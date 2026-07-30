@@ -1,0 +1,148 @@
+---
+title: "Advisor"
+description: "Warmbly watches your sending and tells you what to fix, on the page where the fix lives."
+---
+
+The Advisor continuously checks your workspace for the things that quietly ruin cold outreach: complaints climbing, a domain missing DKIM, a new mailbox sending at full volume, a follow-up nobody replies to, a list that is mostly shared inboxes. When it finds one, it says what is wrong, why it matters, and what to do, and where the fix is a setting, it offers to make the change for you.
+
+Suggestions appear on the page where the problem is. A campaign's problems are on that campaign, a mailbox's are on Accounts, and rate problems are on Deliverability. There is no separate inbox of advice to check, because advice you have to go looking for is advice nobody reads.
+
+## Where you see it
+
+Recommendations show up in four places:
+
+- **On the row itself.** A mailbox with a problem carries a small coloured flag in the accounts list, and a campaign with a problem carries one in the campaigns list. Clicking it opens that row's findings in place. This is the main way you meet the Advisor: you are already scanning the table, and the advice is on the line it is about rather than in a list above it that you have to match up yourself.
+- **Above the list.** A single line summarises the page ("3 mailboxes could be doing better") and expands to the full set, which is where **Fix all** lives. It stays collapsed unless something is critical or the advice is about the workspace rather than any one row.
+- **On the nav tab.** A tab badges the number of critical and high-severity findings sitting behind it, so you can see there is something to look at without opening the page. Lower-severity suggestions never badge a tab.
+- **In the assistant.** The AI assistant can read your open recommendations, so asking it "why is this campaign not getting replies" gets an answer grounded in what has already been measured instead of a guess.
+
+A step's copy problem flags its campaign, since a step has no row of its own. Opening a flagged mailbox shows its findings at the top of the detail drawer.
+
+When there is nothing to say, nothing renders. There is no empty "0 issues" panel.
+
+### One problem, many subjects
+
+If the same check fires on several things at once, they collapse into one card: "19 mailboxes are capped above the safe band", not nineteen copies of the same sentence. Expanding it lists every affected mailbox or campaign, each with its own **Fix**, and the card offers a single **Fix all** that works through them in turn. On a campaign or mailbox page nothing collapses, since everything there is already about the one thing you are looking at.
+
+## How a recommendation is made
+
+Detection is not AI. Every check is an explicit rule with an explicit threshold, run over your own data, so the same numbers always produce the same result and nothing is invented. AI is used for one thing: rewriting the explanation so it reads like a person wrote it. It cannot create a recommendation, change how serious one is, or change what the fix does, and it only ever sees the measurements the check already made.
+
+That means the Advisor works fully on a self-hosted install with no AI configured, and it never spends your AI credits. The wording is just plainer.
+
+### Sample floors
+
+A check stays quiet until it has enough data to be right. Two bounces out of thirty sends is not a `7%` bounce rate, it is thirty sends, and advice built on it would be wrong more often than not. The floors are:
+
+| Signal | Minimum before the Advisor says anything |
+|--------|-------------------------------------------|
+| Complaint rate | `100` sends in the last 30 days |
+| Bounce rate | `50` sends in the last 30 days |
+| Spam placement | `20` warmup deliveries in the last 7 days |
+| Reply rate and copy performance | `200` sends in the last 30 days |
+| Per-step comparison | `100` sends on that step |
+
+### Severity
+
+| Severity | What it means |
+|----------|---------------|
+| **Critical** | Reputation or delivery is being damaged right now. |
+| **Needs attention** | A real problem that becomes critical if left alone. |
+| **Worth fixing** | A meaningful improvement with no immediate risk. |
+| **Suggestion** | Polish. |
+
+Only critical and "needs attention" badge a nav tab.
+
+## What it checks
+
+### Deliverability
+
+- **Complaint rate** per mailbox over 30 days. Warns from `0.03%`, critical at `0.10%`, matching the ceiling Google asks bulk senders to stay under.
+- **Bounce rate** per mailbox over 30 days. Warns from `3%`, critical at `5%`, where Amazon SES puts an account under review.
+- **Spam placement**, measured on warmup mail landing in partner inboxes. Warns from `10%`, escalates at `20%`, critical at `40%`.
+- **SPF, DKIM, and DMARC** on each sending domain. Critical when the mailbox is actively sending cold mail, because Google's bulk sender rules require all three. A domain that has not been checked yet is never reported as failing.
+- **Tracking domain**: whether a sending mailbox has its own verified tracking domain instead of sharing one.
+
+### Mailbox configuration
+
+- **Daily cap above the safe band** (`50`/day). Reported gently on a mailbox with clean numbers over real volume, and firmly on one without.
+- **New mailbox at full volume**: a mailbox connected less than `30` days ago sending above `20`/day.
+- **Sending in bursts**: a minimum gap under `5` minutes between sends.
+- **Unresolved errors** on a mailbox campaigns still route through.
+- **Volume concentration**: too few mailboxes carrying your total cold volume.
+- **Inactive mailbox attached to a running campaign**, so the campaign silently underdelivers.
+
+### Warmup
+
+- **Warmup off** while the mailbox sends cold campaigns. Critical on a new mailbox.
+- **Warmup left paused** and never resumed.
+- **Warmup ceiling too low** to balance the mailbox's cold volume (it should be roughly half the cold cap).
+- **Warmup reply rate below `20%`**, which makes warmup one-way traffic.
+- **Quarantined or blocked from the warmup pool**, critical if the mailbox is still sending cold mail.
+
+### Campaigns
+
+- **No follow-ups**: a single-email campaign.
+- **Reply rate at volume** below `1%`, escalating under `0.3%`.
+- **One weak step**: a step replying at less than a quarter of the campaign's best step, compared only against its own siblings since they all reach the same audience.
+- **One-click unsubscribe off.**
+- **Capacity shortfall**: a daily limit above what the campaign's own mailboxes can send.
+- **No senders**: a running campaign with no active mailbox resolving for it.
+- **Follow-up spacing** outside `2` to `14` days.
+- **List exhaustion**: fewer than `7` days of leads left.
+- **No A/B test** on a high-volume campaign.
+- **Sending window too narrow** to fit the daily volume at safe pacing.
+- **Duplicate enrollment**: contacts in more than one running campaign at once.
+
+### Copy
+
+Copy checks are deliberately conservative, and skip drafts entirely.
+
+- **A merge variable that will not resolve**, shipping a literal `{{token}}` to the recipient.
+- **Bulk-mail phrasing**: two or more phrases that read as mass mail. One is never flagged.
+- **Length** over `200` words.
+- **Subject over `60` characters**, which truncates in a mobile inbox list.
+- **More than two links** in a first-touch email.
+- **A shouting subject line**: capitals or stacked exclamation marks.
+
+### List quality
+
+- **Shared inboxes** (`info@`, `sales@`) above `15%` of the audience.
+- **Consumer mailbox domains** above `40%` of a B2B list.
+- **Suppressed contacts** above `10%`, which will be skipped at send time.
+- **Missing first names** above `10%` when the copy personalizes on that field.
+- **Unsubscribed contacts still enrolled** in a running campaign.
+
+## Fixing something
+
+Opening a recommendation walks three short screens, in the order people actually ask about them:
+
+1. **Why**, with the numbers the check measured laid out beside the explanation.
+2. **What changes**, the exact before and after of every field the fix touches.
+3. **Done**, with **Undo** where the fix can be reverted.
+
+Nothing is applied until you have seen the second screen. The change runs as you, with your permissions, and is written to the audit log like any change you make by hand. If you can see a recommendation but do not have permission to make the change it proposes, applying it is refused rather than silently escalated.
+
+Recommendations that need a judgement call, like adding a DNS record or fixing a broken merge variable, have no button. Those open the same flow, and the second screen is the ordered set of steps to do it by hand, along with a link to the screen where you would do it. A missing DKIM record tells you to generate a key in your provider's console, publish the record it gives you, and then turn signing on, which is a separate switch. Where the remedy is genuinely one sentence, like shortening a subject line, it stays one sentence rather than being padded into a list.
+
+Where the same check fired on many rows, the summary above the list offers **Fix all**, which works through them one at a time and names every row it will touch before it starts.
+
+## Making one go away
+
+- **Snooze** hides it for a week or a month. The check keeps running in the background; it just stops asking.
+- **Stop suggesting this** dismisses it. A dismissal sticks until the problem clears and then happens again later, so you are not re-answering the same question every week.
+- **Useful / not useful** on an expanded card feeds threshold tuning. A check that everyone marks unhelpful is a check that is wrong.
+
+## Settings
+
+Under **Settings > Workspace** you can switch the Advisor off entirely, mute whole categories (deliverability, mailbox, warmup, campaign, copy, list), or raise the minimum severity so only serious findings surface. Changing these needs the manage-settings permission, and it applies to everyone in the workspace.
+
+## Timing
+
+Findings refresh in the background, and again when you open a page whose advice has gone stale. Updates arrive live, so a teammate applying a fix clears the card on your screen too, without a refresh.
+
+## See also
+
+- [Deliverability](/guides/deliverability/) for the underlying measurements and the health bands.
+- [Warmup](/guides/warmup/) for how warmup volume and pool standing work.
+- [AI assistant](/guides/ai-assistant/) for asking follow-up questions about a recommendation.
