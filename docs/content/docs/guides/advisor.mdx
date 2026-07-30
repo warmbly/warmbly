@@ -131,7 +131,18 @@ Where the same check fired on many rows, the summary above the list offers **Fix
 
 Findings whose fix is an edit to something Warmbly owns offer **Fix with agent**: copy, sequence shape, and list membership. That runs an agent against that one finding, which reads the current campaign, step, or list, makes the smallest change that resolves the problem, and reports back.
 
-Findings whose fix lives outside Warmbly do not offer it, because no agent can reach them. A missing DMARC record is a DNS change at your registrar; a shared tracking domain needs a CNAME before anything in the app can be set. Those show their ordered steps and a link to where the remaining part is done, rather than a button that would run and then have to admit it changed nothing.
+Findings whose fix lives outside Warmbly do not offer it, because no agent can reach them. A missing DMARC record is a DNS change at your registrar; a shared tracking domain needs a CNAME before anything in the app can be set. Those show their ordered steps rather than a button that would run and then have to admit it changed nothing.
+
+### Records to paste
+
+Where the fix is a DNS record, the record itself is on the screen, one copy button per field, laid out the way a DNS provider asks for it: type, host, value.
+
+- **SPF** comes with your mail provider's include already filled in. If your provider is not one Warmbly recognises, the include is left as an obvious placeholder rather than a guess, because a wrong include looks finished and fails silently.
+- **DMARC** is scoped to your sending domain and starts at `p=none`, which monitors without affecting delivery. Tighten it to `p=quarantine` once a few weeks of reports show your legitimate mail passing.
+- **DKIM** gives you the host, and names the console screen that generates the value. The value is generated per domain by your provider, so nothing can template it honestly.
+- **Tracking domain** gives you the full CNAME, pointing at whatever tracking host this install is configured with, so a self-hosted deployment gets its own value.
+
+Every check now offers at least one way forward: a fix to apply, an agent that can do it, or ordered steps to do it by hand. None of them leave you with a paragraph and no instruction.
 
 It runs as you, with your permissions, and only ever gets the tools that finding's category needs. A copy problem gets read access to the campaign and the ability to edit that step, and nothing else. Nothing in any of those tool sets can send mail, delete a campaign or a contact, or touch team, billing, or API keys. Each loop costs one AI credit.
 
