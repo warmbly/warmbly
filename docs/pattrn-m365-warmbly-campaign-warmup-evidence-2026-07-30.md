@@ -175,18 +175,52 @@ warmup tasks: dead_lettered=4 historical
 pending_or_active_warmup_tasks=0
 ```
 
-Historical warmup dead-letter inspection:
+Historical warmup dead-letter inspection and no-activation preflight:
 
 ```text
-c430078a-49a9-43f4-b804-e9a2dd5c1c8e | failed to upload email body to S3: mkdir /data/blobs/emails: permission denied
-c2047d7f-de3d-42e9-87e1-f17a41b93883 | failed to get cipher: encryptedkeys: dek already exists for organization
-1b2f3ccb-7e0b-4e21-a50a-f96ba81f258c | failed to upload email body to S3: mkdir /data/blobs/emails: permission denied
-95059229-c096-44e9-ba04-89c161a97bf2 | failed to upload email body to S3: mkdir /data/blobs/emails: permission denied
+Preflight environment on Warmbly host repo /home/hl-mailserver/projects/warmbly:
+- commit: ac60dbbf
+- branch: feat/warmbly-twentycrm-approval-pack
+- BLOB_PROVIDER=filesystem
+- BLOB_FS_ROOT=/data/blobs
+- ENCRYPTED_KEYS_PROVIDER=postgres
+- KMS_PROVIDER=local
+- TASKS_PROVIDER=local
+- backend health: HTTP 200 from http://127.0.0.1:8080/health
+
+Storage preflight:
+- backend container user 1000:1000 could mkdir /data/blobs/emails, write a marker under /data/blobs, read it, and remove it.
+- worker container user 1000:1000 could mkdir /data/blobs/emails, write a marker under /data/blobs, read it, and remove it.
+- /data/blobs and /data/blobs/emails are owned by warmbly:warmbly and writable by the runtime user.
+
+DEK preflight:
+- organization_encrypted_keys rows: 1 row / 1 distinct organization.
+- Pattrn linked accounts share organization 2fb95e84-2893-4e0e-910e-8c52f7d7abb8.
+- Pattrn org has exactly 1 distinct DEK row; ciphertext length 80 chars.
+- No encrypted_data_key values were printed or copied into this document.
 ```
 
-Decision: do **not** replay or clear these as part of this no-activation pass. They are historical failed warmup send attempts from before the current closed gate, not pending/active work. They should stay as an audit trail until a separate warmup activation approval; before activation, run a storage/DEK preflight and either mark these stale rows superseded/quarantined or clear them with an explicit DB migration note.
+Historical warmup dead letters were still `pending` with due `next_retry_at` before the preflight, so they were **quarantined without replaying**. The four associated `tasks` remain `dead_lettered`; the `task_dead_letters` rows are now `status=quarantined`, `next_retry_at=NULL`, and include a JSON quarantine note requiring owner approval before any replay.
 
-Conclusion: warmup remains safe as a recipient-only readiness setup; no warmup activation was performed. Do not enable warmup sending until the historical dead-lettered warmup tasks are explicitly handled and an explicit warmup activation approval exists.
+```text
+1ff64710-2c59-45c8-b0cf-473fbdde1628 | c430078a-49a9-43f4-b804-e9a2dd5c1c8e | colin@pattrndata.co.uk | quarantined | prior error: /data/blobs/emails permission denied
+67fdbba9-38b4-489e-9cec-989dac741509 | c2047d7f-de3d-42e9-87e1-f17a41b93883 | james@pattrndata.com   | quarantined | prior error: encryptedkeys: dek already exists for organization
+4d1b93bb-90c4-4667-9fa8-95143d026ffc | 1b2f3ccb-7e0b-4e21-a50a-f96ba81f258c | sarah@pattrndata.com   | quarantined | prior error: /data/blobs/emails permission denied
+0ac42155-8fb4-479c-8038-79b5b0cafa49 | 95059229-c096-44e9-ba04-89c161a97bf2 | james@pattrndata.com   | quarantined | prior error: /data/blobs/emails permission denied
+```
+
+Post-quarantine checks:
+
+```text
+task_dead_letters_by_type_status: campaign pending=2; warmup quarantined=4
+retryable_due_now_warmup=0
+pending_or_active_warmup_tasks=0
+warmup_task_statuses: warmup dead_lettered=4
+warmup_enabled_timestamp_set=0
+warmup_null=3
+```
+
+Conclusion: historical warmup retry risk is neutralized without enabling warmup or replaying any message. Warmup remains a closed gate. The two remaining campaign pending dead letters are separate from warmup and should be reviewed before restarting any DLQ retry consumer, but they were not mutated in this warmup no-activation pass.
 
 ## Gates after this evidence
 
@@ -201,7 +235,59 @@ Cleared:
 
 Still closed / caveated:
 
-- Warmup activation gate: closed; `warmup=NULL`, no pending/active warmup tasks, current-day warmup send/reply counters zero.
+- Warmup activation gate: closed; `warmup=NULL`, no pending/active warmup tasks, current-day warmup send/reply counters zero, and historical warmup DLQs are quarantined with no retry schedule.
 - Prospect/cold campaign gate: closed; internal-only proof does not approve prospect sends.
 - Full Microsoft-delivery proof for the pilot sender is now present for `james@pattrndata.com`; repeat the same proof per additional sender/shared mailbox before expansion or warmup waves.
 - Expansion gate: closed; no approval here for additional kiosk/shared-mailbox expansion.
+- DLQ retry gate: closed for warmup; two separate campaign DLQs remain pending and should be reviewed before restarting any DLQ retry consumer.
+
+## Next sender/shared-mailbox proof plan
+
+Candidate order:
+
+1. `sarah@pattrndata.com` — linked Outlook account, premium pool, `recipient_only`, healthy, `warmup=NULL`; no current proof in Microsoft Sent Items yet.
+2. `colin@pattrndata.co.uk` — linked Outlook account, premium pool, `recipient_only`, healthy, `warmup=NULL`; no current proof in Microsoft Sent Items yet.
+
+Internal-only proof gate per candidate:
+
+- Re-run backend health and DB no-activation checks immediately before proof.
+- Re-run read-only Microsoft Graph inbox smoke for the candidate mailbox.
+- Confirm candidate remains `active`, `recipient_only`, `healthy`, `warmup=NULL`, and has no pending/active warmup tasks.
+- Use one controlled Warmbly-native campaign proof with:
+  - explicit sender pool containing only the candidate mailbox;
+  - contact list containing only approved internal recipients;
+  - a unique marker such as `pwproof-<UTC timestamp>`;
+  - no prospects, no cold list, no LinkedIn/CRM mutations, no warmup start/resume.
+- Capture the full proof triangle before marking the proof done:
+  - Warmbly DB/API campaign/task completion and persisted RFC `Message-ID`;
+  - worker send-success log for that message/task;
+  - Microsoft Graph Sent Items readback for the same subject marker and `internetMessageId`.
+- If any part of the triangle is missing, classify narrowly as enqueue/control-plane proof only and do not promote the mailbox to a send/warmup-ready state.
+
+## Pilot-only warmup wave plan
+
+This is a plan only; it does **not** approve or start warmup.
+
+Scope:
+
+- Pilot pool: current three linked Pattrn Outlook accounts only: `james@pattrndata.com`, `sarah@pattrndata.com`, `colin@pattrndata.co.uk`.
+- Prospect/cold recipients: excluded.
+- Removed legacy 12 users and later 13-kiosk expansion: excluded.
+- Warmup role transition: requires explicit owner approval before any account changes from `recipient_only`/`warmup=NULL` into an active sender/receiver warmup role.
+
+Pre-activation checks required in the same operator window as any future activation:
+
+- Backend/worker/container health OK.
+- Storage preflight write/remove OK from backend and worker.
+- DEK preflight still exactly one org key for the Pattrn org.
+- `retryable_due_now_warmup=0` and no pending/active warmup tasks.
+- Any campaign pending DLQs reviewed or quarantined if they could be retried by a consumer restart.
+- Graph read smoke passes for every mailbox in the wave.
+- Each candidate has a completed Warmbly-native proof triangle or is explicitly left recipient-only.
+
+Initial caps and pauses:
+
+- Start with a pilot-only low cap below configured defaults; do not use `warmup_base`/`warmup_max` as permission to send at those levels.
+- No prospect recipients in warmup seed/partner scope.
+- Immediate pause/quarantine triggers: Graph auth/read failure, worker send failure, new DLQ, non-internal recipient evidence, Sent Items mismatch, storage/DEK failure, or any owner revocation.
+- Post-activation evidence must show exactly which rows changed, which messages were sent, where they were found in Graph, and that no cold/prospect campaign was touched.
