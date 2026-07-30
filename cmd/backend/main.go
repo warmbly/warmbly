@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/meszmate/apple-go"
 	"github.com/meszmate/google-go"
 	"github.com/warmbly/warmbly/internal/api"
@@ -24,6 +25,8 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+
+	"github.com/warmbly/warmbly/internal/app/advisor"
 	"github.com/warmbly/warmbly/internal/app/aiagent"
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
@@ -166,6 +169,8 @@ func main() {
 	var emailVerifyService emailverifyapp.Service
 	var placementRepository repository.PlacementRepository
 	var placementService placement.Service
+	var advisorRepository repository.AdvisorRepository
+	var advisorService advisor.Service
 
 	var folderService group.GroupService
 	var tagService group.GroupService
@@ -1291,6 +1296,27 @@ func main() {
 		placementPoller := jobs.NewPlacementPoller(placementService, 2*time.Minute)
 		go placementPoller.Start(ctx)
 
+		// Advisor. Detection is deterministic Go over a per-org snapshot and
+		// always runs; the narrator is optional and only rewrites the card copy,
+		// so an install with no LLM provider still gets every recommendation.
+		// Fixes execute through the AI tool registry as the invoking member, so
+		// the Advisor can never apply a change that member could not make by
+		// hand. Registering its read tools here (rather than in BuildRegistry)
+		// closes the loop between the two without an import cycle.
+		advisorRepository = repository.NewAdvisorRepository(primaryDB)
+		var advisorNarrator *advisor.Narrator
+		if aiProvider != nil {
+			advisorNarrator = advisor.NewNarrator(
+				aiProvider,
+				aiagent.NewVoicePreamble(organizationService),
+				advisorTier{featureGateService},
+				advisorRepository,
+			)
+		}
+		advisorService = advisor.NewService(advisorRepository, aiToolRegistry, advisorNarrator, auditService)
+		aitools.RegisterAdvisorTools(aiToolRegistry, advisorService)
+		go (&advisor.Runner{Repo: advisorRepository, Service: advisorService}).Run(ctx)
+
 		addr = apiCfg.Hostname
 		ginMode = apiCfg.GinMode
 		websocketURI = apiCfg.WebsocketURI
@@ -1414,6 +1440,9 @@ func main() {
 		// Seed inbox-placement testing
 		PlacementRepo:    placementRepository,
 		PlacementService: placementService,
+
+		AdvisorService:    advisorService,
+		AdvisorRepository: advisorRepository,
 
 		// Third-party integrations
 		IntegrationService: integrationServiceForHandler,
@@ -1541,4 +1570,17 @@ func wsHealthURL(wsURI string) string {
 	u.Path = "/health"
 	u.RawQuery = ""
 	return u.String()
+}
+
+// advisorTier adapts the feature gate to the advisor narrator's model-tier
+// lookup. A gate error is treated as "not paid": the only consequence is that
+// a card's copy is rewritten by the cheaper model.
+type advisorTier struct{ gate feature.FeatureGateService }
+
+func (t advisorTier) IsPaid(ctx context.Context, orgID uuid.UUID) bool {
+	if t.gate == nil {
+		return false
+	}
+	paid, err := t.gate.IsPaidOrganization(ctx, orgID)
+	return err == nil && paid
 }
