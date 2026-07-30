@@ -222,6 +222,65 @@ warmup_null=3
 
 Conclusion: historical warmup retry risk is neutralized without enabling warmup or replaying any message. Warmup remains a closed gate. The two remaining campaign pending dead letters are separate from warmup and should be reviewed before restarting any DLQ retry consumer, but they were not mutated in this warmup no-activation pass.
 
+## Sarah mailbox proof attempt — blocked on Sent Items mismatch
+
+Scope:
+
+- Internal-only recipient: `rohit@pattrndata.io`
+- Explicit sender pool: `sarah@pattrndata.com` (`email_account_id=ac8f94eb-3c84-4eef-b10f-34396069fef1`)
+- Marker: `pwproof-sarah-20260730190252`
+- Campaign id: `2271c73d-62d5-400c-9fcc-4d249919443f`
+- Worktree commit: `ac60dbbf`
+- Backend health: `GET http://127.0.0.1:8080/health -> HTTP 200`
+- Preflight: `HTTP 200`, `passed=true`, `score=100`; checks passed for campaign readiness, schedule window, daily limit, and unsubscribe header.
+
+Pre-send gates immediately before the attempt:
+
+```text
+warmup_enabled_count=0
+pending_or_active_warmup_tasks=0
+colin@pattrndata.co.uk | premium | recipient_only | healthy
+james@pattrndata.com   | premium | recipient_only | healthy
+sarah@pattrndata.com   | premium | recipient_only | healthy
+graph_auth_present=true
+```
+
+Warmbly control-plane evidence:
+
+```text
+campaign_create|sarah@pattrndata.com|http=200
+contact_add|sarah@pattrndata.com|http=200
+campaign_start|sarah@pattrndata.com|http=200
+campaign_terminal|sarah@pattrndata.com|status=active|message_id_present=true
+
+campaign_logs:
+- started: Campaign started
+- email_sent: Email sent to rohit@pattrndata.io
+
+dead_letters_for_campaign=0
+completed task message_id=<e4aae2be-68c2-4358-adce-c9ff7dd33a22@pattrndata.com>
+```
+
+Microsoft Graph Sent Items readback for Sarah did **not** find the marker or `internetMessageId`, including a retry after the send window:
+
+```text
+graph_sentitems|sarah@pattrndata.com|matches=0
+marker=pwproof-sarah-20260730190252
+message_id=<e4aae2be-68c2-4358-adce-c9ff7dd33a22@pattrndata.com>
+```
+
+Worker log correlation also did not show a matching `Email sent successfully` row for that RFC `Message-ID` in the inspected window. Because the proof triangle is incomplete, this is classified as **Warmbly DB/API/control-plane proof only for Sarah**, not full Microsoft-delivery proof. The Colin proof was not attempted because the Sarah gate did not pass.
+
+Safety cleanup after the failed proof triangle:
+
+```text
+POST /v1/campaigns/2271c73d-62d5-400c-9fcc-4d249919443f/stop -> HTTP 200 {"status":"stopped"}
+campaign status=paused
+remaining proof-campaign tasks: only the completed send task remained after stop/cancel cleanup
+warmup_enabled_count=0
+pending_or_active_warmup_tasks=0
+```
+
 ## Gates after this evidence
 
 Cleared:
@@ -237,7 +296,7 @@ Still closed / caveated:
 
 - Warmup activation gate: closed; `warmup=NULL`, no pending/active warmup tasks, current-day warmup send/reply counters zero, and historical warmup DLQs are quarantined with no retry schedule.
 - Prospect/cold campaign gate: closed; internal-only proof does not approve prospect sends.
-- Full Microsoft-delivery proof for the pilot sender is now present for `james@pattrndata.com`; repeat the same proof per additional sender/shared mailbox before expansion or warmup waves.
+- Full Microsoft-delivery proof for the pilot sender is present for `james@pattrndata.com` only. `sarah@pattrndata.com` is blocked on a Sent Items / worker-log correlation mismatch; `colin@pattrndata.co.uk` was not attempted after Sarah failed the gate.
 - Expansion gate: closed; no approval here for additional kiosk/shared-mailbox expansion.
 - DLQ retry gate: closed for warmup; two separate campaign DLQs remain pending and should be reviewed before restarting any DLQ retry consumer.
 

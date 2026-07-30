@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -124,13 +125,14 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  schedule_windows`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
+	var contactOrderField sql.NullString
 	var dest []any = []any{
 		&campaign.ID, &campaign.Name, &campaign.Description, &campaign.Status,
 		&campaign.StopOnReply, &campaign.OpenTracking, &campaign.LinkTracking,
 		&campaign.TextOnly, &campaign.DailyLimit, &campaign.UnsubscribeHeader, &campaign.RiskyEmails,
 		&campaign.CC, &campaign.BCC, &campaign.StartDate, &campaign.EndDate, &campaign.Timezone, &campaign.Days,
 		&campaign.StartTime, &campaign.EndTime,
-		&campaign.ContactOrderBy, &campaign.ContactOrderDir, &campaign.ContactOrderField,
+		&campaign.ContactOrderBy, &campaign.ContactOrderDir, &contactOrderField,
 		&campaign.UpdatedAt, &campaign.CreatedAt,
 		&campaign.SenderStrategy, &campaign.RotationMode,
 		&campaign.RampEnabled, &campaign.RampStart, &campaign.RampIncrement, &campaign.RampCeiling, &campaign.RampLevel, &campaign.RampLevelDate,
@@ -139,9 +141,15 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.ScheduleWindows,
 	}
 	dest = append(dest, extra...)
-	return rows.Scan(
-		dest...,
-	)
+	if err := rows.Scan(dest...); err != nil {
+		return err
+	}
+	if contactOrderField.Valid {
+		campaign.ContactOrderField = &contactOrderField.String
+	} else {
+		campaign.ContactOrderField = nil
+	}
+	return nil
 }
 
 const CAMPAIGN_SELECT_FULL = `

@@ -89,3 +89,6 @@ xcuserdata/
 secrets/
 *.bak-mailpit-resend
 .docker-compose.yml.swp
+
+# Graphify local AST cache
+graphify-out/cache/
