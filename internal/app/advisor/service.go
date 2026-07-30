@@ -276,6 +276,12 @@ func (s *service) List(ctx context.Context, orgID uuid.UUID, f repository.Adviso
 	if err != nil {
 		return nil, errx.InternalError()
 	}
+	// Stamped on read rather than stored: which checks an agent can resolve is
+	// a property of this build, and a stored copy would go stale the moment the
+	// allowlist changes.
+	for i := range out {
+		out[i].AgentFixable = s.agent != nil && CanAgentFix(&out[i])
+	}
 	return out, nil
 }
 
@@ -295,6 +301,7 @@ func (s *service) Get(ctx context.Context, orgID, id uuid.UUID) (*models.Advisor
 	if f == nil {
 		return nil, errx.ErrNotFound
 	}
+	f.AgentFixable = s.agent != nil && CanAgentFix(f)
 	return f, nil
 }
 

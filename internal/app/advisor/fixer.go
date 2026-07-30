@@ -56,6 +56,52 @@ const (
 	agentTimeout       = 90 * time.Second
 )
 
+// agentFixable is the set of checks an agent can actually resolve, by detector
+// key rather than by category.
+//
+// Category was the wrong grain and shipped a real defect: it offered "fix with
+// agent" on a missing DMARC record, which lives in DNS at a registrar the
+// platform has no access to. The agent would dutifully run, find nothing it
+// could change, and report failure, which reads as a broken feature rather than
+// as the honest answer that this one needs a person.
+//
+// The rule for being on this list: the fix is an edit to content the platform
+// owns. Copy, sequence shape, and list membership qualify. DNS, provider
+// consoles, and anything needing a judgement call about volume do not, and
+// those show their manual steps instead.
+var agentFixable = map[string]bool{
+	// Copy: the text is ours to edit.
+	"copy_broken_template":  true,
+	"copy_spam_phrases":     true,
+	"copy_too_long":         true,
+	"copy_subject_too_long": true,
+	"copy_shouty_subject":   true,
+	"copy_too_many_links":   true,
+
+	// Sequence shape: steps are ours to add and re-time.
+	"campaign_no_followups":       true,
+	"campaign_followup_spacing":   true,
+	"campaign_step_dropoff":       true,
+	"campaign_capacity_shortfall": true,
+	"campaign_narrow_window":      true,
+
+	// List membership: contacts are ours to filter and correct.
+	"list_role_addresses":               true,
+	"list_missing_personalization_data": true,
+	"list_unsubscribed_enrolled":        true,
+	"list_suppressed_share":             true,
+}
+
+// CanAgentFix reports whether the agent should be offered for a finding. The
+// client asks so it can show the manual steps instead of a button that would
+// fail.
+func CanAgentFix(f *models.AdvisorFinding) bool {
+	if f == nil || f.Action != nil {
+		return false
+	}
+	return agentFixable[f.DetectorKey] && len(fixTools[f.Category]) > 0
+}
+
 // fixTools is the tool allowlist per finding category.
 //
 // The allowlist is the safety boundary, not the prompt. A model told "only edit
@@ -97,10 +143,10 @@ func (s *service) FixWithAgent(ctx context.Context, inv aitools.Invocation, id u
 		return nil, xerr
 	}
 
-	names := fixTools[f.Category]
-	if len(names) == 0 {
+	if !CanAgentFix(f) {
 		return nil, errx.ErrAdvisorNoAgentFix
 	}
+	names := fixTools[f.Category]
 	tools := s.toolList.ToolDefsByName(inv, names...)
 	if len(tools) == 0 {
 		// The member can see the finding but holds none of the permissions the

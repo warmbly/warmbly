@@ -163,6 +163,11 @@ type AdvisorFinding struct {
 	// Steps is the ordered manual how-to, set only by checks with no one-click
 	// fix. Empty means the remedy prose is the whole answer.
 	Steps []string `json:"steps,omitempty"`
+	// AgentFixable is true when an agent can resolve this by editing something
+	// the platform owns. False for anything that lives outside it, like a DNS
+	// record, so the client shows the steps rather than a button that cannot
+	// succeed. Computed per request, never stored.
+	AgentFixable bool `json:"agent_fixable"`
 	// Narrated is false while the card still shows the built-in fallback copy
 	// (AI unconfigured, or narration not run yet). The card is fully usable
 	// either way; this only tells the client whether to offer "rewrite".
