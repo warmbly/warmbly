@@ -51,7 +51,9 @@ export default function AdvisorRowFlag({ findings, subject, className = "" }: Pr
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                        onClick={(e) => e.stopPropagation()}
+                        // No onClick here: PopoverMenuTrigger supplies one that
+                        // already stops the row's open handler and a wrapping
+                        // link's navigation.
                         aria-label={`${findings.length} suggestion${findings.length > 1 ? "s" : ""} for this row`}
                         className={`inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-medium uppercase tracking-[0.08em] transition ${
                             settled ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : SEVERITY_ROW[severity]

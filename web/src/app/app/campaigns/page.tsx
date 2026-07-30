@@ -7,6 +7,9 @@ import useStopCampaign from "@/lib/api/hooks/app/campaigns/useStopCampaign";
 import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
 import { useConfirm } from "@/hooks/context/confirm";
 import { NewCampaignDialog } from "@/components/app/campaigns/NewCampaignDialog";
+import AdvisorRowFlag from "@/components/app/advisor/AdvisorRowFlag";
+import AdvisorSummaryBar from "@/components/app/advisor/AdvisorSummaryBar";
+import { useAdvisorEntityIndex } from "@/lib/api/hooks/app/advisor/useAdvisor";
 import LaunchCampaignDialog from "@/components/app/campaigns/LaunchCampaignDialog";
 import toast from "react-hot-toast";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -285,6 +288,9 @@ export default function CampaignsPage() {
     }
 
     const campaignsData = useCampaigns({ query, folder });
+    // One query for the surface; a step's copy problem indexes onto its parent
+    // campaign, so it flags the row even though the step has no row of its own.
+    const advisor = useAdvisorEntityIndex("campaigns");
     const campaigns = campaignsData.campaigns ?? [];
 
     const folders = p.user.folders ?? [];
@@ -461,6 +467,12 @@ export default function CampaignsPage() {
             </SectionBar>
 
             <PageBody>
+                <AdvisorSummaryBar
+                    surface="campaigns"
+                    noun="campaign"
+                    nounPlural="campaigns"
+                    className="mx-5 mt-3"
+                />
                 {campaignsData.isPending ? (
                     <SkeletonRows />
                 ) : campaignsData.isError ? (
@@ -521,6 +533,7 @@ export default function CampaignsPage() {
                                     <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0 hidden sm:inline">
                                         {c.id.slice(0, 8)}
                                     </span>
+                                    <AdvisorRowFlag findings={advisor.get(c.id)} subject={c.name} />
                                     <CampaignFolderChips campaign={c} folders={folders} />
                                     {c.description && (
                                         <span className="text-[11.5px] text-slate-400 truncate hidden md:inline">
