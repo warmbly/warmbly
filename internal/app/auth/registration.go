@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"net/mail"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -14,7 +16,25 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
 
+func registrationEmailAllowed(email string) bool {
+	allowed := strings.TrimSpace(os.Getenv("REGISTRATION_ALLOWED_EMAILS"))
+	if allowed == "" {
+		return true
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+	for _, item := range strings.Split(allowed, ",") {
+		if email == strings.ToLower(strings.TrimSpace(item)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error) {
+	if !registrationEmailAllowed(data.Email) {
+		return nil, errx.New(errx.Forbidden, "Registration is restricted on this private instance.")
+	}
+
 	if xerr := s.captcha.Verify(ctx, data.Turnstile, ipaddr); xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, xerr
@@ -123,6 +143,9 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 	email, xerr := mail.ParseAddress(token.Email)
 	if xerr != nil {
 		return errx.ErrEmail
+	}
+	if !registrationEmailAllowed(email.Address) {
+		return errx.New(errx.Forbidden, "Registration is restricted on this private instance.")
 	}
 
 	u, xerr := s.userRepository.CreateUser(ctx, email, sess.PasswordHash)

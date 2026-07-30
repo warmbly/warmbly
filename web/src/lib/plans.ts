@@ -6,7 +6,7 @@
 // Business / Enterprise). "Free" is kept here as a private label for
 // the "no active subscription" state — never marketed, never sold.
 
-export type PlanID = "free" | "starter" | "grow" | "business" | "enterprise";
+export type PlanID = "free" | "starter" | "grow" | "pro" | "business" | "enterprise";
 
 export interface PlanDef {
     id: PlanID;
@@ -63,6 +63,17 @@ export const PLAN_CATALOG: Record<PlanID, PlanDef> = {
         accent: "orange",
         dedicatedIps: false,
     },
+    pro: {
+        id: "pro",
+        label: "Pro",
+        description: "For teams that need a paid workspace without the free-tier locks.",
+        priceMonthly: 99,
+        priceAnnual: 79,
+        sendsPerDay: 1_000,
+        bullets: ["Unlimited warmup", "Unlimited mailboxes", "1,000 emails / day"],
+        accent: "indigo",
+        dedicatedIps: false,
+    },
     business: {
         id: "business",
         label: "Business",
@@ -99,10 +110,10 @@ export const PLAN_CATALOG: Record<PlanID, PlanDef> = {
     },
 };
 
-export const PAID_PLANS: PlanID[] = ["starter", "grow", "business", "enterprise"];
+export const PAID_PLANS: PlanID[] = ["starter", "grow", "pro", "business", "enterprise"];
 
 export function planOrder(id: PlanID): number {
-    return (["free", "starter", "grow", "business", "enterprise"] as PlanID[]).indexOf(id);
+    return (["free", "starter", "grow", "pro", "business", "enterprise"] as PlanID[]).indexOf(id);
 }
 
 export function isAtLeast(actual: PlanID, required: PlanID): boolean {

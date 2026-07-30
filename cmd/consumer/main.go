@@ -315,7 +315,7 @@ func main() {
 	var notifEmail notification.EmailSender
 	if emailCfg, ecErr := cfg.LoadEmailConfig(ctx); ecErr == nil {
 		if smtpCfg := cfg.LoadSMTPConfig(ctx); smtpCfg != nil {
-			notifEmail = notify.NewSMTPEmailNotificationService(emailCfg.EmailName, emailCfg.EmailAddress, smtpCfg.Host, smtpCfg.Port)
+			notifEmail = notify.NewSMTPEmailNotificationService(emailCfg.EmailName, emailCfg.EmailAddress, smtpCfg.Host, smtpCfg.Port, smtpCfg.Username, smtpCfg.Password)
 		} else if ses, sErr := notify.NewEmailNotficiationService(ctx, emailCfg.EmailName, emailCfg.EmailAddress); sErr == nil {
 			notifEmail = ses
 		}

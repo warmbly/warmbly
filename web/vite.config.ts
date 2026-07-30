@@ -37,6 +37,18 @@ export default defineConfig({
         // inert for normal local dev. Lets `make web PUBLIC_HOST=<name>` work
         // when reached at https://<host>.<tailnet>.ts.net.
         allowedHosts: [".ts.net", ...(process.env.VITE_ALLOWED_HOSTS?.split(",").filter(Boolean) ?? [])],
+        proxy: {
+            "/api": {
+                target: "http://backend:8080",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api/, ""),
+            },
+            "/socket": {
+                target: "http://realtime:4000",
+                changeOrigin: true,
+                ws: true,
+            },
+        },
         // Warm up the most-mounted entry points before the user
         // clicks them so navigation doesn't trigger a cold compile.
         warmup: {

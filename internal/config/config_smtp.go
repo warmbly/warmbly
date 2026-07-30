@@ -6,8 +6,10 @@ import (
 )
 
 type SMTPConfig struct {
-	Host string
-	Port string
+	Host     string
+	Port     string
+	Username string
+	Password string
 }
 
 func (c *Config) LoadSMTPConfig(ctx context.Context) *SMTPConfig {
@@ -22,7 +24,9 @@ func (c *Config) LoadSMTPConfig(ctx context.Context) *SMTPConfig {
 	}
 
 	return &SMTPConfig{
-		Host: host,
-		Port: port,
+		Host:     host,
+		Port:     port,
+		Username: os.Getenv("SMTP_USERNAME"),
+		Password: os.Getenv("SMTP_PASSWORD"),
 	}
 }

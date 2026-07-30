@@ -38,6 +38,14 @@ type OnboardingOutlookSharedRequest struct {
 	Name                 string `json:"name"`
 }
 
+// OnboardingOutlookAppOnlyRequest connects an approved tenant mailbox using
+// Microsoft Graph application permissions. The server validates read-only Graph
+// access before it persists the sender.
+type OnboardingOutlookAppOnlyRequest struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
 func (h *Handler) StartEmailOAuth(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	orgID := middleware.GetOrganizationID(c)
@@ -112,6 +120,35 @@ func (h *Handler) ConnectEmailOutlookShared(c *gin.Context) {
 		"email":                   acc.Email,
 		"parent_email_account_id": parentID.String(),
 		"shared_mailbox":          "true",
+	})
+
+	c.JSON(http.StatusCreated, acc)
+}
+
+func (h *Handler) ConnectEmailOutlookAppOnly(c *gin.Context) {
+	userIDStr := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+
+	var req OnboardingOutlookAppOnlyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	acc, xerr := h.EmailService.OnboardOutlookAppOnly(c.Request.Context(), userIDStr, orgID, &models.NewOutlookAppOnlyMailboxAccount{
+		OrganizationID: orgID,
+		Email:          req.Email,
+		Name:           req.Name,
+	})
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionConnect, models.AuditEntityEmailAccount, &acc.ID, nil, map[string]string{
+		"provider":       "outlook",
+		"email":          acc.Email,
+		"graph_app_only": "true",
 	})
 
 	c.JSON(http.StatusCreated, acc)

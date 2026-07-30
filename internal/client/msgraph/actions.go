@@ -69,7 +69,7 @@ func (c *Client) move(ctx context.Context, messageID, destinationID string) (str
 // Returns an empty string (no error) when the message can't be found.
 func (c *Client) ResolveMessageID(ctx context.Context, internetMessageID string) (string, error) {
 	filter := "internetMessageId eq '" + strings.ReplaceAll(internetMessageID, "'", "''") + "'"
-	u := c.mailboxBase() + "/messages?$select=id&$top=1&$filter=" + url.QueryEscape(filter)
+	u := c.mailboxBaseURL() + "/messages?$select=id&$top=1&$filter=" + url.QueryEscape(filter)
 	var resp struct {
 		Value []struct {
 			ID string `json:"id"`
@@ -85,7 +85,7 @@ func (c *Client) ResolveMessageID(ctx context.Context, internetMessageID string)
 }
 
 func (c *Client) messageURL(messageID string) string {
-	return c.mailboxBase() + "/messages/" + url.PathEscape(messageID)
+	return c.mailboxBaseURL() + "/messages/" + url.PathEscape(messageID)
 }
 
 // ensureFolder resolves a top-level mail folder id by display name, creating the
@@ -99,7 +99,7 @@ func (c *Client) ensureFolder(ctx context.Context, name string) (string, error) 
 	c.mu.Unlock()
 
 	// Look for an existing folder with this display name.
-	listURL := c.mailboxBase() + "/mailFolders?$select=id,displayName&$top=100"
+	listURL := c.mailboxBaseURL() + "/mailFolders?$select=id,displayName&$top=100"
 	var list struct {
 		Value []struct {
 			ID          string `json:"id"`
@@ -120,7 +120,7 @@ func (c *Client) ensureFolder(ctx context.Context, name string) (string, error) 
 	var created struct {
 		ID string `json:"id"`
 	}
-	if err := c.doJSON(ctx, "POST", c.mailboxBase()+"/mailFolders", map[string]any{"displayName": name}, &created); err != nil {
+	if err := c.doJSON(ctx, "POST", c.mailboxBaseURL()+"/mailFolders", map[string]any{"displayName": name}, &created); err != nil {
 		return "", err
 	}
 	c.cacheFolder(name, created.ID)

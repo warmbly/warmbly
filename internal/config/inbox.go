@@ -4,13 +4,15 @@ import (
 	"os"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 )
 
 type Oauth2Inbox struct {
-	Google  *oauth2.Config
-	Outlook *oauth2.Config
+	Google         *oauth2.Config
+	Outlook        *oauth2.Config
+	OutlookAppOnly *clientcredentials.Config
 }
 
 func GoogleOauth2Inbox(baseURL string) *oauth2.Config {
@@ -55,5 +57,25 @@ func OutlookOauth2Inbox(baseURL string) *oauth2.Config {
 			AuthURL:  "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
 			TokenURL: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
 		},
+	}
+}
+
+// OutlookAppOnlyInbox configures Microsoft Graph application-permission access.
+// It is used only for tenant-owned Microsoft 365 mailboxes that have passed the
+// human approval/admin-consent gate. The worker targets a specific mailbox with
+// /users/{mailbox}; the token itself is tenant/app scoped.
+func OutlookAppOnlyInbox() *clientcredentials.Config {
+	tenantID := os.Getenv("BOX_OUTLOOK_TENANT_ID")
+	if tenantID == "" {
+		tenantID = os.Getenv("MICROSOFT_TENANT_ID")
+	}
+	if tenantID == "" {
+		tenantID = "common"
+	}
+	return &clientcredentials.Config{
+		ClientID:     os.Getenv("BOX_OUTLOOK_CLIENT_ID"),
+		ClientSecret: os.Getenv("BOX_OUTLOOK_CLIENT_SECRET"),
+		TokenURL:     "https://login.microsoftonline.com/" + tenantID + "/oauth2/v2.0/token",
+		Scopes:       []string{"https://graph.microsoft.com/.default"},
 	}
 }

@@ -17,6 +17,9 @@ func (m *MailManager) AddWMail(
 	// Cfg is avro-excluded from the payload, so rebuild it from the worker's
 	// local oauth config for token refresh (no-op for smtp_imap).
 	data.Cfg = m.cfgFor(data.Type)
+	if data.Type == models.InboxProviderOutlook && data.Graph != nil && data.Graph.AppOnly && m.oauthInbox != nil && m.oauthInbox.OutlookAppOnly != nil {
+		data.AppOnlyCfg = *m.oauthInbox.OutlookAppOnly
+	}
 
 	newMail, err := wmail.NewWMail(
 		data,

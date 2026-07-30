@@ -37,6 +37,7 @@ type OAuthCredentials struct {
 	AccessToken  string
 	RefreshToken string
 	ExpiresAt    time.Time
+	AppOnly      bool
 }
 
 type EmailRepository interface {
@@ -1379,6 +1380,7 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 		AccessToken:  decryptedAccessToken,
 		RefreshToken: decryptedRefreshToken,
 		ExpiresAt:    expiresAt,
+		AppOnly:      decryptedRefreshToken == models.GraphAppOnlyRefreshToken,
 	}, nil
 }
 

@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -16,19 +17,26 @@ import (
 const smtpSendTimeout = 10 * time.Second
 
 type smtpEmailNotificationService struct {
-	Name    string
-	Address string
-	Host    string
-	Port    string
+	Name     string
+	Address  string
+	Host     string
+	Port     string
+	Username string
+	Password string
 }
 
-func NewSMTPEmailNotificationService(name, address, host, port string) EmailNotificationService {
-	return &smtpEmailNotificationService{
+func NewSMTPEmailNotificationService(name, address, host, port string, credentials ...string) EmailNotificationService {
+	service := &smtpEmailNotificationService{
 		Name:    name,
 		Address: address,
 		Host:    host,
 		Port:    port,
 	}
+	if len(credentials) >= 2 {
+		service.Username = credentials[0]
+		service.Password = credentials[1]
+	}
+	return service
 }
 
 func (s *smtpEmailNotificationService) Send(ctx context.Context, to, cc, bcc []string, subject, message string) error {
@@ -48,7 +56,7 @@ func (s *smtpEmailNotificationService) Send(ctx context.Context, to, cc, bcc []s
 
 	msg := []byte(headers + message)
 
-	if err := sendSMTP(ctx, addr, s.Host, s.Address, allRecipients, msg); err != nil {
+	if err := sendSMTP(ctx, addr, s.Host, s.Address, allRecipients, msg, s.Username, s.Password); err != nil {
 		sentry.CaptureException(err)
 		return err
 	}
@@ -73,14 +81,14 @@ func (s *smtpEmailNotificationService) SendOutreach(ctx context.Context, to []st
 		"Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n"
 
 	msg := []byte(headers + message)
-	if err := sendSMTP(ctx, addr, s.Host, s.Address, to, msg); err != nil {
+	if err := sendSMTP(ctx, addr, s.Host, s.Address, to, msg, s.Username, s.Password); err != nil {
 		sentry.CaptureException(err)
 		return err
 	}
 	return nil
 }
 
-func sendSMTP(ctx context.Context, addr, host, from string, recipients []string, msg []byte) error {
+func sendSMTP(ctx context.Context, addr, host, from string, recipients []string, msg []byte, username, password string) error {
 	if len(recipients) == 0 {
 		return errors.New("smtp send requires at least one recipient")
 	}
@@ -106,6 +114,18 @@ func sendSMTP(ctx context.Context, addr, host, from string, recipients []string,
 		return err
 	}
 	defer client.Close()
+
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+			return err
+		}
+	}
+
+	if username != "" && password != "" {
+		if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
+			return err
+		}
+	}
 
 	if err := client.Mail(from); err != nil {
 		return err

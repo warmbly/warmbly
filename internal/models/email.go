@@ -152,6 +152,17 @@ type NewSharedOutlookMailboxAccount struct {
 	Email                string
 }
 
+const GraphAppOnlyRefreshToken = "__warmbly_graph_app_only__"
+
+// NewOutlookAppOnlyMailboxAccount connects a tenant-owned Microsoft 365 mailbox
+// using Microsoft Graph application permissions. Onboarding validates read
+// access only; send activity stays behind Warmbly's normal account/campaign gates.
+type NewOutlookAppOnlyMailboxAccount struct {
+	OrganizationID *uuid.UUID
+	Name           string
+	Email          string
+}
+
 // EmailOnboardingState is stored in Redis for the lifetime of an OAuth round trip.
 type EmailOnboardingState struct {
 	UserID         string     `json:"user_id"`

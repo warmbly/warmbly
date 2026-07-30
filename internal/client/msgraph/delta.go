@@ -45,7 +45,7 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 	// history id captured at connect time rather than backfilling everything.
 	priming := next == ""
 	if priming {
-		next = c.mailboxBase() + "/mailFolders/" + folder + "/messages/delta?$select=" + url.QueryEscape(deltaSelect)
+		next = c.mailboxBaseURL() + "/mailFolders/" + folder + "/messages/delta?$select=" + url.QueryEscape(deltaSelect)
 	}
 
 	for {
@@ -120,7 +120,7 @@ func (c *Client) applyDelta(ctx context.Context, folder string, item *graphMessa
 
 // fetchMessage hydrates a single message with the full property set.
 func (c *Client) fetchMessage(ctx context.Context, id string) (*graphMessage, error) {
-	u := c.mailboxBase() + "/messages/" + url.PathEscape(id) + "?$select=" + url.QueryEscape(msgSelect)
+	u := c.mailboxBaseURL() + "/messages/" + url.PathEscape(id) + "?$select=" + url.QueryEscape(msgSelect)
 	var msg graphMessage
 	if err := c.doJSON(ctx, "GET", u, nil, &msg); err != nil {
 		return nil, err

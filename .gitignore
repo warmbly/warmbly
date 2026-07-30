@@ -86,3 +86,6 @@ build-errors.log
 # Xcode per-user state (ios/)
 xcuserdata/
 .DS_Store
+secrets/
+*.bak-mailpit-resend
+.docker-compose.yml.swp

@@ -403,6 +403,8 @@ func main() {
 				emailCfg.EmailAddress,
 				smtpCfg.Host,
 				smtpCfg.Port,
+				smtpCfg.Username,
+				smtpCfg.Password,
 			)
 		} else {
 			emailNotificationService, err = notify.NewEmailNotficiationService(

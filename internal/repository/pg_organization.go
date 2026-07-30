@@ -211,10 +211,12 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 		SELECT
 			om.id, om.organization_id, om.user_id, om.role, om.permissions,
 			om.invited_by, om.invited_at, om.accepted_at,
-			o.id, o.name, o.slug, o.avatar_url, o.owner_user_id, o.created_at, o.updated_at,
+			o.id, o.name, o.slug, o.avatar_url, p.name AS plan_name, o.owner_user_id, o.created_at, o.updated_at,
 			o.deletion_scheduled_at, o.deletion_scheduled_for
 		FROM organization_members om
 		JOIN organizations o ON o.id = om.organization_id
+		LEFT JOIN subscriptions s ON s.organization_id = o.id AND s.status IN ('active', 'trialing')
+		LEFT JOIN plans p ON p.id = s.plan_id
 		WHERE om.user_id = $1
 		ORDER BY om.invited_at DESC
 	`
@@ -231,7 +233,7 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 		err := rows.Scan(
 			&m.ID, &m.OrganizationID, &m.UserID, &m.Role, &m.Permissions,
 			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt,
-			&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt,
+			&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.Plan, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt,
 			&org.DeletionScheduledAt, &org.DeletionScheduledFor,
 		)
 		if err != nil {

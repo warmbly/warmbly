@@ -12,6 +12,7 @@ type Organization struct {
 	Name        string    `json:"name"`
 	Slug        *string   `json:"slug,omitempty"`
 	AvatarURL   *string   `json:"avatar_url,omitempty"`
+	Plan        *string   `json:"plan,omitempty"`
 	OwnerUserID uuid.UUID `json:"owner_user_id"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

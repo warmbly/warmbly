@@ -258,6 +258,65 @@ func (s *emailService) OnboardOutlookShared(ctx context.Context, userID string, 
 	return acc, xerr
 }
 
+// OnboardOutlookAppOnly validates a tenant Microsoft 365 mailbox with Graph
+// application permissions, then persists it as a normal Outlook sender account.
+// Validation is read-only against /users/{mailbox}/mailFolders/inbox; no send,
+// warmup, prospect, or campaign activity is started during onboarding.
+func (s *emailService) OnboardOutlookAppOnly(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewOutlookAppOnlyMailboxAccount) (*models.Email, *errx.Error) {
+	if data == nil {
+		return nil, errx.ErrInvalid
+	}
+	data.Email = strings.TrimSpace(data.Email)
+	if _, err := mail.ParseAddress(data.Email); err != nil {
+		return nil, errx.ErrEmail
+	}
+	if !validNameLen(&data.Name) {
+		return nil, errx.ErrEmailName
+	}
+	if orgID == nil {
+		return nil, errx.ErrUser
+	}
+	if s.oauthInbox == nil || s.oauthInbox.OutlookAppOnly == nil || s.oauthInbox.OutlookAppOnly.ClientID == "" || s.oauthInbox.OutlookAppOnly.ClientSecret == "" {
+		return nil, errx.ErrEmailOnboardExchange
+	}
+	if xerr := s.guardInboxLimit(ctx, orgID); xerr != nil {
+		return nil, xerr
+	}
+	if exists, xerr := s.emailRepository.ExistsForUser(ctx, userID, data.Email); xerr != nil {
+		return nil, xerr
+	} else if exists {
+		return nil, errx.ErrEmailOnboardAlreadyExists
+	}
+
+	tok, err := s.oauthInbox.OutlookAppOnly.Token(ctx)
+	if err != nil {
+		return nil, errx.ErrEmailOnboardExchange
+	}
+	if xerr := validateOutlookSharedMailboxAccess(ctx, tok.AccessToken, data.Email); xerr != nil {
+		return nil, xerr
+	}
+	if xerr := s.guardMailboxThrottle(ctx, orgID); xerr != nil {
+		return nil, xerr
+	}
+
+	data.OrganizationID = orgID
+	acc, xerr := s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
+		OrganizationID: data.OrganizationID,
+		Provider:       models.InboxProviderOutlook,
+		Name:           data.Name,
+		Email:          data.Email,
+		AccessToken:    "",
+		RefreshToken:   models.GraphAppOnlyRefreshToken,
+		ExpiresAt:      time.Now().UTC(),
+	})
+	if xerr == nil && acc != nil {
+		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
+		s.dispatchAccountConnected(ctx, orgID, acc)
+		s.loadAccountBestEffort(ctx, acc.ID)
+	}
+	return acc, xerr
+}
+
 // OnboardSMTPIMAP validates the supplied SMTP/IMAP credentials against a live worker, then
 // persists the email account on success. Returns ErrEmailCredentials if the worker reports failure.
 func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewSMTPIMAPAccount) (*models.Email, *errx.Error) {

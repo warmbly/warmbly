@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
 
 // WorkerType represents the type of worker
@@ -128,6 +129,7 @@ type UpdateWorker struct {
 type DedicatedWorkerAssignment struct {
 	ID             uuid.UUID  `json:"id"`
 	WorkerID       uuid.UUID  `json:"worker_id"`
+	UserID         uuid.UUID  `json:"user_id"`
 	OrganizationID uuid.UUID  `json:"organization_id"`
 	SubscriptionID uuid.UUID  `json:"subscription_id"`
 	AssignedAt     time.Time  `json:"assigned_at"`
@@ -202,19 +204,15 @@ type AddWorkerEmailSmtpImapData struct {
 }
 
 // AddWorkerEmailGraphData seeds a Microsoft Graph mailbox on the worker: the
-// delegated OAuth token, the mailbox address whose Graph mail endpoint should be
-// used, and the opaque per-folder delta cursors persisted by the control plane
-// (empty on first connect, which primes the cursor without backfilling history).
-//
-// MailboxEmail is intentionally explicit instead of assuming /me: shared
-// Microsoft 365 mailboxes reuse a licensed delegate token but must send, sync,
-// and run warmup actions against /users/{shared-mailbox}. Regular Outlook
-// accounts pass their own email address, which keeps the worker payload shape
-// identical across normal and shared Outlook senders.
+// delegated OAuth token and the opaque per-folder delta cursors persisted by the
+// control plane (empty on first connect, which primes the cursor without
+// backfilling history).
 type AddWorkerEmailGraphData struct {
-	Token        *oauth2.Token     `json:"token" avro:"token"`
-	MailboxEmail string            `json:"mailbox_email" avro:"mailbox_email"`
-	DeltaLinks   map[string]string `json:"delta_links" avro:"delta_links"`
+	Token         *oauth2.Token     `json:"token" avro:"token"`
+	MailboxEmail  string            `json:"mailbox_email" avro:"mailbox_email"`
+	DeltaLinks    map[string]string `json:"delta_links" avro:"delta_links"`
+	AppOnly       bool              `json:"app_only" avro:"app_only"`
+	MailboxUserID string            `json:"mailbox_user_id" avro:"mailbox_user_id"`
 }
 
 type AddWorkerEmail struct {
@@ -229,7 +227,8 @@ type AddWorkerEmail struct {
 	SmtpImap  *AddWorkerEmailSmtpImapData `json:"smtp_imap" avro:"smtp_imap"`
 	Graph     *AddWorkerEmailGraphData    `json:"graph" avro:"graph"`
 
-	Cfg oauth2.Config `json:"-" avro:"-"`
+	Cfg        oauth2.Config            `json:"-" avro:"-"`
+	AppOnlyCfg clientcredentials.Config `json:"-" avro:"-"`
 }
 
 type RemoveWorkerEmail struct {

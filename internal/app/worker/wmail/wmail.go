@@ -145,6 +145,10 @@ func NewWMail(
 		}
 		token := data.Graph.Token
 		deltaLinks := data.Graph.DeltaLinks
+		mailboxUserID := data.Graph.MailboxUserID
+		if mailboxUserID == "" {
+			mailboxUserID = data.Email
+		}
 
 		mail.GraphData = &GraphData{
 			Client: &msgraph.Client{
@@ -166,7 +170,11 @@ func NewWMail(
 			},
 		}
 
-		if err := mail.GraphData.Client.Init(mailCtx, token, data.Cfg); err != nil {
+		if data.Graph.AppOnly {
+			if err := mail.GraphData.Client.InitAppOnly(mailCtx, data.AppOnlyCfg, mailboxUserID); err != nil {
+				return nil, err
+			}
+		} else if err := mail.GraphData.Client.Init(mailCtx, token, data.Cfg); err != nil {
 			return nil, err
 		}
 	case models.InboxProviderSMTPIMAP:

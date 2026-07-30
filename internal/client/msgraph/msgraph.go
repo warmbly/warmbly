@@ -22,10 +22,12 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/stoken"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
 
 const (
-	// graphBase is the Microsoft Graph v1.0 root.
+	// graphBase is the Microsoft Graph v1.0 root. Mail calls are made
+	// against /me for delegated OAuth or /users/{mailbox} for app-only access.
 	graphBase = "https://graph.microsoft.com/v1.0"
 
 	// Well-known mail folder ids Graph accepts directly in a path or as a
@@ -40,6 +42,10 @@ type Client struct {
 	MailboxEmail string
 	FirstName    string
 	LastName     string
+
+	// MailboxUserID switches Graph paths from delegated /me to app-only
+	// /users/{mailbox}. Leave empty for delegated OAuth mailboxes.
+	MailboxUserID string
 
 	hc    *http.Client
 	Cache *cache.Cache
@@ -66,6 +72,7 @@ type Client struct {
 // cfg and persists the new token via OnTokenRefresh (the worker relays it back to
 // the control plane, which owns the encrypted credential store).
 func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Config) *errx.MailError {
+	c.MailboxUserID = ""
 	ts := cfg.TokenSource(ctx, token)
 	ts = oauth2.ReuseTokenSource(token, ts)
 	ts = stoken.New(ts, func(t *oauth2.Token) error {
@@ -78,6 +85,42 @@ func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Confi
 	}
 	c.folderIDs = map[string]string{}
 	return nil
+}
+
+// InitAppOnly builds an application-permission Graph client for a specific
+// mailbox. App-only tokens are minted by the worker from tenant client
+// credentials, not refreshed/persisted per mailbox.
+func (c *Client) InitAppOnly(ctx context.Context, cfg clientcredentials.Config, mailboxUserID string) *errx.MailError {
+	if cfg.ClientID == "" || cfg.ClientSecret == "" || cfg.TokenURL == "" || mailboxUserID == "" {
+		return errx.ErrMailAuthenticationFailed
+	}
+	c.MailboxUserID = mailboxUserID
+	c.hc = oauth2.NewClient(ctx, cfg.TokenSource(ctx))
+	if c.DeltaLinks == nil {
+		c.DeltaLinks = map[string]string{}
+	}
+	c.folderIDs = map[string]string{}
+	return nil
+}
+
+func (c *Client) mailboxBaseURL() string {
+	mailbox := strings.TrimSpace(c.MailboxUserID)
+	if mailbox == "" {
+		mailbox = strings.TrimSpace(c.MailboxEmail)
+	}
+	if mailbox == "" {
+		mailbox = strings.TrimSpace(c.Email)
+	}
+	if mailbox == "" {
+		return graphBase + "/me"
+	}
+	return graphBase + "/users/" + url.PathEscape(mailbox)
+}
+
+// mailboxBase is kept for older shared-mailbox tests/callers; new code should
+// use mailboxBaseURL so delegated, shared, and app-only paths share one helper.
+func (c *Client) mailboxBase() string {
+	return c.mailboxBaseURL()
 }
 
 // do issues a single authenticated request. body may be nil.
@@ -124,20 +167,4 @@ func (c *Client) doJSON(ctx context.Context, method, url string, in, out any) er
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
-}
-
-// mailboxBase returns the Graph resource root for this sender mailbox. Warmbly
-// must not assume /me for Outlook transport: shared Microsoft 365 mailboxes use a
-// delegate's OAuth token but their own mailbox resource, so send, delta sync, and
-// warmup engagement all have to target /users/{mailbox}. Falling back to Email
-// preserves compatibility with older worker payloads that predate MailboxEmail.
-func (c *Client) mailboxBase() string {
-	mailbox := strings.TrimSpace(c.MailboxEmail)
-	if mailbox == "" {
-		mailbox = strings.TrimSpace(c.Email)
-	}
-	if mailbox == "" {
-		return graphBase + "/me"
-	}
-	return graphBase + "/users/" + url.PathEscape(mailbox)
 }
