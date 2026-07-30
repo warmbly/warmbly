@@ -15,11 +15,7 @@ import type {
     AdvisorSurface,
 } from "@/lib/api/models/app/advisor/Advisor";
 import { SEVERITY_RANK, groupFindings } from "@/lib/api/models/app/advisor/Advisor";
-import {
-    SURFACE_FETCH_LIMIT,
-    useAdvisorFindings,
-    useApplyAdvisorFinding,
-} from "@/lib/api/hooks/app/advisor/useAdvisor";
+import { SURFACE_FETCH_LIMIT, useAdvisorFindings } from "@/lib/api/hooks/app/advisor/useAdvisor";
 import AdvisorCard from "./AdvisorCard";
 import AdvisorFixDrawer from "./AdvisorFixDrawer";
 import AdvisorGroupCard from "./AdvisorGroupCard";
@@ -50,7 +46,6 @@ export default function AdvisorStrip({
     title,
 }: Props) {
     const [fixing, setFixing] = useState<AdvisorFinding | null>(null);
-    const apply = useApplyAdvisorFinding();
 
     // An entity-scoped strip must not fire before its id exists, or it renders
     // the whole org's findings for a beat while the page hydrates.
@@ -128,13 +123,11 @@ export default function AdvisorStrip({
                 </div>
             </section>
 
-            <AdvisorFixDrawer
-                finding={fixing}
-                onClose={() => setFixing(null)}
-                onConfirm={async (finding) => {
-                    await apply.mutateAsync(finding.id);
-                }}
-            />
+            <AnimatePresence>
+                {fixing ? (
+                    <AdvisorFixDrawer finding={fixing} onClose={() => setFixing(null)} />
+                ) : null}
+            </AnimatePresence>
         </>
     );
 }

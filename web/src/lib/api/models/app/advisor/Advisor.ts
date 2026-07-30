@@ -67,6 +67,9 @@ export interface AdvisorFinding {
     group_title?: string;
     detail: string;
     remedy: string;
+    // The ordered manual steps, set only by checks with no one-click fix. When
+    // empty the card falls back to the remedy prose.
+    steps?: string[];
     // False while the card carries the built-in copy rather than AI-written
     // copy. The card is fully usable either way.
     narrated: boolean;
@@ -223,6 +226,36 @@ export function groupFindings(findings: AdvisorFinding[], minSize = 3): AdvisorG
 export function groupTitle(group: AdvisorGroup): string {
     if (group.members.length < 2 || !group.lead.group_title) return group.lead.title;
     return group.lead.group_title.replace("{count}", String(group.members.length));
+}
+
+// resolutionSteps is the ordered how-to for a finding with no one-click fix.
+// Empty means the remedy prose is the whole answer.
+export function resolutionSteps(finding: AdvisorFinding): string[] {
+    return finding.steps ?? [];
+}
+
+// findingLink is the way to the screen where a manual fix is actually made. A
+// step's problem sends you to its campaign, since a step has no page of its own.
+export function findingLink(finding: AdvisorFinding): { href: string; label: string } | null {
+    if (finding.entity_type === "campaign" && finding.entity_id) {
+        return { href: `/app/campaigns/${finding.entity_id}`, label: "Open the campaign" };
+    }
+    if (finding.entity_type === "step" && finding.parent_id) {
+        return { href: `/app/campaigns/${finding.parent_id}`, label: "Open the campaign" };
+    }
+    if (finding.entity_type === "email_account" && finding.entity_id) {
+        return { href: `/app/emails?mailbox=${finding.entity_id}`, label: "Open the mailbox" };
+    }
+    switch (finding.surface) {
+        case "deliverability":
+            return { href: "/app/deliverability", label: "Open deliverability" };
+        case "contacts":
+            return { href: "/app/contacts", label: "Open contacts" };
+        case "settings":
+            return { href: "/app/settings/workspace", label: "Open workspace settings" };
+        default:
+            return null;
+    }
 }
 
 // worstSeverity is the tone a group of findings should take: the most urgent
