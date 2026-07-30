@@ -1068,7 +1068,12 @@ func (r *emailRepository) SetWarmupLifecycle(ctx context.Context, userID, emailA
 		return nil, errx.ErrNotFound
 	}
 
-	return r.Get(ctx, userID, emailAccountID)
+	accountID, parseErr := uuid.Parse(emailAccountID)
+	if parseErr != nil {
+		return nil, errx.ErrUuid
+	}
+
+	return r.GetByID(ctx, accountID)
 }
 
 func (r *emailRepository) GetByID(ctx context.Context, emailAccountID uuid.UUID) (*models.Email, *errx.Error) {

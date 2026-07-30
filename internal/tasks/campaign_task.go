@@ -625,6 +625,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// Note: Full email stored in Cassandra by email sync service
 	taskRecord.MessageID = messageID
 	taskRecord.Status = "completed"
+	if err := s.taskRepo.UpdateTaskMessageID(ctx, taskID, messageID); err != nil {
+		log.Warn().Err(err).Str("task_id", taskID.String()).Msg("Failed to persist campaign task message_id")
+	}
 
 	// STEP 17: Update campaign progress
 	if err := s.campaignProgressRepo.RecordEmailSent(ctx, campaign.ID, contact.ID, sequence.ID); err != nil {

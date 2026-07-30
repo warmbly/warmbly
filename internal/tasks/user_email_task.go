@@ -179,6 +179,9 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	// STEP 10: Update task record
 	taskRecord.MessageID = messageID
 	taskRecord.Status = "completed"
+	if err := s.taskRepo.UpdateTaskMessageID(ctx, taskID, messageID); err != nil {
+		log.Warn().Err(err).Str("task_id", taskID.String()).Msg("Failed to persist user email task message_id")
+	}
 
 	// STEP 11: Mark task completed (with advisory lock)
 	if err := s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "completed"); err != nil {
