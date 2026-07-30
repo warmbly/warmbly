@@ -162,6 +162,10 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       nats: { condition: service_healthy }
+      # Login/password-reset flows send auth codes through the local SMTP sink
+      # by default (SMTP_HOST=mailpit). Keep it in the backend lifecycle so
+      # auth does not 500 after partial service recreates.
+      mailpit: { condition: service_started }
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 10s
