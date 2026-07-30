@@ -589,9 +589,10 @@ func (r *advisorRepository) RecordFeedback(ctx context.Context, orgID, findingID
 func (r *advisorRepository) GetSettings(ctx context.Context, orgID uuid.UUID) (*models.AdvisorSettings, error) {
 	s := models.DefaultAdvisorSettings(orgID)
 	err := r.db.QueryRow(ctx, `
-		SELECT enabled, muted_categories, muted_detectors, min_severity, updated_at
+		SELECT enabled, muted_categories, muted_detectors, min_severity, autopilot, autopilot_actor_id, updated_at
 		FROM advisor_settings WHERE organization_id = $1`, orgID).
-		Scan(&s.Enabled, &s.MutedCategories, &s.MutedDetectors, &s.MinSeverity, &s.UpdatedAt)
+		Scan(&s.Enabled, &s.MutedCategories, &s.MutedDetectors, &s.MinSeverity,
+			&s.Autopilot, &s.AutopilotActorID, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return s, nil
 	}
@@ -603,15 +604,19 @@ func (r *advisorRepository) GetSettings(ctx context.Context, orgID uuid.UUID) (*
 
 func (r *advisorRepository) UpdateSettings(ctx context.Context, s *models.AdvisorSettings) error {
 	_, err := r.db.Exec(ctx, `
-		INSERT INTO advisor_settings (organization_id, enabled, muted_categories, muted_detectors, min_severity, updated_at)
-		VALUES ($1,$2,$3,$4,$5,NOW())
+		INSERT INTO advisor_settings (organization_id, enabled, muted_categories, muted_detectors, min_severity,
+			autopilot, autopilot_actor_id, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
 		ON CONFLICT (organization_id) DO UPDATE SET
 			enabled = EXCLUDED.enabled,
 			muted_categories = EXCLUDED.muted_categories,
 			muted_detectors = EXCLUDED.muted_detectors,
 			min_severity = EXCLUDED.min_severity,
+			autopilot = EXCLUDED.autopilot,
+			autopilot_actor_id = EXCLUDED.autopilot_actor_id,
 			updated_at = NOW()`,
-		s.OrganizationID, s.Enabled, s.MutedCategories, s.MutedDetectors, string(s.MinSeverity))
+		s.OrganizationID, s.Enabled, s.MutedCategories, s.MutedDetectors, string(s.MinSeverity),
+		s.Autopilot, s.AutopilotActorID)
 	return err
 }
 

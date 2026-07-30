@@ -264,8 +264,18 @@ type AdvisorSettings struct {
 	MutedCategories []string        `json:"muted_categories"`
 	MutedDetectors  []string        `json:"muted_detectors"`
 	MinSeverity     AdvisorSeverity `json:"min_severity"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	// Autopilot applies auto-safe fixes on its own. Off by default.
+	Autopilot bool `json:"autopilot"`
+	// AutopilotActorID is the member autopilot acts as. Set automatically to
+	// whoever switches it on; autopilot stops if they leave the org.
+	AutopilotActorID *uuid.UUID `json:"autopilot_actor_id,omitempty"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
+
+// AutopilotMaxPerRun bounds how many fixes autopilot may apply in one
+// evaluation. A misconfiguration should cost a handful of reversible changes,
+// not a whole workspace rewritten while nobody was looking.
+const AutopilotMaxPerRun = 10
 
 // DefaultAdvisorSettings is what an org gets before it has ever written a
 // settings row: everything on, nothing muted.

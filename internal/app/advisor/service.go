@@ -32,6 +32,14 @@ type ToolRunner interface {
 	Call(ctx context.Context, inv aitools.Invocation, name string, args json.RawMessage) (string, error)
 }
 
+// MemberResolver returns a member's permission mask. Autopilot needs it so it
+// can act as the person who switched it on rather than as an unbounded system
+// actor: same permission gates, same audit attribution, and it stops working
+// the moment that member leaves the organization.
+type MemberResolver interface {
+	MemberPermissions(ctx context.Context, orgID, userID uuid.UUID) (models.OrganizationPermission, error)
+}
+
 // Service is the advisor application API.
 type Service interface {
 	// Evaluate runs every detector for one org, reconciles the results against
@@ -54,7 +62,9 @@ type Service interface {
 	Feedback(ctx context.Context, orgID, userID, id uuid.UUID, helpful bool, reason string) *errx.Error
 
 	GetSettings(ctx context.Context, orgID uuid.UUID) (*models.AdvisorSettings, *errx.Error)
-	UpdateSettings(ctx context.Context, orgID uuid.UUID, s *models.AdvisorSettings) *errx.Error
+	// UpdateSettings records userID as the autopilot actor when autopilot is on,
+	// so unattended fixes always run with a named member's permissions.
+	UpdateSettings(ctx context.Context, orgID, userID uuid.UUID, s *models.AdvisorSettings) *errx.Error
 }
 
 type service struct {
@@ -62,13 +72,14 @@ type service struct {
 	tools    ToolRunner
 	narrator *Narrator
 	audit    AuditLogger
+	members  MemberResolver
 }
 
-// NewService wires the advisor. narrator and audit may be nil: the advisor is
-// fully functional without either, it just loses the AI-written copy and the
-// live cross-client refresh respectively.
-func NewService(repo repository.AdvisorRepository, tools ToolRunner, narrator *Narrator, audit AuditLogger) Service {
-	return &service{repo: repo, tools: tools, narrator: narrator, audit: audit}
+// NewService wires the advisor. narrator, audit and members may be nil: the
+// advisor is fully functional without them, losing the AI-written copy, the
+// live cross-client refresh, and autopilot respectively.
+func NewService(repo repository.AdvisorRepository, tools ToolRunner, narrator *Narrator, audit AuditLogger, members MemberResolver) Service {
+	return &service{repo: repo, tools: tools, narrator: narrator, audit: audit, members: members}
 }
 
 // maxNarrationsPerRun bounds how many completions one evaluation can spend.
@@ -122,6 +133,10 @@ func (s *service) Evaluate(ctx context.Context, orgID uuid.UUID, trigger string)
 		log.Printf("advisor: resolve missing for org %s: %v", orgID, err)
 	}
 
+	// Autopilot runs before the summary so the score reflects what it fixed,
+	// rather than reporting problems that no longer exist.
+	fixed := s.autopilot(ctx, orgID, settings, stored)
+
 	narrated := s.narrateBatch(ctx, orgID, stored)
 
 	summary, err := s.repo.Summary(ctx, orgID)
@@ -134,16 +149,65 @@ func (s *service) Evaluate(ctx context.Context, orgID uuid.UUID, trigger string)
 	// One audit entry per run, only when something actually changed. The spine
 	// turns this into a live refresh of every teammate's advisor strips and
 	// nav badges without a bespoke realtime event.
-	if (newCount > 0 || closed > 0) && s.audit != nil {
+	if (newCount > 0 || closed > 0 || fixed > 0) && s.audit != nil {
 		s.audit.LogAction(ctx, orgID, uuid.Nil, models.AuditActionUpdate, models.AuditEntityAdvisorFinding, nil, "", "",
 			nil, map[string]string{
-				"new":      fmt.Sprint(newCount),
-				"resolved": fmt.Sprint(closed),
-				"open":     fmt.Sprint(summary.Total),
-				"trigger":  trigger,
+				"new":       fmt.Sprint(newCount),
+				"resolved":  fmt.Sprint(closed),
+				"open":      fmt.Sprint(summary.Total),
+				"autofixed": fmt.Sprint(fixed),
+				"trigger":   trigger,
 			})
 	}
 	return summary, nil
+}
+
+// autopilot applies the auto-safe fixes among this run's findings, as the
+// member who switched it on. It returns how many landed.
+//
+// Everything here fails closed. No actor, no resolver, or a member who has left
+// the organization means autopilot does nothing at all, because the alternative
+// is a background process making sending changes with nobody accountable for
+// them. Individual failures are logged and skipped rather than aborting the
+// pass: one tool that a member lacks permission for should not stop the rest.
+func (s *service) autopilot(ctx context.Context, orgID uuid.UUID, settings *models.AdvisorSettings, findings []*models.AdvisorFinding) int {
+	if settings == nil || !settings.Autopilot || settings.AutopilotActorID == nil || s.members == nil {
+		return 0
+	}
+	actor := *settings.AutopilotActorID
+
+	perms, err := s.members.MemberPermissions(ctx, orgID, actor)
+	if err != nil {
+		log.Printf("advisor: autopilot actor %s is not a member of org %s, skipping: %v", actor, orgID, err)
+		return 0
+	}
+
+	inv := aitools.Invocation{
+		OrgID:    orgID,
+		UserID:   actor,
+		OrgPerms: perms,
+		// A JWT-shaped invocation: autopilot is a member acting, not an API key,
+		// so it is gated on org permissions like any dashboard action.
+		IsAPIKey:  false,
+		UserAgent: "warmbly-advisor-autopilot",
+	}
+
+	applied := 0
+	for _, f := range findings {
+		if applied >= models.AutopilotMaxPerRun {
+			log.Printf("advisor: autopilot hit the per-run cap of %d for org %s", models.AutopilotMaxPerRun, orgID)
+			break
+		}
+		if f.Status != models.AdvisorStatusOpen || f.Action == nil || !f.Action.Auto {
+			continue
+		}
+		if _, xerr := s.Apply(ctx, inv, f.ID); xerr != nil {
+			log.Printf("advisor: autopilot could not apply %s for org %s: %s", f.DetectorKey, orgID, xerr.Message)
+			continue
+		}
+		applied++
+	}
+	return applied
 }
 
 // narrateBatch rewrites the findings that still carry fallback copy, most
@@ -354,7 +418,7 @@ func (s *service) GetSettings(ctx context.Context, orgID uuid.UUID) (*models.Adv
 	return out, nil
 }
 
-func (s *service) UpdateSettings(ctx context.Context, orgID uuid.UUID, in *models.AdvisorSettings) *errx.Error {
+func (s *service) UpdateSettings(ctx context.Context, orgID, userID uuid.UUID, in *models.AdvisorSettings) *errx.Error {
 	if in == nil {
 		return errx.ErrInvalid
 	}
@@ -370,6 +434,15 @@ func (s *service) UpdateSettings(ctx context.Context, orgID uuid.UUID, in *model
 	if in.MutedDetectors == nil {
 		in.MutedDetectors = []string{}
 	}
+	// Autopilot always acts as whoever last switched it on, and the client never
+	// gets to nominate somebody else: that would be a way to borrow a
+	// colleague's permissions for unattended writes.
+	in.AutopilotActorID = nil
+	if in.Autopilot && userID != uuid.Nil {
+		actor := userID
+		in.AutopilotActorID = &actor
+	}
+
 	in.OrganizationID = orgID
 	if err := s.repo.UpdateSettings(ctx, in); err != nil {
 		return errx.InternalError()

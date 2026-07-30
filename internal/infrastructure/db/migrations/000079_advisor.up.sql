@@ -135,6 +135,13 @@ CREATE TABLE IF NOT EXISTS advisor_settings (
     muted_detectors  text[] NOT NULL DEFAULT '{}',
     -- Lowest severity the org wants surfaced.
     min_severity     text NOT NULL DEFAULT 'low',
+    -- Autopilot applies the fixes marked auto-safe without asking. Off by
+    -- default: acting on someone's sending configuration unattended is opt-in.
+    autopilot        boolean NOT NULL DEFAULT false,
+    -- The member autopilot acts as. It runs with their permissions and is
+    -- audited as them, so removing them from the org stops it rather than
+    -- leaving an unattributable actor with standing write access.
+    autopilot_actor_id uuid REFERENCES users(id) ON DELETE SET NULL,
     updated_at       timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT advisor_settings_min_severity_check
         CHECK (min_severity IN ('critical', 'high', 'medium', 'low'))

@@ -92,7 +92,7 @@ func seedAdvisor(ctx context.Context, pool *pgxpool.Pool) error {
 // on its own schedule and fills in the rest.
 func runAdvisor(ctx context.Context, pool *pgxpool.Pool) error {
 	repo := repository.NewAdvisorRepository(&db.DB{Pool: pool})
-	svc := advisor.NewService(repo, nil, nil, nil)
+	svc := advisor.NewService(repo, nil, nil, nil, nil)
 
 	summary, err := svc.Evaluate(ctx, sandboxOrg, "seed")
 	if err != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -1313,7 +1314,8 @@ func main() {
 				advisorRepository,
 			)
 		}
-		advisorService = advisor.NewService(advisorRepository, aiToolRegistry, advisorNarrator, auditService)
+		advisorService = advisor.NewService(advisorRepository, aiToolRegistry, advisorNarrator, auditService,
+			advisorMembers{organizationService})
 		aitools.RegisterAdvisorTools(aiToolRegistry, advisorService)
 		go (&advisor.Runner{Repo: advisorRepository, Service: advisorService}).Run(ctx)
 
@@ -1583,4 +1585,25 @@ func (t advisorTier) IsPaid(ctx context.Context, orgID uuid.UUID) bool {
 	}
 	paid, err := t.gate.IsPaidOrganization(ctx, orgID)
 	return err == nil && paid
+}
+
+// advisorMembers resolves the autopilot actor's permissions. An error here
+// means the member is gone or was never in this org, and autopilot fails closed
+// on it rather than falling back to acting with no permission mask at all.
+type advisorMembers struct {
+	orgs organization.OrganizationService
+}
+
+func (m advisorMembers) MemberPermissions(ctx context.Context, orgID, userID uuid.UUID) (models.OrganizationPermission, error) {
+	if m.orgs == nil {
+		return 0, errors.New("organization service unavailable")
+	}
+	member, xerr := m.orgs.GetMembership(ctx, orgID, userID)
+	if xerr != nil {
+		return 0, xerr
+	}
+	if member == nil {
+		return 0, errors.New("not a member of this organization")
+	}
+	return member.Permissions, nil
 }

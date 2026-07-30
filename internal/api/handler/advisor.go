@@ -296,7 +296,14 @@ func (h *Handler) UpdateAdvisorSettings(c *gin.Context) {
 		errx.JSON(c, errx.ErrInvalid)
 		return
 	}
-	if xerr := h.AdvisorService.UpdateSettings(c.Request.Context(), orgID, &req); xerr != nil {
+	// This route is JWT-only, so there is always a real member behind it to
+	// attribute autopilot to.
+	userID, err := middleware.GetUserUUID(c)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.Unauthorized, "invalid user"))
+		return
+	}
+	if xerr := h.AdvisorService.UpdateSettings(c.Request.Context(), orgID, userID, &req); xerr != nil {
 		errx.JSON(c, xerr)
 		return
 	}
