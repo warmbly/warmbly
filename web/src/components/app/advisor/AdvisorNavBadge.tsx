@@ -34,11 +34,11 @@ export default function AdvisorNavBadge({ surface }: { surface: AdvisorSurface }
             transition={{ type: "spring", stiffness: 500, damping: 26 }}
             title={label}
             aria-label={label}
-            // Solid and saturated, like every other indicator in this sidebar.
-            // A pale chip reads as a disabled control next to them, and white on
-            // amber-100 was never legible at 10px anyway.
+            // Solid and saturated, like every other indicator in this sidebar,
+            // and the same orange as the high-severity dot on the row it points
+            // at. A pale chip read as a disabled control next to them.
             className={`inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-medium tabular-nums text-white ${
-                counts.critical > 0 ? "bg-rose-600" : "bg-orange-600"
+                counts.critical > 0 ? "bg-rose-500" : "bg-orange-500"
             }`}
         >
             {counts.urgent > 99 ? "99+" : counts.urgent}
