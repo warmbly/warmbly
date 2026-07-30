@@ -310,6 +310,11 @@ func (s *emailService) OnboardOutlookAppOnly(ctx context.Context, userID string,
 		ExpiresAt:      time.Now().UTC(),
 	})
 	if xerr == nil && acc != nil {
+		// App-only Microsoft 365 mailboxes must follow the same post-connect
+		// warmup-pool membership path as delegated/shared Outlook mailboxes.
+		// This joins them as recipient-only when warmup is not enabled, so the
+		// pool/health model is ready before a separate warmup start gate.
+		s.syncWarmupPoolMembership(ctx, acc)
 		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 		s.dispatchAccountConnected(ctx, orgID, acc)
 		s.loadAccountBestEffort(ctx, acc.ID)
