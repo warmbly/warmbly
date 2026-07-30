@@ -215,15 +215,12 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
                     ))}
                 </div>
 
-                {/* The panel takes the height of whatever screen is showing and
-                    animates between them, so stepping forward never jumps the
-                    dialog under the cursor. */}
-                <motion.div
-                    className="relative overflow-hidden"
-                    animate={{ height: "auto" }}
-                    transition={{ duration: 0.24, ease: EASE }}
-                >
-                    <AnimatePresence initial={false} mode="wait">
+                {/* The panel resizes to whatever screen is showing rather than
+                    jumping. popLayout takes the outgoing screen out of flow, so
+                    the container never collapses to nothing in the gap between
+                    one screen leaving and the next arriving. */}
+                <motion.div layout className="relative overflow-hidden" transition={{ duration: 0.24, ease: EASE }}>
+                    <AnimatePresence initial={false} mode="popLayout">
                         <motion.div
                             key={stage}
                             initial={{ opacity: 0, x: 12 * direction.current }}
