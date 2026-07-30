@@ -36,8 +36,22 @@ export interface AdvisorAction {
     tool: string;
     args: unknown;
     label: string;
+    // True when autopilot is allowed to apply this one unattended: a bounded,
+    // reversible settings change that only moves in the safe direction.
+    auto?: boolean;
     preview?: AdvisorPreviewChange[];
     undo?: { tool: string; args: unknown };
+}
+
+// What an agent fix reports back.
+export interface AdvisorAgentResult {
+    finding_id: string;
+    // False when the agent read the current state and decided nothing needed
+    // changing, which leaves the finding open.
+    applied: boolean;
+    summary: string;
+    // The tools it called, in order. The checkable part of the receipt.
+    steps?: string[];
 }
 
 export interface AdvisorFinding {
@@ -109,6 +123,10 @@ export interface AdvisorSettings {
     muted_categories: string[];
     muted_detectors: string[];
     min_severity: AdvisorSeverity;
+    // Applies the auto-safe fixes without asking, as the member who switched
+    // it on.
+    autopilot: boolean;
+    autopilot_actor_id?: string;
     updated_at: string;
 }
 

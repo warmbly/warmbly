@@ -18,6 +18,7 @@ import {
     ThumbsUpIcon,
     Undo2Icon,
     XIcon,
+    ZapIcon,
 } from "lucide-react";
 import type { AdvisorFinding } from "@/lib/api/models/app/advisor/Advisor";
 import {
@@ -107,6 +108,18 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
                 >
                     <div className="flex items-center gap-1.5">
                         <span className="truncate text-[12.5px] font-medium text-slate-900">{finding.title}</span>
+                        {/* Autopilot acting silently would be the thing people
+                            resent about it. Say up front which findings it is
+                            allowed to take, whether or not it is switched on. */}
+                        {finding.action?.auto && !applied ? (
+                            <span
+                                title="Autopilot can apply this one on its own when it is switched on"
+                                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+                            >
+                                <ZapIcon className="h-2.5 w-2.5" />
+                                Auto
+                            </span>
+                        ) : null}
                         {applied ? (
                             <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
                                 <CheckCircle2Icon className="h-2.5 w-2.5" />
@@ -136,7 +149,7 @@ export default function AdvisorCard({ finding, onFix, compact = false, defaultOp
                                     : "border border-slate-200 text-slate-600 hover:bg-slate-50"
                             }`}
                         >
-                            {finding.action ? "Fix" : "How to fix"}
+                            {finding.action ? "Fix" : "Fix with agent"}
                         </button>
                     ) : null}
 

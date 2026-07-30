@@ -1,4 +1,5 @@
 import type {
+    AdvisorAgentResult,
     AdvisorFinding,
     AdvisorFindingsQuery,
     AdvisorSettings,
@@ -41,6 +42,16 @@ export async function applyAdvisorFinding(id: string): Promise<AdvisorFinding> {
     return await Request<AdvisorFinding>({
         method: "POST",
         url: `/advisor/recommendations/${id}/apply`,
+        authorization: true,
+    });
+}
+
+// The agent fix, for findings with no deterministic action. Slow by nature:
+// the agent reads the current state before it changes anything.
+export async function agentFixAdvisorFinding(id: string): Promise<AdvisorAgentResult> {
+    return await Request<AdvisorAgentResult>({
+        method: "POST",
+        url: `/advisor/recommendations/${id}/agent-fix`,
         authorization: true,
     });
 }

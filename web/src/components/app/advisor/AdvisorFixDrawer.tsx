@@ -17,10 +17,11 @@ import {
     CheckIcon,
     Loader2Icon,
     ShieldCheckIcon,
+    SparklesIcon,
     Undo2Icon,
     XIcon,
 } from "lucide-react";
-import type { AdvisorFinding } from "@/lib/api/models/app/advisor/Advisor";
+import type { AdvisorAgentResult, AdvisorFinding } from "@/lib/api/models/app/advisor/Advisor";
 import {
     SEVERITY_CHIP,
     SEVERITY_LABEL,
@@ -30,6 +31,7 @@ import {
     resolutionSteps,
 } from "@/lib/api/models/app/advisor/Advisor";
 import {
+    useAgentFixAdvisorFinding,
     useApplyAdvisorFinding,
     useUndoAdvisorFinding,
 } from "@/lib/api/hooks/app/advisor/useAdvisor";
@@ -56,6 +58,11 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
 
     const apply = useApplyAdvisorFinding();
     const undo = useUndoAdvisorFinding();
+    const agentFix = useAgentFixAdvisorFinding();
+    // What the agent reported, shown on the outcome screen. Kept separate from
+    // the apply path because an agent can succeed at running and still
+    // correctly change nothing.
+    const [agentResult, setAgentResult] = useState<AdvisorAgentResult | null>(null);
 
     const action = finding?.action;
     const link = finding ? findingLink(finding) : null;
@@ -75,6 +82,7 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
         if (!finding) return;
         setStage(finding.status === "applied" ? "done" : "why");
         setFailed(null);
+        setAgentResult(null);
         direction.current = 1;
     }, [finding]);
 
@@ -114,18 +122,36 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
         }
     }
 
+    async function runAgentFix() {
+        if (!finding || agentFix.isPending) return;
+        setFailed(null);
+        try {
+            const result = await agentFix.mutateAsync(finding);
+            setAgentResult(result);
+            direction.current = 1;
+            setStage("done");
+        } catch {
+            setFailed("The agent could not complete this. Nothing was changed.");
+        }
+    }
+
+    // Findings the agent can act on: the ones with no settings change to make,
+    // where the fix is an edit to copy, a sequence, or a list.
+    const canAgentFix = !action && finding.status !== "applied";
+
     // The rail only claims the steps this finding actually has. A finding with
-    // no one-click fix never shows a third dot it can't reach.
-    const rail: { id: Stage; label: string }[] = action
-        ? [
-              { id: "why", label: "Why" },
-              { id: "change", label: "What changes" },
-              { id: "done", label: "Done" },
-          ]
-        : [
-              { id: "why", label: "Why" },
-              { id: "change", label: "How to fix it" },
-          ];
+    // nothing to land on never shows a third dot it can't reach.
+    const rail: { id: Stage; label: string }[] =
+        action || canAgentFix
+            ? [
+                  { id: "why", label: "Why" },
+                  { id: "change", label: action ? "What changes" : "How to fix it" },
+                  { id: "done", label: "Done" },
+              ]
+            : [
+                  { id: "why", label: "Why" },
+                  { id: "change", label: "How to fix it" },
+              ];
     const railIndex = Math.max(0, rail.findIndex((s) => s.id === stage));
 
     return (
@@ -242,7 +268,7 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
                                     failed={failed}
                                 />
                             ) : (
-                                <DoneStep finding={finding} />
+                                <DoneStep finding={finding} agent={agentResult} />
                             )}
                         </motion.div>
                     </AnimatePresence>
@@ -301,6 +327,20 @@ export default function AdvisorFixDrawer({ finding, onClose }: Props) {
                                     <CheckIcon className="h-3.5 w-3.5" />
                                 )}
                                 {applying ? "Applying…" : action.label}
+                            </button>
+                        ) : stage === "change" && canAgentFix ? (
+                            <button
+                                type="button"
+                                onClick={runAgentFix}
+                                disabled={agentFix.isPending}
+                                className="inline-flex h-7 items-center gap-1.5 rounded-md bg-slate-900 px-2.5 text-[12.5px] font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+                            >
+                                {agentFix.isPending ? (
+                                    <Loader2Icon className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <SparklesIcon className="h-3.5 w-3.5" />
+                                )}
+                                {agentFix.isPending ? "Working…" : "Let the agent fix it"}
                             </button>
                         ) : (
                             <button
@@ -464,26 +504,42 @@ function ChangeStep({
     );
 }
 
-function DoneStep({ finding }: { finding: AdvisorFinding }) {
+function DoneStep({
+    finding,
+    agent,
+}: {
+    finding: AdvisorFinding;
+    agent: AdvisorAgentResult | null;
+}) {
+    // An agent run that correctly changed nothing is a real outcome, not a
+    // failure, and must not wear the green check.
+    const changed = agent ? agent.applied : true;
+
     return (
         <div className="flex flex-col items-center py-4 text-center">
             <motion.div
                 initial={{ scale: 0.6, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", stiffness: 380, damping: 22 }}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50"
+                className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                    changed ? "bg-emerald-50" : "bg-slate-100"
+                }`}
             >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" strokeWidth={2.5}>
-                    <motion.path
-                        d="M5 13l4 4L19 7"
-                        stroke="rgb(5 150 105)"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        initial={{ pathLength: 0 }}
-                        animate={{ pathLength: 1 }}
-                        transition={{ delay: 0.12, duration: 0.32, ease: EASE }}
-                    />
-                </svg>
+                {changed ? (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" strokeWidth={2.5}>
+                        <motion.path
+                            d="M5 13l4 4L19 7"
+                            stroke="rgb(5 150 105)"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            initial={{ pathLength: 0 }}
+                            animate={{ pathLength: 1 }}
+                            transition={{ delay: 0.12, duration: 0.32, ease: EASE }}
+                        />
+                    </svg>
+                ) : (
+                    <SparklesIcon className="h-4 w-4 text-slate-400" />
+                )}
             </motion.div>
 
             <motion.p
@@ -492,18 +548,49 @@ function DoneStep({ finding }: { finding: AdvisorFinding }) {
                 transition={{ delay: 0.2, duration: 0.2 }}
                 className="mt-2.5 text-[13px] font-medium text-slate-900"
             >
-                {finding.action?.label ?? "Applied"}
+                {agent
+                    ? changed
+                        ? "The agent made the change"
+                        : "The agent changed nothing"
+                    : (finding.action?.label ?? "Applied")}
             </motion.p>
 
             <motion.p
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.26, duration: 0.2 }}
-                className="mt-1 max-w-[320px] text-[12px] leading-relaxed text-slate-500"
+                className="mt-1 max-w-[340px] text-[12px] leading-relaxed text-slate-500"
             >
-                The next check confirms it and clears the flag. Until then the row stays marked so you
-                can undo without hunting for it.
+                {agent
+                    ? agent.summary
+                    : "The next check confirms it and clears the flag. Until then the row stays marked so you can undo without hunting for it."}
             </motion.p>
+
+            {/* The receipt. The summary above is the agent's account of itself;
+                this is the list of tools it actually called, which is the part
+                that matches the audit log. */}
+            {agent?.steps && agent.steps.length > 0 ? (
+                <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.32, duration: 0.2 }}
+                    className="mt-3 w-full"
+                >
+                    <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
+                        What it ran
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap justify-center gap-1">
+                        {agent.steps.map((step, i) => (
+                            <span
+                                key={`${step}-${i}`}
+                                className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10.5px] text-slate-600"
+                            >
+                                {step}
+                            </span>
+                        ))}
+                    </div>
+                </motion.div>
+            ) : null}
         </div>
     );
 }

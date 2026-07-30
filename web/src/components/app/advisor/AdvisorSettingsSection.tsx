@@ -30,15 +30,24 @@ export default function AdvisorSettingsSection({ canManage }: { canManage: boole
     const muted = useMemo(() => new Set(data?.muted_categories ?? []), [data]);
     const enabled = data?.enabled ?? true;
     const minSeverity = data?.min_severity ?? "low";
+    const autopilot = data?.autopilot ?? false;
 
     // Every control sends the whole settings object: the endpoint replaces
     // rather than merges, so a partial payload would silently clear the rest.
-    function save(patch: Partial<{ enabled: boolean; muted_categories: string[]; min_severity: AdvisorSeverity }>) {
+    function save(
+        patch: Partial<{
+            enabled: boolean;
+            muted_categories: string[];
+            min_severity: AdvisorSeverity;
+            autopilot: boolean;
+        }>,
+    ) {
         update.mutate({
             enabled,
             muted_categories: [...muted],
             muted_detectors: data?.muted_detectors ?? [],
             min_severity: minSeverity,
+            autopilot,
             ...patch,
         });
     }
@@ -67,6 +76,14 @@ export default function AdvisorSettingsSection({ canManage }: { canManage: boole
 
             {enabled ? (
                 <>
+                    <ToggleRow
+                        label="Autopilot"
+                        description="Applies the safe fixes on its own: lowering a cap that is above the safe band, widening a send gap, matching a campaign limit to what its mailboxes can carry, turning on one-click unsubscribe. It never pauses sending, edits your copy, or makes a change it cannot undo. Every fix runs with your permissions and appears in the audit log as you, and it stops if you leave the workspace."
+                        checked={autopilot}
+                        onChange={(v) => save({ autopilot: v })}
+                        disabled={disabled}
+                    />
+
                     <Row
                         label="Minimum severity"
                         description="Hide anything less urgent than this. Only critical and needs-attention findings ever badge a nav tab, whatever this is set to."

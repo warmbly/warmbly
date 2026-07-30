@@ -11,6 +11,7 @@ import type {
 } from "@/lib/api/models/app/advisor/Advisor";
 import { indexByEntity } from "@/lib/api/models/app/advisor/Advisor";
 import {
+    agentFixAdvisorFinding,
     applyAdvisorFinding,
     dismissAdvisorFinding,
     getAdvisorFindings,
@@ -95,6 +96,20 @@ export function useApplyAdvisorFinding() {
         onSuccess: (finding) => {
             invalidate(finding);
             toast.success("Applied");
+        },
+    });
+}
+
+// The agent fix. It can legitimately come back "nothing needed changing", so
+// the toast reports what happened rather than assuming success.
+export function useAgentFixAdvisorFinding() {
+    const invalidate = useAdvisorInvalidator();
+    return useMutation({
+        mutationFn: (finding: AdvisorFinding) => agentFixAdvisorFinding(finding.id),
+        onSuccess: (result, finding) => {
+            invalidate(finding);
+            if (result.applied) toast.success("The agent made the change");
+            else toast("The agent found nothing to change", { icon: "🤔" });
         },
     });
 }
