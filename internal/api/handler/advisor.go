@@ -162,6 +162,35 @@ func (h *Handler) ApplyAdvisorFinding(c *gin.Context) {
 	c.JSON(http.StatusOK, f)
 }
 
+// AgentFixAdvisorFinding — POST /advisor/recommendations/:id/agent-fix
+//
+// For the findings a settings change cannot resolve. Runs a bounded agent as
+// the calling member, inside a tool allowlist scoped to the finding's category,
+// and reports what it actually called rather than only what it says it did.
+func (h *Handler) AgentFixAdvisorFinding(c *gin.Context) {
+	if h.AdvisorService == nil {
+		errx.JSON(c, errx.New(errx.ServiceUnavailable, "the Advisor is not configured on this server"))
+		return
+	}
+	inv, xerr := h.jwtInvocation(c)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid recommendation id"))
+		return
+	}
+
+	res, xerr := h.AdvisorService.FixWithAgent(c.Request.Context(), inv, id)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
 // UndoAdvisorFinding — POST /advisor/recommendations/:id/undo
 func (h *Handler) UndoAdvisorFinding(c *gin.Context) {
 	if h.AdvisorService == nil {

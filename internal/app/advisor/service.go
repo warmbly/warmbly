@@ -57,6 +57,10 @@ type Service interface {
 	// Undo reverts a previously applied fix.
 	Undo(ctx context.Context, inv aitools.Invocation, id uuid.UUID) (*models.AdvisorFinding, *errx.Error)
 
+	// FixWithAgent resolves a finding that has no deterministic action by
+	// running a bounded agent against it, as the calling member.
+	FixWithAgent(ctx context.Context, inv aitools.Invocation, id uuid.UUID) (*models.AdvisorAgentResult, *errx.Error)
+
 	Snooze(ctx context.Context, orgID, userID, id uuid.UUID, days int) *errx.Error
 	Dismiss(ctx context.Context, orgID, userID, id uuid.UUID, reason string) *errx.Error
 	Feedback(ctx context.Context, orgID, userID, id uuid.UUID, helpful bool, reason string) *errx.Error
@@ -73,13 +77,32 @@ type service struct {
 	narrator *Narrator
 	audit    AuditLogger
 	members  MemberResolver
+
+	// The agent-fix path. All four are optional together: without them the
+	// advisor still detects, explains, and applies its one-click fixes.
+	agent    AgentRunner
+	toolList ToolLister
+	credits  CreditCharger
+	tier     TierSource
 }
 
-// NewService wires the advisor. narrator, audit and members may be nil: the
-// advisor is fully functional without them, losing the AI-written copy, the
-// live cross-client refresh, and autopilot respectively.
-func NewService(repo repository.AdvisorRepository, tools ToolRunner, narrator *Narrator, audit AuditLogger, members MemberResolver) Service {
-	return &service{repo: repo, tools: tools, narrator: narrator, audit: audit, members: members}
+// AgentDeps carries the optional agent-fix wiring.
+type AgentDeps struct {
+	Agent   AgentRunner
+	Tools   ToolLister
+	Credits CreditCharger
+	Tier    TierSource
+}
+
+// NewService wires the advisor. Every dependency past repo is optional: the
+// advisor without them loses AI-written copy, the live cross-client refresh,
+// autopilot, and the agent fix respectively, but still detects and explains.
+func NewService(repo repository.AdvisorRepository, tools ToolRunner, narrator *Narrator, audit AuditLogger, members MemberResolver, agent *AgentDeps) Service {
+	s := &service{repo: repo, tools: tools, narrator: narrator, audit: audit, members: members}
+	if agent != nil {
+		s.agent, s.toolList, s.credits, s.tier = agent.Agent, agent.Tools, agent.Credits, agent.Tier
+	}
+	return s
 }
 
 // maxNarrationsPerRun bounds how many completions one evaluation can spend.

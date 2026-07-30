@@ -127,4 +127,5 @@ var (
 	ErrAdvisorSnoozeRange  = New(BadRequest, "Snooze length must be between 1 and 90 days.")
 	ErrAdvisorBadSeverity  = New(BadRequest, "Minimum severity must be one of critical, high, medium, or low.")
 	ErrAdvisorFixForbidden = New(Forbidden, "You can see this recommendation but don't have permission to apply the change it makes.")
+	ErrAdvisorNoAgentFix   = New(BadRequest, "This recommendation needs a person: there's no change an agent can safely make for it.")
 )

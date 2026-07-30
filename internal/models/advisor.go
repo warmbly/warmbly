@@ -289,6 +289,20 @@ func DefaultAdvisorSettings(orgID uuid.UUID) *AdvisorSettings {
 	}
 }
 
+// AdvisorAgentResult is what an agent fix reports back.
+type AdvisorAgentResult struct {
+	FindingID uuid.UUID `json:"finding_id"`
+	// Applied is true only when the agent called a tool that changed something.
+	// A run that read the campaign and decided nothing was wrong reports false,
+	// so the finding stays open.
+	Applied bool `json:"applied"`
+	// Summary is the agent's own account of what it did.
+	Summary string `json:"summary"`
+	// Steps are the tool calls it made, in order. This is the part the member
+	// can check against the audit log.
+	Steps []string `json:"steps,omitempty"`
+}
+
 // AdvisorFeedback is a member's verdict on one finding.
 type AdvisorFeedback struct {
 	FindingID uuid.UUID `json:"finding_id"`

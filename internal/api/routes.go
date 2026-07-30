@@ -927,6 +927,15 @@ func Run(
 			// to silence the Advisor for a whole workspace.
 			jwtOnly.PATCH("/advisor/settings", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateAdvisorSettings)
 
+			// The agent fix is JWT-only for the same reason the dashboard agent
+			// is: it acts as a named member, inside their permissions, and there
+			// is no API scope that should let a key spend credits rewriting a
+			// workspace's campaigns unattended. The tools it may call are
+			// permission-gated again inside the registry.
+			jwtOnly.POST("/advisor/recommendations/:id/agent-fix", m.RequireOrganization(),
+				m.RequirePermission(models.PermUseAI), m.RateLimitMiddleware(models.RateLimitWrite),
+				h.AgentFixAdvisorFinding)
+
 			jwtOnly.DELETE("/limit-requests/:id", h.CancelLimitRequest)
 
 			account := jwtOnly.Group("/me")

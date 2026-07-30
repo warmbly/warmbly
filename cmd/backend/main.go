@@ -1314,8 +1314,20 @@ func main() {
 				advisorRepository,
 			)
 		}
+		// The agent fix reuses the assistant's provider, tool registry, and
+		// credit meter, so a finding a settings change cannot resolve (broken
+		// copy, a list full of shared inboxes) still has a way to be fixed.
+		var advisorAgent *advisor.AgentDeps
+		if aiProvider != nil {
+			advisorAgent = &advisor.AgentDeps{
+				Agent:   aiProvider,
+				Tools:   aiToolRegistry,
+				Credits: creditService,
+				Tier:    advisorTier{featureGateService},
+			}
+		}
 		advisorService = advisor.NewService(advisorRepository, aiToolRegistry, advisorNarrator, auditService,
-			advisorMembers{organizationService})
+			advisorMembers{organizationService}, advisorAgent)
 		aitools.RegisterAdvisorTools(aiToolRegistry, advisorService)
 		go (&advisor.Runner{Repo: advisorRepository, Service: advisorService}).Run(ctx)
 
