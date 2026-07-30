@@ -133,6 +133,26 @@ The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the a
 | GET | `/analytics/*` (dashboard, deliverability, warmup, campaigns, accounts, usage) | `READ_ANALYTICS` |
 | GET | `/audit-logs` | `READ_AUDIT_LOGS` |
 
+### Advisor
+
+Recommendations about deliverability, mailbox configuration, warmup, campaign performance, copy, and list quality. See the [Advisor guide](/guides/advisor/).
+
+Reads are an analytics read of the workspace's sending posture. Applying or undoing a fix has no scope of its own: the change runs through the tool the fix actually uses and is refused if the caller lacks that tool's permission, so a key that can read recommendations cannot use them to make changes it could not make directly.
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/advisor/recommendations` | `READ_ANALYTICS` |
+| GET | `/advisor/summary` | `READ_ANALYTICS` |
+| GET | `/advisor/settings` | `READ_ANALYTICS` |
+| POST | `/advisor/refresh` | `READ_ANALYTICS` |
+| POST | `/advisor/recommendations/:id/snooze` | `READ_ANALYTICS` |
+| POST | `/advisor/recommendations/:id/dismiss` | `READ_ANALYTICS` |
+| POST | `/advisor/recommendations/:id/feedback` | `READ_ANALYTICS` |
+| POST | `/advisor/recommendations/:id/apply` | permission of the underlying change |
+| POST | `/advisor/recommendations/:id/undo` | permission of the underlying change |
+
+Changing Advisor settings (`PATCH /advisor/settings`) is JWT only, alongside the rest of organization settings. Silencing checks for a whole workspace is governance, and no read scope should be able to do it.
+
 ### API key self-service
 
 | Method | Path | API Permission |

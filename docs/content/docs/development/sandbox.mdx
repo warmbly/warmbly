@@ -45,6 +45,22 @@ Two other entry points:
 - an org audit trail (campaign created and started, mailbox connected, member invited, deal created, key created) so the audit log has depth
 - reply templates, notifications (some unread), and labels everywhere they appear: folders (Outbound, Nurture), mailbox tags (VIP, Cold, Agency), and categories (Lead, Customer, Churn risk) bound to the campaigns, senders, several contacts, and inbox threads
 - working credentials for every `smtp_imap` account in the database, including the older `make seed` fixtures, sealed with `CREDENTIALS_ENCRYPTION_KEY` so the worker can decrypt and use them
+- an [Advisor](/guides/advisor/) showcase (see below), and one evaluation run at the end of seeding so the recommendations exist before you log in
+
+### The Advisor showcase
+
+The Advisor only has something to say about a workspace with problems, so the seeder gives Sunrise Labs a few deliberate ones. Everything else is normalized to a well-run baseline first (every sender at the 50/day safe cap, on its own verified tracking domain, with SPF, DKIM, and DMARC passing), so the findings that remain are specific rather than a wall of the same card repeated twenty times.
+
+The seeded problems, all in `internal/sandbox/advisor.go`:
+
+- `liam.walsh@sunrise.test` has a month of real sending behind it (1,600 completed tasks) with 72 bounces and one complaint, putting it at `4.5%` bounce and `0.06%` complaint. Both come from real `tasks` and `deliverability_events` rows, so the Advisor's numbers reconcile with the Deliverability page rather than contradicting it. Its cap is also raised to 120/day.
+- `yuki.sato@sunrise.test` has SPF and DKIM but no DMARC, and a 90-second gap between sends.
+- `erik.lund@sunrise.test` was connected six days ago, went straight to the full 50/day cap, and has warmup paused.
+- "Q4 outbound (first draft)" is a paused campaign written the way first drafts get written: one email with no follow-up, one-click unsubscribe off, a shouting subject line that truncates, 246 words, four links, bulk-mail phrasing, and an `{{if}}` with no `{{end}}` (which does not fail a send, it silently degrades to literal text). Its 160-contact audience is a quarter shared inboxes with a third missing the first name the copy greets on.
+
+Nothing here stops the sandbox sending: caps go up rather than down, gaps get shorter, the authentication columns are observation-only, and the deliberately-rough campaign stays paused so it never mails the synthetic list.
+
+Seeding ends by running one evaluation and printing what it found, so `make sandbox-seed` on its own tells you the whole path works. Expect roughly twenty findings and a score in the thirties.
 
 ## How it works
 
@@ -97,7 +113,8 @@ A tour that shows the platform working end to end:
 4. **Deliverability and analytics**: the deliverability view shows bounces, complaints, and unsubscribes with rates; reply intents and the suppression list are populated; mailboxes surface one resolved and one open error.
 5. **Mailboxes**: each sender shows warmup activity climbing its ramp; the warmup pool exchanges verified mail between accounts.
 6. **Mailpit** (`http://localhost:18025`): the raw wire view; every message the platform sends, including warmup tokens and tracking rewrites.
-7. **Realtime**: open a second browser window and watch counts and inbox rows update live without refreshing.
+7. **Advisor**: Accounts, Campaigns, Contacts, and Deliverability each badge the number of urgent findings behind them. Open Accounts to see the three problem senders, then open "Q4 outbound (first draft)" under Campaigns for the copy and list findings. Press **Fix** on one (for example, warmup paused on `erik.lund`) to see the before/after preview, apply it, and undo it from the card.
+8. **Realtime**: open a second browser window and watch counts and inbox rows update live without refreshing. Applying an Advisor fix in one window clears the card in the other.
 
 ## Troubleshooting
 
