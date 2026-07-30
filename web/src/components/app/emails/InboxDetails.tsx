@@ -9,6 +9,7 @@
 
 import React, { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import AdvisorStrip from "@/components/app/advisor/AdvisorStrip";
 import {
     XIcon,
     GaugeIcon,
@@ -321,6 +322,17 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
 
     return (
         <div className="divide-y divide-slate-200/60">
+            {/* Whatever the Advisor has on this mailbox, above the numbers that
+                produced it. This is where a row flag and a deep link both land. */}
+            <AdvisorStrip
+                entityType="email_account"
+                entityId={mailbox.id}
+                title=""
+                limit={4}
+                compact
+                className="px-5 py-4"
+            />
+
             {/* Health */}
             <div className="px-5 py-4">
                 <div className="flex items-center justify-between">
