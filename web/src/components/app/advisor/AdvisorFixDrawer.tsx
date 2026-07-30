@@ -36,6 +36,7 @@ import {
     useApplyAdvisorFinding,
     useUndoAdvisorFinding,
 } from "@/lib/api/hooks/app/advisor/useAdvisor";
+import AdvisorSnippets from "./AdvisorSnippets";
 
 interface Props {
     finding: AdvisorFinding | null;
@@ -470,6 +471,10 @@ function ChangeStep({
                     ))}
                 </ol>
             )}
+
+            {finding.snippets && finding.snippets.length > 0 ? (
+                <AdvisorSnippets snippets={finding.snippets} />
+            ) : null}
 
             {link ? (
                 <Link

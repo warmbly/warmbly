@@ -32,6 +32,14 @@ export interface AdvisorPreviewChange {
     to: string;
 }
 
+// One copy-pasteable value, rendered as a labelled field with a copy button.
+export interface AdvisorSnippet {
+    label: string;
+    value: string;
+    // The one caveat that trips people up on this specific field.
+    note?: string;
+}
+
 export interface AdvisorAction {
     tool: string;
     args: unknown;
@@ -88,6 +96,9 @@ export interface AdvisorFinding {
     // False for anything living outside it, like a DNS record, so those show
     // their steps rather than a button that cannot succeed.
     agent_fixable?: boolean;
+    // Exact values to paste somewhere Warmbly cannot reach, such as a DNS
+    // record at a registrar.
+    snippets?: AdvisorSnippet[];
     // False while the card carries the built-in copy rather than AI-written
     // copy. The card is fully usable either way.
     narrated: boolean;
