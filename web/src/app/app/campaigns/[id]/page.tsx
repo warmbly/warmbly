@@ -16,6 +16,7 @@ import type { DitherTone } from "@/components/ui/dither";
 import AnalyticsShareButton from "@/components/app/analytics/AnalyticsShareButton";
 import TaskPreview from "@/components/app/campaigns/TaskPreview";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import AdvisorStrip from "@/components/app/advisor/AdvisorStrip";
 
 const pctFmt = (v: number) => `${v.toFixed(1)}%`;
 
@@ -105,6 +106,10 @@ export default function CampaignOverview() {
 
     return (
         <div className="space-y-5">
+            {/* What the Advisor has found about THIS campaign, above the numbers
+                that motivated it. Renders nothing when there is nothing wrong. */}
+            <AdvisorStrip entityType="campaign" entityId={id} title="" limit={3} compact />
+
             <div className="grid lg:grid-cols-[1fr_340px] gap-5 items-start">
                 {/* Main analytics column */}
                 <div className="space-y-5 min-w-0">

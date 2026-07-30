@@ -14,6 +14,7 @@ import { useAutosave } from "@/hooks/useAutosave";
 import { useRegisterUnsaved } from "@/hooks/context/unsaved";
 import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
 import { usePermission } from "@/hooks/usePermission";
+import AdvisorSettingsSection from "@/components/app/advisor/AdvisorSettingsSection";
 
 export default function WorkspaceSettingsPage() {
     const currentOrg = useAppStore((s) => s.currentOrganization);
@@ -281,6 +282,8 @@ export default function WorkspaceSettingsPage() {
                     disabled={!canManageSettings}
                 />
             </Section>
+
+            <AdvisorSettingsSection canManage={canManageSettings} />
 
             <Section
                 eyebrow="Workspace stats"

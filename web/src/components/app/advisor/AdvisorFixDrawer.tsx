@@ -9,12 +9,12 @@
 // screen that shows the exact before and after has been seen.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     ArrowLeftIcon,
     ArrowRightIcon,
     CheckIcon,
-    ExternalLinkIcon,
     Loader2Icon,
     ShieldCheckIcon,
     Undo2Icon,
@@ -431,13 +431,13 @@ function ChangeStep({
             )}
 
             {link ? (
-                <a
-                    href={link.href}
+                <Link
+                    to={link.href}
                     className="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 text-[12px] font-medium text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
                 >
                     {link.label}
-                    <ExternalLinkIcon className="h-3 w-3" />
-                </a>
+                    <ArrowRightIcon className="h-3 w-3" />
+                </Link>
             ) : null}
 
             {action ? (

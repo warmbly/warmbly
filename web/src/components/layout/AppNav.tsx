@@ -51,6 +51,8 @@ import mailboxDisplayStatus from "@/lib/mailboxStatus";
 import useAPIKeys from "@/lib/api/hooks/app/api-keys/useAPIKeys";
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import AdvisorNavBadge from "@/components/app/advisor/AdvisorNavBadge";
+import type { AdvisorSurface } from "@/lib/api/models/app/advisor/Advisor";
 import { UserNav } from "./UserNav";
 import { Logo } from "@/components/svg";
 import { cn } from "@/lib/utils";
@@ -80,6 +82,10 @@ interface NavItem {
     permission?: PermissionKey;
     /** Friendly label of the permission, for the access dialog. */
     permissionLabel?: string;
+    /** Advisor surface — when set, the row badges the count of critical/high
+     *  recommendations the Advisor has open for that area, so a problem is
+     *  visible from the sidebar on the tab where its fix lives. */
+    advisorSurface?: AdvisorSurface;
     /** Live indicator key — renders an ambient, realtime activity cluster.
      *  Each key has its OWN motif (campaigns = dot-grid, accounts = flame,
      *  tasks = red attention dot) so the rows stay visually distinct rather
@@ -130,11 +136,11 @@ const sections: NavSection[] = [
     {
         label: "Email",
         items: [
-            { title: "Accounts", url: "/app/emails", icon: MailIcon, indicator: "accounts", permission: "MANAGE_EMAILS", permissionLabel: "Manage mailboxes" },
-            { title: "Campaigns", url: "/app/campaigns", icon: MegaphoneIcon, indicator: "campaigns", permission: "VIEW_CAMPAIGNS", permissionLabel: "View campaigns" },
-            { title: "Contacts", url: "/app/contacts", icon: UsersIcon, indicator: "contacts", permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
+            { title: "Accounts", url: "/app/emails", icon: MailIcon, indicator: "accounts", advisorSurface: "emails", permission: "MANAGE_EMAILS", permissionLabel: "Manage mailboxes" },
+            { title: "Campaigns", url: "/app/campaigns", icon: MegaphoneIcon, indicator: "campaigns", advisorSurface: "campaigns", permission: "VIEW_CAMPAIGNS", permissionLabel: "View campaigns" },
+            { title: "Contacts", url: "/app/contacts", icon: UsersIcon, indicator: "contacts", advisorSurface: "contacts", permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
             { title: "Analytics", url: "/app/analytics", icon: BarChart3Icon, indicator: "analytics", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
-            { title: "Deliverability", url: "/app/deliverability", icon: ShieldCheckIcon, permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
+            { title: "Deliverability", url: "/app/deliverability", icon: ShieldCheckIcon, advisorSurface: "deliverability", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
         ],
     },
     {
@@ -271,6 +277,7 @@ function NavRow({ item }: { item: NavItem }) {
                 separator) is never pushed off the row — longer labels like
                 "Campaigns"/"Accounts" used to clip it at narrower widths. */}
             <span className="truncate flex-1 min-w-0">{item.title}</span>
+            {item.advisorSurface && !locked && <AdvisorNavBadge surface={item.advisorSurface} />}
             {item.indicator === "campaigns" && !locked && <CampaignActivity />}
             {item.indicator === "accounts" && !locked && <MailboxActivity />}
             {item.indicator === "tasks" && !locked && <TasksActivity />}

@@ -318,6 +318,10 @@ export function useRealtimeEvents() {
           ai_skill: [['ai', 'skills']],
           // Connected MCP servers (external tools).
           mcp_server: [['ai', 'connections']],
+          // Advisor: a background evaluation that opened or resolved findings,
+          // or a teammate applying/snoozing/dismissing one. Refreshes every
+          // strip and every nav badge at once.
+          advisor_finding: [['advisor']],
           settings: [['organizations', 'current']],
           unibox: [['unibox']],
           crm_note: [['crm'], ['contacts']],

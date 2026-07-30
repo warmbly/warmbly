@@ -1,5 +1,6 @@
 import { RiFireLine, RiMoreLine } from "@remixicon/react";
 import React, { useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
@@ -74,6 +75,11 @@ function healthTone(status?: AccountStatus): { dot: string; text: string; label:
     return { dot: "bg-rose-500", text: "text-rose-600", label: `Issue ${h.score}`, pulse: true };
 }
 
+import AdvisorRowFlag from "@/components/app/advisor/AdvisorRowFlag";
+import AdvisorSummaryBar from "@/components/app/advisor/AdvisorSummaryBar";
+import { useAdvisorEntityIndex } from "@/lib/api/hooks/app/advisor/useAdvisor";
+import type { AdvisorFinding } from "@/lib/api/models/app/advisor/Advisor";
+
 export default function AddressesPage() {
     const p = useUserProfile();
     const confirm = useConfirm();
@@ -87,6 +93,7 @@ export default function AddressesPage() {
     const [viewTab, setViewTab] = React.useState<string>("overview");
     const [removing, setRemoving] = React.useState(false);
     const [bulkStart, setBulkStart] = React.useState(false);
+    const [searchParams, setSearchParams] = useSearchParams();
     const queryClient = useQueryClient();
 
     // Warmup is a paid/trial feature; gate the start controls when the org
@@ -94,6 +101,10 @@ export default function AddressesPage() {
     // is the real enforcement point.
     const featureStatus = useFeatureStatus();
     const canWarmup = featureStatus.data?.can_use_warmup !== false;
+
+    // One query for the whole surface; each row reads its own advice out of the
+    // index rather than asking for it.
+    const advisor = useAdvisorEntityIndex("emails");
 
     // One query feeds live health for every row; the realtime layer already
     // invalidates ["analytics","accounts",…] on warmup/account events.
@@ -163,6 +174,26 @@ export default function AddressesPage() {
         setViewTab(tab);
         setView(id);
     };
+
+    // ?mailbox=<id> opens that mailbox's detail on arrival, so advisor advice
+    // about one mailbox can link straight to it instead of dropping the reader
+    // at the top of a list of twenty.
+    useEffect(() => {
+        const id = searchParams.get("mailbox");
+        if (!id) return;
+        openDetail(id, searchParams.get("tab") ?? "overview");
+        // Consume it, or every later close would be undone by a re-render.
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete("mailbox");
+                next.delete("tab");
+                return next;
+            },
+            { replace: true },
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
 
     const stag = useMemo(() => {
         if (!p) return DefaultFolder;
@@ -269,6 +300,12 @@ export default function AddressesPage() {
             </SectionBar>
 
             <PageBody>
+                <AdvisorSummaryBar
+                    surface="emails"
+                    noun="mailbox"
+                    nounPlural="mailboxes"
+                    className="mb-3"
+                />
                 <WarmupCoverageNotice
                     warmupCount={warmupActive}
                     totalCount={stats.total}
@@ -337,6 +374,7 @@ export default function AddressesPage() {
                                     box={box}
                                     tags={p?.user.tags ?? []}
                                     status={statusById.get(box.id)}
+                                    findings={advisor.get(box.id)}
                                     canWarmup={canWarmup}
                                     checked={selected.includes(box.id)}
                                     onToggleSelect={() =>
@@ -416,6 +454,7 @@ function MailboxRow({
     box,
     tags,
     status,
+    findings,
     canWarmup,
     checked,
     onToggleSelect,
@@ -424,6 +463,7 @@ function MailboxRow({
     box: Inbox;
     tags: Tag[];
     status?: AccountStatus;
+    findings: AdvisorFinding[];
     canWarmup: boolean;
     checked: boolean;
     onToggleSelect: () => void;
@@ -505,7 +545,10 @@ function MailboxRow({
                 />
             </td>
             <td className="px-3 max-w-0 md:max-w-none">
-                <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(box.id); }} className="flex w-full min-w-0 items-center gap-2.5 text-left">
+                {/* The flag is a sibling of the open-row button, not a child:
+                    it has its own trigger and nesting buttons is invalid. */}
+                <div className="flex w-full min-w-0 items-center gap-2">
+                <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(box.id); }} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
                     <div className="w-6 h-6 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
                         <span className="text-[9.5px] font-semibold text-sky-700">
                             {box.email.slice(0, 2).toUpperCase()}
@@ -533,6 +576,8 @@ function MailboxRow({
                         </span>
                     )}
                 </button>
+                <AdvisorRowFlag findings={findings} subject={box.email} />
+                </div>
             </td>
             <td className={`px-3 text-[12px] tabular-nums text-right font-mono ${warmupTone}`}>
                 {active ? (
