@@ -204,7 +204,7 @@ export default function DeliverabilityPage() {
                 surface="deliverability"
                 noun="mailbox"
                 nounPlural="mailboxes"
-                className="mx-3 mt-3"
+                className="mx-5 mt-3"
             />
 
             {q.isError ? (

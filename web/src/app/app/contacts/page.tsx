@@ -9,7 +9,7 @@ export default function ContactsPage() {
     return (
         <>
             {/* List-hygiene findings live where the list does. */}
-            <AdvisorSummaryBar surface="contacts" noun="list" nounPlural="lists" className="mx-3 mt-3" />
+            <AdvisorSummaryBar surface="contacts" noun="list" nounPlural="lists" className="mx-5 mt-3" />
             <ContactsTable />
         </>
     );

@@ -304,7 +304,7 @@ export default function AddressesPage() {
                     surface="emails"
                     noun="mailbox"
                     nounPlural="mailboxes"
-                    className="mb-3"
+                    className="mx-5 my-3"
                 />
                 <WarmupCoverageNotice
                     warmupCount={warmupActive}
