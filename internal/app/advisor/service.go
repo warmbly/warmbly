@@ -84,6 +84,9 @@ type service struct {
 	toolList ToolLister
 	credits  CreditCharger
 	tier     TierSource
+
+	// trackingHost is this install's tracking host, for the CNAME template.
+	trackingHost string
 }
 
 // AgentDeps carries the optional agent-fix wiring.
@@ -97,12 +100,25 @@ type AgentDeps struct {
 // NewService wires the advisor. Every dependency past repo is optional: the
 // advisor without them loses AI-written copy, the live cross-client refresh,
 // autopilot, and the agent fix respectively, but still detects and explains.
-func NewService(repo repository.AdvisorRepository, tools ToolRunner, narrator *Narrator, audit AuditLogger, members MemberResolver, agent *AgentDeps) Service {
+func NewService(repo repository.AdvisorRepository, tools ToolRunner, narrator *Narrator, audit AuditLogger, members MemberResolver, agent *AgentDeps, opts ...Option) Service {
 	s := &service{repo: repo, tools: tools, narrator: narrator, audit: audit, members: members}
 	if agent != nil {
 		s.agent, s.toolList, s.credits, s.tier = agent.Agent, agent.Tools, agent.Credits, agent.Tier
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
 	return s
+}
+
+// Option configures the service without another positional parameter.
+type Option func(*service)
+
+// WithTrackingHost supplies the platform's tracking host so the tracking-domain
+// finding can hand over a complete CNAME instead of telling somebody to go and
+// look the target up.
+func WithTrackingHost(host string) Option {
+	return func(s *service) { s.trackingHost = host }
 }
 
 // maxNarrationsPerRun bounds how many completions one evaluation can spend.
@@ -132,6 +148,7 @@ func (s *service) Evaluate(ctx context.Context, orgID uuid.UUID, trigger string)
 		return nil, err
 	}
 
+	snapshot.TrackingHost = s.trackingHost
 	findings := Detect(snapshot, settings)
 
 	keep := make([]string, 0, len(findings))

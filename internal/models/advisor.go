@@ -168,6 +168,10 @@ type AdvisorFinding struct {
 	// record, so the client shows the steps rather than a button that cannot
 	// succeed. Computed per request, never stored.
 	AgentFixable bool `json:"agent_fixable"`
+	// Snippets are the exact values to paste somewhere the platform cannot
+	// reach: a DNS record, a CNAME target. Prose telling somebody to "add an
+	// SPF record" is where most people stop; the record itself is the fix.
+	Snippets []AdvisorSnippet `json:"snippets,omitempty"`
 	// Narrated is false while the card still shows the built-in fallback copy
 	// (AI unconfigured, or narration not run yet). The card is fully usable
 	// either way; this only tells the client whether to offer "rewrite".
@@ -292,6 +296,19 @@ func DefaultAdvisorSettings(orgID uuid.UUID) *AdvisorSettings {
 		MutedDetectors:  []string{},
 		MinSeverity:     AdvisorLow,
 	}
+}
+
+// AdvisorSnippet is one copy-pasteable value, rendered as a labelled field with
+// a copy button. Used for DNS records, where the whole difficulty is knowing
+// what to type.
+type AdvisorSnippet struct {
+	// Label names the field in the DNS provider's own words ("Type", "Name",
+	// "Value") or the thing being pasted.
+	Label string `json:"label"`
+	Value string `json:"value"`
+	// Note is the one caveat that trips people up on this specific field, such
+	// as a host some providers write as @ and others leave blank.
+	Note string `json:"note,omitempty"`
 }
 
 // AdvisorAgentResult is what an agent fix reports back.

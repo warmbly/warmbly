@@ -2,6 +2,7 @@ package advisor
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -276,8 +277,9 @@ func detectDomainAuth(s *repository.AdvisorSnapshot) []Finding {
 			Detail: fmt.Sprintf(
 				"The sending domain for %s has no valid %s record. Google's bulk sender rules require SPF, DKIM, and DMARC to be aligned, so unauthenticated cold mail is filtered on arrival regardless of how good the copy is.",
 				m.Email, joinWords(missing)),
-			Remedy: "Add the missing DNS records at the domain's registrar. This is the highest-leverage deliverability fix available and it costs nothing.",
-			Steps:  domainAuthSteps(missing),
+			Remedy:   "Add the missing DNS records at the domain's registrar. This is the highest-leverage deliverability fix available and it costs nothing.",
+			Steps:    domainAuthSteps(missing),
+			Snippets: domainAuthSnippets(m, missing),
 			Evidence: map[string]any{
 				"mailbox":                m.Email,
 				"missing":                missing,
@@ -326,13 +328,8 @@ func detectSharedTrackingDomain(s *repository.AdvisorSnapshot) []Finding {
 			Title:       title,
 			Detail:      detail,
 			Remedy:      "Point a subdomain of your sending domain at the tracking host with a CNAME, then set it as this mailbox's tracking domain.",
-			Steps: []string{
-				"Pick a subdomain of the domain you send from, something like track.yourdomain.com. It has to be the sending domain: a tracking domain on an unrelated domain buys you nothing.",
-				"At your DNS provider, add a CNAME from that subdomain to the tracking host shown in the mailbox's settings.",
-				"Open the mailbox, put the subdomain in the tracking domain field, and save.",
-				"Wait for it to verify. DNS usually propagates in minutes, but give it up to an hour before assuming it failed.",
-				"Existing links keep working. New sends pick up the new domain automatically.",
-			},
+			Steps:       trackingDomainSteps(),
+			Snippets:    trackingDomainSnippets(m, s.TrackingHost),
 			Evidence: map[string]any{
 				"mailbox":         m.Email,
 				"tracking_domain": m.TrackingDomain,
@@ -348,21 +345,131 @@ func detectSharedTrackingDomain(s *repository.AdvisorSnapshot) []Finding {
 // A generic "set up SPF, DKIM and DMARC" is exactly the advice someone who is
 // already stuck has read five times.
 func domainAuthSteps(missing []string) []string {
-	steps := []string{"Open your DNS provider for the domain this mailbox sends from."}
+	steps := []string{"Open your DNS provider for the domain this mailbox sends from. The records to add are below, ready to paste."}
 	for _, record := range missing {
 		switch record {
 		case "SPF":
-			steps = append(steps, "Add a TXT record at the root of the domain that authorizes your provider to send for it. If an SPF record already exists, edit that one: two SPF records is a failure, not a backup.")
+			steps = append(steps, "Add the SPF record as a TXT record at the root of the domain. If an SPF record already exists, edit that one instead of adding a second: two SPF records is a failure, not a backup.")
 		case "DKIM":
-			steps = append(steps, "Generate a DKIM key in your mail provider's admin console and publish the CNAME or TXT record it gives you. Then turn signing on, which is a separate switch from publishing the key.")
+			steps = append(steps, "Generate a DKIM key in your mail provider's admin console, publish the record it gives you at the host below, then turn signing on. Publishing the key and enabling signing are two separate switches and missing the second is the usual cause.")
 		case "DMARC":
-			steps = append(steps, "Add a TXT record at _dmarc on the domain, starting at p=none with a reporting address. That monitors without affecting delivery; tighten to quarantine once the reports look clean.")
+			steps = append(steps, "Add the DMARC record as a TXT record at the _dmarc host. It starts at p=none, which monitors without affecting delivery; tighten it to quarantine once a few weeks of reports look clean.")
 		}
 	}
 	return append(steps,
-		"Give DNS up to a few hours to propagate.",
-		"Send yourself a test message and check the headers show a pass for each record. Warmbly re-checks the domain on its own schedule and the finding clears once it does.",
+		"Give DNS up to a few hours to propagate. Most providers are much faster.",
+		"Send yourself a test message and check the headers show a pass for each record. Warmbly re-checks the domain on its own schedule and this clears itself once it does.",
 	)
+}
+
+func trackingDomainSteps() []string {
+	return []string{
+		"Pick a subdomain of the domain you send from. It has to be that domain: a tracking subdomain on an unrelated domain inherits none of its reputation and buys you nothing.",
+		"At your DNS provider, add the CNAME below.",
+		"Open the mailbox's settings, put the subdomain in the tracking domain field, and save.",
+		"Wait for it to verify. DNS usually propagates in minutes, but give it up to an hour before assuming it failed.",
+		"Links already sent keep working. New sends pick up the new domain automatically.",
+	}
+}
+
+// trackingDomainSnippets renders the CNAME. The target is this install's own
+// tracking host, so a self-hosted deployment gets its own value rather than a
+// hardcoded cloud one.
+func trackingDomainSnippets(m repository.AdvisorMailbox, trackingHost string) []models.AdvisorSnippet {
+	host := m.TrackingDomain
+	if host == "" {
+		host = "track." + emailDomain(m.Email)
+	}
+	out := []models.AdvisorSnippet{
+		{Label: "Record type", Value: "CNAME"},
+		{Label: "Host", Value: host, Note: "A subdomain of the domain this mailbox sends from."},
+	}
+	if trackingHost != "" {
+		out = append(out, models.AdvisorSnippet{Label: "Points to", Value: trackingHost})
+	} else {
+		out = append(out, models.AdvisorSnippet{
+			Label: "Points to",
+			Value: "",
+			Note:  "This install has no tracking host configured, so there is nothing to point at yet. Set TRACKING_DOMAIN on the server first.",
+		})
+	}
+	return out
+}
+
+// emailDomain is the sending domain for a mailbox address.
+func emailDomain(email string) string {
+	if i := strings.LastIndex(email, "@"); i >= 0 && i+1 < len(email) {
+		return email[i+1:]
+	}
+	return "yourdomain.com"
+}
+
+// spfInclude is the provider's SPF include mechanism. An unrecognised provider
+// gets no guess: a wrong include is worse than an obvious blank, because it
+// looks finished.
+func spfInclude(provider string) (string, bool) {
+	switch provider {
+	case "gmail", "google":
+		return "include:_spf.google.com", true
+	case "outlook", "office365", "microsoft":
+		return "include:spf.protection.outlook.com", true
+	}
+	return "", false
+}
+
+// dkimHost is where the provider expects its DKIM record. The value itself is
+// generated per domain in the provider's console, so it is never templated here.
+func dkimHost(provider, domain string) (string, string) {
+	switch provider {
+	case "gmail", "google":
+		return "google._domainkey." + domain, "Google Admin > Apps > Google Workspace > Gmail > Authenticate email generates the TXT value."
+	case "outlook", "office365", "microsoft":
+		return "selector1._domainkey." + domain, "Microsoft 365 Defender > Policies > DKIM gives you two CNAME records (selector1 and selector2) pointing at your tenant."
+	}
+	return "yourselector._domainkey." + domain, "Your provider's admin console generates both the selector name and the value."
+}
+
+// domainAuthSnippets renders the records to paste for whatever is missing.
+func domainAuthSnippets(m repository.AdvisorMailbox, missing []string) []models.AdvisorSnippet {
+	domain := emailDomain(m.Email)
+	out := []models.AdvisorSnippet{}
+
+	for _, record := range missing {
+		switch record {
+		case "SPF":
+			include, known := spfInclude(m.Provider)
+			value := "v=spf1 " + include + " ~all"
+			note := "Host is the domain root, which some DNS providers write as @ and others leave blank."
+			if !known {
+				value = "v=spf1 include:YOUR-PROVIDER-SPF-HOST ~all"
+				note = "Replace the include with your mail provider's published SPF host. Host is the domain root, written as @ or left blank depending on your DNS provider."
+			}
+			out = append(out,
+				models.AdvisorSnippet{Label: "SPF record type", Value: "TXT"},
+				models.AdvisorSnippet{Label: "SPF host", Value: domain, Note: note},
+				models.AdvisorSnippet{Label: "SPF value", Value: value},
+			)
+		case "DKIM":
+			host, note := dkimHost(m.Provider, domain)
+			out = append(out,
+				models.AdvisorSnippet{Label: "DKIM host", Value: host, Note: note},
+			)
+		case "DMARC":
+			// p=none deliberately: a first DMARC record that quarantines can
+			// silently bin legitimate mail from a service nobody remembered was
+			// sending as this domain. Monitor first, tighten later.
+			out = append(out,
+				models.AdvisorSnippet{Label: "DMARC record type", Value: "TXT"},
+				models.AdvisorSnippet{Label: "DMARC host", Value: "_dmarc." + domain},
+				models.AdvisorSnippet{
+					Label: "DMARC value",
+					Value: fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc@%s; adkim=r; aspf=r; pct=100", domain),
+					Note:  "Starts in monitor-only mode. Change p=none to p=quarantine once the reports show your legitimate mail passing.",
+				},
+			)
+		}
+	}
+	return out
 }
 
 // --- small text helpers ---------------------------------------------------

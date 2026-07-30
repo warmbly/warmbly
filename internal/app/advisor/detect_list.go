@@ -129,6 +129,12 @@ func detectFreeMailHeavy(s *repository.AdvisorSnapshot) []Finding {
 				"%s of the contacts in %s are on gmail, outlook.com, yahoo and similar. For B2B outreach that usually means the list was scraped rather than sourced, and consumer providers are also the strictest filters you will face.",
 				pct(r), cl.Campaign.Name),
 			Remedy: "Check where this list came from. If the target is companies, the addresses should mostly be on company domains.",
+			Steps: []string{
+				"Check where the list came from. A B2B list that is mostly consumer addresses was usually scraped rather than sourced.",
+				"Filter the consumer-domain contacts out and see what is left. If that is most of the list, the list is the problem, not the copy.",
+				"Rebuild from a source that gives you company addresses: an export from your CRM, a provider that verifies, or manual research on a smaller set.",
+				"Keep the consumer addresses out of cold campaigns. They reply less and complain more, and the complaints land on your sending domain.",
+			},
 			Evidence: map[string]any{
 				"campaign":                cl.Campaign.Name,
 				"free_mail_contacts":      cl.List.FreeMail,

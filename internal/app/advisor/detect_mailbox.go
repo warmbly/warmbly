@@ -216,6 +216,13 @@ func detectMailboxErrors(s *repository.AdvisorSnapshot) []Finding {
 				m.Email, plural(m.UnresolvedErrs, "error", "errors"),
 				map[bool]string{true: " while it is attached to a running campaign", false: ""}[m.InActiveCampaign]),
 			Remedy: "Open the mailbox and work through the errors. Authentication failures usually mean a reconnect; rate-limit errors mean the provider is pushing back and the cap should come down.",
+			Steps: []string{
+				"Open the mailbox and read the errors. They are grouped by kind, and the kind tells you the fix.",
+				"Authentication or credential errors mean a reconnect. An expired OAuth token or a changed password will not recover on its own.",
+				"Rate-limit or throttling errors mean the provider is pushing back. Lower the daily cap and widen the send gap rather than retrying into it.",
+				"Connection or timeout errors are usually the host or port. Check them against your provider's current documented values.",
+				"Once the cause is fixed, the errors stop accumulating and this clears on the next check.",
+			},
 			Evidence: map[string]any{
 				"mailbox":                m.Email,
 				"unresolved_errors_7d":   m.UnresolvedErrs,
@@ -265,6 +272,13 @@ func detectMailboxConcentration(s *repository.AdvisorSnapshot) []Finding {
 			"You sent %d cold emails in the last week across %s, about %d per mailbox per day. Spreading volume across more mailboxes and more sending identities is the whole safety model here: concentrating it means one reputation problem takes out all of your sending at once.",
 			totalVolume, plural(sending, "mailbox", "mailboxes"), perMailbox),
 		Remedy: fmt.Sprintf("Connect more mailboxes and let the campaign rotate across them. At this volume you want around %s, each staying near the default cap.", plural(wantMailboxes, "mailbox", "mailboxes")),
+		Steps: []string{
+			fmt.Sprintf("Connect more mailboxes until you have around %s carrying this volume.", plural(wantMailboxes, "mailbox", "mailboxes")),
+			"Spread them across more than one domain if you can. Several mailboxes on one domain still concentrate the risk on that domain's reputation.",
+			"Put each new mailbox through warmup before it takes campaign traffic, and start it at 10 to 20 a day.",
+			"Add them to the campaign, or give them the tag it selects senders by, and it starts rotating across them automatically.",
+			fmt.Sprintf("Bring the existing mailboxes back down to about %d/day as the new ones take the load.", defaultColdCap),
+		},
 		Evidence: map[string]any{
 			"sending_mailboxes":     sending,
 			"cold_sends_7d":         totalVolume,
@@ -297,6 +311,12 @@ func detectInactiveMailboxInCampaign(s *repository.AdvisorSnapshot) []Finding {
 				"A running campaign routes through %s, but the mailbox is %s so nothing sends from it. The campaign is delivering less than it is configured to, and the shortfall does not show up as an error anywhere.",
 				m.Email, m.Status),
 			Remedy: "Either reactivate the mailbox or take it off the campaign, so the campaign's real capacity matches what it reports.",
+			Steps: []string{
+				"Decide which you want: the mailbox sending again, or the campaign no longer counting on it.",
+				"To bring it back, open the mailbox and resolve whatever deactivated it, usually a reconnect, then set it active.",
+				"To let it go, open the campaign's sender settings and remove it, or take off the tag that selects it.",
+				"Either way the campaign's reported capacity starts matching what it can actually send, which is what makes its daily limit meaningful.",
+			},
 			Evidence: map[string]any{
 				"mailbox":              m.Email,
 				"status":               m.Status,

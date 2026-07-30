@@ -1,6 +1,7 @@
 package advisor
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -569,5 +570,85 @@ func TestAutopilotOnlyGetsReversibleSafeFixes(t *testing.T) {
 	}
 	if autos == 0 {
 		t.Fatal("no auto-safe fix fired, so this test is not checking anything")
+	}
+}
+
+func TestEveryFindingOffersAWayForward(t *testing.T) {
+	// The gap this closes: a finding with no one-click fix, no agent, and no
+	// steps leaves the reader a paragraph of prose and no instruction. That is
+	// how a missing DMARC record ended up as a dead end, and it was not the
+	// only one.
+	//
+	// Every finding must offer at least one of: a fix to apply, an agent that
+	// can do it, or ordered steps to do it by hand.
+	m := healthyMailbox()
+	m.CampaignLimit = 120
+	m.MinWaitTime = 30
+	m.AuthDMARC = false
+	m.AuthSPF = false
+	m.AuthState = "failing"
+	m.Complaints30d = 5
+	m.ColdSent30d = 4000
+	m.Bounces30d = 300
+	m.WarmupSent7d = 60
+	m.WarmupSpam7d = 30
+	m.UnresolvedErrs = 5
+	m.TrackingDomain = ""
+	m.InActiveCampaign = true
+	m.PoolBlocked = true
+	m.PoolSpamScore = 80
+
+	findings := Detect(snapshotOf(m), defaults())
+	if len(findings) < 5 {
+		t.Fatalf("this mailbox should trip most of the detectors, got %d findings", len(findings))
+	}
+	for _, f := range findings {
+		hasFix := f.Action != nil
+		hasAgent := agentFixable[f.Key]
+		hasSteps := len(f.Steps) > 0
+		if !hasFix && !hasAgent && !hasSteps {
+			t.Errorf("finding %q offers no way forward: no fix, no agent, no steps", f.Key)
+		}
+	}
+}
+
+func TestDNSFindingsShipThePasteableRecord(t *testing.T) {
+	// Telling somebody to "add an SPF record" is where most people stop. The
+	// record itself is the fix, so a finding whose remedy lives in DNS has to
+	// carry the value to paste.
+	m := healthyMailbox()
+	m.Email = "sender@acme.test"
+	m.Provider = "gmail"
+	m.AuthSPF = false
+	m.AuthDMARC = false
+	m.AuthState = "failing"
+
+	byKey := findingsByKey(Detect(snapshotOf(m), defaults()))
+	auth, ok := byKey["mailbox_domain_auth"]
+	if !ok {
+		t.Fatal("domain auth did not fire on a mailbox missing SPF and DMARC")
+	}
+	if len(auth.Snippets) == 0 {
+		t.Fatal("domain auth carries no records to paste")
+	}
+
+	joined := ""
+	for _, s := range auth.Snippets {
+		if s.Label == "" {
+			t.Error("a snippet has no label, so it is unclear what field it goes in")
+		}
+		joined += s.Label + "=" + s.Value + "\n"
+	}
+
+	// The provider-specific include and the domain-specific DMARC host are the
+	// two values a generic template gets wrong.
+	if !strings.Contains(joined, "include:_spf.google.com") {
+		t.Errorf("SPF record does not carry the Google include for a gmail mailbox:\n%s", joined)
+	}
+	if !strings.Contains(joined, "_dmarc.acme.test") {
+		t.Errorf("DMARC host is not scoped to the sending domain:\n%s", joined)
+	}
+	if !strings.Contains(joined, "p=none") {
+		t.Errorf("DMARC record should start in monitor-only mode:\n%s", joined)
 	}
 }

@@ -1327,7 +1327,8 @@ func main() {
 			}
 		}
 		advisorService = advisor.NewService(advisorRepository, aiToolRegistry, advisorNarrator, auditService,
-			advisorMembers{organizationService}, advisorAgent)
+			advisorMembers{organizationService}, advisorAgent,
+			advisor.WithTrackingHost(emailCfg.TrackingDomain))
 		aitools.RegisterAdvisorTools(aiToolRegistry, advisorService)
 		go (&advisor.Runner{Repo: advisorRepository, Service: advisorService}).Run(ctx)
 

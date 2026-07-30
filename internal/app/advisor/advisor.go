@@ -66,6 +66,9 @@ type Finding struct {
 	// errors" is a summary, not an instruction, and the person reading it is
 	// usually the one who does not already know the answer.
 	Steps []string
+	// Snippets are the exact values to paste, for fixes that live outside the
+	// platform. A DNS step without the record is a step that ends in a search.
+	Snippets []models.AdvisorSnippet
 
 	// Evidence is the numbers the detector fired on. It is shown in the card,
 	// hashed for narration caching, and is the ONLY input the narrator gets, so
@@ -108,6 +111,7 @@ func (f Finding) toModel(orgID uuid.UUID) *models.AdvisorFinding {
 		Detail:         f.Detail,
 		Remedy:         f.Remedy,
 		Steps:          f.Steps,
+		Snippets:       f.Snippets,
 		Evidence:       json.RawMessage(evidence),
 		Action:         f.Action,
 	}

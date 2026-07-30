@@ -181,6 +181,9 @@ type AdvisorSnapshot struct {
 	Steps          []AdvisorStep
 	Lists          map[uuid.UUID]AdvisorListStats
 	Org            AdvisorOrgStats
+	// TrackingHost is this install's tracking host, set by the service rather
+	// than loaded from SQL, so a detector can render a complete CNAME.
+	TrackingHost string
 }
 
 // AdvisorRepository persists findings and loads the evaluation snapshot.
@@ -253,17 +256,17 @@ func NewAdvisorRepository(database *db.DB) AdvisorRepository {
 const findingColumns = `
 	id, organization_id, fingerprint, detector_key, category, severity, surface,
 	entity_type, entity_id, entity_label, parent_type, parent_id, status, impact,
-	title, group_title, detail, remedy, steps, narrated, evidence, action,
+	title, group_title, detail, remedy, steps, snippets, narrated, evidence, action,
 	first_seen_at, last_seen_at, resolved_at, snoozed_until,
 	dismissed_at, dismiss_reason, applied_at, applied_by, applied_result`
 
 func scanFinding(row db.Scannable) (*models.AdvisorFinding, error) {
 	var f models.AdvisorFinding
-	var evidence, action []byte
+	var evidence, action, snippets []byte
 	if err := row.Scan(
 		&f.ID, &f.OrganizationID, &f.Fingerprint, &f.DetectorKey, &f.Category, &f.Severity, &f.Surface,
 		&f.EntityType, &f.EntityID, &f.EntityLabel, &f.ParentType, &f.ParentID, &f.Status, &f.Impact,
-		&f.Title, &f.GroupTitle, &f.Detail, &f.Remedy, &f.Steps, &f.Narrated, &evidence, &action,
+		&f.Title, &f.GroupTitle, &f.Detail, &f.Remedy, &f.Steps, &snippets, &f.Narrated, &evidence, &action,
 		&f.FirstSeenAt, &f.LastSeenAt, &f.ResolvedAt, &f.SnoozedUntil,
 		&f.DismissedAt, &f.DismissReason, &f.AppliedAt, &f.AppliedBy, &f.AppliedResult,
 	); err != nil {
@@ -271,6 +274,9 @@ func scanFinding(row db.Scannable) (*models.AdvisorFinding, error) {
 	}
 	if len(evidence) > 0 {
 		f.Evidence = json.RawMessage(evidence)
+	}
+	if len(snippets) > 0 {
+		_ = json.Unmarshal(snippets, &f.Snippets)
 	}
 	if len(action) > 0 {
 		var a models.AdvisorAction
@@ -299,6 +305,12 @@ func (r *advisorRepository) UpsertFinding(ctx context.Context, f *models.Advisor
 	if steps == nil {
 		steps = []string{}
 	}
+	snippetsJSON := []byte(`[]`)
+	if len(f.Snippets) > 0 {
+		if b, err := json.Marshal(f.Snippets); err == nil {
+			snippetsJSON = b
+		}
+	}
 
 	// On conflict the detector's fresh severity/evidence/action always win, but
 	// the human decisions do not: a dismissed finding stays dismissed, and a
@@ -311,8 +323,8 @@ func (r *advisorRepository) UpsertFinding(ctx context.Context, f *models.Advisor
 		INSERT INTO advisor_findings (
 			organization_id, fingerprint, detector_key, category, severity, surface,
 			entity_type, entity_id, entity_label, parent_type, parent_id, status, impact,
-			title, group_title, detail, remedy, steps, narrated, evidence, evidence_hash, action
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'open',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+			title, group_title, detail, remedy, steps, snippets, narrated, evidence, evidence_hash, action
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'open',$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 		ON CONFLICT (organization_id, fingerprint) DO UPDATE SET
 			severity      = EXCLUDED.severity,
 			category      = EXCLUDED.category,
@@ -325,6 +337,7 @@ func (r *advisorRepository) UpsertFinding(ctx context.Context, f *models.Advisor
 			-- Steps are fixed per-detector copy rather than narration, so they
 			-- always take the current build's wording.
 			steps         = EXCLUDED.steps,
+			snippets      = EXCLUDED.snippets,
 			evidence      = EXCLUDED.evidence,
 			action        = EXCLUDED.action,
 			last_seen_at  = NOW(),
@@ -347,16 +360,16 @@ func (r *advisorRepository) UpsertFinding(ctx context.Context, f *models.Advisor
 		RETURNING ` + findingColumns + `, (xmax::text::bigint = 0) AS inserted`
 
 	var out models.AdvisorFinding
-	var evidenceOut, actionOut []byte
+	var evidenceOut, actionOut, snippetsOut []byte
 	var inserted bool
 	err := r.db.QueryRow(ctx, query,
 		f.OrganizationID, f.Fingerprint, f.DetectorKey, f.Category, f.Severity, f.Surface,
 		f.EntityType, f.EntityID, f.EntityLabel, f.ParentType, f.ParentID, f.Impact,
-		f.Title, f.GroupTitle, f.Detail, f.Remedy, steps, f.Narrated, evidence, evidenceHashOf(f), actionJSON,
+		f.Title, f.GroupTitle, f.Detail, f.Remedy, steps, snippetsJSON, f.Narrated, evidence, evidenceHashOf(f), actionJSON,
 	).Scan(
 		&out.ID, &out.OrganizationID, &out.Fingerprint, &out.DetectorKey, &out.Category, &out.Severity, &out.Surface,
 		&out.EntityType, &out.EntityID, &out.EntityLabel, &out.ParentType, &out.ParentID, &out.Status, &out.Impact,
-		&out.Title, &out.GroupTitle, &out.Detail, &out.Remedy, &out.Steps, &out.Narrated, &evidenceOut, &actionOut,
+		&out.Title, &out.GroupTitle, &out.Detail, &out.Remedy, &out.Steps, &snippetsOut, &out.Narrated, &evidenceOut, &actionOut,
 		&out.FirstSeenAt, &out.LastSeenAt, &out.ResolvedAt, &out.SnoozedUntil,
 		&out.DismissedAt, &out.DismissReason, &out.AppliedAt, &out.AppliedBy, &out.AppliedResult,
 		&inserted,
@@ -366,6 +379,9 @@ func (r *advisorRepository) UpsertFinding(ctx context.Context, f *models.Advisor
 	}
 	if len(evidenceOut) > 0 {
 		out.Evidence = json.RawMessage(evidenceOut)
+	}
+	if len(snippetsOut) > 0 {
+		_ = json.Unmarshal(snippetsOut, &out.Snippets)
 	}
 	if len(actionOut) > 0 {
 		var a models.AdvisorAction

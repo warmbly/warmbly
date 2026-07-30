@@ -156,6 +156,13 @@ func detectReplyRateLow(s *repository.AdvisorSnapshot) []Finding {
 				"%s has sent %d emails in the last 30 days and received %s, a reply rate of %s. At this sample size that is not variance: the offer, the audience, or the opening line is not landing, and sending more of it costs sender reputation without producing results.",
 				c.Name, c.Sent, plural(c.Replied, "reply", "replies"), pct(r)),
 			Remedy: "Pause and change one thing at a time. Narrow the audience first (it is usually the audience), then rewrite the first email around a single specific problem those companies actually have.",
+			Steps: []string{
+				"Pause the campaign. Every further send at this rate costs reputation and teaches you nothing new.",
+				"Look at the audience first. It is the audience far more often than the copy: check that the contacts really are the people who have the problem you are selling to.",
+				"Narrow it. A list of 200 companies you can describe precisely outperforms 2,000 you cannot.",
+				"Then rewrite the first email around one specific problem those companies have, in the words they would use for it.",
+				"Change one thing at a time and restart at low volume. Changing audience and copy together tells you nothing about which one mattered.",
+			},
 			Evidence: map[string]any{
 				"campaign":           c.Name,
 				"sends_30d":          c.Sent,
@@ -485,6 +492,12 @@ func detectListExhaustion(s *repository.AdvisorSnapshot) []Finding {
 				"%s has %s left to reach at %d a day, so it is %s out. Campaigns do not announce that they have finished their list; they just stop producing results while still looking active.",
 				camp.Name, plural(camp.LeadsRemaining, "lead", "leads"), camp.DailyLimit, whenExhausted(daysLeft)),
 			Remedy: "Add more contacts now if the campaign is working, or let it finish and read the numbers before building the next list.",
+			Steps: []string{
+				"Decide whether this campaign is working before you feed it. Check its reply rate on the campaign page.",
+				"If it is working, add contacts to the same list and they get picked up on the next scheduling pass. No restart needed.",
+				"If it is not, let it finish. Topping up a campaign that is not landing just spends more reputation on the same result.",
+				"Either way, build the next list while this one drains, so there is no gap where the mailboxes sit idle.",
+			},
 			Evidence: map[string]any{
 				"campaign":        camp.Name,
 				"leads_remaining": camp.LeadsRemaining,
@@ -533,6 +546,12 @@ func detectNoABTest(s *repository.AdvisorSnapshot) []Finding {
 				"%s has sent %d emails on a single variant. At this volume an A/B test costs nothing extra and is the only way to know whether the copy is what is holding the campaign back.",
 				camp.Name, camp.Sent),
 			Remedy: "Add a second variant that changes one thing: the subject line, or the opening sentence. Changing both at once tells you nothing about which mattered.",
+			Steps: []string{
+				"Open the first email step and add a variant.",
+				"Change exactly one thing in it. The subject line is the usual first test, because it decides whether anything else gets read.",
+				"Leave everything else identical, including the call to action. Two variants that differ in three ways cannot tell you which one moved the number.",
+				"Let it run until each variant has a few hundred sends before reading the result.",
+			},
 			Evidence: map[string]any{
 				"campaign":           camp.Name,
 				"sends_30d":          camp.Sent,
@@ -622,6 +641,12 @@ func detectDuplicateEnrollment(s *repository.AdvisorSnapshot) []Finding {
 			"%s enrolled in two or more of your %d running campaigns at once. To the recipient that is two unrelated strangers pitching in the same week, which is how a sender earns a complaint instead of a reply.",
 			plural(s.Org.DuplicateContacts, "contact is", "contacts are"), s.Org.RunningCampaigns),
 		Remedy: "Pick one campaign per contact. Deduplicate the overlapping lists, or split the audience by a field that keeps them apart.",
+		Steps: []string{
+			"Open Contacts and find the contacts enrolled more than once.",
+			"Pick which campaign each one should be in. Usually the more specific campaign wins.",
+			"Remove them from the others. To the recipient, two of your campaigns is two unrelated strangers pitching in the same week.",
+			"Then stop it recurring: split the audiences on a field that keeps them apart, like industry or company size, rather than rebuilding overlapping lists by hand each time.",
+		},
 		Evidence: map[string]any{
 			"duplicate_contacts": s.Org.DuplicateContacts,
 			"running_campaigns":  s.Org.RunningCampaigns,

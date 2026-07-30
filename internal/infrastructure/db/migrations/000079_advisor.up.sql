@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS advisor_findings (
     -- The ordered manual how-to, set only by checks with no one-click fix.
     -- Empty means the remedy prose is the whole answer.
     steps             text[] NOT NULL DEFAULT '{}',
+    -- Copy-pasteable values for a fix that lives outside the platform, such as
+    -- the DNS records for SPF, DKIM and DMARC.
+    snippets          jsonb NOT NULL DEFAULT '[]'::jsonb,
     -- False while the row still carries the deterministic fallback copy, so a
     -- later run can upgrade it once AI is configured / credits exist.
     narrated          boolean NOT NULL DEFAULT false,
