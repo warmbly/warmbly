@@ -129,7 +129,9 @@ Where the same check fired on many rows, the summary above the list offers **Fix
 
 ### Letting an agent do it
 
-Findings with no settings change offer **Fix with agent**. That runs an agent against that one finding: it reads the current campaign, step, or list, makes the smallest change that resolves the problem, and reports back.
+Findings whose fix is an edit to something Warmbly owns offer **Fix with agent**: copy, sequence shape, and list membership. That runs an agent against that one finding, which reads the current campaign, step, or list, makes the smallest change that resolves the problem, and reports back.
+
+Findings whose fix lives outside Warmbly do not offer it, because no agent can reach them. A missing DMARC record is a DNS change at your registrar; a shared tracking domain needs a CNAME before anything in the app can be set. Those show their ordered steps and a link to where the remaining part is done, rather than a button that would run and then have to admit it changed nothing.
 
 It runs as you, with your permissions, and only ever gets the tools that finding's category needs. A copy problem gets read access to the campaign and the ability to edit that step, and nothing else. Nothing in any of those tool sets can send mail, delete a campaign or a contact, or touch team, billing, or API keys. Each loop costs one AI credit.
 
