@@ -111,6 +111,11 @@ const (
 
 	// Connected MCP server (external tools) connect/update/disconnect.
 	AuditEntityMCPServer AuditEntityType = "mcp_server"
+
+	// Advisor recommendation: applied, undone, snoozed, dismissed, or a
+	// background evaluation that opened or resolved findings. Rides the audit
+	// spine so every teammate's advisor strips and nav badges stay live.
+	AuditEntityAdvisorFinding AuditEntityType = "advisor_finding"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

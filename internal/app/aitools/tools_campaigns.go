@@ -97,18 +97,19 @@ func (d Deps) registerCampaignTools(r *Registry) {
 		Name:        "update_campaign",
 		Description: "Update a campaign's settings. Only provided fields change. Editing a draft is safe; changing an active campaign takes effect on the next sends.",
 		InputSchema: objectSchema(map[string]any{
-			"campaign_id":    strProp("The campaign's UUID."),
-			"name":           strProp("New name."),
-			"description":    strProp("New description."),
-			"daily_limit":    intProp("Per-day send cap for the campaign."),
-			"stop_on_reply":  boolProp("Stop sequencing a lead once they reply."),
-			"open_tracking":  boolProp("Track opens."),
-			"link_tracking":  boolProp("Track link clicks."),
-			"text_only":      boolProp("Send plain text only."),
-			"ramp_enabled":   boolProp("Gradually ramp daily volume."),
-			"ramp_start":     intProp("Ramp starting volume."),
-			"ramp_increment": intProp("Ramp daily increment."),
-			"ramp_ceiling":   intProp("Ramp ceiling."),
+			"campaign_id":        strProp("The campaign's UUID."),
+			"name":               strProp("New name."),
+			"description":        strProp("New description."),
+			"daily_limit":        intProp("Per-day send cap for the campaign."),
+			"stop_on_reply":      boolProp("Stop sequencing a lead once they reply."),
+			"open_tracking":      boolProp("Track opens."),
+			"link_tracking":      boolProp("Track link clicks."),
+			"text_only":          boolProp("Send plain text only."),
+			"unsubscribe_header": boolProp("Send the List-Unsubscribe header (one-click unsubscribe)."),
+			"ramp_enabled":       boolProp("Gradually ramp daily volume."),
+			"ramp_start":         intProp("Ramp starting volume."),
+			"ramp_increment":     intProp("Ramp daily increment."),
+			"ramp_ceiling":       intProp("Ramp ceiling."),
 		}, "campaign_id"),
 		Risk:            generation.RiskWrite,
 		RequiredOrgPerm: models.PermManageCampaigns,
@@ -203,18 +204,19 @@ func (d Deps) getCampaign(ctx context.Context, inv Invocation, args json.RawMess
 
 func (d Deps) updateCampaign(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
 	in, err := decodeArgs[struct {
-		CampaignID    string  `json:"campaign_id"`
-		Name          *string `json:"name"`
-		Description   *string `json:"description"`
-		DailyLimit    *int    `json:"daily_limit"`
-		StopOnReply   *bool   `json:"stop_on_reply"`
-		OpenTracking  *bool   `json:"open_tracking"`
-		LinkTracking  *bool   `json:"link_tracking"`
-		TextOnly      *bool   `json:"text_only"`
-		RampEnabled   *bool   `json:"ramp_enabled"`
-		RampStart     *int    `json:"ramp_start"`
-		RampIncrement *int    `json:"ramp_increment"`
-		RampCeiling   *int    `json:"ramp_ceiling"`
+		CampaignID        string  `json:"campaign_id"`
+		Name              *string `json:"name"`
+		Description       *string `json:"description"`
+		DailyLimit        *int    `json:"daily_limit"`
+		StopOnReply       *bool   `json:"stop_on_reply"`
+		OpenTracking      *bool   `json:"open_tracking"`
+		LinkTracking      *bool   `json:"link_tracking"`
+		TextOnly          *bool   `json:"text_only"`
+		UnsubscribeHeader *bool   `json:"unsubscribe_header"`
+		RampEnabled       *bool   `json:"ramp_enabled"`
+		RampStart         *int    `json:"ramp_start"`
+		RampIncrement     *int    `json:"ramp_increment"`
+		RampCeiling       *int    `json:"ramp_ceiling"`
 	}](args)
 	if err != nil {
 		return "", err
@@ -224,17 +226,18 @@ func (d Deps) updateCampaign(ctx context.Context, inv Invocation, args json.RawM
 		return "", err
 	}
 	upd := &models.UpdateCampaign{
-		Name:          in.Name,
-		Description:   in.Description,
-		DailyLimit:    in.DailyLimit,
-		StopOnReply:   in.StopOnReply,
-		OpenTracking:  in.OpenTracking,
-		LinkTracking:  in.LinkTracking,
-		TextOnly:      in.TextOnly,
-		RampEnabled:   in.RampEnabled,
-		RampStart:     in.RampStart,
-		RampIncrement: in.RampIncrement,
-		RampCeiling:   in.RampCeiling,
+		Name:              in.Name,
+		Description:       in.Description,
+		DailyLimit:        in.DailyLimit,
+		StopOnReply:       in.StopOnReply,
+		OpenTracking:      in.OpenTracking,
+		LinkTracking:      in.LinkTracking,
+		TextOnly:          in.TextOnly,
+		UnsubscribeHeader: in.UnsubscribeHeader,
+		RampEnabled:       in.RampEnabled,
+		RampStart:         in.RampStart,
+		RampIncrement:     in.RampIncrement,
+		RampCeiling:       in.RampCeiling,
 	}
 	camp, xerr := d.Campaigns.Update(ctx, inv.UserID.String(), in.CampaignID, upd)
 	if xerr != nil {

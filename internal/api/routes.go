@@ -421,6 +421,30 @@ func Run(
 				skillsGroup.DELETE("/:id", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.DeleteSkill)
 			}
 
+			// Advisor. Reads are an analytics read of the org's sending
+			// posture. Apply/undo carry no gate here on purpose: the fix runs
+			// through the AI tool registry, which enforces whatever permission
+			// the underlying change actually needs, so a viewer sees the advice
+			// and gets a clean 403 if they try to apply it.
+			advisorGroup := protected.Group("/advisor")
+			advisorGroup.Use(m.RequireOrganization())
+			{
+				advisorGroup.GET("/recommendations", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.ListAdvisorFindings)
+				advisorGroup.GET("/summary", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetAdvisorSummary)
+				advisorGroup.GET("/settings", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetAdvisorSettings)
+
+				advisorWrite := advisorGroup.Group("")
+				advisorWrite.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+				{
+					advisorWrite.POST("/refresh", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.RefreshAdvisor)
+					advisorWrite.POST("/recommendations/:id/apply", h.ApplyAdvisorFinding)
+					advisorWrite.POST("/recommendations/:id/undo", h.UndoAdvisorFinding)
+					advisorWrite.POST("/recommendations/:id/snooze", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.SnoozeAdvisorFinding)
+					advisorWrite.POST("/recommendations/:id/dismiss", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.DismissAdvisorFinding)
+					advisorWrite.POST("/recommendations/:id/feedback", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.SubmitAdvisorFeedback)
+				}
+			}
+
 			contacts := protected.Group("/contacts")
 			contacts.Use(m.RateLimitMiddleware(models.RateLimitWrite))
 			{
@@ -897,6 +921,12 @@ func Run(
 			// Cancel a pending limit request by id (submitter-only). Sits
 			// outside the /organization group so the URL doesn't need
 			// double-encoding of the org id.
+			// Advisor settings are org governance (switching checks off for
+			// everyone), so they follow the same JWT-only rule as the rest of
+			// org settings. There is no read-scoped API bit that should be able
+			// to silence the Advisor for a whole workspace.
+			jwtOnly.PATCH("/advisor/settings", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateAdvisorSettings)
+
 			jwtOnly.DELETE("/limit-requests/:id", h.CancelLimitRequest)
 
 			account := jwtOnly.Group("/me")

@@ -295,6 +295,10 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 	if err := deactivateFixtureMailboxes(ctx, pool); err != nil {
 		return err
 	}
+	// Last: the Advisor showcase reads the state everything above just wrote.
+	if err := seedAdvisor(ctx, pool); err != nil {
+		return err
+	}
 
 	fmt.Println("sandbox seeded:")
 	fmt.Printf("  dashboard  %s / %s (org: Sunrise Labs)\n", SandboxLoginEmail, SandboxLoginPassword)
@@ -306,6 +310,9 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 	fmt.Println("  team       a second teammate plus a pending invite, and a developer API key")
 	fmt.Println("  labels     folders/tags/categories bound to mailboxes, campaigns, contacts, and inbox threads")
 	fmt.Printf("  credits    plan allowance + %d purchased (AI assistant ready)\n", sandboxTopupCredits)
+	if err := runAdvisor(ctx, pool); err != nil {
+		return err
+	}
 	return nil
 }
 

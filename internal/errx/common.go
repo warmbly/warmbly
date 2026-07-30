@@ -120,4 +120,11 @@ var (
 	// Servers
 	ErrIPAddr    = New(BadRequest, "Invalid IP Address.")
 	ErrPublicKey = New(BadRequest, "Invalid Public Key.")
+
+	// Advisor
+	ErrAdvisorNoAction     = New(BadRequest, "This recommendation doesn't have a one-click fix.")
+	ErrAdvisorNotApplied   = New(BadRequest, "This recommendation hasn't been applied, so there's nothing to undo.")
+	ErrAdvisorSnoozeRange  = New(BadRequest, "Snooze length must be between 1 and 90 days.")
+	ErrAdvisorBadSeverity  = New(BadRequest, "Minimum severity must be one of critical, high, medium, or low.")
+	ErrAdvisorFixForbidden = New(Forbidden, "You can see this recommendation but don't have permission to apply the change it makes.")
 )

@@ -33,12 +33,22 @@ func (r *auditRepository) Log(ctx context.Context, log *models.CreateAuditLog) e
 	changesJSON := marshalAuditMap(log.Changes)
 	metadataJSON := marshalAuditMap(log.Metadata)
 
+	// A zero actor means the platform itself acted (a background evaluation, a
+	// scheduled sweep). actor_id has a users FK, so that has to be written as
+	// NULL rather than the zero UUID, which would fail the insert and take the
+	// realtime broadcast down with it.
+	var actorID *uuid.UUID
+	if log.UserID != uuid.Nil {
+		id := log.UserID
+		actorID = &id
+	}
+
 	query := `
 		INSERT INTO audit_logs (organization_id, actor_id, action, entity_type, entity_id, ip_address, user_agent, changes, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 	_, err := r.db.Exec(ctx, query,
-		log.OrgID, log.UserID, string(log.Action), string(log.EntityType), log.EntityID,
+		log.OrgID, actorID, string(log.Action), string(log.EntityType), log.EntityID,
 		log.IPAddress, log.UserAgent, changesJSON, metadataJSON,
 	)
 	return err

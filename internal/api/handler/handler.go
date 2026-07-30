@@ -4,6 +4,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/admin"
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/advisor"
 	"github.com/warmbly/warmbly/internal/app/aiagent"
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/app/analytics"
@@ -189,6 +190,13 @@ type Handler struct {
 	// Seed inbox-placement testing.
 	PlacementRepo    repository.PlacementRepository
 	PlacementService placement.Service
+
+	// Advisor: continuously-evaluated recommendations about deliverability,
+	// mailbox config, warmup, campaign performance, copy, and list hygiene.
+	// The repository is held alongside the service so a read can cheaply check
+	// how stale the findings are before deciding to re-evaluate inline.
+	AdvisorService    advisor.Service
+	AdvisorRepository repository.AdvisorRepository
 
 	// Customer-facing webhooks (subscribe → HMAC-signed delivery).
 	WebhookService webhook.Service
