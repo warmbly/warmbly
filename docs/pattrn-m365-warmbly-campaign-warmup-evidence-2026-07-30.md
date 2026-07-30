@@ -5,11 +5,11 @@ Secret-free operational evidence from the live Warmbly host `mail.pattrndata.ai`
 ## Live service state
 
 - Worktree branch: `feat/warmbly-twentycrm-approval-pack`
-- Worktree commit: `044a7530`
+- Worktree commit: `ac60dbbf`
 - Backend health: `GET http://127.0.0.1:8080/health -> HTTP 200`, body `{"status":"ok"}`
 - Docker services observed running/healthy where healthcheck exists: `backend`, `mailpit`, `nats`, `postgres`, `realtime`, `redis`, `tracking`, `web`, `worker`.
 - `TASKS_PROVIDER=local` on backend/worker.
-- Backend Graph env key presence: `BOX_OUTLOOK_TENANT_ID`, `BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET` present; values not recorded.
+- Backend Graph app-only tenant/client/application-credential env refs present; values not recorded.
 
 ## Controlled Warmbly-native campaign proof
 
@@ -48,7 +48,82 @@ campaign_contact_progress:
 dead_letters_for_campaign=0
 ```
 
-Caveat: Microsoft Graph `Sent Items` readback for this specific Warmbly campaign marker returned `sent_items_matches=0`. Follow-up inspection showed the campaign task rows were marked `completed` after Warmbly successfully queued/published the send event, but the task rows did not persist the generated RFC `Message-ID` and worker logs no longer contained a matching send-success line for the smoke task IDs. So this proof is now classified more narrowly as **Warmbly campaign enqueue/control-plane proof**, not confirmed worker-send or independent Microsoft Sent Items proof. A code fix was added to persist campaign/user-email task `message_id` values so future proofs have a stable Graph/inbox correlation key.
+Caveat: Microsoft Graph `Sent Items` readback for this specific Warmbly campaign marker returned `sent_items_matches=0`. Follow-up inspection showed the campaign task rows were marked `completed` after Warmbly successfully queued/published the send event, but the task rows did not persist the generated RFC `Message-ID` and worker logs no longer contained a matching send-success line for the smoke task IDs. So this proof was classified more narrowly as **Warmbly campaign enqueue/control-plane proof**, not confirmed worker-send or independent Microsoft Sent Items proof. A code fix was added to persist campaign/user-email task `message_id` values so future proofs have a stable Graph/inbox correlation key.
+
+## Confirmed Warmbly-native worker + Microsoft Sent Items proof after Message-ID persistence
+
+Scope:
+
+- Internal-only recipient: `rohit@pattrndata.io`
+- Explicit sender pool: `james@pattrndata.com` (`email_account_id=ea4b17db-80b9-445b-9c28-8d67679dc4a5`)
+- Marker: `pwproof-20260730162702`
+- Campaign id: `28be1c26-0e2c-44ae-bec6-5fe2e0c4e24a`
+- Worktree commit: `ac60dbbf`
+- Backend health: `GET http://127.0.0.1:8080/health -> HTTP 200`, body `{"status":"ok"}`
+- Preflight returned `passed=false`, `score=75` only because `unsubscribe_header` was disabled for the internal-only proof; campaign readiness, schedule window, and daily-limit checks passed.
+
+Live DB/API readback:
+
+```text
+campaign=28be1c26-0e2c-44ae-bec6-5fe2e0c4e24a
+name=Proof pwproof-20260730162702
+status=completed
+sender_strategy=explicit
+daily_limit=3
+open_tracking=false
+link_tracking=false
+
+campaign_logs:
+- started: Campaign started @ 2026-07-30 16:27:05.205888+00
+- email_sent: Email sent to rohit@pattrndata.io @ 2026-07-30 16:27:08.537635+00
+- completed: Campaign completed: all emails sent @ 2026-07-30 16:27:09.336924+00
+
+campaign_contact_progress:
+- contact_id=cb2a16ad-b41f-4b07-aafb-4d595cd672e5
+- sequence_id=740a9b8d-d3d8-45a4-81c7-cd94115b5337
+- sent_at=2026-07-30 16:27:08.503006+00
+- bounced_at/replied_at/opened_at/clicked_at empty
+
+tasks:
+- 84895b69-a6be-446a-95dd-40f98b9dfa44 campaign completed
+  scheduled=2026-07-30 16:27:07.630613+00
+  completed=2026-07-30 16:27:08.541864+00
+  sender=james@pattrndata.com
+  message_id=<bc44ce03-5ce4-4a83-893c-fff6d693b4e4@pattrndata.com>
+- 3457cfe2-395f-4176-bc9a-adbc8f853fd5 campaign completed
+  scheduled=2026-07-30 16:00:00+00
+  completed=2026-07-30 16:27:09.350378+00
+  sender=james@pattrndata.com
+  message_id empty (completion/check task)
+
+dead_letters_for_campaign=0
+```
+
+Worker send-success log:
+
+```json
+{"level":"info","task_id":"84895b69-a6be-446a-95dd-40f98b9dfa44","message_id":"<bc44ce03-5ce4-4a83-893c-fff6d693b4e4@pattrndata.com>","provider_msg_id":"<bc44ce03-5ce4-4a83-893c-fff6d693b4e4@pattrndata.com>","time":"2026-07-30T16:27:09Z","message":"Email sent successfully"}
+```
+
+Microsoft Graph app-only Sent Items readback:
+
+```text
+graph_auth_present=True
+subject_marker_matches=1
+subject=Pattrn Warmbly proof pwproof-20260730162702
+internetMessageId=<bc44ce03-5ce4-4a83-893c-fff6d693b4e4@pattrndata.com>
+sentDateTime=2026-07-30T16:27:08Z
+to=rohit@pattrndata.io
+```
+
+No warmup was activated as part of this proof:
+
+```text
+warmup_flag_set=0
+pending_or_active_warmup_tasks=0
+warmup_emails_sent_today=0
+warmup_emails_replied_today=0
+```
 
 ## Prior direct Graph send readback still present
 
@@ -121,11 +196,12 @@ Cleared:
 - Three active Outlook-linked Warmbly accounts exist.
 - Warmup pools are seeded.
 - All three linked accounts are premium `recipient_only`, healthy, and `warmup=NULL`.
-- Controlled Warmbly-native internal campaign proof completed in Warmbly DB/API with no campaign dead letters, but follow-up evidence narrows this to enqueue/control-plane proof because worker-send/Sent Items proof was not available for the marker.
+- Controlled Warmbly-native internal campaign proof completed in Warmbly DB/API with no campaign dead letters.
+- Follow-up Warmbly-native proof at commit `ac60dbbf` persisted the worker RFC `Message-ID`, emitted a worker send-success log, and was independently found in Microsoft Graph Sent Items for `james@pattrndata.com`.
 
 Still closed / caveated:
 
 - Warmup activation gate: closed; `warmup=NULL`, no pending/active warmup tasks, current-day warmup send/reply counters zero.
 - Prospect/cold campaign gate: closed; internal-only proof does not approve prospect sends.
-- Warmbly-native campaign proof lacks independent Graph Sent Items readback for the campaign marker; investigate sender implementation / save-to-sent behavior before treating this as full Microsoft-delivery proof.
+- Full Microsoft-delivery proof for the pilot sender is now present for `james@pattrndata.com`; repeat the same proof per additional sender/shared mailbox before expansion or warmup waves.
 - Expansion gate: closed; no approval here for additional kiosk/shared-mailbox expansion.
