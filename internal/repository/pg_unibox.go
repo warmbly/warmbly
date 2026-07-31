@@ -108,11 +108,18 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 	_, err := r.db.Exec(ctx, query,
 		e.ID, userID, e.EmailID, e.Mailbox, e.ThreadID, e.MessageID,
 		e.GmailID, e.ParentID, e.UID, e.ModSeq,
-		e.Flags, e.BCC, e.CC, e.FromAddr, e.InReplyTo, e.ReplyTo,
-		e.ToAddr, e.Subject, e.Size, e.InternalDate, e.SentDate,
+		nonNilStrings(e.Flags), nonNilStrings(e.BCC), nonNilStrings(e.CC), nonNilStrings(e.FromAddr), nonNilStrings(e.InReplyTo), nonNilStrings(e.ReplyTo),
+		nonNilStrings(e.ToAddr), e.Subject, e.Size, e.InternalDate, e.SentDate,
 		e.Snippet, e.Seen, e.CreatedAt, e.UpdatedAt,
 	)
 	return err
+}
+
+func nonNilStrings(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
 }
 
 func (r *uniboxRepository) UpdateEntry(ctx context.Context, userID, emailID, id uuid.UUID, e *UpdateUniboxEntry) error {

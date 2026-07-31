@@ -16,6 +16,10 @@ import (
 )
 
 func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewEmail) error {
+	if e == nil || e.Message == nil {
+		return fmt.Errorf("NEW_EMAIL event missing message")
+	}
+
 	// Check for warmup token header in message headers.
 	// Try the current header name first, then the legacy "X-Warmbly-Token"
 	// so messages in flight during the rollout continue to verify.

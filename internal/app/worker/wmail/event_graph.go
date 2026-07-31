@@ -78,7 +78,7 @@ func (w *WMail) onGraphMessageAdd(ctx context.Context, msg *models.EmailMessageD
 	}
 
 	w.maybeEmitBounce(msg)
-	return w.onEvent(models.JobEventTypeNewEmail, data)
+	return w.onNewEmailEvent(data)
 }
 
 // onGraphMessageRemove emits REMOVE_EMAIL for a message deleted or moved out of a
