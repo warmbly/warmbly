@@ -185,9 +185,10 @@ func (b *NATSBus) Publish(ctx context.Context, topic, key string, payload []byte
 		Header:  nats.Header{},
 	}
 	if key != "" {
-		// Nats-Msg-Id enables JetStream's built-in dedup window so retries of
-		// the same logical event don't get persisted twice.
-		msg.Header.Set(nats.MsgIdHdr, key)
+		// Carried as a plain header, never as Nats-Msg-Id: the key is a
+		// partition/affinity hint (one mailbox, one org), not a unique event
+		// id, so feeding it to JetStream's dedup window would silently drop
+		// every event after the first for that key within the window.
 		msg.Header.Set("Warmbly-Key", key)
 	}
 
@@ -248,7 +249,7 @@ func (b *NATSBus) Subscribe(ctx context.Context, topics []string, group string, 
 		// on the exact separator and should use Subject() if it needs to
 		// compare against a Kafka-style topic name.
 		topic := strings.TrimPrefix(m.Subject(), b.prefix+".")
-		if err := handler(hctx, Message{
+		if err := invokeHandler(hctx, handler, Message{
 			Topic:   topic,
 			Key:     key,
 			Payload: m.Data(),

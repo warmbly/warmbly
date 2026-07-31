@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/warmbly/warmbly/internal/client/netbind"
 )
 
 func VerifyImap(ctx context.Context, host string, port int, user, pass string) bool {
@@ -20,7 +21,13 @@ func VerifyImap(ctx context.Context, host string, port int, user, pass string) b
 	}
 	defer conn.Close()
 
-	tlsConn := tls.Client(conn, &tls.Config{ServerName: host})
+	// Matches the sync client's TLS policy: MAIL_TLS_INSECURE is a dev-only
+	// knob for the local self-signed sandbox, never set in production. Without
+	// it, validation rejects mailboxes the worker would go on to sync fine.
+	tlsConn := tls.Client(conn, &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: netbind.InsecureTLS(),
+	})
 	if err := tlsConn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return false
 	}

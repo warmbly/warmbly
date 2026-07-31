@@ -11,8 +11,16 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+// ValidateCredentials seals a copy of the credentials with the org DEK and asks
+// a worker to try them against the live servers. The caller's credentials are
+// never mutated: they go on to be stored under the credentials key, and sealing
+// them in place here would double-encrypt the stored password.
 func (s *emailService) ValidateCredentials(ctx context.Context, orgID uuid.UUID, workerID string, credentials *models.SmtpImap) *errx.Error {
 	processID := uuid.New()
+
+	if credentials == nil || credentials.SMTP == nil || credentials.IMAP == nil {
+		return errx.ErrEmailCredentialsRequired
+	}
 
 	cipher, err := s.cipherService.Cipher(ctx, orgID)
 	if err != nil {
@@ -20,13 +28,15 @@ func (s *emailService) ValidateCredentials(ctx context.Context, orgID uuid.UUID,
 		return errx.InternalError()
 	}
 
-	credentials.IMAP.Password, err = cipher.Encrypt(ctx, credentials.IMAP.Password)
+	sealedIMAP := *credentials.IMAP
+	sealedIMAP.Password, err = cipher.Encrypt(ctx, credentials.IMAP.Password)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
 	}
 
-	credentials.SMTP.Password, err = cipher.Encrypt(ctx, credentials.SMTP.Password)
+	sealedSMTP := *credentials.SMTP
+	sealedSMTP.Password, err = cipher.Encrypt(ctx, credentials.SMTP.Password)
 	if err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()
@@ -35,7 +45,7 @@ func (s *emailService) ValidateCredentials(ctx context.Context, orgID uuid.UUID,
 	if err := s.publisher.PublishEmailValidation(ctx, workerID, models.EventWorkerEmailValidation{
 		OrgID:       orgID,
 		ProcessID:   processID,
-		Credentials: credentials,
+		Credentials: &models.SmtpImap{SMTP: &sealedSMTP, IMAP: &sealedIMAP},
 	}); err != nil {
 		sentry.CaptureException(err)
 		return errx.InternalError()

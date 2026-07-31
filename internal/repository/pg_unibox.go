@@ -105,14 +105,26 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 		ON CONFLICT (id) DO NOTHING
 	`
 
+	// The array columns are NOT NULL. A nil Go slice binds as SQL NULL, so a
+	// message with no In-Reply-To (any thread root) would fail the insert.
 	_, err := r.db.Exec(ctx, query,
 		e.ID, userID, e.EmailID, e.Mailbox, e.ThreadID, e.MessageID,
 		e.GmailID, e.ParentID, e.UID, e.ModSeq,
-		e.Flags, e.BCC, e.CC, e.FromAddr, e.InReplyTo, e.ReplyTo,
-		e.ToAddr, e.Subject, e.Size, e.InternalDate, e.SentDate,
+		textArray(e.Flags), textArray(e.BCC), textArray(e.CC), textArray(e.FromAddr),
+		textArray(e.InReplyTo), textArray(e.ReplyTo), textArray(e.ToAddr),
+		e.Subject, e.Size, e.InternalDate, e.SentDate,
 		e.Snippet, e.Seen, e.CreatedAt, e.UpdatedAt,
 	)
 	return err
+}
+
+// textArray coalesces a nil slice to an empty one so it binds as '{}' rather
+// than NULL.
+func textArray(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
 }
 
 func (r *uniboxRepository) UpdateEntry(ctx context.Context, userID, emailID, id uuid.UUID, e *UpdateUniboxEntry) error {

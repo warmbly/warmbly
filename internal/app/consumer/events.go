@@ -3,9 +3,9 @@ package jobs
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -14,7 +14,12 @@ type EventHandler[T any] func(ctx context.Context, event T) error
 func (s *JobsService) HandleEvent(ctx context.Context, event *models.JobEvent) error {
 	resp, ok := s.eventHandlers[event.Type]
 	if !ok {
-		return errors.New("invalid event type")
+		// Ack rather than nak: an unregistered type is not a transient failure,
+		// so redelivering it just burns the retry budget and fills the log on
+		// every occurrence. Warn so a genuinely missing handler still surfaces.
+		log.Warn().Str("event_type", string(event.Type)).
+			Msg("no handler registered for job event type, dropping")
+		return nil
 	}
 	return resp(ctx, event.Body)
 }

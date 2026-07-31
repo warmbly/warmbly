@@ -30,7 +30,10 @@ func (m *MailManager) AddWMail(
 		m.cipherService,
 	)
 	if err != nil {
-		return nil
+		// Surface it: swallowing this leaves the mailbox absent from the map
+		// while the caller logs a successful load, so a mailbox that cannot
+		// authenticate looks connected and silently never sends or syncs.
+		return err
 	}
 
 	m.Emails[data.ID] = newMail

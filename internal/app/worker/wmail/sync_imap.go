@@ -33,7 +33,7 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 				return err
 			}
 			if count > 0 {
-				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, 0); err != nil {
+				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, 0, count); err != nil {
 					return err
 				}
 			}
@@ -49,7 +49,7 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 				return err
 			}
 			if count > 0 {
-				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, befBox.HighestModSeq); err != nil {
+				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, befBox.HighestModSeq, count); err != nil {
 					return err
 				}
 			}

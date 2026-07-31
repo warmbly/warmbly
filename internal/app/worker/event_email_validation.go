@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -32,15 +31,28 @@ func (w *WorkerService) HandleEmailValidation(ctx context.Context, data models.E
 		return nil
 	}
 
-	var group sync.WaitGroup
 	results := make(chan bool, 2)
-	group.Add(2)
-	go func() {
-		results <- email.VerifyImap(ctx, data.Credentials.IMAP.Host, data.Credentials.IMAP.Port, data.Credentials.IMAP.Username, data.Credentials.IMAP.Password)
-	}()
-	go func() {
-		results <- email.VerifySMTP(ctx, data.Credentials.SMTP.Host, data.Credentials.SMTP.Port, data.Credentials.SMTP.Username, data.Credentials.SMTP.Password)
-	}()
+	// Credentials are untrusted user input. A panic in a bare goroutine cannot
+	// be recovered by the caller and would take down the whole worker along
+	// with every mailbox assigned to it, so each probe recovers its own.
+	probe := func(fn func() bool) {
+		go func() {
+			ok := false
+			defer func() {
+				if r := recover(); r != nil {
+					sentry.CurrentHub().Recover(r)
+				}
+				results <- ok
+			}()
+			ok = fn()
+		}()
+	}
+	probe(func() bool {
+		return email.VerifyImap(ctx, data.Credentials.IMAP.Host, data.Credentials.IMAP.Port, data.Credentials.IMAP.Username, data.Credentials.IMAP.Password)
+	})
+	probe(func() bool {
+		return email.VerifySMTP(ctx, data.Credentials.SMTP.Host, data.Credentials.SMTP.Port, data.Credentials.SMTP.Username, data.Credentials.SMTP.Password)
+	})
 
 	result1 := <-results
 	result2 := <-results

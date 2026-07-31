@@ -26,6 +26,11 @@ const (
 	MaxEmailBodySize = 200 * 1024 // 200 KB
 	MaxEmailFolders  = 30
 
+	// ImapFetchBatchSize bounds how many messages one IMAP sync window holds in
+	// memory. A first sync matches the whole folder, so without this a large
+	// mailbox would buffer every envelope before fetching any body.
+	ImapFetchBatchSize = 200
+
 	// Sequences. Empty by default so the editor shows a smart, position-based
 	// label (e.g. "Email 1") until the user names the step themselves.
 	SequenceDefaultName  = ""

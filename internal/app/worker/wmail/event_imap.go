@@ -99,7 +99,13 @@ func (w *WMail) onImapEmailUpdate(ctx context.Context, msg *models.EmailMessageD
 
 		w.maybeEmitBounce(msg)
 
-		if err := w.onEvent(models.JobEventTypeNewEmail, data); err != nil {
+		// The consumer decodes NEW_EMAIL as JobEventNewEmail{user_id, message}.
+		// Sending the bare message left Message nil on the far side and the
+		// consumer panicked on the first inbound mail.
+		if err := w.onEvent(models.JobEventTypeNewEmail, &models.JobEventNewEmail{
+			UserID:  w.UserID,
+			Message: data,
+		}); err != nil {
 			return err
 		}
 	} else {

@@ -136,7 +136,7 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 		}
 		hctx, cancel := context.WithTimeout(ctx, handlerTimeout())
 		defer cancel()
-		if err := handler(hctx, Message{
+		if err := invokeHandler(hctx, handler, Message{
 			Topic:   topic,
 			Key:     string(msg.Key),
 			Payload: msg.Value,

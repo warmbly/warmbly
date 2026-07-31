@@ -16,6 +16,13 @@ import (
 )
 
 func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewEmail) error {
+	// Drop malformed events rather than dereferencing nil: this handler runs on
+	// the shared consumer, so one bad payload would otherwise panic the process
+	// and stop every org's event processing.
+	if e == nil || e.Message == nil {
+		log.Warn().Msg("NEW_EMAIL event without a message body, dropping")
+		return nil
+	}
 	// Check for warmup token header in message headers.
 	// Try the current header name first, then the legacy "X-Warmbly-Token"
 	// so messages in flight during the rollout continue to verify.

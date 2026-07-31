@@ -191,12 +191,40 @@ func (c *Client) SelectForSync(mailbox string) (uint32, *errx.MailError) {
 	return data.NumMessages, nil
 }
 
-func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.MailError {
-	// 1:* — an empty SeqSet has no encodable ranges and panics inside
-	// go-imap; ChangedSince narrows the result server-side.
-	var allMessages imap.SeqSet
-	allMessages.AddRange(1, 0)
-	cmd := c.client.Fetch(allMessages, &imap.FetchOptions{
+// FetchChanges walks the selected mailbox in bounded sequence windows, emitting
+// each changed message through OnUpdate. count is the mailbox's message count
+// from SelectForSync; it bounds the walk so a first sync of a large mailbox
+// (ChangedSince 0 matches everything) can't buffer the whole folder at once.
+func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64, count uint32) *errx.MailError {
+	if count == 0 {
+		return nil
+	}
+	const batch = uint32(config.ImapFetchBatchSize)
+	for lo := uint32(1); lo <= count; lo += batch {
+		hi := lo + batch - 1
+		if hi > count {
+			hi = count
+		}
+		if err := c.fetchRange(ctx, lastModSeq, lo, hi); err != nil {
+			return err
+		}
+		// The caller's context is the mailbox's sync context; abandon a long
+		// walk promptly when the mailbox is removed or the worker shuts down.
+		if ctx.Err() != nil {
+			return nil
+		}
+	}
+	return nil
+}
+
+// fetchRange fetches one sequence window and emits it. Bodies are fetched only
+// after the window's command is closed — a nested FETCH on the same connection
+// blocks until the outer one finishes, and the outer one cannot finish while we
+// wait, which deadlocks the sync on the first message.
+func (c *Client) fetchRange(ctx context.Context, lastModSeq uint64, lo, hi uint32) *errx.MailError {
+	var seqs imap.SeqSet
+	seqs.AddRange(lo, hi)
+	cmd := c.client.Fetch(seqs, &imap.FetchOptions{
 		UID:      true,
 		Envelope: true,
 		BodyStructure: &imap.FetchItemBodyStructure{
@@ -212,6 +240,13 @@ func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.Mail
 			Peek:         true,
 		}},
 	})
+	type pending struct {
+		email models.EmailMessageData
+		uid   imap.UID
+		body  imap.BodyStructure
+	}
+	var collected []pending
+
 	for em := cmd.Next(); em != nil; em = cmd.Next() {
 		var email models.EmailMessageData
 		var euid imap.UID
@@ -256,16 +291,21 @@ func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64) *errx.Mail
 		}
 
 		email.Flags = append(email.Flags, headerFlags...)
-		email.BodyPlain, email.BodyHTML = fetchTextParts(c.client, euid, bodyStructure)
-
-		if err := c.OnUpdate(ctx, &email); err != nil {
-			log.Warn().Err(err).Msg("Failed to Send Message Update")
-			return nil
-		}
+		collected = append(collected, pending{email: email, uid: euid, body: bodyStructure})
 	}
 
 	if err := cmd.Close(); err != nil {
 		return c.handleError(err)
+	}
+
+	for i := range collected {
+		p := &collected[i]
+		p.email.BodyPlain, p.email.BodyHTML = fetchTextParts(c.client, p.uid, p.body)
+
+		if err := c.OnUpdate(ctx, &p.email); err != nil {
+			log.Warn().Err(err).Msg("Failed to Send Message Update")
+			return nil
+		}
 	}
 
 	return nil

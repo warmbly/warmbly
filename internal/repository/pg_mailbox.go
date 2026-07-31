@@ -38,8 +38,9 @@ func (r *mailboxRepository) CreateEntry(ctx context.Context, userId, emailId uui
 			updated_at = EXCLUDED.updated_at
 	`
 
+	// attributes is NOT NULL; a nil slice binds as SQL NULL. See textArray.
 	_, err := r.db.Exec(ctx, query,
-		emailId, mb.UIDValidity, mb.Name, mb.Attrs, mb.HighestModSeq, mb.UpdatedAt,
+		emailId, mb.UIDValidity, mb.Name, textArray(mb.Attrs), mb.HighestModSeq, mb.UpdatedAt,
 	)
 	return err
 }

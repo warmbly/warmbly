@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/smtp"
 	"time"
+
+	"github.com/warmbly/warmbly/internal/client/netbind"
 )
 
 func VerifySMTP(ctx context.Context, host string, port int, user, pass string) bool {
@@ -15,11 +17,18 @@ func VerifySMTP(ctx context.Context, host string, port int, user, pass string) b
 	var conn net.Conn
 	var err error
 
+	// Matches the send client's TLS policy: MAIL_TLS_INSECURE is a dev-only
+	// knob for the local self-signed sandbox, never set in production.
+	tlsConf := &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: netbind.InsecureTLS(),
+	}
+
 	switch port {
 	case 465:
 		dialer := &tls.Dialer{
 			NetDialer: &net.Dialer{Timeout: 5 * time.Second},
-			Config:    &tls.Config{ServerName: host},
+			Config:    tlsConf,
 		}
 		conn, err = dialer.DialContext(ctx, "tcp", addr)
 
@@ -30,24 +39,25 @@ func VerifySMTP(ctx context.Context, host string, port int, user, pass string) b
 	default:
 		return false
 	}
+	// A bad host is ordinary user input, not an exceptional case: dial failed
+	// means conn is nil, and closing it would panic this goroutine and take
+	// the whole worker down with it.
+	if err != nil || conn == nil {
+		return false
+	}
 	defer conn.Close()
 
-	var c *smtp.Client
-	switch port {
-	case 465:
-		c, err = smtp.NewClient(conn, host)
-	case 587:
-		c, err = smtp.NewClient(conn, host)
-		if err == nil {
-			if err = c.StartTLS(&tls.Config{ServerName: host}); err != nil {
-				return false
-			}
-		}
-	}
+	c, err := smtp.NewClient(conn, host)
 	if err != nil {
 		return false
 	}
 	defer c.Close()
+
+	if port == 587 {
+		if err := c.StartTLS(tlsConf); err != nil {
+			return false
+		}
+	}
 
 	auth := smtp.PlainAuth("", user, pass, host)
 

@@ -25,9 +25,13 @@ package eventbus
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // EventBus is the transport-level interface. Implementations must be safe for
@@ -83,6 +87,24 @@ type Message struct {
 // the substitution rule.
 func Subject(topic string) string {
 	return strings.ReplaceAll(topic, ":", ".")
+}
+
+// invokeHandler runs a Handler and converts a panic into an error. Handlers
+// process payloads produced by other services, so one malformed or unexpected
+// message must not take the whole subscriber process down and stop every
+// organization's event processing. The message is nak'd like any other failure.
+func invokeHandler(ctx context.Context, handler Handler, msg Message) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("eventbus: handler panic on topic %s: %v", msg.Topic, r)
+			log.Error().
+				Str("topic", msg.Topic).
+				Str("key", msg.Key).
+				Bytes("stack", debug.Stack()).
+				Msg("eventbus handler panic recovered")
+		}
+	}()
+	return handler(ctx, msg)
 }
 
 // handlerTimeout is the per-message processing budget shared by both bus

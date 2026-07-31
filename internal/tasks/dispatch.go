@@ -38,7 +38,10 @@ func (s *tasksService) HandleTask(task *proto.ProcessTask) *errx.Error {
 		return s.HandleCampaignTask(task)
 	case "warmup":
 		return s.HandleEmailTask(task)
-	case "user_email":
+	// "email" is the task_type enum value emailsend writes for a one-off send
+	// (compose, reply, agent-draft approval). It is not spelled "user_email"
+	// anywhere in the database.
+	case "email":
 		return s.HandleUserEmailTask(task)
 	default:
 		log.Warn().Str("task_id", taskID.String()).Str("task_type", rec.TaskType).Msg("task dispatch: unknown task type")
