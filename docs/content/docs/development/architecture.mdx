@@ -10,6 +10,27 @@ Warmbly is split into two planes:
 
 The boundary exists for two reasons. First, cold-mail deliverability lives at the IP level, so workers must be spread across distinct machine-level network identities. Second, the control plane owns relational state and the worker fleet should remain disposable.
 
+<Mermaid
+  chart={`
+flowchart LR
+  subgraph CP["Control plane"]
+    API["Backend"] --> PG[("Postgres")]
+    API --> BUS{{"Event bus"}}
+    BUS --> CONS["Consumer"] --> PG
+    TRK["Tracking"] --> BUS
+    API -. "Redis pub/sub" .-> RT["Realtime"]
+  end
+  subgraph EP["Execution plane"]
+    W1["Worker VPS"]
+    W2["Worker VPS"]
+  end
+  BUS <--> W1
+  BUS <--> W2
+  W1 --> P["Gmail · Microsoft · SMTP"]
+  W2 --> P
+`}
+/>
+
 ## Services
 
 | Service | Language | Plane | Notes |
