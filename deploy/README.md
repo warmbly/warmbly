@@ -12,15 +12,19 @@ Two distinct planes, deployed differently.
 ```
 deploy/
 ├── docker/
-│   ├── backend.Dockerfile
+│   ├── backend.Dockerfile          # also builds the seed + migrate binaries
 │   ├── consumer.Dockerfile
 │   ├── worker.Dockerfile
-│   └── realtime.Dockerfile
+│   ├── realtime.Dockerfile
+│   ├── go-dev.Dockerfile           # hot-reload dev images (make app)
+│   ├── rust-dev.Dockerfile
+│   ├── elixir-dev.Dockerfile
+│   └── air.toml
 └── config/
     └── env.example
 ```
 
-The tracking Dockerfile lives at `tracking/Dockerfile`. The local-dev compose is `docker-compose.yml` at the repo root.
+The tracking Dockerfile lives at `tracking/Dockerfile`, and the frontends build from `web/Dockerfile` and `admin/Dockerfile` (nginx static builds with runtime config injection). The self-host compose is `docker-compose.yml` at the repo root.
 
 ## Building images
 
@@ -30,18 +34,21 @@ docker build -f deploy/docker/consumer.Dockerfile -t warmbly/consumer .
 docker build -f deploy/docker/worker.Dockerfile   -t warmbly/worker   .
 docker build -f deploy/docker/realtime.Dockerfile -t warmbly/realtime .
 docker build -f tracking/Dockerfile               -t warmbly/tracking tracking/
+docker build -f web/Dockerfile                    -t warmbly/web      web/
+docker build -f admin/Dockerfile                  -t warmbly/admin    admin/
 ```
 
-GitHub Actions publishes these to GHCR automatically. See [the deployment guide](https://docs.warmbly.com/development/deployment-guide/).
+The default builds have no Kafka/Avro support; add `--build-arg GO_TAGS=kafka` (Go images) or `--build-arg CARGO_FEATURES=kafka` (tracking) to opt in.
+
+GitHub Actions publishes these to GHCR automatically. See [the self-hosting guide](https://docs.warmbly.com/development/deployment-guide/).
 
 ## Local development
 
 ```bash
-make infra  # postgres, redis, kafka, etc. (leave running, shared across worktrees)
-make app    # backend, consumer, worker, tracking, realtime, web (hot reload)
-make sim    # adds premium + dedicated workers (prod-image flow)
-make seed   # rich fixture
-make tools  # kafka-ui at :18090
+make dev    # one-command native dev stack (infra + migrations + seed + app)
+make infra  # postgres, redis, nats, mailpit (leave running, shared across worktrees)
+make app    # backend, consumer, worker, tracking, realtime, web, admin (hot reload, in Docker)
+make seed   # rich fixtures
 make reset  # nuke volumes
 ```
 
@@ -51,7 +58,7 @@ Full reference: [local development](https://docs.warmbly.com/development/local-d
 
 The Dockerfiles in `deploy/docker/` are the deployment unit. Production runs on Railway. Other valid targets: Fly.io, ECS Fargate, single-VPS systemd. Migrations run automatically on backend boot.
 
-Configuration is env-driven — see `deploy/config/env.example` for the full env reference, or [the deployment guide](https://docs.warmbly.com/development/deployment-guide/) for a step-by-step.
+Configuration is env-driven — see `deploy/config/env.example` for the full env reference, or [the self-hosting guide](https://docs.warmbly.com/development/deployment-guide/) for a step-by-step.
 
 ### Realtime transport
 
@@ -84,13 +91,13 @@ curl -fsSL https://api.example.com/worker-install.sh | sudo bash -s -- \
   --enroll wmenroll_... \
   --api-base https://api.example.com
 
-# or fully manual:
+# or fully manual, passing a prepared env file:
 sudo bash scripts/install-worker.sh \
-  --kafka kafka.example.com:9092 \
-  --schema-registry https://schema.example.com \
-  --redis redis://cache.example.com:6379 \
-  --aws-region us-east-1 --aws-key ... --aws-secret ...
+  --image ghcr.io/<owner>/warmbly/worker:prod \
+  --env-file worker.env
 ```
+
+`scripts/install-worker.sh --help` lists every flag (`--ips` for multi-IP machines, `--update`, `--uninstall`, `--purge`, `--status`, `--no-auto-update`, plus the legacy Kafka/AWS prompts).
 
 ### Why per-VPS instead of Kubernetes DaemonSet
 
@@ -102,24 +109,22 @@ Workers in production should be assigned to a worker profile in the dashboard. T
 
 | Env var | Source | Notes |
 |---------|--------|-------|
-| `APP_ENV` | profile | `prod` selects `alias/master-key`; otherwise `alias/master-key-dev` |
-| `AWS_REGION` | profile (via AWS credentials row) | |
-| `AWS_ACCESS_KEY_ID` | profile (via AWS credentials row) | |
-| `AWS_SECRET_ACCESS_KEY` | profile (via AWS credentials row) | encrypted at rest |
-| `KAFKA_BOOTSTRAP_SERVERS` | profile | |
-| `KAFKA_SASL_USERNAME` | profile | |
-| `KAFKA_SASL_PASSWORD` | profile | encrypted at rest |
-| `SCHEMA_REGISTRY_URL` | profile | |
-| `SCHEMA_REGISTRY_KEY` | profile | |
-| `SCHEMA_REGISTRY_SECRET` | profile | encrypted at rest |
+| `APP_ENV` | profile | |
+| `EVENTBUS_PROVIDER` / `NATS_URL` | profile | `nats` on the default stack |
+| `CODEC_PROVIDER` | profile | `json` on the default stack |
 | `REDIS` | profile | full URL with embedded password; encrypted at rest |
+| `ENCRYPTED_KEYS_BACKEND_URL` | profile | the backend's public/internal URL |
+| `ENCRYPTED_KEYS_WORKER_TOKEN` | profile | must equal the backend's `INTERNAL_API_TOKEN` |
+| `BOX_GOOGLE_*` / `BOX_OUTLOOK_*` | profile | mailbox OAuth clients; needed for token refresh |
+| `KAFKA_*` / `SCHEMA_REGISTRY_*` | profile | Kafka path only; secrets encrypted at rest |
+| `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | profile (via AWS credentials row) | only when using AWS KMS/S3; secret encrypted at rest |
 | `WORKER_TIER` | (worker row) | `shared` or `dedicated` |
 
 The worker does **not** open a Postgres connection. Do not add one.
 
 ## Auto-update
 
-Each worker profile picks a release channel (`pinned` / `stable` / `dev`) and an `auto_update` toggle. When a GitHub release fires the webhook, the backend resolves the channel and (if `auto_update=true`) rolls every assigned worker. See [the deployment guide](https://docs.warmbly.com/development/deployment-guide/).
+Each worker profile picks a release channel (`pinned` / `stable` / `dev`) and an `auto_update` toggle. When a GitHub release fires the webhook, the backend resolves the channel and (if `auto_update=true`) rolls every assigned worker. See [the self-hosting guide](https://docs.warmbly.com/development/deployment-guide/).
 
 ## Health checks
 
@@ -132,5 +137,5 @@ curl http://localhost:4000/health   # realtime
 ## Documentation
 
 - [Local development](https://docs.warmbly.com/development/local-development/)
-- [Deployment guide](https://docs.warmbly.com/development/deployment-guide/)
+- [Self-hosting guide](https://docs.warmbly.com/development/deployment-guide/)
 - [Architecture](https://docs.warmbly.com/development/architecture/)

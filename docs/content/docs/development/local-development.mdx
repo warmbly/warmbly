@@ -26,8 +26,9 @@ make dev
 This is the whole setup for a fresh clone. It brings up the no-cloud Docker infra
 (postgres, redis, nats, mailpit), waits until
 everything is actually ready, applies migrations, loads the seed fixtures,
-installs web dependencies on first run, and then starts the backend, consumer,
-both shared workers, and the dashboard together in your terminal.
+installs web dependencies on first run, starts the realtime and tracking
+services as containers, and then runs the backend, consumer, worker, dashboard,
+and admin panel together in your terminal.
 
 Open `http://localhost:5173` and log in with `dev@warmbly.com` / `password123`.
 
@@ -40,9 +41,10 @@ make dev SEED=false           # skip fixture seeding
 make dev AI_PROVIDER=ollama   # with the AI assistant on (see the AI provider section)
 ```
 
-Tracking (`:3000`) and realtime (`:4000`) are deliberately not part of `make dev`;
-start them with `make tracking` / `make realtime` when you need pixels, click
-redirects, or live dashboard updates. They need the Rust and Elixir toolchains.
+Tracking (`:3000`) and realtime (`:4000`) run as containers under `make dev`, so
+pixels, click redirects, and live dashboard updates work without the Rust or
+Elixir toolchains. The native `make tracking` / `make realtime` targets are for
+iterating on those services themselves.
 
 ## Make targets
 
@@ -108,7 +110,7 @@ The no-cloud stack has no AWS, GCP, Stripe, or Kafka. After `make infra && make 
 - **backend**, **consumer**, **tracking**, **realtime**, **web**, **admin**: app services
 - **worker**: one send/sync worker (scale with `docker compose up --scale worker=N`, or add machines via the SSH enrollment flow)
 
-Encryption, blob storage, and delayed tasks all run on local providers (`KMS_PROVIDER=local`, `BLOB_PROVIDER=filesystem`, `TASKS_PROVIDER=local`), so nothing external is needed. See the [deployment guide](/development/deployment-guide/) for the provider switches.
+Encryption, blob storage, and delayed tasks all run on local providers (`KMS_PROVIDER=local`, `BLOB_PROVIDER=filesystem`, `TASKS_PROVIDER=local`), so nothing external is needed. See the [self-hosting guide](/development/deployment-guide/) for the provider switches.
 
 ## Service URLs
 
@@ -164,7 +166,7 @@ When `SEED_RICH=true` (default in `docker-compose.yml`), also loads:
 
 ## Encryption and storage
 
-The local stack needs no AWS. Envelope encryption uses a local AES master key (`KMS_PROVIDER=local`, `KMS_LOCAL_MASTER_KEY`, a fixed dev value in the Makefile), and blobs (avatars, logos) go to a directory (`BLOB_PROVIDER=filesystem`, `BLOB_FS_ROOT`). Flip `KMS_PROVIDER=aws` / `BLOB_PROVIDER=s3` to use AWS KMS and any S3-compatible store instead. See the [deployment guide](/development/deployment-guide/) for every provider switch.
+The local stack needs no AWS. Envelope encryption uses a local AES master key (`KMS_PROVIDER=local`, `KMS_LOCAL_MASTER_KEY`, a fixed dev value in the Makefile), and blobs (avatars, logos) go to a directory (`BLOB_PROVIDER=filesystem`, `BLOB_FS_ROOT`). Flip `KMS_PROVIDER=aws` / `BLOB_PROVIDER=s3` to use AWS KMS and any S3-compatible store instead. See the [self-hosting guide](/development/deployment-guide/) for every provider switch.
 
 ## Connecting psql / Redis CLI
 
@@ -202,9 +204,9 @@ cache.
 
 ### Tracking (Rust) and realtime (Elixir)
 
-Deliberately kept out of `make dev` and `make run` because they need their own
-toolchains (cargo, elixir + mix). Start them when you need open/click tracking
-or live dashboard updates:
+`make dev` runs both as containers; `make run` does not include them. The native
+targets need their own toolchains (cargo, elixir + mix) and are for working on
+those services directly:
 
 ```bash
 make tracking   # tracking pixel + click redirect service on :3000
@@ -229,7 +231,7 @@ make backend AI_PROVIDER=groq   AI_KEY=gsk_... AI_MODEL=openai/gpt-oss-20b
 make backend AI_PROVIDER=openai AI_KEY=sk-...
 ```
 
-`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so AI credits are not charged and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1–3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [deployment guide](/development/deployment-guide/) for the full provider list.
+`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so AI credits are not charged and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1–3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [self-hosting guide](/development/deployment-guide/) for the full provider list.
 
 ## Mailpit
 
@@ -283,7 +285,7 @@ curl http://localhost:8222/jsz | jq   # JetStream streams + message counts
 curl http://localhost:8222/varz | jq  # server info and connections
 ```
 
-To tail subjects live, use the NATS CLI (`nats` from nats-io) against `nats://localhost:4222`, for example `nats sub 'warmbly.>'`. On the optional Kafka overlay, the event bus is Kafka instead; see the deployment guide.
+To tail subjects live, use the NATS CLI (`nats` from nats-io) against `nats://localhost:4222`, for example `nats sub 'warmbly.>'`. On the optional Kafka overlay, the event bus is Kafka instead; see the [self-hosting guide](/development/deployment-guide/).
 
 ## Troubleshooting
 
@@ -297,5 +299,5 @@ To tail subjects live, use the NATS CLI (`nats` from nats-io) against `nats://lo
 
 - [Sandbox](/development/sandbox/): a fully working demo environment on this stack
 - [Architecture](/development/architecture/): control vs execution plane, encryption model
-- [Deployment guide](/development/deployment-guide/): running in production
+- [Self-hosting](/development/deployment-guide/): running in production
 - [Event system](/development/events/): event bus and topic reference

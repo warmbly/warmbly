@@ -124,7 +124,7 @@ cloud service only if you want one:
 
 Scaling is by mailboxes and workers, not IPs. Reaching it from another machine,
 connecting Gmail, and day-2 operations are all in the
-[deployment guide](https://docs.warmbly.com/development/deployment-guide/).
+[self-hosting guide](https://docs.warmbly.com/development/deployment-guide/).
 
 ## Documentation
 
@@ -134,7 +134,7 @@ The full docs live at **[docs.warmbly.com](https://docs.warmbly.com)**.
 |-----------|----------|
 | [Local development](https://docs.warmbly.com/development/local-development/) | Every make target, the native services, and how seeding works |
 | [Architecture](https://docs.warmbly.com/development/architecture/) | How the control plane and workers split the job, plus the encryption model |
-| [Deployment guide](https://docs.warmbly.com/development/deployment-guide/) | Taking it to production and scaling the worker fleet |
+| [Self-hosting guide](https://docs.warmbly.com/development/deployment-guide/) | Taking it to production and scaling the worker fleet |
 | [API reference](https://docs.warmbly.com/api/) | Endpoints, auth, permissions, and webhooks |
 
 ## Community

@@ -29,7 +29,8 @@
 # LOSING KMS_LOCAL_MASTER_KEY OR CREDENTIALS_ENCRYPTION_KEY IS UNRECOVERABLE:
 # every stored mailbox credential is sealed with them. Back them up.
 #
-# To run on Kafka + S3 instead, overlay docker-compose.kafka.yml (see that file).
+# To run on Kafka + S3 instead, set the provider vars above and rebuild the Go
+# images with --build-arg GO_TAGS=kafka (tracking: --build-arg CARGO_FEATURES=kafka).
 
 x-selfhost-env: &selfhost-env
   APP_ENV: ${APP_ENV:-dev}
