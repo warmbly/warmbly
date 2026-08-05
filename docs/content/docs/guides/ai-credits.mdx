@@ -3,106 +3,86 @@ title: AI credits
 description: How AI credits work in Warmbly, what each AI action costs, the monthly allowance and reset rules, and how to buy top-up packs.
 ---
 
-AI features in Warmbly run on credits. Your plan grants a monthly allowance that refreshes every billing cycle, and you can buy top-up packs that never expire when you need more. This guide covers what each action costs, how the two credit pools work, and how to buy more.
+AI features run on credits. Your plan grants a monthly allowance that refreshes each billing cycle, and top-up packs never expire.
 
 <Callout type="info" title="Who can manage credits">
-The credits card lives on the **AI & credits** tab of **Settings, Billing** and requires the **Manage billing** permission, the same permission that controls the rest of billing. The owner and any role granted billing access can view the balance and buy packs; other members do not see it.
+Everything here lives on the **AI & credits** tab of **Settings > Billing** and needs the **Manage billing** permission. Other members do not see it.
 </Callout>
 
-## The two credit pools
+## The two pools
 
-Every workspace has two separate credit pools:
+| Pool | Refresh | Rollover |
+|------|---------|----------|
+| **Monthly allowance** | Reset to the plan amount each billing cycle | No, unused credits are replaced by the fresh grant |
+| **Purchased credits** | Bought as top-up packs | Yes, they never expire and survive every reset |
 
-- **Monthly allowance.** Granted by your plan and reset to the plan amount at the start of each billing cycle. Unused monthly credits do not roll over, they are replaced by the fresh grant.
-- **Purchased credits.** Bought as top-up packs. They never expire and are not touched by the monthly reset, so they carry over cycle to cycle.
-
-When you run an AI action, Warmbly spends your monthly allowance first and only draws on purchased credits once the monthly pool is empty. That way your top-ups are held in reserve for months where you go over the allowance.
+Spending draws the monthly pool first and only touches purchased credits once it is empty, holding your top-ups in reserve for heavy months.
 
 ## What each action costs
 
-Credits are charged from what each call actually uses. Every action has a flat **minimum** that is reserved up front (this is also what gates an empty balance before any work starts), and after the call finishes the real token usage is priced per model. Small calls cost exactly the minimum; long calls with a lot of context or output pay for what they used.
+Each action reserves a flat **minimum** up front (which also gates an empty balance before work starts), then settles against real token usage after the call.
 
-| Action | Minimum credits |
-|--------|-----------------|
-| Writing assistant draft | 1 |
-| Selection edit in a composer (Edit with AI on selected text) | 1 |
-| AI assistant step (one turn of the dashboard agent) | 1 per turn |
-| Reply draft in the unibox | 2 |
-| Compose draft (grounded new-email draft; a clarifying question costs the same minimum) | 2 |
-| Contact research run | 2 |
-| Single-shot AI step in an automation (classify, extract, generate) | 1 |
-| AI agent step in an automation (per step it takes) | 1 per step |
-| AI switch in an automation with the AI decider (the value decider is free) | 1 |
-| Ask AI branch in an automation (per evaluation) | 1 |
-| Switch step with the AI decider in a campaign sequence (per contact; the value decider is free) | 1 |
-| Per-recipient AI variable in a campaign email, instant mode (per recipient) | 1 |
-| Per-recipient AI variable in a campaign email, research mode (per recipient) | 2 |
+| Action | Minimum |
+|--------|---------|
+| Writing assistant draft, selection edit ("Edit with AI") | 1 |
+| AI assistant step | 1 per turn |
+| Reply draft, compose draft, contact research run | 2 |
+| Single-shot automation AI step (classify, extract, generate) | 1 |
+| Automation AI agent step | 1 per step |
+| AI switch or campaign switch step, AI decider (value decider is free) | 1 |
+| Ask AI branch | 1 per evaluation |
+| Per-recipient AI variable, instant / research mode | 1 / 2 per recipient |
+| Web search by an AI step (only when results are found) | 1 |
 | Inbox agent handled thread | 5 |
-| Web search made by an AI step (only when results are found) | 1 |
 
-How the usage pricing works:
+Five rules govern the settle:
 
-- One credit buys a fixed token budget on the model that served the call: light models (mini and haiku class) price at 1,500 tokens per credit, standard models at 400 tokens per credit. The exact model and token count of every charge appear in the transaction log.
-- The overage settle can never fail a result you already received: at worst it drains the balance to zero.
-- If an AI action fails because of a provider error, the reserved minimum is refunded automatically. You are never charged for output you did not receive.
-- A contact research run that finds nothing is still a successful run and costs its credits. You are paying for the search, not the result.
-- Running out mid-action returns a clear "insufficient credits" response before any work starts, so a depleted balance never leaves you half-charged.
+- One credit buys a fixed token budget on the serving model: light models (mini and haiku class) at 1,500 tokens per credit, standard models at 400. The exact model and token count appear in the transaction log.
+- **Overage can never fail a result you already received**; at worst it drains the balance to zero.
+- A provider error refunds the reserved minimum automatically, so you are never charged for output you did not get.
+- A contact research run that finds nothing still costs its credits. You are paying for the search, not the result.
+- Running out returns "insufficient credits" **before** any work starts, so a depleted balance never leaves you half-charged.
 
-## Usage overview and spend controls
+## Usage and spend controls
 
-The **AI usage & spend controls** card on the **AI & credits** tab of **Settings, Billing** shows today / this week / this month spend, a usage graph you can switch between the last 7, 30, or 90 days, and breakdowns by feature and by model over the selected range (credits, tokens, and call counts). It is also where the spend controls live. Each limit is set with a slider (with quick presets) or an exact number, and shows the window's current spend against the limit as you set it; changes collect into a save bar and nothing applies until you save.
+The **AI usage & spend controls** card shows today, this week, and this month spend, a graph over the last 7, 30, or 90 days, and breakdowns by feature and model (credits, tokens, call counts). Each limit is set by slider or exact number and shows current spend against it; changes collect into a save bar.
 
-- **Spend limits.** Optional hard caps per calendar day, ISO week, and calendar month. When a limit is reached, AI actions pause with a clear message until the window rolls over. Leave a limit off for no cap.
-- **Per-member limits.** Optional ceilings on what each individual teammate can spend, per calendar day, ISO week, and calendar month, mirroring the workspace windows. They count only charges a member triggered themselves; workspace-level scheduled work (automations, the inbox agent) is not attributed to anyone. Who can use AI at all is separate: the "Use AI" permission on roles (see [Team and roles](/guides/team-roles/)).
-- **Low-credit reminder.** When the balance drops below your threshold, everyone with the Manage billing permission gets an in-app alert (at most once per day) and the credits views refresh live.
-- **Auto top-up.** When enabled, Warmbly buys your chosen pack automatically with the card on file the moment the balance dips below your auto top-up threshold. A monthly purchase maximum bounds how much can ever be auto-billed; purchases appear in the transaction log like any other top-up. Auto top-up needs a saved payment method (the card your subscription bills).
+| Control | Behavior |
+|---------|----------|
+| **Spend limits** | Optional hard caps per calendar day, ISO week, and calendar month. At the limit, AI pauses with a clear message until the window rolls over |
+| **Per-member limits** | The same three windows per teammate, counting only charges they triggered. Workspace-level work (automations, inbox agent) is attributed to nobody |
+| **Low-credit reminder** | Below your threshold, everyone with Manage billing gets an in-app alert, at most once a day |
+| **Auto top-up** | Buys your chosen pack automatically when the balance dips below a threshold, bounded by a monthly purchase maximum. Needs the saved subscription card |
 
-## Monthly allowance by plan
+Who can use AI at all is separate: the **Use AI** role permission (see [Team and roles](/guides/team-roles/)).
 
-Each plan grants a monthly allowance:
+## Allowances and top-ups
 
 | Plan | Monthly credits |
 |------|-----------------|
-| Free trial | 50 |
+| Free trial | 50 (granted once, at trial start) |
 | Starter | 250 |
 | Pro | 2,000 |
 | Enterprise | 25,000 |
 
-Free-trial workspaces get their allowance once, at the start of the trial. Paid workspaces get a fresh grant on every billing cycle. The exact reset date is shown on the credits card next to your balance.
-
-## Buying top-up packs
-
-Paid workspaces can buy top-up packs at any time. Three fixed sizes are available:
-
-- 500 credits
-- 2,000 credits
-- 10,000 credits
-
-Open the **AI & credits** tab of **Settings, Billing**, find the **AI credits** card, and pick a pack. You are taken to Stripe Checkout to pay with the card on file. As soon as the payment settles, the credits land in your purchased pool and the balance on the card updates live.
+Paid workspaces get a fresh grant each cycle, with the reset date shown beside your balance. Top-up packs come in **500**, **2,000**, and **10,000** credits, paid through Stripe Checkout with the card on file, landing in the purchased pool as soon as payment settles. Top-ups require an active paid plan.
 
 <Callout type="warn" title="Purchases settle through Stripe">
-Credits are added only after Stripe confirms the payment, not the moment you click. If you close the checkout tab before paying, nothing is charged and nothing is granted. A completed purchase is applied exactly once, even if Stripe retries the confirmation.
+Credits arrive only after Stripe confirms payment, not when you click. Closing the checkout tab charges nothing. A completed purchase is applied exactly once even if Stripe retries.
 </Callout>
 
-Top-up purchases require an active paid plan. On the free trial the pack buttons are replaced with a prompt to upgrade first.
+## The transaction log
 
-## Reading the transaction log
+Every grant, purchase, and spend, newest first, with the activity, model and token count, signed credit change, resulting balance, and time. Each spend records exactly what ran it: campaign, step, and contact for a switch step; automation, node, and run for an automation step (including what an Ask AI branch asked); the thread for inbox drafts; and the teammate behind manual features.
 
-The credits card shows a running log of every grant, purchase, and spend, newest first. Each row shows the activity, the model and token count of the call, the signed credit change (green for grants and purchases, plain for spends), the balance afterward, and when it happened. Every AI spend also records exactly what ran it: the campaign, step, and contact for a switch step; the automation, node, and run for an automation step (including what an Ask AI branch asked); the thread for inbox drafts; and the teammate who triggered manual features like the writing assistant. Use **Load more** to page back through older activity.
+## FAQ
 
-## Frequently asked questions
+**Do unused monthly credits roll over?** No. Buy a top-up pack for credits that carry over.
 
-**Do unused monthly credits roll over?**
-No. The monthly pool is reset to your plan's allowance each cycle. Buy a top-up pack if you want credits that carry over.
+**Do purchased credits expire?** No, through any number of resets.
 
-**Do purchased credits expire?**
-No. Purchased credits stay on your balance until you spend them, through any number of resets.
+**What happens when I change plans?** Your allowance follows the new plan from the next cycle. Purchased credits are unaffected.
 
-**What happens to my credits if I change plans?**
-Your monthly allowance follows your new plan from the next billing cycle. Purchased credits are unaffected.
+**What happens if I cancel?** Monthly grants stop; any purchased balance stays until spent.
 
-**What happens to purchased credits if I cancel?**
-They remain on the ledger. Monthly grants stop once the subscription ends, but any purchased balance you already hold stays until spent.
-
-**Do AI credits apply on a self-hosted install?**
-Only when you point it at a paid provider. If you run a free or local model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`), AI actions are not charged and the assistant shows a "free model" notice. See the [self-hosting guide](/development/deployment-guide/).
+**Do credits apply when self-hosting?** Only against a paid provider. A free or local model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`) is not charged and shows a "free model" notice. See the [self-hosting guide](/development/deployment-guide/).

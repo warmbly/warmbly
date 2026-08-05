@@ -3,127 +3,69 @@ title: "Notifications"
 description: "In-app notification feed and per-category preferences."
 ---
 
-Notifications keep you on top of what is happening across your sending without watching every page. Warmbly raises an in-app notification when something meaningful occurs, like a campaign starting to bounce or a sender worker going quiet, and surfaces it in a feed you reach from the bell in the dashboard chrome.
+The bell in the dashboard chrome shows your unread count and opens a feed of recent notifications, newest first. Each has a title, optional detail, and a link to the thing it is about. Reading one clears it from the count.
 
-This guide explains the bell and the feed, the categories Warmbly notifies on, how to control each one, and the defaults that ship out of the box.
-
-## The bell and the feed
-
-The bell lives in the dashboard chrome and is available from anywhere under the app. It shows a count of your unread notifications, and opening it reveals your feed: a list of recent notifications, newest first.
-
-Each notification has a short title and, where relevant, a bit more detail and a link that takes you straight to the thing it is about (for example, the affected campaign or mailbox). Reading or opening a notification marks it as read, which clears it from the unread count.
-
-The feed is per user. Notifications are scoped to you, not shared across your whole organization, so two people in the same workspace can have different things in their feeds depending on what they own and what they have turned on.
+**Feeds are per user**, not shared across the workspace, so two teammates see different things depending on what they own and what they enabled.
 
 <Callout type="info" title="Realtime by default">
-The feed updates live. When a notification is raised, it appears in your feed and the bell count moves without you refreshing the page, the same way replies, contacts, and counts stay current everywhere else in the dashboard.
+The feed and the bell count update live, without refreshing.
 </Callout>
 
-## Categories
+## Categories and defaults
 
-Warmbly notifies on a fixed set of categories, grouped by what they tell you: inbound activity, health, and security.
+| Category | Group | Default | Raised when |
+| --- | --- | --- | --- |
+| Bounce detected | Health | On | A campaign starts bouncing |
+| Spam complaint | Health | On | A complaint lands on a campaign |
+| Worker downtime | Health | On | A sender worker stops responding |
+| New sign-in | Security | On | Your account is accessed from a new device, with browser, OS, and rough location |
+| Billing alerts | Billing | On, including email | A trial expired or sending was paused for billing |
+| Teammate joined | Team | On | Someone accepted an invitation |
+| Reply received | Inbound | Off | A recipient replied to a cold email |
+| Out-of-office detected | Inbound | Off | An auto-responder hit one of your sends |
 
-### Inbound activity
-
-These categories are about replies and responses coming back from recipients of your cold email.
-
-- **Reply received**: a recipient replied to one of your cold emails.
-- **Out-of-office detected**: an auto-responder hit one of your sends.
-
-### Health
-
-These are deliverability and infrastructure alerts. They are about your sending staying safe and your senders staying online.
-
-- **Bounce detected**: a campaign starts bouncing. This notifies the campaign owner.
-- **Spam complaint**: a complaint event landed on one of your campaigns.
-- **Worker downtime**: a sender worker stops responding.
-
-For more on what bounces and complaints mean for your reputation, and the thresholds Warmbly acts on, see [Deliverability](/guides/deliverability/).
-
-### Security
-
-- **New sign-in**: your account was accessed from a device you have not used before, with the browser, OS, and approximate location in the notification body.
-
-### Billing
-
-- **Billing alerts**: your trial expired or your workspace's sending was paused for billing reasons. These go to the members who can act on them, the ones with the manage billing permission, not to everyone in the workspace.
-
-### Team
-
-- **Teammate joined**: someone accepted an invitation to your workspace. Goes to members with the manage team permission; the person who joined is not notified about themselves.
+Health defaults **on** because those alerts are operationally important and low volume. Inbound defaults **off** because a large campaign would generate one notification per recipient and flood the feed. Turn **Reply received** on only for smaller, higher-touch campaigns.
 
 <Callout type="info" title="Who gets notified">
-Workspace-level events never fan out to the whole organization. Warmbly notifies the people a thing concerns: reply and bounce alerts go to the owner of the mailbox or campaign, worker downtime goes to members who can manage mailboxes, billing to members who can manage billing, and team changes to members who can manage the team.
+Workspace events never fan out to everyone. Reply and bounce alerts go to the owner of the mailbox or campaign, worker downtime to members who can manage mailboxes, billing to those who can manage billing, and team changes to those who can manage the team. The person who joined is not notified about themselves.
 </Callout>
-
-## Per-category preferences
-
-You control notifications per category from **Settings → Notifications**. Each category has its own toggle, so you can keep the ones that matter to you and silence the rest.
-
-The settings page groups the toggles the same way as above:
-
-- **Inbound activity** Reply received, Out-of-office detected.
-- **Health** Bounce detected, Spam complaint, Worker downtime.
-- **Security** New sign-in.
-- **Billing** Billing alerts.
-- **Team** Teammate joined.
-
-Toggles save automatically as you flip them; the save indicator next to the page title confirms each change has persisted.
-
-## Defaults
-
-The defaults are chosen to be useful without being noisy. The shipped defaults are:
-
-| Category | Group | Default |
-| --- | --- | --- |
-| Bounce detected | Health | On |
-| Spam complaint | Health | On |
-| Worker downtime | Health | On |
-| New sign-in | Security | On |
-| Billing alerts | Billing | On, including email |
-| Teammate joined | Team | On |
-| Reply received | Inbound | Off |
-| Out-of-office detected | Inbound | Off |
-
-Health categories default **on** because they are operationally important and low volume: you want to know right away if a campaign is bouncing or a worker has gone down.
-
-Inbound categories default **off** on purpose. A large campaign can generate a reply or auto-responder for many recipients, and a notification per recipient would flood your feed. If you are running smaller, higher-touch campaigns and want to be pinged on every reply, turn **Reply received** on. For high-volume work, leave it off and read replies in the [Unibox](/guides/unibox/) instead.
 
 <Callout type="info" title="Where to read replies">
-Even with the reply notification off, you never miss responses. Every reply still lands in your unified inbox. The notification is just an optional ping on top of it.
+Even with reply notifications off you never miss anything: every reply still lands in the [Unibox](/guides/unibox/). The notification is only an optional ping.
 </Callout>
+
+Toggle each category under **Settings > Notifications**. Changes save automatically.
 
 ## Channels
 
-The settings page controls where enabled notifications are delivered. The channel toggles apply across every category above.
-
-- **In-app**: the bell in the dashboard. Always on, controlled by the per-category toggles above.
-- **Mobile push**: alerts on devices signed in with the Warmbly iOS app. Registration happens automatically when you allow notifications in the app, and signing out on a device stops its pushes. Push is batched so a burst never pings you once per event: the first notification in a quiet stretch is delivered immediately, and anything else that arrives inside the batching window (five hours by default) is held and sent as a single summary, like "3 new replies", when the window closes.
-- **Email**: delivery to your account email, batched by the digest cadence described below rather than one email per event.
-- **Slack**: posts each enabled notification to your connected Slack, on the channel you have configured for Slack in the [Integrations](/guides/integrations/) tab. Connect Slack and set up a channel there first; until a Slack channel is configured the toggle saves but nothing is delivered.
+| Channel | Behavior |
+|---------|----------|
+| **In-app** | The bell. Always on, governed by the category toggles |
+| **Mobile push** | iOS app devices, registered automatically when you allow notifications. Batched: the first alert in a quiet stretch goes immediately, and anything inside the window (five hours by default) is held and sent as one summary like "3 new replies" |
+| **Email** | Your account email, batched by the digest rules below |
+| **Slack** | Posts to the channel configured under [Integrations](/guides/integrations/). Until a channel is set, the toggle saves but nothing is delivered |
 
 ## Email digest
 
-Email notifications are designed to cost you as few emails as possible. Nothing is emailed the moment it happens. Each alert with the email channel on waits on a short hold, and what actually reaches your inbox follows three rules:
+Nothing is emailed the moment it happens. Three rules govern what reaches your inbox:
 
-- **Read means no email.** Anything you read in the dashboard or the mobile app before the hold expires is never emailed. If you live in the dashboard, the email channel stays almost silent.
-- **One email, not a stream.** When the hold expires, everything still unread goes out as a single bundled email, with each item linked back into the app.
-- **Shared events share one email.** When the same event concerns several teammates (a worker outage, a trial expiring), Warmbly sends one email with all of them together in To, instead of a copy per person. Everyone sees who else was told.
+- **Read means no email.** Anything you read in the dashboard or mobile app before the hold expires is never emailed, so living in the dashboard keeps this channel almost silent.
+- **One email, not a stream.** When the hold expires, everything still unread goes out as one bundled email with links back into the app.
+- **Shared events share one email.** An event concerning several teammates (a worker outage, a trial expiring) sends one email with everyone in To, so each person sees who else was told.
 
-The window is yours to pick in **Settings → Notifications**, under Email delivery: presets from every 30 minutes up to once a day, or a custom window anywhere in that range. The default is every 30 minutes. There is deliberately no per-event option; 30 minutes is the floor, so the email channel can never turn into one email per alert.
+Pick the window under **Settings > Notifications**, Email delivery: presets from every 30 minutes up to once a day, default 30 minutes. **There is deliberately no per-event option**, so the email channel can never become one email per alert.
 
-Security sign-in alerts ignore the window and always send immediately: if someone signs in to your account from a new device, waiting is not an option.
+Security sign-in alerts ignore the window and always send immediately.
 
-On top of the window, each person has a rolling 24 hour budget of notification emails (25 by default, configurable when self-hosting). Past the budget, alerts stay in the in-app feed instead of emailing. With bundling, normal use never gets near it; it exists so even the busiest day stays a handful of emails.
+Each person also has a rolling 24-hour budget of notification emails (25 by default, configurable when self-hosting). Past it, alerts stay in the feed. With bundling, normal use never approaches this.
 
-For richer, event-specific routing (custom messages, branching, multiple destinations), use [Automations](/guides/automations/) instead: they can route events like replies, bookings, and record changes to outside tools with full control.
+For event-specific routing with custom messages, branching, or multiple destinations, use [Automations](/guides/automations/) instead.
 
-## Practical tips
+## Tips
 
-- Leave the three health categories on. They are the early-warning signals that protect your sending reputation, and they stay quiet unless something is actually wrong.
-- Turn **Reply received** on only if your volume is low enough that one ping per reply is helpful. Otherwise work from the [Unibox](/guides/unibox/).
-- A growing unread count on the bell with several **Bounce** or **Spam complaint** entries is your cue to open the [Deliverability](/guides/deliverability/) dashboard and find the campaign or list behind it.
-- Remember preferences are per user. If a teammate is not seeing alerts you expect them to act on, check their own Notifications settings.
+- Leave the three health categories on. They stay quiet unless something is genuinely wrong.
+- A rising count of **Bounce** or **Spam complaint** entries is your cue to open [Deliverability](/guides/deliverability/) and find the campaign behind it.
+- Preferences are per user, so if a teammate is not seeing alerts you expect them to act on, check their own settings.
 
 ## Related guides
 

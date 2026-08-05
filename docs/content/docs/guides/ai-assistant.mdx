@@ -3,77 +3,60 @@ title: AI assistant
 description: The in-product AI assistant that searches your data, edits records, sends messages with your approval, and manages campaigns, mailboxes, and settings, never doing anything your own role could not.
 ---
 
-The AI assistant is a chat panel built into the dashboard. It can look things up across your contacts, campaigns, mailboxes, unified inbox, CRM, team, and settings, and it can take almost any action you can take yourself, from editing a contact to sending a reply. It always asks before changing anything, sending is held to a stricter bar, and it can never do anything your own role could not, in your workspace and no other. Everything happens live: answers stream in word by word as they are generated, and each tool step appears the moment the assistant starts it.
+A chat panel in the dashboard that reads across your contacts, campaigns, mailboxes, unified inbox, CRM, team, and settings, and takes almost any action you could take yourself. Answers stream word by word and each tool step appears as it starts.
 
-Open it from the spark button in the top bar, or press `Cmd/Ctrl + I`. The panel stays with you as you move between pages, so you can keep a conversation going while you work.
-
-Access is a role permission: members need **Use AI** (on by default for admins and managers, off for viewers) or the assistant and AI drafting are hidden entirely. Admins can also cap what each member spends per day, week, or month; see [AI credits](/guides/ai-credits/) and [Team and roles](/guides/team-roles/).
-
-Conversations are private to the member who started them by default. A workspace admin can flip **Shared history** under **Settings, Workspace, AI assistant**: then every member with the Use AI permission sees every conversation in the history rail (attributed by owner) and can open, continue, or delete any of them. Turning it on exposes existing conversations to the whole team, so decide deliberately. Either way, delete a conversation from the history rail, or use **Clear history** at the bottom of the rail to remove every conversation you own in the workspace at once.
-
-## Tabs, minimizing, and background runs
-
-Conversations run as tabs, like an editor: open several at once with the **+** button, and a run keeps streaming in its own tab while you read another. The expand button turns the panel into a full workspace with your conversation history down the side, grouped by day and searchable; hover a conversation to delete it, which removes its transcript for good.
-
-The panel is yours to arrange: drag its inner edge to resize, and move it to the left or right edge of the screen from the header (both remembered). On desktop it can also come off the edge entirely: click the pop-out button (or press `Alt + P`, or just drag the header away from the edge) and it becomes a floating window you can place anywhere and resize from any edge or corner. Its position and size are remembered, and the same button or shortcut docks it back. Inside the panel, `Ctrl/Cmd + ]` and `[` switch tabs, `Alt + N` opens a new chat, `Alt + W` closes the tab, and `Alt + M` minimizes; the full list is in the shortcuts dialog (`?`).
-
-You do not have to keep the panel open to keep the assistant working:
-
-- **Minimize** docks it into a compact status bar at the bottom of the screen. The bar shows what the assistant is doing live: working (with the step count), waiting for an approval, or holding a finished response you have not read. Click it to bring the panel back on that conversation.
-- **Close it entirely** and any running work carries on. The spark button in the top bar shows a pulsing dot while a run streams, an amber dot when an action is waiting for your approval, and a solid dot when a response is ready; click it to reopen.
+Open it from the spark button or `Cmd/Ctrl + I`. The panel follows you between pages.
 
 <Callout type="info" title="What it can and cannot do">
-The assistant acts as you. It can only see and do what your own role allows, scoped to your workspace, so it can never reach data or actions you could not reach by hand, and never another organization's. Every change asks first, and sending a message is never auto-approved: you approve each send after seeing the full message.
+The assistant acts as you: only what your role allows, only in your workspace, never another organization's data. Every change asks first, and **sending is never auto-approved**, even with "Always allow" on.
 </Callout>
+
+Access is the **Use AI** role permission (on for admins and managers, off for viewers); without it the assistant and AI drafting are hidden. Admins can cap per-member spend by day, week, or month. See [AI credits](/guides/ai-credits/) and [Team and roles](/guides/team-roles/).
+
+## Conversations and the panel
+
+Conversations are **private to you by default**. An admin can enable **Shared history** under Settings > Workspace > AI assistant, after which every member with Use AI sees, opens, continues, and deletes any conversation, attributed by owner. Turning it on exposes existing conversations, so decide deliberately. Delete individually from the history rail, or **Clear history** to remove every conversation you own.
+
+Conversations run as tabs: open several with **+**, and a run keeps streaming in its own tab while you read another. Expanding gives a full workspace with searchable history grouped by day.
+
+The panel resizes by dragging its inner edge and docks to either screen edge. On desktop it also pops out into a floating window (the pop-out button, `Alt + P`, or dragging the header away), remembering position and size.
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl/Cmd + ]` / `[` | Switch tabs |
+| `Alt + N` / `Alt + W` | New chat / close tab |
+| `Alt + M` | Minimize |
+| `?` | All shortcuts |
+
+**Work continues without the panel.** Minimizing docks it to a status bar showing live state: working with a step count, waiting on approval, or holding an unread response. Closing it entirely also keeps runs going, and the spark button shows a pulsing dot while streaming, amber when an approval waits, and solid when a response is ready.
 
 ## What you can ask
 
-The assistant has a large set of tools it uses to answer you and act for you:
-
-- Find, read, create, and delete contacts, edit their fields, tags, subscription, and notes, and bulk-edit many at once
-- Read a contact's full activity timeline and the emails you have sent them
-- List campaigns, read send/open/click/reply stats, and list a campaign's leads by status (queued, in progress, done with no reply, replied, bounced, unsubscribed), which is how it finds leads that went cold
-- Create, edit, or delete a campaign, manage its sender mailboxes and tracking domain, read its logs, and add, edit, or remove its sequence steps
-- Start or stop a campaign (always asks first)
-- Read org-wide analytics, list your mailboxes, and manage a mailbox: change its sending limits and warmup, set a tracking domain, appeal a warmup ban, or disconnect it
-- Read your unified inbox, draft a reply, or send a reply or a brand-new email for you (each send shows the full message and asks first)
-- Snooze threads, set labels, mark threads read, and cancel a queued send
-- Run your full CRM: deals, tasks, notes, pipelines, and stages, end to end
-- Read and manage automations, including enabling one, which then runs on real events
-- Manage your team (invite, change roles, remove), edit workspace and AI voice settings, read your plan and limits, and manage API keys and webhooks
+- Find, read, create, and delete contacts, edit fields, tags, subscription, and notes, and bulk-edit
+- Read a contact's activity timeline and the emails you sent them
+- List campaigns and stats, and list leads by status, which is how it finds leads that went cold
+- Create, edit, or delete campaigns, manage sender mailboxes and tracking domains, read logs, and edit sequence steps
+- Start or stop a campaign (always asks)
+- Read analytics, list mailboxes, and manage one: sending limits, warmup, tracking domain, warmup-ban appeals, disconnection
+- Read the unified inbox, draft a reply, or send a reply or new email (each send shows the full message and asks)
+- Snooze threads, set labels, mark read, cancel a queued send
+- Run the CRM end to end: deals, tasks, notes, pipelines, stages
+- Read and manage automations, including enabling one
+- Manage the team, workspace and voice settings, plan and limits, API keys, and webhooks
 - Search the web and read a public page
 
-Because it knows what page you are on, you can say things like "summarize this campaign" or "draft a reply here" and it understands what "this" and "here" mean.
+It knows what page you are on, so "summarize this campaign" and "draft a reply here" resolve correctly.
 
-## How actions are approved
+## Approvals
 
-The assistant splits what it does into two kinds:
+**Reading runs automatically.** **Changing always asks**, showing an approval card with a plain-language summary. You can **Approve** that one action, **Skip** it, or **Always allow** that kind of action workspace-wide from then on.
 
-- **Reading** runs automatically. Looking up a contact or checking campaign stats needs no confirmation.
-- **Changing** always asks first. When the assistant wants to update a contact, create a task, or set up a draft campaign, it pauses and shows you an approval card with a plain-language summary of exactly what it will do.
+Sending is stricter and never auto-approves. The card shows the full message and sending mailbox, and only that exact message goes out. It refuses suppressed addresses. Starting a campaign and enabling an automation carry their own approvals, since both put mail in motion.
 
-On an approval card you can:
+**Drafts stay drafts.** Campaigns the assistant builds are never started and automations are left disabled; you get a button to open them in the real editor. Copy it writes is grounded in your workspace [voice profile](/guides/unibox/) and follows the same human-writing rules as the rest of Warmbly.
 
-- **Approve** to run just that action
-- **Skip** to decline it and let the assistant carry on differently
-- **Always allow** to let that kind of action run automatically from now on, for your whole workspace
+## Credits and privacy
 
-Sending is different. An action that sends mail is never auto-approved, even if you have turned on **Always allow** for other actions. The approval card shows the full message and the mailbox it will send from, and it only sends when you approve that exact message. The assistant can send a reply into a thread or compose a brand-new email, and it refuses to send to an address your workspace has suppressed. Starting a campaign and enabling an automation are their own approvals too, since both can put mail in motion.
+Each step costs one AI credit, and a request is capped at a set number of steps (shown as the run progresses) so nothing runs away. Remaining credits show at the panel's bottom, and the stop button ends a run anytime. On a self-hosted install with a free or local model, runs are not charged and a "free model" notice appears.
 
-## Draft campaigns and automations
-
-When you ask the assistant to build a campaign or an automation, it creates it as a **draft** (a campaign is never started, an automation is left disabled) and gives you a button to open it in the real editor. You review, adjust, and turn it on yourself. Nothing the assistant builds goes live on its own.
-
-Any email copy or reply the assistant writes is grounded in your workspace [voice profile](/guides/unibox/#ai-reply-drafts) (what you sell, who you sell to, and your house voice, set under Settings, Workspace), and runs through the same human-writing rules as the rest of Warmbly, so it reads like a real person and not like AI.
-
-## Credits and limits
-
-Each step the assistant takes costs one AI credit, and a single request is capped at a set number of steps (shown as the run progresses) so a question can never run away. The credits remaining are shown at the bottom of the panel. If you run out, the assistant stops and tells you; see [AI credits](/guides/ai-credits/) for how allowances and top-ups work.
-
-On a self-hosted install pointed at a free or local model, runs are not charged and the assistant shows a "free model" notice, since a smaller local model can produce lower-quality answers.
-
-You can stop a run at any time with the stop button, and start a fresh conversation with the **+** tab button.
-
-## Privacy
-
-By default, conversations are private to you: other members of your workspace do not see your assistant sessions. If an admin turns on **Shared history** (Settings, Workspace, AI assistant), every conversation in the workspace becomes visible to and continuable by every member with the Use AI permission. Either way, when the assistant changes something (creates a task, updates a contact), that change shows up in the shared activity feed like any other edit, so your teammates' views stay current.
+Changes the assistant makes (a created task, an updated contact) appear in the shared activity feed like any other edit, so teammates' views stay current.
