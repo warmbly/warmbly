@@ -56,7 +56,7 @@ The **Inbound webhook** trigger lets anything outside Warmbly start a flow. Pick
 - The request returns immediately and the flow runs in the background, so a slow action never blocks the caller. An automation that is **Off** accepts the request and does nothing.
 - Keys beginning with an underscore are stripped from the payload, and the body is capped at 1 MB.
 
-Each trigger carries its own event data (for example, a reply carries the contact email, the reply intent, and a classifier confidence). Those values are what your conditions test and what your action text can insert. See [Personalization & expressions](/guides/expressions) for the full list of variables per trigger.
+Each trigger carries its own event data (for example, a reply carries the contact email, the reply intent, and a classifier confidence). Those values are what your conditions test and what your action text can insert. See [Personalization & expressions](/guides/expressions/) for the full list of variables per trigger.
 
 ## IF conditions (branching)
 
@@ -81,7 +81,7 @@ Operators depend on the field's type:
 
 Three special conditions are available for any trigger:
 
-- **Ask AI (yes/no)** puts a model in the branch: you write a plain-language question about the event ("Is this reply asking about pricing?"), and the answer picks the path — yes takes the right dot, no takes the bottom dot. The question is templated, so you can drop event fields into it with `{{.field}}`. Each evaluation costs one credit; if the model can't answer (or you are out of credits), the no path runs and the run history shows why. See [AI steps in automations](/guides/ai-steps-in-automations/).
+- **Ask AI (yes/no)** puts a model in the branch: you write a plain-language question about the event ("Is this reply asking about pricing?"), and the answer picks the path: yes takes the right dot, no takes the bottom dot. The question is templated, so you can drop event fields into it with `{{.field}}`. Each evaluation costs one credit; if the model can't answer (or you are out of credits), the no path runs and the run history shows why. See [AI steps in automations](/guides/ai-steps-in-automations/).
 - **Random split** sends a set percentage down the "yes" path (between `1%` and `99%`). The split is deterministic per event, so the same event always takes the same branch and re-deliveries don't flip it.
 - **Advanced expression** is the escape hatch described next.
 
@@ -97,7 +97,7 @@ and (gtf .confidence 0.8) (eq .intent "positive")
 
 This passes only when the classifier confidence is at least `0.8` and the reply intent is `positive`. You can use comparisons (`eq`, `gt`, `lt`), numeric-coercing comparisons (`gtf`, `ltf`, `add`, `sub`, `mul`, `div`), boolean logic (`and`, `or`, `not`), and text helpers (`contains`, `lower`). A broken or empty expression is treated as **false**, so a malformed condition never silently passes. The expression is validated when you save.
 
-The full language, every variable, and more examples are in [Personalization & expressions](/guides/expressions).
+The full language, every variable, and more examples are in [Personalization & expressions](/guides/expressions/).
 
 ## Action steps
 
@@ -161,7 +161,7 @@ Text fields in an action (a Slack or Discord message, a webhook URL, a deal name
 New reply from {{.contact_email}} on {{.campaign_name}}
 ```
 
-Tokens are filled in when the automation runs. An unknown token renders empty rather than failing. See [Personalization & expressions](/guides/expressions) for the rules and the per-trigger variable list.
+Tokens are filled in when the automation runs. An unknown token renders empty rather than failing. See [Personalization & expressions](/guides/expressions/) for the rules and the per-trigger variable list.
 
 ## Templates
 
@@ -188,10 +188,10 @@ Automation runs are best-effort and bounded against loops, so one failing step w
 ## Related guides
 
 <Cards>
-  <Card title="Personalization & expressions" href="/guides/expressions">
+  <Card title="Personalization & expressions" href="/guides/expressions/">
     The condition and templating language shared by automations and campaigns.
   </Card>
-  <Card title="Deliverability" href="/guides/deliverability">
+  <Card title="Deliverability" href="/guides/deliverability/">
     Warmup health and complaint signals that several automation triggers fire on.
   </Card>
 </Cards>

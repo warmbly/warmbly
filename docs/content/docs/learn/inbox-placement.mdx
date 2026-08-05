@@ -15,7 +15,7 @@ The two numbers can be wildly different. 99% delivery and 30% placement is not u
 
 ### Warmup probes
 
-Warmbly's [warmup pool](/learn/warmup-pools) is also a placement probe. Pool members report where each warmup message arrived: inbox, spam, or promotions. We aggregate per sending mailbox over a rolling sample window.
+Warmbly's [warmup pool](/learn/warmup-pools/) is also a placement probe. Pool members report where each warmup message arrived: inbox, spam, or promotions. We aggregate per sending mailbox over a rolling sample window.
 
 Probe accuracy depends on pool diversity. A pool that only contains Gmail addresses can't tell you anything about Outlook placement. Our premium pool spans Gmail, Outlook, Yahoo, iCloud and self-hosted IMAP servers in proportion to the broader receiver landscape.
 
@@ -31,7 +31,7 @@ If a recipient moves a message from Spam to Inbox, replies, or adds you to their
 
 ## What hurts placement
 
-- Unauthenticated mail (missing or misaligned [SPF, DKIM, DMARC](/learn/spf-dkim-dmarc)).
+- Unauthenticated mail (missing or misaligned [SPF, DKIM, DMARC](/learn/spf-dkim-dmarc/)).
 - Sudden volume spikes from an otherwise quiet mailbox.
 - Cold mail with heavy HTML, unsolicited attachments, or tracking-pixel-only bodies.
 - Word-for-word identical content across thousands of sends: content fingerprinting catches it.

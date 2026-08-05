@@ -6,7 +6,7 @@ description: Merge variables, conditionals, fallbacks, functions, and spintax so
 Every subject line and email body in Warmbly supports merge variables and simple conditionals. They're rendered separately for each recipient when the email actually sends, so a single template can read naturally for your whole list.
 
 <Callout type="info" title="Full syntax reference">
-  This page covers the ideas and how to combine them. The complete syntax reference (every field, helper, and rule) lives in the [Expressions guide](/guides/expressions).
+  This page covers the ideas and how to combine them. The complete syntax reference (every field, helper, and rule) lives in the [Expressions guide](/guides/expressions/).
 </Callout>
 
 ## Variables
@@ -35,7 +35,7 @@ Fields whose name has spaces or punctuation (for example `Job Title`) work the s
 {{if .Job Title}}Role: {{.Job Title}}{{end}}
 ```
 
-The equivalent `index` form (`{{index . "Job Title"}}`) also works if you prefer it. Both spellings are covered in the [Expressions guide](/guides/expressions).
+The equivalent `index` form (`{{index . "Job Title"}}`) also works if you prefer it. Both spellings are covered in the [Expressions guide](/guides/expressions/).
 
 The name must match a field that exists on the contact; if it doesn't, the value is blank. So pair custom fields with a conditional whenever the surrounding text depends on them.
 
@@ -127,7 +127,7 @@ Tip: prefer `gtf`/`ltf` over the plain `gt`/`lt` whenever a value might be text.
 
 ## Spintax: vary your wording
 
-Wrap a few options in braces separated by `|` and Warmbly picks one at random for each recipient. Varying your phrasing keeps a large send from looking like one identical blast, which helps [deliverability](/learn/deliverability).
+Wrap a few options in braces separated by `|` and Warmbly picks one at random for each recipient. Varying your phrasing keeps a large send from looking like one identical blast, which helps [deliverability](/learn/deliverability/).
 
 ```
 {Hi|Hey|Hello} {{.FirstName | default "there"}},

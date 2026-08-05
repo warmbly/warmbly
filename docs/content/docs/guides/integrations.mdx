@@ -63,7 +63,7 @@ Empty values are dropped before the upsert, so a missing first name never overwr
 A few rules worth knowing:
 
 - Mappings resolve in order of specificity: provider defaults first, then your connection default map, then any per-automation overrides. The most specific value for a given destination field wins.
-- A `static` value can include event variables. For example a static company source written as `{{.company}}` is filled from the event data. See [Personalization & expressions](/guides/expressions) for the full variable list.
+- A `static` value can include event variables. For example a static company source written as `{{.company}}` is filled from the event data. See [Personalization & expressions](/guides/expressions/) for the full variable list.
 
 ## Webhook delivery
 
@@ -92,7 +92,7 @@ Calendly and Cal.com work the other way around: they call into Warmbly. When you
 
 ## How integrations feed automations
 
-Integrations are most useful as the actions at the end of an automation. An [automation](/guides/automations) is a flow that starts with a trigger event and runs one or more action steps. Your connected integrations are what those steps act on:
+Integrations are most useful as the actions at the end of an automation. An [automation](/guides/automations/) is a flow that starts with a trigger event and runs one or more action steps. Your connected integrations are what those steps act on:
 
 - post to a Slack channel or a Discord channel
 - upsert a contact, person, or lead in your CRM
@@ -109,7 +109,7 @@ The most actionable events are offered as triggers and actions:
 - warmup health changed
 - deliverability complaint
 
-You can also filter when an action runs. A common pattern is to only notify or push to a CRM on a `positive` reply, or only above a minimum classifier confidence. A reply event also informs the [deliverability](/guides/deliverability) signals Warmbly tracks per mailbox.
+You can also filter when an action runs. A common pattern is to only notify or push to a CRM on a `positive` reply, or only above a minimum classifier confidence. A reply event also informs the [deliverability](/guides/deliverability/) signals Warmbly tracks per mailbox.
 
 ### Push contacts on demand
 
@@ -118,7 +118,7 @@ Beyond event-driven flows, you can push a batch of contacts into a connected CRM
 ## Next steps
 
 <Cards>
-  <Card title="Automations" href="/guides/automations" />
-  <Card title="Personalization & expressions" href="/guides/expressions" />
-  <Card title="Deliverability" href="/guides/deliverability" />
+  <Card title="Automations" href="/guides/automations/" />
+  <Card title="Personalization & expressions" href="/guides/expressions/" />
+  <Card title="Deliverability" href="/guides/deliverability/" />
 </Cards>

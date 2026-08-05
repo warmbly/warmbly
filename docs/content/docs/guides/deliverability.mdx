@@ -3,197 +3,103 @@ title: "Deliverability"
 description: "Bounce, complaint, and spam-placement health, with the thresholds Warmbly acts on."
 ---
 
-Deliverability is whether your email actually reaches the inbox, instead of bouncing, getting marked as spam, or being filtered into the junk folder. Warmbly tracks this for every mailbox and every campaign you run, surfaces it on a single dashboard, and acts automatically when a mailbox starts to look risky.
+Deliverability is whether your mail reaches the inbox instead of bouncing, getting marked as spam, or landing in junk. Warmbly tracks it per mailbox and per campaign, and acts automatically when a mailbox looks risky.
 
-This guide explains what Warmbly measures, the health bands it sorts mailboxes into, the exact thresholds that trigger action, and the built-in protections that keep your sending clean: one-click unsubscribe, pre-send verification, and suppression.
+These defaults are deliberately stricter than the point where Google or Microsoft start penalizing senders, so action happens before provider enforcement hits your reputation.
 
-The numbers in this guide are Warmbly's defaults. They are deliberately stricter than the point where mailbox providers like Google or Microsoft start penalizing senders, because the goal is to act before provider-level enforcement hits your reputation.
+## The dashboard
 
-## The deliverability dashboard
+Scope everything to `7d`, `30d`, or `90d` with the range tabs. It updates live, so no refreshing.
 
-The Deliverability page gives you one live view of how your mailboxes are performing. It updates in real time as new sends, bounces, complaints, and replies come in, so you do not need to refresh.
+| Section | What it shows |
+|---------|---------------|
+| Headline rates | Deliverability score, bounce rate, complaint rate, spam placement, suppressed count |
+| Over time | One metric per day: bounces, complaints, opens, replies, or sent. Use it to find the day something spiked |
+| Window totals | Raw counts behind the rates |
+| Seed inbox placement | Inbox vs spam share from test deliveries, with the sample count |
+| Placement by provider | The same split per Gmail, Outlook, and IMAP/SMTP |
+| Warmup placement by domain | Continuous placement per recipient domain, amber at `10%` spam, red at `20%` |
+| At risk | Mailboxes and campaigns with bounce or complaint activity, worst first |
 
-You can scope the whole dashboard to a time window with the range tabs: `7d`, `30d`, or `90d`.
+The **score** is a `0-100` composite starting at `100`: bounce rate subtracts up to `40` points (maxed at `10%`), complaint rate up to `30` (maxed at `0.30%`), spam placement up to `40` (maxed at `40%`). Bounce rate is highlighted at `5%`, complaint rate at `0.1%`.
 
-### Headline rates
-
-At the top of the page are five headline numbers for the selected window:
-
-- **Deliverability score**: a `0-100` composite for the window, shown with its health band chip. The score starts at `100` and subtracts a penalty per signal: bounce rate costs up to `40` points (maxed at a `10%` bounce rate), complaint rate up to `30` points (maxed at `0.30%`), and spam placement up to `40` points (maxed at `40%` spam placement). It shows a dash until the window has any activity.
-- **Bounce rate**: the share of sent emails that bounced, shown as a percentage along with the raw counts (for example, bounces out of total sent). This number is highlighted when it reaches `5%` or higher.
-- **Complaint rate**: the share of recipients who marked your mail as spam. This number is highlighted when it reaches `0.1%` or higher.
-- **Spam placement**: the share of monitored test deliveries that landed in spam or junk, based on seed inbox samples. If there is no seed data yet, this shows a dash.
-- **Suppressed**: the number of recipients currently on your active suppression list (see [Suppression](#suppression-stopping-traffic-early) below).
-
-### Trend over time
-
-The "Over time" chart plots a single metric per day across your selected window. You can switch which metric is plotted between **Bounces**, **Complaints**, **Opens**, **Replies**, and **Sent**. Use this to spot a sudden spike: a clean line that jumps on one day usually points to a specific campaign or list problem.
-
-### Window totals
-
-A side panel lists the raw totals for the window: Sent, Opens, Clicks, Replies, Bounces, Complaints, and Unsubscribes. These are the counts behind the rates above.
-
-### Seed inbox placement
-
-When seed (test inbox) data is available, the dashboard shows an **Inbox placement** breakdown: the percentage of seed deliveries that landed in the inbox versus the percentage that landed in spam, along with how many seed samples that is based on.
-
-Seed placement is the most direct signal you have. Bounces and complaints tell you about visible failures, but a message can be delivered "successfully" and still land in the junk folder where no one sees it. Seed inbox placement is how Warmbly catches that.
+Use **Customize** to pick which sections show. Your choices and time window persist per browser.
 
 <Callout type="info" title="Placement needs a sample">
-Spam placement and inbox placement only appear once there is enough seed data. A small number of samples can be noisy, so treat a low sample count as a hint, not a verdict. Warmbly only starts acting on placement once it has a meaningful sample (see the bands below).
+Placement figures only appear once seed data exists, and a small sample is a hint rather than a verdict. Warmbly waits for a meaningful sample before acting.
 </Callout>
 
-### Placement by provider
+**Placement by provider is the check before scaling a campaign.** An aggregate rate can look fine while one provider quietly junks everything: Gmail at `95%` inbox with Outlook at `40%` is a provider-specific problem, usually authentication or content, not volume.
 
-Seed placement results are also broken down per recipient provider (Gmail, Outlook, IMAP/SMTP). Each row shows a stacked bar of where your test mail landed (inbox, promotions, spam, or another folder), the inbox and spam rates, and the number of samples behind them.
-
-This is the view to check before scaling up a campaign: an aggregate placement rate can look fine while one provider is quietly junking everything. If Gmail shows `95%` inbox but Outlook shows `40%`, the problem is provider-specific (often authentication or content), not general volume.
-
-### Warmup placement by domain
-
-While seed tests are point-in-time probes, warmup gives you a continuous placement signal for free: every verified warmup delivery reports whether it arrived in the recipient's inbox or was filed into spam. The dashboard rolls this up per recipient domain, showing deliveries, inbox rate, and spam rate for each, with a status dot that turns amber at `10%` spam and red at `20%`.
-
-Because warmup partners are real monitored mailboxes across providers, this section keeps updating as long as warmup runs, so placement drift shows up here first, before it shows up as complaints on a campaign.
-
-### Mailboxes and campaigns at risk
-
-Below the charts, two lists rank the mailboxes and campaigns that have bounce or complaint activity in the window, worst first. Each row shows how many emails were sent, the bounce rate, the complaint (spam) rate, and a colored health band chip.
-
-Clicking a campaign row opens that campaign. From the mailboxes list you can jump to **All mailboxes** to manage individual senders.
-
-### Customizing the dashboard
-
-Use the **Customize** menu in the top bar to choose which sections are visible: the over-time chart, window totals, placement by provider, warmup placement by domain, and the two at-risk lists. Your section choices and the selected time window are remembered per browser, so the dashboard opens the way you left it.
+**Warmup placement is your continuous signal.** Seed tests are point-in-time probes, but every verified warmup delivery reports inbox or spam, so drift appears here before it becomes complaints on a campaign.
 
 ## Health bands
 
-Warmbly sorts each mailbox into a health band. The band is shown as a colored chip on the dashboard, and it controls how Warmbly treats the mailbox: which bands stay in warmup pools, which get throttled, and which get pulled out entirely.
-
-The four bands you see on the dashboard are:
-
-| Band | Chip color | Meaning |
-| --- | --- | --- |
-| Healthy | Green | Sending normally. No action needed. |
-| Watch | Amber | Early warning signs. Volume lowered, spacing increased, monitoring up. |
-| Quarantine | Orange | Removed from the shared warmup pool. Cold sending throttled or paused. |
-| Blocked | Red | Blocked from the shared warmup pool. Requires review before re-entry. |
-
-Warmup is a paid feature, and these pool actions apply to the shared paid warmup pool that healthy paying customers depend on. Protecting that shared reputation is the reason the bands exist. For how warmup itself works, see the [Warmup](/guides/warmup) guide.
-
-<Callout type="info" title="Different metrics, different failure modes">
-The deliverability score is a headline summary, but Warmbly never acts on the composite alone. It tracks complaint rate, spam-folder placement, and bounce rate as separate signals, because they fail for different reasons. Any one of them crossing a threshold can move a mailbox into a worse band, even while the overall score still looks acceptable.
-</Callout>
-
-### Sample floors
-
-Warmbly waits for a minimum amount of data before acting on a rate, so a single bad event does not flip a brand-new mailbox into quarantine:
-
-- **Spam placement** needs at least `20` warmup deliveries in the last `7 days` before it counts.
-- **Complaints** need at least `100` delivered emails in the last `30 days` before the rate is acted on.
-
-### Exact thresholds
-
-These are the default bands and the metrics that move a mailbox into each one. A mailbox enters a band when it crosses any single threshold listed for that band.
+Each mailbox sits in a band, shown as a colored chip. The band controls how Warmbly treats it.
 
 | Band | Spam placement | Complaint rate | Bounce rate | Other triggers |
 | --- | --- | --- | --- | --- |
-| Watch | `>= 10%` (over `20+` deliveries) | `>= 0.03%` | — | — |
+| Watch | `>= 10%` | `>= 0.03%` | n/a | n/a |
 | Quarantine | `>= 20%` | `>= 0.10%` | `>= 5%` | Repeated suspicious warmup-token failures |
-| Blocked | `>= 40%` | `>= 0.30%` | `>= 10%` | Clear abuse signals (token forgery patterns, repeated spam flags) |
-| Catastrophic | `>= 80%` | — | — | — |
+| Blocked | `>= 40%` | `>= 0.30%` | `>= 10%` | Clear abuse signals (token forgery, repeated spam flags) |
+| Catastrophic | `>= 80%` | n/a | n/a | n/a |
 
-What each band does:
+A mailbox enters a band by crossing any single threshold. What each band does:
 
-- **Watch**: lower the mailbox's warmup volume, increase spacing between sends, and watch it more closely. Cold campaign volume for the mailbox is dampened by the same factor, so a mailbox showing early warning signs slows down across both warmup and cold sending before it ever reaches quarantine.
-- **Quarantine**: immediately remove the mailbox from the shared paid warmup pool for `7 days`. If the same mailbox is also sending cold campaigns, that sending is throttled or paused. A quarantined mailbox is not selected as a warmup sender or as a warmup recipient.
-- **Blocked**: block the mailbox from the shared paid pool for `30 days` and require review before it can re-enter.
-- **Catastrophic**: a spam placement of `80%` or higher triggers an immediate long-duration block and a full reputation reset. The mailbox does not return to the shared paid pool automatically.
+- **Healthy**: sending normally, nothing to do.
+- **Watch**: warmup volume lowered and spacing increased. Cold volume is dampened by the same factor, so it slows across both before reaching quarantine.
+- **Quarantine**: out of the shared paid warmup pool for `7 days`, as neither sender nor recipient. Cold sending is throttled or paused.
+- **Blocked**: out of the shared pool for `30 days`, review required before re-entry.
+- **Catastrophic**: immediate long block and a full reputation reset. No automatic return.
 
-<Callout type="warn" title="80% spam is not a warning, it is a failure">
-If a mailbox is landing in spam most of the time, it is already damaging the shared pool. The bands above are designed to act long before that point. By the time a mailbox would hit a "most mail in spam" level, Warmbly has usually already quarantined or blocked it.
+**Sample floors** stop one bad event flipping a new mailbox: spam placement needs `20+` warmup deliveries in `7 days`, complaints need `100+` delivered emails in `30 days`.
+
+<Callout type="info" title="Different metrics, different failure modes">
+Warmbly never acts on the composite score alone. Complaint rate, spam placement, and bounce rate are tracked separately because they fail for different reasons, so any one can move a mailbox even while the score still looks fine.
 </Callout>
 
 ### Re-entry after a block
 
-A blocked mailbox does not automatically come back just because the cooldown elapsed. Before it re-enters the shared paid pool, it has to requalify:
-
-- authentication is still healthy: SPF, DKIM, DMARC (and PTR where relevant)
-- no recent provider complaints or hard-bounce spikes
-- no recent invalid warmup-token attempts
-- spam-folder placement back below `10%` on a fresh probation sample
-- re-entry is gradual, starting at low volume (for example `5-10/day` of warmup at first)
+Time elapsing is not enough. A blocked mailbox must requalify: SPF, DKIM, and DMARC still healthy; no recent complaints or hard-bounce spikes; no recent invalid warmup-token attempts; spam placement back under `10%` on a fresh probation sample. Re-entry then starts low, around `5-10/day` of warmup.
 
 ## Domain authentication
 
-Authentication is the foundation of deliverability. Gmail, Yahoo, and Outlook all require a sending domain to publish SPF, DKIM, and DMARC records, and a domain that fails alignment is the most common silent reason mail lands in spam or is rejected outright.
+Gmail, Yahoo, and Outlook all require SPF, DKIM, and DMARC, and failed alignment is the most common silent reason mail lands in spam. Warmbly checks each sending domain in the background about once a day, and on demand from the mailbox.
 
-Warmbly checks each mailbox's sending domain in the background and keeps the result on the mailbox, so you can see at a glance which domains are set up correctly without running a check by hand. The state is refreshed roughly once a day, and you can also run an on-demand check from the mailbox.
+- **Passing**: SPF and DMARC both present, the two records readable authoritatively from DNS.
+- **Failing**: SPF or DMARC missing.
+- **Unknown**: not checked yet, or the lookup could not complete. A DNS hiccup never looks like a misconfiguration.
 
-Each domain resolves to one of three states:
+DKIM is advisory: selectors are not discoverable from DNS, so "not found" means unconfirmed, not absent. A domain can pass on SPF and DMARC with DKIM unconfirmed.
 
-- **Passing**: SPF and DMARC are both present. These are the two records Warmbly can read authoritatively from DNS.
-- **Failing**: SPF or DMARC is missing. The domain is not meeting the bulk-sender requirement and needs attention.
-- **Unknown**: the domain has not been checked yet, or the DNS lookup could not complete. Warmbly treats a lookup it could not resolve as unknown rather than failing, so a temporary DNS hiccup never looks like a misconfiguration.
-
-DKIM is reported separately and is advisory. DKIM selectors are not discoverable from DNS, so a "not found" for DKIM only means Warmbly could not confirm it with the common selectors, not that DKIM is absent. A domain can therefore be Passing on SPF and DMARC while DKIM is shown as unconfirmed.
-
-<Callout type="info" title="This is informational today">
-The authentication state is there to surface and warn about unauthenticated domains. It does not stop sending or warmup on its own yet. Fixing a Failing domain (publish SPF, DKIM, and DMARC at your DNS provider) is still the single highest-impact deliverability change you can make.
+<Callout type="info" title="Informational today">
+Authentication state warns you; it does not block sending or warmup yet. Fixing a Failing domain is still the highest-impact deliverability change available to you.
 </Callout>
 
-## One-click unsubscribe
+## Built-in protections
 
-Warmbly supports one-click unsubscribe (the RFC 8058 standard that Gmail and Yahoo require for bulk senders). When it is enabled, recipients get a native "Unsubscribe" control in their mail client, and a single click opts them out without them having to open your email or click through a landing page.
+**One-click unsubscribe** (RFC 8058) puts a native Unsubscribe control in the recipient's mail client. It drives complaint rate down, because someone who can opt out cleanly rarely hits "mark as spam" instead, and Google's bulk-sender guidance effectively requires it at volume. Unsubscribes are suppressed automatically.
 
-Why this matters for deliverability:
+**Pre-send verification** checks an address before sending and skips undeliverable ones, keeping bad addresses from becoming the hard bounces that drive the `5%` and `10%` thresholds above.
 
-- making it easy to unsubscribe drives down your complaint rate, because a recipient who can opt out cleanly is far less likely to hit "mark as spam" instead
-- Google's bulk-sender guidance requires one-click unsubscribe for marketing and subscribed mail, so it is effectively mandatory for staying in the inbox at volume
+**Suppression** is the safety net: a suppressed recipient is never emailed again by any campaign. Warmbly suppresses automatically on a bounce, a spam complaint, or an unsubscribe, because once someone has bounced or complained the safest response is to stop, not to keep collecting negative signals.
 
-When someone unsubscribes, that address is added to your suppression list automatically, so no campaign will mail them again.
+Bounces are detected from the delivery-status report the recipient's server sends back. Only permanent failures (`5.x.x`, such as a nonexistent address) record a bounce and suppress; temporary ones (`4.x.x`, such as a full mailbox or greylisting) never do. This works the same for Gmail and Microsoft Graph mailboxes, where the send reports success and the bounce arrives later.
 
-## Pre-send verification
+## How to read it
 
-Warmbly can verify a recipient address before it sends to them. The point is to catch bad addresses before they turn into bounces, because a high bounce rate is one of the fastest ways to wreck a mailbox's reputation (and one of the `>= 5%` / `>= 10%` thresholds above).
+1. Start with the headline numbers. Bounce at `5%` and complaints at `0.1%` are the highlighted danger lines.
+2. If a rate looks off, switch the chart to that metric and find the spike day. It usually points at one campaign or one imported list.
+3. Check placement by provider and by domain to see whether mail actually reaches inboxes.
+4. Read the at-risk lists. The chips show which senders Warmbly is already acting on.
+5. Slow down anything in Watch and let it recover. Leave Quarantine and Blocked out of sending until they requalify.
 
-If verification flags an address as undeliverable, Warmbly skips it rather than sending and collecting a hard bounce. This keeps your bounce rate low and your sent volume honest.
-
-<Callout type="info" title="Verification protects your bounce rate">
-Bounces are weighed heavily by mailbox providers. Keeping bad addresses out of your sends is cheaper and safer than recovering a mailbox after its bounce rate has already spiked.
-</Callout>
-
-## Suppression: stopping traffic early
-
-Suppression is Warmbly's safety net. A suppressed recipient is one that no campaign will email again, no matter which campaign or list they appear on. Warmbly automatically suppresses an address after a clear negative signal:
-
-- a bounce (especially a hard bounce)
-- a spam complaint
-- an unsubscribe
-
-Campaigns skip suppressed recipients automatically. This is intentional: when a recipient has already bounced or complained, the safest response is to stop sending to them, not to keep trying and collect more negative signals that drag down your rates.
-
-The **Suppressed** count on the dashboard shows how many recipients are currently held back this way.
-
-### How bounces are detected
-
-When a message can't be delivered, the recipient's mail server sends back a bounce notification (a delivery-status report) that lands in your mailbox. Warmbly reads those automatically and, only for permanent failures (a `5.x.x` status, such as an address that doesn't exist), records the bounce against the exact send and suppresses that recipient. Temporary failures (a `4.x.x` status, such as a full mailbox or a greylisting delay) are never treated as permanent, so a recipient is never suppressed over a transient hiccup. This works the same for every provider, including mailboxes connected over the provider APIs (Gmail and Microsoft Graph), where the send itself reports success and the bounce only shows up later.
-
-## How to read your dashboard
-
-A practical way to use the page:
-
-1. Check the headline numbers first. The score and its band chip give you the one-glance answer; bounce rate at or above `5%` and complaint rate at or above `0.1%` are the two highlighted danger lines.
-2. If a rate looks off, switch the "Over time" chart to that metric and find the day it spiked. That usually points you at one campaign or one imported list.
-3. Check **Placement by provider** and **Warmup placement by domain** to see whether mail is actually reaching inboxes, and whether a problem is concentrated at one provider.
-4. Scroll to **Mailboxes at risk** and **Campaigns at risk**. The band chips tell you which senders Warmbly is already acting on.
-5. For any mailbox in Watch, slow it down and let it recover before pushing more volume. For Quarantine or Blocked, leave it out of sending and let it requalify.
-
-The single most important habit: keep complaint rate and spam placement low. A clean reputation with modest volume beats high volume with a rising complaint rate every time.
+The habit that matters: keep complaint rate and spam placement low. A clean reputation at modest volume beats high volume with rising complaints every time.
 
 ## Related guides
 
 <Cards>
-  <Card title="Warmup" href="/guides/warmup" />
-  <Card title="Personalization & expressions" href="/guides/expressions" />
-  <Card title="Error codes" href="/api/error-codes" />
+  <Card title="Warmup" href="/guides/warmup/" />
+  <Card title="Personalization & expressions" href="/guides/expressions/" />
+  <Card title="Error codes" href="/api/error-codes/" />
 </Cards>

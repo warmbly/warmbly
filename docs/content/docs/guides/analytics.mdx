@@ -5,7 +5,7 @@ description: "Campaign and account performance metrics."
 
 Analytics is how Warmbly tells you whether your sending is working. It rolls up every send, open, click, reply, bounce, and complaint into rates you can act on, broken down by workspace, by campaign, and by individual mailbox.
 
-This guide covers the metrics Warmbly tracks, where each breakdown lives, and how A/B analysis picks a winner. For the bounce, complaint, and spam-placement side of reporting (health bands and the thresholds Warmbly acts on), see the [Deliverability](/guides/deliverability) guide.
+This guide covers the metrics Warmbly tracks, where each breakdown lives, and how A/B analysis picks a winner. For the bounce, complaint, and spam-placement side of reporting (health bands and the thresholds Warmbly acts on), see the [Deliverability](/guides/deliverability/) guide.
 
 ## The metrics Warmbly tracks
 
@@ -22,7 +22,7 @@ Every campaign send produces a set of events. Warmbly counts them and turns the 
 
 A few things worth knowing about how the counts behave:
 
-- **Open and click tracking** only work when the campaign has open tracking or link tracking turned on, and when the sender mailboxes have a tracking domain configured. With tracking off, opens and clicks stay at zero even though sends and replies are still counted. See [Deliverability](/guides/deliverability) for the pre-send checks that flag missing tracking domains.
+- **Open and click tracking** only work when the campaign has open tracking or link tracking turned on, and when the sender mailboxes have a tracking domain configured. With tracking off, opens and clicks stay at zero even though sends and replies are still counted. See [Deliverability](/guides/deliverability/) for the pre-send checks that flag missing tracking domains.
 - **Replies are human replies.** An out-of-office auto-reply or an autoresponder does not count as a reply and does not stamp the contact as having replied. This keeps reply rate honest and stops an auto-reply from silently tripping a sequence's stop-on-reply rule.
 - **Bots are filtered out.** Crawler and CLI user agents, browser prefetches, link previews from chat apps, and email security gateways that open every link in a message are served normally but never counted. Without this filter, a single corporate security scanner could mark every link in a campaign as "clicked" seconds after delivery.
 - **Auto-opens are labeled, not hidden.** Privacy proxies such as Apple Mail Privacy Protection fetch the tracking pixel automatically whether or not the person reads the email. These opens still count (they confirm delivery), but they are tagged as auto-opens and shown next to the open count (for example "12 auto") so you can judge real engagement. If the same recipient later opens from a real client, the open is upgraded to a human open. Auto-opens never trigger opened-based sequence branches or automations.
@@ -49,7 +49,7 @@ The "Email performance" chart plots one metric per day across the window. Switch
 
 A side panel lists the raw window totals behind the rates: Sent, Opens, Clicks, Replies, and Bounces.
 
-Below that, **Account health** summarizes your mailboxes into three counts: Healthy, At risk, and Issues. This is a quick read on whether any senders need attention before you push more volume. The full per-mailbox detail lives on the [Deliverability](/guides/deliverability) dashboard.
+Below that, **Account health** summarizes your mailboxes into three counts: Healthy, At risk, and Issues. This is a quick read on whether any senders need attention before you push more volume. The full per-mailbox detail lives on the [Deliverability](/guides/deliverability/) dashboard.
 
 ### Top campaigns
 
@@ -69,7 +69,7 @@ Open any campaign to see its own analytics, scoped to that campaign alone. The c
 
 ### Per-sequence step stats
 
-A campaign's analytics also break performance down by sequence step. For each step you see emails sent, opens, clicks, replies, and bounces. This tells you which step in a multi-touch sequence is actually pulling the replies, and which follow-ups are dead weight. For how sequence steps are built, see the [Sequences](/guides/sequences) guide.
+A campaign's analytics also break performance down by sequence step. For each step you see emails sent, opens, clicks, replies, and bounces. This tells you which step in a multi-touch sequence is actually pulling the replies, and which follow-ups are dead weight. For how sequence steps are built, see the [Sequences](/guides/sequences/) guide.
 
 ### Daily and hourly trends
 
@@ -88,7 +88,7 @@ Every mailbox reports its own status and usage so you can tell a healthy sender 
 - **Warmup status**: whether warmup is on, its current volume, and its target and max volume.
 - **Warmup health**: the mailbox's warmup-pool reputation: its state (healthy, watch, throttled, quarantined, or blocked), spam score, and any block expiry.
 
-Use this to find the one mailbox dragging down a campaign's bounce rate, rather than blaming the whole campaign. The thresholds that move a mailbox between health states are documented in [Deliverability](/guides/deliverability).
+Use this to find the one mailbox dragging down a campaign's bounce rate, rather than blaming the whole campaign. The thresholds that move a mailbox between health states are documented in [Deliverability](/guides/deliverability/).
 
 ## A/B analysis
 
@@ -133,7 +133,7 @@ A practical loop for using analytics:
 1. Start on the workspace dashboard. Check the four headline rates for the window you care about.
 2. If a rate looks off, switch the performance chart to that metric and find the day it moved. That usually points at one campaign or one list.
 3. Open the campaign behind it and read the per-step stats to see which touch is responsible.
-4. If the problem is bounces or complaints, drop into the per-mailbox breakdown and the [Deliverability](/guides/deliverability) dashboard to find the specific sender at fault.
+4. If the problem is bounces or complaints, drop into the per-mailbox breakdown and the [Deliverability](/guides/deliverability/) dashboard to find the specific sender at fault.
 5. For subject and copy decisions, lean on A/B analysis rather than guessing, and wait for real confidence before locking in a winner.
 
 The habit that matters most: a clean reply rate with a low bounce and complaint rate beats a big open-rate screenshot every time.
@@ -141,7 +141,7 @@ The habit that matters most: a clean reply rate with a low bounce and complaint 
 ## Related guides
 
 <Cards>
-  <Card title="Deliverability" href="/guides/deliverability" />
-  <Card title="Sequences" href="/guides/sequences" />
-  <Card title="Personalization & expressions" href="/guides/expressions" />
+  <Card title="Deliverability" href="/guides/deliverability/" />
+  <Card title="Sequences" href="/guides/sequences/" />
+  <Card title="Personalization & expressions" href="/guides/expressions/" />
 </Cards>

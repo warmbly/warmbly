@@ -9,13 +9,13 @@ Before you start a recovery plan, decide whether the mailbox is worth recovering
 
 1. Is the mailbox tied to a person whose name needs to be on the email? If not, retire it and warm a new one.
 2. Has the domain been blocklisted at major receivers? Check tools like MXToolbox blacklist lookup, Talos, and Spamhaus. If yes, the recovery work is at the domain level too.
-3. Is the placement issue from this mailbox alone, or is it a domain-wide problem? Check [placement](/learn/inbox-placement) on other mailboxes on the same domain.
+3. Is the placement issue from this mailbox alone, or is it a domain-wide problem? Check [placement](/learn/inbox-placement/) on other mailboxes on the same domain.
 
 ## Stop the bleeding
 
-- Pause every [campaign](/guides/campaigns) sending from the affected mailbox immediately.
+- Pause every [campaign](/guides/campaigns/) sending from the affected mailbox immediately.
 - Remove the mailbox from active sender pools in your campaigns.
-- If the mailbox is in the [warmup pool](/learn/warmup-pools), let the platform's auto-quarantine kick in (it likely already has).
+- If the mailbox is in the [warmup pool](/learn/warmup-pools/), let the platform's auto-quarantine kick in (it likely already has).
 - Do not "send a few test emails to gauge". Every additional send while reputation is poor is another data point in the wrong column.
 
 ## Audit the basics
@@ -26,7 +26,7 @@ Before you start a recovery plan, decide whether the mailbox is worth recovering
 4. **PTR:** sending IP has a reverse DNS record that resolves back?
 5. **Mailbox content:** review the last 90 days of sent mail for any HTML-heavy, image-only, or link-bait messages.
 
-Fix anything that's broken before you start the volume work. Recovery on a misconfigured domain is futile. See [SPF, DKIM and DMARC](/learn/spf-dkim-dmarc) for the details.
+Fix anything that's broken before you start the volume work. Recovery on a misconfigured domain is futile. See [SPF, DKIM and DMARC](/learn/spf-dkim-dmarc/) for the details.
 
 ## The recovery ramp
 

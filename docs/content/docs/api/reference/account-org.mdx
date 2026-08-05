@@ -259,6 +259,18 @@ Auth: public (not available to API keys).
 
 A token pair (same shape as the login confirm success response).
 
+### Social sign-in
+
+All three are public and unavailable to API keys. A provider-verified identity counts as strong auth, so there is no email code step, and a first sign-in creates the account, organization, and trial.
+
+| Endpoint | Body | Purpose |
+|----------|------|---------|
+| `GET /auth/providers` | none | Which native sign-in options this deployment supports, so the mobile app adapts to self-hosted backends without a rebuild. Returns `{apple, google}` objects with `enabled` and a public `client_id`. |
+| `POST /auth/apple` | `identity_token` (required), `first_name`, `last_name` | Exchanges a Sign in with Apple identity token, verified against Apple's keys. Apple shares the name only with the app, so pass it through for first-sign-in prefill. |
+| `POST /auth/google` | `id_token` (required) | Exchanges a Google Sign-In ID token, verified against Google's keys and the client ID from `/auth/providers`. |
+
+Apple and Google both return a token pair (same shape as the login confirm success response).
+
 ## Sessions
 
 Self-service session management for the signed-in user. Revoking by id can only ever touch the caller's own sessions.
@@ -1998,6 +2010,18 @@ Auth: Session only (not available to API keys).
   "inquiry_id": "eiq1..."
 }
 ```
+
+### Promo codes and referrals
+
+All session only, requiring org permission `manage_billing` and a selected organization. See the [referral program guide](/guides/referral-program/) for the product rules.
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /subscription/discounts` | The org's promo-code redemption history (`code`, `type`, `percent_off`, `duration`, `redeemed_at`). |
+| `GET /subscription/referral` | The org's referral status and code. |
+| `POST /subscription/referral` | Creates the org's referral code. |
+| `GET /subscription/referral/attributions` | One row per referred signup. `status` is `pending` (signed up, not yet paid), `qualified` (reached a paid checkout), `rewarded`, or `void` (clawback, self-referral, or cap). `reward_cents` is integer cents. |
+| `GET /subscription/referral/earnings` | The reward ledger. `amount_cents` is positive for a reward, negative for a clawback within the 30-day window; `reason` is `referral_reward` or `referral_clawback:<cause>`; `balance_after_cents` is the running balance. |
 
 ## Reference data
 

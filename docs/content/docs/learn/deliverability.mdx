@@ -27,7 +27,7 @@ The only way to know placement after the fact is to probe it: warmup pool partne
 
 ### Authentication alignment
 
-DMARC asks: does the domain in the visible From header match either the SPF Return-Path domain OR the DKIM `d=` tag? Strict alignment requires an exact match; relaxed (the default) allows organisational-domain match. A DMARC `p=none` with passing alignment is treated very differently from `p=reject` with passing alignment. Both are different from a misalignment that DMARC allows through but Gmail still penalises. See the [SPF/DKIM/DMARC guide](/learn/spf-dkim-dmarc).
+DMARC asks: does the domain in the visible From header match either the SPF Return-Path domain OR the DKIM `d=` tag? Strict alignment requires an exact match; relaxed (the default) allows organisational-domain match. A DMARC `p=none` with passing alignment is treated very differently from `p=reject` with passing alignment. Both are different from a misalignment that DMARC allows through but Gmail still penalises. See the [SPF/DKIM/DMARC guide](/learn/spf-dkim-dmarc/).
 
 ### Sender reputation, three vectors
 
@@ -148,6 +148,6 @@ The trigger to run this playbook is any one of: spam placement above 10% on a 20
 
 The DMARC alignment check on step three is the one most often skipped. A common silent failure: someone adds a new sending service (Stripe, Notion, support tool) that uses your domain in the From address but does not have its DKIM key added to your DNS. DMARC starts failing for that sub-population, the reputation lookup pulls a "this domain is sending unaligned mail" signal, and your unrelated cold mailboxes suffer.
 
-For the full recovery workflow once a mailbox has hit the quarantine or block band, read [the recovery playbook](/learn/reputation-recovery).
+For the full recovery workflow once a mailbox has hit the quarantine or block band, read [the recovery playbook](/learn/reputation-recovery/).
 
 Fix deliverability before you have a problem. Act on the watch band, not the catastrophe band.

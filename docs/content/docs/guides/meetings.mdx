@@ -118,7 +118,7 @@ Every meeting also appears on the contact's activity timeline, alongside emails,
 
 Each meeting entry shows what happened (booked, rescheduled, or canceled), when the call is set for, which calendar it came from, and a one-click **Join** link when a meeting URL is available and the call is not canceled. Canceled meetings show the cancellation reason when the provider includes one.
 
-This pairs well with the [Unibox](/guides/unibox) and [Contacts and CRM](/guides/contacts-crm) views: a reply and the call it produced sit on the same record.
+This pairs well with the [Unibox](/guides/unibox/) and [Contacts and CRM](/guides/contacts-crm/) views: a reply and the call it produced sit on the same record.
 
 ## Booking links and "Book a call"
 
@@ -127,7 +127,7 @@ A booking link is your public scheduling page (your Calendly or Cal.com URL). On
 Set it under the connection's **Booking link** settings: paste your full `https://` scheduling URL, for example `https://calendly.com/you/intro`. After that:
 
 - A **Book a call** / **Booking link** button appears on contact detail and Unibox threads. It opens your scheduling page in a new tab, prefilled with the contact's email and name. If you have several scheduling links connected, it offers a picker.
-- A **Booking link** button in the [Unibox](/guides/unibox) reply composer drops the link, prefilled for the recipient, straight into your reply text.
+- A **Booking link** button in the [Unibox](/guides/unibox/) reply composer drops the link, prefilled for the recipient, straight into your reply text.
 
 When you book from a place tied to a specific contact, Warmbly embeds that contact's id in the link (as the `utm_content` parameter). Both providers echo it back in the booking webhook, which is what lets a self-booked call attribute to the exact contact even if they book under a different email address.
 
@@ -137,18 +137,18 @@ The Book a call and Booking link buttons only render when you have a connected s
 
 ## Automations when a meeting is booked
 
-Meeting events can drive [Automations](/guides/automations). Calendly and Cal.com both emit meeting events you can wire to actions, and other connected tools can react to them too:
+Meeting events can drive [Automations](/guides/automations/). Calendly and Cal.com both emit meeting events you can wire to actions, and other connected tools can react to them too:
 
 - **Meeting booked**, **rescheduled**, and **canceled** are available as notification triggers, so Slack, Discord, Zapier, Make, and n8n can ping your team the moment a call is set, moved, or dropped.
 - **Meeting booked** and **canceled** are available as CRM triggers, so HubSpot, Salesforce, Pipedrive, and Close can create or update a record when a call is booked.
 
-For example, you can have Warmbly post "Meeting booked" to a Slack channel and upsert the contact into your CRM, automatically, every time a prospect books a call. See [Notifications](/guides/notifications) for routing alerts to people, and [Automations](/guides/automations) for building the flows.
+For example, you can have Warmbly post "Meeting booked" to a Slack channel and upsert the contact into your CRM, automatically, every time a prospect books a call. See [Notifications](/guides/notifications/) for routing alerts to people, and [Automations](/guides/automations/) for building the flows.
 
 ## Related
 
 <Cards>
-  <Card title="Automations" href="/guides/automations" />
-  <Card title="Contacts and CRM" href="/guides/contacts-crm" />
-  <Card title="Unibox" href="/guides/unibox" />
-  <Card title="Notifications" href="/guides/notifications" />
+  <Card title="Automations" href="/guides/automations/" />
+  <Card title="Contacts and CRM" href="/guides/contacts-crm/" />
+  <Card title="Unibox" href="/guides/unibox/" />
+  <Card title="Notifications" href="/guides/notifications/" />
 </Cards>

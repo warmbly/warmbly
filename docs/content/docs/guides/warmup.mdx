@@ -3,156 +3,111 @@ title: Warmup
 description: "How email warmup builds sender reputation, pools, and ramp."
 ---
 
-Warmup keeps your mailboxes healthy by sending small amounts of low-risk, natural-looking mail between participating accounts. The goal is to build and maintain sender reputation gradually, so that when you start (or continue) cold outreach, your messages are more likely to land in the inbox instead of spam.
-
-Warmup runs quietly in the background. You turn it on for a mailbox, choose how aggressively it ramps, and Warmbly handles partner selection, spacing, replies, and safety on your behalf.
+Warmup sends small amounts of low-risk, natural-looking mail between participating mailboxes to build sender reputation, so your cold outreach lands in the inbox. You turn it on per mailbox and pick how fast it ramps; Warmbly handles partners, spacing, replies, and safety.
 
 <Callout type="info" title="Warmup is a paid feature">
-  Warmup is available on paid plans only. Free organizations can connect mailboxes, but warmup traffic will not be scheduled for them. If your plan does not include warmup, any pending warmup activity for your mailboxes is skipped rather than sent.
+  Free organizations can connect mailboxes, but no warmup traffic is scheduled for them; pending warmup activity is skipped rather than sent.
 </Callout>
 
-## Why warmup matters
+## Why it works
 
-Mailbox providers like Google and Microsoft watch how a sending address behaves over time. A brand-new address that suddenly sends a burst of cold email looks suspicious and is likely to be filtered. An address that sends a steady, modest, conversational stream of mail and gets replies looks like a real person.
+Providers watch how an address behaves over time. A new address that suddenly bursts out cold email looks suspicious. One that sends a steady, modest, conversational stream and gets replies looks like a person. Warmup manufactures that history: low volume instead of spikes, natural spacing across the day, replies so threads look real, and slow growth. Reputation builds slowly and is lost quickly, so warmup favors patience over throughput.
 
-Warmup gives your mailbox that history. It:
+## How it works
 
-- generates normal-looking, low-volume activity instead of sudden spikes
-- spreads sends across the day with natural spacing
-- mixes in replies so threads look like real conversations
-- ramps volume up slowly so the increase looks organic
+With warmup enabled, Warmbly repeatedly picks a partner mailbox (avoiding recent ones), decides whether to start a thread or reply to one, sends a short plaintext message through that mailbox's worker, then records stats and schedules the next send.
 
-Reputation is built slowly and lost quickly, so warmup favors patience over throughput.
+Every warmup send carries a hidden verification token so the receiver can confirm it is genuine warmup traffic. Warmup mail is plaintext and never carries open or click pixels, because it needs to look like ordinary personal email.
 
-## How warmup works
+Enabling warmup controls **outbound** scheduling only. An active mailbox with warmup off stays available as a recipient-only participant, and never starts sending just because it received something.
 
-When warmup is enabled on a mailbox, Warmbly repeatedly:
+### Where the content comes from
 
-1. Confirms your organization is allowed to use warmup.
-2. Picks a partner mailbox from your warmup pool, avoiding partners it used recently.
-3. Decides whether to start a fresh message or reply to an existing warmup thread (based on your reply rate).
-4. Sends a short, plaintext, unremarkable message through the worker assigned to that mailbox.
-5. Records the send, updates your daily warmup stats, and schedules the next send.
+Message generation stays off the live sending path. When an AI provider is configured, a background batch builds complete conversation plans (a subject, an opening, and five alternating reply turns), each validated against a strict schema, checked for robotic language, and passed through a safety lint before entering the active bank.
 
-Each warmup send carries a hidden verification token so the receiving side can confirm the message is genuine warmup traffic and not abuse. Warmup mail is plaintext only and is not tracked with open or click pixels, because the point is to look like ordinary personal email.
+At send time a message draws from the least-used suitable thread and accounts for usage atomically, spreading content evenly across thousands of mailboxes. The opening is personalized with the mailbox's stable persona, greeting, sign-off, and signature; reply turns stay unused until the recipient actually replies. If generation is unavailable or the bank is empty, a built-in reviewed library takes over, so **warmup never waits on an AI provider**.
 
-Warmup enablement controls outbound scheduling, not whether an eligible mailbox can receive warmup traffic. An active mailbox with warmup enabled participates as a sender and recipient. An active mailbox with warmup disabled remains available as a recipient-only participant, so other pool mailboxes can send it verified warmup messages. Recipient-only mailboxes never begin an outbound warmup schedule merely because they received a message.
+The controller runs every six hours against the last seven days of demand: at least 200 active threads, up to 5,000, refreshing the most-used content, at most 250 threads per batch and 1,000 per day. Threads are retired automatically when at least 3 of 20 or more sampled deliveries land in spam and the rate is `15%` or higher. Admins monitor it but never refill it by hand.
 
-Warmbly keeps message generation off the live sending path. When an AI provider is configured, a background batch process generates complete conversation plans: one subject, one opening body, and five ordered reply turns that alternate naturally between the two participants. Each result must match a strict structured schema. It is then normalized, checked for robotic language, and passed through a warmup safety lint before it can enter the active bank.
+## Pools
 
-At send time, a new message draws from the least-used suitable thread and accounts for usage atomically, which spreads content evenly even when thousands of mailboxes warm at once. The opening is personalized with the sender mailbox's stable writing persona, greeting, sign-off, and signature. The generated reply turns remain unused until the receiving mailbox actually replies. No live model call is required. If generation is unavailable, a result fails validation, or the bank is empty, the built-in reviewed library takes over automatically, so warmup does not stop or wait on an AI provider.
+A pool is the set of mailboxes that warm each other. Your mailbox only exchanges warmup mail within its own pool.
 
-Generation runs on autopilot every six hours. The controller reads the last seven days of total warmup demand and calculates how large the shared content bank should be. It keeps at least 200 active threads, grows the bank up to 5,000 threads, refreshes the most-used content, and can add up to 250 threads in one batch. A shared bank produces more diversity than splitting content by arbitrary mailbox tags. Generated threads are also removed automatically when at least 3 of 20 or more sampled deliveries land in spam and the observed rate is 15% or higher. Only one scheduled batch can be in flight at a time, completed batches are ingested after restarts, stale reservations recover automatically, and the 1,000-thread daily generation cap limits cost. Admins monitor the library and job feed but do not refill or tune it manually.
+| Pool | Who is in it |
+|------|--------------|
+| `premium` | Paid organizations' mailboxes. The default for paid accounts, isolated from lower-trust traffic. |
+| `free` | Lower-trust or trial mailboxes, kept separate so free traffic never mixes into premium reputation. |
 
-## Pools: free vs premium
+The separation is never crossed silently. Warmbly spreads sends across many partners and recipient domains rather than looping the same two mailboxes, since tight reciprocal pairs are easy for providers to spot. **Pool quality matters more than pool size.**
 
-Warmup traffic is separated into pools. A pool is a set of mailboxes that warm each other up. Your mailbox only ever exchanges warmup mail with other mailboxes in the same pool.
-
-| Pool | Who is in it | Notes |
-|------|--------------|-------|
-| `premium` | Paid organizations' mailboxes | The default pool for paid accounts; isolated from lower-trust traffic. |
-| `free` | Lower-trust or trial mailboxes | Kept separate so free traffic never mixes into premium reputation. |
-
-This separation is deliberate and is never crossed silently. Premium pool quality is protected so that healthy paying mailboxes are not exposed to the reputation risk of unproven inboxes.
-
-A larger pool gives each mailbox more partners to rotate through, which makes warmup look more natural. Warmbly actively spreads your sends across many partners and many recipient domains rather than looping the same two mailboxes back and forth, since tight reciprocal pairs are an easy pattern for providers to detect. Pool quality matters more than raw pool size.
-
-Recipient capacity includes both sender-and-recipient mailboxes and recipient-only mailboxes. Disabling outbound warmup therefore does not immediately remove a healthy mailbox from the recipient pool. Disconnecting the mailbox, losing warmup-plan access, or entering a quarantined or blocked health state does remove it from eligible recipient selection.
+Turning off outbound warmup does not remove a healthy mailbox from the recipient pool. Disconnecting it, losing warmup-plan access, or entering a quarantined or blocked state does.
 
 ## The ramp
 
-Warmup volume increases gradually instead of jumping straight to a high number. Each mailbox follows a simple ramp you can configure:
-
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| Start volume | `10` per day | How many warmup emails the mailbox sends on day one. |
-| Daily increase | `+1` per day | How much the daily target grows each day. |
-| Ceiling | `40` per day | The maximum daily warmup volume; the ramp stops climbing here. |
+| Start volume | `10`/day | Warmup emails on day one |
+| Daily increase | `+1`/day | How much the target grows daily |
+| Ceiling | `40`/day | Where the ramp stops climbing |
 
-So a mailbox at default settings sends about 10 warmup emails on its first day, 11 the next day, 12 the day after, and so on, leveling off at 40 per day after roughly a month. You can adjust these values per mailbox, but the conservative defaults exist because slow ramps build the most durable reputation.
+At defaults a mailbox sends 10 on day one, 11 the next, and levels off at 40 after roughly a month. You can change these per mailbox, but conservative defaults build the most durable reputation.
 
-A few things shape the actual number sent on a given day:
-
-- Sends are spread across your configured warmup hours with human-like spacing and jitter, never all at once.
-- The daily target is capped by how many eligible partner mailboxes exist, so a small pool will not push a mailbox to send the same partner twice in one day.
-- If a mailbox's health drops (see below), its volume is automatically reduced and its spacing widened until it recovers.
+Three things shape the real daily number: sends are spread across your warmup hours with jitter, the target is capped by how many eligible partners exist, and a mailbox whose health drops gets reduced volume and wider spacing until it recovers.
 
 <Callout type="info" title="Warmup and campaigns coexist">
-  Keep warmup running even after you start sending campaigns. A mailbox that backs a live campaign automatically drops to at most five warmup messages per day, leaving the real campaign as the primary traffic. Warmup does not make repetitive or unwanted campaign copy safe. Use genuine targeting, personalization, suppression, unsubscribe support where required, and campaign A/B variants for real outreach.
+  Keep warmup on after campaigns start. A mailbox backing a live campaign drops to at most five warmup messages per day, leaving the campaign as primary traffic. Warmup does not make repetitive or unwanted copy safe: you still need real targeting, personalization, suppression, and unsubscribe support.
 </Callout>
 
-## Reply behavior
+## Replies
 
-Real inboxes do not only send. They also reply. Warmup mimics this with a configurable reply rate per mailbox.
+Real inboxes reply, so a configurable share of the time a mailbox answers an existing warmup thread instead of starting one. For AI content Warmbly reloads the original conversation plan and sends its next unused turn, with the conversation ID and turn number traveling on every verified send, so a reply continues the same exchange. A parent message is answered only once, and an exhausted or retired thread ends rather than repeating.
 
-A portion of the time, instead of starting a new message, a mailbox will reply to an existing warmup thread it received. For AI content, Warmbly reloads the exact original conversation plan and sends its next unused reply turn. The conversation ID and turn number travel with every verified warmup send, so a later reply continues the same exchange instead of selecting a vaguely related line. A parent message can only be answered once, and an exhausted or safety-retired thread ends rather than repeating itself. Reviewed static content is the fallback when the original AI thread is unavailable.
+Replies thread properly with a real `Re:` subject and `In-Reply-To` header, and candidates must be between 45 minutes and seven days old, so nothing is answered instantly or revived indefinitely.
 
-The reply threads correctly with a real `Re:` subject and `In-Reply-To` header. Reply candidates must be between 45 minutes and seven days old, so messages are neither answered instantly nor revived indefinitely. Replies are tracked separately in warmup stats as a healthy-engagement signal.
-
-Timing follows human behavior throughout. Sends are spread over the day in bursts and lulls rather than a fixed rhythm, never land on round clock marks, and replies only go to messages that arrived long enough ago to have plausibly been read. On the receiving side, opens and reads happen on a natural delay (most within minutes, some up to an hour later) and only during the recipient's waking hours, so no mailbox in the pool "reads" email at 3am or reacts to every message within seconds.
+Timing imitates people throughout: sends come in bursts and lulls rather than a fixed rhythm, never land on round clock marks, and opens happen on a natural delay during the recipient's waking hours. No mailbox in the pool reads mail at 3am or reacts within seconds.
 
 ## Keeping warmup out of your inbox
 
-Warmup traffic should build reputation without cluttering the mailbox you actually read. When a warmup message is received, Warmbly recognizes it by its verification token and files it away automatically. This inbound processing runs for eligible recipient-only mailboxes even when their outbound warmup toggle is off. The message is moved out of the inbox into a dedicated `Warmbly` folder and usually marked as read. Anything that landed in spam is rescued first so providers record a positive placement signal. Depending on the mailbox persona and randomized engagement plan, the message may also be marked important or starred. This works across Gmail, Outlook (via Microsoft Graph), and generic IMAP mailboxes, and warmup mail never appears in your unified inbox.
+Warmbly recognizes inbound warmup by its token and files it automatically, including for recipient-only mailboxes. The message moves to a dedicated `Warmbly` folder and is usually marked read; anything that landed in spam is rescued first so the provider records a positive placement signal. This works across Gmail, Outlook via Microsoft Graph, and generic IMAP, and warmup mail never appears in your unified inbox.
 
-## Pool safety and abuse protection
+## Pool safety
 
-Shared warmup pools only work if every participant behaves. Warmbly continuously evaluates each mailbox's behavior and removes risky ones before they can harm the pool's reputation.
+Shared pools only work if participants behave, so each mailbox accumulates a spam score from negative signals: complaints, spam-folder placement, bounces, invalid or forged tokens, and tampering with delivered warmup mail.
 
-### Verification tokens
+| State | Meaning | Effect |
+|-------|---------|--------|
+| `healthy` | Normal | Full volume |
+| `watch` | Mild concern | Spacing stretched modestly |
+| `throttled` | Probation | Volume cut, spacing widened until recovery |
+| `quarantined` | Clear problem | Out of the shared pool for a cooldown |
+| `blocked` | Serious or repeated abuse | Out for longer, review required |
 
-Every warmup email includes a hidden verification token. When the message is received, the token is checked. Missing, expired, forged, or malformed tokens are treated as suspicious and counted against the sending or receiving mailbox.
-
-### Spam score and signals
-
-Each mailbox accumulates a spam score from negative signals such as:
-
-- recipients marking warmup mail as spam (user complaints)
-- warmup mail landing in the Junk or Spam folder (placement)
-- bounces, especially hard bounces
-- invalid or forged warmup-token attempts
-- tampering with delivered warmup mail
-
-### Health states and auto-block
-
-Based on those signals, every pool participant carries a health state. Warmbly uses these states to throttle or remove mailboxes automatically:
-
-| State | What it means | What happens |
-|-------|---------------|--------------|
-| `healthy` | Normal behavior | Full warmup volume. |
-| `watch` | Mild concern | Volume kept close to normal, spacing stretched modestly. |
-| `throttled` | Probation | Volume cut and spacing widened until it recovers. |
-| `quarantined` | Clear problem | Removed from the shared pool for a cooldown period. |
-| `blocked` | Serious or repeated abuse | Removed for a longer period; requires review to return. |
-
-A quarantined or blocked mailbox is not selected as a warmup sender or recipient, and it does not continue using the shared paid pool. Auto-block also triggers on clear abuse patterns, for example repeated invalid warmup-token attempts in a short window or a spam score that crosses the danger threshold.
+Quarantined and blocked mailboxes are selected as neither sender nor recipient. Auto-block also fires on clear abuse, such as repeated invalid tokens in a short window.
 
 <Callout type="warn" title="Acting early protects everyone">
-  Warmbly intervenes well before a mailbox reaches the point where providers themselves would penalize it. A mailbox landing in spam a large share of the time has already become dangerous to the shared pool, so it is throttled or removed early rather than left to keep collecting negative signals.
+  Warmbly intervenes well before providers would penalize a mailbox. One landing in spam a large share of the time is already dangerous to the pool, so it is throttled or removed rather than left collecting negative signals.
 </Callout>
 
-### Getting back in
-
-A blocked mailbox is not automatically restored just because time passed. Before it re-enters a pool, it should requalify: authentication still healthy, no recent complaints or hard-bounce spikes, no recent invalid-token attempts, and spam-folder placement back to a low level. When it does return, it re-enters gradually at low volume rather than jumping back to its old ceiling.
+Getting back in requires requalifying, not just waiting: healthy authentication, no recent complaints or hard-bounce spikes, no recent invalid-token attempts, and spam placement back to a low level. Return is gradual, not a jump back to the old ceiling.
 
 ## Recommended posture
 
-- Start new mailboxes at the default of around `10` warmup emails per day.
-- Let the ramp climb slowly. Do not raise the ceiling casually above the default `40`.
-- Keep warmup running alongside your campaigns, not just before them.
-- Prefer more healthy mailboxes over forcing a few inboxes to send too much.
-- Watch complaint and spam-placement signals more closely than open-rate vanity metrics. A low complaint rate matters more than maximum throughput.
+- Start new mailboxes around `10`/day and let the ramp climb slowly.
+- Do not raise the ceiling above `40` casually.
+- Keep warmup running alongside campaigns, not only before them.
+- Prefer more healthy mailboxes over pushing a few too hard.
+- Watch complaints and spam placement, not open-rate vanity metrics.
 
 ## Related guides
 
 <Cards>
-  <Card title="Deliverability" href="/guides/deliverability">
+  <Card title="Deliverability" href="/guides/deliverability/">
     Authentication, suppression, and inbox-placement signals that warmup supports.
   </Card>
-  <Card title="Personalization" href="/guides/expressions">
+  <Card title="Personalization" href="/guides/expressions/">
     Expressions for personalizing your campaign sends.
   </Card>
-  <Card title="Mailboxes" href="/guides/mailboxes">
+  <Card title="Mailboxes" href="/guides/mailboxes/">
     Sending limits and provider setup for the mailboxes you warm.
   </Card>
 </Cards>

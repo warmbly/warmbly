@@ -242,7 +242,7 @@ These never accept an API key. They depend on a human-bound session: billing flo
 
 ### Referrals and discounts
 
-The referral program and billing discount history are part of `/subscription/*`, so they are JWT only and never accept an API key. There is no API permission scope for them; browser callers are gated by the org permission below. The discount validation and checkout endpoints are listed under [Subscription and billing](/api/account-and-organization/) in the reference.
+The referral program and billing discount history are part of `/subscription/*`, so they are JWT only and never accept an API key. There is no API permission scope for them; browser callers are gated by the org permission below. The discount validation and checkout endpoints are listed under [Subscription and billing](/api/reference/account-org/) in the reference.
 
 | Method | Path | JWT permission |
 |--------|------|----------------|
@@ -322,6 +322,6 @@ External MCP servers whose tools the assistant can use (see [Connect MCP tools](
 
 ## See also
 
-- [Authentication](/api/authentication)
-- [Permissions Reference](/api/permissions)
-- [Error Codes](/api/error-codes)
+- [Authentication](/api/authentication/)
+- [Permissions Reference](/api/permissions/)
+- [Error Codes](/api/error-codes/)

@@ -36,7 +36,7 @@ Click a step to open the composer. An email step has:
 
 The Preview tab renders your subject and body through the real send engine against a sample contact, so merge fields, conditionals, and spintax all resolve exactly as they will at send time. If a template is malformed (for example an `{{if}}` with no matching `{{end}}`), you will see a warning, and any tokens that would send literally are flagged before you start the campaign.
 
-For everything you can put in subjects and bodies (merge fields, fallbacks, conditionals, and spintax), see [Personalization](/guides/expressions).
+For everything you can put in subjects and bodies (merge fields, fallbacks, conditionals, and spintax), see [Personalization](/guides/expressions/).
 
 <Callout type="info" title="Templates">
 You can apply a saved template to a step, or save the current step as a reusable template from the composer. Templates live in your shared template library and carry their subject and body.
@@ -63,7 +63,7 @@ Action steps connect the same way as email steps and are most useful at the end 
 
 ### Switch steps
 
-A **Switch step** routes each contact down one of several named case paths. Give the step its cases (for example `interested`, `not_now`, `wrong_person`); every case renders as its own dot on the node, and you drag each dot to the step that path leads to — as many cases as you need. The bottom dot is the `otherwise` fallback for contacts no case matched. Side effects are ordinary action steps (add a tag, create a deal or task, run an automation, fire an event) placed on a path, so the decision and its consequences stay separately visible on the canvas.
+A **Switch step** routes each contact down one of several named case paths. Give the step its cases (for example `interested`, `not_now`, `wrong_person`); every case renders as its own dot on the node, and you drag each dot to the step that path leads to, as many cases as you need. The bottom dot is the `otherwise` fallback for contacts no case matched. Side effects are ordinary action steps (add a tag, create a deal or task, run an automation, fire an event) placed on a path, so the decision and its consequences stay separately visible on the canvas.
 
 Two deciders are available per step:
 
@@ -85,7 +85,7 @@ Spacing between steps is a property of the **target** step, not a separate node.
 
 To set spacing, click the connection line that leads into a step. The connection editor shows a "wait N days before it" control. Set it in days (0 to 60). The wait is shown on the line as a label like `wait 3d`.
 
-Because the wait belongs to the target step, every path that leads into that step uses the same wait. Spacing your follow-ups out (rather than sending them back to back) keeps your sending pattern natural and protects deliverability. See [Deliverability](/guides/deliverability) for guidance on safe pacing.
+Because the wait belongs to the target step, every path that leads into that step uses the same wait. Spacing your follow-ups out (rather than sending them back to back) keeps your sending pattern natural and protects deliverability. See [Deliverability](/guides/deliverability/) for guidance on safe pacing.
 
 <Callout type="info" title="Instant branches skip the wait">
 When a path runs instantly (see reply and engagement branches below), it fires the moment the event happens, so the target step's wait does not apply. The connection editor hides the wait control in that case.
@@ -185,6 +185,6 @@ If stop on reply is off and your sequence has more than one step, Warmbly warns 
 ## Related
 
 <Cards>
-<Card title="Personalization & expressions" href="/guides/expressions" />
-<Card title="Deliverability" href="/guides/deliverability" />
+<Card title="Personalization & expressions" href="/guides/expressions/" />
+<Card title="Deliverability" href="/guides/deliverability/" />
 </Cards>

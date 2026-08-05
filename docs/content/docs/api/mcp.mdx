@@ -149,9 +149,9 @@ Rate limits apply to MCP calls exactly as they do to the rest of the API (per-ke
 
 The one-command flow is standard MCP authorization, so any spec-compliant client works without Warmbly-specific setup. On a request with no valid token, `/v1/mcp` returns `401` with a `WWW-Authenticate` header pointing at the protected-resource metadata. The client then walks:
 
-- `GET /.well-known/oauth-protected-resource` — the resource and its authorization server ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)).
-- `GET /.well-known/oauth-authorization-server` — the authorize, token, and registration endpoints ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)).
-- `POST /v1/oauth/register` — dynamic client registration, so the client mints a public (PKCE) `client_id` with no manual app setup ([RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)).
+- `GET /.well-known/oauth-protected-resource`: the resource and its authorization server ([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)).
+- `GET /.well-known/oauth-authorization-server`: the authorize, token, and registration endpoints ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)).
+- `POST /v1/oauth/register`: dynamic client registration, so the client mints a public (PKCE) `client_id` with no manual app setup ([RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)).
 - Authorization code with PKCE (S256) in the browser, then `POST /v1/oauth/token` for a short-lived access token and a rotating refresh token.
 
 The same discovery drives Warmbly's OAuth server for any client. See the [OAuth 2.1](/api/oauth/) page for the full authorization-server reference.
