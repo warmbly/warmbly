@@ -3,75 +3,63 @@ title: Automations
 description: "A visual flow builder: a trigger event connected to action steps across your integrations."
 ---
 
-An automation is a small flow you build on a canvas. It starts with one **trigger** (something that happens in Warmbly, like a reply coming in or a meeting being booked) and runs one or more **action steps** in response (post to Slack, push to your CRM, tag a contact, and more). Between the trigger and the actions you can add **IF conditions** to branch the flow, so different events take different paths.
+An automation is a flow on a canvas: one **trigger** (a reply arrives, a meeting is booked) runs one or more **actions** (post to Slack, push to your CRM, tag a contact), with **IF conditions** in between to branch. No code, though an advanced mode accepts a free-form condition.
 
-You build this visually. There is no code to write, though an optional advanced mode lets you write a free-form condition when you need one.
+<Mermaid
+  chart={`
+flowchart LR
+  T["Trigger"] --> C{"IF condition"}
+  C -->|yes| A1["Action"]
+  C -->|no| A2["Action"]
+  A1 -.->|on error| E["Error path"]
+`}
+/>
 
-## Where to find it
+## The builder
 
-Open the **Automations** tab. Each automation has a name, an on/off toggle, and a canvas. Toggle an automation to **Active** to let it run, or leave it **Off** while you build. An automation that is **Off** never fires, even from a campaign step.
+Open the **Automations** tab. Each automation has a name, an on/off toggle, and a canvas. **Off** never fires, even from a campaign step.
 
-## The visual builder
-
-The canvas works like the campaign sequence editor:
-
-- The **Trigger** node sits at the top. You can't delete it.
-- Drag from a node's dot to draw a connection to another node.
-- Drag from a dot onto empty canvas to open a menu and drop what comes next already connected to that node: an **AI step**, an **AI switch**, a **condition**, a built-in or integration action, or a **Stop** to end that path.
-- Click any node to open its editor panel on the right.
-- Click a connection line, then press `Delete` or `Backspace`, to remove it.
-- Use the **Add** button (its dropdown places an AI step, AI switch, condition, or any action) and **Tidy up** to auto-arrange the layout.
-
-Where you drag the cards sticks. The arrangement saves on its own, so a flow opens exactly how you left it, and moving a card is not a change you have to save. The builder is also a shared canvas: when a teammate is in the same flow you see their cursor, watch cards move as they drag them, and see the cards they have selected outlined in their color. Press `/` to chat from your cursor. See [Collaboration](/guides/collaboration/).
+- The **Trigger** node sits at the top and cannot be deleted.
+- Drag a node's dot onto another node to connect, or onto empty canvas to pick what comes next (AI step, AI switch, condition, action, or **Stop**) already connected.
+- Click a node to edit it. Click a connection and press `Delete` to remove it.
+- **Add** places a node; **Tidy up** auto-arranges.
+- Card positions save on their own, and the canvas is collaborative: teammates' cursors, live card movement, their selections outlined in their color. Press `/` to chat. See [Collaboration](/guides/collaboration/).
 
 <Callout type="info" title="Save before it runs">
-The flow's logic is edited locally. Changes to triggers, conditions, and actions only take effect after you press **Save** (card positions are the exception: they save automatically). **Test** also saves first, then dry-runs the saved flow.
+Triggers, conditions, and actions only take effect after **Save** (card positions are the exception). **Test** saves first, then dry-runs.
 </Callout>
 
 ## Triggers
 
-A trigger is the event that starts the flow. Pick one in the trigger node's editor. The available triggers are:
-
 | Trigger | Fires when |
 | --- | --- |
 | Reply received | A contact replies to a campaign email |
-| Meeting booked | A meeting is booked (Calendly / Cal.com) |
-| Meeting rescheduled | A booked meeting is rescheduled |
-| Meeting canceled | A booked meeting is canceled |
+| Meeting booked / rescheduled / canceled | A Calendly or Cal.com meeting changes |
 | Email bounced | A campaign email bounces |
 | Unsubscribed | A contact unsubscribes |
 | Warmup health changed | A mailbox's warmup health state changes |
 | Deliverability complaint | A spam complaint is recorded |
 | Inbound webhook | An external system POSTs to this automation's unique URL |
-| Campaign action | Launched on demand from a campaign step, not from a real event |
+| Campaign action | A campaign sequence reaches a "Run automation" step |
 
-The **Campaign action** trigger is special: it never fires by itself. It only runs when a campaign sequence reaches a "Run automation" step, which lets you trigger an automation as part of a campaign flow. (A campaign-launched run still evaluates your conditions, and an automation that is **Off** is a no-op.)
+Each trigger carries its own event data (a reply carries contact email, reply intent, classifier confidence). Those are the values your conditions test and your action text inserts. Full per-trigger variable list: [Personalization & expressions](/guides/expressions/).
 
-### Inbound webhook trigger
+**Campaign action** never fires by itself; it runs only from a campaign step, still evaluating your conditions.
 
-The **Inbound webhook** trigger lets anything outside Warmbly start a flow. Pick it on the trigger node and **save**: the editor then shows a unique URL for this automation. Any system that can send an HTTP request (a form tool, your backend, a no-code platform) `POST`s JSON to that URL and the flow runs.
+### Inbound webhook
 
-- The JSON body becomes the event payload, so reference its keys directly in actions and conditions with `{{.field}}` (a body of `{"email":"a@b.com","plan":"pro"}` gives you `{{.email}}` and `{{.plan}}`). A body that is not a JSON object is exposed verbatim as `{{.body}}`.
-- The URL itself is the credential: it carries a high-entropy token, so treat it like a secret and rotate it (by switching the trigger away and back) if it leaks. Send it over HTTPS.
-- The request returns immediately and the flow runs in the background, so a slow action never blocks the caller. An automation that is **Off** accepts the request and does nothing.
-- Keys beginning with an underscore are stripped from the payload, and the body is capped at 1 MB.
+Pick the trigger and **save**, and the editor shows a unique URL. Anything that can send HTTP `POST`s JSON to it.
 
-Each trigger carries its own event data (for example, a reply carries the contact email, the reply intent, and a classifier confidence). Those values are what your conditions test and what your action text can insert. See [Personalization & expressions](/guides/expressions/) for the full list of variables per trigger.
+- The JSON body becomes the payload: `{"email":"a@b.com"}` gives you `{{.email}}`. A non-object body is exposed as `{{.body}}`.
+- **The URL is the credential.** It carries a high-entropy token, so treat it as a secret, send it over HTTPS, and rotate it (switch the trigger away and back) if it leaks.
+- The request returns immediately and the flow runs in the background, so a slow action never blocks the caller.
+- Keys starting with an underscore are stripped; the body is capped at 1 MB.
 
-## IF conditions (branching)
+## IF conditions
 
-An **IF** node splits the flow into a **yes** path and a **no** path. Add one with **Add condition**, then connect:
+An IF node splits into a **yes** path (right dot) and a **no** path (bottom dot). Only the matching branch runs; an unconnected branch just ends, or drag it to a **Stop** node.
 
-- the node's **right** dot to the steps that should run when the condition is **true** (the "yes" path)
-- the node's **bottom** dot to the steps that should run when the condition is **false** (the "no" path)
-
-At run time the flow follows only the branch that matches the outcome. A branch you leave unconnected simply ends there, or you can drag it to a **Stop** node to end it explicitly.
-
-### Building a condition
-
-In the condition editor you pick a **field**, an **operator**, and a **value**. The fields offered depend on the trigger, so they are always meaningful. For a reply, for example, you can branch on **Reply intent**, **Classifier confidence**, **Contact email**, **Subject**, or whether a contact was matched. Meeting, bounce, complaint, unsubscribe, warmup, and campaign-action triggers each expose their own fields.
-
-Operators depend on the field's type:
+Pick a **field**, an **operator**, and a **value**. Fields depend on the trigger, so they are always meaningful.
 
 | Field type | Operators |
 | --- | --- |
@@ -79,110 +67,72 @@ Operators depend on the field's type:
 | Number | `≥`, `≤`, `is`, `is present` |
 | Choice (enum) | `is`, `is not`, `is present` |
 
-Three special conditions are available for any trigger:
+Three special conditions work with any trigger:
 
-- **Ask AI (yes/no)** puts a model in the branch: you write a plain-language question about the event ("Is this reply asking about pricing?"), and the answer picks the path: yes takes the right dot, no takes the bottom dot. The question is templated, so you can drop event fields into it with `{{.field}}`. Each evaluation costs one credit; if the model can't answer (or you are out of credits), the no path runs and the run history shows why. See [AI steps in automations](/guides/ai-steps-in-automations/).
-- **Random split** sends a set percentage down the "yes" path (between `1%` and `99%`). The split is deterministic per event, so the same event always takes the same branch and re-deliveries don't flip it.
-- **Advanced expression** is the escape hatch described next.
-
-### Advanced expression mode
-
-When the field/operator picker can't express what you want, choose **Advanced expression** and write a free-form condition. The "yes" branch is taken when the expression is truthy.
-
-Reference trigger fields with a leading dot, and use the helper functions Warmbly provides:
+- **Ask AI (yes/no)**: a plain-language question about the event ("Is this reply asking about pricing?") picks the path. Templated, so you can drop in `{{.field}}`. One credit per evaluation; if the model can't answer or you are out of credits, the no path runs and History shows why. See [AI steps in automations](/guides/ai-steps-in-automations/).
+- **Random split**: a set percentage (`1%` to `99%`) down the yes path, deterministic per event so re-deliveries never flip it.
+- **Advanced expression**: a free-form condition, taken when truthy.
 
 ```
 and (gtf .confidence 0.8) (eq .intent "positive")
 ```
 
-This passes only when the classifier confidence is at least `0.8` and the reply intent is `positive`. You can use comparisons (`eq`, `gt`, `lt`), numeric-coercing comparisons (`gtf`, `ltf`, `add`, `sub`, `mul`, `div`), boolean logic (`and`, `or`, `not`), and text helpers (`contains`, `lower`). A broken or empty expression is treated as **false**, so a malformed condition never silently passes. The expression is validated when you save.
+Comparisons (`eq`, `gt`, `lt`), numeric coercion (`gtf`, `ltf`, `add`, `sub`, `mul`, `div`), logic (`and`, `or`, `not`), and text helpers (`contains`, `lower`) are available. A broken or empty expression is **false**, so a malformed condition never silently passes, and it is validated on save.
 
-The full language, every variable, and more examples are in [Personalization & expressions](/guides/expressions/).
+## Actions
 
-## Action steps
+Each action node picks a **Run** target (an integration, or Warmbly built-in) and an **Action**.
 
-An action is what the automation does when the flow reaches it. Each action node has two parts: **Run** (which integration, or Warmbly's built-in actions) and **Action** (what to do).
-
-### Integration actions
-
-Connect an action to one of your integrations to push data out. Available actions depend on the connected provider:
-
-| Action | What it does |
+| Integration action | What it does |
 | --- | --- |
-| Send a Slack message | Posts to a Slack channel |
-| Send a Discord message | Posts to a Discord channel |
-| Send a webhook | Sends an HTTP request to a URL you provide |
-| Create / update HubSpot contact | Upserts a contact in HubSpot |
-| Create / update Pipedrive person | Upserts a person in Pipedrive |
-| Create / update Salesforce contact | Upserts a contact in Salesforce |
-| Create / update Close lead | Upserts a lead in Close |
+| Send a Slack / Discord message | Posts to a channel (Slack needs `#channel`) |
+| Send a webhook | HTTP request to a URL you provide |
+| Create / update HubSpot contact, Pipedrive person, Salesforce contact, Close lead | Upserts the record |
 
-A Slack action needs a **channel** (for example `#sales`). A webhook action needs a **URL**. Slack, Discord, and webhook actions also accept an optional **message** template.
+Slack, Discord, and webhook actions take an optional message template. Slack and Discord arrive as a branded card in Warmbly's accent color with contact and subject fields, not a plain line.
 
-Slack and Discord notifications arrive as a branded card in Warmbly's sky-blue accent: a title, your message text when you set one, and contact and subject fields, rather than a plain line. Discord uses a rich embed and Slack a colored attachment.
-
-### Native (built-in) actions
-
-These act directly on the event's contact and need no external connection. Pick **Warmbly (built-in)** under **Run**:
-
-| Action | What it does |
+| Built-in action | What it does |
 | --- | --- |
-| Add a tag | Adds a contact category (tag) |
-| Remove a tag | Removes a contact category (tag) |
-| Label the email | Applies inbox labels to the conversation the contact replied on |
-| Create a task | Creates a task assigned to the workspace owner |
-| Create a deal | Creates a CRM deal in a chosen pipeline and stage |
-| Move the deal stage | Moves the contact's most recent open deal in a pipeline |
-| Unsubscribe the contact | Unsubscribes the contact (works when the event carries a campaign) |
-| Set variables | Computes named values from templates and stores them for later steps to reuse |
-| Fire event | Publishes a custom event to the realtime gateway; your app receives it over the API websocket, with no public URL |
-| AI step | One AI node: an agent that takes reversible actions, or a single-shot classify, extract, or generate over the event. See [AI steps in automations](/guides/ai-steps-in-automations/) |
-| AI switch | Routes the event down one of your cases, decided by an AI prompt or a value match. See [AI steps in automations](/guides/ai-steps-in-automations/) |
+| Add / remove a tag | Adds or removes a contact category |
+| Label the email | Applies inbox labels to the replied-on conversation |
+| Create a task | Assigned to the workspace owner |
+| Create a deal | In a chosen pipeline and stage |
+| Move the deal stage | Moves the contact's most recent open deal in that pipeline |
+| Unsubscribe the contact | Only when the event carries a campaign |
+| Set variables | Computes named values from templates for later steps to reuse as `{{.name}}` |
+| Fire event | Publishes a `CUSTOM_EVENT` to the realtime gateway |
+| AI step / AI switch | An agent or single-shot AI node, and AI-decided routing. See [AI steps](/guides/ai-steps-in-automations/) |
 
-**Move the deal stage** acts on the contact's most recent open deal in the chosen pipeline. If they have no open deal there, nothing happens. **Unsubscribe the contact** only applies when the triggering event carries a campaign, such as a reply, bounce, or unsubscribe. **Label the email** only works on a **Reply received** automation: it labels the conversation that reply belongs to (the same labels you set by hand in the unibox), so it needs an inbox thread to act on.
+Three constraints worth knowing: **Move the deal stage** does nothing if the contact has no open deal in that pipeline, **Unsubscribe** needs an event carrying a campaign, and **Label the email** works only on a Reply received automation, since it needs a thread to label.
 
-**Set variables** computes one or more named values from templates and writes them back into the flow, so you can normalize or combine fields once and reuse the result (`{{.name}}`) in several later steps. Each value is a Go template; it does not run arbitrary code.
+**Fire event** is the inverse of the inbound webhook: your app subscribes over the websocket with an API key holding `REALTIME_SUBSCRIBE` and receives `{ name, payload }`, so you get events without hosting a public URL. See [Realtime events](/api/realtime/).
 
-**Fire event** is the inverse of the inbound webhook: instead of an outside system calling you, Warmbly tells your system something happened. Give it an event name and a set of templated key/value fields, and when the step runs Warmbly publishes a `CUSTOM_EVENT` to the realtime gateway. Your app subscribes with an API key (the `REALTIME_SUBSCRIBE` permission) over the websocket and receives `{ name, payload }`, so you get events without hosting a public URL or exposing an endpoint. See [Realtime events](/api/realtime/). The same step is available on campaign sequences.
+### The on-error branch
 
-### Handling errors (the on-error branch)
+Every action has a red dot on its right edge. Drag from it to handle failures (a rejected Slack message, a CRM timeout).
 
-Every action node has an **on error** branch: the red dot on its right edge. Drag from it to the steps that should run when that action fails (a rejected Slack message, a CRM timeout, a webhook that won't connect).
+- **With** an on-error branch connected, a failure follows it and the run is **not** marked failed, like a try/catch. The normal path is skipped.
+- **Without** one, the failure is recorded in History and the run is marked errored, but the flow continues down the normal path best-effort, so one bad step never blocks the rest.
+- A dry run never fails an action, so **Test** always shows the normal path.
 
-- When the action fails and an on-error branch is connected, the flow follows that branch and the run is **not** marked failed, the error is handled, like a try/catch. The normal path below the action is skipped.
-- When an action has no on-error branch, a failure is recorded in History, the run is marked errored, and the flow still continues down the normal path best-effort, so one failing step never blocks the rest.
-- A dry run never fails an action, so **Test** always shows the normal path, not the on-error branch.
+### Templating
 
-### Templating action text
-
-Text fields in an action (a Slack or Discord message, a webhook URL, a deal name, a task title) support variable fields drawn from the trigger. The builder shows clickable chips that insert the available variables for you. Reference each with standard dotted Go-template field access, `{{.key}}`:
+Text fields (messages, webhook URLs, deal names, task titles) accept trigger variables as `{{.key}}`, with clickable chips in the builder to insert them:
 
 ```
 New reply from {{.contact_email}} on {{.campaign_name}}
 ```
 
-Tokens are filled in when the automation runs. An unknown token renders empty rather than failing. See [Personalization & expressions](/guides/expressions/) for the rules and the per-trigger variable list.
+Unknown tokens render empty rather than failing.
 
-## Templates
+## Testing and history
 
-You don't have to build every flow from scratch. Templates give you a ready-made trigger plus a starter set of conditions and actions that you can edit before saving. They're a fast way to set up common patterns, like notifying a channel on a positive reply or creating a deal when a meeting is booked.
+**Test** saves the canvas and dry-runs it against sample data: no messages sent, no records changed. It shows the exact path taken and a preview of each action. AI steps are the exception, running for real so you see actual output, which spends one credit per AI step.
 
-## Testing and run history
-
-Two tools in the builder header help you confirm a flow behaves the way you expect.
-
-### Test (dry run)
-
-Press **Test** to save the current canvas and then **dry-run** it against sample event data. A dry run is safe: **no messages are sent and no records change.** The panel shows the exact path the flow takes (which IF branches it follows) and a preview of what each action would send. If no actions ran, check your conditions, the panel will tell you so.
-
-AI steps are the one exception: a Test runs them for real so you can see the actual model output and the branches it drives, which means a Test spends one credit per AI step. See [AI steps in automations](/guides/ai-steps-in-automations/).
-
-### History
-
-Press **History** to see recent real runs of this automation. Each run shows whether it succeeded or errored, when it started, and the result of each action step: the error text when a step fails, and a short summary of what the step did when it succeeds (the channel or URL it used, or the variables a Set variables step computed). Run history updates live as the automation fires, so you can watch it work without refreshing.
+**History** shows recent real runs: success or error, start time, and per-step results (error text on failure, a short summary on success). It updates live as the automation fires.
 
 <Callout type="info" title="Best-effort by design">
-Automation runs are best-effort and bounded against loops, so one failing step won't block the rest of the flow. The run is still recorded as errored in History so you can see what went wrong.
+Runs are best-effort and bounded against loops, so one failing step won't block the rest. The run is still recorded as errored so you can see what went wrong.
 </Callout>
 
 ## Related guides
@@ -192,6 +142,6 @@ Automation runs are best-effort and bounded against loops, so one failing step w
     The condition and templating language shared by automations and campaigns.
   </Card>
   <Card title="Deliverability" href="/guides/deliverability/">
-    Warmup health and complaint signals that several automation triggers fire on.
+    Warmup health and complaint signals that several triggers fire on.
   </Card>
 </Cards>

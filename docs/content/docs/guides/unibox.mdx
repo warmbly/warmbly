@@ -3,148 +3,106 @@ title: "Unibox"
 description: "A unified inbox across all connected mailboxes, with categories and threading."
 ---
 
-The Unibox is one inbox for every mailbox you have connected to Warmbly. Instead of logging into each account separately, you read, sort, and reply to every inbound message from a single screen. Conversations are grouped into threads, you can label them with your own categories, and the whole view stays live as new mail arrives.
+One inbox for every connected mailbox. Read, sort, and reply from a single screen instead of logging into each account. Three columns: a **scope rail** for picking what to look at, a **conversation list**, and a **thread view** where you read and reply.
 
-It is laid out in three columns:
-
-- A **scope rail** on the left for picking what to look at (All, Unread, a single mailbox, a tag, a category, and more).
-- A **conversation list** in the middle, with one row per conversation.
-- A **thread view** on the right that opens the conversation you click, where you read and reply.
-
-## The unified inbox
-
-Every connected mailbox feeds the same list. By default the Unibox shows everything across all of your accounts, newest first. The scope rail on the left lets you narrow that down without leaving the page.
-
-The Inbox section of the rail has these views, each with a live count:
+## Scopes
 
 | View | Shows |
 | --- | --- |
 | All | Every conversation across every mailbox |
-| Unread | Conversations with at least one unread message |
-| Today | Conversations with activity today |
-| This week | Conversations from the last 7 days |
-| Awaiting reply | Conversations where the other side is waiting on you |
-| Snoozed | Conversations you have snoozed for later |
-| Scheduled | Replies you have queued to send later |
+| Unread | At least one unread message |
+| Today / This week | Activity today, or in the last 7 days |
+| Awaiting reply | The other side is waiting on you |
+| Snoozed | Snoozed for later |
+| Scheduled | Replies queued to send later |
 
-Below that, the rail lists each connected mailbox with its own unread count, plus your **Categories** and **Tags**. Click any of them to filter the list to just that mailbox, category, or tag. When you have a lot of mailboxes or tags, each section collapses to the first few with a `Show all` toggle and an inline filter box, so the rail never becomes a wall of scrolling.
+Below those, the rail lists each mailbox with its unread count, plus your **Categories** and **Tags**. Long lists collapse to the first few with a `Show all` toggle and an inline filter.
 
-All of the counts in the rail come from the server in a single request, so they match the rows you see. The view you are looking at, and the conversation you have open, are both stored in the page URL (for example `/app/unibox/unread`), so you can refresh, bookmark, or share a link and land back in the same place.
+Counts come from the server in one request, so they always match the rows. The current view and open conversation live in the URL (`/app/unibox/unread`), so refreshing, bookmarking, and sharing all land in the same place.
 
-### Searching and filtering
-
-The search box at the top of the conversation list searches within whatever scope you are in. Press `/` to jump straight to it. For more precise filtering, open the filters (the settings icon next to search) to narrow by sender, mailbox, tag, category, date range, and read state.
+Search (press `/`) searches within your current scope. The filters icon narrows by sender, mailbox, tag, category, date range, and read state.
 
 ## Threading
 
-The Unibox collapses messages into conversations the way Gmail does: each row in the list is one thread, not one message. If a conversation has several back-and-forth messages, you still see a single row for it, with a small count badge showing how many messages are inside.
-
-Open a conversation and the thread view shows every message in order, with the participants and the mailbox the thread belongs to. A reply you send, or a new inbound message on the same conversation, lands in the same thread rather than creating a new row.
-
-When you have several conversations open over time, the list also groups rows under date headers (`Today`, `Yesterday`, `This week`, `Earlier`) so scanning down the list reads like a timeline.
+Each row is a conversation, not a message, with a badge showing how many messages are inside. Opening it shows every message in order with participants and the owning mailbox. Replies and new inbound mail land in the same thread. Rows group under `Today`, `Yesterday`, `This week`, and `Earlier` headers.
 
 <Callout type="info" title="Keyboard navigation">
-The conversation list is keyboard-friendly. Use `j` and `k` to move between rows, `Enter` to open the focused conversation, `Esc` to close it, and `/` to focus search. A small cheat sheet sits at the bottom of the list.
+`j` / `k` move between rows, `Enter` opens, `Esc` closes, `/` focuses search, `c` labels. A cheat sheet sits at the bottom of the list.
 </Callout>
 
 ## Categories and labels
 
-Categories are your own labels for conversations. They are the same categories you use elsewhere in Warmbly (for example on contacts), so a label like `Interested` or `Follow up` means the same thing everywhere.
+Categories are your own conversation labels, shared with the rest of Warmbly, so `Interested` means the same thing on a contact as it does here. Label with the **Label** button or `c`: search existing categories, tick what applies, or type a name and **Create**. A conversation can carry several.
 
-To label a conversation, open it and use the **Label** button in the thread header, or press `c`. A small menu opens where you can search your existing categories, tick the ones that apply, and create a new category on the spot by typing a name and choosing **Create**. Labels are assigned per conversation, and a conversation can carry more than one.
+Labeled conversations show colored chips on the row and in the header, and each category appears in the rail with its own count for one-click filtering. **Labels are manual**; Warmbly never auto-tags.
 
-Once a conversation is labeled:
-
-- Its labels show as colored chips on the row in the list and in the thread header.
-- The category appears in the rail under **Categories**, with its own count, so you can filter the whole inbox down to just that category in one click.
-
-Categories are assigned manually. Warmbly does not auto-tag conversations for you, so a label only appears when you put it there.
-
-<Callout type="info" title="Categories vs. tags">
-Categories are labels you apply to conversations inside the Unibox. Tags are labels on the mailboxes themselves (for example grouping accounts by client or domain). Both appear as filters in the rail, but they describe different things.
+<Callout type="info" title="Categories vs tags">
+Categories label conversations. Tags label the mailboxes themselves (grouping accounts by client or domain). Both filter from the rail, but they describe different things.
 </Callout>
 
-## Seen and unread
+## Read state
 
-A conversation is unread when any message inside it has not been seen yet. Unread conversations stand out two ways at once: a bright bar down the left edge of the row, and bolder text. This makes them easy to spot from a distance, and it keeps the **Unread** count in the rail honest.
-
-When you open a conversation, its unread messages are marked as seen automatically, and the unread count, the bolding, and the collapsed row all update to match. Read state is kept in sync with the mailbox provider, so marking something read or unread in the underlying account is reflected in the Unibox too.
+A conversation is unread when any message inside is unseen, marked by a bright left edge bar and bolder text. Opening it marks its messages seen and updates the counts. Read state syncs both ways with the mailbox provider.
 
 ## Replying
 
-Open a conversation and you reply right inside the thread view. There is a **Reply** button at the bottom, and a **Forward** button next to it. You can also hover any individual message to reply to that specific message in the thread. The composer only appears once you ask for it, so a conversation you are just reading stays clean.
+Reply, forward, or hover any single message to reply to it specifically. The composer only appears when you ask for it. Replies go from the mailbox that owns the thread, so conversations stay on one account. You can apply a saved **template** or **Insert booking link**.
 
-Replies go out from the mailbox that owns the thread, keeping the conversation on the same account it started on. You can apply a saved **template** or use **Insert booking link** to drop in a scheduling link; the reply is sent as you write it.
+### AI drafts
 
-### AI reply drafts
+AI lives at your cursor, not in the toolbar. With the cursor in the body, click the sparkle (or press **⌘J**) for three options: write something inline, **Draft a reply from this thread**, or **Continue writing**.
 
-AI lives where you type, not in the toolbar. With the cursor in the body, a small sparkle sits at the end of your current line; click it (or press **⌘J**) and a menu opens at the cursor with three things: ask AI to write something and insert it right there, **Draft a reply from this thread**, or **Continue writing** from where you stopped. Inserted text types itself in and can be undone or regenerated in one click.
+A thread draft is grounded in the whole conversation, the contact's record and campaign membership, and your workspace **voice profile**. While it writes, a review bar offers **Keep**, **Retry**, **Adjust** (steer with an instruction like "shorter"), or **Discard**. Nothing sends until you press Send. Each draft costs [AI credits](/guides/ai-credits/).
 
-A full thread draft is grounded in the whole conversation, what Warmbly knows about the contact (their details and which campaigns they are in), and your workspace **voice profile**, so it answers the actual message in your voice rather than a generic template. While it writes, a review bar appears above the body: **Keep** it, **Retry** for a fresh take, **Adjust** to steer the redraft with an instruction ("shorter", "mention pricing"), or **Discard** to restore what you had. Nothing is sent until you press **Send** yourself. Each draft costs AI credits (see [AI credits](/guides/ai-credits/)).
+Select any text for a floating **Edit with AI** pill: quick actions (improve, shorten, expand, fix grammar, friendlier, more formal) or a free instruction, rewriting just the selection with **Undo** and **Again** one click away. One credit per rewrite. The same control works in the campaign step editor.
 
-You can also edit any passage in place: select text in the body and a floating **Edit with AI** pill appears over the selection. It offers quick actions (improve, shorten, expand, fix grammar, friendlier, more formal) or a free instruction, rewrites just the selected text, and leaves the change selected with **Undo** and **Again** one click away. The same control works in the campaign step editor. Each rewrite costs one credit.
+Set your voice profile under **Settings, Workspace**: what you sell, who to, and how you want to sound. It grounds every AI writing surface.
 
-Set your voice profile under **Settings, Workspace**: a short note on what you sell, who you sell to, and how you want to sound. It grounds every AI writing surface, not just reply drafts.
+For drafts written automatically on every inbound reply and held for approval, turn on the [inbox agent](/guides/inbox-agent/). It never sends on its own.
 
-Want Warmbly to draft the reply for you the moment someone replies, without pressing **Draft reply** each time? Turn on the [inbox agent](/guides/inbox-agent/): on every inbound reply it writes a suggested reply and holds it under **Agent drafts** for you to approve, edit, or discard. It still never sends on its own.
+## Composing
 
-## Composing a new email
+**Compose** in the header, the `n` key anywhere, or the **Email** action on a contact opens a docked window so you can keep browsing while writing.
 
-The **Compose** button in the Unibox header (or the **n** key anywhere in the dashboard, or the **Email** action on a contact) opens a docked compose window in the corner, so you can keep browsing the inbox while you write. The contact drawer variant arrives with the recipient prefilled.
-
-The **To** field searches your contacts as you type (name, email, company) and also accepts any raw address. If the recipient is on your workspace suppression list (bounced, complained, or unsubscribed), the composer tells you before you write a word and blocks the send.
-
-The **From** menu defaults to **Auto**, which picks the best mailbox for the recipient (existing conversation first, then remaining daily budget and domain auth). The menu is searchable and can be filtered by mailbox tag; with a tag selected, the Auto row becomes **Auto in that tag** and picks the best mailbox from that group only, so a workspace with mailboxes tagged per brand or team can auto-pick within the right one. Through the API this is the optional `from_tag_id` field on `POST /unibox/compose`.
+**To** searches contacts as you type and accepts raw addresses. Suppressed recipients (bounced, complained, unsubscribed) are flagged before you write a word, and the send is blocked.
 
 ### Auto mailbox selection
 
-**From** defaults to **Auto**: Warmbly scores every active mailbox for the recipient and picks the best one, preferring the mailbox that already has a conversation with them (contacts should keep hearing from the same address), then the one with the most daily sending budget left, with domain authentication health as a tiebreaker. The picker shows the resolved pick and the reason before you send, and opening it reveals every mailbox with its budget bar (sent today against its daily limit), a history badge for past messages with that recipient, and an auth-health dot, so overriding the pick is an informed choice. The send confirmation reports which mailbox was used.
+**From** defaults to **Auto**, scoring every active mailbox for the recipient: an existing conversation with them wins first (contacts should keep hearing from one address), then the most remaining daily budget, with domain auth health as the tiebreaker.
 
-### Drafts
+The picker shows the pick and its reason before sending. Opening it reveals every mailbox with a budget bar (sent today against its limit), a history badge, and an auth-health dot, so overriding is informed. The menu filters by mailbox tag; with a tag selected, Auto picks within that group only, which is the `from_tag_id` field on `POST /unibox/compose`.
 
-Everything you type autosaves to **Drafts** after a moment of quiet (the header shows Saving and Saved as it happens). Closing the window keeps the draft; sending or emptying it out removes it. Your drafts live under the Compose button in the rail: click one to pick up where you left off, on any device, even mid-draft on another one. Drafts are personal, not shared with teammates.
+### Drafts and history
 
-### History with a recipient
+Typing autosaves to **Drafts** after a pause. Closing keeps the draft; sending or emptying removes it. Drafts sit under the Compose button, resume on any device, and are personal rather than shared.
 
-Once a recipient is set, the **History** button slides out a panel with every conversation you have had with them, without leaving the draft. Tabs split the full back-and-forth from just the mail you sent them, and a search box narrows by subject. Rows open the real thread in the Unibox, and the panel notes which mailbox you usually email them from.
+With a recipient set, **History** slides out every conversation you have had with them: tabs split the full thread from just your sent mail, search narrows by subject, rows open the real thread, and the panel notes which mailbox you usually use.
 
-The same AI experience as replies lives in the compose body: **⌘J** at the cursor to write inline, select text to **Edit with AI**, and a **Suggest** action next to an empty subject line writes one from the body. Sends can also be scheduled with the same presets as replies.
+**⌘J**, **Edit with AI**, and a **Suggest** action for an empty subject all work here too. AI drafts are grounded in the contact record, your full correspondence with that address, and your voice profile, and the review card shows what it used. When it genuinely cannot tell what the email is for, it asks one short question instead of inventing a pitch.
 
-**Draft this email with AI** is grounded the same way reply drafts are: the recipient's contact record (details and campaign membership), your full correspondence history with that address, and your workspace voice profile all feed the draft, and the review card shows exactly what it was grounded in. When the AI genuinely cannot tell what the email is for, it asks you one short question instead of inventing a pitch; answer inline and it writes the email. If no voice profile is set, the composer points you to **Settings, Workspace** so drafts know your product instead of sounding generic.
+### Sending controls
 
-### Scheduling a send
+| Control | Behavior |
+|---------|----------|
+| **Undo send** | Instant sends wait 30s by default (adjustable 5 to 120s under Settings, Profile). A header countdown offers **Cancel**, which returns the email to the composer intact. Applies to API sends with `send_mode: instant` too. |
+| **Schedule** | Queue a send for later. It appears inline in the thread as a dashed card and in the **Scheduled** view, cancellable any time. A usage meter warns as you approach the queued-send cap. |
+| **Snooze** | Clears a conversation until a time you pick, up to 90 days out, with presets or a custom time. **Un-snooze now** brings it back immediately. |
 
-Instead of sending immediately, you can queue a reply to go out later. Scheduled sends appear inline at the bottom of the thread (with a dashed card and the time they will fire) and also in the **Scheduled** view in the rail. You can cancel a scheduled send any time before it goes out. There is a cap on how many sends you can have queued at once; the rail shows a small usage meter as you approach it.
+Scheduled and smart-queued sends skip the undo window, since they already wait. Cancel them from the **Scheduled** view, or via `DELETE /unibox/scheduled/:task_id`.
 
-### Undo send
+## Realtime
 
-Emails you send right away do not actually leave for a short window, so you can still take them back. After you hit **Send** on a compose or a reply, a countdown appears in the dashboard header (and as a banner in the mobile app) showing when the email will go out, with a **Cancel** action next to it. Cancelling returns the email to the composer with everything you wrote intact.
-
-The window is 30 seconds by default and adjustable between 5 and 120 seconds under **Settings, Profile**. It applies per user, to your own sends. Scheduled and smart-queued sends are not affected; those already wait, and you cancel them from the **Scheduled** view as before. This also applies to sends made through the API with `send_mode` set to `instant`: the response's `scheduled_at` reflects the delay, and `DELETE /unibox/scheduled/:task_id` cancels within the window.
-
-### Snoozing
-
-Snoozing clears a conversation out of your inbox until a time you pick, then brings it back. Use the **Snooze** button in the thread header for quick presets (in 1 hour, tomorrow at 9:00, next week, and so on) or pick a custom date and time. Snoozed conversations live in the **Snoozed** view until they return. You can snooze up to 90 days out, and **Un-snooze now** brings a conversation back immediately.
-
-## How it stays realtime
-
-The Unibox is live. You do not need to refresh it.
-
-- When a new message arrives, it appears in the list, the matching thread updates if you have it open, and the unread count goes up on its own.
-- When read state changes, or a message is updated, the affected conversation and the counts refresh.
-- Replies, scheduled sends, snoozes, and label changes all update the relevant views right away.
-
-This keeps the rail counts, the conversation list, the open thread, and the per-mailbox and per-category counts all consistent with each other in real time.
+Nothing needs refreshing. New mail appears in the list, updates the open thread, and raises the unread count on its own. Read-state changes, replies, scheduled sends, snoozes, and label changes all refresh the affected views, keeping rail counts, the list, and the open thread consistent.
 
 <Callout type="info" title="Keeping inboxes healthy">
-Replying promptly and keeping conversations organized supports sender reputation, which is what warmup and good deliverability practices protect. See the [Deliverability](/guides/deliverability/) guide for how Warmbly tracks the health of each mailbox.
+Replying promptly supports sender reputation, which warmup and good deliverability practice protect. See [Deliverability](/guides/deliverability/).
 </Callout>
 
 ## Related
 
 <Cards>
   <Card title="Meetings" href="/guides/meetings/">
-    Connect Calendly or Cal.com and drop booking links into your replies.
+    Connect Calendly or Cal.com and drop booking links into replies.
   </Card>
   <Card title="Deliverability" href="/guides/deliverability/">
     How mailbox health and sending reputation are tracked.
