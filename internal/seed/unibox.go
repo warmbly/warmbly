@@ -108,7 +108,7 @@ func seedUnibox(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 		{
 			id: UniboxOwnerWelcomeID, userID: UserOwnerID, emailID: EmailOwnerSelfID,
 			threadID: "seed-thread-owner-welcome", messageID: "<seed-owner-welcome@warmbly.local>",
-			uid: 401, flags: []string{}, from: []string{"Warmbly <hello@warmbly.com>"},
+			uid: 401, flags: []string{}, from: []string{"Warmbly <team@warmbly.com>"},
 			to: []string{"Owner Inbox <owner@warmbly.local>"}, subject: "Welcome to Warmbly",
 			snippet:      "Your account is ready. Connect another mailbox or start a campaign whenever you are.",
 			seen:         false,
@@ -117,7 +117,7 @@ func seedUnibox(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 		{
 			id: UniboxOwnerDigestID, userID: UserOwnerID, emailID: EmailOwnerSelfID,
 			threadID: "seed-thread-owner-digest", messageID: "<seed-owner-digest@warmbly.local>",
-			uid: 402, flags: []string{"\\Seen"}, from: []string{"Warmbly Digest <digest@warmbly.com>"},
+			uid: 402, flags: []string{"\\Seen"}, from: []string{"Warmbly Digest <team@warmbly.com>"},
 			to: []string{"Owner Inbox <owner@warmbly.local>"}, subject: "Your weekly deliverability digest",
 			snippet:      "Inbox placement held steady across both connected mailboxes this week. No complaints, no hard bounces.",
 			seen:         true,

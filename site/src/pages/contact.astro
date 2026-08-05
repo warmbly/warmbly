@@ -28,17 +28,10 @@ import Icon from '../components/Icon.astro';
 const channels = [
   {
     icon: 'mail',
-    title: 'General',
-    email: 'hello@warmbly.com',
-    topic: 'Anything that does not fit the sales inbox. Account questions, partnerships, feedback, or simply saying hello.',
+    title: 'Email us',
+    email: 'team@warmbly.com',
+    topic: 'Account questions, custom plans, dedicated workers, BYOK, SSO, volume pricing, procurement, partnerships, feedback, or simply saying hello.',
     sla: 'within 1 business day',
-  },
-  {
-    icon: 'send',
-    title: 'Sales',
-    email: 'sales@warmbly.com',
-    topic: 'Custom plans, dedicated workers, BYOK, SSO, volume pricing, and procurement questions.',
-    sla: 'within 4 business hours',
   },
 ];
 
@@ -46,17 +39,17 @@ const steps = [
   {
     n: '01',
     title: 'You send',
-    body: 'Pick the inbox that fits. One human gets the message, not a triage queue.',
+    body: 'Send us a note. One human gets the message, not a triage queue.',
   },
   {
     n: '02',
     title: 'We route',
-    body: 'The owning team picks it up. General and sales each have their own rotation, so the right person reads it first.',
+    body: 'The owning team picks it up. Whoever covers your topic reads it first, so it does not bounce between people.',
   },
   {
     n: '03',
     title: 'You hear back',
-    body: 'A real reply within the SLA listed on each channel. No tracker, no autoresponder loop.',
+    body: 'A real reply within the response time published above. No tracker, no autoresponder loop.',
   },
 ];
 
@@ -66,18 +59,18 @@ const faqs = [
     a: 'No. We keep support over email so the answer is searchable, attributable, and reviewable later. For an enterprise plan, your account team will set up a dedicated Slack channel.',
   },
   {
-    q: 'How fast does sales actually respond?',
-    a: 'Within four business hours, usually faster. Business hours are 09:00 to 18:00 US Eastern, Monday through Friday, excluding US federal holidays.',
+    q: 'How fast do you actually respond?',
+    a: 'Within one business day, usually faster. Business hours are 09:00 to 18:00 US Eastern, Monday through Friday, excluding US federal holidays.',
   },
   {
     q: 'Are you hiring?',
-    a: 'Sometimes. Open roles are listed on the careers page when they exist. If nothing is posted but you think you would be a strong fit, send a note to hello@warmbly.com with a short pitch and a link to your work.',
+    a: 'Sometimes. Open roles are listed on the careers page when they exist. If nothing is posted but you think you would be a strong fit, send a note to team@warmbly.com with a short pitch and a link to your work.',
   },
 ];
 ---
 <Layout
   title="Contact Sales & Support | Warmbly"
-  description="Reach the team or sales directly. Two inboxes, one owner each, with published response times."
+  description="Reach the team directly. One inbox, owned by a person, with a published response time."
 >
   <!-- =====================================================
        HERO · Split postcard
@@ -146,7 +139,7 @@ const faqs = [
                 From the team
               </div>
               <p class="text-white/90 text-[15.5px] md:text-[16.5px] leading-[1.55] max-w-md">
-                Each inbox lands with a small group of people who actually own the answer. Pick the topic, and we will pick the right pair of hands.
+                Your message lands with a small group of people who actually own the answer, not a triage queue.
               </p>
             </div>
           </div>
@@ -162,10 +155,10 @@ const faqs = [
               Contact
             </div>
             <h1 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.025em] leading-[1.05] text-heading">
-              Pick the inbox.<br/>We will pick up the rest.
+              Send one email.<br/>We will pick up the rest.
             </h1>
             <p class="mt-5 text-[15.5px] text-foreground/75 leading-relaxed max-w-md">
-              No support black hole and no chatbot. Every channel below is owned by a person, with a response time we publish in writing.
+              No support black hole and no chatbot. One inbox, owned by a person, with a response time we publish in writing.
             </p>
           </div>
 
@@ -174,15 +167,15 @@ const faqs = [
               href="#channels"
               class="inline-flex items-center gap-1.5 font-semibold text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] transition-colors"
             >
-              See all channels
+              Email the team
               <Icon name="arrowRight" size={14} />
             </a>
             <a
-              href="mailto:hello@warmbly.com"
+              href="mailto:team@warmbly.com"
               class="inline-flex items-center gap-1.5 text-foreground/75 hover:text-heading transition-colors font-mono"
             >
               <Icon name="mail" size={13} />
-              hello@warmbly.com
+              team@warmbly.com
             </a>
           </div>
         </div>
@@ -205,7 +198,7 @@ const faqs = [
             Channels
           </div>
           <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] leading-[1.1] text-heading max-w-2xl">
-            Two inboxes. One owner each.
+            One inbox. A real owner.
           </h2>
         </div>
         <p class="text-[13.5px] text-muted-foreground max-w-xs md:text-right">
@@ -373,7 +366,7 @@ const faqs = [
     <div class="container-page">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-5 border-t border-[color:var(--border)] pt-10">
         <p class="text-[14px] text-foreground/75 max-w-md">
-          Still not sure which inbox? Send a note to <a href="mailto:hello@warmbly.com" class="font-mono text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">hello@warmbly.com</a> and we will route it.
+          Not sure where to start? Send a note to <a href="mailto:team@warmbly.com" class="font-mono text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">team@warmbly.com</a> and we will route it internally.
         </p>
         <div class="flex items-center gap-5 text-[13px]">
           <a href="/trust/" class="inline-flex items-center gap-1.5 text-foreground/75 hover:text-heading">

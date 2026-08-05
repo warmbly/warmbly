@@ -18,7 +18,7 @@ const (
 	RegisteredAddr = "1 Example Street, London, W1A 1AA"
 	WebsiteURL     = "https://warmbly.com"
 	AppURL         = "https://app.warmbly.com"
-	SupportEmail   = "support@warmbly.com"
+	SupportEmail   = "team@warmbly.com"
 	TermsURL       = "https://warmbly.com/terms"
 	PrivacyURL     = "https://warmbly.com/privacy"
 )

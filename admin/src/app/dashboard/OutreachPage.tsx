@@ -56,7 +56,7 @@ export default function OutreachPage() {
     const qc = useQueryClient();
     const [mode, setMode] = useState<Mode>("email");
     const [target, setTarget] = useState("");
-    const [replyTo, setReplyTo] = useState("support@warmbly.com");
+    const [replyTo, setReplyTo] = useState("team@warmbly.com");
     const [subject, setSubject] = useState("");
     const [body, setBody] = useState("");
 
@@ -298,7 +298,7 @@ export default function OutreachPage() {
                             id="reply_to"
                             value={replyTo}
                             onChange={(e) => setReplyTo(e.target.value)}
-                            placeholder="support@warmbly.com (replies will land here)"
+                            placeholder="team@warmbly.com (replies will land here)"
                             className="font-mono text-sm"
                         />
                         <p className="text-[10px] text-muted-foreground mt-0.5">
