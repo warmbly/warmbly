@@ -45,10 +45,16 @@ export async function generateMetadata(props: PageProps<'/[...slug]'>): Promise<
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
+  const url = page.url.endsWith('/') ? page.url : `${page.url}/`;
+
   return {
     title: page.data.title,
     description: page.data.description,
+    alternates: { canonical: url },
     openGraph: {
+      url,
+      title: page.data.title,
+      description: page.data.description,
       images: getPageImage(page).url,
     },
   };
