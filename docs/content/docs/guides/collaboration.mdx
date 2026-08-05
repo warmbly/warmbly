@@ -3,69 +3,60 @@ title: Live collaboration
 description: See your team working in real time across the whole dashboard.
 ---
 
-The Warmbly dashboard is live by default. Campaign sends, opens, clicks, replies, new inbox mail, contact changes, automation runs, meetings, and audit entries all appear the moment they happen, for everyone in the workspace, without a refresh. On top of that event stream sits a presence layer that shows who on your team is online and what they are working on.
+The dashboard is live by default: sends, opens, clicks, replies, new mail, contact changes, automation runs, meetings, and audit entries appear the moment they happen, for everyone, without a refresh. A presence layer on top shows who is online and what they are working on.
 
 ## Online teammates
 
-The header shows an avatar stack of every workspace member who currently has the dashboard open. Hover it to see each person's name and where they are right now (for example "in unibox" or "editing"). The stack updates instantly as people come and go.
-
-Click a teammate in the list to jump straight to the page they are on. It is the fastest way to join someone: open the stack, click their name, and you are looking at the same screen, with their live cursor in view.
+The header shows an avatar stack of everyone with the dashboard open. Hover for each person's name and where they are ("in unibox", "editing"). Click a teammate to jump straight to their page, which is the fastest way to join someone.
 
 ## Who is already on this?
 
-Anywhere a record can be opened, Warmbly shows you when a teammate already has it open:
+Anywhere a record opens, Warmbly shows when a teammate has it too:
 
-- **Unibox**: a conversation row gets a green pulse when someone else is reading it, and an amber pulse when they are already writing a reply. The open thread shows a pill with their name, so two people never answer the same prospect twice.
-- **Automations**: opening a flow that a teammate is editing shows an amber "is editing" pill next to the automation name. Coordinate before saving; the last save wins.
-- **Campaigns**: the campaign header shows who else is viewing the same campaign.
-- **Contacts**: the contact panel shows when someone else has the same person open for editing.
-- **Everywhere else a record opens**: the same indicator appears on a deal, a CRM task, an email template, a mailbox's settings, and an integration connection, so you always know when someone else is already in the same record.
+| Surface | Indicator |
+|---------|-----------|
+| Unibox | Green pulse on a row someone is reading, amber when they are writing a reply, plus a name pill on the open thread, so two people never answer the same prospect |
+| Automations | An amber "is editing" pill by the automation name. Coordinate before saving: last save wins |
+| Campaigns, contacts | Who else is viewing or editing the same record |
+| Deals, tasks, templates, mailbox settings, integrations | The same indicator on every record that opens |
 
-Indicators are scoped to your workspace. Only members of the same organization can see your presence, and what they see is limited to your name, avatar, the dashboard page you are on, and the record you have open.
+Indicators are workspace-scoped. Teammates see only your name, avatar, current page, and open record.
 
 ## What updates live
 
-Beyond presence, the dashboard reflects changes from any source in real time:
-
-- An email sent inside a campaign updates the campaign's progress, the leads list, and analytics for every viewer the moment the worker sends it.
-- Opens, clicks, and replies pulse into campaign stats and the activity feed as recipients act. Automated replies such as out-of-office do not count as replies.
+- Campaign sends update progress, the leads list, and analytics for every viewer as the worker sends.
+- Opens, clicks, and replies pulse into stats and the activity feed. Out-of-office and other automated replies never count as replies.
 - New mail appears in every member's unibox as it syncs, respecting inbox permissions.
-- Contact imports, edits, and deletes refresh the contacts views for the whole team.
-- Mailbox health transitions (for example a warmup quarantine) flip status badges live.
-- The CRM is live end to end: moving a deal between stages, ticking a task done, or editing a pipeline's stages all show up for every teammate on that view the moment you make the change, no refresh needed. While a teammate is dragging a deal you also see a colored ring on the card so you know it is in motion.
-- The [audit log](/guides/security/) streams new entries as teammates act, so the activity trail is also a live feed.
+- Contact imports, edits, and deletes refresh contacts views for the whole team.
+- Mailbox health transitions (a warmup quarantine, say) flip status badges live.
+- The CRM is live end to end: moving a deal, ticking a task, or editing pipeline stages shows up immediately, and a deal being dragged carries a colored ring so you know it is in motion.
+- The audit log streams new entries, so the activity trail is itself a live feed.
 
-Events are permission-aware: a member without inbox access never receives unibox events, and billing events only reach members who can manage billing. See [Team roles](/guides/team-roles/) for the permission model.
+**Events are permission-aware**: a member without inbox access never receives unibox events, and billing events reach only those who can manage billing. See [Team roles](/guides/team-roles/).
 
-## Live cursors
+## Live cursors and chat
 
-Wherever two teammates are on the same page, you see each other's cursors move in real time, each tagged with the person's avatar and name so it is always clear who is who. This works across the dashboard: the contacts table, the deal board, the unibox, settings, and every other page. On pages that scroll at the app level the cursor tracks the content as either person scrolls; elsewhere it marks where the teammate's pointer is.
+On a shared page you see each other's cursors move, tagged with avatar and name, across the contacts table, deal board, unibox, settings, and everywhere else. On app-scrolling pages the cursor tracks content as either person scrolls.
 
-### Cursor chat
+Press `/` to chat from your cursor: an input opens at your pointer and what you type appears live in a colored bubble beside your cursor on teammates' screens, exactly where you are pointing. Enter sends (it lingers a few seconds, then fades), Escape dismisses. It is built for spatial remarks that do not deserve a thread: "this one?", "typo here".
 
-When a teammate is on the same page or canvas, press `/` to chat from your cursor. A small input opens at your pointer; whatever you type appears live in a colored bubble next to your cursor on your teammates' screens, exactly where you are pointing. Press Enter to send (the message lingers for a few seconds, then fades), Escape to dismiss. It is made for the quick, spatial remarks that do not deserve a message thread: "this one?", "typo here", "look at this step".
+Chat respects record permissions, enforced by the realtime service like the rest of the stream.
 
-Chat respects record permissions: a message typed on a surface is only delivered to teammates whose role can see that kind of record, enforced by the realtime service like the rest of the event stream.
+## Shared builder canvases
 
-## Live on the builder canvases
+The [automation builder](/guides/automations/) and [sequence](/guides/sequences/) editor are shared canvases. You see teammates' cursors, watch cards slide as they drag, and see what each person has selected, outlined in their cursor color with their name, so "the step I have selected" is visible rather than described. Cursor chat works here too.
 
-The [automation builder](/guides/automations/) and the campaign [sequence](/guides/sequences/) editor are shared canvases. When a teammate is in the same flow, you see their cursor and watch cards slide as they drag them. Everyone is looking at the same live layout, so you can arrange a flow together without narrating every move.
-
-You also see what each person has selected: the cards a teammate selects get an outline in their cursor color with their name on it, so "the step I have selected" is something everyone can see rather than describe. Selections update live as people click around, and cursor chat works here too.
-
-Card positions also stick. However you arrange the cards, that layout saves automatically and is exactly what you and your teammates see the next time the flow is opened. There is no separate "save layout" step, and moving a card never marks the flow as having unsaved changes. Only edits to the logic do.
-
-Live cursors and drags follow the same privacy rules as the rest of presence: with "show activity" off, a member's pointer and card movements are not shared.
+Card positions save automatically, so the layout you leave is the one everyone opens next time. Moving a card never marks the flow unsaved; only logic edits do.
 
 ## Presence privacy
 
-Presence is a workspace setting, controlled by an admin under Settings, Workspace, Team presence. Two independent toggles decide how much members see about each other:
+An admin controls this under **Settings > Workspace > Team presence** with two independent toggles:
 
-- **Show who's online** turns the live avatar stack and online indicators on or off for the whole workspace. With it off, no one can see who has the dashboard open.
-- **Show activity** keeps online status but hides what each person is doing, so teammates no longer see "viewing", "editing", or "replying to" a specific record. Online stays visible; only the detail is hidden.
+- **Show who's online** turns the avatar stack and online indicators on or off workspace-wide.
+- **Show activity** keeps online status but hides what each person is doing, so no "viewing" or "editing" detail is shared.
 
-The toggles are enforced by the realtime service, so when a control is off the hidden signal is never sent to teammates, not merely hidden in the interface. Changes apply immediately to everyone connected, with no reload. Editing the settings requires the Manage settings permission.
+The realtime service enforces both, so a hidden signal is **never sent**, not merely hidden in the interface. Changes apply immediately with no reload, and editing them needs the Manage settings permission. With "show activity" off, cursors and card drags are not shared either.
 
 ## Developers
 
-The same realtime stream is available to API consumers over a WebSocket, including the presence events that power these indicators. See the [Realtime WebSocket](/api/realtime/) reference for connection details, channels, and rate limits.
+The same stream, including presence events, is available over a WebSocket. See the [Realtime WebSocket](/api/realtime/) reference.
