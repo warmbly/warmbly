@@ -199,8 +199,16 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 		return nil, errx.ErrUser
 	}
 
-	// Pick any healthy worker for the one-shot validation handshake.
-	w, werr := s.workerAssignment.SelectSharedWorker(ctx, true)
+	// Pick any healthy worker for the one-shot validation handshake. Tier is
+	// irrelevant here (nothing is placed yet, the worker just dials the
+	// credentials once), so fall back to the other tier rather than failing:
+	// asking only for free-tier workers made onboarding impossible on any
+	// deployment whose workers all register as premium, which includes a stock
+	// self-host install.
+	w, werr := s.workerAssignment.SelectSharedWorker(ctx, false)
+	if werr != nil || w == nil {
+		w, werr = s.workerAssignment.SelectSharedWorker(ctx, true)
+	}
 	if werr != nil || w == nil {
 		return nil, errx.ErrEmailOnboardNoWorker
 	}

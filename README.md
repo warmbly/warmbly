@@ -110,6 +110,20 @@ git clone https://github.com/warmbly/warmbly && cd warmbly
 make up               # or: docker compose up --build
 ```
 
+You need Docker with Compose v2 and about 10 GB of free disk; the first build
+takes roughly 6 minutes. Then open `http://localhost:5173` and register.
+
+> [!IMPORTANT]
+> Warmbly emails a 6-digit code to finish signup and on every login. A fresh
+> install has no mail relay, so that code lands in the bundled Mailpit catcher
+> at `http://localhost:18025`, not in your inbox.
+
+**➡️ Follow the [step-by-step self-hosting guide](https://docs.warmbly.com/development/deployment-guide/)**
+for the full walkthrough: setting your own secrets, verifying the stack is
+healthy, granting the first admin, exposing it on your network or behind HTTPS,
+connecting Gmail and Microsoft mailboxes, scaling workers, backups, and a
+troubleshooting table for the errors people actually hit.
+
 Every external dependency is picked by an environment variable, so you swap in a
 cloud service only if you want one:
 
@@ -122,9 +136,7 @@ cloud service only if you want one:
 | KMS / root key | **Local AES master key**  | AWS KMS                      |
 | Payments       | **Off (everything unlocked)** | Stripe                   |
 
-Scaling is by mailboxes and workers, not IPs. Reaching it from another machine,
-connecting Gmail, and day-2 operations are all in the
-[self-hosting guide](https://docs.warmbly.com/development/deployment-guide/).
+Scaling is by mailboxes and workers, not IPs.
 
 ## Documentation
 
@@ -134,7 +146,7 @@ The full docs live at **[docs.warmbly.com](https://docs.warmbly.com)**.
 |-----------|----------|
 | [Local development](https://docs.warmbly.com/development/local-development/) | Every make target, the native services, and how seeding works |
 | [Architecture](https://docs.warmbly.com/development/architecture/) | How the control plane and workers split the job, plus the encryption model |
-| [Self-hosting guide](https://docs.warmbly.com/development/deployment-guide/) | Taking it to production and scaling the worker fleet |
+| [Self-hosting guide](https://docs.warmbly.com/development/deployment-guide/) | Step-by-step install, then production, backups, and scaling the worker fleet |
 | [API reference](https://docs.warmbly.com/api/) | Endpoints, auth, permissions, and webhooks |
 
 ## Community

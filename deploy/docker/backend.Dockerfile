@@ -43,8 +43,11 @@ COPY --from=builder /out/backend /app/backend
 COPY --from=builder /out/seed /app/seed
 COPY --from=builder /out/migrate /app/migrate
 
-# Installer script the worker orchestrator uploads + runs over SSH.
-COPY scripts/install-worker.sh /app/scripts/install-worker.sh
+# Installer script the worker orchestrator uploads + runs over SSH, and serves
+# at GET /worker-install.sh. The mode is explicit because COPY otherwise keeps
+# the checkout's: on a filesystem without POSIX permissions that is 0700, and
+# the backend runs as uid 1000, so serving the installer fails with a 500.
+COPY --chmod=755 scripts/install-worker.sh /app/scripts/install-worker.sh
 
 USER warmbly
 EXPOSE 8080

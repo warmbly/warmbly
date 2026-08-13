@@ -11,6 +11,17 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+// WorkerLivenessWindow is how stale a worker's heartbeat may be before
+// placement stops considering it. Workers heartbeat every 30s, so this
+// tolerates a handful of missed beats.
+//
+// Without it, rows for workers that no longer exist stay active and healthy
+// forever and get selected, and the command sent to them times out with no
+// consumer. That is easy to hit: a worker with no WORKER_ID set generates a
+// fresh UUID on every boot, so each container recreate leaves another dead row
+// behind.
+const WorkerLivenessWindow = "10 minutes"
+
 // EmailAccountWorkerInfo contains worker info for an email account
 type EmailAccountWorkerInfo struct {
 	EmailAccountID uuid.UUID
@@ -88,6 +99,7 @@ type WorkerRepository interface {
 
 	// Heartbeat (auto-registers new workers on first contact)
 	UpsertOnHeartbeat(ctx context.Context, id uuid.UUID, ipAddr, tier, egressKind string) error
+	DeactivateWorker(ctx context.Context, id uuid.UUID) error
 
 	// Health and capacity
 	InsertWorkerHealthSample(ctx context.Context, sample *models.WorkerHealthSample) error
@@ -138,10 +150,11 @@ func (r *workerRepository) GetSharedWorkersByTier(ctx context.Context, freeTier 
 		WHERE worker_type = 'shared'
 		  AND active = true
 		  AND free_tier = $1
+		  AND last_seen_at > now() - $2::interval
 		ORDER BY account_count ASC
 	`
 
-	rows, err := r.db.Query(ctx, query, freeTier)
+	rows, err := r.db.Query(ctx, query, freeTier, WorkerLivenessWindow)
 	if err != nil {
 		return nil, err
 	}

@@ -23,6 +23,7 @@ import LoginPage from "@/app/auth/LoginPage";
 import OverviewPage from "@/app/dashboard/OverviewPage";
 import WorkersPage from "@/app/dashboard/WorkersPage";
 import WorkerDetailPage from "@/app/dashboard/WorkerDetailPage";
+import WorkerNewPage from "@/app/dashboard/WorkerNewPage";
 import AuditPage from "@/app/dashboard/AuditPage";
 import OrganizationsPage from "@/app/dashboard/OrganizationsPage";
 import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
@@ -78,6 +79,8 @@ const router = createBrowserRouter([
                 children: [
                     { index: true, element: <OverviewPage /> },
                     { path: "workers", element: <WorkersPage /> },
+                    // Before :id so "new" isn't parsed as a worker id.
+                    { path: "workers/new", element: <WorkerNewPage /> },
                     { path: "workers/:id", element: <WorkerDetailPage /> },
                     { path: "mailboxes", element: <MailboxesPage /> },
                     { path: "users", element: <UsersPage /> },

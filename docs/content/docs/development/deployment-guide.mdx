@@ -1,9 +1,11 @@
 ---
 title: Self-hosting
-description: Run the whole Warmbly platform yourself, from a one-command Docker stack to a distributed worker fleet.
+description: A step-by-step guide to running the whole Warmbly platform yourself, from one Docker command to a distributed worker fleet.
 ---
 
-The default stack needs **no cloud account of any kind**: no AWS, no GCP, no Stripe, no Kafka. One `docker-compose.yml` runs everything on local, open-source pieces, and every external dependency is an env-var switch you can flip later.
+Warmbly self-hosts with **no cloud account of any kind**: no AWS, no GCP, no Stripe, no Kafka. One `docker-compose.yml` runs everything on local, open-source pieces, and every external dependency is an environment variable you can flip later.
+
+Follow the seven steps below in order and you will have a working install. Everything after them is optional.
 
 <Mermaid
   chart={`
@@ -25,62 +27,287 @@ flowchart LR
 `}
 />
 
-## Quick start
+## Before you start
 
-You need Docker 20.10+ with Compose v2 and Git. 2 cores / 4 GB RAM is comfortable for a small install.
+| You need | Why |
+|----------|-----|
+| Docker 20.10+ with Compose v2 | Everything runs as containers |
+| Git | To clone the repository |
+| ~10 GB free disk | The first build produces about 3.7 GB of images plus 2.5 GB of build cache |
+| 4 GB RAM | The running stack idles near 300 MB; the first build is the demanding part |
+| Free ports | 5173, 5174, 8080, 4000, 3000, 4222, 8222, 11025, 15432, 16379, 18025 |
+
+The first build compiles Go, Rust, and Elixir services and builds two frontends. On a modern laptop that takes about **6 minutes**. Later builds reuse the cache and are much faster.
+
+Nothing else is required to install. Two things are worth gathering before you get far, because they are the only credentials that come from outside Warmbly:
+
+- **An SMTP relay** for the platform's own mail. Warmbly emails a login code on every sign-in, and until you set one those go to the bundled Mailpit catcher instead of real inboxes. See [notification email](#notification-email).
+- **OAuth clients** if you want to connect Gmail, Google Workspace, or Microsoft 365 mailboxes. Plain SMTP and IMAP mailboxes need nothing. See [connect mailboxes](#connect-mailboxes).
+
+All configuration lives in a single `.env` at the repository root, covered in [environment configuration](#environment-configuration) with a [complete example](#a-complete-env).
+
+<Callout type="warn" title="Do not run the build on a nearly full disk">
+Building seven images at once is the single most common way a first install fails. If Docker runs out of space mid-build you get a confusing `no space left on device` from whichever service happened to be compiling. See [troubleshooting](#troubleshooting).
+</Callout>
+
+## Install it
+
+<Steps>
+
+<Step>
+
+### Get the code
 
 ```bash
 git clone https://github.com/warmbly/warmbly && cd warmbly
-make up               # or: docker compose -p warmbly up -d --build
 ```
 
-Then:
+</Step>
 
-1. Open `http://localhost:5173` and register (captcha is off by default).
-2. Grant yourself platform admin (the only way to seed the first one), then sign in at `http://localhost:5174`:
+<Step>
 
-   ```bash
-   make grant-admin EMAIL=you@example.com      # ROLE=super|support|ops|analyst
-   ```
+### Set your secrets
 
-3. Optional demo data (`dev@warmbly.com` / `password123`, mailboxes, campaigns, history):
+**One `.env` next to `docker-compose.yml` configures the entire stack.** Every variable is optional and falls back to a working no-cloud default, so an absent or empty `.env` still boots. You set only what you want to change, and it reaches every service that needs it: the backend, consumer, worker, tracking, and realtime.
 
-   ```bash
-   docker compose -p warmbly --profile seed run --rm seed
-   ```
+The compose file ships working dev defaults for every secret, so you can skip this step to try Warmbly on your own machine. **Do not skip it for anything reachable by other people.**
+
+Generate your own values and put them in a `.env` file next to `docker-compose.yml`:
+
+```bash
+cat > .env <<EOF
+AUTH_SECRET=$(openssl rand -base64 32)
+INTERNAL_API_TOKEN=$(openssl rand -hex 24)
+SECRET_KEY_BASE=$(openssl rand -base64 64 | tr -d '\n')
+KMS_LOCAL_MASTER_KEY=$(openssl rand -base64 32)
+CREDENTIALS_ENCRYPTION_KEY=$(openssl rand -hex 32)
+EOF
+```
+
+| Variable | Format | What it protects |
+|----------|--------|------------------|
+| `AUTH_SECRET` | 32+ chars | JWT signing. The realtime service reads the same value as `JWT_SECRET`, and compose wires that for you |
+| `INTERNAL_API_TOKEN` | any random string | The backend's internal API, which workers and the tracking service authenticate against |
+| `SECRET_KEY_BASE` | 64+ chars | Phoenix session signing in the realtime service |
+| `KMS_LOCAL_MASTER_KEY` | base64, exactly 32 bytes | The root key that seals every per-organization data key |
+| `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex chars | Mailbox SMTP and IMAP credentials at rest |
+
+<Callout type="warn" title="Back up the last two keys before you store a single mailbox">
+`KMS_LOCAL_MASTER_KEY` and `CREDENTIALS_ENCRYPTION_KEY` seal every stored credential. Losing them is unrecoverable, and a database backup without them cannot be decrypted.
+</Callout>
+
+</Step>
+
+<Step>
+
+### Start the stack
+
+```bash
+make up
+```
+
+That is `docker compose -p warmbly up -d --build`. It builds the images and starts eleven containers in the background. The first run is the slow one.
+
+</Step>
+
+<Step>
+
+### Check that everything is healthy
+
+```bash
+make status
+```
+
+Wait until `backend`, `postgres`, `redis`, `nats`, `realtime`, `tracking`, and `mailpit` all report `(healthy)`. The backend applies its database migrations on boot, so it takes a few seconds longer than the rest.
+
+Then confirm each entry point answers:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/health   # backend
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/health   # tracking
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4000/health   # realtime
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173          # dashboard
+```
+
+All four should print `200`. If one does not, `make logs backend` (or the service in question) will say why, and the [troubleshooting](#troubleshooting) table covers the usual causes.
+
+</Step>
+
+<Step>
+
+### Create your account
+
+Open `http://localhost:5173` and register. Captcha is off by default, so any email address works.
+
+**Warmbly emails you a 6-digit code to finish signing up, and again on every login.** A fresh install has no real mail relay, so that code goes to the bundled Mailpit catcher instead of a real inbox:
+
+1. Open `http://localhost:18025`
+2. Open the newest message ("Your Verification Code", then "Your Login Code" on later sign-ins)
+3. Copy the 6-digit code back into the dashboard
+
+This is the step people miss most often. Point `SMTP_HOST` at a real relay ([notification email](#notification-email)) once you are past setup, and the codes go to your actual inbox.
+
+</Step>
+
+<Step>
+
+### Make yourself a platform admin
+
+Nothing grants the first platform admin automatically, so do it from the host after your account exists:
+
+```bash
+make grant-admin EMAIL=you@example.com          # ROLE=super|support|ops|analyst, default super
+```
+
+Then sign in at `http://localhost:5174` with the same account and code flow.
+
+</Step>
+
+<Step>
+
+### Load demo data (optional)
+
+To explore a populated workspace instead of an empty one:
+
+```bash
+docker compose -p warmbly --profile seed run --rm --build seed
+```
+
+That creates `dev@warmbly.com` / `password123` along with mailboxes, campaigns, contacts, and two weeks of history. Login still needs the code from Mailpit.
+
+Keep the `--build` flag. `compose run` reuses whatever seed image already exists, and a stale one fails against a newer database schema.
+
+For a demo where mail actually flows end to end, with sends, replies, opens, and clicks, see the [sandbox](/development/sandbox/).
+
+</Step>
+
+</Steps>
 
 ![The dashboard after your first login](/dashboard-campaigns.png)
 
-For a demo where mail actually flows end to end (sends, replies, opens, clicks), see the [sandbox](/development/sandbox/).
-
-## Set your secrets
-
-The compose file ships dev defaults for every secret so the quick start works. Before exposing the install, set your own in a `.env` next to `docker-compose.yml`:
-
-```bash
-AUTH_SECRET=<random, 32+ chars>                 # JWT signing; shared with realtime
-INTERNAL_API_TOKEN=<random>                     # workers + tracking authenticate with this
-SECRET_KEY_BASE=<random, 64+ chars>             # Phoenix session key (realtime)
-KMS_LOCAL_MASTER_KEY=<make gen-key>             # 32 bytes base64; seals per-org data keys
-CREDENTIALS_ENCRYPTION_KEY=<openssl rand -hex 32>   # exactly 64 hex chars; seals mailbox credentials
-```
-
-**Back up `KMS_LOCAL_MASTER_KEY` and `CREDENTIALS_ENCRYPTION_KEY`.** They seal every stored mailbox credential; losing them is unrecoverable.
-
-## What's running
+## What is running
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| web / admin | 5173 / 5174 | Dashboard and admin panel (nginx static builds, URLs injected at container start) |
+| web / admin | 5173 / 5174 | Dashboard and admin panel (static nginx builds, URLs injected at container start) |
 | backend | 8080 | REST API; applies migrations on every boot; `GET /health` |
 | tracking | 3000 | Open pixels and click redirects; `GET /health` |
 | realtime | 4000 | WebSocket fanout; `GET /health` |
-| consumer / worker | none | Event processor; send/sync executor |
+| consumer / worker | none | Event processor; send and sync executor |
 | postgres / redis | 15432 / 16379 | PostgreSQL 16; cache and realtime bridge |
-| nats | 4222 (mon 8222) | Event bus (JetStream) |
-| mailpit | 18025 (SMTP 11025) | Dev mail catcher for notification email |
+| nats | 4222 (monitoring 8222) | Event bus (JetStream) |
+| mailpit | 18025 (SMTP 11025) | Mail catcher for platform email, including login codes |
 
-There is no separate migration step: migrations are embedded in the backend binary (a standalone `/app/migrate` binary ships in the image too).
+There is no separate migration step. Migrations are embedded in the backend binary, and a standalone `/app/migrate` binary ships in the image as well.
+
+## Environment configuration
+
+Everything is configured by environment variable. With compose, put your values in the `.env` next to `docker-compose.yml` and they reach the right services automatically; compose fans a shared block out to backend, consumer, and worker, and maps the handful of names the realtime and tracking services use.
+
+Nothing below is required to start. The compose defaults boot a working stack, and each section here is what you change to move past "works on my machine."
+
+### Values that must agree across services
+
+These are the ones that break things quietly when they drift, because each service reads its own copy. Compose keeps them in sync for you; a hand-rolled deployment must do it deliberately.
+
+| Value | Read by | If it drifts |
+|-------|---------|--------------|
+| `AUTH_SECRET`, seen by realtime as `JWT_SECRET` | backend, realtime | The dashboard loads but never goes live: the websocket rejects every token |
+| `INTERNAL_API_TOKEN`, seen by workers as `ENCRYPTED_KEYS_WORKER_TOKEN` | backend, worker, tracking | Workers cannot fetch decryption keys and tracking cannot resolve click tickets. Both fail closed with `401` |
+| `KMS_LOCAL_MASTER_KEY` | backend, consumer, worker | Sealed data keys cannot be opened. Mailbox credentials stop decrypting |
+| `CREDENTIALS_ENCRYPTION_KEY` | backend, worker | Stored SMTP and IMAP passwords stop decrypting |
+| `EVENTBUS_PROVIDER` and `NATS_URL` | every service | Producers and consumers land on different buses and work silently disappears |
+| `CODEC_PROVIDER` | every service | Events are written in one format and read in another |
+| `PUBSUB_ENABLED` | backend, consumer, realtime | Realtime events are published to a transport nobody is listening on |
+
+### What each service needs
+
+| Service | Needs |
+|---------|-------|
+| backend | Everything: the five secrets, `PRIMARY_DB`, `REDIS`, the provider switches, and the public URLs |
+| consumer | The same shared block as the backend. It writes to Postgres, so it needs `PRIMARY_DB` and the encryption keys |
+| worker | No database. It needs the event bus, `REDIS`, the encryption keys, `ENCRYPTED_KEYS_BACKEND_URL` plus the internal token, and the `BOX_*` OAuth clients |
+| tracking | The event bus, `BACKEND_INTERNAL_URL`, and `INTERNAL_API_TOKEN` |
+| realtime | `JWT_SECRET`, `SECRET_KEY_BASE`, `DATABASE_URL`, `REDIS_URL`, `PHX_HOST` |
+| web / admin | Only `WARMBLY_*` URLs, read at container start and written into `/config.js`. The same image runs anywhere |
+
+`APP_ENV` accepts `dev` or `prod`. No other value turns on production behavior, and `prod` additionally makes `SENTRY_DSN` and the GeoIP file at `GEODB_PATH` mandatory on every Go service.
+
+### A complete `.env`
+
+Everything a real deployment usually sets, in one file. Delete any line to fall back to its default.
+
+```bash
+# ── Where it lives ────────────────────────────────────────────────
+PUBLIC_HOST=warmbly.example.com          # or set the four URLs below explicitly
+# APP_URL=https://app.example.com
+# API_PUBLIC_URL=https://api.example.com
+# CORS_ALLOW_ORIGINS=https://app.example.com,https://admin.example.com
+# WEBSOCKET_URL=wss://ws.example.com/socket/websocket
+# PHX_HOST=ws.example.com
+# CHECK_ORIGIN=true
+# TRACKING_DOMAIN=t.example.com
+
+# ── Secrets (generate your own) ───────────────────────────────────
+AUTH_SECRET=replace-me-32-chars-minimum
+INTERNAL_API_TOKEN=replace-me
+SECRET_KEY_BASE=replace-me-64-chars-minimum
+KMS_LOCAL_MASTER_KEY=replace-me-base64-32-bytes
+CREDENTIALS_ENCRYPTION_KEY=replace-me-exactly-64-hex-chars
+
+# ── Connecting mailboxes ──────────────────────────────────────────
+BOX_GOOGLE_CLIENT_ID=
+BOX_GOOGLE_CLIENT_SECRET=
+BOX_OUTLOOK_CLIENT_ID=
+BOX_OUTLOOK_CLIENT_SECRET=
+
+# ── Platform email (login codes, resets, digests) ─────────────────
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+EMAIL_NAME=Warmbly
+EMAIL_ADDRESS=noreply@example.com
+
+# ── Optional: AI assistant ────────────────────────────────────────
+# AI_PROVIDER=openai
+# AI_API_KEY=sk-...
+# AI_MODEL=
+
+# ── Optional: sign in with Google / Apple ─────────────────────────
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=
+# GOOGLE_REDIRECT_URI=
+
+# ── Optional: captcha, billing, error tracking ────────────────────
+# CAPTCHA_PROVIDER=turnstile
+# TURNSTILE_SECRET=
+# WARMBLY_TURNSTILE_KEY=            # the site key, used by web + admin
+# BILLING_PROVIDER=stripe
+# STRIPE_SECRET_KEY=
+# STRIPE_WEBHOOK_SECRET=
+# STRIPE_PUBLISHABLE_KEY=
+# SENTRY_DSN=
+
+# ── Optional: swap infrastructure ─────────────────────────────────
+# BLOB_PROVIDER=s3
+# BLOB_BUCKET=warmbly
+# AWS_ENDPOINT_URL_S3=https://s3.example.com
+# AWS_REGION=us-east-1
+# AWS_ACCESS_KEY_ID=
+# AWS_SECRET_ACCESS_KEY=
+# KMS_PROVIDER=aws
+# KMS_AWS_KEY_ID=alias/warmbly
+# EVENTBUS_PROVIDER=kafka           # needs images built with GO_TAGS=kafka
+# KAFKA_BOOTSTRAP_SERVERS=broker:9092
+# PRIMARY_DB=postgres://user:pass@host:5432/warmbly?sslmode=require
+# REDIS=redis://host:6379
+
+# ── Production ────────────────────────────────────────────────────
+# APP_ENV=prod                      # then SENTRY_DSN + GEODB_PATH are required
+```
+
+The exhaustive list, with every variable and its default, is [`deploy/config/env.example`](https://github.com/warmbly/warmbly/blob/main/deploy/config/env.example).
 
 ## Reaching it from your network
 
@@ -90,43 +317,147 @@ Set one variable in `.env` and every URL (app, CORS, websocket, tracking, blobs,
 PUBLIC_HOST=192.168.1.50        # your machine's LAN IP, or a domain
 ```
 
-Then open `http://192.168.1.50:5173`.
+Recreate the containers with `make up` and open `http://192.168.1.50:5173`.
+
+Once `PUBLIC_HOST` is set, every derived URL uses it and `http://localhost:5173` stops working: the browser sends a `localhost` origin, which is no longer in `CORS_ALLOW_ORIGINS`, so the API answers `403`. Use the address you configured. To keep both, list them yourself:
+
+```bash
+CORS_ALLOW_ORIGINS=http://192.168.1.50:5173,http://192.168.1.50:5174,http://localhost:5173,http://localhost:5174
+```
 
 ### Behind a reverse proxy with HTTPS
 
-Terminate TLS in a proxy (Caddy, nginx, Traefik) and set the URLs explicitly instead of `PUBLIC_HOST` (compose only derives plain `http://` forms):
+Compose only derives plain `http://` URLs from `PUBLIC_HOST`, so terminate TLS in a proxy (Caddy, nginx, Traefik) and set each URL explicitly instead:
 
 ```bash
-APP_URL=https://app.example.com                 # proxy to :5173
-API_PUBLIC_URL=https://api.example.com          # proxy to :8080
+APP_URL=https://app.example.com                       # proxy to :5173
+API_PUBLIC_URL=https://api.example.com                # proxy to :8080
 CORS_ALLOW_ORIGINS=https://app.example.com,https://admin.example.com
 WEBSOCKET_URL=wss://ws.example.com/socket/websocket   # proxy to :4000
-TRACKING_DOMAIN=t.example.com                   # proxy to :3000; use a separate, neutral domain
+TRACKING_DOMAIN=t.example.com                         # proxy to :3000; use a separate, neutral domain
 PHX_HOST=ws.example.com
 ```
 
-## Connect Gmail and Microsoft mailboxes
+Give the admin panel its own host proxied to `:5174`, and list it in `CORS_ALLOW_ORIGINS` as above. It reads its API base from `API_PUBLIC_URL`, so it needs nothing else.
 
-SMTP/IMAP mailboxes need no extra setup. For Gmail and Microsoft 365, create OAuth apps and set:
+Every origin that talks to the API has to appear in `CORS_ALLOW_ORIGINS`. Anything not listed is answered with `403` on preflight, which in a browser looks like the app loading and then every request failing.
 
-```bash
-BOX_GOOGLE_CLIENT_ID=...          # redirect URI: <api base>/addresses/google/callback
-BOX_GOOGLE_CLIENT_SECRET=...
-BOX_OUTLOOK_CLIENT_ID=...         # redirect URI: <api base>/addresses/outlook/callback
-BOX_OUTLOOK_CLIENT_SECRET=...
-```
-
-These must reach the backend **and every worker** (compose does this; remote workers get them via their profile). Without them on the worker, a connected mailbox stalls when its first token expires, about an hour in. They are separate from `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, which enable sign-in with Google.
+Make sure the proxy serves the websocket host over HTTP/1.1. The upgrade handshake cannot be expressed in HTTP/2, so a proxy that forces h2 to the client on that hostname breaks realtime while leaving everything else working.
 
 ## Notification email
 
-The backend's own transactional mail (confirmations, resets, digests) goes out over SMTP. Compose points it at the bundled Mailpit; switch to a real relay before going live:
+The platform's own mail (login codes, confirmations, resets, digests) goes out over SMTP. Compose points it at the bundled Mailpit. Switch to a real relay before you rely on the install:
 
 ```bash
-SMTP_HOST=smtp.example.com        # unset falls back to AWS SES (requires AWS credentials)
+SMTP_HOST=smtp.example.com        # unset falls back to AWS SES, which needs AWS credentials
 SMTP_PORT=587
 EMAIL_NAME=Warmbly
 EMAIL_ADDRESS=noreply@example.com
+```
+
+## Connect mailboxes
+
+This is the first thing you will actually want to do after installing, and the only part that needs credentials from outside Warmbly.
+
+There are three ways to attach a sending mailbox. Only the OAuth ones need setup.
+
+| Mailbox type | Setup needed | Variables |
+|--------------|--------------|-----------|
+| Any SMTP + IMAP provider | None | none |
+| Gmail / Google Workspace | A Google Cloud OAuth client | `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET` |
+| Outlook / Microsoft 365 | An Entra ID app registration | `BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET` |
+
+<Callout type="warn" title="These are not the sign-in variables">
+`BOX_GOOGLE_*` connects **mailboxes you send from**. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (no `BOX_` prefix) are a different thing entirely: they enable "Sign in with Google" for logging into Warmbly. You can set either, both, or neither, and one never substitutes for the other.
+</Callout>
+
+### SMTP and IMAP
+
+Nothing to configure. Add the mailbox in the dashboard with its host, port, username, and password. SMTP must be port `587` or `465`; IMAP is typically `993`.
+
+### Gmail and Google Workspace
+
+<Steps>
+
+<Step>
+In the [Google Cloud console](https://console.cloud.google.com/), create (or pick) a project and enable the **Gmail API**.
+</Step>
+
+<Step>
+Configure the OAuth consent screen. For a Workspace domain, choose **Internal** to skip Google's verification review. For personal Gmail accounts you need **External**, which stays limited to test users until verified.
+</Step>
+
+<Step>
+Create credentials of type **OAuth client ID**, application type **Web application**, and set the authorized redirect URI to your API base plus the callback path:
+
+```
+https://api.example.com/addresses/google/callback
+```
+
+On a stock local install that is `http://localhost:8080/addresses/google/callback`.
+</Step>
+
+<Step>
+Put the client id and secret in your root `.env`:
+
+```bash
+BOX_GOOGLE_CLIENT_ID=1234567890-abc123.apps.googleusercontent.com
+BOX_GOOGLE_CLIENT_SECRET=GOCSPX-your-secret-here
+```
+
+Then `make up` to recreate the containers with the new values.
+</Step>
+
+</Steps>
+
+### Outlook and Microsoft 365
+
+<Steps>
+
+<Step>
+In the [Entra ID portal](https://entra.microsoft.com/), go to **App registrations** and create a new registration.
+</Step>
+
+<Step>
+Add a **Web** redirect URI pointing at your API base:
+
+```
+https://api.example.com/addresses/outlook/callback
+```
+</Step>
+
+<Step>
+Under **API permissions**, add the Microsoft Graph delegated permissions the mailbox needs: `Mail.ReadWrite`, `Mail.Send`, `IMAP.AccessAsUser.All`, `SMTP.Send`, and `offline_access` so refresh tokens are issued.
+</Step>
+
+<Step>
+Under **Certificates & secrets**, create a client secret, then set both values in your root `.env`:
+
+```bash
+BOX_OUTLOOK_CLIENT_ID=00000000-0000-0000-0000-000000000000
+BOX_OUTLOOK_CLIENT_SECRET=your-client-secret-value
+```
+</Step>
+
+</Steps>
+
+<Callout type="warn" title="Workers need these too">
+The backend starts the OAuth flow, but **each worker refreshes the token** when it expires. Compose passes the `BOX_*` values to the worker automatically, and remote workers receive them in their enrollment config. If a worker is missing them, the mailbox connects fine and then silently stops about an hour later when its first access token expires.
+</Callout>
+
+### Sign in with Google or Apple (optional)
+
+Separate from mailboxes, and unrelated to sending. Email and password plus passkeys work without any of this.
+
+```bash
+GOOGLE_CLIENT_ID=...        # redirect: <app base>/auth/google/callback
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://app.example.com/auth/google/callback
+
+APPLE_APP_ID=...
+APPLE_TEAM_ID=...
+APPLE_KEY_ID=...
+APPLE_KEY_SECRET=...
 ```
 
 ## Provider switches
@@ -134,35 +465,35 @@ EMAIL_ADDRESS=noreply@example.com
 | Subsystem | Compose default | Opt-in |
 |-----------|-----------------|--------|
 | Event bus | NATS JetStream (`EVENTBUS_PROVIDER=nats`) | Kafka (`=kafka`, needs a `kafka`-tagged build) |
-| Codec | JSON (`CODEC_PROVIDER=json`) | Avro + Schema Registry (`=avro`, same tag) |
+| Codec | JSON (`CODEC_PROVIDER=json`) | Avro plus Schema Registry (`=avro`, same tag) |
 | Root key | Local AES (`KMS_PROVIDER=local`) | AWS KMS (`=aws`) |
-| Blob storage | Filesystem (`BLOB_PROVIDER=filesystem`) | S3 / MinIO / R2 (`=s3` + `BLOB_BUCKET`) |
+| Blob storage | Filesystem (`BLOB_PROVIDER=filesystem`) | S3, MinIO, R2 (`=s3` plus `BLOB_BUCKET`) |
 | Task scheduler | In-process poller (`TASKS_PROVIDER=local`) | GCP Cloud Tasks (`=gcloud`) |
 | Billing | Off (`BILLING_PROVIDER=none`, everything unlocked) | Stripe (`=stripe`) |
 | Captcha | Off (`CAPTCHA_PROVIDER=none`) | Cloudflare Turnstile (`=turnstile`) |
-| Realtime transport | Redis pub/sub (`PUBSUB_ENABLED=false`) | Google Cloud Pub/Sub (`=true` + `GCP_PROJECT_ID`) |
+| Realtime transport | Redis pub/sub (`PUBSUB_ENABLED=false`) | Google Cloud Pub/Sub (`=true` plus `GCP_PROJECT_ID`) |
 
-Three gotchas:
+Three things to know:
 
-- **Bare binaries default to the cloud values** (`kafka`, `avro`, `s3`, `aws`). Compose, the Makefile, and `env.example` set the local values for you; hand-rolled environments must set them or the process exits at boot.
-- Kafka/Avro are also build-time opt-ins: `--build-arg GO_TAGS=kafka` (Go), `--build-arg CARGO_FEATURES=kafka` (tracking).
+- **Bare binaries default to the cloud values** (`kafka`, `avro`, `s3`, `aws`). Compose, the Makefile, and `env.example` set the local values for you. A hand-rolled environment must set them or the process exits at boot.
+- Kafka and Avro are also build-time opt-ins: `--build-arg GO_TAGS=kafka` for Go, `--build-arg CARGO_FEATURES=kafka` for tracking.
 - `PUBSUB_ENABLED` must match across backend, consumer, and realtime.
 
 ## Optional subsystems
 
 | Feature | Enable with |
 |---------|-------------|
-| Stripe billing | `BILLING_PROVIDER=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
-| Turnstile captcha | `CAPTCHA_PROVIDER=turnstile` + `TURNSTILE_SECRET` (backend), `WARMBLY_TURNSTILE_KEY` (web/admin). Compose pins captcha off, so use a `docker-compose.override.yml` |
+| Stripe billing | `BILLING_PROVIDER=stripe` plus `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PUBLISHABLE_KEY`. All three are read at boot and the backend exits if any is missing |
+| Turnstile captcha | `CAPTCHA_PROVIDER=turnstile` plus `TURNSTILE_SECRET` (backend) and `WARMBLY_TURNSTILE_KEY` (web and admin). Compose pins captcha off, so use a `docker-compose.override.yml` |
 | Sign in with Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` |
 | Sign in with Apple | `APPLE_APP_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_KEY_SECRET` |
-| Mobile push (APNs) | `APNS_KEY_PATH` (or `APNS_KEY`), `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` on backend + consumer; partial config disables push with a warning, never a crash |
+| Mobile push (APNs) | `APNS_KEY_PATH` (or `APNS_KEY`), `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` on backend and consumer. Partial config disables push with a warning, never a crash |
 | Notification tuning | `NOTIFICATION_PUSH_WINDOW` (default `5h`), `NOTIFICATION_EMAIL_DAILY_CAP` (default `25`, `0` means uncapped) |
-| Error tracking | `SENTRY_DSN`; optional in dev, **required on every Go service when `APP_ENV=prod`** (which also makes the GeoIP file at `GEODB_PATH` mandatory) |
+| Error tracking | `SENTRY_DSN`. Optional in dev, **required on every Go service when `APP_ENV=prod`**, which also makes the GeoIP file at `GEODB_PATH` mandatory |
 
 ## AI provider
 
-Omit all AI vars to run with AI off: AI endpoints return a clean `503`, everything else works. Set on backend and consumer:
+Omit all AI variables to run with AI off: AI endpoints return a clean `503` and everything else works. Set these on the backend and the consumer:
 
 ```bash
 AI_PROVIDER=openai       # openai | openrouter | groq | ollama | anthropic | custom
@@ -176,17 +507,17 @@ AI_BASE_URL=             # required for custom (any OpenAI-compatible endpoint)
 | `openai` | api.openai.com | also the only provider for warmup content batch generation |
 | `openrouter` | openrouter.ai | one key fronts every vendor; switch via `AI_MODEL` |
 | `groq` | api.groq.com | fast, free tier |
-| `ollama` | localhost:11434 | no key, free local model (`AI_FREE` auto-true) |
+| `ollama` | localhost:11434 | no key, free local model (`AI_FREE` is automatically true) |
 | `anthropic` | api.anthropic.com | Anthropic connector |
 | `custom` | your `AI_BASE_URL` | vLLM, LocalAI, LM Studio |
 
-`AI_MODEL_TRIAL` / `AI_MODEL_PAID` optionally split models by plan. Web search for the assistant: `SEARCH_PROVIDER=serper` (+`SEARCH_API_KEY`) or `=searxng` (+`SEARCH_API_URL`).
-
-The full env reference is [`deploy/config/env.example`](https://github.com/warmbly/warmbly/blob/main/deploy/config/env.example).
+`AI_MODEL_TRIAL` and `AI_MODEL_PAID` optionally split models by plan. Web search for the assistant is `SEARCH_PROVIDER=serper` (plus `SEARCH_API_KEY`) or `=searxng` (plus `SEARCH_API_URL`).
 
 ## Workers
 
-Outbound mail leaves through each mailbox's own provider, so the source IP is the provider's, not the worker's. Workers are interchangeable executors with no database: commands in from the event bus, encrypted keys over the backend's internal API, a heartbeat back every 90 seconds.
+Outbound mail leaves through each mailbox's own provider, so the source IP is the provider's, not the worker's. Workers are interchangeable executors with no database: commands in from the event bus, encrypted keys over the backend's internal API, and a heartbeat back every 90 seconds.
+
+A worker leaves rotation the moment it stops: on shutdown it sends a farewell beat that marks it inactive. If it dies without one (hard kill, machine loss), placement stops considering it once its heartbeat is more than 10 minutes stale. Either way nothing is placed onto a machine that is no longer answering.
 
 More workers on the same host:
 
@@ -194,9 +525,36 @@ More workers on the same host:
 docker compose -p warmbly up -d --scale worker=3
 ```
 
+### Worker identity
+
+Each worker needs a stable UUID. It is resolved at boot in this order:
+
+1. `WORKER_ID` if set, used as-is
+2. a UUID derived from `WORKER_BIND_IP`, so each IP on a multi-IP box is its own worker
+3. the hostname, if the hostname is itself a UUID
+4. otherwise a **freshly generated UUID**
+
+The compose worker hits case 4, so every recreate registers as a new worker and leaves the previous row behind. Those rows are inert (placement skips them once their heartbeat goes stale) but they clutter the admin Workers list. Pin the identity to avoid that:
+
+```bash
+WORKER_ID=<a uuid you generate once>     # uuidgen
+```
+
+Set it only when you run a single worker per host. Scaled replicas share one environment, so a pinned `WORKER_ID` would make them collide; leave it unset when using `--scale`.
+
+The remote installer handles this for you: it derives the UUID from the machine's public IPv4, so a reinstall on the same IP keeps the same identity and reputation.
+
 ### Remote workers
 
 A remote worker VPS must be able to reach the backend URL, NATS (or Kafka), and Redis.
+
+<Callout type="warn" title="The enrolled worker inherits the backend's addresses">
+The config handed to a worker is generated from the backend's own environment. On a stock local install that means `ENCRYPTED_KEYS_BACKEND_URL=http://localhost:8080`, `NATS_URL=nats://nats:4222`, and `REDIS=redis://redis:6379`, none of which resolve on another machine. Before enrolling a remote worker, set `API_PUBLIC_URL`, `NATS_URL`, and `REDIS` on the backend to addresses the VPS can actually reach, and open those ports.
+</Callout>
+
+The generated `worker.env` carries the decryption material the worker needs: the internal API token, `KMS_LOCAL_MASTER_KEY`, and `CREDENTIALS_ENCRYPTION_KEY`. It is returned exactly once, over the one-time enrollment token, and the token is rejected on any reuse. Serve the API over HTTPS before enrolling anything across a network you do not control.
+
+On `BLOB_PROVIDER=filesystem`, a remote worker writes blobs to its own local disk rather than a volume the backend shares. Use `BLOB_PROVIDER=s3` with a bucket both sides can reach when you run workers off-host.
 
 <Mermaid
   chart={`
@@ -213,88 +571,128 @@ sequenceDiagram
 `}
 />
 
-**Token enrollment (one command on the VPS):** creating a worker via the admin API with `generate_enrollment_token` returns a one-time `wmenroll_...` token, then:
+**Token enrollment, one command on the VPS.** Creating a worker through the admin API with `generate_enrollment_token` returns a one-time `wmenroll_...` token. Then:
 
 ```bash
 curl -fsSL https://api.example.com/worker-install.sh | sudo bash -s -- \
   --enroll wmenroll_... --api-base https://api.example.com
 ```
 
-**Or SSH-managed from the admin panel:** Workers, **Add Worker** (host, port, user), paste the generated SSH public key into the VPS's `~/.ssh/authorized_keys`, click **Test connection** (first success pins the host fingerprint), then **Install**.
+**Or SSH-managed from the admin panel.** Go to Workers, **Add Worker** (host, port, user), paste the generated SSH public key into the VPS's `~/.ssh/authorized_keys`, click **Test connection** (the first success pins the host fingerprint), then **Install**.
 
-Either way the installer installs Docker if missing, derives the worker's UUID from the machine's public IPv4 (same IP, same identity and reputation), writes `/etc/warmbly/worker.env`, creates the `warmbly-worker.service` systemd unit, and adds a daily self-update timer. `--help` lists all flags (`--ips` for multi-IP machines, `--update`, `--uninstall`, `--purge`).
+Either way the installer installs Docker if it is missing, derives the worker's UUID from the machine's public IPv4 (same IP, same identity and reputation), writes `/etc/warmbly/worker.env`, creates the `warmbly-worker.service` systemd unit, and adds a daily self-update timer. Run it with `--help` for every flag: `--ips` for multi-IP machines, plus `--update`, `--uninstall`, and `--purge`.
 
-Set `WORKER_IMAGE` on the backend explicitly (e.g. `ghcr.io/<owner>/warmbly/worker:prod`); its built-in default does not match what CI publishes.
+Set `WORKER_IMAGE` on the backend explicitly, for example `ghcr.io/<owner>/warmbly/worker:prod`. Its built-in default does not match what CI publishes.
 
-### Profiles and day-2 operations
+### Day-2 operations
 
-A **worker profile** (admin panel) bundles the shared config once: event bus settings, Redis URL, backend URL and token, worker image, release channel (`pinned`, `stable`, `dev`), auto-update flag. Secrets are encrypted at rest. When a profile changes, assigned workers are flagged stale and one click rewrites their env over SSH and restarts them.
+From each worker's detail page in the admin panel: Test connection, Install (idempotent), Restart, Pull latest and restart, Apply config and restart (environment only, no image pull), Live status, Logs, Update OS packages, Reboot, Rotate SSH keys, Uninstall, and Delete.
 
-From each worker's detail page: Test connection, Install (idempotent), Restart, Pull latest and restart, Apply config and restart (env only, no image pull), Live status, Logs, Update OS packages, Reboot, Rotate SSH keys, Uninstall, Delete.
+"Apply config" only rewrites the environment file. Use "Pull latest and restart" to move a worker onto a new image.
 
 ## Images and releases
 
-CI publishes multi-arch images to `ghcr.io/<owner>/warmbly/` (works on any fork with `packages: write`):
+CI publishes multi-arch images to `ghcr.io/<owner>/warmbly/`, which works on any fork with `packages: write`:
 
 | Trigger | Images | Tags |
 |---------|--------|------|
 | Push to `main` | backend, consumer, worker, tracking, realtime | `:<sha>`, `:dev` |
-| Tag `vX.Y.Z` | all of the above + web, admin | `:vX.Y.Z`, `:vX.Y`, `:vX`, `:prod` |
+| Tag `vX.Y.Z` | all of the above plus web and admin | `:vX.Y.Z`, `:vX.Y`, `:vX`, `:prod` |
 
-### Worker auto-update
-
-```bash
-RELEASES_ENABLED=true
-RELEASES_GITHUB_REPO=<owner>/warmbly
-RELEASES_WORKER_IMAGE_REPO=ghcr.io/<owner>/warmbly/worker
-RELEASES_WEBHOOK_SECRET=<shared with GitHub>
-```
-
-Add a GitHub webhook: payload URL `https://api.example.com/webhooks/github/releases`, JSON, the same secret, Releases events only. Publishing a release resolves the new tag for `stable`/`dev` profiles and rolls workers with auto-update on (the dashboard shows a `v1.2.3 -> v1.2.4` diff either way).
-
-**Roll back** by switching a profile to `pinned` with an older image tag and clicking Apply. Control-plane migrations are forward-only, so prefer rolling forward.
+To move a worker fleet onto a new release, update `WORKER_IMAGE` and use "Pull latest and restart" on each worker. Control-plane migrations are forward-only, so prefer rolling forward over rolling back.
 
 ## Upgrading and backups
 
 ```bash
-git pull && docker compose -p warmbly up -d --build     # migrations apply on backend boot
+git pull && make up          # migrations apply on backend boot
 ```
 
-Back up three things:
+Upgrading is safe with data in place: migrations are forward-only and apply on backend boot.
 
-1. Postgres: `docker compose -p warmbly exec -T postgres pg_dump -U warmbly warmbly_dev > backup.sql`
-2. The `blobs` volume (uploads and stored message bodies on the filesystem provider)
-3. Your `.env`, above all the two encryption keys; a database backup without them cannot decrypt anything
+### Backing up
+
+Back up three things. All three, or the backup is not a backup:
+
+```bash
+docker compose -p warmbly exec -T postgres pg_dump -U warmbly warmbly_dev > backup.sql
+```
+
+1. **Postgres**, with the command above
+2. **The `blobs` volume**, which holds uploads and stored message bodies on the filesystem provider
+3. **Your `.env`**, above all the two encryption keys
+
+<Callout type="warn" title="A database backup without the keys is unreadable">
+`KMS_LOCAL_MASTER_KEY` and `CREDENTIALS_ENCRYPTION_KEY` are what every mailbox credential is sealed with. Restore the database with different keys and the rows are all still there, all still undecryptable.
+</Callout>
+
+### Restoring
+
+Restore into an empty database **before the backend starts**. The dump carries its own schema and its `schema_migrations` row, so a backend that has already migrated will collide with it.
+
+```bash
+# 1. Put your .env back first, with the original encryption keys.
+
+# 2. Start only Postgres, so nothing migrates underneath you.
+docker compose -p warmbly up -d postgres
+
+# 3. Load the dump.
+docker compose -p warmbly exec -T postgres psql -U warmbly -d warmbly_dev < backup.sql
+
+# 4. Bring up the rest. The backend sees the restored schema version
+#    and applies only migrations newer than the backup.
+make up
+```
+
+Restoring into a database that already has tables fails with "already exists" errors part-way through and leaves a half-populated schema. If that happens, `make reset` and start again from step 2.
 
 ## Beyond compose
 
-The compose file is a template, not a requirement. The Dockerfiles in `deploy/docker/` plus `tracking/`, `web/`, and `admin/` are the deployment units; any container host works with the env reference above. The frontends are configured at container start via `WARMBLY_*` vars, so the same images run anywhere.
+The compose file is a template, not a requirement. The Dockerfiles in `deploy/docker/` plus `tracking/`, `web/`, and `admin/` are the deployment units, and any container host works with the environment reference above. The frontends are configured at container start from `WARMBLY_*` variables, so the same images run anywhere.
 
 ## Troubleshooting
 
-| Symptom | Check |
-|---------|-------|
-| Backend exits at boot | First log lines; usual causes: cloud provider defaults outside compose, malformed `CREDENTIALS_ENCRYPTION_KEY` (needs 64 hex), `APP_ENV=prod` without `SENTRY_DSN` or the GeoIP file |
-| Workers/tracking get 401s | `INTERNAL_API_TOKEN` must match on backend, workers (`ENCRYPTED_KEYS_WORKER_TOKEN`), and tracking; unset fails closed |
-| Worker `install_state: error` | Test connection first (SSH key in `authorized_keys`?), then `last_error` and Logs on the detail page |
-| Heartbeat offline | Can the VPS reach the backend URL, NATS/Kafka, and Redis? Is the container running (Live status)? |
-| Mailbox stalls after ~1h | Worker missing `BOX_GOOGLE_*` / `BOX_OUTLOOK_*`; set in the profile and restart |
-| Auto-update didn't fire | GitHub webhook Recent Deliveries: 401 = wrong secret; 200 with no effect = check the Releases panel and backend logs |
-| Worker stuck on old image | "Apply config" only rewrites env; use "Pull latest and restart" |
-| No realtime updates | `AUTH_SECRET` must equal realtime's `JWT_SECRET`; `PUBSUB_ENABLED` must agree on backend, consumer, realtime |
+### The build fails
+
+| Symptom | Cause and fix |
+|---------|---------------|
+| `no space left on device`, often from a random service mid-compile | Docker is out of disk. Free space with `docker builder prune -af` and `docker image prune -af`, then check the host has ~10 GB free and re-run `make up` |
+| `failed to authorize: ... EOF` while pulling a base image | A transient registry blip. Re-run `make up`; completed layers are cached |
+| `failed to xattr /path/._something: operation not permitted` (macOS) | The checkout is on a filesystem without native extended attributes (exFAT, NTFS, or a network share), so macOS writes `._*` sidecar files that BuildKit cannot read. Run `dot_clean -m .` then `find . -name '._*' -delete`, and re-run. Cloning to an APFS volume avoids it entirely |
+
+### The stack is up but something is wrong
+
+| Symptom | Cause and fix |
+|---------|---------------|
+| No login code arrives | On a default install codes go to Mailpit, not your inbox. Open `http://localhost:18025`. Set `SMTP_HOST` to a real relay to change that |
+| "Too many attempts" on login or signup | Auth emails are capped at 5 per address per 30 minutes. Wait it out, or clear the counter with `docker compose -p warmbly exec redis redis-cli FLUSHDB` |
+| Backend exits at boot | Read the first log lines. Usual causes: cloud provider defaults outside compose, a malformed `CREDENTIALS_ENCRYPTION_KEY` (it needs exactly 64 hex characters), or `APP_ENV=prod` without `SENTRY_DSN` or the GeoIP file |
+| Dashboard loads but every request fails | Check `http://localhost:5173/config.js` returns the right `API_URL`. It is generated at container start from `WARMBLY_API_URL` |
+| "No mailbox workers are available" when connecting a mailbox | No worker is active with a heartbeat inside the last 10 minutes. Check `make status` shows `worker` running and `make logs worker` is clean. Placement deliberately ignores workers that stopped reporting, so a worker that was removed cannot silently swallow mailboxes |
+| Connecting a mailbox is rejected on the port | SMTP must be `587` or `465`. The bundled Mailpit listens on `1025` and offers no STARTTLS, so it catches platform email but cannot be used as a test mailbox |
+| Workers or tracking get 401s | `INTERNAL_API_TOKEN` must match on the backend, the workers (as `ENCRYPTED_KEYS_WORKER_TOKEN`), and tracking. Unset fails closed |
+| No realtime updates | `AUTH_SECRET` must equal realtime's `JWT_SECRET`, and `PUBSUB_ENABLED` must agree across backend, consumer, and realtime. Compose wires both |
+| Seeding fails with `no migration found for version N` | The seed image is older than your schema. Re-run with `--build` |
+| Scheduled sends never fire | Delayed sends run through the in-process Postgres task poller (`TASKS_PROVIDER=local`), so the backend must be running |
+| Mailbox stalls after about an hour | The worker is missing `BOX_GOOGLE_*` or `BOX_OUTLOOK_*`. Set them and restart the worker |
+| Worker `install_state: error` | Test connection first (is the SSH key in `authorized_keys`?), then read `last_error` and Logs on the worker's detail page |
+| Worker heartbeat offline | Can the VPS reach the backend URL, NATS or Kafka, and Redis? Is the container running (Live status)? |
+
+Still stuck? `make logs` follows everything, and `make logs backend` follows one service. Ask in [Discord](https://dc.warmbly.com) or open a [GitHub issue](https://github.com/warmbly/warmbly/issues) with the first 50 lines of the failing service's log.
 
 ## Quick reference
 
 ```bash
-make up          # the whole platform in Docker
-make gen-key     # print a fresh KMS_LOCAL_MASTER_KEY
-make grant-admin EMAIL=you@example.com   # bootstrap the first platform admin
-make logs        # follow logs (make logs backend for one service)
+make up          # build and start the whole platform in Docker
 make status      # docker compose ps
+make logs        # follow logs (make logs backend for one service)
 make stop        # stop everything, keep data
+make down        # stop and remove containers, keep data
 make reset       # tear down including volumes (destroys data)
 
-make dev         # local development stack instead (native Go + hot reload)
+make gen-key     # print a fresh KMS_LOCAL_MASTER_KEY
+make grant-admin EMAIL=you@example.com   # bootstrap the first platform admin
+
+make dev         # local development stack instead (native Go, hot reload)
 make sandbox     # live end-to-end demo environment
 ```
 

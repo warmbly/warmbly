@@ -1,22 +1,30 @@
-// Single worker detail — overview header + the four SSH lifecycle
-// actions (test, install, restart, uninstall) wired to the admin
-// endpoints. Logs panel tails journald with a selectable line count
-// and an optional follow mode.
+// Single worker detail — overview header + the SSH lifecycle actions wired to
+// the admin endpoints. Routine actions (test, install, restart, pull latest,
+// apply config) sit in the header; the destructive and rarely-used ones (rotate
+// keys, OS update, reboot, uninstall, delete) are grouped in a Maintenance card
+// so they can't be hit by accident. Logs panel tails journald with a selectable
+// line count and an optional follow mode.
 
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
     ArrowLeft,
+    ArrowUpCircle,
     Copy,
     Download,
     Hammer,
+    KeyRound,
+    PackageOpen,
     PlayCircle,
     PowerOff,
     RefreshCw,
+    RotateCcw,
     ShieldAlert,
+    SlidersHorizontal,
     StopCircle,
+    Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StateLegend } from "@/components/StateLegend";
@@ -34,14 +42,20 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
+    applyWorkerConfig,
+    deleteWorker,
     getManagedWorker,
     getWorkerEmails,
     getWorkerLogs,
     getWorkerLiveStatus,
     installWorker,
+    rebootWorker,
     restartWorker,
+    rotateWorkerKeys,
+    systemUpdateWorker,
     testWorker,
     uninstallWorker,
+    upgradeWorker,
 } from "@/lib/api/client/admin/workers";
 
 // Risk band (mailbox reputation tier) + health state (warmup/worker) tones.
@@ -62,6 +76,7 @@ const HEALTH_TONE: Record<string, string> = {
 export default function WorkerDetailPage() {
     const { id = "" } = useParams<{ id: string }>();
     const qc = useQueryClient();
+    const navigate = useNavigate();
 
     const workerQ = useQuery({
         queryKey: ["admin", "worker", id],
@@ -146,6 +161,62 @@ export default function WorkerDetailPage() {
         onError: (e: Error) => toast.error(e.message),
     });
 
+    const upgradeMut = useMutation({
+        mutationFn: () => upgradeWorker(id),
+        onSuccess: () => {
+            toast.success("Pulling the latest image and restarting");
+            invalidate();
+        },
+        onError: (e: Error) => toast.error(e.message),
+    });
+
+    const applyMut = useMutation({
+        mutationFn: () => applyWorkerConfig(id),
+        onSuccess: () => {
+            toast.success("Config rewritten and worker restarted");
+            invalidate();
+        },
+        onError: (e: Error) => toast.error(e.message),
+    });
+
+    // The rotated public key is shown once here; it has to reach the VPS's
+    // authorized_keys or every later SSH action fails.
+    const [rotatedKey, setRotatedKey] = useState<string | null>(null);
+    const rotateMut = useMutation({
+        mutationFn: () => rotateWorkerKeys(id),
+        onSuccess: (res) => {
+            setRotatedKey(res.ssh_public_key);
+            toast.success("New keypair generated");
+            invalidate();
+        },
+        onError: (e: Error) => toast.error(e.message),
+    });
+
+    const [systemUpdateOutput, setSystemUpdateOutput] = useState<string | null>(null);
+    const systemUpdateMut = useMutation({
+        mutationFn: () => systemUpdateWorker(id),
+        onSuccess: (res) => {
+            setSystemUpdateOutput(res.output);
+            toast.success(
+                res.reboot_required
+                    ? "OS packages updated. A reboot is required."
+                    : "OS packages updated",
+            );
+        },
+        onError: (e: Error) => toast.error(e.message),
+    });
+
+    const [confirmReboot, setConfirmReboot] = useState(false);
+    const rebootMut = useMutation({
+        mutationFn: () => rebootWorker(id),
+        onSuccess: () => {
+            toast.success("Reboot issued");
+            setConfirmReboot(false);
+            invalidate();
+        },
+        onError: (e: Error) => toast.error(e.message),
+    });
+
     const [confirmUninstall, setConfirmUninstall] = useState(false);
     const uninstallMut = useMutation({
         mutationFn: () => uninstallWorker(id),
@@ -153,6 +224,17 @@ export default function WorkerDetailPage() {
             toast.success("Uninstall scheduled");
             setConfirmUninstall(false);
             invalidate();
+        },
+        onError: (e: Error) => toast.error(e.message),
+    });
+
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const deleteMut = useMutation({
+        mutationFn: () => deleteWorker(id),
+        onSuccess: () => {
+            toast.success("Worker deleted");
+            qc.invalidateQueries({ queryKey: ["admin", "workers", "managed"] });
+            navigate("/workers");
         },
         onError: (e: Error) => toast.error(e.message),
     });
@@ -225,18 +307,71 @@ export default function WorkerDetailPage() {
                 </Button>
                 <Button
                     size="sm"
-                    variant={confirmUninstall ? "destructive" : "outline"}
-                    onClick={() => (confirmUninstall ? uninstallMut.mutate() : setConfirmUninstall(true))}
-                    disabled={uninstallMut.isPending}
+                    variant="outline"
+                    onClick={() => upgradeMut.mutate()}
+                    disabled={upgradeMut.isPending}
                 >
-                    {confirmUninstall ? <StopCircle className="size-4" /> : <PowerOff className="size-4" />}
-                    {uninstallMut.isPending
-                        ? "Uninstalling…"
-                        : confirmUninstall
-                            ? "Confirm uninstall"
-                            : "Uninstall"}
+                    <ArrowUpCircle className="size-4" />
+                    {upgradeMut.isPending ? "Pulling…" : "Pull latest"}
+                </Button>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => applyMut.mutate()}
+                    disabled={applyMut.isPending}
+                >
+                    <SlidersHorizontal className="size-4" />
+                    {applyMut.isPending ? "Applying…" : "Apply config"}
                 </Button>
             </PageHeader>
+
+            {rotatedKey && (
+                <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    <div className="flex items-start gap-2">
+                        <KeyRound className="size-4 mt-0.5 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                            <p className="font-medium">
+                                New public key. Add it to the VPS before the next action.
+                            </p>
+                            <p className="mt-1">
+                                Until this lands in <code>~/.ssh/authorized_keys</code> on the
+                                machine, every SSH action here will fail.
+                            </p>
+                            <pre className="mt-2 overflow-x-auto rounded bg-white/70 p-2 text-xs">
+                                {rotatedKey}
+                            </pre>
+                            <div className="mt-2 flex gap-3">
+                                <button
+                                    className="underline"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(rotatedKey);
+                                        toast.success("Public key copied");
+                                    }}
+                                >
+                                    copy
+                                </button>
+                                <button className="underline" onClick={() => setRotatedKey(null)}>
+                                    dismiss
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {systemUpdateOutput && (
+                <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
+                    <div className="flex items-center justify-between">
+                        <span className="font-medium">Package manager output</span>
+                        <button className="underline" onClick={() => setSystemUpdateOutput(null)}>
+                            dismiss
+                        </button>
+                    </div>
+                    <pre className="mt-2 max-h-64 overflow-auto rounded bg-white p-2 text-xs">
+                        {systemUpdateOutput}
+                    </pre>
+                </div>
+            )}
 
             {confirmUninstall && (
                 <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-start gap-2">
@@ -249,6 +384,20 @@ export default function WorkerDetailPage() {
                             onClick={() => setConfirmUninstall(false)}
                             className="ml-3 underline"
                         >
+                            cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {confirmDelete && (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-start gap-2">
+                    <ShieldAlert className="size-4 mt-0.5" />
+                    <div>
+                        Deleting removes the worker row and its stored SSH key. It does not stop
+                        anything still running on the machine, so uninstall first unless the box is
+                        already gone.
+                        <button onClick={() => setConfirmDelete(false)} className="ml-3 underline">
                             cancel
                         </button>
                     </div>
@@ -524,6 +673,87 @@ export default function WorkerDetailPage() {
                             </a>
                         </div>
                     )}
+                </CardContent>
+            </Card>
+
+            <Card className="mt-4">
+                <CardHeader>
+                    <CardTitle>Maintenance</CardTitle>
+                    <CardDescription>
+                        Host-level and destructive operations. Each one acts on the machine over
+                        SSH, so the worker must be reachable.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => systemUpdateMut.mutate()}
+                            disabled={systemUpdateMut.isPending}
+                        >
+                            <PackageOpen className="size-4" />
+                            {systemUpdateMut.isPending ? "Updating…" : "Update OS packages"}
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => rotateMut.mutate()}
+                            disabled={rotateMut.isPending}
+                        >
+                            <KeyRound className="size-4" />
+                            {rotateMut.isPending ? "Rotating…" : "Rotate SSH keys"}
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant={confirmReboot ? "destructive" : "outline"}
+                            onClick={() =>
+                                confirmReboot ? rebootMut.mutate() : setConfirmReboot(true)
+                            }
+                            disabled={rebootMut.isPending}
+                        >
+                            <RotateCcw className="size-4" />
+                            {rebootMut.isPending
+                                ? "Rebooting…"
+                                : confirmReboot
+                                    ? "Confirm reboot"
+                                    : "Reboot"}
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant={confirmUninstall ? "destructive" : "outline"}
+                            onClick={() =>
+                                confirmUninstall ? uninstallMut.mutate() : setConfirmUninstall(true)
+                            }
+                            disabled={uninstallMut.isPending}
+                        >
+                            {confirmUninstall ? (
+                                <StopCircle className="size-4" />
+                            ) : (
+                                <PowerOff className="size-4" />
+                            )}
+                            {uninstallMut.isPending
+                                ? "Uninstalling…"
+                                : confirmUninstall
+                                    ? "Confirm uninstall"
+                                    : "Uninstall"}
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant={confirmDelete ? "destructive" : "outline"}
+                            onClick={() =>
+                                confirmDelete ? deleteMut.mutate() : setConfirmDelete(true)
+                            }
+                            disabled={deleteMut.isPending}
+                        >
+                            <Trash2 className="size-4" />
+                            {deleteMut.isPending
+                                ? "Deleting…"
+                                : confirmDelete
+                                    ? "Confirm delete"
+                                    : "Delete worker"}
+                        </Button>
+                    </div>
                 </CardContent>
             </Card>
         </div>

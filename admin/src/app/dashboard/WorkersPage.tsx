@@ -7,8 +7,10 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
+import { Plus } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
     Explorer,
     FilterGroup,
@@ -228,7 +230,14 @@ export default function WorkersPage() {
             <PageHeader
                 title="Workers"
                 description="Physical worker processes managed over SSH. One worker = one machine running the Warmbly worker binary."
-            />
+            >
+                <Button size="sm" asChild>
+                    <Link to="/workers/new">
+                        <Plus className="size-4" />
+                        Add worker
+                    </Link>
+                </Button>
+            </PageHeader>
 
             <Explorer
                 activeCount={activeCount}

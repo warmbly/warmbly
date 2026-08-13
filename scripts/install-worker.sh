@@ -43,6 +43,10 @@ ID_FILE="${CONFIG_DIR}/worker.id"
 UNIT_FILE="/etc/systemd/system/warmbly-worker.service"
 TEMPLATE_UNIT_FILE="/etc/systemd/system/warmbly-worker@.service"
 INSTANCES_DIR="${CONFIG_DIR}/instances"
+# Host path backing BLOB_FS_ROOT. The worker runs as uid 1000 and cannot create
+# a top-level directory itself, so without this mount it exits at boot with
+# "mkdir /data: permission denied" whenever BLOB_PROVIDER=filesystem.
+BLOB_DIR="/var/lib/warmbly/blobs"
 CONTAINER_NAME="warmbly-worker"
 INSTALLER_BIN="/usr/local/bin/warmbly-worker-installer"
 AUTO_UPDATE_UNIT_FILE="/etc/systemd/system/warmbly-worker-auto-update.service"
@@ -474,6 +478,8 @@ resolve_worker_id() {
   fi
 
   install -d -m 0700 "$CONFIG_DIR"
+  # Owned by uid/gid 1000 to match the worker user inside the container.
+  install -d -m 0755 -o 1000 -g 1000 "$BLOB_DIR" 2>/dev/null || install -d -m 0777 "$BLOB_DIR"
   printf 'id=%s\nip=%s\n' "$id" "$ip" > "$ID_FILE"
   chmod 0644 "$ID_FILE"
 
@@ -504,6 +510,7 @@ ExecStart=/usr/bin/docker run --rm \\
   --hostname ${worker_id} \\
   --network host \\
   --env-file ${ENV_FILE} \\
+  -v ${BLOB_DIR}:/data/blobs \\
   --log-driver=journald \\
   ${IMAGE}
 
@@ -596,6 +603,7 @@ ExecStart=/usr/bin/docker run --rm \\
   --network host \\
   --env-file ${ENV_FILE} \\
   --env-file ${INSTANCES_DIR}/%i.env \\
+  -v ${BLOB_DIR}:/data/blobs \\
   --log-driver=journald \\
   ${IMAGE}
 

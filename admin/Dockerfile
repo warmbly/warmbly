@@ -19,6 +19,9 @@ FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN nginx -t
 COPY --from=build /app/dist /usr/share/nginx/html
+# public/ files keep their checkout mode through the build; on a filesystem
+# without POSIX permissions (exFAT/NTFS mounts) that is 0700 and nginx 403s.
+RUN chmod -R a+rX /usr/share/nginx/html
 COPY docker-entrypoint.sh /docker-entrypoint.d/40-warmbly-config.sh
 RUN chmod +x /docker-entrypoint.d/40-warmbly-config.sh
 EXPOSE 80

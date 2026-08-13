@@ -14,7 +14,8 @@ import (
 
 var (
 	// Plans (00000000-0000-0000-0000-0000000001xx).
-	// PlanFreeTrialID is the well-known UUID already inserted by migration 000015.
+	// PlanFreeTrialID is the well-known UUID migration 000080 inserts so signup
+	// works without seeding; seedPlans upserts the same row.
 	PlanFreeTrialID  = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	PlanStarterID    = uuid.MustParse("00000000-0000-0000-0000-000000000110")
 	PlanProMonthlyID = uuid.MustParse("00000000-0000-0000-0000-000000000120")

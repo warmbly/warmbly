@@ -86,15 +86,17 @@ func (r *workerRepository) ListCapacityCandidates(
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT worker_id, worker_type, free_tier, egress_kind, health_state,
-		       load_score, base_capacity, health_multiplier, age_multiplier,
-		       sends_attempted_1h, sends_succeeded_1h,
-		       bounces_hard_1h, bounces_soft_1h, complaints_1h, auth_errors_1h
-		  FROM worker_capacity_view
-		 WHERE worker_type = 'shared'
-		   AND free_tier = $1
-		   AND health_state = ANY($2::text[])
-	`, freeTier, states)
+		SELECT v.worker_id, v.worker_type, v.free_tier, v.egress_kind, v.health_state,
+		       v.load_score, v.base_capacity, v.health_multiplier, v.age_multiplier,
+		       v.sends_attempted_1h, v.sends_succeeded_1h,
+		       v.bounces_hard_1h, v.bounces_soft_1h, v.complaints_1h, v.auth_errors_1h
+		  FROM worker_capacity_view v
+		  JOIN workers w ON w.id = v.worker_id
+		 WHERE v.worker_type = 'shared'
+		   AND v.free_tier = $1
+		   AND v.health_state = ANY($2::text[])
+		   AND w.last_seen_at > now() - $3::interval
+	`, freeTier, states, WorkerLivenessWindow)
 	if err != nil {
 		return nil, err
 	}

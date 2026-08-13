@@ -176,6 +176,11 @@ func newWorker(id uuid.UUID, freeTier bool, wtype models.WorkerType) models.Work
 }
 
 func TestAssign_FreeOrg_LandsOnFreeSharedWorker(t *testing.T) {
+	// Tier separation only exists when billing does. With BILLING_PROVIDER=none
+	// (the self-host default) there is no paid/free split to enforce — see
+	// TestAssign_SelfHost_PlacesEveryOrgAsPaid.
+	t.Setenv("BILLING_PROVIDER", "stripe")
+
 	freeWorker := newWorker(uuid.New(), true, models.WorkerTypeShared)
 	premiumWorker := newWorker(uuid.New(), false, models.WorkerTypeShared)
 
@@ -494,10 +499,35 @@ func TestSelectSharedWorker_CapacityAware_FallsBackWhenAllSaturated(t *testing.T
 	}
 }
 
+// With billing disabled every org places as paid. HasPaidSubscription requires a
+// Stripe subscription id, so without this a self-host org is free tier forever
+// and can only ever be placed onto free-tier workers — while a stock worker
+// registers as premium, leaving no candidate and no way to connect a mailbox.
+func TestAssign_SelfHost_PlacesEveryOrgAsPaid(t *testing.T) {
+	t.Setenv("BILLING_PROVIDER", "none")
+
+	premiumWorker := newWorker(uuid.New(), false, models.WorkerTypeShared)
+	wr := &stubWorkerRepo{sharedPremium: []models.Worker{premiumWorker}}
+	svc := NewAssignmentService(wr, &stubSubRepo{sub: nil}, &stubPlanRepo{})
+
+	got, err := svc.AssignWorkerToEmail(context.Background(), uuid.New(), uuid.New())
+	if err != nil {
+		t.Fatalf("AssignWorkerToEmail: %v", err)
+	}
+	if *got != premiumWorker.ID {
+		t.Errorf("self-host org should place on the premium worker, got %s", got)
+	}
+	if wr.lastEmailPoolTypeSet != "premium" {
+		t.Errorf("self-host org should join the premium warmup pool, got %q", wr.lastEmailPoolTypeSet)
+	}
+}
+
 func TestAssign_UpdatesLoadScoreByMailboxWeight(t *testing.T) {
 	// AssignWorkerToEmail must bump load_score by MailboxWeight. With an
 	// OAuth provider the bump is 0.05; with cold SMTP it's 1.0; with
 	// warmup it's 0.4.
+	t.Setenv("BILLING_PROVIDER", "stripe")
+
 	freeWorker := newWorker(uuid.New(), true, models.WorkerTypeShared)
 	wr := &stubWorkerRepo{
 		sharedFree:    []models.Worker{freeWorker},

@@ -106,6 +106,11 @@ type HeartbeatPayload struct {
 	BindIP     string `json:"bind_ip"`
 	Tier       string `json:"tier,omitempty"`        // shared_free | shared_premium (dedicated is rejected; allocated by the control plane)
 	EgressKind string `json:"egress_kind,omitempty"` // cold_smtp | oauth_api | warmup_only
+	// Stopping is set on the farewell beat a worker sends as it shuts down, so
+	// the row goes inactive at once instead of staying selectable until its
+	// heartbeat ages out. Placement would otherwise keep handing work to a
+	// process that is already gone.
+	Stopping bool `json:"stopping,omitempty"`
 }
 
 func (h *Handler) InternalWorkerHeartbeat(c *gin.Context) {
@@ -141,6 +146,14 @@ func (h *Handler) InternalWorkerHeartbeat(c *gin.Context) {
 	}
 	if h.WorkerRepo == nil {
 		// Worker repository not wired (e.g. tests). Treat as 204 noop.
+		c.Status(http.StatusNoContent)
+		return
+	}
+	if p.Stopping {
+		if err := h.WorkerRepo.DeactivateWorker(c.Request.Context(), id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		c.Status(http.StatusNoContent)
 		return
 	}

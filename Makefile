@@ -72,8 +72,13 @@ up:
 	@echo "  Admin:     http://localhost:5174"
 	@echo "  API:       http://localhost:8080"
 	@echo ""
-	@echo "  Demo data: $(COMPOSE) --profile seed run --rm seed"
-	@echo "  Logs:      make logs        Stop: make down"
+	@echo "  Sign up, then read your 6-digit code in Mailpit: http://localhost:18025"
+	@echo "  (every login sends one; a fresh install has no real mail relay)"
+	@echo ""
+	@echo "  Admin access: make grant-admin EMAIL=you@example.com"
+	@echo "  Demo data:    $(COMPOSE) --profile seed run --rm --build seed"
+	@echo "  Logs:         make logs        Stop: make down"
+	@echo "  Guide:        https://docs.warmbly.com/development/deployment-guide/"
 
 # One-command demo. Seeds the "Sunrise Labs" showcase org (live mailboxes on
 # mailpit + dovecot, active/paused/completed/draft campaigns, a warmup pool, and
@@ -651,12 +656,13 @@ grant-admin:
 	echo "Granting admin_permissions=$$bits to $(EMAIL)..."; \
 	out=$$($(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -tA \
 		-v ON_ERROR_STOP=1 \
-		-c "UPDATE users SET admin_permissions = $$bits, admin_granted_at = NOW() WHERE email = '$(EMAIL)' RETURNING id;"); \
+		-c "UPDATE users SET admin_permissions = $$bits, admin_granted_at = NOW() WHERE email = '$(EMAIL)' RETURNING id;" \
+		| grep -Eo '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$$' | head -1); \
 	if [ -z "$$out" ]; then \
 		echo "No user with email $(EMAIL). Sign up at http://localhost:5173 first."; \
 		exit 1; \
 	fi; \
-	echo "OK. user_id=$$out — open http://localhost:5174 and sign in."
+	echo "OK. user_id=$$out. Open http://localhost:5174 and sign in."
 
 revoke-admin:
 	@if [ -z "$(EMAIL)" ]; then echo "Usage: make revoke-admin EMAIL=<email>"; exit 1; fi

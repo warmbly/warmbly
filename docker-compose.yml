@@ -20,11 +20,15 @@
 # BLOB_PROVIDER=filesystem, TASKS_PROVIDER=local, CODEC_PROVIDER=json,
 # BILLING_PROVIDER=none, CAPTCHA_PROVIDER=none, PUBSUB_ENABLED=false.
 #
-# Secrets have dev-friendly defaults so `docker compose up` just works. For a
-# real deployment, put your own values in a .env file next to this file:
+# ONE .env NEXT TO THIS FILE CONFIGURES EVERYTHING. Every variable below is
+# ${VAR:-default}, so an absent or empty .env still boots the full no-cloud
+# stack and you set only what you want to change. Copy deploy/config/env.example
+# to .env as a starting point.
+#
+# For a real deployment set at least:
 #   AUTH_SECRET, KMS_LOCAL_MASTER_KEY (base64 32 bytes; `make gen-key`),
-#   CREDENTIALS_ENCRYPTION_KEY (64 hex), INTERNAL_API_TOKEN, and — to connect
-#   Gmail mailboxes — BOX_GOOGLE_CLIENT_ID / BOX_GOOGLE_CLIENT_SECRET.
+#   CREDENTIALS_ENCRYPTION_KEY (64 hex), INTERNAL_API_TOKEN, SECRET_KEY_BASE,
+#   and — to connect Gmail/Microsoft mailboxes — BOX_GOOGLE_* / BOX_OUTLOOK_*.
 #
 # LOSING KMS_LOCAL_MASTER_KEY OR CREDENTIALS_ENCRYPTION_KEY IS UNRECOVERABLE:
 # every stored mailbox credential is sealed with them. Back them up.
@@ -32,26 +36,77 @@
 # To run on Kafka + S3 instead, set the provider vars above and rebuild the Go
 # images with --build-arg GO_TAGS=kafka (tracking: --build-arg CARGO_FEATURES=kafka).
 
+# Everything below is overridable from a single .env next to this file. The
+# defaults are the no-cloud stack, so an empty .env still boots; set only what
+# you want to change. See docs.warmbly.com/development/deployment-guide/.
 x-selfhost-env: &selfhost-env
   APP_ENV: ${APP_ENV:-dev}
-  AWS_CONFIG_ENABLED: "false"
-  EVENTBUS_PROVIDER: nats
-  NATS_URL: nats://nats:4222
-  CODEC_PROVIDER: json
-  KMS_PROVIDER: local
+  AWS_CONFIG_ENABLED: ${AWS_CONFIG_ENABLED:-false}
+
+  # Event bus + serialization. Kafka needs images built with GO_TAGS=kafka.
+  EVENTBUS_PROVIDER: ${EVENTBUS_PROVIDER:-nats}
+  NATS_URL: ${NATS_URL:-nats://nats:4222}
+  CODEC_PROVIDER: ${CODEC_PROVIDER:-json}
+  KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-}
+  KAFKA_SASL_USERNAME: ${KAFKA_SASL_USERNAME:-}
+  KAFKA_SASL_PASSWORD: ${KAFKA_SASL_PASSWORD:-}
+  SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-}
+
+  # Encryption. Back up both keys; losing them is unrecoverable.
+  KMS_PROVIDER: ${KMS_PROVIDER:-local}
   KMS_LOCAL_MASTER_KEY: ${KMS_LOCAL_MASTER_KEY:-Xr0JA7gqF2POy29a7MRByyqddivTNt8WOyKsOXklazk=}
+  KMS_AWS_KEY_ID: ${KMS_AWS_KEY_ID:-}
   CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-  BLOB_PROVIDER: filesystem
-  BLOB_FS_ROOT: /data/blobs
-  BLOB_PUBLIC_BASE_URL: ${API_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:8080}/public
-  TASKS_PROVIDER: local
-  BILLING_PROVIDER: none
-  CAPTCHA_PROVIDER: none
-  PUBSUB_ENABLED: "false"
-  PRIMARY_DB: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
-  REDIS: redis://redis:6379
+
+  # Blob storage. s3 also needs BLOB_BUCKET + the AWS_* values below.
+  BLOB_PROVIDER: ${BLOB_PROVIDER:-filesystem}
+  BLOB_FS_ROOT: ${BLOB_FS_ROOT:-/data/blobs}
+  BLOB_BUCKET: ${BLOB_BUCKET:-}
+  BLOB_PUBLIC_BASE_URL: ${BLOB_PUBLIC_BASE_URL:-${API_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:8080}/public}
+  AWS_REGION: ${AWS_REGION:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  AWS_ENDPOINT_URL_S3: ${AWS_ENDPOINT_URL_S3:-}
+
+  TASKS_PROVIDER: ${TASKS_PROVIDER:-local}
+  PUBSUB_ENABLED: ${PUBSUB_ENABLED:-false}
+
+  # Billing. stripe requires all three keys or the backend exits at boot.
+  BILLING_PROVIDER: ${BILLING_PROVIDER:-none}
+  STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+  STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+
+  # Captcha. Set both to turn Turnstile on.
+  CAPTCHA_PROVIDER: ${CAPTCHA_PROVIDER:-none}
+  TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
+
+  PRIMARY_DB: ${PRIMARY_DB:-postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable}
+  REDIS: ${REDIS:-redis://redis:6379}
   AUTH_SECRET: ${AUTH_SECRET:-local-dev-auth-secret-minimum-32-characters-long}
   INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-local-dev-internal-token}
+
+  # AI assistant. Omit AI_PROVIDER to run with AI off (endpoints return 503).
+  AI_PROVIDER: ${AI_PROVIDER:-}
+  AI_API_KEY: ${AI_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-}
+  AI_MODEL_TRIAL: ${AI_MODEL_TRIAL:-}
+  AI_MODEL_PAID: ${AI_MODEL_PAID:-}
+  AI_BASE_URL: ${AI_BASE_URL:-}
+  AI_FREE: ${AI_FREE:-}
+  SEARCH_PROVIDER: ${SEARCH_PROVIDER:-}
+  SEARCH_API_URL: ${SEARCH_API_URL:-}
+  SEARCH_API_KEY: ${SEARCH_API_KEY:-}
+
+  # Mobile push. Partial config disables push with a warning, never a crash.
+  APNS_KEY: ${APNS_KEY:-}
+  APNS_KEY_ID: ${APNS_KEY_ID:-}
+  APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+  APNS_TOPIC: ${APNS_TOPIC:-}
+  NOTIFICATION_PUSH_WINDOW: ${NOTIFICATION_PUSH_WINDOW:-}
+  NOTIFICATION_EMAIL_DAILY_CAP: ${NOTIFICATION_EMAIL_DAILY_CAP:-}
+
+  SENTRY_DSN: ${SENTRY_DSN:-}
 
 services:
 
@@ -141,6 +196,9 @@ services:
       # To reach Warmbly from another machine, set PUBLIC_HOST=<ip-or-domain> in
       # .env — every URL below derives from it. Or set each URL explicitly.
       APP_URL: ${APP_URL:-http://${PUBLIC_HOST:-localhost}:5173}
+      # The backend's own public base. Remote workers enrolled from here get it
+      # as ENCRYPTED_KEYS_BACKEND_URL, so it must be reachable from the worker.
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:8080}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://${PUBLIC_HOST:-localhost}:5173,http://${PUBLIC_HOST:-localhost}:5174}
       WEBSOCKET_URL: ${WEBSOCKET_URL:-ws://${PUBLIC_HOST:-localhost}:4000/socket/websocket}
       ENCRYPTED_KEYS_PROVIDER: postgres
@@ -148,14 +206,32 @@ services:
       EMAIL_ADDRESS: ${EMAIL_ADDRESS:-noreply@warmbly.local}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       TRACKING_DOMAIN: ${TRACKING_DOMAIN:-${PUBLIC_HOST:-localhost}:3000}
-      GEODB_PATH: /app/data/GeoLite2-City.mmdb
+      GEODB_PATH: ${GEODB_PATH:-/app/data/GeoLite2-City.mmdb}
       # Gmail mailbox OAuth (leave unset to connect only SMTP/IMAP + Outlook
       # mailboxes). See the self-hosting docs for the Google Cloud setup.
       BOX_GOOGLE_CLIENT_ID: ${BOX_GOOGLE_CLIENT_ID:-}
       BOX_GOOGLE_CLIENT_SECRET: ${BOX_GOOGLE_CLIENT_SECRET:-}
       BOX_OUTLOOK_CLIENT_ID: ${BOX_OUTLOOK_CLIENT_ID:-}
       BOX_OUTLOOK_CLIENT_SECRET: ${BOX_OUTLOOK_CLIENT_SECRET:-}
+      # Sign in with Google / Apple. Separate from the BOX_* mailbox clients
+      # above; email+password and passkeys work without any of these.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      GOOGLE_IOS_CLIENT_ID: ${GOOGLE_IOS_CLIENT_ID:-}
+      APPLE_APP_ID: ${APPLE_APP_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_KEY_SECRET: ${APPLE_KEY_SECRET:-}
+      # Passkeys derive from APP_URL when unset. Changing the RP id invalidates
+      # every enrolled passkey, so keep it stable per deployment.
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_RP_ORIGINS: ${WEBAUTHN_RP_ORIGINS:-}
+      # Worker image the orchestrator installs on remote machines.
+      WORKER_IMAGE: ${WORKER_IMAGE:-}
     volumes:
       - blobs:/data/blobs
     depends_on:
@@ -191,10 +267,17 @@ services:
       dockerfile: deploy/docker/worker.Dockerfile
     environment:
       <<: *selfhost-env
-      MAIL_TLS_INSECURE: "true"
+      # Dovecot in the sandbox profile uses a self-signed cert. Set
+      # MAIL_TLS_INSECURE=false once you only connect real mailboxes.
+      MAIL_TLS_INSECURE: ${MAIL_TLS_INSECURE:-true}
       ENCRYPTED_KEYS_PROVIDER: http
-      ENCRYPTED_KEYS_BACKEND_URL: http://backend:8080
+      ENCRYPTED_KEYS_BACKEND_URL: ${ENCRYPTED_KEYS_BACKEND_URL:-http://backend:8080}
       ENCRYPTED_KEYS_WORKER_TOKEN: ${INTERNAL_API_TOKEN:-local-dev-internal-token}
+      # Unset by default so each replica generates its own id and --scale works.
+      # Pin it only when running exactly one worker on this host.
+      WORKER_ID: ${WORKER_ID:-}
+      WORKER_TIER: ${WORKER_TIER:-}
+      WORKER_EGRESS_KIND: ${WORKER_EGRESS_KIND:-}
       BOX_GOOGLE_CLIENT_ID: ${BOX_GOOGLE_CLIENT_ID:-}
       BOX_GOOGLE_CLIENT_SECRET: ${BOX_GOOGLE_CLIENT_SECRET:-}
       BOX_OUTLOOK_CLIENT_ID: ${BOX_OUTLOOK_CLIENT_ID:-}
@@ -212,12 +295,15 @@ services:
     ports: ["3000:3000"]
     environment:
       APP_ENV: ${APP_ENV:-dev}
-      AWS_CONFIG_ENABLED: "false"
+      AWS_CONFIG_ENABLED: ${AWS_CONFIG_ENABLED:-false}
       TRACKING_HOST: "0.0.0.0"
       TRACKING_PORT: "3000"
-      EVENTBUS_PROVIDER: nats
-      NATS_URL: nats://nats:4222
-      KAFKA_TRACKING_TOPIC: tracking-events
+      EVENTBUS_PROVIDER: ${EVENTBUS_PROVIDER:-nats}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-}
+      KAFKA_TRACKING_TOPIC: ${KAFKA_TRACKING_TOPIC:-tracking-events}
+      TRACKING_RATE_LIMIT_PER_MIN: ${TRACKING_RATE_LIMIT_PER_MIN:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
       # Overridable so `make dev` (native backend) can point at
       # host.docker.internal:8080 while `docker compose up` uses the container.
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8080}
@@ -235,15 +321,23 @@ services:
     environment:
       PHX_HOST: ${PHX_HOST:-${PUBLIC_HOST:-localhost}}
       PORT: 4000
-      DATABASE_URL: postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable
-      DATABASE_SSL: "false"
-      DATABASE_POOL_SIZE: "10"
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: ${PRIMARY_DB:-postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
+      REDIS_URL: ${REDIS:-redis://redis:6379}
       # Must equal the backend AUTH_SECRET so JWTs validate across services.
       JWT_SECRET: ${AUTH_SECRET:-local-dev-auth-secret-minimum-32-characters-long}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-local-development-secret-key-base-minimum-64-characters-for-phoenix}
-      PUBSUB_ENABLED: "false"
-      CHECK_ORIGIN: "false"
+      PUBSUB_ENABLED: ${PUBSUB_ENABLED:-false}
+      # Behind a reverse proxy set CHECK_ORIGIN=true once PHX_HOST matches the
+      # public websocket hostname.
+      CHECK_ORIGIN: ${CHECK_ORIGIN:-false}
+    # SENTRY_DSN deliberately arrives via env_file, not the mapping above: the
+    # Elixir Sentry library reads the variable itself and refuses to start on an
+    # empty string, so it has to be genuinely absent rather than "".
+    env_file:
+      - path: .env
+        required: false
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -261,9 +355,10 @@ services:
       WARMBLY_API_URL: ${API_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:8080}
       WARMBLY_APP_URL: ${APP_URL:-http://${PUBLIC_HOST:-localhost}:5173}
       WARMBLY_TRACKING_DOMAIN: ${TRACKING_DOMAIN:-${PUBLIC_HOST:-localhost}:3000}
-      # Captcha is off server-side (CAPTCHA_PROVIDER=none); this Cloudflare test
-      # key keeps the widget satisfied without a real key.
-      WARMBLY_TURNSTILE_KEY: "1x00000000000000000000AA"
+      # Cloudflare's always-pass test key keeps the widget satisfied while
+      # captcha is off server-side. Set WARMBLY_TURNSTILE_KEY to your site key
+      # when you set CAPTCHA_PROVIDER=turnstile.
+      WARMBLY_TURNSTILE_KEY: ${WARMBLY_TURNSTILE_KEY:-1x00000000000000000000AA}
     depends_on:
       backend: { condition: service_healthy }
 
@@ -276,7 +371,7 @@ services:
       WARMBLY_API_URL: ${API_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:8080}
       WARMBLY_DASHBOARD_URL: ${APP_URL:-http://${PUBLIC_HOST:-localhost}:5173}
       WARMBLY_ENV_LABEL: ${ENV_LABEL:-development}
-      WARMBLY_TURNSTILE_KEY: "1x00000000000000000000AA"
+      WARMBLY_TURNSTILE_KEY: ${WARMBLY_TURNSTILE_KEY:-1x00000000000000000000AA}
     depends_on:
       backend: { condition: service_healthy }
 
@@ -291,6 +386,9 @@ services:
     environment:
       <<: *selfhost-env
       SEED_RICH: "true"
+      # Without SEED_FULL the paid plans, durations, and subscriptions never
+      # load, so the seeded orgs come up with no plan attached.
+      SEED_FULL: "true"
     depends_on:
       backend: { condition: service_healthy }
     profiles: ["seed"]

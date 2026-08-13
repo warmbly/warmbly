@@ -177,8 +177,16 @@ func main() {
 	// the rolling 1m counters into a WorkerHealth event, publishes via the
 	// event bus so the consumer can write a row into worker_health_samples.
 	go workerService.Heartbeat(ctx)
-	go runInternalHeartbeat(ctx, workerID, bindIP)
 	go workerService.RunHealth(ctx, 30*time.Second)
+
+	// heartbeatDone closes once the farewell beat has been sent. Main waits on
+	// it before returning, otherwise the process exits mid-request and the
+	// worker stays registered as active.
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		runInternalHeartbeat(ctx, workerID, bindIP)
+	}()
 
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -193,6 +201,15 @@ func main() {
 	log.Printf("Worker %s started, listening on topic %s", workerID, workerTopic)
 	if err := bus.Subscribe(ctx, []string{workerTopic}, "worker-"+workerID.String(), workerService.Receive); err != nil {
 		log.Println("event bus subscribe ended:", err)
+	}
+
+	// Give the farewell beat a moment to land. Bounded so a wedged backend
+	// can't stop the worker from exiting; the heartbeat staleness window
+	// catches it either way.
+	select {
+	case <-heartbeatDone:
+	case <-time.After(8 * time.Second):
+		log.Println("timed out waiting for the shutdown heartbeat")
 	}
 	log.Println("Worker stopped")
 }
@@ -212,15 +229,20 @@ func runInternalHeartbeat(ctx context.Context, workerID uuid.UUID, bindIP string
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	send := func() {
-		payload := map[string]string{
+	// reqCtx is separate from ctx so the farewell beat still sends after ctx is
+	// cancelled by the shutdown signal.
+	send := func(reqCtx context.Context, stopping bool) {
+		payload := map[string]any{
 			"worker_id":   workerID.String(),
 			"bind_ip":     reportedIP,
 			"tier":        os.Getenv("WORKER_TIER"),
 			"egress_kind": os.Getenv("WORKER_EGRESS_KIND"),
 		}
+		if stopping {
+			payload["stopping"] = true
+		}
 		body, _ := json.Marshal(payload)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/v1/internal/worker/heartbeat", bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/api/v1/internal/worker/heartbeat", bytes.NewReader(body))
 		if err != nil {
 			log.Println("failed to build internal heartbeat:", err)
 			return
@@ -238,15 +260,21 @@ func runInternalHeartbeat(ctx context.Context, workerID uuid.UUID, bindIP string
 		}
 	}
 
-	send()
+	send(ctx, false)
 	ticker := time.NewTicker(90 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			// Farewell beat on a fresh context: ctx is already cancelled, and
+			// without this the row stays selectable until the heartbeat ages
+			// out, so placement keeps picking a worker that has exited.
+			byeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			send(byeCtx, true)
+			cancel()
 			return
 		case <-ticker.C:
-			send()
+			send(ctx, false)
 		}
 	}
 }

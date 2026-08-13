@@ -100,9 +100,10 @@ defmodule RealtimeWeb.OrgChannel do
 
   @impl true
   def handle_info(:after_join, socket) do
-    # Subscribe to the organization's Pub/Sub topic
-    org_id = socket.assigns.org_id
-    Phoenix.PubSub.subscribe(Realtime.PubSub, "org:#{org_id}")
+    # No manual PubSub.subscribe here: joining already subscribed this process
+    # to "org:<id>", which is the topic the sequencer broadcasts on. Subscribing
+    # again delivered every event to handle_info twice, so each client received
+    # a duplicate of every org event and ran every invalidation twice.
 
     # Track presence for human members only; developer API-key sockets are
     # event consumers, not teammates. When the org has turned off "show who's

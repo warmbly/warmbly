@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './global.css'
-import { createBrowserRouter, Navigate, Outlet, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import RootLayout from './app/layout';
 
 import "@fontsource/inter/400.css";
@@ -78,13 +78,6 @@ import OnboardingLayout from './app/onboarding/layout';
 import OnboardingPage from './app/onboarding/page';
 import SelectOrgPage from './app/select-org/page';
 import InviteAcceptPage from './app/invite/page';
-import AdminLayout from './app/app/admin/layout';
-import AdminPage from './app/app/admin/page';
-import AdminWorkersPage from './app/app/admin/workers/page';
-import AdminAddWorkerPage from './app/app/admin/workers/new/page';
-import AdminWorkerDetailPage from './app/app/admin/workers/[id]/page';
-import AdminCredentialsPage from './app/app/admin/credentials/page';
-import AdminAuditPage from './app/app/admin/audit/page';
 
 // React-Query defaults tuned for a dashboard. The library's
 // out-of-the-box behaviour treats every query as immediately stale
@@ -354,18 +347,6 @@ const router = createBrowserRouter([
             element: <Navigate to="/app/settings/members" replace />,
           },
           {
-            path: "admin",
-            element: <AdminLayoutWithOutlet />,
-            children: [
-              { index: true, element: <AdminPage /> },
-              { path: "workers", element: <AdminWorkersPage /> },
-              { path: "workers/new", element: <AdminAddWorkerPage /> },
-              { path: "workers/:id", element: <AdminWorkerDetailPage /> },
-              { path: "credentials", element: <AdminCredentialsPage /> },
-              { path: "audit", element: <AdminAuditPage /> },
-            ],
-          },
-          {
             path: "*",
             element: <DashboardNotFound />,
           },
@@ -378,11 +359,6 @@ const router = createBrowserRouter([
     ],
   },
 ]);
-
-// AdminLayout takes a children prop rather than rendering <Outlet/>; bridge it.
-function AdminLayoutWithOutlet() {
-  return <AdminLayout><Outlet /></AdminLayout>;
-}
 
 const rootEl = document.getElementById('root')!
 createRoot(rootEl).render(

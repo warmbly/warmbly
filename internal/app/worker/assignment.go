@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -57,6 +58,13 @@ type workerAssignmentService struct {
 	workerRepo repository.WorkerRepository
 	subRepo    repository.SubscriptionRepository
 	planRepo   repository.PlanRepository
+	// selfHost treats every org as paid for placement. Set when
+	// BILLING_PROVIDER=none (the self-host default), where HasPaidSubscription
+	// is structurally always false because it requires a Stripe subscription
+	// id. Without this, every org counts as free tier and placement only ever
+	// looks at free-tier workers, so a stock install can never place a mailbox.
+	// Mirrors feature.gate's selfHost unlock.
+	selfHost bool
 }
 
 func NewAssignmentService(
@@ -68,6 +76,7 @@ func NewAssignmentService(
 		workerRepo: workerRepo,
 		subRepo:    subRepo,
 		planRepo:   planRepo,
+		selfHost:   config.BillingProvider() == "none",
 	}
 }
 
@@ -79,8 +88,9 @@ func (s *workerAssignmentService) AssignWorkerToEmail(ctx context.Context, email
 		return nil, err
 	}
 
-	// 2. Determine if free tier or paid
-	isPaidOrg := sub != nil && sub.HasPaidSubscription()
+	// 2. Determine if free tier or paid. With billing disabled there is no
+	// paid/free split to enforce, so everything places as paid.
+	isPaidOrg := s.selfHost || (sub != nil && sub.HasPaidSubscription())
 
 	// 3. Compute mailbox weight once - reused for whichever worker we
 	// land on (dedicated or shared). 0 is a sentinel that means
@@ -88,8 +98,12 @@ func (s *workerAssignmentService) AssignWorkerToEmail(ctx context.Context, email
 	// resolveMailboxWeight below.
 	weight := s.resolveMailboxWeight(ctx, emailAccountID)
 
-	// 4. Check if paid org has dedicated worker plan
-	if isPaidOrg {
+	// 4. Check if paid org has dedicated worker plan. Requires a real
+	// subscription to read a plan from: with billing disabled isPaidOrg is true
+	// even for an org that has no subscription row at all, which is what an org
+	// created before the free-trial plan shipped looks like. Those fall through
+	// to shared placement.
+	if isPaidOrg && sub != nil {
 		plan, err := s.planRepo.GetByID(ctx, sub.PlanID)
 		if err != nil {
 			return nil, err

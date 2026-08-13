@@ -61,6 +61,21 @@ type WorkerEnvConfig struct {
 	EncryptedKeysBackendURL  string
 	EncryptedKeysWorkerToken string
 
+	// Decryption material. A worker fetches the org's encrypted data key over
+	// the internal API and opens it locally, then opens mailbox credentials
+	// with the credentials key, so without these it can authenticate to the
+	// backend and still be unable to send a single message.
+	KMSProvider              string
+	KMSLocalMasterKey        string
+	KMSAWSKeyID              string
+	CredentialsEncryptionKey string
+
+	// Blob storage. A worker binary defaults this to s3, so an unset value on a
+	// no-cloud deployment makes the worker look for AWS at boot.
+	BlobProvider string
+	BlobBucket   string
+	BlobFSRoot   string
+
 	EventBusProvider string
 	NATSURL          string
 	CodecProvider    string
@@ -619,6 +634,15 @@ func (o *Orchestrator) renderEnvFile(ctx context.Context, workerID uuid.UUID) (e
 	write("ENCRYPTED_KEYS_PROVIDER", "http")
 	write("ENCRYPTED_KEYS_BACKEND_URL", env.EncryptedKeysBackendURL)
 	write("ENCRYPTED_KEYS_WORKER_TOKEN", env.EncryptedKeysWorkerToken)
+	// A bare worker binary defaults KMS_PROVIDER to "aws", so this must be
+	// written explicitly or a self-host worker exits at boot looking for AWS.
+	write("KMS_PROVIDER", env.KMSProvider)
+	write("KMS_LOCAL_MASTER_KEY", env.KMSLocalMasterKey)
+	write("KMS_AWS_KEY_ID", env.KMSAWSKeyID)
+	write("CREDENTIALS_ENCRYPTION_KEY", env.CredentialsEncryptionKey)
+	write("BLOB_PROVIDER", env.BlobProvider)
+	write("BLOB_BUCKET", env.BlobBucket)
+	write("BLOB_FS_ROOT", env.BlobFSRoot)
 	write("KAFKA_BOOTSTRAP_SERVERS", env.KafkaBootstrap)
 	write("KAFKA_SASL_USERNAME", env.KafkaSASLUsername)
 	write("KAFKA_SASL_PASSWORD", env.KafkaSASLPassword)

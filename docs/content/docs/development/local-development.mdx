@@ -32,6 +32,10 @@ and admin panel together in your terminal.
 
 Open `http://localhost:5173` and log in with `dev@warmbly.com` / `password123`.
 
+Warmbly emails a 6-digit code on every login, and local mail goes to Mailpit
+rather than a real inbox. Open `http://localhost:18025`, read the newest "Your
+Login Code" message, and paste the code into the dashboard.
+
 Ctrl-C stops the app services; the Docker infra stays up, so the next `make dev`
 skips straight to starting the app. The Go services run natively with `go run`,
 so a code change plus Ctrl-C and re-run recompiles in a second or two. Variants:
@@ -95,7 +99,7 @@ docker compose -p warmbly up -d postgres redis nats mailpit          # infra
 docker compose -p warmbly -f docker-compose.yml -f docker-compose.dev.yml up -d --build \
     backend consumer worker tracking realtime web admin              # app
 docker compose -p warmbly up -d dovecot                              # sandbox IMAP host
-docker compose -p warmbly --profile seed run --rm seed               # seed
+docker compose -p warmbly --profile seed run --rm --build seed       # seed
 docker compose -p warmbly --profile seed --profile sandbox down -v   # reset
 ```
 
@@ -156,7 +160,7 @@ The dev user's org always loads as a mid-flight workspace, not an empty shell:
 
 All dates are computed relative to the current time, so the workspace looks active no matter when you seed.
 
-When `SEED_RICH=true` (default in `docker-compose.yml`), also loads:
+When `SEED_RICH=true` (set in `docker-compose.yml`, and by `make seed`), also loads:
 
 - 3 orgs (Acme free, Beta pro, Gamma enterprise) each with their own owner user (password `password123`)
 - 3 workers matching the `docker-compose.yml` hostnames (shared / premium / dedicated)

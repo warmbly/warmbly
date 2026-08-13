@@ -65,12 +65,6 @@ const ROUTE_TITLES: Record<string, string> = {
   "/app/settings/oauth-apps": "OAuth apps",
   "/app/settings/danger": "Danger zone",
 
-  // Admin
-  "/app/admin": "Admin",
-  "/app/admin/workers": "Workers",
-  "/app/admin/workers/new": "Add worker",
-  "/app/admin/credentials": "Credentials",
-  "/app/admin/audit": "Admin audit",
 };
 
 // Parameterised routes: [regex, label]. Ordered most-specific first so a

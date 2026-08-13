@@ -18,10 +18,14 @@ func (r *workerRepository) UpsertOnHeartbeat(ctx context.Context, id uuid.UUID, 
 	if egressKind == "" {
 		egressKind = "cold_smtp"
 	}
+	// last_seen_at is set on insert too, not just on conflict: this call IS a
+	// heartbeat, and placement skips workers whose heartbeat is stale, so a
+	// newly-registered worker would otherwise be unselectable until its second
+	// ping.
 	const q = `
 		INSERT INTO workers (id, name, ip_addr, active, free_tier, worker_type,
-		                     egress_kind, health_state, load_score)
-		VALUES ($1, $2, $3, TRUE, $4, $5, $6, 'healthy', 0)
+		                     egress_kind, health_state, load_score, last_seen_at)
+		VALUES ($1, $2, $3, TRUE, $4, $5, $6, 'healthy', 0, now())
 		ON CONFLICT (id) DO UPDATE
 		   SET ip_addr = EXCLUDED.ip_addr,
 		       active = TRUE,
@@ -35,6 +39,17 @@ func (r *workerRepository) UpsertOnHeartbeat(ctx context.Context, id uuid.UUID, 
 	`
 	name := "auto-registered-" + id.String()[:8]
 	_, err := r.db.Exec(ctx, q, id, name, ipAddr, freeTier, workerType, egressKind)
+	return err
+}
+
+// DeactivateWorker marks a worker inactive without deleting it, so its history
+// and mailbox assignments survive. Called from the farewell heartbeat a worker
+// sends on shutdown; a worker that comes back flips active to TRUE again on its
+// next beat.
+func (r *workerRepository) DeactivateWorker(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE workers SET active = FALSE, updated_at = now() WHERE id = $1
+	`, id)
 	return err
 }
 

@@ -74,15 +74,24 @@ if config_env() == :prod do
     pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE") || "10"),
     show_sensitive_data_on_connection_error: true
 
-  # Sentry configuration
-  if sentry_dsn = System.get_env("SENTRY_DSN") do
-    config :sentry,
-      dsn: sentry_dsn,
-      environment_name: :prod
+  # Sentry configuration. An env var that is present but empty must behave as
+  # unset: compose passes every optional variable through as "" so a single
+  # .env can drive the whole stack, and Sentry rejects "" as an invalid DSN
+  # hard enough to take the whole node down at boot.
+  case System.get_env("SENTRY_DSN") do
+    dsn when is_binary(dsn) and dsn != "" ->
+      config :sentry, dsn: dsn, environment_name: :prod
+
+    _ ->
+      :ok
   end
 
   # Goth for GCP authentication
-  if gcp_credentials = System.get_env("GOOGLE_APPLICATION_CREDENTIALS_JSON") do
-    config :goth, json: gcp_credentials
+  case System.get_env("GOOGLE_APPLICATION_CREDENTIALS_JSON") do
+    creds when is_binary(creds) and creds != "" ->
+      config :goth, json: creds
+
+    _ ->
+      :ok
   end
 end

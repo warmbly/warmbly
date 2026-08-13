@@ -79,8 +79,8 @@ Event codec: `CODEC_PROVIDER=json` is required wherever workers are exercised (t
 
 Infra runs in docker; the Go services and frontends run natively on the host for fast iteration — no docker image rebuilds when you change app code. Targets live in the `Makefile`.
 
-- `make dev` — the one-command stack: brings up the docker infra and waits for readiness (postgres, kafka topics, KMS/S3 init), applies migrations, loads seed fixtures (skip with `SEED=false`), installs web deps on first run, then starts backend + consumer + both shared workers + the dashboard in one terminal. Login: dev@warmbly.com / password123. Ctrl-C stops the app; infra stays up.
-- `make infra` — start the backing services in docker (postgres, redis, kafka, schema-registry, mailpit, localstack + init, cloud-tasks, stripe-mock). Run once; leave running.
+- `make dev` — the one-command stack: brings up the docker infra and waits for postgres, applies migrations, loads seed fixtures (skip with `SEED=false`), installs web + admin deps on first run, starts realtime and tracking as containers, then runs backend + consumer + worker + dashboard + admin in one terminal. Login: dev@warmbly.com / password123, with the emailed login code in Mailpit at http://localhost:18025. Ctrl-C stops the app; infra stays up.
+- `make infra` — start the backing services in docker (postgres, redis, nats, mailpit). Run once; leave running. Kafka, Schema Registry, localstack, cloud-tasks, and stripe-mock are gone; the stack is no-cloud by default (NATS, local KMS, filesystem blobs, in-process tasks).
 - `make backend` — run the API natively on `:8080` (applies the embedded migrations on boot against the docker postgres).
 - `make consumer` / `make worker` / `make worker-premium` — run those Go services natively, each in its own terminal. Two native workers exist because tier placement is strict: free-trial orgs place onto the free-tier worker (`make worker`), paid orgs onto the premium one (`make worker-premium`). The workers read encrypted DEKs through the backend's `/internal/dek` endpoint (the prod `http` provider, no worker DB), so `make backend` must be running and their `INTERNAL_API_TOKEN` must match (the targets are pre-wired to match).
 - `make run` — backend + consumer + both workers together in one terminal (Ctrl-C stops all).
@@ -165,7 +165,8 @@ API keys with the `REALTIME_SUBSCRIBE` permission (bit 11) can connect to the sa
 - `cmd/worker`: execution worker for send/sync operations
 - `tracking/`: open and click tracking service
 - `realtime/`: websocket fanout service
-- `web/`: in-product frontend (dashboard)
+- `web/`: in-product frontend (dashboard). Customer-facing only: it holds no platform-admin screens, and operator tooling must not be added back here
+- `admin/`: platform admin panel (:5174), the single operator surface. Workers, users, orgs, warmup, campaigns, analytics, audit. Every route sits behind `RequireAdmin` and the backend's `RequireAdminPermission` gates
 - `site/`: public marketing site (Astro 5 + Tailwind v4)
 - `deploy/`: production deploy manifests, infrastructure, and runtime config
 - `docs/`: documentation site (docs.warmbly.com); product guides, API reference, and self-hosting/engineering docs under `content/docs/development/`
