@@ -524,7 +524,7 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// STEP 11: Add jitter. Deliberately NOT rounded to a 5-minute grid — a
 	// fleet that only ever sends at :x0/:x5 marks is a detectable pattern.
 	jitter := randomJitter(-20, 20)
-	candidateTime = candidateTime.Add(time.Minute * time.Duration(jitter))
+	candidateTime = notBefore(candidateTime.Add(time.Minute * time.Duration(jitter)))
 
 	// STEP 12: Check conflicts with other scheduled tasks
 	dateToCheck := candidateTime
@@ -546,10 +546,10 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// STEP 14: Ensure still within a sending window after all adjustments
 	// (jitter/conflict/distribution can push into a gap between intervals, or
 	// out of the mailbox's workday). Satisfies both calendars.
-	candidateTime = s.intersectWindows(ctx, selected.Behavior, candidateTime, windows, campaignTZ)
+	candidateTime = s.intersectWindows(ctx, selected.Behavior, notBefore(candidateTime), windows, campaignTZ)
 
 	// STEP 15: Randomise the sub-minute component so sends never land on :00.
-	return humanizeSeconds(candidateTime), nextPair, account.ID, nil
+	return finalSlot(candidateTime), nextPair, account.ID, nil
 }
 
 // deferToNextDay pushes a candidate time to the next valid campaign day within

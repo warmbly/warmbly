@@ -318,7 +318,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 
 	// STEP 8: Add human-like jitter (±15 minutes)
 	jitter := randomJitter(-15, 15)
-	candidateTime := earliestNext.Add(time.Minute * time.Duration(jitter))
+	candidateTime := notBefore(earliestNext.Add(time.Minute * time.Duration(jitter)))
 
 	// STEP 9: Avoid exact round times (10:00, 11:00)
 	candidateTime = avoidRoundTimes(candidateTime)
@@ -371,10 +371,10 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 // window leaves the candidate untouched: warmup should degrade to its own
 // window rather than stop.
 func (s *schedulerService) snapWarmupToBehavior(r behavior.Resolved, candidate time.Time) time.Time {
-	if snapped, ok := behaviorWindow(r, candidate); ok {
+	if snapped, ok := behaviorWindow(r, notBefore(candidate)); ok {
 		candidate = snapped
 	}
-	return humanizeSeconds(candidate)
+	return finalSlot(candidate)
 }
 
 // minutesToClock renders minutes-since-midnight as the "15:04" string the

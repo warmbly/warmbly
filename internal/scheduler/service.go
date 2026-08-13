@@ -145,7 +145,7 @@ func calculateFirstSlotTomorrow(timezone string) time.Time {
 
 	// Add random jitter
 	jitter := randomJitter(0, 60)
-	return humanizeSeconds(firstSlot.Add(time.Minute * time.Duration(jitter)))
+	return finalSlot(firstSlot.Add(time.Minute * time.Duration(jitter)))
 }
 
 // randomJitter generates random jitter between min and max minutes

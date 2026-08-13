@@ -624,6 +624,13 @@ func (r *emailRepository) Get(ctx context.Context, orgID, emailAccountID string)
 		&i.CreatedAt, &i.UpdatedAt, &i.Tags,
 	)
 	if err != nil {
+		// A mailbox that does not exist, or belongs to another organization, is
+		// a 404 — not a server error. Both cases land here as no-rows because
+		// the query is scoped by organization_id, which is also what keeps the
+		// tenancy boundary from leaking a "wrong org" signal.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errx.ErrNotFound
+		}
 		db.CaptureError(err, query, params, "queryrow")
 		return nil, errx.InternalError()
 	}

@@ -50,7 +50,7 @@ func (s *schedulerService) CalculateNextEmailTime(ctx context.Context, accountID
 
 	// STEP 4: Add jitter (±10 minutes)
 	jitter := randomJitter(-10, 10)
-	candidateTime = candidateTime.Add(time.Minute * time.Duration(jitter))
+	candidateTime = notBefore(candidateTime.Add(time.Minute * time.Duration(jitter)))
 
 	// STEP 5: Resolve conflicts with scheduled tasks
 	scheduledTasks, err := s.taskRepo.GetScheduledTasksForAccount(ctx, accountID, candidateTime)
@@ -65,7 +65,7 @@ func (s *schedulerService) CalculateNextEmailTime(ctx context.Context, accountID
 	}
 
 	// STEP 7: Final window check after jitter and conflict resolution
-	return s.snapEmailToWindow(bhv, candidateTime, account.Timezone), nil
+	return notBefore(s.snapEmailToWindow(bhv, candidateTime, account.Timezone)), nil
 }
 
 // snapEmailToWindow places a smart-send candidate inside the mailbox's rolled

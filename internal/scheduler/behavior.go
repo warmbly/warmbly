@@ -115,6 +115,24 @@ func (s *schedulerService) behaviorGap(r behavior.Resolved, at time.Time, fallba
 	return secs
 }
 
+// notBefore keeps a scheduled slot in the future.
+//
+// Every scheduler adds SYMMETRIC jitter (±20 minutes for campaigns) to a
+// candidate that may already sit only seconds from now, so the negative half
+// can push the slot into the past. A past scheduled_at fires the moment it is
+// enqueued, which skips the spacing the send was placed with, and one more than
+// 15 minutes stale is cancelled outright by the overdue sweep.
+//
+// The floor is now plus a few seconds of spread, so a batch of clamped tasks
+// does not all land on the same instant.
+func notBefore(candidate time.Time) time.Time {
+	now := time.Now()
+	if candidate.After(now) {
+		return candidate
+	}
+	return now.Add(time.Duration(5+rand.Intn(55)) * time.Second)
+}
+
 // sameLocalDay reports whether two instants fall on the same calendar day in a
 // mailbox's own timezone. Budgets are per LOCAL day, so this — not a UTC date
 // comparison — is what decides whether a send is spending today's allowance.

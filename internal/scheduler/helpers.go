@@ -159,7 +159,7 @@ func calculateFirstSlotTomorrowAt(timezone, startTime string) time.Time {
 	firstSlot := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(),
 		startMinutes/60, startMinutes%60, 0, 0, loc)
 	jitter := randomJitter(0, 60)
-	return humanizeSeconds(firstSlot.Add(time.Minute * time.Duration(jitter)))
+	return finalSlot(firstSlot.Add(time.Minute * time.Duration(jitter)))
 }
 
 // humanizeSeconds randomises the sub-minute component of a scheduled time. All
@@ -167,8 +167,25 @@ func calculateFirstSlotTomorrowAt(timezone, startTime string) time.Time {
 // second :00, so without this the whole platform sends at second zero — a
 // fleet-wide fingerprint in Received headers. Applied as the last step of the
 // schedulers.
+//
+// It truncates DOWN to the minute before re-randomising, so on its own it can
+// move a slot up to 59 seconds EARLIER. Callers that are producing a real
+// scheduled_at must therefore use finalSlot, which clamps afterwards; this
+// helper deliberately stays a pure formatter.
 func humanizeSeconds(t time.Time) time.Time {
 	return t.Truncate(time.Minute).Add(time.Duration(rand.Intn(60)) * time.Second)
+}
+
+// finalSlot is the last thing a scheduler does to a candidate: randomise its
+// sub-minute component, then guarantee the result is still in the future.
+//
+// Both halves matter. Without the randomisation the whole fleet sends at second
+// :00, which is a fingerprint in Received headers. Without the clamp, that same
+// randomisation — plus the symmetric jitter each scheduler applies — can land a
+// near-term send in the past, where it fires immediately with none of the
+// spacing it was placed with, or gets cancelled outright by the overdue sweep.
+func finalSlot(t time.Time) time.Time {
+	return notBefore(humanizeSeconds(t))
 }
 
 // avoidRoundTimes adds randomness to avoid exact round times (10:00, 11:00)
