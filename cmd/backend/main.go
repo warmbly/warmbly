@@ -34,6 +34,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
+	behaviorapp "github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/compose"
@@ -50,6 +51,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/fleet"
 	"github.com/warmbly/warmbly/internal/app/group"
+	"github.com/warmbly/warmbly/internal/app/guardrail"
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
@@ -212,6 +214,10 @@ func main() {
 
 	// Warmup
 	var warmupService warmupapp.Service
+
+	// Per-mailbox human sending behaviour (rolled workday, daily/hourly
+	// ceilings, send spacing) — consumed by the schedulers and the dashboard.
+	var behaviorService behaviorapp.Service
 
 	// Danger zone (delayed deletions)
 	var dangerZoneService dangerzone.Service
@@ -1016,7 +1022,17 @@ func main() {
 
 		// Template & email send services
 		templateService = template.NewService(templateRepository)
+
+		// Sending behaviour. Wired onto the scheduler rather than passed to its
+		// constructor so a deployment without it keeps every mailbox on the
+		// legacy fixed cap and min-gap path.
+		behaviorRepository := repository.NewBehaviorRepository(primaryDB.Pool)
+		behaviorService = behaviorapp.NewService(behaviorRepository, emailRepostory)
+
 		schedulerService := scheduler.NewSchedulerService(taskRepository, warmupRepository, campaignProgressRepository, emailRepostory, campaignRepostory, contactRepostory, campaignLogRepository)
+		if aware, ok := schedulerService.(scheduler.BehaviorAware); ok {
+			aware.WireBehavior(behaviorService)
+		}
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService, dailyThrottleService)
 		composeService = compose.NewService(emailRepostory, repository.NewComposeRepository(primaryDB))
@@ -1309,6 +1325,21 @@ func main() {
 		placementPoller := jobs.NewPlacementPoller(placementService, 2*time.Minute)
 		go placementPoller.Start(ctx)
 
+		// Auto-pause guardrails: pause any active campaign whose bounce,
+		// complaint, or reply rate has left the band its owner set. Fifteen
+		// minutes is fast enough that a campaign cannot do much damage inside
+		// one window at the platform's per-mailbox defaults. The same tick
+		// prunes expired daily sending plans.
+		guardrailService := guardrail.NewService(
+			repository.NewGuardrailRepository(primaryDB.Pool),
+			campaignLogRepository,
+			auditService,
+			notificationService,
+		)
+		guardrailJob := jobs.NewGuardrailJob(guardrailService, behaviorRepository)
+		guardrailScheduler := jobs.NewGuardrailScheduler(guardrailJob, 15*time.Minute)
+		go guardrailScheduler.Start(ctx)
+
 		// Advisor. Detection is deterministic Go over a per-org snapshot and
 		// always runs; the narrator is optional and only rewrites the card copy,
 		// so an install with no LLM provider still gets every recommendation.
@@ -1468,6 +1499,7 @@ func main() {
 		PlacementRepo:    placementRepository,
 		PlacementService: placementService,
 
+		BehaviorService:   behaviorService,
 		AdvisorService:    advisorService,
 		AdvisorRepository: advisorRepository,
 

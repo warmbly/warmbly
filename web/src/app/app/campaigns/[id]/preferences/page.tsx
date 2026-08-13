@@ -16,6 +16,8 @@ import {
     RotationRampSection,
 } from "@/components/app/campaigns/preferences/CampaignEmails";
 import CampaignContactOrder from "@/components/app/campaigns/preferences/CampaignContactOrder";
+import { GuardrailsSection } from "@/components/app/campaigns/preferences/CampaignGuardrails";
+import { guardrailValidationError } from "@/lib/helper/guardrail";
 import CampaignFolderField from "@/components/app/campaigns/CampaignFolderField";
 import useUpdateCampaign from "@/lib/api/hooks/app/campaigns/useUpdateCampaign";
 import toast from "react-hot-toast";
@@ -51,6 +53,11 @@ const SECTIONS = [
         id: "matching",
         label: "ESP matching",
         description: "Align the sending mailbox provider with each recipient's provider.",
+    },
+    {
+        id: "guardrails",
+        label: "Auto-pause",
+        description: "Stop this campaign automatically when its bounce, complaint, or reply rate leaves the band you set.",
     },
     {
         id: "leadflow",
@@ -216,6 +223,26 @@ export default function CampaignPreferences() {
             }),
             ...(newData.risky_emails !== campaign.risky_emails && { risky_emails: newData.risky_emails }),
 
+            // Auto-pause guardrails
+            ...(newData.guardrail_enabled !== campaign.guardrail_enabled && {
+                guardrail_enabled: newData.guardrail_enabled,
+            }),
+            ...(newData.guardrail_bounce_rate_max !== campaign.guardrail_bounce_rate_max && {
+                guardrail_bounce_rate_max: newData.guardrail_bounce_rate_max,
+            }),
+            ...(newData.guardrail_complaint_rate_max !== campaign.guardrail_complaint_rate_max && {
+                guardrail_complaint_rate_max: newData.guardrail_complaint_rate_max,
+            }),
+            ...(newData.guardrail_reply_rate_min !== campaign.guardrail_reply_rate_min && {
+                guardrail_reply_rate_min: newData.guardrail_reply_rate_min,
+            }),
+            ...(newData.guardrail_min_sample !== campaign.guardrail_min_sample && {
+                guardrail_min_sample: newData.guardrail_min_sample,
+            }),
+            ...(newData.guardrail_window_days !== campaign.guardrail_window_days && {
+                guardrail_window_days: newData.guardrail_window_days,
+            }),
+
             // cc/bcc
             ...(newData.cc !== campaign.cc && { cc: newData.cc }),
             ...(newData.bcc !== campaign.bcc && { bcc: newData.bcc }),
@@ -248,6 +275,8 @@ export default function CampaignPreferences() {
         if (newData.ramp_enabled && newData.ramp_start > newData.ramp_ceiling) {
             return "Ramp start must be less than or equal to the ramp ceiling.";
         }
+        const guardrail = guardrailValidationError(newData);
+        if (guardrail) return guardrail;
         // Sending accounts: nothing selected is valid — it means "all active
         // mailboxes", so there is no minimum-selection requirement anymore.
         return null;
@@ -322,6 +351,8 @@ export default function CampaignPreferences() {
                 return <DeliverabilitySection newCampaign={newData} setNewCampaign={setNewData} />;
             case "rotation":
                 return <RotationRampSection newCampaign={newData} setNewCampaign={setNewData} />;
+            case "guardrails":
+                return <GuardrailsSection newCampaign={newData} setNewCampaign={setNewData} />;
             case "matching":
                 return (
                     <EspMatchingSection

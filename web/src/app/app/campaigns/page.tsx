@@ -77,6 +77,7 @@ const STATUS_LABEL: Record<string, string> = {
     paused: "paused",
     paused_no_accounts: "no accounts",
     paused_trial_expired: "trial expired",
+    paused_guardrail: "auto-paused",
     completed: "finished",
     draft: "draft",
 };
@@ -90,6 +91,7 @@ const STATUS_TONE: Record<string, string> = {
     paused: "text-amber-600",
     paused_no_accounts: "text-amber-600",
     paused_trial_expired: "text-amber-600",
+    paused_guardrail: "text-rose-600",
     draft: "text-slate-500",
 };
 
@@ -110,6 +112,9 @@ function CampaignStatusMark({ status }: { status: string }) {
     } else if (status === "paused") {
         Icon = PauseIcon;
         title = "Paused";
+    } else if (status === "paused_guardrail") {
+        Icon = AlertTriangleIcon;
+        title = "Paused automatically — a deliverability guardrail was breached";
     } else if (status === "paused_no_accounts" || status === "paused_trial_expired") {
         Icon = AlertTriangleIcon;
         title = status === "paused_no_accounts" ? "Paused — no sending accounts" : "Paused — trial expired";

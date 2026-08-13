@@ -5,6 +5,7 @@
   "pages": [
     "---Sending---",
     "mailboxes",
+    "sending-behavior",
     "warmup",
     "campaigns",
     "sequences",

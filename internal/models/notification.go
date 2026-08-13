@@ -20,6 +20,10 @@ const (
 	NotifSecuritySignIn  NotificationCategory = "security_new_signin"
 	NotifBillingAlert    NotificationCategory = "billing_alert"
 	NotifTeamActivity    NotificationCategory = "team_activity"
+	// NotifCampaignPaused fires when the platform pauses a campaign on its
+	// own — today, when an auto-pause guardrail band is breached. Rare and
+	// always actionable, so it defaults on with email.
+	NotifCampaignPaused NotificationCategory = "campaign_paused"
 )
 
 // ChannelPrefs is the per-category delivery toggles: in-app feed, account
@@ -48,6 +52,7 @@ type NotificationPreferences struct {
 	SecuritySignIn  CategoryPref `json:"security_new_signin"`
 	BillingAlert    CategoryPref `json:"billing_alert"`
 	TeamActivity    CategoryPref `json:"team_activity"`
+	CampaignPaused  CategoryPref `json:"campaign_paused"`
 
 	// EmailDigestMinutes is the email-channel bundling window: pending
 	// notification emails hold this long, then flush as one email. Bounded
@@ -68,6 +73,9 @@ func DefaultNotificationPreferences() NotificationPreferences {
 	// Billing defaults to email on: rare, and a paused workspace must reach
 	// whoever can fix it even when nobody is watching the dashboard.
 	billing := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true, Email: true}}
+	// A campaign the platform stopped by itself has to reach whoever can
+	// restart it, so this one emails by default too.
+	campaignPaused := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true, Email: true}}
 	return NotificationPreferences{
 		InboundReply:       off,
 		InboundOOO:         off,
@@ -77,6 +85,7 @@ func DefaultNotificationPreferences() NotificationPreferences {
 		SecuritySignIn:     on,
 		BillingAlert:       billing,
 		TeamActivity:       on,
+		CampaignPaused:     campaignPaused,
 		EmailDigestMinutes: 30,
 	}
 }
@@ -100,6 +109,8 @@ func (p NotificationPreferences) CategoryPref(c NotificationCategory) CategoryPr
 		return p.BillingAlert
 	case NotifTeamActivity:
 		return p.TeamActivity
+	case NotifCampaignPaused:
+		return p.CampaignPaused
 	default:
 		return CategoryPref{}
 	}

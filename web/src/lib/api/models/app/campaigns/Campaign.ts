@@ -62,6 +62,18 @@ export default interface Campaign {
     max_new_leads_per_day: number;
     prioritize_new_leads: boolean;
 
+    // Auto-pause guardrails. Bounce and complaint rates are ceilings (pause at
+    // or above); the reply rate is a floor (pause below). A rate of 0 turns its
+    // rule off. guardrail_tripped_at/reason are server-owned.
+    guardrail_enabled: boolean;
+    guardrail_bounce_rate_max: number;
+    guardrail_complaint_rate_max: number;
+    guardrail_reply_rate_min: number;
+    guardrail_min_sample: number;
+    guardrail_window_days: number;
+    guardrail_tripped_at?: string | null;
+    guardrail_reason?: string;
+
     // Campaign-scoped tracking-domain override (honored only when verified).
     tracking_domain: string;
     tracking_domain_verified: boolean;

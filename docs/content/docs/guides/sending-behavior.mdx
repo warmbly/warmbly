@@ -1,0 +1,75 @@
+---
+title: "Sending behavior"
+description: "Give each mailbox a human workday: randomized hours, volume, lunch break, and spacing, in its own timezone."
+---
+
+Automated sending looks automated. A mailbox that sends exactly 40 emails every day, starts at 09:00:00, and spaces every send exactly 600 seconds apart is describing itself as a machine in its own headers.
+
+Sending behavior fixes that. You give a mailbox ranges instead of fixed values, and it rolls one workday out of those ranges each day: a start time, a finish time, a lunch break, a daily target, an hourly ceiling. It then keeps to that day.
+
+Everything here is per mailbox and lives in its own timezone, so a London mailbox and a Denver mailbox on the same campaign each keep their own office hours.
+
+## Turn it on
+
+**Mailboxes** > pick a mailbox > **Sending** > **Sending like a person**.
+
+It is off by default. A mailbox that has not opted in keeps its fixed daily cap and minimum gap exactly as before, so switching this on is the only thing that changes its behavior.
+
+## What gets randomized
+
+| Setting | Default range | What it controls |
+|---------|---------------|------------------|
+| Working days | Mon-Fri | Days this mailbox sends anything at all, cold and warmup alike |
+| Workday start | `09:03` to `09:27` | The mailbox opens at a different minute each day |
+| Workday finish | `17:18` to `17:56` | Nothing is scheduled after the day's rolled finish |
+| Lunch break | starts `12:00`-`13:30`, lasts `30`-`60` min | A quiet gap in the middle of the day |
+| Cold emails per day | `30` to `45` | The day's cold-send target |
+| Cold emails per hour | `5` to `9` | Stops the whole day landing in one burst |
+| Delay between emails | `90` to `420` seconds | Drawn fresh for every send |
+
+Every time is local to the mailbox's own timezone, which you set on the mailbox itself.
+
+## The daily plan
+
+The roll happens once per mailbox per local day, and the result is stored. That matters: the scheduler recomputes a mailbox's next slot many times a day, and a fresh random workday on every calculation would mean the mailbox never actually keeps to one.
+
+The **Sending** tab shows today's rolled workday at the top: the hours, the break, the spacing band, the hourly ceiling, and how much of the day's target is already spent. That is the answer to "why is nothing sending right now".
+
+Editing the ranges does not change today. Today keeps the workday it already started, and the new ranges take effect on the next roll.
+
+## How it interacts with your other limits
+
+Sending behavior can only ever **lower** volume or **delay** a send. It can never raise a mailbox above its own daily cap or bring a send forward.
+
+- The day's rolled target is applied as a minimum against the mailbox's daily cap and the campaign's daily limit. If the mailbox is capped at `50` and the day rolls `38`, the day is `38`.
+- The delay range replaces the mailbox's fixed minimum gap while behavior is on.
+- A campaign's own sending windows still apply. A send has to satisfy both calendars: the campaign's window in the campaign timezone, and the mailbox's workday in the mailbox timezone.
+- Warmup follows the same working days, hours, and break, so warmup mail is not arriving at 03:00 from a mailbox whose campaign mail keeps office hours. Warmup is **not** charged against the cold daily or hourly ceilings; it has its own ramp.
+- Smart send for your own replies follows the workday but is never charged against the cold budgets.
+
+<Callout type="warn" title="The hourly ceiling is doing real work">
+Without it, a mailbox with a 40/day target and a 90-second floor could empty its whole day before 11am and then sit silent. That is a more obvious pattern than sending too much.
+</Callout>
+
+## Choosing ranges
+
+The defaults describe an ordinary weekday sender and are a good starting point for most mailboxes. If you change them:
+
+- Keep the daily range inside the safe cold band. `30-50/day` is normal for a warmed mailbox; a mailbox connected in the last month should stay nearer `10-20/day`.
+- Keep the delay range wide. A narrow range is only slightly less of a pattern than a fixed value.
+- Leave the lunch break on. It is one of the cheapest signals of a real person's inbox.
+- Do not set the workday to cover the whole clock. A mailbox that sends at every hour of the day is not describing an office.
+
+The break has to fit inside the shortest workday the ranges can produce, and the latest possible start has to come before the earliest possible finish. The editor blocks a save that would break either rule.
+
+## API
+
+The profile and today's plan are both readable and writable through the API. See [Endpoints](/api/endpoints/) for the scopes.
+
+```http
+GET  /api/v1/emails/{id}/behavior
+PUT  /api/v1/emails/{id}/behavior
+GET  /api/v1/emails/{id}/behavior/plan
+```
+
+`PUT` is a partial update: send only the fields you want to change. It is naturally idempotent, so retries are safe without an `Idempotency-Key`.

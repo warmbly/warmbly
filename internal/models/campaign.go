@@ -148,6 +148,23 @@ type Campaign struct {
 	MaxNewLeadsPerDay  int  `json:"max_new_leads_per_day"`
 	PrioritizeNewLeads bool `json:"prioritize_new_leads"`
 
+	// Auto-pause guardrails. Rates are evaluated over a rolling window and the
+	// campaign is paused the moment a band is breached, rather than waiting for
+	// a mailbox provider to react first. A rate threshold of 0 disables that
+	// rule; GuardrailMinSample keeps a small sample from tripping anything.
+	//
+	// Bounce and complaint rates are CEILINGS (pause when at or above); the
+	// reply rate is a FLOOR (pause when below), because a campaign at volume
+	// that nobody answers is spending sender reputation for nothing.
+	GuardrailEnabled          bool       `json:"guardrail_enabled"`
+	GuardrailBounceRateMax    float64    `json:"guardrail_bounce_rate_max"`
+	GuardrailComplaintRateMax float64    `json:"guardrail_complaint_rate_max"`
+	GuardrailReplyRateMin     float64    `json:"guardrail_reply_rate_min"`
+	GuardrailMinSample        int        `json:"guardrail_min_sample"`
+	GuardrailWindowDays       int        `json:"guardrail_window_days"`
+	GuardrailTrippedAt        *time.Time `json:"guardrail_tripped_at,omitempty"`
+	GuardrailReason           string     `json:"guardrail_reason,omitempty"`
+
 	// Campaign-scoped tracking-domain override. Honored only when verified;
 	// otherwise falls back to the mailbox/default domain.
 	TrackingDomain           string     `json:"tracking_domain"`
@@ -249,6 +266,16 @@ type UpdateCampaign struct {
 	MaxNewLeadsPerDay  *int    `json:"max_new_leads_per_day,omitempty"`
 	PrioritizeNewLeads *bool   `json:"prioritize_new_leads,omitempty"`
 	TrackingDomain     *string `json:"tracking_domain,omitempty"`
+
+	// Auto-pause guardrails. GuardrailTrippedAt/Reason are server-owned and
+	// are cleared when the campaign is started again, so they are not settable
+	// here.
+	GuardrailEnabled          *bool    `json:"guardrail_enabled,omitempty"`
+	GuardrailBounceRateMax    *float64 `json:"guardrail_bounce_rate_max,omitempty"`
+	GuardrailComplaintRateMax *float64 `json:"guardrail_complaint_rate_max,omitempty"`
+	GuardrailReplyRateMin     *float64 `json:"guardrail_reply_rate_min,omitempty"`
+	GuardrailMinSample        *int     `json:"guardrail_min_sample,omitempty"`
+	GuardrailWindowDays       *int     `json:"guardrail_window_days,omitempty"`
 }
 
 // CreateCampaign is the payload accepted by POST /campaigns. Name is required;

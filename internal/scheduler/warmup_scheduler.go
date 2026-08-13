@@ -2,10 +2,12 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -153,14 +155,30 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		return time.Time{}, ErrWarmupNotEnabled
 	}
 
-	// STEP 1.5: Ensure today is a valid warmup day
+	// STEP 1.5: Resolve the mailbox's sending-behaviour profile. When one is
+	// enabled it OWNS the mailbox's hours: warmup follows the same rolled
+	// workday, lunch break and working weekdays as cold sending, because a
+	// mailbox whose warmup mail keeps arriving at 03:00 while its campaign mail
+	// keeps office hours has told the receiving side exactly what it is.
+	//
+	// Warmup is NOT charged against the persona's cold daily/hourly ceilings:
+	// those budget cold outreach, and warmup has its own ramp.
+	bhv := s.behaviorFor(ctx, account)
+	warmupStart, warmupEnd := account.WarmupStartTime, account.WarmupEndTime
+	if bhv.Enabled {
+		plan := bhv.PlanOn(behavior.PlanDateFor(time.Now(), bhv.Loc))
+		warmupStart = minutesToClock(plan.WorkStartMinute)
+		warmupEnd = minutesToClock(plan.WorkEndMinute)
+	}
+
+	// STEP 1.6: Ensure today is a valid warmup day
 	if account.WarmupDays > 0 {
 		loc := loadLocation(account.Timezone)
 		now := time.Now().In(loc)
 		candidateDay := findNextValidDay(now, uint8(account.WarmupDays), loc)
 		if candidateDay.Day() != now.Day() || candidateDay.Month() != now.Month() || candidateDay.Year() != now.Year() {
 			// Today is not a valid warmup day, schedule for next valid day's start time
-			startMinutes := parseTimeOfDay(account.WarmupStartTime)
+			startMinutes := parseTimeOfDay(warmupStart)
 			if startMinutes == 0 {
 				startMinutes = 8 * 60
 			}
@@ -168,7 +186,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 			firstSlot := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(),
 				startMinutes/60, startMinutes%60, 0, 0, loc)
 			jitter := randomJitter(0, 60)
-			return humanizeSeconds(firstSlot.Add(time.Minute * time.Duration(jitter))), nil
+			return s.snapWarmupToBehavior(bhv, firstSlot.Add(time.Minute*time.Duration(jitter))), nil
 		}
 	}
 
@@ -235,9 +253,12 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		targetVolume = adjusted
 	}
 
-	minWaitSeconds := account.MinWaitTime
+	// Spacing: a drawn gap from the profile when one is enabled, otherwise the
+	// mailbox's fixed min gap. The health-state multiplier still applies on top,
+	// so a throttled mailbox stretches whichever base it is using.
+	minWaitSeconds := s.behaviorGap(bhv, time.Now(), account.MinWaitTime)
 	if adj.minWaitMultiplier > 1.0 {
-		minWaitSeconds = int(float64(account.MinWaitTime)*adj.minWaitMultiplier + 0.5)
+		minWaitSeconds = int(float64(minWaitSeconds)*adj.minWaitMultiplier + 0.5)
 	}
 
 	// STEP 3: Count emails already sent today
@@ -248,18 +269,18 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 
 	// STEP 4: Check if we've hit today's limit
 	if emailsSentToday >= targetVolume {
-		// Move to tomorrow's first slot (8am-9am local time)
-		return calculateFirstSlotTomorrowAt(account.Timezone, account.WarmupStartTime), nil
+		// Move to tomorrow's first slot
+		return s.snapWarmupToBehavior(bhv, calculateFirstSlotTomorrowAt(account.Timezone, warmupStart)), nil
 	}
 
 	// STEP 5: Calculate ideal spacing
 	// Distribute remaining emails across remaining business hours
 	remainingSlots := targetVolume - emailsSentToday
-	hoursRemaining := calculateHoursRemainingUntil(account.Timezone, account.WarmupEndTime)
+	hoursRemaining := calculateHoursRemainingUntil(account.Timezone, warmupEnd)
 
 	// If business hours are over, move to tomorrow
 	if hoursRemaining <= 0 {
-		return calculateFirstSlotTomorrowAt(account.Timezone, account.WarmupStartTime), nil
+		return s.snapWarmupToBehavior(bhv, calculateFirstSlotTomorrowAt(account.Timezone, warmupStart)), nil
 	}
 
 	idealIntervalHours := hoursRemaining / float64(remainingSlots)
@@ -303,7 +324,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 	candidateTime = avoidRoundTimes(candidateTime)
 
 	// STEP 10: Ensure within configured warmup time window
-	candidateTime = ensureTimeWindow(candidateTime, account.WarmupStartTime, account.WarmupEndTime, loadLocation(account.Timezone))
+	candidateTime = ensureTimeWindow(candidateTime, warmupStart, warmupEnd, loadLocation(account.Timezone))
 
 	// STEP 11: Check conflicts with other tasks on this account
 	scheduledTasks, err := s.taskRepo.GetScheduledTasksToday(ctx, accountID)
@@ -313,9 +334,13 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 
 	candidateTime = resolveConflicts(candidateTime, scheduledTasks, minWaitSeconds)
 
-	// STEP 12: Apply human-like distribution curve
+	// STEP 12: Apply human-like distribution curve. Skipped when a behaviour
+	// profile is driving the day — it already carries this mailbox's own peak
+	// hours and lunch break.
 	loc := loadLocation(account.Timezone)
-	candidateTime = applyDistributionCurve(candidateTime, loc)
+	if !bhv.Enabled {
+		candidateTime = applyDistributionCurve(candidateTime, loc)
+	}
 
 	// STEP 13: Final day-of-week guard — conflict resolution or jitter may have pushed
 	// the candidate into a day that isn't a valid warmup day.
@@ -324,7 +349,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		candidateLocal := candidateTime.In(loc)
 		validLocal := validDay.In(loc)
 		if candidateLocal.Day() != validLocal.Day() || candidateLocal.Month() != validLocal.Month() || candidateLocal.Year() != validLocal.Year() {
-			startMinutes := parseTimeOfDay(account.WarmupStartTime)
+			startMinutes := parseTimeOfDay(warmupStart)
 			if startMinutes == 0 {
 				startMinutes = 8 * 60
 			}
@@ -335,6 +360,31 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		}
 	}
 
-	// Randomise the sub-minute component so warmup sends never land on :00.
-	return humanizeSeconds(candidateTime), nil
+	// STEP 14: Final snap onto the mailbox's workday. Jitter, conflict
+	// resolution and the day-of-week guard can all land a candidate inside the
+	// lunch break or on a non-working weekday.
+	return s.snapWarmupToBehavior(bhv, candidateTime), nil
+}
+
+// snapWarmupToBehavior moves a warmup candidate onto the mailbox's rolled
+// workday and randomises its sub-minute component. A profile with no reachable
+// window leaves the candidate untouched: warmup should degrade to its own
+// window rather than stop.
+func (s *schedulerService) snapWarmupToBehavior(r behavior.Resolved, candidate time.Time) time.Time {
+	if snapped, ok := behaviorWindow(r, candidate); ok {
+		candidate = snapped
+	}
+	return humanizeSeconds(candidate)
+}
+
+// minutesToClock renders minutes-since-midnight as the "15:04" string the
+// legacy warmup window helpers parse.
+func minutesToClock(minute int) string {
+	if minute < 0 {
+		minute = 0
+	}
+	if minute >= models.MinutesPerDay {
+		minute = models.MinutesPerDay - 1
+	}
+	return fmt.Sprintf("%02d:%02d", minute/60, minute%60)
 }

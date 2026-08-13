@@ -1,11 +1,13 @@
-// Mailbox detail — a themed right slide-over with four tabs:
+// Mailbox detail — a themed right slide-over with five tabs:
 //   Overview   read-only at-a-glance: health, today's usage, warmup status, identity
 //   Analytics  warmup volume series + summary metrics
 //   Warmup     editable warmup ramp config + live status
+//   Sending    human sending behaviour: working days, hours, lunch, volume, spacing
 //   Settings   profile, signature, tags, sending caps, tracking domain
 // Edits across Warmup + Settings share one form; a sticky save bar commits
-// them via PATCH /emails/:id. Read data: /analytics/accounts/:id and
-// /analytics/warmup?email_id=.
+// them via PATCH /emails/:id. Sending owns its own save (PUT
+// /emails/:id/behavior) because the profile is a separate resource with its own
+// validation. Read data: /analytics/accounts/:id and /analytics/warmup?email_id=.
 
 import React, { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -16,6 +18,7 @@ import {
     BarChart3Icon,
     FlameIcon,
     Settings2Icon,
+    ClockFadingIcon,
     CheckCircle2Icon,
     AlertTriangleIcon,
     AlertCircleIcon,
@@ -51,6 +54,7 @@ import useUpdateEmailTrackingDomain from "@/lib/api/hooks/app/emails/useUpdateEm
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import EmailEditor from "../EmailEditor";
+import SendingBehaviorTab from "./SendingBehaviorTab";
 import TagSelector from "../popup/select/TagSelector";
 import TimeSelect from "@/components/ui/TimeSelect";
 import { DitherBarChart } from "@/components/ui/dither";
@@ -125,6 +129,7 @@ const TABS: { key: string; label: string; icon: LucideIcon }[] = [
     { key: "overview", label: "Overview", icon: GaugeIcon },
     { key: "analytics", label: "Analytics", icon: BarChart3Icon },
     { key: "warmup", label: "Warmup", icon: FlameIcon },
+    { key: "sending", label: "Sending", icon: ClockFadingIcon },
     { key: "settings", label: "Settings", icon: Settings2Icon },
 ];
 
@@ -275,6 +280,7 @@ function Detail({ mailbox, onClose, initialTab = "overview", canWarmup = true }:
                 {tab === "overview" && <OverviewTab status={status.data} loading={status.isPending} mailbox={mailbox} />}
                 {tab === "analytics" && <AnalyticsTab warmup={warmup.data} loading={warmup.isPending} />}
                 {tab === "warmup" && <WarmupTab form={form} update={update} status={status.data} mailbox={mailbox} canWarmup={canWarmup} />}
+                {tab === "sending" && <SendingBehaviorTab mailboxId={mailbox.id} />}
                 {tab === "settings" && <SettingsTab form={form} update={update} mailbox={mailbox} />}
             </div>
 

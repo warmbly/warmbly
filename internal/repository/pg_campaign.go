@@ -121,7 +121,10 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  ramp_enabled, ramp_start, ramp_increment, ramp_ceiling, ramp_level, ramp_level_date,
 		  esp_match_mode, max_new_leads_per_day, prioritize_new_leads,
 		  tracking_domain, tracking_domain_verified, tracking_domain_verified_at,
-		  schedule_windows`
+		  schedule_windows,
+		  guardrail_enabled, guardrail_bounce_rate_max, guardrail_complaint_rate_max,
+		  guardrail_reply_rate_min, guardrail_min_sample, guardrail_window_days,
+		  guardrail_tripped_at, guardrail_reason`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
 	var dest []any = []any{
@@ -137,6 +140,9 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.ESPMatchMode, &campaign.MaxNewLeadsPerDay, &campaign.PrioritizeNewLeads,
 		&campaign.TrackingDomain, &campaign.TrackingDomainVerified, &campaign.TrackingDomainVerifiedAt,
 		&campaign.ScheduleWindows,
+		&campaign.GuardrailEnabled, &campaign.GuardrailBounceRateMax, &campaign.GuardrailComplaintRateMax,
+		&campaign.GuardrailReplyRateMin, &campaign.GuardrailMinSample, &campaign.GuardrailWindowDays,
+		&campaign.GuardrailTrippedAt, &campaign.GuardrailReason,
 	}
 	dest = append(dest, extra...)
 	return rows.Scan(
@@ -157,6 +163,9 @@ const CAMPAIGN_SELECT_FULL = `
 	c.esp_match_mode, c.max_new_leads_per_day, c.prioritize_new_leads,
 	c.tracking_domain, c.tracking_domain_verified, c.tracking_domain_verified_at,
 	c.schedule_windows,
+	c.guardrail_enabled, c.guardrail_bounce_rate_max, c.guardrail_complaint_rate_max,
+	c.guardrail_reply_rate_min, c.guardrail_min_sample, c.guardrail_window_days,
+	c.guardrail_tripped_at, c.guardrail_reason,
 	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
 	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
@@ -820,12 +829,13 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 		argPos++
 	}
 	if data.Status != nil {
-		// Valid statuses: draft, active, paused, completed, paused_trial_expired
+		// Valid statuses: draft, active, paused, completed, paused_trial_expired,
+		// paused_no_accounts, paused_guardrail
 		status := *data.Status
 		validStatuses := map[string]bool{
 			"draft": true, "active": true, "paused": true,
 			"completed": true, "paused_trial_expired": true,
-			"paused_no_accounts": true,
+			"paused_no_accounts": true, "paused_guardrail": true,
 		}
 		if !validStatuses[status] {
 			return nil, errx.ErrInvalid
@@ -1052,6 +1062,52 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 		setClauses = append(setClauses, "tracking_domain_verified = false", "tracking_domain_verified_at = NULL")
 	}
 
+	// Auto-pause guardrails. Each rate is a percentage in [0,100] where 0 means
+	// "this rule is off"; the DB CHECK mirrors these bounds, but rejecting here
+	// gives the caller a message instead of a constraint violation.
+	guardrailRate := func(column string, value *float64) *errx.Error {
+		if value == nil {
+			return nil
+		}
+		if *value < 0 || *value > 100 {
+			return errx.New(errx.BadRequest, column+" must be a percentage between 0 and 100")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", column, argPos))
+		args = append(args, *value)
+		argPos++
+		return nil
+	}
+	if data.GuardrailEnabled != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "guardrail_enabled", argPos))
+		args = append(args, *data.GuardrailEnabled)
+		argPos++
+	}
+	if err := guardrailRate("guardrail_bounce_rate_max", data.GuardrailBounceRateMax); err != nil {
+		return nil, err
+	}
+	if err := guardrailRate("guardrail_complaint_rate_max", data.GuardrailComplaintRateMax); err != nil {
+		return nil, err
+	}
+	if err := guardrailRate("guardrail_reply_rate_min", data.GuardrailReplyRateMin); err != nil {
+		return nil, err
+	}
+	if data.GuardrailMinSample != nil {
+		if *data.GuardrailMinSample < 1 || *data.GuardrailMinSample > 100000 {
+			return nil, errx.New(errx.BadRequest, "guardrail sample floor must be between 1 and 100000")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "guardrail_min_sample", argPos))
+		args = append(args, *data.GuardrailMinSample)
+		argPos++
+	}
+	if data.GuardrailWindowDays != nil {
+		if *data.GuardrailWindowDays < 0 || *data.GuardrailWindowDays > 365 {
+			return nil, errx.New(errx.BadRequest, "guardrail window must be between 0 and 365 days")
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "guardrail_window_days", argPos))
+		args = append(args, *data.GuardrailWindowDays)
+		argPos++
+	}
+
 	if argPos == 3 && data.EmailTags == nil && data.Folders == nil {
 		return nil, errx.ErrNotEnough
 	}
@@ -1158,6 +1214,9 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.ESPMatchMode, &campaign.MaxNewLeadsPerDay, &campaign.PrioritizeNewLeads,
 		&campaign.TrackingDomain, &campaign.TrackingDomainVerified, &campaign.TrackingDomainVerifiedAt,
 		&campaign.ScheduleWindows,
+		&campaign.GuardrailEnabled, &campaign.GuardrailBounceRateMax, &campaign.GuardrailComplaintRateMax,
+		&campaign.GuardrailReplyRateMin, &campaign.GuardrailMinSample, &campaign.GuardrailWindowDays,
+		&campaign.GuardrailTrippedAt, &campaign.GuardrailReason,
 		&campaign.EmailTags, &campaign.Folders,
 	)
 	if err != nil {
@@ -1265,11 +1324,14 @@ func (r *campaignRepository) GetSequencesRoutingByCampaignID(ctx context.Context
 // Key is the current status, values are the statuses it can transition to.
 var validCampaignTransitions = map[string]map[string]bool{
 	"draft":                {"active": true},
-	"active":               {"paused": true, "completed": true, "paused_no_accounts": true, "paused_trial_expired": true},
+	"active":               {"paused": true, "completed": true, "paused_no_accounts": true, "paused_trial_expired": true, "paused_guardrail": true},
 	"paused":               {"active": true, "draft": true},
 	"paused_no_accounts":   {"active": true, "paused": true},
 	"paused_trial_expired": {"active": true, "paused": true},
-	"completed":            {}, // terminal state
+	// An auto-pause is resumable, but only deliberately: the owner has to
+	// restart the campaign (or park it) after looking at why it tripped.
+	"paused_guardrail": {"active": true, "paused": true},
+	"completed":        {}, // terminal state
 }
 
 // UpdateStatus updates only the status of a campaign with state machine validation
@@ -1309,7 +1371,12 @@ func (r *campaignRepository) StartCampaign(ctx context.Context, campaignID uuid.
 		    last_status_change_at = NOW(),
 		    updated_at = NOW(),
 		    ramp_level = CASE WHEN ramp_enabled AND ramp_level = 0 THEN ramp_start ELSE ramp_level END,
-		    ramp_level_date = CASE WHEN ramp_enabled AND ramp_level = 0 THEN CURRENT_DATE ELSE ramp_level_date END
+		    ramp_level_date = CASE WHEN ramp_enabled AND ramp_level = 0 THEN CURRENT_DATE ELSE ramp_level_date END,
+		    -- Starting again clears any auto-pause marker: the badge describes
+		    -- the pause, and the pause is over. The next sweep re-evaluates
+		    -- from scratch and will trip again if nothing was actually fixed.
+		    guardrail_tripped_at = NULL,
+		    guardrail_reason = ''
 		WHERE id = $1`
 	_, err := r.DB.Exec(ctx, query, campaignID)
 	return err

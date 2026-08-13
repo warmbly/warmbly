@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -33,6 +34,23 @@ type schedulerService struct {
 	// campaignLogRepo records send-path decision logs (e.g. ESP defer,
 	// new-lead cap). Optional/nil-safe so the scheduler keeps working without it.
 	campaignLogRepo repository.CampaignLogRepository
+	// behaviorSvc supplies each mailbox's rolled workday (hours, lunch, daily
+	// and hourly ceilings, send spacing). Optional/nil-safe: without it every
+	// mailbox keeps the legacy fixed cap and min-gap path.
+	behaviorSvc behavior.Service
+}
+
+// WireBehavior attaches the sending-behaviour engine. Kept off the constructor
+// so the scheduler stays constructible in tests and in any deployment that has
+// not enabled the feature.
+func (s *schedulerService) WireBehavior(b behavior.Service) {
+	s.behaviorSvc = b
+}
+
+// BehaviorAware is the optional capability the caller uses to attach the
+// behaviour engine after construction.
+type BehaviorAware interface {
+	WireBehavior(b behavior.Service)
 }
 
 // NewSchedulerService creates a new scheduler service

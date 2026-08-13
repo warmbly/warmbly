@@ -37,6 +37,8 @@ go.work.sum
 
 # MacOS
 .DS_Store
+# AppleDouble sidecars, created whenever the repo lives on a non-HFS volume
+._*
 
 # Geo Location
 *.mmdb

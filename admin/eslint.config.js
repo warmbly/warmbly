@@ -10,7 +10,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 // presets and downgrading no-explicit-any / unused-vars to warnings.
 
 export default defineConfig([
-  globalIgnores(['dist', 'node_modules', 'coverage']),
+  globalIgnores(['dist', 'node_modules', 'coverage', '**/._*']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

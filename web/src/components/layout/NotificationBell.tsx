@@ -12,6 +12,7 @@ import {
     KeyRoundIcon,
     ReplyIcon,
     ServerCrashIcon,
+    PauseCircleIcon,
     Settings2Icon,
     ShieldAlertIcon,
     TriangleAlertIcon,
@@ -36,6 +37,7 @@ const CATEGORY_META: Record<string, { icon: LucideIcon; tone: string }> = {
     security_new_signin: { icon: KeyRoundIcon, tone: "bg-violet-50 text-violet-600" },
     billing_alert: { icon: CreditCardIcon, tone: "bg-amber-50 text-amber-600" },
     team_activity: { icon: UsersIcon, tone: "bg-emerald-50 text-emerald-600" },
+    campaign_paused: { icon: PauseCircleIcon, tone: "bg-rose-50 text-rose-600" },
 };
 
 const FALLBACK_META = { icon: BellIcon, tone: "bg-slate-100 text-slate-500" };

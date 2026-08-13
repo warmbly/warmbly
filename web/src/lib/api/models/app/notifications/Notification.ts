@@ -29,6 +29,7 @@ export interface NotificationPreferences {
     security_new_signin: CategoryPref;
     billing_alert: CategoryPref;
     team_activity: CategoryPref;
+    campaign_paused: CategoryPref;
     email_digest_minutes: number;
 }
 
@@ -66,6 +67,9 @@ export function normalizeNotificationPreferences(
         security_new_signin: p?.security_new_signin ?? on,
         billing_alert: p?.billing_alert ?? billing,
         team_activity: p?.team_activity ?? on,
+        // Emails by default, like billing: a campaign the platform stopped by
+        // itself has to reach whoever can restart it.
+        campaign_paused: p?.campaign_paused ?? billing,
         email_digest_minutes: Math.min(Math.max(minutes, EMAIL_WINDOW_MIN_MINUTES), EMAIL_WINDOW_MAX_MINUTES),
     };
 }

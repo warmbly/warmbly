@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/apikey"
 	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/auth"
+	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
@@ -142,6 +143,12 @@ type Handler struct {
 	// Pre-send email verification (control-plane SMTP RCPT probe / pluggable
 	// paid backend). Drops hard-bouncing addresses before a worker sends.
 	EmailVerifyService emailverifyapp.Service
+
+	// Per-mailbox human sending behaviour: the ranges a mailbox rolls its
+	// workday from, and the plan it rolled for today. Nil disables the
+	// behaviour endpoints (the schedulers then run every mailbox on its fixed
+	// cap and gap).
+	BehaviorService behavior.Service
 
 	// Warmup health
 	WarmupService warmup.Service

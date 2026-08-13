@@ -80,7 +80,26 @@ Optional **campaign dates** bound when it may send. Leave both blank to run open
 
 The play and pause buttons work from the list row or the detail view. Starting moves the campaign to **active** and begins scheduling inside your windows and limits; pausing stops new scheduling immediately and resumes from where it left off.
 
-A campaign can pause itself: **paused, no accounts** when it loses every sender, and **paused, trial expired** when a trial ends. It moves to **finished** once every contact completes the sequence. Configured to do so, it also stops following up with a contact the moment they reply.
+A campaign can pause itself: **paused, no accounts** when it loses every sender, **paused, trial expired** when a trial ends, and **auto-paused** when a guardrail trips. It moves to **finished** once every contact completes the sequence. Configured to do so, it also stops following up with a contact the moment they reply.
+
+## Auto-pause guardrails
+
+**Preferences** > **Auto-pause** stops a campaign the moment its rates leave the band you set, instead of waiting for a mailbox provider to react. Off by default.
+
+| Rule | Direction | Default | Why |
+|------|-----------|---------|-----|
+| Bounce rate | pause at or above | `5%` | Amazon SES puts an account under review at `5%` and can pause sending at `10%` |
+| Complaint rate | pause at or above | `0.10%` | Google asks senders to stay under `0.10%` and never reach `0.30%` |
+| Reply rate | pause below | off | A campaign at volume that nobody answers is spending reputation for nothing |
+
+Two more controls keep the rules honest:
+
+- **Only after** is the sample floor. No rule fires below this many sends in the window, because one bounce out of four is not a `25%` bounce rate. Default `50`.
+- **Measured over the last** is the rolling window in days. `0` measures the campaign's whole history. Default `7`.
+
+Setting a rate to `0` turns that rule off. The check runs every 15 minutes, and when several bands are breached at once the campaign is paused with the most damaging reason attached: complaints first, then bounces, then replies.
+
+A paused campaign shows the reason and the numbers behind it on the **Auto-pause** section, and everyone on the team who can see campaigns gets a notification. Starting the campaign again clears the marker, but the next check re-evaluates from scratch, so fix the underlying problem first.
 
 ## Live activity
 
@@ -96,6 +115,7 @@ Defaults are deliberately conservative, aiming at a low complaint rate rather th
 - **Spread, don't concentrate**: volume splits across many mailboxes and worker IPs.
 - **Ramp gradually**: raise volume only while performance stays healthy.
 - **Health gating**: a mailbox in deliverability trouble has its cold volume cut or paused automatically.
+- **Human timing**: mailboxes with [sending behavior](/guides/sending-behavior/) enabled keep randomized working hours, volume, and spacing in their own timezone.
 
 A practical band is `30` to `50`/day for warmed mailboxes, starting newer ones at `10` to `20`.
 

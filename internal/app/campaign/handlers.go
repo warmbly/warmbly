@@ -145,9 +145,14 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 		return errx.ErrNotFound
 	}
 
-	// Verify status allows starting
-	if campaign.Status != "draft" && campaign.Status != "paused" && campaign.Status != "paused_no_accounts" {
-		return errx.New(errx.BadRequest, "campaign must be in draft, paused, or paused_no_accounts status to start")
+	// Verify status allows starting. paused_guardrail is included: an
+	// auto-pause is meant to be reviewed and then explicitly restarted, not to
+	// become a dead end the owner cannot recover from.
+	startable := map[string]bool{
+		"draft": true, "paused": true, "paused_no_accounts": true, "paused_guardrail": true,
+	}
+	if !startable[campaign.Status] {
+		return errx.New(errx.BadRequest, "campaign must be in draft, paused, paused_no_accounts, or paused_guardrail status to start")
 	}
 
 	// Check cooldown

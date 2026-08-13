@@ -22,7 +22,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 // so dead code still fails the build.
 
 export default defineConfig([
-  globalIgnores(['dist', 'node_modules', 'coverage']),
+  globalIgnores(['dist', 'node_modules', 'coverage', '**/._*']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
