@@ -55,6 +55,9 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import EmailEditor from "../EmailEditor";
 import SendingBehaviorTab from "./SendingBehaviorTab";
+import useSendingBehavior from "@/lib/api/hooks/app/emails/useSendingBehavior";
+import useSendingPlan from "@/lib/api/hooks/app/emails/useSendingPlan";
+import { minutesToClock, secondsToLabel } from "@/lib/api/models/app/emails/SendingBehavior";
 import TagSelector from "../popup/select/TagSelector";
 import TimeSelect from "@/components/ui/TimeSelect";
 import { DitherBarChart } from "@/components/ui/dither";
@@ -113,6 +116,17 @@ function NumField({ value, onChange, suffix }: { value: number; onChange: (v: nu
             className="w-full h-9"
         />
     );
+}
+
+// min_wait_time is stored in SECONDS. Render it as a duration so the number
+// can never be read as minutes — a 600 shown as "600 min" (or a 10 typed into a
+// field labelled minutes) is the difference between a 10-minute gap and a
+// 10-second burst.
+function formatGap(seconds: number): string {
+    if (!Number.isFinite(seconds) || seconds < 60) return `${seconds ?? 0}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return s === 0 ? `${m} min` : `${m} min ${s}s`;
 }
 
 function statusTone(status: string) {
@@ -318,6 +332,14 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
     const usage = status?.daily_usage;
     const ws = status?.warmup_status;
 
+    // When a sending-behaviour profile is on, TODAY'S rolled plan is the real
+    // ceiling and spacing — not the mailbox's fixed cap and gap. Showing the
+    // fixed numbers here would contradict what the mailbox actually does.
+    const behavior = useSendingBehavior(mailbox.id);
+    const personaOn = behavior.data?.enabled === true;
+    const plan = useSendingPlan(mailbox.id, personaOn);
+    const today = personaOn ? plan.data : undefined;
+
     const healthTone =
         health?.status === "healthy" ? { bar: "bg-emerald-500", text: "text-emerald-600", icon: CheckCircle2Icon }
             : health?.status === "warning" ? { bar: "bg-amber-500", text: "text-amber-600", icon: AlertTriangleIcon }
@@ -369,7 +391,19 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
 
             {/* Key stats */}
             <div className="grid grid-cols-2 divide-x divide-y divide-slate-200/60">
-                <StatCard label="Sent today" value={usage ? usage.campaign_sent : "—"} sub={usage ? `of ${usage.campaign_limit}/day cap` : undefined} />
+                <StatCard
+                    label="Sent today"
+                    value={usage ? usage.campaign_sent : "—"}
+                    sub={
+                        today
+                            ? today.is_working_day
+                                ? `of ${today.daily_limit} rolled for today`
+                                : "not a sending day"
+                            : usage
+                                ? `of ${usage.campaign_limit}/day cap`
+                                : undefined
+                    }
+                />
                 <StatCard label="Warmup today" value={ws ? ws.current_volume : (usage?.warmup_sent ?? "—")} sub={ws ? `target ${ws.target_volume}` : undefined} accent />
                 <StatCard label="Reply rate" value={ws ? `${ws.reply_rate}%` : "—"} sub="warmup replies" />
                 <StatCard label="Days warming" value={ws ? ws.days_active : "—"} sub={ws ? `max ${ws.max_volume}/day` : undefined} />
@@ -395,8 +429,26 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
             <div>
                 <Row label="Provider"><span className="capitalize">{mailbox.provider?.replace("_", "/")}</span></Row>
                 <Row label="Tracking domain">{mailbox.tracking_domain || <span className="text-slate-400">Not set</span>}</Row>
-                <Row label="Daily cap">{mailbox.campaign_limit} / day</Row>
-                <Row label="Min gap">{mailbox.min_wait_time} min</Row>
+                <Row label="Daily cap">
+                    {today?.is_working_day
+                        ? `${today.daily_limit} / day today (${behavior.data?.daily_limit_min}-${behavior.data?.daily_limit_max} range)`
+                        : `${mailbox.campaign_limit} / day`}
+                </Row>
+                <Row label="Min gap">
+                    {today
+                        ? `${secondsToLabel(today.gap_min_seconds)}-${secondsToLabel(today.gap_max_seconds)}`
+                        : formatGap(mailbox.min_wait_time)}
+                </Row>
+                {today?.is_working_day && (
+                    <Row label="Workday">
+                        {minutesToClock(today.work_start_minute)}-{minutesToClock(today.work_end_minute)}
+                        {today.lunch_start_minute !== null && today.lunch_end_minute !== null && (
+                            <span className="text-slate-400">
+                                {" "}(lunch {minutesToClock(today.lunch_start_minute)}-{minutesToClock(today.lunch_end_minute)})
+                            </span>
+                        )}
+                    </Row>
+                )}
                 <Row label="Last synced">
                     <span className="inline-flex items-center gap-1.5 text-slate-600">
                         <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
@@ -1091,8 +1143,11 @@ function SettingsTab({ form, update, mailbox }: { form: Inbox; update: (p: Parti
                 <FieldShell label="Daily campaign cap" hint="Max cold-campaign emails per day. Default 50; raise only with good reputation.">
                     <NumField value={form.campaign_limit} onChange={(v) => update({ campaign_limit: v })} suffix="emails / day" />
                 </FieldShell>
-                <FieldShell label="Minimum gap" hint="Smallest delay between two sends from this mailbox.">
-                    <NumField value={form.min_wait_time} onChange={(v) => update({ min_wait_time: v })} suffix="minutes" />
+                <FieldShell
+                    label="Minimum gap"
+                    hint={`Smallest delay between two sends from this mailbox — currently ${formatGap(form.min_wait_time)}. Overridden while Sending behaviour is on, which draws a fresh delay for every send.`}
+                >
+                    <NumField value={form.min_wait_time} onChange={(v) => update({ min_wait_time: v })} suffix="seconds" />
                 </FieldShell>
             </div>
 

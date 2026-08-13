@@ -503,6 +503,32 @@ func seedMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 			m.id, p.healthState, p.healthScore, p.spamScore); err != nil {
 			return fmt.Errorf("pool join %s: %w", m.email, err)
 		}
+		// Give the first few mailboxes a sending-behaviour profile so the
+		// Sending tab has a real rolled workday to show, and the rest keep the
+		// fixed cap so both paths are visible side by side.
+		//
+		// The hours are deliberately near-24h and the gaps short: the sandbox
+		// simulator has to keep producing traffic whatever time of day someone
+		// runs it, and a 9-to-5 persona would idle the demo overnight. Every
+		// other dimension (per-day roll, lunch, hourly ceiling, drawn spacing)
+		// still behaves exactly as it does in production.
+		if i < 4 {
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO email_account_behavior (
+					email_account_id, enabled,
+					daily_limit_min, daily_limit_max,
+					hourly_limit_min, hourly_limit_max,
+					gap_min_seconds, gap_max_seconds,
+					work_start_min, work_start_max, work_end_min, work_end_max,
+					lunch_enabled, lunch_earliest, lunch_latest, lunch_min_minutes, lunch_max_minutes,
+					weekdays
+				) VALUES ($1, true, 30, 45, 5, 9, 45, 180, 1, 20, 1400, 1439, true, 720, 810, 30, 60, 127)
+				ON CONFLICT (email_account_id) DO UPDATE SET
+					enabled = EXCLUDED.enabled,
+					updated_at = NOW()`, m.id); err != nil {
+				return fmt.Errorf("behaviour %s: %w", m.email, err)
+			}
+		}
 	}
 	return nil
 }

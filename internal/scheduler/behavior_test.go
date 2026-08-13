@@ -335,3 +335,113 @@ func TestRemainingSendMinutesFallsBackToTheCampaignWindow(t *testing.T) {
 		t.Fatal("no profile and no campaign window means no pacing window")
 	}
 }
+
+/* ── rotation across mailboxes with no explicit sender row ─────────────── */
+
+// Tag-resolved pools (and the "all active mailboxes" default) carry no
+// campaign_senders row, so they have no stored cursor and no last_sent_at.
+// These tests pin the fallback that keeps round-robin and least-recently-used
+// from handing every send to the same mailbox.
+
+func candidateWithoutSenderRow(id string, rotationPosition int, lastSent *time.Time) AccountCandidate {
+	return AccountCandidate{
+		Account:          models.Email{ID: uuid.MustParse(id)},
+		RemainingToday:   10,
+		Weight:           10,
+		RotationPosition: rotationPosition,
+		SenderLastSentAt: lastSent,
+	}
+}
+
+func TestRoundRobinFallsBackToTodaysSendCount(t *testing.T) {
+	// Three tag-resolved mailboxes. The lowest UUID has already sent the most
+	// today, so a correct round-robin must NOT pick it.
+	busiest := candidateWithoutSenderRow("11111111-1111-1111-1111-111111111111", 9, nil)
+	middle := candidateWithoutSenderRow("22222222-2222-2222-2222-222222222222", 4, nil)
+	idle := candidateWithoutSenderRow("33333333-3333-3333-3333-333333333333", 0, nil)
+
+	got := selectAccountByRotationMode("round_robin", []AccountCandidate{busiest, middle, idle})
+	if got == nil {
+		t.Fatal("expected a selection")
+	}
+	if got.Account.ID != idle.Account.ID {
+		t.Fatalf("picked %s, want the least-used mailbox %s", got.Account.ID, idle.Account.ID)
+	}
+}
+
+func TestLeastRecentlyUsedFallsBackToRealSendHistory(t *testing.T) {
+	recent := time.Now().Add(-5 * time.Minute)
+	older := time.Now().Add(-3 * time.Hour)
+
+	// Again the lowest UUID is the one that sent most recently.
+	a := candidateWithoutSenderRow("11111111-1111-1111-1111-111111111111", 0, &recent)
+	b := candidateWithoutSenderRow("22222222-2222-2222-2222-222222222222", 0, &older)
+
+	got := selectAccountByRotationMode("least_recently_used", []AccountCandidate{a, b})
+	if got == nil {
+		t.Fatal("expected a selection")
+	}
+	if got.Account.ID != b.Account.ID {
+		t.Fatalf("picked %s, want the longest-idle mailbox %s", got.Account.ID, b.Account.ID)
+	}
+}
+
+func TestLeastRecentlyUsedPrefersAMailboxThatNeverSent(t *testing.T) {
+	sent := time.Now().Add(-2 * time.Hour)
+	used := candidateWithoutSenderRow("11111111-1111-1111-1111-111111111111", 0, &sent)
+	fresh := candidateWithoutSenderRow("22222222-2222-2222-2222-222222222222", 0, nil)
+
+	got := selectAccountByRotationMode("least_recently_used", []AccountCandidate{used, fresh})
+	if got == nil || got.Account.ID != fresh.Account.ID {
+		t.Fatalf("a mailbox with no send history should sort first, got %+v", got)
+	}
+}
+
+func TestRotationRotatesAcrossRepeatedPicks(t *testing.T) {
+	// The regression this guards: before the fallback, every pick returned the
+	// same mailbox because all positions were 0 and the tie-break is by UUID.
+	ids := []string{
+		"11111111-1111-1111-1111-111111111111",
+		"22222222-2222-2222-2222-222222222222",
+		"33333333-3333-3333-3333-333333333333",
+	}
+	sentToday := map[string]int{ids[0]: 0, ids[1]: 0, ids[2]: 0}
+
+	picked := map[string]int{}
+	for i := 0; i < 9; i++ {
+		pool := make([]AccountCandidate, 0, len(ids))
+		for _, id := range ids {
+			pool = append(pool, candidateWithoutSenderRow(id, sentToday[id], nil))
+		}
+		got := selectAccountByRotationMode("round_robin", pool)
+		if got == nil {
+			t.Fatal("expected a selection")
+		}
+		id := got.Account.ID.String()
+		picked[id]++
+		sentToday[id]++ // the send lands, so the next pass sees a higher count
+	}
+
+	if len(picked) != 3 {
+		t.Fatalf("rotation stuck on %d of 3 mailboxes: %v", len(picked), picked)
+	}
+	for id, n := range picked {
+		if n != 3 {
+			t.Fatalf("mailbox %s took %d of 9 sends, want an even 3: %v", id, n, picked)
+		}
+	}
+}
+
+func TestNeedsRotationFallbackOnlyForCursorModes(t *testing.T) {
+	for _, mode := range []string{"round_robin", "least_recently_used"} {
+		if !needsRotationFallback(mode) {
+			t.Fatalf("%s depends on per-sender bookkeeping", mode)
+		}
+	}
+	// Weighted spreads by remaining capacity, so it needs no extra query.
+	for _, mode := range []string{"weighted", ""} {
+		if needsRotationFallback(mode) {
+			t.Fatalf("%q should not trigger the extra lookup", mode)
+		}
+	}
+}

@@ -475,6 +475,13 @@ func selectAccountRoundRobin(candidates []AccountCandidate) *AccountCandidate {
 	return best
 }
 
+// needsRotationFallback reports whether a rotation mode depends on per-sender
+// bookkeeping that only explicitly-picked senders carry. Weighted selection is
+// driven by remaining capacity, so it already spreads without a cursor.
+func needsRotationFallback(rotationMode string) bool {
+	return rotationMode == "round_robin" || rotationMode == "least_recently_used"
+}
+
 // selectAccountByRotationMode dispatches to the chosen rotation strategy. For
 // explicit-strategy campaigns rotationMode is one of weighted / round_robin /
 // least_recently_used; anything else falls back to weighted.

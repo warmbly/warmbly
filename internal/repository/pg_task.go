@@ -102,6 +102,9 @@ type TaskRepository interface {
 	// Scheduling queries (CRITICAL for "next best time" calculation)
 	CountEmailsSentToday(ctx context.Context, accountID uuid.UUID) (int, error)
 	GetLastEmailTime(ctx context.Context, accountID uuid.UUID) (*time.Time, error)
+	// GetLastSendTimes is the batch form, for rotation across a campaign's
+	// whole sender pool. Accounts that have never sent are absent from the map.
+	GetLastSendTimes(ctx context.Context, accountIDs []uuid.UUID, taskType string) (map[uuid.UUID]time.Time, error)
 	GetScheduledTasksForAccount(ctx context.Context, accountID uuid.UUID, date time.Time) ([]Task, error)
 	GetScheduledTasksToday(ctx context.Context, accountID uuid.UUID) ([]Task, error)
 	// ListDuePendingTaskIDs returns pending tasks whose scheduled_at has passed,
@@ -502,6 +505,48 @@ func (r *taskRepository) GetLastEmailTime(ctx context.Context, accountID uuid.UU
 	}
 
 	return lastTime, err
+}
+
+// GetLastSendTimes returns the most recent completed send per account for a
+// task type, in one query.
+//
+// This is what gives rotation a signal for mailboxes resolved by TAG (or the
+// "all active mailboxes" default) rather than picked individually. Those
+// mailboxes have no campaign_senders row, so they carry no rotation cursor and
+// no last_sent_at — without this, round-robin and least-recently-used would
+// both fall through to their tie-breaker and hand every send to the same
+// mailbox until it hit its cap, which is the opposite of rotating.
+func (r *taskRepository) GetLastSendTimes(ctx context.Context, accountIDs []uuid.UUID, taskType string) (map[uuid.UUID]time.Time, error) {
+	out := map[uuid.UUID]time.Time{}
+	if len(accountIDs) == 0 {
+		return out, nil
+	}
+
+	query := `
+		SELECT email_account_id, MAX(completed_at)
+		FROM tasks
+		WHERE email_account_id = ANY($1)
+		  AND status = 'completed'
+		  AND task_type = $2::task_type
+		  AND completed_at IS NOT NULL
+		GROUP BY email_account_id
+	`
+
+	rows, err := r.db.Query(ctx, query, accountIDs, taskType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id uuid.UUID
+		var at time.Time
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		out[id] = at
+	}
+	return out, rows.Err()
 }
 
 // GetScheduledTasksForAccount gets scheduled tasks for an account on a specific date

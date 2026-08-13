@@ -258,6 +258,24 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// Profiles are resolved for the whole pool in one query, so adding
 	// mailboxes to a campaign does not add a query per mailbox to every pass.
 	behaviors := s.behaviorForAll(ctx, accounts)
+
+	// Rotation fallback for mailboxes with no campaign_senders row (tag-resolved
+	// pools and the "all active mailboxes" default). One query for the whole
+	// pool; a failure just leaves the map empty and rotation degrades to its
+	// tie-breaker rather than blocking the send.
+	lastSends := map[uuid.UUID]time.Time{}
+	if needsRotationFallback(campaign.RotationMode) {
+		ids := make([]uuid.UUID, 0, len(accounts))
+		for _, a := range accounts {
+			if _, ok := senderMetaByID[a.ID]; !ok {
+				ids = append(ids, a.ID)
+			}
+		}
+		if sends, lerr := s.taskRepo.GetLastSendTimes(ctx, ids, "campaign"); lerr == nil {
+			lastSends = sends
+		}
+	}
+
 	var candidates []AccountCandidate
 	for _, acct := range accounts {
 		sentToday, err := s.taskRepo.CountCampaignEmailsSentToday(ctx, acct.ID)
@@ -351,6 +369,17 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 			cand.SenderWeight = meta.weight
 			cand.RotationPosition = meta.rotationPosition
 			cand.SenderLastSentAt = meta.lastSentAt
+		} else {
+			// No explicit sender row, so no stored cursor. Derive both signals
+			// from what the mailbox has actually done: today's send count is
+			// the round-robin position (least-used goes next), and its real
+			// last send drives least-recently-used. Without this, a tag-based
+			// campaign on either mode would keep picking the same mailbox.
+			cand.RotationPosition = sentToday
+			if at, ok := lastSends[acct.ID]; ok {
+				t := at
+				cand.SenderLastSentAt = &t
+			}
 		}
 		candidates = append(candidates, cand)
 	}
