@@ -265,19 +265,25 @@ func (s *emailService) dispatchAccountConnected(ctx context.Context, orgID *uuid
 	}
 }
 
+// oauthConfigured reports whether an OAuth client is actually usable, i.e. both
+// halves of the credential are present.
+func oauthConfigured(cfg *oauth2.Config) bool {
+	return cfg != nil && cfg.ClientID != "" && cfg.ClientSecret != ""
+}
+
 func (s *emailService) oauthConfigFor(provider models.InboxProvider) (*oauth2.Config, *errx.Error) {
-	if s.oauthInbox == nil {
-		return nil, errx.InternalError()
-	}
+	// LoadOauth2Inbox always returns a config, populated with empty strings when
+	// the variables are unset, so the credentials themselves are what decides
+	// whether the provider is actually available here.
 	switch provider {
 	case models.InboxProviderGoogle:
-		if s.oauthInbox.Google == nil {
-			return nil, errx.InternalError()
+		if s.oauthInbox == nil || !oauthConfigured(s.oauthInbox.Google) {
+			return nil, errx.ErrEmailOnboardGoogleNotConfigured
 		}
 		return s.oauthInbox.Google, nil
 	case models.InboxProviderOutlook:
-		if s.oauthInbox.Outlook == nil {
-			return nil, errx.InternalError()
+		if s.oauthInbox == nil || !oauthConfigured(s.oauthInbox.Outlook) {
+			return nil, errx.ErrEmailOnboardOutlookNotConfigured
 		}
 		return s.oauthInbox.Outlook, nil
 	default:

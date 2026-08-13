@@ -11,6 +11,11 @@ import (
 type Error struct {
 	Code    Code   `json:"code"`
 	Message string `json:"message"`
+	// Identifier optionally overrides the machine-readable `code` in the JSON
+	// response. Without it every error of the same HTTP class is indistinguishable
+	// to a client, so a caller that needs to branch on a specific condition has
+	// nothing stable to match on. Empty means "derive it from Code".
+	Identifier string `json:"-"`
 }
 
 // Error implements error interface.
@@ -21,6 +26,22 @@ func (e *Error) Error() string {
 // New creates a new business error.
 func New(code Code, message string) *Error {
 	return &Error{Code: code, Message: message}
+}
+
+// NewWithIdentifier creates a business error carrying its own machine-readable
+// identifier, for conditions a client is expected to detect and handle
+// specifically rather than just display.
+func NewWithIdentifier(code Code, identifier, message string) *Error {
+	return &Error{Code: code, Message: message, Identifier: identifier}
+}
+
+// identifier returns the response `code`: the error's own when set, otherwise
+// the generic one for its HTTP class.
+func (e *Error) identifier() string {
+	if e.Identifier != "" {
+		return e.Identifier
+	}
+	return codeToIdentifier[e.Code]
 }
 
 // --- Predefined errors (exported) ---
@@ -54,7 +75,7 @@ func Handle(c *gin.Context, err error) {
 		c.JSON(httpCode, response{
 			Error:     httpError,
 			Message:   bizErr.Message,
-			Code:      codeToIdentifier[bizErr.Code],
+			Code:      bizErr.identifier(),
 			RequestID: c.GetString("request_id"),
 		})
 		return
@@ -71,7 +92,7 @@ func JSON(c *gin.Context, err *Error) {
 	c.JSON(httpCode, response{
 		Error:     httpError,
 		Message:   err.Message,
-		Code:      codeToIdentifier[err.Code],
+		Code:      err.identifier(),
 		RequestID: c.GetString("request_id"),
 	})
 }

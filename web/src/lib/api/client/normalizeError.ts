@@ -6,6 +6,9 @@ export interface AppError {
     message: string;
     status?: number;
     redirect?: boolean;
+    /** Stable machine-readable code from the API, for branching on a specific
+     *  condition rather than matching on human-readable text. */
+    code?: string;
 }
 
 export function normalizeError(error: unknown): AppError {
@@ -43,6 +46,7 @@ export function normalizeError(error: unknown): AppError {
             error: data.error || "Unknown Error",
             message: data.message || "Unexpected error occured.",
             status,
+            code: data.code,
         }
     }
 

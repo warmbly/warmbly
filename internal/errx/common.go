@@ -63,9 +63,17 @@ var (
 	ErrGroupMax   = New(BadRequest, "You reached the maximum amount.")
 
 	// Email
-	ErrEmailCredentials          = New(BadRequest, "Invalid email credentials.")
-	ErrEmailValidation           = New(BadRequest, "Deadline exceed, try again later.")
-	ErrEmailOnboardProvider      = New(BadRequest, "Unsupported email provider. Use 'gmail', 'outlook', or 'smtp_imap'.")
+	ErrEmailCredentials     = New(BadRequest, "Invalid email credentials.")
+	ErrEmailValidation      = New(BadRequest, "Deadline exceed, try again later.")
+	ErrEmailOnboardProvider = New(BadRequest, "Unsupported email provider. Use 'gmail', 'outlook', or 'smtp_imap'.")
+	// Raised when the provider is supported but this deployment has no OAuth
+	// client for it. Self-host only: the hosted product always has both set. The
+	// message names the variables because the person hitting this is usually the
+	// same person who can fix it.
+	ErrEmailOnboardGoogleNotConfigured = NewWithIdentifier(ServiceUnavailable, "mailbox_provider_not_configured",
+		"Gmail is not configured on this deployment. Set BOX_GOOGLE_CLIENT_ID and BOX_GOOGLE_CLIENT_SECRET in your .env, then restart. See https://docs.warmbly.com/development/deployment-guide/#connect-mailboxes")
+	ErrEmailOnboardOutlookNotConfigured = NewWithIdentifier(ServiceUnavailable, "mailbox_provider_not_configured",
+		"Microsoft 365 is not configured on this deployment. Set BOX_OUTLOOK_CLIENT_ID and BOX_OUTLOOK_CLIENT_SECRET in your .env, then restart. See https://docs.warmbly.com/development/deployment-guide/#connect-mailboxes")
 	ErrEmailOnboardState         = New(BadRequest, "Invalid or expired onboarding state.")
 	ErrEmailOnboardCode          = New(BadRequest, "Authorization code is missing or invalid.")
 	ErrEmailOnboardExchange      = New(BadRequest, "Could not exchange the authorization code with the provider.")

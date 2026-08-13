@@ -245,6 +245,24 @@ Returned when the service is temporarily unavailable.
 - Wait and retry with exponential backoff
 - Check status page for incidents
 
+#### `mailbox_provider_not_configured`
+
+A `503` whose `code` is `mailbox_provider_not_configured` is not transient and retrying will not help. It means the deployment has no OAuth client for the mailbox provider the request asked for, which only happens on a self-hosted install.
+
+```json
+{
+  "error": "Service Unavailable",
+  "message": "Gmail is not configured on this deployment. Set BOX_GOOGLE_CLIENT_ID and BOX_GOOGLE_CLIENT_SECRET in your .env, then restart.",
+  "code": "mailbox_provider_not_configured",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
+**How to fix:**
+- Set `BOX_GOOGLE_CLIENT_ID` and `BOX_GOOGLE_CLIENT_SECRET`, or `BOX_OUTLOOK_CLIENT_ID` and `BOX_OUTLOOK_CLIENT_SECRET`, in the `.env` at your install root, then restart
+- Or connect the mailbox over SMTP and IMAP instead, which needs no configuration
+- Full walkthrough: [connect mailboxes](/development/deployment-guide/#connect-mailboxes)
+
 ## Error handling best practices
 
 ### Implement retry logic

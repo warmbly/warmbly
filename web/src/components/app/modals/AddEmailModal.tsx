@@ -23,7 +23,9 @@ import {
     KeyRoundIcon,
     Loader2Icon,
     MailIcon,
+    ExternalLinkIcon,
     SendIcon,
+    SettingsIcon,
     ShieldCheckIcon,
     XIcon,
 } from "lucide-react";
@@ -76,6 +78,10 @@ export default function AddEmailModal() {
 
     const [view, setView] = React.useState<View>("pick");
     const [oauthBusy, setOauthBusy] = React.useState<OAuthProvider | null>(null);
+    // Set when the deployment has no OAuth client for the provider the user
+    // picked. Rendered inline rather than as a toast: it is a setup instruction
+    // with a link, not a transient failure.
+    const [notConfigured, setNotConfigured] = React.useState<OAuthProvider | null>(null);
     const pendingState = React.useRef<{ provider: OAuthProvider; state: string } | null>(null);
 
     // Reset when the modal closes.
@@ -83,6 +89,7 @@ export default function AddEmailModal() {
         if (!user.addEmail) {
             setView("pick");
             setOauthBusy(null);
+            setNotConfigured(null);
             pendingState.current = null;
         }
     }, [user.addEmail]);
@@ -131,6 +138,7 @@ export default function AddEmailModal() {
     async function startOAuth(provider: OAuthProvider) {
         if (oauthBusy) return;
         setOauthBusy(provider);
+        setNotConfigured(null);
         try {
             const { url, state } = await onboardOAuthStart(provider);
             pendingState.current = { provider, state };
@@ -143,7 +151,12 @@ export default function AddEmailModal() {
         } catch (err) {
             pendingState.current = null;
             setOauthBusy(null);
-            toast.error(buildError(err as AppError));
+            const e = err as AppError;
+            if (e.code === "mailbox_provider_not_configured") {
+                setNotConfigured(provider);
+                return;
+            }
+            toast.error(buildError(e));
         }
     }
 
@@ -168,7 +181,14 @@ export default function AddEmailModal() {
                         onClick={(e) => e.stopPropagation()}
                         className="w-full max-w-[560px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[88dvh]"
                     >
-                        <Header view={view} onBack={() => setView("pick")} onClose={() => user.setAddEmail(false)} />
+                        <Header
+                            view={view}
+                            onBack={() => {
+                                setNotConfigured(null);
+                                setView("pick");
+                            }}
+                            onClose={() => user.setAddEmail(false)}
+                        />
                         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">
                             <AnimatePresence mode="wait" initial={false}>
                                 <motion.div
@@ -180,18 +200,26 @@ export default function AddEmailModal() {
                                 >
                                     {view === "pick" && <PickProvider onPick={setView} />}
                                     {view === "gmail" && (
-                                        <OAuthPanel
-                                            provider="gmail"
-                                            busy={oauthBusy === "gmail"}
-                                            onConnect={() => startOAuth("gmail")}
-                                        />
+                                        notConfigured === "gmail" ? (
+                                            <ProviderNotConfigured provider="gmail" />
+                                        ) : (
+                                            <OAuthPanel
+                                                provider="gmail"
+                                                busy={oauthBusy === "gmail"}
+                                                onConnect={() => startOAuth("gmail")}
+                                            />
+                                        )
                                     )}
                                     {view === "outlook" && (
-                                        <OAuthPanel
-                                            provider="outlook"
-                                            busy={oauthBusy === "outlook"}
-                                            onConnect={() => startOAuth("outlook")}
-                                        />
+                                        notConfigured === "outlook" ? (
+                                            <ProviderNotConfigured provider="outlook" />
+                                        ) : (
+                                            <OAuthPanel
+                                                provider="outlook"
+                                                busy={oauthBusy === "outlook"}
+                                                onConnect={() => startOAuth("outlook")}
+                                            />
+                                        )
                                     )}
                                     {view === "smtp_imap" && (
                                         <SmtpImapPanel
@@ -251,6 +279,68 @@ function Header({
             >
                 <XIcon className="w-3.5 h-3.5" />
             </button>
+        </div>
+    );
+}
+
+// Shown when the API reports this deployment has no OAuth client for the chosen
+// provider. Self-host only, and the person seeing it can usually fix it, so it
+// names the exact variables and links the setup guide instead of just failing.
+const PROVIDER_SETUP: Record<OAuthProvider, { label: string; vars: string[] }> = {
+    gmail: {
+        label: "Gmail and Google Workspace",
+        vars: ["BOX_GOOGLE_CLIENT_ID", "BOX_GOOGLE_CLIENT_SECRET"],
+    },
+    outlook: {
+        label: "Outlook and Microsoft 365",
+        vars: ["BOX_OUTLOOK_CLIENT_ID", "BOX_OUTLOOK_CLIENT_SECRET"],
+    },
+};
+
+function ProviderNotConfigured({ provider }: { provider: OAuthProvider }) {
+    const { label, vars } = PROVIDER_SETUP[provider];
+    return (
+        <div className="p-4">
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                <div className="flex items-start gap-2.5">
+                    <SettingsIcon className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                        <p className="text-[12.5px] font-medium text-amber-900">
+                            {label} is not configured on this deployment
+                        </p>
+                        <p className="text-[12.5px] text-amber-800 mt-1">
+                            Connecting these mailboxes needs an OAuth client. Add both values to
+                            the <code className="bg-white/70 px-1 rounded">.env</code> at the root of
+                            your Warmbly install, then restart with{" "}
+                            <code className="bg-white/70 px-1 rounded">make up</code>.
+                        </p>
+                        <ul className="mt-2 space-y-1">
+                            {vars.map((v) => (
+                                <li
+                                    key={v}
+                                    className="text-[12px] font-mono text-amber-900 bg-white/70 rounded px-1.5 py-1"
+                                >
+                                    {v}=
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <a
+                href="https://docs.warmbly.com/development/deployment-guide/#connect-mailboxes"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-slate-200 text-[12.5px] text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+                <ExternalLinkIcon className="w-3.5 h-3.5" />
+                Full environment setup guide
+            </a>
+
+            <p className="mt-3 text-[12px] text-slate-500">
+                No setup needed for any other provider: connect it over SMTP and IMAP instead.
+            </p>
         </div>
     );
 }
