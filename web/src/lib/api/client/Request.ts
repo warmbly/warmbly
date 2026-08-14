@@ -9,6 +9,8 @@ import reviveDates from "@/lib/helper/reviveDates";
 import type { AppError } from "./normalizeError";
 import { clearTokens } from "@/lib/auth";
 import type Token from "@/lib/api/models/auth/Token";
+import { CONFENGE_OPERATOR_MODE } from "@/lib/information";
+import { ensureConfengeOperatorSession } from "./auth/confengeOperatorSession";
 
 interface AuthRequestConfig extends AxiosRequestConfig {
     authorization?: boolean
@@ -20,6 +22,7 @@ let refreshPromise: Promise<Token> | null = null;
 async function ensureValidToken(): Promise<Token> {
     const token = getToken();
     if (!token) {
+        if (CONFENGE_OPERATOR_MODE) return ensureConfengeOperatorSession();
         throw NoToken;
     }
 
@@ -30,6 +33,7 @@ async function ensureValidToken(): Promise<Token> {
     // Access token expired — need to refresh
     if (!token.refresh_token || isExpired(token.refresh_token_expires_at)) {
         clearTokens();
+        if (CONFENGE_OPERATOR_MODE) return ensureConfengeOperatorSession(true);
         throw SessionExpired;
     }
 
@@ -55,6 +59,7 @@ async function ensureValidToken(): Promise<Token> {
         return newToken;
     } catch {
         clearTokens();
+        if (CONFENGE_OPERATOR_MODE) return ensureConfengeOperatorSession(true);
         throw SessionExpired;
     } finally {
         refreshPromise = null;
@@ -80,6 +85,16 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
         // If we get a 401 on an authorized request, try refreshing once
         if (config.authorization && (appErr?.status === 401)) {
             try {
+                if (CONFENGE_OPERATOR_MODE) {
+                    clearTokens();
+                    const token = await ensureConfengeOperatorSession(true);
+                    config.headers = {
+                        ...config.headers,
+                        Authorization: `Bearer ${token.access_token}`,
+                    };
+                    const res = await Client.request(config);
+                    return reviveDates(res.data);
+                }
                 const token = await ensureValidToken();
                 config.headers = {
                     ...config.headers,

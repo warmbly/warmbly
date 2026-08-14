@@ -98,6 +98,21 @@ demo data, and starts the backend, worker, and dashboard natively. Open
 setup lives in the
 [local development guide](https://docs.warmbly.com/development/local-development/).
 
+
+## CONFENGE local ops (fork)
+
+For the CONFENGE outreach operator path on WSL (Postgres + Redis + NATS + Mailpit,
+no Kafka/AWS/Stripe):
+
+```bash
+cp .env.confenge.example .env.confenge
+make confenge-local
+make confenge-import FEED=internal/app/confenge/testdata/demo_3_companies.json
+```
+
+Login `dev@warmbly.com` / `password123`, open `/app/confenge`, generate → approve →
+enroll. Captured in Mailpit. Full guide: [docs/confenge/local-ops.md](docs/confenge/local-ops.md).
+
 ## Self-hosting
 
 <a href="https://docs.warmbly.com/development/deployment-guide/"><img src="https://img.shields.io/badge/Runs%20on-Docker%20Compose-2496ED?logo=docker&logoColor=white&style=flat-square" alt="Runs on Docker Compose" /></a>

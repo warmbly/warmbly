@@ -29,3 +29,8 @@ function fromWindow(key: string): string | undefined {
 export function runtimeEnv(key: string, buildTime?: string, fallback = ""): string {
     return fromWindow(key) ?? (buildTime ? buildTime : undefined) ?? fallback;
 }
+
+export function runtimeBool(key: string, buildTime?: string, fallback = false): boolean {
+    const value = runtimeEnv(key, buildTime, String(fallback)).trim().toLowerCase();
+    return value === "true" || value === "1" || value === "yes";
+}

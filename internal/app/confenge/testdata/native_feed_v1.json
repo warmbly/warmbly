@@ -1,0 +1,349 @@
+{
+  "schema_version": "confenge.outreach.v1",
+  "generated_at": "2026-08-06T12:00:00Z",
+  "source": {
+    "system": "extra-cli",
+    "run_id": "fixture-run-001",
+    "snapshot_hash": "abc123snapshot",
+    "repo_sha": "deadbeef",
+    "profile_id": "confenge",
+    "profile_version": "1.0.0"
+  },
+  "pagination": {
+    "cursor": null,
+    "next_cursor": null,
+    "has_more": false
+  },
+  "leads": [
+    {
+      "source_lead_id": "lead-acme-sc",
+      "company": {
+        "cnpj14": "11222333000181",
+        "cnpj_root": "11222333",
+        "razao_social": "Construtora Regional ACME Ltda",
+        "nome_fantasia": "ACME Obras",
+        "municipio": "Florianopolis",
+        "uf": "SC",
+        "website": "https://acme.example.com"
+      },
+      "priority": {
+        "rank": 1,
+        "score": 82.5,
+        "tier": "HIGH",
+        "confidence": "HIGH"
+      },
+      "moment": {
+        "code": "CONTRACT_EXTENSION",
+        "summary": "Contrato de obra publica com prorrogacao publicada no PNCP",
+        "observed_at": "2026-07-15",
+        "confidence": "HIGH",
+        "evidence_ids": ["ev-acme-1"]
+      },
+      "offer": {
+        "service_code": "ADDITIVE_REVIEW",
+        "service_name": "Revisao de aditivos",
+        "entry_offer": "Leitura tecnica do aditivo em curso",
+        "rationale": "Momento de prorrogacao com margem para apoio consultivo"
+      },
+      "messaging_context": {
+        "fact_to_mention": "Prorrogacao do contrato 001/2025 publicada no PNCP em julho/2026",
+        "question_to_ask": "Faz sentido conversarmos sobre o controle de aditivos desta obra?",
+        "cta": "Posso enviar um checklist de 1 pagina?",
+        "claims_to_avoid": ["garantia de economia", "erro na gestao"]
+      },
+      "target_fit_class": "TARGET_CONFIRMED",
+      "target_fit_version": "confenge-target-fit-v1",
+      "target_fit_computed_at": "2026-08-06T12:00:00Z",
+      "target_fit_source_watermark": "2026-08-06T12:00:00Z",
+      "target_fit_fresh": true,
+      "target_fit_send_tier": "A_AUTOMATIC",
+      "email_send_ready": true,
+      "contacts": [
+        {
+          "source_contact_id": "ct-acme-eng",
+          "name": "Ana Silva",
+          "role": "Engenheira de contratos",
+          "email": "ana.silva@acme.example.com",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "https://acme.example.com/equipe",
+          "source_document": "",
+          "source_date": "2026-06-01",
+          "verification_status": "OFFICIAL_SOURCE",
+          "confidence": "HIGH",
+          "recommended": true,
+          "email_send_ready": true
+        }
+      ],
+      "contracts": [
+        {"id": "c-001", "number": "001/2025", "agency": "Prefeitura Exemplo"}
+      ],
+      "evidence": [
+        {
+          "id": "ev-acme-1",
+          "type": "PNCP_PUBLICATION",
+          "title": "Prorrogacao contrato 001/2025",
+          "url": "https://pncp.example.gov.br/contratos/001-2025",
+          "document": "Termo de prorrogacao",
+          "date": "2026-07-15",
+          "location": "secao 2",
+          "excerpt": "Fica prorrogado o prazo de execucao por 180 dias.",
+          "synthesis": "Prorrogacao formal publicada",
+          "epistemic_class": "CONFIRMED_FACT",
+          "reliability": "HIGH",
+          "consulted_at": "2026-08-01"
+        }
+      ],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "lead-nacional",
+      "company": {
+        "cnpj14": "99888777000166",
+        "cnpj_root": "99888777",
+        "razao_social": "Empresa Nacional de Infraestrutura SA",
+        "nome_fantasia": "ENI",
+        "municipio": "Sao Paulo",
+        "uf": "SP",
+        "website": "https://eni.example.org"
+      },
+      "priority": {
+        "rank": 2,
+        "score": 70,
+        "tier": "MEDIUM",
+        "confidence": "MEDIUM"
+      },
+      "moment": {
+        "code": "ADDITIVE_SIGNED",
+        "summary": "Aditivo de reajuste publicado",
+        "observed_at": "2026-06-20",
+        "confidence": "HIGH",
+        "evidence_ids": ["ev-eni-1"]
+      },
+      "offer": {
+        "service_code": "REAJUSTE_SUPPORT",
+        "service_name": "Apoio a reajustes",
+        "entry_offer": "Parecer resumido sobre clausula de reajuste",
+        "rationale": "Aditivo recente com potencial de segunda opiniao tecnica"
+      },
+      "messaging_context": {
+        "fact_to_mention": "Aditivo de reajuste do contrato 44/2024 publicado em junho/2026",
+        "question_to_ask": "Voces ja fecharam a leitura economica deste aditivo?",
+        "cta": "Posso compartilhar um modelo de memoria de calculo?",
+        "claims_to_avoid": []
+      },
+      "target_fit_class": "TARGET_CONFIRMED",
+      "target_fit_version": "confenge-target-fit-v1",
+      "target_fit_computed_at": "2026-08-06T12:00:00Z",
+      "target_fit_source_watermark": "2026-08-06T12:00:00Z",
+      "target_fit_fresh": true,
+      "target_fit_send_tier": "A_AUTOMATIC",
+      "email_send_ready": true,
+      "contacts": [
+        {
+          "source_contact_id": "ct-eni-generic",
+          "name": "",
+          "role": "Comercial",
+          "email": "contato@eni.example.org",
+          "verification_status": "INSTITUTIONAL_GENERIC",
+          "confidence": "MEDIUM",
+          "recommended": true,
+          "email_send_ready": true
+        }
+      ],
+      "contracts": [],
+      "evidence": [
+        {
+          "id": "ev-eni-1",
+          "type": "CONTRACT_ADDITIVE",
+          "title": "Aditivo reajuste 44/2024",
+          "url": "https://portal.example.gov.br/44-2024",
+          "date": "2026-06-20",
+          "excerpt": "Reajuste conforme indices oficiais.",
+          "synthesis": "Aditivo de reajuste formal",
+          "epistemic_class": "CONFIRMED_FACT",
+          "reliability": "HIGH",
+          "consulted_at": "2026-08-01"
+        }
+      ],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "lead-no-contact",
+      "company": {
+        "cnpj14": "55444333000122",
+        "cnpj_root": "55444333",
+        "razao_social": "Obras do Planalto Ltda",
+        "nome_fantasia": "Planalto",
+        "municipio": "Brasilia",
+        "uf": "DF",
+        "website": ""
+      },
+      "priority": {
+        "rank": 3,
+        "score": 55,
+        "tier": "MEDIUM",
+        "confidence": "LOW"
+      },
+      "moment": {
+        "code": "TENDER_WIN",
+        "summary": "Homologacao recente em licitacao de reforma",
+        "observed_at": "2026-05-10",
+        "confidence": "MEDIUM",
+        "evidence_ids": []
+      },
+      "offer": {
+        "service_code": "BID_READINESS",
+        "service_name": "Preparacao de propostas",
+        "entry_offer": "Checklist de conformidade documental",
+        "rationale": ""
+      },
+      "messaging_context": {
+        "fact_to_mention": "Homologacao em licitação de reforma em maio/2026",
+        "question_to_ask": "Quem na equipe cuida da memoria de calculo de aditivos?",
+        "cta": "Posso enviar um checklist curto?",
+        "claims_to_avoid": []
+      },
+      "target_fit_class": "TARGET_CONFIRMED",
+      "target_fit_version": "confenge-target-fit-v1",
+      "target_fit_computed_at": "2026-08-06T12:00:00Z",
+      "target_fit_source_watermark": "2026-08-06T12:00:00Z",
+      "target_fit_fresh": true,
+      "target_fit_send_tier": "A_AUTOMATIC",
+      "email_send_ready": false,
+      "contacts": [],
+      "contracts": [],
+      "evidence": [],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "lead-unverified",
+      "company": {
+        "cnpj14": "66777888000199",
+        "cnpj_root": "66777888",
+        "razao_social": "Consorcio Ponte Norte",
+        "nome_fantasia": "Ponte Norte",
+        "municipio": "Curitiba",
+        "uf": "PR",
+        "website": "https://pontenorte.example.net"
+      },
+      "priority": {
+        "rank": 4,
+        "score": 60,
+        "tier": "MEDIUM",
+        "confidence": "MEDIUM"
+      },
+      "moment": {
+        "code": "CONSORTIUM_ACTIVE",
+        "summary": "Consorcio ativo em obra rodoviaria",
+        "observed_at": "2026-04-01",
+        "confidence": "MEDIUM",
+        "evidence_ids": ["ev-cn-1"]
+      },
+      "offer": {
+        "service_code": "ADDITIVE_REVIEW",
+        "service_name": "Revisao de aditivos",
+        "entry_offer": "Mapa de riscos de aditivos do consorcio",
+        "rationale": "Estrutura multi-empresa exige cuidado com interlocutor"
+      },
+      "messaging_context": {
+        "fact_to_mention": "Consorcio ativo em obra rodoviaria com publicacoes recentes",
+        "question_to_ask": "Quem e o interlocutor tecnico de aditivos no consorcio?",
+        "cta": "Posso enviar uma pergunta objetiva por e-mail?",
+        "claims_to_avoid": ["vinculo societario"]
+      },
+      "target_fit_class": "TARGET_CONFIRMED",
+      "target_fit_version": "confenge-target-fit-v1",
+      "target_fit_computed_at": "2026-08-06T12:00:00Z",
+      "target_fit_source_watermark": "2026-08-06T12:00:00Z",
+      "target_fit_fresh": true,
+      "target_fit_send_tier": "A_AUTOMATIC",
+      "email_send_ready": false,
+      "contacts": [
+        {
+          "source_contact_id": "ct-cn-cand",
+          "name": "Bruno Costa",
+          "role": "Diretor",
+          "email": "bruno@pontenorte.example.net",
+          "verification_status": "CANDIDATE_UNVERIFIED",
+          "confidence": "LOW",
+          "recommended": false
+        }
+      ],
+      "contracts": [],
+      "evidence": [
+        {
+          "id": "ev-cn-1",
+          "type": "PUBLIC_NOTICE",
+          "title": "Ata de consorcio",
+          "url": "https://docs.example.gov.br/consorcio-ponte",
+          "date": "2026-04-01",
+          "excerpt": "Constituido o consorcio Ponte Norte.",
+          "synthesis": "Consorcio formalizado",
+          "epistemic_class": "CONFIRMED_FACT",
+          "reliability": "MEDIUM",
+          "consulted_at": "2026-08-01"
+        }
+      ],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "lead-dnc",
+      "company": {
+        "cnpj14": "12345678000195",
+        "cnpj_root": "12345678",
+        "razao_social": "Servicos Tecnicos Beta Ltda",
+        "nome_fantasia": "Beta",
+        "municipio": "Joinville",
+        "uf": "SC",
+        "website": "https://beta.example.com"
+      },
+      "priority": {
+        "rank": 5,
+        "score": 40,
+        "tier": "LOW",
+        "confidence": "HIGH"
+      },
+      "moment": {
+        "code": "NO_RECENT_SIGNAL",
+        "summary": "Sem fato gerador recente",
+        "observed_at": "2026-01-01",
+        "confidence": "HIGH",
+        "evidence_ids": []
+      },
+      "offer": {
+        "service_code": "DIAGNOSTIC",
+        "service_name": "Diagnostico leve",
+        "entry_offer": "Conversa exploratoria",
+        "rationale": ""
+      },
+      "messaging_context": {
+        "fact_to_mention": "Atuacao regional em contratos publicos de engenharia",
+        "question_to_ask": "Faz sentido uma conversa curta sobre controle de aditivos?",
+        "cta": "Posso ligar 10 minutos esta semana?",
+        "claims_to_avoid": []
+      },
+      "target_fit_class": "TARGET_CONFIRMED",
+      "target_fit_version": "confenge-target-fit-v1",
+      "target_fit_computed_at": "2026-08-06T12:00:00Z",
+      "target_fit_source_watermark": "2026-08-06T12:00:00Z",
+      "target_fit_fresh": true,
+      "target_fit_send_tier": "A_AUTOMATIC",
+      "email_send_ready": false,
+      "contacts": [
+        {
+          "source_contact_id": "ct-beta-dnc",
+          "name": "Carlos Souza",
+          "role": "Socio",
+          "email": "carlos@beta.example.com",
+          "verification_status": "DO_NOT_CONTACT",
+          "confidence": "HIGH",
+          "recommended": false
+        }
+      ],
+      "contracts": [],
+      "evidence": [],
+      "commercial_state": "DO_NOT_CONTACT"
+    }
+  ]
+}

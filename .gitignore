@@ -88,3 +88,13 @@ build-errors.log
 # Xcode per-user state (ios/)
 xcuserdata/
 .DS_Store
+
+# CONFENGE local operator secrets / kill switch / backups
+.env.confenge
+data/confenge-kill-switch
+data/backups/
+
+# CONFENGE readiness evidence (local current-run only; never commit SHA-bound proofs)
+data/confenge-evidence/
+data/confenge-artifacts/
+data/confenge-backend.env

@@ -10,11 +10,10 @@ allowBuilds:
 # (rolldown-vite was being requested as plain `vite@7.1.14`, which doesn't
 # exist on the registry).
 overrides:
+  # Must match package.json pnpm.overrides (pnpm 10 frozen install) and
+  # stay a single mapping per key (YAML last-key-wins is not portable).
+  nanoid: 3.3.18
   picomatch: ^4.0.4
   # Clear CVE-2026-59887 (quadratic-complexity ReDoS via `mailto:`) in the
   # transitive linkify-it.
   linkify-it: ^5.0.2
-  # Clear GHSA-5p4m-2wfm-xmqj (quadratic CPU use resolving !!omap) in js-yaml.
-  js-yaml: ^4.3.1
-  # Clear CVE-2026-67213 (DoS via infinite loop) in the transitive nanoid.
-  nanoid: ^3.3.17

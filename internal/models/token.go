@@ -49,7 +49,8 @@ type Session struct {
 	BrowserName string `json:"browser_name"`
 	OSName      string `json:"os_name"`
 
-	// How this session authenticated: email, google, apple, webauthn.
+	// How this session authenticated: email, google, apple, webauthn, or the
+	// dedicated loopback CONFENGE operator bootstrap.
 	AuthProvider string `json:"auth_provider"`
 
 	CreatedAt time.Time  `json:"created_at"`

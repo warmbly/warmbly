@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -200,8 +201,11 @@ func (s *JobsService) HandleEmailRateLimited(ctx context.Context, event models.E
 		}
 	}
 
-	// Mark email account as inactive (terminated due to abuse)
-	if s.EmailRepository != nil {
+	// Sync throttles use Message prefix "sync_throttled:" and must not deactivate
+	// the mailbox (Hostinger first backfill of a full inbox is legitimate).
+	// Only non-throttle rate limits mark inactive.
+	isSyncThrottle := strings.HasPrefix(event.Message, "sync_throttled:")
+	if s.EmailRepository != nil && !isSyncThrottle {
 		inactive := "inactive"
 		if _, xerr := s.EmailRepository.Update(ctx, event.UserID, event.EmailAccountID, &models.UpdateEmail{
 			Status: &inactive,
@@ -210,7 +214,7 @@ func (s *JobsService) HandleEmailRateLimited(ctx context.Context, event models.E
 		}
 	}
 
-	if s.WarmupService != nil {
+	if s.WarmupService != nil && !isSyncThrottle {
 		health, _ := s.WarmupService.ApplyRateLimitExceeded(ctx, emailAccountID, "worker sync/email rate limit exceeded")
 		s.markRiskBandFromWarmupHealth(ctx, emailAccountID, health)
 	}

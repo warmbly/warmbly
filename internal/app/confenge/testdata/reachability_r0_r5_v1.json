@@ -1,0 +1,92 @@
+{
+  "schema_version": "confenge.outreach.v1",
+  "generated_at": "2026-08-14T12:00:00Z",
+  "source": {"system": "extra-cli", "run_id": "reachability-contract-001", "snapshot_hash": "reachability-r0-r5-v1", "repo_sha": "contract", "profile_id": "confenge", "profile_version": "1.0.0"},
+  "pagination": {"cursor": null, "next_cursor": null, "has_more": false},
+  "leads": [
+    {
+      "source_lead_id": "r1-direct-email",
+      "company": {"cnpj14": "11111000000191", "cnpj_root": "11111000", "razao_social": "Construtora Aurora Ltda", "nome_fantasia": "Aurora", "municipio": "Porto Alegre", "uf": "RS", "website": "https://aurora.example"},
+      "priority": {"rank": 1, "score": 90, "tier": "HIGH", "confidence": "HIGH"},
+      "moment": {"code": "ANUALIDADE", "summary": "Aniversario de reajuste do contrato 88/2024", "observed_at": "2026-07-01", "confidence": "HIGH", "evidence_ids": ["ev-r1"]},
+      "offer": {"service_code": "REAJUSTE", "service_name": "Reajuste contratual", "entry_offer": "Checklist do ciclo", "rationale": "Aniversario"},
+      "messaging_context": {"fact_to_mention": "contrato 88/2024 atingiu o aniversario de reajuste em 2026", "question_to_ask": "Posso te mandar o checklist?", "cta": "Posso te mandar o checklist?", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-14T12:00:00Z", "target_fit_source_watermark": "2026-08-14T12:00:00Z", "target_fit_fresh": true, "email_send_ready": true,
+      "contacts": [{"source_contact_id": "ct-r1", "name": "Ana Souza", "role": "Diretora de Contratos", "email": "ana.souza@aurora.example", "source_url": "https://aurora.example/equipe", "source_date": "2026-07-01", "verification_status": "OFFICIAL_SOURCE", "confidence": "HIGH", "recommended": true, "email_send_ready": true, "mailbox_purpose": "COMERCIAL", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE", "reachability_class": "R1_DIRECT", "route_type": "email", "route_relation": "BELONGS_TO_NAMED_PERSON", "channel_value": "ana.souza@aurora.example", "channel_display": "e-mail direto observado"}],
+      "evidence": [{"id": "ev-r1", "type": "CONTRACT_PUBLICATION", "title": "Contrato 88/2024", "url": "https://pncp.gov.br/88-2024", "date": "2024-07-01", "excerpt": "contrato 88/2024 atingiu o aniversario de reajuste em 2026", "synthesis": "contrato 88/2024 atingiu o aniversario de reajuste em 2026", "epistemic_class": "CONFIRMED_FACT", "reliability": "HIGH", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "r2-inferred-email",
+      "company": {"cnpj14": "22222000000182", "cnpj_root": "22222000", "razao_social": "Obras Pampas Ltda", "nome_fantasia": "Pampas", "municipio": "Caxias do Sul", "uf": "RS", "website": "https://pampas.example"},
+      "priority": {"rank": 2, "score": 80, "tier": "HIGH", "confidence": "MEDIUM"},
+      "moment": {"code": "ADITIVO", "summary": "Aditivo recente publicado", "observed_at": "2026-07-10", "confidence": "HIGH", "evidence_ids": ["ev-r2"]},
+      "offer": {"service_code": "ADITIVOS", "service_name": "Aditivos", "entry_offer": "Leitura do aditivo", "rationale": "Aditivo"},
+      "messaging_context": {"fact_to_mention": "termo aditivo 3 ao contrato 10/2023 publicado em julho/2026", "question_to_ask": "Faz sentido um recorte?", "cta": "Posso te mandar o recorte?", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-14T12:00:00Z", "target_fit_source_watermark": "2026-08-14T12:00:00Z", "target_fit_fresh": true, "email_send_ready": true,
+      "contacts": [{"source_contact_id": "ct-r2", "name": "Bruno Lima", "role": "Gerente de Contratos", "email": "bruno.lima@pampas.example", "source_url": "https://pampas.example/equipe", "source_date": "2026-07-01", "verification_status": "OFFICIAL_SOURCE", "confidence": "MEDIUM", "recommended": true, "email_send_ready": true, "inferred_email": true, "mailbox_purpose": "COMERCIAL", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE", "reachability_class": "R2_HIGH_CONFIDENCE_DIRECT", "route_type": "email", "route_relation": "BELONGS_TO_NAMED_PERSON", "channel_value": "bruno.lima@pampas.example", "channel_display": "e-mail inferido"}],
+      "evidence": [{"id": "ev-r2", "type": "CONTRACT_ADDITIVE", "title": "Aditivo 3", "url": "https://pncp.gov.br/10-2023-aditivo-3", "date": "2026-07-10", "excerpt": "termo aditivo 3", "synthesis": "termo aditivo 3 ao contrato 10/2023 publicado em julho/2026", "epistemic_class": "CONFIRMED_FACT", "reliability": "HIGH", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "r3-routed-call",
+      "company": {"cnpj14": "33333000000173", "cnpj_root": "33333000", "razao_social": "Construtora X Ltda", "nome_fantasia": "Construtora X", "municipio": "Curitiba", "uf": "PR", "website": "https://construtorax.example"},
+      "priority": {"rank": 3, "score": 85, "tier": "HIGH", "confidence": "HIGH"},
+      "moment": {"code": "LICITACAO", "summary": "Edital publicado com quantitativos a conferir", "observed_at": "2026-07-20", "confidence": "HIGH", "evidence_ids": ["ev-r3"]},
+      "offer": {"service_code": "APOIO_LICITACAO", "service_name": "Apoio a licitacao", "entry_offer": "Leitura do edital", "rationale": "Edital"},
+      "messaging_context": {"fact_to_mention": "edital 45/2026 publicado com quantitativos a conferir", "question_to_ask": "Posso falar com Carlos?", "cta": "Posso enviar o recorte?", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-14T12:00:00Z", "target_fit_source_watermark": "2026-08-14T12:00:00Z", "target_fit_fresh": true, "email_send_ready": false,
+      "contacts": [{"source_contact_id": "ct-r3", "name": "Carlos Silva", "role": "Socio administrador / diretor", "email": "", "phone": "+554132220000", "phone_detail": {"e164": "+554132220000", "source": "COMPANY_WEBSITE"}, "source_url": "https://construtorax.example/contato", "source_date": "2026-07-01", "verification_status": "OFFICIAL_SOURCE", "confidence": "HIGH", "recommended": true, "email_send_ready": false, "mailbox_purpose": "MANUAL_CHANNEL", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE", "reachability_class": "R3_ROUTED_TO_NAMED_PERSON", "route_type": "phone", "route_relation": "ROUTES_TO_NAMED_PERSON", "channel_value": "+554132220000", "channel_display": "telefone oficial da empresa"}],
+      "evidence": [{"id": "ev-r3", "type": "PNCP_PUBLICATION", "title": "Edital 45/2026", "url": "https://pncp.gov.br/edital-45-2026", "date": "2026-07-20", "excerpt": "edital 45/2026 publicado", "synthesis": "edital 45/2026 publicado com quantitativos a conferir", "epistemic_class": "CONFIRMED_FACT", "reliability": "HIGH", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "r4-role-mailbox",
+      "company": {"cnpj14": "44444000000164", "cnpj_root": "44444000", "razao_social": "Metrovia Construcoes SA", "nome_fantasia": "Metrovia", "municipio": "Curitiba", "uf": "PR", "website": "https://metrovia.example"},
+      "priority": {"rank": 4, "score": 70, "tier": "MEDIUM", "confidence": "HIGH"},
+      "moment": {"code": "LICITACAO", "summary": "Edital de licitacao publicado", "observed_at": "2026-07-20", "confidence": "HIGH", "evidence_ids": ["ev-r4"]},
+      "offer": {"service_code": "APOIO_LICITACAO", "service_name": "Apoio a licitacao", "entry_offer": "Leitura do edital", "rationale": "Edital"},
+      "messaging_context": {"fact_to_mention": "edital 12/2026 publicado com quantitativos a conferir", "question_to_ask": "Posso enviar um recorte para a equipe?", "cta": "Posso enviar um recorte para a equipe?", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-14T12:00:00Z", "target_fit_source_watermark": "2026-08-14T12:00:00Z", "target_fit_fresh": true, "email_send_ready": true,
+      "contacts": [{"source_contact_id": "ct-r4", "name": "Joao Historico", "role": "Licitacoes", "email": "licitacoes@metrovia.example", "source_url": "https://metrovia.example/contato", "source_date": "2026-07-01", "verification_status": "OFFICIAL_SOURCE", "confidence": "HIGH", "recommended": true, "email_send_ready": true, "mailbox_purpose": "ROLE_MAILBOX", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE_GENERIC", "reachability_class": "R4_ROLE_ROUTE", "route_type": "email", "route_relation": "ROLE_MAILBOX", "channel_value": "licitacoes@metrovia.example", "channel_display": "caixa de licitacoes"}],
+      "evidence": [{"id": "ev-r4", "type": "PNCP_PUBLICATION", "title": "Edital 12/2026", "url": "https://pncp.gov.br/edital-12-2026", "date": "2026-07-20", "excerpt": "edital 12/2026", "synthesis": "edital 12/2026 publicado com quantitativos a conferir", "epistemic_class": "CONFIRMED_FACT", "reliability": "HIGH", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "r5-corporate-generic",
+      "company": {"cnpj14": "55555000000155", "cnpj_root": "55555000", "razao_social": "Atlas Obras Ltda", "nome_fantasia": "Atlas Obras", "municipio": "Florianopolis", "uf": "SC", "website": "https://atlas.example"},
+      "priority": {"rank": 5, "score": 55, "tier": "MEDIUM", "confidence": "LOW"},
+      "moment": {"code": "PUBLICACAO", "summary": "Contrato publicado sem evento especifico", "observed_at": "2026-06-01", "confidence": "MEDIUM", "evidence_ids": ["ev-r5"]},
+      "offer": {"service_code": "MONITORAMENTO_CONTRATUAL", "service_name": "Monitoramento", "entry_offer": "Segunda leitura", "rationale": "Contrato"},
+      "messaging_context": {"fact_to_mention": "contrato 12/2025 publicado no PNCP", "question_to_ask": "", "cta": "", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-14T12:00:00Z", "target_fit_source_watermark": "2026-08-14T12:00:00Z", "target_fit_fresh": true, "email_send_ready": false,
+      "contacts": [{"source_contact_id": "ct-r5", "name": "Contato", "role": "Atendimento", "email": "contato@atlas.example", "source_url": "https://atlas.example/contato", "source_date": "2026-06-01", "verification_status": "INSTITUTIONAL_GENERIC", "confidence": "LOW", "recommended": false, "email_send_ready": true, "mailbox_purpose": "GENERIC_CONTACT", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE_GENERIC", "reachability_class": "R5_CORPORATE_ONLY", "route_type": "form", "route_relation": "CORPORATE_GENERIC", "channel_value": "https://atlas.example/contato", "channel_display": "formulario institucional"}],
+      "evidence": [{"id": "ev-r5", "type": "PNCP_PUBLICATION", "title": "Contrato 12/2025", "url": "https://pncp.gov.br/12-2025", "date": "2026-06-01", "excerpt": "contratacao", "synthesis": "contrato 12/2025 publicado no PNCP", "epistemic_class": "CONFIRMED_FACT", "reliability": "MEDIUM", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "r0-no-route",
+      "company": {"cnpj14": "66666000000146", "cnpj_root": "66666000", "razao_social": "Nortevia Ltda", "nome_fantasia": "Nortevia", "municipio": "Manaus", "uf": "AM", "website": ""},
+      "priority": {"rank": 6, "score": 30, "tier": "LOW", "confidence": "LOW"},
+      "moment": {"code": "UNKNOWN", "summary": "Sem momento acionavel", "observed_at": "2026-05-01", "confidence": "LOW", "evidence_ids": []},
+      "offer": {"service_code": "MONITORAMENTO_CONTRATUAL", "service_name": "Monitoramento", "entry_offer": "", "rationale": ""},
+      "messaging_context": {"fact_to_mention": "", "question_to_ask": "", "cta": "", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-14T12:00:00Z", "target_fit_source_watermark": "2026-08-14T12:00:00Z", "target_fit_fresh": true, "email_send_ready": false,
+      "contacts": [{"source_contact_id": "ct-r0", "name": "", "role": "", "email": "", "verification_status": "NOT_FOUND", "confidence": "LOW", "recommended": false, "email_send_ready": false, "reachability_class": "R0_NO_ACTIONABLE_ROUTE"}],
+      "evidence": [],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "blocked-dnc",
+      "company": {"cnpj14": "77777000000137", "cnpj_root": "77777000", "razao_social": "Delta Obras Ltda", "nome_fantasia": "Delta", "municipio": "Recife", "uf": "PE", "website": "https://delta.example"},
+      "priority": {"rank": 7, "score": 40, "tier": "LOW", "confidence": "LOW"},
+      "moment": {"code": "PUBLICACAO", "summary": "Contrato publicado", "observed_at": "2026-06-01", "confidence": "LOW", "evidence_ids": []},
+      "offer": {"service_code": "MONITORAMENTO_CONTRATUAL", "service_name": "Monitoramento", "entry_offer": "", "rationale": ""},
+      "messaging_context": {"fact_to_mention": "", "question_to_ask": "", "cta": "", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-14T12:00:00Z", "target_fit_source_watermark": "2026-08-14T12:00:00Z", "target_fit_fresh": true, "email_send_ready": false,
+      "contacts": [{"source_contact_id": "ct-blocked", "name": "Eva Costa", "role": "Diretora", "email": "eva.costa@delta.example", "phone": "+558132220000", "verification_status": "DO_NOT_CONTACT", "confidence": "HIGH", "recommended": false, "email_send_ready": false, "do_not_contact": true, "reachability_class": "BLOCKED", "route_type": "email", "route_relation": "BELONGS_TO_NAMED_PERSON"}],
+      "evidence": [],
+      "commercial_state": "DO_NOT_CONTACT"
+    }
+  ]
+}

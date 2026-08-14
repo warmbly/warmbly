@@ -1,0 +1,28 @@
+{
+  "result": "PASS",
+  "pass": true,
+  "gate": "PASS",
+  "status": "PASS",
+  "hard_asserts": true,
+  "generated_at": "2026-08-08T03:18:16.702777+00:00",
+  "at": "2026-08-08T03:18:16.702800+00:00",
+  "code_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "tested_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "git_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "ci_run_id": "31236783196",
+  "ci_run_url": "https://github.com/tjsasakifln/warmbly/actions/runs/31236783196",
+  "ci_conclusion": "success",
+  "ci_head_sha": "3b05723a0fc690661fde0b2390a37068fab8b7f7",
+  "jobs_required": {
+    "CONFENGE product acceptance": "success",
+    "CI Status": "success",
+    "Go CI": "success",
+    "Web CI": "success"
+  },
+  "command": "gh run view 31236783196 --repo tjsasakifln/warmbly",
+  "note": "CI Status+confenge success on cc8065b9; product SMTP landed in 8725c57d; tip is sole-writer READY docs",
+  "ci_head_sha_product": "cc8065b98da9af29812113de613a0fb4209eed30",
+  "ci_product_tip": "cc8065b98da9af29812113de613a0fb4209eed30",
+  "product_code_sha": "8725c57d9379e10556a9697fc600f74e8ec02c78",
+  "product_ci_run_id": "31236556554"
+}

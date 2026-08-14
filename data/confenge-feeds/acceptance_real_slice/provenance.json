@@ -1,0 +1,21 @@
+{
+  "schema": "confenge.outreach.acceptance_slice.v1",
+  "generated_at": "2026-08-08T01:34:29.645264+00:00",
+  "extra_cli_sha": "7cf9593d68afad00006f578cc7324aee506cebe2",
+  "warmbly_sha_at_copy": "7c27e100d5f070a198659d7f697df78268f07b50",
+  "source_run_id": "run-e4dd67baf24eed62",
+  "pipeline_manifest_path": "/mnt/d/extra-cli/artifacts/confenge/full-national-2026-08-07/reports/pipeline-manifest.json",
+  "full_national_manifest_hash": "908a697f95eb4127a867f258cb9d260bf4a78e36dd710a5c331d2bd201121cdf",
+  "universe_manifest_hash": "0a24a827b9aa9c11888a6cacebe86a2a32bdee4e1f6b289b4af13c73d9560e5a",
+  "universe_eligibles": 48748,
+  "full_scale": true,
+  "sample_selection": {
+    "method": "first_N_from_chunk_0000_preferring_order_stable",
+    "count": 12,
+    "source_chunk": "chunk_0000.json",
+    "source_chunk_hash": "14b45947a806606aedce3be0412ee561bca7d147b3845b5f4c58b5d722ca7e1f",
+    "note": "Deterministic slice of real pipeline feed; transport emails rewritten to operator sink; original contacts preserved as metadata."
+  },
+  "bridge_output_hash": "14b45947a806606aedce3be0412ee561bca7d147b3845b5f4c58b5d722ca7e1f",
+  "never_send_to_real_leads": true
+}

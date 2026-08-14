@@ -74,6 +74,9 @@ type TasksService interface {
 	// a bounded web-research agent at send time (nil = research degrades to a
 	// single completion with one optional web search).
 	SetAITools(src AIToolSource)
+
+	// WireConfengeDispatch attaches the optional CONFENGE global dispatch gate.
+	WireConfengeDispatch(g ConfengeOutboundGate)
 }
 
 // AIToolSource yields the read-only web tools (search_web, fetch_url) a
@@ -130,6 +133,9 @@ type tasksService struct {
 	// aiTools sources the web tools research-mode AI variables run a bounded
 	// agent over (SetAITools). Nil = research degrades.
 	aiTools AIToolSource
+
+	// confengeGate paces CONFENGE campaign email with the shared global governor.
+	confengeGate ConfengeOutboundGate
 
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.

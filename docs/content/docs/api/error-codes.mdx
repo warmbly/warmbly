@@ -43,6 +43,8 @@ All errors follow this structure:
 | 501 | Not Implemented | Feature not available |
 | 503 | Service Unavailable | Service temporarily down |
 
+The dedicated CONFENGE operator bootstrap uses `CONFENGE_OPERATOR_SESSION_UNAVAILABLE` with status `503` when its technical identity can no longer issue a session. Check the configured user, organization membership, ban state, and contact permissions. Include the returned `request_id` when investigating the failure.
+
 ## Error details
 
 ### 400 Bad Request
@@ -275,6 +277,14 @@ A `503` whose `code` is `mailbox_provider_not_configured` is not transient and r
 - Set `BOX_GOOGLE_CLIENT_ID` and `BOX_GOOGLE_CLIENT_SECRET`, or `BOX_OUTLOOK_CLIENT_ID` and `BOX_OUTLOOK_CLIENT_SECRET`, in the `.env` at your install root, then restart
 - Or connect the mailbox over SMTP and IMAP instead, which needs no configuration
 - Full walkthrough: [connect mailboxes](/development/deployment-guide/#connect-mailboxes)
+
+## CONFENGE pilot account results
+
+`POST /confenge/pilot/cohort/prepare` returns HTTP `200` when the batch was evaluated, even when individual accounts are blocked. Every item has `status=PREPARED` or `status=BLOCKED`. Blocked items include `reason_code`, `human_readable_reason`, and `remediation`.
+
+Common reason codes include `feed_missing`, `feed_stale`, `account_not_found`, `account_not_in_current_snapshot`, `account_ineligible`, `target_fit_stale`, `account_do_not_contact`, `account_blocked`, `commercial_context_expired`, `recipient_missing`, `recipient_lookup_failed`, `recipient_removed_current_snapshot`, `recipient_changed_requires_review`, `recipient_snapshot_missing`, `recipient_conflict`, `recipient_invalid`, `recipient_demo_or_fixture`, `recipient_opt_out`, `recipient_hard_bounce`, `recipient_suppressed`, `provenance_tainted`, `recipient_not_send_ready`, `recipient_not_commercially_suitable`, `recipient_domain_mismatch`, `recipient_domain_unverified`, `recipient_provenance_missing`, `recipient_evidence_date_missing`, `recipient_evidence_date_invalid`, `recipient_evidence_stale`, `generic_mailbox_not_allowed`, `copy_evidence_unavailable`, `incomplete_copy_context`, `invalid_review_state`, `preparation_failed`, `cohort_capacity_reached`, `cohort_reservation_failed`, `cohort_membership_failed`, and `cohort_membership_conflict`.
+
+These are per-account workflow results, not transport errors. Fix the indicated data or policy gate and retry with the same `Idempotency-Key`.
 
 ## Error handling best practices
 

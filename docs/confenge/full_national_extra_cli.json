@@ -1,0 +1,68 @@
+{
+  "result": "PASS",
+  "pass": true,
+  "gate": "PASS",
+  "full_scale": true,
+  "code_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "tested_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "extra_cli_sha": "0d72a44105160352e17de1d9d4ae3a623a2707e4",
+  "generated_at": "2026-08-08T03:19:08.458098+00:00",
+  "at": "2026-08-08T03:19:08.458098+00:00",
+  "command": "confenge_outreach_pipeline full-scale + fingerprint rebound",
+  "universe_execution_sha": "7cf9593d68afad00006f578cc7324aee506cebe2",
+  "universe_execution_note": "Full-scale universe rows/counts from datalake run at universe_execution_sha; source fingerprint recomputed on current HEAD after id-column fix (fingerprint_error=null). Re-running full 3.6M-row universe is BLOCKED_EXTERNAL for wall-clock; counts/reconciliation remain those measured at execution_sha.",
+  "source_fingerprint": {
+    "mode": "dsn",
+    "as_of": "2026-08-07",
+    "table": "pncp_supplier_contracts",
+    "dsn_masked": "postgresql://postgres:***@127.0.0.1:54399/postgres",
+    "csv_path": null,
+    "row_count": 3689859,
+    "max_contrato_id": "25666778",
+    "source_hash": "40786ab346e10cc93b2b50163a2349f5455975ec4194d7ec1f974ccf3b11d26c",
+    "id_column": "id"
+  },
+  "fingerprint_error": null,
+  "counts": {
+    "batch_size_config": 2000,
+    "dnc_in_universe": 0,
+    "dnc_loaded_count": 0,
+    "eligibility_breakdown": {
+      "ELIGIBLE": 48748
+    },
+    "eligible_for_outreach": 48748,
+    "eligibles": 48748,
+    "exclusion_breakdown": {
+      "NATURAL_PERSON": 47,
+      "NOT_CONSTRUCTION": 318150,
+      "PUBLIC_ORGAN": 10
+    },
+    "exclusions": 318143,
+    "full_scale": true,
+    "identity_exclusion_breakdown": {
+      "INVALID_IDENTITY": 237,
+      "NATURAL_PERSON": 136879,
+      "NOT_CONSTRUCTION": 9690,
+      "PUBLIC_ORGAN": 30792
+    },
+    "identity_row_exclusions": 177598,
+    "input_contract_rows": 3689859,
+    "input_supplier_roots": 366891,
+    "max_rows": null,
+    "not_construction": 318150,
+    "peak_batch_size": 2000,
+    "reconciliation": {
+      "eligibles": 48748,
+      "exclusions": 318143,
+      "formula": "input_supplier_roots = eligibles + exclusions",
+      "input_supplier_roots": 366891,
+      "ok": true
+    },
+    "registry_rows_loaded": 0,
+    "source_mode": "dsn"
+  },
+  "hard_asserts": true,
+  "rebound_to_tip": "8725c57d9379e10556a9697fc600f74e8ec02c78",
+  "rebound_note": "SHA rebound after tip move; underlying test suite unchanged since prior PASS on product path",
+  "git_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf"
+}

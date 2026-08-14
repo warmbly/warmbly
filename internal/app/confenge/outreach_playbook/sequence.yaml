@@ -1,0 +1,62 @@
+outreach_doctrine_version: confenge-outreach-v2
+
+# Each touch must earn existence. Cadence delays are defaults (experimental priors), not governor limits.
+sequence:
+  max_touches: 5
+  stop_on:
+    - human_reply
+    - dnc
+    - bounce
+    - active_conversation
+  account_rules:
+    no_simultaneous_identical_copy: true
+    no_multithread_without_reason: true
+    pause_other_contacts_on_active_conversation: true
+
+  touches:
+    - position: 1
+      name: SIGNAL
+      objective: fact + honest hypothesis + micro-offer
+      adds_value: public_fact_and_micro_offer
+      forbidden: [just_following_up, meeting_default, institutional_pitch]
+      default_delay_days: 0
+
+    - position: 2
+      name: IMPLICATION
+      objective: another technical angle or implication; simple CTA
+      adds_value: new_implication_or_angle
+      forbidden: [just_following_up, last_attempt_guilt]
+      default_delay_days: 4
+
+    - position: 3
+      name: VALUE
+      objective: mini-checklist, benchmark, or useful public insight
+      adds_value: checklist_or_insight
+      forbidden: [just_following_up]
+      default_delay_days: 5
+
+    - position: 4
+      name: ROUTING
+      objective: short ask if another person owns the theme (internal referral)
+      adds_value: routing_question
+      forbidden: [spam_all_stakeholders]
+      default_delay_days: 5
+
+    - position: 5
+      name: GRACEFUL_CLOSE
+      objective: close without guilt trip or false urgency
+      adds_value: respectful_close
+      forbidden: [ultima_tentativa, last_chance, following_up]
+      default_delay_days: 7
+
+empty_followup_phrases:
+  - só acompanhando
+  - so acompanhando
+  - subindo no seu inbox
+  - teve chance de ver
+  - última tentativa
+  - ultima tentativa
+  - just following up
+  - bumping this
+  - checking in
+  - looping back

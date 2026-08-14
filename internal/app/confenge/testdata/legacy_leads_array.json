@@ -1,0 +1,45 @@
+[
+  {
+    "cnpj14": "11222333000181",
+    "razao_social": "Construtora Regional ACME Ltda",
+    "score_total": 80,
+    "priority": "HIGH",
+    "rank_position": 1,
+    "suggested_offer": "ADDITIVE_REVIEW",
+    "next_human_step": "Validar interlocutor de contratos",
+    "commercial_state": "NEW",
+    "municipio": "Florianopolis",
+    "uf": "SC",
+    "signals_fired": ["CONTRACT_EXTENSION"],
+    "email": "ana.silva@acme.example.com",
+    "contact_name": "Ana Silva",
+    "cargo": "Engenheira de contratos",
+    "verification_status": "OFFICIAL_SOURCE"
+  },
+  {
+    "cnpj14": "55444333000122",
+    "razao_social": "Obras do Planalto Ltda",
+    "score_total": 50,
+    "priority": "MEDIUM",
+    "rank_position": 2,
+    "suggested_offer": "BID_READINESS",
+    "commercial_state": "NEW",
+    "municipio": "Brasilia",
+    "uf": "DF"
+  },
+  {
+    "cnpj14": "99888777000166",
+    "razao_social": "Empresa Nacional de Infraestrutura SA",
+    "score_total": 65,
+    "priority": "MEDIUM",
+    "contacts": [
+      {
+        "id": "c1",
+        "name": "Equipe comercial",
+        "email": "contato@eni.example.org",
+        "verification_status": "INSTITUTIONAL_GENERIC",
+        "recommended": true
+      }
+    ]
+  }
+]

@@ -1,0 +1,182 @@
+---
+title: CONFENGE outreach staging
+description: Import versioned commercial feeds, review each outbound touch with human approval, and send only after per-message approval.
+---
+
+CONFENGE outreach is an optional, feature-flagged staging layer. It lets an organization import a versioned commercial feed (for example from `extra-cli`) into Warmbly so companies can sit in a queue even when no verified email exists yet.
+
+Warmbly stays the execution plane: contacts, mailboxes, campaigns, inbox, CRM. The intelligence plane (datalake, signals, evidence scoring) stays outside Warmbly. Warmbly never connects to that database and never writes into it.
+
+## Enable
+
+Set on the backend:
+
+```env
+CONFENGE_OUTREACH_ENABLED=true
+```
+
+Leave `CONFENGE_AUTO_SEND_ENABLED=false` unless you have an explicit operational policy. Human approval remains the default (`CONFENGE_REQUIRE_HUMAN_APPROVAL=true`).
+
+Optional feed source:
+
+```env
+CONFENGE_EXTRA_CLI_FEED_URL=https://feed.example.com/confenge/outreach.json
+CONFENGE_EXTRA_CLI_FEED_TOKEN=
+CONFENGE_EXTRA_CLI_ALLOWED_HOSTS=feed.example.com
+CONFENGE_FEED_MAX_AGE=24h
+```
+
+In production the feed URL must be HTTPS and the host must be on the allowlist. Local development may use a `file://` path.
+
+## Dedicated operator dashboard
+
+The isolated CONFENGE deployment can expose a focused PT-BR dashboard without an interactive sign-in:
+
+```env
+CONFENGE_OPERATOR_MODE=true
+CONFENGE_OPERATOR_USER_ID=11111111-0000-0000-0000-000000000001
+CONFENGE_OPERATOR_ORG_ID=22222222-0000-0000-0000-000000000001
+```
+
+This mode is disabled by default in Warmbly. It must only be enabled when both the dashboard and API bind to loopback and operators connect through an SSH tunnel. The configured user must be active, accepted into the organization, and have view and manage contacts permissions. Invalid configuration fails startup.
+
+The browser skips login, registration, workspace selection, and onboarding. Internally it receives a normal organization-scoped JWT session, so the existing permission gates, human approval controls, idempotency, and audit attribution remain active. All browser actions are attributed to the configured technical operator.
+
+## Recipient and messageability gates
+
+Every target ends in `VALIDATED`, `EXCEPTION`, or `BLOCKED`. A generic mailbox is never auto-promoted to `VALIDATED`. Warmbly never invents a name, role, ownership, personal email, consent, or evidence.
+
+Copy is planned only after extra-cli intelligence is reduced to an internal `OutreachStrategy`. The messageability gate then decides `READY`, `NEEDS_ENRICHMENT`, or `BLOCKED`. Only a `READY` plan is rendered. `NEEDS_REVIEW` means the exact body is sendable if a human presses Approve. Unready items go to a separate exception or enrichment queue.
+
+`NEEDS_REVIEW` is assigned only when recipient resolution is `VALIDATED`, the contact tier is `DIRECT_EMAIL_VALIDATED`, messageability is `READY`, and the composed body is non-empty. An `EXCEPTION` never becomes `NEEDS_REVIEW`. Two individually valid named humans on the same account stay `EXCEPTION` and land in `MANUAL_OUTREACH` until a human picks one recipient.
+
+Human `APPROVE`, `EDIT`, `REJECT`, `RECIPIENT_CHANGE`, and `SKIP` persist as `HumanCorrection`. Edits keep before/after. AI never substitutes the human gate.
+
+## Per-touch human approval (product invariant)
+
+Every CONFENGE outbound message (email or WhatsApp) requires **explicit human approval of that exact message** before it can enter the send queue. AI may generate, classify, and suggest. AI never approves and never sends.
+
+Flow:
+
+1. Plan a cadence for an account (initial touch plus spaced follow-ups).
+2. When a touch is due, generate the message text just-in-time (prior touches, outcomes, latest imported context).
+3. Human reviews the exact recipient, channel, subject/body, fact and evidence.
+4. Human edits if needed (any edit clears prior approval).
+5. Human chooses **Approve**, Skip, or DNC. Approval does not enqueue or send.
+
+Approval is **per touch**, never for a whole sequence or account. There is no “approve whole sequence” action.
+
+Transport is blocked unless the durable touchpoint has a matching content hash and a human `approved_by`. Draft-only approval is not enough to send.
+
+Cadence uses a versioned policy (`confenge.cadence.v1`): initial touch plus spaced follow-ups with no false urgency. Channel is chosen at touch time. Follow-ups are not a fixed multi-step campaign sequence that auto-fires after the first enrollment.
+
+Dominant stops: `DO_NOT_CONTACT`, opt-out, bounce, and human reply cancel open future touches atomically. Reimport does not reactivate `SENT` or `DNC` touchpoints.
+
+## Import
+
+`POST /api/v1/confenge/import` accepts:
+
+- the full feed JSON body (`schema_version: confenge.outreach.v1`; legacy shapes remain auditable but are not outreach-eligible)
+- the extra-cli operator pack (`cards.json`) or `confenge.decision_unit_account.v1` accounts. Routed calls and manual lanes import as first-class work even when no email is VALIDATED
+- or `{"uri":"https://...","dry_run":true}` to fetch then import
+
+The import printout includes the operator summary: actionable accounts, route distribution, number requiring a manual call, number that are email-safe, unresolved blockers, and the next human actions. Re-import of the same extra-cli identity does not create a second account.
+
+Use `?dry_run=true` for counts only (`creates`, `updates`, `unchanged`, `missing_contact`, and related fields). Send `Idempotency-Key` for safe retries.
+
+Companies with eligible current target-fit but no enrollable contact enter as `NEEDS_CONTACT`. They are not discarded and are not forced into the contacts table.
+
+## Target-fit authorization
+
+`extra-cli` is the sole authority for CONFENGE target-fit. Warmbly does not infer ICP membership from company names, industry text, public contracts, email availability, old scores, or prior `enrollable` values.
+
+Outbound requires all of the following at the same time:
+
+- `target_fit_class` is `TARGET_CONFIRMED`
+- `target_fit_fresh` is explicitly `true`
+- `target_fit_version`, `target_fit_source_watermark`, and a comparable observed timestamp are present
+- any supplied `target_fit_send_tier` is eligible under the imported contract
+- the company and selected contact both have imported `email_send_ready=true`
+- DNC, reply, bounce, suppression, provenance, approval, and dispatch gates still pass
+
+Missing, stale, contradictory, out-of-scope, or downgraded target-fit fails closed. A valid company email does not compensate for missing commercial authorization.
+
+An ineligible import keeps the account and its history, assigns a `TARGET_FIT_*` suppression reason, cancels open touchpoints and dispatch items, blocks unsent drafts, and detaches queued campaign enrollment. A later older watermark cannot restore eligibility. The same authorization is reloaded immediately before campaign transport, so an already approved or queued item cannot send after a downgrade.
+
+The **Agora** lane applies the complete target-fit and contact gates in its server-side query. It means the company can legitimately receive an outbound action now, not merely that a contact exists.
+
+## Reimport rules
+
+Reimport updates machine-owned fields (priority, moment, offer, messaging, evidence). It preserves:
+
+- human `DO_NOT_CONTACT` and block flags
+- post-send queue states (enrolled, sent, replied, and later CRM states)
+- terminal touchpoint states (`SENT`, `DNC`, and other closed states)
+
+Target-fit is updated only by a current authoritative decision. A downgrade takes effect immediately across planning, generation, approval, enrollment, and the final send gate. Imports with an older decision watermark cannot overwrite a newer restriction.
+
+## API surface
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /confenge/status` | Whether the feature is on |
+| `GET /confenge/cockpit` | Contact funnel, Today view, action cards, and honest manual lanes |
+| `GET /confenge/today` | Executable human work only (calls, routed calls, reviews, forms) |
+| `POST /confenge/actions/:id/start` | Mark a commercial action in progress |
+| `POST /confenge/actions/:id/outcome` | Record a lean commercial outcome (never infers WON) |
+| `POST /confenge/manual-queue/:id/action` | Persist a `HumanCorrection` without auto-approve |
+| `GET /confenge/summary` | Queue counters |
+| `GET /confenge/accounts` | Staged companies |
+| `GET /confenge/accounts/:id` | Company with candidates and evidence |
+| `POST /confenge/import` | Dry-run or apply feed |
+| `GET /confenge/import-runs` | Import audit history |
+| `GET /confenge/touchpoints/review` | Human review queue (due / needs review / approved) |
+| `GET /confenge/accounts/:id/touchpoints` | Account touch timeline |
+| `POST /confenge/accounts/:id/plan` | Plan cadence chain |
+| `POST /confenge/pilot/cohort/prepare` | Prepare up to 30 selected accounts with one explicit result per account |
+| `POST /confenge/touchpoints/:id/generate` | JIT draft for a due touch |
+| `POST /confenge/touchpoints/:id/edit` | Edit (clears approval) |
+| `POST /confenge/touchpoints/:id/approve` | Human approve this touch only |
+| `POST /confenge/touchpoints/:id/decision` | Skip or reject |
+| `POST /confenge/touchpoints/:id/queue` | CAS queue then transport |
+| `POST /confenge/accounts/:id/dnc` | DNC and cancel open futures |
+
+Permissions follow contacts: view for reads, manage for import, plan, review, and send actions.
+
+## Dashboard
+
+The CONFENGE page is a PT-BR commercial operations center. It uses the CONFENGE brand and a side menu with shortcuts to critical pilot blockers, the overview, immediate actions, contact gaps, pending decisions, planning, and review. The first panel fails closed and highlights every unresolved controlled-pilot gate, including feed and channel readiness, stale context, the 30-message cohort, individual human approvals, and the dispatch safety pause. It shows prepared and approved progress against the 30-message target. Those counts come only from durable pilot memberships and their exact touchpoints, never from global organization queue totals. An unavailable membership read is a blocker. In dedicated operator mode, approval and transport also require that exact membership, so a touchpoint created outside the batch cannot enter the controlled pilot. The operator forms the pilot cohort manually by selecting up to 30 target-fit-eligible accounts. One batch request resolves exactly one eligible recipient and prepares exactly one initial draft per account. The request requires an `Idempotency-Key`; reusing that key with another account set returns a conflict. The response reports `PREPARED` or `BLOCKED` with a stable reason code, a human-readable explanation, and remediation for every selected account. A blocked account does not roll back successful accounts. Retries and duplicate clicks reuse the existing first touchpoint and draft instead of creating duplicates. A generated message only enters `NEEDS_REVIEW` when it is already technically and commercially sendable. `NEEDS_REVIEW` is human authorization, not a rewrite bucket. If the dossier cannot support a specific first contact, messageability is `NEEDS_ENRICHMENT` or `BLOCKED` and no sendable body is stored. Approval does not enqueue or send. The authorize lane requires a `VALIDATED` recipient and `READY` messageability. extra-cli contact tiers stay distinct: `DIRECT_EMAIL_VALIDATED` can become recipient `VALIDATED` and, only with messageability `READY`, enter `NEEDS_REVIEW`. `NAMED_HUMAN_MANUAL_CHANNEL` goes to `MANUAL_OUTREACH`. `ROLE_MAILBOX_VALIDATED` goes to `ROLE_MAILBOX_EXCEPTION` and is never a named human. `GENERIC_CORPORATE_CONTACT` goes to `LOW_CONFIDENCE_MANUAL`. Exhausted or blocked contacts have no automatic action. Generic institutional mailboxes stay in Exceções. Acknowledging a generic mailbox does not make it approvable. Human `APPROVE`, `EDIT`, `REJECT`, `RECIPIENT_CHANGE`, and `SKIP` on the cockpit path persist as `HumanCorrection`. If no account is eligible, the cohort area shows monitored and target-fit-suppressed counts and offers a check for a newer feed version. A synchronized snapshot with zero eligible accounts is reported as blocked, not operationally ready. Monitored accounts cannot bypass target-fit or sending-readiness gates. Each blocker action moves focus to and highlights the work area that resolves it. The dispatch blocker points to the first earlier gate until those gates are complete, then points to the resume control. The resume action stays disabled while any gate other than the final dispatch pause remains unresolved.
+
+Feed freshness uses the upstream manifest's durable `source_generated_at`, not the time at which Warmbly downloaded it. The API retains `feed_last_success_at` as a backward-compatible alias for that authoritative source time and exposes `feed_synced_at` separately for operational diagnostics. The dashboard, API and VPS status script use the same `CONFENGE_FEED_MAX_AGE` threshold, which defaults to 24 hours. Missing, stale, corrupt, or rolled-back feed state blocks cohort preparation.
+
+The page also opens with **O que fazer agora**: only executable human work (calls, routed calls, emails to review, role mailboxes, WhatsApp, professional profiles, forms). Each card shows company, person or target role, why now, offer, channel, reachability class, confidence, factual hook, evidence, warnings, channel-appropriate copy, last outcome, and next action. A corporate switchboard is labeled as the company number, never as the person's direct phone. Calls, WhatsApp, social, and forms are human-executed only. They never auto-send and never bypass the email `VALIDATED + READY → NEEDS_REVIEW → human approval → dispatch` path.
+
+The operational funnel counts imported tiers, `NEEDS_REVIEW`, the manual lanes, planned and actionable work, approvals, and post-send outcomes (`SENT` as contacted, `REPLIED`, `MEETING`) from `GET /confenge/cockpit`. Each manual-lane card shows why now, the factual hook, the recommended action, confidence, and a Copy text control. The per-message review queue shows company, exact recipient, channel, service, fact and evidence, stage number, short history, and the exact send preview. The operator can approve without dispatch, skip the stage, reject with a reason, or mark the account as do not contact.
+
+## Commercial actions
+
+Actionability is not email sendability. A named person plus a company switchboard is a `ROUTED_CALL` (actionable, not sendable). An inferred email is `INFERRED_EMAIL_REVIEW` and never enters `VALIDATED` or dispatch. A role mailbox is `ROLE_EMAIL`, not a personal inbox. Missing reachability is left empty: Warmbly does not invent an R-class from the current `confenge.outreach.v1` feed.
+
+Execution state (`PLANNED`, `READY`, `IN_PROGRESS`, `COMPLETED`, `NEEDS_FOLLOWUP`, `BLOCKED`) is separate from outcome (`GATEKEEPER_REACHED`, `REFERRED_TO_OTHER_PERSON`, `TARGET_REACHED`, `INTERESTED`, `MEETING_SCHEDULED`, `WRONG_PERSON`, `INVALID_ROUTE`, `DNC`). A gatekeeper who names Maria in contratos is new Decision-Unit intelligence, not a failed call. That outcome mints a child action linked to the parent. WON is never inferred.
+
+`HumanCorrection` is reused for person, role, route, and DNC feedback (`source = HUMAN_INTERACTION`). It never overwrites upstream evidence. `WRONG_PERSON` and `INVALID_ROUTE` block silent replan of the same person or route.
+
+The extra-cli plug contract (additive fields the future producer can fill) is documented in `docs/confenge/commercial-actions.md`.
+
+## Global dispatch governor
+
+CONFENGE outbound email and WhatsApp share one local rolling-hour cap (default 10 sends/hour, min gap 360s, timezone America/Sao_Paulo). The governor is the final gate before provider send: approved items that exceed capacity re-compete for future slots and never burst after restart.
+
+| Env | Default |
+| --- | --- |
+| `CONFENGE_GLOBAL_SENDS_PER_HOUR` | `10` |
+| `CONFENGE_MIN_SEND_GAP_SECONDS` | `360` |
+| `CONFENGE_SEND_TIMEZONE` | `America/Sao_Paulo` |
+| `CONFENGE_SEND_WINDOW_START` / `END` | `09:00` / `18:00` |
+| `CONFENGE_DISPATCH_PAUSED` | `false` |
+
+API: `GET /confenge/dispatch/status`, `POST /confenge/dispatch/pause`, `POST /confenge/dispatch/resume`.
+
+## Architecture notes
+
+See `docs/confenge/` in the repository for feed contracts, outcomes, WhatsApp policy, and the touchpoint state machine detail (`docs/confenge/touchpoints.md`).

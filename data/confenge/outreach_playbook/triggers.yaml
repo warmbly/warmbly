@@ -1,0 +1,74 @@
+outreach_doctrine_version: confenge-outreach-v2
+
+# Activation / moment triggers → why_now framing (not scores).
+triggers:
+  - code: ANUALIDADE
+    aliases: [ANNUALITY, ANIVERSARIO, ANIVERSÁRIO, REAJUSTE_JANELA]
+    why_now_template: marco temporal/anualidade do contrato sugere janela de verificação documental
+    fact_vs_claim: |
+      Annualidade is a verify-now signal, never proof of unpaid reajuste.
+    preferred_offers: [REAJUSTE_CHECK, DOCUMENT_CHECKLIST]
+    risk_flags: [annualidade_verify_only]
+    claims_to_avoid:
+      - reajuste a receber
+      - não pago
+      - credito de
+      - crédito de
+
+  - code: ADITIVO_RECENTE
+    aliases: [ADITIVO, ADDITIVE, TERMO_ADITIVO]
+    why_now_template: aditivo ou alteração recente publicada merece leitura de efeitos colaterais
+    preferred_offers: [ADITIVO_RISK_CHECK, CONTRACT_TIMELINE]
+    risk_flags: []
+
+  - code: MEDICAO
+    aliases: [MEDIÇÃO, MEDICOES, MEASUREMENT]
+    why_now_template: contexto de medição/execução em fase em que critérios e memórias importam
+    preferred_offers: [MEDICAO_CHECK, DOCUMENT_CHECKLIST]
+    risk_flags: []
+
+  - code: ENCERRAMENTO
+    aliases: [CLOSEOUT, TERMINO, FIM_VIGENCIA, VIGENCIA]
+    why_now_template: proximidade de encerramento concentra pendências que ainda podem ser regularizadas
+    preferred_offers: [CLOSEOUT_CHECK, CONTRACT_TIMELINE]
+    risk_flags: []
+
+  - code: NOVA_CONTRATACAO
+    aliases: [NOVO_CONTRATO, LICITACAO, AWARD]
+    why_now_template: nova contratação/publicação abre janela de leitura preventiva
+    preferred_offers: [CONTRACT_CHECK, PROCUREMENT_RISK_SNAPSHOT]
+    risk_flags: []
+
+  - code: PRORROGACAO
+    aliases: [PRORROGAÇÃO, EXTENSION]
+    why_now_template: prorrogação altera horizonte e pode reabrir bases de cálculo e prazos
+    preferred_offers: [CONTRACT_TIMELINE, DOCUMENT_CHECKLIST]
+    risk_flags: []
+
+  - code: DOCUMENTACAO_PUBLICADA
+    aliases: [DOC_PUBLICADA, PUBLICACAO, PNCP]
+    why_now_template: documentação recentemente publicada permite checagem pontual
+    preferred_offers: [PUBLIC_DATA_SNAPSHOT, DOCUMENT_CHECKLIST]
+    risk_flags: []
+
+  - code: DIVERGENCIA
+    aliases: [DIVERGÊNCIA, INCONSISTENCIA, INCONSISTÊNCIA]
+    why_now_template: há sinal público de possível divergência que merece validação (não conclusão)
+    preferred_offers: [CONTRACT_CHECK, CLAIM_READINESS_CHECK]
+    risk_flags: [hypothesis_language_required]
+    claims_to_avoid:
+      - irregularidade confirmada
+      - fraude
+      - o órgão errou
+
+  - code: PORTFOLIO
+    aliases: [CARTEIRA, MONITORAMENTO]
+    why_now_template: contexto de carteira/monitoramento prioriza um recorte público específico
+    preferred_offers: [PUBLIC_DATA_SNAPSHOT]
+    risk_flags: []
+
+  - code: GENERIC
+    aliases: [UNKNOWN, OTHER, ""]
+    why_now_template: momento comercial indicado pelo extra-cli (sem reinventar prioridade)
+    preferred_offers: [CONTRACT_CHECK, DOCUMENT_CHECKLIST]
+    risk_flags: [weak_trigger]

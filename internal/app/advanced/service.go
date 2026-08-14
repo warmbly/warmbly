@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
-	"net/mail"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/emailaddr"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 	"github.com/warmbly/warmbly/internal/tasksched"
@@ -43,6 +43,7 @@ type Service interface {
 	RecordInboundBounce(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, failedRecipient, reason string) *errx.Error
 
 	ShouldSuppressRecipient(ctx context.Context, organizationID uuid.UUID, recipient string) (bool, string, *errx.Error)
+	SuppressRecipient(ctx context.Context, organizationID uuid.UUID, email, reason string, source models.DeliverabilityEventType) *errx.Error
 	// Unsubscribe suppresses a contact in response to a List-Unsubscribe action
 	// (one-click POST or the manual link). Always suppresses — it's an explicit
 	// recipient request, independent of the auto-suppress settings.
@@ -117,6 +118,9 @@ type Service interface {
 	// WireInboxAgent attaches the inbox agent so an inbound human reply drafts a
 	// suggested reply for review (M10). Best-effort; nil = feature off.
 	WireInboxAgent(a InboxAgent)
+	// WireConfengeReply attributes classified replies to CONFENGE staging
+	// (outcome outbox + CRM tasks/deals). Best-effort; nil = feature off.
+	WireConfengeReply(h ConfengeReplyHook)
 
 	// EmitCampaignEvent dispatches a campaign event (e.g. from a sequence
 	// "notify" action node) to customer webhooks and wired integrations.
@@ -159,6 +163,15 @@ type service struct {
 	realtime             ReplyRealtimePublisher
 	automationRunner     AutomationRunner
 	inboxAgent           InboxAgent
+	confengeReply        ConfengeReplyHook
+}
+
+// ConfengeReplyHook is implemented by the CONFENGE outreach service. Kept as a
+// narrow interface so advanced does not import the confenge package.
+// subject/body/actor are required so commercial lexicon (DNC, referral, OOO)
+// and CRM tasks run on the real email path (not only PreClass).
+type ConfengeReplyHook interface {
+	OnClassifiedReply(ctx context.Context, orgID uuid.UUID, contactEmail, replyClass string, contactID *uuid.UUID, subject, bodyText string, actorID uuid.UUID) error
 }
 
 func NewService(
@@ -362,6 +375,29 @@ func (s *service) ShouldSuppressRecipient(ctx context.Context, organizationID uu
 		return false, "", nil
 	}
 	return true, entry.Reason, nil
+}
+
+// SuppressRecipient permanently suppresses an address for the organization.
+func (s *service) SuppressRecipient(ctx context.Context, organizationID uuid.UUID, email, reason string, source models.DeliverabilityEventType) *errx.Error {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return nil
+	}
+	if source == "" {
+		source = models.DeliverabilityEventUnsubscribe
+	}
+	if reason == "" {
+		reason = "suppressed"
+	}
+	if err := s.repo.UpsertSuppressedRecipient(ctx, &models.SuppressedRecipient{
+		OrganizationID: organizationID,
+		Email:          email,
+		Reason:         reason,
+		Source:         source,
+	}); err != nil {
+		return toErrx(err)
+	}
+	return nil
 }
 
 // Unsubscribe resolves the campaign + contact behind a List-Unsubscribe link and
@@ -663,17 +699,8 @@ func (s *service) SelectVariant(ctx context.Context, organizationID, campaignID,
 }
 
 func parseSenderEmail(addrs []string) string {
-	if len(addrs) == 0 {
-		return ""
-	}
-	primary := strings.TrimSpace(addrs[0])
-	if primary == "" {
-		return ""
-	}
-	if parsed, err := mail.ParseAddress(primary); err == nil {
-		return strings.ToLower(strings.TrimSpace(parsed.Address))
-	}
-	return strings.ToLower(strings.Trim(primary, "<>"))
+	// Normalize Hostinger/live Unibox forms (" (a@b)", "Name (a@b)") as well as RFC5322.
+	return emailaddr.ExtractFirst(addrs)
 }
 
 func cleanMessageID(mid string) string {
@@ -893,6 +920,17 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		// for every reply, so OOO/unsubscribe stay correct even when the gate
 		// skipped the model.
 		_ = s.campaignProgressRepo.RecordReplyClassification(ctx, cID, ctID, sID, replyResult.Class, replyResult.Source, replyResult.Confidence)
+
+		// CONFENGE staging: full handoff with body so commercial lexicon runs (DNC/referral/OOO).
+		if s.confengeReply != nil && account.OrganizationID != nil {
+			actorID := uuid.Nil
+			if account.UserID != "" {
+				if parsed, perr := uuid.Parse(account.UserID); perr == nil {
+					actorID = parsed
+				}
+			}
+			_ = s.confengeReply.OnClassifiedReply(ctx, *account.OrganizationID, sender, replyResult.Class, &ctID, msg.Subject, msg.Snippet, actorID)
+		}
 
 		// OOO trap fix: only a HUMAN reply stamps replied_at. An auto_reply /
 		// out_of_office must NOT count as a reply, or it would (a) trip

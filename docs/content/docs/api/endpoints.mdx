@@ -78,6 +78,10 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | POST | `/contacts/:id/research` | `AI_RESEARCH` |
 | GET | `/contacts/:id/research` | `AI_RESEARCH` |
 | POST | `/contacts/research/batch` | `AI_RESEARCH` |
+| POST | `/confenge/pilot/cohort/prepare` | `WRITE_CONTACTS` |
+| POST | `/confenge/drafts/invalidate-prior-composer` | `WRITE_CONTACTS` |
+| GET | `/confenge/cockpit` | `READ_CONTACTS` |
+| POST | `/confenge/manual-queue/:id/action` | `WRITE_CONTACTS` |
 
 `GET /contacts/custom-fields` lists the distinct custom-field keys used across your contacts (frequency-ranked), for building personalization pickers. It returns a flat string array under `data`, capped at 200 keys.
 
@@ -312,6 +316,7 @@ External MCP servers whose tools the assistant can use (see [Connect MCP tools](
 ## Public
 
 - `GET /health`
+- `POST /auth/confenge-operator/session` (dedicated loopback CONFENGE deployment only; returns `404` when operator mode is disabled)
 - `POST /webhooks/github/releases` (HMAC-SHA256 signature)
 - `POST /webhook/stripe` (Stripe signature)
 - `POST /webhook/campaign`, `/webhook/email`, `/webhook/user-email` (Google OIDC token from Cloud Tasks)

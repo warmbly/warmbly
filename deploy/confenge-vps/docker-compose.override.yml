@@ -1,0 +1,235 @@
+# CONFENGE always-on execution plane overlay for Netcup VPS.
+#
+# Usage (from repo root on the VPS, e.g. /opt/warmbly-confenge):
+#   export COMPOSE_PROJECT_NAME=warmbly-confenge
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f deploy/confenge-vps/docker-compose.override.yml \
+#     --env-file deploy/confenge-vps/.env \
+#     up -d
+#
+# Design:
+# - Reuses root self-host images/services (no second platform).
+# - Isolates app state under project name warmbly-confenge (own volumes).
+# - Binds operator UI/API to loopback only (SSH tunnel from laptop).
+# - Does NOT expose Postgres/Redis/NATS publicly.
+# - restart: unless-stopped so reboot recovers without laptop.
+# - Resource limits protect extra-cli co-tenancy.
+# - GREEN autorun / global auto-send remain OFF (env.example).
+# - No local MTA. Outbound mail is authenticated client SMTP to Hostinger.
+
+name: warmbly-confenge
+
+x-confenge-env: &confenge-env
+  APP_ENV: ${APP_ENV:-production}
+  CONFENGE_OUTREACH_ENABLED: ${CONFENGE_OUTREACH_ENABLED:-true}
+  CONFENGE_OPERATOR_MODE: ${CONFENGE_OPERATOR_MODE:-true}
+  CONFENGE_OPERATOR_USER_ID: ${CONFENGE_OPERATOR_USER_ID:-11111111-0000-0000-0000-000000000001}
+  CONFENGE_OPERATOR_ORG_ID: ${CONFENGE_OPERATOR_ORG_ID:-22222222-0000-0000-0000-000000000001}
+  CONFENGE_REQUIRE_HUMAN_APPROVAL: ${CONFENGE_REQUIRE_HUMAN_APPROVAL:-true}
+  CONFENGE_AUTO_SEND_ENABLED: ${CONFENGE_AUTO_SEND_ENABLED:-false}
+  CONFENGE_GREEN_AUTORUN_ENABLED: ${CONFENGE_GREEN_AUTORUN_ENABLED:-false}
+  CONFENGE_SENDING_PAUSED: ${CONFENGE_SENDING_PAUSED:-false}
+  CONFENGE_KILL_SWITCH_PATH: /data/confenge-ops/kill-switch
+  CONFENGE_WHATSAPP_ENABLED: ${CONFENGE_WHATSAPP_ENABLED:-false}
+  CONFENGE_WHATSAPP_AUTO_SEND_ENABLED: ${CONFENGE_WHATSAPP_AUTO_SEND_ENABLED:-false}
+  CONFENGE_WHATSAPP_AUTO_REPLY_ENABLED: ${CONFENGE_WHATSAPP_AUTO_REPLY_ENABLED:-false}
+  CONFENGE_GLOBAL_SENDS_PER_HOUR: ${CONFENGE_GLOBAL_SENDS_PER_HOUR:-10}
+  CONFENGE_MIN_SEND_GAP_SECONDS: ${CONFENGE_MIN_SEND_GAP_SECONDS:-360}
+  CONFENGE_SEND_WINDOW_START: ${CONFENGE_SEND_WINDOW_START:-09:00}
+  CONFENGE_SEND_WINDOW_END: ${CONFENGE_SEND_WINDOW_END:-18:00}
+  CONFENGE_SEND_TIMEZONE: ${CONFENGE_SEND_TIMEZONE:-America/Sao_Paulo}
+  CONFENGE_SEND_BUSINESS_DAYS_ONLY: ${CONFENGE_SEND_BUSINESS_DAYS_ONLY:-true}
+  CONFENGE_DEFAULT_CAMPAIGN_DAILY_LIMIT: ${CONFENGE_DEFAULT_CAMPAIGN_DAILY_LIMIT:-200}
+  # Documentation / inventory only in this PR (governor core unchanged).
+  HOSTINGER_PLAN_CLASS: ${HOSTINGER_PLAN_CLASS:-BUSINESS_EMAIL_STARTER}
+  CONFENGE_RATE_MODE: ${CONFENGE_RATE_MODE:-adaptive}
+  CONFENGE_RATE_START_PER_HOUR: ${CONFENGE_RATE_START_PER_HOUR:-10}
+  CONFENGE_RATE_MAX_PER_HOUR: ${CONFENGE_RATE_MAX_PER_HOUR:-20}
+  CONFENGE_DYNAMIC_PRIORITY_ENABLED: ${CONFENGE_DYNAMIC_PRIORITY_ENABLED:-true}
+  CONFENGE_FEED_SYNC_ENABLED: ${CONFENGE_FEED_SYNC_ENABLED:-true}
+  CONFENGE_FEED_SYNC_INTERVAL: ${CONFENGE_FEED_SYNC_INTERVAL:-15m}
+  CONFENGE_FEED_MAX_AGE: ${CONFENGE_FEED_MAX_AGE:-24h}
+  CONFENGE_FEED_SYNC_ORG_ID: ${CONFENGE_FEED_SYNC_ORG_ID:-22222222-0000-0000-0000-000000000001}
+  CONFENGE_EXTRA_CLI_FEED_URL: ${CONFENGE_EXTRA_CLI_FEED_URL:-https://host.docker.internal:8443/email_send_ready_feed.json}
+  CONFENGE_EXTRA_CLI_MANIFEST_URL: ${CONFENGE_EXTRA_CLI_MANIFEST_URL:-https://host.docker.internal:8443/manifest.json}
+  CONFENGE_EXTRA_CLI_ALLOWED_HOSTS: ${CONFENGE_EXTRA_CLI_ALLOWED_HOSTS:-host.docker.internal,127.0.0.1,159.195.18.88}
+  CONFENGE_OUTCOME_WEBHOOK_URL: ${CONFENGE_OUTCOME_WEBHOOK_URL:-https://host.docker.internal:8443/webhooks/warmbly/outcome}
+  CONFENGE_OUTCOME_WEBHOOK_SECRET: ${CONFENGE_OUTCOME_WEBHOOK_SECRET:-}
+  # Same-host feed uses private CA; allow only when feed is loopback/host-gateway.
+  WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS: ${WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS:-true}
+  SSL_CERT_FILE: ${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres:
+    <<: *restart
+    logging: *default-logging
+    # Never publish Postgres to the public internet.
+    ports: !override
+      - "127.0.0.1:15432:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1536M
+        reservations:
+          memory: 256M
+
+  redis:
+    <<: *restart
+    logging: *default-logging
+    ports: !override
+      - "127.0.0.1:16379:6379"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+
+  nats:
+    <<: *restart
+    logging: *default-logging
+    ports: !override
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+
+  # Mailpit stays for controlled self-smoke / approve→dispatch proofs only.
+  # Production commercial mail uses Hostinger via sealed mailbox credentials.
+  mailpit:
+    <<: *restart
+    logging: *default-logging
+    ports: !override
+      - "127.0.0.1:18025:8025"
+      - "127.0.0.1:11025:1025"
+
+  backend:
+    <<: *restart
+    logging: *default-logging
+    ports: !override
+      - "127.0.0.1:8080:8080"
+    environment:
+      <<: *confenge-env
+      # Notification relay can stay on mailpit; campaign mail uses Hostinger accounts.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      MAIL_TLS_INSECURE: ${MAIL_TLS_INSECURE:-false}
+    volumes:
+      - confenge_ops:/data/confenge-ops
+      - confenge_keys:/data/confenge-keys:ro
+      - blobs:/data/blobs
+      # GeoIP DB required by current backend boot path when GEODB_PATH is set.
+      - ${GEODB_HOST_PATH:-./data/GeoLite2-City.mmdb}:/app/data/GeoLite2-City.mmdb:ro
+      # Private CA for same-host confenge-plane HTTPS (host file or system CA copy).
+      - ${CONFENGE_FEED_CA_HOST_PATH:-./ops/feed-tls/ca-bundle.crt}:/etc/ssl/confenge-ca-bundle.crt:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "confenge-feed:host-gateway"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1536M
+        reservations:
+          memory: 384M
+
+  consumer:
+    <<: *restart
+    logging: *default-logging
+    environment:
+      <<: *confenge-env
+    volumes:
+      - confenge_ops:/data/confenge-ops
+      - blobs:/data/blobs
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+
+  worker:
+    <<: *restart
+    logging: *default-logging
+    environment:
+      <<: *confenge-env
+      # Stable worker id so backend can route validate/send commands (hostname is not a UUID).
+      WORKER_ID: ${WORKER_ID:-10c8f5e4-1c39-5b2a-9c8b-3d2f0a8b1a01}
+      WORKER_TIER: ${WORKER_TIER:-shared}
+      # Production Hostinger uses real TLS. Override only for Mailpit sink tests.
+      MAIL_TLS_INSECURE: ${MAIL_TLS_INSECURE:-false}
+    volumes:
+      - confenge_ops:/data/confenge-ops
+      # Optional signature image for CID attach (path from env at runtime).
+      - ${CONFENGE_SIGNATURE_IMAGE_HOST_PATH:-./data/confenge}:/data/confenge:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "confenge-feed:host-gateway"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+
+  tracking:
+    <<: *restart
+    logging: *default-logging
+    ports: !override
+      - "127.0.0.1:3000:3000"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+
+  realtime:
+    <<: *restart
+    logging: *default-logging
+    ports: !override
+      - "127.0.0.1:4000:4000"
+    # BEAM RSS ~500–520Mi at boot and climbs past 1Gi under load; 512M cgroup OOM-looped.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 1536M
+        reservations:
+          memory: 384M
+
+  web:
+    <<: *restart
+    logging: *default-logging
+    ports: !override
+      - "127.0.0.1:5173:80"
+    environment:
+      WARMBLY_API_URL: ${API_PUBLIC_URL:-http://127.0.0.1:18080}
+      WARMBLY_APP_URL: ${APP_URL:-http://127.0.0.1:5173}
+      WARMBLY_CONFENGE_OPERATOR_MODE: ${CONFENGE_OPERATOR_MODE:-true}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.3"
+          memory: 256M
+
+  # Admin not required for daily CONFENGE ops; keep profile-optional.
+  admin:
+    profiles: ["admin"]
+    <<: *restart
+    ports: !override
+      - "127.0.0.1:5174:80"
+
+volumes:
+  confenge_ops:
+  confenge_keys:

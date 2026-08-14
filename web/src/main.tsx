@@ -50,6 +50,8 @@ import ReferralSettingsPage from './app/app/settings/referral/page';
 import LimitsSettingsPage from './app/app/settings/limits/page';
 import RolesSettingsPage from './app/app/settings/roles/page';
 import UniboxPage from './app/app/unibox/page';
+import ConfengePage from './app/app/confenge/page';
+import ConfengeOperatorLayout from './app/app/confenge/OperatorLayout';
 import DashboardNotFound from './app/app/not-found';
 import NotFound from './app/not-found';
 
@@ -78,6 +80,7 @@ import OnboardingLayout from './app/onboarding/layout';
 import OnboardingPage from './app/onboarding/page';
 import SelectOrgPage from './app/select-org/page';
 import InviteAcceptPage from './app/invite/page';
+import { CONFENGE_OPERATOR_MODE } from './lib/information';
 import SetupPage from './app/setup/page';
 import SSOCallbackPage from './app/auth/sso/page';
 
@@ -112,7 +115,7 @@ const queryClient = new QueryClient({
     },
 });
 
-const router = createBrowserRouter([
+const standardRoutes = [
   {
     path: "/",
     element: <RootLayout />,
@@ -222,6 +225,10 @@ const router = createBrowserRouter([
           {
             path: "contacts",
             element: <ContactsPage />,
+          },
+          {
+            path: "confenge",
+            element: <ConfengePage />,
           },
           {
             path: "campaigns",
@@ -370,7 +377,22 @@ const router = createBrowserRouter([
       }
     ],
   },
-]);
+];
+
+const operatorRoutes = [
+  {
+    path: "/",
+    element: <ConfengeOperatorLayout />,
+    children: [
+      { index: true, element: <ConfengePage /> },
+      { path: "app", element: <ConfengePage /> },
+      { path: "app/confenge", element: <ConfengePage /> },
+      { path: "*", element: <Navigate to="/" replace /> },
+    ],
+  },
+];
+
+const router = createBrowserRouter(CONFENGE_OPERATOR_MODE ? operatorRoutes : standardRoutes);
 
 const rootEl = document.getElementById('root')!
 createRoot(rootEl).render(

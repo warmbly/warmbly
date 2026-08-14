@@ -19,56 +19,83 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 	}
 
 	for _, box := range folders {
-		befBox := w.SmtpImapData.FindPair(&box)
+		// SELECT is source of truth for EXISTS/UIDNEXT/HIGHESTMODSEQ. LIST-STATUS
+		// alone is insufficient on Hostinger (flat MODSEQ + empty LIST counts).
+		sel, serr := w.SmtpImapData.ImapClient.SelectForSyncInfo(box.Name)
+		if serr != nil {
+			return serr
+		}
+
+		cur := box
+		cur.NumMessages = sel.NumMessages
+		cur.UIDNext = sel.UIDNext
+		if sel.HighestModSeq != 0 {
+			cur.HighestModSeq = sel.HighestModSeq
+		}
+		if sel.UIDValidity != 0 {
+			cur.UIDValidity = sel.UIDValidity
+		}
+
+		befBox := w.SmtpImapData.FindPair(&cur)
+		plan := planMailboxSync(befBox, &cur)
+
 		if befBox == nil {
-			if err := w.mboxEvent(&box); err != nil {
+			if err := w.mboxEvent(&cur); err != nil {
 				return nil
 			}
-
-			// FETCH requires a selected mailbox; the select also arms
-			// CONDSTORE for the ChangedSince filtering. An empty mailbox is
-			// skipped: 1:* on zero messages is a server error.
-			count, err := w.SmtpImapData.ImapClient.SelectForSync(box.Name)
-			if err != nil {
-				return err
-			}
-			if count > 0 {
-				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, 0, count); err != nil {
+			if sel.NumMessages > 0 {
+				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, 0, sel.NumMessages); err != nil {
 					return err
 				}
 			}
-
-			w.SmtpImapData.Mailboxes = append(w.SmtpImapData.Mailboxes, &box)
+			stored := cur
+			w.SmtpImapData.Mailboxes = append(w.SmtpImapData.Mailboxes, &stored)
 			continue
 		}
 
-		if befBox.HighestModSeq != box.HighestModSeq {
-			w.SmtpImapData.mailbox = box.UIDValidity
-			count, err := w.SmtpImapData.ImapClient.SelectForSync(box.Name)
-			if err != nil {
-				return err
-			}
-			if count > 0 {
-				if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, befBox.HighestModSeq, count); err != nil {
-					return err
+		if plan.Fetch {
+			w.SmtpImapData.mailbox = cur.UIDValidity
+			if sel.NumMessages > 0 {
+				if plan.Full {
+					if err := w.SmtpImapData.ImapClient.FetchChanges(ctx, plan.LastModSeq, sel.NumMessages); err != nil {
+						return err
+					}
+				} else {
+					lo, hi := plan.Lo, plan.Hi
+					if hi > sel.NumMessages {
+						hi = sel.NumMessages
+					}
+					if lo < 1 {
+						lo = 1
+					}
+					if lo <= hi {
+						if err := w.SmtpImapData.ImapClient.FetchSeqWindow(ctx, plan.LastModSeq, lo, hi); err != nil {
+							return err
+						}
+					}
 				}
 			}
 		}
 
-		if befBox.HighestModSeq != box.HighestModSeq || befBox.Name != box.Name || !slices.Equal(befBox.Attrs, box.Attrs) {
-			w.mboxEvent(&box)
-
+		if plan.Fetch || befBox.Name != cur.Name || !slices.Equal(befBox.Attrs, cur.Attrs) ||
+			befBox.NumMessages != cur.NumMessages || befBox.UIDNext != cur.UIDNext ||
+			befBox.HighestModSeq != cur.HighestModSeq {
+			if plan.Fetch || befBox.Name != cur.Name || !slices.Equal(befBox.Attrs, cur.Attrs) ||
+				befBox.HighestModSeq != cur.HighestModSeq {
+				w.mboxEvent(&cur)
+			}
 			for _, ibox := range w.SmtpImapData.Mailboxes {
-				if ibox.UIDValidity == box.UIDValidity {
-					ibox.HighestModSeq = box.HighestModSeq
-					ibox.Name = box.Name
-					ibox.Attrs = box.Attrs
+				if ibox.UIDValidity == cur.UIDValidity {
+					ibox.HighestModSeq = cur.HighestModSeq
+					ibox.NumMessages = cur.NumMessages
+					ibox.UIDNext = cur.UIDNext
+					ibox.Name = cur.Name
+					ibox.Attrs = cur.Attrs
 				}
 			}
 		}
 	}
 
-	// Collect deletions first to avoid modifying the slice during iteration
 	var deleted []uint32
 outer:
 	for _, box := range w.SmtpImapData.Mailboxes {
@@ -77,7 +104,6 @@ outer:
 				continue outer
 			}
 		}
-
 		if err := w.onEvent(models.JobEventTypeMailboxDelete, &models.JobEventMailboxDelete{
 			UserID:      w.UserID,
 			EmailID:     w.ID,

@@ -41,10 +41,13 @@ type Client struct {
 
 // Attachment is a fully-resolved file to encode into an outbound message. Data
 // is the raw bytes; MimeType drives the Content-Type.
+// When ContentID is set (e.g. "sig@domain"), the part is sent as inline with
+// Content-Disposition: inline so HTML can reference cid:ContentID.
 type Attachment struct {
-	Filename string
-	MimeType string
-	Data     []byte
+	Filename  string
+	MimeType  string
+	Data      []byte
+	ContentID string // without angle brackets; empty = regular download attachment
 }
 
 func (c *Client) Send(
@@ -119,9 +122,9 @@ func (c *Client) writeAlternativeBody(msg *bytes.Buffer, headers map[string]stri
 	writer.Close()
 }
 
-// writeMixedBody writes a multipart/mixed message: a multipart/alternative
-// sub-tree for the text bodies, then one application/* part per attachment with
-// a Content-Disposition: attachment header.
+// writeMixedBody writes a multipart/mixed message: a multipart/related (or
+// alternative) sub-tree for the text bodies + inline CID images, then regular
+// download attachments.
 func (c *Client) writeMixedBody(msg *bytes.Buffer, headers map[string]string, bodyPlain, bodyHTML string, attachments []Attachment) {
 	mixed := multipart.NewWriter(msg)
 	headers["Content-Type"] = fmt.Sprintf("multipart/mixed; boundary=%s", mixed.Boundary())
@@ -131,33 +134,71 @@ func (c *Client) writeMixedBody(msg *bytes.Buffer, headers map[string]string, bo
 	}
 	fmt.Fprint(msg, "\r\n")
 
-	// multipart/alternative sub-tree for the text bodies.
-	var altBuf bytes.Buffer
-	alt := multipart.NewWriter(&altBuf)
-	writeTextParts(alt, bodyPlain, bodyHTML)
-	alt.Close()
-
-	altPart, _ := mixed.CreatePart(textproto.MIMEHeader{
-		"Content-Type": {fmt.Sprintf("multipart/alternative; boundary=%s", alt.Boundary())},
-	})
-	altPart.Write(altBuf.Bytes())
-
-	// One attachment part per file.
+	var inline, download []Attachment
 	for _, a := range attachments {
-		mimeType := a.MimeType
-		if mimeType == "" {
-			mimeType = "application/octet-stream"
+		if strings.TrimSpace(a.ContentID) != "" {
+			inline = append(inline, a)
+		} else {
+			download = append(download, a)
 		}
-		fn := mime.QEncoding.Encode("utf-8", a.Filename)
-		part, _ := mixed.CreatePart(textproto.MIMEHeader{
-			"Content-Type":              {fmt.Sprintf("%s; name=%q", mimeType, fn)},
-			"Content-Transfer-Encoding": {"base64"},
-			"Content-Disposition":       {fmt.Sprintf("attachment; filename=%q", fn)},
+	}
+
+	// Body + inline images as multipart/related (or plain alternative).
+	var bodyBuf bytes.Buffer
+	if len(inline) > 0 {
+		rel := multipart.NewWriter(&bodyBuf)
+		var altBuf bytes.Buffer
+		alt := multipart.NewWriter(&altBuf)
+		writeTextParts(alt, bodyPlain, bodyHTML)
+		alt.Close()
+		altPart, _ := rel.CreatePart(textproto.MIMEHeader{
+			"Content-Type": {fmt.Sprintf("multipart/alternative; boundary=%s", alt.Boundary())},
 		})
-		writeBase64Wrapped(part, a.Data)
+		altPart.Write(altBuf.Bytes())
+		for _, a := range inline {
+			writeAttachmentPart(rel, a, true)
+		}
+		rel.Close()
+		relPart, _ := mixed.CreatePart(textproto.MIMEHeader{
+			"Content-Type": {fmt.Sprintf("multipart/related; boundary=%s", rel.Boundary())},
+		})
+		relPart.Write(bodyBuf.Bytes())
+	} else {
+		alt := multipart.NewWriter(&bodyBuf)
+		writeTextParts(alt, bodyPlain, bodyHTML)
+		alt.Close()
+		altPart, _ := mixed.CreatePart(textproto.MIMEHeader{
+			"Content-Type": {fmt.Sprintf("multipart/alternative; boundary=%s", alt.Boundary())},
+		})
+		altPart.Write(bodyBuf.Bytes())
+	}
+
+	for _, a := range download {
+		writeAttachmentPart(mixed, a, false)
 	}
 
 	mixed.Close()
+}
+
+func writeAttachmentPart(w *multipart.Writer, a Attachment, inline bool) {
+	mimeType := a.MimeType
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	fn := mime.QEncoding.Encode("utf-8", a.Filename)
+	hdr := textproto.MIMEHeader{
+		"Content-Type":              {fmt.Sprintf("%s; name=%q", mimeType, fn)},
+		"Content-Transfer-Encoding": {"base64"},
+	}
+	if inline && strings.TrimSpace(a.ContentID) != "" {
+		cid := strings.Trim(strings.TrimSpace(a.ContentID), "<>")
+		hdr["Content-ID"] = []string{"<" + cid + ">"}
+		hdr["Content-Disposition"] = []string{fmt.Sprintf("inline; filename=%q", fn)}
+	} else {
+		hdr["Content-Disposition"] = []string{fmt.Sprintf("attachment; filename=%q", fn)}
+	}
+	part, _ := w.CreatePart(hdr)
+	writeBase64Wrapped(part, a.Data)
 }
 
 // writeTextParts writes the text/plain and optional text/html quoted-printable

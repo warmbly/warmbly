@@ -1,0 +1,136 @@
+{
+  "verdict": "READY_FOR_CONTROLLED_REAL_OUTREACH",
+  "emitted_by": "scripts/confenge_readiness_gate.py",
+  "at": "2026-08-08T03:21:48.595328+00:00",
+  "generated_at": "2026-08-08T03:21:48.595330+00:00",
+  "code_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "gates": {
+    "contact_integrity": "PASS",
+    "dnc_sticky": "PASS",
+    "reimport_sticky": "PASS",
+    "restart_no_burst": "PASS",
+    "approval_content_hash": "PASS",
+    "reply_cancels_future": "PASS",
+    "full_national_extra_cli": "PASS",
+    "real_feed_generated": "PASS",
+    "real_feed_imported": "PASS",
+    "edit_invalidation": "PASS",
+    "governor_10h": "PASS",
+    "daily_limit_non_conflicting": "PASS",
+    "mailpit_exact_delivery": "PASS",
+    "whatsapp_policy_mock": "PASS",
+    "outcome_hmac_roundtrip": "PASS",
+    "playwright_live": "PASS",
+    "ci_exact_head": "PASS"
+  },
+  "contacts": {
+    "gate": "PASS",
+    "reason": "human-verified pilot recipient list present",
+    "total_emails_sampled": 12,
+    "example_com_emails": 0,
+    "fixture_email_ratio": 0.0,
+    "enrollable_emails": 12,
+    "enrollable_non_fixture_emails": 12,
+    "discovered_emails": 12,
+    "total_phones": 10,
+    "official_source_phones": 10,
+    "whatsapp_eligible_count": 0,
+    "contact_discovered": true,
+    "email_enrollable": true,
+    "whatsapp_eligible": false,
+    "status_counts": {
+      "HUMAN_CONFIRMED": 12
+    },
+    "sample_domains": [
+      "warmbly.local",
+      "warmbly.local",
+      "warmbly.local",
+      "warmbly.local",
+      "warmbly.local",
+      "warmbly.local",
+      "warmbly.local",
+      "warmbly.local"
+    ],
+    "sample_sources": [
+      "https://brasilapi.com.br/api/cnpj/v1/",
+      "https://brasilapi.com.br/api/cnpj/v1/",
+      "https://brasilapi.com.br/api/cnpj/v1/",
+      "https://brasilapi.com.br/api/cnpj/v1/",
+      "https://brasilapi.com.br/api/cnpj/v1/",
+      "https://brasilapi.com.br/api/cnpj/v1/"
+    ],
+    "sample_classifications": [
+      {
+        "email": "confenge-pilot+00028986000108@warmbly.local",
+        "domain": "warmbly.local",
+        "status": "HUMAN_CONFIRMED",
+        "enrollable": true,
+        "discovered": true,
+        "verification_status": "HUMAN_CONFIRMED"
+      },
+      {
+        "email": "confenge-pilot+00061493000170@warmbly.local",
+        "domain": "warmbly.local",
+        "status": "HUMAN_CONFIRMED",
+        "enrollable": true,
+        "discovered": true,
+        "verification_status": "HUMAN_CONFIRMED"
+      },
+      {
+        "email": "confenge-pilot+00103582000131@warmbly.local",
+        "domain": "warmbly.local",
+        "status": "HUMAN_CONFIRMED",
+        "enrollable": true,
+        "discovered": true,
+        "verification_status": "HUMAN_CONFIRMED"
+      },
+      {
+        "email": "confenge-pilot+00220982000127@warmbly.local",
+        "domain": "warmbly.local",
+        "status": "HUMAN_CONFIRMED",
+        "enrollable": true,
+        "discovered": true,
+        "verification_status": "HUMAN_CONFIRMED"
+      },
+      {
+        "email": "confenge-pilot+00237518000143@warmbly.local",
+        "domain": "warmbly.local",
+        "status": "HUMAN_CONFIRMED",
+        "enrollable": true,
+        "discovered": true,
+        "verification_status": "HUMAN_CONFIRMED"
+      },
+      {
+        "email": "confenge-pilot+00242092000116@warmbly.local",
+        "domain": "warmbly.local",
+        "status": "HUMAN_CONFIRMED",
+        "enrollable": true,
+        "discovered": true,
+        "verification_status": "HUMAN_CONFIRMED"
+      }
+    ],
+    "pilot_list": "/mnt/d/warmbly/data/confenge-evidence/human-verified-pilot-list.json",
+    "whatsapp_eligible_note": "Public phone does not imply WhatsApp opt-in (eligible only with explicit consent fields).",
+    "note": "domain!=example.com is NOT verified. Pattern-guessed emails stay non-enrollable. contact_discovered \u2260 email_enrollable \u2260 whatsapp_eligible."
+  },
+  "sticky_reimport": {
+    "status": "PASS",
+    "critical_results": {
+      "no_burst_creates": true,
+      "dnc_sticky": true,
+      "sent_sticky": true,
+      "approval_sticky": true,
+      "replied_sticky": true,
+      "bounced_sticky": true,
+      "process_restart": true
+    },
+    "process_restart": true
+  },
+  "channel_ready": true,
+  "playwright_live": "PASS",
+  "governor_10h": "PASS",
+  "ci": "PASS",
+  "ci_exact_head": "PASS",
+  "blockers": [],
+  "report_only": false
+}

@@ -4,11 +4,12 @@ import { AuthError } from "@/lib/errors/auth";
 export interface AppError {
     error: string;
     message: string;
-    status?: number;
-    redirect?: boolean;
     /** Stable machine-readable code from the API, for branching on a specific
      *  condition rather than matching on human-readable text. */
     code?: string;
+    request_id?: string;
+    status?: number;
+    redirect?: boolean;
 }
 
 export function normalizeError(error: unknown): AppError {
@@ -39,6 +40,8 @@ export function normalizeError(error: unknown): AppError {
                 message: data.message || "Your session is invalid or expired.",
                 status,
                 redirect: true,
+                code: data.code,
+                request_id: data.request_id,
             };
         }
 
@@ -47,6 +50,7 @@ export function normalizeError(error: unknown): AppError {
             message: data.message || "Unexpected error occured.",
             status,
             code: data.code,
+            request_id: data.request_id,
         }
     }
 

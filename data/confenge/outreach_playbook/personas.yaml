@@ -1,0 +1,58 @@
+# Buyer roles — map only when role evidence exists; else UNKNOWN.
+outreach_doctrine_version: confenge-outreach-v2
+
+roles:
+  - code: OWNER_PARTNER
+    match_keywords: [sócio, socio, proprietário, proprietario, dono, founder, partner, owner]
+    priorities: [dinheiro, risco, margem, tempo, crescimento, sobrecarga]
+    tone: peer_direct
+    prefer_angles: [economic_window, risk_clarity, time_saved]
+  - code: DIRECTOR
+    match_keywords: [diretor, directora, director, superintendente, gerente geral]
+    priorities: [resultado, risco, previsibilidade, delegação]
+    tone: peer_concise
+    prefer_angles: [portfolio_risk, decision_clarity]
+  - code: COMMERCIAL
+    match_keywords: [comercial, vendas, business development, captacao, captação]
+    priorities: [oportunidade, relacionamento, pipeline]
+    tone: collaborative
+    prefer_angles: [client_retention, bid_quality]
+  - code: CONTRACTS
+    match_keywords: [contratos, contratual, administrativo, gestão de contratos, gestao de contratos]
+    priorities: [precisão, documentação, fechamento correto]
+    tone: technical_precise
+    prefer_angles: [document_checklist, process_gap]
+  - code: ENGINEERING
+    match_keywords: [engenheiro, engenheira, engenharia, técnico, tecnico, obras, fiscal]
+    priorities: [precisão técnica, documentação, risco operacional, medição]
+    tone: technical_peer
+    prefer_angles: [measurement, memory, technical_evidence]
+  - code: PLANNING
+    match_keywords: [planejamento, pmo, cronograma, orçamento, orcamento]
+    priorities: [prazo, custo, desvio]
+    tone: analytical
+    prefer_angles: [timeline, variance]
+  - code: FINANCE
+    match_keywords: [financeiro, cfo, controller, contábil, contabil, faturamento]
+    priorities: [fluxo, valores, previsibilidade, recebimento, exposição]
+    tone: quantitative_careful
+    prefer_angles: [cash_timing, exposure]
+  - code: LEGAL
+    match_keywords: [jurídico, juridico, advogado, advogada, legal]
+    priorities: [fatos, rastreabilidade, suporte técnico-documental]
+    tone: complement_not_compete
+    prefer_angles: [technical_support_to_legal, evidence_trail]
+    rules:
+      - never_position_as_legal_substitute
+  - code: PROCUREMENT
+    match_keywords: [compras, licitação, licitacao, procurement, suprimentos]
+    priorities: [conformidade, risco de contratação]
+    tone: process_aware
+    prefer_angles: [procurement_risk, documentation]
+  - code: UNKNOWN
+    match_keywords: []
+    priorities: [relevância, clareza, baixo atrito]
+    tone: neutral_professional
+    prefer_angles: [public_fact, micro_offer]
+    rules:
+      - never_infer_title_from_generic_email

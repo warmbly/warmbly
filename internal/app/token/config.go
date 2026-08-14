@@ -12,4 +12,5 @@ const (
 	AuthProviderApple    = "apple"
 	AuthProviderGoogle   = "google"
 	AuthProviderWebAuthn = "webauthn"
+	AuthProviderConfenge = "confenge_operator"
 )

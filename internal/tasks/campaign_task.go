@@ -11,6 +11,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/confenge"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -563,7 +564,115 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		Attachments:    attachmentRefs,
 	}
 
+	// CONFENGE global dispatch governor: final gate before worker/SMTP for
+	// CONFENGE-attributed campaigns (shared rolling-hour cap with WhatsApp).
+	// Switch only on GateKind — never treat infrastructure errors as DNC.
+	var confengeLease uuid.UUID
+	if s.confengeGate != nil && campaign.OrganizationID != nil {
+		gate := s.confengeGate.GateCampaignEmail(
+			ctx, *campaign.OrganizationID, campaign.Name, contact.Email,
+			campaign.ID, contact.ID, sequence.ID,
+		)
+		switch gate.Kind {
+		case confenge.GateHardBlock:
+			// DNC/bounce only: advance progress + permanent suppress so contact is not reselected.
+			log.Info().Str("campaign_id", campaign.ID.String()).Str("contact", contact.Email).Str("reason", gate.Reason).Msg("confenge gate hard-block")
+			if rerr := s.campaignProgressRepo.RecordEmailSent(ctx, campaign.ID, contact.ID, sequence.ID); rerr != nil {
+				log.Warn().Err(rerr).Str("campaign_id", campaign.ID.String()).Msg("confenge gate: failed to record skipped progress")
+			}
+			if berr := s.campaignProgressRepo.RecordEmailBounced(ctx, campaign.ID, contact.ID, sequence.ID); berr != nil {
+				log.Warn().Err(berr).Str("campaign_id", campaign.ID.String()).Msg("confenge gate: failed to mark contact blocked")
+			}
+			if s.advanced != nil && contact.Email != "" {
+				_ = s.advanced.SuppressRecipient(ctx, *campaign.OrganizationID, contact.Email, "confenge_gate:"+gate.Reason, models.DeliverabilityEventUnsubscribe)
+			}
+			_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
+			if s.campaignLogRepo != nil {
+				_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+					CampaignID: campaign.ID,
+					EventType:  "suppressed",
+					Message:    fmt.Sprintf("CONFENGE gate hard-block %s: %s", contact.Email, gate.Reason),
+					Metadata:   map[string]interface{}{"reason": gate.Reason},
+				})
+			}
+			_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+			executionStatus = "completed"
+			return nil
+
+		case confenge.GateCommercialBlock:
+			// Target-fit is reversible. Skip this detached/ineligible lead without
+			// bounce-marking or adding a sticky global recipient suppression.
+			log.Info().Str("campaign_id", campaign.ID.String()).Str("contact", contact.Email).Str("reason", gate.Reason).Msg("confenge commercial authorization blocked")
+			_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
+			if s.campaignLogRepo != nil {
+				_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+					CampaignID: campaign.ID, EventType: "target_fit_blocked",
+					Message:  fmt.Sprintf("CONFENGE target-fit blocked %s: %s", contact.Email, gate.Reason),
+					Metadata: map[string]interface{}{"reason": gate.Reason},
+				})
+			}
+			_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+			executionStatus = "completed"
+			return nil
+
+		case confenge.GateAlready:
+			// Idempotent success: ensure progress advances even if a prior crash
+			// committed the governor slot without RecordEmailSent.
+			if rerr := s.campaignProgressRepo.RecordEmailSent(ctx, campaign.ID, contact.ID, sequence.ID); rerr != nil {
+				log.Warn().Err(rerr).Str("campaign_id", campaign.ID.String()).Msg("confenge gate: already-sent progress update failed")
+			}
+			_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "completed")
+			_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+			executionStatus = "completed"
+			return nil
+
+		case confenge.GateDeferred:
+			// No slot: reschedule for next free slot (no burst, no suppress).
+			when := gate.NextSlot
+			if when.IsZero() {
+				when = time.Now().UTC().Add(time.Hour)
+			}
+			if when.Before(time.Now().UTC()) {
+				when = time.Now().UTC().Add(time.Minute)
+			}
+			log.Info().Str("campaign_id", campaign.ID.String()).Str("reason", gate.Reason).Time("next_slot", when).Msg("confenge gate deferred send")
+			_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_daily_limit")
+			if cerr := s.createCampaignTask(ctx, campaign.ID, accountID, when); cerr != nil {
+				log.Warn().Err(cerr).Msg("failed to reschedule after confenge gate defer")
+			}
+			executionStatus = "completed"
+			return nil
+
+		case confenge.GateTransient:
+			// Infrastructure blip: retry with backoff — never suppress or bounce-mark.
+			errMsg := gate.Reason
+			if gate.Err != nil {
+				errMsg = gate.Err.Error()
+			}
+			log.Warn().Str("campaign_id", campaign.ID.String()).Str("error", errMsg).Msg("confenge gate transient failure")
+			s.taskRepo.RecordTaskFailure(ctx, taskID, "confenge_gate_transient", errMsg)
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending")
+			executionStatus = "failed"
+			return errx.InternalError()
+
+		case confenge.GateProceed:
+			confengeLease = gate.ReservationID
+
+		case confenge.GateBypass:
+			// Non-CONFENGE or governor unwired: send without global lease.
+		default:
+			// Unknown kind: fail closed as transient (no permanent suppress).
+			log.Warn().Int("kind", int(gate.Kind)).Str("campaign_id", campaign.ID.String()).Msg("confenge gate unknown kind")
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending")
+			executionStatus = "failed"
+			return errx.InternalError()
+		}
+	}
+
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
+		if confengeLease != uuid.Nil && s.confengeGate != nil {
+			s.confengeGate.ReleaseCampaignEmail(ctx, confengeLease, err.Error())
+		}
 		// Failed to send to worker, record failure
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Send failed", err.Error())
 		if s.campaignLogRepo != nil {
@@ -621,6 +730,8 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		return nil
 	}
 
+	// The CONFENGE lease is committed only by the provider-confirmed EMAIL_SENT
+	// result. Kafka publication alone is not proof that SMTP accepted the mail.
 	// STEP 16: Store sent email metadata (encrypted) in database
 	// Note: Full email stored in Cassandra by email sync service
 	taskRecord.MessageID = messageID

@@ -1,0 +1,6 @@
+DROP INDEX IF EXISTS outreach_commercial_actions_history_idx;
+DROP INDEX IF EXISTS outreach_commercial_actions_account_idx;
+DROP INDEX IF EXISTS outreach_commercial_actions_today_idx;
+DROP INDEX IF EXISTS outreach_commercial_actions_org_open_route_uidx;
+DROP INDEX IF EXISTS outreach_commercial_actions_org_idempotency_uidx;
+DROP TABLE IF EXISTS outreach_commercial_actions;

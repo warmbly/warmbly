@@ -26,6 +26,9 @@ export function TextInput({
     className,
     onKeyDown,
     onBlur,
+    testId,
+    ariaLabel,
+    "data-testid": dataTestId,
 }: {
     value: string;
     onChange: (v: string) => void;
@@ -39,6 +42,9 @@ export function TextInput({
     // text into something else (a clock value, a number) so the parse happens
     // once the user settles rather than on every keystroke.
     onBlur?: () => void;
+    testId?: string;
+    "data-testid"?: string;
+    ariaLabel?: string;
 }) {
     return (
         <input
@@ -50,6 +56,8 @@ export function TextInput({
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
             onBlur={onBlur}
+            data-testid={dataTestId ?? testId}
+            aria-label={ariaLabel}
             className={cn(base, "min-w-0", className)}
         />
     );

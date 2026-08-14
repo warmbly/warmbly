@@ -137,15 +137,18 @@ func (w *WMail) recordSyncEvent(ctx context.Context, count int) error {
 	return nil
 }
 
-// onRateLimitExceeded handles rate limit exceeded - terminates account and sends event
-func (w *WMail) onRateLimitExceeded(ctx context.Context, err *errx.MailError) {
-	log.Error().
+// onSyncRateLimited pauses this sync pass without killing the mailbox.
+// First IMAP backfill of a real Hostinger/SMTP inbox can exceed the burst
+// window legitimately; terminating would brick send/sync for commercial use.
+// Abuse still gets a durable warning event; hard terminate stays for send-path
+// failures that set TerminateFunc from account-level handlers.
+func (w *WMail) onSyncRateLimited(ctx context.Context, err *errx.MailError) {
+	log.Warn().
 		Str("email_id", w.ID.String()).
 		Str("user_id", w.UserID.String()).
 		Str("error_code", string(err.Code)).
-		Msg("Rate limit exceeded - terminating email account")
+		Msg("IMAP sync rate limit exceeded - pausing this pass (mailbox stays active)")
 
-	// Send rate limit event to jobsService via Kafka
 	userInfo := err.GetUserErrorInfo()
 	errorEvent := models.EmailErrorEvent{
 		TaskID:         "",
@@ -154,8 +157,8 @@ func (w *WMail) onRateLimitExceeded(ctx context.Context, err *errx.MailError) {
 		ErrorCode:      string(err.Code),
 		ErrorType:      string(err.Type),
 		ResolveMethod:  string(err.ResolveMethod),
-		Message:        err.Message,
-		UserVisible:    err.IsUserVisible(),
+		Message:        "sync_throttled: " + err.Message,
+		UserVisible:    false,
 		UserTitle:      userInfo.Title,
 		UserMessage:    userInfo.Message,
 		ActionRequired: userInfo.ActionRequired,
@@ -163,21 +166,17 @@ func (w *WMail) onRateLimitExceeded(ctx context.Context, err *errx.MailError) {
 	}
 
 	if sendErr := w.onEvent(models.JobEventTypeEmailRateLimited, errorEvent); sendErr != nil {
-		log.Error().Err(sendErr).Msg("Failed to send rate limit event")
+		log.Error().Err(sendErr).Msg("Failed to send sync rate limit event")
 	}
-
-	// Terminate the email account
-	if w.TerminateFunc != nil {
-		w.TerminateFunc()
-	}
+	// Do not call TerminateFunc: keep SMTP send path alive.
 }
 
-// CheckAndRecordSync checks rate limits and records sync events
-// Returns MailError if rate limit exceeded (and triggers termination)
+// CheckAndRecordSync checks rate limits and records sync events.
+// Returns MailError if rate limit exceeded (caller should stop this pass).
 func (w *WMail) CheckAndRecordSync(ctx context.Context, newEmailCount int) *errx.MailError {
 	// Check rate limit first
 	if err := w.checkSyncRateLimit(ctx); err != nil {
-		w.onRateLimitExceeded(ctx, err)
+		w.onSyncRateLimited(ctx, err)
 		return err
 	}
 

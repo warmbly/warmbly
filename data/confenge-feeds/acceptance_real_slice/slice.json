@@ -1,0 +1,3116 @@
+{
+  "schema_version": "confenge.outreach.v1",
+  "generated_at": "2026-08-08T01:34:29.666535+00:00",
+  "source": {
+    "profile_id": "confenge",
+    "profile_version": "2.0.0",
+    "repo_sha": "7cf9593d68af",
+    "run_id": "run-e4dd67baf24eed62",
+    "snapshot_hash": "a90bb0f2eebd5ecb98d0ba5db111301f479a98f71aef088dad72b0f22af87437",
+    "system": "extra-cli",
+    "acceptance_provenance": {
+      "schema": "confenge.outreach.acceptance_slice.v1",
+      "generated_at": "2026-08-08T01:34:29.645264+00:00",
+      "extra_cli_sha": "7cf9593d68afad00006f578cc7324aee506cebe2",
+      "warmbly_sha_at_copy": "7c27e100d5f070a198659d7f697df78268f07b50",
+      "source_run_id": "run-e4dd67baf24eed62",
+      "pipeline_manifest_path": "/mnt/d/extra-cli/artifacts/confenge/full-national-2026-08-07/reports/pipeline-manifest.json",
+      "full_national_manifest_hash": "908a697f95eb4127a867f258cb9d260bf4a78e36dd710a5c331d2bd201121cdf",
+      "universe_manifest_hash": "0a24a827b9aa9c11888a6cacebe86a2a32bdee4e1f6b289b4af13c73d9560e5a",
+      "universe_eligibles": 48748,
+      "full_scale": true,
+      "sample_selection": {
+        "method": "first_N_from_chunk_0000_preferring_order_stable",
+        "count": 12,
+        "source_chunk": "chunk_0000.json",
+        "source_chunk_hash": "14b45947a806606aedce3be0412ee561bca7d147b3845b5f4c58b5d722ca7e1f",
+        "note": "Deterministic slice of real pipeline feed; transport emails rewritten to operator sink; original contacts preserved as metadata."
+      },
+      "bridge_output_hash": "14b45947a806606aedce3be0412ee561bca7d147b3845b5f4c58b5d722ca7e1f",
+      "never_send_to_real_leads": true
+    },
+    "note": "Acceptance slice derived from full national pipeline; sinks only."
+  },
+  "pagination": {
+    "chunk_index": 0,
+    "has_more": false,
+    "lead_count": 12
+  },
+  "leads": [
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00028986000108",
+        "cnpj_root": "00028986",
+        "municipio": "Vila Velha",
+        "nome_fantasia": "",
+        "razao_social": "ELEVADORES ATLAS SCHINDLER LTDA.",
+        "uf": "ES",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+554335218420",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "9704348693c644a4",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00028986000108",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00028986000108@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+554335218420",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "9704348693c644a4",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "JUSTICA FEDERAL DE 1A. INSTANCIA - PE",
+          "end_date": null,
+          "id": "25394409",
+          "object": "Execução de serviços de manutenção preventiva, preditiva e corretiva, com reposição de peças, em elevadores para passageiros, marca Atlas Schindler, instalados ",
+          "publication_date": "2026-05-26",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 1290685.0
+        },
+        {
+          "agency": "MINISTERIO PUBLICO DO EST. DO RIO DE JANEIRO",
+          "end_date": null,
+          "id": "18374313",
+          "object": "Contratação de sociedade empresária especializada no fornecimento, com instalação, de 1 (uma) botoeira de cabina com tecnologia tec e display de vídeo (CJ COP5 ",
+          "publication_date": "2026-05-05",
+          "start_date": null,
+          "uf": "RJ",
+          "value_brl": 6532.2
+        },
+        {
+          "agency": "TRIBUNAL DE JUSTIÇA DO ESTADO DO AMAZONAS",
+          "end_date": null,
+          "id": "10746641",
+          "object": "Contratação de serviço de engenharia referente ao fornecimento, instalação e manutenção de elevadores de passageiros, incluindo todos os componentes e acessório",
+          "publication_date": "2026-04-16",
+          "start_date": null,
+          "uf": "AM",
+          "value_brl": 1109175.0
+        },
+        {
+          "agency": "FESP - FUNDAÇÃO ESTATAL DE SAÚDE DO PANTANAL",
+          "end_date": null,
+          "id": "6013863",
+          "object": "Contratação de empresa especializada para a prestação de serviços de manutenção preventiva e corretiva com troca de peças, se necessário, nos elevadores Atlas S",
+          "publication_date": "2026-04-15",
+          "start_date": null,
+          "uf": "MS",
+          "value_brl": 56580.52
+        },
+        {
+          "agency": "FUNDAÇÃO SANTA CABRINI",
+          "end_date": null,
+          "id": "5030153",
+          "object": "O objeto é a prestação de serviço de manutenção corretiva e preventiva de elevador, tendo prazo de contrato previsto para 36 (trinta e seis) meses, com fornecim",
+          "publication_date": "2026-03-26",
+          "start_date": null,
+          "uf": "RJ",
+          "value_brl": 16200.0
+        },
+        {
+          "agency": "2900 - Secretaria Municipal de Educação",
+          "end_date": null,
+          "id": "5032897",
+          "object": "O presente Termo de Contrato tem por objeto a contratação, por inexigibilidade de licitação, de   empresa   especializada   na   prestação   de   serviços   de ",
+          "publication_date": "2026-03-06",
+          "start_date": null,
+          "uf": "TO",
+          "value_brl": null
+        },
+        {
+          "agency": "Unidade administrativa",
+          "end_date": null,
+          "id": "15384592",
+          "object": "Contratação de empresa para prestação de serviços técnicos especializados de manutenção\r\npreventiva e corretiva integral para elevador da marca ATLAS SCHINDLER,",
+          "publication_date": "2026-01-20",
+          "start_date": null,
+          "uf": "PR",
+          "value_brl": 47546.67
+        },
+        {
+          "agency": "MINISTERIO PUBLICO DO EST. DO RIO DE JANEIRO",
+          "end_date": null,
+          "id": "18146683",
+          "object": "Serviço de fornecimento, com instalação de 01 (um) terminal externo de chamada de elevador da marca ATLAS SCHINDLER, a ser destinado ao 8º pavimento do Edifício",
+          "publication_date": "2026-01-12",
+          "start_date": null,
+          "uf": "RJ",
+          "value_brl": 21121.08
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: AM, MS, PE, PR, RJ, TO.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: AM, MS, PE, PR, RJ, TO.",
+          "title": "UFs observadas nos contratos do input: AM, MS, PE, PR, RJ, TO.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-national-footprint",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "title": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 5,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00028986000108",
+      "_pilot_sink_email": "confenge-pilot+00028986000108@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+554335218420",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "9704348693c644a4",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00061493000170",
+        "cnpj_root": "00061493",
+        "municipio": "Carlos Barbosa",
+        "nome_fantasia": "",
+        "razao_social": "ENCOPAV ENGENHARIA LTDA",
+        "uf": "RS",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+555135791100",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "4c0021c20864032d",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00061493000170",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00061493000170@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+555135791100",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "4c0021c20864032d",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "Unidades Administrativas  Subordinadas",
+          "end_date": null,
+          "id": "22709500",
+          "object": "Contratação de empresa, através de empreitada global (material + mão de obra) para execução da obra de pavimentação em Concreto Betuminoso Usinado À Quente (C.B",
+          "publication_date": "2026-05-13",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 2839000.0
+        },
+        {
+          "agency": "Prefeitura Municipal de Feliz",
+          "end_date": null,
+          "id": "22235621",
+          "object": "PRESTACAO DE SERVICOS DE REPAROS EM VIAS PAVIMENTAS COM CBUQ  CONFORME ATA DE REGISTRO DE PRECOS 058 2024",
+          "publication_date": "2026-05-12",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 299939.34
+        },
+        {
+          "agency": "Secretaria de Obras e Trânsito",
+          "end_date": null,
+          "id": "25385175",
+          "object": "Contratação de empresa, sob regime de empreitada por preço unitário, para execução de obra de pavimentação asfáltica da rua Ranieri Petrini.",
+          "publication_date": "2026-05-07",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 1484201.39
+        },
+        {
+          "agency": "Prefeitura Municipal de São Vendelino",
+          "end_date": null,
+          "id": "25444944",
+          "object": "Contratação de empresa especializada para execução de obras de engenharia, com fornecimento de materiais, sob regime de execução de empreitada por preço global ",
+          "publication_date": "2026-05-04",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 1446527.73
+        },
+        {
+          "agency": "Unidades Administrativas  Subordinadas",
+          "end_date": null,
+          "id": "64156",
+          "object": "Contratação de empresa especializada, através de empreitada global (material + mão de obra) para execução de obra de pavimentação em concreto betuminoso usinado",
+          "publication_date": "2026-04-01",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 2080975.12
+        },
+        {
+          "agency": "SUP. REG. DO DNIT NO EST.DO RIO GRANDE DO SUL",
+          "end_date": null,
+          "id": "15388381",
+          "object": "O OBJETO DO PRESENTE INSTRUMENTO É A CONTRATAÇÃO DE SERVIÇOS DE ENGENHARIA DE MANUTENÇÃO E RECUPERAÇÃO NA RODOVIA BR116/RS, COM VISTAS A EXECUÇÃO DE PLANO ANUAL",
+          "publication_date": "2026-02-27",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 61700000.0
+        },
+        {
+          "agency": "SUP. REG. DO DNIT NO EST.DO RIO GRANDE DO SUL",
+          "end_date": null,
+          "id": "15368463",
+          "object": "O OBJETO DO PRESENTE INSTRUMENTO É A CONTRATAÇÃO DE SERVIÇOS DE MANUTENÇÃO E RECUPERAÇÃO NA RODOVIA BR-116/RS, SEGMENTO DO KM 529,400 AO KM 659,900, EXTENSÃO TO",
+          "publication_date": "2026-02-27",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 39670000.0
+        },
+        {
+          "agency": "Unidades Administrativas  Subordinadas",
+          "end_date": null,
+          "id": "18176040",
+          "object": "Contratação de empresa especializada, sob o regime de empreitada global, para a execução de obra de pavimentação de vias urbanas no Município de Cruz Alta, com ",
+          "publication_date": "2026-01-16",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 7429800.0
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: RS.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: RS.",
+          "title": "UFs observadas nos contratos do input: RS.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 10,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00061493000170",
+      "_pilot_sink_email": "confenge-pilot+00061493000170@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+555135791100",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "4c0021c20864032d",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00103582000131",
+        "cnpj_root": "00103582",
+        "municipio": "Salvador",
+        "nome_fantasia": "",
+        "razao_social": "Engevix Engenharia e Projetos S/A",
+        "uf": "BA",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+551121060100",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "d79b7c331748a437",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00103582000131",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00103582000131@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+551121060100",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "d79b7c331748a437",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "DEPARTAMENTO NACIONAL INFRAEST.DE TRANSPORTES",
+          "end_date": null,
+          "id": "7993894",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA A ELABORAÇÃO DOS PROJETOS BÁSICOS E EXECUTIVOS DE ENGENHARIA PARA OBRAS DE IMPLANTAÇÃO EM PISTA SIMPLES E PAVIMENTAÇÃO",
+          "publication_date": "2025-06-06",
+          "start_date": null,
+          "uf": "DF",
+          "value_brl": 4815528.49
+        },
+        {
+          "agency": "DEPARTAMENTO NACIONAL INFRAEST.DE TRANSPORTES",
+          "end_date": null,
+          "id": "7796276",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA A ELABORAÇÃO DOS PROJETOS BÁSICOS E EXECUTIVOS DE ENGENHARIA PARA OBRAS DE IMPLANTAÇÃO EM PISTA SIMPLES E PAVIMENTAÇÃO",
+          "publication_date": "2025-06-06",
+          "start_date": null,
+          "uf": "DF",
+          "value_brl": 4063962.86
+        },
+        {
+          "agency": "SUP. REG. DO DNIT NO ESTADO DE ALAGOAS",
+          "end_date": null,
+          "id": "2413834",
+          "object": "PRESTAÇÃO DE SERVIÇOS DE SUPERVISÃO DA EXECUÇÃO DAS OBRAS DE IMPLANTAÇÃO, DUPLICAÇÃO, PAVIMENTAÇÃO, ADEQUAÇÃO DE CAPACIDADE, MELHORIA DA SEGURANÇA E ELIMINAÇÃO ",
+          "publication_date": "2025-02-18",
+          "start_date": null,
+          "uf": "AL",
+          "value_brl": 36690348.48
+        },
+        {
+          "agency": "SECRETARIA MUNICIPAL DE OBRAS E INFRAESTRUTURA",
+          "end_date": null,
+          "id": "1218625",
+          "object": "DJ-024/24 - Serviço técnico profissional especializado para a avaliação da conformidade de projetos estruturais de empreendimentos de infraestruturaEXECUÇÃO DE ",
+          "publication_date": "2024-07-30",
+          "start_date": null,
+          "uf": "MG",
+          "value_brl": 2874800.93
+        },
+        {
+          "agency": "Secretaria de Estado da Infraestrutura e Mobilidade",
+          "end_date": "2023-12-27",
+          "id": "25588732",
+          "object": "COORDENAÇÃO, SUPERVISÃO,  CONTROLE  DE  SUBSÍDIOS  À  FISCALIZAÇÃO DE  OBRAS RODOVIÁRIAS  NA  EXECUÇÃO  DAS  OBRAS  DE  MANUTENÇÃO,  PONTES COLOMBO MACHADO SALL",
+          "publication_date": "2022-01-20",
+          "start_date": null,
+          "uf": "SC",
+          "value_brl": 1239779.74
+        },
+        {
+          "agency": "Secretaria de Estado da Infraestrutura e Mobilidade",
+          "end_date": "2022-09-02",
+          "id": "25587872",
+          "object": "Elaboração da Revisão de Projeto de Engenharia Rodoviária para Obras de Implantação e Pavimentação da Rodovia SC-108, trecho: Angelina - Major Gercino, com exte",
+          "publication_date": "2021-02-10",
+          "start_date": null,
+          "uf": "SC",
+          "value_brl": 565599.99
+        },
+        {
+          "agency": "Secretaria de Estado da Infraestrutura e Mobilidade",
+          "end_date": "2022-08-22",
+          "id": "25587991",
+          "object": "SUPERVISÃO E CONTROLE DE SUBSÍDIOS À FISCALIZAÇÃO DE OBRAS RODOVIÁRIAS DA EXECUÇÃO DOS TRABALHOS RODOVIÁRIOS NA RODOVIA SC 390, TRECHO CELSO RAMOS - ANITA GARIB",
+          "publication_date": "2021-01-12",
+          "start_date": null,
+          "uf": "SC",
+          "value_brl": 1252999.32
+        },
+        {
+          "agency": "Secretaria de Estado da Infraestrutura e Mobilidade",
+          "end_date": "2022-05-10",
+          "id": "25588259",
+          "object": "Elaboração projeto engenharia para obras de restauração com aumento de capacidade da Rod.  SC-477, trecho: Canoinhas (Entr.  BR-280) - (Entr.  BR-116) p/ Monte ",
+          "publication_date": "2020-12-15",
+          "start_date": null,
+          "uf": "SC",
+          "value_brl": 657732.78
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: AL, DF, MG, SC.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: AL, DF, MG, SC.",
+          "title": "UFs observadas nos contratos do input: AL, DF, MG, SC.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.age+reajuste_evidence",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "8 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "id": "cf-mature-no-reajuste",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "8 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "title": "8 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-reajuste-angle",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Hipótese: pode haver janela para estruturação de pleito de reajuste; requer validação documental da cláusula e índices aplicáveis.",
+          "title": "Hipótese: pode haver janela para estruturação de pleito de reajuste; requer validação documental da cláusula e índices aplicáveis.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-national-footprint",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "title": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs",
+          "cf-mature-no-reajuste"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 15,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00103582000131",
+      "_pilot_sink_email": "confenge-pilot+00103582000131@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+551121060100",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "d79b7c331748a437",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00220982000127",
+        "cnpj_root": "00220982",
+        "municipio": "Ipê",
+        "nome_fantasia": "",
+        "razao_social": "MATT CONSTRUTORA LTDA",
+        "uf": "RS",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+555433591119",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "bf89b011cb077e49",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00220982000127",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00220982000127@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+555433591119",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "bf89b011cb077e49",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "Prefeitura Municipal de Veranópolis",
+          "end_date": null,
+          "id": "22712372",
+          "object": "PAVIMENTAÇÃO ASFÁLTICA EM CBUQ NA ESTRADA VELHA DA VACARIA, PLANO DE AÇÃO Nº 09032024-066018/2024 Emenda Parlamentar 202428610007",
+          "publication_date": "2026-05-18",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 424063.27
+        },
+        {
+          "agency": "Município de Relvado",
+          "end_date": null,
+          "id": "18362362",
+          "object": "EXECUÇÃO DE 600,00M DE EXTENSÃO DE OBRA DE PAVIMENTAÇÃO ASFALTICA COM C.B.U.Q NA ESTRADA DE LIGAÇÃO ENTRE RELVADO E PUTINGA NO MUNICÍPIO DE RELVADO/RS",
+          "publication_date": "2026-05-13",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 1028249.67
+        },
+        {
+          "agency": "Município de Relvado",
+          "end_date": null,
+          "id": "18362767",
+          "object": "EXECUÇÃO DE 6.987,37M DE EXTENSÃO DE OBRA DE PAVIMENTAÇÃO ASFALTICA COM C.B.U.Q NA ESTRADA DE ACESSO A LINHA CAPOEIRINHAS-TRECHO DE LIGAÇÃO ENTRE RELVADO E COQU",
+          "publication_date": "2026-05-11",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 14928544.14
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL",
+          "end_date": null,
+          "id": "17544767",
+          "object": "CONTRATACAO DE EMPRESA PARA A EXECUCAO DE PAVIMENTACAO ASFALTICA EM CONCRETO BETUMINOSO USINADO A QUENTE  CBUQ  NA ESTRADA DA COMUNIDADE CAPELA SAO VALENTIM LIN",
+          "publication_date": "2026-05-11",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 1270096.18
+        },
+        {
+          "agency": "Prefeitura Municipal de Veranópolis",
+          "end_date": null,
+          "id": "22711962",
+          "object": "PAVIMENTAÇÃO ASFÁSTICA EM CBUQ NA RUA CASEMIRO ECCO",
+          "publication_date": "2026-05-11",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 696006.44
+        },
+        {
+          "agency": "Municipio de Victor Graeff",
+          "end_date": null,
+          "id": "15350141",
+          "object": "Execucao de obra  empreitada global com fornecimento de material e mao de obra  visando a pavimentacao asfaltica na Rua 23 de outubro  trecho que liga ao Loteam",
+          "publication_date": "2026-02-24",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 753985.52
+        },
+        {
+          "agency": "Município de Nova Prata",
+          "end_date": null,
+          "id": "15406886",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA A EXECUÇÃO DE UMA CICLOVIA COM PAVIMENTAÇÃO ASFÁLTICA NA RUA BUARQUE DE MACEDO NO MUNICÍPIO DE NOVA PRATA/RS.",
+          "publication_date": "2026-02-06",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 334000.0
+        },
+        {
+          "agency": "Prefeitura Municipal de Montenegro",
+          "end_date": null,
+          "id": "15225240",
+          "object": "Contratação de empresa especializada para o fornecimento de materiais e mão de obra para a execução de obra de capeamento asfáltico e sinalização viária das rua",
+          "publication_date": "2026-02-04",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 1849678.19
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: RS.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: RS.",
+          "title": "UFs observadas nos contratos do input: RS.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 20,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00220982000127",
+      "_pilot_sink_email": "confenge-pilot+00220982000127@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+555433591119",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "bf89b011cb077e49",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00237518000143",
+        "cnpj_root": "00237518",
+        "municipio": "Goiânia",
+        "nome_fantasia": "",
+        "razao_social": "CONSORCIO CME DUPLICACAO GO222",
+        "uf": "GO",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+556240060123",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "91124185fbd60a9b",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00237518000143",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00237518000143@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+556240060123",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "91124185fbd60a9b",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "AGENCIA GOIANA DE INFRAEST.E TRANSPORTES/GO",
+          "end_date": null,
+          "id": "25400656",
+          "object": "CONTRATAÇÃO INTEGRADA PARA A ELABORAÇÃO DE PROJETOS E EXECUÇÃO DAS OBRAS DE DUPLICAÇÃO, PAVIMENTAÇÃO, RESTAURAÇÃO E OAES DA RODOVIA GO-222, TRECHO: ENTR. GO-080",
+          "publication_date": "2026-05-26",
+          "start_date": null,
+          "uf": "GO",
+          "value_brl": 315798003.67
+        },
+        {
+          "agency": "Agência Estadual de Gestão de Empreendimentos",
+          "end_date": null,
+          "id": "24574453",
+          "object": "Constitui objeto do presente instrumento, a CONTRATAÇÃO INTEGRADA DE EMPRESA DE ENGENHARIA PARA ELABORAÇÃO DE PROJETO BÁSICO E EXECUTIVO DE ENGENHARIA E EXECUÇÃ",
+          "publication_date": "2026-05-21",
+          "start_date": null,
+          "uf": "MS",
+          "value_brl": 96317049.48
+        },
+        {
+          "agency": "AGENCIA GOIANA DE INFRAEST.E TRANSPORTES/GO",
+          "end_date": null,
+          "id": "18360796",
+          "object": "Elaboração dos projetos e execução das obras de Duplicação, Restauração e Obras de Arte Especiais da Rodovia GO-536, Trecho: Entr. GO-020 / Av. Progresso (Senad",
+          "publication_date": "2026-05-12",
+          "start_date": null,
+          "uf": "GO",
+          "value_brl": 64317286.97
+        },
+        {
+          "agency": "AGENCIA GOIANA DE INFRAEST.E TRANSPORTES/GO",
+          "end_date": null,
+          "id": "5984720",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA RESTAURAÇÃO DA RODOVIA GO-330, TRECHO: ORIZONA/ PIRES DO RIO/GO-020 (PRÓX. RONCADOR) COM EXTENSÃO DE 42,49 KM, NESTE E",
+          "publication_date": "2026-04-29",
+          "start_date": null,
+          "uf": "GO",
+          "value_brl": 63867816.92
+        },
+        {
+          "agency": "AGENCIA GOIANA DE INFRAEST.E TRANSPORTES/GO",
+          "end_date": null,
+          "id": "15463438",
+          "object": "ELABORAÇÃO PROJETO E EXECUÇÃO DOS SERVIÇOS DE REABILITAÇÃO DO PAVIMENTO DA RODOVIA GO-410. TRECHO: EDÉIA/PORTEIRÃO, COM EXTENSÃO TOTAL DE 61,60 KM, ESTADO DE GO",
+          "publication_date": "2026-03-11",
+          "start_date": null,
+          "uf": "GO",
+          "value_brl": 106754984.97
+        },
+        {
+          "agency": "AGENCIA GOIANA DE INFRAEST.E TRANSPORTES/GO",
+          "end_date": null,
+          "id": "15180957",
+          "object": "Restauração - Região Centro Norte - LOTE 04, Rodovia GO-060, Trecho: Goiânia / Entr. GO 469 (Trindade), com extensão de 32,54 km, neste Estado.",
+          "publication_date": "2026-01-27",
+          "start_date": null,
+          "uf": "GO",
+          "value_brl": 66117077.0
+        },
+        {
+          "agency": "DEPART.NACIONAL DE INFRA-ESTR. DE TRANSPORTE",
+          "end_date": null,
+          "id": "8633016",
+          "object": "EXECUÇÃO DOS SERVIÇOS NECESSÁRIOS DE RECUPERAÇÃO E MANUTENÇÃO/CONSERVAÇÃO RODOVIÁRIA NA RODOVIA BR-262/MS, SEGMENTOS KM 366,80 AO KM 489,60; SOB JURISDIÇÃO DA S",
+          "publication_date": "2025-09-25",
+          "start_date": null,
+          "uf": "MS",
+          "value_brl": 169999000.0
+        },
+        {
+          "agency": "SECRETARIA DE ESTADO DE INFRA-ESTRUTURA",
+          "end_date": null,
+          "id": "8653574",
+          "object": "Contratação de empresa especializada para execução do serviço de Microrrevestimento Asfáltico a Frio com emulsão modificada com polímero com espessura de 0,80 c",
+          "publication_date": "2025-09-23",
+          "start_date": null,
+          "uf": "MT",
+          "value_brl": 49393701.3
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: GO, MS, MT.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: GO, MS, MT.",
+          "title": "UFs observadas nos contratos do input: GO, MS, MT.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-national-footprint",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "title": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 25,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00237518000143",
+      "_pilot_sink_email": "confenge-pilot+00237518000143@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+556240060123",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "91124185fbd60a9b",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00242092000116",
+        "cnpj_root": "00242092",
+        "municipio": "Brasília",
+        "nome_fantasia": "",
+        "razao_social": "MULTICON ENGENHARIA LTDA",
+        "uf": "DF",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+551132562333",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "35f0f83f2fb78859",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00242092000116",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00242092000116@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+551132562333",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "35f0f83f2fb78859",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "GRUPAMENTO DE APOIO DO DF",
+          "end_date": null,
+          "id": "60560",
+          "object": "O OBJETO DO PRESENTE INTSTRUMENTO É A CONTRATAÇÃO DE EMPRESA ESPECIALIZADA EM SERVIÇOS DE ENGENHARIA PARA EXECUÇÃO DE REFORMA, CONTEMPLANDO INTERVENÇÕES NAS INS",
+          "publication_date": "2026-03-29",
+          "start_date": null,
+          "uf": "DF",
+          "value_brl": 1200064.67
+        },
+        {
+          "agency": "GRUPAMENTO DE APOIO DO DF",
+          "end_date": null,
+          "id": "62416",
+          "object": "CONTRATAÇÃO DE OBRA DE CONSTRUÇÃO DE TRÊS PONTES EM CONCRETO NO CAMPO DE PROVAS BRIGADEIRO VELLOSO (CPBV)",
+          "publication_date": "2026-03-12",
+          "start_date": null,
+          "uf": "DF",
+          "value_brl": 15600379.0
+        },
+        {
+          "agency": "FUNDAC DO PATRIM HIST ARTISTICO DE PE",
+          "end_date": null,
+          "id": "24421100",
+          "object": "Contratação de empresa especializada no ramo da construção civil, visando a inserção no sistema de Registro de Preços, pelo prazo de 24 (vinte e quatro) meses, ",
+          "publication_date": "2026-03-04",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 63752.19
+        },
+        {
+          "agency": "SECRETARIA DE IMPRENSA",
+          "end_date": null,
+          "id": "15099011",
+          "object": "Constitui objeto do presente CONTRATO a Contratação de empresa especializada no ramo da construção civil, para a execução de serviços de engenharia de manutençã",
+          "publication_date": "2025-12-30",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 78327.73
+        },
+        {
+          "agency": "FUNDAC DO PATRIM HIST ARTISTICO DE PE",
+          "end_date": null,
+          "id": "8978152",
+          "object": "Contratação de serviços de engenharia de manutenção corretiva para os equipamentos FUNDARPE (Sede) / Pasárgada / Cinema São Luiz / Casa da Cultura / Casa Olivei",
+          "publication_date": "2025-12-17",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 117295.9
+        },
+        {
+          "agency": "FUNDAC DO PATRIM HIST ARTISTICO DE PE",
+          "end_date": null,
+          "id": "8949434",
+          "object": "Contratação de serviços de engenharia de manutenção corretiva da Recuperação e requalificação do Cinema São Luiz, a fim de atender as demandas sob a responsabil",
+          "publication_date": "2025-12-16",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 63752.19
+        },
+        {
+          "agency": "DEPARTAMENTO GERAL - 120101",
+          "end_date": null,
+          "id": "8939005",
+          "object": "Contratação de empresa especializada no ramo da construção civil, visando a inserção no sistema de Registro de Preços, pelo prazo de 24 (vinte e quatro) meses, ",
+          "publication_date": "2025-12-05",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 1892192.88
+        },
+        {
+          "agency": "FUNDAC DO PATRIM HIST ARTISTICO DE PE",
+          "end_date": null,
+          "id": "585405",
+          "object": "Contratação de serviços de engenharia de manutenção corretiva no CINE THEATRO GUARANY, na cidade de Triunfo/PE, prazo de execução do serviço será de 03 (TRÊS) m",
+          "publication_date": "2025-10-30",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 203855.48
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: DF, PE.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: DF, PE.",
+          "title": "UFs observadas nos contratos do input: DF, PE.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 30,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00242092000116",
+      "_pilot_sink_email": "confenge-pilot+00242092000116@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+551132562333",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "35f0f83f2fb78859",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00338885000133",
+        "cnpj_root": "00338885",
+        "municipio": "Arapiraca",
+        "nome_fantasia": "",
+        "razao_social": "NOVATEC CONSTRUÇOES E EMPREENDIMENTOS LTDA",
+        "uf": "AL",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+558133225522",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "42367a84e2fd0741",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00338885000133",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00338885000133@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+558133225522",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "42367a84e2fd0741",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "DEPARTAMENTO ESTADUAL DE INFRAESTRUTURA RODOVIÁRIA DE SERGIPE",
+          "end_date": null,
+          "id": "25402029",
+          "object": "CONTRATAÇÃO SEMI-INTEGRADA DE EMPRESA PARA ELABORAÇÃO DO PROJETO EXECUTIVO DE ENGENHARIA E EXECUÇÃO DAS OBRAS DE IMPLANTAÇÃO E PAVIMENTAÇÃO DOS ACESSOS 212 (POV",
+          "publication_date": "2026-05-06",
+          "start_date": null,
+          "uf": "SE",
+          "value_brl": 9322858.02
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL DE FREI PAULO",
+          "end_date": null,
+          "id": "5038708",
+          "object": "Contratação de empresa especializada em obras e serviços de engenharia para realizar a pavimentação asfáltica em ruas na Serra Redonda, no Município de Frei Pau",
+          "publication_date": "2026-04-29",
+          "start_date": null,
+          "uf": "SE",
+          "value_brl": 610637.58
+        },
+        {
+          "agency": "DEPARTAMENTO ESTADUAL DE INFRAESTRUTURA RODOVIÁRIA DE SERGIPE",
+          "end_date": null,
+          "id": "9041395",
+          "object": "IMPLANTAÇÃO E PAVIMENTAÇÃO DO SEGMENTO DA RODOVIA SE-303, TRECHO: UHE XINGÓ / ENTR. SE-230, COM EXTENSÃO DE 14,64 KM, NO MUNICÍPIO DE CANINDÉ DO SÃO FRANCISCO, ",
+          "publication_date": "2026-04-28",
+          "start_date": null,
+          "uf": "SE",
+          "value_brl": 67431357.71
+        },
+        {
+          "agency": "EAL-SECRET DE EST DE TRANSPORTE E DES URBANO",
+          "end_date": null,
+          "id": "5032614",
+          "object": "Contratação de empresa especializada para a execução de obra para a Implantação e Recapeamento do Acesso ao Povoado Capim Grosso e Povoado Entrada, no Município",
+          "publication_date": "2026-04-27",
+          "start_date": null,
+          "uf": "AL",
+          "value_brl": 11387460.0
+        },
+        {
+          "agency": "SEC EXECUTIVA DE RECURSOS HIDRICOS",
+          "end_date": null,
+          "id": "10740754",
+          "object": "CONTRATAÇÃO DE EMPRESA DE ENGENHARIA PARA EXECUÇÃO DAS OBRAS DE RECUPERAÇÃO DA BARRAGEM DE JAZIGO, MUNICÍPIO DE SERRA TALHADA/PE, nas condições estabelecidas no",
+          "publication_date": "2026-04-23",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 18975156.78
+        },
+        {
+          "agency": "MAL-PREFEITURA MUNICIPAL DE ARAPIRACA",
+          "end_date": null,
+          "id": "59028",
+          "object": "Obras e serviços de melhoramento dos sistemas de infraestrutura do Residencial Vale da Perucaba, no \nmunicípio de Arapiraca/AL",
+          "publication_date": "2026-04-01",
+          "start_date": null,
+          "uf": "AL",
+          "value_brl": 26455156.68
+        },
+        {
+          "agency": "DEPARTAMENTO ESTADUAL DE INFRAESTRUTURA RODOVIÁRIA DE SERGIPE",
+          "end_date": null,
+          "id": "292047",
+          "object": "IMPLANTAÇÃO E PAVIMENTAÇÃO DO ACESSO RODOVIÁRIO À SE-200 NO KM 210,36, COM EXTENSÃO APROXIMADA DE 1,00 KM, NO MUNICÍPIO DE CANINDÉ DO SÃO FRANCISCO, NESTE ESTAD",
+          "publication_date": "2026-03-23",
+          "start_date": null,
+          "uf": "SE",
+          "value_brl": 2091125.83
+        },
+        {
+          "agency": "SECRETARIA DE ESTADO DO DESENVOLVIMENTO URBANO E INFRAESTRUTURA",
+          "end_date": null,
+          "id": "15291543",
+          "object": "EXECUÇÃO DE OBRAS/SERVIÇOS DE PAVIMENTAÇÃO, DRENAGEM E URBANISMO NO CONJUNTO SANTO ANTÔNIO, LOCALIZADO NO MUNICÍPIO DE ESTÂNCIA/SE.",
+          "publication_date": "2026-02-09",
+          "start_date": null,
+          "uf": "SE",
+          "value_brl": 11868672.45
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: AL, PE, SE.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: AL, PE, SE.",
+          "title": "UFs observadas nos contratos do input: AL, PE, SE.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-national-footprint",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "title": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 35,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00338885000133",
+      "_pilot_sink_email": "confenge-pilot+00338885000133@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+558133225522",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "42367a84e2fd0741",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00472805000138",
+        "cnpj_root": "00472805",
+        "municipio": "Jacuizinho",
+        "nome_fantasia": "",
+        "razao_social": "Traçado Construções e Serviços Ltda.",
+        "uf": "RS",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+555421071000",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "3e68b5fa5ef9c67e",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00472805000138",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00472805000138@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+555421071000",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "3e68b5fa5ef9c67e",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "MUNICÍPIO DE PONTE PRETA - RS",
+          "end_date": null,
+          "id": "25556619",
+          "object": "Contratação de empresa especializada para execução de obras de pavimentação asfáltica e de passeio com blocos intertratavados, na forma de empreitada global, co",
+          "publication_date": "2026-05-29",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 276128.31
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL DE FAGUNDES VARELA",
+          "end_date": null,
+          "id": "24417906",
+          "object": "Pavimentacao asfaltica nova em CBUQ e sinalizacao Horizontal e Vertical em trecho de estrada municipal  ligacao entre o municipio de Fagundes Varela ate a divis",
+          "publication_date": "2026-05-15",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 1556993.2
+        },
+        {
+          "agency": "Prefeitura Municipal de Coxilha",
+          "end_date": null,
+          "id": "12484966",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA NO FORNECIMENTO DE MATERIAIS E MÃO DE OBRA PARA EXECUÇÃO DE PAVIMENTAÇÃO ASFÁLTICA, CONFORME ESPECIFICAÇÕES DEFINIDAS NO ME",
+          "publication_date": "2026-05-07",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 767502.41
+        },
+        {
+          "agency": "Prefeitura Municipal de Coxilha",
+          "end_date": null,
+          "id": "12485054",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA NO FORNECIMENTO DE MATERIAIS E MÃO DE OBRA PARA EXECUÇÃO DE PAVIMENTAÇÃO ASFÁLTICA, CONFORME ESPECIFICAÇÕES DEFINIDAS NO ME",
+          "publication_date": "2026-05-07",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 391568.77
+        },
+        {
+          "agency": "PM Jacutinga",
+          "end_date": null,
+          "id": "5976331",
+          "object": "Pavimentação Asfáltica no trecho que interliga o Município de Jacutinga - RS com o Município de Quatro Irmãos  RS, conforme Convênio Administrativo nº AJ/CN/003",
+          "publication_date": "2026-04-14",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 17123125.09
+        },
+        {
+          "agency": "Prefeitura Municipal de Quatro Irmãos",
+          "end_date": null,
+          "id": "5029550",
+          "object": "Contratação de Empresa para Execução de Pavimentação Asfáltica na Rua Leão Kwitko (Plano de Ação 090032023) e Pavimentação da Rua Gregório Ioshpe e Construção d",
+          "publication_date": "2026-04-09",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 259372.0
+        },
+        {
+          "agency": "MUNICIPIO DE IMIGRANTE",
+          "end_date": null,
+          "id": "15465381",
+          "object": "Constitui objeto da presente licitação a contratação de empresa para a reconstrução da ciclovia localizada na VRS-863, denominada Rodovia Paulo Gilberto Altmann",
+          "publication_date": "2026-03-12",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 3782835.94
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL DE ERECHIM",
+          "end_date": null,
+          "id": "15354645",
+          "object": "Contratação de empresa especializada para executar a revitalização de vias urbanas com microrrevestimento nas Avenidas, Maurício Cardoso e Sete de Setembro, atr",
+          "publication_date": "2026-02-25",
+          "start_date": null,
+          "uf": "RS",
+          "value_brl": 2255100.0
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: RS.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: RS.",
+          "title": "UFs observadas nos contratos do input: RS.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-national-footprint",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "title": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 40,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00472805000138",
+      "_pilot_sink_email": "confenge-pilot+00472805000138@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+555421071000",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "3e68b5fa5ef9c67e",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00507949000182",
+        "cnpj_root": "00507949",
+        "municipio": "Cuiabá",
+        "nome_fantasia": "",
+        "razao_social": "JATOBETON ENGENHARIA LTDA",
+        "uf": "MT",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "source_contact_id": "pilot-sink-00507949000182",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00507949000182@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": []
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "DEPARTAMENTO NACIONAL INFRAEST.DE TRANSPORTES",
+          "end_date": null,
+          "id": "547830",
+          "object": "CONTRATAÇÃO DE EMPRESA PARA ELABORAÇÃO DOS ESTUDOS, PROJETOS BÁSICO E EXECUTIVO DE ENGENHARIA, EXECUÇÃO DAS OBRAS DE REABILITAÇÃO DE 01 (UMA) OBRA DE ARTE ESPEC",
+          "publication_date": "2025-10-30",
+          "start_date": null,
+          "uf": "DF",
+          "value_brl": 9527127.48
+        },
+        {
+          "agency": "SUP. REG. DO DNIT NO ESTADO DA PARAIBA",
+          "end_date": null,
+          "id": "350973",
+          "object": "O OBJETO DO PRESENTE INSTRUMENTO É A CONTRATAÇÃO DE EMPRESA PARA ELABORAÇÃO DOS ESTUDOS, PROJETOS BÁSICO E EXECUTIVO DE ENGENHARIA E EXECUÇÃO DAS OBRAS DE REABI",
+          "publication_date": "2025-10-15",
+          "start_date": null,
+          "uf": "PB",
+          "value_brl": 6944929.01
+        },
+        {
+          "agency": "SECRETARIA DE ESTADO DE INFRA-ESTRUTURA",
+          "end_date": null,
+          "id": "325896",
+          "object": "Contratação Semi-Integrada de empresa de engenharia para execução dos serviços necessários para elaboração do projeto executivo de engenharia e Execução de obra",
+          "publication_date": "2025-10-10",
+          "start_date": null,
+          "uf": "MT",
+          "value_brl": 14750781.02
+        },
+        {
+          "agency": "DEPARTAMENTO NACIONAL INFRAEST.DE TRANSPORTES",
+          "end_date": null,
+          "id": "8271522",
+          "object": "CONTRATAÇÃO DE EMPRESA PARA ELABORAÇÃO DOS ESTUDOS, PROJETOS BÁSICO E EXECUTIVO DE ENGENHARIA, EXECUÇÃO DAS OBRAS DE REABILITAÇÃO DE 03 (TRÊS) OBRAS DE ARTE ESP",
+          "publication_date": "2025-08-28",
+          "start_date": null,
+          "uf": "DF",
+          "value_brl": 9147685.47
+        },
+        {
+          "agency": "DEPARTAMENTO NACIONAL INFRAEST.DE TRANSPORTES",
+          "end_date": null,
+          "id": "751293",
+          "object": "CONTRATAÇÃO DE EMPRESA PARA ELABORAÇÃO DOS ESTUDOS, PROJETOS BÁSICO E EXECUTIVO DE ENGENHARIA, EXECUÇÃO DAS OBRAS DE REABILITAÇÃO DE 01 (UMA) OBRA DE ARTE ESPEC",
+          "publication_date": "2025-05-30",
+          "start_date": null,
+          "uf": "DF",
+          "value_brl": 8468000.0
+        },
+        {
+          "agency": "EMLURB - AUTARQUIA DE MANUTENÇÃO E LIMPEZA URBANA",
+          "end_date": null,
+          "id": "2533498",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA DE ENGENHARIA PARA EXECUÇÃO DE SERVIÇOS DE\r\nRECUPERAÇÃO ESTRUTURAL DA PONTE/VIADUTO JOSÉ DE BARROS LIMA (PONTE JOANA BEZERR",
+          "publication_date": "2024-10-22",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 17200000.0
+        },
+        {
+          "agency": "EMLURB - AUTARQUIA DE MANUTENÇÃO E LIMPEZA URBANA",
+          "end_date": null,
+          "id": "2495375",
+          "object": "A CONTRATAÇÃO DE EMPRESA ESPECIALIZADA DE ENGENHARIA PARA EXECUÇÃO DE SERVIÇOS ESPECIAIS DE RECUPERAÇÃO E REFORÇO ESTRUTURAL DA ANTIGA PONTE GIRATÓRIA (PONTE 12",
+          "publication_date": "2024-09-27",
+          "start_date": null,
+          "uf": "PE",
+          "value_brl": 14350000.0
+        },
+        {
+          "agency": "Secretaria de Estado da Infraestrutura e Mobilidade",
+          "end_date": "2023-10-24",
+          "id": "25588428",
+          "object": "EXECUÇÃO DOS SERV. DE REAB. DOS BLOCOS DE COROAMENTO DAS PONTES COLOMBO M. SALLES E PEDRO I. CAMPOS (BL. EIXOS 3 AO 10 - EIXOS 3, 4, 5, 6, 7, 7N, 8, 9 E 10) EM ",
+          "publication_date": "2022-05-11",
+          "start_date": null,
+          "uf": "SC",
+          "value_brl": 13431952.78
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: DF, MT, PB, PE, SC.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: DF, MT, PB, PE, SC.",
+          "title": "UFs observadas nos contratos do input: DF, MT, PB, PE, SC.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.age+reajuste_evidence",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "4 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "id": "cf-mature-no-reajuste",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "4 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "title": "4 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-reajuste-angle",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Hipótese: pode haver janela para estruturação de pleito de reajuste; requer validação documental da cláusula e índices aplicáveis.",
+          "title": "Hipótese: pode haver janela para estruturação de pleito de reajuste; requer validação documental da cláusula e índices aplicáveis.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-national-footprint",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "title": "Sinais públicos de operação multi-UF/nacional observados; não se afirma estrutura interna completa sem fonte organizacional.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs",
+          "cf-mature-no-reajuste"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 163,
+        "score": 98.60344905524676,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00507949000182",
+      "_pilot_sink_email": "confenge-pilot+00507949000182@warmbly.local",
+      "_original_contacts": []
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00604322000140",
+        "cnpj_root": "00604322",
+        "municipio": "Brasília",
+        "nome_fantasia": "",
+        "razao_social": "ENGESPRO ENGENHARIA LTDA",
+        "uf": "DF",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+552122333914",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "620389e0e2446916",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00604322000140",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00604322000140@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+552122333914",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "620389e0e2446916",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "SUPERINTENDENCIA REG.NO ESTADO DO AMAPA/DNIT",
+          "end_date": null,
+          "id": "2427717",
+          "object": "OBJETO: PRESTAÇÃO DE SERVIÇOS TÉCNICOS DE APOIO E ASSESSORAMENTO EM ENGENHARIA CONSULTIVA PARA ATUAÇÃO NAS ÁREAS DE PLANEJAMENTO E GESTÃO PÚBLICA DAS DEMANDAS R",
+          "publication_date": "2025-02-14",
+          "start_date": null,
+          "uf": "AP",
+          "value_brl": 4416986696.78
+        },
+        {
+          "agency": "DEPARTAMENTO NACIONAL INFRAEST.DE TRANSPORTES",
+          "end_date": null,
+          "id": "2135993",
+          "object": "Construção, Manutenção, Conservação e Execução de Obras e Serviços relativos à Coleta de Dados de Veículos Pesados e Monitoramento de Operações através de Posto",
+          "publication_date": "2025-01-16",
+          "start_date": null,
+          "uf": "DF",
+          "value_brl": 63761187.83
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 2 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 2 contrato(s) no input.",
+          "title": "Portfólio público observado com 2 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: AP, DF.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: AP, DF.",
+          "title": "UFs observadas nos contratos do input: AP, DF.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.age+reajuste_evidence",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "2 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "id": "cf-mature-no-reajuste",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "2 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "title": "2 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-reajuste-angle",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Hipótese: pode haver janela para estruturação de pleito de reajuste; requer validação documental da cláusula e índices aplicáveis.",
+          "title": "Hipótese: pode haver janela para estruturação de pleito de reajuste; requer validação documental da cláusula e índices aplicáveis.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Sugiro um diagnóstico contratual B2G curto para mapear riscos e priorizar encaixes.",
+        "fact_to_mention": "Portfólio público observado com 2 contrato(s) no input.",
+        "question_to_ask": "Quais contratos ou frentes B2G mais preocupam a liderança técnica neste momento (mesmo que a gente ainda não tenha o dossiê completo)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs",
+          "cf-mature-no-reajuste"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "diagnostico_focal_abm",
+        "rationale": "Melhor ângulo atual é diagnóstico contratual B2G / discovery.",
+        "service_code": "diagnostico_contratual_b2g",
+        "service_name": "Diagnóstico contratual B2G"
+      },
+      "priority": {
+        "confidence": "MEDIUM",
+        "rank": 79,
+        "score": 47.8,
+        "tier": "MEDIUM"
+      },
+      "source_lead_id": "cnpj:00604322000140",
+      "_pilot_sink_email": "confenge-pilot+00604322000140@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+552122333914",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "620389e0e2446916",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00635391000110",
+        "cnpj_root": "00635391",
+        "municipio": "Goiânia",
+        "nome_fantasia": "",
+        "razao_social": "CONSÓRCIO TECCON - SÃO BENTO - EGETRA",
+        "uf": "GO",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "source_contact_id": "pilot-sink-00635391000110",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00635391000110@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": []
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "AGENCIA GOIANA DE INFRAEST.E TRANSPORTES/GO",
+          "end_date": null,
+          "id": "22702688",
+          "object": "Elaboração de projetos e execução das obras de pavimentação da rodovia GO-455, trecho: Entr. BR-153 - Trevinho / Colinaçu (Pau Terra), com extensão de 19,59 km.",
+          "publication_date": "2026-05-18",
+          "start_date": null,
+          "uf": "GO",
+          "value_brl": 44698585.77
+        },
+        {
+          "agency": "AGENCIA GOIANA DE INFRAEST.E TRANSPORTES/GO",
+          "end_date": null,
+          "id": "22708414",
+          "object": "Elaboração dos projetos e execução das obras de pavimentação da rodovia GO-206, trecho: Chapadão do Céu / Divisa MS, com extensão de 9,52 km.",
+          "publication_date": "2026-05-18",
+          "start_date": null,
+          "uf": "GO",
+          "value_brl": 17662499.37
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 2 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 2 contrato(s) no input.",
+          "title": "Portfólio público observado com 2 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: GO.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: GO.",
+          "title": "UFs observadas nos contratos do input: GO.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "WEAK_INFERENCE",
+          "excerpt": "",
+          "id": "wi-lean-hypothesis",
+          "location": "",
+          "reliability": "LOW",
+          "synthesis": "Hipótese fraca de estrutura enxuta com base em: regionalidade/poucos UFs no material observado; funções concentradas sinalizadas. Ausência de sinais robustos ≠ prova de ausência de estrutura interna.",
+          "title": "Hipótese fraca de estrutura enxuta com base em: regionalidade/poucos UFs no material observado; funções concentradas sinalizadas. Ausência de sinais robustos ≠ prova de ausência de estrutura interna.",
+          "type": "WEAK_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Posso dimensionar um reforço temporário de backoffice técnico/contratual por sprint.",
+        "fact_to_mention": "Portfólio público observado com 2 contrato(s) no input.",
+        "question_to_ask": "Onde a carga contratual mais aperta o time (medições, aditivos, reajuste, propostas)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "outsourcing_operacional_temporario",
+        "rationale": "Hipótese de estrutura enxuta com carga contratual observada: reforço temporário de backoffice só porque evidências regionais/de volume sustentam — não por score fixo.",
+        "service_code": "reforco_temporario_backoffice",
+        "service_name": "Reforço temporário de backoffice técnico/contratual"
+      },
+      "priority": {
+        "confidence": "MEDIUM",
+        "rank": 159,
+        "score": 46.68682857494768,
+        "tier": "MEDIUM"
+      },
+      "source_lead_id": "cnpj:00635391000110",
+      "_pilot_sink_email": "confenge-pilot+00635391000110@warmbly.local",
+      "_original_contacts": []
+    },
+    {
+      "commercial_state": "NEW",
+      "company": {
+        "cnpj14": "00638562000165",
+        "cnpj_root": "00638562",
+        "municipio": "Vitória",
+        "nome_fantasia": "",
+        "razao_social": "AMF ENGENHARIA E SERVICO LTDA",
+        "uf": "ES",
+        "website": ""
+      },
+      "contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+552732514695",
+          "recommended": false,
+          "role": "",
+          "source_contact_id": "ed2e03fc5e7c4bdd",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        },
+        {
+          "source_contact_id": "pilot-sink-00638562000165",
+          "name": "Operador CONFENGE (sink controlado)",
+          "role": "pilot_sink",
+          "email": "confenge-pilot+00638562000165@warmbly.local",
+          "phone": "",
+          "linkedin_url": "",
+          "source_url": "operator-human-verified-pilot-list",
+          "source_document": "CONFENGE_HUMAN_VERIFIED_PILOT_LIST",
+          "source_date": "2026-08-08",
+          "verification_status": "HUMAN_CONFIRMED",
+          "confidence": "HIGH",
+          "recommended": true,
+          "_transport_sink": true,
+          "_original_contacts": [
+            {
+              "confidence": "LOW",
+              "email": "",
+              "linkedin_url": "",
+              "name": "",
+              "phone": "+552732514695",
+              "recommended": true,
+              "role": "",
+              "source_contact_id": "ed2e03fc5e7c4bdd",
+              "source_date": "2026-08-08",
+              "source_document": "",
+              "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+              "verification_status": "OFFICIAL_SOURCE"
+            }
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "agency": "PREFEITURA MUNICIPAL DE COLATINA",
+          "end_date": null,
+          "id": "25555219",
+          "object": "ELABORACAO DO PROJETO EXECUTIVO DE ENGENHARIA E EXECUCAO DE OBRAS E SERVICOS DE INFRAESTRUTURA URBANA DE LIGACAO DOS BAIRROS VICENTE SOELLA E AMARILIO CAIADO FR",
+          "publication_date": "2026-06-02",
+          "start_date": null,
+          "uf": "ES",
+          "value_brl": 19333294.63
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL DE SAO ROQUE DO CANAA",
+          "end_date": null,
+          "id": "15120594",
+          "object": "Contratacao de empresa especializada para execucao de obra, objetivando a construcao de uma capela mortuaria localizada a Rua olindina Belo Pereira, s/nO, Bairr",
+          "publication_date": "2026-01-21",
+          "start_date": null,
+          "uf": "ES",
+          "value_brl": 3522583.24
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL DE SAO ROQUE DO CANAA",
+          "end_date": null,
+          "id": "267674",
+          "object": "Constitui objeto do presente instrumento a contratacao de empresa especializada para a execucao dos servicos de construcao de um Centro de Convivencia do Idoso,",
+          "publication_date": "2025-10-07",
+          "start_date": null,
+          "uf": "ES",
+          "value_brl": 910129.46
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL DE SAO ROQUE DO CANAA",
+          "end_date": null,
+          "id": "15361186",
+          "object": "Contratacao de empresa para execucao de obra objetivando a construcao de uma creche destinada ao atendimento de criancas de 0 a 3 anos de idade, a fim de cumpri",
+          "publication_date": "2025-09-23",
+          "start_date": null,
+          "uf": "ES",
+          "value_brl": 4744671.88
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL DE VITORIA",
+          "end_date": null,
+          "id": "8023193",
+          "object": "EXECUÇÃO DAS OBRAS DE RECUPERAÇÃO DAS JUNTAS DE DILATAÇÃO DA PONTE CARLOS LINDENBERG (OU PONTE DA PASSAGEM), LOCALIZADA NA AVENIDA FERNANDO FERRARI, BAIRRO GOIA",
+          "publication_date": "2025-08-01",
+          "start_date": null,
+          "uf": "ES",
+          "value_brl": 684831.3
+        },
+        {
+          "agency": "PREFEITURA MUNICIPAL DE DORES DO RIO PRETO",
+          "end_date": null,
+          "id": "8097784",
+          "object": "Contratacao de empresa especializada para execucao de obras de construcao de 01 (uma) escola de 09 (nove) salas de aula (terrea), no Corrego Agua Cumprida, Dist",
+          "publication_date": "2025-07-07",
+          "start_date": null,
+          "uf": "ES",
+          "value_brl": 9006145.94
+        },
+        {
+          "agency": "EES-DEPARTAMENTO EDIFICAÇÕES E RODOVIAS DO ES",
+          "end_date": null,
+          "id": "221022",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA PARA REFORMA E AMPLIAÇÃO DA EEEFM GERALDO VARGAS NOGUEIRA, LOCALIZADA NO MUNICÍPIO DE COLATINA/ES, NA ÁREA DE ABRANGÊNCIA D",
+          "publication_date": "2025-04-14",
+          "start_date": null,
+          "uf": "ES",
+          "value_brl": 15066580.51
+        },
+        {
+          "agency": "EES-DEPARTAMENTO EDIFICAÇÕES E RODOVIAS DO ES",
+          "end_date": null,
+          "id": "2333373",
+          "object": "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA  PARA RECONSTRUÇÃO DA EEEFM CORONEL OLÍMPIO CUNHA, LOCALIZADA NO MUNICÍPIO DE CARIACICA/ES, NA ÁREA DE ABRANGÊNCIA DA SUPER",
+          "publication_date": "2025-02-10",
+          "start_date": null,
+          "uf": "ES",
+          "value_brl": 17061053.28
+        }
+      ],
+      "evidence": [
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "Portfólio público observado com 8 contrato(s) no input.",
+          "id": "cf-portfolio-count",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "Portfólio público observado com 8 contrato(s) no input.",
+          "title": "Portfólio público observado com 8 contrato(s) no input.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.uf",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "UFs observadas nos contratos do input: ES.",
+          "id": "cf-ufs",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "UFs observadas nos contratos do input: ES.",
+          "title": "UFs observadas nos contratos do input: ES.",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "input.contracts.age+reajuste_evidence",
+          "epistemic_class": "CONFIRMED_FACT",
+          "excerpt": "4 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "id": "cf-mature-no-reajuste",
+          "location": "",
+          "reliability": "HIGH",
+          "synthesis": "4 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "title": "4 contrato(s) com vigência ≥ 365 dias sem prova de reajuste no input (ausência de prova ≠ prova de ausência de reajuste).",
+          "type": "CONFIRMED_FACT",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-reajuste-angle",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Hipótese: pode haver janela para estruturação de pleito de reajuste; requer validação documental da cláusula e índices aplicáveis.",
+          "title": "Hipótese: pode haver janela para estruturação de pleito de reajuste; requer validação documental da cláusula e índices aplicáveis.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-robust-public-org-signals",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "title": "Sinais públicos de unidade jurídica/claims/compliance ou equipe grande; hipótese de estrutura robusta — não é fato de organograma.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        },
+        {
+          "consulted_at": "2026-08-08T01:32:48Z",
+          "date": "",
+          "document": "",
+          "epistemic_class": "STRONG_INFERENCE",
+          "excerpt": "",
+          "id": "si-high-recurrence",
+          "location": "",
+          "reliability": "MEDIUM",
+          "synthesis": "Alta recorrência contratual pública observada ou sinalizada.",
+          "title": "Alta recorrência contratual pública observada ou sinalizada.",
+          "type": "STRONG_INFERENCE",
+          "url": ""
+        }
+      ],
+      "messaging_context": {
+        "claims_to_avoid": [
+          "Afirmar estrutura interna (organograma, headcount, área jurídica) sem fonte pública.",
+          "Tratar ausência de dado como prova de ausência de reajuste, aditivo ou equipe.",
+          "Linguagem insider ('sei que o gerente X…', 'vocês não têm claims…').",
+          "Prometer resultado de pleito, vitória em licitação ou reequilíbrio garantido.",
+          "Qualificar/desqualificar a empresa como lead; o produto é ângulo de abordagem.",
+          "Usar score genérico como se fosse evidência contratual.",
+          "Oferecer outsourcing pleno ou dizer que a conta 'não tem estrutura'.",
+          "garantia de economia",
+          "intenção de compra confirmada",
+          "lead quente",
+          "propensão de compra",
+          "demanda comprovada de consultoria"
+        ],
+        "cta": "Envio escopo de auditoria focal (composições + BDI) para um contrato-alvo.",
+        "fact_to_mention": "Portfólio público observado com 8 contrato(s) no input.",
+        "question_to_ask": "Há interesse em uma segunda opinião independente sobre planilha/BDI de um pacote específico (sem substituir a equipe interna)?",
+        "why_now": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal.",
+        "why_now_code": "PORTFOLIO_REVIEW"
+      },
+      "moment": {
+        "code": "PORTFOLIO_REVIEW",
+        "confidence": "MEDIUM",
+        "evidence_ids": [
+          "cf-portfolio-count",
+          "cf-ufs",
+          "cf-mature-no-reajuste"
+        ],
+        "observed_at": "2026-08-07",
+        "summary": "Em 2026-08-07, há portfólio público observável sem dor contratual concreta dominante — ângulo de revisão/diagnóstico focal."
+      },
+      "offer": {
+        "entry_offer": "auditoria_independente_segunda_opiniao",
+        "rationale": "Conta com sinais de estrutura robusta/ABM: oferecer revisão independente / segunda opinião / auditoria específica — jamais presumir ausência de estrutura.",
+        "service_code": "auditoria_orcamento_bdi",
+        "service_name": "Auditoria de orçamento, composições, BDI e planilhas"
+      },
+      "priority": {
+        "confidence": "HIGH",
+        "rank": 3,
+        "score": 100.0,
+        "tier": "HIGH"
+      },
+      "source_lead_id": "cnpj:00638562000165",
+      "_pilot_sink_email": "confenge-pilot+00638562000165@warmbly.local",
+      "_original_contacts": [
+        {
+          "confidence": "LOW",
+          "email": "",
+          "linkedin_url": "",
+          "name": "",
+          "phone": "+552732514695",
+          "recommended": true,
+          "role": "",
+          "source_contact_id": "ed2e03fc5e7c4bdd",
+          "source_date": "2026-08-08",
+          "source_document": "",
+          "source_url": "https://brasilapi.com.br/api/cnpj/v1/",
+          "verification_status": "OFFICIAL_SOURCE"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "schema": "confenge.outreach.acceptance_slice.v1",
+    "generated_at": "2026-08-08T01:34:29.645264+00:00",
+    "extra_cli_sha": "7cf9593d68afad00006f578cc7324aee506cebe2",
+    "warmbly_sha_at_copy": "7c27e100d5f070a198659d7f697df78268f07b50",
+    "source_run_id": "run-e4dd67baf24eed62",
+    "pipeline_manifest_path": "/mnt/d/extra-cli/artifacts/confenge/full-national-2026-08-07/reports/pipeline-manifest.json",
+    "full_national_manifest_hash": "908a697f95eb4127a867f258cb9d260bf4a78e36dd710a5c331d2bd201121cdf",
+    "universe_manifest_hash": "0a24a827b9aa9c11888a6cacebe86a2a32bdee4e1f6b289b4af13c73d9560e5a",
+    "universe_eligibles": 48748,
+    "full_scale": true,
+    "sample_selection": {
+      "method": "first_N_from_chunk_0000_preferring_order_stable",
+      "count": 12,
+      "source_chunk": "chunk_0000.json",
+      "source_chunk_hash": "14b45947a806606aedce3be0412ee561bca7d147b3845b5f4c58b5d722ca7e1f",
+      "note": "Deterministic slice of real pipeline feed; transport emails rewritten to operator sink; original contacts preserved as metadata."
+    },
+    "bridge_output_hash": "14b45947a806606aedce3be0412ee561bca7d147b3845b5f4c58b5d722ca7e1f",
+    "never_send_to_real_leads": true
+  }
+}

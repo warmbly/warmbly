@@ -17,6 +17,7 @@ import {
     FlameIcon,
     GitBranchIcon,
     InboxIcon,
+    Building2Icon,
     KeyIcon,
     ListChecksIcon,
     type LucideIcon,
@@ -48,6 +49,7 @@ import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import useUsageOverview from "@/lib/api/hooks/app/analytics/useUsageOverview";
 import useDashboard from "@/lib/api/hooks/app/analytics/useDashboard";
 import mailboxDisplayStatus from "@/lib/mailboxStatus";
+import { useConfengeStatus } from "@/lib/api/hooks/app/confenge/useConfenge";
 import useAPIKeys from "@/lib/api/hooks/app/api-keys/useAPIKeys";
 import useIntegrationConnections from "@/lib/api/hooks/app/integrations/useIntegrationConnections";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
@@ -102,6 +104,8 @@ interface NavItem {
         | "analytics"
         | "apikeys"
         | "integrations";
+    /** Optional server feature flag; currently only "confenge". */
+    featureFlag?: "confenge";
 }
 
 // Plan badge shown on locked sidebar rows. Plan names + colors come
@@ -139,6 +143,7 @@ const sections: NavSection[] = [
             { title: "Accounts", url: "/app/emails", icon: MailIcon, indicator: "accounts", advisorSurface: "emails", permission: "MANAGE_EMAILS", permissionLabel: "Manage mailboxes" },
             { title: "Campaigns", url: "/app/campaigns", icon: MegaphoneIcon, indicator: "campaigns", advisorSurface: "campaigns", permission: "VIEW_CAMPAIGNS", permissionLabel: "View campaigns" },
             { title: "Contacts", url: "/app/contacts", icon: UsersIcon, indicator: "contacts", advisorSurface: "contacts", permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
+            { title: "CONFENGE", url: "/app/confenge", icon: Building2Icon, permission: "VIEW_CONTACTS", permissionLabel: "View contacts", featureFlag: "confenge" },
             { title: "Analytics", url: "/app/analytics", icon: BarChart3Icon, indicator: "analytics", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
             { title: "Deliverability", url: "/app/deliverability", icon: ShieldCheckIcon, advisorSurface: "deliverability", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
         ],
@@ -169,10 +174,14 @@ function NavRow({ item }: { item: NavItem }) {
     const unseen = useAppStore((s) => s.unseenCount);
     const access = useFeatureAccess();
     const hasItemPermission = usePermission(item.permission ?? "VIEW_CAMPAIGNS");
+    const confengeStatus = useConfengeStatus();
     const [deniedOpen, setDeniedOpen] = useState(false);
     const active =
         pathname === item.url || pathname.startsWith(item.url + "/");
     const badge = item.badgeStoreKey === "unseenCount" ? unseen : undefined;
+
+    // Feature-flagged rows (CONFENGE) only appear when the backend flag is on.
+    if (item.featureFlag === "confenge" && !confengeStatus.data?.enabled) return null;
 
     // Role-gated items disappear from the sidebar for users that
     // can't access them, instead of showing a lock — these are

@@ -311,6 +311,7 @@ services:
       # every enrolled passkey, so keep it stable per deployment.
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
       WEBAUTHN_RP_ORIGINS: ${WEBAUTHN_RP_ORIGINS:-}
+      WEBAUTHN_RP_DISPLAY_NAME: ${WEBAUTHN_RP_DISPLAY_NAME:-Warmbly}
       # Worker image the orchestrator installs on remote machines.
       WORKER_IMAGE: ${WORKER_IMAGE:-}
     volumes:

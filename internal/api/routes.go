@@ -66,6 +66,10 @@ func Run(
 	// credential, resolving to one automation that runs with the JSON body.
 	r.POST("/api/v1/integrations/inbound/automation/:token", h.InboundAutomation)
 
+	// Evolution API WhatsApp webhooks (provider gateway → Warmbly). Auth is the
+	// per-instance webhook secret (Bearer or X-Webhook-Secret).
+	r.POST("/api/v1/webhooks/evolution/:instance", h.EvolutionWebhook)
+
 	// OAuth 2.1 authorization-server discovery (RFC 8414): public + unversioned.
 	r.GET("/.well-known/oauth-authorization-server", h.OAuthServerMetadata)
 
@@ -250,6 +254,9 @@ func Run(
 		auth.GET("/providers", h.AuthProviders)
 		auth.POST("/apple", h.AppleTokenLogin)
 		auth.POST("/google", h.GoogleTokenLogin)
+		// Dedicated loopback deployment only. The handler returns 404 unless
+		// CONFENGE_OPERATOR_MODE is explicitly enabled and validated on boot.
+		auth.POST("/confenge-operator/session", h.ConfengeOperatorSession)
 
 		// Generic OpenID Connect. The only sign-in path with no dependency on
 		// outbound mail, which is what makes it the one that matters for a
@@ -496,6 +503,70 @@ func Run(
 					advisorWrite.POST("/recommendations/:id/snooze", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.SnoozeAdvisorFinding)
 					advisorWrite.POST("/recommendations/:id/dismiss", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.DismissAdvisorFinding)
 					advisorWrite.POST("/recommendations/:id/feedback", m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.SubmitAdvisorFeedback)
+				}
+			}
+
+			// CONFENGE outreach staging (extra-cli feed import). Feature-flagged
+			// server-side; status is always readable so the dashboard can hide
+			// the nav when disabled. Mutations require manage contacts.
+			confengeGroup := protected.Group("/confenge")
+			confengeGroup.Use(m.RequireOrganization())
+			{
+				confengeGroup.GET("/status", h.GetConfengeStatus)
+				confengeGroup.GET("/dispatch/status", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeDispatchStatus)
+				confengeGroup.GET("/summary", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeSummary)
+				confengeGroup.GET("/working-overview", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeWorkingOverview)
+				confengeGroup.GET("/working-queue", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListConfengeWorkingQueue)
+				confengeGroup.GET("/cockpit", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeContactCockpit)
+				confengeGroup.GET("/today", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeToday)
+				confengeGroup.GET("/attention", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListConfengeAttention)
+				confengeGroup.GET("/attention/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeAttention)
+				confengeGroup.GET("/accounts", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListConfengeAccounts)
+				confengeGroup.GET("/accounts/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeAccount)
+				confengeGroup.GET("/import-runs", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListConfengeImportRuns)
+				confengeGroup.GET("/import-runs/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeImportRun)
+				confengeGroup.GET("/drafts", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListConfengeDrafts)
+				confengeGroup.GET("/drafts/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeDraft)
+				confengeGroup.GET("/touchpoints/review", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListConfengeReviewTouchpoints)
+				confengeGroup.GET("/touchpoints/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.GetConfengeTouchpoint)
+				confengeGroup.GET("/accounts/:id/touchpoints", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.ListConfengeAccountTouchpoints)
+
+				confengeWrite := confengeGroup.Group("")
+				confengeWrite.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+				{
+					confengeWrite.POST("/import", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ImportConfengeFeed)
+					confengeWrite.POST("/sync", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.SyncConfengeFeed)
+					confengeWrite.POST("/accounts/:id/block", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.BlockConfengeAccount)
+					confengeWrite.POST("/accounts/:id/dnc", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.DNCConfengeAccount)
+					confengeWrite.POST("/accounts/:id/plan", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.PlanConfengeCadence)
+					confengeWrite.POST("/pilot/cohort/prepare", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.PrepareConfengePilotCohort)
+					confengeWrite.POST("/accounts/:id/cancel-touchpoints", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.CancelConfengeAccountTouchpoints)
+					confengeWrite.POST("/accounts/:id/generate", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.GenerateConfengeDraft)
+					confengeWrite.POST("/accounts/:id/generate-reply", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.GenerateConfengeReplyDraft)
+					confengeWrite.POST("/accounts/:id/resume", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ResumeConfengeAccount)
+					confengeWrite.POST("/accounts/:id/referral", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ChangeConfengeReferral)
+					confengeWrite.POST("/accounts/:id/generate-whatsapp", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.GenerateConfengeWhatsAppDraft)
+					confengeGroup.GET("/accounts/:id/channel-decision", m.RequireAccess(models.PermViewContacts, models.APIPermReadContacts), h.DecideConfengeChannel)
+					confengeWrite.POST("/drafts/:id/review", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ReviewConfengeDraft)
+					confengeWrite.POST("/drafts/:id/enroll", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.EnrollConfengeDraft)
+					confengeWrite.POST("/drafts/:id/send-whatsapp", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.SendConfengeWhatsAppDraft)
+					confengeWrite.POST("/touchpoints/:id/generate", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.GenerateConfengeTouchpoint)
+					confengeWrite.POST("/touchpoints/:id/edit", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.EditConfengeTouchpoint)
+					confengeWrite.POST("/touchpoints/:id/approve", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ApproveConfengeTouchpoint)
+					confengeWrite.POST("/touchpoints/:id/decision", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.RejectSkipConfengeTouchpoint)
+					confengeWrite.POST("/touchpoints/:id/queue", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.QueueConfengeTouchpoint)
+					confengeWrite.POST("/touchpoints/:id/green-autorun", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.GreenAutorunConfengeTouchpoint)
+					confengeWrite.POST("/campaign/policy/authorize", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.AuthorizeConfengeCampaignPolicy)
+					confengeWrite.POST("/campaign/green-autorun/batch", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.BatchGreenAutorunConfenge)
+					confengeWrite.POST("/campaign/bootstrap", m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.BootstrapConfengeCampaign)
+					confengeGroup.GET("/campaign/policy", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetConfengeCampaignPolicy)
+					confengeWrite.POST("/crm/bootstrap", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.BootstrapConfengePipeline)
+					confengeWrite.POST("/drafts/invalidate-prior-composer", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.InvalidatePriorComposerDrafts)
+					confengeWrite.POST("/manual-queue/:id/action", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ApplyConfengeManualAction)
+					confengeWrite.POST("/actions/:id/start", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.StartConfengeCommercialAction)
+					confengeWrite.POST("/actions/:id/outcome", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.RecordConfengeCommercialOutcome)
+					confengeWrite.POST("/dispatch/pause", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.PauseConfengeDispatch)
+					confengeWrite.POST("/dispatch/resume", m.RequireAccess(models.PermManageContacts, models.APIPermWriteContacts), h.ResumeConfengeDispatch)
 				}
 			}
 

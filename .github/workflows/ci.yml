@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # Default token only gets `contents: read` on PRs from forks; the
 # dorny/paths-filter action needs to list PR files via the GitHub
@@ -64,6 +65,16 @@ jobs:
     needs: changes
     if: needs.changes.outputs.go-services == 'true'
     runs-on: ubuntu-latest
+    # Mailpit for CONFENGE product-acceptance email proof (SMTP + HTTP API).
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.22
+        ports:
+          - 1025:1025
+          - 8025:8025
+    env:
+      CONFENGE_MAILPIT_SMTP: 127.0.0.1:1025
+      CONFENGE_MAILPIT_API: http://127.0.0.1:8025
     steps:
       - uses: actions/checkout@v4
 
@@ -87,6 +98,18 @@ jobs:
 
       - name: Verify protobuf files are up to date
         run: make check-proto
+
+      - name: Wait for Mailpit
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "$CONFENGE_MAILPIT_API/api/v1/info" >/dev/null; then
+              echo "mailpit ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "mailpit did not become ready" >&2
+          exit 1
 
       - name: Run tests with coverage
         run: |
@@ -136,6 +159,197 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # Real browser CONFENGE product acceptance (not data-testid static presence).
+  # Requires full local-like stack; fails closed if healthchecks fail.
+  confenge-product-acceptance:
+    name: CONFENGE product acceptance
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.go-services == 'true'
+    # Hard gate: Playwright FAIL must fail the workflow. Do not re-add continue-on-error.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: warmbly
+          POSTGRES_PASSWORD: warmbly
+          POSTGRES_DB: warmbly_dev
+        ports: ["15432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U warmbly"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["16379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # NATS without JetStream panics ensureStream; start -js manually in a step.
+      mailpit:
+        image: axllent/mailpit:v1.22
+        ports:
+          - 11025:1025
+          - 18025:8025
+    env:
+      PRIMARY_DB: postgres://warmbly:warmbly@127.0.0.1:15432/warmbly_dev?sslmode=disable
+      REDIS: redis://127.0.0.1:16379
+      NATS_URL: nats://127.0.0.1:4222
+      EVENTBUS_PROVIDER: nats
+      CODEC_PROVIDER: json
+      APP_ENV: dev
+      APP_URL: http://127.0.0.1:5173
+      # Use :8080 so default VITE_API_URL and dashboard expectations match.
+      API_HOST: 127.0.0.1:8080
+      WEBSOCKET_URL: ws://127.0.0.1:4000/socket/websocket
+      GEODB_PATH: /tmp/missing-geolite.mmdb
+      BILLING_PROVIDER: none
+      AWS_CONFIG_ENABLED: "false"
+      CAPTCHA_PROVIDER: none
+      KMS_PROVIDER: local
+      KMS_LOCAL_MASTER_KEY: Xr0JA7gqF2POy29a7MRByyqddivTNt8WOyKsOXklazk=
+      CREDENTIALS_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      ENCRYPTED_KEYS_PROVIDER: postgres
+      BLOB_PROVIDER: filesystem
+      BLOB_FS_ROOT: /tmp/warmbly-blobs
+      BLOB_PUBLIC_BASE_URL: http://127.0.0.1:8080/public
+      TASKS_PROVIDER: local
+      AUTH_SECRET: local-dev-auth-secret-minimum-32-characters-long
+      INTERNAL_API_TOKEN: local-dev-internal-token
+      EMAIL_NAME: Warmbly Dev
+      EMAIL_ADDRESS: dev@warmbly.local
+      SMTP_HOST: 127.0.0.1
+      SMTP_PORT: "11025"
+      CONFENGE_LOCAL_SMTP_DELIVERY: "true"
+      CONFENGE_SMTP_SINK_EMAIL: confenge-e2e-sink@warmbly.local
+      TRACKING_DOMAIN: t.warmbly.com
+      CORS_ALLOW_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+      CONFENGE_OUTREACH_ENABLED: "true"
+      CONFENGE_REQUIRE_HUMAN_APPROVAL: "true"
+      CONFENGE_AUTO_SEND_ENABLED: "false"
+      CONFENGE_DEFAULT_CAMPAIGN_DAILY_LIMIT: "100"
+      CONFENGE_GLOBAL_SENDS_PER_HOUR: "10"
+      CONFENGE_MIN_SEND_GAP_SECONDS: "360"
+      CONFENGE_E2E: "1"
+      CONFENGE_E2E_API: http://127.0.0.1:8080
+      CONFENGE_E2E_MAILPIT: http://127.0.0.1:18025
+      CONFENGE_E2E_BASE_URL: http://127.0.0.1:5173
+      CONFENGE_GATE_CODE_SHA: ${{ github.sha }}
+      CONFENGE_E2E_PROOF_DIR: ${{ github.workspace }}/data/confenge-evidence
+      # Absolute path: Playwright runs with cwd=web/, so repo-relative paths break.
+      # The historical real slice predates authoritative target-fit fields and must fail closed.
+      CONFENGE_E2E_FEED: ${{ github.workspace }}/internal/app/confenge/testdata/demo_3_companies.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web deps + Playwright browser
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          npx playwright install --with-deps chromium
+
+      - name: Start NATS JetStream
+        run: |
+          docker run -d --name confenge-nats -p 4222:4222 -p 8222:8222 \
+            nats:2.10-alpine -js -sd /data -m 8222
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8222/healthz >/dev/null 2>&1; then
+              echo "nats jetstream up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "nats failed" >&2
+          docker logs confenge-nats || true
+          exit 1
+
+      - name: Migrate + seed
+        run: |
+          go run ./cmd/migrate
+          SEED_RICH=true SEED_FULL=true go run ./cmd/seed
+
+      - name: Start backend
+        run: |
+          mkdir -p /tmp/warmbly-blobs data/confenge-evidence
+          go build -o /tmp/warmbly-backend ./cmd/backend
+          nohup /tmp/warmbly-backend > /tmp/confenge-backend.log 2>&1 &
+          echo $! > /tmp/confenge-backend.pid
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/v1/confenge/status || true)
+            if [ "$code" = "401" ] || [ "$code" = "200" ]; then
+              if kill -0 "$(cat /tmp/confenge-backend.pid)" 2>/dev/null; then
+                echo "backend up code=$code"
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+          echo "backend failed to start" >&2
+          tail -100 /tmp/confenge-backend.log || true
+          exit 1
+
+      - name: Start web
+        working-directory: web
+        env:
+          VITE_API_URL: http://127.0.0.1:8080
+          VITE_APP_URL: http://127.0.0.1:5173
+        run: |
+          nohup pnpm dev --host 127.0.0.1 --port 5173 > /tmp/confenge-web.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:5173/; then
+              echo "web up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "web failed to start" >&2
+          tail -50 /tmp/confenge-web.log || true
+          exit 1
+
+      - name: Healthchecks (pre-browser)
+        run: |
+          curl -fsS http://127.0.0.1:18025/api/v1/info >/dev/null
+          curl -fsS -o /dev/null http://127.0.0.1:5173/
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/v1/confenge/status || true)
+          test -n "$code" && test "$code" -lt 500
+          # Prove confenge feature is enabled on the server for the E2E org path.
+          echo "confenge status http=$code"
+
+      - name: Playwright live browser
+        working-directory: web
+        run: pnpm test:e2e:confenge:live
+
+      - name: Upload playwright evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: confenge-playwright-evidence
+          path: |
+            data/confenge-evidence/
+            web/playwright-report/
+          if-no-files-found: warn
 
   admin-ci:
     name: Admin CI
@@ -385,11 +599,29 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, go-ci, web-ci, admin-ci, site-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images, security]
+    needs: [changes, go-ci, web-ci, confenge-product-acceptance, admin-ci, site-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images, security]
     if: always()
     steps:
       - name: Check CI status
         run: |
+          # confenge-product-acceptance is a hard gate when it ran. Skipped (path filter)
+          # is allowed only when neither web nor go-services changed; otherwise failure,
+          # cancelled, or timed_out of that job fails the aggregate.
+          confenge_result="${{ needs.confenge-product-acceptance.result }}"
+          confenge_failed=0
+          if [[ "$confenge_result" == "failure" ]] || \
+             [[ "$confenge_result" == "cancelled" ]] || \
+             [[ "$confenge_result" == "timed_out" ]]; then
+            confenge_failed=1
+          fi
+          # When web/go changed, job should not be skipped; treat unexpected skip as fail.
+          if [[ "${{ needs.changes.outputs.web }}" == "true" ]] || \
+             [[ "${{ needs.changes.outputs.go-services }}" == "true" ]]; then
+            if [[ "$confenge_result" == "skipped" ]] || [[ -z "$confenge_result" ]]; then
+              echo "CONFENGE product acceptance was skipped but web/go changes require it"
+              confenge_failed=1
+            fi
+          fi
           if [[ "${{ needs.go-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.web-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.admin-ci.result }}" == "failure" ]] || \
@@ -399,8 +631,9 @@ jobs:
              [[ "${{ needs.rust-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.elixir-ci.result }}" == "failure" ]] || \
              [[ "${{ needs.ios-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.security.result }}" == "failure" ]]; then
-            echo "CI failed"
+             [[ "${{ needs.security.result }}" == "failure" ]] || \
+             [[ "$confenge_failed" -eq 1 ]]; then
+            echo "CI failed (confenge=$confenge_result)"
             exit 1
           fi
-          echo "CI passed"
+          echo "CI passed (confenge=$confenge_result)"

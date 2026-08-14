@@ -13,9 +13,11 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/confenge"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/creditwatch"
+	"github.com/warmbly/warmbly/internal/app/crm"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/inboxagent"
 	"github.com/warmbly/warmbly/internal/app/integration"
@@ -353,6 +355,23 @@ func main() {
 		repository.NewAIDraftRepository(primaryDB.Pool),
 		streamingPublisher,
 	)
+	// CONFENGE outcome sink (feature-flagged; no-op when disabled).
+	confengeCfgC := confenge.LoadConfig()
+	var confengeSvc confenge.Service
+	var confengeSink confenge.OutcomeSink
+	if confengeCfgC.Enabled {
+		confengeSvc = confenge.NewService(confengeCfgC, repository.NewOutreachRepository(primaryDB.Pool), nil)
+		if sink, ok := confengeSvc.(confenge.OutcomeSink); ok {
+			confengeSink = sink
+		}
+		// Inbox replies are classified in THIS process (ProcessIncomingReply).
+		// Wire CRM here so applyReplyCRM can create tasks/deals on the real
+		// email handoff path; without it s.crm is nil and handoff is a silent no-op
+		// for CRM side effects. Same rationale as WireNotifier / WireRealtime.
+		confengeSvc.WireCRM(crm.NewService(crmRepo))
+		advancedService.WireConfengeReply(confengeSvc)
+	}
+
 	advancedService.WireInboxAgent(inboxAgentServiceC)
 
 	eventsPublisher := events.NewPublisher(consumerBus, s3Client, consumerCodec, cipherService)
@@ -372,9 +391,13 @@ func main() {
 		WarmupEngagementRepo:        repository.NewWarmupEngagementRepository(primaryDB.Pool),
 		WarmupService:               warmupService,
 		WorkerRepo:                  workerRepo,
+		TaskRepo:                    taskRepo,
+		CampaignRepo:                campaignRepo,
 		Publisher:                   eventsPublisher,
 		StreamingPublisher:          streamingPublisher,
 		AdvancedService:             advancedService,
+		ConfengeOutcomes:            confengeSink,
+		ConfengeSends:               confengeSvc,
 		Cache:                       redisCache,
 		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 		AssignmentService:           workerAssignmentSvc,

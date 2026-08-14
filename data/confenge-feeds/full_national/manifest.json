@@ -1,0 +1,74 @@
+{
+  "chunk_count": 4,
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "content_hash": "14b45947a806606aedce3be0412ee561bca7d147b3845b5f4c58b5d722ca7e1f",
+      "cursor": "00028986000108",
+      "file": "chunk_0000.json",
+      "has_more": true,
+      "lead_count": 50,
+      "leads_hash": "e41c043d625efe5803ac98c3b5ec32e3a4249439fbee3190935abdb4469abd30",
+      "next_cursor": "03752550000155",
+      "status": "written"
+    },
+    {
+      "chunk_index": 1,
+      "content_hash": "d4e9a384ecebe86c06e0a7d9de0e0bc26e34e1a91d7ae7e793d6f7aed9fe5ae8",
+      "cursor": "03752550000155",
+      "file": "chunk_0001.json",
+      "has_more": true,
+      "lead_count": 50,
+      "leads_hash": "afb75f1dfe6463a06f69f7cba5bce245aa2d4efb1fa97841ab0c985d20fb583f",
+      "next_cursor": "17464285000114",
+      "status": "written"
+    },
+    {
+      "chunk_index": 2,
+      "content_hash": "0c32daf6046acdc6df956e106377e7d84fd9f7e39fb1c2178f01cbb40699863e",
+      "cursor": "17464285000114",
+      "file": "chunk_0002.json",
+      "has_more": true,
+      "lead_count": 50,
+      "leads_hash": "6cc51d961f27c0d049111430c33780f3ab562ca5962536ebf53c48066427d74d",
+      "next_cursor": "36457536000188",
+      "status": "written"
+    },
+    {
+      "chunk_index": 3,
+      "content_hash": "2b758b34fabb71d0a4f17414bf7157a6e3ad555c7c6dc66fb11ed943ea098579",
+      "cursor": "36457536000188",
+      "file": "chunk_0003.json",
+      "has_more": false,
+      "lead_count": 50,
+      "leads_hash": "078659f237fb44bceb197521ed6a1006bfc756ebdbc2a81bcea94d8e0517a655",
+      "next_cursor": null,
+      "status": "written"
+    }
+  ],
+  "generated_at": "2026-08-08T01:32:51Z",
+  "hashes": {
+    "manifest_inputs": "571b68cd3416e1d2d58605541b8148aa0c766e287172ea9b5fecee5760d00645",
+    "snapshot": "a90bb0f2eebd5ecb98d0ba5db111301f479a98f71aef088dad72b0f22af87437"
+  },
+  "inputs": {
+    "account_intelligence": "/mnt/d/extra-cli/artifacts/confenge/full-national-2026-08-07/05_bridge_inputs/account_intelligence.jsonl",
+    "contacts": "/mnt/d/extra-cli/artifacts/confenge/full-national-2026-08-07/05_bridge_inputs/contacts.jsonl",
+    "universe": "/mnt/d/extra-cli/artifacts/confenge/full-national-2026-08-07/05_bridge_inputs/universe.jsonl"
+  },
+  "lead_count": 200,
+  "limit": null,
+  "manifest_content_hash": "d61b2cafbcad6f33ae7ba599b0b64146d653c904eb08544dfd7fb09ae58db953",
+  "max_bytes_per_chunk": 512000,
+  "max_leads_per_chunk": 50,
+  "module_version": "1.0.0",
+  "schema_version": "confenge.outreach.manifest.v1",
+  "source": {
+    "profile_id": "confenge",
+    "profile_version": "2.0.0",
+    "repo_sha": "7cf9593d68af",
+    "run_id": "run-e4dd67baf24eed62",
+    "snapshot_hash": "a90bb0f2eebd5ecb98d0ba5db111301f479a98f71aef088dad72b0f22af87437",
+    "system": "extra-cli"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "pass": true,
+  "result": "PASS",
+  "hard_asserts": true,
+  "generated_at": "2026-08-08T03:18:51.680Z",
+  "at": "2026-08-08T03:18:51.680Z",
+  "code_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "tested_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "command": "playwright confenge-product-acceptance",
+  "test_id": "import-approve-edit-invalidate-queue-mailpit",
+  "touchpoint_id": "5f5bd1ac-3fd3-4bdb-bbc4-7515fd0808b7",
+  "account_id": "fac25a17-4b1c-4a10-9272-4455122bd323",
+  "after_approve": {
+    "state": "APPROVED",
+    "content_hash_len": 64,
+    "approved_matches_content": true,
+    "approved_content_hash": "ce5d3e67d32ffab477dae1535c874a1d8d7a1296c9c46835bc4879492cc3212e",
+    "subject": "Sobre PAVIDEZ ENGENHARIA LTDA",
+    "body_len": 481,
+    "recipient": "ana@pavidez74.example.com"
+  },
+  "after_edit": {
+    "state": "NEEDS_REVIEW",
+    "approved_content_hash_cleared": true,
+    "content_hash_changed": true,
+    "not_valid_approved_for_send": true
+  },
+  "after_reapprove_queue": {
+    "state": "SENT",
+    "approved_matches_content": true,
+    "queued_or_sent": true
+  },
+  "mailpit_exact_delivery": {
+    "required_when_sent": true,
+    "transport_state": "SENT",
+    "matched": true,
+    "mailpit_message_id": "58L9HpWI9aWD16sPVUAA4t",
+    "approved_subject": "Sobre PAVIDEZ ENGENHARIA LTDA",
+    "mailpit_subject": "Sobre PAVIDEZ ENGENHARIA LTDA",
+    "approved_body_prefix": "Ol\u00e1, Ana,\n\nSou da CONFENGE. Notei que Portf\u00f3lio p\u00fablico observado com 8 contrato(s) no input..\n\nAjudamos times de engenh",
+    "body_match": true,
+    "recipient_meta": "ana@pavidez74.example.com",
+    "mailpit_to": "ana@pavidez74.example.com",
+    "note": "Body must match approved content; recipient may be controlled sink"
+  },
+  "ui_approve_queue": {
+    "touchpoint_id": "b6208dc5-5de5-410f-9627-c9246ff776bd",
+    "state": "SENT",
+    "approved_matches_content": true
+  },
+  "imported_feed": "/mnt/d/warmbly/data/confenge-feeds/acceptance_real_slice/slice.json",
+  "healthchecks": {
+    "api": "http://127.0.0.1:18080",
+    "mailpit": "http://127.0.0.1:18025",
+    "web": "http://127.0.0.1:5173"
+  },
+  "git_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf"
+}

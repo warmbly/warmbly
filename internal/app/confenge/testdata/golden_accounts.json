@@ -1,0 +1,214 @@
+{
+  "scenarios": [
+    {
+      "id": "regional_lean",
+      "label": "empresa regional enxuta",
+      "account": {
+        "razao_social": "Construtora Regional ACME Ltda",
+        "nome_fantasia": "ACME Obras",
+        "municipio": "Florianopolis",
+        "uf": "SC",
+        "moment_code": "CONTRACT_EXTENSION",
+        "moment_summary": "Contrato de obra publica com prorrogacao publicada no PNCP",
+        "service_code": "ADDITIVE_REVIEW",
+        "service_name": "Revisao de aditivos",
+        "entry_offer": "Leitura tecnica do aditivo em curso",
+        "fact_to_mention": "Prorrogacao do contrato 001/2025 publicada no PNCP em julho/2026",
+        "question_to_ask": "Faz sentido conversarmos sobre o controle de aditivos desta obra?",
+        "cta": "Posso enviar um checklist de 1 pagina?",
+        "claims_to_avoid": ["garantia de economia"],
+        "moment_evidence_ids": ["ev-acme-1"]
+      },
+      "contact": {
+        "name": "Ana Silva",
+        "role": "Engenheira de contratos",
+        "email": "ana.silva@acme.example.com",
+        "verification_status": "OFFICIAL_SOURCE"
+      },
+      "evidence": [
+        {
+          "source_evidence_id": "ev-acme-1",
+          "title": "Prorrogacao contrato 001/2025",
+          "synthesis": "Prorrogacao formal publicada",
+          "excerpt": "Fica prorrogado o prazo de execucao por 180 dias.",
+          "epistemic_class": "CONFIRMED_FACT"
+        }
+      ],
+      "channel": "EMAIL_INITIAL"
+    },
+    {
+      "id": "national_structured",
+      "label": "empresa nacional estruturada",
+      "account": {
+        "razao_social": "Empresa Nacional de Infraestrutura SA",
+        "nome_fantasia": "ENI",
+        "municipio": "Sao Paulo",
+        "uf": "SP",
+        "moment_code": "ADDITIVE_SIGNED",
+        "moment_summary": "Aditivo de reajuste publicado em diario oficial",
+        "service_code": "REAJUSTE_SUPPORT",
+        "service_name": "Apoio a reajustes",
+        "entry_offer": "Parecer resumido sobre clausula de reajuste",
+        "fact_to_mention": "Aditivo de reajuste do contrato 450/2024 publicado em 20/06/2026",
+        "question_to_ask": "O time de contratos ja fechou a memoria de calculo deste reajuste?",
+        "cta": "Posso mandar um modelo de memoria de calculo em uma pagina?",
+        "claims_to_avoid": [],
+        "moment_evidence_ids": ["ev-eni-1"]
+      },
+      "contact": {
+        "name": "Bruno Costa",
+        "role": "Gerente de contratos",
+        "email": "bruno.costa@eni.example.org",
+        "verification_status": "OFFICIAL_SOURCE"
+      },
+      "evidence": [
+        {
+          "source_evidence_id": "ev-eni-1",
+          "title": "Aditivo reajuste 450/2024",
+          "synthesis": "Aditivo de reajuste formal",
+          "excerpt": "Fica reajustado o valor contratual conforme indices oficiais.",
+          "epistemic_class": "CONFIRMED_FACT"
+        }
+      ],
+      "channel": "EMAIL_INITIAL"
+    },
+    {
+      "id": "aditivo_reajuste_fact",
+      "label": "conta com fato especifico de aditivo/reajuste",
+      "account": {
+        "razao_social": "Obras Sul Engenharia Ltda",
+        "nome_fantasia": "Obras Sul",
+        "municipio": "Curitiba",
+        "uf": "PR",
+        "moment_code": "REAJUSTE_WINDOW",
+        "moment_summary": "Janela de reajuste anual aberta no contrato 88/2023",
+        "service_code": "REAJUSTE_SUPPORT",
+        "service_name": "Apoio a reajustes",
+        "entry_offer": "Checagem da formula de reajuste",
+        "fact_to_mention": "Contrato 88/2023 tem reajuste anual previsto para agosto/2026 no PNCP",
+        "question_to_ask": "Voces ja validaram a formula do reajuste de agosto?",
+        "cta": "Posso enviar a checklist de formula em PDF?",
+        "claims_to_avoid": ["credito identificado"],
+        "moment_evidence_ids": ["ev-sul-1"]
+      },
+      "contact": {
+        "name": "Carla Mendes",
+        "role": "Analista de contratos",
+        "email": "carla@obrassul.example.com",
+        "verification_status": "PUBLIC_DOCUMENT_RECENT"
+      },
+      "evidence": [
+        {
+          "source_evidence_id": "ev-sul-1",
+          "title": "Clausula de reajuste 88/2023",
+          "synthesis": "Reajuste anual em agosto",
+          "excerpt": "O reajuste ocorrera anualmente no mes de agosto.",
+          "epistemic_class": "CONFIRMED_FACT"
+        }
+      ],
+      "channel": "EMAIL_INITIAL"
+    },
+    {
+      "id": "weak_fact_diagnostic",
+      "label": "conta sem fato forte (abordagem diagnostica)",
+      "account": {
+        "razao_social": "Metalurgica Interior ME",
+        "nome_fantasia": "Metal Interior",
+        "municipio": "Joinville",
+        "uf": "SC",
+        "moment_code": "WARM_INTRO",
+        "moment_summary": "Empresa com contratos publicos esporadicos, sem momento forte recente",
+        "service_code": "DIAGNOSTIC",
+        "service_name": "Diagnostico de governanca de contratos",
+        "entry_offer": "Conversa diagnostica de 20 minutos",
+        "fact_to_mention": "",
+        "question_to_ask": "Ha algum processo de aditivo ou reajuste em que uma leitura externa ajude agora?",
+        "cta": "Posso enviar um roteiro de diagnostico de uma pagina?",
+        "claims_to_avoid": ["garantia de economia"],
+        "moment_evidence_ids": []
+      },
+      "contact": {
+        "name": "Diego Alves",
+        "role": "Responsavel tecnico",
+        "email": "diego@metal.example.com",
+        "verification_status": "OFFICIAL_SOURCE"
+      },
+      "evidence": [],
+      "channel": "EMAIL_INITIAL"
+    },
+    {
+      "id": "followup_ignored",
+      "label": "follow-up apos e-mail ignorado",
+      "account": {
+        "razao_social": "Construtora Regional ACME Ltda",
+        "nome_fantasia": "ACME Obras",
+        "municipio": "Florianopolis",
+        "uf": "SC",
+        "moment_code": "CONTRACT_EXTENSION",
+        "moment_summary": "Contrato de obra publica com prorrogacao publicada no PNCP",
+        "service_code": "ADDITIVE_REVIEW",
+        "service_name": "Revisao de aditivos",
+        "entry_offer": "Leitura tecnica do aditivo em curso",
+        "fact_to_mention": "Prorrogacao do contrato 001/2025 publicada no PNCP em julho/2026",
+        "question_to_ask": "Ainda faz sentido uma conversa curta sobre aditivos?",
+        "cta": "Se preferir, respondo so com o checklist.",
+        "claims_to_avoid": [],
+        "moment_evidence_ids": ["ev-acme-1"]
+      },
+      "contact": {
+        "name": "Ana Silva",
+        "role": "Engenheira de contratos",
+        "email": "ana.silva@acme.example.com",
+        "verification_status": "OFFICIAL_SOURCE"
+      },
+      "evidence": [
+        {
+          "source_evidence_id": "ev-acme-1",
+          "title": "Prorrogacao contrato 001/2025",
+          "synthesis": "Prorrogacao formal publicada",
+          "excerpt": "Fica prorrogado o prazo.",
+          "epistemic_class": "CONFIRMED_FACT"
+        }
+      ],
+      "channel": "EMAIL_FOLLOWUP",
+      "prior_body": "Ola Ana, notei a prorrogacao do contrato 001/2025. Posso enviar um checklist?"
+    },
+    {
+      "id": "positive_reply",
+      "label": "resposta positiva",
+      "account": {
+        "razao_social": "Empresa Nacional de Infraestrutura SA",
+        "nome_fantasia": "ENI",
+        "municipio": "Sao Paulo",
+        "uf": "SP",
+        "moment_code": "ADDITIVE_SIGNED",
+        "moment_summary": "Aditivo de reajuste publicado",
+        "service_code": "REAJUSTE_SUPPORT",
+        "service_name": "Apoio a reajustes",
+        "entry_offer": "Parecer resumido",
+        "fact_to_mention": "Aditivo de reajuste do contrato 450/2024 publicado em 20/06/2026",
+        "question_to_ask": "Prefere que eu envie o modelo de memoria de calculo antes da call?",
+        "cta": "Posso mandar o modelo ainda hoje.",
+        "claims_to_avoid": [],
+        "moment_evidence_ids": ["ev-eni-1"]
+      },
+      "contact": {
+        "name": "Bruno Costa",
+        "role": "Gerente de contratos",
+        "email": "bruno.costa@eni.example.org",
+        "verification_status": "OFFICIAL_SOURCE"
+      },
+      "evidence": [
+        {
+          "source_evidence_id": "ev-eni-1",
+          "title": "Aditivo reajuste",
+          "synthesis": "Aditivo formal",
+          "excerpt": "Reajuste conforme indices.",
+          "epistemic_class": "CONFIRMED_FACT"
+        }
+      ],
+      "channel": "REPLY_DRAFT",
+      "inbound_reply": "Ola, faz sentido sim. Pode me enviar mais detalhes?"
+    }
+  ]
+}

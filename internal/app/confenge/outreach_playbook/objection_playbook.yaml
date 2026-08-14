@@ -1,0 +1,58 @@
+outreach_doctrine_version: confenge-outreach-v2
+
+objections:
+  - id: already_internal
+    match: [já fazemos internamente, ja fazemos internamente, temos equipe interna]
+    strategy: complement_second_read_peak_demand
+    guidance: |
+      Não atacar a equipe. Oferecer segunda leitura, pico de demanda, validação independente ou tema pontual.
+    never: [vocês não têm estrutura, equipe insuficiente]
+
+  - id: have_legal
+    match: [temos jurídico, nosso jurídico, advogado interno]
+    strategy: technical_complement
+    guidance: |
+      Nunca substituir o jurídico. Enfatizar engenharia, cálculo, memória, evidência técnica e interface técnico-contratual.
+    never: [melhor que o jurídico, substituímos o jurídico]
+
+  - id: no_interest
+    match: [não tenho interesse, nao tenho interesse, sem interesse]
+    strategy: respect_and_stop
+    guidance: Respeitar. Não argumentar compulsivamente. Encerrar e marcar NOT_INTERESTED.
+    never: [mas deixa eu só]
+
+  - id: price
+    match: [quanto custa, qual o valor, preço, preco]
+    strategy: transparent_by_offer
+    guidance: Não esconder. Encaminhar conforme micro-offer/service; se ainda cedo, amarrar ao escopo.
+    never: [depende de conversar 30 minutos sem faixa]
+
+  - id: send_material
+    match: [manda material, envia material, brochure, apresentação institucional]
+    strategy: problem_specific_not_brochure
+    guidance: Não enviar brochure genérico. Responder ao problema que iniciou a conversa; cumprir micro-offer se prometido.
+    never: [segue nosso deck institucional genérico]
+
+  - id: who_are_you
+    match: [quem é você, quem e voce, o que é a confenge, o que e a confenge]
+    strategy: short_verifiable_identity
+    guidance: Explicação curta, verificável, sem mini-CV nem superlativos.
+    never: [líderes de mercado, especialistas número 1]
+
+  - id: wrong_person
+    match: [não sou a pessoa, nao sou a pessoa, fale com]
+    strategy: thank_and_route
+    guidance: Agradecer, pedir indicação curta, não insistir no mesmo contato.
+    never: [pode só olhar rapidinho]
+
+  - id: already_has_consultant
+    match: [já temos consultor, ja temos consultor, já contratamos]
+    strategy: complement_or_close
+    guidance: Oferecer complementaridade pontual ou encerrar com respeito.
+    never: [eles não fazem o que fazemos]
+
+  - id: contact_later
+    match: [mais tarde, no próximo trimestre, depois do carnaval]
+    strategy: schedule_respect
+    guidance: Registrar CONTACT_LATER; não pressionar.
+    never: [é agora ou nunca]

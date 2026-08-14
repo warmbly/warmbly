@@ -28,6 +28,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     set -eux; \
     if echo "$GO_TAGS" | grep -qw kafka; then CGO=1; TAGS="musl kafka"; else CGO=0; TAGS=""; fi; \
     CGO_ENABLED=$CGO GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags "$TAGS" -ldflags="-s -w" -o /out/backend ./cmd/backend; \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /out/confenge ./cmd/confenge; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /out/seed ./cmd/seed; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
@@ -40,6 +41,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
     adduser -D -u 1000 warmbly
 
 COPY --from=builder /out/backend /app/backend
+COPY --from=builder /out/confenge /app/confenge
 COPY --from=builder /out/seed /app/seed
 COPY --from=builder /out/migrate /app/migrate
 

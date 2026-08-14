@@ -1,0 +1,161 @@
+outreach_doctrine_version: confenge-outreach-v2
+
+# Micro-offers: value before meeting. Cold path only suggests LOW budget.
+offers:
+  - code: CONTRACT_CHECK
+    description: Pontos objetivos que eu conferiria no contrato público citado
+    buyer_value: Clareza sobre o que verificar antes de qualquer diagnóstico pago
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [contract_event]
+    applicable_service_codes: ["*"]
+    prohibited_claims: [crédito confirmado, valor a receber]
+    cta_patterns:
+      - Posso te mandar os pontos que eu conferiria?
+      - Faz sentido eu te enviar o recorte que encontrei?
+
+  - code: REAJUSTE_CHECK
+    description: Checklist de verificação de reajuste (documentos e memórias), sem afirmar crédito
+    buyer_value: Separar sinal de anualidade de conclusão de valor devido
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_contract]
+    applicable_service_codes: [REAJUSTE, REEQUILIBRIO]
+    prohibited_claims:
+      - reajuste a receber
+      - o órgão deixou de pagar
+      - perda de R$
+    cta_patterns:
+      - Posso te mandar o checklist do que eu verificaria no reajuste?
+      - Quer que eu te envie os pontos documentais que eu conferiria primeiro?
+
+  - code: ADITIVO_RISK_CHECK
+    description: Leitura curta de efeitos colaterais de aditivo recente
+    buyer_value: Enxergar o que o aditivo pode ter alterado além do texto assinado
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [aditivo_or_moment]
+    applicable_service_codes: [ADITIVOS, REAJUSTE, MEDICOES]
+    prohibited_claims: [aditivo irregular, valor perdido no aditivo]
+    cta_patterns:
+      - Posso te mostrar o que eu checaria depois desse aditivo?
+
+  - code: MEDICAO_CHECK
+    description: Pontos de medição/critério a validar com base pública
+    buyer_value: Antecipar onde divergência de campo vs planilha costuma nascer
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_contract]
+    applicable_service_codes: [MEDICOES, PLANILHAS, ADITIVOS]
+    prohibited_claims: [glosa indevida, medição não paga de]
+    cta_patterns:
+      - Posso te mandar o que eu verificaria na medição?
+
+  - code: CLOSEOUT_CHECK
+    description: Checklist de close-out / pendências perto do término
+    buyer_value: Lista objetiva do que ainda cabe regularizar
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_contract]
+    applicable_service_codes: [ENCERRAMENTO_CONTRATUAL, REAJUSTE, MEDICOES]
+    prohibited_claims: [contrato sem quitação]
+    cta_patterns:
+      - Quer o checklist do que eu conferiria antes do encerramento?
+
+  - code: DOCUMENT_CHECKLIST
+    description: Lista curta de documentos públicos/internos a reunir
+    buyer_value: Reduz caça documental sem vender o serviço completo
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_event]
+    applicable_service_codes: ["*"]
+    prohibited_claims: []
+    cta_patterns:
+      - Posso te mandar a lista do que eu reuniria primeiro?
+
+  - code: CONTRACT_TIMELINE
+    description: Linha do tempo pública do contrato (marcos publicados)
+    buyer_value: Visão cronológica sem dossiê intimidador
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [public_dates]
+    applicable_service_codes: ["*"]
+    prohibited_claims: []
+    cta_patterns:
+      - Quer que eu te envie a linha do tempo pública que montei?
+
+  - code: PUBLIC_DATA_SNAPSHOT
+    description: Recorte de dados públicos relevantes (sem parecer vigilância)
+    buyer_value: Amostra da capacidade de leitura pública da CONFENGE
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_event]
+    applicable_service_codes: ["*"]
+    prohibited_claims: [estamos monitorando sua empresa, analisamos toda a carteira]
+    cta_patterns:
+      - Posso te mandar o recorte público que encontrei?
+
+  - code: CLAIM_READINESS_CHECK
+    description: Prontidão documental para eventual pleito (sem afirmar mérito)
+    buyer_value: Saber o que falta antes de investir em pedido formal
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_contract]
+    applicable_service_codes: [REEQUILIBRIO, REAJUSTE, EXTRACONTRATUAIS]
+    prohibited_claims: [direito confirmado, valor devido]
+    cta_patterns:
+      - Posso te mostrar o que eu checaria antes de qualquer pleito?
+
+  - code: PROCUREMENT_RISK_SNAPSHOT
+    description: Snapshot de risco documental em contexto de licitação/contratação
+    buyer_value: Antecipar premissas frágeis
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_event]
+    applicable_service_codes: [APOIO_LICITACAO, ADITIVOS]
+    prohibited_claims: [vão perder a licitação]
+    cta_patterns:
+      - Quer um snapshot do que eu verificaria no edital/instrumento?
+
+  - code: DIAGNOSTIC_CHECKLIST
+    description: Checklist diagnóstico do que conferir no portfólio público (sem especialidade inventada)
+    buyer_value: Clareza sobre o próximo passo factual antes de ofertar serviço especializado
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_event]
+    applicable_service_codes: [DIAGNOSTICO, MONITORAMENTO_CONTRATUAL, INTELIGENCIA_PNCP]
+    prohibited_claims: [reajuste a receber, crédito confirmado]
+    cta_patterns:
+      - Posso te mandar o checklist diagnóstico do que eu conferiria primeiro?
+      - Faz sentido eu te enviar o recorte público para validarmos juntos?
+
+  - code: MARKET_BRIEF
+    description: Briefing curto de mercado/PNCP a partir de dados públicos
+    buyer_value: Leitura priorizada de órgãos e oportunidades aderentes
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_event]
+    applicable_service_codes: [INTELIGENCIA_PNCP, APOIO_LICITACAO]
+    prohibited_claims: [garantimos vitória]
+    cta_patterns:
+      - Posso te mandar o briefing público que montei sobre o seu recorte de mercado?
+
+  - code: BACKOFFICE_SCOPE_CHECK
+    description: Escopo mínimo de reforço pontual (sem presumir falta de capacidade interna)
+    buyer_value: Separar pico operacional de necessidade estrutural
+    fulfillment_path: draft_from_evidence
+    fulfillment_cost: LOW
+    required_evidence: [moment_or_contract]
+    applicable_service_codes: [BACKOFFICE, MONITORAMENTO_CONTRATUAL]
+    prohibited_claims: [vocês não têm estrutura, precisam terceirizar tudo]
+    cta_patterns:
+      - Posso te mostrar o escopo mínimo que eu validaria antes de qualquer reforço?
+
+# Explicitly not auto-offered on cold path
+restricted_offers:
+  - code: FULL_DIAGNOSTIC
+    fulfillment_cost: HIGH
+    note: Never offer full unpaid diagnostic on cold email.
+  - code: PAID_CONSULTING_PITCH
+    fulfillment_cost: HIGH
+    note: Not a micro-offer; belongs after interest.

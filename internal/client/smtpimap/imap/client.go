@@ -132,11 +132,14 @@ func (c *Client) Folders() ([]models.Mailbox, *errx.MailError) {
 	var resp []models.Mailbox
 
 	// LIST-STATUS: without requesting these, f.Status is nil for every
-	// folder and the sync loop sees an empty account.
+	// folder and the sync loop sees an empty account. NumMessages/UIDNext
+	// back the EXISTS/UIDNEXT fallback when CONDSTORE HighestModSeq stalls.
 	cmd := c.client.List("", "%", &imap.ListOptions{
 		ReturnStatus: &imap.StatusOptions{
 			UIDValidity:   true,
 			HighestModSeq: true,
+			NumMessages:   true,
+			UIDNext:       true,
 		},
 	})
 
@@ -155,11 +158,17 @@ func (c *Client) Folders() ([]models.Mailbox, *errx.MailError) {
 			continue
 		}
 
+		var num uint32
+		if f.Status.NumMessages != nil {
+			num = *f.Status.NumMessages
+		}
 		resp = append(resp, models.Mailbox{
 			Name:          f.Mailbox,
 			Attrs:         attrs,
 			UIDValidity:   f.Status.UIDValidity,
 			HighestModSeq: f.Status.HighestModSeq,
+			NumMessages:   num,
+			UIDNext:       uint32(f.Status.UIDNext),
 		})
 	}
 
@@ -178,17 +187,41 @@ func (c *Client) Mailbox(mailbox string, uidvali, opts *imap.SelectOptions) erro
 	return nil
 }
 
+// SyncMailboxStatus is SELECT/EXAMINE state used by the IMAP sync planner.
+// Prefer these over LIST-STATUS: some hosts (Hostinger) advertise CONDSTORE
+// but leave LIST-STATUS NumMessages/UIDNext empty while SELECT EXISTS works.
+type SyncMailboxStatus struct {
+	NumMessages   uint32
+	UIDNext       uint32
+	HighestModSeq uint64
+	UIDValidity   uint32
+}
+
 // SelectForSync opens a mailbox read-only with CONDSTORE enabled and returns
 // its message count. FETCH is only valid against a selected mailbox, so the
 // sync loop must call this before FetchChanges; CONDSTORE on the SELECT is
 // what arms ChangedSince. The count lets the caller skip the fetch entirely
 // for an empty mailbox, where a 1:* set is a server error.
 func (c *Client) SelectForSync(mailbox string) (uint32, *errx.MailError) {
+	st, err := c.SelectForSyncInfo(mailbox)
+	if err != nil {
+		return 0, err
+	}
+	return st.NumMessages, nil
+}
+
+// SelectForSyncInfo is SelectForSync plus UIDNEXT/HIGHESTMODSEQ for EXISTS fallback.
+func (c *Client) SelectForSyncInfo(mailbox string) (*SyncMailboxStatus, *errx.MailError) {
 	data, err := c.client.Select(mailbox, &imap.SelectOptions{ReadOnly: true, CondStore: true}).Wait()
 	if err != nil {
-		return 0, c.handleError(err)
+		return nil, c.handleError(err)
 	}
-	return data.NumMessages, nil
+	return &SyncMailboxStatus{
+		NumMessages:   data.NumMessages,
+		UIDNext:       uint32(data.UIDNext),
+		HighestModSeq: data.HighestModSeq,
+		UIDValidity:   data.UIDValidity,
+	}, nil
 }
 
 // FetchChanges walks the selected mailbox in bounded sequence windows, emitting
@@ -199,17 +232,25 @@ func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64, count uint
 	if count == 0 {
 		return nil
 	}
+	return c.FetchSeqWindow(ctx, lastModSeq, 1, count)
+}
+
+// FetchSeqWindow walks inclusive sequence numbers [lo, hi] in bounded batches.
+// Used by the EXISTS/UIDNEXT fallback to fetch only newly appended messages
+// when CONDSTORE HighestModSeq does not advance.
+func (c *Client) FetchSeqWindow(ctx context.Context, lastModSeq uint64, lo, hi uint32) *errx.MailError {
+	if lo == 0 || hi == 0 || lo > hi {
+		return nil
+	}
 	const batch = uint32(config.ImapFetchBatchSize)
-	for lo := uint32(1); lo <= count; lo += batch {
-		hi := lo + batch - 1
-		if hi > count {
-			hi = count
+	for start := lo; start <= hi; start += batch {
+		end := start + batch - 1
+		if end > hi {
+			end = hi
 		}
-		if err := c.fetchRange(ctx, lastModSeq, lo, hi); err != nil {
+		if err := c.fetchRange(ctx, lastModSeq, start, end); err != nil {
 			return err
 		}
-		// The caller's context is the mailbox's sync context; abandon a long
-		// walk promptly when the mailbox is removed or the worker shuts down.
 		if ctx.Err() != nil {
 			return nil
 		}

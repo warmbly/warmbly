@@ -1,0 +1,122 @@
+# Isolated Evolution API stack for CONFENGE WhatsApp transport.
+# Project name: evolution-confenge
+# Does NOT share Postgres/Redis with Warmbly or extra-cli.
+#
+# Pin: Evolution API v2.3.7 (stable). Do not deploy 2.4.0-rc to production.
+# Image: evoapicloud/evolution-api:2.3.7
+#
+# Usage:
+#   cp .env.example .env   # fill secrets
+#   docker compose -p evolution-confenge --env-file .env up -d
+#
+# Network: keep Evolution on a private network. Warmbly reaches it privately;
+# public ingress should hit Warmbly's webhook, not Evolution Manager.
+
+name: evolution-confenge
+
+services:
+  evolution-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${EVOLUTION_DB_NAME:-evolution}
+      POSTGRES_USER: ${EVOLUTION_DB_USER:-evolution}
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:?set EVOLUTION_DB_PASSWORD}
+    volumes:
+      - evolution_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER:-evolution} -d ${EVOLUTION_DB_NAME:-evolution}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - evolution_net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  evolution-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - evolution_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - evolution_net
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  evolution-api:
+    # Stable pin — not a release candidate.
+    image: evoapicloud/evolution-api:2.3.7
+    restart: unless-stopped
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    environment:
+      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://evolution-api:8080}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?set EVOLUTION_API_KEY}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${EVOLUTION_DB_USER:-evolution}:${EVOLUTION_DB_PASSWORD}@evolution-postgres:5432/${EVOLUTION_DB_NAME:-evolution}?schema=public
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379
+      CACHE_REDIS_PREFIX_KEY: evolution
+      # Production path: WhatsApp Business / Cloud API.
+      # Do not enable Baileys for production CONFENGE traffic.
+      LOG_LEVEL: ${EVOLUTION_LOG_LEVEL:-ERROR,WARN,INFO}
+      DEL_INSTANCE: "false"
+    # Bind only on loopback / private interface in production via reverse proxy.
+    # Default: no public publish; attach Warmbly network externally if needed.
+    ports:
+      - "${EVOLUTION_HOST_BIND:-127.0.0.1}:${EVOLUTION_HOST_PORT:-8089}:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - evolution_net
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+volumes:
+  evolution_pg_data:
+  evolution_redis_data:
+  evolution_instances:
+
+networks:
+  evolution_net:
+    name: evolution_confenge_net
+    driver: bridge
+    internal: false

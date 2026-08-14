@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/confenge"
 	"github.com/warmbly/warmbly/internal/client/goog"
 	"github.com/warmbly/warmbly/internal/client/msgraph"
 	"github.com/warmbly/warmbly/internal/client/smtpimap/smtp"
@@ -17,10 +18,12 @@ import (
 
 // Attachment is a fully-resolved attachment ready to be MIME-encoded: the
 // worker has already fetched Data from object storage.
+// ContentID (without brackets) marks an inline image for cid: references.
 type Attachment struct {
-	Filename string
-	MimeType string
-	Data     []byte
+	Filename  string
+	MimeType  string
+	Data      []byte
+	ContentID string
 }
 
 // SendRequest contains all parameters needed to send an email
@@ -293,8 +296,14 @@ func (w *WMail) sendViaSMTP(ctx context.Context, req *SendRequest, bodyHTML stri
 	// Build custom headers (warmup token + RFC 8058 one-click unsubscribe).
 	smtpCustomHeaders := buildSendHeaders(req)
 
+	// CONFENGE: if HTML references the signature CID, attach the JPEG inline.
+	atts := req.Attachments
+	if jpeg, ok := confengeInlineSignature(bodyHTML); ok {
+		atts = append(append([]Attachment{}, atts...), jpeg)
+	}
+
 	// Convert resolved attachments to the SMTP transport shape.
-	smtpAttachments := toSMTPAttachments(req.Attachments)
+	smtpAttachments := toSMTPAttachments(atts)
 
 	// Send via SMTP. Attachments are passed explicitly (not variadic) so an
 	// empty list still selects the same code path.
@@ -354,6 +363,31 @@ func toGraphAttachments(in []Attachment) []msgraph.Attachment {
 	return out
 }
 
+// confengeInlineSignature attaches the optimized Tiago Sasaki signature image
+// when the HTML body references the known CID (CONFENGE commercial mail).
+func confengeInlineSignature(bodyHTML string) (Attachment, bool) {
+	if bodyHTML == "" || !strings.Contains(bodyHTML, confenge.SignatureImageCID) {
+		return Attachment{}, false
+	}
+	data, err := confenge.LoadSignatureJPEG()
+	if err != nil || len(data) == 0 {
+		return Attachment{}, false
+	}
+	filename, mime, _ := confenge.SignatureImageMeta()
+	if filename == "" {
+		filename = confenge.SignatureImageFilename
+	}
+	if mime == "" {
+		mime = "image/jpeg"
+	}
+	return Attachment{
+		Filename:  filename,
+		MimeType:  mime,
+		Data:      data,
+		ContentID: confenge.SignatureImageCID,
+	}, true
+}
+
 // toSMTPAttachments maps wmail attachments to the SMTP transport shape.
 func toSMTPAttachments(in []Attachment) []smtp.Attachment {
 	if len(in) == 0 {
@@ -362,9 +396,10 @@ func toSMTPAttachments(in []Attachment) []smtp.Attachment {
 	out := make([]smtp.Attachment, 0, len(in))
 	for _, a := range in {
 		out = append(out, smtp.Attachment{
-			Filename: a.Filename,
-			MimeType: a.MimeType,
-			Data:     a.Data,
+			Filename:  a.Filename,
+			MimeType:  a.MimeType,
+			Data:      a.Data,
+			ContentID: a.ContentID,
 		})
 	}
 	return out

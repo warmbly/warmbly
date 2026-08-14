@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/confenge"
 	"github.com/warmbly/warmbly/internal/app/worker/wmail"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -22,6 +23,17 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 		Strs("to", sendEmail.To).
 		Bool("is_warmup", sendEmail.IsWarmup).
 		Msg("Processing send email event")
+	// The isolated CONFENGE execution plane shares the kill-switch volume with
+	// the backend. Re-check it at the worker boundary so a stale or directly
+	// published queue item cannot reach SMTP while dispatch is paused.
+	confengeCfg := confenge.LoadConfig()
+	if confengeCfg.Enabled && confengeCfg.OperatorMode &&
+		(!confengeCfg.RequireHumanApproval || confengeCfg.AutoSendEnabled || confengeCfg.GreenAutorunEnabled) {
+		return fmt.Errorf("CONFENGE unsafe authorization configuration at worker transport boundary")
+	}
+	if confengeCfg.Enabled && confengeCfg.OperatorMode && !confengeCfg.SendingAllowed() {
+		return fmt.Errorf("CONFENGE sending paused at worker transport boundary")
+	}
 
 	// Get the email account from MailManager
 	w.mailManager.RLock()

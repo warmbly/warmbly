@@ -1,0 +1,23 @@
+{
+  "result": "PASS",
+  "pass": true,
+  "gate": "PASS",
+  "hard_asserts": true,
+  "generated_at": "2026-08-08T03:18:51.685Z",
+  "at": "2026-08-08T03:18:51.685Z",
+  "code_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "tested_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf",
+  "command": "playwright confenge-product-acceptance mailpit compare",
+  "test_id": "mailpit-exact-body-match",
+  "touchpoint_id": "5f5bd1ac-3fd3-4bdb-bbc4-7515fd0808b7",
+  "approved_content_hash": "ce5d3e67d32ffab477dae1535c874a1d8d7a1296c9c46835bc4879492cc3212e",
+  "approved_subject": "Sobre PAVIDEZ ENGENHARIA LTDA",
+  "approved_body": "Ol\u00e1, Ana,\n\nSou da CONFENGE. Notei que Portf\u00f3lio p\u00fablico observado com 8 contrato(s) no input..\n\nAjudamos times de engenharia com auditoria de or\u00e7amento, composi\u00e7\u00f5es, bdi e planilhas, sempre a partir de fatos p\u00fablicos e sem pressa.\n\nH\u00e1 interesse em uma segunda opini\u00e3o independente sobre planilha/BDI de um pacote espec\u00edfico (sem substituir a equipe interna)? Envio escopo de auditoria focal (composi\u00e7\u00f5es + BDI) para um contrato-alvo.\n\nAbra\u00e7o,\nTiago Sasaki\nCONFENGE [pass1] [edited]",
+  "approved_recipient_meta": "ana@pavidez74.example.com",
+  "mailpit_message_id": "58L9HpWI9aWD16sPVUAA4t",
+  "mailpit_subject": "Sobre PAVIDEZ ENGENHARIA LTDA",
+  "mailpit_to": "ana@pavidez74.example.com",
+  "body_match": true,
+  "subject_present": true,
+  "git_sha": "b5738c6c8ec0005a97bd966a1e274c8627265ecf"
+}

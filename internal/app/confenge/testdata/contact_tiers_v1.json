@@ -1,0 +1,66 @@
+{
+  "schema_version": "confenge.outreach.v1",
+  "generated_at": "2026-08-13T12:00:00Z",
+  "source": {"system": "extra-cli", "run_id": "contact-tiers-contract-001", "snapshot_hash": "contact-tiers-v1-sha", "repo_sha": "contract", "profile_id": "confenge", "profile_version": "1.0.0"},
+  "pagination": {"cursor": null, "next_cursor": null, "has_more": false},
+  "leads": [
+    {
+      "source_lead_id": "tier-a-named-email",
+      "company": {"cnpj14": "22111000000191", "cnpj_root": "22111000", "razao_social": "Construtora Horizonte Sul Ltda", "nome_fantasia": "Horizonte Sul", "municipio": "Porto Alegre", "uf": "RS", "website": "https://horizontesul.com.br"},
+      "priority": {"rank": 1, "score": 88, "tier": "HIGH", "confidence": "HIGH"},
+      "moment": {"code": "ANUALIDADE", "summary": "Aniversario de reajuste do contrato publicado", "observed_at": "2026-07-01", "confidence": "HIGH", "evidence_ids": ["ev-tier-a"]},
+      "offer": {"service_code": "REAJUSTE", "service_name": "Reajuste contratual", "entry_offer": "Checklist do ciclo", "rationale": "Aniversario"},
+      "messaging_context": {"fact_to_mention": "contrato 1149/2022 atingiu o aniversario de reajuste em 2024", "question_to_ask": "Posso te mandar o checklist do que eu verificaria no reajuste?", "cta": "Posso te mandar o checklist do que eu verificaria no reajuste?", "claims_to_avoid": ["credito confirmado"]},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-13T12:00:00Z", "target_fit_source_watermark": "2026-08-13T12:00:00Z", "target_fit_fresh": true, "email_send_ready": true,
+      "contacts": [{"source_contact_id": "ct-tier-a", "name": "Ana Souza", "role": "Diretora de Contratos", "email": "ana.souza@horizontesul.com.br", "source_url": "https://horizontesul.com.br/equipe", "source_date": "2026-07-01", "verification_status": "OFFICIAL_SOURCE", "confidence": "HIGH", "recommended": true, "email_send_ready": true, "mailbox_purpose": "COMERCIAL", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE", "contact_tier": "DIRECT_EMAIL_VALIDATED", "channel": "email"}],
+      "evidence": [{"id": "ev-tier-a", "type": "CONTRACT_PUBLICATION", "title": "Contrato 1149/2022", "url": "https://pncp.gov.br/1149-2022", "date": "2024-07-01", "excerpt": "contrato 1149/2022 atingiu o aniversario de reajuste em 2024", "synthesis": "contrato 1149/2022 atingiu o aniversario de reajuste em 2024", "epistemic_class": "CONFIRMED_FACT", "reliability": "HIGH", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "tier-b-named-manual",
+      "company": {"cnpj14": "33222000000182", "cnpj_root": "33222000", "razao_social": "Obras Pampas Engenharia Ltda", "nome_fantasia": "Pampas Engenharia", "municipio": "Caxias do Sul", "uf": "RS", "website": "https://pampaseng.com.br"},
+      "priority": {"rank": 2, "score": 76, "tier": "HIGH", "confidence": "MEDIUM"},
+      "moment": {"code": "ADITIVO", "summary": "Aditivo recente publicado", "observed_at": "2026-07-10", "confidence": "HIGH", "evidence_ids": ["ev-tier-b"]},
+      "offer": {"service_code": "ADITIVOS", "service_name": "Aditivos contratuais", "entry_offer": "Leitura do aditivo", "rationale": "Aditivo publico"},
+      "messaging_context": {"fact_to_mention": "termo aditivo 2 ao contrato 88/2021 publicado em julho/2026", "question_to_ask": "Faz sentido um recorte curto deste aditivo?", "cta": "Posso te mandar o recorte do que eu conferiria?", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-13T12:00:00Z", "target_fit_source_watermark": "2026-08-13T12:00:00Z", "target_fit_fresh": true, "email_send_ready": false,
+      "contacts": [{"source_contact_id": "ct-tier-b", "name": "Bruno Lima", "role": "Gerente de Contratos", "email": "", "linkedin_url": "https://www.linkedin.com/in/bruno-lima-contratos", "phone": "+5551999990000", "source_url": "https://pampaseng.com.br/equipe", "source_date": "2026-07-01", "verification_status": "OFFICIAL_SOURCE", "confidence": "MEDIUM", "recommended": true, "email_send_ready": false, "mailbox_purpose": "MANUAL_CHANNEL", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE", "contact_tier": "NAMED_HUMAN_MANUAL_CHANNEL", "channel": "linkedin"}],
+      "evidence": [{"id": "ev-tier-b", "type": "CONTRACT_ADDITIVE", "title": "Aditivo 2", "url": "https://pncp.gov.br/88-2021-aditivo-2", "date": "2026-07-10", "excerpt": "termo aditivo 2 ao contrato 88/2021", "synthesis": "termo aditivo 2 ao contrato 88/2021 publicado em julho/2026", "epistemic_class": "CONFIRMED_FACT", "reliability": "HIGH", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "tier-c-role-mailbox",
+      "company": {"cnpj14": "44333000000173", "cnpj_root": "44333000", "razao_social": "Metrovia Construcoes SA", "nome_fantasia": "Metrovia", "municipio": "Curitiba", "uf": "PR", "website": "https://metrovia.com.br"},
+      "priority": {"rank": 3, "score": 70, "tier": "MEDIUM", "confidence": "HIGH"},
+      "moment": {"code": "LICITACAO", "summary": "Edital de licitacao publicado", "observed_at": "2026-07-20", "confidence": "HIGH", "evidence_ids": ["ev-tier-c"]},
+      "offer": {"service_code": "APOIO_LICITACAO", "service_name": "Apoio a licitacao", "entry_offer": "Leitura do edital", "rationale": "Edital publico"},
+      "messaging_context": {"fact_to_mention": "edital 45/2026 publicado com quantitativos a conferir", "question_to_ask": "Posso enviar um recorte para a equipe de licitacoes?", "cta": "Posso enviar um recorte para a equipe?", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-13T12:00:00Z", "target_fit_source_watermark": "2026-08-13T12:00:00Z", "target_fit_fresh": true, "email_send_ready": true,
+      "contacts": [{"source_contact_id": "ct-tier-c", "name": "", "role": "Licitações", "email": "licitacoes@metrovia.com.br", "source_url": "https://metrovia.com.br/contato", "source_date": "2026-07-01", "verification_status": "OFFICIAL_SOURCE", "confidence": "HIGH", "recommended": true, "email_send_ready": true, "mailbox_purpose": "ROLE_MAILBOX", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE_GENERIC", "contact_tier": "ROLE_MAILBOX_VALIDATED", "channel": "email"}],
+      "evidence": [{"id": "ev-tier-c", "type": "PNCP_PUBLICATION", "title": "Edital 45/2026", "url": "https://pncp.gov.br/edital-45-2026", "date": "2026-07-20", "excerpt": "edital 45/2026 publicado com quantitativos a conferir", "synthesis": "edital 45/2026 publicado com quantitativos a conferir", "epistemic_class": "CONFIRMED_FACT", "reliability": "HIGH", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "tier-d-generic",
+      "company": {"cnpj14": "55444000000164", "cnpj_root": "55444000", "razao_social": "Atlas Obras e Servicos Ltda", "nome_fantasia": "Atlas Obras", "municipio": "Florianopolis", "uf": "SC", "website": "https://atlasobras.com.br"},
+      "priority": {"rank": 4, "score": 55, "tier": "MEDIUM", "confidence": "LOW"},
+      "moment": {"code": "PUBLICACAO", "summary": "Contrato publicado sem evento especifico", "observed_at": "2026-06-01", "confidence": "MEDIUM", "evidence_ids": ["ev-tier-d"]},
+      "offer": {"service_code": "MONITORAMENTO_CONTRATUAL", "service_name": "Monitoramento contratual", "entry_offer": "Segunda leitura", "rationale": "Contrato publico"},
+      "messaging_context": {"fact_to_mention": "contrato 12/2025 publicado no PNCP", "question_to_ask": "", "cta": "", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-13T12:00:00Z", "target_fit_source_watermark": "2026-08-13T12:00:00Z", "target_fit_fresh": true, "email_send_ready": false,
+      "contacts": [{"source_contact_id": "ct-tier-d", "name": "Contato", "role": "Atendimento", "email": "contato@atlasobras.com.br", "source_url": "https://atlasobras.com.br/contato", "source_date": "2026-06-01", "verification_status": "INSTITUTIONAL_GENERIC", "confidence": "LOW", "recommended": false, "email_send_ready": true, "mailbox_purpose": "GENERIC_CONTACT", "ownership_status": "COMPANY_OWNED", "recipient_commercial_suitability": "SUITABLE_GENERIC", "contact_tier": "GENERIC_CORPORATE_CONTACT", "channel": "form"}],
+      "evidence": [{"id": "ev-tier-d", "type": "PNCP_PUBLICATION", "title": "Contrato 12/2025", "url": "https://pncp.gov.br/12-2025", "date": "2026-06-01", "excerpt": "contratacao de empresa", "synthesis": "contrato 12/2025 publicado no PNCP", "epistemic_class": "CONFIRMED_FACT", "reliability": "MEDIUM", "consulted_at": "2026-08-01"}],
+      "commercial_state": "NEW"
+    },
+    {
+      "source_lead_id": "tier-e-exhausted",
+      "company": {"cnpj14": "66555000000155", "cnpj_root": "66555000", "razao_social": "Nortevia Construtora Ltda", "nome_fantasia": "Nortevia", "municipio": "Manaus", "uf": "AM", "website": ""},
+      "priority": {"rank": 5, "score": 40, "tier": "LOW", "confidence": "LOW"},
+      "moment": {"code": "UNKNOWN", "summary": "Sem momento acionavel", "observed_at": "2026-05-01", "confidence": "LOW", "evidence_ids": []},
+      "offer": {"service_code": "MONITORAMENTO_CONTRATUAL", "service_name": "Monitoramento contratual", "entry_offer": "", "rationale": ""},
+      "messaging_context": {"fact_to_mention": "", "question_to_ask": "", "cta": "", "claims_to_avoid": []},
+      "target_fit_class": "TARGET_CONFIRMED", "target_fit_version": "confenge-target-fit-v1", "target_fit_computed_at": "2026-08-13T12:00:00Z", "target_fit_source_watermark": "2026-08-13T12:00:00Z", "target_fit_fresh": true, "email_send_ready": false,
+      "contacts": [], "evidence": [], "commercial_state": "NEW"
+    }
+  ]
+}

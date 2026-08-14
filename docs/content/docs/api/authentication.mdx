@@ -5,6 +5,14 @@ description: Learn how to authenticate with the Warmbly API using API keys.
 
 The Warmbly API uses API keys for authentication. Each API key has specific permissions that control what operations it can perform.
 
+## Dedicated CONFENGE operator sessions
+
+The dedicated loopback-only CONFENGE deployment may enable `CONFENGE_OPERATOR_MODE`. Its browser calls `POST /v1/auth/confenge-operator/session` without a request body and receives the standard access and refresh token pair for one configured technical member. This removes interactive authentication from the operator experience without making CONFENGE APIs anonymous.
+
+The endpoint returns `404` on every normal Warmbly deployment. When enabled, the backend validates the configured user, accepted organization membership, login ban state, and view and manage contacts permissions both at startup and before issuing a session. The response uses `Cache-Control: no-store`. The UI and API must remain bound to loopback and be reached through an SSH tunnel.
+
+The endpoint does not accept `Idempotency-Key` because issuing an additional isolated session does not repeat a commercial mutation. The browser uses a single-flight request lock, and the backend limits bootstrap attempts per client address.
+
 ## API key format
 
 API keys follow this format:

@@ -12,7 +12,9 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e:confenge": "playwright test -c playwright.config.ts e2e/confenge-product-acceptance.spec.ts",
+    "test:e2e:confenge:live": "CONFENGE_E2E=1 playwright test -c playwright.config.ts e2e/confenge-product-acceptance.spec.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
@@ -102,6 +104,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
+    "@playwright/test": "1.62.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.6.0",
@@ -119,5 +122,12 @@
     "typescript-eslint": "^8.45.0",
     "vite": "^7.3.6",
     "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "nanoid": "3.3.18",
+      "picomatch": "^4.0.4",
+      "linkify-it": "^5.0.2"
+    }
   }
 }

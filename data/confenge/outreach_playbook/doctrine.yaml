@@ -1,0 +1,66 @@
+# CONFENGE outreach doctrine — machine-readable core
+# Human narrative: docs/confenge/OUTREACH-DOCTRINE.md
+outreach_doctrine_version: confenge-outreach-v2
+channel_policy:
+  runtime_allowed: [EMAIL]
+  whatsapp: OFF
+  auto_call: OFF
+  green_autorun: OFF
+
+north_star_metric: positive_conversations_per_delivered
+secondary_metrics:
+  - human_reply_rate
+  - positive_reply_rate
+  - qualified_conversation_rate
+  - meeting_rate
+  - proposal_rate
+  - win_rate
+  - attributed_revenue
+
+principles:
+  - id: strategy_before_copy
+    summary: Plan commercial strategy before any wording.
+  - id: extra_cli_owns_who
+    summary: extra-cli decides WHO/WHY NOW; Warmbly decides HOW TO APPROACH.
+  - id: no_local_rescoring
+    summary: Never create lead/commercial/conversion priority scores here.
+  - id: fact_neq_hypothesis
+    summary: Facts from evidence only; inferences marked as hypothesis.
+  - id: know_a_lot_say_little
+    summary: Anti-creepy public-data phrasing; minimal necessary fact.
+  - id: value_before_meeting
+    summary: First CTA prefers micro-offer permission, not calendar link.
+  - id: no_institutional_pitch_first
+    summary: First email sells attention and low-friction next step only.
+  - id: each_touch_earns_existence
+    summary: No empty following-up; each touch adds value.
+  - id: fail_closed_on_claims
+    summary: Unsupported material claims block approval path.
+  - id: human_approval_unchanged
+    summary: Strategy and generation may be automatic; send approval stays human.
+
+first_email_defaults:
+  min_words: 40
+  max_words: 100
+  target_sentences: "3-4"
+  max_ctas: 1
+  max_links: 1
+  attachments: false
+  meeting_cta_default: false
+  language: pt-BR
+  subject:
+    max_words: 6
+    no_emoji: true
+    no_all_caps: true
+    no_fake_re: true
+    no_fake_fwd: true
+    no_urgency: true
+    no_financial_promise: true
+
+hierarchy_of_evidence:
+  - confenge_own_measured_outcomes
+  - large_modern_datasets
+  - behavioral_empirical_research
+  - established_methodology
+  - expert_recommendation
+  - sales_folklore

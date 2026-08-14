@@ -1,0 +1,135 @@
+outreach_doctrine_version: confenge-outreach-v2
+
+banned_phrases:
+  - isso não prova crédito sozinho
+  - isso nao prova credito sozinho
+  - eventos públicos relevantes sem triagem
+  - eventos publicos relevantes sem triagem
+  - sem presumir falta de capacidade interna
+  - hipótese, não crédito comprovado
+  - hipotese, nao credito comprovado
+  - momento comercial indicado pelo extra-cli
+  - espero que este email o encontre bem
+  - espero que esta mensagem o encontre bem
+  - venho por meio deste
+  - gostaria de apresentar
+  - soluções personalizadas
+  - solucoes personalizadas
+  - maximizar resultados
+  - potencializar
+  - sinergia
+  - transformação digital
+  - transformacao digital
+  - solução 360
+  - solucao 360
+  - ia de ponta
+  - revolucionário
+  - revolucionario
+  - imperdível
+  - imperdivel
+  - estamos monitorando sua empresa
+  - analisamos toda a carteira
+  - detectamos que vocês deixaram de
+  - dinheiro a receber
+  - crédito identificado
+  - credito identificado
+  - identificamos perda de
+  - tem 15 minutos amanhã
+  - tem 15 minutos amanha
+  - podemos marcar uma call
+  - qual horário funciona
+  - qual horario funciona
+  - segue o link do meu calendário
+  - segue o link do meu calendario
+
+meeting_cta_phrases:
+  - marcar uma call
+  - marcar uma reunião
+  - marcar uma reuniao
+  - 15 minutos
+  - 30 minutos
+  - calendly
+  - agendar uma call
+  - tem um horário
+  - tem um horario
+
+fake_re_fwd:
+  - "^re:"
+  - "^fw:"
+  - "^fwd:"
+
+preferred_public_source_phrasing:
+  - Vi no PNCP
+  - Pelo contrato publicado
+  - Nas informações públicas do contrato
+  - Pela publicação
+
+creepy_phrasing:
+  - estamos monitorando
+  - monitoramos sua empresa
+  - sabemos que vocês
+  - sabemos que voces
+  - detectamos que vocês
+  - detectamos que voces
+  - analisamos toda a carteira
+  - acesso privilegiado
+
+unsupported_monetary:
+  - r$
+  - milhão a receber
+  - milhao a receber
+  - milhões a recuperar
+  - milhoes a recuperar
+
+annualidade_bad_claims:
+  - reajuste a receber
+  - reajuste não pago
+  - reajuste nao pago
+  - o órgão deixou de pagar
+  - o orgao deixou de pagar
+  - vocês têm direito ao reajuste
+  - voces tem direito ao reajuste
+  - crédito de reajuste
+  - credito de reajuste
+
+rejection_reasons:
+  - factual_error
+  - too_generic
+  - too_salesy
+  - wrong_service
+  - wrong_offer
+  - wrong_recipient
+  - too_long
+  - creepy
+  - unsupported_claim
+  - tone
+  - other
+
+edit_signal_codes:
+  - shortened
+  - softened_claim
+  - changed_cta
+  - removed_jargon
+  - corrected_fact
+  - changed_offer
+  - other
+
+commercial_reply_classes:
+  - POSITIVE_INTEREST
+  - OFFER_ACCEPTED
+  - SEND_MORE_INFO
+  - WRONG_PERSON
+  - REFERRAL
+  - ALREADY_HANDLED_INTERNAL
+  - ALREADY_HAS_CONSULTANT
+  - NOT_A_PRIORITY
+  - NOT_INTERESTED
+  - CONTACT_LATER
+  - PRICE_QUESTION
+  - CREDIBILITY_QUESTION
+  - TECHNICAL_QUESTION
+  - PROCUREMENT_CONCERN
+  - DNC
+  - OUT_OF_OFFICE
+  - AUTO_REPLY
+  - OTHER

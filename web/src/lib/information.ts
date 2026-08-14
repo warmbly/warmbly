@@ -1,4 +1,4 @@
-import { runtimeEnv } from "./runtimeConfig";
+import { runtimeBool, runtimeEnv } from "./runtimeConfig";
 
 export const WEBSITE_URL = "https://warmbly.com";
 // These read the container-injected runtime config first (so one built image
@@ -10,6 +10,10 @@ export const API_URL = runtimeEnv("API_URL", import.meta.env.VITE_API_URL);
 export const API_BASE_URL = `${API_URL}/v1`;
 export const TRACKING_DOMAIN = runtimeEnv("TRACKING_DOMAIN", import.meta.env.VITE_TRACKING_DOMAIN);
 export const TURNSTILE_KEY = runtimeEnv("TURNSTILE_KEY", import.meta.env.VITE_TURNSTILE_KEY);
+export const CONFENGE_OPERATOR_MODE = runtimeBool(
+  "CONFENGE_OPERATOR_MODE",
+  import.meta.env.VITE_CONFENGE_OPERATOR_MODE,
+);
 export const HUMAN_VERIFICATION_FAIL = "We couldn’t verify you’re human. Please try the security check again or reload the page.";
 export const PASSWORD_FAIL = "The password must be at least 8 characters long and contain both uppercase and lowercase letters, as well as a number."
 export const TOKEN_KEY = "auth_token";
