@@ -14,6 +14,10 @@ enum SessionPhase: Equatable {
 enum LoginOutcome {
     case loggedIn
     case needsTwoFA(pendingToken: String)
+    /// A code was emailed and must be confirmed with `confirmLogin`. Not every
+    /// deployment sends one: self-hosted installs default to signing in without
+    /// it, so a login can resolve on the first call.
+    case needsCode(session: String)
 }
 
 /// Owns the auth lifecycle and the active-organization context.
@@ -173,14 +177,33 @@ final class SessionStore {
 
     // MARK: - Login flow
 
-    func startLogin(email: String, password: String) async throws -> String {
+    func startLogin(email: String, password: String) async throws -> LoginOutcome {
         let body = [
             "email": email,
             "password": password,
             "turnstile": AppConfig.turnstileToken,
         ]
-        let session: AuthSession = try await api.post("auth/login", body: body, authorized: false)
-        return session.session
+        let result: AuthSession = try await api.post("auth/login", body: body, authorized: false)
+        return try await resolve(result)
+    }
+
+    /// Maps a start-of-login response onto an outcome, completing the sign-in
+    /// when the backend already resolved it.
+    private func resolve(_ result: AuthSession) async throws -> LoginOutcome {
+        if result.needsCode {
+            guard let session = result.session else {
+                throw APIError.decoding(URLError(.cannotParseResponse))
+            }
+            return .needsCode(session: session)
+        }
+        if result.twoFARequired == true, let pending = result.pendingToken {
+            return .needsTwoFA(pendingToken: pending)
+        }
+        guard let token = result.token else {
+            throw APIError.decoding(URLError(.cannotParseResponse))
+        }
+        try await completeLogin(with: token)
+        return .loggedIn
     }
 
     func confirmLogin(session: String, code: String) async throws -> LoginOutcome {
@@ -222,29 +245,44 @@ final class SessionStore {
 
     /// Apple shares the user's name only with the app, never inside the
     /// identity token, so it rides along for first-sign-in profile prefill.
-    func signInWithApple(identityToken: String, firstName: String?, lastName: String?) async throws {
+    func signInWithApple(identityToken: String, firstName: String?, lastName: String?) async throws -> LoginOutcome {
         var body = ["identity_token": identityToken]
         if let firstName, !firstName.isEmpty { body["first_name"] = firstName }
         if let lastName, !lastName.isEmpty { body["last_name"] = lastName }
-        let token: AuthToken = try await api.post("auth/apple", body: body, authorized: false)
-        try await completeLogin(with: token)
+        let result: LoginResult = try await api.post("auth/apple", body: body, authorized: false)
+        return try await resolve(social: result)
     }
 
-    func signInWithGoogle(idToken: String) async throws {
-        let token: AuthToken = try await api.post("auth/google", body: ["id_token": idToken], authorized: false)
+    func signInWithGoogle(idToken: String) async throws -> LoginOutcome {
+        let result: LoginResult = try await api.post("auth/google", body: ["id_token": idToken], authorized: false)
+        return try await resolve(social: result)
+    }
+
+    /// Social sign-in runs the same 2FA gate as password login, so it can
+    /// return a challenge instead of a token.
+    private func resolve(social result: LoginResult) async throws -> LoginOutcome {
+        if result.twoFARequired == true, let pending = result.pendingToken {
+            return .needsTwoFA(pendingToken: pending)
+        }
+        guard let token = result.token else {
+            throw APIError.decoding(URLError(.cannotParseResponse))
+        }
         try await completeLogin(with: token)
+        return .loggedIn
     }
 
     // MARK: - Registration
 
-    func startRegister(email: String, password: String) async throws -> String {
+    /// Returns the session to confirm, or nil when the deployment has email
+    /// verification off and the account already exists.
+    func startRegister(email: String, password: String) async throws -> String? {
         let body = [
             "email": email,
             "password": password,
             "turnstile": AppConfig.turnstileToken,
         ]
-        let session: AuthSession = try await api.post("auth/register", body: body, authorized: false)
-        return session.session
+        let result: AuthSession = try await api.post("auth/register", body: body, authorized: false)
+        return result.needsCode ? result.session : nil
     }
 
     /// Registration confirm returns 204 (no tokens); chain into the login flow after.

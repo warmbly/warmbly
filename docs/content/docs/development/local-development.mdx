@@ -32,9 +32,13 @@ and admin panel together in your terminal.
 
 Open `http://localhost:5173` and log in with `dev@warmbly.com` / `password123`.
 
-Warmbly emails a 6-digit code on every login, and local mail goes to Mailpit
-rather than a real inbox. Open `http://localhost:18025`, read the newest "Your
-Login Code" message, and paste the code into the dashboard.
+The native dev stack keeps the emailed login code on (`AUTH_LOGIN_CODE=always`)
+so the flow stays exercised, and local mail goes to Mailpit rather than a real
+inbox. Open `http://localhost:18025`, read the newest "Your Login Code"
+message, and paste the code into the dashboard.
+
+A self-hosted install behaves differently: there the code is off by default, so
+signing in never depends on mail. See [self-hosting](/development/deployment-guide/#authentication).
 
 Ctrl-C stops the app services; the Docker infra stays up, so the next `make dev`
 skips straight to starting the app. The Go services run natively with `go run`,
@@ -239,7 +243,9 @@ make backend AI_PROVIDER=openai AI_KEY=sk-...
 
 ## Mailpit
 
-All outbound mail is captured by Mailpit. The backend uses plain SMTP (`mailpit:1025`) in dev rather than SES, so no AWS credentials are needed. Mailpit accepts SMTP AUTH with any credentials (no TLS required), so worker sends from sandbox mailboxes are captured too.
+All outbound mail is captured by Mailpit. The dev targets set `MAIL_TRANSPORT=smtp` with `SMTP_SECURITY=none`, because a sink offers no STARTTLS and the platform transport refuses to send credentials over an unencrypted connection. Mailpit accepts SMTP AUTH with any credentials, so worker sends from sandbox mailboxes are captured too.
+
+Mailpit sits in the `sandbox` compose profile, so the self-host `make up` never starts it. `make dev`, `make infra` and `make sandbox` name it explicitly, which starts it regardless of the profile.
 
 - Web UI: `http://localhost:18025`
 - SMTP from inside docker: `mailpit:1025`

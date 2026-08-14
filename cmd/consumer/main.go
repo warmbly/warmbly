@@ -314,11 +314,14 @@ func main() {
 	// channel. Slack reuses the integration service (token decryption).
 	var notifEmail notification.EmailSender
 	if emailCfg, ecErr := cfg.LoadEmailConfig(ctx); ecErr == nil {
-		if smtpCfg := cfg.LoadSMTPConfig(ctx); smtpCfg != nil {
-			notifEmail = notify.NewSMTPEmailNotificationService(emailCfg.EmailName, emailCfg.EmailAddress, smtpCfg.Host, smtpCfg.Port)
-		} else if ses, sErr := notify.NewEmailNotficiationService(ctx, emailCfg.EmailName, emailCfg.EmailAddress); sErr == nil {
-			notifEmail = ses
+		if transport, tErr := notify.NewTransport(ctx, cfg, emailCfg.EmailName, emailCfg.EmailAddress); tErr == nil {
+			notifEmail = transport
+			log.Printf("Notification mail transport: %s", transport.Description)
+		} else {
+			log.Printf("Warning: notification email disabled: %v", tErr)
 		}
+	} else {
+		log.Printf("Warning: notification email disabled, EMAIL_NAME/EMAIL_ADDRESS not set: %v", ecErr)
 	}
 	notificationService.WireDelivery(notifEmail, integrationServiceC, repository.NewUserRepostory(primaryDB, kmsClient), orgRepoConsumer)
 	// Mobile push (APNs) fires from THIS process too: reply/bounce/complaint

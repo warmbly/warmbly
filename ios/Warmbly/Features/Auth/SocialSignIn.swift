@@ -13,6 +13,9 @@ struct SocialSignInRow: View {
     let providers: AuthProvidersInfo?
     @Binding var busy: Bool
     let onError: (String) -> Void
+    /// Social sign-in runs the same 2FA gate as password login, so it can end
+    /// in a challenge rather than a session.
+    var onTwoFA: (String) -> Void = { _ in }
 
     @State private var googleFlow = GoogleSignInFlow()
 
@@ -75,7 +78,8 @@ struct SocialSignInRow: View {
             Task {
                 defer { busy = false }
                 do {
-                    try await env.session.signInWithApple(identityToken: identityToken, firstName: first, lastName: last)
+                    let outcome = try await env.session.signInWithApple(identityToken: identityToken, firstName: first, lastName: last)
+                    if case let .needsTwoFA(pendingToken) = outcome { onTwoFA(pendingToken) }
                 } catch {
                     onError((error as? APIError)?.errorDescription ?? error.localizedDescription)
                 }
@@ -93,7 +97,8 @@ struct SocialSignInRow: View {
             defer { busy = false }
             do {
                 let idToken = try await googleFlow.signIn(clientID: clientID)
-                try await env.session.signInWithGoogle(idToken: idToken)
+                let outcome = try await env.session.signInWithGoogle(idToken: idToken)
+                if case let .needsTwoFA(pendingToken) = outcome { onTwoFA(pendingToken) }
             } catch GoogleSignInFlow.Failure.cancelled {
                 // User closed the sheet; stay quiet.
             } catch {

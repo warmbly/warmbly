@@ -107,22 +107,33 @@ Kafka. One command brings up the whole platform on local, open-source pieces:
 
 ```bash
 git clone https://github.com/warmbly/warmbly && cd warmbly
-make up               # or: docker compose up --build
+make up
 ```
 
-You need Docker with Compose v2 and about 10 GB of free disk; the first build
-takes roughly 6 minutes. Then open `http://localhost:5173` and register.
+That is the whole install. `make up` waits for the backend and prints a
+one-time link that claims the instance and makes you its admin. Open it, pick a
+password, and you are in.
 
-> [!IMPORTANT]
-> Warmbly emails a 6-digit code to finish signup and on every login. A fresh
-> install has no mail relay, so that code lands in the bundled Mailpit catcher
-> at `http://localhost:18025`, not in your inbox.
+You need Docker with Compose v2 and about 10 GB of free disk; the first run
+builds the images once, which takes roughly 6 minutes.
+
+Nothing else is required. No SMTP relay, no captcha keys, no cloud account, no
+`.env` to hand-write, and no separate command to grant yourself admin. To skip
+the link entirely, set `WARMBLY_BOOTSTRAP_EMAIL` and
+`WARMBLY_BOOTSTRAP_PASSWORD_HASH` in `.env` before the first start and the owner
+account exists when it comes up.
+
+> [!NOTE]
+> Signing in never depends on outbound mail. Platform email defaults to
+> `MAIL_TRANSPORT=log`, so password resets and invitations are written to the
+> backend logs until you point `SMTP_*` at a real relay. Configure one when you
+> are ready, not to get started.
 
 **➡️ Follow the [step-by-step self-hosting guide](https://docs.warmbly.com/development/deployment-guide/)**
 for the full walkthrough: setting your own secrets, verifying the stack is
-healthy, granting the first admin, exposing it on your network or behind HTTPS,
-connecting Gmail and Microsoft mailboxes, scaling workers, backups, and a
-troubleshooting table for the errors people actually hit.
+healthy, configuring mail and single sign-on, exposing it on your network or
+behind HTTPS, connecting Gmail and Microsoft mailboxes, scaling workers,
+backups, and a troubleshooting table for the errors people actually hit.
 
 Every external dependency is picked by an environment variable, so you swap in a
 cloud service only if you want one:

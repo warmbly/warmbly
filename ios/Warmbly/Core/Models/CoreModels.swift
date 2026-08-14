@@ -50,8 +50,31 @@ struct LoginResult: Codable, Sendable {
     }
 }
 
+/// `POST /auth/login` and `/auth/register`.
+///
+/// `session` plus `codeRequired == true` is the two-step flow: a code was
+/// emailed and the caller confirms it. When the deployment has the login code
+/// off, or email verification off, nothing is sent and the remaining fields
+/// carry the outcome instead, so `session` is optional.
 struct AuthSession: Codable, Sendable {
-    var session: String
+    var session: String?
+    var codeRequired: Bool?
+    var token: AuthToken?
+    var twoFARequired: Bool?
+    var pendingToken: String?
+    var expiresIn: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case session
+        case codeRequired = "code_required"
+        case token
+        case twoFARequired = "two_fa_required"
+        case pendingToken = "pending_token"
+        case expiresIn = "expires_in"
+    }
+
+    /// Older backends omit the field entirely; they always sent a code.
+    var needsCode: Bool { codeRequired ?? true }
 }
 
 /// `GET /auth/providers`: which native social sign-in options this host

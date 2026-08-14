@@ -40,7 +40,7 @@ Your account is ready. From here you can connect mailboxes, warm them up, and st
 <table cellpadding="0" cellspacing="0" border="0" align="center" role="presentation" style="margin:0 0 24px;">
 <tr>
 <td align="center" style="border-radius:6px;background:#0f172a;">
-<a href="https://app.warmbly.com/" target="_blank" style="display:inline-block;padding:10px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.01em;">Open the dashboard</a>
+<a href="{{.AppURL}}/" target="_blank" style="display:inline-block;padding:10px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.01em;">Open the dashboard</a>
 </td>
 </tr>
 </table>
@@ -58,13 +58,16 @@ var welcomeTmpl = template.Must(template.New("welcome_content").Parse(welcomeCon
 // base shell so styling stays consistent with the rest of the
 // transactional mail.
 func GenerateWelcomeHTML(firstName string) (string, error) {
-	data := struct{ FirstName string }{FirstName: firstName}
+	data := struct {
+		FirstName string
+		AppURL    string
+	}{FirstName: firstName, AppURL: AppURL}
 	var buf bytes.Buffer
 	if err := welcomeTmpl.Execute(&buf, data); err != nil {
 		sentry.CaptureException(err)
 		return "", err
 	}
-	return renderEmail("Welcome to Warmbly", buf.String())
+	return renderEmail("Welcome to "+CompanyName, buf.String())
 }
 
 // WelcomeTemplate / WelcomeHTMLTMPL retained as deprecated exports so

@@ -3,25 +3,56 @@ package templates
 import (
 	"bytes"
 	"html/template"
+	"os"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 )
 
 // ─── Centralized Business Details ────────────────────────────────
-// Update these constants to change the branding and legal info
-// across all email templates.
-const (
-	CompanyName    = "Warmbly"
-	LegalEntity    = "Mindroot Ltd"
-	CompanyNumber  = "00000000"
-	PlaceOfReg     = "England and Wales"
-	RegisteredAddr = "1 Example Street, London, W1A 1AA"
-	WebsiteURL     = "https://warmbly.com"
-	AppURL         = "https://app.warmbly.com"
-	SupportEmail   = "team@warmbly.com"
-	TermsURL       = "https://warmbly.com/terms"
-	PrivacyURL     = "https://warmbly.com/privacy"
+// Branding and legal info for every email template. These are variables, not
+// constants, because a self-hosted install must not send mail attributed to
+// Mindroot Ltd with links to someone else's dashboard: AppURL derives from
+// APP_URL and the rest are overridable with EMAIL_BRAND_*.
+var (
+	CompanyName    = brandEnv("EMAIL_BRAND_NAME", "Warmbly")
+	LegalEntity    = brandEnv("EMAIL_BRAND_LEGAL_ENTITY", "Mindroot Ltd")
+	CompanyNumber  = brandEnv("EMAIL_BRAND_COMPANY_NUMBER", "00000000")
+	PlaceOfReg     = brandEnv("EMAIL_BRAND_PLACE_OF_REG", "England and Wales")
+	RegisteredAddr = brandEnv("EMAIL_BRAND_ADDRESS", "1 Example Street, London, W1A 1AA")
+	WebsiteURL     = brandEnv("EMAIL_BRAND_WEBSITE_URL", "https://warmbly.com")
+	AppURL         = appURL()
+	SupportEmail   = brandEnv("EMAIL_BRAND_SUPPORT_EMAIL", "team@warmbly.com")
+	TermsURL       = brandEnv("EMAIL_BRAND_TERMS_URL", "https://warmbly.com/terms")
+	PrivacyURL     = brandEnv("EMAIL_BRAND_PRIVACY_URL", "https://warmbly.com/privacy")
 )
+
+func brandEnv(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
+// appURL is the dashboard base every emailed link is built from. Reading it
+// here rather than hardcoding it is what makes password reset and team invites
+// work on a self-hosted install.
+func appURL() string {
+	for _, key := range []string{"APP_URL", "FRONTEND_BASE_URL"} {
+		if v := strings.TrimRight(strings.TrimSpace(os.Getenv(key)), "/"); v != "" {
+			return v
+		}
+	}
+	return "https://app.warmbly.com"
+}
+
+// WebsiteLabel is the display text for the footer website link, derived from
+// WebsiteURL so a rebranded install does not render "warmbly.com" pointing
+// somewhere else.
+func WebsiteLabel() string {
+	label := strings.TrimPrefix(strings.TrimPrefix(WebsiteURL, "https://"), "http://")
+	return strings.TrimSuffix(label, "/")
+}
 
 type baseData struct {
 	Subject        string
@@ -32,6 +63,7 @@ type baseData struct {
 	PlaceOfReg     string
 	RegisteredAddr string
 	WebsiteURL     string
+	WebsiteLabel   string
 	TermsURL       string
 	PrivacyURL     string
 }
@@ -48,6 +80,7 @@ func renderEmail(subject, content string) (string, error) {
 		PlaceOfReg:     PlaceOfReg,
 		RegisteredAddr: RegisteredAddr,
 		WebsiteURL:     WebsiteURL,
+		WebsiteLabel:   WebsiteLabel(),
 		TermsURL:       TermsURL,
 		PrivacyURL:     PrivacyURL,
 	}
@@ -118,7 +151,7 @@ const baseHTML = `<!DOCTYPE html>
 <span style="color:#cbd5e1;">&nbsp;·&nbsp;</span>
 <a href="{{.TermsURL}}" style="color:#64748b;text-decoration:none;">Terms</a>
 <span style="color:#cbd5e1;">&nbsp;·&nbsp;</span>
-<a href="{{.WebsiteURL}}" style="color:#64748b;text-decoration:none;">warmbly.com</a>
+<a href="{{.WebsiteURL}}" style="color:#64748b;text-decoration:none;">{{.WebsiteLabel}}</a>
 </td>
 </tr>
 <tr>

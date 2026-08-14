@@ -2,12 +2,10 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/notify/templates"
@@ -21,21 +19,23 @@ func (s *authService) ResetPasswordStart(ctx context.Context, data *ResetPasswor
 		return err
 	}
 
-	user, err := s.userRepository.GetUserByEmail(ctx, data.Email)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return errx.ErrUser
-		}
-		return errx.InternalError()
+	// Spend the budget before the lookup, and key it on the submitted address,
+	// so an unknown address costs the attacker the same as a known one.
+	if err := s.passwordResetLimit(ctx, data.Email); err != nil {
+		return err
+	}
+
+	user, uerr := s.userRepository.GetUserByEmail(ctx, data.Email)
+	if uerr != nil {
+		// Unknown address answers 200 like every other. Returning ErrUser here
+		// was an enumeration oracle, and because *errx.Error has no Unwrap the
+		// errors.Is check never matched, so it answered 500 instead.
+		return nil
 	}
 
 	u, xerr := s.userService.GetUser(ctx, user.ID)
 	if xerr != nil {
-		return xerr
-	}
-
-	if err := s.passwordResetLimit(ctx, u.Email); err != nil {
-		return err
+		return nil
 	}
 
 	sessionID := uuid.New()
@@ -68,7 +68,7 @@ func (s *authService) ResetPasswordStart(ctx context.Context, data *ResetPasswor
 
 	if err := s.sendAuthEmail(ctx, u.Email, "Password Reset Confirmation", text); err != nil {
 		sentry.CaptureException(err)
-		return errx.InternalError()
+		return errx.ErrMailUndeliverable
 	}
 
 	return nil

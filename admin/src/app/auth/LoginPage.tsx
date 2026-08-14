@@ -21,7 +21,8 @@ import { Label } from "@/components/ui/label";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Logo } from "@/components/Logo";
 import { TurnstileModal } from "@/components/captcha/TurnstileModal";
-import { login, loginConfirm } from "@/lib/api/client/auth";
+import { login, loginConfirm, verifyTwoFA } from "@/lib/api/client/auth";
+import type { LoginResponse } from "@/lib/api/models/auth";
 import { setToken } from "@/lib/auth/storage";
 import { APIError } from "@/lib/api/client";
 import { DASHBOARD_URL, ENV_LABEL } from "@/lib/env";
@@ -42,7 +43,8 @@ function errorMessage(err: unknown): string {
 export default function LoginPage() {
     const nav = useNavigate();
     const loc = useLocation();
-    const [phase, setPhase] = useState<"credentials" | "code">("credentials");
+    const [phase, setPhase] = useState<"credentials" | "code" | "twofa">("credentials");
+    const [pendingToken, setPendingToken] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -83,7 +85,24 @@ export default function LoginPage() {
         const fresh = phase === "credentials";
         try {
             const res = await login({ email, password, turnstile: token });
-            setSession(res.session);
+            // Nothing was emailed: this deployment has the login code off, or
+            // already knows this device. The login is already resolved.
+            if (!res.code_required) {
+                if (res.two_fa_required && res.pending_token) {
+                    setPendingToken(res.pending_token);
+                    setCode("");
+                    setPhase("twofa");
+                    return;
+                }
+                if (res.token) {
+                    setToken(res.token);
+                    const dest = (loc.state as { from?: string } | null)?.from ?? "/";
+                    nav(dest, { replace: true });
+                    return;
+                }
+                throw new Error("The server returned an unexpected sign-in response.");
+            }
+            setSession(res.session ?? "");
             setCode("");
             setResendIn(RESEND_SECONDS);
             if (fresh) setPhase("code");
@@ -113,7 +132,39 @@ export default function LoginPage() {
         setError(null);
         setSubmitting(true);
         try {
-            const tok = await loginConfirm({ session, code: value });
+            const res = await loginConfirm({ session, code: value });
+            // 2FA gate. Without this branch an operator with TOTP enrolled got
+            // a response carrying no access token and was silently stuck.
+            if (res.two_fa_required) {
+                if (!res.pending_token) throw new Error("The server returned an unexpected sign-in response.");
+                setPendingToken(res.pending_token);
+                setCode("");
+                setPhase("twofa");
+                return;
+            }
+            if (!res.access_token) throw new Error("The server returned an unexpected sign-in response.");
+            setToken(res as LoginResponse);
+            const dest = (loc.state as { from?: string } | null)?.from ?? "/";
+            nav(dest, { replace: true });
+        } catch (err) {
+            const msg = errorMessage(err);
+            setError(msg);
+            toast.error(msg);
+            setCode("");
+        } finally {
+            confirmInFlight.current = false;
+            setSubmitting(false);
+        }
+    }
+
+    // ── Step 3: TOTP or recovery code -> /auth/2fa/verify ──
+    async function submitTwoFA(value: string) {
+        if (confirmInFlight.current || value.length < 6) return;
+        confirmInFlight.current = true;
+        setError(null);
+        setSubmitting(true);
+        try {
+            const tok = await verifyTwoFA({ pending_token: pendingToken, code: value });
             setToken(tok);
             const dest = (loc.state as { from?: string } | null)?.from ?? "/";
             nav(dest, { replace: true });
@@ -273,22 +324,30 @@ export default function LoginPage() {
                                         className="text-center"
                                     >
                                         <div className="mx-auto mt-1 grid size-12 place-items-center rounded-xl bg-red-50 text-red-600">
-                                            <MailCheck className="size-6" />
+                                            {phase === "twofa" ? <ShieldCheck className="size-6" /> : <MailCheck className="size-6" />}
                                         </div>
-                                        <h1 className="mt-4 text-[20px] font-semibold tracking-tight">Check your email</h1>
+                                        <h1 className="mt-4 text-[20px] font-semibold tracking-tight">
+                                            {phase === "twofa" ? "Two-factor authentication" : "Check your email"}
+                                        </h1>
                                         <p className="mt-1 text-[13px] text-muted-foreground">
-                                            We sent a 6-digit code to{" "}
-                                            <span className="font-medium text-foreground">{email}</span>.
+                                            {phase === "twofa" ? (
+                                                <>Enter the 6-digit code from your authenticator app, or a recovery code.</>
+                                            ) : (
+                                                <>
+                                                    We sent a 6-digit code to{" "}
+                                                    <span className="font-medium text-foreground">{email}</span>.
+                                                </>
+                                            )}
                                         </p>
 
-                                        <form className="mt-6 flex flex-col items-center gap-4" onSubmit={(e) => { e.preventDefault(); submitCode(code); }}>
+                                        <form className="mt-6 flex flex-col items-center gap-4" onSubmit={(e) => { e.preventDefault(); phase === "twofa" ? submitTwoFA(code) : submitCode(code); }}>
                                             <InputOTP
                                                 maxLength={6}
                                                 value={code}
                                                 onChange={(v) => {
                                                     setCode(v);
                                                     if (error) setError(null);
-                                                    if (v.length === 6) submitCode(v);
+                                                    if (v.length === 6) { if (phase === "twofa") submitTwoFA(v); else submitCode(v); }
                                                 }}
                                                 disabled={submitting}
                                                 containerClassName="gap-2"
@@ -311,7 +370,7 @@ export default function LoginPage() {
 
                                             {errorLine}
 
-                                            <div className="text-[12px] text-muted-foreground">
+                                            <div className={cn("text-[12px] text-muted-foreground", phase === "twofa" && "hidden")}>
                                                 {resendIn > 0 ? (
                                                     <span>
                                                         Resend code in <span className="font-medium text-foreground">{resendIn}s</span>
@@ -329,7 +388,7 @@ export default function LoginPage() {
                                                 )}
                                             </div>
 
-                                            {import.meta.env.DEV && (
+                                            {import.meta.env.DEV && phase === "code" && (
                                                 <p className="text-[11px] text-muted-foreground">
                                                     Dev: the code is in mailpit →{" "}
                                                     <a

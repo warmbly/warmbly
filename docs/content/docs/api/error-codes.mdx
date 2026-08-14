@@ -226,6 +226,19 @@ Returned when an unexpected error occurs on the server.
 - Retry the request after a short delay
 - If persistent, contact support with request details
 
+One `internal_error` variant is worth distinguishing. When an authentication endpoint cannot send its email, the message names that specifically rather than reporting a generic fault:
+
+```json
+{
+  "error": "Internal Server Error",
+  "message": "We couldn't send the email. If you administer this server, check the mail transport configuration.",
+  "code": "internal_error",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
+On a self-hosted deployment that means `MAIL_TRANSPORT` and the `SMTP_` variables. See [self-hosting](/development/deployment-guide/).
+
 ### 503 Service Unavailable
 
 Returned when the service is temporarily unavailable.

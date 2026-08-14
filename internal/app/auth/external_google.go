@@ -8,7 +8,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-func (s *authService) GoogleAuth(ctx context.Context, code, ipaddr, userAgent string) (*models.Token, *errx.Error) {
+func (s *authService) GoogleAuth(ctx context.Context, code, ipaddr, userAgent string) (*models.LoginResult, *errx.Error) {
 	atoken, err := s.externalAuth.GoogleAuth.Exchange(ctx, code)
 	if err != nil {
 		return nil, errx.ErrExternalCode
@@ -28,10 +28,7 @@ func (s *authService) GoogleAuth(ctx context.Context, code, ipaddr, userAgent st
 		return nil, xerr
 	}
 
-	session, xerr := s.tokenService.GenerateSession(ctx, udb.ID, "", ipaddr, userAgent, token.AuthProviderGoogle)
-	if xerr != nil {
-		return nil, xerr
-	}
-
-	return session, nil
+	// Ban enforcement and the 2FA gate, which this path skipped entirely: a
+	// user who enrolled TOTP could sign in without it by choosing Google.
+	return s.finishLoginAs(ctx, udb.ID, ipaddr, userAgent, token.AuthProviderGoogle)
 }

@@ -5,7 +5,7 @@ description: A step-by-step guide to running the whole Warmbly platform yourself
 
 Warmbly self-hosts with **no cloud account of any kind**: no AWS, no GCP, no Stripe, no Kafka. One `docker-compose.yml` runs everything on local, open-source pieces, and every external dependency is an environment variable you can flip later.
 
-Follow the seven steps below in order and you will have a working install. Everything after them is optional.
+Three commands give you a working install. Everything after them is optional, and nothing below is needed before you have seen it running.
 
 <Mermaid
   chart={`
@@ -35,14 +35,16 @@ flowchart LR
 | Git | To clone the repository |
 | ~10 GB free disk | The first build produces about 3.7 GB of images plus 2.5 GB of build cache |
 | 4 GB RAM | The running stack idles near 300 MB; the first build is the demanding part |
-| Free ports | 5173, 5174, 8080, 4000, 3000, 4222, 8222, 11025, 15432, 16379, 18025 |
+| Free ports | 5173, 5174, 8080, 4000, 3000, 4222, 15432, 16379 |
 
 The first build compiles Go, Rust, and Elixir services and builds two frontends. On a modern laptop that takes about **6 minutes**. Later builds reuse the cache and are much faster.
 
-Nothing else is required to install. Two things are worth gathering before you get far, because they are the only credentials that come from outside Warmbly:
+That is the whole list. No SMTP relay, no captcha keys, no cloud account, and no `.env` to write before the first run.
 
-- **An SMTP relay** for the platform's own mail. Warmbly emails a login code on every sign-in, and until you set one those go to the bundled Mailpit catcher instead of real inboxes. See [notification email](#notification-email).
-- **OAuth clients** if you want to connect Gmail, Google Workspace, or Microsoft 365 mailboxes. Plain SMTP and IMAP mailboxes need nothing. See [connect mailboxes](#connect-mailboxes).
+Two things come from outside Warmbly, and both can wait until after you have it running:
+
+- **An SMTP relay** for password resets, invitations and digests. Without one those messages go to the backend logs, and signing in never needs them. See [platform email](#platform-email).
+- **OAuth clients** if you want to connect Gmail, Google Workspace or Microsoft 365 mailboxes. Plain SMTP and IMAP mailboxes need nothing. See [connect mailboxes](#connect-mailboxes).
 
 All configuration lives in a single `.env` at the repository root, covered in [environment configuration](#environment-configuration) with a [complete example](#a-complete-env).
 
@@ -66,16 +68,71 @@ git clone https://github.com/warmbly/warmbly && cd warmbly
 
 <Step>
 
-### Set your secrets
+### Start it
 
-**One `.env` next to `docker-compose.yml` configures the entire stack.** Every variable is optional and falls back to a working no-cloud default, so an absent or empty `.env` still boots. You set only what you want to change, and it reaches every service that needs it: the backend, consumer, worker, tracking, and realtime.
+```bash
+make up
+```
 
-The compose file ships working dev defaults for every secret, so you can skip this step to try Warmbly on your own machine. **Do not skip it for anything reachable by other people.**
+That is `docker compose -p warmbly up -d --build`. It builds the images and starts ten containers in the background, then waits for the backend and prints the link that claims your instance. The first run is the slow one.
 
-Generate your own values and put them in a `.env` file next to `docker-compose.yml`:
+Only what a running install needs is started. The mail catcher and the local IMAP server belong to the demo environment and stay out of the way until you ask for them with `make sandbox`.
+
+</Step>
+
+<Step>
+
+### Claim it
+
+`make up` prints a one-time link when it finishes. Open it, pick a password, and you are the owner and platform admin of the instance.
+
+If you missed it, print it again:
+
+```bash
+make claim
+```
+
+The link is single use, valid for 24 hours, and only its hash is stored, so reading the database does not yield a working one. It is invalidated the moment you use it.
+
+Signing in never depends on mail. The emailed login code is off on a self-hosted install (`AUTH_LOGIN_CODE`), because a relay you have not configured should not stand between you and your own instance. TOTP and passkeys are both available once you are in.
+
+Two things you get for free at this point: the dashboard at `http://localhost:5173`, and the admin panel at `http://localhost:5174` with the same account, because the owner is already an admin.
+
+<Callout title="Automating the install?">
+Set `WARMBLY_BOOTSTRAP_EMAIL` and `WARMBLY_BOOTSTRAP_PASSWORD_HASH` in `.env` before the first start and the account exists when the stack comes up, with no link to click. Both are read only while the users table is empty, so they are a no-op on every later restart.
+</Callout>
+
+</Step>
+
+<Step>
+
+### Load demo data (optional)
+
+To explore a populated workspace instead of an empty one:
+
+```bash
+make seed-demo
+```
+
+That creates `dev@warmbly.com` / `password123` along with mailboxes, campaigns, contacts, and two weeks of history. It builds the seed image each time on purpose: `compose run` otherwise reuses a stale one, which fails against a newer database schema.
+
+For a demo where mail actually flows end to end, with sends, replies, opens, and clicks, see the [sandbox](/development/sandbox/).
+
+</Step>
+
+</Steps>
+
+![The dashboard after your first login](/dashboard-campaigns.png)
+
+## Before you expose it
+
+Everything above works with zero configuration because the compose file ships working defaults for every secret. Those defaults are published in this repository, so they protect nothing. The backend refuses to start on them once `APP_ENV` is anything other than `dev`.
+
+Before anyone else can reach the instance, generate real values into a `.env` next to `docker-compose.yml`:
 
 ```bash
 cat > .env <<EOF
+APP_ENV=prod
 AUTH_SECRET=$(openssl rand -base64 32)
 INTERNAL_API_TOKEN=$(openssl rand -hex 24)
 SECRET_KEY_BASE=$(openssl rand -base64 64 | tr -d '\n')
@@ -92,35 +149,23 @@ EOF
 | `KMS_LOCAL_MASTER_KEY` | base64, exactly 32 bytes | The root key that seals every per-organization data key |
 | `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex chars | Mailbox SMTP and IMAP credentials at rest |
 
+`APP_ENV=prod` requires no cloud account. Error reporting and GeoIP lookups are used when configured and skipped with a logged note when they are not.
+
 <Callout type="warn" title="Back up the last two keys before you store a single mailbox">
 `KMS_LOCAL_MASTER_KEY` and `CREDENTIALS_ENCRYPTION_KEY` seal every stored credential. Losing them is unrecoverable, and a database backup without them cannot be decrypted.
 </Callout>
 
-</Step>
+Rotating the secrets means recreating the containers, which `make up` does. Changing the two encryption keys after mailboxes exist does not: those credentials were sealed with the old values.
 
-<Step>
-
-### Start the stack
-
-```bash
-make up
-```
-
-That is `docker compose -p warmbly up -d --build`. It builds the images and starts eleven containers in the background. The first run is the slow one.
-
-</Step>
-
-<Step>
-
-### Check that everything is healthy
+## Checking the stack
 
 ```bash
 make status
 ```
 
-Wait until `backend`, `postgres`, `redis`, `nats`, `realtime`, `tracking`, and `mailpit` all report `(healthy)`. The backend applies its database migrations on boot, so it takes a few seconds longer than the rest.
+`backend`, `postgres`, `redis` and `nats` report `(healthy)`. The backend applies its migrations on boot, so it takes a few seconds longer than the rest. `realtime` and `tracking` have no healthcheck and show as `running`.
 
-Then confirm each entry point answers:
+Each entry point answers on its own port:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/health   # backend
@@ -129,61 +174,9 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4000/health   # realti
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173          # dashboard
 ```
 
-All four should print `200`. If one does not, `make logs backend` (or the service in question) will say why, and the [troubleshooting](#troubleshooting) table covers the usual causes.
+If one does not print `200`, `make logs backend` (or the service in question) will say why, and [troubleshooting](#troubleshooting) covers the usual causes.
 
-</Step>
-
-<Step>
-
-### Create your account
-
-Open `http://localhost:5173` and register. Captcha is off by default, so any email address works.
-
-**Warmbly emails you a 6-digit code to finish signing up, and again on every login.** A fresh install has no real mail relay, so that code goes to the bundled Mailpit catcher instead of a real inbox:
-
-1. Open `http://localhost:18025`
-2. Open the newest message ("Your Verification Code", then "Your Login Code" on later sign-ins)
-3. Copy the 6-digit code back into the dashboard
-
-This is the step people miss most often. Point `SMTP_HOST` at a real relay ([notification email](#notification-email)) once you are past setup, and the codes go to your actual inbox.
-
-</Step>
-
-<Step>
-
-### Make yourself a platform admin
-
-Nothing grants the first platform admin automatically, so do it from the host after your account exists:
-
-```bash
-make grant-admin EMAIL=you@example.com          # ROLE=super|support|ops|analyst, default super
-```
-
-Then sign in at `http://localhost:5174` with the same account and code flow.
-
-</Step>
-
-<Step>
-
-### Load demo data (optional)
-
-To explore a populated workspace instead of an empty one:
-
-```bash
-docker compose -p warmbly --profile seed run --rm --build seed
-```
-
-That creates `dev@warmbly.com` / `password123` along with mailboxes, campaigns, contacts, and two weeks of history. Login still needs the code from Mailpit.
-
-Keep the `--build` flag. `compose run` reuses whatever seed image already exists, and a stale one fails against a newer database schema.
-
-For a demo where mail actually flows end to end, with sends, replies, opens, and clicks, see the [sandbox](/development/sandbox/).
-
-</Step>
-
-</Steps>
-
-![The dashboard after your first login](/dashboard-campaigns.png)
+The admin panel's **System Status** page shows the same probes plus the platform mail transport, with a live connection check and a send-test button.
 
 ## What is running
 
@@ -196,7 +189,9 @@ For a demo where mail actually flows end to end, with sends, replies, opens, and
 | consumer / worker | none | Event processor; send and sync executor |
 | postgres / redis | 15432 / 16379 | PostgreSQL 16; cache and realtime bridge |
 | nats | 4222 (monitoring 8222) | Event bus (JetStream) |
-| mailpit | 18025 (SMTP 11025) | Mail catcher for platform email, including login codes |
+| mailpit | 18025 (SMTP 11025), bound to localhost | Not started by `make up`. An SMTP sink for the demo environment, in the `sandbox` profile. Its UI has no authentication, so it is never published to the network |
+
+Ten containers, idling near 300 MB in total. Nothing that only the demo environment needs is started: the mail catcher and the local IMAP server sit in the `sandbox` profile and come up only when `make sandbox`, `make dev` or `make infra` name them.
 
 There is no separate migration step. Migrations are embedded in the backend binary, and a standalone `/app/migrate` binary ships in the image as well.
 
@@ -261,13 +256,33 @@ BOX_GOOGLE_CLIENT_SECRET=
 BOX_OUTLOOK_CLIENT_ID=
 BOX_OUTLOOK_CLIENT_SECRET=
 
-# ── Platform email (login codes, resets, digests) ─────────────────
+# ── Platform email (resets, invitations, digests) ─────────────────
+# log writes messages to the backend logs and delivers nothing. Switch to
+# smtp before anyone else relies on this instance.
+MAIL_TRANSPORT=smtp
 SMTP_HOST=smtp.example.com
-SMTP_PORT=587
 SMTP_USERNAME=
 SMTP_PASSWORD=
+SMTP_SECURITY=starttls               # starttls (587) | tls (465) | none (25)
 EMAIL_NAME=Warmbly
 EMAIL_ADDRESS=noreply@example.com
+
+# ── Auth ──────────────────────────────────────────────────────────
+DEPLOYMENT_MODE=self_hosted
+# AUTH_LOGIN_CODE=off                # always | new_device | off
+# DISABLE_REGISTRATION=invite_only   # true | false | invite_only
+# TRUSTED_PROXIES=10.0.0.0/8         # required when a reverse proxy is in front
+
+# First owner, read only while the users table is empty. Omit and the backend
+# prints a single-use setup link to its logs.
+# WARMBLY_BOOTSTRAP_EMAIL=you@example.com
+# WARMBLY_BOOTSTRAP_PASSWORD_HASH=
+
+# ── Optional: single sign-on ──────────────────────────────────────
+# OIDC_ISSUER_URL=https://id.example.com/application/o/warmbly/
+# OIDC_CLIENT_ID=
+# OIDC_CLIENT_SECRET=
+# OIDC_DEFAULT_ORG=<organization uuid>
 
 # ── Optional: AI assistant ────────────────────────────────────────
 # AI_PROVIDER=openai
@@ -344,16 +359,69 @@ Every origin that talks to the API has to appear in `CORS_ALLOW_ORIGINS`. Anythi
 
 Make sure the proxy serves the websocket host over HTTP/1.1. The upgrade handshake cannot be expressed in HTTP/2, so a proxy that forces h2 to the client on that hostname breaks realtime while leaving everything else working.
 
-## Notification email
+## Platform email
 
-The platform's own mail (login codes, confirmations, resets, digests) goes out over SMTP. Compose points it at the bundled Mailpit. Switch to a real relay before you rely on the install:
+The platform's own mail is registration codes, password resets, team invitations, notification digests, and login codes where those are enabled. It is separate from campaign mail, which goes out through the mailboxes you connect.
+
+`MAIL_TRANSPORT` selects how it is sent.
+
+| Transport | What it does |
+|-----------|--------------|
+| `log` | Writes every message to the backend logs and delivers nothing. The default, so a fresh install works before you have a relay |
+| `smtp` | A real submission relay |
+| `ses` | AWS SES; needs AWS credentials and a verified sending identity |
+
+The default is deliberate. Nothing about signing in requires mail on a self-hosted install, so an unconfigured relay costs you password resets and invitations, not access. Read a code out of the logs with:
 
 ```bash
-SMTP_HOST=smtp.example.com        # unset falls back to AWS SES, which needs AWS credentials
-SMTP_PORT=587
+docker compose -p warmbly logs backend | grep -B2 -A12 "MAIL_TRANSPORT=log"
+```
+
+### Using a real relay
+
+```bash
+MAIL_TRANSPORT=smtp
+SMTP_HOST=smtp.example.com
+SMTP_USERNAME=apikey
+SMTP_PASSWORD=...
 EMAIL_NAME=Warmbly
 EMAIL_ADDRESS=noreply@example.com
 ```
+
+`SMTP_SECURITY` picks the transport security, and the port follows from it:
+
+| `SMTP_SECURITY` | Port | When |
+|-----------------|------|------|
+| `starttls` | 587 | The default, and what almost every provider wants |
+| `tls` | 465 | Implicit TLS |
+| `none` | 25 | Cleartext. Only legitimate for a sink or a relay on the same host |
+
+Set either the security mode or the port and the other follows, so `SMTP_PORT=465` alone is enough.
+
+Credentials are never sent over an unencrypted connection. If the relay does not offer STARTTLS and you have set a username, the send fails rather than transmitting the password in the clear. `SMTP_AUTH` defaults to `auto`, which picks the strongest mechanism the relay advertises; set it explicitly to `plain`, `login` or `cram-md5` if you need to pin one. `SMTP_TLS_INSECURE_SKIP_VERIFY=true` exists for an internal relay with a private CA and should not be used with a public provider.
+
+### Checking it works
+
+The backend dials the relay once at boot and logs the result, so a broken configuration shows up in `docker compose logs backend` rather than as a failed password reset weeks later.
+
+The admin panel's **System Status** page has a Platform mail card with the current transport, a live connection check that shows the SMTP error verbatim, and a send-test button.
+
+### Deliverability
+
+Mail from a self-hosted instance is subject to the same rules as any other sender. Publish SPF and DKIM for the domain in `EMAIL_ADDRESS`, and use a domain you control: a `From` address on a domain with no records is the most common reason reset links land in spam.
+
+### Branding
+
+Transactional email carries Warmbly's name and legal footer by default. Override it with the `EMAIL_BRAND_*` variables, which is worth doing on an instance your own users receive mail from:
+
+```bash
+EMAIL_BRAND_NAME=Acme
+EMAIL_BRAND_LEGAL_ENTITY=Acme Ltd
+EMAIL_BRAND_WEBSITE_URL=https://acme.example.com
+EMAIL_BRAND_SUPPORT_EMAIL=support@acme.example.com
+```
+
+Every emailed link (password reset, invitation, the dashboard button in the welcome mail) is built from `APP_URL`. Set it, or those links point somewhere that is not your deployment.
 
 ## Connect mailboxes
 
@@ -459,6 +527,67 @@ APPLE_TEAM_ID=...
 APPLE_KEY_ID=...
 APPLE_KEY_SECRET=...
 ```
+
+## Authentication
+
+Self-hosted defaults differ from the hosted product, because a deployment you run yourself should not depend on infrastructure you have not set up. `DEPLOYMENT_MODE=self_hosted` picks them; each one is independently overridable.
+
+| Setting | Self-host default | What it does |
+|---------|-------------------|--------------|
+| `AUTH_LOGIN_CODE` | `off` | `always`, `new_device` or `off`. Whether a login also requires a code emailed to the account |
+| `REQUIRE_EMAIL_VERIFICATION` | `false` | Whether a signup must confirm an emailed code before the account exists |
+| `DISABLE_REGISTRATION` | `invite_only` | `true`, `false` or `invite_only`. Who may create an account |
+| `DISABLE_PASSWORD_LOGIN` | `false` | Turns off email and password entirely, for SSO-only deployments |
+| `AUTH_IP_RATE_LIMIT` | `60` | Unauthenticated auth requests allowed per source IP per 15 minutes |
+
+### Why the login code is off by default
+
+Emailing a code on every sign-in makes the mail relay a single point of failure for all authentication, and it is not a second factor: NIST SP 800-63B states that email is not to be used for out-of-band authentication, and OWASP ASVS says the same. Codes remain in use for the things email is appropriate for, which are verifying an address at signup and recovering an account.
+
+Set `AUTH_LOGIN_CODE=new_device` to require one only from a device that has not signed in before, or `always` for the hosted behavior. TOTP and passkeys are both stronger and both available.
+
+### Stronger factors
+
+TOTP applies to every sign-in path, including Google, Apple and single sign-on. A passkey does not additionally prompt for TOTP: a user-verified passkey is already a possession factor bound to this origin.
+
+Passkeys need a secure context, so they are only available when `APP_URL` is HTTPS or a `localhost` address. A LAN IP over plain HTTP cannot be a WebAuthn relying-party ID; the backend detects this, logs it at boot, and the login screen hides the option instead of failing in the browser. Changing `APP_URL` after passkeys are enrolled invalidates all of them.
+
+### Behind a reverse proxy
+
+Set `TRUSTED_PROXIES` to the CIDRs your proxy connects from:
+
+```bash
+TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12
+```
+
+Empty means no proxy header is trusted, which is correct for a directly exposed backend. Without this a client can set `X-Forwarded-For` to anything, which forges the address used for rate limits, session records, audit entries, and API-key IP restrictions.
+
+## Single sign-on
+
+Generic OpenID Connect works with Authentik, Keycloak, Zitadel, Pocket ID, Dex, and anything else that publishes a discovery document. It is in the standard build, not a paid tier.
+
+For a self-hosted deployment it is also the sign-in path with no dependency on outbound mail at all, which makes it the recommended posture when you have no relay.
+
+```bash
+OIDC_ISSUER_URL=https://id.example.com/application/o/warmbly/
+OIDC_CLIENT_ID=...
+OIDC_CLIENT_SECRET=...
+OIDC_REDIRECT_URL=https://api.example.com/api/v1/auth/oidc/callback
+OIDC_ALLOWED_DOMAINS=example.com
+OIDC_DEFAULT_ORG=<organization uuid>
+```
+
+Register `OIDC_REDIRECT_URL` as the redirect URI at your provider. It defaults to `API_PUBLIC_URL` plus `/api/v1/auth/oidc/callback`, and providers match it by exact string, so it has to be identical on both sides.
+
+Discovery runs at boot. An unreachable or misconfigured issuer disables SSO with a logged reason rather than shipping a button that always fails.
+
+Three things worth knowing:
+
+- **Set `OIDC_DEFAULT_ORG`.** Warmbly is multi-tenant, and a new user normally gets their own organization. Without this, a twenty-person identity provider produces twenty single-member organizations that share nothing.
+- **Accounts are bound to the provider's subject claim**, not to the email address, and an unverified address is refused. Matching on email alone would let anyone who can register an arbitrary address at your provider claim an existing Warmbly account.
+- **Only RS256 ID tokens are accepted**, which every mainstream provider issues by default.
+
+Pair it with `DISABLE_PASSWORD_LOGIN=true` for an SSO-only deployment.
 
 ## Provider switches
 
@@ -663,12 +792,12 @@ The compose file is a template, not a requirement. The Dockerfiles in `deploy/do
 
 | Symptom | Cause and fix |
 |---------|---------------|
-| No login code arrives | On a default install codes go to Mailpit, not your inbox. Open `http://localhost:18025`. Set `SMTP_HOST` to a real relay to change that |
+| No login code arrives | Self-host does not send one by default (`AUTH_LOGIN_CODE=off`). Registration and reset codes go wherever `MAIL_TRANSPORT` points; on a default install that is the backend logs. Set `MAIL_TRANSPORT=smtp` and the `SMTP_` variables for real delivery |
 | "Too many attempts" on login or signup | Auth emails are capped at 5 per address per 30 minutes. Wait it out, or clear the counter with `docker compose -p warmbly exec redis redis-cli FLUSHDB` |
 | Backend exits at boot | Read the first log lines. Usual causes: cloud provider defaults outside compose, a malformed `CREDENTIALS_ENCRYPTION_KEY` (it needs exactly 64 hex characters), or `APP_ENV=prod` without `SENTRY_DSN` or the GeoIP file |
 | Dashboard loads but every request fails | Check `http://localhost:5173/config.js` returns the right `API_URL`. It is generated at container start from `WARMBLY_API_URL` |
 | "No mailbox workers are available" when connecting a mailbox | No worker is active with a heartbeat inside the last 10 minutes. Check `make status` shows `worker` running and `make logs worker` is clean. Placement deliberately ignores workers that stopped reporting, so a worker that was removed cannot silently swallow mailboxes |
-| Connecting a mailbox is rejected on the port | SMTP must be `587` or `465`. The bundled Mailpit listens on `1025` and offers no STARTTLS, so it catches platform email but cannot be used as a test mailbox |
+| Connecting a mailbox is rejected on the port | SMTP must be `587` or `465`. The Mailpit sink used by `make sandbox` listens on `1025` and offers no STARTTLS, so it cannot be used as a test mailbox |
 | Workers or tracking get 401s | `INTERNAL_API_TOKEN` must match on the backend, the workers (as `ENCRYPTED_KEYS_WORKER_TOKEN`), and tracking. Unset fails closed |
 | No realtime updates | `AUTH_SECRET` must equal realtime's `JWT_SECRET`, and `PUBSUB_ENABLED` must agree across backend, consumer, and realtime. Compose wires both |
 | Seeding fails with `no migration found for version N` | The seed image is older than your schema. Re-run with `--build` |
@@ -682,7 +811,10 @@ Still stuck? `make logs` follows everything, and `make logs backend` follows one
 ## Quick reference
 
 ```bash
-make up          # build and start the whole platform in Docker
+make up          # build and start the platform, then print the claim link
+make claim       # print the claim link again
+make seed-demo   # load the showcase workspace
+
 make status      # docker compose ps
 make logs        # follow logs (make logs backend for one service)
 make stop        # stop everything, keep data
@@ -690,7 +822,7 @@ make down        # stop and remove containers, keep data
 make reset       # tear down including volumes (destroys data)
 
 make gen-key     # print a fresh KMS_LOCAL_MASTER_KEY
-make grant-admin EMAIL=you@example.com   # bootstrap the first platform admin
+make grant-admin EMAIL=you@example.com   # promote an existing account to platform admin
 
 make dev         # local development stack instead (native Go, hot reload)
 make sandbox     # live end-to-end demo environment

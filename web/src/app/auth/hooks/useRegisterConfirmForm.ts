@@ -1,18 +1,19 @@
 import type React from "react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import useRegisterConfirm from "@/lib/api/hooks/auth/useRegisterConfirm";
 import toast from "react-hot-toast";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 
 export function useRegisterConfirmForm() {
-    const params = useParams();
+    // Query params, not path params. See useLoginConfirmForm.
+    const [params] = useSearchParams();
     const navigate = useNavigate();
     const registerConfirm = useRegisterConfirm();
 
-    const mail = params["to"] ?? "";
-    const session = params["session"] ?? "";
+    const mail = params.get("to") ?? "";
+    const session = params.get("session") ?? "";
     const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
     const [captcha, setCaptcha] = useState(false);
     const [pending, setPending] = useState(false);

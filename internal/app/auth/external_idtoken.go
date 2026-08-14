@@ -6,6 +6,7 @@ import (
 	"net/mail"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/token"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -29,12 +30,12 @@ func (s *authService) WireExternalIDTokens(apple, google IDTokenVerifier) {
 // AppleIDTokenAuth signs a user in with a native Sign in with Apple identity
 // token. Apple only shares the user's name with the app (never in the token),
 // so the client forwards it for first-sign-in profile prefill.
-func (s *authService) AppleIDTokenAuth(ctx context.Context, rawToken, firstName, lastName, ipaddr, userAgent string) (*models.Token, *errx.Error) {
+func (s *authService) AppleIDTokenAuth(ctx context.Context, rawToken, firstName, lastName, ipaddr, userAgent string) (*models.LoginResult, *errx.Error) {
 	return s.externalIDTokenAuth(ctx, s.appleIDTokens, token.AuthProviderApple, rawToken, firstName, lastName, ipaddr, userAgent)
 }
 
 // GoogleIDTokenAuth signs a user in with a native Google Sign-In ID token.
-func (s *authService) GoogleIDTokenAuth(ctx context.Context, rawToken, ipaddr, userAgent string) (*models.Token, *errx.Error) {
+func (s *authService) GoogleIDTokenAuth(ctx context.Context, rawToken, ipaddr, userAgent string) (*models.LoginResult, *errx.Error) {
 	return s.externalIDTokenAuth(ctx, s.googleIDTokens, token.AuthProviderGoogle, rawToken, "", "", ipaddr, userAgent)
 }
 
@@ -43,7 +44,7 @@ func (s *authService) GoogleIDTokenAuth(ctx context.Context, rawToken, ipaddr, u
 // provider-verified identity is already strong auth, so there is no email OTP
 // or captcha step; first sign-in provisions the org and free trial exactly
 // like password registration does.
-func (s *authService) externalIDTokenAuth(ctx context.Context, verifier IDTokenVerifier, provider, rawToken, firstName, lastName, ipaddr, userAgent string) (*models.Token, *errx.Error) {
+func (s *authService) externalIDTokenAuth(ctx context.Context, verifier IDTokenVerifier, provider, rawToken, firstName, lastName, ipaddr, userAgent string) (*models.LoginResult, *errx.Error) {
 	if verifier == nil {
 		return nil, errx.ErrExternalProvider
 	}
@@ -67,32 +68,76 @@ func (s *authService) externalIDTokenAuth(ctx context.Context, verifier IDTokenV
 		return nil, errx.ErrEmail
 	}
 
+	userID, rerr := s.resolveFederatedUser(ctx, provider, claims.Issuer, claims.Subject, email, firstName, lastName)
+	if rerr != nil {
+		return nil, rerr
+	}
+
+	// Ban check and the 2FA gate both live in finishLoginAs, so social
+	// sign-in enforces exactly what password login does.
+	return s.finishLoginAs(ctx, userID, ipaddr, userAgent, provider)
+}
+
+// resolveFederatedUser maps a verified external identity to a local account.
+//
+// The lookup order is what keeps this safe. The (issuer, subject) pair is the
+// only provider-controlled stable identifier, so it is checked first. Falling
+// back to the email address is allowed exactly once, to link a pre-existing
+// local account, and only when that account has no other identity from this
+// issuer already: a second subject claiming an address that is already
+// federated is an impersonation attempt, not a re-login.
+func (s *authService) resolveFederatedUser(ctx context.Context, provider, issuer, subject string, email *mail.Address, firstName, lastName string) (uuid.UUID, *errx.Error) {
+	if s.identities != nil && issuer != "" && subject != "" {
+		existing, ierr := s.identities.FindUserByIdentity(ctx, issuer, subject)
+		if ierr != nil {
+			sentry.CaptureException(ierr)
+			return uuid.Nil, errx.InternalError()
+		}
+		if existing != uuid.Nil {
+			_ = s.identities.TouchLogin(ctx, issuer, subject)
+			return existing, nil
+		}
+	}
+
 	u, uerr := s.userRepository.GetUserByEmail(ctx, email.Address)
 	if uerr != nil && !errors.Is(uerr, errx.ErrUser) {
 		sentry.CaptureException(uerr)
-		return nil, errx.InternalError()
+		return uuid.Nil, errx.InternalError()
 	}
 
 	if u == nil {
-		u, uerr = s.createExternalUser(ctx, email, firstName, lastName)
-		if uerr != nil {
-			sentry.CaptureException(uerr)
-			return nil, errx.InternalError()
+		var cerr error
+		u, cerr = s.createExternalUser(ctx, email, firstName, lastName)
+		if cerr != nil {
+			sentry.CaptureException(cerr)
+			return uuid.Nil, errx.InternalError()
+		}
+	} else if s.identities != nil && issuer != "" {
+		linked, herr := s.identities.HasIdentityForIssuer(ctx, u.ID, issuer)
+		if herr != nil {
+			sentry.CaptureException(herr)
+			return uuid.Nil, errx.InternalError()
+		}
+		if linked {
+			return uuid.Nil, errx.New(errx.Forbidden, "this account is already linked to a different identity from that provider")
 		}
 	}
 
-	// Ban-scope enforcement — parity with password and passkey login.
-	if scope, scopeErr := s.userRepository.GetBanState(ctx, u.ID); scopeErr == nil {
-		if models.BanScope(scope).Has(models.BanScopeLogin) {
-			return nil, errx.New(errx.Forbidden, "this account has been suspended")
+	if s.identities != nil && issuer != "" && subject != "" {
+		if lerr := s.identities.Link(ctx, u.ID, models.UserIdentity{
+			Provider: provider,
+			Issuer:   issuer,
+			Subject:  subject,
+			Email:    email.Address,
+		}); lerr != nil {
+			// A unique-index violation means another account already owns this
+			// identity. Refuse rather than sign anyone in.
+			sentry.CaptureException(lerr)
+			return uuid.Nil, errx.New(errx.Forbidden, "that identity is already linked to another account")
 		}
 	}
 
-	session, xerr := s.tokenService.GenerateSession(ctx, u.ID, "", ipaddr, userAgent, provider)
-	if xerr != nil {
-		return nil, xerr
-	}
-	return session, nil
+	return u.ID, nil
 }
 
 // createExternalUser provisions a first-time social sign-in: a passwordless

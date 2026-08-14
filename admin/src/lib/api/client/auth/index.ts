@@ -7,7 +7,9 @@ import type {
     LoginRequest,
     LoginStartResponse,
     LoginConfirmRequest,
+    LoginConfirmResponse,
     LoginResponse,
+    TwoFAVerifyRequest,
     AdminProfile,
 } from "@/lib/api/models/auth";
 
@@ -22,10 +24,22 @@ export function login(input: LoginRequest): Promise<LoginStartResponse> {
 }
 
 // Step 2: exchange the session + emailed code for the access/refresh token pair.
-export function loginConfirm(input: LoginConfirmRequest): Promise<LoginResponse> {
-    return Request<LoginResponse>({
+export function loginConfirm(input: LoginConfirmRequest): Promise<LoginConfirmResponse> {
+    return Request<LoginConfirmResponse>({
         method: "POST",
         url: "/v1/auth/login/confirm",
+        data: input,
+        timeout: 15_000,
+    });
+}
+
+// Exchanges the single-use pending token + a TOTP or recovery code for the
+// real token pair. The admin panel had no 2FA step at all, so an operator who
+// enrolled TOTP was locked out of it entirely.
+export function verifyTwoFA(input: TwoFAVerifyRequest): Promise<LoginResponse> {
+    return Request<LoginResponse>({
+        method: "POST",
+        url: "/v1/auth/2fa/verify",
         data: input,
         timeout: 15_000,
     });

@@ -1,7 +1,10 @@
 package api
 
 import (
+	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -11,6 +14,17 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/models"
 )
+
+// splitCSV parses a comma-separated env list, dropping empty entries.
+func splitCSV(value string) []string {
+	out := make([]string, 0, 4)
+	for _, part := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
 
 func Run(
 	h *handler.Handler,
@@ -22,6 +36,20 @@ func Run(
 	gin.SetMode(ginMode)
 
 	r := gin.Default()
+
+	// Gin trusts every proxy by default, which makes X-Forwarded-For (and so
+	// c.ClientIP()) attacker-controlled: forged values reach the captcha
+	// verifier, session records, audit rows, and the API-key IP allowlist.
+	// Default to trusting nothing and honor the header only for the CIDRs an
+	// operator names in TRUSTED_PROXIES.
+	if proxies := splitCSV(os.Getenv("TRUSTED_PROXIES")); len(proxies) > 0 {
+		if err := r.SetTrustedProxies(proxies); err != nil {
+			log.Fatalf("invalid TRUSTED_PROXIES: %v", err)
+		}
+	} else {
+		_ = r.SetTrustedProxies(nil)
+	}
+
 	r.Use(middleware.RequestIDMiddleware())
 	r.Use(middleware.APIVersionMiddleware(middleware.APIVersion))
 
@@ -184,7 +212,21 @@ func Run(
 	v1.GET("/invitations/lookup", h.PreviewInvitation)
 
 	auth := v1.Group("/auth")
+	// Every unauthenticated auth route shares one per-IP budget. Nothing
+	// throttled these before: RateLimitMiddleware is keyed on the user id and
+	// short-circuits when there is none, so password guessing was unbounded and
+	// each guess cost a 64 MiB Argon2 hash.
+	auth.Use(m.AuthIPRateLimitMiddleware())
 	{
+		// Public deployment capabilities. Deliberately outside the rate limiter
+		// below is not an option (it is a GET the login screen makes first), so
+		// it shares the budget with a generous allowance.
+		auth.GET("/config", h.AuthConfig)
+
+		// First-run claim. Public because there is no account to authenticate
+		// as yet; the one-time token is the protection.
+		auth.POST("/setup", h.SetupClaim)
+
 		auth.POST("/login", h.LoginStart)
 		auth.POST("/login/confirm", h.LoginConfirm)
 		auth.POST("/register", h.RegistrationStart)
@@ -208,6 +250,13 @@ func Run(
 		auth.GET("/providers", h.AuthProviders)
 		auth.POST("/apple", h.AppleTokenLogin)
 		auth.POST("/google", h.GoogleTokenLogin)
+
+		// Generic OpenID Connect. The only sign-in path with no dependency on
+		// outbound mail, which is what makes it the one that matters for a
+		// deployment with no relay.
+		auth.POST("/oidc/begin", h.OIDCBegin)
+		auth.GET("/oidc/callback", h.OIDCCallback)
+		auth.POST("/oidc/exchange", h.OIDCExchange)
 
 		// 2FA login challenge (PUBLIC): exchanges a single-use pending token +
 		// TOTP/recovery code for a real session. Rate-limited in the service
@@ -1032,6 +1081,12 @@ func Run(
 	adminRoutes.Use(m.AuthMiddleware(), m.AdminMiddleware())
 	{
 		// Settings → Storage backends (pluggable infrastructure registry)
+		// Platform mail diagnostics. A broken relay locks everyone out, so the
+		// operator needs to see the SMTP dialogue from inside the panel rather
+		// than inferring it from a 500 on the login screen.
+		adminRoutes.GET("/mail/status", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminMailStatus)
+		adminRoutes.POST("/mail/test", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminSendTestEmail)
+
 		adminRoutes.GET("/settings/backends", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminListStorageBackends)
 		adminRoutes.GET("/settings/backends/active/:kind", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetActiveStorageBackend)
 		adminRoutes.POST("/settings/backends/:id/activate", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminActivateStorageBackend)

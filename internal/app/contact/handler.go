@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/utils/paging"
@@ -13,8 +14,13 @@ import (
 )
 
 func (s *contactService) Add(ctx context.Context, userID string, orgID uuid.UUID, contacts []models.AddContact) ([]models.Contact, *errx.Error) {
-	// Enforce contact limit if subscription repos are available
-	if s.subRepo != nil && s.planRepo != nil {
+	// Enforce contact limit if subscription repos are available.
+	//
+	// This path reads the plan directly instead of going through the feature
+	// gate, so it never saw the self-host short-circuit: every self-hosted org
+	// was capped at the seeded Free Trial plan's 100 contacts even though
+	// BILLING_PROVIDER=none unlocks every other limit.
+	if !config.SelfHosted() && s.subRepo != nil && s.planRepo != nil {
 		uid, parseErr := uuid.Parse(userID)
 		if parseErr == nil {
 			sub, err := s.subRepo.GetByUserID(ctx, uid)

@@ -22,6 +22,9 @@ import useRegisterConfirm from "@/lib/api/hooks/auth/useRegisterConfirm";
 import { saveTokens } from "@/lib/auth";
 import getUser from "@/lib/api/client/auth/getUser";
 import { WEBSITE_URL, TURNSTILE_KEY } from "@/lib/information";
+import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
+import type Session from "@/lib/api/models/auth/Session";
+import beginOIDC from "@/lib/api/client/auth/beginOIDC";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import * as Sentry from "@sentry/react";
@@ -153,9 +156,27 @@ export default function LoginPage() {
     const navigate = useNavigate();
     const location = useLocation();
     const queryClient = useQueryClient();
-    const defaultDevBypassToken = "warmbly-local-turnstile-bypass";
+    // What this backend actually supports. Gating on import.meta.env.DEV meant
+    // the widget mounted in every container build regardless of
+    // CAPTCHA_PROVIDER, so login silently required reaching
+    // challenges.cloudflare.com even on an air-gapped install.
+    const { config: authConfig, ready: authConfigReady } = useAuthConfig();
+
+    // A brand new instance has no account to sign in as. Send them to the
+    // claim link rather than showing a form that cannot succeed.
+    useEffect(() => {
+        if (authConfigReady && authConfig.setup_required) navigate("/setup", { replace: true });
+    }, [authConfigReady, authConfig.setup_required, navigate]);
+
+    // The SSO callback redirects here with a reason when the provider or the
+    // exchange refused, so the failure is visible instead of silent.
+    useEffect(() => {
+        const reason = new URLSearchParams(location.search).get("sso_error");
+        if (reason) toast.error(reason);
+    }, [location.search]);
+    const captchaRequired = authConfig.captcha;
     const turnstileBypassToken = import.meta.env.DEV
-        ? (import.meta.env.VITE_TURNSTILE_BYPASS_TOKEN?.trim() || defaultDevBypassToken)
+        ? (import.meta.env.VITE_TURNSTILE_BYPASS_TOKEN?.trim() || "")
         : "";
 
     /* State */
@@ -330,6 +351,15 @@ export default function LoginPage() {
 
     /* Captcha helper — invisible Turnstile with loading + timeout */
     const withCaptcha = useCallback((fn: (token: string) => Promise<void>) => {
+        // No captcha configured server-side means no token to obtain. Waiting
+        // on a widget that will never load is how this used to hang for ten
+        // seconds and then fail with "Verification timed out". The widget above
+        // stays mounted until the config resolves, so this only skips it once
+        // we know the backend does not verify a token.
+        if (authConfigReady && !captchaRequired) {
+            void fn("");
+            return;
+        }
         if (turnstileBypassToken) {
             void fn(turnstileBypassToken);
             return;
@@ -363,7 +393,7 @@ export default function LoginPage() {
             // Invisible Turnstile requires explicit execution per action.
             turnstileRef.current?.execute();
         }
-    }, [turnstileBypassToken]);
+    }, [turnstileBypassToken, captchaRequired, authConfigReady]);
 
     const onTurnstileVerify = (token: string, bound?: BoundTurnstileObject) => {
         if (bound) turnstileRef.current = bound;
@@ -395,6 +425,38 @@ export default function LoginPage() {
         turnstileRef.current?.reset();
     };
 
+    /* Completes a login that needed no emailed code, honoring the 2FA gate. */
+    const finishDirectLogin = useCallback(async (res: Session): Promise<boolean> => {
+        if (res.two_fa_required) {
+            if (!res.pending_token) {
+                toast.error("Something went wrong, please try again.");
+                return false;
+            }
+            setPendingToken(res.pending_token);
+            goTo("2fa");
+            return true;
+        }
+        if (!res.token?.access_token) {
+            toast.error("Something went wrong, please try again.");
+            return false;
+        }
+        toast.success("Welcome back!");
+        try { sessionStorage.setItem(SUGGEST_PASSKEY_FLAG, "1"); } catch { /* storage unavailable */ }
+        await completeSession(res.token);
+        return true;
+    }, [completeSession]);
+
+    /* Single sign-on. The backend mints state, nonce and the PKCE verifier and
+       stores them server-side, so the client only needs the URL. */
+    const handleSSO = useCallback(async () => {
+        try {
+            const { url } = await beginOIDC();
+            window.location.href = url;
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+        }
+    }, []);
+
     /* ── Step 1: Email ─────────────────────── */
     const handleEmailContinue = (data: z.infer<typeof emailSchema>) => {
         setEmail(data.email);
@@ -407,8 +469,15 @@ export default function LoginPage() {
         withCaptcha(async (token) => {
             try {
                 const res = await loginMutation.mutateAsync({ email, password: data.password, turnstile: token });
+                // A deployment with the login code turned off, or a device this
+                // account has used before, completes here: there is nothing to
+                // confirm and nothing was emailed.
+                if (!res.code_required) {
+                    if (await finishDirectLogin(res)) return;
+                    return;
+                }
                 toast.success("Verification code sent!");
-                setSession(res.session);
+                setSession(res.session ?? "");
                 goTo("verify");
             } catch (e) {
                 toast.error(buildError(e as AppError));
@@ -422,8 +491,16 @@ export default function LoginPage() {
         withCaptcha(async (token) => {
             try {
                 const res = await registerMutation.mutateAsync({ email, password: data.password, turnstile: token });
+                // Email verification off means the account already exists, so
+                // send them to sign in rather than to a code they never got.
+                if (!res.code_required) {
+                    toast.success("Account created. Sign in to continue.");
+                    handleModeChange("signin");
+                    goTo("signin");
+                    return;
+                }
                 toast.success("Verification code sent!");
-                setSession(res.session);
+                setSession(res.session ?? "");
                 goTo("verify");
             } catch (e) {
                 toast.error(buildError(e as AppError));
@@ -493,7 +570,7 @@ export default function LoginPage() {
                 const mutation = mode === "signin" ? loginMutation : registerMutation;
                 const res = await mutation.mutateAsync({ email, password, turnstile: token });
                 toast.success("Code resent!");
-                setSession(res.session);
+                setSession(res.session ?? "");
             } catch (e) {
                 toast.error(buildError(e as AppError));
             }
@@ -523,6 +600,8 @@ export default function LoginPage() {
                         <SignInStep
                             email={email}
                             pending={pending}
+                            ssoEnabled={authConfig.providers.includes("oidc")}
+                            onSSO={handleSSO}
                             onBack={() => goTo("email", -1)}
                             onSubmit={handleSignIn}
                         />
@@ -541,6 +620,7 @@ export default function LoginPage() {
                 {step === "verify" && (
                     <MotionWrap key="verify" direction={direction}>
                         <VerifyStep
+                            mailDelivers={authConfig.mail_delivers}
                             email={email}
                             pending={pending}
                             onBack={() => goTo(mode === "signin" ? "signin" : "signup", -1)}
@@ -564,7 +644,7 @@ export default function LoginPage() {
                 )}
             </AnimatePresence>
 
-            {!turnstileBypassToken && (
+            {(!authConfigReady || captchaRequired) && !turnstileBypassToken && (
                 <Turnstile
                     sitekey={TURNSTILE_KEY}
                     execution="execute"
@@ -802,11 +882,15 @@ function EmailStep({
 function SignInStep({
     email,
     pending,
+    ssoEnabled,
+    onSSO,
     onBack,
     onSubmit,
 }: {
     email: string;
     pending: boolean;
+    ssoEnabled: boolean;
+    onSSO: () => void;
     onBack: () => void;
     onSubmit: (data: z.infer<typeof signInSchema>) => void;
 }) {
@@ -845,6 +929,24 @@ function SignInStep({
                     <AuthButton loading={pending}>Sign in</AuthButton>
                 </div>
             </form>
+
+            {ssoEnabled && (
+                <>
+                    <div className="flex items-center gap-3 my-4">
+                        <div className="h-px flex-1 bg-slate-200" />
+                        <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400">or</span>
+                        <div className="h-px flex-1 bg-slate-200" />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onSSO}
+                        disabled={pending}
+                        className="w-full h-10 rounded-md border border-slate-200 text-[13px] font-medium text-slate-700 hover:bg-slate-50 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition-colors disabled:opacity-50"
+                    >
+                        Continue with single sign-on
+                    </button>
+                </>
+            )}
         </div>
     );
 }
@@ -952,12 +1054,14 @@ function SignUpStep({
 function VerifyStep({
     email,
     pending,
+    mailDelivers,
     onBack,
     onSubmit,
     onResend,
 }: {
     email: string;
     pending: boolean;
+    mailDelivers: boolean;
     onBack: () => void;
     onSubmit: (code: string) => void;
     onResend: () => void;
@@ -983,6 +1087,11 @@ function VerifyStep({
                 <p className="text-sm text-slate-400 mt-1.5">
                     We sent a 6-digit code to <span className="text-slate-600 font-medium break-all">{email}</span>
                 </p>
+                {!mailDelivers && (
+                    <p className="mt-3 mx-auto max-w-sm rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] leading-relaxed text-amber-800">
+                        This server has no mail transport configured, so the code was written to the backend logs instead of being sent. Run <span className="font-mono">docker compose logs backend</span> to read it.
+                    </p>
+                )}
             </div>
 
             <div className="space-y-5">

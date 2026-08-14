@@ -23,7 +23,7 @@ PROTO_DIR := internal/tasks/proto
 PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools fmt lint proto check-proto \
-        up seed seed-plan sandbox sandbox-seed sandbox-simulate reset logs status stop down test-seed \
+        up claim seed-demo seed seed-plan sandbox sandbox-seed sandbox-simulate reset logs status stop down test-seed \
         restart restart-go restart-all infra infra-down app app-down app-logs \
         backend consumer worker run dev tracking realtime web \
         admin site docs grant-admin revoke-admin gen-key
@@ -67,18 +67,42 @@ up:
 	@command -v docker >/dev/null || { echo "docker is required: https://docs.docker.com/get-docker/"; exit 1; }
 	$(COMPOSE) up -d --build
 	@echo ""
-	@echo "Warmbly is starting (the first build compiles the images once)."
-	@echo "  Dashboard: http://localhost:5173"
-	@echo "  Admin:     http://localhost:5174"
-	@echo "  API:       http://localhost:8080"
+	@echo "Warmbly is starting. The first run builds the images once."
 	@echo ""
-	@echo "  Sign up, then read your 6-digit code in Mailpit: http://localhost:18025"
-	@echo "  (every login sends one; a fresh install has no real mail relay)"
+	@$(MAKE) --no-print-directory claim
+	@echo "  Dashboard: http://localhost:5173     Admin: http://localhost:5174"
+	@echo "  Demo data: make seed-demo            Logs:  make logs"
+	@echo "  Guide:     https://docs.warmbly.com/development/deployment-guide/"
+
+# Print the one-time link that claims a fresh instance, waiting for the backend
+# to finish migrating first so `make up` ends with something actionable rather
+# than an instruction to go and grep the logs.
+claim:
+	@printf "  Waiting for the backend"; \
+	for i in $$(seq 1 60); do \
+		if $(COMPOSE) logs backend 2>/dev/null | grep -qE "Claim this instance|Bootstrap: created owner"; then break; fi; \
+		printf "."; sleep 2; \
+	done; echo ""; echo ""
+	@claimed=$$($(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -tA \
+		-c "SELECT EXISTS (SELECT 1 FROM users LIMIT 1);" 2>/dev/null | tr -d '[:space:]'); \
+	link=$$($(COMPOSE) logs backend 2>/dev/null | grep -oE 'http[^ ]*/setup\?token=[a-f0-9]+' | tail -1); \
+	if [ "$$claimed" = "t" ]; then \
+		echo "  This instance already has an account. Sign in:"; \
+		echo "    http://localhost:5173"; \
+	elif [ -n "$$link" ]; then \
+		echo "  Open this link to claim your instance and become its admin."; \
+		echo "  Single use, valid for 24 hours:"; \
+		echo ""; \
+		echo "    $$link"; \
+	else \
+		echo "  The backend has not finished starting."; \
+		echo "  Run 'make claim' again shortly, or 'make logs backend' to see why."; \
+	fi
 	@echo ""
-	@echo "  Admin access: make grant-admin EMAIL=you@example.com"
-	@echo "  Demo data:    $(COMPOSE) --profile seed run --rm --build seed"
-	@echo "  Logs:         make logs        Stop: make down"
-	@echo "  Guide:        https://docs.warmbly.com/development/deployment-guide/"
+
+# Seed the showcase workspace into the running docker stack.
+seed-demo:
+	$(COMPOSE) --profile seed run --rm --build seed
 
 # One-command demo. Seeds the "Sunrise Labs" showcase org (live mailboxes on
 # mailpit + dovecot, active/paused/completed/draft campaigns, a warmup pool, and
@@ -424,7 +448,13 @@ GO_DEV_ENV := \
 	PUBSUB_ENABLED=false \
 	ENCRYPTED_KEYS_PROVIDER=postgres \
 	PRIMARY_DB=postgres://warmbly:warmbly@$(INFRA_HOST):15432/warmbly_dev?sslmode=disable \
-	REDIS=redis://$(INFRA_HOST):16379
+	REDIS=redis://$(INFRA_HOST):16379 \
+	MAIL_TRANSPORT=smtp \
+	EMAIL_NAME='Warmbly Dev' \
+	EMAIL_ADDRESS=dev@warmbly.local \
+	SMTP_HOST=$(INFRA_HOST) \
+	SMTP_PORT=11025 \
+	SMTP_SECURITY=none
 
 # Worker: NATS + local KMS + shared filesystem blobs; no Postgres by design
 # (relational access is via the backend internal API).
@@ -456,8 +486,11 @@ backend:
 	EMAIL_NAME='Warmbly Dev' \
 	EMAIL_ADDRESS=dev@warmbly.local \
 	TRACKING_DOMAIN=t.warmbly.com \
+	MAIL_TRANSPORT=smtp \
 	SMTP_HOST=$(INFRA_HOST) \
 	SMTP_PORT=11025 \
+	SMTP_SECURITY=none \
+	AUTH_LOGIN_CODE=always \
 	GEODB_PATH=data/GeoLite2-City.mmdb \
 	INTERNAL_API_TOKEN=local-dev-internal-token \
 	go run ./cmd/backend

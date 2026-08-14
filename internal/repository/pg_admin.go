@@ -17,6 +17,10 @@ import (
 
 // AdminRepository defines the interface for admin data access
 type AdminRepository interface {
+	// GrantBootstrapAdmin grants admin permissions to the first owner of a
+	// fresh install, where there is no existing admin to attribute the grant to.
+	GrantBootstrapAdmin(ctx context.Context, userID uuid.UUID, permissions uint32) error
+
 	// User Management
 	SearchUsers(ctx context.Context, search *models.AdminUserSearch) (*models.AdminUsersResult, error)
 	GetUserDetail(ctx context.Context, userID uuid.UUID) (*models.AdminUserDetail, error)
@@ -428,6 +432,23 @@ func (r *adminRepository) GetUserPreview(ctx context.Context, userID uuid.UUID) 
 	preview.RateLimits, _ = r.GetUserRateLimits(ctx, userID)
 
 	return preview, nil
+}
+
+// GrantBootstrapAdmin grants admin permissions with no granter. It exists for
+// the first owner of a fresh install, where by definition no admin exists to
+// do the granting, and admin_granted_by has a foreign key to users so it must
+// be NULL rather than a zero UUID.
+func (r *adminRepository) GrantBootstrapAdmin(ctx context.Context, userID uuid.UUID, permissions uint32) error {
+	const query = `
+		UPDATE users SET
+			admin_permissions = $2,
+			admin_granted_at = NOW(),
+			admin_granted_by = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := r.db.Exec(ctx, query, userID, permissions)
+	return err
 }
 
 // UpdateUserAdminPermissions updates a user's admin permissions

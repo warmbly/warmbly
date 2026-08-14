@@ -1,6 +1,6 @@
 import type React from "react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import useLoginConfirm from "@/lib/api/hooks/auth/useLoginConfirm";
 import { saveTokens } from "@/lib/auth";
@@ -10,13 +10,17 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 
 export function useLoginConfirmForm() {
-    const params = useParams();
+    // Query params, not path params: the login page navigates to
+    // /auth/login/confirm?session=...&to=..., and the route declares no
+    // path segments, so useParams() always returned empty and every
+    // confirmation posted a blank session.
+    const [params] = useSearchParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const loginConfirm = useLoginConfirm();
 
-    const mail = params["to"] ?? "";
-    const session = params["session"] ?? "";
+    const mail = params.get("to") ?? "";
+    const session = params.get("session") ?? "";
     const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
     const [captcha, setCaptcha] = useState(false);
     const [pending, setPending] = useState(false);

@@ -79,6 +79,12 @@ func (s *service) FinishLogin(ctx context.Context, session string, credential []
 		}
 	}
 
+	// No TOTP step, deliberately. A user-verified passkey is a possession
+	// factor bound to this origin and already satisfies multi-factor on its
+	// own, so demanding a second one adds friction without adding security.
+	// Social sign-in is the opposite case and does run the 2FA gate
+	// (auth.finishLoginAs), because there the second factor is the identity
+	// provider's business, not something this deployment can observe.
 	tok, xerr := s.token.GenerateSession(ctx, user.ID, user.Email, ipaddr, userAgent, token.AuthProviderWebAuthn)
 	if xerr != nil {
 		return nil, xerr

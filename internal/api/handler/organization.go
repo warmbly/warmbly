@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify/templates"
@@ -224,11 +225,17 @@ func (h *Handler) InviteMember(c *gin.Context) {
 
 	// Send invitation email
 	if h.EmailNotificationService != nil {
-		subject := fmt.Sprintf("You've been invited to join %s on Warmbly", orgName)
-		acceptURL := fmt.Sprintf("%s/invite?token=%s", templates.AppURL, inv.Token)
+		subject := fmt.Sprintf("You've been invited to join %s on %s", orgName, templates.CompanyName)
+		acceptURL := config.GetInviteURL(inv.Token)
 		// GenerateInvitationHTML reports its own render errors to Sentry.
 		if body, gerr := templates.GenerateInvitationHTML(inviterName, orgName, acceptURL); gerr == nil {
-			go h.EmailNotificationService.Send(c.Request.Context(), []string{req.Email}, nil, nil, subject, body)
+			// Detached from the request context: the handler returns before the
+			// send completes, and a cancelled context aborted the send mid-dial.
+			sendCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 45*time.Second)
+			go func() {
+				defer cancel()
+				_ = h.EmailNotificationService.Send(sendCtx, []string{req.Email}, nil, nil, subject, body)
+			}()
 		}
 	}
 

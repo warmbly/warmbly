@@ -34,6 +34,11 @@ type UserRepository interface {
 	// fetching the full user row (hot path: every instant send).
 	GetUndoSendSeconds(ctx context.Context, userID uuid.UUID) (int, error)
 	SetUndoSendSeconds(ctx context.Context, userID uuid.UUID, seconds int) error
+
+	// IsEmpty reports whether the instance has no users at all. Drives the
+	// first-launch exemption for DISABLE_REGISTRATION and the bootstrap owner,
+	// both of which must only apply to a brand new install.
+	IsEmpty(ctx context.Context) (bool, error)
 }
 
 type userRepository struct {
@@ -189,6 +194,15 @@ func (r *userRepository) GetBanState(ctx context.Context, userID uuid.UUID) (uin
 	var scope uint32
 	err := r.DB.QueryRow(ctx, q, userID).Scan(&scope)
 	return scope, err
+}
+
+func (r *userRepository) IsEmpty(ctx context.Context) (bool, error) {
+	// EXISTS rather than COUNT: this runs on every signup attempt once the
+	// lockdown is on, and it only ever needs the first row.
+	const q = `SELECT NOT EXISTS (SELECT 1 FROM users LIMIT 1)`
+	var empty bool
+	err := r.DB.QueryRow(ctx, q).Scan(&empty)
+	return empty, err
 }
 
 func (r *userRepository) GetUndoSendSeconds(ctx context.Context, userID uuid.UUID) (int, error) {

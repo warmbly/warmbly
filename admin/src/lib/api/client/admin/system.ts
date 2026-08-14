@@ -24,3 +24,41 @@ export function getSystemStatus(): Promise<SystemStatusResult> {
         authorization: true,
     });
 }
+
+// /admin/mail/status and /admin/mail/test — the platform's own mail transport.
+//
+// This is separate from the component probes above because platform mail is
+// not a backing service that degrades: login codes, password resets and
+// invitations all go through it, so a broken relay is a lockout.
+
+export interface MailStatusResult {
+    transport: string;
+    delivers: boolean;
+    healthy: boolean;
+    detail: string;
+    error?: string;
+}
+
+export function getMailStatus(): Promise<MailStatusResult> {
+    return Request({
+        method: "GET",
+        url: "/admin/mail/status",
+        authorization: true,
+    });
+}
+
+export interface SendTestEmailResult {
+    sent: boolean;
+    transport: string;
+    error?: string;
+    note?: string;
+}
+
+export function sendTestEmail(to: string): Promise<SendTestEmailResult> {
+    return Request({
+        method: "POST",
+        url: "/admin/mail/test",
+        data: { to },
+        authorization: true,
+    });
+}

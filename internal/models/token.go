@@ -61,8 +61,22 @@ type Session struct {
 	AccessNonce     string    `json:"access_nonce"`
 }
 
+// AuthSession is what LoginStart and RegistrationStart return.
+//
+// Session plus CodeRequired=true is the original two-step flow: a code was
+// emailed and the caller POSTs it to the matching /confirm endpoint. When the
+// deployment has AUTH_LOGIN_CODE off, or the device is already known, no code
+// is sent and the remaining fields carry the completed login instead. The extra
+// fields are additive, so a client that only reads `session` still works.
 type AuthSession struct {
-	Session string `json:"session"`
+	Session string `json:"session,omitempty"`
+
+	CodeRequired bool `json:"code_required"`
+
+	Token         *Token `json:"token,omitempty"`
+	TwoFARequired bool   `json:"two_fa_required,omitempty"`
+	PendingToken  string `json:"pending_token,omitempty"`
+	ExpiresIn     int    `json:"expires_in,omitempty"`
 }
 
 type LoginSession struct {

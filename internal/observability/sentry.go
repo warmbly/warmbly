@@ -19,13 +19,16 @@ func InitSentry(ctx context.Context, cfg *config.Config, service string) error {
 		ServerName:     service,
 	}
 
-	if cfg.Env == "prod" {
-		sentryDsn, err := cfg.LoadSentryDSNBackend(ctx)
-		if err != nil {
-			return err
-		}
+	// A DSN is used when one is configured, in any environment. Error reporting
+	// is the operator's choice, not a requirement of the software: demanding a
+	// Sentry account to run APP_ENV=prod made a self-hosted deployment fail to
+	// boot over a service it never asked for.
+	if sentryDsn, err := cfg.LoadSentryDSNBackend(ctx); err == nil && sentryDsn != "" {
 		options.Dsn = sentryDsn
 	} else {
+		if cfg.Env == "prod" {
+			log.Printf("Sentry is not configured (no SENTRY_DSN); errors are logged locally only.")
+		}
 		options.BeforeSend = func(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
 			log.Printf("[sentry-local][%s][%s] %s", service, event.Level, summarizeSentryEvent(event))
 			return event

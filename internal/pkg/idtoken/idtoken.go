@@ -31,6 +31,15 @@ type Claims struct {
 	EmailVerified bool
 	GivenName     string
 	FamilyName    string
+	// Issuer is carried through so a generic OIDC caller can key the account
+	// on (issuer, subject) rather than on the email address alone.
+	Issuer string
+	// Nonce binds the token to one authorization request. This package does
+	// not compare it: only the caller knows which nonce it minted, so the
+	// caller must check it and reject a mismatch.
+	Nonce string
+	// Groups carries the group or role claim when the provider sends one.
+	Groups []string
 }
 
 // Verifier validates RS256 ID tokens for one provider: signature via the
@@ -110,6 +119,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 	email, _ := mc["email"].(string)
 	given, _ := mc["given_name"].(string)
 	family, _ := mc["family_name"].(string)
+	nonce, _ := mc["nonce"].(string)
 
 	return &Claims{
 		Subject:       sub,
@@ -117,7 +127,31 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 		EmailVerified: boolClaim(mc["email_verified"]),
 		GivenName:     given,
 		FamilyName:    family,
+		Issuer:        iss,
+		Nonce:         nonce,
+		Groups:        stringsClaim(mc["groups"]),
 	}, nil
+}
+
+// stringsClaim reads a claim that providers send as either a single string or
+// an array of them.
+func stringsClaim(v any) []string {
+	switch value := v.(type) {
+	case string:
+		if value == "" {
+			return nil
+		}
+		return []string{value}
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, entry := range value {
+			if s, ok := entry.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // audienceAllowed accepts the JWT aud claim as either a string or an array.

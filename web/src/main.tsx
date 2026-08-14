@@ -78,6 +78,8 @@ import OnboardingLayout from './app/onboarding/layout';
 import OnboardingPage from './app/onboarding/page';
 import SelectOrgPage from './app/select-org/page';
 import InviteAcceptPage from './app/invite/page';
+import SetupPage from './app/setup/page';
+import SSOCallbackPage from './app/auth/sso/page';
 
 // React-Query defaults tuned for a dashboard. The library's
 // out-of-the-box behaviour treats every query as immediately stale
@@ -152,6 +154,11 @@ const router = createBrowserRouter([
             ]
           },
           {
+            // Landing for the single-use code an SSO redirect carries.
+            path: "sso",
+            element: <SSOCallbackPage />,
+          },
+          {
             path: "reset-password",
             element: <ResetPasswordLayout />,
             children: [
@@ -184,6 +191,11 @@ const router = createBrowserRouter([
       {
         path: "invite",
         element: <InviteAcceptPage />,
+      },
+      {
+        // First-run claim link printed by the backend on an empty database.
+        path: "setup",
+        element: <SetupPage />,
       },
       {
         path: "oauth",

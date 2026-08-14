@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 // Provider selection helpers. These centralize the env-var switches and their
 // defaults so the service mains (and the AWS-config gate below) agree on which
@@ -28,6 +31,40 @@ func TasksProvider() string { return providerOr("TASKS_PROVIDER", "local") }
 // BillingProvider returns the selected billing backend ("none" | "stripe").
 // Default none — self-host boots without Stripe and unlocks all features.
 func BillingProvider() string { return providerOr("BILLING_PROVIDER", "none") }
+
+// Mail transports for platform email (login codes, resets, invites, digests).
+const (
+	MailTransportSMTP = "smtp"
+	MailTransportLog  = "log"
+	MailTransportSES  = "ses"
+)
+
+// MailTransport returns the selected platform-mail transport. Explicit
+// MAIL_TRANSPORT wins; otherwise SMTP_HOST selects smtp and an unset one falls
+// back to ses, which is what hosted deployments have always used. Self-host
+// compose sets log explicitly so a fresh install can log in with no relay.
+func MailTransport() string {
+	if v := os.Getenv("MAIL_TRANSPORT"); v != "" {
+		return strings.ToLower(strings.TrimSpace(v))
+	}
+	if os.Getenv("SMTP_HOST") != "" {
+		return MailTransportSMTP
+	}
+	return MailTransportSES
+}
+
+// SelfHosted reports whether this deployment is a self-host install.
+// DEPLOYMENT_MODE is the explicit switch; BILLING_PROVIDER=none is the historic
+// signal and stays the fallback so existing installs keep their behavior.
+func SelfHosted() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("DEPLOYMENT_MODE"))) {
+	case "self_hosted", "selfhosted", "self-hosted":
+		return true
+	case "cloud", "hosted":
+		return false
+	}
+	return BillingProvider() == "none"
+}
 
 // CaptchaProvider returns the selected captcha backend ("turnstile" | "none").
 // Explicit CAPTCHA_PROVIDER wins; otherwise it's "turnstile" only when a

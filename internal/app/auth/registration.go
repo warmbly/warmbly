@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"net/mail"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -15,6 +14,14 @@ import (
 )
 
 func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error) {
+	if s.policy.DisablePasswordLogin {
+		return nil, errx.New(errx.Forbidden, "password sign-up is disabled on this deployment")
+	}
+
+	if err := s.signupAllowed(ctx); err != nil {
+		return nil, err
+	}
+
 	if xerr := s.captcha.Verify(ctx, data.Turnstile, ipaddr); xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, xerr
@@ -24,14 +31,24 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 		return nil, errx.ErrPassword
 	}
 
-	if err := s.canSendEmail(ctx, data.Email); err != nil {
-		return nil, err
-	}
-
 	passwordHash, xerr := argon2.Hash(data.Password)
 	if xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, errx.InternalError()
+	}
+
+	// With verification off, or with a transport that cannot deliver, there is
+	// nothing to confirm: create the account now rather than issuing a code
+	// nobody can receive. Every product surveyed defaults self-host to this.
+	if !s.policy.RequireEmailVerification || !s.mailDelivers {
+		if err := s.createAccount(ctx, data.Email, passwordHash, data.ReferralCode); err != nil {
+			return nil, err
+		}
+		return &models.AuthSession{CodeRequired: false}, nil
+	}
+
+	if err := s.canSendEmail(ctx, emailFlowRegistration, data.Email); err != nil {
+		return nil, err
 	}
 
 	issuedAt := time.Now()
@@ -57,7 +74,7 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 
 	if xerr := s.sendAuthEmail(ctx, data.Email, "Your Verification Code", text); xerr != nil {
 		sentry.CaptureException(xerr)
-		return nil, errx.InternalError()
+		return nil, errx.ErrMailUndeliverable
 	}
 
 	codeHash, xerr := argon2.Hash(code)
@@ -84,7 +101,8 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 	}
 
 	return &models.AuthSession{
-		Session: sessionToken,
+		Session:      sessionToken,
+		CodeRequired: true,
 	}, nil
 }
 
@@ -120,51 +138,5 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 		return errx.ErrCode
 	}
 
-	email, xerr := mail.ParseAddress(token.Email)
-	if xerr != nil {
-		return errx.ErrEmail
-	}
-
-	u, xerr := s.userRepository.CreateUser(ctx, email, sess.PasswordHash)
-	if xerr != nil {
-		sentry.CaptureException(xerr)
-		return errx.InternalError()
-	}
-
-	if err := s.userService.SaveUser(ctx, u); err != nil {
-		return err
-	}
-
-	// Auto-create organization for new user
-	var org *models.Organization
-	if s.organizationService != nil {
-		orgName := u.FirstName + "'s Organization"
-		if u.FirstName == "" {
-			orgName = "My Organization"
-		}
-		var orgErr *errx.Error
-		org, orgErr = s.organizationService.Create(ctx, u.ID, orgName)
-		if orgErr != nil {
-			sentry.CaptureException(orgErr)
-			// Don't fail registration if org creation fails
-		}
-	}
-
-	// Start 2-week free trial for new user (linked to organization)
-	if s.trialService != nil && org != nil {
-		if err := s.trialService.StartFreeTrialWithOrg(ctx, u.ID, org.ID); err != nil {
-			sentry.CaptureException(err)
-			// Don't fail registration if trial creation fails
-		}
-	}
-
-	// Attribute the signup to a referrer if a referral code rode along.
-	// Best-effort: a bad or self-referral code never fails registration.
-	if s.referral != nil && org != nil && sess.ReferralCode != "" {
-		if xerr := s.referral.AttributeSignup(ctx, sess.ReferralCode, org.ID, u.ID); xerr != nil {
-			sentry.CaptureException(xerr)
-		}
-	}
-
-	return nil
+	return s.createAccount(ctx, token.Email, sess.PasswordHash, sess.ReferralCode)
 }

@@ -1,21 +1,25 @@
 import type React from "react";
 import { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import useResetPasswordConfirm from "@/lib/api/hooks/auth/useResetPasswordConfirm";
 import { usePasswordStrength } from "@/hooks/usePasswordStrength";
-import { is64ByteHex } from "@/lib/token";
 import toast from "react-hot-toast";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 
 export function useResetPasswordConfirmForm() {
-    const params = useParams();
+    // The emailed link is /auth/reset-password/confirm?session=<jwt>. This
+    // read a path param named "token" against a route with no path
+    // segments, and then validated it as 128 hex characters, which a JWT
+    // can never be, so the page always rendered "Link expired" and never
+    // called the API.
+    const [params] = useSearchParams();
     const navigate = useNavigate();
     const resetConfirm = useResetPasswordConfirm();
     const { evaluate } = usePasswordStrength();
 
-    const token = params["token"] ?? "";
-    const isValidToken = is64ByteHex(token);
+    const session = params.get("session") ?? "";
+    const isValidToken = session.length > 0;
     const [password, setPassword] = useState("");
     const [password2, setPassword2] = useState("");
     const [captcha, setCaptcha] = useState(false);
@@ -33,7 +37,7 @@ export function useResetPasswordConfirmForm() {
         setPending(true);
         try {
             await toast.promise(
-                resetConfirm.mutateAsync({ token, password, turnstile: turnstileToken }),
+                resetConfirm.mutateAsync({ session, password, turnstile: turnstileToken }),
                 { loading: "Loading...", success: "Password successfully changed", error: (err: AppError) => buildError(err) }
             );
             navigate("/auth/login?action=1");

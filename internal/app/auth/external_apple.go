@@ -11,7 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-func (s *authService) AppleAuth(ctx context.Context, code, ipaddr, userAgent string) (*models.Token, *errx.Error) {
+func (s *authService) AppleAuth(ctx context.Context, code, ipaddr, userAgent string) (*models.LoginResult, *errx.Error) {
 	atoken, err := s.externalAuth.AppleAuth.ValidateCode(code)
 	if err != nil {
 		if errors.Is(err, apple.ErrorResponseInvalidGrant) {
@@ -35,10 +35,6 @@ func (s *authService) AppleAuth(ctx context.Context, code, ipaddr, userAgent str
 		return nil, xerr
 	}
 
-	session, xerr := s.tokenService.GenerateSession(ctx, udb.ID, "", ipaddr, userAgent, token.AuthProviderApple)
-	if xerr != nil {
-		return nil, xerr
-	}
-
-	return session, nil
+	// Ban enforcement and the 2FA gate, which this path skipped entirely.
+	return s.finishLoginAs(ctx, udb.ID, ipaddr, userAgent, token.AuthProviderApple)
 }

@@ -16,6 +16,7 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MailStatusCard } from "./MailStatusCard";
 import {
     getSystemStatus,
     type SystemComponentStatus,
@@ -124,6 +125,7 @@ export default function SystemStatusPage() {
                     )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <MailStatusCard />
                         {components.map((c) => (
                             <ComponentCard key={c.name} component={c} />
                         ))}

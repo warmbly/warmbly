@@ -36,6 +36,16 @@ var (
 	ErrCode        = New(BadRequest, "Invalid or expired verification code.")
 	ErrAuthLimit   = New(BadRequest, "Too many attempts, please try again later.")
 
+	// ErrMailUndeliverable separates "we could not send you the email" from
+	// every other internal fault. It used to be a bare 500, which on a
+	// self-hosted install with no working relay is the single least helpful
+	// thing to show someone who cannot log in.
+	ErrMailUndeliverable = New(Internal, "We couldn't send the email. If you administer this server, check the mail transport configuration.")
+
+	// ErrRegistrationClosed is returned when public signups are off. The
+	// operator sets DISABLE_REGISTRATION.
+	ErrRegistrationClosed = New(Forbidden, "This server is not accepting new accounts. Ask an administrator for an invitation.")
+
 	ErrExternalCode     = New(BadRequest, "Invalid or expired code, please try again.")
 	ErrExternalEmail    = New(BadRequest, "Invalid or unverified email address.")
 	ErrExternalProvider = New(BadRequest, "This sign-in method isn't available on this server.")

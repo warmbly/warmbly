@@ -81,6 +81,81 @@ x-selfhost-env: &selfhost-env
   CAPTCHA_PROVIDER: ${CAPTCHA_PROVIDER:-none}
   TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
 
+  # Deployment mode. Picks the auth defaults below; every one stays
+  # individually overridable.
+  DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-self_hosted}
+
+  # ── Platform email (login codes, resets, invitations, digests) ──────────
+  #
+  # log is the default so a fresh install can complete first login with no
+  # relay: the code is printed to `docker compose logs backend`. Switch to smtp
+  # before anyone else uses this instance.
+  #
+  #   MAIL_TRANSPORT=smtp
+  #   SMTP_HOST=smtp.example.com  SMTP_USERNAME=...  SMTP_PASSWORD=...
+  #
+  # SMTP_SECURITY is starttls (587), tls (implicit, 465) or none (a local sink
+  # only). The port defaults per mode, and credentials are never sent over an
+  # unencrypted connection.
+  MAIL_TRANSPORT: ${MAIL_TRANSPORT:-log}
+  EMAIL_NAME: ${EMAIL_NAME:-Warmbly}
+  EMAIL_ADDRESS: ${EMAIL_ADDRESS:-noreply@localhost}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_SECURITY: ${SMTP_SECURITY:-}
+  SMTP_AUTH: ${SMTP_AUTH:-auto}
+  SMTP_EHLO_NAME: ${SMTP_EHLO_NAME:-}
+  SMTP_TLS_INSECURE_SKIP_VERIFY: ${SMTP_TLS_INSECURE_SKIP_VERIFY:-false}
+
+  # ── Auth policy ────────────────────────────────────────────────────────
+  #
+  # AUTH_LOGIN_CODE is always, new_device or off. Self-host defaults to off:
+  # emailing a code on every login makes the relay a single point of failure
+  # for all authentication, and neither NIST SP 800-63B nor OWASP ASVS counts
+  # email as a second factor. TOTP and passkeys both remain available.
+  AUTH_LOGIN_CODE: ${AUTH_LOGIN_CODE:-}
+  REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-}
+  # true | false | invite_only. Self-host defaults to invite_only, with a
+  # first-launch exemption so the very first signup always works.
+  DISABLE_REGISTRATION: ${DISABLE_REGISTRATION:-}
+  DISABLE_PASSWORD_LOGIN: ${DISABLE_PASSWORD_LOGIN:-false}
+  AUTH_IP_RATE_LIMIT: ${AUTH_IP_RATE_LIMIT:-60}
+  # CIDRs allowed to set X-Forwarded-For. Empty trusts nothing, which is
+  # correct for a directly exposed backend; set it when you run a proxy.
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+
+  # First owner, read only while the users table is empty. Leave unset and the
+  # backend prints a single-use setup link to its logs instead.
+  WARMBLY_BOOTSTRAP_EMAIL: ${WARMBLY_BOOTSTRAP_EMAIL:-}
+  WARMBLY_BOOTSTRAP_PASSWORD_HASH: ${WARMBLY_BOOTSTRAP_PASSWORD_HASH:-}
+  WARMBLY_BOOTSTRAP_PASSWORD: ${WARMBLY_BOOTSTRAP_PASSWORD:-}
+  WARMBLY_BOOTSTRAP_ORG: ${WARMBLY_BOOTSTRAP_ORG:-}
+
+  # Generic OpenID Connect. The one sign-in path with no mail dependency, so
+  # it is the recommended posture for a deployment with no relay.
+  OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+  OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+  OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+  OIDC_REDIRECT_URL: ${OIDC_REDIRECT_URL:-}
+  OIDC_SCOPES: ${OIDC_SCOPES:-}
+  OIDC_ALLOWED_DOMAINS: ${OIDC_ALLOWED_DOMAINS:-}
+  OIDC_DEFAULT_ORG: ${OIDC_DEFAULT_ORG:-}
+  OIDC_PROVIDER_NAME: ${OIDC_PROVIDER_NAME:-}
+
+  # Transactional email branding. A self-hosted install should not send mail
+  # attributed to someone else's company.
+  EMAIL_BRAND_NAME: ${EMAIL_BRAND_NAME:-}
+  EMAIL_BRAND_LEGAL_ENTITY: ${EMAIL_BRAND_LEGAL_ENTITY:-}
+  EMAIL_BRAND_COMPANY_NUMBER: ${EMAIL_BRAND_COMPANY_NUMBER:-}
+  EMAIL_BRAND_PLACE_OF_REG: ${EMAIL_BRAND_PLACE_OF_REG:-}
+  EMAIL_BRAND_ADDRESS: ${EMAIL_BRAND_ADDRESS:-}
+  EMAIL_BRAND_WEBSITE_URL: ${EMAIL_BRAND_WEBSITE_URL:-}
+  EMAIL_BRAND_SUPPORT_EMAIL: ${EMAIL_BRAND_SUPPORT_EMAIL:-}
+  EMAIL_BRAND_TERMS_URL: ${EMAIL_BRAND_TERMS_URL:-}
+  EMAIL_BRAND_PRIVACY_URL: ${EMAIL_BRAND_PRIVACY_URL:-}
+
   PRIMARY_DB: ${PRIMARY_DB:-postgres://warmbly:warmbly@postgres:5432/warmbly_dev?sslmode=disable}
   REDIS: ${REDIS:-redis://redis:6379}
   AUTH_SECRET: ${AUTH_SECRET:-local-dev-auth-secret-minimum-32-characters-long}
@@ -151,13 +226,22 @@ services:
       timeout: 3s
       retries: 10
 
-  # Local SMTP sink + web UI so outbound mail is visible without a real relay.
-  # Point mailbox SMTP at mailpit:1025 (or use it as the notification relay).
+  # SMTP sink for testing campaign sends without a real mailbox.
+  #
+  # In the `sandbox` profile, so `make up` never starts it: platform mail goes
+  # to the logs (MAIL_TRANSPORT=log) or to your relay, and a real install sends
+  # campaign mail through the mailboxes you connect. `make sandbox`, `make dev`
+  # and `make infra` start it by naming it explicitly.
+  #
+  # Bound to loopback when it does run. Its web UI has no authentication, so
+  # publishing it would hand every captured message to anyone who can reach the
+  # host. Set MAILPIT_BIND=0.0.0.0 if you deliberately want it reachable.
   mailpit:
     image: axllent/mailpit:latest
+    profiles: ["sandbox"]
     ports:
-      - "18025:8025"
-      - "11025:1025"
+      - "${MAILPIT_BIND:-127.0.0.1}:18025:8025"
+      - "${MAILPIT_BIND:-127.0.0.1}:11025:1025"
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
@@ -202,12 +286,9 @@ services:
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://${PUBLIC_HOST:-localhost}:5173,http://${PUBLIC_HOST:-localhost}:5174}
       WEBSOCKET_URL: ${WEBSOCKET_URL:-ws://${PUBLIC_HOST:-localhost}:4000/socket/websocket}
       ENCRYPTED_KEYS_PROVIDER: postgres
-      EMAIL_NAME: ${EMAIL_NAME:-Warmbly}
-      EMAIL_ADDRESS: ${EMAIL_ADDRESS:-noreply@warmbly.local}
-      SMTP_HOST: ${SMTP_HOST:-mailpit}
-      SMTP_PORT: ${SMTP_PORT:-1025}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # Mail and auth policy live in the shared anchor above, so the consumer
+      # gets them too. It previously received neither, which silently disabled
+      # every notification and digest email in this stack.
       TRACKING_DOMAIN: ${TRACKING_DOMAIN:-${PUBLIC_HOST:-localhost}:3000}
       GEODB_PATH: ${GEODB_PATH:-/app/data/GeoLite2-City.mmdb}
       # Gmail mailbox OAuth (leave unset to connect only SMTP/IMAP + Outlook

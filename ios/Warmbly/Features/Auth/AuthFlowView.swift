@@ -468,9 +468,15 @@ struct AuthFlowView: View {
             // stay right above the keyboard.
             if focusedField != .email {
                 VStack(spacing: 12) {
-                    SocialSignInRow(providers: providers, busy: $busy) { message in
-                        showError(message)
-                    }
+                    SocialSignInRow(
+                        providers: providers,
+                        busy: $busy,
+                        onError: { message in showError(message) },
+                        onTwoFA: { pendingToken in
+                            code = ""
+                            go(to: .twoFA(pendingToken: pendingToken))
+                        }
+                    )
 
                     HStack(spacing: 12) {
                         Rectangle().fill(Color(.separator).opacity(0.45)).frame(height: 1)
@@ -727,19 +733,50 @@ struct AuthFlowView: View {
     private func submitCredentials() async {
         guard !busy, password.count >= (mode == .signIn ? 1 : 8) else { return }
         await run {
-            let session: String
             switch mode {
             case .signIn:
-                session = try await env.session.startLogin(email: email, password: password)
                 registerFlow = false
+                // A deployment can sign someone in without emailing a code, so
+                // the first call may already be the whole login.
+                let outcome = try await env.session.startLogin(email: email, password: password)
+                switch outcome {
+                case .loggedIn:
+                    return
+                case let .needsTwoFA(pendingToken):
+                    code = ""
+                    go(to: .twoFA(pendingToken: pendingToken))
+                    return
+                case let .needsCode(session):
+                    code = ""
+                    infoMessage = nil
+                    resendRemaining = 60
+                    go(to: .verify(session: session))
+                }
             case .signUp:
-                session = try await env.session.startRegister(email: email, password: password)
                 registerFlow = true
+                // With email verification off the account already exists, so
+                // fall straight through to signing in.
+                guard let session = try await env.session.startRegister(email: email, password: password) else {
+                    registerFlow = false
+                    let outcome = try await env.session.startLogin(email: email, password: password)
+                    switch outcome {
+                    case .loggedIn:
+                        return
+                    case let .needsTwoFA(pendingToken):
+                        code = ""
+                        go(to: .twoFA(pendingToken: pendingToken))
+                    case let .needsCode(loginSession):
+                        code = ""
+                        resendRemaining = 60
+                        go(to: .verify(session: loginSession))
+                    }
+                    return
+                }
+                code = ""
+                infoMessage = nil
+                resendRemaining = 60
+                go(to: .verify(session: session))
             }
-            code = ""
-            infoMessage = nil
-            resendRemaining = 60
-            go(to: .verify(session: session))
         }
     }
 
@@ -749,14 +786,21 @@ struct AuthFlowView: View {
             if registerFlow {
                 try await env.session.confirmRegister(session: session, code: submitted)
                 // Registration returns no tokens; chain into login with the same credentials.
-                let loginSession = try await env.session.startLogin(email: email, password: password)
+                let outcome = try await env.session.startLogin(email: email, password: password)
                 registerFlow = false
                 code = ""
                 resendRemaining = 60
-                withAnimation(.easeOut(duration: 0.2)) {
-                    infoMessage = "Account created. We emailed you a sign-in code."
+                switch outcome {
+                case .loggedIn:
+                    return
+                case let .needsTwoFA(pendingToken):
+                    go(to: .twoFA(pendingToken: pendingToken))
+                case let .needsCode(loginSession):
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        infoMessage = "Account created. We emailed you a sign-in code."
+                    }
+                    go(to: .verify(session: loginSession))
                 }
-                go(to: .verify(session: loginSession))
             } else {
                 let outcome = try await env.session.confirmLogin(session: session, code: submitted)
                 if case let .needsTwoFA(pendingToken) = outcome {
@@ -771,12 +815,18 @@ struct AuthFlowView: View {
     private func resendCode() async {
         guard case .verify = step else { return }
         await run {
-            let session: String
+            let session: String?
             if registerFlow {
                 session = try await env.session.startRegister(email: email, password: password)
             } else {
-                session = try await env.session.startLogin(email: email, password: password)
+                if case let .needsCode(loginSession) = try await env.session.startLogin(email: email, password: password) {
+                    session = loginSession
+                } else {
+                    // The retry resolved the login outright; nothing to resend.
+                    return
+                }
             }
+            guard let session else { return }
             code = ""
             resendRemaining = 60
             step = .verify(session: session)

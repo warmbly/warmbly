@@ -25,7 +25,7 @@ func (h *Handler) LoginStart(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), authRequestTimeout)
 	defer cancel()
 
-	resp, err := h.AuthService.LoginStart(ctx, &data, c.ClientIP())
+	resp, err := h.AuthService.LoginStart(ctx, &data, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		errx.Handle(c, err)
 		return
