@@ -70,6 +70,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
+	"github.com/warmbly/warmbly/internal/app/plathealth"
 	"github.com/warmbly/warmbly/internal/app/provisioning"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/referral"
@@ -140,6 +141,7 @@ func main() {
 	var websocketURI string
 	var allowedOrigins []string
 	var systemChecker *sysstatus.Checker
+	var platformHealth *plathealth.Collector
 
 	var tzService tz.TzService
 
@@ -1591,6 +1593,44 @@ func main() {
 		if v := os.Getenv("TRACKING_SERVICE_URL"); v != "" {
 			systemChecker.Add("tracking", sysstatus.HTTPCheck(strings.TrimRight(v, "/")+"/health"))
 		}
+
+		// Dependency matrix for /ready and /health/deps. /health stays process-up.
+		platformHealth = plathealth.NewCollector(plathealth.Options{
+			Timeout: plathealth.DefaultTimeout,
+			DB: func(ctx context.Context) error {
+				var n int
+				return primaryDB.QueryRow(ctx, "SELECT 1").Scan(&n)
+			},
+			Cache: func(ctx context.Context) error {
+				const key = "ops.health.probe"
+				if err := cache.Set(ctx, key, "1", 30*time.Second).Err(); err != nil {
+					return err
+				}
+				v, err := cache.Get(ctx, key).Result()
+				if err != nil {
+					return err
+				}
+				if v != "1" {
+					return errors.New("cache mismatch")
+				}
+				return nil
+			},
+			Bus: bus,
+			Heartbeat: func(ctx context.Context) (plathealth.HeartbeatSnapshot, error) {
+				var fresh, stale int
+				err := primaryDB.QueryRow(ctx, plathealth.HeartbeatSQL, plathealth.HeartbeatWindow).Scan(&fresh, &stale)
+				if err != nil {
+					return plathealth.HeartbeatSnapshot{}, err
+				}
+				return plathealth.HeartbeatSnapshot{Observed: true, Fresh: fresh, Stale: stale}, nil
+			},
+			Provider: func(ctx context.Context) error {
+				if mailTransport == nil {
+					return plathealth.ErrUnobserved
+				}
+				return mailTransport.Preflight(ctx)
+			},
+		})
 	}
 
 	// The facts only boot knows, handed to the configuration and health pages so
@@ -1767,6 +1807,9 @@ func main() {
 
 		// Admin System Status probes
 		SystemChecker: systemChecker,
+
+		// Platform /live /ready /health/deps evaluator
+		PlatformHealth: platformHealth,
 
 		// Organization-wide audit trail, backed by Postgres. The no-op
 		// fallback (audit.NewNoOpService) remains for entrypoints without

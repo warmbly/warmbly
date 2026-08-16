@@ -164,13 +164,19 @@ make status
 Each entry point answers on its own port:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/health   # backend
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/health   # backend process-up (compose)
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/live     # backend liveness
+curl -sS http://localhost:8080/ready                                   # backend readiness (503 if a plane is down)
+curl -sS http://localhost:8080/health/deps                             # per-plane matrix
+go run ./cmd/opsprobe --base-url http://localhost:8080                 # external probe
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/health   # tracking
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4000/health   # realtime
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173          # dashboard
 ```
 
-If one does not print `200`, `make logs backend` (or the service in question) will say why, and [troubleshooting](#troubleshooting) covers the usual causes.
+`GET /health` on the backend is process-up only so compose does not restart the API when Postgres, Redis, or NATS blips. A 200 there is not a healthy platform. Use `/live` for orchestrator restarts, `/ready` and `/health/deps` for traffic, and `cmd/opsprobe` from outside the box. See [Incident runbook](/development/incident-runbook/).
+
+If `/live` does not print `200`, `make logs backend` (or the service in question) will say why, and [troubleshooting](#troubleshooting) covers the usual causes.
 
 The admin panel's **System Status** page shows the same probes plus the platform mail transport, with a live connection check and a send-test button.
 
@@ -179,7 +185,7 @@ The admin panel's **System Status** page shows the same probes plus the platform
 | Service | Port | Purpose |
 |---------|------|---------|
 | web / admin | 5173 / 5174 | Dashboard and admin panel (static nginx builds, URLs injected at container start) |
-| backend | 8080 | REST API; applies migrations on every boot; `GET /health` |
+| backend | 8080 | REST API; applies migrations on every boot; `GET /health` (process-up), `GET /live`, `GET /ready`, `GET /health/deps` |
 | tracking | 3000 | Open pixels and click redirects; `GET /health` |
 | realtime | 4000 | WebSocket fanout; `GET /health` |
 | consumer / worker | none | Event processor; send and sync executor |

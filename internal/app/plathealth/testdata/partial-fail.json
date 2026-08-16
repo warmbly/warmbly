@@ -1,0 +1,8 @@
+{
+  "dns": {"observed": true, "ok": true},
+  "tls": {"observed": true, "ok": true},
+  "api": {"observed": true, "health_status": 200, "live_status": 200, "ready_status": 503, "ready": false},
+  "event_ingest": {"observed": true, "ok": false, "reason": "publish_failed"},
+  "read_after_write": {"observed": true, "ok": false, "reason": "round_trip_mismatch"},
+  "worker_heartbeat": {"observed": false, "ok": false, "reason": "unobserved"}
+}

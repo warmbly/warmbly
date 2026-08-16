@@ -37,6 +37,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
+	"github.com/warmbly/warmbly/internal/app/plathealth"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/referral"
 	"github.com/warmbly/warmbly/internal/app/releases"
@@ -306,4 +307,6 @@ type Handler struct {
 	// InstanceSettings is the database-backed settings tier. It holds only
 	// keys no environment variable owns.
 	InstanceSettings instancesettings.Service
+	// PlatformHealth evaluates liveness, readiness, and dependency health.
+	PlatformHealth *plathealth.Collector
 }
