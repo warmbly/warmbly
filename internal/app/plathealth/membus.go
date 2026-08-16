@@ -55,9 +55,9 @@ func (m *MemoryBus) Subscribe(ctx context.Context, _ []string, _ string, handler
 		case <-ctx.Done():
 			return ctx.Err()
 		case p := <-ch:
-			if err := handler(ctx, eventbus.Message{Topic: ProbeTopic, Payload: p}); err != nil {
-				return err
-			}
+			// Handler errors are NAK, not fatal. Subscribe stays up until ctx ends,
+			// matching JetStream: a foreign probe_id must not kill the consumer.
+			_ = handler(ctx, eventbus.Message{Topic: ProbeTopic, Payload: p})
 		}
 	}
 }

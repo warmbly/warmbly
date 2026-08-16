@@ -3,12 +3,17 @@ package plathealth
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 )
 
 func TestEvaluateProbeNamesEveryCheck(t *testing.T) {
@@ -186,6 +191,67 @@ func TestProbeBusRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProbeBusRoundTripSubscribeCanceledAfterMatch(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	ingest, raw := ProbeBusRoundTrip(ctx, newDeliverThenCancelBus())
+	if !ingest.OK {
+		t.Fatalf("publish half failed: %+v", ingest)
+	}
+	if !raw.OK {
+		t.Fatalf("matched probe_id must stay success when Subscribe returns Canceled, got %+v", raw)
+	}
+}
+
+func TestProbeBusRoundTripDoesNotAckForeign(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	bus := newRecordHandlerBus()
+	ingest, raw := ProbeBusRoundTrip(ctx, bus)
+	if !ingest.OK || !raw.OK {
+		t.Fatalf("own probe must still succeed: ingest=%+v raw=%+v", ingest, raw)
+	}
+	got := bus.handlerErrors()
+	if len(got) < 2 {
+		t.Fatalf("handler should see foreign then own, got %d results", len(got))
+	}
+	if got[0] == nil {
+		t.Fatal("foreign probe_id was ACKed on the shared durable")
+	}
+	if !errors.Is(got[0], errForeignProbe) {
+		t.Fatalf("foreign handler err=%v, want errForeignProbe", got[0])
+	}
+	if got[1] != nil {
+		t.Fatalf("own probe_id should be ACKed, handler err=%v", got[1])
+	}
+}
+
+func TestRunProbeLiveBusKeepsHeartbeatFromDeps(t *testing.T) {
+	t.Parallel()
+	srv := newDepsServer(t, true, "ok")
+	defer srv.Close()
+	r, err := RunProbe(context.Background(), ProbeConfig{
+		BaseURL: srv.URL,
+		Bus:     NewMemoryBus(),
+		Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := indexChecks(r)
+	if by[CheckWorkerHeartbeat].Status != StatusOK {
+		t.Fatalf("documented --base-url --nats-url path left heartbeat %q (want ok from /health/deps)", by[CheckWorkerHeartbeat].Status)
+	}
+	if by[CheckEventIngest].Status != StatusOK || by[CheckReadAfterWrite].Status != StatusOK {
+		t.Fatalf("bus should replace ingest/raw, got ingest=%q raw=%q", by[CheckEventIngest].Status, by[CheckReadAfterWrite].Status)
+	}
+	if !r.Green {
+		t.Fatalf("live command with fresh deps + working bus must be able to go green: %+v", r)
+	}
+}
+
 func TestProbeBusRoundTripPublishFail(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -226,19 +292,21 @@ func mustFixture(t *testing.T, name string) ProbeInput {
 func newDepsServer(t *testing.T, ready bool, heartbeatStatus string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
+	hb := Observation{Plane: PlaneWorkerHeartbeat, Observed: true, Required: true, OK: true}
+	if heartbeatStatus == "stale" || !ready {
+		hb.OK = false
+		hb.Stale = true
+		hb.Reason = ReasonNewestHeartbeatStale
+	}
 	report := Evaluate(true, []Observation{
 		{Plane: PlaneControlPlane, Observed: true, OK: true, Required: true},
 		{Plane: PlaneDB, Observed: true, OK: true, Required: true},
 		{Plane: PlaneCache, Observed: true, OK: true, Required: true},
 		{Plane: PlaneQueue, Observed: true, OK: true, Required: true},
 		{Plane: PlaneEventProcessing, Observed: true, OK: ready, Required: true},
-		{Plane: PlaneWorkerHeartbeat, Observed: true, Stale: !ready, Required: true, Reason: ReasonNewestHeartbeatStale},
+		hb,
 		{Plane: PlaneProviderEdge, Observed: true, OK: true, Required: true},
 	}, time.Now().UTC(), DefaultTimeout)
-	if heartbeatStatus != "stale" {
-		// keep Evaluate output
-		_ = heartbeatStatus
-	}
 	body, err := MarshalReport(report)
 	if err != nil {
 		t.Fatal(err)
@@ -275,3 +343,97 @@ func indexChecks(r ProbeReport) map[string]CheckResult {
 	}
 	return m
 }
+
+// deliverThenCancelBus delivers the published payload then returns Canceled
+// from Subscribe, which is the race that used to flip a successful consume
+// into round_trip_mismatch.
+type deliverThenCancelBus struct {
+	mu      sync.Mutex
+	payload []byte
+	ready   chan struct{}
+	once    sync.Once
+}
+
+func newDeliverThenCancelBus() *deliverThenCancelBus {
+	return &deliverThenCancelBus{ready: make(chan struct{})}
+}
+
+func (b *deliverThenCancelBus) Publish(_ context.Context, _, _ string, payload []byte) error {
+	b.mu.Lock()
+	b.payload = append([]byte(nil), payload...)
+	b.mu.Unlock()
+	b.once.Do(func() { close(b.ready) })
+	return nil
+}
+
+func (b *deliverThenCancelBus) Subscribe(ctx context.Context, _ []string, _ string, handler eventbus.Handler) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.ready:
+	}
+	b.mu.Lock()
+	p := append([]byte(nil), b.payload...)
+	b.mu.Unlock()
+	_ = handler(ctx, eventbus.Message{Topic: ProbeTopic, Payload: p})
+	return context.Canceled
+}
+
+func (b *deliverThenCancelBus) Close() error { return nil }
+func (b *deliverThenCancelBus) Name() string { return "deliver-then-cancel" }
+
+// recordHandlerBus delivers a foreign probe_id first, then the published one,
+// and records each handler error so the test can see ACK vs NAK.
+type recordHandlerBus struct {
+	mu        sync.Mutex
+	published []byte
+	ready     chan struct{}
+	once      sync.Once
+	results   []error
+}
+
+func newRecordHandlerBus() *recordHandlerBus {
+	return &recordHandlerBus{ready: make(chan struct{})}
+}
+
+func (b *recordHandlerBus) Publish(_ context.Context, _, _ string, payload []byte) error {
+	b.mu.Lock()
+	b.published = append([]byte(nil), payload...)
+	b.mu.Unlock()
+	b.once.Do(func() { close(b.ready) })
+	return nil
+}
+
+func (b *recordHandlerBus) Subscribe(ctx context.Context, _ []string, _ string, handler eventbus.Handler) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.ready:
+	}
+	foreign, err := json.Marshal(probePayload{Kind: "ops_health_probe", ProbeID: "00000000-0000-0000-0000-000000000000"})
+	if err != nil {
+		return err
+	}
+	errF := handler(ctx, eventbus.Message{Topic: ProbeTopic, Payload: foreign})
+	b.mu.Lock()
+	b.results = append(b.results, errF)
+	own := append([]byte(nil), b.published...)
+	b.mu.Unlock()
+	errOwn := handler(ctx, eventbus.Message{Topic: ProbeTopic, Payload: own})
+	b.mu.Lock()
+	b.results = append(b.results, errOwn)
+	b.mu.Unlock()
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (b *recordHandlerBus) handlerErrors() []error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]error, len(b.results))
+	copy(out, b.results)
+	return out
+}
+
+func (b *recordHandlerBus) Close() error { return nil }
+func (b *recordHandlerBus) Name() string { return "record-handler" }

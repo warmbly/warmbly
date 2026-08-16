@@ -198,6 +198,10 @@ type probePayload struct {
 	ProbeID string `json:"probe_id"`
 }
 
+// errForeignProbe is returned from the shared durable handler so a payload
+// for another probe_id is NAK'd, not ACKed. Returning nil would steal it.
+var errForeignProbe = errors.New("foreign ops health probe")
+
 // ProbeBusRoundTrip publishes a labeled probe payload on the shipped EventBus
 // and waits to consume the same probe_id. ingest is the publish half;
 // raw (read-after-write) is the consume half.
@@ -220,14 +224,13 @@ func ProbeBusRoundTrip(ctx context.Context, bus eventbus.EventBus) (ingest, raw 
 	go func() {
 		subErr <- bus.Subscribe(subCtx, []string{ProbeTopic}, ProbeConsumerGroup, func(_ context.Context, msg eventbus.Message) error {
 			if !bytes.Contains(msg.Payload, []byte(id)) {
-				return nil
+				return errForeignProbe
 			}
 			select {
 			case <-got:
 			default:
 				close(got)
 			}
-			cancel()
 			return nil
 		})
 	}()
@@ -250,22 +253,44 @@ func ProbeBusRoundTrip(ctx context.Context, bus eventbus.EventBus) (ingest, raw 
 	ingest.OK = true
 	ingest.LatencyMS = time.Since(start).Milliseconds()
 
-	select {
-	case <-got:
+	success := func() (Observation, Observation) {
 		raw.Observed = true
 		raw.OK = true
+		raw.Reason = ""
+		raw.Timeout = false
 		raw.LatencyMS = time.Since(start).Milliseconds()
 		return ingest, raw
+	}
+	matched := func() bool {
+		select {
+		case <-got:
+			return true
+		default:
+			return false
+		}
+	}
+
+	select {
+	case <-got:
+		return success()
 	case err := <-subErr:
+		// Subscribe often returns Canceled (or exits) after a match. A
+		// received probe_id is success even if that error wins the select.
+		if matched() {
+			return success()
+		}
 		raw.Observed = true
 		raw.OK = false
-		if err != nil && !errors.Is(err, context.Canceled) {
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, errForeignProbe) {
 			raw.Reason = ReasonSubscribeFailed
 		} else {
 			raw.Reason = ReasonRoundTripMismatch
 		}
 		return ingest, raw
 	case <-ctx.Done():
+		if matched() {
+			return success()
+		}
 		raw.Observed = true
 		raw.Timeout = true
 		raw.Reason = ReasonRoundTripTimeout

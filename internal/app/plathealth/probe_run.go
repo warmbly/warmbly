@@ -85,11 +85,9 @@ func collectLive(ctx context.Context, cfg ProbeConfig) (ProbeInput, error) {
 			in.TLS = CheckInput{Observed: false, Reason: ReasonHTTPScheme}
 		}
 		in.API = liveAPI(ctx, cfg, strings.TrimRight(cfg.BaseURL, "/"))
-		// Prefer explicit bus when provided; otherwise lift ingest/raw/heartbeat
-		// from /health/deps so a remote probe does not need broker credentials.
-		if cfg.Bus == nil && cfg.NATSURL == "" {
-			liftDeps(&in, cfg)
-		}
+		// Always lift heartbeat from /health/deps. A live --nats-url only
+		// replaces ingest/raw; it must not leave worker_heartbeat zero-value.
+		liftDeps(ctx, &in, cfg)
 	} else {
 		in.DNS = CheckInput{Observed: false, Reason: ReasonUnobserved}
 		in.TLS = CheckInput{Observed: false, Reason: ReasonUnobserved}
@@ -242,12 +240,12 @@ func getJSON(ctx context.Context, client *http.Client, rawURL string) (int, *dep
 	return resp.StatusCode, &body
 }
 
-func liftDeps(in *ProbeInput, cfg ProbeConfig) {
+func liftDeps(ctx context.Context, in *ProbeInput, cfg ProbeConfig) {
 	client := cfg.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: cfg.Timeout}
 	}
-	_, body := getJSON(context.Background(), client, strings.TrimRight(cfg.BaseURL, "/")+"/health/deps")
+	_, body := getJSON(ctx, client, strings.TrimRight(cfg.BaseURL, "/")+"/health/deps")
 	if body == nil {
 		if !in.EventIngest.Observed {
 			in.EventIngest = CheckInput{Observed: false, Reason: ReasonUnobserved}
