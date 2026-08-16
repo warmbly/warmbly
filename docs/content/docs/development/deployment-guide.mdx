@@ -654,7 +654,11 @@ Each worker needs a stable UUID. It is resolved at boot in this order:
 3. the hostname, if the hostname is itself a UUID
 4. otherwise a **freshly generated UUID**
 
-The compose worker hits case 4, so every recreate registers as a new worker and leaves the previous row behind. Those rows are inert (placement skips them once their heartbeat goes stale) but they clutter the admin Workers list. Pin the identity to avoid that:
+The compose worker hits case 4, so every recreate registers as a new worker and leaves the previous row behind, still holding the mailboxes that were assigned to it.
+
+Sending recovers on its own. Placement skips a worker once its heartbeat goes stale, and the reconciler releases any mailbox still pointing at one and places it on a live worker within its interval. Until that happens, sends from those mailboxes fail with `email account not found in worker`.
+
+Pinning the identity avoids the gap, and the churn of mailboxes moving between workers:
 
 ```bash
 WORKER_ID=<a uuid you generate once>     # uuidgen

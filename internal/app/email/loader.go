@@ -98,7 +98,11 @@ func (s *emailService) LoadAccountOntoWorker(ctx context.Context, accountID uuid
 		return nil
 	}
 
-	workerID := acc.WorkerID
+	workerID, rerr := s.releaseDeadWorker(ctx, acc.ID, acc.WorkerID)
+	if rerr != nil {
+		return rerr
+	}
+
 	if workerID == nil {
 		// No worker yet: assign one now (OAuth onboarding never assigned).
 		if acc.OrganizationID == nil || s.workerAssignment == nil {
@@ -126,6 +130,46 @@ func (s *emailService) LoadAccountOntoWorker(ctx context.Context, accountID uuid
 		return nil
 	}
 	return s.publisher.PublishAddEmail(ctx, *workerID, payload)
+}
+
+// releaseDeadWorker returns the worker a mailbox should load onto, releasing it
+// first when the one it holds can no longer receive anything.
+//
+// A worker that has stopped heartbeating cannot be sent to, so a mailbox still
+// pointing at one is stranded: every send fails with "email account not found
+// in worker" and nothing re-places it, because assignment previously ran only
+// when worker_id was NULL.
+//
+// That is routine rather than exotic. A worker started without WORKER_ID mints
+// a fresh UUID on every boot, so each `docker compose up -d worker` leaves the
+// previous row behind with its mailboxes still attached.
+//
+// Returning the current worker unchanged on a lookup failure is deliberate: a
+// database blip must not churn placements, because moving a mailbox changes the
+// IP it sends from.
+func (s *emailService) releaseDeadWorker(ctx context.Context, accountID uuid.UUID, current *uuid.UUID) (*uuid.UUID, error) {
+	if current == nil || s.workerAssignment == nil {
+		return current, nil
+	}
+
+	live, err := s.workerAssignment.IsWorkerLive(ctx, *current)
+	if err != nil {
+		log.Warn().Err(err).Str("email_id", accountID.String()).
+			Msg("could not check worker liveness; keeping the current assignment")
+		return current, nil
+	}
+	if live {
+		return current, nil
+	}
+
+	log.Info().
+		Str("email_id", accountID.String()).
+		Str("worker_id", current.String()).
+		Msg("assigned worker is gone; releasing the mailbox so it can be placed on a live worker")
+	if err := s.workerAssignment.UnassignWorkerFromEmail(ctx, accountID); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 // buildAddWorkerEmail reconstructs the worker payload for an account, decrypting

@@ -31,6 +31,15 @@ type WorkerAssignmentService interface {
 	// based on the organization's subscription status (free tier vs paid)
 	AssignWorkerToEmail(ctx context.Context, emailAccountID, orgID uuid.UUID) (*uuid.UUID, error)
 
+	// UnassignWorkerFromEmail releases a mailbox from its worker, returning the
+	// worker's account count and load score.
+	UnassignWorkerFromEmail(ctx context.Context, emailAccountID uuid.UUID) error
+
+	// IsWorkerLive reports whether a worker can still receive commands: active
+	// and heartbeating inside the liveness window. A mailbox assigned to a
+	// worker that fails this cannot send until it is placed somewhere else.
+	IsWorkerLive(ctx context.Context, workerID uuid.UUID) (bool, error)
+
 	// SelectSharedWorker selects the least loaded shared worker for the given tier
 	SelectSharedWorker(ctx context.Context, freeTier bool) (*models.Worker, error)
 
@@ -218,6 +227,11 @@ func (s *workerAssignmentService) resolveMailboxWeight(ctx context.Context, emai
 		return defaultMailboxWeight
 	}
 	return MailboxWeight(hint.Provider, hint.IsWarmup)
+}
+
+// IsWorkerLive reports whether a worker is still a valid target for commands.
+func (s *workerAssignmentService) IsWorkerLive(ctx context.Context, workerID uuid.UUID) (bool, error) {
+	return s.workerRepo.IsWorkerLive(ctx, workerID)
 }
 
 // UnassignWorkerFromEmail removes the worker assignment for an email

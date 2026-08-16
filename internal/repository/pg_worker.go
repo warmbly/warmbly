@@ -43,6 +43,9 @@ type WorkerRepository interface {
 	// Worker queries
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Worker, error)
 	GetSharedWorkersByTier(ctx context.Context, freeTier bool) ([]models.Worker, error)
+	// IsWorkerLive reports whether a worker is active and heartbeating inside
+	// WorkerLivenessWindow, i.e. whether it can still receive commands.
+	IsWorkerLive(ctx context.Context, id uuid.UUID) (bool, error)
 	GetAllActiveWorkers(ctx context.Context) ([]models.Worker, error)
 	GetAvailableDedicatedWorker(ctx context.Context) (*models.Worker, error)
 	PromoteIdlePremiumWorkerToDedicated(ctx context.Context) (*models.Worker, error)
@@ -143,6 +146,26 @@ func (r *workerRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.W
 
 // GetSharedWorkersByTier retrieves all shared workers matching the specified tier
 // Results are sorted by account_count ASC (least loaded first) for even distribution
+// IsWorkerLive reports whether a worker is still a valid placement target,
+// using the same predicate as selection: active, and heartbeating inside
+// WorkerLivenessWindow. A mailbox already assigned to a worker that fails this
+// is orphaned, because its send commands go to a topic with no consumer.
+func (r *workerRepository) IsWorkerLive(ctx context.Context, id uuid.UUID) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM workers
+			WHERE id = $1
+			  AND active = true
+			  AND last_seen_at > now() - $2::interval
+		)
+	`
+	var live bool
+	if err := r.db.QueryRow(ctx, query, id, WorkerLivenessWindow).Scan(&live); err != nil {
+		return false, err
+	}
+	return live, nil
+}
+
 func (r *workerRepository) GetSharedWorkersByTier(ctx context.Context, freeTier bool) ([]models.Worker, error) {
 	query := `
 		SELECT id, ip_addr, active, free_tier, worker_type, account_count, created_at, updated_at
