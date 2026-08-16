@@ -64,6 +64,10 @@ type UniboxRepository interface {
 	// step that knows the contact but not the thread can still label it.
 	AddThreadLabels(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
 	LatestThreadIDForContact(ctx context.Context, userID uuid.UUID, email string) (string, error)
+	// LatestMessageIDInThread returns the newest RFC Message-ID in a thread, so
+	// a reply that arrives with only a provider thread id can still carry the
+	// In-Reply-To header the recipient's mail client threads on.
+	LatestMessageIDInThread(ctx context.Context, orgID uuid.UUID, threadID string) (string, error)
 }
 
 type uniboxRepository struct {
@@ -820,6 +824,37 @@ func (r *uniboxRepository) LatestThreadIDForContact(ctx context.Context, userID 
 			return "", err
 		}
 		return threadID, nil
+	}
+	return "", rows.Err()
+}
+
+// LatestMessageIDInThread returns the newest non-empty RFC Message-ID in the
+// thread. Scoped through email_accounts so one organization cannot read another
+// organization's conversation, matching every other org-scoped unibox read.
+func (r *uniboxRepository) LatestMessageIDInThread(ctx context.Context, orgID uuid.UUID, threadID string) (string, error) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return "", nil
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT message_id
+		FROM unibox_emails
+		WHERE thread_id = $2
+		  AND message_id <> ''
+		  AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+		ORDER BY internal_date DESC
+		LIMIT 1
+	`, orgID, threadID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		var messageID string
+		if err := rows.Scan(&messageID); err != nil {
+			return "", err
+		}
+		return messageID, nil
 	}
 	return "", rows.Err()
 }

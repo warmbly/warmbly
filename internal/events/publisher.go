@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -52,6 +53,7 @@ type SendEmailParams struct {
 	CC             []string
 	BCC            []string
 	InReplyTo      string
+	ThreadID       string
 	Subject        string
 	MessageID      string
 	BodyPlain      string
@@ -109,6 +111,18 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 		subject = encSubject
 	}
 
+	// Parent is what makes a reply land inside its conversation. ThreadID is
+	// the provider-side handle (Gmail appends to a thread only when it is set);
+	// MessageID is the RFC Message-ID the recipient's own client threads on.
+	// Both fields already exist on the event, so this adds no schema change.
+	var parent *models.EmailParent
+	if params.ThreadID != "" || params.InReplyTo != "" {
+		parent = &models.EmailParent{
+			ThreadID:  params.ThreadID,
+			MessageID: strings.Trim(params.InReplyTo, "<>"),
+		}
+	}
+
 	// Create SendEmail message for worker
 	sendEmail := &models.SendEmail{
 		TaskID:         params.TaskID,
@@ -121,6 +135,7 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 		BodyS3Key:      s3Key,
 		MessageID:      params.MessageID,
 		InReplyTo:      params.InReplyTo,
+		Parent:         parent,
 		IsWarmup:       params.IsWarmup,
 		TrackingInfo:   params.TrackingInfo,
 		WarmupToken:    params.WarmupToken,

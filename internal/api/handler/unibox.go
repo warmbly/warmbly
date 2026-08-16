@@ -444,6 +444,17 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 		return
 	}
 
+	// The composer only knows the provider thread id, but a thread id is
+	// meaningless outside the sending mailbox: the recipient's client threads
+	// on In-Reply-To/References. Resolve the parent Message-ID here so a reply
+	// nests for them too, without needing a client change.
+	inReplyTo := req.InReplyTo
+	if len(inReplyTo) == 0 && req.ThreadID != "" {
+		if parentMessageID, xerr := h.UniboxService.LatestMessageIDInThread(c.Request.Context(), *orgID, req.ThreadID); xerr == nil && parentMessageID != "" {
+			inReplyTo = []string{parentMessageID}
+		}
+	}
+
 	sendReq := &emailsend.SendEmailRequest{
 		To:          req.To,
 		CC:          req.CC,
@@ -451,7 +462,7 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 		Subject:     req.Subject,
 		BodyHTML:    req.BodyHTML,
 		BodyPlain:   req.BodyPlain,
-		InReplyTo:   req.InReplyTo,
+		InReplyTo:   inReplyTo,
 		ThreadID:    req.ThreadID,
 		SendMode:    req.SendMode,
 		ScheduledAt: req.ScheduledAt,
