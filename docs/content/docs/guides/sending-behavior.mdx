@@ -29,6 +29,8 @@ It is off by default. A mailbox that has not opted in keeps its fixed daily cap 
 
 Every time is local to the mailbox's own timezone, which you set on the mailbox itself.
 
+A new mailbox has no timezone set, and that is a valid state rather than a gap: with none set, only the campaign's own sending window applies. Set one when the mailbox belongs to somebody in a particular place, and both calendars then have to agree before a send goes out.
+
 ## The daily plan
 
 The roll happens once per mailbox per local day, and the result is stored. That matters: the scheduler recomputes a mailbox's next slot many times a day, and a fresh random workday on every calculation would mean the mailbox never actually keeps to one.

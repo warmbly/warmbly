@@ -191,6 +191,11 @@ type UpdateEmail struct {
 	WarmupEndTime   *string `json:"warmup_end_time"`
 	WarmupDays      *int    `json:"warmup_days"`
 
+	// Timezone is the mailbox's own IANA zone, which its sending behaviour and
+	// business-hours window are evaluated in. Empty means not configured, so
+	// only the campaign's window applies.
+	Timezone *string `json:"timezone"`
+
 	Tags []string `json:"tags"`
 }
 

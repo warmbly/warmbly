@@ -674,6 +674,15 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 		args = append(args, *udata.SignatureSync)
 		argPos++
 	}
+	if udata.Timezone != nil {
+		tz := strings.TrimSpace(*udata.Timezone)
+		if verr := validate.EmailTimezone(tz); verr != nil {
+			return nil, verr
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "timezone", argPos))
+		args = append(args, tz)
+		argPos++
+	}
 	if udata.SignatureCode != nil {
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "signature_code", argPos))
 		args = append(args, *udata.SignatureCode)
