@@ -102,7 +102,7 @@ Every emailed link (password reset, invitation, the first-run claim link) is bui
 | `FRONTEND_BASE_URL` | Alternative name for the same value, read when `APP_URL` is unset | unset | no |
 | `API_PUBLIC_URL` | The backend's public base. Frontends, blob URLs and the OIDC redirect derive from it | derived from `PUBLIC_HOST` under compose | yes |
 | `BACKEND_PUBLIC_URL` | The backend base used in generated worker configuration | falls back to `API_PUBLIC_URL` | yes |
-| `APP_ORIGIN` | The exact origin the mailbox OAuth callback page posts the authorization code back to. Unset means a wildcard target origin | derived under compose | yes |
+| `APP_ORIGIN` | The exact origin the mailbox OAuth callback page posts the authorization code back to. Only needed when the dashboard is served somewhere other than `APP_URL` | derived from `APP_URL` | yes |
 | `API_HOST` | The listen address | `0.0.0.0:8080` | yes |
 | `PUBLIC_HOST` | Compose only. A hostname or LAN IP that every other URL derives from | `localhost` | yes |
 | `CORS_ALLOW_ORIGINS` | Comma separated origins allowed to call the API. Anything not listed gets `403` on preflight | derived from `PUBLIC_HOST` under compose | yes |

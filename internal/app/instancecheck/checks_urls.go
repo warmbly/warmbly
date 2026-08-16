@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/warmbly/warmbly/internal/config"
 )
 
 const (
@@ -175,9 +177,15 @@ func checkAppOriginWildcard(ctx context.Context, d Deps, in Input) *Finding {
 	if env("APP_ORIGIN") != "" {
 		return nil
 	}
-	return result(CategoryURLs, SeverityInfo, "APP_ORIGIN is not set",
-		"APP_ORIGIN is not set, so the mailbox OAuth callback page posts the authorization code back to the dashboard "+
-			"with a wildcard target origin. Set APP_ORIGIN to your dashboard origin.",
+	// APP_ORIGIN is only needed when APP_URL cannot supply the origin, since
+	// the callback page derives its postMessage target from APP_URL otherwise.
+	if u, err := url.Parse(config.AppBaseURL()); err == nil && u.Scheme != "" && u.Host != "" {
+		return nil
+	}
+	return result(CategoryURLs, SeverityInfo, "No OAuth callback target origin",
+		"Neither APP_ORIGIN nor a usable APP_URL is set, so the mailbox OAuth callback page posts the authorization "+
+			"code back to the dashboard with a wildcard target origin. Set APP_URL to your dashboard origin, "+
+			"or APP_ORIGIN if the dashboard is served somewhere else.",
 		docsAddresses)
 }
 
