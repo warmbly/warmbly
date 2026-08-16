@@ -134,7 +134,7 @@ Signing in never depends on mail. The emailed login code is off on a self-hosted
 docker compose -p warmbly exec backend warmblyctl status
 ```
 
-It prints four blocks: the instance state, the platform admins, the health checks, and what to run next. Roughly, on an instance that already has accounts:
+It prints four blocks: the instance state, the platform admins, what to run next, and the health checks. Roughly, on an instance that already has accounts:
 
 ```
 Instance
@@ -148,15 +148,15 @@ Instance
 Platform admins
   you@example.com (super, mask 4194303)
 
-Checks
-  ...one line per finding, grouped by severity...
-
 How to get in
   Sign in at http://localhost:5173
   Lost the password:       warmblyctl user reset-password --email you@example.com
   Lost the authenticator:  warmblyctl user disable-2fa --email you@example.com
   No account of your own:  warmblyctl user create --email you@example.com --admin
   Who is an admin:         warmblyctl user list --admin
+
+Checks
+  ...one line per finding, grouped by severity...
 ```
 
 The exact wording moves with the state: an unclaimed instance says so and tells you to print a setup link instead. `--json` prints the same facts as a machine-readable document, which is what `make claim` reads.

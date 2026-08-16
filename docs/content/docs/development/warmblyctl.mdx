@@ -79,7 +79,7 @@ docker compose -p warmbly exec backend warmblyctl status
 | `--json` | off | Prints the state as JSON instead of prose, and always exits 0 |
 | `--quiet` | off | Prints only the checks, without the instance summary. Ignored with `--json` |
 
-It prints four blocks: the instance state, the platform admins, the health checks, and how to get in. A sample run is on [first run](/development/first-run/#checking-where-you-stand).
+It prints four blocks in this order: the instance state, the platform admins, how to get in, and the checks. A sample run is on [first run](/development/first-run/#checking-where-you-stand).
 
 The **How to get in** block changes with the state. An unclaimed instance is told to print a setup link; a claimed one is given the recovery commands; an instance with no platform admin is told to promote an account.
 
