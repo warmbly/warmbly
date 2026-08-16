@@ -37,6 +37,8 @@ flowchart LR
 | 4 GB RAM | The running stack idles near 300 MB; the first build is the demanding part |
 | Free ports | 5173, 5174, 8080, 4000, 3000, 4222, 8222, 15432, 16379 |
 
+`3000` is worth checking before you start: it is the default for a lot of other self-hosted software, and a collision there stops the tracking service from publishing. Set `TRACKING_PORT` to move the host side and point your reverse proxy at the new port.
+
 The first build compiles Go, Rust, and Elixir services and builds two frontends. On a modern laptop that takes about **6 minutes**. Later builds reuse the cache and are much faster.
 
 That is the whole list. No SMTP relay, no captcha keys, no cloud account, and no `.env` to write before the first run.

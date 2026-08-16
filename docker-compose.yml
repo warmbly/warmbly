@@ -202,6 +202,7 @@ services:
   # ─── infrastructure ───────────────────────────────────────────────────
 
   postgres:
+    restart: unless-stopped
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: warmbly
@@ -217,6 +218,7 @@ services:
       retries: 10
 
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     ports: ["16379:6379"]
     volumes:
@@ -228,6 +230,7 @@ services:
       retries: 10
 
   nats:
+    restart: unless-stopped
     image: nats:2.10-alpine
     # -js: JetStream (durable streams). -m 8222: HTTP monitoring for healthcheck.
     command: ["-js", "-sd", "/data", "-m", "8222"]
@@ -251,6 +254,7 @@ services:
   # publishing it would hand every captured message to anyone who can reach the
   # host. Set MAILPIT_BIND=0.0.0.0 if you deliberately want it reachable.
   mailpit:
+    restart: unless-stopped
     image: axllent/mailpit:latest
     profiles: ["sandbox"]
     ports:
@@ -267,6 +271,7 @@ services:
   # In the `sandbox` profile so the lean `make up` self-host never pulls it.
   # `make sandbox` / `make infra` start it by naming it explicitly.
   dovecot:
+    restart: unless-stopped
     image: dovecot/dovecot:latest
     profiles: ["sandbox"]
     environment:
@@ -283,6 +288,7 @@ services:
   # ─── application ──────────────────────────────────────────────────────
 
   backend:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: deploy/docker/backend.Dockerfile
@@ -341,6 +347,7 @@ services:
       start_period: 20s
 
   consumer:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: deploy/docker/consumer.Dockerfile
@@ -357,6 +364,7 @@ services:
   # (or run more on other machines via the SSH enrollment flow). Outbound IPs
   # belong to the mail provider, so more workers = more parallelism, not more IPs.
   worker:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: deploy/docker/worker.Dockerfile
@@ -384,10 +392,14 @@ services:
       nats: { condition: service_healthy }
 
   tracking:
+    restart: unless-stopped
     build:
       context: ./tracking
       dockerfile: Dockerfile
-    ports: ["3000:3000"]
+    # 3000 is a very common default for other self-hosted tools. Remap the host
+    # side with TRACKING_PORT when it is already taken; the container port and
+    # everything derived from TRACKING_DOMAIN stay as they are.
+    ports: ["${TRACKING_PORT:-3000}:3000"]
     environment:
       APP_ENV: ${APP_ENV:-dev}
       AWS_CONFIG_ENABLED: ${AWS_CONFIG_ENABLED:-false}
@@ -409,6 +421,7 @@ services:
       nats: { condition: service_healthy }
 
   realtime:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: deploy/docker/realtime.Dockerfile
@@ -442,6 +455,7 @@ services:
   # the release publishes to GHCR is what runs here. For hot-reload development
   # use `make app` / docker-compose.dev.yml instead.
   web:
+    restart: unless-stopped
     build:
       context: ./web
       dockerfile: Dockerfile
@@ -458,6 +472,7 @@ services:
       backend: { condition: service_healthy }
 
   admin:
+    restart: unless-stopped
     build:
       context: ./admin
       dockerfile: Dockerfile
