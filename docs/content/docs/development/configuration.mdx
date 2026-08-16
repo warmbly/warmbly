@@ -56,7 +56,7 @@ Five values protect the whole instance. Compose ships a working default for each
 | `INTERNAL_API_TOKEN` | any random string | The backend's `/api/v1/internal/` routes, which workers and the tracking service authenticate against | yes |
 | `SECRET_KEY_BASE` | 64 characters or more | Phoenix session signing in the realtime service | yes |
 | `KMS_LOCAL_MASTER_KEY` | base64, exactly 32 bytes | The root key that seals every per-organization data key | yes |
-| `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex characters | Mailbox SMTP and IMAP credentials at rest | yes |
+| `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex characters | Mailbox credentials at rest: SMTP and IMAP passwords, and Gmail and Outlook OAuth access and refresh tokens | yes |
 
 Generate real ones before anyone else can reach the instance:
 
@@ -82,7 +82,7 @@ Values that must be identical across services, because each service reads its ow
 | `AUTH_SECRET`, seen by realtime as `JWT_SECRET` | backend, realtime | The dashboard loads but never goes live: the websocket rejects every token |
 | `INTERNAL_API_TOKEN`, seen by workers as `ENCRYPTED_KEYS_WORKER_TOKEN` | backend, worker, tracking | Workers cannot fetch decryption keys and tracking cannot resolve click tickets. Both fail closed with `401` |
 | `KMS_LOCAL_MASTER_KEY` | backend, consumer, worker | Sealed data keys cannot be opened, so mailbox credentials stop decrypting |
-| `CREDENTIALS_ENCRYPTION_KEY` | backend, worker | Stored SMTP and IMAP passwords stop decrypting |
+| `CREDENTIALS_ENCRYPTION_KEY` | backend, worker | Stored SMTP and IMAP passwords and OAuth tokens stop decrypting, so no mailbox can send or sync |
 
 <Callout type="warn" title="Only the backend refuses to boot on a published default">
 The secret check runs in the backend. The consumer and the workers start happily on a published default, so an instance can look healthy while one process is using a key anyone can read from GitHub. The `secret_published_default` check on [Instance health](/development/instance-health/#secret_published_default) is what catches it.

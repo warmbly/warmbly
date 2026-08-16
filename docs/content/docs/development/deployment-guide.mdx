@@ -141,7 +141,7 @@ EOF
 | `INTERNAL_API_TOKEN` | any random string | The backend's internal API, which workers and the tracking service authenticate against |
 | `SECRET_KEY_BASE` | 64+ chars | Phoenix session signing in the realtime service |
 | `KMS_LOCAL_MASTER_KEY` | base64, exactly 32 bytes | The root key that seals every per-organization data key |
-| `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex chars | Mailbox SMTP and IMAP credentials at rest |
+| `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex chars | Mailbox credentials at rest: SMTP and IMAP passwords, and Gmail and Outlook OAuth access and refresh tokens |
 
 `APP_ENV=prod` requires no cloud account. Error reporting and GeoIP lookups are used when configured and skipped with a logged note when they are not.
 
@@ -204,7 +204,7 @@ These are the ones that break things quietly when they drift, because each servi
 | `AUTH_SECRET`, seen by realtime as `JWT_SECRET` | backend, realtime | The dashboard loads but never goes live: the websocket rejects every token |
 | `INTERNAL_API_TOKEN`, seen by workers as `ENCRYPTED_KEYS_WORKER_TOKEN` | backend, worker, tracking | Workers cannot fetch decryption keys and tracking cannot resolve click tickets. Both fail closed with `401` |
 | `KMS_LOCAL_MASTER_KEY` | backend, consumer, worker | Sealed data keys cannot be opened. Mailbox credentials stop decrypting |
-| `CREDENTIALS_ENCRYPTION_KEY` | backend, worker | Stored SMTP and IMAP passwords stop decrypting |
+| `CREDENTIALS_ENCRYPTION_KEY` | backend, worker | Stored SMTP and IMAP passwords and OAuth tokens stop decrypting, so no mailbox can send or sync |
 | `EVENTBUS_PROVIDER` and `NATS_URL` | every service | Producers and consumers land on different buses and work silently disappears |
 | `CODEC_PROVIDER` | every service | Events are written in one format and read in another |
 | `PUBSUB_ENABLED` | backend, consumer, realtime | Realtime events are published to a transport nobody is listening on |

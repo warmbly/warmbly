@@ -123,6 +123,32 @@ func NewEmailRepostory(db *db.DB, enc *encrypt.Encrypter) EmailRepository {
 // without CREDENTIALS_ENCRYPTION_KEY configured.
 var errNoCredentialEncrypter = errors.New("credential encrypter not configured (set CREDENTIALS_ENCRYPTION_KEY)")
 
+// sealCredential encrypts a credential for storage. It fails closed: without an
+// encrypter the caller must abort rather than fall back to a plaintext write.
+func (r *emailRepository) sealCredential(plain string) (string, error) {
+	if r.Encrypt == nil {
+		return "", errNoCredentialEncrypter
+	}
+	return r.Encrypt.Encrypt(plain)
+}
+
+// openCredential returns the plaintext behind a stored credential, reporting
+// whether the row was still in the pre-sealing plaintext format.
+//
+// Rows written before OAuth tokens were sealed hold the provider token verbatim
+// ("ya29...", "1//0g...", a Graph JWT), none of which is valid hex, so a
+// ParseHex/AEAD failure identifies a legacy row rather than corruption. Callers
+// re-seal on the spot so the plaintext window closes on first read.
+func (r *emailRepository) openCredential(stored string) (string, bool, error) {
+	if r.Encrypt == nil {
+		return "", false, errNoCredentialEncrypter
+	}
+	if plain, err := r.Encrypt.Decrypt(stored); err == nil {
+		return plain, false, nil
+	}
+	return stored, true, nil
+}
+
 func (r *emailRepository) ExistsForUser(ctx context.Context, userID, email string) (bool, *errx.Error) {
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM email_accounts WHERE user_id = $1 AND email = $2)`
@@ -209,6 +235,19 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 		return nil, errx.InternalError()
 	}
 
+	// Seal before opening the transaction so a misconfigured encrypter aborts
+	// the connect instead of writing provider tokens in the clear.
+	encAccessToken, encErr := r.sealCredential(data.AccessToken)
+	if encErr != nil {
+		db.CaptureError(encErr, "", nil, "encrypt-access-token")
+		return nil, errx.InternalError()
+	}
+	encRefreshToken, encErr := r.sealCredential(data.RefreshToken)
+	if encErr != nil {
+		db.CaptureError(encErr, "", nil, "encrypt-refresh-token")
+		return nil, errx.InternalError()
+	}
+
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -261,8 +300,8 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 
 	params = []any{
 		id,
-		data.AccessToken,
-		data.RefreshToken,
+		encAccessToken,
+		encRefreshToken,
 		data.ExpiresAt,
 	}
 
@@ -272,8 +311,9 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 		params...,
 	)
 	if err != nil {
-		db.CaptureError(err, query, params, "exec")
-		errx.InternalError()
+		// params holds the sealed tokens; keep them out of the error report.
+		db.CaptureError(err, query, nil, "exec")
+		return nil, errx.InternalError()
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -1369,17 +1409,19 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 		return nil, errx.InternalError()
 	}
 
-	// Decrypt tokens
-	var xerr error
-	decryptedAccessToken, xerr := r.Encrypt.Decrypt(accessToken)
+	// Decrypt tokens, tolerating rows written before OAuth tokens were sealed.
+	decryptedAccessToken, accessLegacy, xerr := r.openCredential(accessToken)
 	if xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, errx.InternalError()
 	}
-	decryptedRefreshToken, xerr := r.Encrypt.Decrypt(refreshToken)
+	decryptedRefreshToken, refreshLegacy, xerr := r.openCredential(refreshToken)
 	if xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, errx.InternalError()
+	}
+	if accessLegacy || refreshLegacy {
+		r.resealOAuthCredentials(ctx, emailAccountID, decryptedAccessToken, decryptedRefreshToken)
 	}
 
 	return &OAuthCredentials{
@@ -1387,6 +1429,33 @@ func (r *emailRepository) GetOAuthCredentials(ctx context.Context, emailAccountI
 		RefreshToken: decryptedRefreshToken,
 		ExpiresAt:    expiresAt,
 	}, nil
+}
+
+// resealOAuthCredentials rewrites a pre-sealing row in its encrypted form. It
+// is the migration path for tokens stored before sealing existed: there is no
+// SQL-only migration for them because the key lives in the application, so the
+// upgrade happens on first read instead. Best-effort by design, a failure here
+// must not break the read that triggered it; the next read retries.
+func (r *emailRepository) resealOAuthCredentials(ctx context.Context, emailAccountID uuid.UUID, accessToken, refreshToken string) {
+	encAccessToken, err := r.sealCredential(accessToken)
+	if err != nil {
+		sentry.CaptureException(err)
+		return
+	}
+	encRefreshToken, err := r.sealCredential(refreshToken)
+	if err != nil {
+		sentry.CaptureException(err)
+		return
+	}
+
+	query := `
+		UPDATE email_accounts_oauth
+		SET access_token = $1, refresh_token = $2
+		WHERE email_account_id = $3
+	`
+	if _, err := r.DB.Exec(ctx, query, encAccessToken, encRefreshToken, emailAccountID); err != nil {
+		db.CaptureError(err, query, nil, "reseal-oauth-credentials")
+	}
 }
 
 // GetWorkerID retrieves the worker ID assigned to an email account
