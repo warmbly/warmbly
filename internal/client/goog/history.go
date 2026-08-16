@@ -6,7 +6,24 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+// FetchHistory walks Gmail's history from lastHistoryID and returns the new
+// checkpoint. A zero lastHistoryID means the mailbox has no baseline yet, which
+// history.list cannot serve: startHistoryId=0 is rejected with "Requested
+// entity was not found". Read the mailbox's current historyId instead and
+// return it as the baseline.
+//
+// The baseline is forward-looking only. Mail that arrived before the mailbox
+// was connected is not walked, because Gmail's history API is strictly
+// incremental from whatever id it is given.
 func (c *Client) FetchHistory(ctx context.Context, lastHistoryID uint64) (uint64, error) {
+	if lastHistoryID == 0 {
+		profile, err := c.srv.Users.GetProfile("me").Context(ctx).Do()
+		if err != nil {
+			return 0, HandleError(err)
+		}
+		return profile.HistoryId, nil
+	}
+
 	call := c.srv.Users.History.List("me").MaxResults(500).StartHistoryId(lastHistoryID) // It does not include the record that has that exact HistoryID
 
 	var newLastHistoryID uint64
