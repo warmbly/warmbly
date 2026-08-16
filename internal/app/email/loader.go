@@ -19,6 +19,13 @@ func (s *emailService) WireGraphDelta(repo repository.EmailGraphDeltaRepository)
 	s.graphDelta = repo
 }
 
+// WireEmailHistoryID attaches the Gmail history-cursor repository, the Google
+// counterpart of WireGraphDelta. Optional; when unset, a reloaded Gmail mailbox
+// falls back to the legacy email_accounts.last_id column.
+func (s *emailService) WireEmailHistoryID(repo repository.EmailHistoryIDRepository) {
+	s.historyID = repo
+}
+
 // reconcileRepublishInterval bounds how often the reconciler re-publishes a
 // given account. The immediate onboarding load and any reassignment still fire
 // right away (they call LoadAccountOntoWorker directly); this only throttles the
@@ -155,13 +162,9 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 		if cerr != nil {
 			return nil, cerr
 		}
-		var lastHistory uint64
-		if acc.LastID != nil && *acc.LastID > 0 {
-			lastHistory = uint64(*acc.LastID)
-		}
 		out.Google = &models.AddWorkerEmailGoogleData{
 			Token:         oauthToken(creds),
-			LastHistoryID: lastHistory,
+			LastHistoryID: s.lastHistoryFor(ctx, userID, acc.ID, acc.LastID),
 		}
 	case models.InboxProviderOutlook:
 		creds, cerr := s.emailRepository.GetOAuthCredentials(ctx, acc.ID)
@@ -189,6 +192,29 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 	}
 
 	return out, nil
+}
+
+// lastHistoryFor is the Gmail checkpoint a (re)loaded mailbox resumes from.
+//
+// The consumer writes every checkpoint to email_history_ids. This used to read
+// email_accounts.last_id instead, which nothing writes, so the column is always
+// NULL and every worker restart handed the mailbox a zero cursor. That silently
+// re-bootstraps to Gmail's current historyId and skips everything that arrived
+// since the last sync, unrecoverably: the history API only walks forward from
+// the id it is given.
+//
+// legacyLastID stays as a fallback for rows carrying a value from before the
+// checkpoint table existed.
+func (s *emailService) lastHistoryFor(ctx context.Context, userID, emailID uuid.UUID, legacyLastID *int64) uint64 {
+	if s.historyID != nil {
+		if saved, err := s.historyID.Get(ctx, userID, emailID); err == nil && saved != nil && saved.HistoryID > 0 {
+			return saved.HistoryID
+		}
+	}
+	if legacyLastID != nil && *legacyLastID > 0 {
+		return uint64(*legacyLastID)
+	}
+	return 0
 }
 
 func (s *emailService) deltaLinksFor(ctx context.Context, userID, emailID uuid.UUID) map[string]string {

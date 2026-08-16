@@ -66,9 +66,12 @@ type Client struct {
 func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Config) *errx.MailError {
 	ts := cfg.TokenSource(ctx, token)
 	ts = oauth2.ReuseTokenSource(token, ts)
-	ts = stoken.New(ts, func(t *oauth2.Token) error {
-		return c.OnTokenRefresh(context.Background(), t)
-	})
+	// Same guard as goog.Init: a nil OnTokenRefresh would panic per request.
+	if c.OnTokenRefresh != nil {
+		ts = stoken.New(ts, func(t *oauth2.Token) error {
+			return c.OnTokenRefresh(context.Background(), t)
+		})
+	}
 
 	c.hc = oauth2.NewClient(ctx, ts)
 	if c.DeltaLinks == nil {

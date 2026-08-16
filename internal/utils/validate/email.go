@@ -4,6 +4,7 @@ import (
 	"net/mail"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/warmbly/warmbly/internal/errx"
 )
@@ -65,5 +66,22 @@ func ValidateTrackingDomain(domain string) *errx.Error {
 		return errx.ErrEmailTrackingDomain
 	}
 
+	return nil
+}
+
+// EmailTimezone accepts an IANA zone name the runtime can actually load, or the
+// empty string meaning "not configured". A zone that does not resolve would be
+// silently coerced to UTC by the scheduler, which is how a mailbox ends up
+// sending at the wrong local hour with nothing to point at.
+func EmailTimezone(tz string) *errx.Error {
+	if tz == "" {
+		return nil
+	}
+	if len(tz) > 64 {
+		return errx.ErrEmailTimezone
+	}
+	if _, err := time.LoadLocation(tz); err != nil {
+		return errx.ErrEmailTimezone
+	}
 	return nil
 }

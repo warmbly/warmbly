@@ -45,6 +45,10 @@ type EmailService interface {
 	// WireGraphDelta attaches the Graph delta-cursor repository so the worker
 	// reconciler can seed a mailbox's saved cursors when loading it.
 	WireGraphDelta(repo repository.EmailGraphDeltaRepository)
+	// WireEmailHistoryID attaches the Gmail history-cursor repository, the
+	// Google counterpart of WireGraphDelta, so a reloaded mailbox resumes from
+	// its saved checkpoint instead of re-bootstrapping.
+	WireEmailHistoryID(repo repository.EmailHistoryIDRepository)
 	// StartWorkerReconciler periodically ensures every active mailbox is
 	// assigned to a worker and loaded onto it (blocks until ctx is cancelled).
 	StartWorkerReconciler(ctx context.Context, interval time.Duration)
@@ -62,6 +66,7 @@ type emailService struct {
 	workerAssignment   worker.WorkerAssignmentService
 	throttle           dailythrottle.Service
 	graphDelta         repository.EmailGraphDeltaRepository
+	historyID          repository.EmailHistoryIDRepository
 	// webhookService is optional. When non-nil, account lifecycle events
 	// (email_account.connected, email_account.removed) are dispatched to
 	// subscribed customer webhooks.

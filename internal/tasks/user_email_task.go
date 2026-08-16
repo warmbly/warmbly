@@ -149,6 +149,13 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 		inReplyTo = emailTask.InReplyTo[0]
 	}
 
+	// The composer's thread is persisted on the task row; without carrying it
+	// through, every dashboard reply starts a new conversation.
+	var threadID string
+	if emailTask.ThreadID != nil {
+		threadID = *emailTask.ThreadID
+	}
+
 	// STEP 9: Build EmailMessage and send via worker
 	emailMsg := EmailMessage{
 		From:      account.Email,
@@ -160,6 +167,7 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 		BodyPlain: bodyPlain,
 		InReplyTo: inReplyTo,
 		MessageID: messageID,
+		ThreadID:  threadID,
 		IsWarmup:  false,
 		Tracking:  nil,
 	}

@@ -34,6 +34,10 @@ type UniboxService interface {
 		orgID, emailID uuid.UUID,
 		threadID, limit, cursor string,
 	) (*models.MailSearchResult, *errx.Error)
+	// LatestMessageIDInThread is the RFC Message-ID a reply into this thread
+	// should name in its In-Reply-To header. Returns "" when the thread is
+	// unknown or holds no message id, which callers treat as "no backfill".
+	LatestMessageIDInThread(ctx context.Context, orgID uuid.UUID, threadID string) (string, *errx.Error)
 	GetUnseenCount(
 		ctx context.Context,
 		orgID uuid.UUID,

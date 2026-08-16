@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"sort"
@@ -97,6 +98,49 @@ func oidcRedirectURL() string {
 	}
 	// The route is registered on /v1, not /api/v1: there is no /api prefix.
 	return base + "/v1/auth/oidc/callback"
+}
+
+// oauthPublicBaseURL is the base every mailbox-connect redirect_uri is built
+// from. It has to be the address the provider will send a browser back to,
+// which is API_PUBLIC_URL, the same value oidcRedirectURL derives from and the
+// one .env.example already documents as `<API_PUBLIC_URL>/addresses/...`.
+//
+// It is emphatically NOT API_HOST: that is the listener's bind address, which
+// stays 0.0.0.0:8080 in a container. Sent as a redirect_uri it is not even an
+// absolute URI, so the provider rejects the request outright.
+func oauthPublicBaseURL(bindAddr string) string {
+	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("API_PUBLIC_URL")), "/"); v != "" {
+		return v
+	}
+	return browsableBaseFromBindAddr(bindAddr)
+}
+
+// browsableBaseFromBindAddr turns a listener address into a URL a browser on
+// the same host can actually open, so a stock local install that never set
+// API_PUBLIC_URL still produces an absolute redirect_uri.
+func browsableBaseFromBindAddr(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	// Already a URL (someone put a real base in API_HOST): keep it as-is.
+	if strings.Contains(addr, "://") {
+		return strings.TrimRight(addr, "/")
+	}
+
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		host, port = addr, ""
+	}
+	// A wildcard bind is reachable from the host itself as localhost.
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "localhost"
+	}
+	if port == "" {
+		return "http://" + host
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 // splitList parses a comma-separated env list.

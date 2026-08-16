@@ -119,6 +119,7 @@ var (
 	ErrEmailSignatureHTML        = New(BadRequest, "HTML email signature is too long.")
 	ErrEmailMinWaitTime          = New(BadRequest, "Minimum time gap between emails must be between 0 and 86400 minutes.")
 	ErrEmailCampaignLimit        = New(BadRequest, "Campaign limit must be between 0 and 100.")
+	ErrEmailTimezone             = New(BadRequest, "Invalid timezone. Use an IANA name such as Europe/London or America/Denver, or leave it empty to follow the campaign.")
 	ErrEmailWarmupBase           = New(BadRequest, "Warmup base must be between 0 and 100.")
 	ErrEmailWarmupMax            = New(BadRequest, "Warmup max amount must be between 0 and 100.")
 	ErrEmailWarmupIncrease       = New(BadRequest, "Warmup increase amount must be between 0 and 100.")

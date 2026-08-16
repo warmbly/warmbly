@@ -463,7 +463,8 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 				// Deferral, not a send (see above).
 				return s.deferToNextDay(campaign), nil, accounts[0].ID, ErrCampaignDeferred
 			}
-			return time.Time{}, nil, uuid.Nil, ErrNoEmailAccounts
+			// The pool was not empty, every mailbox in it was gated out.
+			return time.Time{}, nil, uuid.Nil, ErrNoEligibleMailbox
 		}
 	}
 

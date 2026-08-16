@@ -3,9 +3,12 @@ package handler
 import (
 	"html/template"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/warmbly/warmbly/internal/config"
 )
 
 // callbackPage renders a tiny HTML page that hands the OAuth code + state
@@ -71,6 +74,23 @@ type callbackData struct {
 	AppOrigin string
 }
 
+// callbackTargetOrigin is the postMessage target the authorization code is
+// handed to. An empty value makes the bridge fall back to "*", which posts the
+// code to whatever origin the opener happens to have, so derive it from APP_URL
+// when APP_ORIGIN is unset rather than leaving a wildcard on a stock install.
+// APP_ORIGIN stays the explicit override for a dashboard served somewhere other
+// than APP_URL.
+func callbackTargetOrigin() string {
+	if v := strings.TrimSpace(os.Getenv("APP_ORIGIN")); v != "" {
+		return v
+	}
+	u, err := url.Parse(config.AppBaseURL())
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
 func (h *Handler) EmailOAuthCallbackGmail(c *gin.Context) {
 	renderOAuthCallback(c, "gmail")
 }
@@ -90,7 +110,7 @@ func renderOAuthCallback(c *gin.Context, provider string) {
 		State:     state,
 		Error:     providerErr,
 		Status:    "Connecting your mailbox… this window will close.",
-		AppOrigin: os.Getenv("APP_ORIGIN"),
+		AppOrigin: callbackTargetOrigin(),
 	}
 	if providerErr != "" {
 		data.Status = "Connection cancelled."

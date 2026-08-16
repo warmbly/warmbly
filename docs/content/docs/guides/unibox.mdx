@@ -26,6 +26,8 @@ Search (press `/`) searches within your current scope. The filters icon narrows 
 
 Each row is a conversation, not a message, with a badge showing how many messages are inside. Opening it shows every message in order with participants and the owning mailbox. Replies and new inbound mail land in the same thread. Rows group under `Today`, `Yesterday`, `This week`, and `Earlier` headers.
 
+Threading applies on both sides. A reply you send carries the provider's thread id, which nests it in your own mailbox, and an `In-Reply-To` header naming the last message in the conversation, which is what nests it for the recipient. Their mail client only ever sees the header: a thread id means nothing outside the mailbox that issued it.
+
 <Callout type="info" title="Keyboard navigation">
 `j` / `k` move between rows, `Enter` opens, `Esc` closes, `/` focuses search, `c` labels. A cheat sheet sits at the bottom of the list.
 </Callout>

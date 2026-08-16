@@ -1,6 +1,9 @@
 package scheduler
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	// ErrWarmupNotEnabled is returned when warmup is not enabled for an account
@@ -17,6 +20,17 @@ var (
 
 	// ErrNoEmailAccounts is returned when no email accounts are available for sending
 	ErrNoEmailAccounts = errors.New("no email accounts available for this campaign")
+
+	// ErrNoEligibleMailbox is the narrower case: the campaign HAS mailboxes,
+	// but every one was gated out for both today and tomorrow (daily cap
+	// reached, warmup health, or outside its own sending window). Reporting
+	// that as ErrNoEmailAccounts sent people looking at their tag configuration
+	// for a problem that was never there.
+	//
+	// It wraps ErrNoEmailAccounts so existing callers that pause the campaign
+	// on errors.Is(err, ErrNoEmailAccounts) keep behaving exactly as before.
+	ErrNoEligibleMailbox = fmt.Errorf(
+		"%w: every mailbox is outside its sending window or over its daily budget", ErrNoEmailAccounts)
 
 	// ErrDailyLimitReached is returned when the daily limit has been reached
 	ErrDailyLimitReached = errors.New("daily email limit reached")

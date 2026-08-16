@@ -13,15 +13,19 @@ import (
 
 // EmailMessage represents an email to be sent
 type EmailMessage struct {
-	From           string
-	To             []string
-	CC             []string
-	BCC            []string
-	Subject        string
-	BodyHTML       string
-	BodyPlain      string
-	InReplyTo      string
-	MessageID      string
+	From      string
+	To        []string
+	CC        []string
+	BCC       []string
+	Subject   string
+	BodyHTML  string
+	BodyPlain string
+	InReplyTo string
+	MessageID string
+	// ThreadID is the provider-side conversation handle. Gmail only appends to
+	// an existing thread when it is set on the outbound message; a matching
+	// Subject and In-Reply-To are not enough.
+	ThreadID       string
 	IsWarmup       bool
 	Tracking       *models.TrackingInfo
 	WarmupToken    string
@@ -79,6 +83,7 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 		CC:             msg.CC,
 		BCC:            msg.BCC,
 		InReplyTo:      msg.InReplyTo,
+		ThreadID:       msg.ThreadID,
 		Subject:        msg.Subject,
 		MessageID:      msg.MessageID,
 		BodyPlain:      msg.BodyPlain,

@@ -24,6 +24,11 @@ func (s *Token) Token() (*oauth2.Token, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Called from inside the oauth2 transport's RoundTrip, so a nil callback
+	// here takes down the caller's request rather than surfacing as an error.
+	if s.onUpdate == nil {
+		return t, nil
+	}
 
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {

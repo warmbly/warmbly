@@ -29,6 +29,12 @@ RUN apk add --no-cache ca-certificates tzdata && \
     if echo "$GO_TAGS" | grep -qw kafka; then apk add --no-cache librdkafka; fi && \
     adduser -D -u 1000 warmbly
 
+# BLOB_FS_ROOT's default mount point, owned by the user the process runs as.
+# Docker seeds a fresh named volume from the image, so the directory has to
+# exist here with the right owner; otherwise Docker creates the mount point
+# root-owned and the worker cannot read the bodies it is asked to send.
+RUN mkdir -p /data/blobs && chown -R warmbly:warmbly /data
+
 COPY --from=builder /out/worker /app/worker
 
 USER warmbly
