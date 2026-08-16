@@ -1065,7 +1065,10 @@ func main() {
 
 		eventsPublisher := events.NewPublisher(bus, s3, codecImpl, cipherService)
 
-		oauth2Cfg := config.LoadOauth2(apiCfg.Hostname)
+		// apiCfg.Hostname is the bind address, not a reachable base. Building
+		// the mailbox-connect redirect_uri from it sends the provider
+		// "0.0.0.0:8080/addresses/google/callback".
+		oauth2Cfg := config.LoadOauth2(oauthPublicBaseURL(apiCfg.Hostname))
 		emailService = email.NewServiceWithWorker(
 			emailRepostory,
 			cipherService,

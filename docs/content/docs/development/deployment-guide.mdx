@@ -459,6 +459,8 @@ https://api.example.com/addresses/google/callback
 ```
 
 On a stock local install that is `http://localhost:8080/addresses/google/callback`.
+
+The base Warmbly actually sends is `API_PUBLIC_URL`, so it has to match what you register here. Behind a reverse proxy that means the public API host, not the address the container binds to. Leave `API_PUBLIC_URL` unset and the base falls back to `http://localhost:8080`, which is right for a local install and wrong for every proxied one.
 </Step>
 
 <Step>
