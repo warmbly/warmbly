@@ -1085,6 +1085,9 @@ func main() {
 		emailService.WireThrottle(dailyThrottleService)
 		// Seed Graph delta cursors when the reconciler reloads mailboxes.
 		emailService.WireGraphDelta(repository.NewEmailGraphDeltaRepository(primaryDB))
+		// The Gmail equivalent: without it a reloaded mailbox re-bootstraps its
+		// history cursor and skips everything that arrived since the last sync.
+		emailService.WireEmailHistoryID(repository.NewEmailHistoryIDRepository(primaryDB))
 		analyticsRepository := repository.NewAnalyticsRepository(primaryDB)
 		emailAccountErrorRepository := repository.NewEmailAccountErrorRepository(primaryDB)
 		analyticsService = analytics.NewService(analyticsRepository, emailRepostory, campaignRepostory, emailAccountErrorRepository, warmupRepository)
