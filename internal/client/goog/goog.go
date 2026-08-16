@@ -30,9 +30,14 @@ type Client struct {
 func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Config) *errx.MailError {
 	ts := cfg.TokenSource(ctx, token)
 	ts = oauth2.ReuseTokenSource(token, ts)
-	ts = stoken.New(ts, func(token *oauth2.Token) error {
-		return c.OnTokenRefresh(context.Background(), token)
-	})
+	// Only wrap when there is somewhere to persist to. stoken calls onUpdate on
+	// every Token(), which the oauth2 transport does per request, so wrapping
+	// with a nil OnTokenRefresh panics inside RoundTrip on the first API call.
+	if c.OnTokenRefresh != nil {
+		ts = stoken.New(ts, func(token *oauth2.Token) error {
+			return c.OnTokenRefresh(context.Background(), token)
+		})
+	}
 
 	httpClient := oauth2.NewClient(ctx, ts)
 	var err error
