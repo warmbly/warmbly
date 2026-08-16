@@ -12,17 +12,56 @@ mod producer;
 
 use axum::{routing::get, Router};
 use std::net::SocketAddr;
+use std::time::Duration;
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
 use crate::handlers::{health, track_click, track_open, AppState};
 use crate::observability::report_error;
 use crate::producer::Producer;
+
+/// Connects the event-bus producer, retrying transient failures.
+///
+/// The whole stack starts at once, so the first lookup of `nats` can fail with
+/// "DNS error: failed to lookup address information: Try again" purely because
+/// the other container is not up yet. Exiting on that leaves the service dead,
+/// and nothing else fails loudly when it is: sends still succeed, so the only
+/// symptom is opens and clicks silently never recording.
+async fn connect_producer(config: &Config) -> Producer {
+    const MAX_ATTEMPTS: u32 = 8;
+    const MAX_DELAY: Duration = Duration::from_secs(10);
+
+    let mut delay = Duration::from_millis(500);
+    let mut attempt: u32 = 1;
+
+    loop {
+        match Producer::from_config(config).await {
+            Ok(producer) => {
+                if attempt > 1 {
+                    info!("Tracking event producer connected after {attempt} attempts");
+                }
+                return producer;
+            }
+            Err(e) => {
+                if attempt >= MAX_ATTEMPTS {
+                    report_error("Failed to create tracking event producer", e.as_ref());
+                    std::process::exit(1);
+                }
+                warn!(
+                    "Tracking event producer not ready (attempt {attempt}/{MAX_ATTEMPTS}), retrying in {delay:?}: {e}"
+                );
+                tokio::time::sleep(delay).await;
+                delay = (delay * 2).min(MAX_DELAY);
+                attempt += 1;
+            }
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -48,13 +87,7 @@ async fn main() {
 
     // Event-bus producer (NATS by default; Kafka when EVENTBUS_PROVIDER=kafka
     // and the `kafka` feature is compiled in).
-    let producer = match Producer::from_config(&config).await {
-        Ok(p) => p,
-        Err(e) => {
-            report_error("Failed to create tracking event producer", e.as_ref());
-            std::process::exit(1);
-        }
-    };
+    let producer = connect_producer(&config).await;
 
     let state = AppState::new(producer, &config);
 
