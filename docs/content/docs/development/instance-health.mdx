@@ -40,6 +40,8 @@ kubectl exec -it deploy/warmbly-backend -- warmblyctl status
 warmblyctl status                                          # bare binary
 ```
 
+`status` is one of nine commands. The rest, including the ones that create an account and reset a password when nobody can sign in, are on the [warmblyctl reference](/development/warmblyctl/).
+
 ## Health endpoints
 
 There are two, and they answer different questions.
@@ -241,4 +243,5 @@ A reachable realtime service that still leaves the dashboard dead has a differen
 
 - [Configuration reference](/development/configuration/) for every variable named here, including the [realtime](/development/configuration/#realtime-service) and [tracking](/development/configuration/#tracking-service) variables no check reads
 - [Accounts and access](/development/accounts-and-access/) for the access checks
+- [warmblyctl](/development/warmblyctl/) for `status` and every other operator command
 - [Troubleshooting](/development/troubleshooting/) for symptoms that do not come from a check

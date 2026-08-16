@@ -78,7 +78,7 @@ Both pin the same compose project (`-p warmbly`), the same `warmbly_postgres_dat
   Why:                      https://docs.warmbly.com/development/first-run/
 ```
 
-That command creates the account, an organization and a trial, and grants every platform admin bit. It prompts for a password on a terminal and refuses on a non-TTY rather than creating a passwordless account, so pass `--password-stdin` from a script.
+That command creates the account, an organization and a trial, and grants every platform admin bit. The password is the one you type: it prompts for it twice on a terminal, and refuses on a non-TTY rather than creating a passwordless account, so pass `--password-stdin` from a script. Then sign in at `APP_URL` with that password. See [user create](/development/warmblyctl/#user-create).
 
 If one of the existing accounts is yours and you only lost the password, use `warmblyctl user reset-password` instead. Every recovery command is listed under [recovering access](/development/accounts-and-access/#recovering-access).
 
@@ -146,7 +146,7 @@ Instance
   App URL           http://localhost:5173 (APP_URL)
 
 Platform admins
-  you@example.com (super, mask 4294967295)
+  you@example.com (super, mask 4194303)
 
 Checks
   ...one line per finding, grouped by severity...
@@ -213,6 +213,7 @@ For a demo where mail actually flows end to end, with sends, replies, opens and 
 ## See also
 
 - [Accounts and access](/development/accounts-and-access/) for registration modes, invitations and recovery
+- [warmblyctl](/development/warmblyctl/) for every command and flag on this page
 - [Configuration reference](/development/configuration/) for every environment variable
 - [Instance health](/development/instance-health/) for the checks that run against a new install
 - [Self-hosting](/development/deployment-guide/) for the full deployment walkthrough

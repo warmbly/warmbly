@@ -120,49 +120,40 @@ git clone https://github.com/warmbly/warmbly && cd warmbly
 make up
 ```
 
-That is the whole install. `make up` waits for the backend and prints a
-one-time link that claims the instance and makes you its admin. Open it, pick a
-password, and you are in.
+That is the whole install. `make up` waits for the backend and prints a one-time
+link that claims the instance and makes you its admin. Open it, pick a password,
+and you are in. You need Docker with Compose v2 and about 10 GB of free disk; the
+first run builds the images once, which takes roughly 6 minutes.
 
-You need Docker with Compose v2 and about 10 GB of free disk; the first run
-builds the images once, which takes roughly 6 minutes.
+Nothing else is required: no SMTP relay, no captcha keys, no cloud account, no
+`.env` to hand-write, and no separate command to grant yourself admin. To change
+something, `cp .env.example .env` and edit it. The [template](./.env.example)
+boots as-is and carries the commands that generate your own secrets; set those
+and `APP_ENV=prod` before anyone else can reach the instance.
 
-Nothing else is required. No SMTP relay, no captcha keys, no cloud account, no
-`.env` to hand-write, and no separate command to grant yourself admin. When you
-are ready to change something, `cp .env.example .env` and edit it: the
-[template](./.env.example) boots as-is, and every variable in it is documented
-in the
-[configuration reference](https://docs.warmbly.com/development/configuration/).
-Generate your own secrets and set `APP_ENV=prod` before anyone else can reach
-the instance; the file has the commands. To skip the claim link entirely, set
-`WARMBLY_BOOTSTRAP_EMAIL` and `WARMBLY_BOOTSTRAP_PASSWORD_HASH` before the first
-start and the owner account exists when it comes up.
+| If | Then |
+|----|------|
+| The claim link is gone | It is single use and lasts 24 hours. `make claim` prints a fresh one |
+| No link was printed at all | The database already has accounts, so the instance is claimed. `make cli ARGS="user create --email you@example.com --admin"` adds you, prompting for a password to set |
+| You would rather skip the link | Set `WARMBLY_BOOTSTRAP_EMAIL` and `WARMBLY_BOOTSTRAP_PASSWORD_HASH` before the first start and the owner exists when it comes up |
+| Something is wrong | `make doctor` prints the instance state and every failing check |
 
-Three things that catch people, all covered in
-[first run](https://docs.warmbly.com/development/first-run/):
-
-- **The link is gone.** It is single use and lasts 24 hours. Print another with
-  `docker compose -p warmbly exec backend warmblyctl setup-link`, or `make claim`.
-- **No link was printed at all.** The database already has accounts, so the
-  instance is already claimed. Add yourself with
-  `docker compose -p warmbly exec backend warmblyctl user create --email you@example.com --admin`.
-- **`make dev` and `make up` share one database.** Seeding in one claims the
-  other. That is the usual reason there was no link.
+Those all run [`warmblyctl`](https://docs.warmbly.com/development/warmblyctl/),
+the operator CLI baked into the backend image. It talks to the database directly,
+so it works when signing in does not.
 
 > [!NOTE]
-> Signing in never depends on outbound mail. Under Docker Compose, platform email
-> defaults to `MAIL_TRANSPORT=log`, so password resets and invitations are
-> written to the backend logs until you point `SMTP_*` at a real relay. Team
-> invitations still work without one: invite the person under **Settings >
-> Members**, then copy the invite link from their row under **Pending
-> invitations** and send it yourself. See
+> Signing in never depends on outbound mail. Platform email defaults to
+> `MAIL_TRANSPORT=log` under Compose, so password resets and invitations go to the
+> backend logs until you point `SMTP_*` at a relay. Invitations still work without
+> one: invite the person under **Settings > Members**, then copy the link from
+> their row and send it yourself. See
 > [accounts and access](https://docs.warmbly.com/development/accounts-and-access/).
 
 **➡️ Follow the [step-by-step self-hosting guide](https://docs.warmbly.com/development/deployment-guide/)**
-for the full walkthrough: setting your own secrets, verifying the stack is
-healthy, configuring mail and single sign-on, exposing it on your network or
-behind HTTPS, connecting Gmail and Microsoft mailboxes, scaling workers,
-backups, and a troubleshooting table for the errors people actually hit.
+for the full walkthrough: your own secrets, verifying the stack is healthy, mail
+and single sign-on, HTTPS, connecting Gmail and Microsoft mailboxes, scaling
+workers, backups, and a troubleshooting table.
 
 Every external dependency is picked by an environment variable, so you swap in a
 cloud service only if you want one:
@@ -187,6 +178,7 @@ The full docs live at **[docs.warmbly.com](https://docs.warmbly.com)**.
 | [Self-hosting guide](https://docs.warmbly.com/development/deployment-guide/) | Step-by-step install, then production, backups, and scaling the worker fleet |
 | [First run](https://docs.warmbly.com/development/first-run/) | Claiming the instance, reissuing the setup link, and what to do when accounts already exist |
 | [Accounts and access](https://docs.warmbly.com/development/accounts-and-access/) | Registration modes, inviting people with or without a mail relay, SSO, and recovering access |
+| [`warmblyctl`](https://docs.warmbly.com/development/warmblyctl/) | The operator CLI: creating accounts, setting passwords, granting admin, and instance status |
 | [Configuration reference](https://docs.warmbly.com/development/configuration/) | Every environment variable, its default, and whether changing it needs a restart |
 | [Instance health](https://docs.warmbly.com/development/instance-health/) | The checks the admin panel runs against your deployment, and `make doctor` |
 | [Troubleshooting](https://docs.warmbly.com/development/troubleshooting/) | The errors self-hosters actually hit, and the command that fixes each one |

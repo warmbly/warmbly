@@ -1,0 +1,305 @@
+---
+title: warmblyctl
+description: The operator CLI for a Warmbly instance. Every command and flag, how to run it in each runtime, how passwords are set, and how to get back in when nobody can sign in.
+---
+
+`warmblyctl` is the operator CLI for a Warmbly instance. It answers two questions: what state is this install in, and how do I get back in. It reads and writes the database directly, so it keeps working when the sign-in page does not.
+
+Authorization is container or host access. That is the same trust model as Sentry's `createuser`, Gitea's `admin user create` and authentik's `ak changepassword`, and it is the right one when the identity system is the thing that is broken. The CLI has no HTTP surface and never will.
+
+## Running it
+
+The binary ships inside the backend image at `/usr/local/bin/warmblyctl`, so it is on the path in every runtime. Running it inside the backend is the documented path because the environment there is already correct.
+
+```bash
+docker compose -p warmbly exec backend warmblyctl status   # docker compose
+docker exec -it warmbly-backend warmblyctl status          # plain docker
+kubectl exec -it deploy/warmbly-backend -- warmblyctl status
+warmblyctl status                                          # bare binary
+```
+
+Every example on this page shows the compose form. Substitute the prefix you need.
+
+For a compose install, `make cli` is the same thing with less typing. Flags go through `ARGS`, because make reads a bare `--email` as one of its own options:
+
+```bash
+make cli status
+make cli setup-link
+make cli ARGS="user create --email you@example.com --admin"
+```
+
+### Terminals and pipes
+
+This is the one piece of shell mechanics the CLI cannot hide from you.
+
+`docker compose exec` allocates a TTY unless you pass `-T`. Commands that prompt need that TTY. Commands you pipe into need it gone.
+
+| You want to | Run |
+|---|---|
+| Be prompted for a password | `docker compose -p warmbly exec backend warmblyctl ...` |
+| Pipe a password in | `printf '%s' 'your-password' \| docker compose -p warmbly exec -T backend warmblyctl ... --password-stdin` |
+
+A command that would set a password refuses on a non-TTY unless you passed `--password-stdin`, rather than creating an account nobody can sign in to.
+
+### What it reads from the environment
+
+| Variable | Needed by | If it is missing |
+|---|---|---|
+| `PRIMARY_DB` | every command except `hash-password` | The command stops and tells you to run it inside the backend container |
+| `REDIS` | `setup-link` always, `reset-password` to mint a link | `setup-link` fails. Everything else degrades to a warning and continues |
+| `AUTH_SECRET` | `reset-password` when it mints a link | The link cannot be signed with the key the backend verifies, so it is refused |
+| `APP_URL` | every printed link and sign-in hint | Links are built against `https://app.warmbly.com`, which is the hosted service and not your instance |
+
+Inside the backend container all four are already set. Outside it, export them first, and match `AUTH_SECRET` to the backend's exactly.
+
+## The commands
+
+| Command | Does |
+|---|---|
+| [`status`](#status) | Prints the instance state, the platform admins, the health checks, and what to run next |
+| [`setup-link`](#setup-link) | Prints a fresh single-use link that claims an instance with no accounts |
+| [`user create`](#user-create) | Creates an account, an organization and a trial, optionally a platform admin |
+| [`user list`](#user-list) | Lists accounts, and answers whether any platform admin survives |
+| [`user reset-password`](#user-reset-password) | Prints a one-time reset link, or sets the password from stdin |
+| [`user grant-admin`](#user-grant-admin) | Gives an account a platform admin role |
+| [`user revoke-admin`](#user-revoke-admin) | Takes platform admin away from an account |
+| [`user disable-2fa`](#user-disable-2fa) | Clears an account's authenticator enrolment |
+| [`hash-password`](#hash-password) | Prints an argon2 hash for unattended provisioning |
+
+`warmblyctl --help` lists them, and `warmblyctl <command> --help` prints one command's flags with an example.
+
+## status
+
+```bash
+docker compose -p warmbly exec backend warmblyctl status
+```
+
+| Flag | Default | Does |
+|---|---|---|
+| `--json` | off | Prints the state as JSON instead of prose, and always exits 0 |
+| `--quiet` | off | Prints only the checks, without the instance summary. Ignored with `--json` |
+
+It prints four blocks: the instance state, the platform admins, the health checks, and how to get in. A sample run is on [first run](/development/first-run/#checking-where-you-stand).
+
+The **How to get in** block changes with the state. An unclaimed instance is told to print a setup link; a claimed one is given the recovery commands; an instance with no platform admin is told to promote an account.
+
+The **Checks** block holds the same findings the admin panel's Setup and health page shows. Every one of them is documented on [instance health](/development/instance-health/).
+
+`make doctor` is `warmblyctl status` for a compose install.
+
+### Exit status and JSON
+
+`status` exits non-zero when any check is at error severity, which is what makes `make doctor` usable as the last line of a deploy script.
+
+`--json` is the exception: it always exits 0, because `make claim` uses it to decide whether the backend is answering at all. Read `.summary.error` for the verdict instead.
+
+| Key | Holds |
+|---|---|
+| `accounts`, `claimed`, `setup_required` | Account count, and whether a setup link can still be issued |
+| `admin_count`, `admins` | How many platform admins exist, and who they are |
+| `registration`, `registration_source` | The resolved registration mode, and whether it was set or defaulted |
+| `mail_transport`, `mail_delivers`, `mail_transport_source` | The transport, whether it puts mail on the wire, and where the setting came from |
+| `app_url`, `app_url_source` | The base URL every printed link is built from |
+| `next_steps` | The same commands the prose **How to get in** block prints |
+| `checks`, `summary` | The findings, and the error, warning and note counts |
+
+Those keys are a contract. They are only ever appended to, never renamed or dropped.
+
+## setup-link
+
+```bash
+docker compose -p warmbly exec backend warmblyctl setup-link
+```
+
+Prints a single-use link that claims an unclaimed instance. It expires in 24 hours, replaces any outstanding link, and only its hash is stored, so this is the only time it is printed.
+
+It refuses on an instance that already has accounts, by design: a second owner must never be mintable without an existing account. If you get that refusal, you want [`user create`](#user-create) instead.
+
+This is the one command that cannot degrade, because the token lives in Redis. With Redis down, create the owner directly instead.
+
+`make claim` wraps it for a compose install, and finds the link already in the logs before minting a new one.
+
+## user create
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user create --email you@example.com --admin
+```
+
+| Flag | Default | Does |
+|---|---|---|
+| `--email` | required | The address of the account to create |
+| `--admin` | off | Grants every platform admin permission, the same as `--role super` |
+| `--org` | `<name>'s Organization` | Names the new organization |
+| `--no-org` | off | Creates the account with no organization and no trial |
+| `--password-stdin` | off | Reads the password from stdin instead of prompting |
+
+It creates the account, an organization and a free trial, and with `--admin` grants every platform admin bit. Use `--no-org` when the person will accept an invitation into a workspace that already exists.
+
+An address that already exists is an error, and the message points you at `reset-password`.
+
+### The password is the one you type
+
+There is no generated or default password. On a terminal the command prompts for it twice, with echo off:
+
+```
+Password for you@example.com:
+Repeat password for you@example.com:
+Created account you@example.com (id ...), organization "Your Organization" (id ...),
+a free trial, every platform admin permission (mask 4194303).
+
+Next
+  Sign in at http://localhost:5173 with the password you just set.
+```
+
+It must be between 8 and 128 characters, which is the same rule the dashboard enforces, so the scripted route is never weaker than the interactive one.
+
+From a script, pipe it in so it never reaches your shell history or `ps` output:
+
+```bash
+printf '%s' "$PASSWORD" | docker compose -p warmbly exec -T backend \
+  warmblyctl user create --email you@example.com --admin --password-stdin
+```
+
+### Signing in afterwards
+
+Open the URL the command printed, which is `APP_URL`, and sign in with the address and that password. On the default compose stack that is `http://localhost:5173`.
+
+Nothing else stands in the way on a stock self-hosted instance:
+
+- **No emailed login code.** `AUTH_LOGIN_CODE` defaults to off when self-hosted, and a transport that does not deliver can never gate a login whatever the setting says. See [login codes](/development/accounts-and-access/#login-codes)
+- **No email confirmation.** `REQUIRE_EMAIL_VERIFICATION` defaults to off when self-hosted, so the account is usable immediately
+- **No captcha** unless you set `TURNSTILE_SECRET`
+- **No invitation**, and no dependency on the registration mode. `invite_only` and `true` both govern the sign-up form, which this command does not use
+
+The dashboard and the admin panel are separate apps. `--admin` opens the panel on `ADMIN_URL`, port `5174` in the default stack, not `APP_URL`.
+
+## user list
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user list --admin
+```
+
+| Flag | Default | Does |
+|---|---|---|
+| `--admin` | off | Lists only accounts holding platform admin permissions |
+| `--limit` | `50` | How many accounts to print, between 1 and 100 |
+
+Prints address, name, admin role and creation date, oldest first. `--admin` answers the narrow question of whether any admin account survives, and when none does it prints the two commands that fix that.
+
+## user reset-password
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user reset-password --email you@example.com
+```
+
+| Flag | Default | Does |
+|---|---|---|
+| `--email` | required | The address of the account to reset |
+| `--password-stdin` | off | Reads the new password from stdin and sets it immediately |
+| `--ttl` | `1h` | How long the printed link stays valid, up to 24 hours |
+
+Without `--password-stdin` it prints a single-use reset URL and changes nothing yet. Open it in a browser and choose the new password there, which keeps it out of your shell history, your scrollback and the process list. It redeems through exactly the same path as the reset link the product emails, and opening it revokes every existing session for the account.
+
+`--ttl` is capped at 24 hours because a reset link is a bearer credential for the account.
+
+The automation path sets the password directly and revokes every existing session the same way:
+
+```bash
+printf '%s' "$PASSWORD" | docker compose -p warmbly exec -T backend \
+  warmblyctl user reset-password --email you@example.com --password-stdin
+```
+
+Reach for that form when Redis is down, since a link cannot be minted without it.
+
+## user grant-admin
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user grant-admin --email you@example.com --role super
+```
+
+| Flag | Default | Does |
+|---|---|---|
+| `--email` | required | The address of the account to promote |
+| `--role` | required | One of `super`, `support`, `ops`, `analyst` |
+
+| Role | Grants |
+|---|---|
+| `super` | Every platform admin permission. This is the one that opens every admin screen |
+| `support` | Users, campaigns, organizations, the warmup pool, warmup bans, appeals, enterprise inquiries, audit logs |
+| `ops` | Workers and worker management, rate limits, analytics, organizations, audit logs |
+| `analyst` | Read only: users, campaigns, organizations, analytics, audit logs |
+
+The role replaces the account's existing mask rather than adding to it, and re-granting the role it already holds is reported as no change. The permissions are read from the session, so the account has to sign out and back in before the panel reflects the grant.
+
+The account must already exist. `make grant-admin EMAIL=... ROLE=...` wraps this for a compose install.
+
+## user revoke-admin
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user revoke-admin --email old@example.com
+```
+
+| Flag | Default | Does |
+|---|---|---|
+| `--email` | required | The address of the account to demote |
+| `--force` | off | Allows removing the last remaining platform admin |
+
+Removes every platform admin permission and leaves the account otherwise untouched.
+
+Revoking the only remaining admin is refused without `--force`, because it closes the admin panel for everyone and nothing inside the product can reopen it. Grant someone else first. `make revoke-admin EMAIL=...` wraps it.
+
+## user disable-2fa
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user disable-2fa --email you@example.com
+```
+
+Clears the authenticator enrolment and the recovery codes, so a lost phone does not become a full password reset. The password still works, and the account can enroll a new authenticator from account security after signing in.
+
+## hash-password
+
+```bash
+warmblyctl hash-password
+printf '%s' 'your password' | warmblyctl hash-password
+```
+
+Prints an argon2 hash for `WARMBLY_BOOTSTRAP_PASSWORD_HASH`, which provisions the owner before the first start of an instance with no accounts. See [unattended provisioning](/development/first-run/#unattended-provisioning).
+
+It prompts when a terminal is attached and reads the pipe when one is not, so the same command works by hand and in a provisioning script. The hash alone goes to stdout, so it can be captured or piped; the explanation goes to stderr. This is the only command that does not need a database.
+
+<Callout type="warn" title="Quote the hash">
+An argon2 PHC string contains `$` characters. Docker Compose reads those as interpolation, so a bare hash in `.env` silently loses part of itself. Wrap it in single quotes there, and double every `$` if you paste it into `docker-compose.yml` directly.
+</Callout>
+
+## When Redis is down
+
+Account recovery must not depend on the cache, so most commands treat an unreachable Redis as a warning and carry on.
+
+| Command | Without Redis |
+|---|---|
+| `setup-link` | Fails. The token lives in Redis, so there is nowhere to put it |
+| `user reset-password` without `--password-stdin` | Fails. The link is bound to a nonce in Redis. The message points you at the `--password-stdin` form |
+| `user reset-password --password-stdin` | Works. The password changes, but existing sessions cannot be revoked |
+| `user create` | Works. The new account is not warmed into the cache, which is harmless |
+| `status` | Works, and reports `redis_unreachable` as a finding |
+| Everything else | Works |
+
+## Make targets
+
+Every one of these runs `warmblyctl` inside the backend container of a compose install.
+
+| Target | Runs |
+|---|---|
+| `make claim` | Finds or prints the first-run claim link, and says what to do instead when the instance is already claimed |
+| `make doctor` | `warmblyctl status`, non-zero on any error-severity check |
+| `make cli ARGS="..."` | Any command, with a TTY attached so prompts work |
+| `make grant-admin EMAIL=... ROLE=...` | `user grant-admin` |
+| `make revoke-admin EMAIL=...` | `user revoke-admin` |
+
+## See also
+
+- [First run](/development/first-run/) for claiming a fresh instance and provisioning the owner unattended
+- [Accounts and access](/development/accounts-and-access/) for registration modes, invitations, login codes and single sign-on
+- [Instance health](/development/instance-health/) for every check `status` can report
+- [Troubleshooting](/development/troubleshooting/) for symptoms and the command that fixes each one
+- [Configuration reference](/development/configuration/) for every variable named here
