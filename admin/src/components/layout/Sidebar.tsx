@@ -11,18 +11,26 @@ import {
     FileText,
     Flame,
     Gauge,
+    HeartPulse,
     LayoutDashboard,
     Mailbox,
     Megaphone,
     Radio,
+    Ruler,
     Send,
     Server,
+    Settings2,
     ShieldCheck,
+    SlidersHorizontal,
     Sparkles,
     Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/Logo";
+import { useMe } from "@/hooks/useMe";
+import { AdminPerm, hasAdminPerm } from "@/lib/auth/permissions";
+import { findingCount, useInstanceHealth, worstSeverity } from "@/hooks/useInstanceHealth";
+import type { CheckSeverity } from "@/lib/api/client/admin/instance";
 import { AdminBadge } from "./AdminBadge";
 
 interface NavItem {
@@ -30,6 +38,10 @@ interface NavItem {
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     end?: boolean;
+    // Admin permission bit the backend gates this route's data on.
+    perm?: number;
+    // Renders the live count of instance findings next to the label.
+    healthBadge?: boolean;
 }
 
 interface NavGroup {
@@ -64,13 +76,56 @@ const GROUPS: NavGroup[] = [
         items: [
             { to: "/analytics", label: "Analytics", icon: BarChart3 },
             { to: "/events", label: "Live Events", icon: Radio },
-            { to: "/system", label: "System Status", icon: Activity },
             { to: "/audit", label: "Audit Log", icon: FileText },
+        ],
+    },
+    {
+        label: "Instance",
+        items: [
+            {
+                to: "/health",
+                label: "Setup and health",
+                icon: HeartPulse,
+                perm: AdminPerm.ViewAnalytics,
+                healthBadge: true,
+            },
+            {
+                to: "/configuration",
+                label: "Configuration",
+                icon: SlidersHorizontal,
+                perm: AdminPerm.ManageSettings,
+                end: true,
+            },
+            {
+                to: "/configuration/settings",
+                label: "Instance settings",
+                icon: Settings2,
+                perm: AdminPerm.ManageSettings,
+            },
+            {
+                to: "/limits",
+                label: "Effective limits",
+                icon: Ruler,
+                perm: AdminPerm.ViewAnalytics,
+            },
+            {
+                to: "/system",
+                label: "System Status",
+                icon: Activity,
+                perm: AdminPerm.ViewAnalytics,
+            },
         ],
     },
 ];
 
 export function Sidebar() {
+    const { data: me } = useMe();
+    const mask = me?.admin_permissions;
+    const canReadHealth = hasAdminPerm(mask, AdminPerm.ViewAnalytics);
+    const healthQ = useInstanceHealth({ enabled: canReadHealth });
+    const findings = findingCount(healthQ.data);
+    const worst = worstSeverity(healthQ.data);
+
     return (
         <aside
             className={cn(
@@ -95,20 +150,33 @@ export function Sidebar() {
             </div>
 
             <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-5">
-                {GROUPS.map((group) => (
-                    <div key={group.label}>
-                        <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                            {group.label}
+                {GROUPS.map((group) => {
+                    const items = group.items.filter(
+                        (item) => item.perm === undefined || hasAdminPerm(mask, item.perm),
+                    );
+                    if (items.length === 0) return null;
+                    return (
+                        <div key={group.label}>
+                            <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                {group.label}
+                            </div>
+                            <ul className="space-y-0.5">
+                                {items.map((item) => (
+                                    <li key={item.to}>
+                                        <SidebarLink
+                                            {...item}
+                                            badge={
+                                                item.healthBadge && findings > 0
+                                                    ? { count: findings, severity: worst }
+                                                    : undefined
+                                            }
+                                        />
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
-                        <ul className="space-y-0.5">
-                            {group.items.map((item) => (
-                                <li key={item.to}>
-                                    <SidebarLink {...item} />
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                ))}
+                    );
+                })}
             </nav>
 
             <div className="px-4 py-3 border-t border-sidebar-border flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -119,7 +187,18 @@ export function Sidebar() {
     );
 }
 
-function SidebarLink({ to, label, icon: Icon, end }: NavItem) {
+interface CountBadge {
+    count: number;
+    severity: CheckSeverity | null;
+}
+
+const BADGE_TONES: Record<CheckSeverity, string> = {
+    error: "bg-red-600 text-white",
+    warning: "bg-amber-500 text-white",
+    info: "bg-sky-600 text-white",
+};
+
+function SidebarLink({ to, label, icon: Icon, end, badge }: NavItem & { badge?: CountBadge }) {
     return (
         <NavLink
             to={to}
@@ -139,6 +218,16 @@ function SidebarLink({ to, label, icon: Icon, end }: NavItem) {
         >
             <Icon className="size-4 shrink-0 opacity-80 group-hover:opacity-100" />
             <span className="truncate">{label}</span>
+            {badge && (
+                <span
+                    className={cn(
+                        "ml-auto shrink-0 rounded-full px-1.5 text-[10px] font-semibold leading-4 tabular-nums",
+                        BADGE_TONES[badge.severity ?? "info"],
+                    )}
+                >
+                    {badge.count}
+                </span>
+            )}
         </NavLink>
     );
 }

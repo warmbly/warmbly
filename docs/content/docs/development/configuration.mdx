@@ -1,0 +1,430 @@
+---
+title: Configuration reference
+description: Every environment variable Warmbly reads, what it does, its default, and whether changing it needs a restart.
+---
+
+The environment is authoritative. Warmbly never lets a web form overwrite a setting your environment owns, so there is no precedence to reason about and no file that silently rewrites itself behind you.
+
+That rule has three consequences worth stating before the tables:
+
+- **Everything on this page is set in the environment of the running process.** With Docker Compose that is the `.env` next to `docker-compose.yml`. With Kubernetes it is the pod spec or a secret. With a bare binary it is the shell or the systemd unit.
+- **Most resolved values are visible, read only, in the admin panel** under **Instance > Configuration** (`http://localhost:5174/configuration` on a stock install). Each row shows the variable name, the value Warmbly actually resolved, where it came from (`env`, `default`, `derived` or `unset`), and whether changing it needs a restart. That page is how you answer "is my variable actually being picked up", without reading source.
+- **A handful of settings are stored in the database instead**, because no environment variable owns them. They are listed in [settings stored in the database](#settings-stored-in-the-database) and are the only settings editable from a browser.
+
+Secrets are never returned by any API. The configuration page shows a sensitive key as set or unset plus a four character fingerprint of its value, which is enough to confirm that two services hold the same `AUTH_SECRET` without disclosing it to anyone.
+
+<Callout type="info" title="The panel reads the backend, not the whole fleet">
+The configuration registry runs inside the backend process, so every value it shows is the value that process resolved. It does not reach into the realtime, tracking, consumer or worker containers, and it does not list variables only those services read: [realtime service](#realtime-service) and [tracking service](#tracking-service) are absent from the page entirely. When a value has to match across services, compare the fingerprints or read the other container's environment directly.
+</Callout>
+
+## Seeing what is actually set
+
+| How | What you get |
+|---|---|
+| **Instance > Configuration** in the admin panel | The backend's entries with resolved value, source, group and restart requirement |
+| `make doctor` | The health checks from a shell, including the configuration problems they detect |
+| `GET /admin/instance/config` | The same list as JSON, behind the `manage_settings` admin permission |
+
+Anything flagged on [Instance health](/development/instance-health/) links back to the section of this page that explains the fix.
+
+<Callout type="warn" title="An empty value in .env is not an empty value">
+`docker-compose.yml` reads this file as `${VAR:-default}`, and Compose treats an empty assignment exactly like a missing one. `KMS_LOCAL_MASTER_KEY=` does not blank the key, it substitutes the published default. To leave something unset under Compose, comment the line out.
+</Callout>
+
+## Deployment
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `APP_ENV` | `dev` or `prod`. `dev` tolerates the published default secrets and turns on Gin debug logging. Set `prod` for anything other people can reach | `dev` | yes |
+| `DEPLOYMENT_MODE` | `self_hosted` or `cloud`. Picks the auth defaults in [authentication](#authentication); every one stays individually overridable | `self_hosted` under compose | yes |
+| `ALLOW_INSECURE_DEFAULTS` | `true` lets the backend boot even when a secret still holds its published default. Only for a throwaway instance | unset | yes |
+| `GIN_MODE` | `debug` or `release` | `release` | yes |
+| `ENV_LABEL` | A label the admin panel shows next to the instance name | unset | yes (container start) |
+| `WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS` | `true` lets customer webhooks point at `http://` and private addresses. Development only: it lets any workspace member make the backend reach into your internal network | `false` | yes |
+
+<Callout type="warn" title="prod does not mean cloud">
+`APP_ENV=prod` needs no cloud account. Error reporting and GeoIP lookups are used when configured and skipped with a logged note when they are not.
+</Callout>
+
+## Secrets
+
+Five values protect the whole instance. Compose ships a working default for each so a fresh clone boots with no configuration, and every one of those defaults is published in this repository, so they protect nothing.
+
+| Variable | Format | What it protects | Restart needed |
+|---|---|---|---|
+| `AUTH_SECRET` | 32 characters or more | JWT and session signing. The realtime service reads the same value as `JWT_SECRET` | yes |
+| `INTERNAL_API_TOKEN` | any random string | The backend's `/api/v1/internal/` routes, which workers and the tracking service authenticate against | yes |
+| `SECRET_KEY_BASE` | 64 characters or more | Phoenix session signing in the realtime service | yes |
+| `KMS_LOCAL_MASTER_KEY` | base64, exactly 32 bytes | The root key that seals every per-organization data key | yes |
+| `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex characters | Mailbox SMTP and IMAP credentials at rest | yes |
+
+Generate real ones before anyone else can reach the instance:
+
+```bash
+cat >> .env <<EOF
+AUTH_SECRET=$(openssl rand -base64 32)
+INTERNAL_API_TOKEN=$(openssl rand -hex 24)
+SECRET_KEY_BASE=$(openssl rand -base64 64 | tr -d '\n')
+KMS_LOCAL_MASTER_KEY=$(openssl rand -base64 32)
+CREDENTIALS_ENCRYPTION_KEY=$(openssl rand -hex 32)
+APP_ENV=prod
+EOF
+```
+
+`make gen-key` prints a single fresh `KMS_LOCAL_MASTER_KEY` if that is all you need.
+
+`APP_ENV=prod` goes last. It is what turns a published default from a logged warning into a refusal to start, so an instance that gets `prod` before the other five will not boot.
+
+Values that must be identical across services, because each service reads its own copy:
+
+| Value | Read by | If it drifts |
+|---|---|---|
+| `AUTH_SECRET`, seen by realtime as `JWT_SECRET` | backend, realtime | The dashboard loads but never goes live: the websocket rejects every token |
+| `INTERNAL_API_TOKEN`, seen by workers as `ENCRYPTED_KEYS_WORKER_TOKEN` | backend, worker, tracking | Workers cannot fetch decryption keys and tracking cannot resolve click tickets. Both fail closed with `401` |
+| `KMS_LOCAL_MASTER_KEY` | backend, consumer, worker | Sealed data keys cannot be opened, so mailbox credentials stop decrypting |
+| `CREDENTIALS_ENCRYPTION_KEY` | backend, worker | Stored SMTP and IMAP passwords stop decrypting |
+
+<Callout type="warn" title="Only the backend refuses to boot on a published default">
+The secret check runs in the backend. The consumer and the workers start happily on a published default, so an instance can look healthy while one process is using a key anyone can read from GitHub. The `secret_published_default` check on [Instance health](/development/instance-health/#secret_published_default) is what catches it.
+</Callout>
+
+<Callout type="warn" title="Back up the two encryption keys">
+`KMS_LOCAL_MASTER_KEY` and `CREDENTIALS_ENCRYPTION_KEY` seal every stored credential and every stored message body. Losing them is unrecoverable, and a database backup without them cannot be decrypted.
+</Callout>
+
+## Addresses
+
+Every emailed link (password reset, invitation, the first-run claim link) is built from `APP_URL`. Leave it unset and those links are built against the hosted service, which means a live reset token leaves your deployment.
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `APP_URL` | The dashboard origin. The source of every emailed link | `https://app.warmbly.com` | no (read per request) |
+| `FRONTEND_BASE_URL` | Alternative name for the same value, read when `APP_URL` is unset | unset | no |
+| `API_PUBLIC_URL` | The backend's public base. Frontends, blob URLs and the OIDC redirect derive from it | derived from `PUBLIC_HOST` under compose | yes |
+| `BACKEND_PUBLIC_URL` | The backend base used in generated worker configuration | falls back to `API_PUBLIC_URL` | yes |
+| `APP_ORIGIN` | The exact origin the mailbox OAuth callback page posts the authorization code back to. Unset means a wildcard target origin | derived under compose | yes |
+| `API_HOST` | The listen address | `0.0.0.0:8080` | yes |
+| `PUBLIC_HOST` | Compose only. A hostname or LAN IP that every other URL derives from | `localhost` | yes |
+| `CORS_ALLOW_ORIGINS` | Comma separated origins allowed to call the API. Anything not listed gets `403` on preflight | derived from `PUBLIC_HOST` under compose | yes |
+| `WEBSOCKET_URL` | The websocket URL the dashboard connects to | derived under compose | yes (container start) |
+| `PHX_HOST` | The realtime service's own hostname | `localhost` | yes |
+| `TRACKING_DOMAIN` | The domain that serves open pixels and click links. Use a separate, neutral domain in production | `localhost:3000` | no |
+| `TRACKING_SERVICE_URL` | Where the backend reaches the tracking service internally | unset | yes |
+
+<Callout type="warn" title="Setting PUBLIC_HOST turns localhost off">
+Once `PUBLIC_HOST` is set, every derived URL uses it and `http://localhost:5173` stops working, because a `localhost` origin is no longer in `CORS_ALLOW_ORIGINS`. To keep both, list them yourself in `CORS_ALLOW_ORIGINS`.
+</Callout>
+
+## Network and proxy
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `TRUSTED_PROXIES` | Comma separated CIDRs allowed to set `X-Forwarded-For` | empty (trust nothing) | yes |
+
+Empty is correct for a directly exposed backend. Behind a reverse proxy it is not: with no trusted CIDR, Warmbly records the proxy's address as the client address, and the per IP login limiter, session records, audit rows and API key IP allowlists all read the wrong address. Set it to the CIDR your proxy connects from:
+
+```bash
+TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12
+```
+
+## Authentication
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `AUTH_LOGIN_CODE` | `always`, `new_device` or `off`. Whether a login also requires a code emailed to the account | `off` on self-host, `new_device` on cloud | yes |
+| `REQUIRE_EMAIL_VERIFICATION` | Whether a signup must confirm an emailed code before the account exists | `false` on self-host | yes |
+| `DISABLE_REGISTRATION` | `false`, `invite_only` or `true`. See [registration modes](/development/accounts-and-access/#registration-modes) | `invite_only` on self-host | yes |
+| `DISABLE_PASSWORD_LOGIN` | Turns off email and password entirely, for single sign-on only deployments | `false` | yes |
+| `SSO_AUTO_PROVISION` | `true` lets a verified identity provider assertion create an account regardless of `DISABLE_REGISTRATION` | `false` | yes |
+| `AUTH_IP_RATE_LIMIT` | Unauthenticated auth requests allowed per source IP per 15 minutes | `60` | yes |
+| `WARMBLY_BOOTSTRAP_EMAIL` | First owner's address, read only while the users table is empty | unset | yes |
+| `WARMBLY_BOOTSTRAP_PASSWORD_HASH` | Argon2 PHC string for that owner. Preferred over the plaintext form | unset | yes |
+| `WARMBLY_BOOTSTRAP_PASSWORD` | Plaintext convenience form. Warns at boot, and leaves a password in your process environment | unset | yes |
+| `WARMBLY_BOOTSTRAP_ORG` | Name of the organization created with that owner | derived from the name | yes |
+| `TWOFA_SECRET` | Key that encrypts stored TOTP secrets. Falls back to `AUTH_SECRET`, so existing deployments keep working; rotating it invalidates every enrolled TOTP secret | `AUTH_SECRET` | yes |
+| `WEBAUTHN_RP_ID` | Passkey relying party id. Derived from `APP_URL` when unset. Changing it invalidates every enrolled passkey | derived | yes |
+| `WEBAUTHN_RP_ORIGINS` | Origins accepted for passkey ceremonies | derived from `APP_URL` | yes |
+| `WEBAUTHN_RP_DISPLAY_NAME` | The name the passkey prompt shows | `Warmbly` | yes |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Sign in with Google. Unrelated to the `BOX_GOOGLE_*` mailbox client | unset | yes |
+| `GOOGLE_IOS_CLIENT_ID` | Additional Google client id accepted from the iOS app | unset | yes |
+| `APPLE_APP_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_KEY_SECRET` | Sign in with Apple | unset | yes |
+| `APPLE_IOS_BUNDLE_ID` | Bundle id accepted from the iOS app | `com.warmbly.app` | yes |
+| `OIDC_ISSUER_URL` | Generic OpenID Connect issuer. Discovery runs at boot | unset | yes |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | The client Warmbly authenticates as | unset | yes |
+| `OIDC_REDIRECT_URL` | Redirect URI registered at the provider. Defaults to `API_PUBLIC_URL` plus `/v1/auth/oidc/callback` | derived | yes |
+| `OIDC_SCOPES` | Scopes requested at the provider | `openid,profile,email` | yes |
+| `OIDC_ALLOWED_DOMAINS` | Email domains allowed to sign in through the provider | empty (any) | yes |
+| `OIDC_DEFAULT_ORG` | Organization uuid every single sign-on user joins | unset | yes |
+| `OIDC_PROVIDER_NAME` | The label on the sign-in button | `Single sign-on` | yes |
+
+Full behavior, including what each registration mode does to the sign-up form, is on [accounts and access](/development/accounts-and-access/).
+
+## Captcha
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `CAPTCHA_PROVIDER` | `none` or `turnstile` | derived, see below | yes |
+| `TURNSTILE_SECRET` | Cloudflare Turnstile secret, read by the backend | unset | yes |
+| `WARMBLY_TURNSTILE_KEY` | The Turnstile site key, read by the dashboard and admin panel at container start | a test key under compose | yes (container start) |
+| `TURNSTILE_BYPASS_TOKEN` | A token that skips verification. Only honoured when `APP_ENV=dev` | unset | yes |
+
+`CAPTCHA_PROVIDER` has no constant default. Unset, it resolves to `turnstile` when `TURNSTILE_SECRET` holds a value and to `none` when it does not, so configuring the secret is what turns captcha on and clearing it is what turns captcha off. The panel reports the resolved value with source `derived`.
+
+Setting `CAPTCHA_PROVIDER=turnstile` explicitly while `TURNSTILE_SECRET` is empty is the one combination that breaks: every verification fails, which means nobody can sign in. Set the secret or set the provider back to `none`.
+
+## Platform mail
+
+Platform mail is the product's own outbound: registration codes, password resets, team invitations, notification digests and login codes where those are enabled. It is separate from campaign mail, which leaves through the mailboxes you connect.
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `MAIL_TRANSPORT` | `smtp`, `log` or `ses` | `log` under compose, `ses` for a bare binary with no `SMTP_HOST` | yes |
+| `EMAIL_NAME` | Display name on platform mail | `Warmbly` | yes |
+| `EMAIL_ADDRESS` | From address on platform mail | none, and the backend refuses to start without it | yes |
+| `SMTP_HOST` | Relay hostname | unset | yes |
+| `SMTP_PORT` | Relay port. Follows `SMTP_SECURITY` when unset | derived | yes |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | Relay credentials. Never sent over an unencrypted connection | unset | yes |
+| `SMTP_SECURITY` | `starttls` (587), `tls` (465) or `none` (25) | `starttls` | yes |
+| `SMTP_AUTH` | `auto`, `plain`, `login`, `cram-md5` or `none` | `auto` | yes |
+| `SMTP_EHLO_NAME` | EHLO name presented to the relay | the sender domain | yes |
+| `SMTP_TLS_INSECURE_SKIP_VERIFY` | Skips certificate verification. Only for a relay with a private certificate authority | `false` | yes |
+| `EMAIL_BRAND_NAME` and the other `EMAIL_BRAND_*` values | Name, legal entity, address and links in the transactional footer | Warmbly's own | yes |
+| `NOTIFICATION_EMAIL_DAILY_CAP` | Notification emails per user per day. `0` means uncapped | `25` | yes |
+| `NOTIFICATION_PUSH_WINDOW` | How long a notification waits before it is also pushed | `5h` | yes |
+
+`log` is a real transport, not a broken one: it writes every message to the backend log and delivers nothing. It exists so a fresh install can complete its first sign-in with no relay. What it costs you is password resets, invitation delivery and digests, all of which have a workaround described on [accounts and access](/development/accounts-and-access/#without-a-mail-relay).
+
+Read a code out of the log:
+
+```bash
+docker compose -p warmbly logs backend | grep -B2 -A12 "MAIL_TRANSPORT=log"
+```
+
+<Callout type="warn" title="The consumer only warns">
+The backend refuses to start without `EMAIL_ADDRESS` and `EMAIL_NAME`. The consumer logs a warning and silently disables all notification and digest email, so an instance can look healthy while sending nothing. Set both on every process.
+</Callout>
+
+## Encryption
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `KMS_PROVIDER` | `local` (AES master key below) or `aws` (AWS KMS) | `local` under compose, `aws` for a bare binary | yes |
+| `KMS_LOCAL_MASTER_KEY` | base64, exactly 32 bytes. The root of trust for every per-organization data key | published default under compose | yes |
+| `KMS_LOCAL_MASTER_KEY_FILE` | Path to a file holding that key instead. Mutually exclusive with the inline value | unset | yes |
+| `KMS_AWS_KEY_ID` | Key id or alias when `KMS_PROVIDER=aws` | unset | yes |
+| `CREDENTIALS_ENCRYPTION_KEY` | exactly 64 hex characters. Seals mailbox SMTP and IMAP passwords at rest | published default under compose | yes |
+| `ENCRYPTED_KEYS_PROVIDER` | `postgres` for backend and consumer, `http` for workers | the caller's fallback, so set it explicitly | yes |
+| `ENCRYPTED_KEYS_BACKEND_URL` | Where a worker reaches the backend's key endpoint | unset | yes |
+| `ENCRYPTED_KEYS_WORKER_TOKEN` | The worker's copy of `INTERNAL_API_TOKEN` | unset | yes |
+
+An empty `CREDENTIALS_ENCRYPTION_KEY` does not fail at boot. It disables sealing, so mailbox passwords are stored unsealed. Set it before you connect a single mailbox, and back it up.
+
+## Storage
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `BLOB_PROVIDER` | `filesystem` or `s3` | `filesystem` under compose, `s3` for a bare binary | yes |
+| `BLOB_FS_ROOT` | Directory for stored bodies, attachments and avatars. The backend, the consumer and every worker on the host must share it | `/data/blobs` | yes |
+| `BLOB_BUCKET` | Bucket name when `BLOB_PROVIDER=s3` | unset | yes |
+| `BLOB_PUBLIC_BASE_URL` | Public base for the backend's `/public` route | derived | yes |
+| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credentials for S3 or SES | unset | yes |
+| `AWS_ENDPOINT_URL_S3` | Non-AWS S3 endpoint (MinIO, R2, B2) | unset | yes |
+| `AWS_CONFIG_ENABLED` | `true` reads secrets from AWS SSM or Secrets Manager | `false` | yes |
+
+On `filesystem`, a remote worker writes blobs to its own disk rather than a volume the backend can read. Use `s3` with a bucket both sides reach when workers run off-host.
+
+## Event bus
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs images built with `GO_TAGS=kafka` | `nats` under compose, `kafka` for a bare binary | yes |
+| `NATS_URL` | JetStream address | `nats://nats:4222` | yes |
+| `NATS_STREAM_NAME`, `NATS_SUBJECT_PREFIX` | Stream and subject naming | `warmbly` | yes |
+| `KAFKA_BOOTSTRAP_SERVERS` | Broker list when `EVENTBUS_PROVIDER=kafka` | unset | yes |
+| `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | Broker credentials | unset | yes |
+| `SCHEMA_REGISTRY_URL`, `SCHEMA_REGISTRY_KEY`, `SCHEMA_REGISTRY_SECRET` | Registry for the Avro codec | unset | yes |
+| `CODEC_PROVIDER` | `json` or `avro` | `json` under compose, `avro` for a bare binary | yes |
+| `EVENTBUS_HANDLER_TIMEOUT` | How long one handler may take before the delivery is abandoned | `30s` | yes |
+| `PUBSUB_ENABLED` | `false` uses the Redis bridge for realtime fanout, `true` uses Google Pub/Sub | `false` | yes |
+| `GCP_PROJECT_ID` | Project when `PUBSUB_ENABLED=true` | unset | yes |
+
+`CODEC_PROVIDER=json` is required wherever workers run: the worker command and result envelopes carry untyped bodies Avro cannot serialize, so any other value makes every worker command fail to encode. `PUBSUB_ENABLED` must agree across backend, consumer and realtime.
+
+<Callout type="warn" title="The tracking topic is read by two languages">
+`KAFKA_TRACKING_TOPIC` is read by the Rust publisher and the Go subscriber. Override it in one place only and opens and clicks stop being consumed, with no error anywhere.
+</Callout>
+
+## Database
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `PRIMARY_DB` | PostgreSQL connection string. Carries inline credentials, so it is never returned by any API | the compose postgres | yes |
+| `DATABASE_URL` | The realtime service's own name for the same database | the compose postgres | yes |
+| `DATABASE_POOL_SIZE` | Maximum pooled connections **for the realtime service only**. The Go services use the driver default and do not read it | `10` | yes |
+| `DATABASE_SSL` | Whether the realtime service connects to Postgres over TLS | `true`, and `false` under compose | yes |
+
+Migrations are embedded in the backend binary and applied on boot. There is no separate migration step, and a standalone `/app/migrate` binary ships in the image for the cases where you want one.
+
+## Cache
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `REDIS` | Redis connection string. Carries inline credentials, so it is never returned by any API | the compose redis | yes |
+| `REDIS_URL` | The realtime service's own name for the same instance | the compose redis | yes |
+
+Redis holds rate limit counters, the organization key cache, the realtime bridge and the first-run setup token. Flushing it on an unclaimed instance destroys the claim link along with every pending auth session.
+
+## GeoIP
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `GEODB_PATH` | Path to a GeoLite2 City database | none, and the backend refuses to start without the variable | yes |
+
+The variable must be set on the backend in every environment. The file itself is optional: a missing file at that path means sessions and audit rows are recorded without a city, and nothing else changes.
+
+## Workers
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `WORKER_ID` | Stable uuid for this worker. Leave unset when running scaled replicas, which share one environment | derived, then random | yes |
+| `WORKER_BIND_IP` | Source address to bind outbound connections to, and the seed for a derived `WORKER_ID` | unset | yes |
+| `WORKER_PUBLIC_IP` | The address the worker reports to the control plane | detected | yes |
+| `WORKER_TIER` | `free`, `premium` or `dedicated`. Tier placement is strict | `free` | yes |
+| `WORKER_EGRESS_KIND` | Label describing the worker's egress path | unset | yes |
+| `WORKER_IMAGE` | Image the remote installer pulls. The built-in default does not match what CI publishes, so set it | built-in | yes |
+| `WORKER_INSTALLER_PATH` | Path to the installer script the backend serves | built-in | yes |
+| `ENCRYPTED_KEYS_BACKEND_URL` | Backend base the worker fetches organization keys from | unset | yes |
+| `ENCRYPTED_KEYS_WORKER_TOKEN` | The worker's copy of `INTERNAL_API_TOKEN` | unset | yes |
+| `MAIL_TLS_INSECURE` | Skips certificate verification on mailbox connections | `false` | yes |
+
+<Callout type="warn" title="An unset key URL is silent">
+An empty `ENCRYPTED_KEYS_BACKEND_URL` or `ENCRYPTED_KEYS_WORKER_TOKEN` lets the worker start, subscribe and never register. There is no log line. The `no_worker_heartbeat` check on [Instance health](/development/instance-health/#no_worker_heartbeat) is what surfaces it.
+</Callout>
+
+Workers hold no database connection by design. Everything relational they need arrives over the backend's internal HTTP API.
+
+## Mailbox connections
+
+Needed on the backend **and** every worker: the backend starts the OAuth flow, and each worker refreshes the token when it expires.
+
+| Variable | What it does | Default |
+|---|---|---|
+| `BOX_GOOGLE_CLIENT_ID`, `BOX_GOOGLE_CLIENT_SECRET` | Connect Gmail and Google Workspace mailboxes. Redirect URI is your API base plus `/addresses/google/callback` | unset |
+| `BOX_OUTLOOK_CLIENT_ID`, `BOX_OUTLOOK_CLIENT_SECRET` | Connect Outlook and Microsoft 365 mailboxes. Redirect URI is your API base plus `/addresses/outlook/callback` | unset |
+
+Plain SMTP and IMAP mailboxes need none of this. If a worker is missing these values, the mailbox connects fine and then silently stops about an hour later, when its first access token expires.
+
+## Integrations
+
+| Variable | What it does | Default |
+|---|---|---|
+| `<PROVIDER>_OAUTH_CLIENT_ID`, `<PROVIDER>_OAUTH_CLIENT_SECRET` | OAuth clients for the CRM and messaging integrations | unset |
+| `INTEGRATIONS_OAUTH_REDIRECT_URL` | Shared redirect URI for those flows | derived from `API_PUBLIC_URL` |
+
+## AI and search
+
+| Variable | What it does | Default |
+|---|---|---|
+| `AI_PROVIDER` | `openai`, `openrouter`, `groq`, `ollama`, `anthropic` or `custom`. Omit every AI variable to run with AI off, in which case AI endpoints return a clean `503` | unset |
+| `AI_API_KEY` | Provider key. Not needed for `ollama` | unset |
+| `AI_MODEL`, `AI_MODEL_TRIAL`, `AI_MODEL_PAID` | Model selection, optionally split by plan | provider preset |
+| `AI_BASE_URL` | Required for `custom`. Any OpenAI compatible endpoint | unset |
+| `AI_FREE` | Treats AI usage as uncharged | derived |
+| `SEARCH_PROVIDER`, `SEARCH_API_URL`, `SEARCH_API_KEY` | Web search for the assistant (`serper` or `searxng`) | unset |
+
+<Callout type="warn" title="An unset provider still uses a key">
+An empty `AI_PROVIDER` with a set `AI_API_KEY` falls back to `api.openai.com`, so the key goes to OpenAI. Set both or neither.
+</Callout>
+
+Set these on the backend and the consumer.
+
+## Tasks and billing
+
+| Variable | What it does | Default |
+|---|---|---|
+| `TASKS_PROVIDER` | `local` (an in-process Postgres poller) or `gcloud` (Cloud Tasks) | `local` |
+| `TASKS_LOCAL_POLL_INTERVAL` | How often the local poller looks for due work | `1s` |
+| `BILLING_PROVIDER` | `none` (every feature unlocked, no trial expiry) or `stripe` | `none` |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` | Required together when `BILLING_PROVIDER=stripe`. The backend exits at boot if any is missing | unset |
+
+Delayed sends run through the local poller, so the backend must be running for scheduled work to fire.
+
+## Observability
+
+| Variable | What it does | Default |
+|---|---|---|
+| `SENTRY_DSN` | Error reporting. Optional in every environment, including `prod` | unset |
+| `APNS_KEY` or `APNS_KEY_PATH`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` | Mobile push on backend and consumer. Partial configuration disables push with a warning, never a crash | unset |
+
+## Tracking service
+
+The Rust open and click service. It reads its own environment, so these have to be set on that container, and none of them appear in the admin panel.
+
+| Variable | What it does | Default |
+|---|---|---|
+| `TRACKING_HOST`, `TRACKING_PORT` | Listen address | `0.0.0.0`, `3000` |
+| `BACKEND_INTERNAL_URL` | Where tracking resolves opaque `/c/<id>` click tickets. **Required**: the service exits at boot without it | none |
+| `INTERNAL_API_TOKEN` | Bearer token for that lookup. **Required**: the service exits at boot on an empty value | none |
+| `TRACKING_RATE_LIMIT_PER_MIN` | Counted pixel and click requests per source per minute. Over budget, pixels are still served but not counted, and click redirects get `429` | `300` |
+| `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs an image built with `CARGO_FEATURES=kafka` | `nats` |
+| `NATS_URL`, `NATS_SUBJECT_PREFIX` | JetStream address and subject prefix. The publish subject is `<prefix>.<topic>` | `nats://localhost:4222`, `warmbly` |
+| `KAFKA_TRACKING_TOPIC` | Event topic, read by the Rust publisher **and** the Go subscriber | `tracking-events` |
+| `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | Broker transport when `EVENTBUS_PROVIDER=kafka` | unset |
+| `SCHEMA_REGISTRY_URL`, `SCHEMA_REGISTRY_KEY`, `SCHEMA_REGISTRY_SECRET` | Registry for the Avro codec | unset |
+| `AWS_CONFIG_ENABLED` | `true` falls back to AWS SSM and Secrets Manager for any value missing from the environment | `false` |
+| `APP_ENV` | Environment label used in logs | `dev` |
+
+## Realtime service
+
+The Elixir websocket service. Its runtime configuration is read only when the release boots in `prod`, which is how the shipped image runs. Like tracking, it reads its own environment and appears nowhere in the admin panel.
+
+| Variable | What it does | Default |
+|---|---|---|
+| `JWT_SECRET` | Must equal the backend's `AUTH_SECRET`. **Required**: the service refuses to boot without it | none |
+| `SECRET_KEY_BASE` | Phoenix session signing. **Required** | none |
+| `DATABASE_URL` | Postgres, used to validate API keys. **Required** | none |
+| `REDIS_URL` | The Redis bridge the backend publishes events onto | `redis://localhost:6379/0` |
+| `PHX_HOST` | The service's own hostname | `localhost` |
+| `PORT` | Listen port | `4000` |
+| `CHECK_ORIGIN` | `true` accepts a websocket upgrade only from `PHX_HOST` | `false` |
+| `PUBSUB_ENABLED` | `true` swaps the Redis bridge for Google Pub/Sub | `false` |
+| `GCP_PROJECT_ID` | Required when `PUBSUB_ENABLED=true`; the service refuses to boot without it | unset |
+| `MAX_CONNECTIONS_PER_USER` | Concurrent sockets one account may hold. The caller's plan limit applies too, whichever is lower | `10` |
+| `MAX_CONNECTIONS_PER_IP` | Concurrent sockets from one address | `50` |
+| `MAX_CONNECTIONS_GLOBAL` | Concurrent sockets on this node | `100000` |
+| `RATE_LIMIT_WS_MESSAGE` | Websocket messages per minute | `120` |
+| `RATE_LIMIT_WS_JOIN` | Channel joins per minute | `30` |
+| `RATE_LIMIT_WS_EVENT` | Client events per minute, which is what bounds presence updates | `60` |
+| `SENTRY_DSN` | Error reporting. An empty string is treated as unset on purpose, because the library rejects `""` hard enough to take the node down | unset |
+
+<Callout type="warn" title="CHECK_ORIGIN is false by default">
+The shipped default accepts a websocket upgrade from **any** origin. A token is still required to join a channel, so an attacker needs a valid JWT either way, but on a deployment reachable from the internet set `PHX_HOST` to the public websocket hostname and `CHECK_ORIGIN=true` so only your own dashboard can open a socket.
+</Callout>
+
+## Settings stored in the database
+
+These are the only settings a browser can change, and no environment variable owns any of them. They live in the admin panel under **Instance > Instance settings** (`/configuration/settings`). Reads are cached for 30 seconds in each process, so a change takes effect everywhere within that window.
+
+| Setting | Type | Default | What it does |
+|---|---|---|---|
+| `invitations.ttl_hours` | integer, 1 to 720 | `168` | How long a new invitation stays valid. Read when the invitation row is written, so it applies to invitations created after the change, not to existing ones |
+| `invitations.links_enabled` | boolean | `true` | Whether the copyable invitation link is returned at all. Off makes `GET /organization/invitations/:id/link` return `404` with an explanation, so an invitation can only arrive by mail |
+| `access.allow_invited_signup` | boolean | `true` | Whether holding a live invitation lets someone create their own account under `invite_only`. Off means an administrator creates every account with `warmblyctl user create` |
+
+Changing them is audited, and every value is validated and clamped server side on write as well as on read, so a row written by an older version still resolves.
+
+## Variables that do not do what their name suggests
+
+| Variable | What actually happens |
+|---|---|
+| `KAFKA_CLUSTER` | Nothing. A loader exists but no caller does. Remove it |
+| `SENTRY_DSN_API` | Nothing, for the same reason. Superseded by `SENTRY_DSN` |
+| `PROVISIONING_DRY_RUN` | It is read, but it cannot be turned off. No real installer adapter is wired yet, so `false` logs a line and is forced back to dry-run rather than creating servers nothing could finish provisioning. `PROVISIONING_RUNNER_ENABLED=false` stops the runner entirely |
+| `CAPTCHA_PROVIDER` | Read, but derived when unset rather than defaulting to a constant. See [captcha](#captcha) |
+
+## See also
+
+- [First run](/development/first-run/) for claiming a fresh instance
+- [Accounts and access](/development/accounts-and-access/) for who may sign in and how to invite people
+- [Instance health](/development/instance-health/) for the checks that read these values back
+- [Troubleshooting](/development/troubleshooting/) for the errors these settings produce

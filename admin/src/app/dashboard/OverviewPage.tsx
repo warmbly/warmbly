@@ -16,6 +16,7 @@ import {
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InstanceProblemsPanel } from "./InstanceHealthPanel";
 import { getPlatformOverview } from "@/lib/api/client/admin/analytics";
 import { listManagedWorkers } from "@/lib/api/client/admin/workers";
 import type { ManagedWorker } from "@/lib/api/models/admin";
@@ -69,6 +70,8 @@ export default function OverviewPage() {
                 title="Platform overview"
                 description="Snapshot of the Warmbly control plane. Live counts pull from /admin/analytics/overview every minute."
             />
+
+            <InstanceProblemsPanel />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                 <StatCard

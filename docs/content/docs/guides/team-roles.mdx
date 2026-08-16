@@ -11,19 +11,29 @@ Inviting, re-roling, removing, and managing roles all need the **Manage team** p
 
 ## Inviting members
 
-In the **Invite teammates** box, paste or type addresses into **Emails**, separated by comma, semicolon, space, or Enter. Each becomes a chip: valid ones grey, malformed ones red so you can remove them first. Pick a **Role** for the batch (a description on the right says what you are granting), then **Send invitations**.
+In the **Invite teammates** box, paste or type addresses into **Emails**, separated by comma, semicolon, space, or Enter. Each becomes a chip: valid ones grey, malformed ones red so you can remove them first. Pick one or more **Roles** for the batch (a description on the right says what you are granting), then **Send invitations**.
 
-Warmbly sends one invitation per address and reports results as "Invited 2 · 1 failed". Invalid addresses are skipped and called out.
+Warmbly sends one invitation per address and reports results as "Invited 2 · 1 failed". Invalid addresses are skipped and called out. The chips clear when the batch finishes.
 
-**Pending invitations** shows the email, role, and expiry for each unaccepted invite, with **Copy invite link** (to share directly instead of waiting on email) and **Cancel invitation**. Expired invites need re-sending.
+**Pending invitations** shows the email, role, and expiry for each unaccepted invite, with two actions on the right of the row: copy the invite link (to share directly instead of waiting on email) and cancel the invitation. There is no resend button. To give somebody a fresh link, invite the same address again: that replaces the invitation in place with a new token and a reset expiry, and the previously copied link stops working.
 
 <Callout type="info" title="Roles are not permanent">
 The invite-time role can be changed inline from the roster later, so it is fine to start people narrow and widen access afterward.
 </Callout>
 
+### On a self-hosted instance
+
+Two things work differently when you run Warmbly yourself.
+
+**An invited person creates their account from the invitation link.** A self-hosted instance ships with signups closed to the public (`DISABLE_REGISTRATION=invite_only`), so visiting the sign-up form directly is refused. The invitation link carries the token that permits the signup, which is why the flow works: the invitee opens the link, clicks **Create an account**, and lands inside your workspace rather than in a new one.
+
+**Invitations may not arrive by email.** Platform mail defaults to a transport that writes messages to the backend log instead of delivering them, so copying the invite link is the path rather than the fallback. The members page shows an amber notice above the **Emails** field when the server reports that mail is not delivered, telling you to invite the person and then copy the link from their row under **Pending invitations**.
+
+Both are covered in [accounts and access](/development/accounts-and-access/#without-a-mail-relay), along with how to point the instance at a real relay.
+
 ## The roster
 
-Each row shows email, role, and join date, with your own row tagged "you". Click a role pill to change it and confirm; per-role counts update immediately.
+Each row shows email, role, and join date, with your own row tagged "you". Open the role picker on a row to tick the roles that member holds; a member can hold several, and their effective access is the union. The owner's row is a fixed Owner badge, and your own row is not editable.
 
 To remove someone, hover (or tap) their row and click the remove icon. **You cannot remove the owner or yourself.** To leave a workspace you own, transfer ownership first.
 

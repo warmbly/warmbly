@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/warmbly/warmbly/internal/config"
@@ -32,7 +33,9 @@ var insecureDefaults = map[string]string{
 //
 // ALLOW_INSECURE_DEFAULTS=true downgrades the refusal to a warning, for an
 // operator who genuinely wants a throwaway instance on a trusted LAN.
-func checkSecrets() {
+// It returns the offenders so the health page can keep reporting them for as
+// long as they are in use, not just once at boot.
+func checkSecrets() []string {
 	var offenders []string
 	for env, def := range insecureDefaults {
 		if os.Getenv(env) == def {
@@ -40,18 +43,20 @@ func checkSecrets() {
 		}
 	}
 	if len(offenders) == 0 {
-		return
+		return nil
 	}
+	sort.Strings(offenders)
 
 	list := strings.Join(offenders, ", ")
 	if isDevEnv() || strings.EqualFold(os.Getenv("ALLOW_INSECURE_DEFAULTS"), "true") {
 		log.Printf("Warning: using the published default value for %s. Anyone can read these from the Warmbly repository. Generate real values before this instance is reachable by other people (make gen-key).", list)
-		return
+		return offenders
 	}
 
 	log.Fatalf("Refusing to start: %s still hold the published default value from docker-compose.yml. "+
 		"Those defaults are public, so they provide no protection. Generate real values (make gen-key) and put them in .env, "+
 		"or set ALLOW_INSECURE_DEFAULTS=true if this instance is genuinely disposable.", list)
+	return offenders
 }
 
 func isDevEnv() bool {
@@ -90,7 +95,8 @@ func oidcRedirectURL() string {
 	if base == "" {
 		return ""
 	}
-	return base + "/api/v1/auth/oidc/callback"
+	// The route is registered on /v1, not /api/v1: there is no /api prefix.
+	return base + "/v1/auth/oidc/callback"
 }
 
 // splitList parses a comma-separated env list.

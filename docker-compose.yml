@@ -1,20 +1,20 @@
-# Warmbly — truly local, no-cloud self-host stack.
+# Warmbly: truly local, no-cloud self-host stack.
 #
 #   docker compose up --build
 #
 # Brings up the whole platform with NO cloud account of any kind: no AWS, no
 # GCP, no Stripe, no Kafka, no Astra. One command, everything local:
 #
-#   Postgres  — relational store
-#   Redis     — cache + realtime pub/sub bridge
-#   NATS      — event bus (JetStream); a single ~15MB binary, not Kafka+ZK+SR
-#   backend   — API (:8080), applies migrations on boot
-#   consumer  — event consumer
-#   worker    — send/sync executor (add more for scale; see docs)
-#   tracking  — open/click pixels (:3000)
-#   realtime  — websocket fanout (:4000)
-#   web       — dashboard (:5173)      admin — control panel (:5174)
-#   mailpit   — local SMTP sink + web UI (:18025) for testing outbound mail
+#   Postgres   relational store
+#   Redis      cache + realtime pub/sub bridge
+#   NATS       event bus (JetStream); a single ~15MB binary, not Kafka+ZK+SR
+#   backend    API (:8080), applies migrations on boot
+#   consumer   event consumer
+#   worker     send/sync executor (add more for scale; see docs)
+#   tracking   open/click pixels (:3000)
+#   realtime   websocket fanout (:4000)
+#   web        dashboard (:5173)      admin: control panel (:5174)
+#   mailpit    local SMTP sink + web UI (:18025) for testing outbound mail
 #
 # Providers (all local): EVENTBUS_PROVIDER=nats, KMS_PROVIDER=local,
 # BLOB_PROVIDER=filesystem, TASKS_PROVIDER=local, CODEC_PROVIDER=json,
@@ -28,7 +28,7 @@
 # For a real deployment set at least:
 #   AUTH_SECRET, KMS_LOCAL_MASTER_KEY (base64 32 bytes; `make gen-key`),
 #   CREDENTIALS_ENCRYPTION_KEY (64 hex), INTERNAL_API_TOKEN, SECRET_KEY_BASE,
-#   and — to connect Gmail/Microsoft mailboxes — BOX_GOOGLE_* / BOX_OUTLOOK_*.
+#   plus BOX_GOOGLE_* / BOX_OUTLOOK_* to connect Gmail/Microsoft mailboxes.
 #
 # LOSING KMS_LOCAL_MASTER_KEY OR CREDENTIALS_ENCRYPTION_KEY IS UNRECOVERABLE:
 # every stored mailbox credential is sealed with them. Back them up.
@@ -42,6 +42,10 @@
 x-selfhost-env: &selfhost-env
   APP_ENV: ${APP_ENV:-dev}
   AWS_CONFIG_ENABLED: ${AWS_CONFIG_ENABLED:-false}
+  # Both are read by the published-default-secrets check. Without the
+  # passthrough it could neither detect SECRET_KEY_BASE nor be overridden.
+  SECRET_KEY_BASE: ${SECRET_KEY_BASE:-local-development-secret-key-base-minimum-64-characters-for-phoenix}
+  ALLOW_INSECURE_DEFAULTS: ${ALLOW_INSECURE_DEFAULTS:-}
 
   # Event bus + serialization. Kafka needs images built with GO_TAGS=kafka.
   EVENTBUS_PROVIDER: ${EVENTBUS_PROVIDER:-nats}
@@ -118,9 +122,19 @@ x-selfhost-env: &selfhost-env
   AUTH_LOGIN_CODE: ${AUTH_LOGIN_CODE:-}
   REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-}
   # true | false | invite_only. Self-host defaults to invite_only, with a
-  # first-launch exemption so the very first signup always works.
+  # first-launch exemption so the very first signup always works: while the
+  # users table is EMPTY any signup is allowed, and seeding spends that for
+  # good. invite_only does not mean "closed": an invitation link creates the
+  # account, because the link carries the token that permits the signup. A
+  # stranger without one cannot register. true closes both paths, and members
+  # can no longer mint invitations either.
+  # https://docs.warmbly.com/development/accounts-and-access/
   DISABLE_REGISTRATION: ${DISABLE_REGISTRATION:-}
   DISABLE_PASSWORD_LOGIN: ${DISABLE_PASSWORD_LOGIN:-false}
+  # Lets a verified identity-provider assertion create an account regardless of
+  # DISABLE_REGISTRATION. Off by default, so configuring OIDC never silently
+  # reopens signup.
+  SSO_AUTO_PROVISION: ${SSO_AUTO_PROVISION:-}
   AUTH_IP_RATE_LIMIT: ${AUTH_IP_RATE_LIMIT:-60}
   # CIDRs allowed to set X-Forwarded-For. Empty trusts nothing, which is
   # correct for a directly exposed backend; set it when you run a proxy.
@@ -250,7 +264,7 @@ services:
   # every seeded sender syncs from, so replies and warmup mail actually land in
   # the unified inbox. Any username logs in with the static password "sandbox";
   # the self-signed cert is fine because sandbox clients set MAIL_TLS_INSECURE.
-  # In the `sandbox` profile so the lean `make up` self-host never pulls it —
+  # In the `sandbox` profile so the lean `make up` self-host never pulls it.
   # `make sandbox` / `make infra` start it by naming it explicitly.
   dovecot:
     image: dovecot/dovecot:latest
@@ -278,7 +292,7 @@ services:
       API_HOST: "0.0.0.0:8080"
       GIN_MODE: release
       # To reach Warmbly from another machine, set PUBLIC_HOST=<ip-or-domain> in
-      # .env — every URL below derives from it. Or set each URL explicitly.
+      # .env and every URL below derives from it. Or set each URL explicitly.
       APP_URL: ${APP_URL:-http://${PUBLIC_HOST:-localhost}:5173}
       # The backend's own public base. Remote workers enrolled from here get it
       # as ENCRYPTED_KEYS_BACKEND_URL, so it must be reachable from the worker.

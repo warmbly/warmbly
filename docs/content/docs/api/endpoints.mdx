@@ -230,6 +230,10 @@ These never accept an API key. They depend on a human-bound session: billing flo
 
 - `POST /auth/login`, `/auth/login/confirm`, `/auth/register`, `/auth/register/confirm`, `/auth/refresh`, `/auth/reset-password`, `/auth/reset-password/confirm`
 - `GET /auth/config` (public deployment capabilities: which sign-in methods this backend has enabled, whether a login code step follows, whether signups are open, whether the instance still needs claiming)
+
+`POST /auth/register` accepts an optional `invite` field carrying an invitation token. On a deployment running `DISABLE_REGISTRATION=invite_only` it is what permits the signup, and the account is created inside the inviting organization rather than in a new one. The token must resolve to a live invitation whose email equals the submitted address, otherwise the request is refused with `invitation_invalid`. Omitting it on a closed deployment returns `registration_invite_only` or `registration_closed`. See [error codes](/api/error-codes/#registration-and-invitation-refusals).
+
+`GET /auth/config` gained two fields: `invites_required` (boolean, true when an invitation token is needed to create an account) and `docs_url` (string, the deployment's link to the accounts and access documentation, for a client to surface next to a refusal).
 - `POST /auth/setup` (first-run claim: exchanges the one-time token printed at boot for the owner account. Refused once any account exists)
 - `GET /auth/providers`, `POST /auth/apple`, `POST /auth/google` (native-app social sign-in)
 - `POST /auth/oidc/begin`, `GET /auth/oidc/callback` (generic OpenID Connect sign-in)

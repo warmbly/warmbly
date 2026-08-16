@@ -1,0 +1,244 @@
+---
+title: Instance health
+description: The Setup and health page, what every check means, how to clear it, and how to run the same checks from a shell.
+---
+
+Warmbly checks its own deployment and tells you what is wrong in the words of the thing that is wrong, with the command that fixes it. A silent instance and a healthy instance look identical from the outside, so the checks exist to make the difference visible.
+
+## Setup and health
+
+The page lives in the **admin panel** on `:5174`, under **Instance > Setup and health**. It is operator tooling, so it is not in the customer-facing dashboard, and every route behind it is gated on a platform admin permission.
+
+The same list is the top panel of the admin overview, and the sidebar entry carries a badge with the number of open findings, because nobody visits a health page speculatively.
+
+| Severity | Means |
+|---|---|
+| `error` | Something is broken or unsafe right now. Sending, signing in or key access is affected |
+| `warning` | Works today, will hurt you. Misconfiguration, a published secret, a concentration risk |
+| `info` | No action required, stated so you are not surprised later |
+
+Only findings are listed. A check that passes returns nothing, so an empty page means the instance is clean.
+
+Each row carries a title, the full message including the fix, and a link to the section of these docs that explains it. Every check that ships today is instance-wide, so no row is scoped to a single mailbox, worker or campaign.
+
+Every check that runs is listed below. If a check is not on this page, it does not exist.
+
+## Running the checks from a shell
+
+```bash
+make doctor
+```
+
+That runs `warmblyctl status`, which prints this instance's state (accounts, platform admins, registration mode, mail transport, `APP_URL`) followed by a **Checks** section holding the same findings, and exits non-zero when anything is at error severity. It is the right thing to put at the end of a deploy script, and it is what to reach for when the backend is unhealthy enough that the admin panel will not load.
+
+Every command works in any runtime:
+
+```bash
+docker compose -p warmbly exec backend warmblyctl status   # docker compose
+docker exec -it warmbly-backend warmblyctl status          # plain docker
+kubectl exec -it deploy/warmbly-backend -- warmblyctl status
+warmblyctl status                                          # bare binary
+```
+
+## Health endpoints
+
+There are two, and they answer different questions.
+
+| Endpoint | Auth | Use it for |
+|---|---|---|
+| `GET /health` | none | Liveness. Is the process up. This is the one a load balancer or an orchestrator probes |
+| `GET /admin/instance/health` | platform admin, `view_analytics` | Deep diagnostics: the finding list the panel renders |
+
+<Callout type="warn" title="Do not point a load balancer at the deep endpoint">
+The diagnostic endpoint reports warnings about configuration, and a warning is not a reason to take a node out of rotation. Use `GET /health` for liveness and leave the diagnostics to the panel and to `make doctor`.
+</Callout>
+
+Two neighbouring endpoints round out the surface, both under **Instance** in the panel:
+
+| Endpoint | Auth | Returns |
+|---|---|---|
+| `GET /admin/instance/config` | `manage_settings` | Every configuration entry with its resolved value, source and restart requirement. Sensitive keys return a fingerprint, never a value |
+| `GET /admin/instance/limits` | `view_analytics` | The effective sending, warmup and rate limits this build compiles in |
+
+## Security and secrets
+
+### secret_published_default
+
+One or more of `AUTH_SECRET`, `KMS_LOCAL_MASTER_KEY`, `CREDENTIALS_ENCRYPTION_KEY`, `INTERNAL_API_TOKEN` or `SECRET_KEY_BASE` still holds the value shipped in `docker-compose.yml`. Those values are published in this repository, so anyone can forge a session token or unwrap every organization key.
+
+Generate real values and restart. See [secrets](/development/configuration/#secrets). The backend refuses to boot on a published default once `APP_ENV` is not `dev`, but only the backend does that check: the consumer and every worker start happily on one, which is why this check exists.
+
+### allow_insecure_defaults
+
+`ALLOW_INSECURE_DEFAULTS=true` overrides the boot refusal above. Remove it once you have generated real values.
+
+### credentials_key_unset
+
+`CREDENTIALS_ENCRYPTION_KEY` is empty, so mailbox SMTP and IMAP passwords are stored without being sealed. Set a 64 hex character key (`openssl rand -hex 32`) before connecting any mailbox, and back it up: losing it makes connected mailboxes unrecoverable. See [encryption](/development/configuration/#encryption).
+
+### internal_token_unset
+
+`INTERNAL_API_TOKEN` is empty, so every request to `/api/v1/internal/` is rejected. Workers cannot fetch organization keys and the tracking service cannot resolve click links. Nothing fails at boot, only at runtime. See [workers](/development/configuration/#workers).
+
+### trusted_proxies_unset
+
+The request that loaded this page carried an `X-Forwarded-For` header while `TRUSTED_PROXIES` is empty, so Warmbly is recording your proxy's address as the client address. The per IP login limiter, session records, audit rows and API key IP allowlists all read the wrong address. Set `TRUSTED_PROXIES` to your proxy's CIDR. See [network and proxy](/development/configuration/#network-and-proxy).
+
+### captcha_misconfigured
+
+`CAPTCHA_PROVIDER=turnstile` with an empty `TURNSTILE_SECRET` fails every verification, which means nobody can sign in. Set the secret or set `CAPTCHA_PROVIDER=none`. See [captcha](/development/configuration/#captcha).
+
+### turnstile_bypass_set
+
+`TURNSTILE_BYPASS_TOKEN` is set. It is only honoured when `APP_ENV=dev`, so on a production deployment it does nothing except confuse the next person. Remove it.
+
+### dev_mode_public
+
+`APP_ENV` is not `prod` while `APP_URL` is not a loopback address. Dev mode allows the published default secrets and enables debug logging. Set `APP_ENV=prod`. See [deployment](/development/configuration/#deployment).
+
+### unsafe_webhook_urls
+
+`WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS=true` lets customer webhooks point at `http://` and private addresses, which means any workspace member can make the backend reach into your internal network. Development only. See [webhooks](/guides/webhooks/).
+
+### tls_verification_off
+
+`SMTP_TLS_INSECURE_SKIP_VERIFY` or `MAIL_TLS_INSECURE` is on, so TLS certificate verification is disabled for platform mail or for mailbox connections. Only legitimate for a relay using a private certificate authority.
+
+## URLs and reachability
+
+### app_url_unset
+
+`APP_URL` and `FRONTEND_BASE_URL` are both empty, so password reset, invitation and setup links are being built against `https://app.warmbly.com`. Those links go to the hosted service, not to your instance, and a live reset token in one of them leaves your deployment. Set `APP_URL` to your dashboard origin. See [addresses](/development/configuration/#addresses).
+
+### app_url_insecure
+
+`APP_URL` uses `http://` on a non-loopback host. Browsers refuse WebAuthn outside a secure context, so passkeys are disabled, and session cookies travel in the clear. Put the dashboard behind HTTPS.
+
+### app_url_host_mismatch
+
+You reached the panel on one host while `APP_URL` names another. Emailed links are built from `APP_URL`, so they will point somewhere other than where people actually reach this instance.
+
+### cors_missing_origin
+
+An origin that talks to the API is not in the resolved CORS list, so the browser blocks its requests. In practice the app loads and then every request fails. Add it to `CORS_ALLOW_ORIGINS`.
+
+### api_public_url_unset_oidc
+
+`OIDC_ISSUER_URL` is set while both `API_PUBLIC_URL` and `OIDC_REDIRECT_URL` are empty, so there is no redirect URL and the single sign-on path is disabled. Set `API_PUBLIC_URL` to this backend's public base. See [single sign-on](/development/accounts-and-access/#single-sign-on).
+
+### oidc_discovery_failed
+
+Discovery against the configured issuer failed at boot, so the single sign-on button is not shown. The message carries the underlying error. Check the issuer URL, its TLS chain, and that the backend can reach it.
+
+### app_origin_wildcard
+
+`APP_ORIGIN` is unset, so the mailbox OAuth callback page posts the authorization code back to the dashboard with a wildcard target origin. Set `APP_ORIGIN` to your dashboard origin.
+
+### tracking_domain_unreachable
+
+`TRACKING_DOMAIN` is set but a probe from the backend did not get an answer, so open pixels and click links in campaign mail will not record. Recipients still receive the mail.
+
+## Platform mail
+
+### mail_transport_log
+
+`MAIL_TRANSPORT=log` writes every message to the backend log instead of delivering it. Login codes, password resets, team invitations and notification digests will never arrive.
+
+Invitations still work: copy the invite link from **Settings > Members** and send it yourself. See [without a mail relay](/development/accounts-and-access/#without-a-mail-relay). To fix it properly, point `MAIL_TRANSPORT` at a relay. See [platform mail](/development/configuration/#platform-mail).
+
+### mail_preflight_failed
+
+The transport is meant to deliver, and the relay did not accept a connection. The message carries the raw SMTP dialogue. Nobody can reset a password or receive an invitation until this is fixed. This check stays quiet when `mail_transport_log` has already fired, so one incident is one row.
+
+### mail_identity_unset
+
+`EMAIL_ADDRESS` or `EMAIL_NAME` is missing. The backend refuses to start without them, but the consumer only warns and silently disables all notification and digest email, so this instance can look healthy while sending nothing.
+
+### mail_from_domain_mismatch
+
+Platform mail is sent from a domain that differs from the dashboard's. Mailbox providers may treat that as a mismatch. Only a problem if you did not intend them to differ.
+
+### login_code_demoted
+
+`AUTH_LOGIN_CODE=always` was demoted to `new_device` at boot because the transport does not deliver. Otherwise nobody could ever complete a login. See [login codes](/development/accounts-and-access/#login-codes).
+
+## Accounts and access
+
+### registration_mode
+
+Always reported, so the mode is never a surprise. `invite_only` means nobody creates an account from the sign-up form and people join through an invitation. `true` means signups are closed and invitations do not work either. See [registration modes](/development/accounts-and-access/#registration-modes).
+
+### no_sign_in_method
+
+`DISABLE_PASSWORD_LOGIN=true` with no OIDC, Google or Apple provider configured leaves no way to sign in to this instance at all. Set `DISABLE_PASSWORD_LOGIN=false` or configure `OIDC_ISSUER_URL`.
+
+### single_platform_admin
+
+Exactly one account holds platform admin permissions. If you lose access to it there is no way to grant admin from inside the product. Add a second from **Instance > Admins**, or with `warmblyctl user grant-admin`. See [platform admins](/development/accounts-and-access/#platform-admins).
+
+### bootstrap_password_still_set
+
+`WARMBLY_BOOTSTRAP_PASSWORD` is still in this deployment's environment. It is read only while the users table is empty, so it now does nothing except leave a plaintext password where `docker inspect` can read it. Remove it. See [first owner](/development/accounts-and-access/#first-owner).
+
+### setup_link_outstanding
+
+The instance has no accounts and a single-use setup link is live. Find it with `make claim`, or print a fresh one with `warmblyctl setup-link`. See [first run](/development/first-run/).
+
+### expired_invitations
+
+Some invitations have expired. They are no longer visible in the dashboard but still hold their address. Re-inviting the same address replaces the expired row. See [invitations](/development/accounts-and-access/#invitations).
+
+## Workers
+
+### no_worker_heartbeat
+
+No worker has checked in for more than five minutes while mailboxes are assigned to workers, so nothing is being sent or synced.
+
+Check the worker process is running, then check `ENCRYPTED_KEYS_BACKEND_URL` and `ENCRYPTED_KEYS_WORKER_TOKEN`: an empty value lets the worker start, subscribe and never register, with no log line to tell you. See [workers](/development/configuration/#workers).
+
+### codec_not_json
+
+`CODEC_PROVIDER` is something other than `json` while workers are registered. Worker command and result envelopes carry untyped bodies that Avro cannot serialize, so every worker command fails to encode. Set `CODEC_PROVIDER=json`. See [event bus](/development/configuration/#event-bus).
+
+## Database
+
+### migrations_dirty
+
+The `schema_migrations` row is marked dirty. The backend applies migrations at boot; a dirty row means one failed halfway and must be resolved before the instance is used. The message carries the version it stopped at.
+
+## Redis
+
+### redis_unreachable
+
+Redis is not reachable. Rate limits, the organization key cache, the realtime bridge and the first-run setup token are all down. See [cache](/development/configuration/#cache).
+
+## Realtime
+
+### websocket_unreachable
+
+The backend turned `WEBSOCKET_URL` into a `/health` URL and the realtime service did not answer it, so the dashboard will not update live and presence stays empty. Anything below a `500` counts as an answer, so an auth wall does not trip this.
+
+A reachable realtime service that still leaves the dashboard dead has a different cause, and no check reports it: `AUTH_SECRET` on the backend and `JWT_SECRET` on the realtime service must be identical or every token is rejected. **Instance > Configuration** shows a four character fingerprint for each sensitive value so you can compare the two without either being disclosed.
+
+## Storage
+
+### blob_root_missing
+
+`BLOB_PROVIDER=filesystem` and `BLOB_FS_ROOT` is unset, missing or not writable, so email bodies, attachments and avatars cannot be stored. The check writes and deletes a probe file to prove the path is usable. The backend, the consumer and every worker on the host must share that path. See [storage](/development/configuration/#storage).
+
+## What each service needs to be healthy
+
+| Service | Needs |
+|---|---|
+| backend | The five secrets, `PRIMARY_DB`, `REDIS`, the provider switches, the public URLs, `EMAIL_ADDRESS`, `EMAIL_NAME` and `GEODB_PATH` |
+| consumer | The same shared block. It writes to Postgres, so it needs `PRIMARY_DB` and both encryption keys, and it needs the mail identity or it silently sends nothing |
+| worker | No database. The event bus, `REDIS`, both encryption keys, `ENCRYPTED_KEYS_BACKEND_URL` plus the worker token, and the `BOX_*` OAuth clients |
+| tracking | The event bus, plus `BACKEND_INTERNAL_URL` and `INTERNAL_API_TOKEN`. It exits at boot without either of those two |
+| realtime | `JWT_SECRET` equal to the backend's `AUTH_SECRET`, plus `SECRET_KEY_BASE` and `DATABASE_URL`. It refuses to boot without all three. `REDIS_URL`, `PHX_HOST` and the connection limits have defaults |
+| web and admin | Only the `WARMBLY_*` URLs, read at container start and written into `/config.js` |
+
+## See also
+
+- [Configuration reference](/development/configuration/) for every variable named here, including the [realtime](/development/configuration/#realtime-service) and [tracking](/development/configuration/#tracking-service) variables no check reads
+- [Accounts and access](/development/accounts-and-access/) for the access checks
+- [Troubleshooting](/development/troubleshooting/) for symptoms that do not come from a check

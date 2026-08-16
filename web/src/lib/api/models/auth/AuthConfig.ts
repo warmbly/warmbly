@@ -18,4 +18,9 @@ export default interface AuthConfig {
     self_hosted: boolean;
     /** True while the instance has no accounts and must be claimed. */
     setup_required: boolean;
+    /** registration === "invite_only", precomputed by the server so the client
+     *  does not reimplement the meaning of a tri-state string. */
+    invites_required: boolean;
+    /** Where to send someone a deployment policy refused, not their mistake. */
+    docs_url: string;
 }

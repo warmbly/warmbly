@@ -42,7 +42,13 @@ import AnalyticsPage from "@/app/dashboard/AnalyticsPage";
 import MailboxesPage from "@/app/dashboard/MailboxesPage";
 import EventsPage from "@/app/dashboard/EventsPage";
 import SystemStatusPage from "@/app/dashboard/SystemStatusPage";
+import HealthPage from "@/app/dashboard/HealthPage";
+import ConfigurationPage from "@/app/dashboard/ConfigurationPage";
+import InstanceSettingsPage from "@/app/dashboard/InstanceSettingsPage";
+import LimitsPage from "@/app/dashboard/LimitsPage";
 import RealtimeManager from "@/lib/realtime/RealtimeManager";
+import { RequirePermission } from "@/components/layout/RequirePermission";
+import { AdminPerm } from "@/lib/auth/permissions";
 import { NotFoundPage } from "@/app/dashboard/StubPages";
 
 // Mirror of web/src/main.tsx's tuned defaults. The admin app sees less
@@ -109,7 +115,64 @@ const router = createBrowserRouter([
                     { path: "outreach", element: <OutreachPage /> },
                     { path: "analytics", element: <AnalyticsPage /> },
                     { path: "events", element: <EventsPage /> },
-                    { path: "system", element: <SystemStatusPage /> },
+                    // Instance: the operator's view of this deployment. Each
+                    // route carries the same permission bit the backend gates
+                    // its endpoint on.
+                    {
+                        path: "health",
+                        element: (
+                            <RequirePermission
+                                perm={AdminPerm.ViewAnalytics}
+                                permissionLabel="View analytics"
+                            >
+                                <HealthPage />
+                            </RequirePermission>
+                        ),
+                    },
+                    {
+                        path: "configuration",
+                        element: (
+                            <RequirePermission
+                                perm={AdminPerm.ManageSettings}
+                                permissionLabel="Manage settings"
+                            >
+                                <ConfigurationPage />
+                            </RequirePermission>
+                        ),
+                    },
+                    {
+                        path: "configuration/settings",
+                        element: (
+                            <RequirePermission
+                                perm={AdminPerm.ManageSettings}
+                                permissionLabel="Manage settings"
+                            >
+                                <InstanceSettingsPage />
+                            </RequirePermission>
+                        ),
+                    },
+                    {
+                        path: "limits",
+                        element: (
+                            <RequirePermission
+                                perm={AdminPerm.ViewAnalytics}
+                                permissionLabel="View analytics"
+                            >
+                                <LimitsPage />
+                            </RequirePermission>
+                        ),
+                    },
+                    {
+                        path: "system",
+                        element: (
+                            <RequirePermission
+                                perm={AdminPerm.ViewAnalytics}
+                                permissionLabel="View analytics"
+                            >
+                                <SystemStatusPage />
+                            </RequirePermission>
+                        ),
+                    },
                     { path: "audit", element: <AuditPage /> },
                     { path: "*", element: <NotFoundPage /> },
                 ],

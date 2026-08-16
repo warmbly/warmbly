@@ -33,6 +33,13 @@ type ReferralAttributor interface {
 	AttributeSignup(ctx context.Context, code string, inviteeOrgID, inviteeUserID uuid.UUID) *errx.Error
 }
 
+// InstanceSettings is the operator-editable half of the signup policy.
+// Satisfied by instancesettings.Service; injected post-construction
+// (WireInstanceSettings) so the auth package needs no import of it (no cycle).
+type InstanceSettings interface {
+	AllowInvitedSignup(ctx context.Context) bool
+}
+
 type AuthService interface {
 	LoginStart(ctx context.Context, data *AuthData, ipaddr, userAgent string) (*models.AuthSession, *errx.Error)
 	LoginConfirm(ctx context.Context, data *ConfirmData, session, ipaddr, userAgent string) (*models.LoginResult, *errx.Error)
@@ -44,6 +51,10 @@ type AuthService interface {
 	// WireReferral attaches the referral attributor (post-construction; nil = no
 	// referral attribution at signup).
 	WireReferral(r ReferralAttributor)
+
+	// WireInstanceSettings attaches the database-backed instance settings
+	// (post-construction; nil keeps the permissive defaults).
+	WireInstanceSettings(s InstanceSettings)
 
 	// Native-app social sign-in: the client authenticates with the provider on
 	// device and exchanges the resulting ID token for a session. First sign-in
@@ -101,6 +112,9 @@ type authService struct {
 	googleIDTokens           IDTokenVerifier
 	twofa                    TwoFAChallenger
 	referral                 ReferralAttributor
+	// settings is the operator-editable settings document, wired after
+	// construction because it needs the database pool.
+	settings InstanceSettings
 	// identities binds federated logins to (issuer, subject). Nil-safe: an
 	// unwired repository falls back to the historic email-only matching, which
 	// is only safe for Apple and Google.
@@ -131,6 +145,10 @@ func (s *authService) WireIdentities(r repository.IdentityRepository) { s.identi
 func (s *authService) WireOIDC(p OIDCProvider) { s.oidc = p }
 
 func (s *authService) WireReferral(r ReferralAttributor) { s.referral = r }
+
+// WireInstanceSettings attaches the instance settings document, so the signup
+// knobs on the admin page reach the registration paths.
+func (s *authService) WireInstanceSettings(set InstanceSettings) { s.settings = set }
 
 func NewService(
 	authRepository repository.AuthRepository,

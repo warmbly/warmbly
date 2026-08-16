@@ -39,6 +39,10 @@ type UserRepository interface {
 	// first-launch exemption for DISABLE_REGISTRATION and the bootstrap owner,
 	// both of which must only apply to a brand new install.
 	IsEmpty(ctx context.Context) (bool, error)
+
+	// CountUsers is the operator-facing count, for boot diagnostics and the
+	// CLI. IsEmpty stays the hot-path check.
+	CountUsers(ctx context.Context) (int, error)
 }
 
 type userRepository struct {
@@ -203,6 +207,13 @@ func (r *userRepository) IsEmpty(ctx context.Context) (bool, error) {
 	var empty bool
 	err := r.DB.QueryRow(ctx, q).Scan(&empty)
 	return empty, err
+}
+
+func (r *userRepository) CountUsers(ctx context.Context) (int, error) {
+	const q = `SELECT count(*) FROM users`
+	var n int
+	err := r.DB.QueryRow(ctx, q).Scan(&n)
+	return n, err
 }
 
 func (r *userRepository) GetUndoSendSeconds(ctx context.Context, userID uuid.UUID) (int, error) {

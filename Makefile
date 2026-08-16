@@ -23,10 +23,10 @@ PROTO_DIR := internal/tasks/proto
 PROTO_GEN_FILES := $(PROTO_DIR)/tasks.pb.go
 
 .PHONY: setup-tools fmt lint proto check-proto \
-        up claim seed-demo seed seed-plan sandbox sandbox-seed sandbox-simulate reset logs status stop down test-seed \
+        up claim doctor cli seed-demo seed seed-plan sandbox sandbox-seed sandbox-simulate reset logs status stop down test-seed \
         restart restart-go restart-all infra infra-down app app-down app-logs \
         backend consumer worker run dev tracking realtime web \
-        admin site docs grant-admin revoke-admin gen-key
+        admin site docs grant-admin revoke-admin gen-key db-reset db-wipe migrate
 
 setup-tools:
 	@echo "Installing required Go tools into $(GO_BIN)"
@@ -35,7 +35,7 @@ setup-tools:
 	GOBIN=$(GO_BIN) go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
 
 # Format all Go code. CI's golangci-lint enforces gofmt, so this is the
-# formatting signal to run before committing — not `go build`.
+# formatting signal to run before committing, not `go build`.
 fmt:
 	gofmt -w ./cmd ./internal
 
@@ -60,6 +60,13 @@ check-proto:
 
 # ─── dev / simulation stack ─────────────────────────────────────────────
 
+# Dashboard / admin URLs printed by up, claim and dev. APP_URL wins, because it
+# is what the backend builds every emailed link from; then PUBLIC_HOST; then
+# localhost. Read from .env as well, since compose does and make does not.
+APP_URL ?= $(shell [ -f .env ] && sed -n 's/^APP_URL=//p' .env | tail -1)
+DASHBOARD_URL = $(if $(strip $(APP_URL)),$(strip $(APP_URL)),http://$(WEB_HOST):5173)
+ADMIN_URL = http://$(WEB_HOST):5174
+
 # One-command no-cloud self-host: the entire stack in Docker, no cloud account
 # (no AWS/GCP/Stripe/Kafka). Builds the images (CGO-free, so fast) and starts
 # everything detached. Dashboard :5173, admin :5174, API :8080.
@@ -70,35 +77,88 @@ up:
 	@echo "Warmbly is starting. The first run builds the images once."
 	@echo ""
 	@$(MAKE) --no-print-directory claim
-	@echo "  Dashboard: http://localhost:5173     Admin: http://localhost:5174"
-	@echo "  Demo data: make seed-demo            Logs:  make logs"
-	@echo "  Guide:     https://docs.warmbly.com/development/deployment-guide/"
+	@echo "  Dashboard: $(DASHBOARD_URL)     Admin: $(ADMIN_URL)"
+	@echo "  Health:    make doctor               Logs:  make logs"
+	@echo "  Demo data: make seed-demo            Guide: https://docs.warmbly.com/development/first-run/"
 
-# Print the one-time link that claims a fresh instance, waiting for the backend
-# to finish migrating first so `make up` ends with something actionable rather
-# than an instruction to go and grep the logs.
+# Report how to get into this instance, and end on a command that works.
+#
+# State is queried FIRST (warmblyctl, falling back to a direct count), so an
+# instance that already has accounts never sits in the wait loop: no setup link
+# is ever issued once one account exists, so waiting for one is waiting forever.
 claim:
 	@printf "  Waiting for the backend"; \
 	for i in $$(seq 1 60); do \
-		if $(COMPOSE) logs backend 2>/dev/null | grep -qE "Claim this instance|Bootstrap: created owner"; then break; fi; \
+		if $(COMPOSE) exec -T backend warmblyctl status --json >/dev/null 2>&1; then break; fi; \
+		if $(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -tAc "SELECT 1" >/dev/null 2>&1 \
+			&& $(COMPOSE) ps --status running backend 2>/dev/null | grep -q backend; then break; fi; \
 		printf "."; sleep 2; \
 	done; echo ""; echo ""
-	@claimed=$$($(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -tA \
-		-c "SELECT EXISTS (SELECT 1 FROM users LIMIT 1);" 2>/dev/null | tr -d '[:space:]'); \
+	@state=$$($(COMPOSE) exec -T backend warmblyctl status --json 2>/dev/null); \
+	accounts=$$(printf '%s' "$$state" | sed -n 's/.*"accounts"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1); \
+	mode=$$(printf '%s' "$$state" | sed -n 's/.*"registration"[[:space:]]*:[[:space:]]*"\([a-z_]*\)".*/\1/p' | head -1); \
+	if [ -z "$$accounts" ]; then \
+		accounts=$$($(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -tA \
+			-c "SELECT count(*) FROM users;" 2>/dev/null | tr -d '[:space:]'); \
+	fi; \
+	[ -n "$$mode" ] || mode="invite_only"; \
 	link=$$($(COMPOSE) logs backend 2>/dev/null | grep -oE 'http[^ ]*/setup\?token=[a-f0-9]+' | tail -1); \
-	if [ "$$claimed" = "t" ]; then \
-		echo "  This instance already has an account. Sign in:"; \
-		echo "    http://localhost:5173"; \
-	elif [ -n "$$link" ]; then \
-		echo "  Open this link to claim your instance and become its admin."; \
-		echo "  Single use, valid for 24 hours:"; \
+	if [ -z "$$accounts" ]; then \
+		echo "  Could not reach the backend or the database, so the instance state is unknown."; \
 		echo ""; \
-		echo "    $$link"; \
+		echo "  See why:"; \
+		echo "    make logs backend"; \
+	elif [ "$$accounts" = "0" ]; then \
+		if [ -z "$$link" ]; then \
+			echo "  No accounts exist yet, and no claim link was found in the logs."; \
+			echo "  Printing a fresh one (this replaces any outstanding link):"; \
+			echo ""; \
+			$(COMPOSE) exec -T backend warmblyctl setup-link 2>&1 | sed 's/^/    /'; \
+		else \
+			echo "  No accounts exist yet. Open this link to claim the instance and"; \
+			echo "  become its admin. Single use, expires in 24 hours:"; \
+			echo ""; \
+			echo "    $$link"; \
+			echo ""; \
+			echo "  Lost it? Print a new one:"; \
+			echo "    $(COMPOSE) exec backend warmblyctl setup-link"; \
+		fi; \
 	else \
-		echo "  The backend has not finished starting."; \
-		echo "  Run 'make claim' again shortly, or 'make logs backend' to see why."; \
+		echo "  This instance already has $$accounts account(s), so no claim link is issued."; \
+		echo "  Registration is $$mode (DISABLE_REGISTRATION), so the sign-up form will"; \
+		echo "  refuse new accounts."; \
+		echo ""; \
+		echo "  Make yourself an owner and platform admin:"; \
+		echo "    $(COMPOSE) exec backend warmblyctl user create --email you@example.com --admin"; \
+		echo ""; \
+		echo "  Already have an account?  $(DASHBOARD_URL)"; \
+		echo "  Lost the password?        $(COMPOSE) exec backend warmblyctl user reset-password --email you@example.com"; \
+		echo "  See everything:           make doctor"; \
+		echo "  Why:                      https://docs.warmbly.com/development/first-run/"; \
 	fi
 	@echo ""
+
+# Every instance health check, from the shell. Non-zero exit when anything is at
+# error severity, so it works as a post-deploy gate.
+doctor:
+	@$(COMPOSE) exec -T backend warmblyctl status || { \
+		echo ""; \
+		echo "Could not run warmblyctl inside the backend container."; \
+		echo "Is the stack up? 'make status' shows it, 'make logs backend' says why not."; \
+		exit 1; \
+	}
+
+# Any warmblyctl command inside the backend container, where PRIMARY_DB, REDIS
+# and the encryption keys are already correct. Interactive (no -T) so the
+# password prompts work. Flags have to go through ARGS, since make eats a bare
+# --email as one of its own options.
+#
+#   make cli status
+#   make cli setup-link
+#   make cli ARGS="user create --email you@example.com --admin"
+#   make cli ARGS="user reset-password --email you@example.com"
+cli:
+	@$(COMPOSE) exec backend warmblyctl $(if $(strip $(ARGS)),$(ARGS),$(RUN_ARGS))
 
 # Seed the showcase workspace into the running docker stack.
 seed-demo:
@@ -161,7 +221,7 @@ sandbox-seed:
 	$(GO_DEV_ENV) go run ./cmd/migrate
 	$(GO_DEV_ENV) go run ./cmd/sandbox -seed-only
 
-# Load rich fixture data. Runs natively like the other dev services — the
+# Load rich fixture data. Runs natively like the other dev services: the
 # seeder only needs Postgres, so it does not depend on a (re)built docker
 # backend image, just `make infra` plus migrations applied (`make migrate`,
 # `make backend`, or `make run`). SEED_RICH/SEED_FULL match the old docker
@@ -225,7 +285,7 @@ db-wipe:
 	@echo ""
 	@echo "Schema wiped. Run 'make migrate' (or 'make backend') to re-apply migrations (then 'make seed' for fixtures)."
 
-# Apply all pending migrations and exit — no API server. Same embedded
+# Apply all pending migrations and exit, with no API server. Same embedded
 # migrations the backend runs on boot, against the dev Postgres. Pair with
 # db-wipe/db-reset, e.g. `make db-wipe && make migrate && make seed`.
 migrate:
@@ -244,7 +304,7 @@ status:
 # Rebuild + restart a single service, picking up code changes.
 # Usage: `make restart backend` (positional) or `make restart SVC=backend`.
 #
-# In Docker, a service's binary is compiled into its image at build time —
+# In Docker, a service's binary is compiled into its image at build time,
 # `docker compose restart` alone keeps the old binary. This target rebuilds
 # the image first and then brings the container up against it, so saving a
 # Go file and running `make restart backend` is the only step you need.
@@ -291,7 +351,7 @@ DEV_COMPOSE := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 # Stateful infrastructure for the no-cloud stack: Postgres, Redis, NATS
 # (JetStream event bus), and Mailpit as a local SMTP sink. Brought up once and
 # left running. No Kafka/Zookeeper/Schema-Registry, no LocalStack, no Stripe
-# mock, no Cloud Tasks emulator — the app runs on the local providers.
+# mock, no Cloud Tasks emulator. The app runs on the local providers.
 INFRA_SVCS  := postgres redis nats mailpit
 
 # Language services. The things you iterate on; recreated per worktree.
@@ -324,7 +384,7 @@ app-logs:
 #
 # The fastest loop: infra stays in docker (`make infra`); the Go services
 # run directly on the host with `go run`. Save a file, re-run the target,
-# and it recompiles against the warm Go build cache in a second or two —
+# and it recompiles against the warm Go build cache in a second or two
 # no docker image build, no container recreate. This is the answer to
 # "docker takes too long to restart".
 #
@@ -355,8 +415,8 @@ INFRA_HOST ?= localhost
 # By default every dev server binds localhost and the frontends call the
 # backend at localhost, so only this machine can use them. To reach them from
 # another computer (e.g. over Tailscale), set PUBLIC_HOST to the address OTHER
-# machines use to reach THIS one — your Tailscale IPv4 (`tailscale ip -4`, a
-# 100.x.y.z) or MagicDNS name (`<host>.<tailnet>.ts.net`) — and pass it to
+# machines use to reach THIS one (your Tailscale IPv4 from `tailscale ip -4`, a
+# 100.x.y.z, or a MagicDNS name `<host>.<tailnet>.ts.net`) and pass it to
 # every target you start:
 #
 #   make backend PUBLIC_HOST=100.83.12.7
@@ -369,7 +429,7 @@ INFRA_HOST ?= localhost
 # widens CORS to those origins. Unset → unchanged localhost behavior.
 #
 # The Go backend already listens on 0.0.0.0:8080, so it's reachable on the
-# Tailscale IP without PUBLIC_HOST — but you still need PUBLIC_HOST so the
+# Tailscale IP without PUBLIC_HOST, but you still need PUBLIC_HOST so the
 # browser app calls the backend at that address instead of its own localhost.
 # (The Vite configs allow *.ts.net hosts, so MagicDNS names work too; raw IPs
 # are always allowed.)
@@ -377,7 +437,7 @@ PUBLIC_HOST ?=
 
 comma := ,
 
-# localhost when PUBLIC_HOST is unset, else PUBLIC_HOST — used to build the
+# localhost when PUBLIC_HOST is unset, else PUBLIC_HOST. Used to build the
 # browser-facing URLs handed to the frontends and the backend.
 WEB_HOST := $(if $(PUBLIC_HOST),$(PUBLIC_HOST),localhost)
 
@@ -546,11 +606,16 @@ gen-key:
 # the app; infra stays up for next time (`make infra-down` stops it too).
 #
 #   make dev                      # everything; dashboard on :5173
-#   make dev SEED=false           # skip fixture seeding
+#   make dev SEED=false           # skip fixture seeding (see the warning below)
 #   make dev AI_PROVIDER=ollama   # with the AI assistant on (see AI env above)
 #
 # Log in with dev@warmbly.com / password123 (from the seed fixtures). For the
 # fully populated demo org instead, use `make sandbox`.
+#
+# SEEDING IS NOT REVERSIBLE FOR SELF-HOST PURPOSES. `make dev` and `make up`
+# share one compose project, one volume and one warmbly_dev database, so the
+# fixture accounts become that instance's accounts. The first-run claim link is
+# only ever issued while the users table is empty, so seeding retires it.
 SEED ?= true
 dev:
 	@command -v docker >/dev/null || { echo "docker is required: https://docs.docker.com/get-docker/"; exit 1; }
@@ -560,6 +625,26 @@ dev:
 	@echo "Waiting for infra to be ready (postgres, redis, nats)..."
 	@until $(COMPOSE) exec -T postgres pg_isready -U warmbly >/dev/null 2>&1; do sleep 1; done
 	$(GO_DEV_ENV) go run ./cmd/migrate
+	@if [ "$(SEED)" = "true" ]; then \
+		echo ""; \
+		echo "  ==================================================================="; \
+		echo "   Seeding fixture accounts into warmbly_dev."; \
+		echo ""; \
+		echo "   This is the SAME database and volume that 'make up' self-hosts"; \
+		echo "   from. It writes 9 accounts, including admin@warmbly.local with"; \
+		echo "   every platform admin permission and a password published in this"; \
+		echo "   repository."; \
+		echo ""; \
+		echo "   It also retires the first-run claim link for good: that link is"; \
+		echo "   only issued while the users table is empty. After this, getting"; \
+		echo "   into a 'make up' install needs"; \
+		echo "     make cli ARGS=\"user create --email you@example.com --admin\""; \
+		echo ""; \
+		echo "   Skip seeding with:  make dev SEED=false"; \
+		echo "   Why: https://docs.warmbly.com/development/first-run/"; \
+		echo "  ==================================================================="; \
+		echo ""; \
+	fi
 	@if [ "$(SEED)" = "true" ]; then $(GO_DEV_ENV) SEED_RICH=true SEED_FULL=true go run ./cmd/seed; fi
 	@if [ ! -d web/node_modules ]; then echo "Installing web dependencies (first run)..."; cd web && pnpm install; fi
 	@if [ ! -d admin/node_modules ]; then echo "Installing admin dependencies (first run)..."; cd admin && pnpm install; fi
@@ -567,7 +652,7 @@ dev:
 	@BACKEND_INTERNAL_URL=http://host.docker.internal:8080 $(COMPOSE) up -d --build realtime tracking
 	@echo ""
 	@echo "Starting backend + consumer + worker + dashboard + admin. Ctrl-C stops them (infra stays up)."
-	@echo "Dashboard: http://localhost:5173    Admin: http://localhost:5174    Login: dev@warmbly.com / password123"
+	@echo "Dashboard: $(DASHBOARD_URL)    Admin: $(ADMIN_URL)    Login: dev@warmbly.com / password123"
 	@echo ""
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) --no-print-directory backend & \
@@ -583,7 +668,7 @@ dev:
 # host. Use these native targets only if you want to iterate on the Rust or
 # Elixir source directly.
 
-# Open/click tracking service (Rust) on :3000 — NATS by default (no Kafka).
+# Open/click tracking service (Rust) on :3000, NATS by default (no Kafka).
 tracking:
 	cd tracking && \
 	APP_ENV=dev \
@@ -651,61 +736,42 @@ admin:
 site:
 	cd site && pnpm dev $(VITE_HOST_FLAG)
 
-# Engineering docs (Fumadocs / Next.js). Port 4322 — :3000 is the tracking
+# Engineering docs (Fumadocs / Next.js). Port 4322, :3000 is the tracking
 # service and :4321 is the marketing site. http://localhost:4322
 # Next.js reads PORT from the env (passing -p through pnpm gets mangled).
 docs:
 	cd docs && PORT=4322 pnpm dev
 
-# ─── admin bootstrap (local/test only) ──────────────────────────────────
+# ─── platform admin ─────────────────────────────────────
 #
-# Grant a registered user platform admin access by flipping
-# users.admin_permissions. There is no other way to seed the first admin —
-# the in-app GrantAdminPermissions endpoint requires you to already be one.
+# Promote an account that ALREADY EXISTS to platform admin. Neither target
+# creates an account: use `make cli ARGS="user create --email you@example.com
+# --admin"` for that. Both go through warmblyctl, so they work against an
+# external PRIMARY_DB instead of only the compose Postgres.
 #
 #   make grant-admin EMAIL=you@example.com               # super (all perms)
 #   make grant-admin EMAIL=you@example.com ROLE=support
-#   make grant-admin EMAIL=you@example.com BITMASK=1     # raw bitmask
 #   make revoke-admin EMAIL=you@example.com              # back to 0
 #
-# Role bitmasks mirror AdminRolePermissions in
-# internal/models/admin_permission.go.
+# The supported day-to-day path is Instance > Admins in the admin panel on
+# :5174. These exist for when nobody can sign in there yet.
 ROLE ?= super
 grant-admin:
 	@if [ -z "$(EMAIL)" ]; then \
-		echo "Usage: make grant-admin EMAIL=<email> [ROLE=super|support|ops|analyst] [BITMASK=N]"; \
+		echo "Usage: make grant-admin EMAIL=<email> [ROLE=super|support|ops|analyst]"; \
 		exit 1; \
 	fi
-	@bits="$(BITMASK)"; \
-	if [ -z "$$bits" ]; then \
-		case "$(ROLE)" in \
-			super)   bits=4194303 ;; \
-			support) bits=1086401 ;; \
-			ops)     bits=1062960 ;; \
-			analyst) bits=1055233 ;; \
-			*) echo "Unknown ROLE='$(ROLE)'. Use super|support|ops|analyst or pass BITMASK=N."; exit 1 ;; \
-		esac; \
-	fi; \
-	echo "Granting admin_permissions=$$bits to $(EMAIL)..."; \
-	out=$$($(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -tA \
-		-v ON_ERROR_STOP=1 \
-		-c "UPDATE users SET admin_permissions = $$bits, admin_granted_at = NOW() WHERE email = '$(EMAIL)' RETURNING id;" \
-		| grep -Eo '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$$' | head -1); \
-	if [ -z "$$out" ]; then \
-		echo "No user with email $(EMAIL). Sign up at http://localhost:5173 first."; \
-		exit 1; \
-	fi; \
-	echo "OK. user_id=$$out. Open http://localhost:5174 and sign in."
+	@$(COMPOSE) exec -T backend warmblyctl user grant-admin --email "$(EMAIL)" --role "$(ROLE)"
+	@echo "Open $(ADMIN_URL) and sign in."
 
 revoke-admin:
 	@if [ -z "$(EMAIL)" ]; then echo "Usage: make revoke-admin EMAIL=<email>"; exit 1; fi
-	@$(COMPOSE) exec -T postgres psql -U warmbly -d warmbly_dev -v ON_ERROR_STOP=1 \
-		-c "UPDATE users SET admin_permissions = 0 WHERE email = '$(EMAIL)';"
+	@$(COMPOSE) exec -T backend warmblyctl user revoke-admin --email "$(EMAIL)"
 
 # Positional-args plumbing. When the first goal is `restart` or `logs`,
 # capture every following word as RUN_ARGS and declare those words as
 # no-op rules so make doesn't error with "no rule for target".
-ifneq (,$(filter restart logs,$(firstword $(MAKECMDGOALS))))
+ifneq (,$(filter restart logs cli,$(firstword $(MAKECMDGOALS))))
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
 endif

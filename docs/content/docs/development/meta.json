@@ -3,10 +3,18 @@
   "description": "Self-host, deploy, and develop Warmbly",
   "root": true,
   "pages": [
-    "architecture",
+    "---Self-hosting---",
+    "deployment-guide",
+    "first-run",
+    "accounts-and-access",
+    "configuration",
+    "instance-health",
+    "troubleshooting",
+    "---Development---",
     "local-development",
     "sandbox",
-    "deployment-guide",
+    "---Reference---",
+    "architecture",
     "events"
   ]
 }

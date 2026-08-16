@@ -29,7 +29,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     if echo "$GO_TAGS" | grep -qw kafka; then CGO=1; TAGS="musl kafka"; else CGO=0; TAGS=""; fi; \
     CGO_ENABLED=$CGO GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags "$TAGS" -ldflags="-s -w" -o /out/backend ./cmd/backend; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /out/seed ./cmd/seed; \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /out/migrate ./cmd/migrate; \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /out/warmblyctl ./cmd/warmblyctl
 
 # Runtime stage
 FROM alpine:3.23
@@ -42,6 +43,10 @@ RUN apk add --no-cache ca-certificates tzdata && \
 COPY --from=builder /out/backend /app/backend
 COPY --from=builder /out/seed /app/seed
 COPY --from=builder /out/migrate /app/migrate
+
+# The operator CLI goes on PATH, not /app, so the documented recovery command is
+# `docker compose exec backend warmblyctl status` and not a path.
+COPY --from=builder /out/warmblyctl /usr/local/bin/warmblyctl
 
 # Installer script the worker orchestrator uploads + runs over SSH, and serves
 # at GET /worker-install.sh. The mode is explicit because COPY otherwise keeps

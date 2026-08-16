@@ -35,7 +35,7 @@ flowchart LR
 | Git | To clone the repository |
 | ~10 GB free disk | The first build produces about 3.7 GB of images plus 2.5 GB of build cache |
 | 4 GB RAM | The running stack idles near 300 MB; the first build is the demanding part |
-| Free ports | 5173, 5174, 8080, 4000, 3000, 4222, 15432, 16379 |
+| Free ports | 5173, 5174, 8080, 4000, 3000, 4222, 8222, 15432, 16379 |
 
 The first build compiles Go, Rust, and Elixir services and builds two frontends. On a modern laptop that takes about **6 minutes**. Later builds reuse the cache and are much faster.
 
@@ -84,22 +84,12 @@ Only what a running install needs is started. The mail catcher and the local IMA
 
 ### Claim it
 
-`make up` prints a one-time link when it finishes. Open it, pick a password, and you are the owner and platform admin of the instance.
+`make up` prints a one-time link when it finishes. Open it, pick a password, and you are the owner and platform admin of the instance. `make claim` prints it again.
 
-If you missed it, print it again:
+Two things you get for free at this point: the dashboard at `http://localhost:5173`, and the admin panel at `http://localhost:5174` with the same account, because the owner is already an admin. Signing in never depends on mail: the emailed login code is off on a self-hosted install.
 
-```bash
-make claim
-```
-
-The link is single use, valid for 24 hours, and only its hash is stored, so reading the database does not yield a working one. It is invalidated the moment you use it.
-
-Signing in never depends on mail. The emailed login code is off on a self-hosted install (`AUTH_LOGIN_CODE`), because a relay you have not configured should not stand between you and your own instance. TOTP and passkeys are both available once you are in.
-
-Two things you get for free at this point: the dashboard at `http://localhost:5173`, and the admin panel at `http://localhost:5174` with the same account, because the owner is already an admin.
-
-<Callout title="Automating the install?">
-Set `WARMBLY_BOOTSTRAP_EMAIL` and `WARMBLY_BOOTSTRAP_PASSWORD_HASH` in `.env` before the first start and the account exists when the stack comes up, with no link to click. Both are read only while the users table is empty, so they are a no-op on every later restart.
+<Callout title="No link, or the link is gone?">
+An instance whose database already has accounts is already claimed, so no link is issued. That is the usual outcome when a previous `make dev` seeded the same database. [First run](/development/first-run/) covers reissuing the link, provisioning the owner unattended, and what to do when accounts already exist.
 </Callout>
 
 </Step>
@@ -116,6 +106,10 @@ make seed-demo
 
 That creates `dev@warmbly.com` / `password123` along with mailboxes, campaigns, contacts, and two weeks of history. It builds the seed image each time on purpose: `compose run` otherwise reuses a stale one, which fails against a newer database schema.
 
+<Callout type="warn" title="The demo seed plants a published super-admin credential">
+It also inserts `admin@warmbly.local` with a published password, every platform admin permission, and a full-access API key whose secret is a constant in this repository. Never run it on an instance anyone else can reach. Detail in [first run](/development/first-run/#demo-data).
+</Callout>
+
 For a demo where mail actually flows end to end, with sends, replies, opens, and clicks, see the [sandbox](/development/sandbox/).
 
 </Step>
@@ -126,7 +120,7 @@ For a demo where mail actually flows end to end, with sends, replies, opens, and
 
 ## Before you expose it
 
-Everything above works with zero configuration because the compose file ships working defaults for every secret. Those defaults are published in this repository, so they protect nothing. The backend refuses to start on them once `APP_ENV` is anything other than `dev`.
+Everything above works with zero configuration because the compose file ships working defaults for every secret. Those defaults are published in this repository, so they protect nothing. Once `APP_ENV` is anything other than `dev` the backend refuses to start on them, naming each one and telling you that `ALLOW_INSECURE_DEFAULTS=true` is the override you should not be using.
 
 Before anyone else can reach the instance, generate real values into a `.env` next to `docker-compose.yml`:
 
@@ -226,7 +220,9 @@ These are the ones that break things quietly when they drift, because each servi
 | realtime | `JWT_SECRET`, `SECRET_KEY_BASE`, `DATABASE_URL`, `REDIS_URL`, `PHX_HOST` |
 | web / admin | Only `WARMBLY_*` URLs, read at container start and written into `/config.js`. The same image runs anywhere |
 
-`APP_ENV` accepts `dev` or `prod`. No other value turns on production behavior, and `prod` additionally makes `SENTRY_DSN` and the GeoIP file at `GEODB_PATH` mandatory on every Go service.
+`APP_ENV` accepts `dev` or `prod`. No other value turns on production behavior. `prod` needs no cloud account: `SENTRY_DSN` stays optional in every environment, and `GEODB_PATH` must be *set* on the backend everywhere while the file it points at is optional.
+
+The complete list of variables, with defaults and whether a change needs a restart, is the [configuration reference](/development/configuration/).
 
 ### A complete `.env`
 
@@ -319,10 +315,10 @@ DEPLOYMENT_MODE=self_hosted
 # REDIS=redis://host:6379
 
 # ── Production ────────────────────────────────────────────────────
-# APP_ENV=prod                      # then SENTRY_DSN + GEODB_PATH are required
+# APP_ENV=prod                      # refuses the published default secrets
 ```
 
-The exhaustive list, with every variable and its default, is [`deploy/config/env.example`](https://github.com/warmbly/warmbly/blob/main/deploy/config/env.example).
+The template to copy for a Compose install is [`.env.example`](https://github.com/warmbly/warmbly/blob/main/.env.example) at the repository root: `cp .env.example .env` boots as-is, and every line it ships commented out is commented out on purpose. [`deploy/config/env.example`](https://github.com/warmbly/warmbly/blob/main/deploy/config/env.example) is the Kubernetes and bare-binary variant, where nothing substitutes a default for you. The exhaustive per-variable reference, with defaults and restart requirements, is the [configuration reference](/development/configuration/).
 
 ## Reaching it from your network
 
@@ -367,7 +363,7 @@ The platform's own mail is registration codes, password resets, team invitations
 
 | Transport | What it does |
 |-----------|--------------|
-| `log` | Writes every message to the backend logs and delivers nothing. The default, so a fresh install works before you have a relay |
+| `log` | Writes every message to the backend logs and delivers nothing. The compose default, so a fresh install works before you have a relay. A bare binary with neither `MAIL_TRANSPORT` nor `SMTP_HOST` falls back to `ses` instead |
 | `smtp` | A real submission relay |
 | `ses` | AWS SES; needs AWS credentials and a verified sending identity |
 
@@ -532,12 +528,15 @@ APPLE_KEY_SECRET=...
 
 Self-hosted defaults differ from the hosted product, because a deployment you run yourself should not depend on infrastructure you have not set up. `DEPLOYMENT_MODE=self_hosted` picks them; each one is independently overridable.
 
+The full treatment lives on [accounts and access](/development/accounts-and-access/): the three registration modes and the first-launch exemption, how to invite teammates with or without a mail relay, single sign-on provisioning, platform admins, and every command for recovering a locked-out instance.
+
 | Setting | Self-host default | What it does |
 |---------|-------------------|--------------|
 | `AUTH_LOGIN_CODE` | `off` | `always`, `new_device` or `off`. Whether a login also requires a code emailed to the account |
 | `REQUIRE_EMAIL_VERIFICATION` | `false` | Whether a signup must confirm an emailed code before the account exists |
-| `DISABLE_REGISTRATION` | `invite_only` | `true`, `false` or `invite_only`. Who may create an account |
+| `DISABLE_REGISTRATION` | `invite_only` | `true`, `false` or `invite_only`. Who may create an account from the sign-up form. Single sign-on provisioning follows the same setting, plus `SSO_AUTO_PROVISION` |
 | `DISABLE_PASSWORD_LOGIN` | `false` | Turns off email and password entirely, for SSO-only deployments |
+| `SSO_AUTO_PROVISION` | `false` | Whether a verified identity provider assertion alone may create an account |
 | `AUTH_IP_RATE_LIMIT` | `60` | Unauthenticated auth requests allowed per source IP per 15 minutes |
 
 ### Why the login code is off by default
@@ -564,28 +563,20 @@ Empty means no proxy header is trusted, which is correct for a directly exposed 
 
 ## Single sign-on
 
-Generic OpenID Connect works with Authentik, Keycloak, Zitadel, Pocket ID, Dex, and anything else that publishes a discovery document. It is in the standard build, not a paid tier.
-
-For a self-hosted deployment it is also the sign-in path with no dependency on outbound mail at all, which makes it the recommended posture when you have no relay.
+Generic OpenID Connect works with Authentik, Keycloak, Zitadel, Pocket ID, Dex, and anything else that publishes a discovery document. It is in the standard build, not a paid tier, and it is the sign-in path with no dependency on outbound mail, which makes it the recommended posture when you have no relay.
 
 ```bash
 OIDC_ISSUER_URL=https://id.example.com/application/o/warmbly/
 OIDC_CLIENT_ID=...
 OIDC_CLIENT_SECRET=...
-OIDC_REDIRECT_URL=https://api.example.com/api/v1/auth/oidc/callback
+OIDC_REDIRECT_URL=https://api.example.com/v1/auth/oidc/callback
 OIDC_ALLOWED_DOMAINS=example.com
 OIDC_DEFAULT_ORG=<organization uuid>
 ```
 
-Register `OIDC_REDIRECT_URL` as the redirect URI at your provider. It defaults to `API_PUBLIC_URL` plus `/api/v1/auth/oidc/callback`, and providers match it by exact string, so it has to be identical on both sides.
+The redirect URI is `/v1/auth/oidc/callback`, not `/api/v1/auth/oidc/callback`. Providers match it by exact string, so it has to be identical on both sides.
 
-Discovery runs at boot. An unreachable or misconfigured issuer disables SSO with a logged reason rather than shipping a button that always fails.
-
-Three things worth knowing:
-
-- **Set `OIDC_DEFAULT_ORG`.** Warmbly is multi-tenant, and a new user normally gets their own organization. Without this, a twenty-person identity provider produces twenty single-member organizations that share nothing.
-- **Accounts are bound to the provider's subject claim**, not to the email address, and an unverified address is refused. Matching on email alone would let anyone who can register an arbitrary address at your provider claim an existing Warmbly account.
-- **Only RS256 ID tokens are accepted**, which every mainstream provider issues by default.
+Single sign-on obeys `DISABLE_REGISTRATION` like every other signup path, with `SSO_AUTO_PROVISION` as the separate opt-in that lets a verified assertion create an account regardless of the mode. The rest, including domain restrictions and how accounts bind to the provider's subject claim, is on [accounts and access](/development/accounts-and-access/#single-sign-on).
 
 Pair it with `DISABLE_PASSWORD_LOGIN=true` for an SSO-only deployment.
 
@@ -604,7 +595,7 @@ Pair it with `DISABLE_PASSWORD_LOGIN=true` for an SSO-only deployment.
 
 Three things to know:
 
-- **Bare binaries default to the cloud values** (`kafka`, `avro`, `s3`, `aws`). Compose, the Makefile, and `env.example` set the local values for you. A hand-rolled environment must set them or the process exits at boot.
+- **Bare binaries default to the cloud values** (`kafka`, `avro`, `s3`, `aws`). Compose, the Makefile, and both env templates set the local values for you. A hand-rolled environment must set them or the process exits at boot.
 - Kafka and Avro are also build-time opt-ins: `--build-arg GO_TAGS=kafka` for Go, `--build-arg CARGO_FEATURES=kafka` for tracking.
 - `PUBSUB_ENABLED` must match across backend, consumer, and realtime.
 
@@ -618,7 +609,7 @@ Three things to know:
 | Sign in with Apple | `APPLE_APP_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_KEY_SECRET` |
 | Mobile push (APNs) | `APNS_KEY_PATH` (or `APNS_KEY`), `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` on backend and consumer. Partial config disables push with a warning, never a crash |
 | Notification tuning | `NOTIFICATION_PUSH_WINDOW` (default `5h`), `NOTIFICATION_EMAIL_DAILY_CAP` (default `25`, `0` means uncapped) |
-| Error tracking | `SENTRY_DSN`. Optional in dev, **required on every Go service when `APP_ENV=prod`**, which also makes the GeoIP file at `GEODB_PATH` mandatory |
+| Error tracking | `SENTRY_DSN`. Optional in every environment, including `prod` |
 
 ## AI provider
 
@@ -778,48 +769,34 @@ Restoring into a database that already has tables fails with "already exists" er
 
 The compose file is a template, not a requirement. The Dockerfiles in `deploy/docker/` plus `tracking/`, `web/`, and `admin/` are the deployment units, and any container host works with the environment reference above. The frontends are configured at container start from `WARMBLY_*` variables, so the same images run anywhere.
 
+## After you install
+
+Three pages carry the day-two answers, so they are not duplicated here:
+
+- **[First run](/development/first-run/)** for claiming the instance, reissuing the setup link, and provisioning the owner without a browser
+- **[Accounts and access](/development/accounts-and-access/)** for registration modes, inviting teammates, single sign-on and recovering a locked-out instance
+- **[Instance health](/development/instance-health/)** for the checks the admin panel runs against this deployment, and `make doctor`
+
 ## Troubleshooting
 
-### The build fails
+Every symptom self-hosters actually hit, with the command that fixes it, is on **[troubleshooting](/development/troubleshooting/)**: build failures, the first-run 403, sign-in problems, workers that never register, and realtime that never goes live.
 
-| Symptom | Cause and fix |
-|---------|---------------|
-| `no space left on device`, often from a random service mid-compile | Docker is out of disk. Free space with `docker builder prune -af` and `docker image prune -af`, then check the host has ~10 GB free and re-run `make up` |
-| `failed to authorize: ... EOF` while pulling a base image | A transient registry blip. Re-run `make up`; completed layers are cached |
-| `failed to xattr /path/._something: operation not permitted` (macOS) | The checkout is on a filesystem without native extended attributes (exFAT, NTFS, or a network share), so macOS writes `._*` sidecar files that BuildKit cannot read. Run `dot_clean -m .` then `find . -name '._*' -delete`, and re-run. Cloning to an APFS volume avoids it entirely |
-
-### The stack is up but something is wrong
-
-| Symptom | Cause and fix |
-|---------|---------------|
-| No login code arrives | Self-host does not send one by default (`AUTH_LOGIN_CODE=off`). Registration and reset codes go wherever `MAIL_TRANSPORT` points; on a default install that is the backend logs. Set `MAIL_TRANSPORT=smtp` and the `SMTP_` variables for real delivery |
-| "Too many attempts" on login or signup | Auth emails are capped at 5 per address per 30 minutes. Wait it out, or clear the counter with `docker compose -p warmbly exec redis redis-cli FLUSHDB` |
-| Backend exits at boot | Read the first log lines. Usual causes: cloud provider defaults outside compose, a malformed `CREDENTIALS_ENCRYPTION_KEY` (it needs exactly 64 hex characters), or `APP_ENV=prod` without `SENTRY_DSN` or the GeoIP file |
-| Dashboard loads but every request fails | Check `http://localhost:5173/config.js` returns the right `API_URL`. It is generated at container start from `WARMBLY_API_URL` |
-| "No mailbox workers are available" when connecting a mailbox | No worker is active with a heartbeat inside the last 10 minutes. Check `make status` shows `worker` running and `make logs worker` is clean. Placement deliberately ignores workers that stopped reporting, so a worker that was removed cannot silently swallow mailboxes |
-| Connecting a mailbox is rejected on the port | SMTP must be `587` or `465`. The Mailpit sink used by `make sandbox` listens on `1025` and offers no STARTTLS, so it cannot be used as a test mailbox |
-| Workers or tracking get 401s | `INTERNAL_API_TOKEN` must match on the backend, the workers (as `ENCRYPTED_KEYS_WORKER_TOKEN`), and tracking. Unset fails closed |
-| No realtime updates | `AUTH_SECRET` must equal realtime's `JWT_SECRET`, and `PUBSUB_ENABLED` must agree across backend, consumer, and realtime. Compose wires both |
-| Seeding fails with `no migration found for version N` | The seed image is older than your schema. Re-run with `--build` |
-| Scheduled sends never fire | Delayed sends run through the in-process Postgres task poller (`TASKS_PROVIDER=local`), so the backend must be running |
-| Mailbox stalls after about an hour | The worker is missing `BOX_GOOGLE_*` or `BOX_OUTLOOK_*`. Set them and restart the worker |
-| Worker `install_state: error` | Test connection first (is the SSH key in `authorized_keys`?), then read `last_error` and Logs on the worker's detail page |
-| Worker heartbeat offline | Can the VPS reach the backend URL, NATS or Kafka, and Redis? Is the container running (Live status)? |
-
-Still stuck? `make logs` follows everything, and `make logs backend` follows one service. Ask in [Discord](https://dc.warmbly.com) or open a [GitHub issue](https://github.com/warmbly/warmbly/issues) with the first 50 lines of the failing service's log.
+Start with `make doctor`, which runs the full health check set and exits non-zero when something is at error severity. `make logs` follows everything, and `make logs backend` follows one service.
 
 ## Quick reference
 
 ```bash
 make up          # build and start the platform, then print the claim link
-make claim       # print the claim link again
+make claim       # check instance state and print the claim link or the next command
+make doctor      # run every instance health check (non-zero exit on an error)
+make cli status  # any warmblyctl command inside the backend container
 make seed-demo   # load the showcase workspace
 
 make status      # docker compose ps
 make logs        # follow logs (make logs backend for one service)
 make stop        # stop everything, keep data
 make down        # stop and remove containers, keep data
-make reset       # tear down including volumes (destroys data)
+make reset       # tear down including volumes (destroys data and the encryption keys)
 
 make gen-key     # print a fresh KMS_LOCAL_MASTER_KEY
 make grant-admin EMAIL=you@example.com   # promote an existing account to platform admin
@@ -828,4 +805,13 @@ make dev         # local development stack instead (native Go, hot reload)
 make sandbox     # live end-to-end demo environment
 ```
 
-See also: [local development](/development/local-development/), [architecture](/development/architecture/), [event system](/development/events/).
+Inside the backend container:
+
+```bash
+docker compose -p warmbly exec backend warmblyctl status
+docker compose -p warmbly exec backend warmblyctl setup-link
+docker compose -p warmbly exec backend warmblyctl user create --email you@example.com --admin
+docker compose -p warmbly exec backend warmblyctl user reset-password --email you@example.com
+```
+
+See also: [configuration reference](/development/configuration/), [local development](/development/local-development/), [architecture](/development/architecture/), [event system](/development/events/).

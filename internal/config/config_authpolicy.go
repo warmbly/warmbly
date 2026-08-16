@@ -1,8 +1,10 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strings"
+	"sync"
 )
 
 // Login-code modes. Emailing a code on every login makes the mail relay a
@@ -39,6 +41,10 @@ type AuthPolicy struct {
 	// DisablePasswordLogin turns off email+password entirely, for deployments
 	// that authenticate through OIDC only.
 	DisablePasswordLogin bool
+	// SSOAutoProvision lets a verified identity-provider assertion create an
+	// account regardless of Registration, for operators whose IdP is the gate.
+	// Off by default: otherwise configuring OIDC silently reopens signup.
+	SSOAutoProvision bool
 }
 
 // LoadAuthPolicy resolves the policy from the environment. mailDelivers is
@@ -48,16 +54,7 @@ type AuthPolicy struct {
 func LoadAuthPolicy(mailDelivers bool) *AuthPolicy {
 	selfHost := SelfHosted()
 
-	loginCode := strings.ToLower(strings.TrimSpace(os.Getenv("AUTH_LOGIN_CODE")))
-	switch loginCode {
-	case LoginCodeAlways, LoginCodeNewDevice, LoginCodeOff:
-	default:
-		if selfHost {
-			loginCode = LoginCodeOff
-		} else {
-			loginCode = LoginCodeNewDevice
-		}
-	}
+	loginCode := resolveLoginCode(os.Getenv("AUTH_LOGIN_CODE"), selfHost)
 	// A transport that does not deliver cannot gate logins, whatever the
 	// operator asked for. Codes still reach them through the log transport, so
 	// this only removes the hard dependency, not the audit trail.
@@ -70,23 +67,90 @@ func LoadAuthPolicy(mailDelivers bool) *AuthPolicy {
 		requireVerification = isTrue(v)
 	}
 
-	registration := strings.ToLower(strings.TrimSpace(os.Getenv("DISABLE_REGISTRATION")))
-	switch registration {
-	case RegistrationOpen, RegistrationInviteOnly, RegistrationClosed:
-	default:
-		if selfHost {
-			registration = RegistrationInviteOnly
-		} else {
-			registration = RegistrationOpen
-		}
-	}
+	registration := resolveRegistration(os.Getenv("DISABLE_REGISTRATION"), selfHost)
 
 	return &AuthPolicy{
 		LoginCode:                loginCode,
 		RequireEmailVerification: requireVerification,
 		Registration:             registration,
 		DisablePasswordLogin:     isTrue(os.Getenv("DISABLE_PASSWORD_LOGIN")),
+		SSOAutoProvision:         isTrue(os.Getenv("SSO_AUTO_PROVISION")),
 	}
+}
+
+// resolveLoginCode maps AUTH_LOGIN_CODE onto a mode. Unset takes the
+// deployment default, a boolean spelling is honoured, and anything else is a
+// typo the operator is told about instead of being read as "not set".
+func resolveLoginCode(raw string, selfHost bool) string {
+	fallback := LoginCodeNewDevice
+	if selfHost {
+		fallback = LoginCodeOff
+	}
+
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "":
+		return fallback
+	case LoginCodeAlways, LoginCodeNewDevice, LoginCodeOff:
+		return value
+	}
+	if isTrue(value) {
+		return LoginCodeAlways
+	}
+	if isFalse(value) {
+		return LoginCodeOff
+	}
+
+	warnUnrecognized("AUTH_LOGIN_CODE", raw, fallback)
+	return fallback
+}
+
+// resolveRegistration maps DISABLE_REGISTRATION onto a mode. The same rule as
+// AUTH_LOGIN_CODE: DISABLE_REGISTRATION=1 asked for closed and must not read
+// as open just because it is not spelled "true".
+func resolveRegistration(raw string, selfHost bool) string {
+	fallback := RegistrationOpen
+	if selfHost {
+		fallback = RegistrationInviteOnly
+	}
+
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "":
+		return fallback
+	case RegistrationOpen, RegistrationInviteOnly, RegistrationClosed:
+		return value
+	}
+	if isTrue(value) {
+		return RegistrationClosed
+	}
+	if isFalse(value) {
+		return RegistrationOpen
+	}
+
+	warnUnrecognized("DISABLE_REGISTRATION", raw, fallback)
+	return fallback
+}
+
+// isFalse is the negative half of isTrue, so an unrecognized value can be told
+// apart from an explicit off.
+func isFalse(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "0", "false", "no", "off":
+		return true
+	}
+	return false
+}
+
+// warnedVars keeps the warning to one line per variable: LoadAuthPolicy is
+// called per admin config request, not only at boot.
+var warnedVars sync.Map
+
+func warnUnrecognized(key, value, resolved string) {
+	if _, seen := warnedVars.LoadOrStore(key, true); seen {
+		return
+	}
+	log.Printf("Warning: %s=%q is not a recognized value; falling back to %s. Fix the value: it is not being read as unset.", key, value, resolved)
 }
 
 // PublicSignupsAllowed reports whether an uninvited stranger may create an

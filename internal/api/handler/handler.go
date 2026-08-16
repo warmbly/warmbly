@@ -25,6 +25,9 @@ import (
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/group"
+	"github.com/warmbly/warmbly/internal/app/instancecheck"
+	"github.com/warmbly/warmbly/internal/app/instanceconfig"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mcp"
@@ -280,4 +283,18 @@ type Handler struct {
 	// Infrastructure liveness probes for the admin System Status page.
 	// Wired in cmd/backend/main.go where the concrete clients live.
 	SystemChecker *sysstatus.Checker
+
+	// Operator visibility (admin panel, Instance section).
+	//
+	// InstanceRuntime carries the facts only boot knows (the resolved CORS
+	// list, the WebAuthn RP, the OIDC redirect, the auth policy) so the
+	// configuration page shows what the process actually derived. Nil is safe:
+	// every resolver falls back to the environment.
+	InstanceRuntime *instanceconfig.Runtime
+	// InstanceChecks is the setup and health registry. Nil falls back to the
+	// environment-only checks, so the page is never blank.
+	InstanceChecks *instancecheck.Registry
+	// InstanceSettings is the database-backed settings tier. It holds only
+	// keys no environment variable owns.
+	InstanceSettings instancesettings.Service
 }

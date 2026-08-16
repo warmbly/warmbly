@@ -55,6 +55,7 @@ export interface AdminProfile {
     last_name?: string;
     avatar?: string;
     is_admin?: boolean;
-    admin_permissions?: string[];
+    // Bitmask, not a list: the backend serializes models.AdminPermission (uint32).
+    admin_permissions?: number;
     [k: string]: unknown;
 }

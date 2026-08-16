@@ -18,7 +18,7 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 		return nil, errx.New(errx.Forbidden, "password sign-up is disabled on this deployment")
 	}
 
-	if err := s.signupAllowed(ctx); err != nil {
+	if err := s.signupAllowed(ctx, data.Email, data.Invite); err != nil {
 		return nil, err
 	}
 
@@ -41,7 +41,7 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 	// nothing to confirm: create the account now rather than issuing a code
 	// nobody can receive. Every product surveyed defaults self-host to this.
 	if !s.policy.RequireEmailVerification || !s.mailDelivers {
-		if err := s.createAccount(ctx, data.Email, passwordHash, data.ReferralCode); err != nil {
+		if err := s.createAccount(ctx, data.Email, passwordHash, data.ReferralCode, data.Invite); err != nil {
 			return nil, err
 		}
 		return &models.AuthSession{CodeRequired: false}, nil
@@ -88,6 +88,7 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 		PasswordHash: passwordHash,
 		Nonce:        nonce,
 		ReferralCode: data.ReferralCode,
+		Invite:       data.Invite,
 	}
 
 	if err := s.saveRegistrationSession(ctx, sessionID, session, expiresAt); err != nil {
@@ -138,5 +139,11 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 		return errx.ErrCode
 	}
 
-	return s.createAccount(ctx, token.Email, sess.PasswordHash, sess.ReferralCode)
+	// Re-check the policy: a session minted while signups were open must not
+	// outlive a lockdown applied before the code came back.
+	if err := s.signupAllowed(ctx, token.Email, sess.Invite); err != nil {
+		return err
+	}
+
+	return s.createAccount(ctx, token.Email, sess.PasswordHash, sess.ReferralCode, sess.Invite)
 }

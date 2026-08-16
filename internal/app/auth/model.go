@@ -7,6 +7,9 @@ type AuthData struct {
 	// ReferralCode is the optional ?ref= code the signup arrived with. Carried
 	// to RegistrationConfirm so the new org can be attributed to its referrer.
 	ReferralCode string `json:"referral_code"`
+	// Invite is the team-invitation token the signup arrived with. It is what
+	// lets an invited person create an account under DISABLE_REGISTRATION=invite_only.
+	Invite string `json:"invite"`
 }
 
 type ConfirmData struct {

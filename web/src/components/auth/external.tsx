@@ -34,12 +34,19 @@ function CellBody({ children }: { children: React.ReactNode }) {
 // Alternative sign-in row. When `passkey` is present (sign-in) it's a third,
 // equal-width cell; on create-account it animates out and Google/Apple glide
 // wider to fill — one fluid layout transition, no snap.
+//
+// `providers` is the list GET /auth/config returns. A button for a provider
+// this deployment has no client for is a dead end, so it is never rendered.
 export default function ExternalLogin({
     passkey,
+    providers,
 }: {
     passkey?: { onClick: () => void; onPrepare: () => void; loading: boolean; disabled?: boolean; label?: string };
+    providers: string[];
 }) {
     const passkeyRef = useRef<HTMLButtonElement | null>(null);
+    const google = providers.includes("google");
+    const apple = providers.includes("apple");
 
     useEffect(() => {
         const button = passkeyRef.current;
@@ -108,33 +115,37 @@ export default function ExternalLogin({
                 )}
             </AnimatePresence>
 
-            <motion.button
-                layout
-                key="google"
-                type="button"
-                transition={spring}
-                onClick={() => PopupCenter(`${API_URL}/auth/google/login`, "Google Login")}
-                className={`${CELL} flex-1 min-w-0`}
-            >
-                <CellBody>
-                    <Google className="w-4 shrink-0" />
-                    Google
-                </CellBody>
-            </motion.button>
+            {google && (
+                <motion.button
+                    layout
+                    key="google"
+                    type="button"
+                    transition={spring}
+                    onClick={() => PopupCenter(`${API_URL}/auth/google/login`, "Google Login")}
+                    className={`${CELL} flex-1 min-w-0`}
+                >
+                    <CellBody>
+                        <Google className="w-4 shrink-0" />
+                        Google
+                    </CellBody>
+                </motion.button>
+            )}
 
-            <motion.button
-                layout
-                key="apple"
-                type="button"
-                transition={spring}
-                onClick={() => PopupCenter(`${API_URL}/auth/apple/login`, "Apple Login")}
-                className={`${CELL} flex-1 min-w-0`}
-            >
-                <CellBody>
-                    <RiAppleFill className="size-4 shrink-0" />
-                    Apple
-                </CellBody>
-            </motion.button>
+            {apple && (
+                <motion.button
+                    layout
+                    key="apple"
+                    type="button"
+                    transition={spring}
+                    onClick={() => PopupCenter(`${API_URL}/auth/apple/login`, "Apple Login")}
+                    className={`${CELL} flex-1 min-w-0`}
+                >
+                    <CellBody>
+                        <RiAppleFill className="size-4 shrink-0" />
+                        Apple
+                    </CellBody>
+                </motion.button>
+            )}
         </motion.div>
     );
 }

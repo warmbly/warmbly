@@ -1,0 +1,115 @@
+---
+title: Troubleshooting
+description: The errors self-hosters actually hit, what causes each one, and the command that fixes it.
+---
+
+Search this page for the exact string you saw. Every row names the cause and the command, not a category.
+
+## I clicked register and got a 403
+
+> **403 This server is not accepting new accounts. Ask an administrator for an invitation.**
+
+Nothing is broken, and you do not need to change any setting to get in.
+
+A self-hosted instance ships with `DISABLE_REGISTRATION=invite_only`, which closes the sign-up form to the public. There is exactly one exemption: while the users table is **empty**, any signup is allowed, and that is what makes a fresh instance claimable. Once one account exists, the exemption is spent for good.
+
+The usual sequence behind that 403 is:
+
+1. you ran `make dev` at some point, which seeds nine fixture accounts by default
+2. `make dev` and `make up` pin the same compose project, the same `warmbly_postgres_data` volume and the same `warmbly_dev` database, so those accounts are your instance's accounts
+3. `make up` therefore found a claimed instance, issued no setup link, and printed none
+4. the sign-up form was the only path left, and `invite_only` refuses it
+
+Pick the fix that matches what you want:
+
+| You want | Do this |
+|---|---|
+| An account for yourself, right now | `docker compose -p warmbly exec backend warmblyctl user create --email you@example.com --admin` |
+| To recover an account that already exists | `docker compose -p warmbly exec backend warmblyctl user reset-password --email you@example.com` and open the printed URL |
+| To let teammates in | Invite them from **Settings > Members** and share the link. See [inviting teammates](/development/accounts-and-access/#inviting-teammates) |
+| A truly fresh start | `make reset && make up`. This destroys the volumes, including the per-organization encryption keys |
+| Open public signup | `DISABLE_REGISTRATION=false` and restart. Read the consequence first: [opening public signup](/development/accounts-and-access/#opening-public-signup) |
+
+Not sure which state you are in?
+
+```bash
+make doctor
+```
+
+Newer builds return the invite-only refusal with its own machine code, `registration_invite_only`, and the text "This server is invite only. Ask an administrator to invite you, then open the link in the invitation to create your account." Same cause, same fixes.
+
+## First run and sign-in
+
+| Symptom | Cause and fix |
+|---|---|
+| `403 This server is invite only.` when registering | `DISABLE_REGISTRATION` defaults to `invite_only` on self-host. Open the invitation link that carries the token, run `warmblyctl user create --email you@example.com --admin`, or set `DISABLE_REGISTRATION=false` and restart. See [accounts and access](/development/accounts-and-access/) |
+| `403 This server is not accepting new accounts.` | `DISABLE_REGISTRATION=true`. No invitation overrides it. Only `warmblyctl user create` adds accounts |
+| Signup worked once, then stopped | The first-launch exemption applies only while the users table is empty. See [the first-launch exemption](/development/accounts-and-access/#the-first-launch-exemption) |
+| `make up` printed no claim link | The database already has accounts, usually from a previous `make dev`. Use `warmblyctl user create --email you@example.com --admin`, or `make reset` to start over, which destroys the encryption volume |
+| The claim link says invalid or expired | 24 hour lifetime, single use, and it does not survive a Redis flush. Print a new one with `warmblyctl setup-link` |
+| `/setup` says the instance is already set up | An account exists, so no claim link will ever be issued. `warmblyctl user reset-password --email ...`, or `warmblyctl user create --email you@example.com --admin` |
+| An invited person gets `invitation_invalid` | The invitation expired (7 days by default), was cancelled, was already used, or they typed a different address than the one it was issued for. Re-invite them |
+| Single sign-on succeeds at the provider then 404s | The redirect URI must be `<API_PUBLIC_URL>/v1/auth/oidc/callback`, not `/api/v1/...`. It has to match on both sides exactly. See [single sign-on](/development/accounts-and-access/#single-sign-on) |
+| Single sign-on stopped provisioning new users | Provisioning now obeys `DISABLE_REGISTRATION`. Invite the person, or set `SSO_AUTO_PROVISION=true` and restart |
+| No login code arrives | Self-host does not send one (`AUTH_LOGIN_CODE=off`). Registration and reset codes go wherever `MAIL_TRANSPORT` points; under compose that is the backend log |
+| No invitation email arrives | Same cause. Copy the link from **Pending invitations** and send it yourself. See [without a mail relay](/development/accounts-and-access/#without-a-mail-relay) |
+| "Too many attempts" on password reset | Password reset is capped at 2 requests per address per 4 hours. Use `warmblyctl user reset-password` instead of waiting |
+| The passkey button is missing | Passkeys need a secure context, so `APP_URL` must be HTTPS or a `localhost` address. A LAN IP over plain HTTP cannot be a relying party |
+| Google, Apple or passkey buttons appear but never work | The sign-in screen follows `GET /auth/config`. If they still appear, that request is failing and the screen says which API URL it tried |
+| Locked out of the only admin account | `warmblyctl user create --email you@example.com --admin`. Every recovery command is on [recovering access](/development/accounts-and-access/#recovering-access) |
+
+## The build fails
+
+| Symptom | Cause and fix |
+|---|---|
+| `no space left on device`, often from a random service mid-compile | Docker is out of disk. Free space with `docker builder prune -af` and `docker image prune -af`, check the host has about 10 GB free, then re-run `make up` |
+| `failed to authorize: ... EOF` while pulling a base image | A transient registry blip. Re-run `make up`; completed layers are cached |
+| `failed to xattr /path/._something: operation not permitted` on macOS | The checkout is on a filesystem without native extended attributes (exFAT, NTFS or a network share), so macOS writes `._*` sidecar files that BuildKit cannot read. Run `dot_clean -m .` then `find . -name '._*' -delete` and re-run. Cloning to an APFS volume avoids it |
+
+## The stack is up but something is wrong
+
+| Symptom | Cause and fix |
+|---|---|
+| The backend exits at boot | Read the first log lines. The usual causes are a published default secret with `APP_ENV=prod` (the message names `ALLOW_INSECURE_DEFAULTS`), cloud provider defaults outside compose, a `CREDENTIALS_ENCRYPTION_KEY` that is not exactly 64 hex characters, or a missing `EMAIL_ADDRESS`, `EMAIL_NAME` or `GEODB_PATH` |
+| The dashboard loads but every request fails | Check `http://localhost:5173/config.js` returns the right `API_URL`. It is generated at container start from `WARMBLY_API_URL`. If the URL is right, the origin is probably missing from `CORS_ALLOW_ORIGINS` |
+| Nothing updates live and presence is empty | `AUTH_SECRET` must equal realtime's `JWT_SECRET`, and `PUBSUB_ENABLED` must agree across backend, consumer and realtime. Compare the fingerprints under **Instance > Configuration** |
+| Workers or tracking get 401s | `INTERNAL_API_TOKEN` must match on the backend, the workers (as `ENCRYPTED_KEYS_WORKER_TOKEN`) and tracking. Unset fails closed |
+| "No mailbox workers are available" when connecting a mailbox | No worker has a heartbeat inside the last 10 minutes. Check `make status` shows `worker` running and `make logs worker` is clean. An empty `ENCRYPTED_KEYS_BACKEND_URL` or worker token lets a worker start and never register, silently |
+| Connecting a mailbox is rejected on the port | SMTP must be `587` or `465`. The Mailpit sink used by `make sandbox` listens on `1025` with no STARTTLS, so it cannot be used as a test mailbox |
+| A mailbox stalls after about an hour | The worker is missing `BOX_GOOGLE_*` or `BOX_OUTLOOK_*`. The backend starts the OAuth flow but each worker refreshes the token. Set them and restart the worker |
+| Scheduled sends never fire | Delayed sends run through the in-process Postgres task poller (`TASKS_PROVIDER=local`), so the backend must be running |
+| Opens and clicks never record | Check `TRACKING_DOMAIN` resolves and the tracking service answers on `/health`. If you overrode `KAFKA_TRACKING_TOPIC`, it has to be overridden for the Rust publisher and the Go subscriber together |
+| Seeding fails with `no migration found for version N` | The seed image is older than your schema. Re-run with `--build` |
+| Worker `install_state: error` | Test connection first (is the SSH key in `authorized_keys`?), then read `last_error` and Logs on the worker's detail page |
+| Worker heartbeat offline | Can the VPS reach the backend URL, NATS or Kafka, and Redis? Is the container running (Live status)? |
+
+## Recovery
+
+Every recovery command, in all four runtimes, is on [recovering access](/development/accounts-and-access/#recovering-access): instance status, listing admins, resetting a password through a printed one-time link, creating a new owner and admin, clearing a lost authenticator, and reissuing the first-run claim link.
+
+The destructive alternative is `make reset`, which removes the volumes and starts over.
+
+<Callout type="warn" title="make reset destroys the encryption volume">
+The volumes hold the per-organization data keys. Every sealed mailbox credential and every stored message body becomes permanently undecryptable, even if you restore a database dump afterwards.
+</Callout>
+
+<Callout type="warn" title="Do not flush Redis to clear a rate limit">
+`redis-cli FLUSHDB` also destroys `bootstrap:setup_token`, every pending auth session and every login attempt counter. On an unclaimed instance that throws away the only way in. Delete the specific key, or wait out the window.
+</Callout>
+
+## Still stuck
+
+```bash
+make logs            # follow everything
+make logs backend    # follow one service
+make doctor          # the full health check set, exits non-zero on an error
+```
+
+Ask in [Discord](https://dc.warmbly.com) or open a [GitHub issue](https://github.com/warmbly/warmbly/issues) with the output of `make doctor` and the first 50 lines of the failing service's log.
+
+## See also
+
+- [First run](/development/first-run/)
+- [Accounts and access](/development/accounts-and-access/)
+- [Configuration reference](/development/configuration/)
+- [Instance health](/development/instance-health/)

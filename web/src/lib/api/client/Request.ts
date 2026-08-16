@@ -77,8 +77,9 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
     } catch (error) {
         const appErr = error as AppError;
 
-        // If we get a 401 on an authorized request, try refreshing once
-        if (config.authorization && (appErr?.status === 401)) {
+        // Only an authorized 401 means the session is gone: refresh, retry once,
+        // then give up. A public 401 reaches the caller with its code intact.
+        if (config.authorization && (appErr?.status === 401 || appErr?.redirect)) {
             try {
                 const token = await ensureValidToken();
                 config.headers = {
@@ -91,11 +92,6 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
                 clearTokens();
                 throw SessionExpired;
             }
-        }
-
-        if (appErr?.status === 401 || appErr?.redirect) {
-            clearTokens();
-            throw SessionExpired;
         }
 
         // A denied WRITE action (edit/save/delete) gets one clear, app-wide

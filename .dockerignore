@@ -28,6 +28,13 @@ build
 # Editor / OS noise
 .DS_Store
 *.swp
+
+# macOS AppleDouble sidecars. On a volume without native xattr support macOS
+# writes a ._name companion beside every file to hold the extended attributes.
+# BuildKit's context sender then tries to read xattrs off those companions and
+# fails with "operation not permitted", which aborts the whole build.
+._*
+**/._*
 *~
 .envrc
 

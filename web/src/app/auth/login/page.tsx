@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { useForm } from "react-hook-form";
@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import toast from "react-hot-toast";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil, LockIcon, Loader2Icon } from "lucide-react";
 import { usePasswordStrength } from "@/hooks/usePasswordStrength";
 
 import Turnstile, { type BoundTurnstileObject } from "react-turnstile";
@@ -21,7 +21,7 @@ import useRegister from "@/lib/api/hooks/auth/useRegister";
 import useRegisterConfirm from "@/lib/api/hooks/auth/useRegisterConfirm";
 import { saveTokens } from "@/lib/auth";
 import getUser from "@/lib/api/client/auth/getUser";
-import { WEBSITE_URL, TURNSTILE_KEY } from "@/lib/information";
+import { WEBSITE_URL, TURNSTILE_KEY, API_URL } from "@/lib/information";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import type Session from "@/lib/api/models/auth/Session";
 import beginOIDC from "@/lib/api/client/auth/beginOIDC";
@@ -151,6 +151,15 @@ function useCountdown(seconds: number) {
 
 type Step = "email" | "signin" | "signup" | "verify" | "2fa";
 type PasskeyStatus = "preparing" | "ready" | "waiting" | "timeout" | "not-found" | "error";
+// Why a signup cannot proceed. Either read off /auth/config before the form is
+// shown, or returned by the API when the policy changed mid-session.
+type SignupBlock = "invite_only" | "closed" | "invitation_invalid";
+
+const REFUSAL_CODES: Record<string, SignupBlock> = {
+    registration_invite_only: "invite_only",
+    registration_closed: "closed",
+    invitation_invalid: "invitation_invalid",
+};
 
 export default function LoginPage() {
     const navigate = useNavigate();
@@ -160,7 +169,7 @@ export default function LoginPage() {
     // the widget mounted in every container build regardless of
     // CAPTCHA_PROVIDER, so login silently required reaching
     // challenges.cloudflare.com even on an air-gapped install.
-    const { config: authConfig, ready: authConfigReady } = useAuthConfig();
+    const { config: authConfig, ready: authConfigReady, unreachable: authConfigUnreachable } = useAuthConfig();
 
     // A brand new instance has no account to sign in as. Send them to the
     // claim link rather than showing a form that cannot succeed.
@@ -182,15 +191,44 @@ export default function LoginPage() {
     /* State */
     const [step, setStep] = useState<Step>("email");
     const [mode, setMode] = useState<"signin" | "signup">(() =>
-        location.pathname.includes("/register") ? "signup" : "signin"
+        location.pathname.includes("/register") ||
+        new URLSearchParams(location.search).get("mode") === "signup"
+            ? "signup"
+            : "signin"
     );
+
+    // The invitation token from /invite. It is the only thing that reopens
+    // signup on an invite_only instance, so it drives the whole screen.
+    const inviteToken = useMemo(
+        () => new URLSearchParams(location.search).get("invite") ?? "",
+        [location.search],
+    );
+    const signupPossible = authConfig.registration === "false" || !!inviteToken;
+    // Set when the API refuses a signup the screen believed was possible.
+    const [refusal, setRefusal] = useState<SignupBlock | null>(null);
+    const signupGate = mode === "signup" && !authConfigReady;
+    const showSignupUnavailable = mode === "signup" && authConfigReady && (!signupPossible || !!refusal);
+    const signupBlock: SignupBlock =
+        refusal ?? (authConfig.registration === "invite_only" ? "invite_only" : "closed");
+    const passkeysEnabled = authConfig.passkeys;
 
     /* Mode change — update URL without remounting */
     const handleModeChange = (m: "signin" | "signup") => {
         setMode(m);
-        window.history.replaceState(null, "", m === "signin" ? "/auth/login" : "/auth/register");
+        setRefusal(null);
+        // Keep the query string: dropping it is how ?invite= and ?next= were
+        // silently lost on a toggle, turning an invited signup into a refused one.
+        window.history.replaceState(
+            null,
+            "",
+            `${m === "signin" ? "/auth/login" : "/auth/register"}${location.search}`,
+        );
     };
-    const [email, setEmail] = useState("");
+    // /invite sends the invited address along, because the backend only accepts
+    // a signup whose email matches the invitation exactly.
+    const [email, setEmail] = useState(
+        () => new URLSearchParams(location.search).get("email")?.trim() ?? "",
+    );
     const [password, setPassword] = useState("");
     const [session, setSession] = useState("");
     const [pendingToken, setPendingToken] = useState("");
@@ -285,11 +323,14 @@ export default function LoginPage() {
             });
     }, []);
 
+    // Never start a WebAuthn ceremony a deployment cannot finish: without a
+    // secure context (or with passkeys off) this only produced an opaque error.
     useEffect(() => {
+        if (!passkeysEnabled) return;
         prepareExplicitPasskey();
         void runConditionalPasskey();
         return () => cancelPasskeyCeremony();
-    }, [prepareExplicitPasskey, runConditionalPasskey]);
+    }, [passkeysEnabled, prepareExplicitPasskey, runConditionalPasskey]);
 
     // The "no passkey here" note is informational, not an error — auto-dismiss
     // it so it never lingers.
@@ -490,7 +531,12 @@ export default function LoginPage() {
         setPassword(data.password);
         withCaptcha(async (token) => {
             try {
-                const res = await registerMutation.mutateAsync({ email, password: data.password, turnstile: token });
+                const res = await registerMutation.mutateAsync({
+                    email,
+                    password: data.password,
+                    turnstile: token,
+                    invite: inviteToken || undefined,
+                });
                 // Email verification off means the account already exists, so
                 // send them to sign in rather than to a code they never got.
                 if (!res.code_required) {
@@ -503,7 +549,15 @@ export default function LoginPage() {
                 setSession(res.session ?? "");
                 goTo("verify");
             } catch (e) {
-                toast.error(buildError(e as AppError));
+                const err = e as AppError;
+                // A deployment policy refusal is not a transient error, so it
+                // becomes a panel that explains the next step, not a toast.
+                const blocked = err.code ? REFUSAL_CODES[err.code] : undefined;
+                if (blocked) {
+                    setRefusal(blocked);
+                    return;
+                }
+                toast.error(buildError(err));
             }
         });
     };
@@ -567,23 +621,56 @@ export default function LoginPage() {
     const handleResend = useCallback(() => {
         withCaptcha(async (token) => {
             try {
-                const mutation = mode === "signin" ? loginMutation : registerMutation;
-                const res = await mutation.mutateAsync({ email, password, turnstile: token });
+                const res = mode === "signin"
+                    ? await loginMutation.mutateAsync({ email, password, turnstile: token })
+                    : await registerMutation.mutateAsync({ email, password, turnstile: token, invite: inviteToken || undefined });
                 toast.success("Code resent!");
                 setSession(res.session ?? "");
             } catch (e) {
                 toast.error(buildError(e as AppError));
             }
         });
-    }, [mode, email, password, loginMutation, registerMutation, withCaptcha]);
+    }, [mode, email, password, inviteToken, loginMutation, registerMutation, withCaptcha]);
 
     return (
         <div className="relative">
+            {authConfigUnreachable && (
+                <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] leading-relaxed text-amber-800">
+                    Could not reach the API at <span className="font-mono break-all">{API_URL}</span>. The sign-in
+                    options shown here may not match this server.
+                </div>
+            )}
+
             <AnimatePresence mode="wait" custom={direction} initial={false}>
-                {step === "email" && (
+                {/* Whether a signup can succeed is a server answer. Wait for it
+                    rather than flashing a form this instance would refuse. */}
+                {signupGate ? (
+                    <MotionWrap key="signup-gate" direction={direction}>
+                        <div className="py-20 grid place-items-center">
+                            <Loader2Icon className="w-5 h-5 animate-spin text-slate-300" />
+                        </div>
+                    </MotionWrap>
+                ) : null}
+                {!signupGate && showSignupUnavailable ? (
+                    <MotionWrap key="signup-unavailable" direction={direction}>
+                        <SignupUnavailable
+                            block={signupBlock}
+                            docsUrl={authConfig.docs_url}
+                            onBack={() => {
+                                handleModeChange("signin");
+                                goTo("email", -1);
+                            }}
+                        />
+                    </MotionWrap>
+                ) : null}
+                {!signupGate && !showSignupUnavailable && step === "email" && (
                     <MotionWrap key="email" direction={direction}>
                         <EmailStep
                             mode={mode}
+                            canSignUp={signupPossible && authConfigReady}
+                            invited={!!inviteToken}
+                            providers={authConfig.providers}
+                            passkeysEnabled={passkeysEnabled}
                             onModeChange={handleModeChange}
                             defaultEmail={email}
                             onContinue={handleEmailContinue}
@@ -595,7 +682,7 @@ export default function LoginPage() {
                         />
                     </MotionWrap>
                 )}
-                {step === "signin" && (
+                {!signupGate && !showSignupUnavailable && step === "signin" && (
                     <MotionWrap key="signin" direction={direction}>
                         <SignInStep
                             email={email}
@@ -607,7 +694,7 @@ export default function LoginPage() {
                         />
                     </MotionWrap>
                 )}
-                {step === "signup" && (
+                {!signupGate && !showSignupUnavailable && step === "signup" && (
                     <MotionWrap key="signup" direction={direction}>
                         <SignUpStep
                             email={email}
@@ -617,7 +704,7 @@ export default function LoginPage() {
                         />
                     </MotionWrap>
                 )}
-                {step === "verify" && (
+                {!signupGate && !showSignupUnavailable && step === "verify" && (
                     <MotionWrap key="verify" direction={direction}>
                         <VerifyStep
                             mailDelivers={authConfig.mail_delivers}
@@ -630,7 +717,7 @@ export default function LoginPage() {
                     </MotionWrap>
                 )}
 
-                {step === "2fa" && (
+                {!signupGate && !showSignupUnavailable && step === "2fa" && (
                     <MotionWrap key="2fa" direction={direction}>
                         <TwoFactorStep
                             pending={verify2FAMutation.isPending}
@@ -717,6 +804,10 @@ function EmailPill({ email, onEdit }: { email: string; onEdit: () => void }) {
 
 function EmailStep({
     mode,
+    canSignUp,
+    invited,
+    providers,
+    passkeysEnabled,
     onModeChange,
     defaultEmail,
     onContinue,
@@ -727,6 +818,10 @@ function EmailStep({
     noPasskey,
 }: {
     mode: "signin" | "signup";
+    canSignUp: boolean;
+    invited: boolean;
+    providers: string[];
+    passkeysEnabled: boolean;
     onModeChange: (m: "signin" | "signup") => void;
     defaultEmail: string;
     onContinue: (data: z.infer<typeof emailSchema>) => void;
@@ -743,6 +838,8 @@ function EmailStep({
     const passkeyLoading = passkeyPending || passkeyStatus === "preparing" || passkeyStatus === "waiting";
     const passkeyLocked = passkeyPending || passkeyStatus === "waiting";
     const passkeyLabel = passkeyStatus === "preparing" ? "Preparing" : passkeyStatus === "waiting" ? "Waiting" : "Passkey";
+    const passkeyCell = mode === "signin" && passkeysEnabled && passkeySupported();
+    const socialCell = providers.includes("google") || providers.includes("apple");
 
     return (
         <div className="space-y-6">
@@ -780,28 +877,33 @@ function EmailStep({
                 </AnimatePresence>
             </div>
 
-            {/* Mode toggle */}
-            <div className="relative flex rounded-lg bg-slate-100 p-1">
-                {(["signin", "signup"] as const).map((m) => (
-                    <button
-                        key={m}
-                        type="button"
-                        onClick={() => onModeChange(m)}
-                        className={`flex-1 relative py-2 text-sm font-medium rounded-md cursor-pointer transition-colors duration-200 ${
-                            mode === m ? "text-slate-800" : "text-slate-400 hover:text-slate-600"
-                        }`}
-                    >
-                        {mode === m && (
-                            <motion.span
-                                layoutId="auth-mode-pill"
-                                className="absolute inset-0 rounded-md bg-white shadow-sm"
-                                transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                            />
-                        )}
-                        <span className="relative z-10">{m === "signin" ? "Sign in" : "Create account"}</span>
-                    </button>
-                ))}
-            </div>
+            {/* Mode toggle. Only rendered when a signup could actually succeed:
+                a tab that always ends in a refusal is a dead end. */}
+            {canSignUp && (
+                <div className="relative flex rounded-lg bg-slate-100 p-1">
+                    {(["signin", "signup"] as const).map((m) => (
+                        <button
+                            key={m}
+                            type="button"
+                            onClick={() => onModeChange(m)}
+                            className={`flex-1 relative py-2 text-sm font-medium rounded-md cursor-pointer transition-colors duration-200 ${
+                                mode === m ? "text-slate-800" : "text-slate-400 hover:text-slate-600"
+                            }`}
+                        >
+                            {mode === m && (
+                                <motion.span
+                                    layoutId="auth-mode-pill"
+                                    className="absolute inset-0 rounded-md bg-white shadow-sm"
+                                    transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                                />
+                            )}
+                            <span className="relative z-10">
+                                {m === "signin" ? "Sign in" : invited ? "Accept invitation" : "Create account"}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
 
             <form onSubmit={handleSubmit(onContinue)} className="space-y-4">
                 <div>
@@ -820,7 +922,9 @@ function EmailStep({
                 <AuthButton loading={false}>Continue</AuthButton>
             </form>
 
-            {/* Alternative sign-in — one balanced row under a single divider */}
+            {/* Alternative sign-in: one balanced row under a single divider.
+                Hidden entirely when this deployment offers neither. */}
+            {(passkeyCell || socialCell) && (
             <div className="space-y-3">
                 <div className="flex items-center gap-3">
                     <div className="flex-1 h-px bg-slate-200" />
@@ -829,7 +933,8 @@ function EmailStep({
                 </div>
 
                 <ExternalLogin
-                    passkey={mode === "signin" && passkeySupported() ? {
+                    providers={providers}
+                    passkey={passkeyCell ? {
                         onClick: onPasskey,
                         onPrepare: onPasskeyPrepare,
                         loading: passkeyLoading,
@@ -839,7 +944,7 @@ function EmailStep({
                 />
 
                 <AnimatePresence>
-                    {mode === "signin" && passkeySupported() && passkeyStatus !== "ready" && (
+                    {passkeyCell && passkeyStatus !== "ready" && (
                         <motion.p
                             key={passkeyStatus}
                             initial={{ opacity: 0, y: -4 }}
@@ -872,6 +977,65 @@ function EmailStep({
                         </motion.div>
                     )}
                 </AnimatePresence>
+            </div>
+            )}
+        </div>
+    );
+}
+
+/* ── Signup unavailable ─────────────────────── */
+
+// What /auth/register shows when this deployment will not accept the signup.
+// The form used to render anyway and the refusal arrived as a 403 toast after
+// the operator had filled in everything.
+function SignupUnavailable({
+    block,
+    docsUrl,
+    onBack,
+}: {
+    block: SignupBlock;
+    docsUrl: string;
+    onBack: () => void;
+}) {
+    const title =
+        block === "invitation_invalid" ? "Invitation not valid"
+            : block === "invite_only" ? "Invitations only"
+                : "Signups are closed";
+    const body =
+        block === "invitation_invalid"
+            ? "That invitation link is invalid, expired, or issued for a different email address. Ask whoever invited you for a fresh one."
+            : block === "invite_only"
+                ? "This server is invite only. Ask an administrator to invite you, then open the link in the invitation to create your account."
+                : "This server is not accepting new accounts.";
+
+    return (
+        <div>
+            <div className="text-center mb-6">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                    <LockIcon className="w-6 h-6 text-slate-400" />
+                </div>
+                <h1 className="text-[28px] font-bold text-slate-900 tracking-tight leading-tight">{title}</h1>
+                <p className="text-sm text-slate-500 mt-2 leading-relaxed">{body}</p>
+            </div>
+
+            <div className="space-y-2">
+                <button
+                    type="button"
+                    onClick={onBack}
+                    className="w-full h-11 rounded-lg bg-slate-900 text-white text-[13px] font-medium hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                    Back to sign in
+                </button>
+                {docsUrl && (
+                    <a
+                        href={docsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full h-11 rounded-lg border border-slate-200 bg-white text-slate-700 text-[13px] font-medium inline-flex items-center justify-center hover:bg-slate-50 transition-colors"
+                    >
+                        Learn more
+                    </a>
+                )}
             </div>
         </div>
     );

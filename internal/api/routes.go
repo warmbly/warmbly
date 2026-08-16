@@ -1213,6 +1213,17 @@ func Run(
 		// System status (infrastructure liveness probes)
 		adminRoutes.GET("/system/status", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminSystemStatus)
 
+		// Instance: the resolved environment, the setup and health checks, the
+		// effective limits, and the small database-backed settings tier. The
+		// configuration and limits pages are read-only because the environment
+		// is authoritative; settings is the only editable one, and it holds
+		// only keys no environment variable owns.
+		adminRoutes.GET("/instance/config", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminInstanceConfig)
+		adminRoutes.GET("/instance/health", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminInstanceHealth)
+		adminRoutes.GET("/instance/limits", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminInstanceLimits)
+		adminRoutes.GET("/instance/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetInstanceSettings)
+		adminRoutes.PUT("/instance/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminPutInstanceSettings)
+
 		// Analytics Dashboard
 		adminRoutes.GET("/analytics/overview", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetPlatformOverview)
 		adminRoutes.GET("/analytics/trends", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetAnalyticsTrends)

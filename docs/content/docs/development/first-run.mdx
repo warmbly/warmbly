@@ -1,0 +1,218 @@
+---
+title: First run
+description: Claiming a fresh Warmbly instance, provisioning the owner without a browser, and what to do when the claim link is gone or the database already has accounts.
+---
+
+A fresh instance has no accounts and is described as **unclaimed**. Claiming it is the one moment where a stranger is allowed to create the first account, and everything on this page is about getting through that moment cleanly, including the two cases where the obvious path is already closed.
+
+## Claim the instance
+
+```bash
+git clone https://github.com/warmbly/warmbly && cd warmbly
+make up
+```
+
+`make up` builds the images, starts the stack, waits for the backend to answer, then runs `make claim`, which prints a single-use link and ends on the command that reissues it:
+
+```
+  No accounts exist yet. Open this link to claim the instance and
+  become its admin. Single use, expires in 24 hours:
+
+    http://localhost:5173/setup?token=...
+
+  Lost it? Print a new one:
+    docker compose -p warmbly exec backend warmblyctl setup-link
+```
+
+Open it, pick a password, and you are the owner and platform admin of the instance.
+
+If no link is in the logs yet, `make claim` mints a fresh one instead of printing nothing, which retires any outstanding link.
+
+The link is derived from `APP_URL`, so outside compose set `APP_URL` before the first boot or the printed link points at the hosted service instead of at your deployment. Only the hash of the token is stored, so reading the database does not yield a working link, and it is invalidated the moment it is used.
+
+Opening the dashboard without a token also works: while the instance is unclaimed, every unauthenticated route funnels to `/setup`, which tells you how to print a link rather than showing a sign-in form that cannot succeed.
+
+## If the link is gone
+
+Four things make a claim link disappear, and all four have the same answer:
+
+- the logs rotated, or the container was recreated
+- 24 hours passed
+- Redis was flushed or restarted without persistence
+- you are on Kubernetes or a bare binary and never saw a compose log at all
+
+Print a new one. The previous link, if any, stops working:
+
+```bash
+docker compose -p warmbly exec backend warmblyctl setup-link   # docker compose
+docker exec -it warmbly-backend warmblyctl setup-link          # plain docker
+kubectl exec -it deploy/warmbly-backend -- warmblyctl setup-link
+warmblyctl setup-link                                          # bare binary
+```
+
+`make claim` does the same thing for a compose install and prints the result.
+
+The command refuses on a claimed instance, by design: there is no second owner to mint. If you get that refusal, read the next section.
+
+## If the instance already has accounts
+
+This is the case that catches people, and it usually has one cause.
+
+<Callout type="warn" title="make dev and make up share one database">
+Both pin the same compose project (`-p warmbly`), the same `warmbly_postgres_data` volume and the same `warmbly_dev` database. `make dev` seeds fixture accounts by default. Once those rows exist the instance is claimed, no setup link is ever issued, and `DISABLE_REGISTRATION=invite_only` refuses the sign-up form. If you ran `make dev` before `make up`, this is what happened.
+</Callout>
+
+`make claim` tells you so, and ends on the command that fixes it:
+
+```
+  This instance already has 9 account(s), so no claim link is issued.
+  Registration is invite_only (DISABLE_REGISTRATION), so the sign-up form will
+  refuse new accounts.
+
+  Make yourself an owner and platform admin:
+    docker compose -p warmbly exec backend warmblyctl user create --email you@example.com --admin
+
+  Already have an account?  http://localhost:5173
+  Lost the password?        docker compose -p warmbly exec backend warmblyctl user reset-password --email you@example.com
+  See everything:           make doctor
+  Why:                      https://docs.warmbly.com/development/first-run/
+```
+
+That command creates the account, an organization and a trial, and grants every platform admin bit. It prompts for a password on a terminal and refuses on a non-TTY rather than creating a passwordless account, so pass `--password-stdin` from a script.
+
+If one of the existing accounts is yours and you only lost the password, use `warmblyctl user reset-password` instead. Every recovery command is listed under [recovering access](/development/accounts-and-access/#recovering-access).
+
+The destructive alternative is to start over:
+
+```bash
+make reset && make up
+```
+
+<Callout type="warn" title="make reset destroys the encryption volume">
+It removes the volumes, which hold the per-organization data keys. Every sealed mailbox credential and every stored message body becomes permanently undecryptable, even if you restore a database dump afterwards. Only do this on an instance you are willing to lose.
+</Callout>
+
+## Unattended provisioning
+
+Set the owner before the first start and no link is issued at all:
+
+```bash
+WARMBLY_BOOTSTRAP_EMAIL=you@example.com
+WARMBLY_BOOTSTRAP_PASSWORD_HASH=$argon2id$v=19$m=65536,t=3,p=2$...
+WARMBLY_BOOTSTRAP_ORG=Acme
+```
+
+Produce the hash without putting a plaintext password anywhere. It prompts on a terminal and reads the pipe when there is not one, so the same command works by hand and in a provisioning script:
+
+```bash
+warmblyctl hash-password
+printf '%s' 'your password' | warmblyctl hash-password
+```
+
+<Callout type="warn" title="Quote the hash">
+An argon2 PHC string contains `$` characters. Docker Compose reads those as interpolation, so a bare hash in `.env` silently loses part of itself and the bootstrap fails with no useful message. Wrap it in single quotes in `.env`, and double every `$` if you paste it directly into `docker-compose.yml`.
+</Callout>
+
+`WARMBLY_BOOTSTRAP_PASSWORD` accepts a plaintext password instead. It works, it warns at boot, and it leaves the password readable in your process environment through `docker inspect` and `/proc`. Prefer the hash, and remove either variable once the owner exists.
+
+All of these are read **only while the users table is empty**, so they are a no-op on every later restart. That also means they cannot be used to fix a lockout: an instance that already has accounts ignores them entirely.
+
+## What the first account gets
+
+| It gets | Detail |
+|---|---|
+| An owner account | Owner of a new organization, which is a membership status rather than a role |
+| An organization | Named from `WARMBLY_BOOTSTRAP_ORG`, or derived from the owner's name |
+| A trial | Irrelevant when `BILLING_PROVIDER=none`, which is the self-host default and unlocks everything |
+| Every platform admin bit | So the same account signs in to the dashboard on `:5173` and the admin panel on `:5174` |
+
+Signing in never depends on mail. The emailed login code is off on a self-hosted install, because a relay you have not configured should not stand between you and your own instance.
+
+## Checking where you stand
+
+```bash
+docker compose -p warmbly exec backend warmblyctl status
+```
+
+It prints four blocks: the instance state, the platform admins, the health checks, and what to run next. Roughly, on an instance that already has accounts:
+
+```
+Instance
+  Accounts          9
+  Claimed           yes, so no setup link is issued
+  Platform admins   1
+  Registration      invite_only (DISABLE_REGISTRATION is unset, so the deployment default applies)
+  Mail transport    log (written to the backend log, never delivered; MAIL_TRANSPORT=log)
+  App URL           http://localhost:5173 (APP_URL)
+
+Platform admins
+  you@example.com (super, mask 4294967295)
+
+Checks
+  ...one line per finding, grouped by severity...
+
+How to get in
+  Sign in at http://localhost:5173
+  Lost the password:       warmblyctl user reset-password --email you@example.com
+  Lost the authenticator:  warmblyctl user disable-2fa --email you@example.com
+  No account of your own:  warmblyctl user create --email you@example.com --admin
+  Who is an admin:         warmblyctl user list --admin
+```
+
+The exact wording moves with the state: an unclaimed instance says so and tells you to print a setup link instead. `--json` prints the same facts as a machine-readable document, which is what `make claim` reads.
+
+The **Checks** section holds the same findings the admin panel's Setup and health page shows, and `warmblyctl status` exits non-zero when any of them is at error severity, which makes `make doctor` usable as a post-deploy gate. Every check is documented on [Instance health](/development/instance-health/).
+
+## Before anyone else can reach it
+
+The compose file ships a working default for every secret so a fresh clone boots with no configuration. All five defaults are published in this repository, so they protect nothing: anyone can forge a session token or unwrap every organization key.
+
+Append real values to `.env`, generating each one as you go:
+
+```bash
+cat >> .env <<EOF
+AUTH_SECRET=$(openssl rand -base64 32)
+INTERNAL_API_TOKEN=$(openssl rand -hex 24)
+SECRET_KEY_BASE=$(openssl rand -base64 64 | tr -d '\n')
+KMS_LOCAL_MASTER_KEY=$(openssl rand -base64 32)
+CREDENTIALS_ENCRYPTION_KEY=$(openssl rand -hex 32)
+APP_ENV=prod
+EOF
+```
+
+Then `make up` to recreate the containers. `make gen-key` prints a single fresh `KMS_LOCAL_MASTER_KEY` if that is all you need.
+
+Set `APP_ENV=prod` last, and only once the other five hold real values. That is the switch that turns a published default from a logged warning into a refusal to start, so setting it first leaves you with a backend that will not boot.
+
+<Callout type="warn" title="Compose reads an empty value as no value">
+`docker-compose.yml` reads `.env` as `${VAR:-default}`, and Compose treats an empty assignment exactly like a missing one. `AUTH_SECRET=` does not blank the secret, it substitutes the published default. Comment a line out rather than emptying it.
+</Callout>
+
+<Callout type="warn" title="Back up the last two keys before you store a single mailbox">
+`KMS_LOCAL_MASTER_KEY` and `CREDENTIALS_ENCRYPTION_KEY` seal every stored credential and message body. Losing them is unrecoverable, and a database backup without them cannot be decrypted.
+</Callout>
+
+Full detail, including which values must be identical across services: [secrets](/development/configuration/#secrets).
+
+## Demo data
+
+```bash
+make seed-demo
+```
+
+Loads the showcase workspace: mailboxes, campaigns, contacts and two weeks of history, with `dev@warmbly.com` / `password123` as the everyday login.
+
+<Callout type="warn" title="The demo seed plants a published super-admin credential">
+`make seed-demo` runs with `SEED_FULL=true`, which also inserts `admin@warmbly.local` with the password `Test1234!`, **every platform admin permission**, and a full-access API key whose secret is a constant in this repository. All three values are public. Never run it on an instance anyone else can reach, and if you already did, delete that account and revoke the key before you expose the instance.
+</Callout>
+
+Seeding also spends the first-launch exemption, so a seeded instance never issues a claim link again. That is fine when you seeded on purpose; it is the surprise described in [if the instance already has accounts](#if-the-instance-already-has-accounts) when you did not.
+
+For a demo where mail actually flows end to end, with sends, replies, opens and clicks, see the [sandbox](/development/sandbox/).
+
+## See also
+
+- [Accounts and access](/development/accounts-and-access/) for registration modes, invitations and recovery
+- [Configuration reference](/development/configuration/) for every environment variable
+- [Instance health](/development/instance-health/) for the checks that run against a new install
+- [Self-hosting](/development/deployment-guide/) for the full deployment walkthrough

@@ -28,6 +28,7 @@ import useRemoveMember from "@/lib/api/hooks/app/organizations/useRemoveMember";
 import useCancelInvitation from "@/lib/api/hooks/app/organizations/useCancelInvitation";
 import useUpdateMemberRole from "@/lib/api/hooks/app/organizations/useUpdateMemberRole";
 import useRoles from "@/lib/api/hooks/app/organizations/useRoles";
+import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import type OrganizationRole from "@/lib/api/models/app/organizations/OrganizationRole";
 import { useAppStore } from "@/stores";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -57,6 +58,7 @@ export default function MembersSettingsPage() {
     const cancelInvite = useCancelInvitation();
     const updateRole = useUpdateMemberRole();
     const customRoles = useRoles();
+    const { config: authConfig, ready: authConfigReady } = useAuthConfig();
     const currentUserId = useAppStore((s) => s.user?.id);
     const currentOrg = useAppStore((s) => s.currentOrganization);
 
@@ -126,6 +128,7 @@ export default function MembersSettingsPage() {
                 >
                     <InviteFlow
                         pending={invite.isPending}
+                        mailDelivers={!authConfigReady || authConfig.mail_delivers}
                         customRoles={customRoles.data ?? []}
                         onSubmit={async (emails, roleIds) => {
                             let ok = 0;
@@ -337,10 +340,12 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 function InviteFlow({
     onSubmit,
     pending,
+    mailDelivers,
     customRoles,
 }: {
     onSubmit: (emails: string[], roleIds: string[]) => Promise<void>;
     pending: boolean;
+    mailDelivers: boolean;
     customRoles: OrganizationRole[];
 }) {
     const [chips, setChips] = React.useState<{ email: string; valid: boolean }[]>([]);
@@ -431,6 +436,19 @@ function InviteFlow({
     return (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-4">
             <div className="space-y-3">
+                {/* MAIL_TRANSPORT=log puts the invitation in the backend log,
+                    not in anyone's inbox. Say so before they wait for it. */}
+                {!mailDelivers && (
+                    <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800">
+                        <MailIcon className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <span>
+                            This server does not deliver mail, so the invitation email will not arrive. Invite the
+                            person anyway, then use <span className="font-medium">Copy invite link</span> on their
+                            row under Pending invitations and send it to them yourself.
+                        </span>
+                    </div>
+                )}
+
                 <div>
                     <Label>Emails</Label>
                     <div

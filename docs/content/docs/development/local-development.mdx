@@ -32,13 +32,21 @@ and admin panel together in your terminal.
 
 Open `http://localhost:5173` and log in with `dev@warmbly.com` / `password123`.
 
+<Callout type="warn" title="make dev shares its database with make up">
+Both pin the same compose project (`-p warmbly`), the same `warmbly_postgres_data` volume and the same `warmbly_dev` database, and `make dev` seeds nine fixture accounts by default, including `admin@warmbly.local` with every platform admin permission and a published password.
+
+Those accounts are your instance's accounts. Seeding therefore spends the first-run exemption permanently: a later `make up` finds a claimed instance, issues no setup link, and the sign-up form refuses you with `403 This server is invite only`. Recover with `warmblyctl user create --email you@example.com --admin`, or start over with `make reset`, which destroys the volumes holding the encryption keys.
+
+Use `make dev SEED=false` on a database you intend to self-host from. Full detail in [first run](/development/first-run/#if-the-instance-already-has-accounts).
+</Callout>
+
 The native dev stack keeps the emailed login code on (`AUTH_LOGIN_CODE=always`)
 so the flow stays exercised, and local mail goes to Mailpit rather than a real
 inbox. Open `http://localhost:18025`, read the newest "Your Login Code"
 message, and paste the code into the dashboard.
 
 A self-hosted install behaves differently: there the code is off by default, so
-signing in never depends on mail. See [self-hosting](/development/deployment-guide/#authentication).
+signing in never depends on mail. See [accounts and access](/development/accounts-and-access/#login-codes).
 
 Ctrl-C stops the app services; the Docker infra stays up, so the next `make dev`
 skips straight to starting the app. The Go services run natively with `go run`,
@@ -205,8 +213,9 @@ make admin            # admin app on :5174
 make site             # marketing site on :4321
 ```
 
-Each target sets the same env you would otherwise export by hand (see
-`deploy/config/env.example` for the full reference). Saving a Go file and
+Each target sets the same env you would otherwise export by hand (see the
+[configuration reference](/development/configuration/) for what each variable
+does, and `deploy/config/env.example` for the bare-binary template). Saving a Go file and
 re-running the target recompiles in a second or two against the warm build
 cache.
 
@@ -239,7 +248,7 @@ make backend AI_PROVIDER=groq   AI_KEY=gsk_... AI_MODEL=openai/gpt-oss-20b
 make backend AI_PROVIDER=openai AI_KEY=sk-...
 ```
 
-`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so AI credits are not charged and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1–3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [self-hosting guide](/development/deployment-guide/) for the full provider list.
+`AI_PROVIDER=ollama` needs no key and marks the model free (`AI_FREE`), so AI credits are not charged and the assistant shows a "free model" notice. Local and free-tier models are less capable, but tool calls and the full agent loop work; use `llama3.1` (8B) or `qwen2.5`, not a 1B to 3B model. Leave `AI_PROVIDER` unset to keep AI off. See the [self-hosting guide](/development/deployment-guide/) for the full provider list.
 
 ## Mailpit
 

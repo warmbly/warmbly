@@ -23,6 +23,7 @@ export function TextInput({
     type = "text",
     disabled,
     autoFocus,
+    autoComplete,
     className,
     onKeyDown,
     onBlur,
@@ -33,6 +34,8 @@ export function TextInput({
     type?: string;
     disabled?: boolean;
     autoFocus?: boolean;
+    // Credential fields need it or password managers cannot fill or save them.
+    autoComplete?: string;
     className?: string;
     onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
     // Fires when the field loses focus. Use it for inputs that parse their
@@ -47,6 +50,7 @@ export function TextInput({
             placeholder={placeholder}
             disabled={disabled}
             autoFocus={autoFocus}
+            autoComplete={autoComplete}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
             onBlur={onBlur}

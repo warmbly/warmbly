@@ -98,6 +98,8 @@ Returned when authentication fails.
 - Check if your key has expired or been revoked
 - Generate a new key if necessary
 
+One `401` variant is not about API keys at all. `setup_token_invalid` is returned by the first-run claim endpoint when the setup link is invalid, already used or expired. Print a new one with `warmblyctl setup-link`, described in [first run](/development/first-run/).
+
 ### 402 Payment Required
 
 Returned when an AI action is requested but the organization is out of credits. The response carries the stable code `insufficient_credits`.
@@ -140,6 +142,28 @@ Returned when authenticated but lacking necessary permissions.
 - Check your API key's permissions
 - Verify IP restrictions if configured
 - Request additional permissions if needed
+
+#### Registration and invitation refusals
+
+Signup and invitation refusals carry their own `code`, so a client can branch on the specific condition instead of matching on text. They describe the deployment's policy and never say anything about whether a given address exists.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `registration_invite_only` | 403 | The server runs `DISABLE_REGISTRATION=invite_only`. Creating an account requires an invitation link, which carries the token that permits the signup |
+| `registration_closed` | 403 | The server runs `DISABLE_REGISTRATION=true`. Signups are off and invitations do not override it |
+| `invitation_invalid` | 403 | The invitation is expired, cancelled, already used, or was issued for a different email address |
+| `setup_already_complete` | 403 | The first-run claim was attempted on an instance that already has an account |
+
+```json
+{
+  "error": "Forbidden",
+  "message": "This server is invite only. Ask an administrator to invite you, then open the link in the invitation to create your account.",
+  "code": "registration_invite_only",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
+**How to fix:** on a self-hosted deployment these are configuration, not faults. See [accounts and access](/development/accounts-and-access/#registration-modes).
 
 ### 404 Not Found
 

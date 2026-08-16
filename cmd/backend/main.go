@@ -27,6 +27,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/adminoutreach"
 	"github.com/warmbly/warmbly/internal/app/advanced"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/app/advisor"
 	"github.com/warmbly/warmbly/internal/app/aiagent"
 	"github.com/warmbly/warmbly/internal/app/aitools"
@@ -55,6 +56,9 @@ import (
 	"github.com/warmbly/warmbly/internal/app/guardrail"
 	idempotencyapp "github.com/warmbly/warmbly/internal/app/idempotency"
 	"github.com/warmbly/warmbly/internal/app/inboxagent"
+	"github.com/warmbly/warmbly/internal/app/instancecheck"
+	"github.com/warmbly/warmbly/internal/app/instanceconfig"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/leadsync"
 	"github.com/warmbly/warmbly/internal/app/mcp"
@@ -128,7 +132,7 @@ func main() {
 	// published default secrets. They are in this repository, so they protect
 	// nothing, and a forged token signed with the default AUTH_SECRET is
 	// accepted by the realtime service.
-	checkSecrets()
+	insecureDefaultsInUse := checkSecrets()
 
 	var addr string
 	var ginMode string
@@ -229,6 +233,9 @@ func main() {
 	var bootstrapService *bootstrap.Service
 	// oidcLogin is nil unless OIDC_ISSUER_URL is configured.
 	var oidcLogin *oidcauth.Service
+	// oidcDiscoveryErr keeps a boot-time discovery failure reportable, since it
+	// otherwise only ever appeared once in the log.
+	var oidcDiscoveryErr string
 	// authCache is the same Redis client the services use, hoisted so the
 	// middleware handler can reach it for the pre-login per-IP limiter.
 	var authCache *cache.Cache
@@ -255,6 +262,10 @@ func main() {
 	var s3ForHandler storage.Store
 	var emailMessageMapForHandler repository.EmailMessageMapRepository
 	var trackedLinkRepository repository.TrackedLinkRepository
+	// instanceSettings and the health registry are built after the handler
+	// dependencies, so the pool is hoisted out of the connection block.
+	var instanceSettings instancesettings.Service
+	var instanceChecksDB *pgxpool.Pool
 	var userRepoForHandler repository.UserRepository
 	var organizationRepoForHandler repository.OrganizationRepository
 	var warmupRoutingRepoForHandler repository.WarmupRoutingRepository
@@ -554,6 +565,8 @@ func main() {
 		)
 		emailMessageMapForHandler = repository.NewEmailMessageMapRepository(primaryDB)
 		trackedLinkRepository = repository.NewTrackedLinkRepository(primaryDB.Pool)
+		instanceChecksDB = primaryDB.Pool
+		instanceSettings = instancesettings.NewService(instancesettings.NewStore(primaryDB.Pool))
 		if err != nil {
 			sentry.CaptureException(err)
 			log.Fatal(err)
@@ -757,8 +770,20 @@ func main() {
 		// be a login requirement.
 		authPolicy = config.LoadAuthPolicy(mailTransport != nil && mailTransport.Delivers)
 		authService.WireDeployment(authPolicy, mailTransport != nil && mailTransport.Delivers)
-		log.Printf("Auth policy: login_code=%s registration=%s email_verification=%t",
-			authPolicy.LoginCode, authPolicy.Registration, authPolicy.RequireEmailVerification)
+		// Invitations answer to the same policy as the signup form.
+		if organizationService != nil {
+			organizationService.WireAuthPolicy(authPolicy)
+		}
+		// The database-backed settings: invitation expiry, the invite-link
+		// switch, and whether an invitee may create their own account.
+		if instanceSettings != nil {
+			authService.WireInstanceSettings(instanceSettings)
+			if organizationService != nil {
+				organizationService.WireInstanceSettings(instanceSettings)
+			}
+		}
+		log.Printf("Auth policy: login_code=%s registration=%s (DISABLE_REGISTRATION) email_verification=%t sso_auto_provision=%t",
+			authPolicy.LoginCode, authPolicy.Registration, authPolicy.RequireEmailVerification, authPolicy.SSOAutoProvision)
 
 		// Native-app social sign-in. Declared as the interface type so an
 		// unconfigured provider stays a true nil (no typed-nil pitfall) and
@@ -792,6 +817,7 @@ func main() {
 				ProviderName:   os.Getenv("OIDC_PROVIDER_NAME"),
 			})
 			if oerr != nil {
+				oidcDiscoveryErr = oerr.Error()
 				log.Printf("Warning: OIDC disabled: %v", oerr)
 			} else {
 				oidcLogin = oidcSvc
@@ -1484,6 +1510,31 @@ func main() {
 		}
 	}
 
+	// The facts only boot knows, handed to the configuration and health pages so
+	// they report what this process actually resolved rather than re-reading the
+	// environment and drifting from it.
+	instanceRuntime := &instanceconfig.Runtime{
+		CORSOrigins:       splitList(os.Getenv("CORS_ALLOW_ORIGINS")),
+		WebAuthnRPID:      os.Getenv("WEBAUTHN_RP_ID"),
+		WebAuthnRPOrigins: splitList(os.Getenv("WEBAUTHN_RP_ORIGINS")),
+		OIDCRedirectURL:   oidcRedirectURL(),
+		OIDCConfigured:    oidcLogin != nil,
+		OIDCDiscoveryErr:  oidcDiscoveryErr,
+		MailTransportKind: mailTransportKind(mailTransport),
+		MailDelivers:      mailTransport != nil && mailTransport.Delivers,
+		PasskeysUsable:    passkeysUsable,
+		InsecureDefaults:  insecureDefaultsInUse,
+		Policy:            authPolicy,
+		WebsocketURL:      os.Getenv("WEBSOCKET_URL"),
+	}
+	instanceChecks := instancecheck.New(instancecheck.Deps{
+		Runtime:   instanceRuntime,
+		Transport: mailTransport,
+		Policy:    authPolicy,
+		DB:        instanceChecksDB,
+		Cache:     authCache,
+	})
+
 	h := &handler.Handler{
 		AuthService:           authService,
 		ExternalAuthProviders: externalAuthProviders,
@@ -1496,6 +1547,10 @@ func main() {
 		MailTransportRef: mailTransport,
 		BootstrapService: bootstrapService,
 		PasskeysUsable:   passkeysUsable,
+
+		InstanceRuntime:  instanceRuntime,
+		InstanceChecks:   instanceChecks,
+		InstanceSettings: instanceSettings,
 
 		TokenService:     tokenService,
 		PasskeyService:   passkeyService,

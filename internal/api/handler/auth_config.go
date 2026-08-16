@@ -54,7 +54,18 @@ type DeploymentAuthConfig struct {
 	// login screen redirects to the setup page rather than showing a form
 	// nobody can yet use.
 	SetupRequired bool `json:"setup_required"`
+
+	// InvitesRequired mirrors registration == invite_only, precomputed so the
+	// client does not reimplement the meaning of a tri-state string.
+	InvitesRequired bool `json:"invites_required"`
+
+	// DocsURL is where to send someone whose signup was refused by deployment
+	// policy rather than by anything they did wrong.
+	DocsURL string `json:"docs_url"`
 }
+
+// accountsDocsURL is the page every registration refusal points at.
+const accountsDocsURL = "https://docs.warmbly.com/development/accounts-and-access/"
 
 // AuthConfig serves GET /v1/auth/config. Public and unauthenticated by design:
 // it is the first request the login screen makes.
@@ -72,16 +83,20 @@ func (h *Handler) AuthConfig(c *gin.Context) {
 		providers = append(providers, "oidc")
 	}
 
+	registration := h.AuthService.RegistrationMode(c.Request.Context())
+
 	c.JSON(http.StatusOK, DeploymentAuthConfig{
 		Captcha:           config.CaptchaProvider() != "none",
 		PasswordLogin:     !policy.DisablePasswordLogin,
 		LoginCode:         policy.LoginCode,
-		Registration:      h.AuthService.RegistrationMode(c.Request.Context()),
+		Registration:      registration,
 		EmailVerification: policy.RequireEmailVerification,
 		MailDelivers:      h.MailDelivers,
 		Passkeys:          h.PasskeysUsable,
 		Providers:         providers,
 		SelfHosted:        config.SelfHosted(),
 		SetupRequired:     h.BootstrapService != nil && h.BootstrapService.Required(c.Request.Context()),
+		InvitesRequired:   registration == config.RegistrationInviteOnly,
+		DocsURL:           accountsDocsURL,
 	})
 }

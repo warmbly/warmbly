@@ -1,0 +1,353 @@
+---
+title: Accounts and access
+description: Who may create an account on your instance, how to invite teammates with or without a mail relay, how single sign-on provisioning works, and how to recover when you are locked out.
+---
+
+If you landed here after seeing **"This server is not accepting new accounts"** or **"This server is invite only"**, nothing is broken. A self-hosted instance ships closed to the public, and the way in is an invitation or the command line, not the sign-up form. Jump to [registration modes](#registration-modes) for what you saw and why, or straight to [inviting teammates](#inviting-teammates) for how to let people in.
+
+## Self-host defaults
+
+`DEPLOYMENT_MODE=self_hosted` picks a set of auth defaults that differ from the hosted product, because a deployment you run yourself should not depend on infrastructure you have not set up. Every one is independently overridable.
+
+| Setting | Self-host default | What it does |
+|---|---|---|
+| `AUTH_LOGIN_CODE` | `off` | Whether a login also requires a code emailed to the account |
+| `REQUIRE_EMAIL_VERIFICATION` | `false` | Whether a signup must confirm an emailed code before the account exists |
+| `DISABLE_REGISTRATION` | `invite_only` | Who may create an account from the sign-up form |
+| `DISABLE_PASSWORD_LOGIN` | `false` | Turns off email and password entirely, for single sign-on only deployments |
+| `SSO_AUTO_PROVISION` | `false` | Whether an identity provider assertion alone may create an account |
+| `AUTH_IP_RATE_LIMIT` | `60` | Unauthenticated auth requests allowed per source IP per 15 minutes |
+
+## First owner
+
+An instance with no accounts is unclaimed. `make up` prints a single-use link that turns the person who opens it into the owner and platform admin:
+
+```
+http://localhost:5173/setup?token=...
+```
+
+The link is valid for 24 hours, single use, and only its hash is stored, so reading the database does not yield a working one. It is invalidated the moment it is used, and no further link is ever issued once an account exists.
+
+Lost it, or never saw it? [First run](/development/first-run/) covers every case, including the common one where the database already had accounts from a previous `make dev`.
+
+Unattended, set both of these before the first start and no link is issued at all:
+
+```bash
+WARMBLY_BOOTSTRAP_EMAIL=you@example.com
+WARMBLY_BOOTSTRAP_PASSWORD_HASH=$argon2id$v=19$m=...
+```
+
+Both are read only while the users table is empty, so they are a no-op on every later restart.
+
+<Callout type="warn" title="Remove WARMBLY_BOOTSTRAP_PASSWORD once the owner exists">
+The plaintext variant works, and then keeps sitting in your process environment where `docker inspect` and `/proc` can read it. Produce a hash with `warmblyctl hash-password` and use `WARMBLY_BOOTSTRAP_PASSWORD_HASH` instead.
+</Callout>
+
+## Registration modes
+
+`DISABLE_REGISTRATION` is tri-state, because "closed to the public but invitations still work" is the state most operators actually want.
+
+| Value | The sign-up form | An invitation link | Single sign-on |
+|---|---|---|---|
+| `false` | Anyone may create an account | Works, and joins the inviting workspace | Provisions new accounts |
+| `invite_only` (self-host default) | Refused, and the dashboard does not render the form | Works. The link carries the token that permits the signup | Provisions only for an address that holds a live invitation, or when `SSO_AUTO_PROVISION=true` |
+| `true` | Refused | Refused, and members cannot create new invitations either | Refused unless `SSO_AUTO_PROVISION=true` |
+
+One database-backed setting sits on top of `invite_only`. Turning **`access.allow_invited_signup`** off under **Instance > Instance settings** makes an invitation stop being a self-service signup capability: both the password path and the single sign-on path then answer with `registration_closed`, and an administrator creates every account with `warmblyctl user create`. It is on by default, so the table above is what a stock instance does.
+
+### The first-launch exemption
+
+There is exactly one exception, and it is the reason signup can appear to work once and then stop: **while the users table is empty, a signup is always allowed.** That exemption is what makes an unclaimed instance claimable. It is spent the moment any account exists, including accounts created by seeding.
+
+So "I registered fine yesterday and today it says the server is invite only" is not a regression. Either an account already existed, or the account you created yesterday spent the exemption.
+
+### What you saw, and what it means
+
+| Message | `code` | HTTP | What to do |
+|---|---|---|---|
+| This server is invite only. Ask an administrator to invite you, then open the link in the invitation to create your account. | `registration_invite_only` | 403 | `DISABLE_REGISTRATION=invite_only`. Get an invitation and create the account from its link, or have an administrator run `warmblyctl user create` |
+| This server is not accepting new accounts. | `registration_closed` | 403 | `DISABLE_REGISTRATION=true`. No invitation overrides this. Only `warmblyctl user create` adds accounts, or change the mode and restart |
+| That invitation link is invalid, expired, or was issued for a different email address. Ask for a fresh one. | `invitation_invalid` | 403 | The invitation expired (7 days by default), was revoked, was already used, or the address you typed is not the address it was issued for |
+| That setup link is invalid, already used, or expired. | `setup_token_invalid` | 401 | 24 hour lifetime, single use, and it does not survive a Redis flush. Print a new one with `warmblyctl setup-link` |
+| This instance has already been set up. | `setup_already_complete` | 403 | An account exists, so no claim link is issued. Sign in, or see [recovering access](#recovering-access) |
+
+Older builds returned the invite-only refusal with the text "This server is not accepting new accounts. Ask an administrator for an invitation." and the generic code `forbidden`. Same cause, same fix.
+
+## Sign-in methods
+
+| Method | Needs a mail relay | Notes |
+|---|---|---|
+| Email and password | No | The default. Turn it off with `DISABLE_PASSWORD_LOGIN=true` for a single sign-on only deployment |
+| Emailed login code | Yes, when enabled | Off on self-host. See [login codes](#login-codes) |
+| TOTP | No | Applies to every sign-in path, including Google, Apple and single sign-on |
+| Passkeys | No | Requires a secure context, so `APP_URL` must be HTTPS or a `localhost` address |
+| Single sign-on (OIDC) | No | The recommended posture when you have no relay. See [single sign-on](#single-sign-on) |
+| Sign in with Google or Apple | No | Optional, and unrelated to connecting Gmail mailboxes |
+
+<Callout type="warn" title="Do not disable everything at once">
+`DISABLE_PASSWORD_LOGIN=true` with no configured provider leaves no way to sign in at all. The `no_sign_in_method` check on [Instance health](/development/instance-health/#no_sign_in_method) fires when that happens.
+</Callout>
+
+## Login codes
+
+`AUTH_LOGIN_CODE` is `always`, `new_device` or `off`, and self-host defaults to `off`.
+
+That default is deliberate. Emailing a code on every sign-in makes the mail relay a single point of failure for all authentication, and it is not a second factor: NIST SP 800-63B states that email is not to be used for out-of-band authentication, and OWASP ASVS says the same. Codes stay in use for what email is appropriate for, which is verifying an address at signup and recovering an account.
+
+Set `new_device` to require one only from a device that has not signed in before, or `always` for the hosted behavior. If the transport does not deliver, `always` is demoted to `new_device` at boot, because otherwise nobody could complete a login at all.
+
+### Stronger factors
+
+A user-verified passkey is already a possession factor bound to this origin, so a passkey sign-in does not additionally prompt for TOTP. Changing `APP_URL` after passkeys are enrolled invalidates all of them, because the relying party id derives from it.
+
+## Inviting teammates
+
+An invitation adds someone to **your workspace**, with the roles you pick. It does not create a second workspace, and it works under the default `invite_only` mode.
+
+<Steps>
+
+<Step>
+
+### Open the members page
+
+In the dashboard, go to **Settings > Members**. You need the **Manage team** permission; the owner and the seeded Admin role have it, and any custom role can carry it.
+
+</Step>
+
+<Step>
+
+### Add the addresses and pick a role
+
+Paste or type addresses into **Emails**, separated by comma, semicolon, space or Enter. Each becomes a chip: valid ones grey, malformed ones red so you can remove them first. Pick one or more **Roles** for the batch (the panel on the right names what you are granting), then **Send invitations**.
+
+Warmbly sends one invitation per address and reports the outcome as a toast, "Invited 2 people" or "Invited 2 · 1 failed". Malformed addresses are skipped and called out. The chips clear when the batch finishes, and the new rows appear under **Pending invitations**.
+
+Roles are workspace data, so the list is whatever your workspace has. The seeded set is Admin, Manager and Viewer; [team and roles](/guides/team-roles/) explains what each grants. Two rules matter at invite time:
+
+- you can only grant permissions you already hold, so nobody can mint an invitation stronger than their own access
+- roles are re-resolved when the invitation is accepted, so editing a role between invite and accept applies
+
+</Step>
+
+<Step>
+
+### Copy the link and send it, if mail does not
+
+Every invitation is backed by a link of the form `https://your-instance/invite?token=...`. If your instance delivers mail, it is emailed and you do not have to do anything. If it does not, the link is the whole mechanism, and the way to get it is the copy button on the invitee's row under **Pending invitations**. See [without a mail relay](#without-a-mail-relay).
+
+</Step>
+
+<Step>
+
+### They create their account from the link
+
+The invitee opens the link, sees the workspace, the inviter and the roles they are being given, and clicks **Create an account**. They set a password and land inside your workspace.
+
+This is the part worth being explicit about: **that signup succeeds under `invite_only` precisely because the link carries the invitation token.** The same person visiting the sign-up form directly, without the link, is refused with `registration_invite_only`. The token is the capability. Nothing else about the address is special.
+
+</Step>
+
+</Steps>
+
+### Without a mail relay
+
+`MAIL_TRANSPORT` defaults to `log` on a self-hosted install, which writes every message to the backend log and delivers nothing. Invitations still work; they just do not arrive by themselves.
+
+The dashboard says so before you waste time waiting. When the backend reports that mail is not delivered, an amber notice sits above the **Emails** field: *"This server does not deliver mail, so the invitation email will not arrive. Invite the person anyway, then use Copy invite link on their row under Pending invitations and send it to them yourself."*
+
+So the flow is two steps, not one:
+
+1. invite the person normally
+2. find their row under **Pending invitations** and click the copy icon on the right of it. The full `/invite?token=...` URL goes to your clipboard and a "Invite link copied" toast confirms it
+
+On a phone or tablet the row actions are always visible; on a desktop they appear when you hover the row. The other icon on that row cancels the invitation.
+
+Send the link over a channel you trust. It is a bearer credential: anyone holding it can create an account in your workspace with the roles you attached, until it expires or you cancel it.
+
+<Callout type="info" title="There is no resend button">
+Nothing re-sends an invitation email, because on a `log` transport there would be nothing to send it with. To give somebody a fresh link, invite the same address again: that replaces the row in place with a new token and a reset expiry, and the previously copied link stops working.
+</Callout>
+
+If you would rather read it out of the log instead:
+
+```bash
+docker compose -p warmbly logs backend | grep -A20 "invitation"
+```
+
+The cleanest fix is still to point `MAIL_TRANSPORT` at a real relay. See [platform mail](/development/configuration/#platform-mail).
+
+## Invitations
+
+| Property | Behavior |
+|---|---|
+| Expiry | 7 days by default. Change it with `invitations.ttl_hours` under **Instance > Instance settings**, clamped to 1 to 720 hours. It is read when the invitation is written, so a change applies to new invitations, not to outstanding ones |
+| Address binding | The invitation is bound to the address it was issued for. Registering a different address with the same token is refused |
+| Re-inviting the same address | Replaces the row in place: one row per address per workspace, a rotated token, a reset expiry, and the previously copied link dead |
+| Copy link | Returns the token for a pending invitation so you can build and share the URL yourself |
+| Cancel | Revokes it immediately |
+| Expired rows | No longer shown in the dashboard. Re-inviting the address replaces the expired row |
+| Turning links off | Set `invitations.links_enabled` to false under **Instance > Instance settings** if invitations must arrive by mail and nowhere else. The copy action then fails with an explanation instead of returning a token. Only do this once mail actually delivers |
+
+Invitations join an existing workspace and never create one. To stand up a **second organization** you need `DISABLE_REGISTRATION=false`, or an administrator running `warmblyctl user create`.
+
+## Single sign-on
+
+Generic OpenID Connect works with Authentik, Keycloak, Zitadel, Pocket ID, Dex and anything else that publishes a discovery document. It is in the standard build, not a paid tier, and it is the one sign-in path with no dependency on outbound mail, which makes it the recommended posture for a deployment with no relay.
+
+```bash
+OIDC_ISSUER_URL=https://id.example.com/application/o/warmbly/
+OIDC_CLIENT_ID=...
+OIDC_CLIENT_SECRET=...
+OIDC_REDIRECT_URL=https://api.example.com/v1/auth/oidc/callback
+OIDC_ALLOWED_DOMAINS=example.com
+OIDC_DEFAULT_ORG=<organization uuid>
+```
+
+<Callout type="warn" title="The redirect URI is /v1/auth/oidc/callback">
+Not `/api/v1/auth/oidc/callback`. Earlier builds derived the wrong path from `API_PUBLIC_URL`, so a successful login at the provider ended in a 404. If you registered the old path at your provider, change it on both sides: providers match the redirect URI by exact string.
+</Callout>
+
+Register `OIDC_REDIRECT_URL` as the redirect URI at your provider. Unset, it defaults to `API_PUBLIC_URL` plus `/v1/auth/oidc/callback`, so `API_PUBLIC_URL` has to be set for single sign-on to work at all.
+
+Four things worth knowing:
+
+- **Single sign-on obeys `DISABLE_REGISTRATION` too.** A verified assertion for an address nobody invited does not create an account under `invite_only` or `true`. A live invitation for that address acts as the allowlist entry and lets it through.
+- **`SSO_AUTO_PROVISION=true` is the separate switch** for operators whose identity provider is the gate. It lets any verified assertion create an account regardless of the registration mode. Turning on OIDC never silently reopens signup on its own.
+- **Set `OIDC_ALLOWED_DOMAINS`.** Without it, any address your provider will assert can sign in. With it, only the domains you list.
+- **Accounts are bound to the issuer and subject pair**, not to the email address, and an unverified address is refused. Matching on email alone would let anyone who can register an arbitrary address at your provider claim an existing Warmbly account.
+
+Only RS256 ID tokens are accepted, which every mainstream provider issues by default. Discovery runs at boot: an unreachable or misconfigured issuer disables single sign-on with a logged reason rather than shipping a button that always fails.
+
+<Callout type="warn" title="Upgrading an existing OIDC install">
+Before this change, single sign-on bypassed `DISABLE_REGISTRATION` entirely, so an instance on `invite_only` was in practice open to anyone the provider would assert. That hole is closed. If you were relying on it, set `SSO_AUTO_PROVISION=true` and restart, or invite the people who need access.
+</Callout>
+
+Pair single sign-on with `DISABLE_PASSWORD_LOGIN=true` for an SSO-only deployment. Keep at least one platform admin who can still get in another way.
+
+## Platform admins
+
+A workspace role and a platform admin bit are different things. Roles govern what someone can do inside one organization. The platform admin bits govern the operator panel on `:5174`: workers, users, organizations, warmup, analytics and audit across the whole instance.
+
+The first owner receives every admin bit when they claim the instance. After that, admins are granted from **Instance > Admins** in the admin panel, either by preset or per bit.
+
+| Preset | Roughly |
+|---|---|
+| `super` | Every bit, including granting admin access to others |
+| `support` | User and organization lookup, impersonation-free support tooling |
+| `ops` | Workers, queues and operational controls |
+| `analyst` | Read-only analytics |
+
+From a shell:
+
+```bash
+warmblyctl user grant-admin --email you@example.com --role super
+warmblyctl user revoke-admin --email someone@example.com
+```
+
+`make grant-admin EMAIL=...` and `make revoke-admin EMAIL=...` wrap the same commands for a compose install. Both only change an account that already exists; neither creates one.
+
+<Callout type="warn" title="Keep a second admin">
+There is no way to grant platform admin from inside the product without already holding the bit. One admin account is one lost password away from needing shell access. The `single_platform_admin` check on [Instance health](/development/instance-health/#single_platform_admin) says so on purpose.
+</Callout>
+
+## Recovering access
+
+Every command below runs inside the backend, because that is where the correct environment already lives: `PRIMARY_DB`, `REDIS` and the encryption keys. Authorization is container or host access, which is the right trust model when the identity system is the thing that is broken. `warmblyctl` has no HTTP surface.
+
+Pick the line that matches how you run Warmbly:
+
+```bash
+docker compose -p warmbly exec backend warmblyctl status   # docker compose
+docker exec -it warmbly-backend warmblyctl status          # plain docker
+kubectl exec -it deploy/warmbly-backend -- warmblyctl status
+warmblyctl status                                          # bare binary
+```
+
+The rest of this section shows the compose form. Substitute the prefix you need.
+
+### See where you stand
+
+```bash
+docker compose -p warmbly exec backend warmblyctl status
+docker compose -p warmbly exec backend warmblyctl user list --admin
+```
+
+`status` reports the account count, whether the instance is claimed, the registration mode and whether it was set or defaulted, whether the mail transport delivers, `APP_URL`, who the platform admins are, the open health checks, and the commands that apply to that exact state. It exits non-zero when a check is at error severity. `user list --admin` answers the narrower question of whether any admin account survives.
+
+### Reset a password without typing one
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user reset-password --email you@example.com
+```
+
+This prints a single-use reset URL valid for one hour. Open it in a browser and set the new password there. Nothing sensitive enters your shell history, and it uses exactly the same redemption path as the reset link the product emails.
+
+For automation, pipe the password instead so it never appears in `ps` output:
+
+```bash
+printf '%s' "$NEW_PASSWORD" | docker compose exec -T backend warmblyctl user reset-password \
+  --email you@example.com --password-stdin
+```
+
+That form also revokes every other session for the account, matching what the web reset does.
+
+### Create a new owner and admin
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user create --email you@example.com --admin
+```
+
+Creates the account, an organization and a trial, and grants every platform admin bit. On a terminal it prompts for the password twice; on a non-TTY it refuses rather than creating a passwordless account, so pass `--password-stdin` in scripts. An address that already exists is an error, and it points you at `reset-password`.
+
+### Lost the authenticator but not the password
+
+```bash
+docker compose -p warmbly exec backend warmblyctl user disable-2fa --email you@example.com
+```
+
+Clears the TOTP enrolment so a lost phone does not become a full password reset.
+
+### Reissue the first-run claim link
+
+```bash
+docker compose -p warmbly exec backend warmblyctl setup-link
+```
+
+Only works while the instance has no accounts. On a claimed instance it refuses and points at `user create`. See [first run](/development/first-run/).
+
+### The browser reset path
+
+The ordinary **Forgot password** flow still works, if mail delivers. It is capped at **2 requests per address per 4 hours**, so repeated attempts during an outage will lock you out of the flow for a while.
+
+<Callout type="warn" title="Do not flush Redis on an unclaimed instance">
+`redis-cli FLUSHDB` destroys the `bootstrap:setup_token` entry along with every pending auth session and rate limit counter. On an instance you have not claimed yet, that throws away the only way in. Delete the single key you meant to clear instead.
+</Callout>
+
+## Opening public signup
+
+If you actually want anyone to be able to create an account:
+
+```bash
+DISABLE_REGISTRATION=false
+```
+
+Restart the backend. The **Create account** tab reappears, invitations keep working, and `warmblyctl status` reports the new mode so you can confirm it took effect.
+
+Understand what that means on an instance reachable from the internet: every visitor can create an account and their own workspace, connect mailboxes and start sending through your deployment. There is no per-domain allowlist on the password path. If you want SSO to be the gate instead, keep `invite_only` and set `SSO_AUTO_PROVISION=true` with `OIDC_ALLOWED_DOMAINS` scoped to your own domains.
+
+## When people cannot get in
+
+| Situation | What to do |
+|---|---|
+| They never received the invitation | Mail probably does not deliver. Click the copy icon on their row under **Pending invitations** and send the link yourself. See [without a mail relay](#without-a-mail-relay) |
+| They opened the sign-up form and got a 403 | They need the invitation link, not the form. The link carries the token that permits the signup |
+| Their invitation expired | Re-invite the same address. It replaces the row and mints a fresh link |
+| Nobody can reset a password | `MAIL_TRANSPORT` does not deliver. Use `warmblyctl user reset-password` and hand over the printed URL |
+| You lost the only admin account | `warmblyctl user create --email you@example.com --admin`, then sign in at the admin panel |
+
+## See also
+
+- [First run](/development/first-run/) for claiming a fresh instance
+- [Configuration reference](/development/configuration/) for every variable named here
+- [Team and roles](/guides/team-roles/) for what each workspace role grants
+- [Troubleshooting](/development/troubleshooting/) for the errors self-hosters actually hit

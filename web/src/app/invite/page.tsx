@@ -13,6 +13,7 @@ import usePreviewInvitation from "@/lib/api/hooks/app/organizations/usePreviewIn
 import useAcceptInvitation from "@/lib/api/hooks/app/organizations/useAcceptInvitation";
 import useOrganizations from "@/lib/api/hooks/app/organizations/useOrganizations";
 import useSwitchOrganization from "@/lib/api/hooks/app/organizations/useSwitchOrganization";
+import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useAppStore } from "@/stores";
 import { Logo } from "@/components/svg";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -30,8 +31,19 @@ export default function InviteAcceptPage() {
     const switchOrg = useSwitchOrganization();
     const setOrganizations = useAppStore((s) => s.setOrganizations);
     const setCurrentOrganization = useAppStore((s) => s.setCurrentOrganization);
+    const { config: authConfig } = useAuthConfig();
 
     const nextPath = `/invite?token=${encodeURIComponent(token ?? "")}`;
+    // The invited address has to travel too: the backend only accepts a signup
+    // whose email equals the invited one, so the form is prefilled with it.
+    const invitedEmail = preview.data?.email ?? "";
+    // The token has to travel as ?invite= too: without it the backend cannot
+    // tell the signup is invited, and an invite_only instance refuses it.
+    const registerPath =
+        `/auth/register?invite=${encodeURIComponent(token ?? "")}` +
+        (invitedEmail ? `&email=${encodeURIComponent(invitedEmail)}` : "") +
+        `&next=${encodeURIComponent(nextPath)}`;
+    const signupClosed = authConfig.registration === "true";
 
     async function onAccept() {
         if (!token) return;
@@ -142,12 +154,19 @@ export default function InviteAcceptPage() {
                                     >
                                         Sign in to accept
                                     </Link>
-                                    <Link
-                                        to={`/auth/register?next=${encodeURIComponent(nextPath)}`}
-                                        className="w-full h-9 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[13px] font-medium inline-flex items-center justify-center transition-colors"
-                                    >
-                                        Create an account
-                                    </Link>
+                                    {signupClosed ? (
+                                        <p className="text-[12px] text-slate-500 leading-relaxed">
+                                            This server is not accepting new accounts. Ask the administrator who
+                                            invited you.
+                                        </p>
+                                    ) : (
+                                        <Link
+                                            to={registerPath}
+                                            className="w-full h-9 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[13px] font-medium inline-flex items-center justify-center transition-colors"
+                                        >
+                                            Create an account
+                                        </Link>
+                                    )}
                                 </div>
                             )}
                         </div>

@@ -106,6 +106,12 @@ func (s *authService) resolveFederatedUser(ctx context.Context, provider, issuer
 	}
 
 	if u == nil {
+		// Just-in-time provisioning is a signup, so it answers to
+		// DISABLE_REGISTRATION like every other one. Without this an instance
+		// set to `true` is still open to anyone the IdP will assert.
+		if xerr := s.federatedSignupAllowed(ctx, email.Address); xerr != nil {
+			return uuid.Nil, xerr
+		}
 		var cerr error
 		u, cerr = s.createExternalUser(ctx, email, firstName, lastName)
 		if cerr != nil {
@@ -142,7 +148,8 @@ func (s *authService) resolveFederatedUser(ctx context.Context, provider, issuer
 
 // createExternalUser provisions a first-time social sign-in: a passwordless
 // user row (they can set a password later via reset), the provider-asserted
-// name when available, and the same org + trial bootstrap as RegistrationConfirm.
+// name when available, and the same invitation, org and trial bootstrap as
+// RegistrationConfirm.
 func (s *authService) createExternalUser(ctx context.Context, email *mail.Address, firstName, lastName string) (*models.User, error) {
 	u, err := s.userRepository.CreateUser(ctx, email, "")
 	if err != nil {
@@ -158,6 +165,13 @@ func (s *authService) createExternalUser(ctx context.Context, email *mail.Addres
 
 	if serr := s.userService.SaveUser(ctx, u); serr != nil {
 		return nil, serr
+	}
+
+	// An invited account joins the inviting organization and stops there, the
+	// same as the password path. Only an address nobody invited gets its own
+	// workspace and trial.
+	if s.acceptPendingInvitation(ctx, u.ID, u.Email) {
+		return u, nil
 	}
 
 	var org *models.Organization

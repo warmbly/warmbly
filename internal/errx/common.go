@@ -42,9 +42,24 @@ var (
 	// thing to show someone who cannot log in.
 	ErrMailUndeliverable = New(Internal, "We couldn't send the email. If you administer this server, check the mail transport configuration.")
 
-	// ErrRegistrationClosed is returned when public signups are off. The
-	// operator sets DISABLE_REGISTRATION.
-	ErrRegistrationClosed = New(Forbidden, "This server is not accepting new accounts. Ask an administrator for an invitation.")
+	// Registration refusals. Each names the deployment policy rather than the
+	// person, and carries its own identifier so a client can branch on the
+	// specific condition instead of string-matching a 403.
+	ErrRegistrationInviteOnly = NewWithIdentifier(Forbidden, "registration_invite_only",
+		"This server is invite only. Ask an administrator to invite you, then open the link in the invitation to create your account. See https://docs.warmbly.com/development/accounts-and-access/")
+	// ErrRegistrationClosed is returned when signups are off entirely. The
+	// operator sets DISABLE_REGISTRATION=true, and no invitation overrides it.
+	ErrRegistrationClosed = NewWithIdentifier(Forbidden, "registration_closed",
+		"This server is not accepting new accounts. See https://docs.warmbly.com/development/accounts-and-access/")
+	ErrInvitationInvalid = NewWithIdentifier(Forbidden, "invitation_invalid",
+		"That invitation link is invalid, expired, or was issued for a different email address. Ask for a fresh one.")
+
+	// First-run claim. Both name the command that resolves them, because the
+	// person who sees these is the person who can run it.
+	ErrSetupToken = NewWithIdentifier(Unauthorized, "setup_token_invalid",
+		"That setup link is invalid, already used, or expired. Print a new one with `warmblyctl setup-link`.")
+	ErrSetupComplete = NewWithIdentifier(Forbidden, "setup_already_complete",
+		"This instance has already been set up. Sign in, or recover access with `warmblyctl user reset-password`.")
 
 	ErrExternalCode     = New(BadRequest, "Invalid or expired code, please try again.")
 	ErrExternalEmail    = New(BadRequest, "Invalid or unverified email address.")

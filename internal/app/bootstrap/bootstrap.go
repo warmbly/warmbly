@@ -79,6 +79,9 @@ func (s *Service) Run(ctx context.Context) error {
 		return fmt.Errorf("bootstrap: checking for existing users: %w", err)
 	}
 	if !empty {
+		// Say why no claim link appeared. Staying silent here is what turns a
+		// re-used database into an unexplained 403 on the signup form.
+		s.explainClaimed(ctx)
 		return nil
 	}
 
@@ -143,25 +146,53 @@ func (s *Service) createOwner(ctx context.Context, address string) error {
 	return nil
 }
 
-// printSetupToken mints a single-use claim token for the first account and
-// prints it once. Only its hash is stored, so reading the database does not
-// yield a usable token, and claiming it deletes the key.
-func (s *Service) printSetupToken(ctx context.Context) error {
+// IssueSetupLink mints a single-use claim link for the first account and
+// returns it. Only its hash is stored, so reading the database does not yield a
+// usable token, and claiming it deletes the key. Minting again replaces any
+// outstanding token, so an old link stops working.
+//
+// It refuses on a claimed instance: a second owner must never be mintable
+// without an existing account.
+func (s *Service) IssueSetupLink(ctx context.Context) (string, error) {
 	if s.cache == nil {
-		return nil
+		return "", fmt.Errorf("bootstrap: no cache is configured, so a setup token cannot be stored (check REDIS)")
+	}
+
+	empty, err := s.users.IsEmpty(ctx)
+	if err != nil {
+		return "", fmt.Errorf("bootstrap: checking for existing users: %w", err)
+	}
+	if !empty {
+		return "", fmt.Errorf("bootstrap: this instance already has accounts, so no setup link is issued. Add an account with `warmblyctl user create --email you@example.com --admin`")
 	}
 
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
-		return err
+		return "", err
 	}
 	token := hex.EncodeToString(buf)
 
 	if err := s.cache.SetEx(ctx, setupTokenKey, hashToken(token), SetupTokenTTL).Err(); err != nil {
-		return fmt.Errorf("bootstrap: storing the setup token: %w", err)
+		return "", fmt.Errorf("bootstrap: storing the setup token: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/setup?token=%s", config.AppBaseURL(), token)
+	return fmt.Sprintf("%s/setup?token=%s", config.AppBaseURL(), token), nil
+}
+
+// printSetupToken mints the claim link at boot and prints it once.
+func (s *Service) printSetupToken(ctx context.Context) error {
+	if s.cache == nil {
+		// The worst possible silence: without a cache the instance can neither
+		// be claimed nor registered against, and nothing else says so.
+		log.Printf("Bootstrap: no accounts exist and no cache is configured, so no setup link can be issued. Check REDIS, then run `warmblyctl setup-link`.")
+		return nil
+	}
+
+	url, err := s.IssueSetupLink(ctx)
+	if err != nil {
+		return err
+	}
+
 	log.Printf("\n"+
 		"┌──────────────────────────────────────────────────────────────────────\n"+
 		"│ No accounts exist yet. Claim this instance with the link below.\n"+
@@ -169,12 +200,44 @@ func (s *Service) printSetupToken(ctx context.Context) error {
 		"│   %s\n"+
 		"│\n"+
 		"│ Single use, valid for %s. It is printed only once, and only its hash\n"+
-		"│ is stored. Set WARMBLY_BOOTSTRAP_EMAIL and\n"+
-		"│ WARMBLY_BOOTSTRAP_PASSWORD_HASH to provision the owner without it.\n"+
+		"│ is stored.\n"+
+		"│\n"+
+		"│ Lost it? Print a new one: warmblyctl setup-link\n"+
+		"│ Unattended instead? Set WARMBLY_BOOTSTRAP_EMAIL and\n"+
+		"│ WARMBLY_BOOTSTRAP_PASSWORD_HASH before the first start.\n"+
 		"└──────────────────────────────────────────────────────────────────────\n",
 		url, SetupTokenTTL)
 
 	return nil
+}
+
+// explainClaimed logs why a claim link was not issued, and what to run
+// instead. Best effort: never blocks boot.
+func (s *Service) explainClaimed(ctx context.Context) {
+	count, err := s.users.CountUsers(ctx)
+	if err != nil {
+		return
+	}
+
+	registration := config.LoadAuthPolicy(false).Registration
+	advice := "Registration is open, so you can create an account from the sign-in page."
+	if registration != config.RegistrationOpen {
+		advice = fmt.Sprintf("Registration is %s (DISABLE_REGISTRATION), so the signup form will refuse\n"+
+			"│ new accounts. Add one with:\n"+
+			"│\n"+
+			"│   warmblyctl user create --email you@example.com --admin", registration)
+	}
+
+	log.Printf("\n"+
+		"┌──────────────────────────────────────────────────────────────────────\n"+
+		"│ First run: skipped. This instance already has %d account(s), so no\n"+
+		"│ setup link is issued.\n"+
+		"│\n"+
+		"│ %s\n"+
+		"│\n"+
+		"│ See where you stand: warmblyctl status\n"+
+		"└──────────────────────────────────────────────────────────────────────\n",
+		count, advice)
 }
 
 // Required reports whether this instance still needs to be claimed. Drives the
@@ -191,7 +254,7 @@ func (s *Service) Required(ctx context.Context) bool {
 // atomic step that decides which one wins.
 func (s *Service) Claim(ctx context.Context, token, address, password, firstName, lastName string) (*models.User, *errx.Error) {
 	if s.cache == nil || token == "" {
-		return nil, errx.ErrToken
+		return nil, errx.ErrSetupToken
 	}
 
 	parsed, perr := mail.ParseAddress(address)
@@ -210,17 +273,24 @@ func (s *Service) Claim(ctx context.Context, token, address, password, firstName
 		return nil, errx.InternalError()
 	}
 	if !empty {
-		return nil, errx.New(errx.Forbidden, "this instance has already been set up")
+		return nil, errx.ErrSetupComplete
 	}
+
+	// Read the remaining lifetime before consuming the key: restoring a losing
+	// token with a fresh TTL would let anyone hold the claim window open
+	// indefinitely by posting a wrong token once a day, and /auth/setup is
+	// public.
+	remaining, _ := s.cache.PTTL(ctx, setupTokenKey).Result()
 
 	stored, gerr := s.cache.GetDel(ctx, setupTokenKey).Result()
 	if gerr != nil || stored == "" || stored != hashToken(token) {
 		// Put a valid-but-losing token back only when the value did not match,
-		// so a typo does not burn the real one.
-		if gerr == nil && stored != "" && stored != hashToken(token) {
-			_ = s.cache.SetEx(ctx, setupTokenKey, stored, SetupTokenTTL).Err()
+		// so a typo does not burn the real one, and only for the time it had
+		// left.
+		if gerr == nil && stored != "" && stored != hashToken(token) && remaining > 0 {
+			_ = s.cache.SetEx(ctx, setupTokenKey, stored, remaining).Err()
 		}
-		return nil, errx.ErrToken
+		return nil, errx.ErrSetupToken
 	}
 
 	hash, herr := argon2.Hash(password)

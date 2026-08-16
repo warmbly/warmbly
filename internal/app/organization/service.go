@@ -18,15 +18,31 @@ import (
 )
 
 const (
-	// InvitationTTL is the default invitation expiration time
+	// InvitationTTL is the invitation expiration used when no instance
+	// settings service is wired; the operator's value overrides it.
 	InvitationTTL = 7 * 24 * time.Hour // 7 days
 
 	// InvitationTokenLength is the length of invitation tokens
 	InvitationTokenLength = 32
 )
 
+// InstanceSettings is the operator-editable half of the invite flow. Satisfied
+// by instancesettings.Service; injected post-construction so this package needs
+// no import of it (no cycle).
+type InstanceSettings interface {
+	InvitationTTL(ctx context.Context) time.Duration
+	InviteLinksEnabled(ctx context.Context) bool
+}
+
 // OrganizationService defines the interface for organization management
 type OrganizationService interface {
+	// WireAuthPolicy attaches the deployment auth policy after construction.
+	WireAuthPolicy(p *config.AuthPolicy)
+
+	// WireInstanceSettings attaches the database-backed instance settings
+	// (post-construction; nil keeps the compiled defaults).
+	WireInstanceSettings(s InstanceSettings)
+
 	// CRUD
 	Create(ctx context.Context, userID uuid.UUID, name string) (*models.Organization, *errx.Error)
 	Get(ctx context.Context, orgID uuid.UUID) (*models.Organization, *errx.Error)
@@ -123,6 +139,45 @@ type organizationService struct {
 	subRepo  repository.SubscriptionRepository
 	userRepo repository.UserRepository
 	throttle dailythrottle.Service
+	// authPolicy is wired after construction, because the policy is loaded
+	// alongside the mail transport and not available at this call site.
+	authPolicy *config.AuthPolicy
+	// settings is the operator-editable invite configuration, wired after
+	// construction because it needs the database pool.
+	settings InstanceSettings
+}
+
+// WireAuthPolicy attaches the deployment auth policy, so invitations answer to
+// DISABLE_REGISTRATION the same way the signup form does.
+func (s *organizationService) WireAuthPolicy(p *config.AuthPolicy) {
+	s.authPolicy = p
+}
+
+// WireInstanceSettings attaches the instance settings document, so the invite
+// TTL and the invite-link switch answer to the admin page.
+func (s *organizationService) WireInstanceSettings(set InstanceSettings) {
+	s.settings = set
+}
+
+// invitationTTL is the operator's invitation lifetime, falling back to the
+// compiled default when nothing is wired.
+func (s *organizationService) invitationTTL(ctx context.Context) time.Duration {
+	if s.settings == nil {
+		return InvitationTTL
+	}
+	if ttl := s.settings.InvitationTTL(ctx); ttl > 0 {
+		return ttl
+	}
+	return InvitationTTL
+}
+
+// inviteLinksEnabled reports whether the copyable invite link is exposed. It
+// defaults to on, so an unwired service keeps the historic behavior.
+func (s *organizationService) inviteLinksEnabled(ctx context.Context) bool {
+	if s.settings == nil {
+		return true
+	}
+	return s.settings.InviteLinksEnabled(ctx)
 }
 
 // NewService creates a new organization service
@@ -368,6 +423,13 @@ func (s *organizationService) GetMembership(ctx context.Context, orgID, userID u
 
 // InviteMember invites a new member to the organization
 func (s *organizationService) InviteMember(ctx context.Context, orgID uuid.UUID, inviterID uuid.UUID, req *models.InviteMemberRequest) (*models.OrganizationInvitation, *errx.Error) {
+	// Refuse to mint an invitation the recipient could never redeem. With
+	// signups fully closed the invite link 403s, so issuing one only wastes
+	// the inviter's time.
+	if s.authPolicy != nil && !s.authPolicy.InvitesAllowed() {
+		return nil, errx.ErrRegistrationClosed
+	}
+
 	// Check member limit
 	canAdd, err := s.CanAddMember(ctx, orgID)
 	if err != nil {
@@ -412,7 +474,7 @@ func (s *organizationService) InviteMember(ctx context.Context, orgID uuid.UUID,
 		Permissions:    permissions,
 		InvitedBy:      inviterID,
 		Token:          token,
-		ExpiresAt:      time.Now().Add(InvitationTTL),
+		ExpiresAt:      time.Now().Add(s.invitationTTL(ctx)),
 		CreatedAt:      time.Now(),
 	}
 
@@ -521,6 +583,12 @@ func (s *organizationService) PreviewInvitation(ctx context.Context, token strin
 // GetInvitationToken returns the secure token for one of the org's pending
 // invitations, so a team manager can copy a shareable /invite link.
 func (s *organizationService) GetInvitationToken(ctx context.Context, orgID, invitationID uuid.UUID) (string, *errx.Error) {
+	// The link is a bearer credential, so an operator can switch it off and
+	// require the invitation to arrive by email.
+	if !s.inviteLinksEnabled(ctx) {
+		return "", errx.New(errx.NotFound, "invite links are turned off on this instance; the invitation has to be delivered by email")
+	}
+
 	inv, err := s.orgRepo.GetInvitationByID(ctx, invitationID)
 	if err != nil {
 		sentry.CaptureException(err)
