@@ -78,6 +78,7 @@ Newer builds return the invite-only refusal with its own machine code, `registra
 | Connecting a mailbox is rejected on the port | SMTP must be `587` or `465`. The Mailpit sink used by `make sandbox` listens on `1025` with no STARTTLS, so it cannot be used as a test mailbox |
 | A mailbox stalls after about an hour | The worker is missing `BOX_GOOGLE_*` or `BOX_OUTLOOK_*`. The backend starts the OAuth flow but each worker refreshes the token. Set them and restart the worker |
 | Scheduled sends never fire | Delayed sends run through the in-process Postgres task poller (`TASKS_PROVIDER=local`), so the backend must be running |
+| Every send dead-letters with `permission denied` on `/data/blobs` | The `blobs` volume was created before the images owned that path, so it is still `root:root` while the services run as uid 1000. Fix it once with `docker compose -p warmbly exec -u root backend chown -R warmbly:warmbly /data/blobs`. The `blob_fs_root` health check reports it, and volumes created from current images are already correct |
 | Opens and clicks never record | Check `TRACKING_DOMAIN` resolves and the tracking service answers on `/health`. If you overrode `KAFKA_TRACKING_TOPIC`, it has to be overridden for the Rust publisher and the Go subscriber together |
 | Seeding fails with `no migration found for version N` | The seed image is older than your schema. Re-run with `--build` |
 | Worker `install_state: error` | Test connection first (is the SSH key in `authorized_keys`?), then read `last_error` and Logs on the worker's detail page |
