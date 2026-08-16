@@ -38,3 +38,18 @@ func (s *uniboxService) GetByThread(
 
 	return resp, nil
 }
+
+// LatestMessageIDInThread resolves the parent Message-ID for a reply that only
+// knows its provider thread id.
+func (s *uniboxService) LatestMessageIDInThread(
+	ctx context.Context,
+	orgID uuid.UUID,
+	threadID string,
+) (string, *errx.Error) {
+	messageID, err := s.uniboxRepository.LatestMessageIDInThread(ctx, orgID, threadID)
+	if err != nil {
+		sentry.CaptureException(err)
+		return "", errx.InternalError()
+	}
+	return messageID, nil
+}

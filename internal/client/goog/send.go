@@ -33,102 +33,17 @@ func (c *Client) SendMessage(
 	attachments []Attachment,
 	customHeaders ...map[string]string,
 ) (*gmail.Message, error) {
-	// Attachments require a multipart/mixed MIME tree, which the structured
-	// gmail.MessagePart API does not express well (no per-part raw bytes with
-	// Content-Disposition). Build a raw RFC 5322 message and submit it as
-	// base64url Raw. The no-attachment path keeps the existing structured form
-	// so threading/back-compat behavior is unchanged.
-	if len(attachments) > 0 {
-		return c.sendRawWithAttachments(to, cc, bcc, messageID, subject, bodyPlain, bodyHTML, parent, attachments, customHeaders...)
-	}
-
-	// Compose headers
-	headers := []*gmail.MessagePartHeader{
-		{Name: "From", Value: c.GetAddress()},
-		{Name: "To", Value: strings.Join(to, ", ")},
-		{Name: "Subject", Value: subject},
-		{Name: "Message-ID", Value: messageID},
-	}
-
-	if len(cc) > 0 {
-		headers = append(headers, &gmail.MessagePartHeader{
-			Name:  "Cc",
-			Value: strings.Join(cc, ", "),
-		})
-	}
-
-	if len(bcc) > 0 {
-		headers = append(headers, &gmail.MessagePartHeader{
-			Name:  "Bcc",
-			Value: strings.Join(bcc, ", "),
-		})
-	}
-
-	if parent != nil && parent.MessageID != "" {
-		// Trim any existing <...> before re-wrapping so we don't emit <<id>>,
-		// which won't match the original Message-ID header and breaks threading.
-		mid := "<" + strings.Trim(parent.MessageID, "<>") + ">"
-		headers = append(headers,
-			&gmail.MessagePartHeader{Name: "In-Reply-To", Value: mid},
-			&gmail.MessagePartHeader{Name: "References", Value: mid},
-		)
-	}
-
-	// Add custom headers (e.g., X-Warmbly-Token for warmup)
-	if len(customHeaders) > 0 {
-		for k, v := range customHeaders[0] {
-			headers = append(headers, &gmail.MessagePartHeader{Name: k, Value: v})
-		}
-	}
-
-	// Compose parts
-	var parts []*gmail.MessagePart
-
-	// Plain text part
-	parts = append(parts, &gmail.MessagePart{
-		MimeType: "text/plain",
-		Body: &gmail.MessagePartBody{
-			Data: base64.URLEncoding.EncodeToString([]byte(bodyPlain)),
-		},
-	})
-
-	// HTML part (optional)
-	if bodyHTML != "" {
-		parts = append(parts, &gmail.MessagePart{
-			MimeType: "text/html",
-			Body: &gmail.MessagePartBody{
-				Data: base64.URLEncoding.EncodeToString([]byte(bodyHTML)),
-			},
-		})
-	}
-
-	// Full message
-	msg := &gmail.Message{
-		Payload: &gmail.MessagePart{
-			MimeType: "multipart/alternative",
-			Headers:  headers,
-			Parts:    parts,
-		},
-	}
-
-	// Threading
-	if parent != nil && parent.ThreadID != "" {
-		msg.ThreadId = parent.ThreadID
-	}
-
-	// Send via Gmail API
-	sent, err := c.srv.Users.Messages.Send("me", msg).Do()
-	if err != nil {
-		return nil, fmt.Errorf("send message failed: %w", err)
-	}
-
-	return sent, nil
+	// Gmail's users.messages.send only ever accepts the base64url raw RFC 5322
+	// form. The structured gmail.MessagePart/Payload tree is what the API
+	// returns when you READ a parsed message; submitting one to Send is
+	// rejected outright with "'raw' RFC822 payload message string or uploading
+	// message via /upload/* URL required". Every send goes through raw.
+	return c.sendRaw(to, cc, bcc, messageID, subject, bodyPlain, bodyHTML, parent, attachments, customHeaders...)
 }
 
-// sendRawWithAttachments builds a multipart/mixed RFC 5322 message
-// (multipart/alternative for text+html, then one application/* part per
-// attachment) and submits it via the Gmail API as base64url-encoded Raw.
-func (c *Client) sendRawWithAttachments(
+// sendRaw builds an RFC 5322 message and submits it as base64url-encoded Raw,
+// which is the only body Gmail's Send endpoint accepts.
+func (c *Client) sendRaw(
 	to, cc, bcc []string,
 	messageID,
 	subject, bodyPlain, bodyHTML string,
@@ -140,7 +55,9 @@ func (c *Client) sendRawWithAttachments(
 	hdrs = append(hdrs,
 		header{"From", c.GetAddress()},
 		header{"To", strings.Join(to, ", ")},
-		header{"Subject", subject},
+		// We now own header encoding, so a non-ASCII subject has to be
+		// RFC 2047-encoded here. Encode is a no-op on a plain ASCII subject.
+		header{"Subject", mime.QEncoding.Encode("utf-8", subject)},
 		header{"Message-ID", messageID},
 		header{"MIME-Version", "1.0"},
 	)
@@ -160,7 +77,7 @@ func (c *Client) sendRawWithAttachments(
 		}
 	}
 
-	raw, err := buildMixedMIME(hdrs, bodyPlain, bodyHTML, attachments)
+	raw, err := buildMIME(hdrs, bodyPlain, bodyHTML, attachments)
 	if err != nil {
 		return nil, fmt.Errorf("build mime: %w", err)
 	}
@@ -181,6 +98,69 @@ func (c *Client) sendRawWithAttachments(
 
 type header struct{ name, value string }
 
+// buildMIME assembles the message body using the narrowest structure the
+// content actually needs: a bare text/plain when that is all there is, a
+// multipart/alternative once there is an HTML body, and a multipart/mixed
+// wrapper only when there are attachments. Wrapping every message in
+// multipart/mixed would be valid but is not what a mail client produces, and
+// cold outreach has no room for gratuitous structural differences.
+func buildMIME(hdrs []header, bodyPlain, bodyHTML string, attachments []Attachment) ([]byte, error) {
+	switch {
+	case len(attachments) > 0:
+		return buildMixedMIME(hdrs, bodyPlain, bodyHTML, attachments)
+	case bodyHTML == "":
+		return buildPlainMIME(hdrs, bodyPlain)
+	default:
+		return buildAlternativeMIME(hdrs, bodyPlain, bodyHTML)
+	}
+}
+
+// writeHeaders emits the top-level headers. They must precede the body and any
+// multipart boundary, so this always runs before a part is created.
+func writeHeaders(buf *bytes.Buffer, hdrs []header) {
+	for _, h := range hdrs {
+		fmt.Fprintf(buf, "%s: %s\r\n", h.name, h.value)
+	}
+}
+
+// buildPlainMIME is the single-part form used by warmup mail and any campaign
+// with no HTML body.
+func buildPlainMIME(hdrs []header, bodyPlain string) ([]byte, error) {
+	var buf bytes.Buffer
+	writeHeaders(&buf, hdrs)
+	fmt.Fprint(&buf, "Content-Type: text/plain; charset=UTF-8\r\n")
+	fmt.Fprint(&buf, "Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+
+	qp := quotedprintable.NewWriter(&buf)
+	if _, err := qp.Write([]byte(bodyPlain)); err != nil {
+		return nil, err
+	}
+	if err := qp.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// buildAlternativeMIME is the text + HTML form used by a normal campaign send.
+func buildAlternativeMIME(hdrs []header, bodyPlain, bodyHTML string) ([]byte, error) {
+	var buf bytes.Buffer
+	alt := multipart.NewWriter(&buf)
+
+	writeHeaders(&buf, hdrs)
+	fmt.Fprintf(&buf, "Content-Type: multipart/alternative; boundary=%s\r\n\r\n", alt.Boundary())
+
+	if err := writeTextPart(alt, "text/plain; charset=UTF-8", bodyPlain); err != nil {
+		return nil, err
+	}
+	if err := writeTextPart(alt, "text/html; charset=UTF-8", bodyHTML); err != nil {
+		return nil, err
+	}
+	if err := alt.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // buildMixedMIME assembles a multipart/mixed message: a multipart/alternative
 // (text/plain + optional text/html) followed by one attachment part each. Text
 // parts use quoted-printable; attachment parts use base64 with a
@@ -192,9 +172,7 @@ func buildMixedMIME(hdrs []header, bodyPlain, bodyHTML string, attachments []Att
 
 	// Top-level headers + the multipart/mixed Content-Type. These must precede
 	// the first boundary, so write them before any part is created.
-	for _, h := range hdrs {
-		fmt.Fprintf(&buf, "%s: %s\r\n", h.name, h.value)
-	}
+	writeHeaders(&buf, hdrs)
 	fmt.Fprintf(&buf, "Content-Type: multipart/mixed; boundary=%s\r\n\r\n", mixed.Boundary())
 
 	// --- multipart/alternative sub-tree for the text bodies ---

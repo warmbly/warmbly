@@ -132,7 +132,7 @@ Discovery against the configured issuer failed at boot, so the single sign-on bu
 
 ### app_origin_wildcard
 
-`APP_ORIGIN` is unset, so the mailbox OAuth callback page posts the authorization code back to the dashboard with a wildcard target origin. Set `APP_ORIGIN` to your dashboard origin.
+Neither `APP_ORIGIN` nor a usable `APP_URL` is set, so the mailbox OAuth callback page posts the authorization code back to the dashboard with a wildcard target origin. Set `APP_URL` to your dashboard origin, or `APP_ORIGIN` if the dashboard is served somewhere else. Setting `APP_URL` alone clears this: the callback page derives its target from it.
 
 ### tracking_domain_unreachable
 

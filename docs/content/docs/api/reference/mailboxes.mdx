@@ -147,6 +147,7 @@ Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
 | `campaign_limit` | integer | no | Daily cold-campaign cap for this mailbox (validated up to `100`). |
 | `min_wait_time` | integer | no | Minimum seconds between sends. |
 | `reply_to` | string | no | Reply-to address. |
+| `timezone` | string | no | The mailbox's own IANA zone, such as `America/Denver`. Its sending behaviour and business-hours window are evaluated in this zone. Send an empty string to clear it, which leaves only the campaign's own window applying. |
 | `warmup` | boolean | no | Enable or disable warmup. |
 | `warmup_base` | integer | no | Warmup starting volume per day. |
 | `warmup_max` | integer | no | Warmup daily ceiling. |

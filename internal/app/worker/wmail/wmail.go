@@ -125,6 +125,11 @@ func NewWMail(
 				OnMessageRemove: mail.onGoogleMessageRemove,
 				OnLabelAdd:      mail.onGoogleMessageLabelsAdded,
 				OnLabelRemove:   mail.onGoogleMessageLabelsRemoved,
+				// Without this a refreshed Gmail token is never persisted, so
+				// the mailbox stops working roughly an hour after connect.
+				OnTokenRefresh: func(_ context.Context, t *oauth2.Token) error {
+					return mail.onTokenUpdate(t)
+				},
 			},
 			LastHistoryID: data.Google.LastHistoryID,
 		}

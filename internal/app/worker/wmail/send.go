@@ -15,6 +15,33 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+// parentReference resolves what a reply should be threaded onto, from whichever
+// of the two independent handles the request carries.
+//
+// They are genuinely independent. ThreadID is the provider's own conversation
+// id and is what makes the message appear in the thread in the SENDER's
+// mailbox; it is meaningless to anyone else. MessageID becomes the RFC
+// In-Reply-To/References headers, which is the only thing the RECIPIENT's mail
+// client can thread on. A dashboard reply starts with only a ThreadID and a
+// warmup reply with only a Message-ID, so requiring both threads neither.
+func parentReference(req *SendRequest) *models.EmailMessageData {
+	if req == nil {
+		return nil
+	}
+	var messageID, threadID string
+	if req.Parent != nil {
+		messageID = req.Parent.MessageID
+		threadID = req.Parent.ThreadID
+	}
+	if messageID == "" && req.InReplyTo != "" {
+		messageID = strings.Trim(req.InReplyTo, "<>")
+	}
+	if messageID == "" && threadID == "" {
+		return nil
+	}
+	return &models.EmailMessageData{MessageID: messageID, ThreadID: threadID}
+}
+
 // Attachment is a fully-resolved attachment ready to be MIME-encoded: the
 // worker has already fetched Data from object storage.
 type Attachment struct {
@@ -144,19 +171,12 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 		return result
 	}
 
-	// Build parent reference for replies. Warmup replies often only have the
-	// RFC Message-ID from the token flow, not a local provider thread record.
-	var parent *models.EmailMessageData
-	if req.InReplyTo != "" && req.Parent != nil {
-		parent = &models.EmailMessageData{
-			MessageID: req.Parent.MessageID,
-			ThreadID:  req.Parent.ThreadID,
-		}
-	} else if req.InReplyTo != "" {
-		parent = &models.EmailMessageData{
-			MessageID: strings.Trim(req.InReplyTo, "<>"),
-		}
-	}
+	// Build parent reference for replies. Gating this on InReplyTo dropped a
+	// perfectly good ThreadID whenever the header was absent, which is every
+	// dashboard reply, so the provider started a new conversation instead.
+	// Warmup replies are the mirror case: an RFC Message-ID from the token flow
+	// and no local thread record.
+	parent := parentReference(req)
 
 	// Build custom headers (warmup token + RFC 8058 one-click unsubscribe).
 	customHeaders := buildSendHeaders(req)
@@ -220,19 +240,12 @@ func (w *WMail) sendViaGraph(ctx context.Context, req *SendRequest, bodyHTML str
 		return result
 	}
 
-	// Build parent reference for replies. Warmup replies often only have the RFC
-	// Message-ID from the token flow, not a local provider thread record.
-	var parent *models.EmailMessageData
-	if req.InReplyTo != "" && req.Parent != nil {
-		parent = &models.EmailMessageData{
-			MessageID: req.Parent.MessageID,
-			ThreadID:  req.Parent.ThreadID,
-		}
-	} else if req.InReplyTo != "" {
-		parent = &models.EmailMessageData{
-			MessageID: strings.Trim(req.InReplyTo, "<>"),
-		}
-	}
+	// Build parent reference for replies. Gating this on InReplyTo dropped a
+	// perfectly good ThreadID whenever the header was absent, which is every
+	// dashboard reply, so the provider started a new conversation instead.
+	// Warmup replies are the mirror case: an RFC Message-ID from the token flow
+	// and no local thread record.
+	parent := parentReference(req)
 
 	// Warmup token + RFC 8058 one-click unsubscribe headers; RAW MIME carries
 	// them verbatim (the JSON message shape cannot).

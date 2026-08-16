@@ -150,6 +150,20 @@ func (r *emailRepository) RevokeOauth(ctx context.Context, id string) *errx.Erro
 }
 
 func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, accessToken, refreshToken string, expiresAt time.Time) error {
+	// Refreshed tokens land here from the worker's OnTokenRefresh callback and
+	// must be sealed on the same terms as the ones written at connect time,
+	// otherwise the first refresh silently reverts the row to plaintext.
+	encAccessToken, err := r.sealCredential(accessToken)
+	if err != nil {
+		db.CaptureError(err, "", nil, "encrypt-access-token")
+		return err
+	}
+	encRefreshToken, err := r.sealCredential(refreshToken)
+	if err != nil {
+		db.CaptureError(err, "", nil, "encrypt-refresh-token")
+		return err
+	}
+
 	query := `
 		UPDATE email_accounts_oauth
 		SET access_token = $1, refresh_token = $2, expires_at = $3
@@ -157,19 +171,19 @@ func (r *emailRepository) RefreshBoxToken(ctx context.Context, id uuid.UUID, acc
 	`
 
 	params := []any{
-		accessToken,
-		refreshToken,
+		encAccessToken,
+		encRefreshToken,
 		expiresAt,
 		id,
 	}
 
-	_, err := r.DB.Exec(
+	if _, err := r.DB.Exec(
 		ctx,
 		query,
 		params...,
-	)
-	if err != nil {
-		db.CaptureError(err, query, params, "exec")
+	); err != nil {
+		// params holds the sealed tokens; keep them out of the error report.
+		db.CaptureError(err, query, nil, "exec")
 		return err
 	}
 	return nil

@@ -259,6 +259,12 @@ func (s *campaignService) enqueueCampaignWakeup(ctx context.Context, campaignID 
 	// the defer time rather than failing the campaign start.
 	if err != nil && !errors.Is(err, scheduler.ErrCampaignDeferred) {
 		switch {
+		// Checked before ErrNoEmailAccounts, which it wraps.
+		case errors.Is(err, scheduler.ErrNoEligibleMailbox):
+			_ = s.campaignRepository.UpdateStatusWithLock(ctx, campaignID, "paused_no_accounts")
+			return errx.New(errx.BadRequest,
+				"this campaign's mailboxes are all outside their sending window or over their daily limit right now; "+
+					"check each mailbox's timezone, sending behaviour and daily cap")
 		case errors.Is(err, scheduler.ErrNoEmailAccounts):
 			_ = s.campaignRepository.UpdateStatusWithLock(ctx, campaignID, "paused_no_accounts")
 			return errx.New(errx.BadRequest, "no active email accounts found for campaign's email tags")

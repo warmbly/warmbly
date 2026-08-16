@@ -23,7 +23,11 @@ func NewTrackingDedupeRepository(db *pgxpool.Pool) TrackingDedupeRepository {
 	return &trackingDedupeRepository{db: db}
 }
 
-// IsProcessed checks if a tracking event has already been processed
+// IsProcessed checks if a tracking event has already been processed.
+//
+// url_hash is NOT NULL and defaults to the empty string, which is exactly what
+// an open event carries, so this compares the column directly. Wrapping it in
+// COALESCE only hid that and made the primary key unusable for the lookup.
 func (r *trackingDedupeRepository) IsProcessed(ctx context.Context, taskID uuid.UUID, eventType, urlHash string) (bool, error) {
 	query := `
 		SELECT EXISTS(
@@ -31,7 +35,7 @@ func (r *trackingDedupeRepository) IsProcessed(ctx context.Context, taskID uuid.
 			FROM tracking_events_processed
 			WHERE task_id = $1
 			  AND event_type = $2
-			  AND COALESCE(url_hash, '') = COALESCE($3, '')
+			  AND url_hash = $3
 		)
 	`
 
@@ -40,12 +44,19 @@ func (r *trackingDedupeRepository) IsProcessed(ctx context.Context, taskID uuid.
 	return exists, err
 }
 
-// MarkProcessed marks a tracking event as processed
+// MarkProcessed marks a tracking event as processed.
+//
+// The conflict target must name the primary key's plain columns
+// (task_id, event_type, url_hash). Targeting an expression instead requires a
+// matching expression index, and there is none, so Postgres rejected every
+// insert with SQLSTATE 42P10 whether or not the row was a duplicate. NULLIF was
+// the second half of the same mistake: it turned an open event's empty url_hash
+// into NULL, which the NOT NULL column would have refused anyway.
 func (r *trackingDedupeRepository) MarkProcessed(ctx context.Context, taskID uuid.UUID, eventType, urlHash string) error {
 	query := `
 		INSERT INTO tracking_events_processed (task_id, event_type, url_hash, processed_at)
-		VALUES ($1, $2, NULLIF($3, ''), NOW())
-		ON CONFLICT (task_id, event_type, COALESCE(url_hash, ''))
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (task_id, event_type, url_hash)
 		DO NOTHING
 	`
 

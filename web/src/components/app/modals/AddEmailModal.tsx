@@ -35,7 +35,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Google, Outlook, Logo } from "@/components/svg";
 import { TextInput } from "@/components/ui/field";
 import { useUserProfile } from "@/hooks/context/user";
-import { APP_URL } from "@/lib/information";
+import { API_URL, APP_URL } from "@/lib/information";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import addEmail from "@/lib/api/client/app/emails/addEmail";
@@ -52,6 +52,34 @@ interface OAuthCallbackMessage {
     code: string;
     state: string;
     error: string;
+}
+
+// originOf normalises a configured base URL to a bare origin. APP_URL and
+// API_URL may carry a trailing slash or a path; event.origin never does.
+function originOf(value: string | undefined): string | null {
+    if (!value) return null;
+    try {
+        return new URL(value, window.location.href).origin;
+    } catch {
+        return null;
+    }
+}
+
+// The origins we accept an OAuth callback message from.
+//
+// The bridge page is served by the API, not the dashboard, so that the
+// redirect_uri registered with Google and Microsoft stays stable across
+// front-end changes. On a split-domain deployment (dashboard on one host, API
+// on another, which is what the self-hosting guide sets up) event.origin is
+// therefore API_URL's origin and never APP_URL's. Accepting only APP_URL
+// silently dropped every callback and left the modal waiting forever.
+//
+// This is a coarse gate: the real replay protection is the single-use state
+// match below, which the message still has to satisfy.
+function allowedCallbackOrigins(): string[] {
+    return [originOf(APP_URL), originOf(API_URL), window.location.origin].filter(
+        (o): o is string => Boolean(o),
+    );
 }
 
 function openCentered(url: string, name: string): Window | null {
@@ -94,13 +122,12 @@ export default function AddEmailModal() {
         }
     }, [user.addEmail]);
 
-    // Listen for the OAuth popup's postMessage. We only honour messages
-    // whose origin matches APP_URL and whose state matches the one we
-    // issued — protects against replay and stray posts.
+    // Listen for the OAuth popup's postMessage. We only honour messages from an
+    // origin we own and whose state matches the one we issued, which is what
+    // protects against replay and stray posts.
     React.useEffect(() => {
         function onMessage(event: MessageEvent) {
-            const expectedOrigin = APP_URL || window.location.origin;
-            if (event.origin && expectedOrigin && event.origin !== expectedOrigin && event.origin !== window.location.origin) {
+            if (event.origin && !allowedCallbackOrigins().includes(event.origin)) {
                 return;
             }
             const data = event.data as OAuthCallbackMessage | undefined;
