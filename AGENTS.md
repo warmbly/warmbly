@@ -55,6 +55,25 @@ Data modeling / representation:
 - prefer real typed columns / enums when the data is fixed-shape, queried or filtered in SQL, or benefits from FK integrity.
 - a `jsonb` column is the right call when the data is a free-form, evolving, read-then-execute blob that isn't filtered in SQL (e.g. the `sequences.conditions` branching tree and `sequences.action` node config) — keep it type-safe at the app boundary with a Go struct + validation on write, and a DB `CHECK` on any discriminator column.
 
+### Workspace data stays portable
+
+A customer can export their whole organization to an archive and import it on another instance (`internal/app/orgtransfer`, Settings > Data, `warmblyctl org export|import`). That only keeps working if every new piece of org-owned data is added to it deliberately. Data that isn't in the registry is silently absent from every archive, and nobody finds out until a migration lands on the other side missing a feature's data.
+
+So: **a migration that adds an organization-scoped table is not done until that table is in `internal/app/orgtransfer/spec.go`.** Add it to `Tables` with its data group and scope, or to `ExcludedTables` with the reason it must not travel. There is no third option; leaving it out is the bug.
+
+When you add one, work through:
+
+- **Scope.** The `WHERE` fragment selecting that table's rows for one organization, with `$1` as the org id. Use a subquery against a parent when the table has no `organization_id` of its own.
+- **Order.** `Tables` is applied top to bottom on import, so a table must sit below everything it references.
+- **Group.** Which `models.OrgDataGroup` it belongs to. If a NOT NULL foreign key crosses a group boundary, add the dependency to `Requires` in `models.OrgDataGroupCatalog` — otherwise a user who deselects the target group gets an import that aborts on a constraint. Nullable crossings need nothing; the importer blanks them.
+- **Secrets.** Any column holding ciphertext needs a `SecretColumn` with the right `KeyDomain`. Warmbly has two and they are not interchangeable: `KeyDomainInstance` is `CREDENTIALS_ENCRYPTION_KEY` (mailbox credentials, which the worker reads without an org context), `KeyDomainOrgDEK` is the per-organization DEK (everything else). Getting this wrong produces mailboxes that authenticate against nothing.
+- **Instance-local columns.** Anything naming a worker, a queue handle, a Stripe object, or a sync checkpoint belongs in `ResetOnImport`, or the whole table in `ImportSkip` when it only means something on the instance that wrote it.
+- **Blobs.** A column holding an object-storage key needs a `BlobColumn` so the bytes travel with the rows.
+
+Rows move as `jsonb` in both directions, so adding a *column* to an existing table needs no code change: the exporter emits it and the importer intersects against the destination catalog. Only new tables need registering.
+
+The same applies to the customer-facing side of a feature: if it stores org data, its docs page and `docs/content/docs/guides/workspace-export-import.mdx` should agree about whether that data moves.
+
 ### Verification: what to run, what to skip
 
 Keep the loop fast. The signals that matter are formatting, lint, and typecheck — not local builds or browser automation.
