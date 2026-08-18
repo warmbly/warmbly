@@ -90,7 +90,10 @@ const (
 	AuditEntityAutomation     AuditEntityType = "automation"
 	AuditEntityLeadSyncSource AuditEntityType = "lead_sync_source"
 	AuditEntityMeeting        AuditEntityType = "meeting"
-	AuditEntityRole           AuditEntityType = "role"
+
+	// Workspace archives (export/import for moving between instances).
+	AuditEntityOrgArchive AuditEntityType = "org_archive"
+	AuditEntityRole       AuditEntityType = "role"
 
 	// Referral program. referral = the share code / attribution; referral_credit
 	// = a reward or clawback on the referrer's earnings ledger.
