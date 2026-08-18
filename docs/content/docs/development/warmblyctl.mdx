@@ -49,8 +49,10 @@ A command that would set a password refuses on a non-TTY unless you passed `--pa
 | `REDIS` | `setup-link` always, `reset-password` to mint a link | `setup-link` fails. Everything else degrades to a warning and continues |
 | `AUTH_SECRET` | `reset-password` when it mints a link | The link cannot be signed with the key the backend verifies, so it is refused |
 | `APP_URL` | every printed link and sign-in hint | Links are built against `https://app.warmbly.com`, which is the hosted service and not your instance |
+| `KMS_PROVIDER` and its key | `org export`, `org import` | The command stops: a workspace's sealed values cannot be opened, so an archive would be useless |
+| `CREDENTIALS_ENCRYPTION_KEY` | `org export`, `org import` | A warning, and mailbox credentials are neither read nor written. Everything else still moves |
 
-Inside the backend container all four are already set. Outside it, export them first, and match `AUTH_SECRET` to the backend's exactly.
+Inside the backend container all of these are already set. Outside it, export them first, and match `AUTH_SECRET` to the backend's exactly.
 
 ## The commands
 
@@ -65,6 +67,9 @@ Inside the backend container all four are already set. Outside it, export them f
 | [`user revoke-admin`](#user-revoke-admin) | Takes platform admin away from an account |
 | [`user disable-2fa`](#user-disable-2fa) | Clears an account's authenticator enrolment |
 | [`hash-password`](#hash-password) | Prints an argon2 hash for unattended provisioning |
+| [`org list`](#org-list) | Lists the workspaces on this instance with their id, owner, and size |
+| [`org export`](#org-export) | Writes a whole workspace to a portable archive file |
+| [`org import`](#org-import) | Applies an archive to a workspace on this instance |
 
 `warmblyctl --help` lists them, and `warmblyctl <command> --help` prints one command's flags with an example.
 
@@ -271,6 +276,70 @@ It prompts when a terminal is attached and reads the pipe when one is not, so th
 An argon2 PHC string contains `$` characters. Docker Compose reads those as interpolation, so a bare hash in `.env` silently loses part of itself. Wrap it in single quotes there, and double every `$` if you paste it into `docker-compose.yml` directly.
 </Callout>
 
+## org list
+
+```bash
+docker compose -p warmbly exec backend warmblyctl org list
+```
+
+Prints every workspace with its id, name, owner email, and member, mailbox and contact counts. It exists so the next two commands have something to name: `--org` accepts the id, the slug, or the owner's email, whichever you have to hand.
+
+## org export
+
+```bash
+docker compose -p warmbly exec backend warmblyctl org export \
+  --org you@example.com --out /tmp/workspace.warmbly.zip
+```
+
+Writes one workspace to a single archive file: the organization, its members and roles, mailboxes, campaigns, sequences, contacts, suppression, CRM, inbox history, and the send state that stops a migrated mailbox from sending twice its daily volume on the day it moves. It is the same archive the dashboard produces under **Settings > Data**, so either side of a migration can use either tool.
+
+| Flag | Does |
+|---|---|
+| `--org` | The workspace: its id, its slug, or the owner's email. Required |
+| `--out` | Where to write the archive. `-` writes to stdout, so it can be piped straight into `ssh` or a bucket. Required |
+| `--groups` | Comma-separated data groups to include. Omit for everything |
+| `--with-credentials` | Seals mailbox and integration credentials into the archive under a passphrase |
+| `--passphrase-stdin` | Reads the passphrase from stdin instead of prompting twice |
+
+`warmblyctl org export --help` prints the group list. `core` is always included; `inbox`, `sending`, `events` and `logs` are the ones that grow without limit, so dropping them is how you get a small archive that still rebuilds a working workspace.
+
+<Callout type="warn" title="An archive with credentials is the most sensitive file this product produces">
+It holds every mailbox password and refresh token in the workspace, protected only by the passphrase you type. Warmbly stores that passphrase nowhere, so losing it means exporting again, and anyone holding both the file and the passphrase can send mail as those mailboxes.
+</Callout>
+
+Without `--with-credentials` the credential fields travel empty and every mailbox arrives on the destination needing a reconnect. Everything else moves either way.
+
+Progress goes to stderr and the archive to the file, so `--out -` streams cleanly:
+
+```bash
+warmblyctl org export --org you@example.com --out - | ssh newhost 'cat > /tmp/workspace.zip'
+```
+
+## org import
+
+```bash
+docker compose -p warmbly exec backend warmblyctl org import \
+  --org you@example.com --file /tmp/workspace.warmbly.zip --dry-run
+```
+
+Applies an archive to a workspace on this instance. It always prints what the archive holds, which rows already exist here, and which members have no account, before writing anything.
+
+| Flag | Does |
+|---|---|
+| `--org` | The destination workspace: id, slug, or owner email. Required |
+| `--file` | The archive to read. Required |
+| `--groups` | Comma-separated data groups to apply. Omit for everything in the archive |
+| `--overwrite` | Replaces rows that already exist here instead of keeping them |
+| `--with-credentials` | Prompts for the export passphrase so credentials come across |
+| `--passphrase-stdin` | Reads that passphrase from stdin |
+| `--dry-run` | Prints the report and writes nothing |
+
+Run it with `--dry-run` first. The report is the same preflight the dashboard shows, and it costs nothing.
+
+The whole import runs in one transaction: if any part fails, nothing lands and the workspace is untouched. Members are matched to accounts on this instance by email address, and anyone without one has their rows reassigned to the workspace owner, named in the report before you commit. An archive carries no password material, so it can never create an account here.
+
+Billing history, plan overrides, worker placement, mailbox sync checkpoints and warmup pool membership are exported for the record but never applied: each belongs to the instance rather than to the workspace. [Export and import](/guides/workspace-export-import/) has the full table.
+
 ## When Redis is down
 
 Account recovery must not depend on the cache, so most commands treat an unreachable Redis as a warning and carry on.
@@ -282,6 +351,7 @@ Account recovery must not depend on the cache, so most commands treat an unreach
 | `user reset-password --password-stdin` | Works. The password changes, but existing sessions cannot be revoked |
 | `user create` | Works. The new account is not warmed into the cache, which is harmless |
 | `status` | Works, and reports `redis_unreachable` as a finding |
+| `org export` and `org import` | Work. Decrypted keys are not cached, so each workspace costs one extra KMS round trip |
 | Everything else | Works |
 
 ## Make targets
@@ -302,4 +372,5 @@ Every one of these runs `warmblyctl` inside the backend container of a compose i
 - [Accounts and access](/development/accounts-and-access/) for registration modes, invitations, login codes and single sign-on
 - [Instance health](/development/instance-health/) for every check `status` can report
 - [Troubleshooting](/development/troubleshooting/) for symptoms and the command that fixes each one
+- [Export and import](/guides/workspace-export-import/) for what an archive contains and what deliberately does not travel
 - [Configuration reference](/development/configuration/) for every variable named here

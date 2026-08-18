@@ -820,6 +820,13 @@ docker compose -p warmbly exec backend warmblyctl status
 docker compose -p warmbly exec backend warmblyctl setup-link
 docker compose -p warmbly exec backend warmblyctl user create --email you@example.com --admin
 docker compose -p warmbly exec backend warmblyctl user reset-password --email you@example.com
+docker compose -p warmbly exec backend warmblyctl org export --org you@example.com --out /tmp/workspace.warmbly.zip
 ```
+
+## Moving a workspace off this instance
+
+`warmblyctl org export` writes a whole workspace to one file, and `org import` reads it back on another instance. That is the supported route between a self-hosted install and the hosted service, in either direction, and between two self-hosted installs.
+
+Mailbox credentials are sealed under an instance-local key, so they only travel when you pass `--with-credentials` and a passphrase; without it, mailboxes arrive on the destination needing a reconnect. See [export and import](/guides/workspace-export-import/) for what an archive contains, and the [warmblyctl reference](/development/warmblyctl/#org-export) for every flag.
 
 See also: [configuration reference](/development/configuration/), [local development](/development/local-development/), [architecture](/development/architecture/), [event system](/development/events/).
