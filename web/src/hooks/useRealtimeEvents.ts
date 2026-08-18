@@ -172,6 +172,10 @@ export function useRealtimeEvents() {
       }
 
       if (includes('ACCOUNT', 'EMAIL_STATUS', 'EMAIL_ERROR', 'WARMUP')) {
+        // ACCOUNT_SYNC_STATE: the mailbox's import finished or fair use
+        // started/stopped holding it; the drawer's sync card refetches.
+        const accountId = getString('email_account_id')
+        if (accountId) invalidate([['emails', accountId, 'sync']])
         invalidate([
           ['emails', 'list'],
           ['analytics', 'accounts'],

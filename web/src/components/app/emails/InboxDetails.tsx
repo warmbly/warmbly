@@ -55,6 +55,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import EmailEditor from "../EmailEditor";
 import SendingBehaviorTab from "./SendingBehaviorTab";
+import SyncStatusCard from "./SyncStatusCard";
 import useSendingBehavior from "@/lib/api/hooks/app/emails/useSendingBehavior";
 import useSendingPlan from "@/lib/api/hooks/app/emails/useSendingPlan";
 import { minutesToClock, secondsToLabel } from "@/lib/api/models/app/emails/SendingBehavior";
@@ -388,6 +389,9 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
                     </ul>
                 )}
             </div>
+
+            {/* Sync: import progress and fair-use status */}
+            <SyncStatusCard mailboxId={mailbox.id} />
 
             {/* Key stats */}
             <div className="grid grid-cols-2 divide-x divide-y divide-slate-200/60">
