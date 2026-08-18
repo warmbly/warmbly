@@ -220,10 +220,12 @@ export function PopoverMenuContent({
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") setOpen(false);
         };
-        document.addEventListener("mousedown", onClick);
+        // Capture phase: dialogs stop mousedown propagation on their card so the
+        // backdrop does not close them, which would otherwise swallow this too.
+        document.addEventListener("mousedown", onClick, true);
         document.addEventListener("keydown", onKey);
         return () => {
-            document.removeEventListener("mousedown", onClick);
+            document.removeEventListener("mousedown", onClick, true);
             document.removeEventListener("keydown", onKey);
         };
     }, [open, setOpen, triggerRef]);
