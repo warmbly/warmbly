@@ -1613,16 +1613,18 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 			*data.Subscribe, orgID, data.Contacts)
 	}
 
+	// Campaigns are organization assets: scoping them by the caller made a
+	// teammate's "add to campaign" a silent no-op on campaigns they did not create.
 	if len(data.RemoveCampaigns) > 0 {
 		b.Queue(`DELETE FROM campaign_leads cl
 		         USING contacts c, campaigns cam
 		         WHERE cl.contact_id = c.id
 		           AND cl.campaign_id = cam.id
 		           AND c.organization_id = $1
-		           AND cam.user_id = $4
+		           AND cam.organization_id = $1
 		           AND cl.contact_id = ANY($2)
 		           AND cl.campaign_id = ANY($3)`,
-			orgID, data.Contacts, data.RemoveCampaigns, userID)
+			orgID, data.Contacts, data.RemoveCampaigns)
 	}
 
 	if len(data.AddCampaigns) > 0 {
@@ -1633,9 +1635,9 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 		         WHERE c.organization_id = $1
 		           AND c.id = ANY($2)
 		           AND cam.id = ANY($3::uuid[])
-		           AND cam.user_id = $4
+		           AND cam.organization_id = $1
 		         ON CONFLICT DO NOTHING`,
-			orgID, data.Contacts, data.AddCampaigns, userID)
+			orgID, data.Contacts, data.AddCampaigns)
 	}
 
 	if len(data.RemoveCategories) > 0 {
@@ -1712,7 +1714,7 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 					SELECT json_agg(json_build_object('id', cam.id, 'name', cam.name))
 					FROM campaign_leads cl
 					JOIN campaigns cam ON cl.campaign_id = cam.id
-					WHERE cl.contact_id =c.id AND cam.user_id = $2
+					WHERE cl.contact_id =c.id AND cam.organization_id = $3
 				),
 				'[]'::json
 			) AS campaigns,
