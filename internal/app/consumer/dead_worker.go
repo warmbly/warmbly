@@ -132,17 +132,10 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 				affectedOrgs[*account.OrganizationID]++
 			}
 
-			// Publish AddEmail event to the new worker so it picks up the account
-			if s.Publisher != nil {
-				userUUID, _ := uuid.Parse(account.UserID)
-				_ = s.Publisher.PublishAddEmail(ctx, replacement.ID, &models.AddWorkerEmail{
-					ID:       account.ID,
-					UserID:   userUUID,
-					Email:    account.Email,
-					Type:     models.InboxProvider(account.Provider),
-					ImapSync: true,
-				})
-			}
+			// The backend's worker reconciler loads the account onto its new
+			// worker with the full payload (decrypted credentials, cursors,
+			// sync policy). Publishing a bare ADD_EMAIL from here only made
+			// the worker reject it and log an error per mailbox.
 		}
 
 		if reassigned > 0 {
