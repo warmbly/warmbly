@@ -67,6 +67,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/oidcauth"
 	"github.com/warmbly/warmbly/internal/app/organization"
+	"github.com/warmbly/warmbly/internal/app/orgtransfer"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
 	"github.com/warmbly/warmbly/internal/app/provisioning"
@@ -249,6 +250,9 @@ func main() {
 
 	// Danger zone (delayed deletions)
 	var dangerZoneService dangerzone.Service
+
+	// Workspace archives (export/import between instances)
+	var orgTransferService orgtransfer.Service
 
 	// Organization-wide audit trail
 	var auditService audit.AuditService
@@ -1396,6 +1400,25 @@ func main() {
 		dangerZoneScheduler := jobs.NewDangerZoneScheduler(dangerZoneJob, 1*time.Hour)
 		go dangerZoneScheduler.Start(ctx)
 
+		// Workspace archives: export a whole organization to a portable file
+		// and import one back, so a workspace can move between instances.
+		// It needs both key domains — the instance credential key for mailbox
+		// credentials and the org DEK for everything else — because neither is
+		// portable and both have to be re-keyed on the way through.
+		orgTransferService = orgtransfer.NewService(
+			repository.NewOrgTransferRepository(primaryDB),
+			cipherService,
+			credEncrypter,
+			s3,
+			orgtransfer.InstanceInfo{
+				PublicURL:  os.Getenv("APP_URL"),
+				AppVersion: os.Getenv("APP_VERSION"),
+			},
+		)
+		orgTransferJob := jobs.NewOrgTransferJob(orgTransferService)
+		orgTransferScheduler := jobs.NewOrgTransferScheduler(orgTransferJob, 1*time.Hour)
+		go orgTransferScheduler.Start(ctx)
+
 		// Prune audit entries past the retention window (90 days). Bounding the
 		// trail's age also bounds how long PII is retained. auditRepository is
 		// constructed earlier (before authService).
@@ -1684,7 +1707,8 @@ func main() {
 		ProvisioningPolicyRepo:   provisioningPolicyRepo,
 
 		// Danger zone
-		DangerZoneService: dangerZoneService,
+		DangerZoneService:  dangerZoneService,
+		OrgTransferService: orgTransferService,
 
 		// Admin System Status probes
 		SystemChecker: systemChecker,

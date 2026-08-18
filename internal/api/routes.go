@@ -960,6 +960,22 @@ func Run(
 				org.POST("/avatar", m.RequireOrganization(), h.UploadOrganizationAvatar)
 				org.DELETE("/avatar", m.RequireOrganization(), h.DeleteOrganizationAvatar)
 
+				// Workspace archives: export the whole organization to a file
+				// and import one back, for moving between instances. Every
+				// route is owner-only (checked in the handler): an export with
+				// credentials is the most sensitive artifact this product
+				// produces, and an import rewrites the workspace.
+				org.GET("/current/transfer/groups", m.RequireOrganization(), h.GetOrgTransferGroups)
+				org.POST("/current/export", m.RequireOrganization(), h.CreateOrgExport)
+				org.GET("/current/export", m.RequireOrganization(), h.ListOrgExports)
+				org.GET("/current/export/:id", m.RequireOrganization(), h.GetOrgExport)
+				org.GET("/current/export/:id/download", m.RequireOrganization(), h.DownloadOrgExport)
+				org.DELETE("/current/export/:id", m.RequireOrganization(), h.DeleteOrgExport)
+				org.POST("/current/import/preflight", m.RequireOrganization(), h.PreflightOrgImport)
+				org.POST("/current/import", m.RequireOrganization(), h.CreateOrgImport)
+				org.GET("/current/import", m.RequireOrganization(), h.ListOrgImports)
+				org.GET("/current/import/:id", m.RequireOrganization(), h.GetOrgImport)
+
 				org.GET("/current/danger-zone", m.RequireOrganization(), h.GetOrganizationDangerZone)
 				org.POST("/current/danger-zone/delete", m.RequireOrganization(), h.ScheduleOrganizationDeletion)
 				org.DELETE("/current/danger-zone/delete", m.RequireOrganization(), h.CancelOrganizationDeletion)
