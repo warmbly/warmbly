@@ -61,6 +61,8 @@ func dispatch(ctx context.Context, args []string) error {
 		return runHashPassword(ctx, args[1:])
 	case "user":
 		return runUser(ctx, args[1:])
+	case "org":
+		return runOrg(ctx, args[1:])
 	}
 	return fmt.Errorf("unknown command %q. Run `warmblyctl --help` for the full list.", args[0])
 }
@@ -86,6 +88,9 @@ var commands = []command{
 	{"user revoke-admin", "Take platform admin away from an account", composeExec + "user revoke-admin --email old@example.com"},
 	{"user disable-2fa", "Clear an account's TOTP enrollment after a lost authenticator", composeExec + "user disable-2fa --email you@example.com"},
 	{"hash-password", "Print an argon2 hash for WARMBLY_BOOTSTRAP_PASSWORD_HASH", "printf '%s' 'your-password' | docker compose -p warmbly exec -T backend warmblyctl hash-password"},
+	{"org list", "List the workspaces on this instance with their id, owner, and size", composeExec + "org list"},
+	{"org export", "Write a whole workspace to a portable archive file", composeExec + "org export --org you@example.com --out /tmp/workspace.warmbly.zip"},
+	{"org import", "Apply an archive to a workspace on this instance", composeExec + "org import --org you@example.com --file /tmp/workspace.warmbly.zip"},
 }
 
 func usage(w *os.File) {
@@ -114,6 +119,12 @@ Environment:
   PRIMARY_DB   Postgres connection string. Every command except hash-password needs it.
   REDIS        Redis URL. setup-link needs it, and reset-password needs it to mint a link.
   APP_URL      Base URL every printed link is built from.
+
+  org export and org import additionally read the instance's crypto settings,
+  because a workspace's sealed values have to be opened on the way out and
+  re-sealed on the way in: KMS_PROVIDER (with KMS_LOCAL_MASTER_KEY or the AWS
+  settings) and CREDENTIALS_ENCRYPTION_KEY. Run them inside the backend
+  container, where those are already set.
 
 Exit status:
   status exits non-zero when a check is at error severity, so it works as a
