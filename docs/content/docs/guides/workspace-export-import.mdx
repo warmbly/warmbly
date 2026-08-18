@@ -1,0 +1,109 @@
+---
+title: "Export and import"
+description: "Move a whole workspace between Warmbly instances, including mailboxes, campaigns, contacts, and inbox history."
+---
+
+A workspace archive is a single file holding everything one workspace owns. It exists so you can move between instances: a self-hosted install to the cloud, the cloud back to self-hosted, or one self-host to another.
+
+Everything here lives under **Settings > Data**, and is limited to the workspace owner. An export with credentials contains every mailbox password in the workspace, so it sits at the same level as deleting the workspace.
+
+## What an archive contains
+
+The data is split into groups. Every export includes **Workspace**; the rest are yours to choose.
+
+| Group | Contents |
+|-------|----------|
+| Workspace | The organization, members, roles, teams, mailboxes, API keys, webhooks, and settings. Always included |
+| Contacts | Contacts, categories, notes, activities, and the suppression list |
+| Campaigns | Campaigns, sequences, senders, attachments, and per-campaign settings |
+| CRM | Pipelines, deals, tasks, and meeting bookings |
+| Automations | Automations, connected integrations, and lead sync sources |
+| Assistant | Assistant sessions and messages, skills, MCP servers, and AI settings |
+| Warmup | Warmup participation, routing rules, statistics, and appeals |
+| Inbox | Unified inbox threads, message bodies, and mailbox sync state |
+| Send history | Queued and completed send tasks with their payloads |
+| Delivery events | Bounces, complaints, opens, clicks, and placement tests |
+| Logs | Audit log, campaign logs, and notifications |
+| Billing history | Subscription, credit ledger, and referral records |
+
+Inbox, send history, delivery events, and logs are the ones that grow without limit. Turn them off and you get a small archive that still rebuilds a working workspace; leave them on for a faithful copy.
+
+<Callout type="info" title="Suppression always travels with contacts">
+The suppression list is part of the Contacts group and is never optional within it. An import that dropped it would start mailing people who already opted out.
+</Callout>
+
+## Exporting
+
+Pick your groups, decide about credentials, and select **Start export**. The archive builds in the background, so you can leave the page; the **Archives** list shows live progress and a **Download** button when it lands.
+
+Archives are kept for 7 days and then deleted automatically. Each one is a full copy of the workspace, so they are not stored indefinitely. You can delete one yourself at any time, and export again whenever you need a fresh copy.
+
+### Credentials
+
+Mailbox passwords, OAuth tokens, and integration keys are encrypted with keys that belong to the instance they live on. Those keys mean nothing anywhere else, so credentials cannot simply be copied.
+
+Turn on **Include mailbox credentials** and Warmbly decrypts them, then re-seals them inside the archive with a key derived from a passphrase you choose. Import that archive with the same passphrase and the destination unseals them and re-encrypts them under its own keys. Mailboxes arrive connected and keep sending.
+
+<Callout type="warn" title="The passphrase is never stored">
+Warmbly does not keep it on either instance. If you lose it, the credentials inside that archive cannot be recovered and you have to export again. Use at least 12 characters and put it in a password manager before you close the page.
+</Callout>
+
+Leave the option off and the credential fields travel empty. Everything else imports normally, and each mailbox arrives marked for reconnection: open it on the destination and sign in again, exactly like connecting it the first time.
+
+## Importing
+
+Choose the archive file, enter its passphrase if it has one, and select **Check this archive**. Nothing is written yet. Warmbly reads the file and reports:
+
+- which workspace it came from, when, and how many rows it holds
+- whether your passphrase opens its credentials
+- how many rows already exist in the destination workspace
+- which members have no account on this instance
+- anything in the archive this instance is too old to understand
+
+Then pick the groups to apply, decide what happens to rows that already exist, and confirm.
+
+### Rows that already exist
+
+**Keep what is here** is the default: the archive only adds rows the destination does not already have. This is the right choice for an empty destination workspace, and the safe one for a workspace already in use.
+
+**Replace with the archive** overwrites matching rows with the archive's versions. Use it when you are re-running an import to pick up changes made on the source since the last one. It cannot be undone.
+
+### How people are matched
+
+Members are matched to destination accounts by email address, so the same person keeps their campaigns, contacts, and notes. An archive never carries password material and can never create an account.
+
+Anyone in the archive without an account on the destination has their rows reassigned to the person running the import, and the preflight report names them before you commit. Invite them afterwards and they get their access back through the normal member flow.
+
+### What deliberately does not import
+
+Some things belong to an instance rather than to a workspace, so they are not applied even when the archive contains them:
+
+| Not imported | Why |
+|--------------|-----|
+| Billing history | Subscription, credits, and referral balances belong to the platform that was paid. The destination issues its own |
+| Plan limit overrides | A capacity grant is a decision by one platform's operators, not a property the workspace carries |
+| Worker assignment | The destination places mailboxes on its own workers |
+| Mailbox sync checkpoints | Replaying a checkpoint would make the destination skip everything that arrived between export and import, so it re-syncs from scratch |
+| Warmup pool membership | Pools are shared across every workspace on an instance, so membership is re-earned rather than asserted by a file |
+| Scheduled deletions | A pending deletion from the source must never follow the workspace to its new home |
+
+An import runs as one transaction. If anything fails, nothing lands and the workspace is untouched.
+
+## After a move
+
+- **Reconnect any mailbox that needs it.** Mailboxes without credentials show as needing a reconnect in the mailbox list.
+- **Point your tracking domain at the new instance.** Click links already delivered keep resolving as long as the domain follows.
+- **Check campaign schedules.** Per-contact progress travels, so a running campaign resumes at the step it reached rather than restarting.
+- **Expect the daily send counters to be honoured.** Today's counts come across, so a mailbox cannot double its volume by being migrated mid-day.
+- **Re-authorize integrations** if you exported without credentials.
+
+<Callout type="info" title="Moving from a self-hosted instance">
+If you have shell access to the source, `warmblyctl org export` writes the same archive straight to a file without going through a browser, which is the easier route for a large workspace. See the [warmblyctl reference](/development/warmblyctl/).
+</Callout>
+
+## Limits
+
+- One export and one import can run per workspace at a time.
+- An uploaded archive can be up to 8 GB.
+- Archives expire 7 days after they finish.
+- An archive can be imported into any instance running the same or a newer release. A newer archive on an older instance is refused, with the version in the message.
