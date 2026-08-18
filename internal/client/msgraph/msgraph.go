@@ -17,7 +17,6 @@ import (
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
-	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/stoken"
 	"golang.org/x/oauth2"
 )
@@ -29,8 +28,10 @@ const (
 
 	// Well-known mail folder ids Graph accepts directly in a path or as a
 	// move destinationId, so we never have to resolve them to opaque ids.
-	FolderInbox = "inbox"
-	FolderJunk  = "junkemail"
+	FolderInbox   = "inbox"
+	FolderJunk    = "junkemail"
+	FolderSent    = "sentitems"
+	FolderArchive = "archive"
 )
 
 // Client is a single Microsoft 365 mailbox reached over Graph.
@@ -52,9 +53,12 @@ type Client struct {
 	folderIDs map[string]string
 	mu        sync.Mutex
 
-	OnMessageAdd    func(ctx context.Context, msg *models.EmailMessageData) error
+	// OnMessageSeen is offered every live delta item with only its id and
+	// read state: the caller dedupes, hydrates (FetchMessage) and stores as
+	// budget allows, and returns false for a message it left on the server,
+	// which pins the folder cursor before that page.
+	OnMessageSeen   func(ctx context.Context, folder, providerID string, seen bool) (stored bool, err error)
 	OnMessageRemove func(ctx context.Context, providerID string) error
-	OnFlagsChange   func(ctx context.Context, providerID string, seen bool) error
 	OnDelta         func(ctx context.Context, folder, deltaLink string) error
 	OnTokenRefresh  func(ctx context.Context, token *oauth2.Token) error
 }

@@ -13,7 +13,11 @@ func (w *WorkerService) HandleAddEmail(ctx context.Context, e *models.AddWorkerE
 	}
 
 	if w.mailManager.Has(e.ID) {
-		// Already loaded - skip silently to keep handler idempotent
+		// Already loaded: keep the handler idempotent, but take a changed sync
+		// budget so an operator's settings change reaches this mailbox.
+		if mail := w.mailManager.Get(e.ID); mail != nil {
+			mail.ApplySyncPolicy(e.Sync)
+		}
 		return nil
 	}
 

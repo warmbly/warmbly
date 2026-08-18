@@ -44,8 +44,8 @@ type captured struct {
 	body      any
 }
 
-// newTestWMail builds a WMail with no Redis (which disables sync rate limiting)
-// and fakes for the two dependencies the new-email paths touch.
+// newTestWMail builds a WMail with no Redis (which makes the sync governor
+// admit everything) and fakes for the two dependencies the store paths touch.
 func newTestWMail(t *testing.T, provider models.InboxProvider, got *[]captured) *WMail {
 	t.Helper()
 	w := &WMail{
@@ -65,9 +65,10 @@ func newTestWMail(t *testing.T, provider models.InboxProvider, got *[]captured) 
 }
 
 // TestNewEmailEventShape pins the worker -> consumer contract for NEW_EMAIL
-// across all three providers. The consumer decodes it as JobEventNewEmail; each
-// provider previously emitted the bare message, which left Message nil on the
-// far side and panicked the consumer on the first inbound mail.
+// across all three providers' store paths (which share storeNew). The consumer
+// decodes it as JobEventNewEmail; each provider previously emitted the bare
+// message, which left Message nil on the far side and panicked the consumer on
+// the first inbound mail.
 func TestNewEmailEventShape(t *testing.T) {
 	msg := func() *models.EmailMessageData {
 		return &models.EmailMessageData{
@@ -84,13 +85,13 @@ func TestNewEmailEventShape(t *testing.T) {
 		invoke   func(w *WMail) error
 	}{
 		{"imap", models.InboxProviderSMTPIMAP, func(w *WMail) error {
-			return w.onImapEmailUpdate(context.Background(), msg())
+			return w.imapStore(context.Background(), msg())
 		}},
 		{"google", models.InboxProviderGoogle, func(w *WMail) error {
-			return w.onGoogleMessageAdd(context.Background(), msg())
+			return w.googleStore(context.Background(), msg())
 		}},
 		{"graph", models.InboxProviderOutlook, func(w *WMail) error {
-			return w.onGraphMessageAdd(context.Background(), msg())
+			return w.graphStore(context.Background(), msg())
 		}},
 	}
 

@@ -9,10 +9,10 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// graphMessage is the subset of the Graph message resource we read. Delta pages
+// GraphMessage is the subset of the Graph message resource we read. Delta pages
 // return a light shape (id, isRead, @removed); a follow-up $select GET fills in
 // the envelope, body, and headers.
-type graphMessage struct {
+type GraphMessage struct {
 	ID                     string           `json:"id"`
 	InternetMessageID      string           `json:"internetMessageId"`
 	ConversationID         string           `json:"conversationId"`
@@ -58,7 +58,7 @@ type graphRemoved struct {
 }
 
 // header returns the first internet header matching name (case-insensitive).
-func (m *graphMessage) header(name string) string {
+func (m *GraphMessage) header(name string) string {
 	for _, h := range m.InternetMessageHeaders {
 		if strings.EqualFold(h.Name, name) {
 			return h.Value
@@ -70,7 +70,7 @@ func (m *graphMessage) header(name string) string {
 // toEmailData maps a fully-hydrated Graph message onto the internal
 // EmailMessageData. The opaque Graph message id is carried in GmailID (the
 // provider-message-id field), and ConversationID stands in for the thread id.
-func (m *graphMessage) toEmailData() *models.EmailMessageData {
+func (m *GraphMessage) toEmailData() *models.EmailMessageData {
 	var plain, html string
 	if m.Body != nil {
 		if strings.EqualFold(m.Body.ContentType, "html") {

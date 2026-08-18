@@ -11,11 +11,11 @@ import (
 	"net/textproto"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-sasl"
-	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/client/netbind"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -42,8 +42,6 @@ type Client struct {
 	// Warmup actions (MOVE/STORE) run on a different code path than the sync
 	// loop and must not interleave with FetchChanges.
 	mu sync.Mutex
-
-	OnUpdate func(ctx context.Context, email *models.EmailMessageData) error
 
 	// BindIP optionally pins outbound TCP to a specific local source address.
 	// When nil, WORKER_BIND_IP is consulted; when still unset, the OS default
@@ -191,40 +189,51 @@ func (c *Client) SelectForSync(mailbox string) (uint32, *errx.MailError) {
 	return data.NumMessages, nil
 }
 
-// FetchChanges walks the selected mailbox in bounded sequence windows, emitting
-// each changed message through OnUpdate. count is the mailbox's message count
-// from SelectForSync; it bounds the walk so a first sync of a large mailbox
-// (ChangedSince 0 matches everything) can't buffer the whole folder at once.
-func (c *Client) FetchChanges(ctx context.Context, lastModSeq uint64, count uint32) *errx.MailError {
-	if count == 0 {
-		return nil
-	}
-	const batch = uint32(config.ImapFetchBatchSize)
-	for lo := uint32(1); lo <= count; lo += batch {
-		hi := lo + batch - 1
-		if hi > count {
-			hi = count
-		}
-		if err := c.fetchRange(ctx, lastModSeq, lo, hi); err != nil {
-			return err
-		}
-		// The caller's context is the mailbox's sync context; abandon a long
-		// walk promptly when the mailbox is removed or the worker shuts down.
-		if ctx.Err() != nil {
-			return nil
-		}
-	}
-	return nil
+// Fetched is one message's envelope as read by FetchEnvelopes, plus what
+// FetchBody needs to read its text parts later. Bodies are deliberately a
+// second step: the sync loop decides per message whether it is new and
+// admitted before paying for the body.
+type Fetched struct {
+	Email *models.EmailMessageData
+	uid   imap.UID
+	body  imap.BodyStructure
 }
 
-// fetchRange fetches one sequence window and emits it. Bodies are fetched only
-// after the window's command is closed — a nested FETCH on the same connection
-// blocks until the outer one finishes, and the outer one cannot finish while we
-// wait, which deadlocks the sync on the first message.
-func (c *Client) fetchRange(ctx context.Context, lastModSeq uint64, lo, hi uint32) *errx.MailError {
-	var seqs imap.SeqSet
-	seqs.AddRange(lo, hi)
-	cmd := c.client.Fetch(seqs, &imap.FetchOptions{
+// SearchSince returns the UIDs in the selected mailbox whose internal date is
+// on or after since (IMAP SINCE has day granularity), ascending. It drives
+// the backfill: the caller walks the set newest first under its cap.
+func (c *Client) SearchSince(since time.Time) ([]imap.UID, *errx.MailError) {
+	return c.uidSearch(&imap.SearchCriteria{Since: since})
+}
+
+// SearchChangedSince returns the UIDs whose mod-sequence is above modSeq: the
+// CONDSTORE incremental set. Asking the server for the set first, instead of
+// FETCHing every sequence window with CHANGEDSINCE, keeps a quiet 50,000
+// message folder to one round trip per tick.
+func (c *Client) SearchChangedSince(modSeq uint64) ([]imap.UID, *errx.MailError) {
+	return c.uidSearch(&imap.SearchCriteria{ModSeq: &imap.SearchCriteriaModSeq{ModSeq: modSeq + 1}})
+}
+
+func (c *Client) uidSearch(criteria *imap.SearchCriteria) ([]imap.UID, *errx.MailError) {
+	data, err := c.client.UIDSearch(criteria, nil).Wait()
+	if err != nil {
+		return nil, c.handleError(err)
+	}
+	return data.AllUIDs(), nil
+}
+
+// FetchEnvelopes reads envelope, flags, structure and the classification
+// headers for the given UIDs (at most ImapFetchBatchSize per call is the
+// caller's job) without bodies.
+func (c *Client) FetchEnvelopes(ctx context.Context, uids []imap.UID) ([]*Fetched, *errx.MailError) {
+	if len(uids) == 0 {
+		return nil, nil
+	}
+	var set imap.UIDSet
+	for _, uid := range uids {
+		set.AddNum(uid)
+	}
+	cmd := c.client.Fetch(set, &imap.FetchOptions{
 		UID:      true,
 		Envelope: true,
 		BodyStructure: &imap.FetchItemBodyStructure{
@@ -233,22 +242,17 @@ func (c *Client) fetchRange(ctx context.Context, lastModSeq uint64, lo, hi uint3
 		Flags:        true,
 		ModSeq:       true,
 		InternalDate: true,
-		ChangedSince: lastModSeq,
+		RFC822Size:   true,
 		BodySection: []*imap.FetchItemBodySection{{
 			Specifier:    imap.PartSpecifierHeader,
 			HeaderFields: headerFetchFields,
 			Peek:         true,
 		}},
 	})
-	type pending struct {
-		email models.EmailMessageData
-		uid   imap.UID
-		body  imap.BodyStructure
-	}
-	var collected []pending
+	var collected []*Fetched
 
 	for em := cmd.Next(); em != nil; em = cmd.Next() {
-		var email models.EmailMessageData
+		email := &models.EmailMessageData{}
 		var euid imap.UID
 
 		var bodyStructure imap.BodyStructure
@@ -291,24 +295,27 @@ func (c *Client) fetchRange(ctx context.Context, lastModSeq uint64, lo, hi uint3
 		}
 
 		email.Flags = append(email.Flags, headerFlags...)
-		collected = append(collected, pending{email: email, uid: euid, body: bodyStructure})
-	}
-
-	if err := cmd.Close(); err != nil {
-		return c.handleError(err)
-	}
-
-	for i := range collected {
-		p := &collected[i]
-		p.email.BodyPlain, p.email.BodyHTML = fetchTextParts(c.client, p.uid, p.body)
-
-		if err := c.OnUpdate(ctx, &p.email); err != nil {
-			log.Warn().Err(err).Msg("Failed to Send Message Update")
-			return nil
+		collected = append(collected, &Fetched{Email: email, uid: euid, body: bodyStructure})
+		if ctx.Err() != nil {
+			break
 		}
 	}
 
-	return nil
+	if err := cmd.Close(); err != nil {
+		return nil, c.handleError(err)
+	}
+	return collected, nil
+}
+
+// FetchBody reads the text parts of one fetched message. It must run after
+// the FetchEnvelopes command that produced it is closed: a nested FETCH on
+// the same connection blocks until the outer one finishes, and the outer one
+// cannot finish while we wait, which deadlocks the sync on the first message.
+func (c *Client) FetchBody(f *Fetched) {
+	if f == nil || f.Email == nil {
+		return
+	}
+	f.Email.BodyPlain, f.Email.BodyHTML = fetchTextParts(c.client, f.uid, f.body)
 }
 
 // parseHeaderFlags reads a HEADER.FIELDS literal and renders the fetched

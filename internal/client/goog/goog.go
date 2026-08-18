@@ -5,7 +5,6 @@ import (
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
-	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/stoken"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/gmail/v1"
@@ -20,7 +19,11 @@ type Client struct {
 	srv   *gmail.Service
 	Cache *cache.Cache
 
-	OnMessageAdd    func(ctx context.Context, msg *models.EmailMessageData) error
+	// OnMessageAdded is offered every message the history feed reports as
+	// added, with only its ids: the caller decides whether to hydrate it. It
+	// returns false to leave the message on the server for a later pass
+	// (fair use), which pins the history checkpoint before that record.
+	OnMessageAdded  func(ctx context.Context, id, threadID string) (added bool, err error)
 	OnMessageRemove func(ctx context.Context, messageID string) error
 	OnLabelAdd      func(ctx context.Context, messageID string, labelIds []string) error
 	OnLabelRemove   func(ctx context.Context, messageID string, labelIds []string) error

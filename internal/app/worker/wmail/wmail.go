@@ -47,6 +47,9 @@ type SmtpImapData struct {
 type WMail struct {
 	UserID uuid.UUID
 	ID     uuid.UUID
+	// OrgID scopes the organization-wide sync budget; nil for a legacy
+	// personal mailbox.
+	OrgID *uuid.UUID
 
 	Email          string
 	FirstName      string
@@ -63,7 +66,18 @@ type WMail struct {
 	Cache                     *cache.Cache
 	Storage                   storage.Store
 	EmailMessageMapRepository repository.EmailMessageMapRepository
+	SyncContext               repository.SyncContextRepository
 	CipherService             cipher.CipherService
+
+	// Sync fair use: the budget engine and the relayed state (governor.go,
+	// sync_state.go). Built in NewWMail from the ADD_EMAIL payload.
+	gov     *governor
+	tracker *syncTracker
+	// laneCache remembers deferred messages' lanes across passes; googleTick
+	// and graphTick carry the running pass's stats into provider callbacks.
+	laneCache  laneCache
+	googleTick *tickStats
+	graphTick  *tickStats
 
 	Ctx           context.Context
 	Cancel        context.CancelFunc
@@ -78,6 +92,7 @@ func NewWMail(
 	terminate func(),
 	cache *cache.Cache, storage storage.Store,
 	emailMessageMapRepository repository.EmailMessageMapRepository,
+	syncContext repository.SyncContextRepository,
 	cipherService cipher.CipherService,
 ) (*WMail, *errx.MailError) {
 	// Use background context so the WMail outlives the AddEmail request handler.
@@ -86,6 +101,7 @@ func NewWMail(
 	mail := &WMail{
 		ID:        data.ID,
 		UserID:    data.UserID,
+		OrgID:     data.OrganizationID,
 		Email:     data.Email,
 		FirstName: data.FirstName,
 		LastName:  data.LastName,
@@ -101,8 +117,31 @@ func NewWMail(
 		Cache:                     cache,
 		Storage:                   storage,
 		EmailMessageMapRepository: emailMessageMapRepository,
+		SyncContext:               syncContext,
 		CipherService:             cipherService,
 	}
+
+	// A publisher older than the sync policy sends no Sync block; compiled
+	// defaults then apply and the mailbox starts its backfill from scratch.
+	var seed *models.SyncState
+	var policy models.SyncPolicy
+	if data.Sync != nil {
+		policy = data.Sync.Policy
+		seed = data.Sync.State
+	}
+	// A nil *cache.Cache must not become a non-nil interface holding nil.
+	var gcache redisCmdable
+	if cache != nil {
+		gcache = cache
+	}
+	mail.gov = newGovernor(data.ID, data.OrganizationID, gcache, policy)
+	mail.tracker = newSyncTracker(seed, func(st models.SyncState) error {
+		return mail.onEvent(models.JobEventTypeSyncState, &models.JobEventSyncState{
+			UserID:  mail.UserID,
+			EmailID: mail.ID,
+			State:   st,
+		})
+	})
 
 	switch data.Type {
 	case models.InboxProviderGoogle:
@@ -121,7 +160,7 @@ func NewWMail(
 				LastName:  data.LastName,
 
 				Cache:           mail.Cache,
-				OnMessageAdd:    mail.onGoogleMessageAdd,
+				OnMessageAdded:  mail.onGoogleMessageAdded,
 				OnMessageRemove: mail.onGoogleMessageRemove,
 				OnLabelAdd:      mail.onGoogleMessageLabelsAdded,
 				OnLabelRemove:   mail.onGoogleMessageLabelsRemoved,
@@ -160,9 +199,8 @@ func NewWMail(
 				Cache:      mail.Cache,
 				DeltaLinks: cloneStringMap(deltaLinks),
 
-				OnMessageAdd:    mail.onGraphMessageAdd,
+				OnMessageSeen:   mail.onGraphMessageSeen,
 				OnMessageRemove: mail.onGraphMessageRemove,
-				OnFlagsChange:   mail.onGraphFlagsChange,
 				OnDelta:         mail.onGraphDelta,
 				OnTokenRefresh: func(_ context.Context, t *oauth2.Token) error {
 					return mail.onTokenUpdate(t)
@@ -190,11 +228,16 @@ func NewWMail(
 				Email:       data.Email,
 				AuthType:    models.AuthPlain,
 				Credentials: data.SmtpImap.Credentials.IMAP,
-
-				OnUpdate: mail.onImapEmailUpdate,
 			}
 			if err := mail.SmtpImapData.ImapClient.Connect(); err != nil {
 				return nil, err
+			}
+			// Saved folder cursors: live sync resumes from each folder's stored
+			// HIGHESTMODSEQ instead of re-baselining (and, before this, instead
+			// of re-walking every folder on every worker restart).
+			for i := range data.SmtpImap.Mailboxes {
+				box := data.SmtpImap.Mailboxes[i]
+				mail.SmtpImapData.Mailboxes = append(mail.SmtpImapData.Mailboxes, &box)
 			}
 		}
 
@@ -215,4 +258,15 @@ func NewWMail(
 	}
 
 	return mail, nil
+}
+
+// ApplySyncPolicy takes the budget from a republished ADD_EMAIL for a mailbox
+// that is already loaded, so an operator's settings change lands within the
+// reconciler's republish interval instead of at the next worker restart. The
+// backfill window already fixed by a running import is deliberately not moved.
+func (w *WMail) ApplySyncPolicy(data *models.AddWorkerEmailSyncData) {
+	if data == nil || w.gov == nil {
+		return
+	}
+	w.gov.SetPolicy(data.Policy)
 }

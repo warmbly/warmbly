@@ -64,7 +64,7 @@ func TestBuildMIME_Attachment(t *testing.T) {
 }
 
 func TestToEmailData_MappingAndFlags(t *testing.T) {
-	m := &graphMessage{
+	m := &GraphMessage{
 		ID:                "gid",
 		InternetMessageID: "<mid@x>",
 		ConversationID:    "conv",

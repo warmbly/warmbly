@@ -67,9 +67,11 @@ func mailErrorToJobEventType(mailErr *errx.MailError) models.JobEventType {
 		errx.MailErrorCodeAuthorizationFailed,
 		errx.MailErrorCodeInvalidCredentials:
 		return models.JobEventTypeEmailAuthError
-	case errx.MailErrorCodeRateLimitExceeded,
-		errx.MailErrorCodeSendingTooFast:
+	case errx.MailErrorCodeRateLimitExceeded:
 		return models.JobEventTypeEmailRateLimited
+	// A provider 429 during sync (MailErrorCodeSendingTooFast) is not
+	// relayed: the loop backs off and retries. Relaying it as a rate-limit
+	// event would deactivate the mailbox for a transient provider throttle.
 	case errx.MailErrorCodeServerUnreachable,
 		errx.MailErrorCodeConnectionLost,
 		errx.MailErrorCodeImapUnknown:

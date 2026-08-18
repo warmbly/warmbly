@@ -21,6 +21,7 @@ type MailManager struct {
 	cache                     *cache.Cache
 	storage                   storage.Store
 	emailMessageMapRepository repository.EmailMessageMapRepository
+	syncContextRepository     repository.SyncContextRepository
 	cipherService             cipher.CipherService
 	oauthInbox                *config.Oauth2Inbox
 }
@@ -30,6 +31,7 @@ func NewMailManager(
 	cache *cache.Cache,
 	storage storage.Store,
 	emailMessageMapRepository repository.EmailMessageMapRepository,
+	syncContextRepository repository.SyncContextRepository,
 	cipherService cipher.CipherService,
 	oauthInbox *config.Oauth2Inbox,
 ) *MailManager {
@@ -39,6 +41,7 @@ func NewMailManager(
 		cache:                     cache,
 		storage:                   storage,
 		emailMessageMapRepository: emailMessageMapRepository,
+		syncContextRepository:     syncContextRepository,
 		cipherService:             cipherService,
 		oauthInbox:                oauthInbox,
 	}

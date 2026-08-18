@@ -27,6 +27,7 @@ func (m *MailManager) AddWMail(
 		m.cache,
 		m.storage,
 		m.emailMessageMapRepository,
+		m.syncContextRepository,
 		m.cipherService,
 	)
 	if err != nil {

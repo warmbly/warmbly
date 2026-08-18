@@ -103,6 +103,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Same channel for the sync governor's "is this a reply to our own
+	// mail?" lookup, which decides the priority lane.
+	syncContextRepo, err := repository.NewHTTPSyncContextRepository(internalBaseURL, internalToken)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Blob storage (S3 by default, filesystem when BLOB_PROVIDER=filesystem).
 	s3Client, err := storage.NewFromEnv(ctx, awscfg, "main")
@@ -164,6 +170,7 @@ func main() {
 		Cache:                     redisCache,
 		Storage:                   s3Client,
 		EmailMessageMapRepository: emailMessageMapRepo,
+		SyncContextRepository:     syncContextRepo,
 		OauthInbox:                &oauthInbox,
 	}
 

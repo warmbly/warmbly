@@ -26,6 +26,9 @@ type WorkerService struct {
 	Cache                     *cache.Cache
 	Storage                   storage.Store
 	EmailMessageMapRepository repository.EmailMessageMapRepository
+	// SyncContextRepository answers the sync governor's priority-lane lookup
+	// over the internal API. Optional: nil means every new message is live.
+	SyncContextRepository repository.SyncContextRepository
 
 	// OauthInbox supplies the provider OAuth configs (client id/secret +
 	// endpoint) the worker needs to refresh delegated tokens locally. Cfg is not
@@ -59,6 +62,7 @@ func (s *WorkerService) Init() error {
 		s.Cache,
 		s.Storage,
 		s.EmailMessageMapRepository,
+		s.SyncContextRepository,
 		s.CipherService,
 		s.OauthInbox,
 	)
