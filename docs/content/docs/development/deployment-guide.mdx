@@ -593,7 +593,7 @@ Pair it with `DISABLE_PASSWORD_LOGIN=true` for an SSO-only deployment.
 | Root key | Local AES (`KMS_PROVIDER=local`) | AWS KMS (`=aws`) |
 | Blob storage | Filesystem (`BLOB_PROVIDER=filesystem`) | S3, MinIO, R2 (`=s3` plus `BLOB_BUCKET`) |
 | Task scheduler | In-process poller (`TASKS_PROVIDER=local`) | GCP Cloud Tasks (`=gcloud`) |
-| Billing | Off (`BILLING_PROVIDER=none`, everything unlocked) | Stripe (`=stripe`) |
+| Billing | Off (`BILLING_PROVIDER=none`, everything unlocked, AI credits unmetered) | Stripe (`=stripe`) |
 | Captcha | Off (`CAPTCHA_PROVIDER=none`) | Cloudflare Turnstile (`=turnstile`) |
 | Realtime transport | Redis pub/sub (`PUBSUB_ENABLED=false`) | Google Cloud Pub/Sub (`=true` plus `GCP_PROJECT_ID`) |
 

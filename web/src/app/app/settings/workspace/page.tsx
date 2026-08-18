@@ -14,6 +14,7 @@ import { useAutosave } from "@/hooks/useAutosave";
 import { useRegisterUnsaved } from "@/hooks/context/unsaved";
 import useCurrentOrganization from "@/lib/api/hooks/app/organizations/useCurrentOrganization";
 import { usePermission } from "@/hooks/usePermission";
+import useAiMetered from "@/hooks/useAiMetered";
 import AdvisorSettingsSection from "@/components/app/advisor/AdvisorSettingsSection";
 
 export default function WorkspaceSettingsPage() {
@@ -29,6 +30,7 @@ export default function WorkspaceSettingsPage() {
     // service re-gates everyone live. Only admins with Manage settings can edit.
     const orgQuery = useCurrentOrganization();
     const canManageSettings = usePermission("MANAGE_SETTINGS");
+    const metered = useAiMetered();
     const [showOnline, setShowOnline] = React.useState(true);
     const [showActivity, setShowActivity] = React.useState(true);
     React.useEffect(() => {
@@ -259,7 +261,7 @@ export default function WorkspaceSettingsPage() {
 
             <Section
                 eyebrow="Inbox agent"
-                description="On an inbound human reply, draft a suggested reply in your voice and hold it in the unibox for review. It never sends on its own. Paid feature; each handled reply costs 5 AI credits."
+                description={`On an inbound human reply, draft a suggested reply in your voice and hold it in the unibox for review. It never sends on its own.${metered ? " Paid feature; each handled reply costs 5 AI credits." : ""}`}
             >
                 <ToggleRow
                     label="Draft replies for me"

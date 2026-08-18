@@ -60,6 +60,7 @@ import { NewContactDialog } from "./NewContactDialog";
 import ExportDialog from "./ExportDialog";
 import ImportWizard from "./ImportWizard";
 import AddFromContactsDialog from "./AddFromContactsDialog";
+import useAiMetered from "@/hooks/useAiMetered";
 import SyncSourcesPanel from "./SyncSourcesPanel";
 import { CategoryChip } from "./CategoryPicker";
 
@@ -227,11 +228,14 @@ export default function ContactsTable({
     // Bulk AI research. Confirms the credit cost (2 per contact) before queuing;
     // runs drain in the background and the tab refreshes live via realtime.
     const batchResearch = useBatchResearch();
+    const metered = useAiMetered();
     function bulkResearch() {
         if (selected.length === 0) return;
         const ids = selected;
         confirm?.show(
-            `Research ${ids.length} ${ids.length === 1 ? "contact" : "contacts"}? This uses up to ${ids.length * 2} AI credits and runs in the background.`,
+            `Research ${ids.length} ${ids.length === 1 ? "contact" : "contacts"}? ${
+                metered ? `This uses up to ${ids.length * 2} AI credits and runs` : "This runs"
+            } in the background.`,
             async () => {
                 const res = await batchResearch.mutateAsync({ contactIds: ids, objective: "" });
                 toast.success(`Queued research for ${res.queued} contacts`);

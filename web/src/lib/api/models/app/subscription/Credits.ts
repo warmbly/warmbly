@@ -7,6 +7,9 @@ export interface CreditPack {
 }
 
 export interface CreditBalance {
+    // True when the deployment runs without a billing provider: the ledger is
+    // bypassed, AI is unlimited, and every figure below is zero and meaningless.
+    unlimited: boolean;
     // Spendable total across both pools.
     balance: number;
     // Current monthly (plan allowance) pool.

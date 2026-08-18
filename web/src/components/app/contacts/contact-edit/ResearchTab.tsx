@@ -24,9 +24,11 @@ import type {
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { TextInput } from "@/components/ui/field";
+import useAiMetered from "@/hooks/useAiMetered";
 
 export default function ResearchTab({ contactId }: { contactId: string }) {
     const research = useContactResearch(contactId);
+    const metered = useAiMetered();
     const run = useRunContactResearch(contactId);
     const [objective, setObjective] = React.useState("");
 
@@ -57,7 +59,7 @@ export default function ResearchTab({ contactId }: { contactId: string }) {
                 </div>
                 <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed">
                     Warmbly searches the public web for current, cited facts about this person and
-                    their company. Costs 2 AI credits per run.
+                    their company.{metered ? " Costs 2 AI credits per run." : ""}
                 </p>
                 <div className="mt-2.5 flex items-center gap-2">
                     <TextInput

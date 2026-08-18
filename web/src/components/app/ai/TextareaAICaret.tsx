@@ -23,6 +23,7 @@ import {
 import toast from "react-hot-toast";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
 import { usePermission } from "@/hooks/usePermission";
+import useAiMetered from "@/hooks/useAiMetered";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import ShortcutTooltip, { Kbd } from "@/components/ui/shortcut-tooltip";
@@ -84,6 +85,7 @@ export default function TextareaAICaret({
     // Single choke point for all AI drafting affordances: members without the
     // use-AI permission see no caret, companion, or draft bar.
     const canAI = usePermission("USE_AI");
+    const metered = useAiMetered();
 
     const [caret, setCaret] = React.useState<number | null>(null);
     const [rect, setRect] = React.useState<RangeRect | null>(null);
@@ -484,7 +486,7 @@ export default function TextareaAICaret({
                                         >
                                             <CornerUpLeftIcon className="w-3.5 h-3.5 text-slate-400" />
                                             {draftLabel}
-                                            <span className="ml-auto text-[10px] text-slate-300">{draftCost}</span>
+                                            {metered && <span className="ml-auto text-[10px] text-slate-300">{draftCost}</span>}
                                         </button>
                                     )}
                                     <button
@@ -499,7 +501,7 @@ export default function TextareaAICaret({
                                     >
                                         <PenLineIcon className="w-3.5 h-3.5 text-slate-400" />
                                         Continue writing
-                                        <span className="ml-auto text-[10px] text-slate-300">from 1 credit</span>
+                                        {metered && <span className="ml-auto text-[10px] text-slate-300">from 1 credit</span>}
                                     </button>
                                 </div>
                                 <div className="px-2.5 pb-2 pt-1 flex items-center gap-2.5 text-[10px] text-slate-400 border-t border-slate-100">

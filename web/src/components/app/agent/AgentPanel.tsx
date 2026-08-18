@@ -39,6 +39,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useConfirm } from "@/hooks/context/confirm";
 import { usePermission } from "@/hooks/usePermission";
+import useAiMetered from "@/hooks/useAiMetered";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
 import {
@@ -147,6 +148,7 @@ export default function AgentPanel() {
     // Members without the use-AI permission have no assistant at all (the
     // header button and Cmd+I are gated too; the backend enforces it anyway).
     const canAI = usePermission("USE_AI");
+    const metered = useAiMetered();
 
     const activeTab = tabs.find((t) => t.key === activeKey) ?? null;
     const draft = activeTab?.draft ?? "";
@@ -925,6 +927,7 @@ export default function AgentPanel() {
                                     Read actions run automatically. Writes ask first.
                                 </span>
                                 {!activeTab?.freeModel &&
+                                    metered &&
                                     activeTab?.credits != null && (
                                         <span className="font-mono tabular-nums">
                                             {activeTab.credits.toLocaleString()} credits

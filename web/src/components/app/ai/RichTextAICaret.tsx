@@ -16,6 +16,7 @@ import { ArrowUpIcon, CheckIcon, PenLineIcon, RefreshCwIcon, SparklesIcon, Undo2
 import toast from "react-hot-toast";
 import useGenerateWrite from "@/lib/api/hooks/app/generation/useGenerateWrite";
 import { usePermission } from "@/hooks/usePermission";
+import useAiMetered from "@/hooks/useAiMetered";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import formatUsage from "@/components/app/ai/usage";
@@ -38,6 +39,7 @@ type Phase = "idle" | "busy" | "applied";
 export default function RichTextAICaret({ editor }: { editor: Editor }) {
     const writeMut = useGenerateWrite();
     const canAI = usePermission("USE_AI");
+    const metered = useAiMetered();
 
     const [companion, setCompanion] = React.useState<{ top: number; left: number } | null>(null);
     const [open, setOpen] = React.useState(false);
@@ -337,7 +339,7 @@ export default function RichTextAICaret({ editor }: { editor: Editor }) {
                                     >
                                         <PenLineIcon className="h-3.5 w-3.5 text-slate-400" />
                                         Continue writing
-                                        <span className="ml-auto text-[10px] text-slate-300">from 1 credit</span>
+                                        {metered && <span className="ml-auto text-[10px] text-slate-300">from 1 credit</span>}
                                     </button>
                                 </div>
                             </div>

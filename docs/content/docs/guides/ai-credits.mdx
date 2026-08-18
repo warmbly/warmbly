@@ -85,4 +85,4 @@ Every grant, purchase, and spend, newest first, with the activity, model and tok
 
 **What happens if I cancel?** Monthly grants stop; any purchased balance stays until spent.
 
-**Do credits apply when self-hosting?** Only against a paid provider. A free or local model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`) is not charged and shows a "free model" notice. See the [self-hosting guide](/development/deployment-guide/).
+**Do credits apply when self-hosting?** Not when billing is off, which is the self-host default (`BILLING_PROVIDER=none`). You pay your AI provider directly, so the credit ledger is bypassed: nothing is debited, there is no plan allowance, the header shows no credit gauge, and per-action cost hints are hidden. A self-hosted install that runs Stripe (`BILLING_PROVIDER=stripe`) is metered exactly like the hosted product. Separately, a free or local model (`AI_PROVIDER=ollama`, or any provider with `AI_FREE=true`) is never charged and shows a "free model" notice. See the [self-hosting guide](/development/deployment-guide/).

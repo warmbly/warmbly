@@ -32,6 +32,23 @@ func (h *Handler) GetCreditBalance(c *gin.Context) {
 		return
 	}
 
+	// No billing provider: AI is unlimited and not tied to a plan, so report
+	// that instead of an empty ledger the dashboard would render as "0 left".
+	if h.CreditService.Unmetered() {
+		c.JSON(http.StatusOK, gin.H{
+			"unlimited":         true,
+			"balance":           0,
+			"monthly_balance":   0,
+			"purchased_balance": 0,
+			"monthly_allowance": 0,
+			"total_purchased":   0,
+			"monthly_reset_at":  nil,
+			"next_reset_at":     nil,
+			"packs":             []credits.CreditPack{},
+		})
+		return
+	}
+
 	ledger, xerr := h.CreditService.GetLedger(c.Request.Context(), *orgID)
 	if xerr != nil {
 		errx.JSON(c, xerr)
@@ -55,6 +72,7 @@ func (h *Handler) GetCreditBalance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"unlimited":         false,
 		"balance":           ledger.Total(),
 		"monthly_balance":   ledger.Balance,
 		"purchased_balance": ledger.PurchasedBalance,

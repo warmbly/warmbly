@@ -23,11 +23,13 @@ import { useCreditSettings } from "@/lib/api/hooks/app/subscription/useCreditSet
 import useCreditUsage from "@/lib/api/hooks/app/subscription/useCreditUsage";
 import type { CreditBalance, AISpendSettings } from "@/lib/api/models/app/subscription/Credits";
 import { usePermission } from "@/hooks/usePermission";
+import useAiMetered from "@/hooks/useAiMetered";
 import { DitherMeter } from "@/components/ui/dither";
 import { cn } from "@/lib/utils";
 
 export function CreditsMeter() {
     const canSee = usePermission("MANAGE_BILLING");
+    const metered = useAiMetered();
     const credits = useCredits();
     const settings = useCreditSettings();
     // Fetched up front (not just on open) so the trigger itself can show the
@@ -38,7 +40,8 @@ export function CreditsMeter() {
     const close = React.useCallback(() => setOpen(false), []);
     useClickOutside(ref, close);
 
-    if (!canSee || credits.isPending || !credits.data) return null;
+    // Nothing to gauge when the ledger is bypassed (self-host without billing).
+    if (!canSee || !metered || credits.isPending || !credits.data || credits.data.unlimited) return null;
 
     const c = credits.data;
     const total = c.balance;

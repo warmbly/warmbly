@@ -266,7 +266,7 @@ The referral program and billing discount history are part of `/subscription/*`,
 
 ### AI credits
 
-Credit balance, top-up purchases, and the transaction log are part of `/subscription/*`, so they are JWT only and never accept an API key. Purchases are fulfilled only in the Stripe webhook, never in the checkout call. See the [AI credits](/guides/ai-credits/) guide for what each action costs and the pack and reset rules.
+Credit balance, top-up purchases, and the transaction log are part of `/subscription/*`, so they are JWT only and never accept an API key. Purchases are fulfilled only in the Stripe webhook, never in the checkout call. See the [AI credits](/guides/ai-credits/) guide for what each action costs and the pack and reset rules. `GET /subscription/credits` carries `unlimited` (boolean): `true` on a deployment with `BILLING_PROVIDER=none`, where the ledger is bypassed and every balance and allowance field is zero and meaningless.
 
 | Method | Path | JWT permission |
 |--------|------|----------------|

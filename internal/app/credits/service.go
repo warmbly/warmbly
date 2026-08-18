@@ -77,6 +77,11 @@ type UsageOverview struct {
 
 // CreditService is the application-facing API for AI credits.
 type CreditService interface {
+	// Unmetered reports whether the ledger is bypassed for every org
+	// (BILLING_PROVIDER=none): AI use is unlimited and not plan-based, so
+	// balances, allowances and top-ups are meaningless to callers.
+	Unmetered() bool
+
 	// GetBalance returns the org's current spendable balance across both pools
 	// (0 if no ledger yet).
 	GetBalance(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
@@ -176,6 +181,8 @@ func NewService(repo repository.CreditRepository, settings repository.AISettings
 		selfHost:   config.BillingProvider() == "none",
 	}
 }
+
+func (s *creditService) Unmetered() bool { return s.selfHost }
 
 func (s *creditService) SetMonitor(fn func(orgID uuid.UUID, balance int)) {
 	s.monitor = fn
