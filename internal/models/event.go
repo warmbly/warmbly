@@ -30,6 +30,9 @@ const (
 	JobEventTypeTokenUpdate      JobEventType = "TOKEN_UPDATE"
 	JobEventTypeHistoryIDUpdate  JobEventType = "HISTORY_ID_UPDATE"
 	JobEventTypeGraphDeltaUpdate JobEventType = "GRAPH_DELTA_UPDATE"
+	// JobEventTypeSyncState relays a mailbox's backfill progress, fair-use
+	// throttle and last-synced time (JobEventSyncState).
+	JobEventTypeSyncState JobEventType = "SYNC_STATE"
 
 	// Task result events from worker
 	JobEventTypeEmailSent   JobEventType = "EMAIL_SENT"

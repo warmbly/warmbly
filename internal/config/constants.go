@@ -27,9 +27,33 @@ const (
 	MaxEmailFolders  = 30
 
 	// ImapFetchBatchSize bounds how many messages one IMAP sync window holds in
-	// memory. A first sync matches the whole folder, so without this a large
-	// mailbox would buffer every envelope before fetching any body.
+	// memory, so a large folder is never buffered whole before any body is read.
 	ImapFetchBatchSize = 200
+
+	// Mailbox sync fair use. Connecting a mailbox imports its recent history
+	// (the backfill), then follows new mail (live). Every number below is a
+	// default: the four Sync* settings are operator-editable in the admin
+	// panel's instance settings, the rest are fixed pacing constants for the
+	// worker-side governor (internal/app/worker/wmail/governor.go).
+	//
+	// The governor defers rather than drops: mail over budget waits for the
+	// next window with its cursor held, and only a flood or repeated daily
+	// overage deactivates the mailbox. Replies to this mailbox's own sends
+	// ride a separate priority lane so an outreach reply is never starved by
+	// a bulky inbox.
+	SyncBackfillDaysDefault         = 90    // how far back the initial import reaches
+	SyncBackfillDaysMax             = 730   // longest window an operator may set
+	SyncBackfillMessagesDefault     = 5_000 // most messages the initial import stores per mailbox
+	SyncBackfillMessagesMax         = 100_000
+	SyncDailyMessagesMailboxDefault = 2_000 // new (live) messages stored per mailbox per UTC day
+	SyncDailyMessagesMailboxMax     = 100_000
+	SyncDailyMessagesOrgDefault     = 25_000 // new + backfilled messages stored per organization per UTC day
+	SyncDailyMessagesOrgMax         = 2_000_000
+	SyncBurstPer5Min                = 300   // live messages one mailbox may store in any 5 minute window
+	SyncHourlyPerMailbox            = 1_000 // live messages one mailbox may store in any clock hour
+	SyncBackfillPerMinute           = 240   // backfill pacing per mailbox
+	SyncFloodPerHour                = 5_000 // new live messages observed in one hour that mark a mailbox as flooding
+	SyncThrottleEscalationDays      = 3     // throttled UTC days out of the last 7 that deactivate a mailbox
 
 	// Sequences. Empty by default so the editor shows a smart, position-based
 	// label (e.g. "Email 1") until the user names the step themselves.

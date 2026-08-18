@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 	"golang.org/x/oauth2"
@@ -192,12 +193,14 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 	provider := models.InboxProvider(acc.Provider)
 
 	out := &models.AddWorkerEmail{
-		ID:        acc.ID,
-		UserID:    userID,
-		Email:     acc.Email,
-		FirstName: first,
-		LastName:  last,
-		Type:      provider,
+		ID:             acc.ID,
+		UserID:         userID,
+		OrganizationID: acc.OrganizationID,
+		Email:          acc.Email,
+		FirstName:      first,
+		LastName:       last,
+		Type:           provider,
+		Sync:           s.syncDataFor(ctx, acc.ID),
 	}
 
 	switch provider {
@@ -230,6 +233,7 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 				SMTP: &models.Service{Host: creds.SMTPHost, Port: creds.SMTPPort, Username: creds.SMTPUser, Password: creds.SMTPPassword},
 				IMAP: &models.Service{Host: creds.IMAPHost, Port: creds.IMAPPort, Username: creds.IMAPUser, Password: creds.IMAPPassword},
 			},
+			Mailboxes: s.mailboxesFor(ctx, userID, acc.ID),
 		}
 	default:
 		return nil, nil
@@ -259,6 +263,48 @@ func (s *emailService) lastHistoryFor(ctx context.Context, userID, emailID uuid.
 		return uint64(*legacyLastID)
 	}
 	return 0
+}
+
+// syncDataFor resolves the fair-use policy the mailbox syncs under and the
+// state a previous worker left behind. Policy comes from instance settings
+// (compiled defaults when none are wired), so an operator's change applies at
+// the next load: onboarding, reassignment, or the reconciler's republish.
+func (s *emailService) syncDataFor(ctx context.Context, emailID uuid.UUID) *models.AddWorkerEmailSyncData {
+	budget := instancesettings.DefaultSync()
+	if s.syncBudget != nil {
+		budget = s.syncBudget.SyncBudget(ctx)
+	}
+	data := &models.AddWorkerEmailSyncData{
+		Policy: models.SyncPolicy{
+			BackfillDays:     budget.BackfillDays,
+			BackfillMessages: budget.BackfillMessages,
+			DailyMessages:    budget.DailyMessagesPerMailbox,
+			OrgDailyMessages: budget.DailyMessagesPerOrg,
+		},
+	}
+	if s.syncState != nil {
+		if saved, err := s.syncState.Get(ctx, emailID); err == nil {
+			data.State = saved
+		} else {
+			log.Warn().Err(err).Str("email_id", emailID.String()).Msg("sync state lookup failed; worker starts fresh")
+		}
+	}
+	return data
+}
+
+// mailboxesFor is the IMAP folder state (name, UIDVALIDITY, HIGHESTMODSEQ)
+// the consumer saved from UPDATE_MAILBOX events. Nil when nothing is saved
+// or the repository is not wired, which the worker treats as a first sight.
+func (s *emailService) mailboxesFor(ctx context.Context, userID, emailID uuid.UUID) []models.Mailbox {
+	if s.mailboxes == nil {
+		return nil
+	}
+	saved, err := s.mailboxes.ListMailboxes(ctx, userID, emailID)
+	if err != nil {
+		log.Warn().Err(err).Str("email_id", emailID.String()).Msg("mailbox folder state lookup failed; worker re-baselines")
+		return nil
+	}
+	return saved
 }
 
 func (s *emailService) deltaLinksFor(ctx context.Context, userID, emailID uuid.UUID) map[string]string {

@@ -265,6 +265,7 @@ func main() {
 	// survive the config block where they're initialized.
 	var s3ForHandler storage.Store
 	var emailMessageMapForHandler repository.EmailMessageMapRepository
+	var emailSyncStateRepository repository.EmailSyncStateRepository
 	var trackedLinkRepository repository.TrackedLinkRepository
 	// instanceSettings and the health registry are built after the handler
 	// dependencies, so the pool is hoisted out of the connection block.
@@ -1095,6 +1096,14 @@ func main() {
 		// The Gmail equivalent: without it a reloaded mailbox re-bootstraps its
 		// history cursor and skips everything that arrived since the last sync.
 		emailService.WireEmailHistoryID(repository.NewEmailHistoryIDRepository(primaryDB))
+		// Sync fair use: the policy a mailbox syncs under, its resumable
+		// backfill state, and the saved IMAP folder cursors.
+		emailSyncStateRepository = repository.NewEmailSyncStateRepository(primaryDB)
+		emailService.WireSyncState(emailSyncStateRepository)
+		emailService.WireMailboxes(repository.NewMailboxRepository(primaryDB))
+		if instanceSettings != nil {
+			emailService.WireSyncBudget(instanceSettings)
+		}
 		analyticsRepository := repository.NewAnalyticsRepository(primaryDB)
 		emailAccountErrorRepository := repository.NewEmailAccountErrorRepository(primaryDB)
 		analyticsService = analytics.NewService(analyticsRepository, emailRepostory, campaignRepostory, emailAccountErrorRepository, warmupRepository)
@@ -1696,6 +1705,7 @@ func main() {
 		Storage:                  s3ForHandler,
 		EncryptedKeys:            encryptedKeys,
 		EmailMessageMap:          emailMessageMapForHandler,
+		EmailSyncState:           emailSyncStateRepository,
 		TrackedLinks:             trackedLinkRepository,
 		UserRepo:                 userRepoForHandler,
 		OrgRepo:                  organizationRepoForHandler,

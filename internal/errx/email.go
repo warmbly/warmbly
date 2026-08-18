@@ -46,6 +46,11 @@ const (
 
 	// Rate limiting and abuse detection
 	MailErrorCodeRateLimitExceeded MailErrorCode = "RATE_LIMIT_EXCEEDED"
+	// Sync fair use (internal/app/worker/wmail/governor.go). SYNC_FLOOD is
+	// an hourly volume no real mailbox produces; SYNC_FAIR_USE is repeated
+	// daily overage. Both deactivate the mailbox until someone reactivates it.
+	MailErrorCodeSyncFlood         MailErrorCode = "SYNC_FLOOD"
+	MailErrorCodeSyncFairUse       MailErrorCode = "SYNC_FAIR_USE"
 	MailErrorCodeSendingTooFast    MailErrorCode = "SENDING_TOO_FAST"
 	MailErrorCodeRecipientRejected MailErrorCode = "RECIPIENT_REJECTED"
 	MailErrorCodeQuotaExceeded     MailErrorCode = "QUOTA_EXCEEDED"
@@ -143,6 +148,18 @@ var (
 		"This email account has exceeded the sync rate limit. This may indicate suspicious activity.",
 		MailErrorResolveMethodNone,
 	)
+	ErrMailSyncFlood = MError(
+		MailErrorWarning,
+		MailErrorCodeSyncFlood,
+		"This mailbox received far more new mail in one hour than sync fair use allows, so syncing was stopped to protect the platform.",
+		MailErrorResolveMethodNone,
+	)
+	ErrMailSyncFairUse = MError(
+		MailErrorWarning,
+		MailErrorCodeSyncFairUse,
+		"This mailbox exceeded its daily sync budget on several recent days, so syncing was stopped. Reactivate it once the volume is back to normal.",
+		MailErrorResolveMethodNone,
+	)
 	ErrMailSendingTooFast = MError(
 		MailErrorWarning,
 		MailErrorCodeSendingTooFast,
@@ -196,6 +213,12 @@ func (e *MailError) GetUserErrorInfo() UserErrorInfo {
 	case MailErrorCodeRateLimitExceeded:
 		info.Title = "Rate Limit Exceeded"
 		info.ActionRequired = "Your account has been temporarily limited due to unusual activity"
+	case MailErrorCodeSyncFlood:
+		info.Title = "Sync stopped: unusual volume"
+		info.ActionRequired = "Check what is delivering mail into this mailbox, then reactivate it under Mailboxes"
+	case MailErrorCodeSyncFairUse:
+		info.Title = "Sync stopped: fair use"
+		info.ActionRequired = "Reduce the volume landing in this mailbox or ask your administrator to raise the sync budget, then reactivate it"
 	case MailErrorCodeSendingTooFast:
 		info.Title = "Sending Too Fast"
 		info.ActionRequired = "Please wait before sending more emails"

@@ -2,6 +2,7 @@ package email
 
 import (
 	"context"
+	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,6 +50,15 @@ type EmailService interface {
 	// Google counterpart of WireGraphDelta, so a reloaded mailbox resumes from
 	// its saved checkpoint instead of re-bootstrapping.
 	WireEmailHistoryID(repo repository.EmailHistoryIDRepository)
+	// WireSyncState, WireMailboxes and WireSyncBudget feed the sync fair-use
+	// payload: resumable backfill state, saved IMAP folder cursors, and the
+	// operator-editable budget the mailbox syncs under.
+	WireSyncState(repo repository.EmailSyncStateRepository)
+	WireMailboxes(repo repository.MailboxRepository)
+	WireSyncBudget(src SyncBudgetSource)
+	// GetSyncState is the dashboard's view of a mailbox's sync: nil state when
+	// the worker has not reported yet.
+	GetSyncState(ctx context.Context, userID, emailID string) (*models.SyncState, models.SyncPolicy, *errx.Error)
 	// StartWorkerReconciler periodically ensures every active mailbox is
 	// assigned to a worker and loaded onto it (blocks until ctx is cancelled).
 	StartWorkerReconciler(ctx context.Context, interval time.Duration)
@@ -67,10 +77,38 @@ type emailService struct {
 	throttle           dailythrottle.Service
 	graphDelta         repository.EmailGraphDeltaRepository
 	historyID          repository.EmailHistoryIDRepository
+	syncState          repository.EmailSyncStateRepository
+	mailboxes          repository.MailboxRepository
+	syncBudget         SyncBudgetSource
 	// webhookService is optional. When non-nil, account lifecycle events
 	// (email_account.connected, email_account.removed) are dispatched to
 	// subscribed customer webhooks.
 	webhookService webhook.Service
+}
+
+// SyncBudgetSource is the operator-editable sync fair-use section, satisfied
+// by instancesettings.Service. Injected post-construction; when unset the
+// loader ships compiled defaults.
+type SyncBudgetSource interface {
+	SyncBudget(ctx context.Context) instancesettings.Sync
+}
+
+// WireSyncState attaches the mailbox sync-state repository so a (re)loaded
+// mailbox resumes its backfill and the API can report progress.
+func (s *emailService) WireSyncState(repo repository.EmailSyncStateRepository) {
+	s.syncState = repo
+}
+
+// WireMailboxes attaches the IMAP folder-state repository so a reloaded IMAP
+// mailbox resumes incrementally from its saved HIGHESTMODSEQ per folder
+// instead of re-walking every folder from scratch.
+func (s *emailService) WireMailboxes(repo repository.MailboxRepository) {
+	s.mailboxes = repo
+}
+
+// WireSyncBudget attaches the instance settings the sync policy is read from.
+func (s *emailService) WireSyncBudget(src SyncBudgetSource) {
+	s.syncBudget = src
 }
 
 // WireThrottle attaches the daily-creation throttle after construction
@@ -163,4 +201,16 @@ func (s *emailService) publishAccountEvent(ctx context.Context, eventType pubsub
 		Provider:       account.Provider,
 		Status:         account.Status,
 	})
+}
+
+// GetSyncState returns the persisted sync state and the policy currently in
+// force. It goes through Get so ownership is checked the same way as every
+// other per-mailbox read.
+func (s *emailService) GetSyncState(ctx context.Context, userID, emailID string) (*models.SyncState, models.SyncPolicy, *errx.Error) {
+	acc, xerr := s.Get(ctx, userID, emailID)
+	if xerr != nil {
+		return nil, models.SyncPolicy{}, xerr
+	}
+	data := s.syncDataFor(ctx, acc.ID)
+	return data.State, data.Policy, nil
 }

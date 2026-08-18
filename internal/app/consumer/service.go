@@ -28,6 +28,7 @@ type JobsService struct {
 	EmailRepository             repository.EmailRepository
 	EmailHistoryIDRepository    repository.EmailHistoryIDRepository
 	EmailGraphDeltaRepository   repository.EmailGraphDeltaRepository
+	EmailSyncStateRepository    repository.EmailSyncStateRepository
 	EmailAccountErrorRepository repository.EmailAccountErrorRepository
 	WarmupRepo                  repository.WarmupRepository
 	WarmupContentRepo           repository.WarmupContentRepository

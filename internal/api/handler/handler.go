@@ -262,6 +262,10 @@ type Handler struct {
 	// as EncryptedKeys. Backed by Postgres in the backend.
 	EmailMessageMap repository.EmailMessageMapRepository
 
+	// Mailbox sync state, read by the dashboard (GET /emails/:id/sync) and by
+	// the worker's priority lane over /api/v1/internal/sync/own-conversation.
+	EmailSyncState repository.EmailSyncStateRepository
+
 	// Click-link store, served to the tracking service over HTTPS at
 	// /api/v1/internal/tracked-links/:id (same no-direct-Postgres rule).
 	TrackedLinks repository.TrackedLinkRepository

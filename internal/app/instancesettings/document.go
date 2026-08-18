@@ -1,6 +1,10 @@
 package instancesettings
 
-import "time"
+import (
+	"time"
+
+	"github.com/warmbly/warmbly/internal/config"
+)
 
 // Bounds on the invitation lifetime. An hour is the shortest window a person
 // can realistically act in; 30 days is the longest a bearer link should live.
@@ -26,11 +30,30 @@ type Access struct {
 	AllowInvitedSignup bool `json:"allow_invited_signup"`
 }
 
+// Sync holds the mailbox sync fair-use budgets. Zero means "compiled
+// default" on read, so a document written before the section existed still
+// resolves; the accepted ranges are clamped in Normalize.
+type Sync struct {
+	// BackfillDays is how far back the initial import reaches when a mailbox
+	// is connected.
+	BackfillDays int `json:"backfill_days"`
+	// BackfillMessages caps how many messages that initial import stores per
+	// mailbox, newest first.
+	BackfillMessages int `json:"backfill_messages"`
+	// DailyMessagesPerMailbox caps new (live) messages stored per mailbox per
+	// UTC day. Replies to the mailbox's own sends have their own equal budget.
+	DailyMessagesPerMailbox int `json:"daily_messages_per_mailbox"`
+	// DailyMessagesPerOrg caps new plus backfilled messages stored across one
+	// organization per UTC day.
+	DailyMessagesPerOrg int `json:"daily_messages_per_org"`
+}
+
 // Document is the whole Tier B settings document. Every key here is one no
 // environment variable owns, so there is no precedence to resolve.
 type Document struct {
 	Invitations Invitations `json:"invitations"`
 	Access      Access      `json:"access"`
+	Sync        Sync        `json:"sync"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -43,6 +66,17 @@ func Defaults() Document {
 		Access: Access{
 			AllowInvitedSignup: true,
 		},
+		Sync: DefaultSync(),
+	}
+}
+
+// DefaultSync is the compiled sync fair-use budget.
+func DefaultSync() Sync {
+	return Sync{
+		BackfillDays:            config.SyncBackfillDaysDefault,
+		BackfillMessages:        config.SyncBackfillMessagesDefault,
+		DailyMessagesPerMailbox: config.SyncDailyMessagesMailboxDefault,
+		DailyMessagesPerOrg:     config.SyncDailyMessagesOrgDefault,
 	}
 }
 
@@ -58,6 +92,27 @@ func (d *Document) Normalize() {
 	if d.Invitations.TTLHours > TTLHoursMax {
 		d.Invitations.TTLHours = TTLHoursMax
 	}
+	d.Sync.Normalize()
+}
+
+// Normalize clamps every budget into its accepted range; zero and negative
+// resolve to the compiled default rather than to "off". There is no way to
+// switch fair use off from this document: an operator who wants no cap sets
+// the maximum, which is still a number.
+func (s *Sync) Normalize() {
+	clamp := func(v, def, max int) int {
+		if v <= 0 {
+			return def
+		}
+		if v > max {
+			return max
+		}
+		return v
+	}
+	s.BackfillDays = clamp(s.BackfillDays, config.SyncBackfillDaysDefault, config.SyncBackfillDaysMax)
+	s.BackfillMessages = clamp(s.BackfillMessages, config.SyncBackfillMessagesDefault, config.SyncBackfillMessagesMax)
+	s.DailyMessagesPerMailbox = clamp(s.DailyMessagesPerMailbox, config.SyncDailyMessagesMailboxDefault, config.SyncDailyMessagesMailboxMax)
+	s.DailyMessagesPerOrg = clamp(s.DailyMessagesPerOrg, config.SyncDailyMessagesOrgDefault, config.SyncDailyMessagesOrgMax)
 }
 
 // TTL is the invitation lifetime as a duration.
@@ -75,6 +130,12 @@ type Patch struct {
 	Access *struct {
 		AllowInvitedSignup *bool `json:"allow_invited_signup"`
 	} `json:"access"`
+	Sync *struct {
+		BackfillDays            *int `json:"backfill_days"`
+		BackfillMessages        *int `json:"backfill_messages"`
+		DailyMessagesPerMailbox *int `json:"daily_messages_per_mailbox"`
+		DailyMessagesPerOrg     *int `json:"daily_messages_per_org"`
+	} `json:"sync"`
 }
 
 // Apply merges a patch onto a document.
@@ -94,6 +155,20 @@ func (p Patch) Apply(doc Document) Document {
 	}
 	if p.Access != nil && p.Access.AllowInvitedSignup != nil {
 		doc.Access.AllowInvitedSignup = *p.Access.AllowInvitedSignup
+	}
+	if p.Sync != nil {
+		if p.Sync.BackfillDays != nil {
+			doc.Sync.BackfillDays = *p.Sync.BackfillDays
+		}
+		if p.Sync.BackfillMessages != nil {
+			doc.Sync.BackfillMessages = *p.Sync.BackfillMessages
+		}
+		if p.Sync.DailyMessagesPerMailbox != nil {
+			doc.Sync.DailyMessagesPerMailbox = *p.Sync.DailyMessagesPerMailbox
+		}
+		if p.Sync.DailyMessagesPerOrg != nil {
+			doc.Sync.DailyMessagesPerOrg = *p.Sync.DailyMessagesPerOrg
+		}
 	}
 	return doc
 }

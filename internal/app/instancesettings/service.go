@@ -31,6 +31,8 @@ type Service interface {
 	InvitationTTL(ctx context.Context) time.Duration
 	InviteLinksEnabled(ctx context.Context) bool
 	AllowInvitedSignup(ctx context.Context) bool
+	// SyncBudget is the mailbox sync fair-use section, already normalized.
+	SyncBudget(ctx context.Context) Sync
 }
 
 type service struct {
@@ -93,4 +95,10 @@ func (s *service) InviteLinksEnabled(ctx context.Context) bool {
 
 func (s *service) AllowInvitedSignup(ctx context.Context) bool {
 	return s.Get(ctx).Access.AllowInvitedSignup
+}
+
+func (s *service) SyncBudget(ctx context.Context) Sync {
+	sync := s.Get(ctx).Sync
+	sync.Normalize()
+	return sync
 }

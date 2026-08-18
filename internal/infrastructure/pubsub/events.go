@@ -42,6 +42,10 @@ const (
 	EventAccountError         EventType = "ACCOUNT_ERROR"
 	EventAccountSynced        EventType = "ACCOUNT_SYNCED"
 	EventAccountHealthChanged EventType = "ACCOUNT_HEALTH_CHANGED"
+	// EventAccountSyncState: a mailbox's import finished or fair use started
+	// or stopped holding it. Status carries the backfill status, Reason the
+	// throttle reason (empty when released).
+	EventAccountSyncState EventType = "ACCOUNT_SYNC_STATE"
 
 	// Bulk operation events
 	EventBulkStarted   EventType = "BULK_STARTED"

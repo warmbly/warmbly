@@ -89,6 +89,16 @@ func Limits() []LimitGroup {
 				{"Contact record", n(config.MaxContactSize / 1024), "KB", "The largest single contact payload."},
 				{"Mailbox folders synced", n(config.MaxEmailFolders), "folders", "Per mailbox."},
 				{"IMAP fetch batch", n(config.ImapFetchBatchSize), "messages", "How many envelopes one sync window holds in memory."},
+			},
+		},
+		{
+			Title: "Mailbox sync fair use",
+			Entries: []LimitEntry{
+				{"Live burst", n(config.SyncBurstPer5Min), "messages/5 min", "New mail one mailbox may store in any five minute window. Over it, mail waits; nothing is dropped."},
+				{"Live hourly", n(config.SyncHourlyPerMailbox), "messages/hour", "Per mailbox, any clock hour."},
+				{"Backfill pace", n(config.SyncBackfillPerMinute), "messages/minute", "Per mailbox during the initial import of history."},
+				{"Flood threshold", n(config.SyncFloodPerHour), "messages/hour", "New live mail seen in one hour that deactivates the mailbox outright."},
+				{"Chronic overage", n(config.SyncThrottleEscalationDays), "days of 7", "Daily budget exhausted on this many of the last seven days deactivates the mailbox. The daily budgets and the backfill window are editable on Instance settings."},
 				{"Unibox page size", n(config.UniboxLimitDefault), "messages", "Default page size, range " + n(config.UniboxLimitMin) + " to " + n(config.UniboxLimitMax) + "."},
 				{"Sequence step delay", n(config.SequenceWaitAfterMax), "days", "The largest per-step wait a sequence can store."},
 				{"Sequence subject", n(config.SequenceSubjectLimit), "characters", "Per step."},
