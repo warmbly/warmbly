@@ -34,10 +34,49 @@ const SETTINGS_KEY = ["admin", "instance", "settings"];
 const TTL_MIN_HOURS = 1;
 const TTL_MAX_HOURS = 720;
 
+// Mailbox sync fair-use bands, mirroring internal/config/constants.go.
+const SYNC_FIELDS = [
+    {
+        key: "backfillDays",
+        setting: "backfill_days",
+        label: "Import window (days)",
+        min: 1,
+        max: 730,
+        help: "How far back the initial import reaches when a mailbox is connected. Newest mail first.",
+    },
+    {
+        key: "backfillMessages",
+        setting: "backfill_messages",
+        label: "Import cap (messages per mailbox)",
+        min: 1,
+        max: 100000,
+        help: "The most messages the initial import stores for one mailbox, whatever the window holds.",
+    },
+    {
+        key: "dailyPerMailbox",
+        setting: "daily_messages_per_mailbox",
+        label: "Daily budget (messages per mailbox)",
+        min: 1,
+        max: 100000,
+        help: "New mail one mailbox may store per UTC day. Over it, mail waits for the next day; replies to the mailbox's own sends have a separate budget of the same size and keep landing.",
+    },
+    {
+        key: "dailyPerOrg",
+        setting: "daily_messages_per_org",
+        label: "Daily budget (messages per organization)",
+        min: 1,
+        max: 2000000,
+        help: "New plus imported mail across one organization per UTC day.",
+    },
+] as const;
+
+type SyncFieldKey = (typeof SYNC_FIELDS)[number]["key"];
+
 interface FormState {
     linksEnabled: boolean;
     ttlHours: string;
     allowInvitedSignup: boolean;
+    sync: Record<SyncFieldKey, string>;
 }
 
 function toForm(s: InstanceSettings): FormState {
@@ -45,7 +84,18 @@ function toForm(s: InstanceSettings): FormState {
         linksEnabled: s.invitations.links_enabled,
         ttlHours: String(s.invitations.ttl_hours),
         allowInvitedSignup: s.access.allow_invited_signup,
+        sync: {
+            backfillDays: String(s.sync.backfill_days),
+            backfillMessages: String(s.sync.backfill_messages),
+            dailyPerMailbox: String(s.sync.daily_messages_per_mailbox),
+            dailyPerOrg: String(s.sync.daily_messages_per_org),
+        },
     };
+}
+
+function syncFieldValid(raw: string, min: number, max: number): boolean {
+    const n = Number(raw);
+    return raw.trim() !== "" && Number.isInteger(n) && n >= min && n <= max;
 }
 
 export default function InstanceSettingsPage() {
@@ -75,12 +125,19 @@ export default function InstanceSettingsPage() {
     });
 
     const server = settingsQ.data;
+    const syncDirty =
+        !!server &&
+        !!form &&
+        SYNC_FIELDS.some((f) => form.sync[f.key] !== String(server.sync[f.setting]));
     const dirty =
         !!server &&
         !!form &&
         (form.linksEnabled !== server.invitations.links_enabled ||
             form.ttlHours !== String(server.invitations.ttl_hours) ||
-            form.allowInvitedSignup !== server.access.allow_invited_signup);
+            form.allowInvitedSignup !== server.access.allow_invited_signup ||
+            syncDirty);
+    const syncValid =
+        form !== null && SYNC_FIELDS.every((f) => syncFieldValid(form.sync[f.key], f.min, f.max));
 
     const ttl = form ? Number(form.ttlHours) : NaN;
     const ttlValid =
@@ -98,9 +155,19 @@ export default function InstanceSettingsPage() {
             );
             return;
         }
+        if (!syncValid) {
+            toast.error("Every sync budget must be a whole number inside its range");
+            return;
+        }
         saveMut.mutate({
             invitations: { links_enabled: form.linksEnabled, ttl_hours: ttl },
             access: { allow_invited_signup: form.allowInvitedSignup },
+            sync: {
+                backfill_days: Number(form.sync.backfillDays),
+                backfill_messages: Number(form.sync.backfillMessages),
+                daily_messages_per_mailbox: Number(form.sync.dailyPerMailbox),
+                daily_messages_per_org: Number(form.sync.dailyPerOrg),
+            },
         });
     }
 
@@ -223,6 +290,55 @@ export default function InstanceSettingsPage() {
                                     }
                                 />
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="lg:col-span-2">
+                        <CardHeader>
+                            <CardTitle>Mailbox sync fair use</CardTitle>
+                            <CardDescription>
+                                What a connected mailbox imports and how much new mail it may
+                                store. Mail over a budget waits and is picked up when the window
+                                rolls; nothing is dropped, and replies to the mailbox&apos;s own
+                                outreach are never held. Changes apply the next time a mailbox is
+                                loaded onto a worker (within a few minutes). The fixed pacing
+                                numbers are listed under Limits.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-1 gap-3 pt-0 md:grid-cols-2">
+                            {SYNC_FIELDS.map((f) => {
+                                const valid = syncFieldValid(form.sync[f.key], f.min, f.max);
+                                return (
+                                    <div key={f.key}>
+                                        <Label htmlFor={`sync-${f.key}`}>{f.label}</Label>
+                                        <Input
+                                            id={`sync-${f.key}`}
+                                            type="text"
+                                            inputMode="numeric"
+                                            autoComplete="off"
+                                            value={form.sync[f.key]}
+                                            onChange={(e) =>
+                                                setForm({
+                                                    ...form,
+                                                    sync: { ...form.sync, [f.key]: e.target.value },
+                                                })
+                                            }
+                                            aria-invalid={!valid}
+                                            className="mt-1"
+                                        />
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            {f.help} Between {f.min.toLocaleString()} and{" "}
+                                            {f.max.toLocaleString()}.
+                                        </p>
+                                        {!valid && (
+                                            <p className="mt-1 text-xs text-red-600">
+                                                Enter a whole number between {f.min.toLocaleString()}{" "}
+                                                and {f.max.toLocaleString()}.
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </CardContent>
                     </Card>
                 </div>

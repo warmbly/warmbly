@@ -103,6 +103,14 @@ export interface InstanceSettings {
     access: {
         allow_invited_signup: boolean;
     };
+    // Mailbox sync fair use. Zero is never stored: the backend clamps every
+    // value into its band and resolves an absent key to the compiled default.
+    sync: {
+        backfill_days: number;
+        backfill_messages: number;
+        daily_messages_per_mailbox: number;
+        daily_messages_per_org: number;
+    };
 }
 
 export function getInstanceSettings(): Promise<InstanceSettings> {
