@@ -40,6 +40,8 @@ interface SectionDef {
     description: string;
     ownerOnly?: boolean;
     permission?: PermissionKey;
+    /** Only meaningful when the deployment runs a billing provider. */
+    billingOnly?: boolean;
 }
 
 interface SectionGroup {
@@ -64,8 +66,8 @@ const GROUPS: SectionGroup[] = [
             { path: "roles", label: "Roles & access", icon: ShieldCheckIcon, description: "Who can do what.", ownerOnly: true },
             { path: "workspace", label: "Workspace", icon: BriefcaseIcon, description: "Org-wide settings.", ownerOnly: true },
             { path: "ai-skills", label: "AI skills", icon: SparklesIcon, description: "Playbooks your AI features follow.", permission: "MANAGE_SETTINGS" },
-            { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, payment, invoices.", ownerOnly: true },
-            { path: "referral", label: "Refer & earn", icon: GiftIcon, description: "Invite teams and earn account credit.", ownerOnly: true },
+            { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, payment, invoices.", ownerOnly: true, billingOnly: true },
+            { path: "referral", label: "Refer & earn", icon: GiftIcon, description: "Invite teams and earn account credit.", ownerOnly: true, billingOnly: true },
             { path: "limits", label: "Limits", icon: GaugeIcon, description: "Request more capacity than your plan allows.", ownerOnly: true },
         ],
     },
@@ -162,6 +164,7 @@ function SettingsLayoutInner() {
         items: g.items.filter(
             (s) =>
                 (!s.ownerOnly || access.isOwner) &&
+                (!s.billingOnly || access.billing) &&
                 (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&
                 (s.permission !== "MANAGE_SETTINGS" || canManageSettings),
         ),

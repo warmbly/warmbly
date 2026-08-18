@@ -50,6 +50,11 @@ type DeploymentAuthConfig struct {
 	// referral fields) that make no sense on someone's own server.
 	SelfHosted bool `json:"self_hosted"`
 
+	// BillingEnabled mirrors the backend feature gate exactly: false when
+	// BILLING_PROVIDER=none, in which case every feature is unlocked and the
+	// dashboard must not present the org as being on a trial or free tier.
+	BillingEnabled bool `json:"billing_enabled"`
+
 	// SetupRequired is true while the instance has no accounts at all. The
 	// login screen redirects to the setup page rather than showing a form
 	// nobody can yet use.
@@ -95,6 +100,7 @@ func (h *Handler) AuthConfig(c *gin.Context) {
 		Passkeys:          h.PasskeysUsable,
 		Providers:         providers,
 		SelfHosted:        config.SelfHosted(),
+		BillingEnabled:    config.BillingProvider() != "none",
 		SetupRequired:     h.BootstrapService != nil && h.BootstrapService.Required(c.Request.Context()),
 		InvitesRequired:   registration == config.RegistrationInviteOnly,
 		DocsURL:           accountsDocsURL,

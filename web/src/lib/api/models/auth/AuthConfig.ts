@@ -16,6 +16,9 @@ export default interface AuthConfig {
     passkeys: boolean;
     providers: string[];
     self_hosted: boolean;
+    /** False when BILLING_PROVIDER=none: the backend unlocks every feature and
+     *  the org must not be presented as being on a trial or free tier. */
+    billing_enabled: boolean;
     /** True while the instance has no accounts and must be claimed. */
     setup_required: boolean;
     /** registration === "invite_only", precomputed by the server so the client

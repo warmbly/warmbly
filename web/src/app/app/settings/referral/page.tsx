@@ -14,6 +14,7 @@ import {
     LockIcon,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { Navigate } from "react-router-dom";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useReferral from "@/lib/api/hooks/app/subscription/useReferral";
 import useReferralAttributions from "@/lib/api/hooks/app/subscription/useReferralAttributions";
@@ -30,6 +31,11 @@ export default function ReferralSettingsPage() {
     const referral = useReferral();
     const summary = referral.data;
     const currency = summary?.currency ?? "usd";
+
+    // Referral credit is billing credit; without a billing provider it has no meaning.
+    if (!access.billing) {
+        return <Navigate to="/app/settings/workspace" replace />;
+    }
 
     if (!access.loading && !access.isOwner) {
         return (

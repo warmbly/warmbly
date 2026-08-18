@@ -344,7 +344,7 @@ Set these on the backend and the consumer.
 |---|---|---|
 | `TASKS_PROVIDER` | `local` (an in-process Postgres poller) or `gcloud` (Cloud Tasks) | `local` |
 | `TASKS_LOCAL_POLL_INTERVAL` | How often the local poller looks for due work | `1s` |
-| `BILLING_PROVIDER` | `none` (every feature unlocked, no trial expiry) or `stripe` | `none` |
+| `BILLING_PROVIDER` | `none` (every feature unlocked, no trial expiry; the dashboard reports the workspace as self-hosted rather than on a free tier and hides billing) or `stripe` | `none` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` | Required together when `BILLING_PROVIDER=stripe`. The backend exits at boot if any is missing | unset |
 
 Delayed sends run through the local poller, so the backend must be running for scheduled work to fire.

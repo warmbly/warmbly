@@ -12,8 +12,14 @@
 // + which surfaces render the LockedSurface overlay. The minimum
 // unlock plan should always match what we promise on the pricing
 // page.
+//
+// A deployment with billing disabled (BILLING_PROVIDER=none, the self-host
+// default) unlocks everything server-side, so it is unlocked here too and the
+// subscription row is ignored: it would otherwise report a free trial that
+// nothing enforces.
 
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
+import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useAppStore } from "@/stores";
 import { PERMISSION_BITS, hasPermission } from "@/lib/permissions";
 import {
@@ -28,6 +34,9 @@ export interface FeatureAccess {
     loading: boolean;
     status?: "active" | "canceled" | "past_due" | "trialing" | "incomplete";
     plan: PlanID;
+    /** False on a deployment running without a billing provider: every gate
+     *  below is open and billing/referral surfaces do not apply. */
+    billing: boolean;
     /** Active subscription on any paid tier. */
     paid: boolean;
     /** Unified inbox — free trial and Starter+. */
@@ -52,7 +61,38 @@ export interface FeatureAccess {
 
 export default function useFeatureAccess(): FeatureAccess {
     const sub = useSubscription();
+    const authConfig = useAuthConfig();
     const currentOrg = useAppStore((s) => s.currentOrganization);
+
+    const isOwner = currentOrg?.role === "owner";
+    // Permission-aware: a custom role carrying MANAGE_TEAM unlocks the
+    // same management surfaces as the built-in admin role.
+    const canManage =
+        currentOrg?.role === "owner" ||
+        currentOrg?.role === "admin" ||
+        hasPermission(currentOrg?.permissions, PERMISSION_BITS.MANAGE_TEAM);
+
+    // Only the confirmed answer counts; the fallback keeps billing on so an
+    // unreachable backend never reads as an unlocked one.
+    const billingOff = !!authConfig.data && authConfig.data.billing_enabled === false;
+    if (billingOff) {
+        return {
+            loading: false,
+            status: "active",
+            plan: "enterprise",
+            billing: false,
+            paid: true,
+            hasInbox: true,
+            hasAdvanced: true,
+            hasDedicatedIps: true,
+            hasRealtime: true,
+            hasBulkOps: true,
+            hasTeam: true,
+            hasWebhooks: true,
+            isOwner,
+            canManage,
+        };
+    }
 
     const planId = ((sub.data?.plan?.name ?? currentOrg?.plan ?? "free").toLowerCase()) as PlanID;
     const plan = getPlan(planId).id;
@@ -67,9 +107,10 @@ export default function useFeatureAccess(): FeatureAccess {
     const isPaid = subSaysPaid || orgImpliesPaid;
 
     return {
-        loading: sub.isPending,
+        loading: sub.isPending || authConfig.isLoading,
         status,
         plan,
+        billing: true,
         paid: isPaid,
         // Unified inbox is included on the free trial and on every paid tier,
         // so gate it on having an active/trialing subscription (isPaid) rather
@@ -82,12 +123,7 @@ export default function useFeatureAccess(): FeatureAccess {
         hasBulkOps: isPaid && isAtLeast(plan, "starter"),
         hasTeam: isPaid && isAtLeast(plan, "starter"),
         hasWebhooks: isPaid && isAtLeast(plan, "business"),
-        isOwner: currentOrg?.role === "owner",
-        // Permission-aware: a custom role carrying MANAGE_TEAM unlocks the
-        // same management surfaces as the built-in admin role.
-        canManage:
-            currentOrg?.role === "owner" ||
-            currentOrg?.role === "admin" ||
-            hasPermission(currentOrg?.permissions, PERMISSION_BITS.MANAGE_TEAM),
+        isOwner,
+        canManage,
     };
 }

@@ -123,7 +123,7 @@ All of these are read **only while the users table is empty**, so they are a no-
 |---|---|
 | An owner account | Owner of a new organization, which is a membership status rather than a role |
 | An organization | Named from `WARMBLY_BOOTSTRAP_ORG`, or derived from the owner's name |
-| A trial | Irrelevant when `BILLING_PROVIDER=none`, which is the self-host default and unlocks everything |
+| A trial | Irrelevant when `BILLING_PROVIDER=none`, which is the self-host default and unlocks everything. The dashboard header shows a `Self-hosted` badge instead of a plan or trial, and the billing and referral settings pages are hidden |
 | Every platform admin bit | So the same account signs in to the dashboard on `:5173` and the admin panel on `:5174` |
 
 Signing in never depends on mail. The emailed login code is off on a self-hosted install, because a relay you have not configured should not stand between you and your own instance.

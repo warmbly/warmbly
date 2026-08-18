@@ -26,6 +26,7 @@ import useAcceptInvitation from "@/lib/api/hooks/app/organizations/useAcceptInvi
 import useSwitchOrganization from "@/lib/api/hooks/app/organizations/useSwitchOrganization";
 import useLogout from "@/lib/api/hooks/auth/useLogout";
 import useUser from "@/lib/api/hooks/auth/useUser";
+import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useAppStore } from "@/stores";
 import { Logo } from "@/components/svg";
 import { NewWorkspaceDialog } from "@/components/app/organizations/NewWorkspaceDialog";
@@ -70,6 +71,8 @@ function SelectOrgPageInner() {
 
     const orgs = useOrganizations();
     const invites = useMyInvitations();
+    // The org row's plan is a trial label nothing enforces when billing is off.
+    const showPlan = useAuthConfig().config.billing_enabled;
     const setOrganizations = useAppStore((s) => s.setOrganizations);
     const setCurrentOrganization = useAppStore((s) => s.setCurrentOrganization);
     const currentOrg = useAppStore((s) => s.currentOrganization);
@@ -252,7 +255,7 @@ function SelectOrgPageInner() {
                                                             <span className="uppercase tracking-[0.08em]">
                                                                 {o.role}
                                                             </span>
-                                                            {o.plan && (
+                                                            {showPlan && o.plan && (
                                                                 <>
                                                                     <span className="text-slate-300">·</span>
                                                                     <span>{o.plan}</span>

@@ -25,6 +25,9 @@ export const AUTH_CONFIG_FALLBACK: AuthConfig = {
     passkeys: false,
     providers: [],
     self_hosted: true,
+    // Unconfirmed billing keeps the subscription-based gates in place rather
+    // than presenting an unreachable backend as an unlocked one.
+    billing_enabled: true,
     setup_required: false,
     docs_url: "https://docs.warmbly.com/development/accounts-and-access/",
 };

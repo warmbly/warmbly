@@ -100,6 +100,11 @@ export default function BillingSettingsPage() {
         return <Navigate to="/app/settings/billing" replace />;
     }
 
+    // No billing provider on this deployment: there is nothing to manage here.
+    if (!access.billing) {
+        return <Navigate to="/app/settings/workspace" replace />;
+    }
+
     if (!access.loading && !access.isOwner) {
         return (
             <SectionShell title="Billing" description="Owner only.">
