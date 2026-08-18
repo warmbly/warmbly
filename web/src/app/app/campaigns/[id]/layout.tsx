@@ -3,6 +3,7 @@ import PermissionButton from "@/components/ui/PermissionButton";
 import { Link, Outlet, useLocation, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
+    ArrowLeftIcon,
     BarChart3Icon,
     CalendarIcon,
     ListChecksIcon,
@@ -104,8 +105,15 @@ export default function CampaignLayout() {
     return (
         <CampaignContext.Provider value={campaign}>
             <div className="flex flex-col min-h-full bg-white">
-                <div className="px-5 pt-5 pb-3 flex items-start gap-3">
+                <div className="px-5 pt-4 pb-3 flex items-start gap-3">
                     <div className="min-w-0">
+                        <Link
+                            to="/app/campaigns"
+                            className="inline-flex items-center gap-1 h-6 -ml-1.5 px-1.5 mb-1 rounded-md text-[11.5px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                        >
+                            <ArrowLeftIcon className="w-3 h-3" />
+                            Campaigns
+                        </Link>
                         <div className="flex items-center gap-2">
                             <h1 className="text-[18px] font-semibold text-slate-900 truncate">{campaign.name}</h1>
                             <span

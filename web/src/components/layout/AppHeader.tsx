@@ -69,9 +69,15 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
         .split("/")
         .filter(Boolean)
         .filter((s) => s !== "app");
-    const crumbs = segments.filter(
-        (s) => !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(s),
-    );
+    // Each crumb links to its own path prefix so "Campaigns > Leads" gets you
+    // back to the list; hidden UUID segments still count toward the prefix.
+    const crumbs = segments
+        .map((seg, i) => ({ seg, to: `/app/${segments.slice(0, i + 1).join("/")}` }))
+        .filter(({ seg }) => !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(seg));
+    // A crumb whose prefix is the page itself is a label; every other one is a
+    // link (so "Campaigns" stays clickable on /campaigns/<id>, where the hidden
+    // id is the real last segment).
+    const currentPath = `/app/${segments.join("/")}`;
 
     return (
         <div className="h-14 flex items-center shrink-0">
@@ -115,18 +121,21 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                 <Crumb>
                     <OrgSwitcher />
                 </Crumb>
-                {crumbs.map((seg, i) => (
-                    <div key={i} className="hidden md:flex items-center gap-2 min-w-0">
+                {crumbs.map(({ seg, to }) => (
+                    <div key={to} className="hidden md:flex items-center gap-2 min-w-0">
                         <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                        <span
-                            className={
-                                i === crumbs.length - 1
-                                    ? "text-[13px] font-medium text-slate-900 truncate"
-                                    : "text-[13px] text-slate-500 truncate"
-                            }
-                        >
-                            {pretty(seg)}
-                        </span>
+                        {to === currentPath ? (
+                            <span className="text-[13px] font-medium text-slate-900 truncate">
+                                {pretty(seg)}
+                            </span>
+                        ) : (
+                            <Link
+                                to={to}
+                                className="text-[13px] text-slate-500 hover:text-slate-900 truncate transition-colors"
+                            >
+                                {pretty(seg)}
+                            </Link>
+                        )}
                     </div>
                 ))}
             </div>
