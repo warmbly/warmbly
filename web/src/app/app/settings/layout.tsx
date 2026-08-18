@@ -17,6 +17,7 @@ import {
     BoxesIcon,
     BriefcaseIcon,
     CreditCardIcon,
+    DatabaseIcon,
     GaugeIcon,
     GiftIcon,
     Loader2Icon,
@@ -80,6 +81,7 @@ const GROUPS: SectionGroup[] = [
     {
         label: "Advanced",
         items: [
+            { path: "data", label: "Data", icon: DatabaseIcon, description: "Export this workspace, or import one from another instance.", ownerOnly: true },
             { path: "danger", label: "Danger zone", icon: AlertOctagonIcon, description: "Irreversible actions." },
         ],
     },

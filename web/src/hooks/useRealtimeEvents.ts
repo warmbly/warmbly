@@ -327,6 +327,12 @@ export function useRealtimeEvents() {
           // strip and every nav badge at once.
           advisor_finding: [['advisor']],
           settings: [['organizations', 'current']],
+          // Workspace archives: an export starting or an import landing changes
+          // both lists on the settings Data page.
+          org_archive: [
+            ['organizations', 'exports'],
+            ['organizations', 'imports'],
+          ],
           unibox: [['unibox']],
           crm_note: [['crm'], ['contacts']],
           crm_pipeline: [['crm', 'pipelines'], ['crm', 'deals']],
