@@ -410,6 +410,12 @@ These are the only settings a browser can change, and no environment variable ow
 | `invitations.ttl_hours` | integer, 1 to 720 | `168` | How long a new invitation stays valid. Read when the invitation row is written, so it applies to invitations created after the change, not to existing ones |
 | `invitations.links_enabled` | boolean | `true` | Whether the copyable invitation link is returned at all. Off makes `GET /organization/invitations/:id/link` return `404` with an explanation, so an invitation can only arrive by mail |
 | `access.allow_invited_signup` | boolean | `true` | Whether holding a live invitation lets someone create their own account under `invite_only`. Off means an administrator creates every account with `warmblyctl user create` |
+| `sync.backfill_days` | integer, 1 to 730 | `90` | How far back a newly connected mailbox's initial import reaches, newest first |
+| `sync.backfill_messages` | integer, 1 to 100000 | `5000` | The most messages that import stores per mailbox |
+| `sync.daily_messages_per_mailbox` | integer, 1 to 100000 | `2000` | New (live) messages one mailbox may store per UTC day. Over it, mail waits for the next day; replies to the mailbox's own sends have a separate budget of the same size |
+| `sync.daily_messages_per_org` | integer, 1 to 2000000 | `25000` | New plus imported messages one organization may store per UTC day |
+
+The four `sync.*` values are read by the backend when a mailbox is loaded onto a worker (on connect, on reassignment, and by the reconciler's periodic republish), so a change reaches every mailbox within a few minutes without a restart. The fixed pacing numbers around them (burst per five minutes, hourly, backfill pace, the flood threshold and the chronic-overage rule) are compiled constants listed under **Instance > Limits**; see [Mailboxes](/guides/mailboxes/#what-gets-synced) for how the budgets behave.
 
 Changing them is audited, and every value is validated and clamped server side on write as well as on read, so a row written by an older version still resolves.
 

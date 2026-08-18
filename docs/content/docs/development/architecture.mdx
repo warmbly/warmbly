@@ -154,7 +154,7 @@ There is no single ML fraud engine. Layered controls instead:
 - Warmup-token verification with invalid-attempt counting and auto-blocking
 - Tracking event deduplication (in-memory + persistent)
 - Idempotent deliverability event processing
-- Worker-side mailbox-sync rate limiting (`internal/app/worker/wmail/ratelimit.go`)
+- Worker-side mailbox-sync fair use: the sync governor (`internal/app/worker/wmail/governor.go`) with priority, live and backfill lanes, deferral instead of dropping, and flood or chronic-overage escalation
 - Suppression lists for bounced/complained/unsubscribed recipients
 - Admin ban + manual override surface
 

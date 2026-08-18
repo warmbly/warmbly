@@ -41,7 +41,7 @@ After connecting, join one or more topics with a `phx_join` message:
 | `account:<account_id>` | One mailbox's sync and warmup events | Requires `manage_emails` |
 | `bulk:<operation_id>` | Progress of one bulk operation | Import/export progress |
 
-Events arrive as channel messages whose event name is the event type, for example `EMAIL_SENT`, `EMAIL_OPENED`, `EMAIL_REPLIED`, `EMAIL_RECEIVED`, `AI_DRAFT_READY`, `CAMPAIGN_COMPLETED`, `TASK_PROGRESS`, `ACCOUNT_HEALTH_CHANGED`, `AUDIT_CREATED`, `AUTOMATION_RUN`, `MEETING_BOOKED`, `NOTIFICATION_CREATED`. Payloads always include `event_type` and a timestamp, plus the relevant ids (`campaign_id`, `contact_id`, `thread_id`, and so on).
+Events arrive as channel messages whose event name is the event type, for example `EMAIL_SENT`, `EMAIL_OPENED`, `EMAIL_REPLIED`, `EMAIL_RECEIVED`, `AI_DRAFT_READY`, `CAMPAIGN_COMPLETED`, `TASK_PROGRESS`, `ACCOUNT_HEALTH_CHANGED`, `ACCOUNT_SYNC_STATE`, `AUDIT_CREATED`, `AUTOMATION_RUN`, `MEETING_BOOKED`, `NOTIFICATION_CREATED`. Payloads always include `event_type` and a timestamp, plus the relevant ids (`campaign_id`, `contact_id`, `thread_id`, and so on).
 
 `AI_DRAFT_READY` fires when the [inbox agent](/guides/inbox-agent/) drafts a suggested reply awaiting review; it carries `thread_id` and `draft_id` and requires `access_unibox`.
 

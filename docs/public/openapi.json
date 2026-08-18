@@ -2655,6 +2655,95 @@
         }
       }
     },
+    "/emails/{id}/sync": {
+      "get": {
+        "operationId": "mailboxes_sync_state",
+        "summary": "Get sync state",
+        "description": "Where the mailbox's initial import stands, whether fair use is holding new mail, and the budget the mailbox syncs under. `state` is null until the worker has reported once.",
+        "tags": [
+          "mailboxes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The mailbox id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mailbox's sync state and policy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailboxSync"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope, permission, or mailbox not allowed for this key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mailbox not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/emails/verify": {
       "post": {
         "operationId": "mailboxes_verify_address",
@@ -18828,6 +18917,118 @@
           "dmarc_found",
           "all_aligned",
           "summary"
+        ]
+      },
+      "MailboxSyncPolicy": {
+        "type": "object",
+        "description": "The fair-use budget a mailbox syncs under, resolved from the instance settings when it was loaded onto a worker.",
+        "properties": {
+          "backfill_days": {
+            "type": "integer",
+            "description": "How far back the initial import reaches."
+          },
+          "backfill_messages": {
+            "type": "integer",
+            "description": "The most messages the initial import stores for this mailbox."
+          },
+          "daily_messages": {
+            "type": "integer",
+            "description": "New (live) messages stored per UTC day. Replies to the mailbox's own sends have a separate budget of the same size."
+          },
+          "org_daily_messages": {
+            "type": "integer",
+            "description": "New plus imported messages stored across the organization per UTC day."
+          }
+        },
+        "required": [
+          "backfill_days",
+          "backfill_messages",
+          "daily_messages",
+          "org_daily_messages"
+        ]
+      },
+      "MailboxSyncState": {
+        "type": "object",
+        "description": "The worker's most recent report of the mailbox's sync.",
+        "properties": {
+          "backfill_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "complete"
+            ]
+          },
+          "backfill_synced": {
+            "type": "integer",
+            "description": "Messages the initial import has stored so far."
+          },
+          "backfill_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The cutoff the import uses, fixed when it started."
+          },
+          "backfill_started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "backfill_completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "throttled_until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Set while fair use is holding new mail; the hold ends at this time at the latest."
+          },
+          "throttle_reason": {
+            "type": "string",
+            "enum": [
+              "",
+              "burst",
+              "hourly",
+              "daily",
+              "org_daily",
+              "priority_daily"
+            ],
+            "description": "Which budget is exhausted while throttled_until is set."
+          },
+          "deferred": {
+            "type": "integer",
+            "description": "New messages seen on the server that are waiting on budget."
+          },
+          "last_synced_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "backfill_status",
+          "backfill_synced",
+          "deferred"
+        ]
+      },
+      "MailboxSync": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MailboxSyncState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the worker has reported once."
+          },
+          "policy": {
+            "$ref": "#/components/schemas/MailboxSyncPolicy"
+          }
+        },
+        "required": [
+          "state",
+          "policy"
         ]
       },
       "MailboxVerifyRequest": {

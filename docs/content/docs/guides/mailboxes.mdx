@@ -32,6 +32,20 @@ With two-factor authentication on, generate an app password in your provider's s
 
 **Limits**: `200` mailboxes per workspace by default (higher allowances come through a reviewed limit-increase request), and `5` new mailboxes per workspace per day as an abuse guardrail that resets daily. Spread large onboarding batches across days.
 
+## What gets synced
+
+Connecting a mailbox does two things: it imports the mailbox's recent history, and from then on it follows new mail as it arrives. Both are the same on every provider.
+
+**The import** brings in the last `90` days, newest first, up to `5,000` messages per mailbox (the defaults; a self-hosted instance can change both under Instance settings). It reads the inbox, sent mail and archive (plus your own folders on Gmail and IMAP), and skips trash, drafts, spam and Gmail's "All Mail". You can watch it in the mailbox drawer's **Sync** card: a progress bar with a running count while it works, then "Up to date" with what was imported. Because it runs newest first, the mail you would look for is there within the first minute; a large mailbox finishes over the next while at a steady pace.
+
+**Live sync** then follows every folder the provider exposes, including junk (so placement problems are visible) and sent mail (so a conversation shows both sides). Read state, flags, deletions and moves are mirrored too.
+
+<Callout type="info" title="Fair use, not a hard cap">
+  There is a budget on how much new mail one mailbox stores per day (`2,000` by default) and how much a whole workspace stores per day (`25,000`), plus a short burst limit so a mailing-list storm cannot swamp the workers. Mail over a budget is not dropped: it waits on the server with the sync cursor held, and comes in when the window rolls. Replies to your own outreach have their own budget and are never held behind ordinary inbound mail. The drawer says "Waiting on the sync budget until ..." while this is happening, and the mailbox checks back less often until then.
+</Callout>
+
+Only two patterns deactivate a mailbox's sync, and both mean something is wrong upstream: a flood (thousands of new messages in a single hour, more than any real inbox produces) or exceeding the daily budget on three of the last seven days. The mailbox then shows the reason under **Needs attention**; fix what is delivering that volume into it, or ask your administrator to raise the budget, and reactivate it.
+
 ## Sending controls
 
 Set these on the mailbox's **Settings** tab. They apply to the next scheduled send, not retroactively.

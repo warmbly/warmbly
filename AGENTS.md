@@ -469,7 +469,7 @@ Instead, the codebase uses layered abuse controls and trust signals across auth,
 - warmup spam-score tracking and auto-blocking from pools
 - tracking-event deduplication and replay resistance
 - deliverability-event idempotency and suppression lists
-- worker-side sync abuse detection
+- worker-side sync fair use (the sync governor: lanes, deferral, flood and chronic-overage escalation)
 - admin ban and manual override controls
 
 ### Auth and signup protection
@@ -653,20 +653,16 @@ If the main goal is protecting your IPs, the best default is:
 - dedicated infrastructure: allow separate recovery handling if you want, but not on the shared paid pool
 - never let a risky mailbox continue warming in the same reputation surface that healthy paying customers depend on
 
-### Worker-side abuse detection
+### Worker-side abuse detection: the sync governor
 
-Workers also defend against mailbox-sync abuse.
+Mailbox sync is governed by a per-mailbox fair-use engine in the worker (`internal/app/worker/wmail/governor.go`), not a flat cap. Keep its shape when touching sync:
 
-Current sync protections in code:
-
-- burst sync limit: `100` new emails per `5 minutes`
-- hourly sync limit: `500` new emails per hour
-- if exceeded, the account is rate-limited, a warning/error event is emitted, and the mailbox can be terminated or set inactive upstream
-
-Relevant code:
-
-- `internal/app/worker/wmail/ratelimit.go`
-- `internal/app/consumer/event_email_error.go`
+- three lanes, each with its own budget: `priority` (mail in a conversation this mailbox owns: a reply to a campaign task, a mapped message, or a stored unibox thread; resolved through `GET /api/v1/internal/sync/own-conversation`), `live` (new mail after connect) and `backfill` (the initial import of history, newest first, bounded by a window in days and a message cap)
+- budgets are Redis fixed windows shared across workers, so an organization budget holds even when its mailboxes sit on different machines; a Redis outage fails open
+- the policy (backfill days and cap, daily messages per mailbox and per organization) is resolved by the backend from the operator-editable instance settings and shipped inside `ADD_EMAIL`; the pacing constants (burst per 5 min, hourly, backfill per minute, flood threshold, chronic-overage days) live in `internal/config/constants.go`
+- over budget means deferred, never dropped: the provider cursor (IMAP HIGHESTMODSEQ, Gmail history id, Graph delta link) is held before the first deferred message and the mail is re-offered next pass; the mailbox reports itself throttled and the loop backs off up to five minutes
+- only two patterns deactivate a mailbox (via the existing `EMAIL_RATE_LIMITED` path in `internal/app/consumer/event_email_error.go`): a flood (more new live mail seen in one hour than `SyncFloodPerHour`) and chronic overage (per-mailbox daily budget exhausted on `SyncThrottleEscalationDays` of the last seven). A provider 429 during sync only backs off; it must never deactivate
+- sync state (backfill progress and cursor, throttle, last synced) is relayed as `SYNC_STATE`, persisted in `email_sync_state`, handed back on the next load so a replaced worker resumes, and shown in the mailbox drawer via `GET /emails/:id/sync`
 
 ### Event replay and duplicate protection
 

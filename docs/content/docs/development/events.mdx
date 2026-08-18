@@ -57,9 +57,11 @@ Workers publish the same envelope shape back on `jobs.worker-events`:
 }
 ```
 
-Types: `NEW_EMAIL`, `INBOUND_BOUNCE`, `REMOVE_EMAIL`, `FLAGS_ADD`, `FLAGS_REMOVE`, `UPDATE_EMAIL`, `UPDATE_MAILBOX`, `DELETE_MAILBOX`, `TOKEN_UPDATE`, `HISTORY_ID_UPDATE`, `GRAPH_DELTA_UPDATE`, `EMAIL_SENT`, `EMAIL_FAILED`, `EMAIL_AUTH_ERROR`, `EMAIL_DISABLED`, `EMAIL_RATE_LIMITED`, `EMAIL_SERVER_ERROR`, `WORKER_HEALTH`.
+Types: `NEW_EMAIL`, `INBOUND_BOUNCE`, `REMOVE_EMAIL`, `FLAGS_ADD`, `FLAGS_REMOVE`, `UPDATE_EMAIL`, `UPDATE_MAILBOX`, `DELETE_MAILBOX`, `TOKEN_UPDATE`, `HISTORY_ID_UPDATE`, `GRAPH_DELTA_UPDATE`, `SYNC_STATE`, `EMAIL_SENT`, `EMAIL_FAILED`, `EMAIL_AUTH_ERROR`, `EMAIL_DISABLED`, `EMAIL_RATE_LIMITED`, `EMAIL_SERVER_ERROR`, `WORKER_HEALTH`.
 
 The consumer registers one handler per type (`internal/app/consumer/events.go`); unregistered types are logged and acknowledged rather than redelivered.
+
+`SYNC_STATE` is the worker's relay of a mailbox's sync state (backfill progress and cursor, fair-use throttle, last-synced time). It carries the full state rather than a delta, so a lost event is repaired by the next one; the consumer writes it to `email_sync_state` and the backend hands it back inside `ADD_EMAIL` on the next load, which is what lets a replaced worker resume an import instead of restarting it.
 
 ## Tracking events
 
