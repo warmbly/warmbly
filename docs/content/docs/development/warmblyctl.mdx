@@ -405,7 +405,7 @@ Paths are relative to `/v1`. `--data` takes a JSON literal, `-` for stdin, or `@
 
 ### For AI agents
 
-The repository ships skills under `.claude/skills/` (`warmbly-api` for the product, `warmbly-ops` for instance administration) that teach a coding agent these commands, the conventions above, and the sending-safety rules. An agent given a scoped key and those skills can operate a workspace end to end without touching the database.
+The repository ships skills under `skills/` (`warmbly-api` for the product, `warmbly-ops` for instance administration) that teach a coding agent these commands, the conventions above, and the sending-safety rules. Install them the way your agent expects, for example `cp -r skills/warmbly-api ~/.claude/skills/` for Claude Code, or point the agent at the `SKILL.md` directly. An agent given a scoped key and those skills can operate a workspace end to end without touching the database.
 
 ## When Redis is down
 

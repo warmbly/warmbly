@@ -68,9 +68,7 @@ tmp/
 build-errors.log
 
 # AI assistant local state
-# Personal agent state stays local, but the project's agent skills ship.
-.claude/*
-!.claude/skills/
+.claude/
 .claude.json
 .aider*
 .cursor/
