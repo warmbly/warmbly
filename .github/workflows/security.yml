@@ -1,0 +1,39 @@
+# Dependency vulnerability scan, deliberately not a PR gate: a CVE published
+# overnight is not actionable in whatever PR happens to trip it, so scanning
+# every PR just makes unrelated work go red. It runs on a schedule and when
+# dependency manifests change on main; a finding fails the run, which is the
+# signal to bump the dependency in its own PR.
+name: Security
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "**/pnpm-lock.yaml"
+      - "**/package-lock.json"
+      - "**/Cargo.lock"
+      - "realtime/mix.lock"
+
+permissions:
+  contents: read
+
+jobs:
+  trivy:
+    name: Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true

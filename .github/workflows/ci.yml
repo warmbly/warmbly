@@ -110,20 +110,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
-          version: 10
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          working-directory: web
 
       - name: Lint
         run: pnpm lint
@@ -148,20 +137,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
-          version: 10
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-          cache-dependency-path: admin/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          working-directory: admin
 
       - name: Lint
         run: pnpm lint
@@ -183,20 +161,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
-          version: 10
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: site/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          working-directory: site
+          node-version: "22"
 
       - name: Build
         # Astro project; build catches type errors, broken imports,
@@ -367,40 +335,15 @@ jobs:
           cache-from: type=gha,scope=ci-${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=ci-${{ matrix.service }}
 
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          severity: "CRITICAL,HIGH"
-          exit-code: "1"
-          ignore-unfixed: true
-
+  # The one job to mark required in branch protection. Skipped jobs pass
+  # (their tree did not change); anything failed or cancelled fails it.
+  # Dependency scanning lives in security.yml, off the PR path on purpose.
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, go-ci, web-ci, admin-ci, site-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images, security]
+    needs: [changes, go-ci, web-ci, admin-ci, site-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images]
     if: always()
     steps:
       - name: Check CI status
-        run: |
-          if [[ "${{ needs.go-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.web-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.admin-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.site-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.make-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.frontend-images.result }}" == "failure" ]] || \
-             [[ "${{ needs.rust-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.elixir-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.ios-ci.result }}" == "failure" ]] || \
-             [[ "${{ needs.security.result }}" == "failure" ]]; then
-            echo "CI failed"
-            exit 1
-          fi
-          echo "CI passed"
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

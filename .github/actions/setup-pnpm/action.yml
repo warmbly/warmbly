@@ -1,0 +1,28 @@
+name: Setup pnpm
+description: pnpm + Node with the pnpm store cached, then a frozen-lockfile install
+
+inputs:
+  working-directory:
+    description: The frontend tree to install
+    required: true
+  node-version:
+    description: Node.js version
+    default: "20"
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 10
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+        cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: pnpm install --frozen-lockfile
