@@ -1,11 +1,15 @@
 ---
 title: warmblyctl
-description: The operator CLI for a Warmbly instance. Every command and flag, how to run it in each runtime, how passwords are set, and how to get back in when nobody can sign in.
+description: The CLI for a Warmbly instance. The operator commands for accounts, health and recovery, and the API commands that let scripts and AI agents drive campaigns, contacts, mailboxes and the inbox with an API key.
 ---
 
-`warmblyctl` is the operator CLI for a Warmbly instance. It answers two questions: what state is this install in, and how do I get back in. It reads and writes the database directly, so it keeps working when the sign-in page does not.
+`warmblyctl` is the CLI for a Warmbly instance, and it has two halves with two trust models.
 
-Authorization is container or host access. That is the same trust model as Sentry's `createuser`, Gitea's `admin user create` and authentik's `ak changepassword`, and it is the right one when the identity system is the thing that is broken. The CLI has no HTTP surface and never will.
+The operator commands answer two questions: what state is this install in, and how do I get back in. They read and write the database directly, so they keep working when the sign-in page does not. Their authorization is container or host access, the same trust model as Sentry's `createuser`, Gitea's `admin user create` and authentik's `ak changepassword`, and it is the right one when the identity system is the thing that is broken.
+
+The [API commands](#the-api-commands) drive a running instance over its public REST API with an API key, so they work from any machine against any instance you hold a key for, the hosted service included. They exist so scripts and AI agents can operate the product itself: campaigns, contacts, mailboxes, the inbox, settings. Everything they can do is bounded by the key's scopes.
+
+The CLI never serves HTTP. The API commands are a client of the already-gated public API, which adds no new surface to your instance.
 
 ## Running it
 
@@ -51,10 +55,12 @@ A command that would set a password refuses on a non-TTY unless you passed `--pa
 | `APP_URL` | every printed link and sign-in hint | Links are built against `https://app.warmbly.com`, which is the hosted service and not your instance |
 | `KMS_PROVIDER` and its key | `org export`, `org import` | The command stops: a workspace's sealed values cannot be opened, so an archive would be useless |
 | `CREDENTIALS_ENCRYPTION_KEY` | `org export`, `org import` | A warning, and mailbox credentials are neither read nor written. Everything else still moves |
+| `WARMBLY_API_KEY` | every API command | The command stops and explains where a key comes from |
+| `WARMBLY_API_URL` | every API command | Falls back to the instance's own `API_PUBLIC_URL`, then the hosted service |
 
-Inside the backend container all of these are already set. Outside it, export them first, and match `AUTH_SECRET` to the backend's exactly.
+Inside the backend container all of these are already set, except the API key, which is yours. Outside it, export what the command needs, and match `AUTH_SECRET` to the backend's exactly.
 
-## The commands
+## The operator commands
 
 | Command | Does |
 |---|---|
@@ -71,7 +77,7 @@ Inside the backend container all of these are already set. Outside it, export th
 | [`org export`](#org-export) | Writes a whole workspace to a portable archive file |
 | [`org import`](#org-import) | Applies an archive to a workspace on this instance |
 
-`warmblyctl --help` lists them, and `warmblyctl <command> --help` prints one command's flags with an example.
+`warmblyctl --help` lists them, and `warmblyctl <command> --help` prints one command's flags with an example. The [API commands](#the-api-commands) are further down, because they authenticate differently.
 
 ## status
 
@@ -340,6 +346,67 @@ The whole import runs in one transaction: if any part fails, nothing lands and t
 
 Billing history, plan overrides, worker placement, mailbox sync checkpoints and warmup pool membership are exported for the record but never applied: each belongs to the instance rather than to the workspace. [Export and import](/guides/workspace-export-import/) has the full table.
 
+## The API commands
+
+Everything in this section talks to the public REST API with an API key, so it runs from anywhere: your laptop, a CI job, an agent's sandbox. It needs no database access and works against the hosted service and self-hosted instances alike.
+
+```bash
+export WARMBLY_API_KEY=wmbly_...                       # Settings > API keys
+export WARMBLY_API_URL=https://api.your-instance.com  # omit for the hosted service
+
+warmblyctl me                 # who the key is, and its scopes
+warmblyctl campaign list
+warmblyctl campaign start --id <uuid>
+```
+
+Every command prints the API's JSON response to stdout, untouched, and exits 1 on failure with the API's own `code` and `request_id` on stderr. What a key can do is exactly its granted [permissions](/api/permissions/); `warmblyctl me` shows them.
+
+### The families
+
+| Family | Covers |
+|---|---|
+| `me` | Identity and granted scopes |
+| `campaign` | List, get, create, update, delete, sequence steps, sender pool, preflight, start, stop, test email, send log |
+| `contact` | Search, get, lookup by address, create, update, delete, notes, timeline, import, export, custom fields |
+| `mailbox` | List, get, update, disconnect, auth check, sync state, sending behaviour, verify, send, warmup start/pause/resume/stop/status |
+| `inbox` | List, count, thread, mark seen, reply, compose, agent drafts, scheduled sends |
+| `analytics` | Dashboard, deliverability, warmup, accounts, campaigns, usage, audit logs |
+| `settings` | Outreach and suppression settings |
+| `webhook` | Endpoints, secrets, deliveries, event types |
+| `apikey` | Key self-service: list, create, update, revoke, the scope catalog |
+| `template` | Reply templates |
+| `crm` | Pipelines, deals, tasks |
+
+`warmblyctl <family> --help` lists a family's subcommands, and `warmblyctl <family> <subcommand> --help` prints its flags and the endpoint it calls.
+
+### The raw passthrough
+
+Anything the API can do that has no typed command yet is one `api` call away, so nothing is out of reach:
+
+```bash
+warmblyctl api get "/campaigns?limit=10"
+warmblyctl api post /contacts --data '{"email":"jane@example.com"}'
+warmblyctl api patch "/campaigns/<id>" --data @changes.json
+warmblyctl api delete "/webhooks/<id>"
+```
+
+Paths are relative to `/v1`. `--data` takes a JSON literal, `-` for stdin, or `@file`.
+
+### Conventions
+
+- List responses are `{"data": [...], "pagination": {"next_cursor", "has_more"}}`. Page with `--cursor` until `has_more` is false; the cursor is opaque.
+- Writes accept `--idempotency-key`, and a retried command with the same key can never double-apply. Details on [authentication](/api/authentication/).
+- A `429` failure names its `Retry-After`; wait it out and retry.
+- `contact list` is a search: `--data` carries the filter body, and omitting it lists everything.
+
+<Callout type="warn" title="Six commands put real mail on the wire">
+`campaign start`, `campaign test-email`, `mailbox send`, `inbox reply`, `inbox compose` and `inbox approve-draft` send. Everything else reads or edits drafts. Run `campaign preflight` before `campaign start`; it is free and catches missing senders, empty audiences and broken tracking.
+</Callout>
+
+### For AI agents
+
+The repository ships skills under `.claude/skills/` (`warmbly-api` for the product, `warmbly-ops` for instance administration) that teach a coding agent these commands, the conventions above, and the sending-safety rules. An agent given a scoped key and those skills can operate a workspace end to end without touching the database.
+
 ## When Redis is down
 
 Account recovery must not depend on the cache, so most commands treat an unreachable Redis as a warning and carry on.
@@ -374,3 +441,4 @@ Every one of these runs `warmblyctl` inside the backend container of a compose i
 - [Troubleshooting](/development/troubleshooting/) for symptoms and the command that fixes each one
 - [Export and import](/guides/workspace-export-import/) for what an archive contains and what deliberately does not travel
 - [Configuration reference](/development/configuration/) for every variable named here
+- [API authentication](/api/authentication/) and [permissions](/api/permissions/) for the keys and scopes the API commands run on
