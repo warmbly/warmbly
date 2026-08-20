@@ -1,16 +1,22 @@
-// warmblyctl is the operator CLI for a Warmbly instance. It answers "what
-// state is this install in" and "how do I get back in" by talking to the
-// database directly, so it keeps working when signing in does not.
+// warmblyctl is the CLI for a Warmbly instance. It has two halves with two
+// trust models, and the split is deliberate:
 //
-// Authorization is container or host access, the same trust model as Sentry's
-// createuser, Gitea's `admin user create` and authentik's `ak changepassword`.
-// It must never grow an HTTP surface.
+// The operator commands (status, setup-link, user, org) talk to the database
+// directly, so they keep working when signing in does not. Their authorization
+// is container or host access, the same trust model as Sentry's createuser,
+// Gitea's `admin user create` and authentik's `ak changepassword`. They read
+// PRIMARY_DB and REDIS from the environment, which is why running them inside
+// the backend container is the documented path.
 //
-// It reads PRIMARY_DB and REDIS from the environment, which is why running it
-// inside the backend container is the documented path: the environment there is
-// already correct.
+// The API commands (api, campaign, contact, mailbox, inbox, ...) are an HTTP
+// client over the public REST API, authorized by an API key, so they drive any
+// instance the caller can reach, including the hosted service. They exist so
+// agents and scripts can operate the product itself: everything they can do is
+// bounded by the key's scopes. The CLI must never SERVE HTTP; being a client
+// of the already-gated public API adds no new surface.
 //
 //	docker compose -p warmbly exec backend warmblyctl status
+//	WARMBLY_API_KEY=wmbly_... warmblyctl campaign list
 package main
 
 import (
@@ -63,6 +69,11 @@ func dispatch(ctx context.Context, args []string) error {
 		return runUser(ctx, args[1:])
 	case "org":
 		return runOrg(ctx, args[1:])
+	case "api":
+		return runAPI(ctx, args[1:])
+	}
+	if _, ok := apiFamilies[args[0]]; ok {
+		return runAPIResource(ctx, args[0], args[1:])
 	}
 	return fmt.Errorf("unknown command %q. Run `warmblyctl --help` for the full list.", args[0])
 }
@@ -94,31 +105,46 @@ var commands = []command{
 }
 
 func usage(w *os.File) {
-	fmt.Fprint(w, `warmblyctl is the operator CLI for this Warmbly instance. It reads and writes
-the database directly, so it works when the sign-in page does not.
+	fmt.Fprint(w, `warmblyctl is the CLI for a Warmbly instance. The operator commands read and
+write the database directly, so they work when the sign-in page does not. The
+API commands drive a running instance over its public REST API with an API
+key, so they work against any instance you hold a key for, hosted included.
 
 Usage:
   warmblyctl <command> [flags]
 
-Commands:
+Operator commands (run where PRIMARY_DB is set, normally the backend container):
 `)
 	for _, c := range commands {
 		fmt.Fprintf(w, "  %-20s %s\n", c.name, c.summary)
 	}
 
+	fmt.Fprint(w, "\nAPI commands (need WARMBLY_API_KEY; each family lists its own subcommands):\n")
+	for _, f := range apiFamilyOrder {
+		fmt.Fprintf(w, "  %-20s %s\n", f, apiFamilies[f])
+	}
+	fmt.Fprintf(w, "  %-20s %s\n", "api", "Raw passthrough: any method, any /v1 path")
+
 	fmt.Fprint(w, "\nExamples:\n")
 	for _, c := range commands {
 		fmt.Fprintf(w, "  %s\n", c.example)
 	}
+	fmt.Fprint(w, `  warmblyctl campaign list
+  warmblyctl campaign start --id <uuid>
+  warmblyctl api get "/campaigns?limit=10"
+`)
 
 	_, _ = io.WriteString(w, `
 Anything piped into a container needs exec -T, which is what turns the TTY off.
 Anything that prompts needs a TTY, so run it without -T.
 
 Environment:
-  PRIMARY_DB   Postgres connection string. Every command except hash-password needs it.
-  REDIS        Redis URL. setup-link needs it, and reset-password needs it to mint a link.
-  APP_URL      Base URL every printed link is built from.
+  PRIMARY_DB       Postgres connection string. Every operator command except hash-password needs it.
+  REDIS            Redis URL. setup-link needs it, and reset-password needs it to mint a link.
+  APP_URL          Base URL every printed link is built from.
+  WARMBLY_API_KEY  API key (wmbly_...) for the API commands.
+  WARMBLY_API_URL  API base URL for the API commands. Defaults to this instance's
+                   API_PUBLIC_URL, then the hosted service.
 
   org export and org import additionally read the instance's crypto settings,
   because a workspace's sealed values have to be opened on the way out and
