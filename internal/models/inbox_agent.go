@@ -62,6 +62,10 @@ type InboxAgentReply struct {
 	// Snippet is the inbound reply's body preview, used to skip drafting a reply
 	// to a trivial ack ("thanks", "ok") that isn't worth a paid draft.
 	Snippet string
+	// BodyText is the reply's full stored text where it exists. The triviality
+	// gate reads it in preference to Snippet: a preview line cannot tell a
+	// one-word ack apart from a long message that opens with one.
+	BodyText string
 	// InReplyTo is the RFC Message-Id of the inbound reply (referenced on send).
 	InReplyTo   string
 	ContactID   uuid.UUID

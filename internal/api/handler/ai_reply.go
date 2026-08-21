@@ -15,6 +15,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
@@ -58,17 +59,19 @@ func (h *Handler) DraftReply(c *gin.Context) {
 		return
 	}
 
-	// Assemble thread context.
-	thread, xerr := h.UniboxService.GetByThread(c.Request.Context(), *orgID, uuid.Nil, req.ThreadID, "20", "")
+	// Assemble thread context from the messages themselves, not their preview
+	// lines: a draft grounded on the first hundred characters of each email
+	// answers the greeting and misses what was actually asked.
+	msgs, xerr := h.UniboxService.ThreadGrounding(c.Request.Context(), *orgID, req.ThreadID, unibox.GroundingLimitMax)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return
 	}
-	if thread == nil || len(thread.Data) == 0 {
+	if len(msgs) == 0 {
 		errx.JSON(c, errx.New(errx.NotFound, "thread not found"))
 		return
 	}
-	history, counterpart := h.buildThreadContext(thread.Data)
+	history, counterpart := buildThreadContext(msgs)
 
 	// Look up the counterpart contact for grounding (best-effort).
 	contactCtx := h.contactContext(c, userID, *orgID, counterpart)
@@ -148,21 +151,14 @@ func (h *Handler) DraftReply(c *gin.Context) {
 	})
 }
 
-// buildThreadContext renders the thread's messages oldest-first and returns the
+// buildThreadContext renders the thread oldest-first and returns the
 // counterpart email (the most recent sender) to look up as a contact.
-func (h *Handler) buildThreadContext(msgs []models.EmailMessageStoreDataPreview) (string, string) {
-	// GetByThread returns oldest-first, so render in order for a natural
-	// transcript and take the counterpart from the most recent (last) message.
-	var b strings.Builder
+func buildThreadContext(msgs []models.MessageGrounding) (string, string) {
 	counterpart := ""
-	for _, m := range msgs {
-		from := strings.Join(m.FromAddr, ", ")
-		fmt.Fprintf(&b, "From: %s\nSubject: %s\n%s\n\n", from, m.Subject, strings.TrimSpace(m.Snippet))
-	}
 	if last := msgs[len(msgs)-1]; len(last.FromAddr) > 0 {
 		counterpart = last.FromAddr[0]
 	}
-	return strings.TrimSpace(b.String()), counterpart
+	return unibox.RenderGrounding(msgs), counterpart
 }
 
 // contactContext returns a compact grounding block for the counterpart contact,

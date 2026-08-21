@@ -923,6 +923,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 					Counterpart:     sender,
 					Subject:         msg.Subject,
 					Snippet:         msg.Snippet,
+					BodyText:        msg.BodyText,
 					InReplyTo:       msg.MessageID,
 					ContactID:       ctID,
 					CampaignID:      cID,

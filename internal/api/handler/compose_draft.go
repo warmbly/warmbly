@@ -9,12 +9,14 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/credits"
+	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
@@ -158,30 +160,26 @@ func (h *Handler) DraftCompose(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// composeHistoryMessages bounds how much correspondence with one address is
+// pulled into a compose draft. Grounding now carries real message text rather
+// than preview lines, so fewer messages say considerably more.
+const composeHistoryMessages = 8
+
 // composeHistoryContext renders the most recent conversations with the address
 // (both directions) as a compact transcript block, newest first.
 func (h *Handler) composeHistoryContext(c *gin.Context, address string) (string, int) {
-	uid, err := middleware.GetUserUUID(c)
-	if err != nil {
-		return "", 0
-	}
 	oid := middleware.GetOrganizationID(c)
 	if oid == nil {
 		return "", 0
 	}
-	res, xerr := h.UniboxService.Search(c.Request.Context(), *oid, uid, &models.MailSearchParams{
-		Address:  &address,
-		PageSize: 8,
-	})
-	if xerr != nil || res == nil || len(res.Data) == 0 {
+	msgs, xerr := h.UniboxService.AddressGrounding(c.Request.Context(), *oid, address, composeHistoryMessages)
+	if xerr != nil || len(msgs) == 0 {
 		return "", 0
 	}
-	var b strings.Builder
-	for _, m := range res.Data {
-		from := strings.Join(m.FromAddr, ", ")
-		fmt.Fprintf(&b, "From: %s\nSubject: %s\n%s\n\n", from, m.Subject, strings.TrimSpace(m.Snippet))
-	}
-	return strings.TrimSpace(b.String()), len(res.Data)
+	// The query returns newest first; the renderer reads a conversation
+	// oldest first, so flip it before rendering.
+	slices.Reverse(msgs)
+	return unibox.RenderGrounding(msgs), len(msgs)
 }
 
 func buildComposePrompt(address, contactCtx, history, subject, instruction string) string {

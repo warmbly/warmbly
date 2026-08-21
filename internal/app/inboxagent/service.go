@@ -8,7 +8,6 @@ package inboxagent
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/credits"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/app/replyclassify"
+	"github.com/warmbly/warmbly/internal/app/unibox"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
@@ -37,8 +37,11 @@ type OrgReader interface {
 }
 
 // ThreadReader loads a thread's messages for grounding (repository.UniboxRepository).
+// GroundingByThread carries the message text, not the preview line: a draft
+// written against the first hundred characters of each email answers the
+// greeting and misses the question.
 type ThreadReader interface {
-	GetByThread(ctx context.Context, orgID, emailID uuid.UUID, threadID string, limit int, cursor string) (*models.MailSearchResult, error)
+	GroundingByThread(ctx context.Context, orgID uuid.UUID, threadID string, limit int) ([]models.MessageGrounding, error)
 }
 
 // SkillsSource optionally contributes the org's enabled skills preamble.
@@ -144,7 +147,11 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 	// A trivial ack ("thanks", "ok, got it") does not warrant a paid reply
 	// draft. Reuse the classifier's content-sanity gate so an org isn't charged
 	// 5 credits to reply to one-liners.
-	if !replyclassify.WorthModeling(replyclassify.Input{BodyText: r.Snippet}) {
+	replyText := r.BodyText
+	if strings.TrimSpace(replyText) == "" {
+		replyText = r.Snippet
+	}
+	if !replyclassify.WorthModeling(replyclassify.Input{BodyText: replyText}) {
 		return
 	}
 
@@ -258,16 +265,11 @@ func (s *service) draft(ctx context.Context, r models.InboxAgentReply) {
 
 // threadHistory renders the thread's messages oldest-first for grounding.
 func (s *service) threadHistory(ctx context.Context, orgID uuid.UUID, threadID string) string {
-	thread, err := s.threads.GetByThread(ctx, orgID, uuid.Nil, threadID, maxThreadMessages, "")
-	if err != nil || thread == nil || len(thread.Data) == 0 {
+	msgs, err := s.threads.GroundingByThread(ctx, orgID, threadID, maxThreadMessages)
+	if err != nil || len(msgs) == 0 {
 		return ""
 	}
-	var b strings.Builder
-	for _, m := range thread.Data {
-		from := strings.Join(m.FromAddr, ", ")
-		fmt.Fprintf(&b, "From: %s\nSubject: %s\n%s\n\n", from, m.Subject, strings.TrimSpace(m.Snippet))
-	}
-	return strings.TrimSpace(b.String())
+	return unibox.RenderGrounding(msgs)
 }
 
 func buildReplyPrompt(history, contactCtx string) string {

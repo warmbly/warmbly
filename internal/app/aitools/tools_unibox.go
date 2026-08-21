@@ -3,7 +3,6 @@ package aitools
 import (
 	"context"
 	"encoding/json"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -145,19 +144,28 @@ func (d Deps) getThread(ctx context.Context, inv Invocation, args json.RawMessag
 		limit = 20
 	}
 
-	res, xerr := d.Unibox.GetByThread(ctx, inv.OrgID, uuid.Nil, in.ThreadID, strconv.Itoa(limit), "")
+	// Reading a thread returns what the messages say, bounded per message.
+	// Handing the assistant preview lines meant it answered on the strength of
+	// the first sentence of each email.
+	msgs, xerr := d.Unibox.ThreadGrounding(ctx, inv.OrgID, in.ThreadID, limit)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
-	out := make([]map[string]any, 0, len(res.Data))
-	for _, m := range res.Data {
+	out := make([]map[string]any, 0, len(msgs))
+	for _, m := range msgs {
+		body := generation.StripQuoted(m.BodyText)
+		if strings.TrimSpace(body) == "" {
+			body = m.Snippet
+		}
+		if len([]rune(body)) > generation.GroundingPerMessageChars {
+			body = string([]rune(body)[:generation.GroundingPerMessageChars]) + "…"
+		}
 		out = append(out, map[string]any{
 			"from":    strings.Join(m.FromAddr, ", "),
 			"to":      strings.Join(m.ToAddr, ", "),
 			"subject": m.Subject,
-			"snippet": m.Snippet,
-			"date":    m.InternalDate,
-			"seen":    m.Seen,
+			"body":    body,
+			"date":    m.SentAt,
 		})
 	}
 	return jsonResult(map[string]any{"thread_id": in.ThreadID, "messages": out})
