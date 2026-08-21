@@ -22,8 +22,11 @@ const (
 	CampaignRampCeilingDefault   = 50
 	CampaignMaxNewLeadsMax       = 1000
 
-	MaxContactSize   = 10240
-	MaxEmailBodySize = 200 * 1024 // 200 KB
+	MaxContactSize = 10240
+	// MaxEmailBodySize bounds a single stored message body. 200 KB cut real
+	// HTML newsletters mid-document; 512 KB clears the overwhelming majority
+	// of them while still bounding what one message can cost.
+	MaxEmailBodySize = 512 * 1024 // 512 KB
 	MaxEmailFolders  = 30
 
 	// ImapFetchBatchSize bounds how many messages one IMAP sync window holds in
