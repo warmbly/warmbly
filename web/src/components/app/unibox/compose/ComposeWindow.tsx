@@ -65,6 +65,7 @@ import {
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
+import { plainToHtml } from "@/lib/email/body";
 
 const MAX_BODY_LEN = 4000;
 const MAX_SCHEDULE_MS = 29 * 24 * 60 * 60 * 1000;
@@ -356,7 +357,7 @@ function ComposeWindowInner({
                 bcc: bcc.length ? bcc : undefined,
                 subject: subject.trim(),
                 body_plain: trimmedBody,
-                body_html: trimmedBody.replace(/\n/g, "<br />"),
+                body_html: plainToHtml(trimmedBody),
                 ...(scheduledAt
                     ? { send_mode: "scheduled" as const, scheduled_at: scheduledAt.toISOString() }
                     : { send_mode: "instant" as const }),

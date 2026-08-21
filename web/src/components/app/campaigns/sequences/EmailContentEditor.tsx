@@ -30,7 +30,7 @@ import useCreateTemplate from "@/lib/api/hooks/app/templates/useCreateTemplate";
 import { useConfirm } from "@/hooks/context/confirm";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import { VARIABLES, SAMPLE, htmlToPlain, renderPreview, templateIssue } from "./emailPreview";
+import { VARIABLES, SAMPLE, htmlToPlain, promptToHtml, renderPreview, templateIssue } from "./emailPreview";
 
 export default function EmailContentEditor({
     subject,
@@ -74,7 +74,9 @@ export default function EmailContentEditor({
 
     function applyTemplate(t: { name: string; subject: string; body_html: string; body_plain: string }) {
         const apply = () => {
-            const html = t.body_html || (t.body_plain ? `<p>${t.body_plain.replace(/\n/g, "</p><p>")}</p>` : "");
+            // promptToHtml escapes as it paragraph-wraps: a template body with
+            // "&" or "<" in it must not reach the editor as raw markup.
+            const html = t.body_html || promptToHtml(t.body_plain ?? "");
             onSubjectChange(t.subject || subject);
             onBodyChange(html, t.body_plain || htmlToPlain(html));
             toast.success(`Applied "${t.name}"`);

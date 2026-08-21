@@ -52,6 +52,7 @@ import {
     PopoverMenuSeparator,
 } from "@/components/ui/popover-menu";
 import { cn } from "@/lib/utils";
+import { plainToHtml } from "@/lib/email/body";
 
 export type ReplyMode = "reply" | "forward";
 
@@ -270,7 +271,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                 bcc: bcc.length ? bcc : undefined,
                 subject: sentSubject,
                 body_plain: trimmedBody,
-                body_html: trimmedBody.replace(/\n/g, "<br />"),
+                body_html: plainToHtml(trimmedBody),
                 thread_id: mode === "reply" ? threadId : undefined,
                 ...(scheduledAt
                     ? {
