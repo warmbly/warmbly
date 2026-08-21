@@ -300,6 +300,7 @@ func (w *WMail) imapStore(ctx context.Context, msg *models.EmailMessageData) err
 		InternalDate: msg.InternalDate,
 		SentDate:     msg.Date,
 		Snippet:      GenerateSnippet(msg.BodyPlain, msg.BodyHTML),
+		BodyText:     SearchText(msg.BodyPlain, msg.BodyHTML),
 		Seen:         false,
 		UpdatedAt:    now,
 		CreatedAt:    now,

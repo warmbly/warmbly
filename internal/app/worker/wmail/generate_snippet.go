@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 )
 
@@ -53,4 +54,10 @@ func GenerateSnippet(bodyPlain, bodyHTML string) string {
 		text = strings.TrimRight(string(runes[:snippetMaxRunes]), " .,;:-") + "…"
 	}
 	return text
+}
+
+// SearchText renders the message body down to the bounded plain text Postgres
+// indexes for search.
+func SearchText(bodyPlain, bodyHTML string) string {
+	return mailhtml.SearchText(bodyPlain, bodyHTML, config.MaxSearchBodyText)
 }

@@ -68,6 +68,20 @@ type UniboxRepository interface {
 	// a reply that arrives with only a provider thread id can still carry the
 	// In-Reply-To header the recipient's mail client threads on.
 	LatestMessageIDInThread(ctx context.Context, orgID uuid.UUID, threadID string) (string, error)
+
+	// ListMissingBodyText pages through messages stored before bodies were
+	// indexed for search, oldest id first from afterID. SetBodyText writes the
+	// rendered text back. Together they are the backfill: without it, search
+	// over message text would only ever work for mail synced from now on.
+	ListMissingBodyText(ctx context.Context, afterID uuid.UUID, limit int) ([]UniboxBodyTarget, error)
+	SetBodyText(ctx context.Context, id uuid.UUID, bodyText string) error
+}
+
+// UniboxBodyTarget is one message awaiting a search-text backfill. UserID is
+// the mailbox owner, which is what the body's object-storage key is built from.
+type UniboxBodyTarget struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
 }
 
 type uniboxRepository struct {
@@ -98,13 +112,13 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 			gmail_id, parent_id, uid, mod_seq,
 			flags, bcc, cc, from_addr, in_reply_to, reply_to,
 			to_addr, subject, size, internal_date, sent_date,
-			snippet, seen, created_at, updated_at
+			snippet, seen, created_at, updated_at, body_text
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10,
 			$11, $12, $13, $14, $15, $16,
 			$17, $18, $19, $20, $21,
-			$22, $23, $24, $25
+			$22, $23, $24, $25, $26
 		)
 		ON CONFLICT (id) DO NOTHING
 	`
@@ -117,7 +131,7 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 		textArray(e.Flags), textArray(e.BCC), textArray(e.CC), textArray(e.FromAddr),
 		textArray(e.InReplyTo), textArray(e.ReplyTo), textArray(e.ToAddr),
 		e.Subject, e.Size, e.InternalDate, e.SentDate,
-		e.Snippet, e.Seen, e.CreatedAt, e.UpdatedAt,
+		e.Snippet, e.Seen, e.CreatedAt, e.UpdatedAt, e.BodyText,
 	)
 	return err
 }
@@ -415,7 +429,11 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 	}
 
 	if params.Subject != nil && *params.Subject != "" {
-		inner += fmt.Sprintf(` AND ue.search_tsv @@ plainto_tsquery('english', $%d)`, argPos)
+		// Two indexes, one query: search_tsv covers subject + preview, and the
+		// body expression matches idx_unibox_emails_body_search exactly (it has
+		// to be written the same way, or the index is not used).
+		inner += fmt.Sprintf(` AND (ue.search_tsv @@ plainto_tsquery('english', $%d)
+				OR to_tsvector('english'::regconfig, ue.body_text) @@ plainto_tsquery('english', $%d))`, argPos, argPos)
 		args = append(args, *params.Subject)
 		argPos++
 	}
@@ -1116,4 +1134,39 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 	}
 
 	return overview, nil
+}
+
+// ListMissingBodyText returns messages whose searchable text was never
+// recorded. Keyset-ordered by id so a sweep can walk the table once without
+// re-reading rows it has already handled, including the ones whose body turns
+// out to be empty and stays that way.
+func (r *uniboxRepository) ListMissingBodyText(ctx context.Context, afterID uuid.UUID, limit int) ([]UniboxBodyTarget, error) {
+	query := `
+		SELECT id, user_id
+		FROM unibox_emails
+		WHERE body_text = '' AND id > $1
+		ORDER BY id
+		LIMIT $2
+	`
+	rows, err := r.db.Query(ctx, query, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]UniboxBodyTarget, 0, limit)
+	for rows.Next() {
+		var t UniboxBodyTarget
+		if err := rows.Scan(&t.ID, &t.UserID); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// SetBodyText records the searchable rendering of a message body.
+func (r *uniboxRepository) SetBodyText(ctx context.Context, id uuid.UUID, bodyText string) error {
+	_, err := r.db.Exec(ctx, `UPDATE unibox_emails SET body_text = $2 WHERE id = $1`, id, bodyText)
+	return err
 }

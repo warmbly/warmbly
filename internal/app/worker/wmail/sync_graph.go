@@ -128,6 +128,7 @@ func (w *WMail) graphStore(ctx context.Context, msg *models.EmailMessageData) er
 		InternalDate: msg.InternalDate,
 		SentDate:     msg.Date,
 		Snippet:      msg.Snippet,
+		BodyText:     SearchText(msg.BodyPlain, msg.BodyHTML),
 		Seen:         false,
 		UpdatedAt:    now,
 		CreatedAt:    now,

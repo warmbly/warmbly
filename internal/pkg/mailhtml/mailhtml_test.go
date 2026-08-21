@@ -98,3 +98,23 @@ func TestLooksLikeHTML(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchTextKeepsQuotedHistoryAndFlattensHTML(t *testing.T) {
+	got := SearchText("", `<p>Happy to help.</p><blockquote>&gt; what is the pricing?</blockquote>`, 0)
+	if !strings.Contains(got, "Happy to help.") || !strings.Contains(got, "what is the pricing?") {
+		t.Fatalf("search text lost content: %q", got)
+	}
+	if strings.Contains(got, "<") || strings.Contains(got, "&gt;") {
+		t.Fatalf("markup or entities survived: %q", got)
+	}
+}
+
+func TestSearchTextPrefersPlainAndRespectsLimit(t *testing.T) {
+	if got := SearchText("plain wins", "<p>html loses</p>", 0); got != "plain wins" {
+		t.Fatalf("got %q", got)
+	}
+	got := SearchText(strings.Repeat("é", 100), "", 10)
+	if len([]rune(got)) != 10 {
+		t.Fatalf("limit not applied on rune boundaries: %q", got)
+	}
+}

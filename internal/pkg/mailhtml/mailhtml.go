@@ -10,6 +10,7 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/microcosm-cc/bluemonday"
 )
@@ -124,4 +125,25 @@ func ToText(raw string) string {
 	// Sanitize escapes its text output ("&" -> "&amp;"), so a body that was
 	// already entity-encoded would otherwise surface as literal "&amp;".
 	return html.UnescapeString(textPolicy.Sanitize(withBreaks))
+}
+
+// SearchText renders a message body down to the bounded plain text that gets
+// indexed for search. Unlike a preview snippet it keeps quoted history, because
+// searching for a phrase someone quoted back at you should still find the
+// conversation, and it flattens HTML so the indexed words are the words the
+// reader sees. maxRunes of 0 or less means no limit.
+func SearchText(bodyPlain, bodyHTML string, maxRunes int) string {
+	text := bodyPlain
+	if strings.TrimSpace(text) == "" && bodyHTML != "" {
+		text = bodyHTML
+	}
+	if LooksLikeHTML(text) {
+		text = ToText(text)
+	}
+	text = strings.Join(strings.Fields(text), " ")
+
+	if maxRunes > 0 && utf8.RuneCountInString(text) > maxRunes {
+		text = string([]rune(text)[:maxRunes])
+	}
+	return text
 }
