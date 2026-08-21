@@ -10,6 +10,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 )
 
 // SendMessage sends a message through Graph's MIME sendMail endpoint. We build a
@@ -33,16 +34,18 @@ func (c *Client) SendMessage(
 ) error {
 	hdrs := []hdr{
 		{"From", c.GetAddress()},
-		{"To", strings.Join(to, ", ")},
-		{"Subject", subject},
+		{"To", mailhdr.AddressList(to)},
+		// RFC 2047: a non-ASCII subject or display name has to be encoded or
+		// it reaches the recipient as mojibake. No-op for plain ASCII.
+		{"Subject", mailhdr.Subject(subject)},
 		{"Message-ID", messageID},
 		{"MIME-Version", "1.0"},
 	}
 	if len(cc) > 0 {
-		hdrs = append(hdrs, hdr{"Cc", strings.Join(cc, ", ")})
+		hdrs = append(hdrs, hdr{"Cc", mailhdr.AddressList(cc)})
 	}
 	if len(bcc) > 0 {
-		hdrs = append(hdrs, hdr{"Bcc", strings.Join(bcc, ", ")})
+		hdrs = append(hdrs, hdr{"Bcc", mailhdr.AddressList(bcc)})
 	}
 	if parent != nil && parent.MessageID != "" {
 		// Trim any existing <...> before re-wrapping so we never emit <<id>>,

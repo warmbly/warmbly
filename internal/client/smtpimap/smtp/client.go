@@ -21,6 +21,7 @@ import (
 	"github.com/warmbly/warmbly/internal/client/netbind"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"golang.org/x/oauth2"
 )
 
@@ -60,9 +61,11 @@ func (c *Client) Send(
 
 	// ----- Headers -----
 	headers := map[string]string{
-		"From":         from.String(),
-		"To":           strings.Join(to, ", "),
-		"Subject":      subject,
+		"From": from.String(),
+		"To":   mailhdr.AddressList(to),
+		// Headers are ASCII on the wire: a raw accent or emoji in the subject
+		// arrives as mojibake, so RFC 2047-encode it (a no-op for plain ASCII).
+		"Subject":      mailhdr.Subject(subject),
 		"Date":         time.Now().Format(time.RFC1123Z),
 		"MIME-Version": "1.0",
 	}
@@ -73,7 +76,7 @@ func (c *Client) Send(
 		headers["Message-ID"] = "<" + strings.Trim(messageID, "<>") + ">"
 	}
 	if len(cc) > 0 {
-		headers["Cc"] = strings.Join(cc, ", ")
+		headers["Cc"] = mailhdr.AddressList(cc)
 	}
 	if inReplyTo != "" {
 		// The parent Message-ID may arrive already wrapped in <...>; trim before
@@ -98,8 +101,11 @@ func (c *Client) Send(
 		c.writeAlternativeBody(&msg, headers, bodyPlain, bodyHTML)
 	}
 
-	recipients := append(append([]string{}, to...), cc...)
-	recipients = append(recipients, bcc...)
+	// Envelope recipients are bare addresses: a display name belongs in the
+	// header, and "Ana <a@b.com>" in RCPT TO is rejected by the server.
+	recipients := mailhdr.BareList(to)
+	recipients = append(recipients, mailhdr.BareList(cc)...)
+	recipients = append(recipients, mailhdr.BareList(bcc)...)
 
 	return c.sendRaw(ctx, from.Address, recipients, msg.Bytes())
 }

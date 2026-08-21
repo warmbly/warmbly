@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"google.golang.org/api/gmail/v1"
 )
 
@@ -54,18 +55,19 @@ func (c *Client) sendRaw(
 	var hdrs []header
 	hdrs = append(hdrs,
 		header{"From", c.GetAddress()},
-		header{"To", strings.Join(to, ", ")},
-		// We now own header encoding, so a non-ASCII subject has to be
-		// RFC 2047-encoded here. Encode is a no-op on a plain ASCII subject.
-		header{"Subject", mime.QEncoding.Encode("utf-8", subject)},
+		header{"To", mailhdr.AddressList(to)},
+		// We now own header encoding, so a non-ASCII subject (or recipient
+		// display name) has to be RFC 2047-encoded here. Encoding is a no-op
+		// on plain ASCII.
+		header{"Subject", mailhdr.Subject(subject)},
 		header{"Message-ID", messageID},
 		header{"MIME-Version", "1.0"},
 	)
 	if len(cc) > 0 {
-		hdrs = append(hdrs, header{"Cc", strings.Join(cc, ", ")})
+		hdrs = append(hdrs, header{"Cc", mailhdr.AddressList(cc)})
 	}
 	if len(bcc) > 0 {
-		hdrs = append(hdrs, header{"Bcc", strings.Join(bcc, ", ")})
+		hdrs = append(hdrs, header{"Bcc", mailhdr.AddressList(bcc)})
 	}
 	if parent != nil && parent.MessageID != "" {
 		mid := "<" + strings.Trim(parent.MessageID, "<>") + ">"
