@@ -1396,6 +1396,11 @@ func main() {
 		// freshly onboarded account send/sync and re-seeds a restarted worker.
 		go emailService.StartWorkerReconciler(ctx, 60*time.Second)
 
+		// Unibox search backfill: record the searchable text of messages synced
+		// before bodies were indexed, so search covers the whole archive and not
+		// just new mail. Walks the table once, then returns.
+		go uniboxService.StartBodyTextBackfill(ctx)
+
 		// Danger zone: schedule + execute delayed deletions (orgs, accounts).
 		dangerZoneRepository := repository.NewDangerZoneRepository(primaryDB.Pool)
 		dangerZoneService = dangerzone.NewService(

@@ -69,6 +69,11 @@ type UniboxService interface {
 	// render inline alongside already-sent messages.
 	ListScheduledByThread(ctx context.Context, userID uuid.UUID, threadID string) ([]models.UniboxScheduledItem, *errx.Error)
 	CancelScheduled(ctx context.Context, userID, taskID uuid.UUID) *errx.Error
+
+	// StartBodyTextBackfill fills in the searchable text of messages stored
+	// before bodies were indexed. Runs until the archive is caught up, then
+	// returns; blocking, so callers run it in a goroutine.
+	StartBodyTextBackfill(ctx context.Context)
 }
 
 type uniboxService struct {
