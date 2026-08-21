@@ -61,6 +61,12 @@ The default of `50` is deliberately conservative. `30` to `50`/day is the normal
   A new mailbox has no reputation. Sudden high volume from a cold inbox is one of the fastest ways to land in spam.
 </Callout>
 
+### Keeping a copy of sent mail
+
+SMTP mailboxes get a **Keep a copy of sent mail** toggle, on by default. SMTP submission puts nothing in your own account, so without it a message Warmbly sends exists only in the recipient's inbox: it shows up in neither your mail client nor the unibox thread. With it on, Warmbly files each message in the mailbox's Sent folder as it goes out, flagged read and dated when it was sent.
+
+Turn it off when your provider already saves its own copy of anything submitted over SMTP, which Gmail, Fastmail and Zoho do, or the folder ends up with two of every message. Gmail and Outlook mailboxes connected with OAuth never show the toggle: their APIs file the copy themselves. Warmup mail is never filed, since it would bury your real sent mail.
+
 The same tab sets the **display name**, **reply-to** (empty uses the mailbox address), **signature** in plain text and HTML, **tags** for grouping, and a **custom tracking domain**. The tracking domain routes opens and clicks through your own subdomain instead of the shared host; Warmbly gives you a `CNAME` to add and verifies it on save.
 
 ## Warmup
