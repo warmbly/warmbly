@@ -69,6 +69,11 @@ type Email struct {
 
 	Timezone string `json:"timezone"`
 
+	// SaveToSent applies to SMTP/IMAP mailboxes only: after a send, the worker
+	// APPENDs a copy to the mailbox's Sent folder. Gmail and Outlook file their
+	// own copy, so the flag is ignored for them.
+	SaveToSent bool `json:"save_to_sent"`
+
 	Tags []string `json:"tags"`
 
 	CreatedAt time.Time `json:"created_at"`
@@ -195,6 +200,11 @@ type UpdateEmail struct {
 	// business-hours window are evaluated in. Empty means not configured, so
 	// only the campaign's window applies.
 	Timezone *string `json:"timezone"`
+
+	// SaveToSent controls the Sent folder copy on SMTP/IMAP mailboxes. Turn it
+	// off when the submission server files its own copy, or the folder ends up
+	// with two of everything.
+	SaveToSent *bool `json:"save_to_sent"`
 
 	Tags []string `json:"tags"`
 }
