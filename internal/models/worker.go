@@ -215,20 +215,31 @@ type AddWorkerEmail struct {
 	UserID uuid.UUID `json:"user_id" avro:"user_id"`
 	// OrganizationID scopes the organization-wide sync budget. Nil for a
 	// legacy personal mailbox, which then only has per-mailbox budgets.
-	OrganizationID *uuid.UUID                  `json:"organization_id" avro:"organization_id"`
-	ImapSync       bool                        `json:"imap_sync" avro:"imap_sync"`
-	Email          string                      `json:"email" avro:"email"`
-	FirstName      string                      `json:"first_name" avro:"first_name"`
-	LastName       string                      `json:"last_name" avro:"last_name"`
-	Type           InboxProvider               `json:"type" avro:"type"`
-	Google         *AddWorkerEmailGoogleData   `json:"google" avro:"google"`
-	SmtpImap       *AddWorkerEmailSmtpImapData `json:"smtp_imap" avro:"smtp_imap"`
-	Graph          *AddWorkerEmailGraphData    `json:"graph" avro:"graph"`
+	OrganizationID *uuid.UUID `json:"organization_id" avro:"organization_id"`
+	ImapSync       bool       `json:"imap_sync" avro:"imap_sync"`
+	// SaveToSent is a pointer so an older control plane that does not send the
+	// field is read as "unset" and takes the default (on) rather than as an
+	// explicit false, which would silently stop filing sent mail.
+	SaveToSent *bool                       `json:"save_to_sent,omitempty" avro:"save_to_sent"`
+	Email      string                      `json:"email" avro:"email"`
+	FirstName  string                      `json:"first_name" avro:"first_name"`
+	LastName   string                      `json:"last_name" avro:"last_name"`
+	Type       InboxProvider               `json:"type" avro:"type"`
+	Google     *AddWorkerEmailGoogleData   `json:"google" avro:"google"`
+	SmtpImap   *AddWorkerEmailSmtpImapData `json:"smtp_imap" avro:"smtp_imap"`
+	Graph      *AddWorkerEmailGraphData    `json:"graph" avro:"graph"`
 	// Sync is the fair-use budget and resume state. Nil only from a publisher
 	// older than the sync policy; the worker then applies compiled defaults.
 	Sync *AddWorkerEmailSyncData `json:"sync" avro:"sync"`
 
 	Cfg oauth2.Config `json:"-" avro:"-"`
+}
+
+// SavesSentCopy reports whether the worker should APPEND a copy of each sent
+// message to the mailbox's Sent folder. Unset means yes: SMTP files nothing on
+// its own, so the copy is the useful default.
+func (a *AddWorkerEmail) SavesSentCopy() bool {
+	return a.SaveToSent == nil || *a.SaveToSent
 }
 
 type RemoveWorkerEmail struct {

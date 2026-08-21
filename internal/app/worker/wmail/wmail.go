@@ -57,6 +57,11 @@ type WMail struct {
 	SignaturePlain string
 	SignatureHTML  string
 
+	// SaveToSent files a copy of every outbound message in the mailbox's Sent
+	// folder. SMTP/IMAP only: Gmail and Graph file their own copy, so acting on
+	// it there would duplicate every sent message.
+	SaveToSent bool
+
 	EmailType models.InboxProvider
 
 	GoogleData   *GoogleData
@@ -106,6 +111,8 @@ func NewWMail(
 		FirstName: data.FirstName,
 		LastName:  data.LastName,
 		EmailType: data.Type,
+		// Unset in the payload means yes; see AddWorkerEmail.SavesSentCopy.
+		SaveToSent: data.Type == models.InboxProviderSMTPIMAP && data.SavesSentCopy(),
 		onEvent: func(jobType models.JobEventType, body any) error {
 			return OnEvent(jobType, data.ID.String(), body)
 		},

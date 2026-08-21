@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/client/goog"
 	"github.com/warmbly/warmbly/internal/client/msgraph"
+	"github.com/warmbly/warmbly/internal/client/smtpimap/imap"
 	"github.com/warmbly/warmbly/internal/client/smtpimap/smtp"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -311,7 +313,7 @@ func (w *WMail) sendViaSMTP(ctx context.Context, req *SendRequest, bodyHTML stri
 
 	// Send via SMTP. Attachments are passed explicitly (not variadic) so an
 	// empty list still selects the same code path.
-	merr := w.SmtpImapData.SmtpClient.Send(
+	raw, merr := w.SmtpImapData.SmtpClient.Send(
 		ctx,
 		req.To,
 		req.Cc,
@@ -329,10 +331,40 @@ func (w *WMail) sendViaSMTP(ctx context.Context, req *SendRequest, bodyHTML stri
 		return result
 	}
 
+	// Warmup traffic is deliberately excluded: it is machine-generated volume,
+	// and filing dozens a day would bury the customer's real sent mail.
+	if !req.IsWarmup {
+		w.saveSentCopy(ctx, raw, result.SentAt)
+	}
+
 	result.Success = true
 	result.MessageID = req.MessageID
 	result.ProviderMsgID = req.MessageID // SMTP uses the same message ID
 	return result
+}
+
+// saveSentCopy files the message in the mailbox's Sent folder. SMTP submission
+// leaves nothing behind in the sender's account, so without this the message
+// is invisible to both the customer's own mail client and the unibox, whose
+// thread reader can only show what the sync found in a folder.
+//
+// Best effort by design: the mail is already delivered, so a failure here is
+// logged and never turns a successful send into a failed one.
+func (w *WMail) saveSentCopy(ctx context.Context, raw []byte, sentAt time.Time) {
+	if !w.SaveToSent || len(raw) == 0 {
+		return
+	}
+	if w.SmtpImapData == nil || w.SmtpImapData.ImapClient == nil {
+		return
+	}
+	err := w.SmtpImapData.ImapClient.AppendToSent(ctx, raw, sentAt)
+	switch {
+	case err == nil:
+	case errors.Is(err, imap.ErrNoSentMailbox):
+		log.Debug().Str("email_id", w.ID.String()).Msg("no sent folder on this account; skipping the sent copy")
+	default:
+		log.Warn().Err(err).Str("email_id", w.ID.String()).Msg("could not file a copy in the sent folder")
+	}
 }
 
 // toGoogAttachments maps wmail attachments to the Gmail transport shape.

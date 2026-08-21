@@ -192,6 +192,7 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 	first, last := splitName(acc.Name)
 	provider := models.InboxProvider(acc.Provider)
 
+	saveToSent := acc.SaveToSent
 	out := &models.AddWorkerEmail{
 		ID:             acc.ID,
 		UserID:         userID,
@@ -201,6 +202,8 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 		LastName:       last,
 		Type:           provider,
 		Sync:           s.syncDataFor(ctx, acc.ID),
+		// Only SMTP/IMAP acts on this; Gmail and Graph file their own copy.
+		SaveToSent: &saveToSent,
 	}
 
 	switch provider {
