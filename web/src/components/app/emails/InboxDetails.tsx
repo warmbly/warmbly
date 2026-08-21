@@ -56,6 +56,7 @@ import buildError from "@/lib/helper/buildError";
 import EmailEditor from "../EmailEditor";
 import SendingBehaviorTab from "./SendingBehaviorTab";
 import SyncStatusCard from "./SyncStatusCard";
+import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import useSendingBehavior from "@/lib/api/hooks/app/emails/useSendingBehavior";
 import useSendingPlan from "@/lib/api/hooks/app/emails/useSendingPlan";
 import { minutesToClock, secondsToLabel } from "@/lib/api/models/app/emails/SendingBehavior";
@@ -198,7 +199,7 @@ export default function InboxDetails({
 /* ── editable fields tracked for the save bar ─────────────────────── */
 const EDITABLE: (keyof Inbox)[] = [
     "name", "signature_html", "signature_plain", "signature_sync", "signature_code",
-    "tags", "campaign_limit", "min_wait_time", "reply_to",
+    "tags", "campaign_limit", "min_wait_time", "reply_to", "save_to_sent",
     "warmup_base", "warmup_max", "warmup_increase", "warmup_reply_rate",
     "warmup_tag", "warmup_start_time", "warmup_end_time", "warmup_days",
 ];
@@ -1115,6 +1116,28 @@ function SettingsTab({ form, update, mailbox }: { form: Inbox; update: (p: Parti
                     </div>
                 </FieldShell>
             </div>
+
+            {mailbox.provider === "smtp_imap" && (
+                <div className="px-5 py-5 space-y-3">
+                    <Eyebrow>Sent folder</Eyebrow>
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[12.5px] font-medium text-slate-900">
+                                Keep a copy of sent mail
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                                Files each message Warmbly sends into this mailbox's Sent
+                                folder. Turn it off if your provider already saves one, or
+                                you will see every message twice.
+                            </div>
+                        </div>
+                        <Toggle
+                            value={form.save_to_sent ?? true}
+                            onChange={(v) => update({ save_to_sent: v })}
+                        />
+                    </div>
+                </div>
+            )}
 
             <div className="px-5 py-5 space-y-2">
                 <Eyebrow>Signature</Eyebrow>

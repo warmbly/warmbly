@@ -14,6 +14,8 @@ export default interface Inbox {
     campaign_limit: number;
     min_wait_time: number;
     reply_to: string;
+    /** SMTP/IMAP only: file a copy of each sent message in the mailbox Sent folder. */
+    save_to_sent: boolean;
     tracking_domain: string;
     tracking_domain_verified: boolean;
     tracking_domain_verified_at?: Date | null;
