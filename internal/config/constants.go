@@ -29,6 +29,11 @@ const (
 	MaxEmailBodySize = 512 * 1024 // 512 KB
 	MaxEmailFolders  = 30
 
+	// MaxSearchBodyText bounds the plain-text copy of a message body kept in
+	// Postgres for full-text search. The body itself lives in object storage;
+	// this only has to be long enough to find a message by what it says.
+	MaxSearchBodyText = 16 * 1024 // 16 KB
+
 	// ImapFetchBatchSize bounds how many messages one IMAP sync window holds in
 	// memory, so a large folder is never buffered whole before any body is read.
 	ImapFetchBatchSize = 200

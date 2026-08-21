@@ -110,8 +110,12 @@ type EmailMessageStoreData struct {
 	SentDate     time.Time `json:"sent_date"`
 	Snippet      string    `json:"snippet"`
 	Seen         bool      `json:"seen"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	CreatedAt    time.Time `json:"created_at"`
+	// BodyText is a bounded plain-text rendering of the message, carried on the
+	// new-email event so the consumer can make the message findable by what it
+	// says. The full body goes to object storage, never here.
+	BodyText  string    `json:"body_text,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type EmailMessageStoreDataPreview struct {
