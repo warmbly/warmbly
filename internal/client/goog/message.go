@@ -3,12 +3,14 @@ package goog
 import (
 	"encoding/base64"
 	"fmt"
+	stdhtml "html"
 	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"google.golang.org/api/gmail/v1"
 )
 
@@ -21,7 +23,7 @@ func getAddressList(headers []*gmail.MessagePartHeader, name string) []string {
 			if err != nil {
 				// fallback: just split by comma
 				for v := range strings.SplitSeq(h.Value, ",") {
-					result = append(result, strings.TrimSpace(v))
+					result = append(result, mailhdr.DecodeWords(strings.TrimSpace(v)))
 				}
 				continue
 			}
@@ -39,12 +41,15 @@ func getAddressList(headers []*gmail.MessagePartHeader, name string) []string {
 	return result
 }
 
+// getSingleHeader returns a header value with RFC 2047 encoded-words decoded.
+// Gmail's API hands headers back raw, so a non-ASCII subject arrives as
+// "=?utf-8?q?...?=" and would be shown that way.
 func getSingleHeader(headers []*gmail.MessagePartHeader, name string) string {
 	for _, h := range headers {
 		// RFC 5322 header names are case-insensitive; match accordingly so the
 		// warmup token (and other headers) resolve regardless of provider casing.
 		if strings.EqualFold(h.Name, name) {
-			return h.Value
+			return mailhdr.DecodeWords(h.Value)
 		}
 	}
 	return ""
@@ -158,8 +163,10 @@ func GmailMessageToEmailData(msg *gmail.Message) *models.EmailMessageData {
 		Size:         msg.SizeEstimate,
 		InternalDate: time.Unix(msg.InternalDate/1000, 0),
 		ModSeq:       msg.HistoryId,
-		Snippet:      msg.Snippet,
-		BodyPlain:    plain,
-		BodyHTML:     html,
+		// Gmail hands the snippet back HTML-escaped ("it&#39;s"), so decode it
+		// or the conversation list shows the entity codes.
+		Snippet:   stdhtml.UnescapeString(msg.Snippet),
+		BodyPlain: plain,
+		BodyHTML:  html,
 	}
 }
