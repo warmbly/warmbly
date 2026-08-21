@@ -18655,6 +18655,10 @@
           "reply_to": {
             "type": "string"
           },
+          "save_to_sent": {
+            "type": "boolean",
+            "description": "SMTP/IMAP mailboxes only: file a copy of each sent message in the mailbox's Sent folder. Ignored for Gmail and Outlook, whose APIs file their own copy."
+          },
           "tracking_domain": {
             "type": "string"
           },
@@ -18804,6 +18808,10 @@
           },
           "reply_to": {
             "type": "string"
+          },
+          "save_to_sent": {
+            "type": "boolean",
+            "description": "SMTP/IMAP mailboxes only: file a copy of each sent message in the mailbox's Sent folder. Ignored for Gmail and Outlook, whose APIs file their own copy."
           },
           "warmup": {
             "type": "boolean",
@@ -22508,10 +22516,16 @@
             "type": "integer"
           },
           "body_plain": {
-            "type": "string"
+            "type": "string",
+            "description": "Plain-text body. Falls back to the preview snippet when body_truncated is true."
           },
           "body_html": {
-            "type": "string"
+            "type": "string",
+            "description": "Sanitized HTML body: scripts, event handlers, embedded frames and unsafe URL schemes are removed, and links carry target=_blank with rel=noopener. Safe to render."
+          },
+          "body_truncated": {
+            "type": "boolean",
+            "description": "True when the stored body could not be read, so body_plain holds only the preview snippet."
           }
         }
       },
