@@ -34,9 +34,14 @@ type EmailMessage struct { // used for sending to the user
 	// ModSeq (CONDSTORE)
 	ModSeq uint64 `json:"mod_seq"`
 
-	// Body
+	// Body. BodyHTML is sanitized for display: scripts, event handlers, and
+	// unsafe URL schemes are stripped before it leaves the API.
 	BodyPlain string `json:"body_plain"`
 	BodyHTML  string `json:"body_html"`
+	// BodyTruncated marks a message whose stored body could not be read, so
+	// BodyPlain holds only the preview snippet. Clients show a notice instead
+	// of presenting a partial message as the whole thing.
+	BodyTruncated bool `json:"body_truncated"`
 }
 
 type EmailMessageData struct { // used when for kafka when an email arrives
