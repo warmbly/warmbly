@@ -32,6 +32,14 @@ Threading applies on both sides. A reply you send carries the provider's thread 
 `j` / `k` move between rows, `Enter` opens, `Esc` closes, `/` focuses search, `c` labels. A cheat sheet sits at the bottom of the list.
 </Callout>
 
+## Reading a message
+
+The newest message in a conversation opens expanded, along with anything still unread. Older messages collapse to their preview line; click the header (or the preview) to open one. Bodies load per message, so a long thread does not pull down every message at once.
+
+What you see is the message as it was sent: paragraphs, line breaks, lists, tables, and inline images are all preserved, and special characters and emoji render as themselves rather than as entity codes. The conversation list still shows a one-line preview, which is a summary of the message and not the message itself.
+
+HTML mail renders in an isolated frame, so a sender's styling cannot leak into the dashboard and nothing in the message can run code. Links open in a new tab and carry no referrer. If the stored copy of a message cannot be read, Warmbly shows the preview it has and says so instead of failing to open the conversation.
+
 ## Categories and labels
 
 Categories are your own conversation labels, shared with the rest of Warmbly, so `Interested` means the same thing on a contact as it does here. Label with the **Label** button or `c`: search existing categories, tick what applies, or type a name and **Create**. A conversation can carry several.
