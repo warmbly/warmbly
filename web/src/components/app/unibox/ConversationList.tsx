@@ -253,7 +253,7 @@ export function ConversationList({
                           from: e.from_addr?.[0] ?? "",
                           to: e.to_addr?.[0] ?? "",
                           subject: e.subject,
-                          body: e.snippet,
+                          snippet: e.snippet,
                           date: new Date(e.internal_date),
                           // Bold the whole conversation when any
                           // message in the thread is unread.

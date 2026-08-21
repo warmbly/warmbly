@@ -57,10 +57,11 @@ export function ConversationItem({ email }: ConversationItemProps) {
   const isSelected = selectedThreadId === threadId;
   const date = new Date(email.date);
   const unread = !email.is_seen;
-  const preview = email.body
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .slice(0, 140);
+  // Snippets are plain text; slice by code point so an emoji at the cut never
+  // splits into a replacement character.
+  const preview = [...(email.snippet ?? "").replace(/\s+/g, " ")]
+    .slice(0, 140)
+    .join("");
 
   const mailbox = accounts.find((a) => a.id === email.account_id);
   const sender = fromName(email.from);

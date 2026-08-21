@@ -76,21 +76,12 @@ function toUniboxEmail(m: UniboxThreadMessage): UniboxEmail {
     from: m.from_addr?.[0] ?? "",
     to: m.to_addr?.[0] ?? "",
     subject: m.subject,
-    body: m.snippet ? `<p>${escapeHtml(m.snippet)}</p>` : "",
+    snippet: m.snippet,
     date: new Date(m.internal_date),
     is_seen: m.seen,
     thread_id: m.thread_id,
     account_id: m.email_id,
   };
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 const SNOOZE_PRESETS: { label: string; until: () => Date }[] = [
@@ -548,10 +539,14 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
       />
 
       <div className="flex-1 overflow-y-auto divide-y divide-slate-200/60">
-        {messages.map((email) => (
+        {messages.map((email, i) => (
           <MessageBubble
             key={email.id}
             email={email}
+            // Open what the reader came for: the newest message, plus anything
+            // still unread. Older read messages stay collapsed so a long
+            // thread does not fetch every body at once.
+            defaultExpanded={i === messages.length - 1 || !email.is_seen}
             onReply={() => openReply(email.id, "reply")}
             onForward={() => openReply(email.id, "forward")}
           />
