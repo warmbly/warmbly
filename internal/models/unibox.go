@@ -148,6 +148,20 @@ type EmailMessageStoreDataPreview struct {
 	Labels []MiniCategory `json:"labels"`
 }
 
+// MessageGrounding is one message rendered for an AI prompt: the stored body
+// text when it exists, with the preview snippet as the fallback for mail synced
+// before bodies were indexed. Deliberately separate from the preview shape so a
+// 16 KB body can never leak into a list response by accident.
+type MessageGrounding struct {
+	ID       uuid.UUID `json:"id"`
+	FromAddr []string  `json:"from_addr"`
+	ToAddr   []string  `json:"to_addr"`
+	Subject  string    `json:"subject"`
+	BodyText string    `json:"body_text"`
+	Snippet  string    `json:"snippet"`
+	SentAt   time.Time `json:"sent_at"`
+}
+
 type EmailParent struct { // used to get information from the parent email
 	ID        uuid.UUID `json:"id" avro:"id"`
 	MessageID string    `json:"message_id" avro:"message_id"`

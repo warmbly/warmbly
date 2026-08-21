@@ -75,6 +75,12 @@ type UniboxRepository interface {
 	// over message text would only ever work for mail synced from now on.
 	ListMissingBodyText(ctx context.Context, afterID uuid.UUID, limit int) ([]UniboxBodyTarget, error)
 	SetBodyText(ctx context.Context, id uuid.UUID, bodyText string) error
+
+	// GroundingByThread and GroundingByAddress return message text for AI
+	// prompts. They are separate from the preview queries because they select
+	// the body column, which is far too big to carry on a list response.
+	GroundingByThread(ctx context.Context, orgID uuid.UUID, threadID string, limit int) ([]models.MessageGrounding, error)
+	GroundingByAddress(ctx context.Context, orgID uuid.UUID, address string, limit int) ([]models.MessageGrounding, error)
 }
 
 // UniboxBodyTarget is one message awaiting a search-text backfill. UserID is
@@ -1169,4 +1175,53 @@ func (r *uniboxRepository) ListMissingBodyText(ctx context.Context, afterID uuid
 func (r *uniboxRepository) SetBodyText(ctx context.Context, id uuid.UUID, bodyText string) error {
 	_, err := r.db.Exec(ctx, `UPDATE unibox_emails SET body_text = $2 WHERE id = $1`, id, bodyText)
 	return err
+}
+
+// groundingColumns is the projection both grounding queries share.
+const groundingColumns = `id, from_addr, to_addr, subject, body_text, snippet, internal_date`
+
+// GroundingByThread returns a conversation oldest-first for prompt grounding.
+func (r *uniboxRepository) GroundingByThread(ctx context.Context, orgID uuid.UUID, threadID string, limit int) ([]models.MessageGrounding, error) {
+	query := `
+		SELECT ` + groundingColumns + `
+		FROM unibox_emails
+		WHERE email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+		  AND thread_id = $2
+		ORDER BY internal_date ASC, id ASC
+		LIMIT $3
+	`
+	return r.scanGrounding(ctx, query, orgID, threadID, limit)
+}
+
+// GroundingByAddress returns the most recent correspondence with one address in
+// either direction, newest-first, for grounding a brand-new email.
+func (r *uniboxRepository) GroundingByAddress(ctx context.Context, orgID uuid.UUID, address string, limit int) ([]models.MessageGrounding, error) {
+	query := `
+		SELECT ` + groundingColumns + `
+		FROM unibox_emails
+		WHERE email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+		  AND (EXISTS (SELECT 1 FROM unnest(from_addr) AS f(addr) WHERE f.addr ILIKE '%' || $2 || '%')
+		    OR EXISTS (SELECT 1 FROM unnest(to_addr) AS t(addr) WHERE t.addr ILIKE '%' || $2 || '%'))
+		ORDER BY internal_date DESC, id DESC
+		LIMIT $3
+	`
+	return r.scanGrounding(ctx, query, orgID, address, limit)
+}
+
+func (r *uniboxRepository) scanGrounding(ctx context.Context, query string, orgID uuid.UUID, match string, limit int) ([]models.MessageGrounding, error) {
+	rows, err := r.db.Query(ctx, query, orgID, match, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.MessageGrounding, 0, limit)
+	for rows.Next() {
+		var m models.MessageGrounding
+		if err := rows.Scan(&m.ID, &m.FromAddr, &m.ToAddr, &m.Subject, &m.BodyText, &m.Snippet, &m.SentAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }

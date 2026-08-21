@@ -70,6 +70,11 @@ type UniboxService interface {
 	ListScheduledByThread(ctx context.Context, userID uuid.UUID, threadID string) ([]models.UniboxScheduledItem, *errx.Error)
 	CancelScheduled(ctx context.Context, userID, taskID uuid.UUID) *errx.Error
 
+	// ThreadGrounding and AddressGrounding return message text for AI prompts:
+	// the stored body when it exists, the preview snippet as the fallback.
+	ThreadGrounding(ctx context.Context, orgID uuid.UUID, threadID string, limit int) ([]models.MessageGrounding, *errx.Error)
+	AddressGrounding(ctx context.Context, orgID uuid.UUID, address string, limit int) ([]models.MessageGrounding, *errx.Error)
+
 	// StartBodyTextBackfill fills in the searchable text of messages stored
 	// before bodies were indexed. Runs until the archive is caught up, then
 	// returns; blocking, so callers run it in a goroutine.
