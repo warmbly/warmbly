@@ -43,6 +43,10 @@ type Client struct {
 	// loop and must not interleave with FetchChanges.
 	mu sync.Mutex
 
+	// sentMailboxName caches the resolved Sent folder for this connection.
+	// Guarded by mu.
+	sentMailboxName string
+
 	// BindIP optionally pins outbound TCP to a specific local source address.
 	// When nil, WORKER_BIND_IP is consulted; when still unset, the OS default
 	// route is used.

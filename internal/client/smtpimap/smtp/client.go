@@ -48,6 +48,10 @@ type Attachment struct {
 	Data     []byte
 }
 
+// Send submits the message and returns the exact RFC 5322 bytes it put on the
+// wire, so the caller can file the same copy in the mailbox's Sent folder.
+// The bytes are returned even on failure: they are useful in a log, and a
+// caller that ignores them is unaffected.
 func (c *Client) Send(
 	ctx context.Context,
 	to, cc, bcc []string,
@@ -56,7 +60,7 @@ func (c *Client) Send(
 	inReplyTo string,
 	attachments []Attachment,
 	customHeaders ...map[string]string,
-) *errx.MailError {
+) ([]byte, *errx.MailError) {
 	from := mail.Address{Address: c.Email, Name: fmt.Sprintf("%s %s", c.FirstName, c.LastName)}
 
 	// ----- Headers -----
@@ -107,7 +111,8 @@ func (c *Client) Send(
 	recipients = append(recipients, mailhdr.BareList(cc)...)
 	recipients = append(recipients, mailhdr.BareList(bcc)...)
 
-	return c.sendRaw(ctx, from.Address, recipients, msg.Bytes())
+	raw := msg.Bytes()
+	return raw, c.sendRaw(ctx, from.Address, recipients, raw)
 }
 
 // writeAlternativeBody writes a multipart/alternative message (text/plain +
