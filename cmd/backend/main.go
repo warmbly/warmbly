@@ -1160,6 +1160,12 @@ func main() {
 		if aware, ok := schedulerService.(scheduler.BehaviorAware); ok {
 			aware.WireBehavior(behaviorService)
 		}
+		// The sending-domain authentication gate. Nil settings (no primary DB)
+		// leaves the persisted auth state observe-only, which is the safe
+		// direction: a missing policy must never block a send.
+		if aware, ok := schedulerService.(scheduler.DomainAuthAware); ok && instanceSettings != nil {
+			aware.WireDomainAuth(instanceSettings)
+		}
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService, dailyThrottleService)
 		composeService = compose.NewService(emailRepostory, repository.NewComposeRepository(primaryDB))
@@ -1343,6 +1349,12 @@ func main() {
 		// Research-mode AI variables run a bounded web-research agent over the
 		// shared tool registry at send time.
 		tasksService.SetAITools(aiToolRegistry)
+		// Warmup sends obey the same sending-domain authentication gate as cold
+		// sends, so an unauthenticated mailbox cannot keep warming against the
+		// shared pool's reputation.
+		if instanceSettings != nil {
+			tasksService.SetDomainAuthPolicy(instanceSettings)
+		}
 
 		// Admin outreach composer — sends from the platform mailer
 		// (SES/SMTP) with a configurable Reply-To, audits every send.
@@ -1522,7 +1534,10 @@ func main() {
 		}
 		advisorService = advisor.NewService(advisorRepository, aiToolRegistry, advisorNarrator, auditService,
 			advisorMembers{organizationService}, advisorAgent,
-			advisor.WithTrackingHost(emailCfg.TrackingDomain))
+			advisor.WithTrackingHost(emailCfg.TrackingDomain),
+			// So the domain-auth finding reports this install's actual gate
+			// (enforced or not, and the grace window) instead of a default one.
+			advisor.WithDomainAuthPolicy(instanceSettings))
 		aitools.RegisterAdvisorTools(aiToolRegistry, advisorService)
 		go (&advisor.Runner{Repo: advisorRepository, Service: advisorService}).Run(ctx)
 

@@ -57,6 +57,7 @@ A `data` array of mailbox objects plus a `pagination` envelope.
       "auth_dmarc_policy": "quarantine",
       "auth_reason": "SPF, DKIM and DMARC all present (DMARC policy: quarantine)",
       "auth_checked_at": "2026-06-11T03:00:00Z",
+      "auth_failing_since": null,
       "warmup": "2026-05-20T00:00:00Z",
       "warmup_paused_at": null,
       "warmup_base": 10,
@@ -82,7 +83,7 @@ A `data` array of mailbox objects plus a `pagination` envelope.
 }
 ```
 
-`provider` is one of `gmail`, `outlook`, or `smtp_imap`. `status` is one of `active`, `inactive`, or `revoked`. `warmup` is the warmup anchor timestamp (null when warmup has never been enabled); a non-null `warmup_paused_at` means warmup is enabled but paused. `auth_state` is the sending domain's authentication state, one of `passing` (SPF and DMARC present), `failing` (SPF or DMARC missing), or `unknown` (not checked yet, or the DNS lookup could not complete); it is refreshed by a background check and `auth_dkim` is advisory (DKIM selectors are not discoverable from DNS). `total` and `next_cursor` may be null when not applicable.
+`provider` is one of `gmail`, `outlook`, or `smtp_imap`. `status` is one of `active`, `inactive`, or `revoked`. `warmup` is the warmup anchor timestamp (null when warmup has never been enabled); a non-null `warmup_paused_at` means warmup is enabled but paused. `auth_state` is the sending domain's authentication state, one of `passing` (SPF and DMARC present), `failing` (SPF or DMARC missing), or `unknown` (not checked yet, the DNS lookup could not complete, or the domain is special-use and cannot resolve). It is refreshed by a background check, and `auth_dkim` is advisory because DKIM selectors are not discoverable from DNS. `auth_failing_since` is when the domain entered `failing` and is null otherwise; a domain that stays `failing` past the instance grace period stops cold sending and warmup from every mailbox on it, so this is the clock that decides. See [domain authentication](/guides/deliverability/#domain-authentication). `total` and `next_cursor` may be null when not applicable.
 
 ## Get a mailbox
 
@@ -116,6 +117,7 @@ A bare mailbox object, same shape as one element of the list `data` array.
   "tracking_domain_verified": true,
   "auth_state": "passing",
   "auth_checked_at": "2026-06-11T03:00:00Z",
+  "auth_failing_since": null,
   "tags": ["outbound"],
   "created_at": "2026-05-19T18:00:00Z",
   "updated_at": "2026-06-11T09:14:00Z"
@@ -296,6 +298,8 @@ The updated mailbox object, with warmup disabled.
 
 Validates SPF, DKIM, and DMARC for the mailbox's sending domain on demand. Authentication alignment is a hard bulk-sender requirement and a common silent deliverability failure, so this confirms the domain is configured correctly without leaving the dashboard.
 
+Read-only: it reports what DNS says right now and leaves the mailbox's stored `auth_state` alone.
+
 Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
 
 | Parameter | In | Type | Description |
@@ -306,19 +310,49 @@ Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
 
 ```json
 {
-  "domain": "acme.com",
+  "domain": "mail.acme.com",
   "spf_found": true,
   "spf_record": "v=spf1 include:_spf.google.com ~all",
   "dkim_found": true,
   "dkim_selectors": ["google"],
   "dmarc_found": true,
   "dmarc_policy": "quarantine",
+  "dmarc_domain": "acme.com",
+  "dmarc_inherited": true,
+  "reserved": false,
+  "lookup_error": false,
   "all_aligned": true,
-  "summary": "SPF, DKIM, and DMARC are all present and aligned."
+  "summary": "SPF, DKIM and DMARC all present (DMARC policy: quarantine), inherited from acme.com"
 }
 ```
 
-`spf_record`, `dkim_selectors`, and `dmarc_policy` are omitted when the corresponding record is not found.
+`spf_record`, `dkim_selectors`, `dmarc_policy`, and `dmarc_domain` are omitted when the corresponding record is not found.
+
+`dmarc_inherited` is `true` when the sending domain has no DMARC record of its own and is covered by its organizational domain's policy, which is how a dedicated sending subdomain normally works; `dmarc_domain` then names the domain the record was read from, and `dmarc_policy` reports its `sp=` value when it publishes one. SPF never inherits, so it must be published on the exact sending domain.
+
+`lookup_error` is `true` when DNS could not answer, and `reserved` is `true` for a special-use domain (`.test`, `.invalid`, `.localhost`, `.example`, `.local`) that cannot resolve by definition. Either one means the domain is unevaluatable, so it is recorded as `unknown` rather than `failing`.
+
+## Record a domain authentication check
+
+`POST /emails/:id/auth-check`
+
+Runs the same check and **records** the verdict against every active mailbox on that sending domain, because authentication is a property of the domain rather than of one mailbox.
+
+This is how a mailbox blocked by the send gate is unblocked: fix the DNS records at your registrar, call this, and cold sending and warmup resume on the next scheduled send instead of waiting for the daily background check.
+
+Recording the verdict is what lifts the gate, so this needs the write scope even though it reads nothing but public DNS.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. The domain is derived from the mailbox address. |
+
+No request body. No `Idempotency-Key` is needed: the result is derived entirely from public DNS with no caller input, so repeating the call converges on the same stored state.
+
+### Response
+
+Identical to `GET /emails/:id/auth-check`.
 
 ## Verify an email address
 

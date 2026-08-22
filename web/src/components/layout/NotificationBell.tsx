@@ -15,6 +15,7 @@ import {
     PauseCircleIcon,
     Settings2Icon,
     ShieldAlertIcon,
+    ShieldOffIcon,
     TriangleAlertIcon,
     UsersIcon,
     type LucideIcon,
@@ -38,6 +39,7 @@ const CATEGORY_META: Record<string, { icon: LucideIcon; tone: string }> = {
     billing_alert: { icon: CreditCardIcon, tone: "bg-amber-50 text-amber-600" },
     team_activity: { icon: UsersIcon, tone: "bg-emerald-50 text-emerald-600" },
     campaign_paused: { icon: PauseCircleIcon, tone: "bg-rose-50 text-rose-600" },
+    health_domain_auth: { icon: ShieldOffIcon, tone: "bg-rose-50 text-rose-600" },
 };
 
 const FALLBACK_META = { icon: BellIcon, tone: "bg-slate-100 text-slate-500" };

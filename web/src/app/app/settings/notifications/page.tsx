@@ -26,6 +26,7 @@ const HEALTH: { key: NotificationCategoryKey; label: string; hint: string }[] = 
     { key: "health_bounce", label: "Bounce detected", hint: "A campaign starts bouncing — notifies the campaign owner." },
     { key: "health_complaint", label: "Spam complaint", hint: "Any complaint event on one of your campaigns." },
     { key: "health_worker_downtime", label: "Worker downtime", hint: "A sender worker stops responding." },
+    { key: "health_domain_auth", label: "Domain authentication failing", hint: "A sending domain lost its SPF or DMARC record. Cold sending and warmup stop from it if it is not fixed." },
     { key: "campaign_paused", label: "Campaign auto-paused", hint: "A guardrail stopped a campaign because its bounce, complaint, or reply rate left the band." },
 ];
 
@@ -108,6 +109,7 @@ export default function NotificationsSettingsPage() {
         "health_bounce",
         "health_complaint",
         "health_worker_downtime",
+        "health_domain_auth",
         "campaign_paused",
         "security_new_signin",
         "billing_alert",

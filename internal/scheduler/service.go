@@ -38,6 +38,27 @@ type schedulerService struct {
 	// and hourly ceilings, send spacing). Optional/nil-safe: without it every
 	// mailbox keeps the legacy fixed cap and min-gap path.
 	behaviorSvc behavior.Service
+	// domainAuth resolves the operator's sending-domain authentication gate.
+	// Optional/nil-safe: without it the persisted auth state stays
+	// observe-only and never blocks a send.
+	domainAuth DomainAuthPolicy
+}
+
+// DomainAuthPolicy resolves whether the sending-domain authentication gate is
+// enforced, and how long a domain must stay failing before it applies. Narrow
+// and primitive-typed so the scheduler does not depend on the settings package;
+// instancesettings.Service satisfies it.
+type DomainAuthPolicy interface {
+	DomainAuth(ctx context.Context) (enforce bool, grace time.Duration)
+}
+
+// domainAuthGate resolves the gate for one scheduling pass. A nil policy, or an
+// operator who turned enforcement off, means no mailbox is ever gated.
+func (s *schedulerService) domainAuthGate(ctx context.Context) (bool, time.Duration) {
+	if s.domainAuth == nil {
+		return false, 0
+	}
+	return s.domainAuth.DomainAuth(ctx)
 }
 
 // WireBehavior attaches the sending-behaviour engine. Kept off the constructor
@@ -51,6 +72,19 @@ func (s *schedulerService) WireBehavior(b behavior.Service) {
 // behaviour engine after construction.
 type BehaviorAware interface {
 	WireBehavior(b behavior.Service)
+}
+
+// WireDomainAuth attaches the sending-domain authentication policy. Kept off
+// the constructor for the same reason as WireBehavior: the scheduler must stay
+// constructible in tests and in deployments that leave the gate off.
+func (s *schedulerService) WireDomainAuth(p DomainAuthPolicy) {
+	s.domainAuth = p
+}
+
+// DomainAuthAware is the optional capability the caller uses to attach the
+// authentication gate after construction.
+type DomainAuthAware interface {
+	WireDomainAuth(p DomainAuthPolicy)
 }
 
 // NewSchedulerService creates a new scheduler service

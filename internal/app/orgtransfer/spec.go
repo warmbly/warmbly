@@ -141,7 +141,16 @@ var Tables = []Table{
 		Scope: scopeOrg,
 		// Worker placement is a property of the instance the mailbox runs on,
 		// never of the mailbox. The destination assigns its own.
-		ResetOnImport: []string{"worker_id"},
+		//
+		// The domain-authentication verdict itself travels: it is a fact about
+		// public DNS and reads the same anywhere. Its two TIMESTAMPS do not.
+		// auth_checked_at is this instance's sweep checkpoint, and
+		// auth_failing_since is the clock the send gate measures its grace
+		// window against, so importing them would let a destination gate a
+		// mailbox on an observation it never made. Cleared, the mailbox sorts
+		// to the head of the destination's own sweep (NULLS FIRST) and cannot
+		// be blocked until that sweep confirms the failure itself.
+		ResetOnImport: []string{"worker_id", "auth_checked_at", "auth_failing_since"},
 	},
 	{
 		Name: "email_accounts_smtp_imap", Group: models.OrgDataGroupCore,

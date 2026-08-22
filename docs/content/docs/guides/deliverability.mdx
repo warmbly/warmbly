@@ -72,9 +72,27 @@ Gmail, Yahoo, and Outlook all require SPF, DKIM, and DMARC, and failed alignment
 
 DKIM is advisory: selectors are not discoverable from DNS, so "not found" means unconfirmed, not absent. A domain can pass on SPF and DMARC with DKIM unconfirmed.
 
-<Callout type="info" title="Informational today">
-Authentication state warns you; it does not block sending or warmup yet. Fixing a Failing domain is still the highest-impact deliverability change available to you.
+A DMARC record on the parent domain covers its subdomains, so a dedicated sending subdomain like `mail.yourdomain.com` passes on the record published at `yourdomain.com`. Where the parent sets `sp=`, that is the policy shown, because `sp=` is what the parent publishes for its subdomains. SPF works the other way: it never inherits, so every sending subdomain needs its own SPF record.
+
+Only the two records that DNS can answer for decide the state. A DMARC policy of `p=none` is Passing, because Google's bulk sender rules ask for a DMARC record at `p=none` or stronger, and stopping mail from a compliant sender would help nobody.
+
+### What a Failing domain stops
+
+A domain that stays Failing past the grace period stops **cold campaign sending** and **warmup sending** from every mailbox on it. The mailbox stays connected, keeps syncing, and keeps receiving warmup mail, so it holds its place in the pool and its inbound capacity. It just stops adding unauthenticated volume to a reputation everyone in the pool shares.
+
+The grace period is set per instance and defaults to `72 hours`, measured from the moment the check first saw the failure, not from when you connected the mailbox. Nothing stops the day a record breaks. You are notified when the clock starts, the mailbox drawer shows the state, and the Advisor card counts down to the date sending stops.
+
+<Callout type="info" title="Your own replies are never blocked">
+The gate covers cold campaigns and warmup only. Manual sends and replies from the unibox always go out, whatever the domain state, because stopping a human mid-conversation is worse than the reputation risk of one message. The mailbox picker still ranks an unauthenticated mailbox last and labels it.
 </Callout>
+
+### Getting sending back
+
+Add the missing records at your registrar, then open the mailbox and press **Re-check** under Domain authentication. That records the new verdict immediately and sending resumes on the next scheduled send. Waiting for the background check works too, it is just slower: it reaches each domain about once a day.
+
+Re-check is also worth pressing after reconnecting a mailbox that was disconnected while Failing, since its stored state is refreshed from scratch when it comes back.
+
+If a campaign has already been paused because every one of its mailboxes was gated, the activity log says so, and you restart the campaign yourself once the domain reads Passing.
 
 ## Built-in protections
 

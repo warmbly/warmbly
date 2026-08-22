@@ -19,6 +19,21 @@ export default interface Inbox {
     tracking_domain: string;
     tracking_domain_verified: boolean;
     tracking_domain_verified_at?: Date | null;
+    /**
+     * Sending-domain authentication, refreshed by a background check.
+     * "unknown" means not checked yet or DNS could not answer, and never gates.
+     * A "failing" domain stops cold sending and warmup once it has been failing
+     * since auth_failing_since for longer than the instance grace window.
+     * auth_dkim is advisory: DKIM selectors are not discoverable from DNS.
+     */
+    auth_state: "unknown" | "passing" | "failing";
+    auth_spf: boolean;
+    auth_dkim: boolean;
+    auth_dmarc: boolean;
+    auth_dmarc_policy?: string;
+    auth_reason?: string;
+    auth_checked_at?: Date | null;
+    auth_failing_since?: Date | null;
     warmup?: Date | null;
     warmup_paused_at?: Date | null;
     warmup_base: number;

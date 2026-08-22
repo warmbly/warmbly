@@ -76,8 +76,9 @@ type EmailRepository interface {
 	// UpdateDomainAuthState records the SPF/DKIM/DMARC result for every active
 	// mailbox on the given sending domain in one write (auth is a per-domain
 	// property). checkedAt stamps the evaluation so the sweep can skip fresh
-	// domains.
-	UpdateDomainAuthState(ctx context.Context, domain, state string, spf, dkim, dmarc bool, dmarcPolicy, reason string, checkedAt time.Time) *errx.Error
+	// domains. It returns the mailboxes that entered the failing state on THIS
+	// call, which is what the sweep notifies on.
+	UpdateDomainAuthState(ctx context.Context, domain, state string, spf, dkim, dmarc bool, dmarcPolicy, reason string, checkedAt time.Time) ([]models.EmailAuthTransition, *errx.Error)
 	Delete(ctx context.Context, userID, emailAccountID string) *errx.Error
 
 	NewOauthAccount(ctx context.Context, userID string, data models.NewOauthAccount) (*models.Email, *errx.Error)
@@ -512,7 +513,7 @@ func (r *emailRepository) Search(ctx context.Context, orgID, search string, curs
 		 ea.id, ea.email, ea.name, ea.signature_plain, ea.signature_html, ea.signature_sync, ea.signature_code,
 	 	 ea.provider, ea.status, COALESCE(ea.last_synced_at, ea.created_at) AS last_synced_at, ea.last_id, ea.campaign_limit,
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at,
-		 ea.auth_state, ea.auth_spf, ea.auth_dkim, ea.auth_dmarc, ea.auth_dmarc_policy, ea.auth_reason, ea.auth_checked_at,
+		 ea.auth_state, ea.auth_spf, ea.auth_dkim, ea.auth_dmarc, ea.auth_dmarc_policy, ea.auth_reason, ea.auth_checked_at, ea.auth_failing_since,
 		 ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.save_to_sent,
 		 ea.created_at, ea.updated_at,
@@ -563,7 +564,7 @@ func (r *emailRepository) Search(ctx context.Context, orgID, search string, curs
 		err := rows.Scan(
 			&i.ID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode, &i.Provider, &i.Status,
 			&i.LastSyncedAt, &i.LastID, &i.CampaignLimit, &i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt,
-			&i.AuthState, &i.AuthSPF, &i.AuthDKIM, &i.AuthDMARC, &i.AuthDMARCPolicy, &i.AuthReason, &i.AuthCheckedAt,
+			&i.AuthState, &i.AuthSPF, &i.AuthDKIM, &i.AuthDMARC, &i.AuthDMARCPolicy, &i.AuthReason, &i.AuthCheckedAt, &i.AuthFailingSince,
 			&i.Warmup, &i.WarmupPausedAt, &i.WarmupBase, &i.WarmupMax, &i.WarmupIncrease,
 			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.SaveToSent,
 			&i.CreatedAt, &i.UpdatedAt, &i.Tags,
@@ -634,7 +635,7 @@ func (r *emailRepository) Get(ctx context.Context, orgID, emailAccountID string)
 		ea.id, ea.email, ea.name, ea.signature_plain, ea.signature_html, ea.signature_sync, ea.signature_code,
 		 ea.provider, ea.status, COALESCE(ea.last_synced_at, ea.created_at) AS last_synced_at, ea.last_id, ea.campaign_limit,
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at,
-		 ea.auth_state, ea.auth_spf, ea.auth_dkim, ea.auth_dmarc, ea.auth_dmarc_policy, ea.auth_reason, ea.auth_checked_at,
+		 ea.auth_state, ea.auth_spf, ea.auth_dkim, ea.auth_dmarc, ea.auth_dmarc_policy, ea.auth_reason, ea.auth_checked_at, ea.auth_failing_since,
 		 ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.save_to_sent,
 		 ea.created_at, ea.updated_at,
@@ -658,7 +659,7 @@ func (r *emailRepository) Get(ctx context.Context, orgID, emailAccountID string)
 	).Scan(
 		&i.ID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode, &i.Provider, &i.Status,
 		&i.LastSyncedAt, &i.LastID, &i.CampaignLimit, &i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt,
-		&i.AuthState, &i.AuthSPF, &i.AuthDKIM, &i.AuthDMARC, &i.AuthDMARCPolicy, &i.AuthReason, &i.AuthCheckedAt,
+		&i.AuthState, &i.AuthSPF, &i.AuthDKIM, &i.AuthDMARC, &i.AuthDMARCPolicy, &i.AuthReason, &i.AuthCheckedAt, &i.AuthFailingSince,
 		&i.Warmup, &i.WarmupPausedAt, &i.WarmupBase, &i.WarmupMax, &i.WarmupIncrease,
 		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.SaveToSent,
 		&i.CreatedAt, &i.UpdatedAt, &i.Tags,
@@ -742,6 +743,13 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "status", argPos))
 		args = append(args, status)
 		argPos++
+		if status == "active" {
+			// Re-derive the verdict, which the sweep froze while inactive.
+			// auth_failing_since is deliberately NOT cleared: that would make
+			// deactivate-then-reactivate an indefinite way to restart the grace
+			// window on a domain that is still broken.
+			setClauses = append(setClauses, "auth_checked_at = NULL")
+		}
 	}
 	if udata.CampaignLimit != nil {
 		if *udata.CampaignLimit < 0 || *udata.CampaignLimit > 100 {
@@ -882,6 +890,7 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 		WHERE user_id = $1 AND id = $2
 		RETURNING id, organization_id, email, name, signature_plain, signature_html, signature_sync, signature_code, provider, status,
 		          COALESCE(last_synced_at, created_at) AS last_synced_at, last_id, campaign_limit, min_wait_time, reply_to, tracking_domain, tracking_domain_verified, tracking_domain_verified_at,
+		          auth_state, auth_spf, auth_dkim, auth_dmarc, auth_dmarc_policy, auth_reason, auth_checked_at, auth_failing_since,
 		          warmup, warmup_paused_at, warmup_base, warmup_max, warmup_increase, warmup_reply_rate, warmup_tag, warmup_pool_type,
 		          warmup_start_time, warmup_end_time, warmup_days, save_to_sent, created_at, updated_at
 	`, strings.Join(setClauses, ", "))
@@ -890,6 +899,10 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 	err = tx.QueryRow(ctx, query, args...).Scan(
 		&i.ID, &i.OrganizationID, &i.Email, &i.Name, &i.SignaturePlain, &i.SignatureHTML, &i.SignatureSync, &i.SignatureCode, &i.Provider, &i.Status,
 		&i.LastSyncedAt, &i.LastID, &i.CampaignLimit, &i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt,
+		// The client replaces its whole cached mailbox with this row, so an
+		// incomplete object here silently blanks the domain-auth state in the
+		// dashboard on every unrelated edit.
+		&i.AuthState, &i.AuthSPF, &i.AuthDKIM, &i.AuthDMARC, &i.AuthDMARCPolicy, &i.AuthReason, &i.AuthCheckedAt, &i.AuthFailingSince,
 		&i.Warmup, &i.WarmupPausedAt, &i.WarmupBase, &i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag, &i.WarmupPoolType,
 		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.SaveToSent,
 		&i.CreatedAt, &i.UpdatedAt,
@@ -1031,12 +1044,36 @@ func (r *emailRepository) ListAuthCheckDue(ctx context.Context, staleBefore time
 	return targets, nil
 }
 
-func (r *emailRepository) UpdateDomainAuthState(ctx context.Context, domain, state string, spf, dkim, dmarc bool, dmarcPolicy, reason string, checkedAt time.Time) *errx.Error {
+func (r *emailRepository) UpdateDomainAuthState(ctx context.Context, domain, state string, spf, dkim, dmarc bool, dmarcPolicy, reason string, checkedAt time.Time) ([]models.EmailAuthTransition, *errx.Error) {
+	// Only 'passing' clears the grace clock; 'unknown' preserves it so a domain
+	// cannot flap through a transient DNS error to escape the gate.
+	// `before` keys on auth_failing_since, not auth_state, or that same flap
+	// would re-report every mailbox on the domain as newly failing.
 	query := `
-		UPDATE email_accounts
-		SET auth_state = $1, auth_spf = $2, auth_dkim = $3, auth_dmarc = $4,
-		    auth_dmarc_policy = $5, auth_reason = $6, auth_checked_at = $7
-		WHERE status = 'active' AND lower(split_part(email, '@', 2)) = $8
+		WITH before AS (
+			SELECT id
+			FROM email_accounts
+			WHERE status = 'active'
+			  AND lower(split_part(email, '@', 2)) = $8
+			  AND auth_failing_since IS NOT NULL
+		),
+		updated AS (
+			UPDATE email_accounts
+			SET auth_state = $1, auth_spf = $2, auth_dkim = $3, auth_dmarc = $4,
+			    auth_dmarc_policy = $5, auth_reason = $6, auth_checked_at = $7,
+			    auth_failing_since = CASE
+			        WHEN $1 = 'passing' THEN NULL
+			        WHEN $1 = 'failing' AND auth_failing_since IS NOT NULL THEN auth_failing_since
+			        WHEN $1 = 'failing' THEN $7
+			        ELSE auth_failing_since
+			    END
+			WHERE status = 'active' AND lower(split_part(email, '@', 2)) = $8
+			RETURNING id, email, organization_id, auth_state
+		)
+		SELECT u.id, u.email, u.organization_id
+		FROM updated u
+		WHERE u.auth_state = 'failing'
+		  AND NOT EXISTS (SELECT 1 FROM before b WHERE b.id = u.id)
 	`
 
 	params := []any{
@@ -1050,11 +1087,27 @@ func (r *emailRepository) UpdateDomainAuthState(ctx context.Context, domain, sta
 		strings.ToLower(strings.TrimSpace(domain)),
 	}
 
-	if _, err := r.DB.Exec(ctx, query, params...); err != nil {
-		db.CaptureError(err, query, params, "exec")
-		return errx.InternalError()
+	rows, err := r.DB.Query(ctx, query, params...)
+	if err != nil {
+		db.CaptureError(err, query, params, "query")
+		return nil, errx.InternalError()
 	}
-	return nil
+	defer rows.Close()
+
+	transitions := make([]models.EmailAuthTransition, 0)
+	for rows.Next() {
+		var t models.EmailAuthTransition
+		if serr := rows.Scan(&t.ID, &t.Email, &t.OrganizationID); serr != nil {
+			db.CaptureError(serr, "", nil, "scan")
+			return nil, errx.InternalError()
+		}
+		transitions = append(transitions, t)
+	}
+	if rerr := rows.Err(); rerr != nil {
+		db.CaptureError(rerr, "", nil, "rows")
+		return nil, errx.InternalError()
+	}
+	return transitions, nil
 }
 
 func (r *emailRepository) Delete(ctx context.Context, userID, emailAccountID string) *errx.Error {
@@ -1139,6 +1192,7 @@ func (r *emailRepository) GetByID(ctx context.Context, emailAccountID uuid.UUID)
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag, ea.warmup_pool_type,
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone, ea.save_to_sent,
+		 ea.auth_state, ea.auth_failing_since,
 		 ea.created_at, ea.updated_at,
 		 COALESCE(array_agg(eat.tag_id) FILTER (WHERE eat.tag_id IS NOT NULL), '{}') AS tags
 		FROM email_accounts ea
@@ -1154,6 +1208,7 @@ func (r *emailRepository) GetByID(ctx context.Context, emailAccountID uuid.UUID)
 		&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 		&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag, &i.WarmupPoolType,
 		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone, &i.SaveToSent,
+		&i.AuthState, &i.AuthFailingSince,
 		&i.CreatedAt, &i.UpdatedAt, &i.Tags,
 	)
 	if err != nil {
@@ -1180,6 +1235,7 @@ func (r *emailRepository) GetByTags(ctx context.Context, userID string, tags []s
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone,
+		 ea.auth_state, ea.auth_failing_since,
 		 ea.created_at, ea.updated_at
 		FROM email_accounts ea
 		JOIN email_tags eat ON eat.email_id = ea.id
@@ -1205,6 +1261,7 @@ func (r *emailRepository) GetByTags(ctx context.Context, userID string, tags []s
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
 			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone,
+			&i.AuthState, &i.AuthFailingSince,
 			&i.CreatedAt, &i.UpdatedAt,
 		)
 		if err != nil {
@@ -1228,6 +1285,7 @@ func (r *emailRepository) GetAllActiveByUser(ctx context.Context, userID string)
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone,
+		 ea.auth_state, ea.auth_failing_since,
 		 ea.created_at, ea.updated_at
 		FROM email_accounts ea
 		WHERE ea.user_id = $1
@@ -1251,6 +1309,7 @@ func (r *emailRepository) GetAllActiveByUser(ctx context.Context, userID string)
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
 			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone,
+			&i.AuthState, &i.AuthFailingSince,
 			&i.CreatedAt, &i.UpdatedAt,
 		)
 		if err != nil {
@@ -1286,6 +1345,7 @@ func (r *emailRepository) GetByCampaignSenders(ctx context.Context, userID strin
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone,
+		 ea.auth_state, ea.auth_failing_since,
 		 ea.created_at, ea.updated_at,
 		 cs.weight, cs.rotation_position, cs.last_sent_at
 		FROM email_accounts ea
@@ -1314,6 +1374,7 @@ func (r *emailRepository) GetByCampaignSenders(ctx context.Context, userID strin
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
 			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone,
+			&i.AuthState, &i.AuthFailingSince,
 			&i.CreatedAt, &i.UpdatedAt,
 			&sender.Weight, &sender.RotationPosition, &sender.LastSentAt,
 		)

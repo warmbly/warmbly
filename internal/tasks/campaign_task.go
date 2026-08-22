@@ -174,7 +174,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	nextTime, nextPair, accountID, err := s.scheduler.CalculateNextCampaignTime(ctx, *campaignTask.CampaignID)
 	if err != nil {
 		if errors.Is(err, scheduler.ErrNoEmailAccounts) {
-			s.autoPauseCampaign(ctx, *campaignTask.CampaignID, taskID)
+			s.autoPauseCampaign(ctx, *campaignTask.CampaignID, taskID, autoPauseReason(err))
 			executionStatus = "completed"
 			return nil
 		}
@@ -743,14 +743,34 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 
 // autoPauseCampaign pauses a campaign when no active email accounts are available.
 // Uses advisory lock to prevent concurrent auto-pause from multiple tasks.
-func (s *tasksService) autoPauseCampaign(ctx context.Context, campaignID, taskID uuid.UUID) {
+// autoPauseReason turns a no-mailbox scheduling error into the sentence the
+// owner reads in the activity log. The narrower sentinels wrap
+// ErrNoEmailAccounts, so they must be tested first; the difference between them
+// is the difference between "fix your DNS", "widen your sending window", and
+// "connect a mailbox".
+func autoPauseReason(err error) string {
+	switch {
+	case errors.Is(err, scheduler.ErrDomainAuthFailing):
+		return "Campaign auto-paused: every mailbox is sending from a domain that fails SPF or DMARC authentication"
+	case errors.Is(err, scheduler.ErrNoEligibleMailbox):
+		return "Campaign auto-paused: every mailbox is outside its sending window or over its daily budget"
+	default:
+		return "Campaign auto-paused: no active email accounts available"
+	}
+}
+
+// autoPauseCampaign parks a campaign that has nothing it can send from. The
+// reason is carried through to the activity log because "paused_no_accounts"
+// covers several very different fixes (connect a mailbox, widen a sending
+// window, repair DNS) and the status alone cannot tell them apart.
+func (s *tasksService) autoPauseCampaign(ctx context.Context, campaignID, taskID uuid.UUID, reason string) {
 	s.campaignRepo.UpdateStatusWithLock(ctx, campaignID, "paused_no_accounts")
 	s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
 	if s.campaignLogRepo != nil {
 		s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
 			CampaignID: campaignID,
 			EventType:  "auto_paused",
-			Message:    "Campaign auto-paused: no active email accounts available",
+			Message:    reason,
 		})
 	}
 }

@@ -48,12 +48,35 @@ type Sync struct {
 	DailyMessagesPerOrg int `json:"daily_messages_per_org"`
 }
 
+// Bounds on the domain-authentication grace window. One hour is the shortest
+// window that still absorbs a resolver blip; 30 days is the longest a domain
+// should keep sending cold mail unauthenticated while being warned about it.
+const (
+	AuthGraceHoursMin     = 1
+	AuthGraceHoursMax     = 720
+	AuthGraceHoursDefault = 72
+)
+
+// Deliverability holds the sending-domain authentication gate.
+type Deliverability struct {
+	// EnforceDomainAuth stops cold sends and warmup sends from a mailbox whose
+	// sending domain has been failing SPF/DMARC for longer than the grace
+	// window. Off leaves the state observe-only: still checked, still shown,
+	// still raised by the advisor, but never blocking.
+	EnforceDomainAuth bool `json:"enforce_domain_auth"`
+	// AuthGraceHours is how long a domain must stay failing before the gate
+	// applies. The clock starts when the sweep first sees the failure, so this
+	// is also how much warning the owner gets.
+	AuthGraceHours int `json:"auth_grace_hours"`
+}
+
 // Document is the whole Tier B settings document. Every key here is one no
 // environment variable owns, so there is no precedence to resolve.
 type Document struct {
-	Invitations Invitations `json:"invitations"`
-	Access      Access      `json:"access"`
-	Sync        Sync        `json:"sync"`
+	Invitations    Invitations    `json:"invitations"`
+	Access         Access         `json:"access"`
+	Sync           Sync           `json:"sync"`
+	Deliverability Deliverability `json:"deliverability"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -66,7 +89,19 @@ func Defaults() Document {
 		Access: Access{
 			AllowInvitedSignup: true,
 		},
-		Sync: DefaultSync(),
+		Sync:           DefaultSync(),
+		Deliverability: DefaultDeliverability(),
+	}
+}
+
+// DefaultDeliverability enforces the gate. Unauthenticated cold mail is a hard
+// Gmail/Yahoo/Outlook rejection and the fastest way to burn a shared warmup
+// pool, and the grace window means nothing stops until a domain has been
+// provably broken for three days with the owner notified throughout.
+func DefaultDeliverability() Deliverability {
+	return Deliverability{
+		EnforceDomainAuth: true,
+		AuthGraceHours:    AuthGraceHoursDefault,
 	}
 }
 
@@ -93,6 +128,27 @@ func (d *Document) Normalize() {
 		d.Invitations.TTLHours = TTLHoursMax
 	}
 	d.Sync.Normalize()
+	d.Deliverability.Normalize()
+}
+
+// Normalize clamps the grace window. Zero and negative resolve to the compiled
+// default rather than to "no grace": a document that predates this section, or
+// one edited by hand, must not accidentally mean "gate everything immediately".
+func (d *Deliverability) Normalize() {
+	if d.AuthGraceHours <= 0 {
+		d.AuthGraceHours = AuthGraceHoursDefault
+	}
+	if d.AuthGraceHours < AuthGraceHoursMin {
+		d.AuthGraceHours = AuthGraceHoursMin
+	}
+	if d.AuthGraceHours > AuthGraceHoursMax {
+		d.AuthGraceHours = AuthGraceHoursMax
+	}
+}
+
+// AuthGrace is the domain-authentication grace window as a duration.
+func (d Deliverability) AuthGrace() time.Duration {
+	return time.Duration(d.AuthGraceHours) * time.Hour
 }
 
 // Normalize clamps every budget into its accepted range; zero and negative
@@ -136,6 +192,10 @@ type Patch struct {
 		DailyMessagesPerMailbox *int `json:"daily_messages_per_mailbox"`
 		DailyMessagesPerOrg     *int `json:"daily_messages_per_org"`
 	} `json:"sync"`
+	Deliverability *struct {
+		EnforceDomainAuth *bool `json:"enforce_domain_auth"`
+		AuthGraceHours    *int  `json:"auth_grace_hours"`
+	} `json:"deliverability"`
 }
 
 // Apply merges a patch onto a document.
@@ -168,6 +228,19 @@ func (p Patch) Apply(doc Document) Document {
 		}
 		if p.Sync.DailyMessagesPerOrg != nil {
 			doc.Sync.DailyMessagesPerOrg = *p.Sync.DailyMessagesPerOrg
+		}
+	}
+	if p.Deliverability != nil {
+		if p.Deliverability.EnforceDomainAuth != nil {
+			doc.Deliverability.EnforceDomainAuth = *p.Deliverability.EnforceDomainAuth
+		}
+		if p.Deliverability.AuthGraceHours != nil {
+			// An explicit zero is a caller mistake, not "no grace": the
+			// documented accepted range starts at one hour.
+			doc.Deliverability.AuthGraceHours = *p.Deliverability.AuthGraceHours
+			if doc.Deliverability.AuthGraceHours < AuthGraceHoursMin {
+				doc.Deliverability.AuthGraceHours = AuthGraceHoursMin
+			}
 		}
 	}
 	return doc

@@ -74,6 +74,11 @@ type TasksService interface {
 	// a bounded web-research agent at send time (nil = research degrades to a
 	// single completion with one optional web search).
 	SetAITools(src AIToolSource)
+
+	// SetDomainAuthPolicy wires the sending-domain authentication gate, which
+	// stops warmup sends from a domain that has been failing SPF/DMARC past
+	// the operator's grace window. Nil leaves the state observe-only.
+	SetDomainAuthPolicy(p DomainAuthPolicy)
 }
 
 // AIToolSource yields the read-only web tools (search_web, fetch_url) a
@@ -134,6 +139,19 @@ type tasksService struct {
 	// warmupSettings caches the warmup generation settings in-process so the
 	// per-send AI-vs-static decision doesn't hit Postgres on every warmup.
 	warmupSettings *warmupSettingsCache
+
+	// domainAuth resolves the operator's sending-domain authentication gate.
+	// Optional/nil-safe: without it the persisted auth state stays
+	// observe-only and no warmup send is ever blocked.
+	domainAuth DomainAuthPolicy
+}
+
+// DomainAuthPolicy resolves whether the sending-domain authentication gate is
+// enforced, and how long a domain must stay failing before it applies. Narrow
+// and primitive-typed so this package does not depend on the settings package;
+// instancesettings.Service satisfies it.
+type DomainAuthPolicy interface {
+	DomainAuth(ctx context.Context) (enforce bool, grace time.Duration)
 }
 
 // warmupSettingsCache is a tiny TTL cache over the generation settings.
@@ -206,4 +224,20 @@ func (s *tasksService) SetAISearch(sc generation.SearchClient) {
 
 func (s *tasksService) SetAITools(src AIToolSource) {
 	s.aiTools = src
+}
+
+// SetDomainAuthPolicy wires the sending-domain authentication gate.
+func (s *tasksService) SetDomainAuthPolicy(p DomainAuthPolicy) {
+	s.domainAuth = p
+}
+
+// domainAuthBlocked reports whether this mailbox may not send because its
+// sending domain has been failing authentication past the grace window.
+// Nil policy or enforcement off means never blocked.
+func (s *tasksService) domainAuthBlocked(ctx context.Context, account *models.Email) bool {
+	if s.domainAuth == nil || account == nil {
+		return false
+	}
+	enforce, grace := s.domainAuth.DomainAuth(ctx)
+	return enforce && account.DomainAuthBlocked(time.Now(), grace)
 }

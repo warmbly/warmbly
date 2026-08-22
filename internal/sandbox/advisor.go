@@ -161,9 +161,9 @@ func seedAdvisorMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("advisor hot-list mailbox: %w", err)
 	}
 
-	// SPF and DKIM pass, DMARC was never published. Observation-only columns:
-	// the auth sweep sets them and nothing gates sending on them, so this
-	// changes what the dashboard says without changing what the worker does.
+	// SPF and DKIM pass, DMARC was never published, so the advisor raises its
+	// domain-authentication card. auth_failing_since stays NULL so the showcase
+	// demonstrates the finding without ever being stopped from sending.
 	if _, err := pool.Exec(ctx, `
 		UPDATE email_accounts
 		SET auth_state = 'failing',

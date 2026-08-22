@@ -108,13 +108,15 @@ func (h *Handler) AdminPutInstanceSettings(c *gin.Context) {
 
 func instanceSettingsAuditDetails(doc instancesettings.Document) map[string]any {
 	details := map[string]any{
-		"invitations_links_enabled":   doc.Invitations.LinksEnabled,
-		"invitations_ttl_hours":       doc.Invitations.TTLHours,
-		"access_allow_invited_signup": doc.Access.AllowInvitedSignup,
-		"sync_backfill_days":          doc.Sync.BackfillDays,
-		"sync_backfill_messages":      doc.Sync.BackfillMessages,
-		"sync_daily_messages_mailbox": doc.Sync.DailyMessagesPerMailbox,
-		"sync_daily_messages_org":     doc.Sync.DailyMessagesPerOrg,
+		"invitations_links_enabled":          doc.Invitations.LinksEnabled,
+		"invitations_ttl_hours":              doc.Invitations.TTLHours,
+		"access_allow_invited_signup":        doc.Access.AllowInvitedSignup,
+		"sync_backfill_days":                 doc.Sync.BackfillDays,
+		"sync_backfill_messages":             doc.Sync.BackfillMessages,
+		"sync_daily_messages_mailbox":        doc.Sync.DailyMessagesPerMailbox,
+		"sync_daily_messages_org":            doc.Sync.DailyMessagesPerOrg,
+		"deliverability_enforce_domain_auth": doc.Deliverability.EnforceDomainAuth,
+		"deliverability_auth_grace_hours":    doc.Deliverability.AuthGraceHours,
 	}
 	return details
 }

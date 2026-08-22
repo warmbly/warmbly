@@ -32,6 +32,18 @@ var (
 	ErrNoEligibleMailbox = fmt.Errorf(
 		"%w: every mailbox is outside its sending window or over its daily budget", ErrNoEmailAccounts)
 
+	// ErrDomainAuthFailing is the narrower case again: every mailbox in the
+	// campaign's pool was gated by the sending-domain authentication check.
+	// Reporting that as ErrNoEligibleMailbox would send people to check
+	// timezones and daily caps for a DNS problem, which is exactly the class of
+	// mislabelling ErrNoEligibleMailbox was introduced to fix.
+	//
+	// It wraps ErrNoEmailAccounts so existing callers that pause the campaign
+	// keep behaving as before; callers that want the specific reason must test
+	// for it BEFORE ErrNoEligibleMailbox and ErrNoEmailAccounts.
+	ErrDomainAuthFailing = fmt.Errorf(
+		"%w: every mailbox is sending from a domain that fails SPF/DMARC authentication", ErrNoEmailAccounts)
+
 	// ErrDailyLimitReached is returned when the daily limit has been reached
 	ErrDailyLimitReached = errors.New("daily email limit reached")
 

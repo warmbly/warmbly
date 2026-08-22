@@ -15,6 +15,15 @@ const (
 	InboxProviderSMTPIMAP InboxProvider = "smtp_imap"
 )
 
+// Sending-domain authentication states, mirroring the email_accounts.auth_state
+// CHECK constraint. "unknown" is deliberately distinct from "failing": it means
+// not checked yet or the DNS lookup could not complete, and never gates.
+const (
+	AuthStateUnknown = "unknown"
+	AuthStatePassing = "passing"
+	AuthStateFailing = "failing"
+)
+
 type Email struct {
 	ID             uuid.UUID  `json:"id"`
 	UserID         string     `json:"user_id"`
@@ -43,10 +52,10 @@ type Email struct {
 	TrackingDomainVerifiedAt *time.Time `json:"tracking_domain_verified_at"`
 
 	// Sending-domain authentication (SPF/DKIM/DMARC), refreshed by the
-	// background auth-check sweep. Observe-only: surfaced to warn about
-	// unauthenticated domains, not yet a hard send gate. AuthState is "unknown"
-	// until checked (or when a DNS lookup failed transiently), distinct from a
-	// real "failing".
+	// background auth-check sweep. AuthState is "unknown" until checked (or
+	// when a DNS lookup failed transiently), distinct from a real "failing".
+	// A sustained "failing" gates cold sending and warmup; see
+	// DomainAuthBlocked for when that becomes enforceable.
 	AuthState       string     `json:"auth_state"`
 	AuthSPF         bool       `json:"auth_spf"`
 	AuthDKIM        bool       `json:"auth_dkim"`
@@ -54,6 +63,10 @@ type Email struct {
 	AuthDMARCPolicy string     `json:"auth_dmarc_policy,omitempty"`
 	AuthReason      string     `json:"auth_reason,omitempty"`
 	AuthCheckedAt   *time.Time `json:"auth_checked_at,omitempty"`
+	// AuthFailingSince is when the domain entered "failing". The grace window
+	// runs from here, so a resolver hiccup or a record broken minutes ago
+	// cannot stop sending immediately.
+	AuthFailingSince *time.Time `json:"auth_failing_since,omitempty"`
 
 	Warmup          *time.Time `json:"warmup"`
 	WarmupPausedAt  *time.Time `json:"warmup_paused_at"`
@@ -89,6 +102,17 @@ func (e *Email) IsWarmingActive() bool {
 	return e.Warmup != nil && e.WarmupPausedAt == nil
 }
 
+// DomainAuthBlocked reports whether this mailbox's sending domain has been
+// failing authentication long enough to stop cold sends and warmup sends.
+// Only a sustained "failing" gates: "unknown", an unstamped clock, and
+// anything inside the grace window all pass through.
+func (e *Email) DomainAuthBlocked(now time.Time, grace time.Duration) bool {
+	if e.AuthState != AuthStateFailing || e.AuthFailingSince == nil {
+		return false
+	}
+	return !now.Before(e.AuthFailingSince.Add(grace))
+}
+
 // IsWarmupPaused reports whether warmup is enabled but paused. A paused
 // mailbox keeps its ramp progress (the anchor is shifted forward on resume).
 func (e *Email) IsWarmupPaused() bool {
@@ -101,6 +125,16 @@ func (e *Email) IsWarmupPaused() bool {
 type EmailAuthTarget struct {
 	ID    uuid.UUID
 	Email string
+}
+
+// EmailAuthTransition is a mailbox that just entered the failing state, so the
+// grace clock started on this pass. The sweep notifies its organization once
+// per transition; a domain that stays failing reports nothing on later passes
+// because auth_failing_since is preserved, which is the whole dedupe.
+type EmailAuthTransition struct {
+	ID             uuid.UUID
+	Email          string
+	OrganizationID *uuid.UUID
 }
 
 type Service struct {

@@ -30,6 +30,7 @@ export interface NotificationPreferences {
     billing_alert: CategoryPref;
     team_activity: CategoryPref;
     campaign_paused: CategoryPref;
+    health_domain_auth: CategoryPref;
     email_digest_minutes: number;
 }
 
@@ -70,6 +71,9 @@ export function normalizeNotificationPreferences(
         // Emails by default, like billing: a campaign the platform stopped by
         // itself has to reach whoever can restart it.
         campaign_paused: p?.campaign_paused ?? billing,
+        // Emails by default too: a sending domain the platform will stop
+        // sending from has to reach whoever can edit the DNS.
+        health_domain_auth: p?.health_domain_auth ?? billing,
         email_digest_minutes: Math.min(Math.max(minutes, EMAIL_WINDOW_MIN_MINUTES), EMAIL_WINDOW_MAX_MINUTES),
     };
 }

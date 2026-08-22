@@ -276,8 +276,27 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		}
 	}
 
+	// The sending-domain authentication gate, resolved once for the whole pass.
+	// authGated counts mailboxes dropped by it so an empty candidate set can be
+	// reported as the DNS problem it is rather than as a scheduling one.
+	enforceAuth, authGrace := s.domainAuthGate(ctx)
+	authGated := 0
+
 	var candidates []AccountCandidate
 	for _, acct := range accounts {
+		// Sending-domain authentication. This runs before the daily-count query
+		// so a gated mailbox costs nothing, and before every other gate because
+		// unauthenticated mail is rejected outright by Gmail/Yahoo/Outlook: no
+		// amount of budget, window, or rotation makes it deliverable.
+		//
+		// Only a SUSTAINED failure gates. "unknown" (never checked, or DNS
+		// could not answer) and a failure inside the grace window both pass
+		// through, so a resolver hiccup can never stop a campaign.
+		if enforceAuth && acct.DomainAuthBlocked(time.Now(), authGrace) {
+			authGated++
+			continue
+		}
+
 		sentToday, err := s.taskRepo.CountCampaignEmailsSentToday(ctx, acct.ID)
 		if err != nil {
 			return time.Time{}, nil, uuid.Nil, err
@@ -382,6 +401,21 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 			}
 		}
 		candidates = append(candidates, cand)
+	}
+
+	// Every mailbox in the pool was gated on authentication: say so, instead of
+	// falling through to a message about sending windows and daily caps.
+	//
+	// Only this case is logged. A partially gated pool still sends, from the
+	// mailboxes that passed, so there is no campaign-level event to report, and
+	// logging one per scheduling pass would bury the activity feed under a row
+	// every few minutes for a condition the mailbox badge, the Advisor card and
+	// the notification already cover.
+	if len(candidates) == 0 && authGated == len(accounts) {
+		s.logCampaignDecision(ctx, campaignID, "domain_auth_gated",
+			"No mailbox can send: every sending domain fails SPF/DMARC authentication",
+			map[string]interface{}{"gated_mailboxes": authGated, "pool_size": len(accounts)})
+		return time.Time{}, nil, uuid.Nil, ErrDomainAuthFailing
 	}
 
 	// STEP 8.25: Apply ESP matching to the under-budget candidate set.

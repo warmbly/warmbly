@@ -33,6 +33,9 @@ type Service interface {
 	AllowInvitedSignup(ctx context.Context) bool
 	// SyncBudget is the mailbox sync fair-use section, already normalized.
 	SyncBudget(ctx context.Context) Sync
+	// DomainAuth is the sending-domain authentication gate: whether it is
+	// enforced at all, and how long a domain must stay failing first.
+	DomainAuth(ctx context.Context) (enforce bool, grace time.Duration)
 }
 
 type service struct {
@@ -101,4 +104,10 @@ func (s *service) SyncBudget(ctx context.Context) Sync {
 	sync := s.Get(ctx).Sync
 	sync.Normalize()
 	return sync
+}
+
+func (s *service) DomainAuth(ctx context.Context) (bool, time.Duration) {
+	d := s.Get(ctx).Deliverability
+	d.Normalize()
+	return d.EnforceDomainAuth, d.AuthGrace()
 }

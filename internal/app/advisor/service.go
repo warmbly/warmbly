@@ -87,6 +87,18 @@ type service struct {
 
 	// trackingHost is this install's tracking host, for the CNAME template.
 	trackingHost string
+	// domainAuth resolves the sending-domain authentication gate, so the
+	// domain-auth finding describes what actually happens on this install
+	// rather than what happens on a default one. Optional/nil-safe.
+	domainAuth DomainAuthPolicy
+}
+
+// DomainAuthPolicy resolves whether the sending-domain authentication gate is
+// enforced, and how long a domain must stay failing before it applies. Narrow
+// and primitive-typed so the advisor does not depend on the settings package;
+// instancesettings.Service satisfies it.
+type DomainAuthPolicy interface {
+	DomainAuth(ctx context.Context) (enforce bool, grace time.Duration)
 }
 
 // AgentDeps carries the optional agent-fix wiring.
@@ -121,6 +133,12 @@ func WithTrackingHost(host string) Option {
 	return func(s *service) { s.trackingHost = host }
 }
 
+// WithDomainAuthPolicy supplies the sending-domain authentication gate so the
+// domain-auth finding can say whether sending has already stopped.
+func WithDomainAuthPolicy(p DomainAuthPolicy) Option {
+	return func(s *service) { s.domainAuth = p }
+}
+
 // maxNarrationsPerRun bounds how many completions one evaluation can spend.
 // New findings are narrated most-severe-first, so the cap only ever costs the
 // least important cards their rewrite, and the next run picks them up.
@@ -149,6 +167,9 @@ func (s *service) Evaluate(ctx context.Context, orgID uuid.UUID, trigger string)
 	}
 
 	snapshot.TrackingHost = s.trackingHost
+	if s.domainAuth != nil {
+		snapshot.DomainAuthEnforced, snapshot.DomainAuthGrace = s.domainAuth.DomainAuth(ctx)
+	}
 	findings := Detect(snapshot, settings)
 
 	keep := make([]string, 0, len(findings))

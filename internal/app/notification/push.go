@@ -225,6 +225,8 @@ func digestTitle(category models.NotificationCategory, n int) string {
 		return fmt.Sprintf("%d team updates", n)
 	case models.NotifCampaignPaused:
 		return fmt.Sprintf("%d campaigns paused automatically", n)
+	case models.NotifDomainAuth:
+		return fmt.Sprintf("%d domains failing authentication", n)
 	default:
 		return fmt.Sprintf("%d new notifications", n)
 	}

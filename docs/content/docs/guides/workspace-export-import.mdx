@@ -85,6 +85,7 @@ Some things belong to an instance rather than to a workspace, so they are not ap
 | Worker assignment | The destination places mailboxes on its own workers |
 | Mailbox sync checkpoints | Replaying a checkpoint would make the destination skip everything that arrived between export and import, so it re-syncs from scratch |
 | Warmup pool membership | Pools are shared across every workspace on an instance, so membership is re-earned rather than asserted by a file |
+| Domain authentication timings | The verdict travels (public DNS reads the same anywhere), but the destination re-checks before it can stop any sending, so a mailbox is never blocked on an observation the new instance never made |
 | Scheduled deletions | A pending deletion from the source must never follow the workspace to its new home |
 
 An import runs as one transaction. If anything fails, nothing lands and the workspace is untouched.

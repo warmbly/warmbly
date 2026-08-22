@@ -66,8 +66,9 @@ func (s *tasksService) ReconcileCampaignSchedules(ctx context.Context, limit int
 			}
 			seeded++
 		case errors.Is(cerr, scheduler.ErrNoEmailAccounts):
-			// No mailbox to send from — pause rather than spin every pass.
-			s.autoPauseCampaign(ctx, id, uuid.Nil)
+			// No mailbox to send from: pause rather than spin every pass, and
+			// record which of the several possible causes it was.
+			s.autoPauseCampaign(ctx, id, uuid.Nil, autoPauseReason(cerr))
 		case errors.Is(cerr, scheduler.ErrCampaignCompleted), errors.Is(cerr, scheduler.ErrCampaignEnded):
 			// Nothing left to send (or past its end date): close it out.
 			s.campaignRepo.UpdateStatus(ctx, id, "completed")

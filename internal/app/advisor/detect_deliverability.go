@@ -263,6 +263,14 @@ func detectDomainAuth(s *repository.AdvisorSnapshot) []Finding {
 			}
 		}
 
+		// What the platform itself is about to do about it. A mailbox the gate
+		// has already stopped is critical whatever else is true of it: nothing
+		// is going out, and only a DNS change starts it again.
+		gate, blocked := domainAuthGateNote(s, m)
+		if blocked {
+			severity = models.AdvisorCritical
+		}
+
 		out = append(out, Finding{
 			Key:         "mailbox_domain_auth",
 			GroupTitle:  "{count} sending domains are missing authentication records",
@@ -275,9 +283,9 @@ func detectDomainAuth(s *repository.AdvisorSnapshot) []Finding {
 			Impact:      clampImpact(60 + 10*len(missing)),
 			Title:       fmt.Sprintf("%s is missing %s", m.Email, joinWords(missing)),
 			Detail: fmt.Sprintf(
-				"The sending domain for %s has no valid %s record. Google's bulk sender rules require SPF, DKIM, and DMARC to be aligned, so unauthenticated cold mail is filtered on arrival regardless of how good the copy is.",
-				m.Email, joinWords(missing)),
-			Remedy:   "Add the missing DNS records at the domain's registrar. This is the highest-leverage deliverability fix available and it costs nothing.",
+				"The sending domain for %s has no valid %s record. Google's bulk sender rules require SPF, DKIM, and DMARC to be aligned, so unauthenticated cold mail is filtered on arrival regardless of how good the copy is.%s",
+				m.Email, joinWords(missing), gate),
+			Remedy:   "Add the missing DNS records at the domain's registrar, then re-check the domain from the mailbox to clear it immediately. This is the highest-leverage deliverability fix available and it costs nothing.",
 			Steps:    domainAuthSteps(missing),
 			Snippets: domainAuthSnippets(m, missing),
 			Evidence: map[string]any{
@@ -288,10 +296,29 @@ func detectDomainAuth(s *repository.AdvisorSnapshot) []Finding {
 				"dmarc":                  m.AuthDMARC,
 				"dmarc_policy":           m.AuthDMARCPolicy,
 				"currently_sending_cold": m.InActiveCampaign,
+				"sending_blocked":        blocked,
 			},
 		})
 	}
 	return out
+}
+
+// domainAuthGateNote describes what the send gate is doing to this mailbox
+// right now, as a sentence to append to the finding, plus whether it is already
+// blocked. Only a domain in the "failing" state has a gate story at all: a
+// domain merely missing DKIM still passes, because DKIM selectors are not
+// discoverable from DNS and never gate on their own.
+func domainAuthGateNote(s *repository.AdvisorSnapshot, m repository.AdvisorMailbox) (string, bool) {
+	if !s.DomainAuthEnforced || m.AuthState != models.AuthStateFailing || m.AuthFailingSince == nil {
+		return "", false
+	}
+	blockedAt := m.AuthFailingSince.Add(s.DomainAuthGrace)
+	if !s.Now.Before(blockedAt) {
+		return " Cold sending and warmup from this mailbox are stopped until the records are in place.", true
+	}
+	return fmt.Sprintf(
+		" Cold sending and warmup from this mailbox stop on %s unless the records are in place by then.",
+		blockedAt.UTC().Format("2 January at 15:04 MST")), false
 }
 
 func detectSharedTrackingDomain(s *repository.AdvisorSnapshot) []Finding {

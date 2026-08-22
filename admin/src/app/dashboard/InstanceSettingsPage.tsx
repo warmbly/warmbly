@@ -34,6 +34,10 @@ const SETTINGS_KEY = ["admin", "instance", "settings"];
 const TTL_MIN_HOURS = 1;
 const TTL_MAX_HOURS = 720;
 
+// Sending-domain authentication grace, mirroring internal/app/instancesettings.
+const AUTH_GRACE_MIN_HOURS = 1;
+const AUTH_GRACE_MAX_HOURS = 720;
+
 // Mailbox sync fair-use bands, mirroring internal/config/constants.go.
 const SYNC_FIELDS = [
     {
@@ -77,6 +81,8 @@ interface FormState {
     ttlHours: string;
     allowInvitedSignup: boolean;
     sync: Record<SyncFieldKey, string>;
+    enforceDomainAuth: boolean;
+    authGraceHours: string;
 }
 
 function toForm(s: InstanceSettings): FormState {
@@ -90,6 +96,8 @@ function toForm(s: InstanceSettings): FormState {
             dailyPerMailbox: String(s.sync.daily_messages_per_mailbox),
             dailyPerOrg: String(s.sync.daily_messages_per_org),
         },
+        enforceDomainAuth: s.deliverability.enforce_domain_auth,
+        authGraceHours: String(s.deliverability.auth_grace_hours),
     };
 }
 
@@ -135,9 +143,19 @@ export default function InstanceSettingsPage() {
         (form.linksEnabled !== server.invitations.links_enabled ||
             form.ttlHours !== String(server.invitations.ttl_hours) ||
             form.allowInvitedSignup !== server.access.allow_invited_signup ||
+            form.enforceDomainAuth !== server.deliverability.enforce_domain_auth ||
+            form.authGraceHours !== String(server.deliverability.auth_grace_hours) ||
             syncDirty);
     const syncValid =
         form !== null && SYNC_FIELDS.every((f) => syncFieldValid(form.sync[f.key], f.min, f.max));
+
+    const authGrace = form ? Number(form.authGraceHours) : NaN;
+    const authGraceValid =
+        form !== null &&
+        form.authGraceHours.trim() !== "" &&
+        Number.isInteger(authGrace) &&
+        authGrace >= AUTH_GRACE_MIN_HOURS &&
+        authGrace <= AUTH_GRACE_MAX_HOURS;
 
     const ttl = form ? Number(form.ttlHours) : NaN;
     const ttlValid =
@@ -159,6 +177,12 @@ export default function InstanceSettingsPage() {
             toast.error("Every sync budget must be a whole number inside its range");
             return;
         }
+        if (!authGraceValid) {
+            toast.error(
+                `The authentication grace period must be a whole number of hours between ${AUTH_GRACE_MIN_HOURS} and ${AUTH_GRACE_MAX_HOURS}`,
+            );
+            return;
+        }
         saveMut.mutate({
             invitations: { links_enabled: form.linksEnabled, ttl_hours: ttl },
             access: { allow_invited_signup: form.allowInvitedSignup },
@@ -167,6 +191,10 @@ export default function InstanceSettingsPage() {
                 backfill_messages: Number(form.sync.backfillMessages),
                 daily_messages_per_mailbox: Number(form.sync.dailyPerMailbox),
                 daily_messages_per_org: Number(form.sync.dailyPerOrg),
+            },
+            deliverability: {
+                enforce_domain_auth: form.enforceDomainAuth,
+                auth_grace_hours: authGrace,
             },
         });
     }
@@ -339,6 +367,66 @@ export default function InstanceSettingsPage() {
                                     </div>
                                 );
                             })}
+                        </CardContent>
+                    </Card>
+
+                    <Card className="lg:col-span-2">
+                        <CardHeader>
+                            <CardTitle>Sending-domain authentication</CardTitle>
+                            <CardDescription>
+                                Gmail, Yahoo, and Outlook reject or spam-filter mail from a domain
+                                without SPF and DMARC, and one unauthenticated sender damages the
+                                reputation of every mailbox in the shared warmup pool. Warmbly
+                                checks each sending domain daily and can stop cold sending and
+                                warmup from a domain that keeps failing. The grace period is how
+                                long a domain may keep failing first, so a DNS outage cannot stop
+                                a customer&apos;s campaigns and the owner is warned throughout it.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4 pt-0">
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="space-y-0.5">
+                                    <Label>Stop sending from unauthenticated domains</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Off keeps the check informational: domains are still
+                                        checked, shown on the mailbox, and raised by the advisor,
+                                        but nothing is ever blocked.
+                                    </p>
+                                </div>
+                                <Switch
+                                    checked={form.enforceDomainAuth}
+                                    onCheckedChange={(v) =>
+                                        setForm({ ...form, enforceDomainAuth: v })
+                                    }
+                                />
+                            </div>
+                            <div className="md:max-w-sm">
+                                <Label htmlFor="auth-grace-hours">Grace period (hours)</Label>
+                                <Input
+                                    id="auth-grace-hours"
+                                    type="text"
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    value={form.authGraceHours}
+                                    onChange={(e) =>
+                                        setForm({ ...form, authGraceHours: e.target.value })
+                                    }
+                                    aria-invalid={!authGraceValid}
+                                    disabled={!form.enforceDomainAuth}
+                                    className="mt-1"
+                                />
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    How long a domain must stay failing before its mailboxes stop
+                                    sending. Between {AUTH_GRACE_MIN_HOURS} and{" "}
+                                    {AUTH_GRACE_MAX_HOURS.toLocaleString()}.
+                                </p>
+                                {!authGraceValid && (
+                                    <p className="mt-1 text-xs text-red-600">
+                                        Enter a whole number between {AUTH_GRACE_MIN_HOURS} and{" "}
+                                        {AUTH_GRACE_MAX_HOURS.toLocaleString()}.
+                                    </p>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
                 </div>

@@ -37,6 +37,10 @@ type AdvisorMailbox struct {
 	AuthDKIM        bool
 	AuthDMARC       bool
 	AuthDMARCPolicy string
+	// AuthFailingSince is when the sending domain entered "failing". The send
+	// gate measures its grace window from here, so the advisor uses it to say
+	// whether sending has already stopped or is only about to.
+	AuthFailingSince *time.Time
 
 	WarmupActive    bool
 	WarmupPaused    bool
@@ -184,6 +188,12 @@ type AdvisorSnapshot struct {
 	// TrackingHost is this install's tracking host, set by the service rather
 	// than loaded from SQL, so a detector can render a complete CNAME.
 	TrackingHost string
+	// DomainAuthEnforced / DomainAuthGrace mirror the operator's sending-domain
+	// authentication gate, also set by the service rather than loaded from SQL.
+	// Without them the domain-auth finding could not tell an owner whether
+	// their mail has already stopped going out or is only about to.
+	DomainAuthEnforced bool
+	DomainAuthGrace    time.Duration
 }
 
 // AdvisorRepository persists findings and loads the evaluation snapshot.

@@ -259,7 +259,12 @@ func (s *campaignService) enqueueCampaignWakeup(ctx context.Context, campaignID 
 	// the defer time rather than failing the campaign start.
 	if err != nil && !errors.Is(err, scheduler.ErrCampaignDeferred) {
 		switch {
-		// Checked before ErrNoEmailAccounts, which it wraps.
+		// Checked before ErrNoEmailAccounts, which they wrap.
+		case errors.Is(err, scheduler.ErrDomainAuthFailing):
+			_ = s.campaignRepository.UpdateStatusWithLock(ctx, campaignID, "paused_no_accounts")
+			return errx.New(errx.BadRequest,
+				"every mailbox on this campaign is sending from a domain that fails SPF or DMARC authentication; "+
+					"add the missing DNS records at your registrar, then re-check the domain from the mailbox")
 		case errors.Is(err, scheduler.ErrNoEligibleMailbox):
 			_ = s.campaignRepository.UpdateStatusWithLock(ctx, campaignID, "paused_no_accounts")
 			return errx.New(errx.BadRequest,

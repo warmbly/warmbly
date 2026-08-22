@@ -111,6 +111,13 @@ export interface InstanceSettings {
         daily_messages_per_mailbox: number;
         daily_messages_per_org: number;
     };
+    // The sending-domain authentication gate. A mailbox whose domain has been
+    // failing SPF or DMARC for longer than the grace window stops sending cold
+    // mail and warmup mail until the records are fixed.
+    deliverability: {
+        enforce_domain_auth: boolean;
+        auth_grace_hours: number;
+    };
 }
 
 export function getInstanceSettings(): Promise<InstanceSettings> {

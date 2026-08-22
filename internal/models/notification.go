@@ -24,6 +24,10 @@ const (
 	// own — today, when an auto-pause guardrail band is breached. Rare and
 	// always actionable, so it defaults on with email.
 	NotifCampaignPaused NotificationCategory = "campaign_paused"
+	// NotifDomainAuth fires when a sending domain starts failing SPF/DMARC.
+	// It is the warning shot before the send/warmup gate applies, so it must
+	// reach the owner while there is still time to fix the DNS records.
+	NotifDomainAuth NotificationCategory = "health_domain_auth"
 )
 
 // ChannelPrefs is the per-category delivery toggles: in-app feed, account
@@ -53,6 +57,7 @@ type NotificationPreferences struct {
 	BillingAlert    CategoryPref `json:"billing_alert"`
 	TeamActivity    CategoryPref `json:"team_activity"`
 	CampaignPaused  CategoryPref `json:"campaign_paused"`
+	DomainAuth      CategoryPref `json:"health_domain_auth"`
 
 	// EmailDigestMinutes is the email-channel bundling window: pending
 	// notification emails hold this long, then flush as one email. Bounded
@@ -76,6 +81,9 @@ func DefaultNotificationPreferences() NotificationPreferences {
 	// A campaign the platform stopped by itself has to reach whoever can
 	// restart it, so this one emails by default too.
 	campaignPaused := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true, Email: true}}
+	// A domain the platform will eventually stop sending from has to reach
+	// whoever can edit the DNS, so this one emails by default too.
+	domainAuth := CategoryPref{Enabled: true, Channels: ChannelPrefs{InApp: true, Push: true, Email: true}}
 	return NotificationPreferences{
 		InboundReply:       off,
 		InboundOOO:         off,
@@ -86,6 +94,7 @@ func DefaultNotificationPreferences() NotificationPreferences {
 		BillingAlert:       billing,
 		TeamActivity:       on,
 		CampaignPaused:     campaignPaused,
+		DomainAuth:         domainAuth,
 		EmailDigestMinutes: 30,
 	}
 }
@@ -111,6 +120,8 @@ func (p NotificationPreferences) CategoryPref(c NotificationCategory) CategoryPr
 		return p.TeamActivity
 	case NotifCampaignPaused:
 		return p.CampaignPaused
+	case NotifDomainAuth:
+		return p.DomainAuth
 	default:
 		return CategoryPref{}
 	}

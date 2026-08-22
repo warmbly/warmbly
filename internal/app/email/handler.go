@@ -10,6 +10,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/dnsauth"
 	"github.com/warmbly/warmbly/internal/utils/paging"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 )
@@ -107,6 +108,60 @@ func (s *emailService) UpdateTrackingDomain(ctx context.Context, userID, emailAc
 	}
 
 	return status, nil
+}
+
+// CheckDomainAuth runs a live SPF/DKIM/DMARC lookup for a mailbox's sending
+// domain and reports it without writing anything.
+func (s *emailService) CheckDomainAuth(ctx context.Context, userID, emailAccountID string) (*dnsauth.Result, *errx.Error) {
+	_, res, xerr := s.resolveDomainAuth(ctx, userID, emailAccountID)
+	return res, xerr
+}
+
+// RefreshDomainAuth runs the same lookup and persists the verdict for every
+// active mailbox on that domain (authentication is a per-domain property, so
+// one owner's fix clears it for all of their mailboxes on it at once).
+//
+// This is the escape hatch from the send gate. Without it an owner who repairs
+// their DNS would keep being blocked until the background sweep next reached
+// their domain, which can be a day away, and "I fixed it and nothing happened"
+// is how a correct gate still becomes a support incident.
+func (s *emailService) RefreshDomainAuth(ctx context.Context, userID, emailAccountID string) (*dnsauth.Result, *errx.Error) {
+	domain, res, xerr := s.resolveDomainAuth(ctx, userID, emailAccountID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if domain == "" {
+		return res, nil
+	}
+
+	// Persist best-effort: the caller asked for a live check and gets the live
+	// answer either way. A failed write only means the sweep re-derives it.
+	_, _ = s.emailRepository.UpdateDomainAuthState(
+		ctx, domain, res.State(), res.SPFFound, res.DKIMFound, res.DMARCFound,
+		res.DMARCPolicy, res.Summary, time.Now(),
+	)
+	return res, nil
+}
+
+// resolveDomainAuth loads the caller's mailbox and runs the DNS lookup for its
+// sending domain, returning the domain alongside the result so the persisting
+// caller does not re-derive it.
+func (s *emailService) resolveDomainAuth(ctx context.Context, userID, emailAccountID string) (string, *dnsauth.Result, *errx.Error) {
+	account, xerr := s.emailRepository.Get(ctx, userID, emailAccountID)
+	if xerr != nil {
+		return "", nil, xerr
+	}
+	if account == nil {
+		return "", nil, errx.ErrNotFound
+	}
+
+	domain := ""
+	if at := strings.LastIndex(account.Email, "@"); at >= 0 {
+		domain = strings.ToLower(strings.TrimSpace(account.Email[at+1:]))
+	}
+
+	res := dnsauth.Check(ctx, domain, nil)
+	return domain, &res, nil
 }
 
 func (s *emailService) Delete(ctx context.Context, userID, emailAccountID string) *errx.Error {

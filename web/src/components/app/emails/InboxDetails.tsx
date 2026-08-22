@@ -50,6 +50,7 @@ import useWarmupLifecycle from "@/lib/api/hooks/app/emails/useWarmupLifecycle";
 import useWarmupBanStatus from "@/lib/api/hooks/app/emails/useWarmupBanStatus";
 import useAppealWarmupBan from "@/lib/api/hooks/app/emails/useAppealWarmupBan";
 import useAuthCheck from "@/lib/api/hooks/app/emails/useAuthCheck";
+import useRefreshAuthCheck from "@/lib/api/hooks/app/emails/useRefreshAuthCheck";
 import useUpdateEmailTrackingDomain from "@/lib/api/hooks/app/emails/useUpdateEmailTrackingDomain";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -688,10 +689,35 @@ function AuthRecordRow({ label, ok, detail }: { label: string; ok: boolean; deta
     );
 }
 
-function AuthCheckPanel({ emailId }: { emailId: string }) {
+// The banner above the records, shown only when the stored state is "failing".
+// The gate is invisible otherwise, and an owner whose campaigns have stopped
+// needs to be told that here rather than inferring it from a paused campaign.
+function AuthGateNotice({ mailbox }: { mailbox: Inbox }) {
+    if (mailbox.auth_state !== "failing") return null;
+
+    const since = mailbox.auth_failing_since ? new Date(mailbox.auth_failing_since) : null;
+    return (
+        <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 flex gap-2.5">
+            <ShieldAlertIcon className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="min-w-0 text-[11.5px] text-rose-900/90 leading-relaxed">
+                <span className="font-medium">This domain is failing authentication.</span>{" "}
+                Cold sending and warmup from this mailbox stop while it stays that way
+                {since ? `, failing since ${since.toLocaleDateString()}` : ""}. Add the missing DNS
+                records at your registrar, then re-check below to clear it straight away.
+            </div>
+        </div>
+    );
+}
+
+function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
+    const emailId = mailbox.id;
     const [open, setOpen] = useState(false);
     const check = useAuthCheck(emailId, open);
-    const data = check.data;
+    // Re-checking RECORDS the verdict, which is what lifts the send gate, so
+    // the button is a write and not a query refetch.
+    const refresh = useRefreshAuthCheck(emailId);
+    const data = refresh.data ?? check.data;
+    const busy = check.isFetching || refresh.isPending;
 
     return (
         <div className="px-5 py-4">
@@ -703,15 +729,21 @@ function AuthCheckPanel({ emailId }: { emailId: string }) {
                 <button
                     onClick={() => {
                         setOpen(true);
-                        if (open) check.refetch();
+                        if (open) {
+                            refresh.mutate(undefined, {
+                                onError: (e) => toast.error(buildError(e as unknown as AppError)),
+                            });
+                        }
                     }}
-                    disabled={check.isFetching}
+                    disabled={busy}
                     className="h-8 px-3 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] font-medium text-slate-700 hover:text-slate-900 inline-flex items-center gap-1.5 transition-colors disabled:opacity-60 shrink-0"
                 >
-                    {check.isFetching ? <Loading className="!w-3.5 h-3.5" /> : <RefreshCwIcon className="w-3.5 h-3.5" />}
+                    {busy ? <Loading className="!w-3.5 h-3.5" /> : <RefreshCwIcon className="w-3.5 h-3.5" />}
                     {open ? "Re-check" : "Check"}
                 </button>
             </div>
+
+            <AuthGateNotice mailbox={mailbox} />
 
             {open && (
                 <div className="mt-3">
@@ -742,7 +774,13 @@ function AuthCheckPanel({ emailId }: { emailId: string }) {
                                 <AuthRecordRow
                                     label="DMARC"
                                     ok={data.dmarc_found}
-                                    detail={data.dmarc_found && data.dmarc_policy ? `policy: ${data.dmarc_policy}` : undefined}
+                                    detail={
+                                        data.dmarc_found && data.dmarc_policy
+                                            ? data.dmarc_inherited
+                                                ? `policy: ${data.dmarc_policy} (inherited from ${data.dmarc_domain})`
+                                                : `policy: ${data.dmarc_policy}`
+                                            : undefined
+                                    }
                                 />
                             </div>
                             <div className="px-3 py-2 text-[10.5px] text-slate-400 font-mono truncate border-t border-slate-200/60">{data.domain}</div>
@@ -889,7 +927,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
             )}
 
             {/* Domain authentication (live SPF/DKIM/DMARC check) */}
-            <AuthCheckPanel emailId={mailbox.id} />
+            <AuthCheckPanel mailbox={mailbox} />
 
             {/* In-campaign health-check explainer */}
             {inCampaign && (

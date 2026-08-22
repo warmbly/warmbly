@@ -127,6 +127,32 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	}
 
 	poolType := s.resolveWarmupPoolType(ctx, account)
+
+	// STEP 3.6: Sending-domain authentication. Pool reputation is shared, so an
+	// unauthenticated sender damages every other participant, not just itself.
+	// Demoted to recipient_only rather than removed: receiving harms nobody and
+	// the mailbox promotes straight back once its DNS is fixed.
+	if s.domainAuthBlocked(ctx, account) {
+		if s.warmupHealth != nil {
+			_ = s.warmupHealth.EnsurePoolMembershipWithRole(ctx, account.ID, poolType, "recipient_only")
+		}
+		log.Warn().
+			Str("task_id", taskID.String()).
+			Str("email_account_id", account.ID.String()).
+			Str("email", account.Email).
+			Msg("warmup send skipped: sending domain fails authentication")
+		_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_domain_auth")
+		// Re-seed the chain, or the mailbox never warms again even after its
+		// DNS is fixed: this task has no successor and nothing else creates
+		// one. The recheck cadence is the partner-exhaustion one (4-8h), which
+		// is the right order of magnitude for a DNS change to propagate.
+		if createErr := s.createWarmupTask(ctx, account.ID, warmupPartnerRecheckTime()); createErr != nil {
+			log.Warn().Err(createErr).Str("task_id", taskID.String()).Str("email_account_id", account.ID.String()).Msg("Failed to reschedule warmup task after domain-auth gate")
+		}
+		executionStatus = "completed"
+		return nil
+	}
+
 	if s.warmupHealth != nil {
 		if err := s.warmupHealth.EnsurePoolMembershipWithRole(ctx, account.ID, poolType, "sender_receiver"); err != nil {
 			return err

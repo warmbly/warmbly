@@ -18,6 +18,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/dnsauth"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -32,6 +33,13 @@ type EmailService interface {
 	// mailbox. start/resume preserve ramp progress; disable turns warmup off.
 	SetWarmupLifecycle(ctx context.Context, userID, emailAccountID, action string) (*models.Email, *errx.Error)
 	UpdateTrackingDomain(ctx context.Context, userID, emailAccountID, domain string) (*models.TrackingDomainStatus, *errx.Error)
+	// CheckDomainAuth runs a live SPF/DKIM/DMARC lookup for a mailbox's
+	// sending domain and returns it without touching stored state.
+	CheckDomainAuth(ctx context.Context, userID, emailAccountID string) (*dnsauth.Result, *errx.Error)
+	// RefreshDomainAuth does the same and PERSISTS the verdict. That write can
+	// lift the cold-send and warmup gate, so it sits behind the write
+	// permission while CheckDomainAuth stays readable.
+	RefreshDomainAuth(ctx context.Context, userID, emailAccountID string) (*dnsauth.Result, *errx.Error)
 	Delete(ctx context.Context, userID, emailAccountID string) *errx.Error
 
 	// Onboarding flow
