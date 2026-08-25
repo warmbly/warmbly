@@ -223,14 +223,19 @@ func (b *NATSBus) Subscribe(ctx context.Context, topics []string, group string, 
 		return fmt.Errorf("eventbus nats: lookup stream: %w", err)
 	}
 
-	cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+	consumerConfig := jetstream.ConsumerConfig{
 		Durable:        b.durable(group, topics),
 		AckPolicy:      jetstream.AckExplicitPolicy,
 		DeliverPolicy:  jetstream.DeliverAllPolicy,
 		FilterSubjects: subjects,
 		MaxDeliver:     10,
 		AckWait:        handlerTimeout() + 5*time.Second,
-	})
+	}
+	if strings.HasPrefix(group, TransientConsumerPrefix) {
+		consumerConfig.DeliverPolicy = jetstream.DeliverLastPolicy
+		consumerConfig.InactiveThreshold = time.Minute
+	}
+	cons, err := stream.CreateOrUpdateConsumer(ctx, consumerConfig)
 	if err != nil {
 		return fmt.Errorf("eventbus nats: create consumer: %w", err)
 	}
@@ -287,7 +292,22 @@ func (b *NATSBus) Subscribe(ctx context.Context, topics []string, group string, 
 	// Block until ctx is cancelled, mirroring KafkaBus.Subscribe semantics.
 	<-ctx.Done()
 	cc.Stop()
+	b.removeSubscriber(cc)
 	return ctx.Err()
+}
+
+func (b *NATSBus) removeSubscriber(target jetstream.ConsumeContext) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, subscriber := range b.subscribers {
+		if subscriber != target {
+			continue
+		}
+		copy(b.subscribers[i:], b.subscribers[i+1:])
+		b.subscribers[len(b.subscribers)-1] = nil
+		b.subscribers = b.subscribers[:len(b.subscribers)-1]
+		return
+	}
 }
 
 func (b *NATSBus) Close() error {

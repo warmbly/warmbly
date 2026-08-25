@@ -1,0 +1,8 @@
+{
+  "dns": {"observed": true, "ok": true},
+  "tls": {"observed": false, "reason": "http_scheme"},
+  "api": {"observed": true, "health_status": 200, "process_up_only": true},
+  "event_ingest": {"observed": false},
+  "read_after_write": {"observed": false},
+  "worker_heartbeat": {"observed": false}
+}

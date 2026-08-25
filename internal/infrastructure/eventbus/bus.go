@@ -34,6 +34,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// TransientConsumerPrefix marks short-lived consumers that may auto-expire.
+const TransientConsumerPrefix = "transient-"
+
 // EventBus is the transport-level interface. Implementations must be safe for
 // concurrent use by multiple goroutines.
 type EventBus interface {

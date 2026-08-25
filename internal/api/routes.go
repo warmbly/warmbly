@@ -15,6 +15,18 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
+// registerPlatformHealth mounts process-up, liveness, readiness, and
+// dependency health. /health stays process-up so compose does not flap
+// when a dependency is down.
+func registerPlatformHealth(r *gin.Engine, h *handler.Handler) {
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+	r.GET("/live", h.Live)
+	r.GET("/ready", h.Ready)
+	r.GET("/health/deps", h.HealthDeps)
+}
+
 // splitCSV parses a comma-separated env list, dropping empty entries.
 func splitCSV(value string) []string {
 	out := make([]string, 0, 4)
@@ -53,9 +65,7 @@ func Run(
 	r.Use(middleware.RequestIDMiddleware())
 	r.Use(middleware.APIVersionMiddleware(middleware.APIVersion))
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
+	registerPlatformHealth(r, h)
 
 	// Public inbound webhooks for third-party integrations. Auth is the
 	// per-org secret embedded in the URL path, minted at connect time and

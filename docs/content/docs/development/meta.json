@@ -10,6 +10,7 @@
     "warmblyctl",
     "configuration",
     "instance-health",
+    "incident-runbook",
     "troubleshooting",
     "---Development---",
     "local-development",

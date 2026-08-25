@@ -1,0 +1,319 @@
+---
+title: Incident runbook
+description: Diagnose and recover platform incidents by plane, with copy-paste commands and named owners.
+---
+
+This page is the platform incident runbook. It classifies an outage as control plane, DB, cache, NATS, email provider, or contract drift, then gives diagnose, mitigation, rollback, evidence capture, commands, and owners. You do not need tribal knowledge of who last touched a box.
+
+It is not the CONFENGE inbound last-mile runbook. Inbound receive stays on `GET /api/v1/webhooks/confenge/inbound/health` and its own docs.
+
+Do not send campaign or warmup mail to "test" a plane. Do not put recipient addresses, message bodies, webhook secrets, or tokens into tickets or chat. Capture `/health/deps` and `opsprobe` JSON instead. Those payloads are allowlisted.
+
+## How to use this page
+
+1. Confirm the process is up: `GET /live` must return `{"status":"live"}`. Compose still uses `GET /health` as process-up. A 200 there is not a healthy platform.
+2. Read dependency truth: `GET /ready` and `GET /health/deps`. HTTP 503 plus `ready: false` is the expected not-ready signal. Look at `planes[].status` and `incident_classes`.
+3. From outside the box, run `go run ./cmd/opsprobe --base-url https://<api-host>`. The probe names TLS, DNS, API, event ingest, read-after-write, and worker heartbeat. Partial failure is not green.
+4. Open the class section that matches `incident_classes` (or the failed plane) and run the commands there.
+5. Capture evidence before you mutate state. Roll back with the command in that section.
+
+Default per-check timeout is 3 seconds. Timeouts fail closed: `status=timeout` is a failure, not a skip. The backend coalesces concurrent checks and caches the full matrix for five seconds so a public readiness path cannot create unbounded dependency probes.
+
+## Surfaces
+
+| Surface | Path | Meaning |
+|---------|------|---------|
+| Process-up (compose) | `GET /health` | Process answers. Always 200 if the binary is up. Not readiness. |
+| Liveness | `GET /live` | Process answers. Safe for orchestrator restarts. |
+| Readiness | `GET /ready` | 200 only when every required plane is observed and ok. 503 otherwise. |
+| Dependency matrix | `GET /health/deps` | Same body as `/ready`. Planes: `control_plane`, `db`, `cache`, `queue`, `event_processing`, `worker_heartbeat`, `provider_edge`. |
+| External probe | `go run ./cmd/opsprobe` | TLS, DNS, API, event ingest, read-after-write, worker heartbeat. |
+
+Required planes fail closed when unobserved. Admin `GET /admin/system/status` is a separate 3s ping page. Do not treat it as this matrix.
+
+## Classification
+
+| Class | Failed plane or check | Owner |
+|-------|----------------------|-------|
+| `control_plane` | `control_plane`, API/DNS/TLS, stale worker heartbeat | Backend on-call (`cmd/backend`) |
+| `db` | `db` | Backend on-call (Postgres) |
+| `cache` | `cache` | Backend on-call (Redis) |
+| `nats` | `queue`, `event_processing`, event ingest, read-after-write | Backend on-call (event bus) |
+| `email_provider` | `provider_edge` | Deliverability on-call |
+| `contract_drift` | missing expected plane or probe check | API owner (`docs/content/docs/api/`) and Backend on-call |
+
+## Control plane
+
+Process, HTTP API, DNS/TLS at the edge, or worker heartbeat into the control plane.
+
+### Diagnose
+
+- `curl -sS http://127.0.0.1:8080/live`
+- `curl -sS -D- http://127.0.0.1:8080/ready`
+- `curl -sS http://127.0.0.1:8080/health/deps`
+- `go run ./cmd/opsprobe --base-url http://127.0.0.1:8080`
+- `make status` or `docker compose ps`
+- `make logs backend`
+
+Expect `/live` 200 even when `/ready` is 503. If `/live` fails, the binary or listener is down. If `/live` works and `worker_heartbeat` is `stale` or `no_fresh_heartbeat`, workers are not posting `POST /api/v1/internal/worker/heartbeat` inside 10 minutes.
+
+### Mitigation
+
+- Restart only the backend process if `/live` is down: `docker compose up -d backend` or the native `make backend` unit.
+- Do not restart Postgres, Redis, or NATS to "fix" a control-plane listener failure.
+- If heartbeat is stale, restart the worker unit (`make worker` / compose `worker`). Placement already ignores heartbeats older than 10 minutes.
+- If DNS or TLS fails on the external probe, fix the edge (certificate, listener, published hostname). Do not change application secrets.
+
+### Rollback
+
+- Redeploy the previous backend image or `git revert` the control-plane commit and restart backend.
+- Leave data stores alone.
+
+### Evidence capture
+
+- `curl -sS http://127.0.0.1:8080/health/deps > health-deps.json`
+- `go run ./cmd/opsprobe --base-url http://127.0.0.1:8080 > opsprobe.json`
+- `docker compose logs --tail=200 backend > backend.log`
+- Confirm the JSON has no recipient or message fields (`planes` and `checks` only).
+
+### Commands
+
+```bash
+curl -sS http://127.0.0.1:8080/live
+curl -sS -o /tmp/ready.json -w '%{http_code}\n' http://127.0.0.1:8080/ready
+curl -sS http://127.0.0.1:8080/health/deps
+go run ./cmd/opsprobe --base-url http://127.0.0.1:8080
+make logs backend
+```
+
+### Owners
+
+Backend on-call owns `cmd/backend`, `internal/api`, and worker heartbeat ingest (`POST /api/v1/internal/worker/heartbeat`). Escalate TLS/DNS at a published hostname to whoever operates the reverse proxy for that host.
+
+## DB
+
+Postgres is the control-plane store. A failed `SELECT 1` or an unobserved `db` plane is this class.
+
+### Diagnose
+
+- Read `planes` where `plane=db` on `/health/deps`.
+- `docker compose ps postgres` (or the managed primary).
+- From a shell that already has `PRIMARY_DB`: `psql "$PRIMARY_DB" -c 'SELECT 1'`
+- `make logs postgres` or the host Postgres log.
+
+Do not dump `emails`, `contacts`, or message tables into the ticket.
+
+### Mitigation
+
+- If the process is down, start it: `docker compose up -d postgres`.
+- If connections are exhausted, restart the backend (it holds the pool), not a failover, unless the primary is actually down.
+- If migrations failed on boot, the backend log names the migration. Do not `--force` a dirty version.
+
+### Rollback
+
+- Restore the last known-good backup onto a new instance and point `PRIMARY_DB` at it.
+- Roll back the backend to the image from before the failing migration. Do not run a newer `*.down.sql` against production unless that migration was just applied and the owner of `internal/infrastructure/db/migrations` approves.
+
+### Evidence capture
+
+- `/health/deps` JSON (`db.status`, `db.latency_ms`, `db.reason`).
+- Backend boot lines around `Running database migrations`.
+- `SELECT 1` success or failure only. No table dumps.
+
+### Commands
+
+```bash
+curl -sS http://127.0.0.1:8080/health/deps | jq '.planes[] | select(.plane=="db")'
+docker compose ps postgres
+psql "$PRIMARY_DB" -c 'SELECT 1'
+make logs postgres
+```
+
+### Owners
+
+Backend on-call (Postgres). The person who applied the last migration in `internal/infrastructure/db/migrations` is the reviewer for a down-migration.
+
+## Cache
+
+Redis is the cache and the local realtime bridge. Readiness writes `ops.health.probe` and reads it back. `PING` alone is not the plane.
+
+### Diagnose
+
+- `/health/deps` `plane=cache`.
+- `docker compose ps redis`
+- `redis-cli -u "$REDIS" PING`
+- `redis-cli -u "$REDIS" GET ops.health.probe`
+
+### Mitigation
+
+- Restart Redis only if the process is down: `docker compose up -d redis`.
+- If Redis is up and the plane is `cache_mismatch`, restart backend so it reconnects.
+- Do not `FLUSHALL` to "fix" health. That drops sessions and rate-limit keys.
+
+### Rollback
+
+- Point the backend at the previous Redis URL if you just changed `REDIS`.
+- Restore Redis only from a snapshot that the cache owner approves. Cache loss is recoverable; a flush during an incident is usually worse.
+
+### Evidence capture
+
+- `/health/deps` `cache` object.
+- `redis-cli INFO persistence` (no key values).
+- Backend logs mentioning redis.
+
+### Commands
+
+```bash
+curl -sS http://127.0.0.1:8080/health/deps | jq '.planes[] | select(.plane=="cache")'
+docker compose ps redis
+redis-cli -u "$REDIS" PING
+make logs redis
+```
+
+### Owners
+
+Backend on-call (Redis). Realtime on-call only if `/health/deps` is fine and the Elixir socket is the broken surface (out of this runbook).
+
+## NATS
+
+The event bus (NATS JetStream by default). `queue` is publish of a labeled `ops.health.probe` payload. `event_processing` is the consume half (read-after-write). A TCP ping to `:4222` is not enough.
+
+### Diagnose
+
+- `/health/deps` `queue` and `event_processing`.
+- `go run ./cmd/opsprobe --base-url http://127.0.0.1:8080 --nats-url nats://127.0.0.1:4222`
+- `docker compose ps nats`
+- NATS monitor: `curl -sS http://127.0.0.1:8222/healthz`
+- `nats stream ls` / `nats stream info warmbly` if the NATS CLI is installed.
+
+`event_ingest` or `read_after_write` failed on the external probe is this class, even when `GET /health` is 200.
+
+### Mitigation
+
+- Restart NATS if the process is down: `docker compose up -d nats`.
+- Restart consumer and workers after the stream is up so they resubscribe.
+- Do not delete the `warmbly` stream to "clear" a probe. That drops worker commands and results.
+
+### Rollback
+
+- Revert an `EVENTBUS_*` config change and restart backend, consumer, and workers.
+- Restore JetStream storage only from the backup the bus owner names. A fresh empty stream is a data loss event for in-flight work.
+
+### Evidence capture
+
+- `/health/deps` `queue` and `event_processing`.
+- `opsprobe` JSON `event_ingest` and `read_after_write`.
+- NATS monitor healthz. No message payloads from `jobs.worker-events` or `tracking-events`.
+
+### Commands
+
+```bash
+curl -sS http://127.0.0.1:8080/health/deps | jq '.planes[] | select(.plane=="queue" or .plane=="event_processing")'
+curl -sS http://127.0.0.1:8222/healthz
+go run ./cmd/opsprobe --base-url http://127.0.0.1:8080 --nats-url "${NATS_URL:-nats://127.0.0.1:4222}"
+docker compose ps nats
+make logs nats
+```
+
+### Owners
+
+Backend on-call (event bus: `internal/infrastructure/eventbus`). Consumer on-call if publish succeeds and the consumer process is the one that is not reading `jobs.worker-events`.
+
+## Email provider
+
+Platform mail transport (login codes, resets) and the provider edge. This plane dials SMTP preflight when `MAIL_TRANSPORT=smtp`. The backend caches the result for five minutes, so frequent readiness requests do not repeatedly authenticate to the relay. It does not send campaign or warmup mail.
+
+### Diagnose
+
+- `/health/deps` `plane=provider_edge`.
+- Backend boot line `Platform mail transport:` or `platform mail preflight FAILED`.
+- `MAIL_TRANSPORT` in the running environment (`log`, `smtp`, `ses`).
+- For SMTP: reachability of the configured relay host (TCP only). Do not authenticate with a personal mailbox.
+
+Worker send path uses each mailbox's own provider. A healthy `provider_edge` does not mean Gmail or Microsoft accepted campaign mail. A failed `provider_edge` does mean the platform cannot prove its configured transport.
+
+### Mitigation
+
+- Set `MAIL_TRANSPORT=log` to fail open for login codes in an emergency (codes appear in backend logs). That is a product degradation, not a send-test.
+- Fix SMTP host, port, or credentials if preflight failed. Rotate the relay password out of band. Do not paste it into chat.
+- Pause campaign sending from the dashboard if customers are also reporting provider rejects. That is a separate action from this plane.
+
+### Rollback
+
+- Restore the previous `MAIL_TRANSPORT` / SMTP settings and restart backend.
+- Revert a relay change at the provider console.
+
+### Evidence capture
+
+- `/health/deps` `provider_edge` (`status`, `reason`, `latency_ms` only).
+- Backend preflight log line. Redact hostnames if they embed credentials.
+- No `To:`, no raw MIME, no campaign IDs in the ticket unless an existing admin page already shows them to the operator.
+
+### Commands
+
+```bash
+curl -sS http://127.0.0.1:8080/health/deps | jq '.planes[] | select(.plane=="provider_edge")'
+make logs backend | sed -n '/[Mm]ail/p'
+# do not: send a campaign, warmup, or personal test message
+```
+
+### Owners
+
+Deliverability on-call. Backend on-call owns the `notify.Transport` preflight. Mailbox-provider outages (Google, Microsoft) stay with deliverability; do not "fix" them by raising send volume.
+
+## Contract drift
+
+The running API no longer matches the documented health contract: a required plane or probe check is missing, `/ready` lost the `ready` field, or `/health/deps` stopped listing `control_plane`, `db`, `cache`, `queue`, `event_processing`, `worker_heartbeat`, `provider_edge`.
+
+### Diagnose
+
+- Compare `planes[].plane` on `/health/deps` to the list in [Surfaces](#surfaces).
+- Compare `opsprobe` `checks[].name` to `dns`, `tls`, `api`, `event_ingest`, `read_after_write`, `worker_heartbeat`.
+- Diff the running image against `docs/content/docs/api/endpoints.mdx` and this page.
+- `incident_classes` containing `contract_drift` is the signal. Do not invent a class.
+
+This is not inbound contract drift and not commercial-event schema drift. Those stay with their own PRs.
+
+### Mitigation
+
+- Stop deploying further API changes until the contract matches.
+- Pin orchestrators to `/live` for restarts and `/ready` for traffic. Do not point a load balancer at `/health` and call it ready.
+
+### Rollback
+
+- Revert the PR that changed `/live`, `/ready`, `/health/deps`, or `cmd/opsprobe`.
+- Restore the previous backend image.
+
+### Evidence capture
+
+- Full `/health/deps` JSON and `opsprobe` JSON (already allowlisted).
+- `git log -1 --oneline` on the running tag.
+- The endpoints page section that disagrees.
+
+### Commands
+
+```bash
+curl -sS http://127.0.0.1:8080/health/deps | jq '{status,ready,planes:[.planes[].plane],classes:.incident_classes}'
+go run ./cmd/opsprobe --fixture internal/app/plathealth/testdata/all-ok.json
+git -C "$(git rev-parse --show-toplevel)" log -1 --oneline
+```
+
+### Owners
+
+API owner (`docs/content/docs/api/`) and Backend on-call. Docs stay in the same change as the route.
+
+## External probe
+
+```bash
+# fixture (offline, what CI drives)
+go run ./cmd/opsprobe --fixture internal/app/plathealth/testdata/all-ok.json
+go run ./cmd/opsprobe --fixture internal/app/plathealth/testdata/api-200-stale-heartbeat.json
+
+# live edge (needs a reachable API)
+go run ./cmd/opsprobe --base-url https://api.example.com
+go run ./cmd/opsprobe --base-url http://127.0.0.1:8080 --nats-url nats://127.0.0.1:4222
+```
+
+Exit `0` only when every required check is `ok`. Exit `1` on partial failure. `/health` returning 200 never forces a green probe.
+
+See also [Deployment](/development/deployment-guide/) and [Event system](/development/events/).
