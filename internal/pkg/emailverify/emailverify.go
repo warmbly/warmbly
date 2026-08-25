@@ -104,11 +104,34 @@ type Config struct {
 	MXTimeout time.Duration
 }
 
-func (c Config) withDefaults() Config {
-	if c.HeloHost == "" {
-		c.HeloHost = "localhost"
+// usableHeloHost accepts only DNS hostnames that are safe to announce in EHLO.
+func usableHeloHost(name string) bool {
+	name = strings.TrimSpace(strings.TrimSuffix(name, "."))
+	if len(name) > 253 || strings.EqualFold(name, "localhost") {
+		return false
 	}
-	if c.MailFrom == "" {
+	labels := strings.Split(name, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
+				(char < '0' || char > '9') && char != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (c Config) withDefaults() Config {
+	// A missing identity disables probing because inventing one creates false verdicts.
+	c.HeloHost = strings.TrimSuffix(strings.TrimSpace(c.HeloHost), ".")
+	if c.MailFrom == "" && usableHeloHost(c.HeloHost) {
 		c.MailFrom = "verify@" + c.HeloHost
 	}
 	if c.DialTimeout <= 0 {
@@ -165,6 +188,12 @@ func (v *SMTPVerifier) Verify(ctx context.Context, email string) Result {
 	}
 	localpart := normalized[:at]
 	domain := normalized[at+1:]
+
+	// A rejected client identity says nothing about whether the recipient exists.
+	if !usableHeloHost(v.cfg.HeloHost) {
+		res.Reason = "verifier identity not configured: EMAIL_VERIFY_HELO_HOST must be a fully-qualified hostname"
+		return res
+	}
 
 	// 2. MX lookup. No MX (and no usable fallback) is a hard invalid: nowhere to
 	// deliver. A lookup *error* (timeout/SERVFAIL) is unknown, not invalid.
@@ -318,6 +347,21 @@ func (v *SMTPVerifier) probe(ctx context.Context, host, localpart, domain string
 	return probeResult{outcome: probeAccepted, catchAll: controlOutcome == probeAccepted}
 }
 
+// identityRejection reports whether a rejection blames the connecting client.
+func identityRejection(msg string) bool {
+	m := strings.ToLower(msg)
+	for _, marker := range []string{
+		"helo", "ehlo", "reverse dns", "reverse hostname", "rdns",
+		"ptr record", "no ptr", "client host rejected", "client rejected",
+		"fully-qualified", "fully qualified", "sender address rejected",
+	} {
+		if strings.Contains(m, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // classifyRcpt maps the error from smtp.Client.Rcpt to a probe outcome. The
 // stdlib surfaces the SMTP reply code on *textproto.Error; 5xx is a hard
 // rejection, 4xx is transient (unknown), and a nil error is acceptance.
@@ -330,6 +374,10 @@ func classifyRcpt(err error) (probeOutcome, string) {
 		code := protoErr.Code
 		switch {
 		case code >= 500 && code < 600:
+			// Some MTAs defer client-identity rejection until the RCPT command.
+			if identityRejection(protoErr.Msg) {
+				return probeUnknown, "prober identity refused (" + strconv.Itoa(code) + "): " + protoErr.Msg
+			}
 			return probeRejected, "recipient rejected (" + strconv.Itoa(code) + "): " + protoErr.Msg
 		case code >= 400 && code < 500:
 			return probeUnknown, "transient/greylisted (" + strconv.Itoa(code) + "): " + protoErr.Msg
