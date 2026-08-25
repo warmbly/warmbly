@@ -70,7 +70,7 @@ func collectLive(ctx context.Context, cfg ProbeConfig) (ProbeInput, error) {
 
 	if cfg.BaseURL != "" {
 		u, err := url.Parse(cfg.BaseURL)
-		if err != nil || u.Host == "" {
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 			return in, fmt.Errorf("invalid base-url")
 		}
 		host := u.Hostname()
@@ -84,10 +84,9 @@ func collectLive(ctx context.Context, cfg ProbeConfig) (ProbeInput, error) {
 		} else {
 			in.TLS = CheckInput{Observed: false, Reason: ReasonHTTPScheme}
 		}
-		in.API = liveAPI(ctx, cfg, strings.TrimRight(cfg.BaseURL, "/"))
-		// Always lift heartbeat from /health/deps. A live --nats-url only
-		// replaces ingest/raw; it must not leave worker_heartbeat zero-value.
-		liftDeps(ctx, &in, cfg)
+		var deps *depsBody
+		in.API, deps = liveAPI(ctx, cfg, strings.TrimRight(cfg.BaseURL, "/"))
+		liftDeps(&in, deps)
 	} else {
 		in.DNS = CheckInput{Observed: false, Reason: ReasonUnobserved}
 		in.TLS = CheckInput{Observed: false, Reason: ReasonUnobserved}
@@ -163,6 +162,7 @@ func liveTLS(ctx context.Context, cfg ProbeConfig, addr, serverName string) Chec
 	if err := dial(cctx, "tcp", addr, tlsCfg); err != nil {
 		out.OK = false
 		out.Reason = ReasonTLSFailed
+		out.LatencyMS = time.Since(start).Milliseconds()
 		if cctx.Err() != nil {
 			out.Timeout = true
 			out.Reason = ReasonTimeout
@@ -184,7 +184,7 @@ type depsBody struct {
 	} `json:"planes"`
 }
 
-func liveAPI(ctx context.Context, cfg ProbeConfig, base string) APIInput {
+func liveAPI(ctx context.Context, cfg ProbeConfig, base string) (APIInput, *depsBody) {
 	client := cfg.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: cfg.Timeout}
@@ -198,15 +198,11 @@ func liveAPI(ctx context.Context, cfg ProbeConfig, base string) APIInput {
 	if readyBody != nil {
 		out.Ready = &readyBody.Ready
 	}
-	depsStatus, depsBody := getJSON(ctx, client, base+"/health/deps")
-	if depsStatus > 0 && depsBody != nil {
-		out.DepsReady = &depsBody.Ready
-	}
-	if out.HealthStatus == 200 && out.LiveStatus == 0 && out.Ready == nil && out.DepsReady == nil {
+	if out.HealthStatus == 200 && out.LiveStatus == 0 && out.Ready == nil {
 		out.ProcessUpOnly = true
 	}
 	out.LatencyMS = time.Since(start).Milliseconds()
-	return out
+	return out, readyBody
 }
 
 func getStatus(ctx context.Context, client *http.Client, rawURL string) int {
@@ -240,12 +236,7 @@ func getJSON(ctx context.Context, client *http.Client, rawURL string) (int, *dep
 	return resp.StatusCode, &body
 }
 
-func liftDeps(ctx context.Context, in *ProbeInput, cfg ProbeConfig) {
-	client := cfg.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: cfg.Timeout}
-	}
-	_, body := getJSON(ctx, client, strings.TrimRight(cfg.BaseURL, "/")+"/health/deps")
+func liftDeps(in *ProbeInput, body *depsBody) {
 	if body == nil {
 		if !in.EventIngest.Observed {
 			in.EventIngest = CheckInput{Observed: false, Reason: ReasonUnobserved}
@@ -258,23 +249,31 @@ func liftDeps(ctx context.Context, in *ProbeInput, cfg ProbeConfig) {
 		}
 		return
 	}
+	sawQueue := false
+	sawEventProcessing := false
+	sawHeartbeat := false
 	for _, p := range body.Planes {
 		ci := planeToCheck(p.Status, p.Reason)
 		switch p.Plane {
 		case PlaneQueue:
-			if !in.EventIngest.Observed {
-				in.EventIngest = ci
-			}
-		case PlaneEventProcessing:
+			sawQueue = true
 			in.EventIngest = ci
+		case PlaneEventProcessing:
+			sawEventProcessing = true
 			in.ReadAfterWrite = ci
 		case PlaneWorkerHeartbeat:
+			sawHeartbeat = true
 			in.WorkerHeartbeat = ci
 		}
 	}
-	if !in.EventIngest.Observed && !in.ReadAfterWrite.Observed {
-		in.EventIngest.Reason = ReasonContractMissingPlane
-		in.ReadAfterWrite.Reason = ReasonContractMissingPlane
+	if !sawQueue {
+		in.EventIngest = CheckInput{Reason: ReasonContractMissingPlane}
+	}
+	if !sawEventProcessing {
+		in.ReadAfterWrite = CheckInput{Reason: ReasonContractMissingPlane}
+	}
+	if !sawHeartbeat {
+		in.WorkerHeartbeat = CheckInput{Reason: ReasonContractMissingPlane}
 	}
 }
 

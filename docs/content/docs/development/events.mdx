@@ -34,6 +34,8 @@ These are the real topic names. On NATS each is prefixed with the subject prefix
 
 Each worker subscribes only to its own `w.<worker-uuid>` topic; the UUID is the worker's identity (derived from its public IP at install time). The consumer service reads `jobs.worker-events` with the consumer group `consumer-group` and `tracking-events` with the group `tracking-consumer`.
 
+NATS health probes use a transient durable that starts at the newest message and expires after one minute of inactivity. This prevents concurrent backend replicas from stealing each other's probe while avoiding a permanent consumer for every readiness request.
+
 ## Worker commands
 
 The backend drives workers with a `{type, body}` envelope (`internal/models/event.go`):

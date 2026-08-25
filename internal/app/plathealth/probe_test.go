@@ -3,6 +3,7 @@ package plathealth
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,8 +42,8 @@ func TestEvaluateProbeAPI200StaleHeartbeatIsNotGreen(t *testing.T) {
 		t.Fatal("API 200 plus stale heartbeat must not be green")
 	}
 	by := indexChecks(r)
-	if by[CheckAPI].Status != StatusOK {
-		t.Fatalf("api status=%q, want ok (process answers); overall must still be not green", by[CheckAPI].Status)
+	if by[CheckAPI].Status != StatusFailed || by[CheckAPI].Reason != ReasonReadyNotReady {
+		t.Fatalf("api = %q/%q, want failed/%s", by[CheckAPI].Status, by[CheckAPI].Reason, ReasonReadyNotReady)
 	}
 	if by[CheckWorkerHeartbeat].Status != StatusStale {
 		t.Fatalf("heartbeat status=%q, want stale", by[CheckWorkerHeartbeat].Status)
@@ -165,8 +167,120 @@ func TestRunProbeLiveHTTPPartialFail(t *testing.T) {
 	if by[CheckWorkerHeartbeat].Status != StatusStale {
 		t.Fatalf("heartbeat=%q", by[CheckWorkerHeartbeat].Status)
 	}
-	if by[CheckAPI].Status != StatusOK {
-		t.Fatalf("api=%q (process answers; overall still not green)", by[CheckAPI].Status)
+	if by[CheckAPI].Status != StatusFailed {
+		t.Fatalf("api=%q, want failed because readiness is false", by[CheckAPI].Status)
+	}
+}
+
+func TestEvaluateProbeReadyFailureCannotGoGreen(t *testing.T) {
+	t.Parallel()
+	in := mustFixture(t, "all-ok.json")
+	ready := false
+	in.API.Ready = &ready
+	in.API.ReadyStatus = http.StatusServiceUnavailable
+	r := EvaluateProbe(in)
+	if r.Green {
+		t.Fatal("ready=false must make the external probe non-green")
+	}
+	got := indexChecks(r)[CheckAPI]
+	if got.Status != StatusFailed || got.Reason != ReasonReadyNotReady {
+		t.Fatalf("api = %q/%q, want failed/%s", got.Status, got.Reason, ReasonReadyNotReady)
+	}
+}
+
+func TestEvaluateProbeLiveWithoutReadinessIsProcessUpOnly(t *testing.T) {
+	t.Parallel()
+	in := mustFixture(t, "all-ok.json")
+	in.API.Ready = nil
+	in.API.DepsReady = nil
+	in.API.ProcessUpOnly = false
+	r := EvaluateProbe(in)
+	got := indexChecks(r)[CheckAPI]
+	if got.Status != StatusProcessUpOnly || r.Green {
+		t.Fatalf("api=%q green=%v, want process_up_only and non-green", got.Status, r.Green)
+	}
+}
+
+func TestRunProbeReadsDependencyMatrixOnce(t *testing.T) {
+	t.Parallel()
+	report := Evaluate(true, allOKObs(), time.Now().UTC(), DefaultTimeout)
+	body, err := MarshalReport(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var readyCalls atomic.Int32
+	var depsCalls atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"status":"ok"}`)) })
+	mux.HandleFunc("/live", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"status":"live","live":true}`)) })
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) {
+		readyCalls.Add(1)
+		_, _ = w.Write(body)
+	})
+	mux.HandleFunc("/health/deps", func(w http.ResponseWriter, _ *http.Request) {
+		depsCalls.Add(1)
+		_, _ = w.Write(body)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	got, err := RunProbe(context.Background(), ProbeConfig{BaseURL: srv.URL, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Green {
+		t.Fatalf("probe not green: %+v", got)
+	}
+	if readyCalls.Load() != 1 || depsCalls.Load() != 0 {
+		t.Fatalf("ready calls=%d deps calls=%d, want 1 and 0", readyCalls.Load(), depsCalls.Load())
+	}
+}
+
+func TestLiftDepsKeepsQueueAndEventProcessingSeparate(t *testing.T) {
+	t.Parallel()
+	in := ProbeInput{}
+	liftDeps(&in, &depsBody{Planes: []struct {
+		Plane  string `json:"plane"`
+		Status string `json:"status"`
+		Reason string `json:"reason"`
+	}{
+		{Plane: PlaneQueue, Status: StatusFailed, Reason: ReasonPublishFailed},
+		{Plane: PlaneEventProcessing, Status: StatusOK},
+		{Plane: PlaneWorkerHeartbeat, Status: StatusOK},
+	}})
+	if in.EventIngest.OK || in.EventIngest.Reason != ReasonPublishFailed {
+		t.Fatalf("queue result overwritten: %+v", in.EventIngest)
+	}
+	if !in.ReadAfterWrite.OK {
+		t.Fatalf("event processing result = %+v, want ok", in.ReadAfterWrite)
+	}
+}
+
+func TestLiftDepsMarksEachMissingPlaneAsContractDrift(t *testing.T) {
+	t.Parallel()
+	in := ProbeInput{}
+	liftDeps(&in, &depsBody{})
+	for name, check := range map[string]CheckInput{
+		CheckEventIngest:     in.EventIngest,
+		CheckReadAfterWrite:  in.ReadAfterWrite,
+		CheckWorkerHeartbeat: in.WorkerHeartbeat,
+	} {
+		if check.Reason != ReasonContractMissingPlane {
+			t.Fatalf("%s reason=%q, want contract drift", name, check.Reason)
+		}
+	}
+}
+
+func TestLiveTLSRecordsFailureLatency(t *testing.T) {
+	t.Parallel()
+	got := liveTLS(context.Background(), ProbeConfig{
+		Timeout: time.Second,
+		TLSDial: func(context.Context, string, string, *tls.Config) error {
+			time.Sleep(5 * time.Millisecond)
+			return errors.New("dial failed")
+		},
+	}, "example.com:443", "example.com")
+	if got.OK || got.LatencyMS <= 0 {
+		t.Fatalf("TLS failure = %+v, want failure with measured latency", got)
 	}
 }
 
@@ -204,7 +318,7 @@ func TestProbeBusRoundTripSubscribeCanceledAfterMatch(t *testing.T) {
 	}
 }
 
-func TestProbeBusRoundTripDoesNotAckForeign(t *testing.T) {
+func TestProbeBusRoundTripDrainsStaleProbeBeforeCurrentOne(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -217,11 +331,8 @@ func TestProbeBusRoundTripDoesNotAckForeign(t *testing.T) {
 	if len(got) < 2 {
 		t.Fatalf("handler should see foreign then own, got %d results", len(got))
 	}
-	if got[0] == nil {
-		t.Fatal("foreign probe_id was ACKed on the shared durable")
-	}
-	if !errors.Is(got[0], errForeignProbe) {
-		t.Fatalf("foreign handler err=%v, want errForeignProbe", got[0])
+	if got[0] != nil {
+		t.Fatalf("stale probe should be drained, handler err=%v", got[0])
 	}
 	if got[1] != nil {
 		t.Fatalf("own probe_id should be ACKed, handler err=%v", got[1])
@@ -273,6 +384,14 @@ func TestDecodeProbeInputRejectsUnknownFields(t *testing.T) {
 	_, err := DecodeProbeInput(bytes.NewReader([]byte(`{"dns":{},"extra":true}`)))
 	if err == nil {
 		t.Fatal("expected unknown field error")
+	}
+}
+
+func TestDecodeProbeInputRejectsMultipleDocuments(t *testing.T) {
+	t.Parallel()
+	_, err := DecodeProbeInput(bytes.NewReader([]byte(`{} {}`)))
+	if err == nil {
+		t.Fatal("expected multiple JSON documents to fail")
 	}
 }
 
@@ -382,8 +501,7 @@ func (b *deliverThenCancelBus) Subscribe(ctx context.Context, _ []string, _ stri
 func (b *deliverThenCancelBus) Close() error { return nil }
 func (b *deliverThenCancelBus) Name() string { return "deliver-then-cancel" }
 
-// recordHandlerBus delivers a foreign probe_id first, then the published one,
-// and records each handler error so the test can see ACK vs NAK.
+// recordHandlerBus delivers a stale probe first, then the published one.
 type recordHandlerBus struct {
 	mu        sync.Mutex
 	published []byte

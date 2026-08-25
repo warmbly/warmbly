@@ -1,7 +1,6 @@
 package plathealth
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,24 +16,42 @@ var ErrUnobserved = errors.New("unobserved")
 
 // Options wires I/O adapters. Nil funcs are unobserved (fail closed).
 type Options struct {
-	Timeout   time.Duration
-	Now       func() time.Time
-	DB        func(context.Context) error
-	Cache     func(context.Context) error
-	Bus       eventbus.EventBus
-	Heartbeat func(context.Context) (HeartbeatSnapshot, error)
-	Provider  func(context.Context) error
+	Timeout          time.Duration
+	ReportCacheTTL   time.Duration
+	ProviderCacheTTL time.Duration
+	Now              func() time.Time
+	DB               func(context.Context) error
+	Cache            func(context.Context) error
+	Bus              eventbus.EventBus
+	Heartbeat        func(context.Context) (HeartbeatSnapshot, error)
+	Provider         func(context.Context) error
 }
 
 // Collector runs adapters with a per-check timeout and evaluates the report.
 type Collector struct {
-	opts Options
+	opts             Options
+	reportMu         sync.Mutex
+	reportCachedAt   time.Time
+	reportCached     Report
+	providerMu       sync.Mutex
+	providerCachedAt time.Time
+	providerCached   Observation
 }
 
 // NewCollector returns a collector. Timeout defaults to DefaultTimeout.
 func NewCollector(opts Options) *Collector {
 	if opts.Timeout <= 0 {
 		opts.Timeout = DefaultTimeout
+	}
+	if opts.ReportCacheTTL == 0 {
+		opts.ReportCacheTTL = 5 * time.Second
+	} else if opts.ReportCacheTTL < 0 {
+		opts.ReportCacheTTL = 0
+	}
+	if opts.ProviderCacheTTL == 0 {
+		opts.ProviderCacheTTL = 5 * time.Minute
+	} else if opts.ProviderCacheTTL < 0 {
+		opts.ProviderCacheTTL = 0
 	}
 	if opts.Now == nil {
 		opts.Now = func() time.Time { return time.Now().UTC() }
@@ -45,19 +62,54 @@ func NewCollector(opts Options) *Collector {
 // Report runs every plane and evaluates readiness. The process is live
 // because this method is executing.
 func (c *Collector) Report(ctx context.Context) Report {
-	return Evaluate(true, c.Observe(ctx), c.opts.Now(), c.opts.Timeout)
+	c.reportMu.Lock()
+	defer c.reportMu.Unlock()
+	now := c.opts.Now()
+	if c.opts.ReportCacheTTL > 0 && !c.reportCachedAt.IsZero() &&
+		now.Sub(c.reportCachedAt) >= 0 && now.Sub(c.reportCachedAt) < c.opts.ReportCacheTTL {
+		return c.reportCached
+	}
+	report := Evaluate(true, c.Observe(ctx), now, c.opts.Timeout)
+	c.reportCached = report
+	c.reportCachedAt = now
+	return report
 }
 
 // Observe runs adapters in parallel. One hung plane cannot stall the rest.
 func (c *Collector) Observe(ctx context.Context) []Observation {
 	obs := make([]Observation, len(RequiredPlanes))
 	var wg sync.WaitGroup
+	queueIndex := -1
+	eventIndex := -1
 	for i, plane := range RequiredPlanes {
+		switch plane {
+		case PlaneQueue:
+			queueIndex = i
+			continue
+		case PlaneEventProcessing:
+			eventIndex = i
+			continue
+		}
 		wg.Add(1)
 		go func(i int, plane string) {
 			defer wg.Done()
 			obs[i] = c.observeOne(ctx, plane)
 		}(i, plane)
+	}
+	if queueIndex >= 0 && eventIndex >= 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cctx, cancel := context.WithTimeout(ctx, c.opts.Timeout)
+			defer cancel()
+			ingest, consumed := ProbeBusRoundTrip(cctx, c.opts.Bus)
+			ingest.Plane = PlaneQueue
+			ingest.Required = true
+			consumed.Plane = PlaneEventProcessing
+			consumed.Required = true
+			obs[queueIndex] = ingest
+			obs[eventIndex] = consumed
+		}()
 	}
 	wg.Wait()
 	return obs
@@ -106,14 +158,10 @@ func (c *Collector) runPlane(ctx context.Context, plane string) Observation {
 		return fromErr(plane, c.opts.DB, ctx, ReasonSelectFailed)
 	case PlaneCache:
 		return fromErr(plane, c.opts.Cache, ctx, ReasonCacheMismatch)
-	case PlaneQueue:
-		return c.observeQueue(ctx)
-	case PlaneEventProcessing:
-		return c.observeEventProcessing(ctx)
 	case PlaneWorkerHeartbeat:
 		return c.observeHeartbeat(ctx)
 	case PlaneProviderEdge:
-		return fromErr(plane, c.opts.Provider, ctx, ReasonSMTPPreflightFailed)
+		return c.observeProvider(ctx)
 	default:
 		return Observation{Plane: plane, Required: true, Observed: false, Reason: ReasonUnobserved}
 	}
@@ -134,37 +182,6 @@ func fromErr(plane string, fn func(context.Context) error, ctx context.Context, 
 		return Observation{Plane: plane, Required: true, Observed: true, Timeout: true, Reason: ReasonTimeout}
 	}
 	return Observation{Plane: plane, Required: true, Observed: true, OK: false, Reason: failReason}
-}
-
-func (c *Collector) observeQueue(ctx context.Context) Observation {
-	if c.opts.Bus == nil {
-		return Observation{Plane: PlaneQueue, Required: true, Observed: false, Reason: ReasonUnobserved}
-	}
-	id := uuid.NewString()
-	payload, _ := json.Marshal(probePayload{Kind: "ops_health_probe", ProbeID: id})
-	if err := c.opts.Bus.Publish(ctx, ProbeTopic, id, payload); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return Observation{Plane: PlaneQueue, Required: true, Observed: true, Timeout: true, Reason: ReasonTimeout}
-		}
-		return Observation{Plane: PlaneQueue, Required: true, Observed: true, OK: false, Reason: ReasonPublishFailed}
-	}
-	return Observation{Plane: PlaneQueue, Required: true, Observed: true, OK: true}
-}
-
-func (c *Collector) observeEventProcessing(ctx context.Context) Observation {
-	ingest, raw := ProbeBusRoundTrip(ctx, c.opts.Bus)
-	// Event processing requires the consume half (read-after-write). Publish
-	// alone is the queue plane.
-	if raw.Timeout || ingest.Timeout {
-		return Observation{Plane: PlaneEventProcessing, Required: true, Observed: true, Timeout: true, Reason: ReasonRoundTripTimeout}
-	}
-	if !raw.Observed {
-		return Observation{Plane: PlaneEventProcessing, Required: true, Observed: false, Reason: raw.Reason}
-	}
-	if !raw.OK {
-		return Observation{Plane: PlaneEventProcessing, Required: true, Observed: true, OK: false, Reason: raw.Reason}
-	}
-	return Observation{Plane: PlaneEventProcessing, Required: true, Observed: true, OK: true, LatencyMS: raw.LatencyMS}
 }
 
 func (c *Collector) observeHeartbeat(ctx context.Context) Observation {
@@ -193,18 +210,27 @@ func (c *Collector) observeHeartbeat(ctx context.Context) Observation {
 	return Observation{Plane: PlaneWorkerHeartbeat, Required: true, Observed: true, OK: true}
 }
 
-type probePayload struct {
-	Kind    string `json:"kind"`
-	ProbeID string `json:"probe_id"`
+func (c *Collector) observeProvider(ctx context.Context) Observation {
+	c.providerMu.Lock()
+	defer c.providerMu.Unlock()
+	now := c.opts.Now()
+	if c.opts.ProviderCacheTTL > 0 && !c.providerCachedAt.IsZero() &&
+		now.Sub(c.providerCachedAt) >= 0 && now.Sub(c.providerCachedAt) < c.opts.ProviderCacheTTL {
+		return c.providerCached
+	}
+	observed := fromErr(PlaneProviderEdge, c.opts.Provider, ctx, ReasonSMTPPreflightFailed)
+	c.providerCached = observed
+	c.providerCachedAt = now
+	return observed
 }
 
-// errForeignProbe is returned from the shared durable handler so a payload
-// for another probe_id is NAK'd, not ACKed. Returning nil would steal it.
-var errForeignProbe = errors.New("foreign ops health probe")
+type probePayload struct {
+	Kind    string    `json:"kind"`
+	ProbeID string    `json:"probe_id"`
+	SentAt  time.Time `json:"sent_at"`
+}
 
-// ProbeBusRoundTrip publishes a labeled probe payload on the shipped EventBus
-// and waits to consume the same probe_id. ingest is the publish half;
-// raw (read-after-write) is the consume half.
+// ProbeBusRoundTrip publishes a labeled payload and waits for a recent probe event.
 func ProbeBusRoundTrip(ctx context.Context, bus eventbus.EventBus) (ingest, raw Observation) {
 	ingest = Observation{Plane: PlaneQueue, Required: true}
 	raw = Observation{Plane: PlaneEventProcessing, Required: true}
@@ -214,17 +240,25 @@ func ProbeBusRoundTrip(ctx context.Context, bus eventbus.EventBus) (ingest, raw 
 		return ingest, raw
 	}
 	id := uuid.NewString()
-	payload, _ := json.Marshal(probePayload{Kind: "ops_health_probe", ProbeID: id})
-	start := time.Now()
+	start := time.Now().UTC()
+	payload, _ := json.Marshal(probePayload{Kind: "ops_health_probe", ProbeID: id, SentAt: start})
+	consumerGroup := ProbeConsumerGroup
+	if bus.Name() == "nats" {
+		consumerGroup = eventbus.TransientConsumerPrefix + ProbeConsumerGroup + "-" + id
+	}
 
 	got := make(chan struct{})
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	subErr := make(chan error, 1)
 	go func() {
-		subErr <- bus.Subscribe(subCtx, []string{ProbeTopic}, ProbeConsumerGroup, func(_ context.Context, msg eventbus.Message) error {
-			if !bytes.Contains(msg.Payload, []byte(id)) {
-				return errForeignProbe
+		subErr <- bus.Subscribe(subCtx, []string{ProbeTopic}, consumerGroup, func(_ context.Context, msg eventbus.Message) error {
+			var received probePayload
+			if err := json.Unmarshal(msg.Payload, &received); err != nil || received.Kind != "ops_health_probe" {
+				return nil
+			}
+			if received.SentAt.IsZero() || received.SentAt.Before(start.Add(-DefaultTimeout)) {
+				return nil
 			}
 			select {
 			case <-got:
@@ -281,7 +315,7 @@ func ProbeBusRoundTrip(ctx context.Context, bus eventbus.EventBus) (ingest, raw 
 		}
 		raw.Observed = true
 		raw.OK = false
-		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, errForeignProbe) {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			raw.Reason = ReasonSubscribeFailed
 		} else {
 			raw.Reason = ReasonRoundTripMismatch

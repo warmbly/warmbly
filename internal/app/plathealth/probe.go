@@ -2,7 +2,9 @@ package plathealth
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"net/http"
 	"time"
 )
 
@@ -80,9 +82,6 @@ func apiCheck(in APIInput) CheckResult {
 		c.Reason = ReasonUnobserved
 		return c
 	}
-	// /live 200 means the control-plane process is up. /health 200 is the
-	// same process-up signal and is not treated as all-planes healthy:
-	// process_up_only is a non-green API status when /live was not seen.
 	liveUp := in.LiveStatus == 200
 	healthUp := in.HealthStatus == 200
 	if !liveUp && !healthUp {
@@ -90,9 +89,19 @@ func apiCheck(in APIInput) CheckResult {
 		c.Reason = ReasonFailed
 		return c
 	}
-	if in.ProcessUpOnly || (healthUp && !liveUp && in.Ready == nil && in.DepsReady == nil) {
+	if in.ProcessUpOnly || !liveUp || (in.Ready == nil && in.DepsReady == nil) {
 		c.Status = StatusProcessUpOnly
 		c.Reason = ReasonHTTPProcessUpOnly
+		return c
+	}
+	if in.Ready != nil && (in.ReadyStatus != http.StatusOK || !*in.Ready) {
+		c.Status = StatusFailed
+		c.Reason = ReasonReadyNotReady
+		return c
+	}
+	if in.DepsReady != nil && !*in.DepsReady {
+		c.Status = StatusFailed
+		c.Reason = ReasonDepsNotReady
 		return c
 	}
 	c.Status = StatusOK
@@ -176,6 +185,13 @@ func DecodeProbeInput(r io.Reader) (ProbeInput, error) {
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil {
+		return ProbeInput{}, err
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return ProbeInput{}, errors.New("multiple JSON documents")
+		}
 		return ProbeInput{}, err
 	}
 	return in, nil

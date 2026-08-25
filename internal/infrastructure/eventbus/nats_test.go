@@ -184,6 +184,40 @@ func TestNATSBus_HandlerErrorIsRedelivered(t *testing.T) {
 	<-subErr
 }
 
+func TestNATSBusTransientConsumerReadsLatestAndIsReleased(t *testing.T) {
+	bus := newTestNATSBus(t)
+	topic := "ops.health.probe"
+	if err := bus.Publish(context.Background(), topic, "probe", []byte("latest")); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	got := make(chan []byte, 1)
+	subErr := make(chan error, 1)
+	go func() {
+		subErr <- bus.Subscribe(ctx, []string{topic}, TransientConsumerPrefix+"probe-test", func(_ context.Context, msg Message) error {
+			got <- append([]byte(nil), msg.Payload...)
+			cancel()
+			return nil
+		})
+	}()
+	select {
+	case payload := <-got:
+		if string(payload) != "latest" {
+			t.Fatalf("payload=%q, want latest", payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("transient consumer did not receive the latest message")
+	}
+	if err := <-subErr; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	if len(bus.subscribers) != 0 {
+		t.Fatalf("short-lived subscriber retained after cancellation: %d", len(bus.subscribers))
+	}
+}
+
 func TestNATSBus_SubscribeValidatesArgs(t *testing.T) {
 	bus := newTestNATSBus(t)
 	ctx := context.Background()

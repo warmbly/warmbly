@@ -17,7 +17,7 @@ Do not send campaign or warmup mail to "test" a plane. Do not put recipient addr
 4. Open the class section that matches `incident_classes` (or the failed plane) and run the commands there.
 5. Capture evidence before you mutate state. Roll back with the command in that section.
 
-Default per-check timeout is 3 seconds. Timeouts fail closed: `status=timeout` is a failure, not a skip.
+Default per-check timeout is 3 seconds. Timeouts fail closed: `status=timeout` is a failure, not a skip. The backend coalesces concurrent checks and caches the full matrix for five seconds so a public readiness path cannot create unbounded dependency probes.
 
 ## Surfaces
 
@@ -141,8 +141,8 @@ Redis is the cache and the local realtime bridge. Readiness writes `ops.health.p
 
 - `/health/deps` `plane=cache`.
 - `docker compose ps redis`
-- `redis-cli -u "$REDIS_URL" PING`
-- `redis-cli -u "$REDIS_URL" GET ops.health.probe`
+- `redis-cli -u "$REDIS" PING`
+- `redis-cli -u "$REDIS" GET ops.health.probe`
 
 ### Mitigation
 
@@ -152,7 +152,7 @@ Redis is the cache and the local realtime bridge. Readiness writes `ops.health.p
 
 ### Rollback
 
-- Point the backend at the previous Redis URL if you just changed `PRIMARY_REDIS` / `REDIS`.
+- Point the backend at the previous Redis URL if you just changed `REDIS`.
 - Restore Redis only from a snapshot that the cache owner approves. Cache loss is recoverable; a flush during an incident is usually worse.
 
 ### Evidence capture
@@ -166,7 +166,7 @@ Redis is the cache and the local realtime bridge. Readiness writes `ops.health.p
 ```bash
 curl -sS http://127.0.0.1:8080/health/deps | jq '.planes[] | select(.plane=="cache")'
 docker compose ps redis
-redis-cli -u "$REDIS_URL" PING
+redis-cli -u "$REDIS" PING
 make logs redis
 ```
 
@@ -221,7 +221,7 @@ Backend on-call (event bus: `internal/infrastructure/eventbus`). Consumer on-cal
 
 ## Email provider
 
-Platform mail transport (login codes, resets) and the provider edge. This plane dials SMTP preflight when `MAIL_TRANSPORT=smtp`. It does not send campaign or warmup mail.
+Platform mail transport (login codes, resets) and the provider edge. This plane dials SMTP preflight when `MAIL_TRANSPORT=smtp`. The backend caches the result for five minutes, so frequent readiness requests do not repeatedly authenticate to the relay. It does not send campaign or warmup mail.
 
 ### Diagnose
 

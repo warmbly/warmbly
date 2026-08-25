@@ -2,8 +2,11 @@ package plathealth
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/warmbly/warmbly/internal/infrastructure/eventbus"
 )
 
 func allOKObs() []Observation {
@@ -237,6 +240,53 @@ func TestCollectorBusRoundTripReady(t *testing.T) {
 	}
 }
 
+func TestCollectorUsesOnePublishForQueueAndEventProcessing(t *testing.T) {
+	t.Parallel()
+	bus := &publishCountingBus{delegate: NewMemoryBus()}
+	c := NewCollector(Options{
+		Timeout:  time.Second,
+		DB:       func(context.Context) error { return nil },
+		Cache:    func(context.Context) error { return nil },
+		Provider: func(context.Context) error { return nil },
+		Heartbeat: func(context.Context) (HeartbeatSnapshot, error) {
+			return HeartbeatSnapshot{Observed: true, Fresh: 1}, nil
+		},
+		Bus: bus,
+	})
+	for range 2 {
+		if report := c.Report(context.Background()); !report.Ready {
+			t.Fatalf("report not ready: %+v", report)
+		}
+	}
+	if got := bus.publishCount(); got != 1 {
+		t.Fatalf("publishes = %d, want one shared round trip", got)
+	}
+}
+
+func TestCollectorCachesProviderPreflight(t *testing.T) {
+	t.Parallel()
+	providerCalls := 0
+	c := NewCollector(Options{
+		Timeout:        time.Second,
+		ReportCacheTTL: -1,
+		DB:             func(context.Context) error { return nil },
+		Cache:          func(context.Context) error { return nil },
+		Provider:       func(context.Context) error { providerCalls++; return nil },
+		Heartbeat: func(context.Context) (HeartbeatSnapshot, error) {
+			return HeartbeatSnapshot{Observed: true, Fresh: 1}, nil
+		},
+		Bus: NewMemoryBus(),
+	})
+	for range 2 {
+		if report := c.Report(context.Background()); !report.Ready {
+			t.Fatalf("report not ready: %+v", report)
+		}
+	}
+	if providerCalls != 1 {
+		t.Fatalf("provider preflight calls = %d, want 1", providerCalls)
+	}
+}
+
 func TestCollectorDroppedConsumeFailsEventProcessing(t *testing.T) {
 	t.Parallel()
 	c := NewCollector(Options{
@@ -268,4 +318,30 @@ func indexPlanes(r Report) map[string]PlaneResult {
 		m[p.Plane] = p
 	}
 	return m
+}
+
+type publishCountingBus struct {
+	delegate eventbus.EventBus
+	mu       sync.Mutex
+	count    int
+}
+
+func (b *publishCountingBus) Publish(ctx context.Context, topic, key string, payload []byte) error {
+	b.mu.Lock()
+	b.count++
+	b.mu.Unlock()
+	return b.delegate.Publish(ctx, topic, key, payload)
+}
+
+func (b *publishCountingBus) Subscribe(ctx context.Context, topics []string, group string, handler eventbus.Handler) error {
+	return b.delegate.Subscribe(ctx, topics, group, handler)
+}
+
+func (b *publishCountingBus) Close() error { return b.delegate.Close() }
+func (b *publishCountingBus) Name() string { return b.delegate.Name() }
+
+func (b *publishCountingBus) publishCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.count
 }
