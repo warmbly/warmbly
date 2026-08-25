@@ -95,5 +95,11 @@ type RegistrationSession struct {
 	ReferralCode string `json:"referral_code,omitempty"`
 	// Invite is the invitation token captured at RegistrationStart, re-checked
 	// and redeemed at confirm so the account lands in the inviting org.
-	Invite string `json:"invite,omitempty"`
+	Invite          string   `json:"invite,omitempty"`
+	SignupIP        string   `json:"signup_ip,omitempty"`
+	SignupUserAgent string   `json:"signup_user_agent,omitempty"`
+	SignupEmailRisk int      `json:"signup_email_risk,omitempty"`
+	SignupASN       *int64   `json:"signup_asn,omitempty"`
+	SignupRiskScore int      `json:"signup_risk_score,omitempty"`
+	SignupSignals   []string `json:"signup_signals,omitempty"`
 }

@@ -19,6 +19,7 @@ import (
 	balancetxn "github.com/stripe/stripe-go/v76/customerbalancetransaction"
 	"github.com/stripe/stripe-go/v76/invoice"
 	"github.com/stripe/stripe-go/v76/paymentintent"
+	"github.com/stripe/stripe-go/v76/paymentmethod"
 	"github.com/stripe/stripe-go/v76/price"
 	"github.com/stripe/stripe-go/v76/subscription"
 	"github.com/stripe/stripe-go/v76/webhook"
@@ -826,6 +827,7 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 			StripeCustomerID: customerID,
 			Status:           models.SubscriptionStatusIncomplete,
 		}
+		newSub.PaymentFingerprint = paymentFingerprintForCustomer(customerID)
 
 		if checkoutSession.Subscription != nil {
 			newSub.StripeSubscriptionID = &checkoutSession.Subscription.ID
@@ -843,6 +845,7 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 		if checkoutSession.Subscription != nil {
 			sub.StripeSubscriptionID = &checkoutSession.Subscription.ID
 		}
+		sub.PaymentFingerprint = paymentFingerprintForCustomer(sub.StripeCustomerID)
 		if err := s.subRepo.Update(ctx, sub); err != nil {
 			return errx.New(errx.Internal, "failed to update subscription")
 		}
@@ -869,6 +872,21 @@ func (s *stripeService) handleCheckoutCompleted(ctx context.Context, event *stri
 	}
 
 	return nil
+}
+
+func paymentFingerprintForCustomer(customerID string) string {
+	if customerID == "" {
+		return ""
+	}
+	customerRecord, err := customer.Get(customerID, nil)
+	if err != nil || customerRecord == nil || customerRecord.InvoiceSettings == nil || customerRecord.InvoiceSettings.DefaultPaymentMethod == nil {
+		return ""
+	}
+	method, err := paymentmethod.Get(customerRecord.InvoiceSettings.DefaultPaymentMethod.ID, nil)
+	if err != nil || method == nil || method.Card == nil {
+		return ""
+	}
+	return method.Card.Fingerprint
 }
 
 // handleCheckoutExpired releases a pending discount reservation when its

@@ -11,11 +11,12 @@ type Sequence struct {
 	ID   uuid.UUID `json:"id"`
 	Name string    `json:"name"`
 
-	Subject   string `json:"subject"`
-	BodyPlain string `json:"body_plain"`
-	BodyHTML  string `json:"body_html"`
-	BodySync  bool   `json:"body_sync"`
-	BodyCode  bool   `json:"body_code"`
+	Subject      string              `json:"subject"`
+	BodyPlain    string              `json:"body_plain"`
+	BodyHTML     string              `json:"body_html"`
+	BodySync     bool                `json:"body_sync"`
+	BodyCode     bool                `json:"body_code"`
+	ContentScore *ContentSafetyScore `json:"content_score,omitempty"`
 
 	WaitAfter int `json:"wait_after"`
 	Position  int `json:"position"`
@@ -46,6 +47,18 @@ type Sequence struct {
 
 	UpdatedAt time.Time `json:"updated_at"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type ContentSafetyIssue struct {
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+}
+
+type ContentSafetyScore struct {
+	Score  int                  `json:"score"`
+	Issues []ContentSafetyIssue `json:"issues"`
+	Hard   bool                 `json:"hard"`
 }
 
 // ActionConfig is the persisted config for a non-email (action/wait) node. Type

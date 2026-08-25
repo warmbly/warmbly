@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
@@ -37,6 +38,7 @@ type ContactService interface {
 	// and performs the upsert / skip / dedup work. Returns per-row
 	// result counts plus a list of rows that failed (with reasons).
 	ImportCommit(ctx context.Context, userID string, orgID uuid.UUID, file io.Reader, filename string, opts *models.ContactImportCommit) (*models.ContactImportResult, *errx.Error)
+	WireImportSafety(repo repository.ContactImportAssessmentRepository, risk ImportRiskRecorder, velocity redis.Cmdable)
 
 	// ListCustomFieldKeys returns the org's distinct contact custom-field keys,
 	// frequency-ranked then alphabetical, capped at 200. Powers the dashboard
@@ -67,6 +69,19 @@ type contactService struct {
 	subRepo            repository.SubscriptionRepository
 	planRepo           repository.PlanRepository
 	streamingPublisher *pubsub.StreamingPublisher
+	importAssessment   repository.ContactImportAssessmentRepository
+	orgRisk            ImportRiskRecorder
+	velocity           redis.Cmdable
+}
+
+type ImportRiskRecorder interface {
+	RecordSignal(ctx context.Context, organizationID uuid.UUID, key string, score int, reason string, evidence map[string]any) error
+}
+
+func (s *contactService) WireImportSafety(repo repository.ContactImportAssessmentRepository, risk ImportRiskRecorder, velocity redis.Cmdable) {
+	s.importAssessment = repo
+	s.orgRisk = risk
+	s.velocity = velocity
 }
 
 func NewService(

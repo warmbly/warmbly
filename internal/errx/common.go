@@ -134,12 +134,14 @@ var (
 	ErrEmailReplyRate            = New(BadRequest, "Warmup reply rate must be between 0 and 100.")
 
 	// Campaign
-	ErrCampaignName        = New(BadRequest, "Campaign name length must be between 3 and 50 characters.")
-	ErrCampaignDescription = New(BadRequest, "Campaign description length must be below 300 characters.")
-	ErrCampaignDailyLimit  = New(BadRequest, "Daily limit must be between 3 and 10000000.")
-	ErrCampaignStartDate   = New(BadRequest, "Start date cannot be in the past. Pick today or later, or clear it (null) to start right away.")
-	ErrCampaignEndDate     = New(BadRequest, "End date must be in the future.")
-	ErrCampaignLimit       = New(BadRequest, "You reached your limit for campaigns, please try again later.")
+	ErrCampaignName                = New(BadRequest, "Campaign name length must be between 3 and 50 characters.")
+	ErrCampaignDescription         = New(BadRequest, "Campaign description length must be below 300 characters.")
+	ErrCampaignDailyLimit          = New(BadRequest, "Daily limit must be between 3 and 10000000.")
+	ErrCampaignStartDate           = New(BadRequest, "Start date cannot be in the past. Pick today or later, or clear it (null) to start right away.")
+	ErrCampaignEndDate             = New(BadRequest, "End date must be in the future.")
+	ErrCampaignLimit               = New(BadRequest, "You reached your limit for campaigns, please try again later.")
+	ErrCampaignVerificationPending = NewWithIdentifier(Conflict, "campaign_verification_pending", "Campaign launch is waiting for recipient verification. Try again after verification completes.")
+	ErrCampaignProjectedBounce     = NewWithIdentifier(Unprocessable, "campaign_projected_bounce_rate_high", "Campaign launch blocked because the projected hard-bounce rate is above 5%.")
 
 	// Sequence
 	ErrSequenceName      = New(BadRequest, "Sequence name cannot be longer than 50 characters.")
@@ -152,8 +154,9 @@ var (
 	ErrSequenceWaitAfter = New(BadRequest, fmt.Sprintf("Step wait must be between 0 and %d days.", config.SequenceWaitAfterMax))
 
 	// Contact
-	ErrContactSerialize = New(BadRequest, "Failed to serialize contact.")
-	ErrContactSize      = New(BadRequest, "Contact size cannot be bigger than 10KB.")
+	ErrContactSerialize     = New(BadRequest, "Failed to serialize contact.")
+	ErrContactSize          = New(BadRequest, "Contact size cannot be bigger than 10KB.")
+	ErrContactImportQuality = NewWithIdentifier(Unprocessable, "contact_import_quality_blocked", "Import blocked because more than 25% of addresses are invalid or disposable.")
 
 	// Unibox
 	ErrUniboxLimit = New(BadRequest, fmt.Sprintf("Limit must be between %d and %d.", config.UniboxLimitMin, config.UniboxLimitMax))

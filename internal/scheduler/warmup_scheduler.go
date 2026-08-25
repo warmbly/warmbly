@@ -45,6 +45,17 @@ func adjustmentFor(state models.WarmupHealthState) healthAdjustment {
 	}
 }
 
+func softRampAdjust(target, placements, sends int) int {
+	if placements <= 0 || target <= 1 {
+		return target
+	}
+	adjusted := int(float64(target)*0.75 + 0.5)
+	if sends > 0 && placements*10 >= sends {
+		adjusted = int(float64(target)*0.70 + 0.5)
+	}
+	return max(1, adjusted)
+}
+
 func warmupPoolTypeForAccount(account *models.Email) string {
 	if account != nil && account.WarmupPoolType != "" {
 		return account.WarmupPoolType
@@ -215,6 +226,15 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		}
 	}
 
+	healthState := s.resolveHealthState(ctx, accountID)
+	// Healthy mailboxes brake for three days on an early placement signal.
+	if healthState == models.WarmupHealthHealthy && s.warmupRepo != nil {
+		placements, sends, err := s.warmupRepo.RecentPlacementSignal(ctx, accountID, time.Now().Add(-72*time.Hour))
+		if err == nil {
+			targetVolume = softRampAdjust(targetVolume, placements, sends)
+		}
+	}
+
 	// STEP 2.1: Cap per-mailbox volume to actual recipient capacity. The
 	// sender should not send multiple warmup messages to the same recipient
 	// in a single day just to hit an arbitrary target; that creates obvious
@@ -237,7 +257,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 	// run at reduced volume and wider spacing until the health sweep clears
 	// them back to healthy. We never zero out volume — even degraded mailboxes
 	// keep a small heartbeat so the sweep has fresh sample data to evaluate.
-	adj := adjustmentFor(s.resolveHealthState(ctx, accountID))
+	adj := adjustmentFor(healthState)
 	if adj.volumeMultiplier < 1.0 {
 		floor := 1
 		if activelyWarming {

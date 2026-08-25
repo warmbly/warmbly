@@ -15,6 +15,14 @@ import (
 // it through IngestDeliverabilityEvent (suppression + campaign progress +
 // breaker), keyed idempotently so re-delivered NDRs don't double-count.
 func (s *service) RecordInboundBounce(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, failedRecipient, reason string) *errx.Error {
+	return s.recordInboundDeliverability(ctx, emailAccountID, originalMessageID, failedRecipient, reason, models.DeliverabilityEventBounce, "inbound_ndr", "ndr:")
+}
+
+func (s *service) RecordInboundComplaint(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, recipient, feedbackType string) *errx.Error {
+	return s.recordInboundDeliverability(ctx, emailAccountID, originalMessageID, recipient, feedbackType, models.DeliverabilityEventComplaint, "inbound_fbl", "fbl:")
+}
+
+func (s *service) recordInboundDeliverability(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, recipient, reason string, eventType models.DeliverabilityEventType, provider, idempotencyPrefix string) *errx.Error {
 	originalMessageID = strings.Trim(strings.TrimSpace(originalMessageID), "<>")
 	if originalMessageID == "" {
 		return nil
@@ -39,13 +47,13 @@ func (s *service) RecordInboundBounce(ctx context.Context, emailAccountID uuid.U
 	}
 
 	req := &models.IngestDeliverabilityEventRequest{
-		EventType:      models.DeliverabilityEventBounce,
-		Provider:       "inbound_ndr",
+		EventType:      eventType,
+		Provider:       provider,
 		TaskID:         &task.ID,
-		RecipientEmail: failedRecipient,
+		RecipientEmail: recipient,
 		Reason:         reason,
 		// Same NDR re-synced (delta re-runs, reconnects) must not double-count.
-		IdempotencyKey: "ndr:" + originalMessageID,
+		IdempotencyKey: idempotencyPrefix + originalMessageID,
 	}
 
 	if ct, cerr := s.taskRepo.GetCampaignTask(ctx, task.ID); cerr == nil && ct != nil {

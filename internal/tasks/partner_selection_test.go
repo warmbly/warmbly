@@ -6,12 +6,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 func TestPickWeightedPartner_FallsBackToUniformWithoutDomains(t *testing.T) {
 	a := uuid.New()
 	b := uuid.New()
-	got := pickWeightedPartner([]uuid.UUID{a, b}, nil, nil, nil, "", nil)
+	got := pickWeightedPartner([]uuid.UUID{a, b}, nil, nil, nil, "", nil, nil, nil)
 	if got != a && got != b {
 		t.Errorf("expected a or b, got %v", got)
 	}
@@ -32,7 +33,7 @@ func TestPickWeightedPartner_PrefersUnderRepresentedDomain(t *testing.T) {
 	freshHits := 0
 	iterations := 2000
 	for i := 0; i < iterations; i++ {
-		picked := pickWeightedPartner([]uuid.UUID{saturatedID, freshID}, domainsByID, domainCounts, nil, "", nil)
+		picked := pickWeightedPartner([]uuid.UUID{saturatedID, freshID}, domainsByID, domainCounts, nil, "", nil, nil, nil)
 		if picked == freshID {
 			freshHits++
 		}
@@ -47,9 +48,38 @@ func TestPickWeightedPartner_PrefersUnderRepresentedDomain(t *testing.T) {
 
 func TestPickWeightedPartner_SingleCandidateReturnsIt(t *testing.T) {
 	id := uuid.New()
-	got := pickWeightedPartner([]uuid.UUID{id}, map[uuid.UUID]string{id: "x.com"}, map[string]int{"x.com": 5}, nil, "", nil)
+	got := pickWeightedPartner([]uuid.UUID{id}, map[uuid.UUID]string{id: "x.com"}, map[string]int{"x.com": 5}, nil, "", nil, nil, nil)
 	if got != id {
 		t.Errorf("single candidate should be returned; got %v", got)
+	}
+}
+
+func TestPickWeightedPartner_DownweightsProviderWithPoorPlacement(t *testing.T) {
+	healthyID := uuid.New()
+	poorID := uuid.New()
+	providers := map[uuid.UUID]string{
+		healthyID: "google",
+		poorID:    "microsoft",
+	}
+	placement := map[string]repository.ProviderPlacement{
+		"google":    {Sends: 100, Placements: 0},
+		"microsoft": {Sends: 100, Placements: 30},
+	}
+
+	healthyHits := 0
+	const iterations = 2000
+	for range iterations {
+		picked := pickWeightedPartner(
+			[]uuid.UUID{healthyID, poorID},
+			nil, nil, nil, "", nil, providers, placement,
+		)
+		if picked == healthyID {
+			healthyHits++
+		}
+	}
+
+	if healthyHits < int(float64(iterations)*0.7) {
+		t.Errorf("healthy provider should dominate selection; got %d/%d", healthyHits, iterations)
 	}
 }
 
@@ -82,7 +112,7 @@ func TestPickWeightedPartner_RoutingRulePrefersProviderMatch(t *testing.T) {
 	for i := 0; i < iterations; i++ {
 		picked := pickWeightedPartner(
 			[]uuid.UUID{googleRecipient, microsoftRecipient},
-			domainsByID, nil, rules, "sender@gmail.com", emailsByID,
+			domainsByID, nil, rules, "sender@gmail.com", emailsByID, nil, nil,
 		)
 		if picked == googleRecipient {
 			googleHits++
@@ -120,7 +150,7 @@ func TestPickWeightedPartner_RoutingRuleZeroWeightExcludes(t *testing.T) {
 	for i := 0; i < 500; i++ {
 		picked := pickWeightedPartner(
 			[]uuid.UUID{allowedID, blockedID},
-			domainsByID, nil, rules, "sender@whatever.io", emailsByID,
+			domainsByID, nil, rules, "sender@whatever.io", emailsByID, nil, nil,
 		)
 		if picked == blockedID {
 			t.Fatalf("weight=0 rule should exclude blocked partner")

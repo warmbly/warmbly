@@ -68,17 +68,18 @@ type Email struct {
 	// cannot stop sending immediately.
 	AuthFailingSince *time.Time `json:"auth_failing_since,omitempty"`
 
-	Warmup          *time.Time `json:"warmup"`
-	WarmupPausedAt  *time.Time `json:"warmup_paused_at"`
-	WarmupBase      int        `json:"warmup_base"`
-	WarmupMax       int        `json:"warmup_max"`
-	WarmupIncrease  int        `json:"warmup_increase"`
-	WarmupReplyRate int        `json:"warmup_reply_rate"`
-	WarmupTag       string     `json:"warmup_tag"`
-	WarmupPoolType  string     `json:"warmup_pool_type"`
-	WarmupStartTime string     `json:"warmup_start_time"`
-	WarmupEndTime   string     `json:"warmup_end_time"`
-	WarmupDays      int        `json:"warmup_days"`
+	Warmup            *time.Time `json:"warmup"`
+	WarmupPausedAt    *time.Time `json:"warmup_paused_at"`
+	WarmupBase        int        `json:"warmup_base"`
+	WarmupMax         int        `json:"warmup_max"`
+	WarmupIncrease    int        `json:"warmup_increase"`
+	WarmupReplyRate   int        `json:"warmup_reply_rate"`
+	WarmupTag         string     `json:"warmup_tag"`
+	WarmupPoolType    string     `json:"warmup_pool_type"`
+	WarmupStartTime   string     `json:"warmup_start_time"`
+	WarmupEndTime     string     `json:"warmup_end_time"`
+	WarmupDays        int        `json:"warmup_days"`
+	ColdRampStartedAt *time.Time `json:"cold_ramp_started_at,omitempty"`
 
 	Timezone string `json:"timezone"`
 

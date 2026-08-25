@@ -13,7 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
 
-func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error) {
+func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipaddr, userAgent string) (*models.AuthSession, *errx.Error) {
 	if s.policy.DisablePasswordLogin {
 		return nil, errx.New(errx.Forbidden, "password sign-up is disabled on this deployment")
 	}
@@ -25,6 +25,21 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 	if xerr := s.captcha.Verify(ctx, data.Turnstile, ipaddr); xerr != nil {
 		sentry.CaptureException(xerr)
 		return nil, xerr
+	}
+
+	var signup *models.RegistrationSession
+	if s.signupRisk != nil {
+		assessment := s.signupRisk.Assess(ctx, data.Email, ipaddr, userAgent)
+		signup = &models.RegistrationSession{
+			SignupIP:        assessment.IP,
+			SignupUserAgent: assessment.UserAgent,
+			SignupEmailRisk: assessment.EmailRisk,
+			SignupASN:       assessment.ASN,
+			SignupRiskScore: assessment.Score,
+			SignupSignals:   assessment.Signals,
+		}
+	} else {
+		signup = &models.RegistrationSession{SignupIP: ipaddr, SignupUserAgent: userAgent}
 	}
 
 	if !crypt.ValidatePassword(data.Password) {
@@ -41,7 +56,7 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 	// nothing to confirm: create the account now rather than issuing a code
 	// nobody can receive. Every product surveyed defaults self-host to this.
 	if !s.policy.RequireEmailVerification || !s.mailDelivers {
-		if err := s.createAccount(ctx, data.Email, passwordHash, data.ReferralCode, data.Invite); err != nil {
+		if err := s.createAccount(ctx, data.Email, passwordHash, data.ReferralCode, data.Invite, signup); err != nil {
 			return nil, err
 		}
 		return &models.AuthSession{CodeRequired: false}, nil
@@ -84,11 +99,17 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 	}
 
 	session := &models.RegistrationSession{
-		CodeHash:     codeHash,
-		PasswordHash: passwordHash,
-		Nonce:        nonce,
-		ReferralCode: data.ReferralCode,
-		Invite:       data.Invite,
+		CodeHash:        codeHash,
+		PasswordHash:    passwordHash,
+		Nonce:           nonce,
+		ReferralCode:    data.ReferralCode,
+		Invite:          data.Invite,
+		SignupIP:        signup.SignupIP,
+		SignupUserAgent: signup.SignupUserAgent,
+		SignupEmailRisk: signup.SignupEmailRisk,
+		SignupASN:       signup.SignupASN,
+		SignupRiskScore: signup.SignupRiskScore,
+		SignupSignals:   signup.SignupSignals,
 	}
 
 	if err := s.saveRegistrationSession(ctx, sessionID, session, expiresAt); err != nil {
@@ -145,5 +166,5 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 		return err
 	}
 
-	return s.createAccount(ctx, token.Email, sess.PasswordHash, sess.ReferralCode, sess.Invite)
+	return s.createAccount(ctx, token.Email, sess.PasswordHash, sess.ReferralCode, sess.Invite, sess)
 }

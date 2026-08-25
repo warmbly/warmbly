@@ -33,6 +33,7 @@ type Service interface {
 	DeleteABVariant(ctx context.Context, campaignID, variantID uuid.UUID) *errx.Error
 
 	RunPreflight(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.PreflightReport, *errx.Error)
+	ContentSafetyEnabled(ctx context.Context, organizationID, campaignID uuid.UUID) (bool, *errx.Error)
 	GetDeliverabilityDashboard(ctx context.Context, organizationID uuid.UUID, from, to time.Time) (*models.DeliverabilityDashboard, *errx.Error)
 
 	IngestDeliverabilityEvent(ctx context.Context, organizationID uuid.UUID, req *models.IngestDeliverabilityEventRequest) *errx.Error
@@ -41,6 +42,7 @@ type Service interface {
 	// the original campaign send via its Message-ID and records a bounce
 	// deliverability event. Best-effort: unresolvable bounces are a no-op.
 	RecordInboundBounce(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, failedRecipient, reason string) *errx.Error
+	RecordInboundComplaint(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, recipient, feedbackType string) *errx.Error
 
 	ShouldSuppressRecipient(ctx context.Context, organizationID uuid.UUID, recipient string) (bool, string, *errx.Error)
 	// Unsubscribe suppresses a contact in response to a List-Unsubscribe action
@@ -1608,6 +1610,14 @@ func (s *service) RunPreflight(ctx context.Context, organizationID, campaignID u
 		return nil, toErrx(err)
 	}
 	return report, nil
+}
+
+func (s *service) ContentSafetyEnabled(ctx context.Context, organizationID, campaignID uuid.UUID) (bool, *errx.Error) {
+	settings, xerr := s.effectiveSettings(ctx, organizationID, campaignID)
+	if xerr != nil {
+		return false, xerr
+	}
+	return settings.Preflight.Enabled && settings.Preflight.CheckContentSafety, nil
 }
 
 func (s *service) GetDeliverabilityDashboard(ctx context.Context, organizationID uuid.UUID, from, to time.Time) (*models.DeliverabilityDashboard, *errx.Error) {

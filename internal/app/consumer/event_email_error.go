@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -58,6 +59,9 @@ func (s *JobsService) HandleEmailAuthError(ctx context.Context, event models.Ema
 
 	// Mark email account as needing re-auth (set status to inactive)
 	if s.EmailRepository != nil {
+		if err := s.EmailRepository.MarkAuthFailure(ctx, emailAccountID, event.Message, time.Now().UTC()); err != nil {
+			log.Error().Err(err).Msg("Failed to mark mailbox domain authentication as failing")
+		}
 		inactive := "inactive"
 		if _, xerr := s.EmailRepository.Update(ctx, event.UserID, event.EmailAccountID, &models.UpdateEmail{
 			Status: &inactive,

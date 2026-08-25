@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/pkg/captcha"
+	"github.com/warmbly/warmbly/internal/pkg/signuprisk"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -40,13 +41,17 @@ type InstanceSettings interface {
 	AllowInvitedSignup(ctx context.Context) bool
 }
 
+type OrganizationRiskRecorder interface {
+	RecordSignal(ctx context.Context, organizationID uuid.UUID, key string, score int, reason string, evidence map[string]any) error
+}
+
 type AuthService interface {
 	LoginStart(ctx context.Context, data *AuthData, ipaddr, userAgent string) (*models.AuthSession, *errx.Error)
 	LoginConfirm(ctx context.Context, data *ConfirmData, session, ipaddr, userAgent string) (*models.LoginResult, *errx.Error)
 	// WireTwoFA attaches the 2FA challenger (post-construction; nil = 2FA off).
 	WireTwoFA(t TwoFAChallenger)
 
-	RegistrationStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error)
+	RegistrationStart(ctx context.Context, data *AuthData, ipaddr, userAgent string) (*models.AuthSession, *errx.Error)
 	RegistrationConfirm(ctx context.Context, data *ConfirmData, session, ipaddr string) *errx.Error
 	// WireReferral attaches the referral attributor (post-construction; nil = no
 	// referral attribution at signup).
@@ -55,6 +60,7 @@ type AuthService interface {
 	// WireInstanceSettings attaches the database-backed instance settings
 	// (post-construction; nil keeps the permissive defaults).
 	WireInstanceSettings(s InstanceSettings)
+	WireSignupRisk(scorer *signuprisk.Scorer, risk OrganizationRiskRecorder)
 
 	// Native-app social sign-in: the client authenticates with the provider on
 	// device and exchanges the resulting ID token for a session. First sign-in
@@ -120,7 +126,9 @@ type authService struct {
 	// is only safe for Apple and Google.
 	identities repository.IdentityRepository
 	// oidc is the generic OpenID Connect provider, nil unless configured.
-	oidc OIDCProvider
+	oidc       OIDCProvider
+	signupRisk *signuprisk.Scorer
+	orgRisk    OrganizationRiskRecorder
 
 	// policy and mailDelivers govern whether an emailed code gates a login and
 	// whether public signups are open. Defaults are set in NewService so a
@@ -149,6 +157,11 @@ func (s *authService) WireReferral(r ReferralAttributor) { s.referral = r }
 // WireInstanceSettings attaches the instance settings document, so the signup
 // knobs on the admin page reach the registration paths.
 func (s *authService) WireInstanceSettings(set InstanceSettings) { s.settings = set }
+
+func (s *authService) WireSignupRisk(scorer *signuprisk.Scorer, risk OrganizationRiskRecorder) {
+	s.signupRisk = scorer
+	s.orgRisk = risk
+}
 
 func NewService(
 	authRepository repository.AuthRepository,

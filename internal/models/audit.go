@@ -119,6 +119,8 @@ const (
 	// background evaluation that opened or resolved findings. Rides the audit
 	// spine so every teammate's advisor strips and nav badges stay live.
 	AuditEntityAdvisorFinding AuditEntityType = "advisor_finding"
+
+	AuditEntityOrgRisk AuditEntityType = "organization_risk"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

@@ -120,6 +120,7 @@ type Subscription struct {
 	StripeCustomerID     string  `json:"stripe_customer_id"`
 	StripeSubscriptionID *string `json:"stripe_subscription_id,omitempty"`
 	StripePriceID        *string `json:"stripe_price_id,omitempty"`
+	PaymentFingerprint   string  `json:"-"`
 
 	// Subscription state
 	Status SubscriptionStatus `json:"status"`

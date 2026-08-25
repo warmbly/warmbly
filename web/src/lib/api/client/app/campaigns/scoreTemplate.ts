@@ -2,8 +2,7 @@ import type TemplateScore from "@/lib/api/models/app/campaigns/TemplateScore";
 import type { ScoreTemplateRequest } from "@/lib/api/models/app/campaigns/TemplateScore";
 import Request from "../../Request";
 
-// Advisory content score for a campaign template. Never blocks — returns a
-// 0-100 score (higher = safer) plus a list of non-blocking issues.
+// Returns the live score and whether the pre-send guardrail considers it hard.
 export default async function scoreTemplate(
     body: ScoreTemplateRequest,
 ): Promise<TemplateScore> {

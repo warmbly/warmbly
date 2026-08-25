@@ -41,6 +41,7 @@ type ContactRepository interface {
 	// the batch scheduler can work them off a cap per tick.
 	UpdateContactVerification(ctx context.Context, contactID uuid.UUID, res emailverify.Result) *errx.Error
 	ListUnverifiedContacts(ctx context.Context, limit int) ([]models.Contact, *errx.Error)
+	ListCampaignContactsForVerification(ctx context.Context, campaignID uuid.UUID) ([]models.Contact, *errx.Error)
 	// SetContactESP caches the recipient ESP/provider resolved from the contact's
 	// domain (control-plane only, no MX dial). Best-effort: a failure should not
 	// block sending.
@@ -486,6 +487,40 @@ func (r *contactRepository) ListUnverifiedContacts(ctx context.Context, limit in
 		return nil, errx.InternalError()
 	}
 	return out, nil
+}
+
+func (r *contactRepository) ListCampaignContactsForVerification(ctx context.Context, campaignID uuid.UUID) ([]models.Contact, *errx.Error) {
+	rows, err := r.DB.Query(ctx, `
+		SELECT c.id, c.email, c.verification_status, c.verification_reason,
+		       c.is_catch_all, c.verification_checked_at
+		FROM campaign_leads cl
+		JOIN contacts c ON c.id = cl.contact_id
+		WHERE cl.campaign_id = $1
+		ORDER BY c.created_at ASC
+	`, campaignID)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+	contacts := make([]models.Contact, 0)
+	for rows.Next() {
+		var contact models.Contact
+		if err := rows.Scan(
+			&contact.ID,
+			&contact.Email,
+			&contact.VerificationStatus,
+			&contact.VerificationReason,
+			&contact.IsCatchAll,
+			&contact.VerificationCheckedAt,
+		); err != nil {
+			return nil, errx.InternalError()
+		}
+		contacts = append(contacts, contact)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errx.InternalError()
+	}
+	return contacts, nil
 }
 
 func (r *contactRepository) GetByEmailAndOrganization(ctx context.Context, organizationID uuid.UUID, email string) (*models.Contact, *errx.Error) {

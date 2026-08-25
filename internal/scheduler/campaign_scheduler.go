@@ -97,6 +97,9 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	if len(accounts) == 0 {
 		return time.Time{}, nil, uuid.Nil, ErrNoEmailAccounts
 	}
+	if campaign.OrganizationID != nil && s.orgRisk != nil && s.orgRisk.SendingSuspended(ctx, *campaign.OrganizationID) {
+		return time.Now().UTC().Add(24 * time.Hour), nil, accounts[0].ID, ErrCampaignDeferred
+	}
 
 	// STEP 3: Get campaign progress - find next contact/sequence to send.
 	// Honor the new-lead-per-day cap and the prioritize-new-leads ordering.
@@ -235,12 +238,35 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// intervals per day).
 	candidateTime = nextScheduleSlot(candidateTime, windows, campaignTZ)
 
+	orgCap := campaign.DailyLimit
+	if campaign.OrganizationID != nil && s.orgRisk != nil {
+		orgCap = s.orgRisk.EffectiveCap(ctx, *campaign.OrganizationID, orgCap)
+	}
+	coldCeilings := make(map[uuid.UUID]int, len(accounts))
+	for i := range accounts {
+		acct := &accounts[i]
+		if acct.ColdRampStartedAt == nil {
+			startedAt := time.Now().UTC()
+			if err := s.emailRepo.StartColdRamp(ctx, acct.ID, startedAt); err == nil {
+				acct.ColdRampStartedAt = &startedAt
+			}
+		}
+		placements := 0
+		if s.warmupRepo != nil {
+			if recent, _, err := s.warmupRepo.RecentPlacementSignal(ctx, acct.ID, time.Now().Add(-7*24*time.Hour)); err == nil {
+				placements = recent
+			}
+		}
+		coldCeilings[acct.ID] = coldReadinessCeiling(*acct, time.Now().UTC(), placements)
+	}
+
 	// effectiveCap is the per-mailbox cold cap for THIS campaign, after the ramp
 	// clamp. It is min(per-mailbox cold cap, campaign daily limit) further min()'d
 	// with the day's ramp ceiling. Applied via min() only — it can never RAISE a
 	// mailbox above its cold cap (the mailbox-first safety invariant).
 	effectiveCap := func(acct models.Email) int {
-		lim := min(acct.CampaignLimit, campaign.DailyLimit)
+		lim := min(acct.CampaignLimit, orgCap)
+		lim = min(lim, coldCeilings[acct.ID])
 		if campaign.RampEnabled {
 			lim = min(lim, campaignRampCeiling(true, campaign.RampStart, campaign.RampIncrement, campaign.RampCeiling, campaign.RampLevel))
 		}
@@ -618,6 +644,28 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 
 	// STEP 15: Randomise the sub-minute component so sends never land on :00.
 	return finalSlot(candidateTime), nextPair, account.ID, nil
+}
+
+func coldReadinessCeiling(account models.Email, now time.Time, placements int) int {
+	initial := min(10, account.CampaignLimit)
+	if account.Warmup != nil {
+		daysWarming := max(0, int(now.Sub(*account.Warmup).Hours()/24))
+		warmupVolume := min(account.WarmupBase+daysWarming*account.WarmupIncrease, account.WarmupMax)
+		initial = min(account.CampaignLimit, max(10, warmupVolume))
+	}
+	daysCold := 0
+	if account.ColdRampStartedAt != nil {
+		start := account.ColdRampStartedAt.UTC()
+		today := now.UTC()
+		startDay := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+		todayDay := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
+		daysCold = max(0, int(todayDay.Sub(startDay)/(24*time.Hour)))
+	}
+	ceiling := min(account.CampaignLimit, initial+5*daysCold)
+	if placements > 0 {
+		ceiling = max(1, int(float64(ceiling)*0.75+0.5))
+	}
+	return ceiling
 }
 
 // deferToNextDay pushes a candidate time to the next valid campaign day within

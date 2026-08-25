@@ -169,6 +169,7 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		ExpiresAt:      tok.Expiry,
 	})
 	if xerr == nil && acc != nil {
+		s.recordMailboxVelocity(ctx, sess.OrganizationID)
 		s.syncWarmupPoolMembership(ctx, acc)
 		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 		s.dispatchAccountConnected(ctx, sess.OrganizationID, acc)
@@ -229,6 +230,7 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 	if xerr != nil {
 		return nil, xerr
 	}
+	s.recordMailboxVelocity(ctx, orgID)
 
 	// Assign the long-term worker (free vs paid tier). Failure here is non-fatal:
 	// the scheduler will pick the account up on its next pass.
@@ -245,6 +247,23 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 	// immediately; the reconciler is the fallback if this fails.
 	s.loadAccountBestEffort(ctx, acc.ID)
 	return acc, nil
+}
+
+func (s *emailService) recordMailboxVelocity(ctx context.Context, orgID *uuid.UUID) {
+	if orgID == nil || s.r == nil {
+		return
+	}
+	key := "org-risk:mailboxes:" + orgID.String() + ":" + time.Now().UTC().Format("2006010215")
+	count, err := s.r.Incr(ctx, key).Result()
+	if err != nil {
+		return
+	}
+	if count == 1 {
+		_ = s.r.Expire(ctx, key, 2*time.Hour).Err()
+	}
+	if count >= 5 && s.orgRisk != nil {
+		_ = s.orgRisk.RecordSignal(ctx, *orgID, "mailbox_velocity", 20, "Many mailboxes were connected in one hour", map[string]any{"mailboxes_per_hour": count})
+	}
 }
 
 // dispatchAccountConnected fires an email_account.connected webhook event

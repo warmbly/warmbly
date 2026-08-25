@@ -144,7 +144,8 @@ func (r *organizationRepository) GetByID(ctx context.Context, id uuid.UUID) (*mo
 		       deletion_scheduled_at, deletion_scheduled_for,
 		       presence_show_online, presence_show_activity,
 		       product_description, icp_notes, voice_profile, inbox_agent_enabled,
-		       assistant_shared_history
+		       assistant_shared_history,
+		       risk_state, risk_score, risk_reason, risk_signals, risk_evaluated_at
 		FROM organizations WHERE id = $1
 	`
 	return r.scanOrganization(ctx, query, id)
@@ -157,7 +158,8 @@ func (r *organizationRepository) GetBySlug(ctx context.Context, slug string) (*m
 		       deletion_scheduled_at, deletion_scheduled_for,
 		       presence_show_online, presence_show_activity,
 		       product_description, icp_notes, voice_profile, inbox_agent_enabled,
-		       assistant_shared_history
+		       assistant_shared_history,
+		       risk_state, risk_score, risk_reason, risk_signals, risk_evaluated_at
 		FROM organizations WHERE slug = $1
 	`
 	return r.scanOrganization(ctx, query, slug)
@@ -166,7 +168,7 @@ func (r *organizationRepository) GetBySlug(ctx context.Context, slug string) (*m
 func (r *organizationRepository) scanOrganization(ctx context.Context, query string, args ...interface{}) (*models.Organization, error) {
 	row := r.db.QueryRow(ctx, query, args...)
 	var org models.Organization
-	err := row.Scan(&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt, &org.DeletionScheduledAt, &org.DeletionScheduledFor, &org.PresenceShowOnline, &org.PresenceShowActivity, &org.ProductDescription, &org.ICPNotes, &org.VoiceProfile, &org.InboxAgentEnabled, &org.AssistantSharedHistory)
+	err := row.Scan(&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt, &org.DeletionScheduledAt, &org.DeletionScheduledFor, &org.PresenceShowOnline, &org.PresenceShowActivity, &org.ProductDescription, &org.ICPNotes, &org.VoiceProfile, &org.InboxAgentEnabled, &org.AssistantSharedHistory, &org.RiskState, &org.RiskScore, &org.RiskReason, &org.RiskSignals, &org.RiskEvaluatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -212,7 +214,8 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 			om.id, om.organization_id, om.user_id, om.role, om.permissions,
 			om.invited_by, om.invited_at, om.accepted_at,
 			o.id, o.name, o.slug, o.avatar_url, o.owner_user_id, o.created_at, o.updated_at,
-			o.deletion_scheduled_at, o.deletion_scheduled_for
+			o.deletion_scheduled_at, o.deletion_scheduled_for,
+			o.risk_state, o.risk_score, o.risk_reason, o.risk_signals, o.risk_evaluated_at
 		FROM organization_members om
 		JOIN organizations o ON o.id = om.organization_id
 		WHERE om.user_id = $1
@@ -233,6 +236,7 @@ func (r *organizationRepository) GetUserOrganizations(ctx context.Context, userI
 			&m.InvitedBy, &m.InvitedAt, &m.AcceptedAt,
 			&org.ID, &org.Name, &org.Slug, &org.AvatarURL, &org.OwnerUserID, &org.CreatedAt, &org.UpdatedAt,
 			&org.DeletionScheduledAt, &org.DeletionScheduledFor,
+			&org.RiskState, &org.RiskScore, &org.RiskReason, &org.RiskSignals, &org.RiskEvaluatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -250,7 +254,8 @@ func (r *organizationRepository) GetUserDefaultOrganization(ctx context.Context,
 		       deletion_scheduled_at, deletion_scheduled_for,
 		       presence_show_online, presence_show_activity,
 		       product_description, icp_notes, voice_profile, inbox_agent_enabled,
-		       assistant_shared_history
+		       assistant_shared_history,
+		       risk_state, risk_score, risk_reason, risk_signals, risk_evaluated_at
 		FROM organizations WHERE owner_user_id = $1
 		ORDER BY created_at ASC LIMIT 1
 	`

@@ -171,6 +171,12 @@ Signup and invitation refusals carry their own `code`, so a client can branch on
 
 **How to fix:** on a self-hosted deployment these are configuration, not faults. See [accounts and access](/development/accounts-and-access/#registration-modes).
 
+#### Sending suspension
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `organization_sending_suspended` | 403 | The workspace risk state is `suspended`. Outbound sending stays blocked until the underlying abuse or correlation signals are reviewed and the state is cleared |
+
 ### 404 Not Found
 
 Returned when the requested resource doesn't exist.
@@ -216,6 +222,12 @@ Returned when the request conflicts with existing data.
 }
 ```
 
+**Specific 409 codes:**
+
+| `code` | Meaning |
+|--------|---------|
+| `campaign_verification_pending` | Campaign launch verified a bounded batch of unchecked recipients and more remain. Retry the start after verification progresses; no campaign mail is scheduled meanwhile |
+
 ### 422 Unprocessable
 
 Returned when validation fails on the request data.
@@ -236,6 +248,13 @@ Returned when validation fails on the request data.
   "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
 }
 ```
+
+**Specific 422 codes:**
+
+| `code` | Meaning |
+|--------|---------|
+| `contact_import_quality_blocked` | More than `25%` of the uploaded addresses are invalid or disposable. No contacts from that import were written |
+| `campaign_projected_bounce_rate_high` | Recipients that are invalid or disposable exceed `5%` of the campaign list. Fix or remove those leads before starting |
 
 ### 500 Internal Server Error
 

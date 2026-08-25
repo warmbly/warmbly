@@ -43,6 +43,8 @@ type UserRepository interface {
 	// CountUsers is the operator-facing count, for boot diagnostics and the
 	// CLI. IsEmpty stays the hot-path check.
 	CountUsers(ctx context.Context) (int, error)
+
+	SetSignupMetadata(ctx context.Context, userID uuid.UUID, ip, userAgent string, emailRisk int, asn *int64) error
 }
 
 type userRepository struct {
@@ -119,6 +121,7 @@ func (r *userRepository) getUser(ctx context.Context, key string, value any) (*m
 	q := fmt.Sprintf(
 		`SELECT u.id, u.email, u.first_name, u.last_name, u.avatar_url, u.referral_source, u.onboarding_completed_at,
 		   u.max_organizations, u.free_trial_used, u.admin_permissions,
+		   COALESCE(host(u.signup_ip), ''), u.signup_user_agent, u.signup_email_risk, u.signup_asn,
 		   u.deletion_scheduled_at, u.deletion_scheduled_for, u.undo_send_seconds,
 		   u.updated_at, u.created_at,
 		   COALESCE(array_agg(ur.role_id) FILTER (WHERE ur.role_id IS NOT NULL), '{}') AS role_ids
@@ -140,6 +143,7 @@ func (r *userRepository) getUser(ctx context.Context, key string, value any) (*m
 		params...,
 	).Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.AvatarURL, &u.ReferralSource, &u.OnboardingCompletedAt,
 		&u.MaxOrganizations, &u.FreeTrialUsed, &adminPerm,
+		&u.SignupIP, &u.SignupUserAgent, &u.SignupEmailRisk, &u.SignupASN,
 		&u.DeletionScheduledAt, &u.DeletionScheduledFor, &u.UndoSendSeconds,
 		&u.UpdatedAt, &u.CreatedAt, &u.Roles)
 	if err != nil {
@@ -214,6 +218,19 @@ func (r *userRepository) CountUsers(ctx context.Context) (int, error) {
 	var n int
 	err := r.DB.QueryRow(ctx, q).Scan(&n)
 	return n, err
+}
+
+func (r *userRepository) SetSignupMetadata(ctx context.Context, userID uuid.UUID, ip, userAgent string, emailRisk int, asn *int64) error {
+	const q = `
+		UPDATE users
+		SET signup_ip = NULLIF($2, '')::inet,
+		    signup_user_agent = LEFT($3, 1024),
+		    signup_email_risk = LEAST(100, GREATEST(0, $4)),
+		    signup_asn = $5,
+		    updated_at = NOW()
+		WHERE id = $1`
+	_, err := r.DB.Exec(ctx, q, userID, ip, userAgent, emailRisk, asn)
+	return err
 }
 
 func (r *userRepository) GetUndoSendSeconds(ctx context.Context, userID uuid.UUID) (int, error) {

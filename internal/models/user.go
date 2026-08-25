@@ -21,6 +21,11 @@ type User struct {
 	MaxOrganizations int  `json:"max_organizations"`
 	FreeTrialUsed    bool `json:"free_trial_used"`
 
+	SignupIP        string `json:"-"`
+	SignupUserAgent string `json:"-"`
+	SignupEmailRisk int    `json:"-"`
+	SignupASN       *int64 `json:"-"`
+
 	// Seconds an instant send is held before it actually leaves, so
 	// the user can still cancel it. Bounds live in config
 	// (UndoSendSecondsMin/Max); default 30.

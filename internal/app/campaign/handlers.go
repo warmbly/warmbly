@@ -239,6 +239,31 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 		}
 	}
 
+	if s.verifier != nil {
+		summary, xerr := s.verifier.VerifyCampaign(ctx, cID)
+		if xerr != nil {
+			return xerr
+		}
+		if summary.Pending > 0 {
+			return errx.ErrCampaignVerificationPending
+		}
+		if summary.ProjectedHardBounceRate > 0.05 {
+			return errx.ErrCampaignProjectedBounce
+		}
+		if summary.ProjectedHardBounceRate >= 0.02 && s.campaignLogRepo != nil {
+			_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+				CampaignID: cID,
+				EventType:  "verification_warning",
+				Message:    "Campaign list has an elevated projected hard-bounce rate",
+				Metadata: map[string]interface{}{
+					"projected_hard_bounce_rate": summary.ProjectedHardBounceRate,
+					"invalid":                    summary.Invalid,
+					"disposable":                 summary.Disposable,
+				},
+			})
+		}
+	}
+
 	activeCampaigns, err := s.campaignRepository.CountActiveForOrganization(ctx, orgID)
 	if err != nil {
 		return errx.InternalError()

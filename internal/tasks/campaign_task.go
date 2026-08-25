@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/warmlint"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
@@ -478,6 +479,29 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			}
 			executionStatus = "failed"
 			return errx.InternalError()
+		}
+	}
+
+	contentScore := warmlint.ScoreWithOptions(subject, bodyHTML, bodyPlain, warmlint.ScoreOptions{AttachmentCount: len(attachmentRefs)})
+	if len(contentScore.Issues) > 0 && s.campaignLogRepo != nil {
+		_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+			CampaignID: campaign.ID,
+			EventType:  "content_warning",
+			Message:    "Campaign content triggered deliverability warnings",
+			Metadata: map[string]interface{}{
+				"score":       contentScore.Score,
+				"issues":      contentScore.Issues,
+				"sequence_id": sequence.ID.String(),
+			},
+		})
+	}
+	if contentScore.Hard && s.advanced != nil {
+		enabled, xerr := s.advanced.ContentSafetyEnabled(ctx, orgID, campaign.ID)
+		if xerr == nil && enabled {
+			_ = s.campaignRepo.UpdateStatus(ctx, campaign.ID, "paused_guardrail")
+			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_content_guardrail")
+			executionStatus = "completed"
+			return nil
 		}
 	}
 

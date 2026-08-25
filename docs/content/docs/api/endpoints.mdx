@@ -63,12 +63,17 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | POST | `/generation/edit` | `WRITE_CAMPAIGNS` |
 | POST | `/generation/ai-variable` | `WRITE_CAMPAIGNS` |
 
+`POST /campaigns/:id/start` runs recipient verification before scheduling. It verifies up to 100 unchecked recipients per request and stores `verification_status`, `verification_summary`, and `verification_checked_at`, which are returned on campaign reads. A `409 campaign_verification_pending` means verification is still progressing and the start can be retried. A projected hard-bounce rate above `5%` returns `422 campaign_projected_bounce_rate_high`; a rate from `2%` through `5%`, or any risky recipient, records a warning but allows the campaign to start.
+
 ### Contacts
 
 | Method | Path | API Permission |
 |--------|------|----------------|
 | POST | `/contacts/search` | `READ_CONTACTS` |
 | GET | `/contacts/custom-fields` | `READ_CONTACTS` |
+| POST | `/contacts/export` | `READ_CONTACTS` |
+| POST | `/contacts/import/preview` | `WRITE_CONTACTS` |
+| POST | `/contacts/import/commit` | `BULK_CONTACTS` |
 | POST | `/contacts` | `WRITE_CONTACTS` |
 | DELETE | `/contacts` | `BULK_CONTACTS` |
 | PATCH | `/contacts` | `BULK_CONTACTS` |
@@ -85,6 +90,8 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | POST | `/contacts/research/batch` | `AI_RESEARCH` |
 
 `GET /contacts/custom-fields` lists the distinct custom-field keys used across your contacts (frequency-ranked), for building personalization pickers. It returns a flat string array under `data`, capped at 200 keys.
+
+`POST /contacts/import/commit` statically classifies every mapped address before writing contacts. Successful responses include `quality` with invalid, disposable, role-based, risky-TLD, and combined bad-address counts. An import whose invalid plus disposable share is above `25%` is recorded for review and rejected with `422 contact_import_quality_blocked` before any contacts are written.
 
 AI contact research charges credits (2 per run, billable even when it finds nothing) and only saves cited findings. See the [AI contact research](/guides/ai-contact-research/) guide. The batch endpoint accepts up to 500 contact ids and drains in the background.
 
@@ -134,6 +141,7 @@ The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the a
 | Method | Path | API Permission |
 |--------|------|----------------|
 | GET | `/templates`, `/templates/:id` | `READ_TEMPLATES` |
+| POST | `/templates/score` | `READ_TEMPLATES` |
 | POST/PATCH/DELETE | `/templates[/:id]` | `WRITE_TEMPLATES` |
 | GET | `/crm/pipelines`, `/crm/pipelines/:id` | `READ_CRM` |
 | POST/PATCH/DELETE | `/crm/pipelines[/:id][/stages[/:stageId]]` | `WRITE_CRM` |
@@ -141,6 +149,8 @@ The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the a
 | POST/PATCH/DELETE | `/crm/deals[/:id]` | `WRITE_CRM` |
 | GET | `/crm/tasks`, `/crm/tasks/:id` | `READ_CRM` |
 | POST/PATCH/DELETE | `/crm/tasks[/:id]` | `WRITE_CRM` |
+
+`POST /templates/score` accepts `subject`, `body_html`, `body_plain`, and optional `attachment_count` and `image_count`. It returns a `0-100` score, an issue list, and `hard`. A hard result does not prevent saving, but the enabled content-safety preflight guardrail pauses the campaign before that step is sent.
 
 ### Analytics and audit
 

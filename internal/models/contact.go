@@ -55,6 +55,18 @@ type Contact struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type CampaignVerificationSummary struct {
+	Total                   int     `json:"total"`
+	Valid                   int     `json:"valid"`
+	Risky                   int     `json:"risky"`
+	Invalid                 int     `json:"invalid"`
+	Unknown                 int     `json:"unknown"`
+	Disposable              int     `json:"disposable"`
+	CatchAll                int     `json:"catch_all"`
+	Pending                 int     `json:"pending"`
+	ProjectedHardBounceRate float64 `json:"projected_hard_bounce_rate"`
+}
+
 // ContactCampaignProgress is a contact's aggregate processing state inside one
 // campaign, derived from campaign_contact_progress (across all of the campaign's
 // steps) plus the contact's subscription flag.

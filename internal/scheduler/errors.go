@@ -49,7 +49,7 @@ var (
 
 	// ErrCampaignDeferred is returned when there IS a valid contact to send but
 	// no eligible mailbox right now — ESP-strict has no same-provider mailbox
-	// under budget, or the daily new-lead cap is reached. The caller must
+	// under budget, the organization is suspended, or the daily new-lead cap is reached. The caller must
 	// reschedule at the returned (defer) time WITHOUT sending. The returned pair
 	// is always nil on this path so it can never be mistaken for a sendable
 	// contact; the returned accountID is a nominal pool mailbox for the wakeup

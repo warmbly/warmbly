@@ -1,8 +1,6 @@
-// Advisory campaign-template content check. A "Check content" button POSTs the
-// current subject + body to /templates/score and renders a 0-100 score (higher
-// = safer) plus a list of non-blocking issues. Purely advisory — it never
-// blocks saving or sending, it just surfaces deliverability hints.
+// Live template check; severe findings can stop the pre-send guardrail.
 
+import { useEffect } from "react";
 import { ShieldCheckIcon, AlertTriangleIcon, AlertCircleIcon } from "lucide-react";
 import useScoreTemplate from "@/lib/api/hooks/app/campaigns/useScoreTemplate";
 import type { TemplateScoreIssue } from "@/lib/api/models/app/campaigns/TemplateScore";
@@ -42,8 +40,13 @@ export default function ContentScore({
     const score = useScoreTemplate();
     const data = score.data;
 
-    const run = () =>
-        score.mutate({ subject, body_html: bodyHtml, body_plain: bodyPlain });
+    const run = () => score.mutate({ subject, body_html: bodyHtml, body_plain: bodyPlain });
+
+    useEffect(() => {
+        const timer = setTimeout(run, 500);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [subject, bodyHtml, bodyPlain]);
 
     const tone = data ? scoreTone(data.score) : null;
 
@@ -52,7 +55,9 @@ export default function ContentScore({
             <div className="flex items-center justify-between gap-3 px-3 py-2.5">
                 <div className="min-w-0">
                     <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Content check</div>
-                    <p className="mt-0.5 text-[11px] text-slate-400 leading-relaxed">Advisory deliverability score — never blocks sending.</p>
+                    <p className="mt-0.5 text-[11px] text-slate-400 leading-relaxed">
+                        Checked automatically. Preflight can pause severe findings.
+                    </p>
                 </div>
                 <button
                     type="button"

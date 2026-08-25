@@ -49,6 +49,7 @@ type CampaignRepository interface {
 	StartCampaign(ctx context.Context, campaignID uuid.UUID) error
 	StopCampaign(ctx context.Context, campaignID uuid.UUID) error
 	ValidateCampaignReady(ctx context.Context, campaignID uuid.UUID) error
+	UpdateVerificationStatus(ctx context.Context, campaignID uuid.UUID, status string, summary *models.CampaignVerificationSummary) error
 	GetPendingCampaignTasks(ctx context.Context, campaignID uuid.UUID) ([]Task, error)
 	// ListCampaignScheduleCandidates returns active campaigns that have NO pending
 	// task — their self-perpetuating chain died and needs re-seeding. Used by the
@@ -129,7 +130,8 @@ const CAMPAIGN_SELECT = `id, name, description, status,
 		  schedule_windows,
 		  guardrail_enabled, guardrail_bounce_rate_max, guardrail_complaint_rate_max,
 		  guardrail_reply_rate_min, guardrail_min_sample, guardrail_window_days,
-		  guardrail_tripped_at, guardrail_reason`
+		  guardrail_tripped_at, guardrail_reason,
+		  verification_status, verification_summary, verification_checked_at`
 
 func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) error {
 	var dest []any = []any{
@@ -148,6 +150,7 @@ func getCampaign(rows db.Scannable, campaign *models.Campaign, extra ...any) err
 		&campaign.GuardrailEnabled, &campaign.GuardrailBounceRateMax, &campaign.GuardrailComplaintRateMax,
 		&campaign.GuardrailReplyRateMin, &campaign.GuardrailMinSample, &campaign.GuardrailWindowDays,
 		&campaign.GuardrailTrippedAt, &campaign.GuardrailReason,
+		&campaign.VerificationStatus, &campaign.VerificationSummary, &campaign.VerificationCheckedAt,
 	}
 	dest = append(dest, extra...)
 	return rows.Scan(
@@ -171,6 +174,7 @@ const CAMPAIGN_SELECT_FULL = `
 	c.guardrail_enabled, c.guardrail_bounce_rate_max, c.guardrail_complaint_rate_max,
 	c.guardrail_reply_rate_min, c.guardrail_min_sample, c.guardrail_window_days,
 	c.guardrail_tripped_at, c.guardrail_reason,
+	c.verification_status, c.verification_summary, c.verification_checked_at,
 	COALESCE(array_agg(cet.tag_id) FILTER (WHERE cet.tag_id IS NOT NULL), '{}') AS email_tag_ids,
 	COALESCE(array_agg(cec.folder_id) FILTER (WHERE cec.folder_id IS NOT NULL), '{}') AS email_folder_ids
 `
@@ -1239,6 +1243,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 		&campaign.GuardrailEnabled, &campaign.GuardrailBounceRateMax, &campaign.GuardrailComplaintRateMax,
 		&campaign.GuardrailReplyRateMin, &campaign.GuardrailMinSample, &campaign.GuardrailWindowDays,
 		&campaign.GuardrailTrippedAt, &campaign.GuardrailReason,
+		&campaign.VerificationStatus, &campaign.VerificationSummary, &campaign.VerificationCheckedAt,
 		&campaign.EmailTags, &campaign.Folders,
 	)
 	if err != nil {
@@ -1394,6 +1399,22 @@ func (r *campaignRepository) StartCampaign(ctx context.Context, campaignID uuid.
 		    guardrail_reason = ''
 		WHERE id = $1`
 	_, err := r.DB.Exec(ctx, query, campaignID)
+	return err
+}
+
+func (r *campaignRepository) UpdateVerificationStatus(ctx context.Context, campaignID uuid.UUID, status string, summary *models.CampaignVerificationSummary) error {
+	payload, err := json.Marshal(summary)
+	if err != nil {
+		return err
+	}
+	_, err = r.DB.Exec(ctx, `
+		UPDATE campaigns
+		SET verification_status = $2,
+		    verification_summary = $3,
+		    verification_checked_at = now(),
+		    updated_at = now()
+		WHERE id = $1
+	`, campaignID, status, payload)
 	return err
 }
 

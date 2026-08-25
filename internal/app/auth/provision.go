@@ -18,7 +18,7 @@ import (
 //
 // invite, when it resolves, puts the account straight into the inviting
 // organization instead of a fresh empty one.
-func (s *authService) createAccount(ctx context.Context, address, passwordHash, referralCode, invite string) *errx.Error {
+func (s *authService) createAccount(ctx context.Context, address, passwordHash, referralCode, invite string, signup *models.RegistrationSession) *errx.Error {
 	email, perr := mail.ParseAddress(address)
 	if perr != nil {
 		return errx.ErrEmail
@@ -37,6 +37,11 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash, 
 
 	if err := s.userService.SaveUser(ctx, u); err != nil {
 		return err
+	}
+	if signup != nil {
+		if err := s.userRepository.SetSignupMetadata(ctx, u.ID, signup.SignupIP, signup.SignupUserAgent, signup.SignupEmailRisk, signup.SignupASN); err != nil {
+			sentry.CaptureException(err)
+		}
 	}
 
 	// An invited account joins the inviting org and stops there: no second
@@ -72,6 +77,15 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash, 
 		if err := s.trialService.StartFreeTrialWithOrg(ctx, u.ID, org.ID); err != nil {
 			sentry.CaptureException(err)
 			// Don't fail registration if trial creation fails
+		}
+	}
+	if s.orgRisk != nil && org != nil && signup != nil && signup.SignupRiskScore > 0 {
+		if err := s.orgRisk.RecordSignal(ctx, org.ID, "signup", signup.SignupRiskScore, "Signup metadata requires monitoring", map[string]any{
+			"signals":    signup.SignupSignals,
+			"email_risk": signup.SignupEmailRisk,
+			"asn":        signup.SignupASN,
+		}); err != nil {
+			sentry.CaptureException(err)
 		}
 	}
 

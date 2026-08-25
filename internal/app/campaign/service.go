@@ -38,6 +38,11 @@ type CampaignService interface {
 	// Campaign-scoped tracking domain (feature 5). Resolves the override's CNAME
 	// and flips verified on success; an unresolved record stays "pending".
 	VerifyCampaignTrackingDomain(ctx context.Context, orgID uuid.UUID, campaignID string) (*models.TrackingDomainStatus, *errx.Error)
+	WireCampaignVerifier(verifier CampaignVerifier)
+}
+
+type CampaignVerifier interface {
+	VerifyCampaign(ctx context.Context, campaignID uuid.UUID) (*models.CampaignVerificationSummary, *errx.Error)
 }
 
 type campaignService struct {
@@ -50,6 +55,11 @@ type campaignService struct {
 	scheduler          scheduler.SchedulerService
 	tasksClient        tasksched.Scheduler
 	streamingPublisher *pubsub.StreamingPublisher
+	verifier           CampaignVerifier
+}
+
+func (s *campaignService) WireCampaignVerifier(verifier CampaignVerifier) {
+	s.verifier = verifier
 }
 
 func NewService(

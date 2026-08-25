@@ -109,13 +109,24 @@ type ContactImportRowError struct {
 }
 
 type ContactImportResult struct {
-	Total     int       `json:"total"`
-	Imported  int       `json:"imported"`
-	Updated   int       `json:"updated"`
-	Skipped   int       `json:"skipped"`
-	Failed    int       `json:"failed"`
-	StartedAt time.Time `json:"started_at"`
-	EndedAt   time.Time `json:"ended_at"`
+	Total     int                   `json:"total"`
+	Imported  int                   `json:"imported"`
+	Updated   int                   `json:"updated"`
+	Skipped   int                   `json:"skipped"`
+	Failed    int                   `json:"failed"`
+	StartedAt time.Time             `json:"started_at"`
+	EndedAt   time.Time             `json:"ended_at"`
+	Quality   *ContactImportQuality `json:"quality,omitempty"`
 
 	Errors []ContactImportRowError `json:"errors,omitempty"`
+}
+
+type ContactImportQuality struct {
+	AssessmentID    string  `json:"assessment_id,omitempty"`
+	Invalid         int     `json:"invalid"`
+	Disposable      int     `json:"disposable"`
+	Role            int     `json:"role"`
+	RiskyTLD        int     `json:"risky_tld"`
+	BadAddressRatio float64 `json:"bad_address_ratio"`
+	Blocked         bool    `json:"blocked"`
 }

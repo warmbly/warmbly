@@ -15,6 +15,8 @@ Everything here lives under **Settings > Security** and concerns signing in to W
 
 A first sign-in with a new address via Google or Apple creates your account, workspace, and free trial automatically.
 
+Registration also evaluates disposable or role-based addresses, repeated normalized aliases, signup IP and ASN velocity, and hosting-network signals after CAPTCHA succeeds. Warmbly stores the signup IP, browser identifier, email risk score, and ASN for abuse correlation. These signals do not reveal whether another account exists, but they can move a new workspace into monitored or restricted sending until it establishes normal behavior.
+
 <Callout type="info" title="Passwordless by design">
 A passkey is tied to your device and unlocked with biometrics or a PIN, so it already proves both something you have and something you are or know. That is why it skips the emailed code.
 </Callout>

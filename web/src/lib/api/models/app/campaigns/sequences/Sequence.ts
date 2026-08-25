@@ -1,6 +1,18 @@
 import type { SequenceConditions } from "./Branching";
 import type { SequenceAction } from "./Action";
 
+export interface SequenceContentScoreIssue {
+    severity: "warn" | "high";
+    code: string;
+    message: string;
+}
+
+export interface SequenceContentScore {
+    score: number;
+    issues: SequenceContentScoreIssue[];
+    hard: boolean;
+}
+
 export default interface Sequence {
     id: string;
     name: string;
@@ -11,6 +23,7 @@ export default interface Sequence {
     body_html: string;
     body_sync: boolean;
     body_code: boolean;
+    content_score?: SequenceContentScore;
 
     wait_after: number;
 

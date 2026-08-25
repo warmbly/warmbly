@@ -104,7 +104,22 @@ If a campaign has already been paused because every one of its mailboxes was gat
 
 The list is held per workspace, and the check runs against the sending campaign's workspace before every send. If a campaign somehow has no workspace, that check cannot be applied, so the campaign is paused with the reason in its activity feed instead of sending unchecked.
 
-Bounces are detected from the delivery-status report the recipient's server sends back. Only permanent failures (`5.x.x`, such as a nonexistent address) record a bounce and suppress; temporary ones (`4.x.x`, such as a full mailbox or greylisting) never do. This works the same for Gmail and Microsoft Graph mailboxes, where the send reports success and the bounce arrives later.
+Bounces are detected both when SMTP rejects a recipient during the send and when a delivery-status report arrives later. Only permanent failures (`5.x.x`, such as a nonexistent address) record a bounce and suppress; temporary ones (`4.x.x`, such as a full mailbox or greylisting) never do. Authentication failures such as `5.7.515` mark the sending mailbox inactive so the same credentials are not retried indefinitely.
+
+Abuse-report feedback loops are parsed when a provider sends a standard ARF complaint. Warmbly records the complaint once, suppresses the original recipient, updates campaign and mailbox guardrails, and ignores unrelated forwarded messages rather than guessing that they are complaints.
+
+## Workspace risk states
+
+Mailbox health protects one sender. The workspace risk state protects the whole sending account when signals correlate across signups, imports, mailbox connections, billing fingerprints, or fresh-domain sending patterns.
+
+| State | Score | Effect |
+|-------|-------|--------|
+| `trusted` | below `20` | Normal sending and pool placement |
+| `watch` | `20-49` | Signals are retained and monitored |
+| `restricted` | `50-79` | Cold sending is capped at `10` per mailbox per day and warmup uses the lower-trust pool |
+| `suspended` | `80+` | Outbound sending is blocked |
+
+State transitions are audited and published live to teammates. The API exposes the state, score, reason, and evaluation time, but keeps raw correlation evidence private.
 
 ## How to read it
 

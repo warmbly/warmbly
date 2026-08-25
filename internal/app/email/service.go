@@ -64,6 +64,7 @@ type EmailService interface {
 	// set, account-lifecycle events fan out to customer webhook endpoints.
 	WireWebhooks(w webhook.Service)
 	WireThrottle(t dailythrottle.Service)
+	WireMailboxRisk(risk MailboxRiskRecorder)
 	// WireGraphDelta attaches the Graph delta-cursor repository so the worker
 	// reconciler can seed a mailbox's saved cursors when loading it.
 	WireGraphDelta(repo repository.EmailGraphDeltaRepository)
@@ -108,6 +109,11 @@ type emailService struct {
 	// (email_account.connected, email_account.removed) are dispatched to
 	// subscribed customer webhooks.
 	webhookService webhook.Service
+	orgRisk        MailboxRiskRecorder
+}
+
+type MailboxRiskRecorder interface {
+	RecordSignal(ctx context.Context, organizationID uuid.UUID, key string, score int, reason string, evidence map[string]any) error
 }
 
 // SyncBudgetSource is the operator-editable sync fair-use section, satisfied
@@ -140,6 +146,10 @@ func (s *emailService) WireSyncBudget(src SyncBudgetSource) {
 // When unset, guardMailboxThrottle is a no-op.
 func (s *emailService) WireThrottle(t dailythrottle.Service) {
 	s.throttle = t
+}
+
+func (s *emailService) WireMailboxRisk(risk MailboxRiskRecorder) {
+	s.orgRisk = risk
 }
 
 // WireWebhooks attaches the webhook dispatcher after construction. Done

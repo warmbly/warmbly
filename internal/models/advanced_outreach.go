@@ -57,6 +57,7 @@ type PreflightValidationSettings struct {
 	CheckABVariantConfigured bool `json:"check_ab_variant_configured"`
 	CheckDailyLimit          bool `json:"check_daily_limit"`
 	CheckScheduleWindow      bool `json:"check_schedule_window"`
+	CheckContentSafety       bool `json:"check_content_safety"`
 }
 
 type DeliverabilityDashboardSettings struct {
@@ -459,6 +460,7 @@ func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 			CheckABVariantConfigured: false,
 			CheckDailyLimit:          true,
 			CheckScheduleWindow:      true,
+			CheckContentSafety:       false,
 		},
 		Dashboard: DeliverabilityDashboardSettings{
 			Enabled:            true,

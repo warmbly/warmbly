@@ -15,6 +15,7 @@ var (
 	wordToken    = regexp.MustCompile(`[a-z0-9%]+`)
 	linkPattern  = regexp.MustCompile(`https?://`)
 	htmlTag      = regexp.MustCompile(`(?i)<[a-z!/][^>]*>`)
+	imageTag     = regexp.MustCompile(`(?i)<img\b`)
 )
 
 // triggerWords are single-token terms that raise SpamAssassin-style content
@@ -74,6 +75,12 @@ type Issue struct {
 type ScoreResult struct {
 	Score  int     `json:"score"` // 0-100, higher = safer
 	Issues []Issue `json:"issues"`
+	Hard   bool    `json:"hard"`
+}
+
+type ScoreOptions struct {
+	AttachmentCount int
+	ImageCount      int
 }
 
 // Score gives an ADVISORY 0-100 content-safety score (higher = safer) for a
@@ -82,6 +89,10 @@ type ScoreResult struct {
 // the mail that actually reaches prospects and drives complaints. It reuses the
 // same trigger-term and ALL-CAPS heuristics as the warmup lint.
 func Score(subject, bodyHTML, bodyPlain string) ScoreResult {
+	return ScoreWithOptions(subject, bodyHTML, bodyPlain, ScoreOptions{})
+}
+
+func ScoreWithOptions(subject, bodyHTML, bodyPlain string, opts ScoreOptions) ScoreResult {
 	res := ScoreResult{Score: 100, Issues: []Issue{}}
 	deduct := func(n int, severity, code, msg string) {
 		res.Score -= n
@@ -94,6 +105,10 @@ func Score(subject, bodyHTML, bodyPlain string) ScoreResult {
 		body = stripTags(bodyHTML)
 	}
 	combined := subj + "\n" + body
+	images := opts.ImageCount
+	if images == 0 {
+		images = len(imageTag.FindAllString(bodyHTML, -1))
+	}
 
 	if subj == "" {
 		deduct(20, "high", "empty_subject", "Subject is empty.")
@@ -126,10 +141,24 @@ func Score(subject, bodyHTML, bodyPlain string) ScoreResult {
 	} else if len(body) > 15000 {
 		deduct(10, "warn", "oversized_body", "Body is very large; trim it for deliverability.")
 	}
+	if opts.AttachmentCount > 0 {
+		severity := "warn"
+		deduction := 8
+		if opts.AttachmentCount > 2 {
+			severity = "high"
+			deduction = 18
+		}
+		deduct(deduction, severity, "attachments", fmt.Sprintf("%d attachment(s) increase first-contact filtering risk.", opts.AttachmentCount))
+	}
+	if images > 2 {
+		deduction := min(20, (images-2)*5)
+		deduct(deduction, "warn", "image_heavy", fmt.Sprintf("%d images make the message look promotional.", images))
+	}
 
 	if res.Score < 0 {
 		res.Score = 0
 	}
+	res.Hard = res.Score < 25
 	return res
 }
 

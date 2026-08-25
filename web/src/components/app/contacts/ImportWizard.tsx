@@ -701,6 +701,23 @@ export function ResultStep({ result, filename }: { result: ImportResult; filenam
                 <StatCard label="Failed"    value={result.failed}   accent={result.failed > 0 ? "red" : "slate"} />
             </div>
 
+            {result.quality && (
+                <div className="rounded-md border border-slate-200 bg-slate-50/40 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <span className="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-medium">
+                            List quality
+                        </span>
+                        <span className="text-[11px] text-slate-600 tabular-nums">
+                            {(result.quality.bad_address_ratio * 100).toFixed(1)}% invalid or disposable
+                        </span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-slate-500 leading-snug">
+                        {result.quality.invalid} invalid, {result.quality.disposable} disposable, {result.quality.role} role-based, and{" "}
+                        {result.quality.risky_tld} risky-domain addresses detected.
+                    </p>
+                </div>
+            )}
+
             {result.errors && result.errors.length > 0 && (
                 <div className="rounded-md border border-slate-200 overflow-hidden">
                     <div className="px-3 h-9 border-b border-slate-200 bg-slate-50/60 flex items-center gap-2">

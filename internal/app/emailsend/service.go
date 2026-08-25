@@ -48,6 +48,11 @@ type SendEmailResponse struct {
 
 type EmailSendService interface {
 	SendEmail(ctx context.Context, userID, orgID, accountID uuid.UUID, req *SendEmailRequest) (*SendEmailResponse, *errx.Error)
+	WireOrgRisk(risk OrgRiskPolicy)
+}
+
+type OrgRiskPolicy interface {
+	SendingSuspended(ctx context.Context, organizationID uuid.UUID) bool
 }
 
 type emailSendService struct {
@@ -58,6 +63,11 @@ type emailSendService struct {
 	tasksClient   tasksched.Scheduler
 	featureGate   feature.FeatureGateService
 	dailyThrottle dailythrottle.Service
+	orgRisk       OrgRiskPolicy
+}
+
+func (s *emailSendService) WireOrgRisk(risk OrgRiskPolicy) {
+	s.orgRisk = risk
 }
 
 func NewService(
@@ -81,6 +91,9 @@ func NewService(
 }
 
 func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, accountID uuid.UUID, req *SendEmailRequest) (*SendEmailResponse, *errx.Error) {
+	if s.orgRisk != nil && s.orgRisk.SendingSuspended(ctx, orgID) {
+		return nil, errx.NewWithIdentifier(errx.Forbidden, "organization_sending_suspended", "This workspace cannot send email while its risk status is suspended.")
+	}
 	// Ban-scope enforcement (migration 000045). Block outbound send
 	// when the admin set BanScopeSend, even if the user can otherwise
 	// log in and inspect their account.

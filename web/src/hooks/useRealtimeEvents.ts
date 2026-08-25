@@ -323,6 +323,7 @@ export function useRealtimeEvents() {
           webhook: [['webhooks'], ['integrations', 'connections']],
           template: [['templates']],
           organization: [['organizations']],
+          organization_risk: [['organizations'], ['emails'], ['campaigns']],
           organization_member: [['organizations'], ['organizations', 'members']],
           invitation: [['organizations', 'invitations']],
           team: [['teams']],

@@ -168,6 +168,7 @@ func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data
 	}
 
 	w.maybeEmitBounce(msg)
+	w.maybeEmitComplaint(msg)
 
 	// The consumer decodes NEW_EMAIL as JobEventNewEmail{user_id, message}.
 	return w.onEvent(models.JobEventTypeNewEmail, &models.JobEventNewEmail{

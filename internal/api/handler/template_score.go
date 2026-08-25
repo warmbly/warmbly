@@ -10,15 +10,14 @@ import (
 )
 
 type scoreTemplateRequest struct {
-	Subject   string `json:"subject"`
-	BodyHTML  string `json:"body_html"`
-	BodyPlain string `json:"body_plain"`
+	Subject         string `json:"subject"`
+	BodyHTML        string `json:"body_html"`
+	BodyPlain       string `json:"body_plain"`
+	AttachmentCount int    `json:"attachment_count"`
+	ImageCount      int    `json:"image_count"`
 }
 
-// ScoreTemplateContent returns an advisory deliverability content score for a
-// campaign template (subject + body) before it is sent. Advisory only — it
-// never blocks sending — so the user gets content feedback on the mail that
-// actually reaches prospects, which warmup-only linting never covered.
+// ScoreTemplateContent returns the content score used by the send guardrail.
 func (h *Handler) ScoreTemplateContent(c *gin.Context) {
 	var req scoreTemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -26,6 +25,9 @@ func (h *Handler) ScoreTemplateContent(c *gin.Context) {
 		return
 	}
 
-	res := warmlint.Score(req.Subject, req.BodyHTML, req.BodyPlain)
+	res := warmlint.ScoreWithOptions(req.Subject, req.BodyHTML, req.BodyPlain, warmlint.ScoreOptions{
+		AttachmentCount: req.AttachmentCount,
+		ImageCount:      req.ImageCount,
+	})
 	c.JSON(http.StatusOK, res)
 }

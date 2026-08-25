@@ -74,6 +74,20 @@ export default interface Campaign {
     guardrail_tripped_at?: string | null;
     guardrail_reason?: string;
 
+    verification_status?: 'unknown' | 'pending' | 'passed' | 'warning' | 'blocked';
+    verification_summary?: {
+        total: number;
+        valid: number;
+        risky: number;
+        invalid: number;
+        unknown: number;
+        disposable: number;
+        catch_all: number;
+        pending: number;
+        projected_hard_bounce_rate: number;
+    };
+    verification_checked_at?: string | null;
+
     // Campaign-scoped tracking-domain override (honored only when verified).
     tracking_domain: string;
     tracking_domain_verified: boolean;
@@ -106,4 +120,3 @@ export interface CampaignSenderInput {
     weight?: number;
     enabled?: boolean;
 }
-

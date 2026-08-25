@@ -16,6 +16,12 @@ type Organization struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
+	RiskState       OrganizationRiskState             `json:"risk_state"`
+	RiskScore       int                               `json:"risk_score"`
+	RiskReason      string                            `json:"risk_reason,omitempty"`
+	RiskSignals     map[string]OrganizationRiskSignal `json:"-"`
+	RiskEvaluatedAt *time.Time                        `json:"risk_evaluated_at,omitempty"`
+
 	// Soft-delete window. When DeletionScheduledFor is non-nil the
 	// organization is "pending deletion" and will be hard-deleted at
 	// that timestamp unless cancelled.

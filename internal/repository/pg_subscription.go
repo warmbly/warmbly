@@ -17,7 +17,7 @@ import (
 // order. With `SELECT *`, the trailing NULL free-trial timestamps land in the
 // non-nullable created_at/updated_at scan slots and pgx fails with
 // "cannot scan NULL into *time.Time", 500-ing every subscription read.
-const subscriptionColumns = `id, user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, trial_start, trial_end, free_trial_started_at, free_trial_ends_at, is_enterprise, created_at, updated_at`
+const subscriptionColumns = `id, user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, payment_fingerprint, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, trial_start, trial_end, free_trial_started_at, free_trial_ends_at, is_enterprise, created_at, updated_at`
 
 type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *models.Subscription) error
@@ -51,19 +51,19 @@ func (r *subscriptionRepository) Create(ctx context.Context, sub *models.Subscri
 	query := `
 		INSERT INTO subscriptions (
 			id, user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id,
-			stripe_price_id, status, current_period_start, current_period_end,
+			stripe_price_id, payment_fingerprint, status, current_period_start, current_period_end,
 			cancel_at_period_end, canceled_at, trial_start, trial_end,
 			free_trial_started_at, free_trial_ends_at,
 			is_enterprise, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
 		)
 	`
 
 	now := time.Now()
 	_, err := r.db.Exec(ctx, query,
 		sub.ID, sub.UserID, sub.OrganizationID, sub.PlanID, sub.StripeCustomerID, sub.StripeSubscriptionID,
-		sub.StripePriceID, sub.Status, sub.CurrentPeriodStart, sub.CurrentPeriodEnd,
+		sub.StripePriceID, sub.PaymentFingerprint, sub.Status, sub.CurrentPeriodStart, sub.CurrentPeriodEnd,
 		sub.CancelAtPeriodEnd, sub.CanceledAt, sub.TrialStart, sub.TrialEnd,
 		sub.FreeTrialStartedAt, sub.FreeTrialEndsAt,
 		sub.IsEnterprise, now, now,
@@ -79,23 +79,24 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *models.Subscri
 			stripe_customer_id = $4,
 			stripe_subscription_id = $5,
 			stripe_price_id = $6,
-			status = $7,
-			current_period_start = $8,
-			current_period_end = $9,
-			cancel_at_period_end = $10,
-			canceled_at = $11,
-			trial_start = $12,
-			trial_end = $13,
-			free_trial_started_at = $14,
-			free_trial_ends_at = $15,
-			is_enterprise = $16,
-			updated_at = $17
+			payment_fingerprint = $7,
+			status = $8,
+			current_period_start = $9,
+			current_period_end = $10,
+			cancel_at_period_end = $11,
+			canceled_at = $12,
+			trial_start = $13,
+			trial_end = $14,
+			free_trial_started_at = $15,
+			free_trial_ends_at = $16,
+			is_enterprise = $17,
+			updated_at = $18
 		WHERE id = $1
 	`
 
 	_, err := r.db.Exec(ctx, query,
 		sub.ID, sub.OrganizationID, sub.PlanID, sub.StripeCustomerID, sub.StripeSubscriptionID,
-		sub.StripePriceID, sub.Status, sub.CurrentPeriodStart, sub.CurrentPeriodEnd,
+		sub.StripePriceID, sub.PaymentFingerprint, sub.Status, sub.CurrentPeriodStart, sub.CurrentPeriodEnd,
 		sub.CancelAtPeriodEnd, sub.CanceledAt, sub.TrialStart, sub.TrialEnd,
 		sub.FreeTrialStartedAt, sub.FreeTrialEndsAt,
 		sub.IsEnterprise, time.Now(),
@@ -129,7 +130,7 @@ func (r *subscriptionRepository) scanSubscription(ctx context.Context, query str
 	var sub models.Subscription
 	err := row.Scan(
 		&sub.ID, &sub.UserID, &sub.OrganizationID, &sub.PlanID, &sub.StripeCustomerID, &sub.StripeSubscriptionID,
-		&sub.StripePriceID, &sub.Status, &sub.CurrentPeriodStart, &sub.CurrentPeriodEnd,
+		&sub.StripePriceID, &sub.PaymentFingerprint, &sub.Status, &sub.CurrentPeriodStart, &sub.CurrentPeriodEnd,
 		&sub.CancelAtPeriodEnd, &sub.CanceledAt, &sub.TrialStart, &sub.TrialEnd,
 		&sub.FreeTrialStartedAt, &sub.FreeTrialEndsAt,
 		&sub.IsEnterprise, &sub.CreatedAt, &sub.UpdatedAt,
@@ -147,7 +148,7 @@ func (r *subscriptionRepository) GetWithLimits(ctx context.Context, orgID uuid.U
 	query := `
 		SELECT
 			s.id, s.user_id, s.organization_id, s.plan_id, s.stripe_customer_id, s.stripe_subscription_id,
-			s.stripe_price_id, s.status, s.current_period_start, s.current_period_end,
+			s.stripe_price_id, s.payment_fingerprint, s.status, s.current_period_start, s.current_period_end,
 			s.cancel_at_period_end, s.canceled_at, s.trial_start, s.trial_end,
 			s.free_trial_started_at, s.free_trial_ends_at,
 			s.is_enterprise, s.created_at, s.updated_at,
@@ -168,7 +169,7 @@ func (r *subscriptionRepository) GetWithLimits(ctx context.Context, orgID uuid.U
 
 	err := row.Scan(
 		&result.ID, &result.UserID, &result.OrganizationID, &result.PlanID, &result.StripeCustomerID, &result.StripeSubscriptionID,
-		&result.StripePriceID, &result.Status, &result.CurrentPeriodStart, &result.CurrentPeriodEnd,
+		&result.StripePriceID, &result.PaymentFingerprint, &result.Status, &result.CurrentPeriodStart, &result.CurrentPeriodEnd,
 		&result.CancelAtPeriodEnd, &result.CanceledAt, &result.TrialStart, &result.TrialEnd,
 		&result.FreeTrialStartedAt, &result.FreeTrialEndsAt,
 		&result.IsEnterprise, &result.CreatedAt, &result.UpdatedAt,

@@ -165,6 +165,10 @@ type Campaign struct {
 	GuardrailTrippedAt        *time.Time `json:"guardrail_tripped_at,omitempty"`
 	GuardrailReason           string     `json:"guardrail_reason,omitempty"`
 
+	VerificationStatus    string                      `json:"verification_status"`
+	VerificationSummary   CampaignVerificationSummary `json:"verification_summary"`
+	VerificationCheckedAt *time.Time                  `json:"verification_checked_at,omitempty"`
+
 	// Campaign-scoped tracking-domain override. Honored only when verified;
 	// otherwise falls back to the mailbox/default domain.
 	TrackingDomain           string     `json:"tracking_domain"`

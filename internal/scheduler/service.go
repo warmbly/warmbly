@@ -42,6 +42,12 @@ type schedulerService struct {
 	// Optional/nil-safe: without it the persisted auth state stays
 	// observe-only and never blocks a send.
 	domainAuth DomainAuthPolicy
+	orgRisk    OrgRiskPolicy
+}
+
+type OrgRiskPolicy interface {
+	EffectiveCap(ctx context.Context, organizationID uuid.UUID, current int) int
+	SendingSuspended(ctx context.Context, organizationID uuid.UUID) bool
 }
 
 // DomainAuthPolicy resolves whether the sending-domain authentication gate is
@@ -85,6 +91,14 @@ func (s *schedulerService) WireDomainAuth(p DomainAuthPolicy) {
 // authentication gate after construction.
 type DomainAuthAware interface {
 	WireDomainAuth(p DomainAuthPolicy)
+}
+
+func (s *schedulerService) WireOrgRisk(p OrgRiskPolicy) {
+	s.orgRisk = p
+}
+
+type OrgRiskAware interface {
+	WireOrgRisk(p OrgRiskPolicy)
 }
 
 // NewSchedulerService creates a new scheduler service

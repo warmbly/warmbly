@@ -1,6 +1,4 @@
-// Result of POST /templates/score — an advisory content-quality score for a
-// campaign template. Higher score = safer; issues are non-blocking hints to
-// improve deliverability (the score never prevents saving or sending).
+// Live content score; a hard result can stop the pre-send guardrail.
 export interface TemplateScoreIssue {
     severity: "warn" | "high";
     code: string;
@@ -10,6 +8,7 @@ export interface TemplateScoreIssue {
 export default interface TemplateScore {
     score: number;
     issues: TemplateScoreIssue[];
+    hard: boolean;
 }
 
 // Body for POST /templates/score.
@@ -17,4 +16,6 @@ export interface ScoreTemplateRequest {
     subject: string;
     body_html: string;
     body_plain: string;
+    attachment_count?: number;
+    image_count?: number;
 }

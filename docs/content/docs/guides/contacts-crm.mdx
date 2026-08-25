@@ -27,6 +27,8 @@ You must map at least one column to **Email**.
 
 Rows with a missing or invalid email are reported with a line number and reason rather than imported.
 
+Before writing any row, Warmbly also classifies the complete file for invalid, disposable, role-based, and risky-TLD addresses. The result includes this list-quality summary. If invalid plus disposable addresses exceed `25%` of the file, the whole import is recorded and blocked before contacts are written. Fix the source list and upload it again rather than removing only the visibly failed rows.
+
 **From Google Sheets**, a sheet is a reusable **sync source** rather than a one-time upload. Connect it once (Warmbly reads only the tab you choose and never writes back), paste the spreadsheet ID from the URL between `/d/` and `/edit`, pick the tab, map columns, then set duplicate handling, a label, and optionally a campaign to enroll into and categories to apply. **Nothing syncs automatically**: press **Sync now**, or save and sync immediately.
 
 Saved sources live in your Sync sources list to re-run, edit, or remove. Each sync dedupes on lowercased email using your chosen duplicate handling, so re-syncing a sheet with new rows is safe.

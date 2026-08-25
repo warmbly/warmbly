@@ -65,6 +65,11 @@ type WarmupStatistic struct {
 	TargetVolume   int
 }
 
+type ProviderPlacement struct {
+	Placements int
+	Sends      int
+}
+
 // WarmupReplyCandidate describes a previously sent warmup message that can be replied to.
 type WarmupReplyCandidate struct {
 	MessageID         string
@@ -110,6 +115,8 @@ type WarmupRepository interface {
 	CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	RecentPlacementSignal(ctx context.Context, accountID uuid.UUID, since time.Time) (placements, sends int, err error)
+	SenderPlacementByProvider(ctx context.Context, accountID uuid.UUID, since time.Time) (map[string]ProviderPlacement, error)
 	CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error)
 	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
@@ -149,6 +156,7 @@ type WarmupRepository interface {
 	// Partner diversity support
 	GetPoolParticipantDomains(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
 	GetPoolParticipantEmails(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
+	GetPoolParticipantProviders(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
 	CountEligibleRecipients(ctx context.Context, poolType string, excludeAccountID uuid.UUID) (int, error)
 	GetRecentPartnerDomainCounts(ctx context.Context, accountID uuid.UUID, since time.Time) (map[string]int, error)
 
@@ -596,6 +604,52 @@ func (r *warmupRepository) SumWarmupSentSince(ctx context.Context, accountID uui
 	var total int
 	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&total)
 	return total, err
+}
+
+func (r *warmupRepository) RecentPlacementSignal(ctx context.Context, accountID uuid.UUID, since time.Time) (int, int, error) {
+	placements, err := r.CountSpamPlacementsSince(ctx, accountID, since)
+	if err != nil {
+		return 0, 0, err
+	}
+	sends, err := r.SumWarmupSentSince(ctx, accountID, since)
+	return placements, sends, err
+}
+
+func (r *warmupRepository) SenderPlacementByProvider(ctx context.Context, accountID uuid.UUID, since time.Time) (map[string]ProviderPlacement, error) {
+	query := `
+		WITH sends AS (
+			SELECT COALESCE(NULLIF(lower(ea.provider), ''), 'unknown') AS provider, COUNT(*)::int AS total
+			FROM warmup_tokens wt
+			JOIN email_accounts ea ON ea.id = wt.recipient_account_id
+			WHERE wt.sender_account_id = $1 AND wt.created_at >= $2
+			GROUP BY provider
+		), placements AS (
+			SELECT COALESCE(NULLIF(lower(recipient_provider), ''), 'unknown') AS provider, COUNT(*)::int AS total
+			FROM warmup_spam_reports
+			WHERE reported_account_id = $1
+			  AND report_type = 'spam_placement'
+			  AND created_at >= $2
+			GROUP BY provider
+		)
+		SELECT COALESCE(s.provider, p.provider), COALESCE(p.total, 0), COALESCE(s.total, 0)
+		FROM sends s
+		FULL OUTER JOIN placements p ON p.provider = s.provider
+	`
+	rows, err := r.db.Query(ctx, query, accountID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]ProviderPlacement{}
+	for rows.Next() {
+		var provider string
+		var signal ProviderPlacement
+		if err := rows.Scan(&provider, &signal.Placements, &signal.Sends); err != nil {
+			return nil, err
+		}
+		out[provider] = signal
+	}
+	return out, rows.Err()
 }
 
 // CountDeliverabilityEventsByAccount counts deliverability events (bounce, complaint, etc.)
@@ -1097,6 +1151,36 @@ func (r *warmupRepository) GetPoolParticipantEmails(ctx context.Context, poolTyp
 			return nil, err
 		}
 		out[id] = email
+	}
+	return out, rows.Err()
+}
+
+func (r *warmupRepository) GetPoolParticipantProviders(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error) {
+	query := `
+		SELECT wpp.email_account_id, COALESCE(NULLIF(lower(ea.provider), ''), 'unknown')
+		FROM warmup_pool_participants wpp
+		JOIN warmup_pools wp ON wpp.pool_id = wp.id
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		WHERE wp.pool_type = $1
+		  AND ea.status = 'active'
+	`
+	if excludeBlocked {
+		query += " AND wpp.health_state IN ('healthy', 'watch', 'throttled')"
+	}
+	query += " AND wpp.participant_role IN ('sender_receiver', 'recipient_only')"
+	rows, err := r.db.Query(ctx, query, poolType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]string{}
+	for rows.Next() {
+		var id uuid.UUID
+		var provider string
+		if err := rows.Scan(&id, &provider); err != nil {
+			return nil, err
+		}
+		out[id] = provider
 	}
 	return out, rows.Err()
 }
