@@ -204,6 +204,19 @@ docker compose -p warmbly logs backend | grep -B2 -A12 "MAIL_TRANSPORT=log"
 The backend refuses to start without `EMAIL_ADDRESS` and `EMAIL_NAME`. The consumer logs a warning and silently disables all notification and digest email, so an instance can look healthy while sending nothing. Set both on every process.
 </Callout>
 
+## Recipient email verification
+
+The backend verifies contact addresses by connecting directly to the recipient domain's MX server on port 25. The identity must belong to the backend host. It is separate from `SMTP_EHLO_NAME`, which identifies platform mail to its configured relay.
+
+| Variable | What it does | Default | Restart needed |
+|---|---|---|---|
+| `EMAIL_VERIFY_HELO_HOST` | Fully qualified DNS hostname announced in EHLO or HELO during recipient probes | unset | yes |
+| `EMAIL_VERIFY_MAIL_FROM` | Envelope sender used during recipient probes | `verify@<EMAIL_VERIFY_HELO_HOST>` | yes |
+
+When `EMAIL_VERIFY_HELO_HOST` is unset or invalid, syntactically valid addresses remain `unknown` and the backend does not contact their MX servers. An `unknown` address remains eligible for cautious campaign sending under the existing campaign policy. Configure a real hostname if you rely on pre-send verification to reject invalid recipients.
+
+A remote `5xx` response that rejects the verifier's HELO, reverse DNS, client host, or envelope sender is recorded as `unknown`, not `invalid`. Those responses describe the probing host and do not prove that the recipient is missing.
+
 ## Encryption
 
 | Variable | What it does | Default | Restart needed |
