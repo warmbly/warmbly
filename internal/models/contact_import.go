@@ -132,4 +132,21 @@ type ContactImportResult struct {
 	// ErrorsTruncated is true when that cap was reached, so the UI can say
 	// "showing the first N of M" instead of implying it listed everything.
 	ErrorsTruncated bool `json:"errors_truncated,omitempty"`
+
+	// Quality is what the uploaded addresses look like, measured at import.
+	// Advisory: a bad list is reported here and stopped at launch, never
+	// refused here, because these are the customer's own records.
+	Quality *ContactImportQuality `json:"quality,omitempty"`
+}
+
+// ContactImportQuality is an import's address-level assessment.
+type ContactImportQuality struct {
+	Malformed  int `json:"malformed"`
+	Disposable int `json:"disposable"`
+	// Role counts shared inboxes. Reported, not counted as bad: mailing info@
+	// is a choice, and many legitimate B2B lists are mostly role addresses.
+	Role        int     `json:"role"`
+	BadSharePct float64 `json:"bad_share_pct"`
+	Flagged     bool    `json:"flagged"`
+	Summary     string  `json:"summary,omitempty"`
 }

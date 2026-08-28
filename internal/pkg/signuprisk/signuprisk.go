@@ -58,6 +58,13 @@ var freeProviders = map[string]bool{
 	"aol.com": true, "gmx.com": true, "mail.com": true, "zoho.com": true,
 }
 
+// IsDisposable reports whether an address is on a known throwaway domain.
+// Exported so the contact-import gate scores against the same list rather than
+// keeping a second copy that drifts.
+func IsDisposable(email string) bool {
+	return disposableDomains[domainOf(email)]
+}
+
 // Score assesses one signup.
 func Score(email, ipaddr string) Result {
 	res := Result{Reasons: []string{}}

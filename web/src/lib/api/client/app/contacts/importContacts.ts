@@ -63,6 +63,19 @@ export interface ImportResult {
     // Set when more rows failed than the API reports back; `errors` then holds
     // the first slice of them and `failed` is the true count.
     errors_truncated?: boolean;
+    // What the uploaded addresses look like. Advisory: a bad list is reported
+    // here and stopped at launch, never refused here.
+    quality?: ImportQuality;
+}
+
+export interface ImportQuality {
+    malformed: number;
+    disposable: number;
+    /** Shared inboxes. Reported, not counted against the list. */
+    role: number;
+    bad_share_pct: number;
+    flagged: boolean;
+    summary?: string;
 }
 
 async function authHeader(): Promise<Record<string, string>> {

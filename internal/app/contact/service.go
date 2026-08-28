@@ -2,6 +2,7 @@ package contact
 
 import (
 	"context"
+	"github.com/warmbly/warmbly/internal/app/orgrisk"
 	"io"
 	"time"
 
@@ -88,6 +89,17 @@ type contactService struct {
 	planRepo           repository.PlanRepository
 	streamingPublisher *pubsub.StreamingPublisher
 	campaignWaker      CampaignWaker
+	// orgRisk files import-quality findings on the workspace's posture.
+	// Optional/nil-safe: without it a bad import is reported but not fused.
+	orgRisk orgrisk.Service
+}
+
+// WireOrgRisk attaches the organization risk posture.
+func (s *contactService) WireOrgRisk(r orgrisk.Service) { s.orgRisk = r }
+
+// OrgRiskAware is the optional capability the caller uses to attach it.
+type OrgRiskAware interface {
+	WireOrgRisk(r orgrisk.Service)
 }
 
 func NewService(

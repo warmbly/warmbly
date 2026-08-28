@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"io"
 	"path/filepath"
 	"strconv"
@@ -11,9 +12,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/orgrisk"
 	"github.com/warmbly/warmbly/internal/email"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/listquality"
 	"github.com/warmbly/warmbly/internal/utils"
 	"github.com/xuri/excelize/v2"
 )
@@ -318,10 +321,25 @@ func (s *contactService) ImportCommit(
 		return nil, xerr
 	}
 
+	// Measure the list the customer actually uploaded, malformed rows included:
+	// those are exactly what this is counting. Synchronous and address-only, so
+	// they learn something now rather than when verification catches up.
+	allAddresses := make([]string, 0, len(parsed))
+	for i := range parsed {
+		if addr := strings.TrimSpace(parsed[i].contact.Email); addr != "" {
+			allAddresses = append(allAddresses, addr)
+			continue
+		}
+		// A row whose address would not parse still counts against the list.
+		allAddresses = append(allAddresses, rawEmailOf(parsed[i].raw))
+	}
+	quality := listquality.Assess(allAddresses)
+
 	res := &models.ContactImportResult{
 		Total:     len(parsed),
 		StartedAt: startedAt,
 		Errors:    make([]models.ContactImportRowError, 0),
+		Quality:   toImportQuality(quality),
 	}
 	// warn records a row-level note without counting the row as failed, so
 	// Total always equals imported + updated + skipped + failed.
@@ -485,6 +503,20 @@ func (s *contactService) ImportCommit(
 	}
 
 	res.EndedAt = time.Now().UTC()
+
+	// File the finding on the workspace's posture. Import quality alone can
+	// only reach `watch`, which changes nothing a customer can feel; it takes
+	// several detectors agreeing to restrict anything.
+	if quality.Flagged && s.orgRisk != nil {
+		if _, err := s.orgRisk.RecordSignal(ctx, orgID, orgrisk.Signal{
+			Key:    "list_quality",
+			Weight: importRiskWeight(quality.BadSharePct),
+			Detail: quality.Summary,
+		}); err != nil {
+			log.Warn().Str("organization_id", orgID.String()).Msg("could not record the import quality signal")
+		}
+	}
+
 	if res.Imported > 0 || res.Updated > 0 || len(skippedLinks) > 0 {
 		s.publishContactsReload(ctx, userID, "contacts:import")
 		// Covers the Google Sheets sync too: it commits through this path.
@@ -812,4 +844,46 @@ func parseIDList(raw []string) ([]string, *errx.Error) {
 		out = append(out, id.String())
 	}
 	return out, nil
+}
+
+// rawEmailOf recovers something printable from a row whose address would not
+// parse, so a malformed entry is still counted rather than silently dropped.
+func rawEmailOf(raw []string) string {
+	for _, v := range raw {
+		if strings.Contains(v, "@") {
+			return strings.TrimSpace(v)
+		}
+	}
+	if len(raw) > 0 {
+		return strings.TrimSpace(raw[0])
+	}
+	return ""
+}
+
+// toImportQuality maps the assessment onto the API shape.
+func toImportQuality(q listquality.Summary) *models.ContactImportQuality {
+	if q.Total == 0 {
+		return nil
+	}
+	return &models.ContactImportQuality{
+		Malformed:   q.Malformed,
+		Disposable:  q.Disposable,
+		Role:        q.Role,
+		BadSharePct: q.BadSharePct,
+		Flagged:     q.Flagged,
+		Summary:     q.Summary,
+	}
+}
+
+// importRiskWeight scales the org-risk contribution with how bad the list is,
+// capped so one import can never restrict a workspace on its own.
+func importRiskWeight(badPct float64) int {
+	w := int(badPct / 2)
+	if w > 30 {
+		w = 30
+	}
+	if w < 1 {
+		w = 1
+	}
+	return w
 }

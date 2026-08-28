@@ -500,3 +500,85 @@ func firstN[T any](in []T, n int) []T {
 	}
 	return in[:n]
 }
+
+// simpleCSV builds an email-only file from the given addresses.
+func simpleCSV(emails []string) string {
+	var b strings.Builder
+	b.WriteString("email\n")
+	for _, e := range emails {
+		b.WriteString(e)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func emailOnlyMapping() []models.ContactImportColumnMapping {
+	return []models.ContactImportColumnMapping{{Index: 0, Target: "email"}}
+}
+
+func repeatEmails(pattern string, n int) []string {
+	out := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, fmt.Sprintf(pattern, i))
+	}
+	return out
+}
+
+// Issue #145: the assessment has to reach the RESULT, not just exist as a
+// package. Testing listquality directly could never catch a call site that
+// never runs, which is the failure this codebase keeps producing.
+func TestLiveImportReportsListQuality(t *testing.T) {
+	f := newImportFixture(t)
+
+	emails := append(repeatEmails("junk%d-not-an-email", 30), repeatEmails("throwaway%d@mailinator.com", 30)...)
+	emails = append(emails, repeatEmails("real%d@acme.test", 40)...)
+
+	res, msg := f.commit(t, simpleCSV(emails), &models.ContactImportCommit{
+		Mapping:   emailOnlyMapping(),
+		Dedup:     models.ContactImportDedupSkip,
+		HasHeader: true,
+	})
+	if msg != "" {
+		t.Fatalf("import rejected: %s", msg)
+	}
+	if res.Quality == nil {
+		t.Fatal("no quality assessment on the result; the import path never ran it")
+	}
+	if !res.Quality.Flagged {
+		t.Errorf("a 60%% unusable list was not flagged: %+v", res.Quality)
+	}
+	if res.Quality.Disposable != 30 {
+		t.Errorf("disposable = %d, want the 30 throwaway addresses", res.Quality.Disposable)
+	}
+	if res.Quality.Summary == "" {
+		t.Error("a flagged list must say what is wrong with it")
+	}
+	// The import still happened: these are the customer's own records, and the
+	// launch gate is where a bad list is actually stopped.
+	if res.Imported == 0 {
+		t.Error("a flagged import stored nothing; it should report, not refuse")
+	}
+}
+
+// An ordinary list must come back with nothing to say.
+func TestLiveImportOfAnOrdinaryListIsQuiet(t *testing.T) {
+	f := newImportFixture(t)
+
+	res, msg := f.commit(t, simpleCSV(repeatEmails("person%d@acme.test", 60)), &models.ContactImportCommit{
+		Mapping:   emailOnlyMapping(),
+		Dedup:     models.ContactImportDedupSkip,
+		HasHeader: true,
+	})
+	if msg != "" {
+		t.Fatalf("import rejected: %s", msg)
+	}
+	if res.Quality == nil {
+		t.Fatal("no quality assessment on the result")
+	}
+	if res.Quality.Flagged {
+		t.Errorf("an ordinary list was flagged: %+v", res.Quality)
+	}
+	if res.Imported != 60 {
+		t.Errorf("imported = %d, want 60", res.Imported)
+	}
+}

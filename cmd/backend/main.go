@@ -1151,6 +1151,11 @@ func main() {
 		rateLimitService = ratelimit.NewService(cache, rateLimitRepository)
 		sequenceService = sequence.NewService(sequenceRepostory)
 		contactService = contact.NewService(contactRepostory, subscriptionRepository, planRepository, streamingPublisher)
+		// A visibly bad import is filed on the workspace's posture. On its own
+		// it can only reach `watch`, which changes nothing.
+		if aware, ok := contactService.(contact.OrgRiskAware); ok && orgRiskService != nil {
+			aware.WireOrgRisk(orgRiskService)
+		}
 
 		// On-demand Google Sheets -> leads sync (backend-only / control plane).
 		// Reuses the integration service for the Google token + sheet reads and

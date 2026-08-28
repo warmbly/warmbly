@@ -753,6 +753,19 @@ export function ResultStep({ result, filename }: { result: ImportResult; filenam
                 <StatCard label="Failed"    value={result.failed}   accent={result.failed > 0 ? "red" : "slate"} />
             </div>
 
+            {result.quality?.flagged && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+                    <AlertTriangleIcon className="w-3.5 h-3.5 mt-px shrink-0 text-amber-600" />
+                    <div className="min-w-0">
+                        <p className="text-[12.5px] font-medium text-amber-900">This list looks low quality</p>
+                        <p className="text-[11.5px] text-amber-800/90 leading-relaxed mt-0.5">
+                            {result.quality.summary} They are imported, but sending to them risks the reputation of
+                            every mailbox in this workspace. Clean the list before launching a campaign with it.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {result.errors && result.errors.length > 0 && (
                 <div className="rounded-md border border-slate-200 overflow-hidden">
                     <div className="px-3 h-9 border-b border-slate-200 bg-slate-50/60 flex items-center gap-2">
