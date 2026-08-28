@@ -6,9 +6,8 @@ const (
 	// ColdRampIncrement is how much a graduating mailbox may add per clean day.
 	ColdRampIncrement = 5
 
-	// Graduation starting volumes, by how long the mailbox warmed. The bands
-	// follow the documented cold posture: a mailbox connected in the last month
-	// belongs near 10-20/day, not at the 50/day cap.
+	// Starting volumes by warmup maturity, following the documented cold
+	// posture: a recently connected mailbox belongs near 10-20/day.
 	coldStartUnproven = 5
 	coldStartWarmed   = 10
 	coldStartMature   = 20
@@ -31,14 +30,9 @@ func ColdStart(warmupDays int) int {
 
 // ColdCeiling is a graduating mailbox's cold cap for today: its starting volume
 // plus ColdRampIncrement per clean day since its first cold send, clamped to
-// the mailbox's own cap.
-//
-// Placements freeze the climb through the same Days() union the warmup ramp
-// uses, so a mailbox landing in junk stops adding cold volume for the same
-// reason and by the same rule that it stops adding warmup volume.
-//
-// rampStart zero means the mailbox has not sent cold mail yet: it gets its
-// starting volume, which is day zero of the ramp.
+// the mailbox's own cap. Placements freeze the climb through the same Days()
+// union the warmup ramp uses. A zero rampStart means it has not sent cold mail
+// yet, so it gets its starting volume.
 func ColdCeiling(warmupDays int, rampStart time.Time, placements []time.Time, now time.Time, mailboxCap int) int {
 	ceiling := ColdStart(warmupDays)
 	if !rampStart.IsZero() {
@@ -48,4 +42,20 @@ func ColdCeiling(warmupDays int, rampStart time.Time, placements []time.Time, no
 		return mailboxCap
 	}
 	return ceiling
+}
+
+// ColdHeldUntil is when the cold ramp resumes climbing, or nil when it already
+// is. It filters placements the same way ColdCeiling does, so the number the
+// dashboard shows and the reason it gives cannot disagree.
+func ColdHeldUntil(rampStart time.Time, placements []time.Time, now time.Time, freeze time.Duration) *time.Time {
+	if rampStart.IsZero() {
+		return nil
+	}
+	counted := make([]time.Time, 0, len(placements))
+	for _, p := range placements {
+		if !p.Before(rampStart) {
+			counted = append(counted, p)
+		}
+	}
+	return FrozenUntil(counted, now, freeze)
 }

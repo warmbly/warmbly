@@ -64,3 +64,35 @@ func TestColdCeilingFreezesOnPlacement(t *testing.T) {
 		t.Error("a placement raised the cold ceiling")
 	}
 }
+
+// The hold the dashboard reports must count exactly the placements the ceiling
+// counts, or the drawer says "paused" while the scheduler is still climbing.
+func TestColdHeldUntilMatchesWhatTheCeilingCounts(t *testing.T) {
+	rampStart := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
+	freeze := 72 * time.Hour
+	now := rampStart.Add(24 * time.Hour)
+
+	// A placement from BEFORE the mailbox ever sent cold mail is not part of
+	// the cold ramp, so it must not be reported as holding it.
+	before := []time.Time{rampStart.Add(-48 * time.Hour)}
+	if got := ColdHeldUntil(rampStart, before, now, freeze); got != nil {
+		t.Errorf("a pre-ramp placement reported as holding the cold ramp: %v", got)
+	}
+	if ColdCeiling(30, rampStart, before, now, 50) != ColdCeiling(30, rampStart, nil, now, 50) {
+		t.Error("a pre-ramp placement changed the ceiling")
+	}
+
+	// One after it does hold, and the ceiling agrees.
+	after := []time.Time{rampStart.Add(12 * time.Hour)}
+	if got := ColdHeldUntil(rampStart, after, now, freeze); got == nil {
+		t.Error("a placement during the ramp is not reported as holding it")
+	}
+	if ColdCeiling(30, rampStart, after, now, 50) >= ColdCeiling(30, rampStart, nil, now, 50) {
+		t.Error("a placement during the ramp did not lower the ceiling")
+	}
+
+	// An unanchored mailbox has no ramp to hold.
+	if got := ColdHeldUntil(time.Time{}, after, now, freeze); got != nil {
+		t.Errorf("an unanchored mailbox reported a hold: %v", got)
+	}
+}

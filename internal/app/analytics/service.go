@@ -571,6 +571,6 @@ func (s *analyticsService) coldRampInfo(ctx context.Context, email *models.Email
 		Ceiling:       ceiling,
 		MailboxCap:    email.CampaignLimit,
 		DaysToFullCap: days,
-		Held:          warmupramp.FrozenUntil(state.Placements, now, warmupramp.FreezeWindow) != nil,
+		Held:          warmupramp.ColdHeldUntil(rampStart, state.Placements, now, warmupramp.FreezeWindow) != nil,
 	}
 }

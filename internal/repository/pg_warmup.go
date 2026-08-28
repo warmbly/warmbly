@@ -118,10 +118,9 @@ type WarmupRepository interface {
 	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
-	// ColdRampStateForAccounts returns the graduation inputs for a whole
-	// candidate pool in one round trip: when each mailbox started warming,
-	// when it first sent cold mail, and its recent junk placements. The
-	// campaign scheduler reads this once per pass, so it must not be per-account.
+	// ColdRampStateForAccounts returns a whole candidate pool's graduation
+	// inputs in one round trip. The scheduler reads this per pass, so it must
+	// not be per-account.
 	ColdRampStateForAccounts(ctx context.Context, accountIDs []uuid.UUID, since time.Time) (map[uuid.UUID]ColdRampState, error)
 	// StampColdRampStart records a mailbox's first cold send. Idempotent: a
 	// mailbox that already has an anchor keeps it.
