@@ -201,6 +201,10 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	// is what makes a thread read as a conversation instead of two monologues.
 	// The directed partner still passes the same health gate as a drawn one.
 	partner := s.directedWarmupPartner(ctx, taskID, poolType)
+	// A directed task IS the reply; the reply-rate draw already happened when
+	// it was scheduled. Rolling again here would square the rate, so a 30%
+	// reply rate would answer 9% of the time.
+	directedReply := partner != nil
 	if partner == nil {
 		partner, err = s.selectWarmupPartner(ctx, *account)
 	}
@@ -223,7 +227,7 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	// STEP 6: Determine if this should be a reply or a new warmup email.
 	// Replies advance the exact cached conversation plan used by the parent.
 	replyRate := account.WarmupReplyRate
-	shouldReply := rand.Float64()*100 < float64(replyRate)
+	shouldReply := directedReply || rand.Float64()*100 < float64(replyRate)
 	var subject, emailBody, conversationTheme, contentSource string
 	var conversationID *uuid.UUID
 	var conversationTurn int
