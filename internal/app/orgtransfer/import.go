@@ -560,6 +560,15 @@ var orgMergeExcluded = map[string]bool{
 	"created_at":             true,
 	"deletion_scheduled_at":  true,
 	"deletion_scheduled_for": true,
+	// Risk posture is one platform's verdict about a tenant on its own
+	// infrastructure, reached from evidence the destination never saw. Letting
+	// an archive carry it would import a suspension nobody here decided, and
+	// letting it carry "trusted" would let an archive clear one.
+	"risk_state":        true,
+	"risk_score":        true,
+	"risk_reason":       true,
+	"risk_signals":      true,
+	"risk_evaluated_at": true,
 }
 
 // buildUserMap resolves archive members to destination accounts by email.

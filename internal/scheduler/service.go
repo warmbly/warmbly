@@ -46,6 +46,9 @@ type schedulerService struct {
 	// outreachRepo reads the org's send-time-optimization settings. Optional/
 	// nil-safe: without it sends stay on the sending mailbox's clock.
 	outreachRepo repository.AdvancedOutreachRepository
+	// orgRiskRepo reads the organization's fused abuse posture. Optional/
+	// nil-safe: without it no organization is ever risk-capped.
+	orgRiskRepo repository.OrgRiskRepository
 }
 
 // DomainAuthPolicy resolves whether the sending-domain authentication gate is
@@ -102,6 +105,35 @@ func (s *schedulerService) WireOutreach(r repository.AdvancedOutreachRepository)
 // outreach settings after construction.
 type OutreachAware interface {
 	WireOutreach(r repository.AdvancedOutreachRepository)
+}
+
+// WireOrgRisk attaches the organization risk posture.
+func (s *schedulerService) WireOrgRisk(r repository.OrgRiskRepository) {
+	s.orgRiskRepo = r
+}
+
+// OrgRiskAware is the optional capability the caller uses to attach org risk
+// after construction.
+type OrgRiskAware interface {
+	WireOrgRisk(r repository.OrgRiskRepository)
+}
+
+// orgRiskCapMultiplier is how much the organization's posture lowers a
+// per-mailbox cold cap. Fails open to 1: a lookup error must never cap a
+// customer's sending on a verdict nothing established.
+func (s *schedulerService) orgRiskCapMultiplier(ctx context.Context, orgID *uuid.UUID) float64 {
+	if s.orgRiskRepo == nil || orgID == nil {
+		return 1
+	}
+	states, err := s.orgRiskRepo.GetOrgRiskStates(ctx, []uuid.UUID{*orgID})
+	if err != nil {
+		return 1
+	}
+	state, ok := states[*orgID]
+	if !ok {
+		return 1
+	}
+	return state.CapMultiplier()
 }
 
 // sendTimePreference resolves the org's recipient-timezone policy for one

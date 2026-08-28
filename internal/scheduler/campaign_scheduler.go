@@ -253,6 +253,10 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// ceiling below costs no query inside the candidate loop.
 	coldRamp := s.coldRampStates(ctx, accounts)
 
+	// The organization's own posture, resolved once. A restricted organization
+	// keeps sending, at a fraction of the volume.
+	riskMultiplier := s.orgRiskCapMultiplier(ctx, campaign.OrganizationID)
+
 	effectiveCap := func(acct models.Email) int {
 		lim := min(acct.CampaignLimit, campaign.DailyLimit)
 		if campaign.RampEnabled {
@@ -262,6 +266,16 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		// full cold cap the day it joins a campaign. min() only, so it can lower
 		// a mailbox but never raise one.
 		lim = min(lim, coldCeilingFor(coldRamp[acct.ID], lim))
+		if riskMultiplier < 1 {
+			risked := int(float64(lim)*riskMultiplier + 0.5)
+			// A restricted organization still sends, just far less. Zeroing it
+			// here would stop the campaign without ever saying why; suspension
+			// is the band that stops sending, and it does so at the send gate.
+			if risked < 1 {
+				risked = 1
+			}
+			lim = min(lim, risked)
+		}
 		return lim
 	}
 

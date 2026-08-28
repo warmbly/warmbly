@@ -738,6 +738,16 @@ func (s *tasksService) resolveWarmupPoolType(ctx context.Context, account *Email
 	if account.OrganizationID == nil {
 		return "free"
 	}
+	// A restricted organization leaves the paid pool whatever it pays: the
+	// shared reputation paying customers depend on is not for spending on a
+	// risky tenant.
+	if s.orgRiskRepo != nil {
+		if states, err := s.orgRiskRepo.GetOrgRiskStates(ctx, []uuid.UUID{*account.OrganizationID}); err == nil {
+			if states[*account.OrganizationID].ForcesFreeWarmupPool() {
+				return "free"
+			}
+		}
+	}
 	if s.featureGate != nil {
 		isPaid, xerr := s.featureGate.IsPaidOrganization(ctx, *account.OrganizationID)
 		if xerr == nil && !isPaid {

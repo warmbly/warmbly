@@ -337,6 +337,9 @@ export function useRealtimeEvents() {
           webhook: [['webhooks'], ['integrations', 'connections']],
           template: [['templates']],
           organization: [['organizations']],
+          // A risk transition changes send caps and warmup pool placement, so
+          // the mailbox and analytics views move with it, not just the banner.
+          org_risk: [['organizations'], ['emails'], ['analytics']],
           organization_member: [['organizations'], ['organizations', 'members']],
           invitation: [['organizations', 'invitations']],
           team: [['teams']],

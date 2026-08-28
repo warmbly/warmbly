@@ -21,6 +21,7 @@ import { SkyChrome } from "./SkyChrome";
 import { AppHeader } from "./AppHeader";
 import { AppNav } from "./AppNav";
 import PendingDeletionBar from "./PendingDeletionBar";
+import SendingRestrictedBar from "./SendingRestrictedBar";
 import { RouteBoundary } from "./ErrorBoundary";
 import { ShortcutsModal } from "@/components/shared/ShortcutsModal";
 import { CommandPalette } from "@/components/shared/CommandPalette";
@@ -56,6 +57,7 @@ export function AppShell() {
                 {/* Sits above the header so it can't be missed. Only
                     renders when the current workspace or the user's
                     own account is scheduled for deletion. */}
+                <SendingRestrictedBar />
                 <PendingDeletionBar />
 
                 <AppHeader onMenu={() => setNavOpen(true)} />

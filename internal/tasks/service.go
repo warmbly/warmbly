@@ -122,8 +122,11 @@ type tasksService struct {
 	campaignRepo         repository.CampaignRepository
 	contactRepo          repository.ContactRepository
 	campaignLogRepo      repository.CampaignLogRepository
-	attachmentRepo       repository.AttachmentRepository
-	trackedLinkRepo      repository.TrackedLinkRepository
+	// orgRiskRepo bars a restricted organization from the paid warmup pool.
+	// Optional/nil-safe.
+	orgRiskRepo     repository.OrgRiskRepository
+	attachmentRepo  repository.AttachmentRepository
+	trackedLinkRepo repository.TrackedLinkRepository
 
 	// automationRunner launches automations from a campaign "run_automation" step.
 	automationRunner AutomationRunner
@@ -240,4 +243,15 @@ func (s *tasksService) domainAuthBlocked(ctx context.Context, account *models.Em
 	}
 	enforce, grace := s.domainAuth.DomainAuth(ctx)
 	return enforce && account.DomainAuthBlocked(time.Now(), grace)
+}
+
+// WireOrgRisk attaches the organization risk posture. Kept off the constructor
+// so the service stays constructible in tests and in deployments without it.
+func (s *tasksService) WireOrgRisk(r repository.OrgRiskRepository) {
+	s.orgRiskRepo = r
+}
+
+// OrgRiskAware is the optional capability the caller uses to attach org risk.
+type OrgRiskAware interface {
+	WireOrgRisk(r repository.OrgRiskRepository)
 }

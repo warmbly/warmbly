@@ -937,6 +937,34 @@ Auth: Session only (not available to API keys).
 
 The organization is the workspace tenant. These endpoints handle creating and switching workspaces, the current workspace and its limits, members, custom roles, invitations, ownership transfer, avatar, and the workspace danger zone. All of `/organization/*` is session only. Mutations are gated by the caller's organization role, noted per endpoint.
 
+### Get the workspace sending posture
+
+`GET /organizations/current/risk`
+
+Returns the workspace's abuse posture and, when it is restricted, why. Readable by any member: a workspace whose sending is limited should be able to see that it is.
+
+Auth: Session only (not available to API keys).
+
+#### Response
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `state` | string | `trusted`, `watch`, `restricted`, or `suspended`. |
+| `restricted` | boolean | True for `restricted` and `suspended`; volume is reduced. |
+| `suspended` | boolean | True when sending is stopped entirely. |
+| `reason` | string | Plain-language summary, when there is one. |
+
+```json
+{
+  "state": "restricted",
+  "restricted": true,
+  "suspended": false,
+  "reason": "imported list is 30% invalid; disposable signup domain"
+}
+```
+
+The detector evidence behind a posture is deliberately not returned. It is operator-facing, and handing an actor the exact signals that flagged them is a map for evading the next check.
+
 ### Create an organization
 
 `POST /organization`

@@ -34,6 +34,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/organization"
+	"github.com/warmbly/warmbly/internal/app/orgrisk"
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -127,6 +128,7 @@ type Handler struct {
 
 	// Organization & IAM
 	OrganizationService organization.OrganizationService
+	OrgRiskService      orgrisk.Service
 
 	// CRM
 	CRMService crm.CRMService
