@@ -330,8 +330,10 @@ func (s *contactService) ImportCommit(
 			allAddresses = append(allAddresses, addr)
 			continue
 		}
-		// A row whose address would not parse still counts against the list.
-		allAddresses = append(allAddresses, rawEmailOf(parsed[i].raw))
+		// The mapped address would not parse. That is exactly what malformed
+		// means, so it is recorded as such rather than hunting other columns
+		// for something with an @ in it, which could pick up a notes field.
+		allAddresses = append(allAddresses, unparseableAddress)
 	}
 	quality := listquality.Assess(allAddresses)
 
@@ -846,19 +848,9 @@ func parseIDList(raw []string) ([]string, *errx.Error) {
 	return out, nil
 }
 
-// rawEmailOf recovers something printable from a row whose address would not
-// parse, so a malformed entry is still counted rather than silently dropped.
-func rawEmailOf(raw []string) string {
-	for _, v := range raw {
-		if strings.Contains(v, "@") {
-			return strings.TrimSpace(v)
-		}
-	}
-	if len(raw) > 0 {
-		return strings.TrimSpace(raw[0])
-	}
-	return ""
-}
+// unparseableAddress stands in for a row whose mapped email would not parse.
+// It is deliberately not an address, so the assessment counts it as malformed.
+const unparseableAddress = "(unparseable)"
 
 // toImportQuality maps the assessment onto the API shape.
 func toImportQuality(q listquality.Summary) *models.ContactImportQuality {

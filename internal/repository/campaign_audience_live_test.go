@@ -106,3 +106,29 @@ func TestLiveCampaignAudienceIsScoped(t *testing.T) {
 		t.Errorf("an unknown campaign returned %d leads, want 0", got.Total)
 	}
 }
+
+// The bug this guards: an invalid address that is also suppressed was counted
+// in Invalid while excluded from Deliverable, so the projected rate could
+// exceed 100% and block a launch whose sendable list was clean.
+func TestLiveCampaignAudienceCountsOnlySendableAsInvalid(t *testing.T) {
+	handle, pool := liveContactDB(t)
+	f := newSharedOrgFixture(t, pool)
+	repo := NewCampaignAudienceRepository(handle)
+
+	// 9 invalid leads, all unsubscribed, plus 1 clean sendable lead.
+	for i := 0; i < 9; i++ {
+		addLead(t, f, "dead"+uuid.New().String()[:6]+"@test.local", "invalid", false)
+	}
+	addLead(t, f, "live"+uuid.New().String()[:6]+"@test.local", "valid", true)
+
+	got, err := repo.GetCampaignAudience(context.Background(), f.org, f.campaign)
+	if err != nil {
+		t.Fatalf("GetCampaignAudience: %v", err)
+	}
+	if got.Invalid != 0 {
+		t.Errorf("invalid = %d, want 0: every invalid lead is unsendable", got.Invalid)
+	}
+	if got.Deliverable != 1 {
+		t.Errorf("deliverable = %d, want the 1 sendable lead", got.Deliverable)
+	}
+}

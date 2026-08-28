@@ -49,8 +49,8 @@ type Verdict struct {
 // Project estimates the audience's bounce rate. A list too small to judge, or
 // with nothing deliverable, is never blocked.
 func Project(a repository.CampaignAudience) Verdict {
-	// Counted in SQL, not derived: a contact can be both suppressed and
-	// unsubscribed, and subtracting both counts would remove it twice.
+	// Counted in SQL: a contact can be both suppressed and unsubscribed, so
+	// subtracting both counts would remove it twice.
 	deliverable := a.Deliverable
 	if deliverable < 0 {
 		deliverable = 0

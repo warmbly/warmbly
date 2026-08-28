@@ -13,8 +13,10 @@ import (
 // it is now, not as it was at the last sweep.
 type CampaignAudience struct {
 	Total int
-	// Verification counts come from the address-verification service. Unknown
-	// means unverified, which is not the same as bad.
+	// Verification counts, restricted to DELIVERABLE leads. Counting an
+	// invalid address that is also suppressed would put it in the numerator
+	// while Deliverable excludes it from the denominator, which can push the
+	// projected rate above 100%.
 	Invalid  int
 	Risky    int
 	Unknown  int
@@ -48,26 +50,29 @@ func (r *campaignAudienceRepository) GetCampaignAudience(ctx context.Context, or
 	var a CampaignAudience
 	// Same role and free-mail vocabularies the advisor uses, so a customer is
 	// not told two different numbers for the same list.
+	// sendable is the same predicate Deliverable counts, reused so every
+	// verification count shares one denominator.
+	const sendable = `ct.subscribed IS NOT FALSE AND NOT EXISTS (
+		SELECT 1 FROM suppressed_recipients sr
+		WHERE sr.organization_id = $1 AND lower(sr.email) = lower(ct.email)
+		  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
+	)`
 	err := r.DB.Pool.QueryRow(ctx, `
 		SELECT
 			COUNT(*),
-			COUNT(*) FILTER (WHERE ct.verification_status = 'invalid'),
-			COUNT(*) FILTER (WHERE ct.verification_status = 'risky'),
+			COUNT(*) FILTER (WHERE `+sendable+` AND ct.verification_status = 'invalid'),
+			COUNT(*) FILTER (WHERE `+sendable+` AND ct.verification_status = 'risky'),
 			-- 'unknown' is the column default, so this is every address nobody
 			-- has checked. NOT NULL, so no null branch is needed.
-			COUNT(*) FILTER (WHERE ct.verification_status NOT IN ('valid','invalid','risky')),
-			COUNT(*) FILTER (WHERE ct.is_catch_all),
+			COUNT(*) FILTER (WHERE `+sendable+` AND ct.verification_status NOT IN ('valid','invalid','risky')),
+			COUNT(*) FILTER (WHERE `+sendable+` AND ct.is_catch_all),
 			COUNT(*) FILTER (WHERE EXISTS (
 				SELECT 1 FROM suppressed_recipients sr
 				WHERE sr.organization_id = $1 AND lower(sr.email) = lower(ct.email)
 				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
 			)),
 			COUNT(*) FILTER (WHERE ct.subscribed IS FALSE),
-			COUNT(*) FILTER (WHERE ct.subscribed IS NOT FALSE AND NOT EXISTS (
-				SELECT 1 FROM suppressed_recipients sr
-				WHERE sr.organization_id = $1 AND lower(sr.email) = lower(ct.email)
-				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
-			)),
+			COUNT(*) FILTER (WHERE `+sendable+`),
 			COUNT(*) FILTER (WHERE split_part(lower(ct.email), '@', 1) IN (`+rolePrefixesSQL+`)),
 			COUNT(*) FILTER (WHERE split_part(lower(ct.email), '@', 2) IN (`+freeMailDomainsSQL+`))
 		FROM campaign_leads cl
