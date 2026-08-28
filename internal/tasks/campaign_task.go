@@ -711,6 +711,15 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	// EMAIL_SENT repairs it downstream if it never lands.
 	// Today's counters were bumped by the reservation, inside the same
 	// transaction, so the new-lead/day cap can never under-count.
+	// Anchor the graduation ramp on the mailbox's first cold send. Idempotent
+	// in SQL, so every later send is a no-op. Best-effort: a mailbox with no
+	// anchor simply sits at its starting volume until one is written.
+	if s.warmupRepo != nil {
+		if err := s.warmupRepo.StampColdRampStart(ctx, account.ID); err != nil {
+			log.Warn().Err(err).Str("email_account_id", account.ID.String()).Msg("could not anchor the cold ramp")
+		}
+	}
+
 	if err := s.stampSendRecorded(ctx, campaign.ID, contact.ID, sequence.ID); err != nil {
 		sentry.CaptureException(err)
 		log.Error().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Str("contact_id", contact.ID.String()).Msg("Failed to record email sent; the worker result will repair the stamp")

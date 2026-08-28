@@ -132,6 +132,24 @@ The detail view streams sends, opens, clicks, replies, bounces, and skips as the
 
 If scheduling stalls on a transient infrastructure hiccup, Warmbly re-seeds within a few minutes. Pausing and resuming forces a fresh start.
 
+## Easing out of warmup
+
+A mailbox that has been warming does not jump straight to its full cold cap. Going from 40 warmup emails a day to 50 cold emails the next morning is the volume jump mailbox providers penalise, so Warmbly ramps into it.
+
+The mailbox starts at a volume set by how long it warmed, then adds `5` a day until it reaches the cap you configured:
+
+| Warmed for | Starts cold at |
+|------------|----------------|
+| under a week | `5`/day |
+| one to two weeks | `10`/day |
+| two weeks or more | `20`/day |
+
+The ramp only ever **lowers** a cap, never raises one, so your configured limit and the campaign's daily limit still bind. A spam placement pauses the climb for the same three days it pauses the warmup ramp, and the paused days are subtracted rather than made up. The mailbox drawer shows today's allowance and roughly when it reaches your cap.
+
+<Callout type="info" title="Only for mailboxes that warmed">
+A mailbox that never used warmup is not gated. This exists to smooth the warmup-to-cold transition, not to cap senders who never opted into warmup.
+</Callout>
+
 ## Safety posture
 
 Defaults are deliberately conservative, aiming at a low complaint rate rather than maximum throughput:

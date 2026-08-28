@@ -153,7 +153,11 @@ var Tables = []Table{
 		// mailbox on an observation it never made. Cleared, the mailbox sorts
 		// to the head of the destination's own sweep (NULLS FIRST) and cannot
 		// be blocked until that sweep confirms the failure itself.
-		ResetOnImport: []string{"worker_id", "auth_checked_at", "auth_failing_since"},
+		// cold_ramp_started_at is the same shape of claim: it RAISES a
+		// mailbox's cold ceiling, and the destination never watched it send.
+		// Cleared, the mailbox re-graduates from its warmup-maturity band,
+		// which costs a few days and is the safe direction to be wrong in.
+		ResetOnImport: []string{"worker_id", "auth_checked_at", "auth_failing_since", "cold_ramp_started_at"},
 	},
 	{
 		Name: "email_accounts_smtp_imap", Group: models.OrgDataGroupCore,

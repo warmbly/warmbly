@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/warmbly/warmbly/internal/app/behavior"
+	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
@@ -943,5 +944,76 @@ func TestLiveReachableRecipientHourIsPreferred(t *testing.T) {
 	}
 	if h := at.In(loc).Hour(); h != 9 {
 		t.Errorf("slot %s is %02d:00 Denver, want the recipient's 9am", at.In(loc), h)
+	}
+}
+
+// graduateMailbox marks the fixture's mailbox as having warmed for daysWarming,
+// and optionally anchors its cold ramp coldDaysAgo in the past.
+func (f *liveFixture) graduateMailbox(t *testing.T, daysWarming int, coldDaysAgo *int) {
+	t.Helper()
+	var coldStart any
+	if coldDaysAgo != nil {
+		coldStart = time.Now().Add(-time.Duration(*coldDaysAgo) * 24 * time.Hour)
+	}
+	if _, err := f.pool.Exec(context.Background(),
+		`UPDATE email_accounts
+		    SET warmup = $2, warmup_paused_at = NULL, cold_ramp_started_at = $3
+		  WHERE id = $1`,
+		f.mailbox, time.Now().Add(-time.Duration(daysWarming)*24*time.Hour), coldStart); err != nil {
+		t.Fatalf("graduate mailbox: %v", err)
+	}
+}
+
+// dailyCapacity reports how many cold sends the scheduler will allow the
+// fixture's mailbox today, which is what the graduation ceiling gates.
+func (f *liveFixture) dailyCapacity(t *testing.T, handle *db.DB) int {
+	t.Helper()
+	repo := repository.NewWarmupRepository(f.pool)
+	states, err := repo.ColdRampStateForAccounts(context.Background(),
+		[]uuid.UUID{f.mailbox}, time.Now().Add(-warmupramp.LookbackWindow))
+	if err != nil {
+		t.Fatalf("cold ramp state: %v", err)
+	}
+	_ = handle
+	return coldCeilingFor(states[f.mailbox], 50)
+}
+
+// TestLiveGraduationStopsTheOvernightJumpToFullCap is issue #147: a mailbox at
+// its warmup ceiling joining a campaign must not reach the cold cap that day.
+func TestLiveGraduationStopsTheOvernightJumpToFullCap(t *testing.T) {
+	handle, pool := liveDB(t)
+	f := newLiveFixture(t, pool, "UTC")
+	f.graduateMailbox(t, 30, nil) // a month of warmup, first cold day
+
+	if got := f.dailyCapacity(t, handle); got != 20 {
+		t.Errorf("first cold day allows %d, want the graduation start of 20 rather than the 50 cap", got)
+	}
+}
+
+func TestLiveGraduationClimbsToTheCap(t *testing.T) {
+	handle, pool := liveDB(t)
+	f := newLiveFixture(t, pool, "UTC")
+
+	three := 3
+	f.graduateMailbox(t, 30, &three)
+	if got := f.dailyCapacity(t, handle); got != 35 {
+		t.Errorf("cold day 3 allows %d, want 20 + 3*5", got)
+	}
+
+	long := 60
+	f.graduateMailbox(t, 30, &long)
+	if got := f.dailyCapacity(t, handle); got != 50 {
+		t.Errorf("a long-graduated mailbox allows %d, want the full 50 cap", got)
+	}
+}
+
+// A mailbox that never used warmup keeps its cap: gating it would cap customers
+// who never opted into warmup, which is not what this gate is for.
+func TestLiveGraduationDoesNotGateAMailboxThatNeverWarmed(t *testing.T) {
+	handle, pool := liveDB(t)
+	f := newLiveFixture(t, pool, "UTC")
+
+	if got := f.dailyCapacity(t, handle); got != 50 {
+		t.Errorf("a never-warmed mailbox allows %d, want its full 50 cap", got)
 	}
 }

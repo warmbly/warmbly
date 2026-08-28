@@ -249,11 +249,19 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// clamp. It is min(per-mailbox cold cap, campaign daily limit) further min()'d
 	// with the day's ramp ceiling. Applied via min() only — it can never RAISE a
 	// mailbox above its cold cap (the mailbox-first safety invariant).
+	// Graduation state for the whole pool in one round trip, so the per-mailbox
+	// ceiling below costs no query inside the candidate loop.
+	coldRamp := s.coldRampStates(ctx, accounts)
+
 	effectiveCap := func(acct models.Email) int {
 		lim := min(acct.CampaignLimit, campaign.DailyLimit)
 		if campaign.RampEnabled {
 			lim = min(lim, campaignRampCeiling(true, campaign.RampStart, campaign.RampIncrement, campaign.RampCeiling, campaign.RampLevel))
 		}
+		// Graduation ceiling: a mailbox at its warmup ceiling must not reach the
+		// full cold cap the day it joins a campaign. min() only, so it can lower
+		// a mailbox but never raise one.
+		lim = min(lim, coldCeilingFor(coldRamp[acct.ID], lim))
 		return lim
 	}
 

@@ -70,8 +70,18 @@ export default interface AccountStatus {
     errors: AccountError[];
     daily_usage: AccountDailyUsage;
     warmup_status?: WarmupStatusInfo;
+    /** Present only while graduation holds the cold cap below the configured one. */
+    cold_ramp?: ColdRampInfo;
     warmup_health?: WarmupHealthInfo;
     // True when the mailbox backs a live campaign — a low-volume health-check
     // warmup keeps running even if the user has warmup paused/off.
     in_campaign: boolean;
+}
+
+// Why the cold cap is below the number configured on the mailbox.
+export interface ColdRampInfo {
+    ceiling: number;
+    mailbox_cap: number;
+    days_to_full_cap: number;
+    held: boolean;
 }
