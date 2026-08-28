@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"github.com/warmbly/warmbly/internal/app/orgrisk"
 
 	"github.com/google/uuid"
 
@@ -46,8 +47,8 @@ type AuthService interface {
 	// WireTwoFA attaches the 2FA challenger (post-construction; nil = 2FA off).
 	WireTwoFA(t TwoFAChallenger)
 
-	RegistrationStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error)
-	RegistrationConfirm(ctx context.Context, data *ConfirmData, session, ipaddr string) *errx.Error
+	RegistrationStart(ctx context.Context, data *AuthData, origin SignupOrigin) (*models.AuthSession, *errx.Error)
+	RegistrationConfirm(ctx context.Context, data *ConfirmData, session string, origin SignupOrigin) *errx.Error
 	// WireReferral attaches the referral attributor (post-construction; nil = no
 	// referral attribution at signup).
 	WireReferral(r ReferralAttributor)
@@ -103,6 +104,10 @@ type AuthService interface {
 }
 
 type authService struct {
+	// orgRisk files signup findings onto the new workspace's posture.
+	// Optional/nil-safe: without it signups are scored but not fused.
+	orgRisk orgrisk.Service
+
 	authRepository           repository.AuthRepository
 	userRepository           repository.UserRepository
 	tokenService             token.TokenService
@@ -180,4 +185,13 @@ func NewService(
 		policy:       config.LoadAuthPolicy(true),
 		mailDelivers: true,
 	}
+}
+
+// WireOrgRisk attaches the organization risk posture. Kept off the constructor
+// so auth stays constructible where risk is not wired.
+func (s *authService) WireOrgRisk(r orgrisk.Service) { s.orgRisk = r }
+
+// OrgRiskAware is the optional capability the caller uses to attach org risk.
+type OrgRiskAware interface {
+	WireOrgRisk(r orgrisk.Service)
 }
