@@ -15,6 +15,7 @@ import (
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/warmlint"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 	"github.com/warmbly/warmbly/internal/tasksched"
@@ -25,6 +26,9 @@ type Service interface {
 	UpdateOrganizationSettings(ctx context.Context, organizationID, updatedBy uuid.UUID, settings *models.AdvancedOutreachSettings) *errx.Error
 
 	GetCampaignSettings(ctx context.Context, campaignID uuid.UUID) (*models.CampaignAdvancedSettings, *errx.Error)
+	// EffectiveSettings is the org settings with the campaign's overrides
+	// merged in — what every per-campaign decision must read.
+	EffectiveSettings(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.AdvancedOutreachSettings, *errx.Error)
 	UpdateCampaignSettings(ctx context.Context, campaignID uuid.UUID, settings *models.AdvancedOutreachSettings) *errx.Error
 
 	ListABVariants(ctx context.Context, campaignID uuid.UUID) ([]models.CampaignABVariant, *errx.Error)
@@ -274,6 +278,10 @@ func (s *service) DeleteABVariant(ctx context.Context, campaignID, variantID uui
 		return toErrx(err)
 	}
 	return nil
+}
+
+func (s *service) EffectiveSettings(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.AdvancedOutreachSettings, *errx.Error) {
+	return s.effectiveSettings(ctx, organizationID, campaignID)
 }
 
 func (s *service) effectiveSettings(ctx context.Context, organizationID, campaignID uuid.UUID) (*models.AdvancedOutreachSettings, *errx.Error) {
@@ -1582,6 +1590,10 @@ func (s *service) RunPreflight(ctx context.Context, organizationID, campaignID u
 		checks = append(checks, check)
 	}
 
+	if settings.Preflight.CheckContentScore {
+		checks = append(checks, s.contentScoreCheck(ctx, campaignID, settings.Preflight.MinContentScore, &recommendations))
+	}
+
 	passedCount := 0
 	for _, c := range checks {
 		if c.Passed {
@@ -1735,4 +1747,67 @@ func (s *service) ProcessRetryableDeadLetters(ctx context.Context) (int, *errx.E
 	}
 
 	return retried, nil
+}
+
+// contentScoreCheck scores every step's copy and reports the worst. A step list
+// it could not read reports as FAILED, not passed: a check that did not run
+// must never look like one that succeeded.
+func (s *service) contentScoreCheck(ctx context.Context, campaignID uuid.UUID, floor int, recommendations *[]string) models.PreflightCheckResult {
+	if floor <= 0 {
+		floor = 60
+	}
+	seqs, err := s.campaignRepo.GetSequencesByCampaignID(ctx, campaignID)
+	if err != nil {
+		*recommendations = append(*recommendations, "Re-run preflight; the campaign's steps could not be read.")
+		return models.PreflightCheckResult{
+			Key:         "content_score",
+			Passed:      false,
+			Severity:    "warning",
+			Message:     "Could not read the campaign's steps to score their copy.",
+			Remediation: "Re-run preflight.",
+		}
+	}
+	if len(seqs) == 0 {
+		return models.PreflightCheckResult{
+			Key:      "content_score",
+			Passed:   true,
+			Severity: "info",
+			Message:  "No steps to score yet.",
+		}
+	}
+
+	worst, worstStep, issue := 101, 0, ""
+	for i, seq := range seqs {
+		r := warmlint.Score(seq.Subject, seq.BodyHTML, seq.BodyPlain)
+		if r.Score >= worst {
+			continue
+		}
+		worst, worstStep, issue = r.Score, i+1, ""
+		for _, is := range r.Issues {
+			if is.Severity == "high" {
+				issue = is.Message
+				break
+			}
+		}
+		if issue == "" && len(r.Issues) > 0 {
+			issue = r.Issues[0].Message
+		}
+	}
+
+	if worst >= floor {
+		return models.PreflightCheckResult{
+			Key:      "content_score",
+			Passed:   true,
+			Severity: "info",
+			Message:  fmt.Sprintf("Copy scores %d/100 for spam signals.", worst),
+		}
+	}
+	*recommendations = append(*recommendations, "Rewrite the lowest-scoring step's copy before sending at volume.")
+	return models.PreflightCheckResult{
+		Key:         "content_score",
+		Passed:      false,
+		Severity:    "warning",
+		Message:     fmt.Sprintf("Step %d scores %d/100 for spam signals (floor %d). %s", worstStep, worst, floor, issue),
+		Remediation: "Trim spam-trigger wording, links, images and stacked punctuation in that step.",
+	}
 }

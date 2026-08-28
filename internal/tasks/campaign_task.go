@@ -499,6 +499,12 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		}
 	}
 
+	// STEP 10.75: Score the copy the recipient will actually receive, after
+	// merge fields, spintax, A/B and AI blocks have resolved. Advisory: it
+	// warns once per step and never blocks or delays the send.
+	s.warnOnWeakContent(ctx, orgID, campaign.ID, sequence.ID, sequence.Position+1,
+		subject, bodyHTML, bodyPlain, len(attachmentRefs))
+
 	// STEP 11: Add tracking on the host resolveTrackingHost picks, and log any
 	// override that was configured but not verified so a customer whose links
 	// are not going through their own domain can see why.

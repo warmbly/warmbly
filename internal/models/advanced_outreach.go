@@ -57,6 +57,12 @@ type PreflightValidationSettings struct {
 	CheckABVariantConfigured bool `json:"check_ab_variant_configured"`
 	CheckDailyLimit          bool `json:"check_daily_limit"`
 	CheckScheduleWindow      bool `json:"check_schedule_window"`
+	// CheckContentScore scores each step's copy for spam signals, at preflight
+	// and again per send against the rendered text. Advisory: it warns, it
+	// never blocks a send.
+	CheckContentScore bool `json:"check_content_score"`
+	// MinContentScore is the 0-100 floor below which copy is flagged.
+	MinContentScore int `json:"min_content_score"`
 }
 
 type DeliverabilityDashboardSettings struct {
@@ -462,6 +468,8 @@ func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 			CheckABVariantConfigured: false,
 			CheckDailyLimit:          true,
 			CheckScheduleWindow:      true,
+			CheckContentScore:        true,
+			MinContentScore:          60,
 		},
 		Dashboard: DeliverabilityDashboardSettings{
 			Enabled:            true,

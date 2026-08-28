@@ -145,6 +145,10 @@ type WarmupRepository interface {
 	// Pool-wide placement analytics (admin overview)
 	PoolSpamPlacementRate(ctx context.Context, since time.Time) (float64, error)
 	PoolSpamPlacementsByProvider(ctx context.Context, since time.Time) (map[string]int, error)
+	// SenderPlacementByProvider is one SENDER's record keyed by who RUNS the
+	// recipient's mail, not how that mailbox connects: email_accounts.provider
+	// collapses every custom host into smtp_imap.
+	SenderPlacementByProvider(ctx context.Context, senderAccountID uuid.UUID, since time.Time) (map[string]ProviderPlacementStat, error)
 
 	// Warmup token management
 	CreateWarmupToken(ctx context.Context, token *models.WarmupToken) error
@@ -169,6 +173,9 @@ type WarmupRepository interface {
 	// Partner diversity support
 	GetPoolParticipantDomains(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
 	GetPoolParticipantEmails(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
+	// GetPoolParticipantProviders maps each participant to the provider that
+	// runs its mail, in the same vocabulary as SenderPlacementByProvider.
+	GetPoolParticipantProviders(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
 	CountEligibleRecipients(ctx context.Context, poolType string, excludeAccountID uuid.UUID) (int, error)
 	GetRecentPartnerDomainCounts(ctx context.Context, accountID uuid.UUID, since time.Time) (map[string]int, error)
 
@@ -804,6 +811,114 @@ func (r *warmupRepository) PoolSpamPlacementsByProvider(ctx context.Context, sin
 			return nil, err
 		}
 		out[provider] = n
+	}
+	return out, rows.Err()
+}
+
+// ProviderPlacementStat is a sender's warmup record against one recipient
+// provider: how many it sent, and how many of those were filtered into junk.
+type ProviderPlacementStat struct {
+	Sends      int
+	Placements int
+}
+
+// Rate is the share of sends that landed in junk, 0 when nothing was sent.
+func (p ProviderPlacementStat) Rate() float64 {
+	if p.Sends <= 0 {
+		return 0
+	}
+	return float64(p.Placements) / float64(p.Sends)
+}
+
+func (r *warmupRepository) SenderPlacementByProvider(ctx context.Context, senderAccountID uuid.UUID, since time.Time) (map[string]ProviderPlacementStat, error) {
+	out := make(map[string]ProviderPlacementStat)
+
+	// Only sends that actually completed. A token is written before the send
+	// goes out, so counting every token would put failed sends in the
+	// denominator and understate the provider's junk rate.
+	sendRows, err := r.db.Query(ctx, `
+		SELECT lower(split_part(ea.email, '@', 2)), COUNT(*)
+		FROM warmup_tokens wt
+		JOIN email_accounts ea ON ea.id = wt.recipient_account_id
+		JOIN tasks t ON t.id = wt.task_id AND t.status = 'completed'
+		WHERE wt.sender_account_id = $1 AND wt.created_at >= $2
+		GROUP BY 1
+	`, senderAccountID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer sendRows.Close()
+	for sendRows.Next() {
+		var domain string
+		var n int
+		if err := sendRows.Scan(&domain, &n); err != nil {
+			return nil, err
+		}
+		key := string(models.ClassifyProvider(domain))
+		stat := out[key]
+		stat.Sends += n
+		out[key] = stat
+	}
+	if err := sendRows.Err(); err != nil {
+		return nil, err
+	}
+
+	placementRows, err := r.db.Query(ctx, `
+		SELECT recipient_domain, COUNT(*)
+		FROM warmup_spam_reports
+		WHERE reported_account_id = $1 AND report_type = 'spam_placement' AND created_at >= $2
+		GROUP BY 1
+	`, senderAccountID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer placementRows.Close()
+	for placementRows.Next() {
+		var domain string
+		var n int
+		if err := placementRows.Scan(&domain, &n); err != nil {
+			return nil, err
+		}
+		key := string(models.ClassifyProvider(domain))
+		stat := out[key]
+		stat.Placements += n
+		out[key] = stat
+	}
+	return out, placementRows.Err()
+}
+
+func (r *warmupRepository) GetPoolParticipantProviders(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error) {
+	// Deliberately NOT health-filtered by default: this map only resolves a
+	// candidate's provider, it never decides eligibility. A candidate missing
+	// from it scores an unpenalized 1.0, so a just-unblocked partner the
+	// selector re-admits would sidestep the sender's provider penalty.
+	query := `
+		SELECT wpp.email_account_id, lower(split_part(ea.email, '@', 2))
+		FROM warmup_pool_participants wpp
+		JOIN warmup_pools wp ON wpp.pool_id = wp.id
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		WHERE wp.pool_type = $1
+		  AND ea.status = 'active'
+	`
+	if excludeBlocked {
+		query += " AND wpp.health_state IN ('healthy', 'watch', 'throttled')"
+	}
+	query += " AND wpp.participant_role IN ('sender_receiver', 'recipient_only')"
+
+	rows, err := r.db.Query(ctx, query, poolType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[uuid.UUID]string)
+	for rows.Next() {
+		var id uuid.UUID
+		var domain string
+		if err := rows.Scan(&id, &domain); err != nil {
+			return nil, err
+		}
+		out[id] = string(models.ClassifyProvider(domain))
 	}
 	return out, rows.Err()
 }

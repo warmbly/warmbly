@@ -132,6 +132,24 @@ The detail view streams sends, opens, clicks, replies, bounces, and skips as the
 
 If scheduling stalls on a transient infrastructure hiccup, Warmbly re-seeds within a few minutes. Pausing and resuming forces a fresh start.
 
+## Content checks
+
+Warmbly scores each step's copy out of 100 for the signals spam filters weight: trigger wording, stacked punctuation, ALL-CAPS subjects, link and image counts, image-only bodies, empty or oversized bodies, and attachments.
+
+You see it in three places:
+
+- **In the editor**, live as you write a step.
+- **In the launch dialog**, alongside the other pre-send checks, with the lowest-scoring step named.
+- **In the campaign activity feed**, if the copy that actually goes out scores below your floor.
+
+That last one catches what the first two cannot. The editor scores the template; the send path scores the message after merge fields, spintax, A/B selection and AI blocks have resolved, which is where a clean template becomes "Hi ," or picks the one spammy spintax branch. It logs once per step per day, not once per recipient.
+
+**Settings** > **Sending** > **Content checks** turns it off or moves the floor, which defaults to `60`.
+
+<Callout type="info" title="Advisory, not a gate">
+A low score never blocks or delays a send. It is a signal to rewrite, not a verdict: a legitimate email can score badly, and a well-scoring one sent to a bad list will still fail.
+</Callout>
+
 ## Safety posture
 
 Defaults are deliberately conservative, aiming at a low complaint rate rather than maximum throughput:

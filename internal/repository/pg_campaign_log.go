@@ -20,6 +20,12 @@ type CampaignLogEntry struct {
 type CampaignLogRepository interface {
 	CreateLog(ctx context.Context, entry *CampaignLogEntry) error
 	GetLogs(ctx context.Context, campaignID uuid.UUID, limit int, cursor *string) (*models.CampaignLogsResult, error)
+	// CreateLogOnce writes the entry only when no entry of the same type with
+	// metadata.<key> = value exists since `since`, and reports whether it did.
+	// Check and insert are one locked statement: a per-send warning runs on
+	// every recipient at once, and a separate check would let concurrent sends
+	// both find nothing and both write.
+	CreateLogOnce(ctx context.Context, entry *CampaignLogEntry, key, value string, since time.Time) (bool, error)
 }
 
 type campaignLogRepository struct {
@@ -102,4 +108,44 @@ func (r *campaignLogRepository) GetLogs(ctx context.Context, campaignID uuid.UUI
 			HasMore:    hasMore,
 		},
 	}, nil
+}
+
+func (r *campaignLogRepository) CreateLogOnce(ctx context.Context, entry *CampaignLogEntry, key, value string, since time.Time) (bool, error) {
+	metadata := entry.Metadata
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Serializes concurrent senders on this (campaign, type, key) triple so the
+	// NOT EXISTS below cannot be true for two of them at once. The key is built
+	// in Go so the statement carries a single unambiguous text parameter.
+	lockKey := entry.CampaignID.String() + ":" + entry.EventType + ":" + value
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, lockKey); err != nil {
+		return false, err
+	}
+
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO campaign_logs (campaign_id, event_type, message, metadata)
+		SELECT $1::uuid, $2::text, $3::text, $4::jsonb
+		 WHERE NOT EXISTS (
+		       SELECT 1 FROM campaign_logs
+		        WHERE campaign_id = $1::uuid
+		          AND event_type = $2::text
+		          AND metadata ->> $5::text = $6::text
+		          AND created_at >= $7::timestamptz
+		 )
+	`, entry.CampaignID, entry.EventType, entry.Message, metadata, key, value, since)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }
