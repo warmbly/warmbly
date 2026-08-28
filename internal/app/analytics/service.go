@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -197,16 +198,18 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 	// Build warmup status if warmup has ever been enabled (active or paused).
 	var warmupStatus *models.WarmupStatusInfo
 	if email.Warmup != nil {
+		target, hold := s.warmupTargetAndHold(ctx, email)
 		warmupStatus = &models.WarmupStatusInfo{
 			Enabled:       true,
 			Paused:        email.WarmupPausedAt != nil,
 			PausedAt:      email.WarmupPausedAt,
 			StartedAt:     *email.Warmup,
 			CurrentVolume: usage.WarmupSent,
-			TargetVolume:  calculateTargetVolume(email),
+			TargetVolume:  target,
 			MaxVolume:     email.WarmupMax,
 			ReplyRate:     email.WarmupReplyRate,
 			DaysActive:    int(time.Since(*email.Warmup).Hours() / 24),
+			RampHold:      hold,
 		}
 	}
 
@@ -397,19 +400,44 @@ func calculateAccountHealth(email *models.Email, errors []models.AccountError) m
 	return health
 }
 
-func calculateTargetVolume(email *models.Email) int {
+// warmupTargetAndHold reports the target the SCHEDULER will act on, and what is
+// holding it down when that is lower than the plain ramp. It runs the shared
+// warmupramp policy rather than its own arithmetic, because a dashboard that
+// says "target 25" while the mailbox sends 18 is worse than no number.
+func (s *analyticsService) warmupTargetAndHold(ctx context.Context, email *models.Email) (int, *models.WarmupRampHold) {
 	if email.Warmup == nil {
-		return 0
+		return 0, nil
+	}
+	now := time.Now()
+
+	var lastPlacement *time.Time
+	var placements, sends int
+	if s.warmupRepo != nil {
+		if at, err := s.warmupRepo.LastSpamPlacementAt(ctx, email.ID); err == nil {
+			lastPlacement = at
+		}
+		since := now.Add(-warmupramp.SoftSignalWindow)
+		if n, err := s.warmupRepo.CountSpamPlacementsSince(ctx, email.ID, since); err == nil {
+			placements = n
+		}
+		if n, err := s.warmupRepo.SumWarmupSentSince(ctx, email.ID, since); err == nil {
+			sends = n
+		}
 	}
 
-	daysActive := int(time.Since(*email.Warmup).Hours() / 24)
-	target := email.WarmupBase + (daysActive * email.WarmupIncrease)
+	days := warmupramp.Days(*email.Warmup, lastPlacement, now, warmupramp.FreezeWindow)
+	target := warmupramp.Target(email.IsWarmingActive(), email.WarmupBase, email.WarmupIncrease, email.WarmupMax, days, false)
+	target = warmupramp.Apply(target, warmupramp.SoftAdjust(placements))
 
-	if target > email.WarmupMax {
-		return email.WarmupMax
+	if placements == 0 || lastPlacement == nil {
+		return target, nil
 	}
-
-	return target
+	return target, &models.WarmupRampHold{
+		Placements: placements,
+		Sends:      sends,
+		LastAt:     *lastPlacement,
+		ResumesAt:  lastPlacement.Add(warmupramp.FreezeWindow),
+	}
 }
 
 // Dashboard Analytics implementations

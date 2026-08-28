@@ -118,6 +118,10 @@ type WarmupRepository interface {
 	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	// LastSpamPlacementAt is when this sender's most recent warmup message was
+	// found in a recipient's junk folder, or nil if it never has been. The
+	// warmup ramp holds where it stood at that moment (see warmupRampDays).
+	LastSpamPlacementAt(ctx context.Context, accountID uuid.UUID) (*time.Time, error)
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error)
 	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
@@ -631,6 +635,22 @@ func (r *warmupRepository) CountSpamPlacementsSince(ctx context.Context, account
 	var count int
 	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
 	return count, err
+}
+
+func (r *warmupRepository) LastSpamPlacementAt(ctx context.Context, accountID uuid.UUID) (*time.Time, error) {
+	query := `
+		SELECT MAX(created_at)
+		FROM warmup_spam_reports
+		WHERE reported_account_id = $1
+		  AND report_type = 'spam_placement'
+	`
+	// MAX over no rows is a SQL NULL, not ErrNoRows, so the nullable scan is
+	// what distinguishes "never placed" from a failure.
+	var at *time.Time
+	if err := r.db.QueryRow(ctx, query, accountID).Scan(&at); err != nil {
+		return nil, err
+	}
+	return at, nil
 }
 
 func (r *warmupRepository) SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {

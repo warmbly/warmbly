@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+
 	"github.com/warmbly/warmbly/internal/app/behavior"
+	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -18,7 +21,6 @@ var poolTypesForHealthLookup = []string{"premium", "free"}
 const (
 	minWarmupRecipientRecheck = 4 * time.Hour
 	maxWarmupRecipientRecheck = 8 * time.Hour
-	activeCampaignWarmupCap   = 5
 )
 
 // healthAdjustment captures how the throttled/watch health state should
@@ -28,6 +30,38 @@ const (
 type healthAdjustment struct {
 	volumeMultiplier  float64 // applied to target_volume
 	minWaitMultiplier float64 // applied to MinWaitTime between sends
+}
+
+// softRampSignal is the early-signal verdict for one scheduling pass.
+type softRampSignal struct {
+	multiplier      float64
+	placements      int
+	sends           int
+	lastPlacementAt *time.Time
+}
+
+// resolveSoftRampSignal reads the mailbox's recent junk placements. Every
+// lookup fails open to "no signal": warmup slowing itself down because a query
+// errored would be a worse outcome than one more day at the planned volume.
+func (s *schedulerService) resolveSoftRampSignal(ctx context.Context, accountID uuid.UUID) softRampSignal {
+	sig := softRampSignal{multiplier: 1.0}
+	if s.warmupRepo == nil {
+		return sig
+	}
+	since := time.Now().Add(-warmupramp.SoftSignalWindow)
+	placements, err := s.warmupRepo.CountSpamPlacementsSince(ctx, accountID, since)
+	if err != nil {
+		return sig
+	}
+	sig.placements = placements
+	sig.multiplier = warmupramp.SoftAdjust(placements)
+	if sends, serr := s.warmupRepo.SumWarmupSentSince(ctx, accountID, since); serr == nil {
+		sig.sends = sends
+	}
+	if at, aerr := s.warmupRepo.LastSpamPlacementAt(ctx, accountID); aerr == nil {
+		sig.lastPlacementAt = at
+	}
+	return sig
 }
 
 func adjustmentFor(state models.WarmupHealthState) healthAdjustment {
@@ -59,22 +93,10 @@ func recipientRecheckTime() time.Time {
 	)) * time.Minute)
 }
 
-// warmupRampTarget computes the day's warmup volume before recipient-capacity
-// and health-state adjustments. An actively-warming mailbox follows its ramp
-// (base + daysWarming*increase, capped at max), reduced to the in-campaign cap
-// when it also backs a live campaign so warmup doesn't stack on production
-// sending pressure. A mailbox kept warm only because it backs a campaign (the
-// monitor lane) runs at the in-campaign cap. Pure (no DB) so the policy is
-// unit-testable.
+// warmupRampTarget is the scheduler's entry point into the shared ramp policy.
+// It stays here so the existing call sites and tests read unchanged.
 func warmupRampTarget(activelyWarming bool, base, increase, max, daysWarming int, inCampaign bool) int {
-	if !activelyWarming {
-		return activeCampaignWarmupCap
-	}
-	target := min(base+daysWarming*increase, max)
-	if inCampaign && target > activeCampaignWarmupCap {
-		target = activeCampaignWarmupCap
-	}
-	return target
+	return warmupramp.Target(activelyWarming, base, increase, max, daysWarming, inCampaign)
 }
 
 // dailyVolumeFactor returns a stable-per-day multiplier (0.75–1.10, with an
@@ -192,11 +214,37 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 
 	// STEP 2: Calculate target volume for today (before recipient-capacity and
 	// health adjustments). Pure policy in warmupRampTarget so it's unit-tested.
+	// The health state drives both the band adjustment (STEP 2.5) and whether
+	// the early-signal cut below applies, so it is resolved once here.
+	healthState := s.resolveHealthState(ctx, accountID)
+
+	// Early adverse signal: a recent junk placement holds the ramp where it
+	// stood and cuts the day about a quarter, before any hard band can trip.
+	// Only while Healthy — a mailbox already in watch or throttled is being
+	// dampened harder by its band, and stacking the two would double-cut it.
+	soft := softRampSignal{multiplier: 1.0}
+	if healthState == models.WarmupHealthHealthy {
+		soft = s.resolveSoftRampSignal(ctx, accountID)
+	}
+
 	daysWarming := 0
 	if activelyWarming {
-		daysWarming = int(time.Since(*account.Warmup).Hours() / 24)
+		daysWarming = warmupramp.Days(*account.Warmup, soft.lastPlacementAt, time.Now(), warmupramp.FreezeWindow)
 	}
 	targetVolume := warmupRampTarget(activelyWarming, account.WarmupBase, account.WarmupIncrease, account.WarmupMax, daysWarming, inCampaign)
+
+	// The cut lands before the recipient-capacity clamp and the band
+	// adjustment, so it composes with both by min() rather than fighting them.
+	if cut := warmupramp.Apply(targetVolume, soft.multiplier); cut < targetVolume {
+		log.Info().
+			Str("email_account_id", accountID.String()).
+			Int("placements_48h", soft.placements).
+			Int("sends_48h", soft.sends).
+			Int("from", targetVolume).
+			Int("to", cut).
+			Msg("warmup volume cut on an early placement signal; ramp held")
+		targetVolume = cut
+	}
 
 	// Vary the day's target so a mailbox doesn't send an identical count every
 	// day. Deterministic per (account, local day) so it's stable across the
@@ -237,7 +285,7 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 	// run at reduced volume and wider spacing until the health sweep clears
 	// them back to healthy. We never zero out volume — even degraded mailboxes
 	// keep a small heartbeat so the sweep has fresh sample data to evaluate.
-	adj := adjustmentFor(s.resolveHealthState(ctx, accountID))
+	adj := adjustmentFor(healthState)
 	if adj.volumeMultiplier < 1.0 {
 		floor := 1
 		if activelyWarming {

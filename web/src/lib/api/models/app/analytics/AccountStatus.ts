@@ -36,6 +36,16 @@ export interface WarmupStatusInfo {
     max_volume: number;
     reply_rate: number;
     days_active: number;
+    /** Present when a recent junk placement cut the day and froze the ramp. */
+    ramp_hold?: WarmupRampHold;
+}
+
+// Why today's warmup target is below the plain ramp.
+export interface WarmupRampHold {
+    placements: number;
+    sends: number;
+    last_placement_at: string;
+    resumes_at: string;
 }
 
 // Warmup-pool reputation for this mailbox. Folded into health.score and also
