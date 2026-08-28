@@ -20,6 +20,10 @@ type CampaignLogEntry struct {
 type CampaignLogRepository interface {
 	CreateLog(ctx context.Context, entry *CampaignLogEntry) error
 	GetLogs(ctx context.Context, campaignID uuid.UUID, limit int, cursor *string) (*models.CampaignLogsResult, error)
+	// HasRecentLogFor reports whether an entry of this type already exists for
+	// the campaign with metadata.<key> = value since `since`. Used to keep a
+	// per-send warning from writing one feed entry per recipient.
+	HasRecentLogFor(ctx context.Context, campaignID uuid.UUID, eventType, key, value string, since time.Time) (bool, error)
 }
 
 type campaignLogRepository struct {
@@ -102,4 +106,18 @@ func (r *campaignLogRepository) GetLogs(ctx context.Context, campaignID uuid.UUI
 			HasMore:    hasMore,
 		},
 	}, nil
+}
+
+func (r *campaignLogRepository) HasRecentLogFor(ctx context.Context, campaignID uuid.UUID, eventType, key, value string, since time.Time) (bool, error) {
+	var exists bool
+	err := r.DB.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM campaign_logs
+			WHERE campaign_id = $1
+			  AND event_type = $2
+			  AND metadata ->> $3 = $4
+			  AND created_at >= $5
+		)
+	`, campaignID, eventType, key, value, since).Scan(&exists)
+	return exists, err
 }
