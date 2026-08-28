@@ -100,7 +100,7 @@ func newProviderRoutingFixture(t *testing.T) *providerRoutingFixture {
 	return f
 }
 
-func (f *providerRoutingFixture) send(t *testing.T, recipient uuid.UUID, n int) {
+func (f *providerRoutingFixture) send(t *testing.T, recipient uuid.UUID, n int, status string) {
 	t.Helper()
 	for i := 0; i < n; i++ {
 		// warmup_tokens.task_id is a real foreign key, so each send needs the
@@ -108,7 +108,7 @@ func (f *providerRoutingFixture) send(t *testing.T, recipient uuid.UUID, n int) 
 		taskID := uuid.New()
 		if _, err := f.pool.Exec(context.Background(),
 			`INSERT INTO tasks (id, task_type, email_account_id, status, message_id)
-			 VALUES ($1, 'warmup', $2, 'completed', '')`, taskID, f.sender); err != nil {
+			 VALUES ($1, 'warmup', $2, $3, '')`, taskID, f.sender, status); err != nil {
 			t.Fatalf("insert task: %v", err)
 		}
 		if _, err := f.pool.Exec(context.Background(),
@@ -139,8 +139,8 @@ func TestLiveProviderRoutingSegmentsOneSendersRecord(t *testing.T) {
 	repo := NewWarmupRepository(handle.Pool)
 	ctx := context.Background()
 
-	f.send(t, f.atGoogle, 20)
-	f.send(t, f.atMSGraph, 20)
+	f.send(t, f.atGoogle, 20, "completed")
+	f.send(t, f.atMSGraph, 20, "completed")
 	f.placement(t, "outlook.com", 10) // failing only at Microsoft
 
 	got, err := repo.SenderPlacementByProvider(ctx, f.sender, time.Now().Add(-24*time.Hour))
@@ -161,7 +161,7 @@ func TestLiveProviderRoutingWindowExcludesOldSignal(t *testing.T) {
 	repo := NewWarmupRepository(handle.Pool)
 	ctx := context.Background()
 
-	f.send(t, f.atMSGraph, 5)
+	f.send(t, f.atMSGraph, 5, "completed")
 	f.placement(t, "outlook.com", 5)
 
 	// A window that starts after everything was written must see nothing, or
@@ -195,5 +195,30 @@ func TestLiveProviderRoutingParticipantProviders(t *testing.T) {
 	// The sender never joined the pool, so it must not appear as a partner.
 	if _, ok := got[f.sender]; ok {
 		t.Error("a non-participant mailbox is being offered as a warmup partner")
+	}
+}
+
+// A token is written before the send goes out, so a failed send leaves one
+// behind. Counting it would put the failure in the denominator and understate
+// the provider's junk rate exactly when the sender is doing worst.
+func TestLiveProviderRoutingIgnoresFailedSends(t *testing.T) {
+	handle, _ := liveContactDB(t)
+	f := newProviderRoutingFixture(t)
+	repo := NewWarmupRepository(handle.Pool)
+
+	f.send(t, f.atMSGraph, 10, "completed")
+	f.send(t, f.atMSGraph, 90, "failed")
+	f.placement(t, "outlook.com", 5)
+
+	got, err := repo.SenderPlacementByProvider(context.Background(), f.sender, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("SenderPlacementByProvider: %v", err)
+	}
+	m := got["microsoft"]
+	if m.Sends != 10 {
+		t.Errorf("sends = %d, want only the 10 that completed", m.Sends)
+	}
+	if m.Rate() != 0.5 {
+		t.Errorf("rate = %v, want 0.5; counting the failures would have read 0.05", m.Rate())
 	}
 }

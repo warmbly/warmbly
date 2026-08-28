@@ -486,11 +486,11 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 		domainsByID = nil
 	}
 
-	// This sender's recent record per recipient provider, plus each
-	// participant's provider, so a mailbox failing specifically at Outlook
-	// stops being handed Outlook partners. Best-effort: a lookup error leaves
-	// the maps empty and weighting degrades to domain diversity alone.
-	providersByID, provErr := s.warmupRepo.GetPoolParticipantProviders(ctx, poolType, true)
+	// This sender's recent record per recipient provider. Best-effort: a lookup
+	// error leaves the maps empty and weighting degrades to domain diversity.
+	// Providers are read UNFILTERED so every candidate the selector can offer
+	// resolves; a missing one would score an unpenalized 1.0.
+	providersByID, provErr := s.warmupRepo.GetPoolParticipantProviders(ctx, poolType, false)
 	if provErr != nil {
 		providersByID = nil
 	}
@@ -615,25 +615,19 @@ func removePartnerID(ids []uuid.UUID, target uuid.UUID) []uuid.UUID {
 }
 
 const (
-	// providerPlacementPenaltyK sets how hard a provider's junk rate cuts a
-	// partner's weight: weight *= 1/(1 + k*rate). At k=4 a 25% rate halves it.
-	// A multiplier, never an exclusion — a sender that stops mailing a provider
-	// entirely never learns whether it recovered there.
+	// weight *= 1/(1 + k*rate). Never an exclusion: a sender that stops mailing
+	// a provider cannot discover it recovered there.
 	providerPlacementPenaltyK = 4.0
-	// providerPlacementMinSends is the sample below which a provider's rate is
-	// ignored. One placement out of two sends is noise, not a pattern.
+	// Below this sample a provider's rate is noise, not a pattern.
 	providerPlacementMinSends = 5
-	// providerPlacementWindow is how far back the per-provider record is read.
-	providerPlacementWindow = 7 * 24 * time.Hour
+	providerPlacementWindow   = 7 * 24 * time.Hour
 )
 
-// partnerSignals are the per-pick inputs to partner weighting. Grouped so the
-// weighting stays one pure function as signals are added.
+// partnerSignals are the per-pick inputs to partner weighting.
 type partnerSignals struct {
 	domainsByID  map[uuid.UUID]string
 	domainCounts map[string]int
-	// providersByID and placementByProvider carry THIS sender's recent junk
-	// rate at each recipient provider.
+	// Keyed by who RUNS the recipient's mail (models.ClassifyProvider).
 	providersByID       map[uuid.UUID]string
 	placementByProvider map[string]repository.ProviderPlacementStat
 	rules               []models.WarmupRoutingRule
@@ -641,9 +635,8 @@ type partnerSignals struct {
 	emailsByID          map[uuid.UUID]string
 }
 
-// providerPenalty is the weight multiplier for sending to one provider, given
-// how this sender has recently landed there. 1.0 when the sample is too small
-// to mean anything, which is also the fail-open path.
+// providerPenalty weights sending to one provider by how this sender has
+// recently landed there. 1.0 on too small a sample, and on every error path.
 func (sig partnerSignals) providerPenalty(partnerID uuid.UUID) float64 {
 	provider, ok := sig.providersByID[partnerID]
 	if !ok || len(sig.placementByProvider) == 0 {

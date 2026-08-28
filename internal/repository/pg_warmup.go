@@ -141,11 +141,9 @@ type WarmupRepository interface {
 	// Pool-wide placement analytics (admin overview)
 	PoolSpamPlacementRate(ctx context.Context, since time.Time) (float64, error)
 	PoolSpamPlacementsByProvider(ctx context.Context, since time.Time) (map[string]int, error)
-	// SenderPlacementByProvider is one SENDER's record keyed by the provider
-	// that RUNS the recipient's mail (models.ClassifyProvider on the recipient
-	// domain), not by how that mailbox connects: email_accounts.provider
-	// collapses every custom host into smtp_imap, which is the bucket the
-	// signal matters most in.
+	// SenderPlacementByProvider is one SENDER's record keyed by who RUNS the
+	// recipient's mail, not how that mailbox connects: email_accounts.provider
+	// collapses every custom host into smtp_imap.
 	SenderPlacementByProvider(ctx context.Context, senderAccountID uuid.UUID, since time.Time) (map[string]ProviderPlacementStat, error)
 
 	// Warmup token management
@@ -806,10 +804,14 @@ func (p ProviderPlacementStat) Rate() float64 {
 func (r *warmupRepository) SenderPlacementByProvider(ctx context.Context, senderAccountID uuid.UUID, since time.Time) (map[string]ProviderPlacementStat, error) {
 	out := make(map[string]ProviderPlacementStat)
 
+	// Only sends that actually completed. A token is written before the send
+	// goes out, so counting every token would put failed sends in the
+	// denominator and understate the provider's junk rate.
 	sendRows, err := r.db.Query(ctx, `
 		SELECT lower(split_part(ea.email, '@', 2)), COUNT(*)
 		FROM warmup_tokens wt
 		JOIN email_accounts ea ON ea.id = wt.recipient_account_id
+		JOIN tasks t ON t.id = wt.task_id AND t.status = 'completed'
 		WHERE wt.sender_account_id = $1 AND wt.created_at >= $2
 		GROUP BY 1
 	`, senderAccountID, since)
@@ -857,8 +859,10 @@ func (r *warmupRepository) SenderPlacementByProvider(ctx context.Context, sender
 }
 
 func (r *warmupRepository) GetPoolParticipantProviders(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error) {
-	// Same membership filter as GetPoolParticipantDomains: the two maps are
-	// read side by side in partner selection and must describe one set.
+	// Deliberately NOT health-filtered by default: this map only resolves a
+	// candidate's provider, it never decides eligibility. A candidate missing
+	// from it scores an unpenalized 1.0, so a just-unblocked partner the
+	// selector re-admits would sidestep the sender's provider penalty.
 	query := `
 		SELECT wpp.email_account_id, lower(split_part(ea.email, '@', 2))
 		FROM warmup_pool_participants wpp

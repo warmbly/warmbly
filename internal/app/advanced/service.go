@@ -15,6 +15,7 @@ import (
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/warmlint"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 	"github.com/warmbly/warmbly/internal/tasksched"
@@ -1578,6 +1579,45 @@ func (s *service) RunPreflight(ctx context.Context, organizationID, campaignID u
 			check.Message = "At least two active A/B variants are required."
 			check.Remediation = "Create at least two active variants or disable AB testing."
 			recommendations = append(recommendations, "Create more A/B variants.")
+		}
+		checks = append(checks, check)
+	}
+
+	if settings.Preflight.CheckContentScore {
+		floor := settings.Preflight.MinContentScore
+		if floor <= 0 {
+			floor = 60
+		}
+		worst, worstStep, issue := 100, 0, ""
+		if seqs, serr := s.campaignRepo.GetSequencesByCampaignID(ctx, campaignID); serr == nil {
+			for i, seq := range seqs {
+				r := warmlint.Score(seq.Subject, seq.BodyHTML, seq.BodyPlain)
+				if r.Score < worst {
+					worst, worstStep = r.Score, i+1
+					issue = ""
+					for _, is := range r.Issues {
+						if is.Severity == "high" {
+							issue = is.Message
+							break
+						}
+					}
+					if issue == "" && len(r.Issues) > 0 {
+						issue = r.Issues[0].Message
+					}
+				}
+			}
+		}
+		pass := worst >= floor
+		check := models.PreflightCheckResult{
+			Key:      "content_score",
+			Passed:   pass,
+			Severity: "warning",
+			Message:  fmt.Sprintf("Copy scores %d/100 for spam signals.", worst),
+		}
+		if !pass {
+			check.Message = fmt.Sprintf("Step %d scores %d/100 for spam signals (floor %d). %s", worstStep, worst, floor, issue)
+			check.Remediation = "Trim spam-trigger wording, links, images and stacked punctuation in that step."
+			recommendations = append(recommendations, "Rewrite the lowest-scoring step's copy before sending at volume.")
 		}
 		checks = append(checks, check)
 	}
