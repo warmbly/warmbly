@@ -18,14 +18,15 @@ type WorkerEvent struct {
 type JobEventType string
 
 const (
-	JobEventTypeNewEmail      JobEventType = "NEW_EMAIL"
-	JobEventTypeInboundBounce JobEventType = "INBOUND_BOUNCE"
-	JobEventTypeRemoveEmail   JobEventType = "REMOVE_EMAIL"
-	JobEventTypeFlagsAdd      JobEventType = "FLAGS_ADD"
-	JobEventTypeFlagsRemove   JobEventType = "FLAGS_REMOVE"
-	JobEventTypeEmailUpdate   JobEventType = "UPDATE_EMAIL"
-	JobEventTypeMailboxUpdate JobEventType = "UPDATE_MAILBOX"
-	JobEventTypeMailboxDelete JobEventType = "DELETE_MAILBOX"
+	JobEventTypeNewEmail         JobEventType = "NEW_EMAIL"
+	JobEventTypeInboundBounce    JobEventType = "INBOUND_BOUNCE"
+	JobEventTypeInboundComplaint JobEventType = "INBOUND_COMPLAINT"
+	JobEventTypeRemoveEmail      JobEventType = "REMOVE_EMAIL"
+	JobEventTypeFlagsAdd         JobEventType = "FLAGS_ADD"
+	JobEventTypeFlagsRemove      JobEventType = "FLAGS_REMOVE"
+	JobEventTypeEmailUpdate      JobEventType = "UPDATE_EMAIL"
+	JobEventTypeMailboxUpdate    JobEventType = "UPDATE_MAILBOX"
+	JobEventTypeMailboxDelete    JobEventType = "DELETE_MAILBOX"
 
 	JobEventTypeTokenUpdate      JobEventType = "TOKEN_UPDATE"
 	JobEventTypeHistoryIDUpdate  JobEventType = "HISTORY_ID_UPDATE"

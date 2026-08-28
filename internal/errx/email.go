@@ -57,8 +57,13 @@ const (
 	MailErrorCodeSyncFairUse       MailErrorCode = "SYNC_FAIR_USE"
 	MailErrorCodeSendingTooFast    MailErrorCode = "SENDING_TOO_FAST"
 	MailErrorCodeRecipientRejected MailErrorCode = "RECIPIENT_REJECTED"
-	MailErrorCodeQuotaExceeded     MailErrorCode = "QUOTA_EXCEEDED"
-	MailErrorCodeAccountSuspended  MailErrorCode = "ACCOUNT_SUSPENDED"
+	// MailErrorCodeDomainAuthRejected is the receiving side refusing the mail
+	// because the SENDING DOMAIN failed its authentication bar (Outlook's
+	// 5.7.515, Gmail's 5.7.26). Not a dead server and not a bad recipient:
+	// retrying from the same domain fails identically until DNS is fixed.
+	MailErrorCodeDomainAuthRejected MailErrorCode = "DOMAIN_AUTH_REJECTED"
+	MailErrorCodeQuotaExceeded      MailErrorCode = "QUOTA_EXCEEDED"
+	MailErrorCodeAccountSuspended   MailErrorCode = "ACCOUNT_SUSPENDED"
 )
 
 var MailErrorCodeGoogleUnknown = func(code int) MailErrorCode {
@@ -175,6 +180,12 @@ var (
 		MailErrorWarning,
 		MailErrorCodeRecipientRejected,
 		"The recipient email address was rejected by the mail server.",
+		MailErrorResolveMethodNone,
+	)
+	ErrMailDomainAuthRejected = MError(
+		MailErrorCritical,
+		MailErrorCodeDomainAuthRejected,
+		"The receiving mail server refused this message because your sending domain failed its authentication checks. Fix the domain's SPF, DKIM and DMARC records.",
 		MailErrorResolveMethodNone,
 	)
 	ErrMailQuotaExceeded = MError(

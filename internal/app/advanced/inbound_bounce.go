@@ -66,3 +66,58 @@ func (s *service) RecordInboundBounce(ctx context.Context, emailAccountID uuid.U
 
 	return s.IngestDeliverabilityEvent(ctx, *account.OrganizationID, req)
 }
+
+// RecordInboundComplaint turns an abuse feedback report the worker parsed into
+// a complaint deliverability event, resolved against the original send. Keyed
+// idempotently so a re-synced report cannot double-count.
+func (s *service) RecordInboundComplaint(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, complainedRecipient, provider string) *errx.Error {
+	originalMessageID = strings.Trim(strings.TrimSpace(originalMessageID), "<>")
+	if originalMessageID == "" {
+		return nil
+	}
+
+	task, err := s.taskRepo.GetTaskByMessageID(ctx, originalMessageID)
+	if err != nil || task == nil {
+		// Warmup mail, a non-campaign send, or already pruned.
+		return nil
+	}
+	if task.EmailAccountID != emailAccountID {
+		// The report should reach the mailbox that sent it; do not attribute a
+		// complaint across accounts.
+		return nil
+	}
+
+	account, aerr := s.emailRepo.GetByID(ctx, emailAccountID)
+	if aerr != nil || account == nil || account.OrganizationID == nil {
+		return nil
+	}
+
+	if provider == "" {
+		provider = "inbound_fbl"
+	}
+	req := &models.IngestDeliverabilityEventRequest{
+		EventType:      models.DeliverabilityEventComplaint,
+		Provider:       provider,
+		TaskID:         &task.ID,
+		RecipientEmail: complainedRecipient,
+		Reason:         "recipient reported the message as spam",
+		IdempotencyKey: "fbl:" + originalMessageID,
+	}
+
+	if ct, cerr := s.taskRepo.GetCampaignTask(ctx, task.ID); cerr == nil && ct != nil {
+		req.CampaignID = ct.CampaignID
+		req.ContactID = ct.ContactID
+		// Most providers redact the complainer, so the campaign's own contact
+		// is the only way to know who to suppress.
+		if req.RecipientEmail == "" && ct.ContactID != nil {
+			if contact, cerr := s.contactRepo.GetByID(ctx, *ct.ContactID); cerr == nil && contact != nil {
+				req.RecipientEmail = contact.Email
+			}
+		}
+	}
+	if req.RecipientEmail == "" {
+		return nil
+	}
+
+	return s.IngestDeliverabilityEvent(ctx, *account.OrganizationID, req)
+}

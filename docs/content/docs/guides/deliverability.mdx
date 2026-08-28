@@ -106,6 +106,10 @@ The list is held per workspace, and the check runs against the sending campaign'
 
 Bounces are detected from the delivery-status report the recipient's server sends back. Only permanent failures (`5.x.x`, such as a nonexistent address) record a bounce and suppress; temporary ones (`4.x.x`, such as a full mailbox or greylisting) never do. This works the same for Gmail and Microsoft Graph mailboxes, where the send reports success and the bounce arrives later.
 
+**Spam complaints** arrive the same way. When a recipient presses "mark as spam", their provider mails an abuse report back to the sending mailbox. Warmbly reads those reports, resolves them to the campaign send they name, and records a complaint: the recipient is suppressed and the number reaches your complaint rate. Providers that redact who complained still identify the message, so the right lead is suppressed anyway. Only genuine abuse reports count. A "not spam" report, where someone rescued your email from junk, is not recorded as a complaint.
+
+**Domain authentication refusals** are separated from ordinary failures. When a receiving server refuses a message because your sending domain failed its checks (Microsoft's `5.7.515`, Gmail's `5.7.26`), that is not a bad recipient and not an outage: every send from that domain fails the same way until its DNS is fixed. Warmbly says so in the campaign's activity feed rather than blaming the address, does not suppress the recipient, and brings that domain's authentication check forward so the [domain authentication](/guides/deliverability/#domain-authentication) state reflects it.
+
 ## How to read it
 
 1. Start with the headline numbers. Bounce at `5%` and complaints at `0.1%` are the highlighted danger lines.

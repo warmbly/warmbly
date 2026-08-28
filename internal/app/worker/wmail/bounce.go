@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/arf"
 	"github.com/warmbly/warmbly/internal/pkg/dsn"
 )
 
@@ -59,4 +60,31 @@ func headerFlagValue(flags []string, name string) string {
 		}
 	}
 	return ""
+}
+
+// maybeEmitComplaint inspects a freshly synced inbound message and, when it is
+// an abuse feedback report for one of our sends, emits an INBOUND_COMPLAINT.
+//
+// This is the other half of the loop bounces already close. A complaint never
+// arrives synchronously: the recipient presses "spam" long after the send
+// succeeded, and the provider mails the report back to the sending mailbox. It
+// is the strongest negative signal a sender gets, and until now nothing read it.
+func (w *WMail) maybeEmitComplaint(msg *models.EmailMessageData) {
+	from := strings.Join(msg.From, " ")
+	if !arf.Detect(from, msg.Subject, headerFlagValue(msg.Flags, "Content-Type")) {
+		return
+	}
+
+	report := arf.Parse(msg.BodyPlain + "\n" + msg.BodyHTML)
+	if !report.IsComplaint || report.OriginalMessageID == "" {
+		return
+	}
+
+	_ = w.onEvent(models.JobEventTypeInboundComplaint, &models.JobEventInboundComplaint{
+		UserID:              w.UserID,
+		EmailID:             w.ID,
+		OriginalMessageID:   strings.Trim(report.OriginalMessageID, "<>"),
+		ComplainedRecipient: report.ComplainedRecipient,
+		Provider:            report.UserAgent,
+	})
 }
