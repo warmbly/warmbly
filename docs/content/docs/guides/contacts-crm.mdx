@@ -35,6 +35,16 @@ Problems with the mapping itself, an unnamed custom field or a name Warmbly cann
 
 Saved sources live in your Sync sources list to re-run, edit, or remove. Each sync dedupes on lowercased email using your chosen duplicate handling, so re-syncing a sheet with new rows is safe.
 
+### What the result tells you about the list
+
+The result step also reports what the addresses themselves look like: how many were malformed, how many are on known throwaway domains, and how many are shared inboxes like `info@`. When a quarter or more of the file is malformed or throwaway, the result says so.
+
+- **Shared inboxes are counted but not held against the list.** Mailing `info@` is a choice, and plenty of legitimate B2B lists are mostly role addresses.
+- **The import still happens.** These are your records, so nothing is refused here. A list bad enough to matter is stopped when you try to launch a campaign with it, which is where the damage would actually occur. See [the launch check](/guides/campaigns/).
+- **Lists under 20 rows are not judged**, since a share of a handful of rows means nothing.
+
+This is not address verification. It reads the addresses; verification asks the receiving server whether they exist, and runs separately in the background.
+
 ## Custom fields
 
 For anything beyond identity: industry, plan tier, account owner. Create them by mapping a column to "Use as custom field" during import, or on a contact's Details tab.

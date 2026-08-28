@@ -382,9 +382,18 @@ Send `multipart/form-data` with a `file` field and an `options` field containing
   "ended_at": "2026-06-11T10:10:07Z",
   "errors": [
     { "line": 57, "email": "not-an-email", "reason": "invalid email" }
-  ]
+  ],
+  "quality": {
+    "malformed": 4,
+    "disposable": 0,
+    "role": 62,
+    "bad_share_pct": 0.3,
+    "flagged": false
+  }
 }
 ```
+
+`quality` describes the addresses in the file: `malformed` are not addresses at all, `disposable` are on known throwaway domains, and `role` counts shared inboxes such as `info@`. `bad_share_pct` is malformed plus disposable, as a percentage of the file; role addresses are deliberately excluded from it, since mailing a shared inbox is a choice rather than a defect. `flagged` is set above 25% on files of at least 20 rows, and carries a `summary` sentence. It is advisory: a flagged import still stores every row it could parse. A list bad enough to matter is refused at campaign launch instead.
 
 Imports are capped at 50,000 rows. `errors` carries at most the first 1,000 entries; past that `errors_truncated` is `true` and the counters, not the list, are the real totals. Every row lands in exactly one of `imported`, `updated`, `skipped`, or `failed`, so those four always sum to `total`.
 
