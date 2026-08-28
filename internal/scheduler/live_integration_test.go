@@ -164,11 +164,16 @@ func liveScheduler(t *testing.T, handle *db.DB, pool *pgxpool.Pool) SchedulerSer
 		repository.NewCampaignProgressRepository(pool),
 		emailRepo,
 		repository.NewCampaignRepostory(handle),
-		nil,
+		repository.NewContactRepostory(handle),
 		nil,
 	)
 	if aware, ok := s.(BehaviorAware); ok {
 		aware.WireBehavior(behavior.NewService(repository.NewBehaviorRepository(pool), emailRepo))
+	}
+	// Send-time optimization is off in the defaults, so wiring this changes
+	// nothing until a test writes an enabled settings row for its org.
+	if aware, ok := s.(OutreachAware); ok {
+		aware.WireOutreach(repository.NewAdvancedOutreachRepository(pool))
 	}
 	return s
 }
@@ -776,5 +781,110 @@ func TestLiveInFlightFollowUpIsNotOfferedAgain(t *testing.T) {
 	}
 	if _, pair, _, err := s.CalculateNextCampaignTime(ctx, f.campaign); !errors.Is(err, ErrCampaignCompleted) || pair != nil {
 		t.Fatalf("the in-flight follow-up was offered again: pair=%v err=%v", pair, err)
+	}
+}
+
+// enableSendTimeOptimization writes an org settings row turning recipient-hour
+// scheduling on, and removes it again on cleanup.
+func (f *liveFixture) enableSendTimeOptimization(t *testing.T, hours []int, avoidWeekends bool) {
+	t.Helper()
+	ctx := context.Background()
+	settings := models.DefaultAdvancedOutreachSettings()
+	settings.SendTimeOptimization.Enabled = true
+	settings.SendTimeOptimization.UseContactTimezone = true
+	settings.SendTimeOptimization.DefaultContactTimezone = "UTC"
+	settings.SendTimeOptimization.PreferredHours = hours
+	settings.SendTimeOptimization.WeekendWeightMultiplier = 1
+	if avoidWeekends {
+		settings.SendTimeOptimization.WeekendWeightMultiplier = 0.5
+	}
+	repo := repository.NewAdvancedOutreachRepository(f.pool)
+	if err := repo.UpsertOutreachSettings(ctx, f.org, f.user, &settings); err != nil {
+		t.Fatalf("write outreach settings: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.pool.Exec(context.Background(),
+			`DELETE FROM outreach_settings WHERE organization_id = $1`, f.org); err != nil {
+			t.Errorf("cleanup outreach settings: %v", err)
+		}
+	})
+}
+
+// setContactTimezone stamps the fixture's single lead with a timezone field.
+func (f *liveFixture) setContactTimezone(t *testing.T, tz string) {
+	t.Helper()
+	if _, err := f.pool.Exec(context.Background(),
+		`UPDATE contacts SET custom_fields = jsonb_build_object('timezone', $2::text)
+		 WHERE organization_id = $1`, f.org, tz); err != nil {
+		t.Fatalf("set contact timezone: %v", err)
+	}
+}
+
+// TestLiveRecipientTimezoneMovesTheSlot is issue #156 end to end: the setting
+// was writable and documented but had no caller, so enabling it changed
+// nothing. The slot must now land in the recipient's own morning, not the
+// sending mailbox's.
+func TestLiveRecipientTimezoneMovesTheSlot(t *testing.T) {
+	handle, pool := liveDB(t)
+	f := newLiveFixture(t, pool, "UTC")
+	f.enableSendTimeOptimization(t, []int{9}, false)
+	f.setContactTimezone(t, "America/Denver")
+
+	at, _ := scheduleSlot(t, liveScheduler(t, handle, pool), f.campaign)
+
+	loc, err := time.LoadLocation("America/Denver")
+	if err != nil {
+		t.Skip("tzdata unavailable")
+	}
+	if got := at.In(loc).Hour(); got != 9 {
+		t.Errorf("send scheduled at %s (%02d:00 Denver), want the recipient's 9am",
+			at.In(loc).Format(time.RFC3339), got)
+	}
+	if !at.After(time.Now()) {
+		t.Errorf("slot %s is not in the future; optimization must delay, never backdate", at)
+	}
+}
+
+// TestLiveSendTimeOptimizationOffLeavesTheSlotAlone pins the default: an org
+// that never opted in keeps sending on the mailbox's clock. Without this, the
+// wiring would silently re-time every existing workspace's campaigns.
+func TestLiveSendTimeOptimizationOffLeavesTheSlotAlone(t *testing.T) {
+	handle, pool := liveDB(t)
+	f := newLiveFixture(t, pool, "UTC")
+	f.setContactTimezone(t, "Asia/Tokyo")
+
+	// No settings row at all — the repository hands back the defaults.
+	at, _ := scheduleSlot(t, liveScheduler(t, handle, pool), f.campaign)
+
+	// The campaign window is always open, so an unoptimized slot is imminent.
+	// A snap to Tokyo's 9am would push it hours out.
+	if time.Until(at) > 2*time.Hour {
+		t.Errorf("slot %s is %v out; optimization must stay off by default",
+			at, time.Until(at).Truncate(time.Minute))
+	}
+}
+
+// TestLiveRecipientTimezoneNeverOutlivesTheCampaign proves the end-date guard:
+// a recipient hour that falls past the campaign's end must not defer the send
+// until the campaign simply expires unsent.
+func TestLiveRecipientTimezoneNeverOutlivesTheCampaign(t *testing.T) {
+	handle, pool := liveDB(t)
+	f := newLiveFixture(t, pool, "UTC")
+	// An hour that is always far away, plus an end date an hour out.
+	f.enableSendTimeOptimization(t, []int{3}, false)
+	f.setContactTimezone(t, "Asia/Tokyo")
+	// end_date is `timestamp without time zone`, so it is written and read
+	// back in UTC to keep the host's local offset out of the comparison.
+	var end time.Time
+	if err := pool.QueryRow(context.Background(),
+		`UPDATE campaigns SET end_date = (NOW() AT TIME ZONE 'utc') + interval '1 hour'
+		 WHERE id = $1 RETURNING end_date`, f.campaign).Scan(&end); err != nil {
+		t.Fatalf("set end date: %v", err)
+	}
+	end = end.UTC()
+
+	at, _ := scheduleSlot(t, liveScheduler(t, handle, pool), f.campaign)
+	if at.UTC().After(end) {
+		t.Errorf("slot %s is past the campaign end %s; the guard did not hold", at.UTC(), end)
 	}
 }

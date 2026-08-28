@@ -64,6 +64,32 @@ The defaults describe an ordinary weekday sender and are a good starting point f
 
 The break has to fit inside the shortest workday the ranges can produce, and the latest possible start has to come before the earliest possible finish. The editor blocks a save that would break either rule.
 
+## Sending in the recipient's timezone
+
+Sending behavior places a send inside the **mailbox's** day. Send-time optimization places it inside the **recipient's** day: hold each campaign email until the clock where the recipient reads mail reaches an hour you chose.
+
+**Settings** > **Sending** > **Send-time optimization**. It is off by default, so nothing about your current sending changes until you turn it on.
+
+| Setting | What it does |
+|---------|--------------|
+| Use the recipient's local hours | The switch for the whole feature |
+| Read each contact's timezone | Uses the contact's `timezone` field first, then the country its email domain points at |
+| Fallback timezone | Used when a contact's timezone cannot be worked out |
+| Skip weekends | Pushes a Saturday or Sunday send to the next weekday |
+| Delivery hours | The local hours a send is allowed to land in |
+
+Warmbly works out the recipient's timezone in this order:
+
+1. The contact's `timezone` custom field, when it holds a valid IANA name such as `America/Denver`.
+2. The country implied by the email domain's country-code suffix: `acme.de` is read as Berlin, `acme.co.uk` as London. Generic domains like `.com` and `.io` carry no location, so they fall through.
+3. The fallback timezone you set.
+
+<Callout type="info" title="It only ever delays a send">
+Send-time optimization can move a send later, never earlier. Every other constraint still binds: the campaign's own sending window, the mailbox's workday and daily cap, the minimum gap between sends. If the recipient's hours and the mailbox's hours never overlap, the send goes out at the next moment both calendars allow rather than not at all. It will also never push a send past the campaign's end date.
+</Callout>
+
+Because it delays sends, a campaign with tight delivery hours and a small mailbox pool sends fewer emails per day than one without. Widen the hours if throughput matters more than placement.
+
 ## API
 
 The profile and today's plan are both readable and writable through the API. See [Endpoints](/api/endpoints/) for the scopes.

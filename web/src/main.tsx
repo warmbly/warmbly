@@ -49,6 +49,7 @@ import DataSettingsPage from './app/app/settings/data/page';
 import BillingSettingsPage from './app/app/settings/billing/page';
 import ReferralSettingsPage from './app/app/settings/referral/page';
 import LimitsSettingsPage from './app/app/settings/limits/page';
+import SendingSettingsPage from './app/app/settings/sending/page';
 import RolesSettingsPage from './app/app/settings/roles/page';
 import UniboxPage from './app/app/unibox/page';
 import DashboardNotFound from './app/app/not-found';
@@ -336,6 +337,7 @@ const router = createBrowserRouter([
               { path: "billing/:tab?", element: <BillingSettingsPage /> },
               { path: "referral", element: <ReferralSettingsPage /> },
               { path: "limits", element: <LimitsSettingsPage /> },
+              { path: "sending", element: <SendingSettingsPage /> },
               { path: "roles", element: <RolesSettingsPage /> },
               { path: "oauth-apps", element: <OAuthAppsPage /> },
               { path: "webhooks", element: <WebhooksSettingsPage /> },

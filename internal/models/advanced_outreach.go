@@ -446,7 +446,10 @@ func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 			AutoSuppressOnUnsubWord: true,
 		},
 		SendTimeOptimization: SendTimeOptimizationSettings{
-			Enabled:                 true,
+			// Off by default: turning it on delays sends to reach the
+			// recipient's business hours, which must be a choice the workspace
+			// makes rather than one that changes its sending overnight.
+			Enabled:                 false,
 			UseContactTimezone:      true,
 			DefaultContactTimezone:  "UTC",
 			PreferredHours:          []int{9, 10, 11, 14, 15, 16},

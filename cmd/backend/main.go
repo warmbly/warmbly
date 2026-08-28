@@ -1189,6 +1189,11 @@ func main() {
 		if aware, ok := schedulerService.(scheduler.DomainAuthAware); ok && instanceSettings != nil {
 			aware.WireDomainAuth(instanceSettings)
 		}
+		// Recipient-timezone send-time optimization reads the org's outreach
+		// settings; without it every send stays on the sending mailbox's clock.
+		if aware, ok := schedulerService.(scheduler.OutreachAware); ok {
+			aware.WireOutreach(advancedRepository)
+		}
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		// Delete drops attachment objects and duplicate copies them, so the
 		// campaign service needs the store the attachment handler writes to.

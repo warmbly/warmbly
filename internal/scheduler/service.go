@@ -42,6 +42,9 @@ type schedulerService struct {
 	// Optional/nil-safe: without it the persisted auth state stays
 	// observe-only and never blocks a send.
 	domainAuth DomainAuthPolicy
+	// outreachRepo reads the org's send-time-optimization settings. Optional/
+	// nil-safe: without it sends stay on the sending mailbox's clock.
+	outreachRepo repository.AdvancedOutreachRepository
 }
 
 // DomainAuthPolicy resolves whether the sending-domain authentication gate is
@@ -85,6 +88,33 @@ func (s *schedulerService) WireDomainAuth(p DomainAuthPolicy) {
 // authentication gate after construction.
 type DomainAuthAware interface {
 	WireDomainAuth(p DomainAuthPolicy)
+}
+
+// WireOutreach attaches the advanced-outreach settings repository, which
+// carries the org's recipient-timezone send-time policy. Kept off the
+// constructor for the same reason as WireBehavior.
+func (s *schedulerService) WireOutreach(r repository.AdvancedOutreachRepository) {
+	s.outreachRepo = r
+}
+
+// OutreachAware is the optional capability the caller uses to attach the
+// outreach settings after construction.
+type OutreachAware interface {
+	WireOutreach(r repository.AdvancedOutreachRepository)
+}
+
+// sendTimePreference resolves the org's recipient-timezone policy for one
+// scheduling pass. No repository, no organization, or an unreadable settings
+// row all mean "not enabled", which leaves the slot on the mailbox's clock.
+func (s *schedulerService) sendTimePreference(ctx context.Context, orgID *uuid.UUID) sendTimePreference {
+	if s.outreachRepo == nil || orgID == nil {
+		return sendTimePreference{}
+	}
+	settings, err := s.outreachRepo.GetOutreachSettings(ctx, *orgID)
+	if err != nil {
+		return sendTimePreference{}
+	}
+	return sendTimePreferenceFrom(settings)
 }
 
 // NewSchedulerService creates a new scheduler service

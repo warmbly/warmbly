@@ -53,7 +53,7 @@ Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelo
     "auto_suppress_on_unsubscribe_keyword": true
   },
   "send_time_optimization": {
-    "enabled": true,
+    "enabled": false,
     "use_contact_timezone": true,
     "default_contact_timezone": "UTC",
     "preferred_hours": [9, 10, 11, 14, 15, 16],
@@ -77,8 +77,8 @@ Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelo
 }
 ```
 
-<Callout type="info" title="Send-time optimization is stored, not yet applied">
-The `send_time_optimization` block is accepted and returned, but campaign scheduling does not place sends by it yet. Sends follow the campaign schedule and each mailbox's own sending profile; recipient-timezone placement is planned.
+<Callout type="info" title="Send-time optimization is off by default">
+`send_time_optimization.enabled` defaults to `false`. Set it to `true` and campaign scheduling holds each send until the recipient's local clock reaches one of `preferred_hours`, resolving the recipient's timezone from the contact's `timezone` custom field, then the country-code suffix of its email domain, then `default_contact_timezone`. It can only delay a send: the campaign window, the mailbox's sending profile, its daily cap, and the campaign end date all still bind. See [Sending behavior](/guides/sending-behavior/).
 </Callout>
 
 ## Update outreach settings
