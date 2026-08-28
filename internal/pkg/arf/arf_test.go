@@ -85,3 +85,19 @@ func TestParseOnUnrelatedBodyIsInert(t *testing.T) {
 		t.Errorf("ordinary mail parsed as a complaint: %+v", r)
 	}
 }
+
+// Original-Mail-From is the SENDER of the reported message. Reading it as the
+// complainer would have suppressed the customer's own sending address.
+func TestParseNeverReadsTheSenderAsTheComplainer(t *testing.T) {
+	body := `Feedback-Type: abuse
+Original-Mail-From: <sender@ourdomain.com>
+Message-ID: <the-original-send@ourdomain.com>
+`
+	r := Parse(body)
+	if !r.IsComplaint {
+		t.Fatal("expected a complaint")
+	}
+	if r.ComplainedRecipient != "" {
+		t.Errorf("ComplainedRecipient = %q, want empty; that address is the sender", r.ComplainedRecipient)
+	}
+}

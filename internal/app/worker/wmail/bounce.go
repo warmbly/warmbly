@@ -62,13 +62,9 @@ func headerFlagValue(flags []string, name string) string {
 	return ""
 }
 
-// maybeEmitComplaint inspects a freshly synced inbound message and, when it is
-// an abuse feedback report for one of our sends, emits an INBOUND_COMPLAINT.
-//
-// This is the other half of the loop bounces already close. A complaint never
-// arrives synchronously: the recipient presses "spam" long after the send
-// succeeded, and the provider mails the report back to the sending mailbox. It
-// is the strongest negative signal a sender gets, and until now nothing read it.
+// maybeEmitComplaint emits INBOUND_COMPLAINT when a synced message is an abuse
+// feedback report for one of our sends. A complaint never arrives
+// synchronously; it comes back as mail, long after the send succeeded.
 func (w *WMail) maybeEmitComplaint(msg *models.EmailMessageData) {
 	from := strings.Join(msg.From, " ")
 	if !arf.Detect(from, msg.Subject, headerFlagValue(msg.Flags, "Content-Type")) {

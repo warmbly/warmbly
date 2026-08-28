@@ -99,23 +99,32 @@ func (s *service) RecordInboundComplaint(ctx context.Context, emailAccountID uui
 		EventType:      models.DeliverabilityEventComplaint,
 		Provider:       provider,
 		TaskID:         &task.ID,
-		RecipientEmail: complainedRecipient,
 		Reason:         "recipient reported the message as spam",
 		IdempotencyKey: "fbl:" + originalMessageID,
 	}
 
-	if ct, cerr := s.taskRepo.GetCampaignTask(ctx, task.ID); cerr == nil && ct != nil {
-		req.CampaignID = ct.CampaignID
-		req.ContactID = ct.ContactID
-		// Most providers redact the complainer, so the campaign's own contact
-		// is the only way to know who to suppress.
-		if req.RecipientEmail == "" && ct.ContactID != nil {
-			if contact, cerr := s.contactRepo.GetByID(ctx, *ct.ContactID); cerr == nil && contact != nil {
-				req.RecipientEmail = contact.Email
-			}
-		}
+	// Who gets suppressed comes from the RESOLVED SEND, never from the report.
+	// A report is unauthenticated mail that anyone able to reach this mailbox
+	// could forge; honouring the address it names would let a forger suppress
+	// a contact that send never went to. Bounded this way, the worst a forged
+	// report can do is suppress the one contact who actually received it,
+	// which is the same person a genuine complaint would suppress.
+	ct, cerr := s.taskRepo.GetCampaignTask(ctx, task.ID)
+	if cerr != nil || ct == nil || ct.ContactID == nil {
+		return nil
 	}
-	if req.RecipientEmail == "" {
+	req.CampaignID = ct.CampaignID
+	req.ContactID = ct.ContactID
+
+	contact, conErr := s.contactRepo.GetByID(ctx, *ct.ContactID)
+	if conErr != nil || contact == nil || contact.Email == "" {
+		return nil
+	}
+	req.RecipientEmail = contact.Email
+
+	// When the provider did disclose an address, it must be the one we sent to.
+	// A mismatch means the report is not about this send.
+	if complainedRecipient != "" && !strings.EqualFold(strings.TrimSpace(complainedRecipient), contact.Email) {
 		return nil
 	}
 

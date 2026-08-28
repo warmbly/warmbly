@@ -23,14 +23,8 @@ var authPhrases = []string{
 }
 
 // isDomainAuthRejection reports whether a refusal blames OUR sending domain's
-// authentication rather than the recipient or the connection.
-//
-// Retrying one of these is pointless: every send from that domain fails
-// identically until its DNS is fixed. Reading them as "server unreachable" is
-// what made a broken SPF record look like an outage.
-//
-// A bare 5.7.1 does not count. It is the generic policy rejection and covers
-// ordinary relay denials, so it only counts alongside one of the phrases.
+// authentication rather than the recipient or the connection. A bare 5.7.1 is
+// deliberately not enough: it covers ordinary relay denials too.
 func isDomainAuthRejection(err error) bool {
 	if err == nil {
 		return false

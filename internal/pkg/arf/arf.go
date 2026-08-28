@@ -20,8 +20,9 @@ type Report struct {
 	// OriginalMessageID is the Message-ID of the reported outbound message,
 	// which is how the complaint resolves to a campaign send.
 	OriginalMessageID string
-	// ComplainedRecipient is the address that reported it, when the provider
-	// disclosed it. Several redact this, so it is often empty.
+	// ComplainedRecipient is the address the report names, when the provider
+	// disclosed it. Advisory only: the caller suppresses the contact the
+	// resolved send actually went to, never an address a report asserts.
 	ComplainedRecipient string
 	// UserAgent is the reporting provider, kept for the event record.
 	UserAgent string
@@ -30,7 +31,9 @@ type Report struct {
 var (
 	reFeedbackType = regexp.MustCompile(`(?im)^\s*Feedback-Type:\s*([a-z-]+)`)
 	reMessageID    = regexp.MustCompile(`(?im)^\s*Message-ID:\s*<([^>\s]+)>`)
-	reOriginalRcpt = regexp.MustCompile(`(?im)^\s*Original-(?:Rcpt-To|Mail-From):\s*<?([^\s<>]+@[^\s<>]+?)>?\s*$`)
+	// Original-Rcpt-To only. Original-Mail-From is the SENDER, and reading it
+	// as the complainer would suppress the customer's own address.
+	reOriginalRcpt = regexp.MustCompile(`(?im)^\s*Original-Rcpt-To:\s*<?([^\s<>]+@[^\s<>]+?)>?\s*$`)
 	reUserAgent    = regexp.MustCompile(`(?im)^\s*User-Agent:\s*(.+)$`)
 )
 

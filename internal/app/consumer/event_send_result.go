@@ -170,6 +170,23 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 		}
 	}
 
+	// A refusal on the SENDING DOMAIN's authentication is not about this lead:
+	// the recipient received nothing, and every retry from that domain fails
+	// identically until its DNS is fixed. Give the reservation back without
+	// spending one of the lead's attempts, and bring the domain's re-check
+	// forward so the send gate stops choosing that mailbox. Another mailbox in
+	// the campaign's pool picks the lead up on the next tick.
+	if code == string(errx.MailErrorCodeDomainAuthRejected) {
+		s.recheckSendingDomainAuth(ctx, task.EmailAccountID)
+		if ct.ContactID != nil && ct.SequenceID != nil && s.CampaignProgressRepo != nil {
+			if relErr := s.CampaignProgressRepo.ReleaseSend(ctx, campaignID, *ct.ContactID, *ct.SequenceID, false); relErr != nil {
+				log.Warn().Err(relErr).Str("campaign_id", campaignID.String()).Msg("could not release a domain-auth refusal for retry")
+			}
+		}
+		s.logCampaignSendFailure(ctx, campaignID, ct, recipient, reason, code, 0, false, true, false)
+		return nil
+	}
+
 	attempts, exhausted, rolledBack := 0, false, false
 	if ct.ContactID != nil && ct.SequenceID != nil && s.CampaignProgressRepo != nil {
 		attempts, exhausted, rolledBack, err = s.CampaignProgressRepo.RecordSendFailure(ctx, campaignID, *ct.ContactID, *ct.SequenceID, reason)
@@ -202,13 +219,6 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 	// reputation, so it goes through the bounce pipeline (progress, optional
 	// suppression, guardrails, warmup health, webhooks) and the lead is
 	// dropped as bounced instead of being offered again.
-	// A domain-authentication refusal is a fact about our sending domain, so
-	// bring its DNS re-check forward instead of retrying into the same wall.
-	// The sweep, not this, decides the verdict the send gate acts on.
-	if code == string(errx.MailErrorCodeDomainAuthRejected) {
-		s.recheckSendingDomainAuth(ctx, task.EmailAccountID)
-	}
-
 	if rolledBack && code == string(errx.MailErrorCodeRecipientRejected) {
 		if s.recordSynchronousBounce(ctx, task, ct, campaign, recipient, reason) {
 			s.logCampaignSendFailure(ctx, campaignID, ct, recipient, reason, code, attempts, false, false, false)
