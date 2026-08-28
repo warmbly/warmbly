@@ -176,13 +176,11 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// STEP 3.5: Resolve the recipient ESP/provider for ESP matching. Cheap:
 	// prefer the cached contact.esp_provider, else derive from the domain
 	// string. NEVER dial MX on the hot path. Empty => unknown => wildcard.
-	// STEP 3.4: The org's recipient-timezone policy, resolved once per pass.
-	// Disabled, absent, or unreadable all leave sends on the sending mailbox's
-	// clock, which is the behaviour before optimization existed.
+	// STEP 3.4: Recipient-timezone policy. Disabled, absent or unreadable all
+	// leave the send on the sending mailbox's clock.
 	sendPref := s.sendTimePreference(ctx, campaign.OrganizationID)
 
-	// The recipient row is loaded once and shared: ESP matching and send-time
-	// optimization both need it, and it is one query either way.
+	// Loaded once: ESP matching and send-time optimization share the row.
 	var recipientContact *models.Contact
 	if (campaign.ESPMatchMode != "off" || sendPref.enabled) && s.contactRepo != nil {
 		if contact, cerr := s.contactRepo.GetByID(ctx, nextPair.ContactID); cerr == nil {
@@ -632,27 +630,14 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		candidateTime = applyDistributionCurve(candidateTime, campaignTZ)
 	}
 
-	// STEP 13.5: Aim the send at the RECIPIENT's business hours, not only the
-	// sender's. This raises hardFloor because "not before 9am where this
-	// recipient reads mail" is a scheduling constraint of the same family as
-	// the campaign window: the task handler sends whatever pair this function
-	// returns, so a slot that did not gate would be a hint the send ignores.
-	// STEP 14 then reconciles it against the campaign window and the mailbox
-	// workday, so a recipient hour the sender can never serve delays the send
-	// instead of blocking it.
+	// STEP 13.5: Aim the send at the RECIPIENT's business hours. hardFloor
+	// moves with it, because the task handler sends whatever pair this returns
+	// and a slot that did not gate would be a hint the send ignores.
 	if sendPref.enabled {
-		loc := recipientLocation(recipientContact, sendPref)
-		snapped := snapToPreferredHour(candidateTime, loc, sendPref.preferredHours, sendPref.avoidWeekends)
-		// Never let the recipient's clock push a send past the campaign's end
-		// date: that would defer until the campaign simply expired unsent.
-		if campaign.EndDate != nil && snapped.After(*campaign.EndDate) {
-			snapped = candidateTime
-		}
-		if snapped.After(candidateTime) {
+		if snapped, ok := s.recipientSlot(ctx, selected.Behavior, candidateTime, windows, campaignTZ,
+			recipientContact, sendPref, campaign.EndDate); ok && snapped.After(candidateTime) {
 			candidateTime = snapped
-			if hardFloor.Before(snapped) {
-				hardFloor = snapped
-			}
+			hardFloor = snapped
 		}
 	}
 

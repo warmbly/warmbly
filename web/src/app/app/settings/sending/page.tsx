@@ -6,6 +6,8 @@
 import React from "react";
 import { ClockIcon } from "lucide-react";
 import { Row, Section, SectionShell, Toggle } from "../_components/SectionShell";
+import { NoAccess } from "@/components/layout/NoAccess";
+import { usePermission } from "@/hooks/usePermission";
 import SaveStatus from "../_components/SaveStatus";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { useAutosave } from "@/hooks/useAutosave";
@@ -25,6 +27,12 @@ import {
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 export default function SendingSettingsPage() {
+    const canManage = usePermission("MANAGE_SETTINGS");
+    if (!canManage) return <NoAccess feature="Sending" permissionLabel="Manage settings" />;
+    return <SendingSettings />;
+}
+
+function SendingSettings() {
     const { data, isLoading } = useOutreachSettings();
     const update = useUpdateOutreachSettings();
     const timezones = useTimezones();

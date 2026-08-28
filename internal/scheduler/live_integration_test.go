@@ -888,3 +888,60 @@ func TestLiveRecipientTimezoneNeverOutlivesTheCampaign(t *testing.T) {
 		t.Errorf("slot %s is past the campaign end %s; the guard did not hold", at.UTC(), end)
 	}
 }
+
+// TestLiveUnreachableRecipientHourStillSends is the livelock guard. When the
+// recipient's preferred hours and the campaign's sending window never overlap,
+// raising a hard floor at the recipient's hour would defer the send on every
+// tick forever. The optimization has to yield instead.
+func TestLiveUnreachableRecipientHourStillSends(t *testing.T) {
+	handle, pool := liveDB(t)
+	f := newLiveFixture(t, pool, "UTC")
+
+	// The campaign may only send 12:00-13:00 UTC...
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE campaigns SET start_time = '12:00', end_time = '13:00' WHERE id = $1`, f.campaign); err != nil {
+		t.Fatalf("narrow the campaign window: %v", err)
+	}
+	// ...and the recipient may only be mailed at 09:00 Tokyo, which is 00:00
+	// UTC. The two never meet.
+	f.enableSendTimeOptimization(t, []int{9}, false)
+	f.setContactTimezone(t, "Asia/Tokyo")
+
+	at, _ := scheduleSlot(t, liveScheduler(t, handle, pool), f.campaign)
+
+	// The slot must land in the campaign's window, not at the recipient hour
+	// the sender can never serve.
+	if h := at.UTC().Hour(); h != 12 {
+		t.Errorf("slot %s is at %02d:00 UTC, want the campaign's 12:00 window",
+			at.UTC().Format(time.RFC3339), h)
+	}
+	if time.Until(at) > 25*time.Hour {
+		t.Errorf("slot %s is %v out; the send is being deferred rather than scheduled",
+			at, time.Until(at).Truncate(time.Minute))
+	}
+}
+
+// TestLiveReachableRecipientHourIsPreferred is the same shape with an overlap:
+// the preference must actually be honored when the sender can serve it.
+func TestLiveReachableRecipientHourIsPreferred(t *testing.T) {
+	handle, pool := liveDB(t)
+	f := newLiveFixture(t, pool, "UTC")
+
+	// 09:00 Denver is 16:00 UTC in daylight time and 16:00 sits in this window.
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE campaigns SET start_time = '06:00', end_time = '23:00' WHERE id = $1`, f.campaign); err != nil {
+		t.Fatalf("widen the campaign window: %v", err)
+	}
+	f.enableSendTimeOptimization(t, []int{9}, false)
+	f.setContactTimezone(t, "America/Denver")
+
+	at, _ := scheduleSlot(t, liveScheduler(t, handle, pool), f.campaign)
+
+	loc, err := time.LoadLocation("America/Denver")
+	if err != nil {
+		t.Skip("tzdata unavailable")
+	}
+	if h := at.In(loc).Hour(); h != 9 {
+		t.Errorf("slot %s is %02d:00 Denver, want the recipient's 9am", at.In(loc), h)
+	}
+}

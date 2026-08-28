@@ -1,15 +1,17 @@
 package scheduler
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// sendTimePreference is the organization's recipient-timezone policy, flattened
-// off models.AdvancedOutreachSettings so the slot math below stays pure.
+// sendTimePreference flattens the org's recipient-timezone policy so the slot
+// math below stays pure.
 type sendTimePreference struct {
 	enabled        bool
 	useContactTZ   bool
@@ -38,9 +40,8 @@ func sendTimePreferenceFrom(s *models.AdvancedOutreachSettings) sendTimePreferen
 	}
 }
 
-// normalizeHours sorts, dedupes and clamps the configured hours. An empty or
-// fully invalid list falls back to business hours rather than to "no hour is
-// ever acceptable", which would stall every campaign on the org.
+// normalizeHours sorts, dedupes and clamps. An empty result would mean "no
+// hour is ever acceptable" and stall every campaign, so it falls back.
 func normalizeHours(hours []int) []int {
 	seen := map[int]bool{}
 	out := make([]int, 0, len(hours))
@@ -58,10 +59,9 @@ func normalizeHours(hours []int) []int {
 	return out
 }
 
-// ccTLDTimezone maps a country-code TLD to the business timezone of that
-// country. Multi-zone countries resolve to their most populous business zone:
-// this only picks WHICH local hour a send aims for, so an approximation beats
-// falling back to UTC for a recipient who is demonstrably not in it.
+// ccTLDTimezone maps a country-code TLD to that country's business timezone.
+// Multi-zone countries resolve to their most populous zone: this only picks
+// which local hour a send aims for, so an approximation beats UTC.
 var ccTLDTimezone = map[string]string{
 	"uk": "Europe/London", "ie": "Europe/Dublin", "fr": "Europe/Paris",
 	"de": "Europe/Berlin", "at": "Europe/Vienna", "ch": "Europe/Zurich",
@@ -85,10 +85,8 @@ var ccTLDTimezone = map[string]string{
 	"ru": "Europe/Moscow",
 }
 
-// recipientLocation resolves the timezone a send should aim at, in descending
-// order of confidence: the contact's own timezone custom field, the country
-// implied by its email domain, then the org default. Never fails: an
-// unresolvable name degrades to the next source and finally to UTC.
+// recipientLocation resolves the timezone to aim at, most confident source
+// first. Never fails: an unresolvable name degrades to the next source.
 func recipientLocation(contact *models.Contact, pref sendTimePreference) *time.Location {
 	if pref.useContactTZ && contact != nil {
 		if tz, ok := contact.CustomFields["timezone"]; ok {
@@ -127,18 +125,15 @@ func timezoneForEmailDomain(email string) string {
 	return ccTLDTimezone[labels[len(labels)-1]]
 }
 
-// snapToPreferredHour moves t forward to the next moment whose local hour in
-// loc is one the org prefers, preserving the minute so sends do not pile onto
-// the hour mark. Forward-only: it can delay a send into a better slot, never
-// pull one earlier than the constraints that produced t.
+// snapToPreferredHour moves t forward to the next preferred local hour in loc,
+// keeping the minute so sends do not pile onto the hour mark. Forward-only.
 func snapToPreferredHour(t time.Time, loc *time.Location, hours []int, avoidWeekends bool) time.Time {
 	if len(hours) == 0 {
 		return t
 	}
 	local := t.In(loc)
 
-	// Scan today's remaining preferred hours, then the following days. Bounded
-	// at 8 days so an avoid-weekends policy can never spin.
+	// Bounded at 8 days so an avoid-weekends policy can never spin.
 	for day := 0; day < 8; day++ {
 		candidateDay := local.AddDate(0, 0, day)
 		if avoidWeekends && isWeekend(candidateDay) {
@@ -150,8 +145,6 @@ func snapToPreferredHour(t time.Time, loc *time.Location, hours []int, avoidWeek
 			}
 			minute, second := local.Minute(), local.Second()
 			if day > 0 || h > local.Hour() {
-				// A later slot starts at the top of its hour plus the original
-				// minute offset; the same hour keeps the exact placement it had.
 				second = 0
 			}
 			candidate := time.Date(candidateDay.Year(), candidateDay.Month(), candidateDay.Day(),
@@ -166,4 +159,49 @@ func snapToPreferredHour(t time.Time, loc *time.Location, hours []int, avoidWeek
 
 func isWeekend(t time.Time) bool {
 	return t.Weekday() == time.Saturday || t.Weekday() == time.Sunday
+}
+
+// maxRecipientSlotProbes bounds the search for a slot both calendars accept.
+const maxRecipientSlotProbes = 8
+
+// recipientSlot finds the earliest moment that is BOTH inside one of the
+// recipient's preferred local hours and already legal for the sender (campaign
+// window plus mailbox workday).
+//
+// ok=false means the two calendars do not meet inside the horizon, and the
+// caller must leave the slot alone. Snapping anyway would raise a hard floor
+// the sender can never satisfy: every tick would re-derive a future recipient
+// hour, defer, wake in the sender's window, and defer again, so the send would
+// never go out at all.
+func (s *schedulerService) recipientSlot(
+	ctx context.Context,
+	r behavior.Resolved,
+	from time.Time,
+	windows models.ScheduleWindows,
+	campaignTZ *time.Location,
+	contact *models.Contact,
+	pref sendTimePreference,
+	endDate *time.Time,
+) (time.Time, bool) {
+	loc := recipientLocation(contact, pref)
+	at := from
+	for i := 0; i < maxRecipientSlotProbes; i++ {
+		snapped := snapToPreferredHour(at, loc, pref.preferredHours, pref.avoidWeekends)
+		if !snapped.After(from) {
+			// Already inside a preferred hour; nothing to move.
+			return from, true
+		}
+		if endDate != nil && snapped.After(*endDate) {
+			// Waiting for the recipient's clock must never outlive the campaign.
+			return time.Time{}, false
+		}
+		legal := s.intersectWindows(ctx, r, snapped, windows, campaignTZ)
+		if !legal.After(snapped) {
+			return snapped, true
+		}
+		// The sender cannot send at that hour. Resume the search from the next
+		// moment it CAN, which strictly advances, so this terminates.
+		at = legal
+	}
+	return time.Time{}, false
 }
