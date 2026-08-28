@@ -15,6 +15,7 @@ var (
 	wordToken    = regexp.MustCompile(`[a-z0-9%]+`)
 	linkPattern  = regexp.MustCompile(`https?://`)
 	htmlTag      = regexp.MustCompile(`(?i)<[a-z!/][^>]*>`)
+	imgTag       = regexp.MustCompile(`(?i)<img\b[^>]*>`)
 )
 
 // triggerWords are single-token terms that raise SpamAssassin-style content
@@ -127,8 +128,44 @@ func Score(subject, bodyHTML, bodyPlain string) ScoreResult {
 		deduct(10, "warn", "oversized_body", "Body is very large; trim it for deliverability.")
 	}
 
+	// Images: cold mail from a real person is usually plain. A wall of images,
+	// or images carrying most of the message, reads as a marketing blast.
+	if images := len(imgTag.FindAllString(bodyHTML, -1)); images > 0 {
+		switch {
+		case len(strings.TrimSpace(body)) < 200 && images >= 1:
+			deduct(20, "high", "image_heavy",
+				"Almost all of this email is images — filters cannot read it and treat that as evasion.")
+		case images > 3:
+			d := (images - 3) * 5
+			if d > 15 {
+				d = 15
+			}
+			deduct(d, "warn", "many_images", fmt.Sprintf("%d images — cold email from a person rarely has many.", images))
+		}
+	}
+
 	if res.Score < 0 {
 		res.Score = 0
+	}
+	return res
+}
+
+// ScoreWithAttachments is Score plus the attachment heuristic, which needs
+// context the template alone does not carry.
+func ScoreWithAttachments(subject, bodyHTML, bodyPlain string, attachments int) ScoreResult {
+	res := Score(subject, bodyHTML, bodyPlain)
+	if attachments > 0 {
+		// A first-contact cold email with an attachment is both a spam signal
+		// and a security prompt for the recipient.
+		res.Score -= 15
+		if res.Score < 0 {
+			res.Score = 0
+		}
+		res.Issues = append(res.Issues, Issue{
+			Severity: "warn",
+			Code:     "has_attachments",
+			Message:  fmt.Sprintf("%d attachment(s) on a cold email — link to the file instead.", attachments),
+		})
 	}
 	return res
 }

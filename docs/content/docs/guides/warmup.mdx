@@ -92,6 +92,8 @@ Real inboxes reply, so a configurable share of the time a mailbox answers an exi
 
 Replies thread properly with a real `Re:` subject and `In-Reply-To` header, and candidates must be between 45 minutes and seven days old, so nothing is answered instantly or revived indefinitely.
 
+Receiving warmup mail can also prompt an answer directly. When a verified warmup email arrives, the recipient sometimes points its next scheduled send back at whoever wrote, 25 minutes to 5 hours later and inside its own warmup hours. That is a re-pointing, not extra work: each mailbox has one warmup send queued at a time, so a reply-back moves that send earlier and aims it, and can never push a send the mailbox had already planned sooner. The chance is the recipient's own reply rate, drawn once when the reply is scheduled rather than again when it sends, and it stops before a thread reaches its message cap so replies cannot answer replies indefinitely.
+
 Timing imitates people throughout: sends come in bursts and lulls rather than a fixed rhythm, never land on round clock marks, and opens happen on a natural delay during the recipient's waking hours. No mailbox in the pool reads mail at 3am or reacts within seconds.
 
 ## Keeping warmup out of your inbox

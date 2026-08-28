@@ -10,13 +10,24 @@ export interface SendTimeOptimizationSettings {
     weekend_weight_multiplier: number;
 }
 
+export interface PreflightSettings {
+    enabled: boolean;
+    check_tracking_domain: boolean;
+    check_unsubscribe_header: boolean;
+    check_ab_variant_configured: boolean;
+    check_daily_limit: boolean;
+    check_schedule_window: boolean;
+    check_content_score: boolean;
+    min_content_score: number;
+}
+
 export interface OutreachSettings {
     bounce_pipeline: Record<string, unknown>;
     task_reliability: Record<string, unknown>;
     ab_testing: Record<string, unknown>;
     reply_intent: Record<string, unknown>;
     send_time_optimization: SendTimeOptimizationSettings;
-    preflight: Record<string, unknown>;
+    preflight: PreflightSettings;
     dashboard: Record<string, unknown>;
     custom?: Record<string, unknown>;
 }

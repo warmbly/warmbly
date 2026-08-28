@@ -24,6 +24,8 @@ import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import useCampaign from "@/lib/api/hooks/app/campaigns/useCampaign";
+import usePreflight from "@/lib/api/hooks/app/campaigns/usePreflight";
+import { preflightFailures } from "@/lib/api/models/app/campaigns/Preflight";
 
 type Phase = "idle" | "launching" | "done";
 
@@ -97,6 +99,12 @@ export default function LaunchCampaignDialog({
     // settings. Falls back to the passed campaign until it resolves.
     const full = useCampaign(campaign?.id ?? "");
     const c = full.data ?? campaign;
+
+    // The platform's own pre-send checks, run fresh each time the dialog opens.
+    // Advisory: a failure is shown, never used to disable Launch, because the
+    // backend owns what actually blocks a start.
+    const preflight = usePreflight(campaign?.id ?? "", !!campaign);
+    const issues = preflightFailures(preflight.data);
 
     // Reset to a clean state whenever a new campaign is opened.
     React.useEffect(() => {
@@ -236,6 +244,59 @@ export default function LaunchCampaignDialog({
                                             }
                                         />
                                     </div>
+
+                                    {/* Pre-send checks */}
+                                    {preflight.isFetching ? (
+                                        <div className="px-5 pt-3 flex items-center gap-2 text-[11.5px] text-slate-400">
+                                            <span className="campaign-grid text-slate-300" aria-hidden />
+                                            Running pre-send checks…
+                                        </div>
+                                    ) : issues.length > 0 ? (
+                                        <div className="px-5 pt-3 space-y-1.5">
+                                            {issues.map((issue) => {
+                                                const isError = issue.severity === "error";
+                                                return (
+                                                    <div
+                                                        key={issue.key}
+                                                        className={`flex items-start gap-2 rounded-md border px-3 py-2 ${
+                                                            isError
+                                                                ? "border-rose-200 bg-rose-50"
+                                                                : "border-amber-200 bg-amber-50"
+                                                        }`}
+                                                    >
+                                                        <AlertTriangleIcon
+                                                            className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
+                                                                isError ? "text-rose-500" : "text-amber-600"
+                                                            }`}
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <p
+                                                                className={`text-[12px] leading-snug ${
+                                                                    isError ? "text-rose-700" : "text-amber-900"
+                                                                }`}
+                                                            >
+                                                                {issue.message}
+                                                            </p>
+                                                            {issue.remediation && (
+                                                                <p
+                                                                    className={`text-[11.5px] leading-snug mt-0.5 ${
+                                                                        isError ? "text-rose-600/90" : "text-amber-800/90"
+                                                                    }`}
+                                                                >
+                                                                    {issue.remediation}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : preflight.data ? (
+                                        <div className="px-5 pt-3 flex items-center gap-1.5 text-[11.5px] text-emerald-700">
+                                            <CheckIcon className="w-3.5 h-3.5 shrink-0" />
+                                            Pre-send checks passed.
+                                        </div>
+                                    ) : null}
 
                                     <p className="px-5 pt-3 text-[11.5px] text-slate-500 leading-relaxed">
                                         Sending begins immediately, paced to the schedule and your

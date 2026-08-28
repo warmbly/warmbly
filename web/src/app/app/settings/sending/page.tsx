@@ -10,6 +10,7 @@ import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
 import SaveStatus from "../_components/SaveStatus";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
+import { NumberInput } from "@/components/ui/field";
 import { useAutosave } from "@/hooks/useAutosave";
 import { useRegisterUnsaved } from "@/hooks/context/unsaved";
 import useTimezones from "@/lib/api/hooks/app/useTimezones";
@@ -59,6 +60,13 @@ function SendingSettings() {
     }, [data]);
 
     const sto = draft?.send_time_optimization;
+
+    const patchPreflight = React.useCallback(
+        (next: Partial<OutreachSettings["preflight"]>) => {
+            setDraft((prev) => (prev ? { ...prev, preflight: { ...prev.preflight, ...next } } : prev));
+        },
+        [],
+    );
 
     const patch = React.useCallback(
         (next: Partial<NonNullable<typeof sto>>) => {
@@ -186,6 +194,45 @@ function SendingSettings() {
                                     </div>
                                 </Row>
                             </>
+                        )}
+                    </>
+                )}
+            </Section>
+
+            <Section
+                eyebrow="Content checks"
+                description="Score each step's copy for the signals spam filters weight: trigger wording, stacked punctuation, link and image counts, attachments. Checked when you launch, and again per send against the copy the recipient actually receives once merge fields and spintax have resolved."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <>
+                        <Row
+                            label="Flag risky copy"
+                            description="Advisory only. It warns in the launch dialog and the campaign activity feed, and never blocks or delays a send."
+                        >
+                            <Toggle
+                                on={!!draft.preflight?.check_content_score}
+                                onChange={(on) => patchPreflight({ check_content_score: on })}
+                            />
+                        </Row>
+                        {draft.preflight?.check_content_score && (
+                            <Row
+                                label="Minimum score"
+                                description="Copy scoring below this out of 100 is flagged. Higher is stricter."
+                            >
+                                <NumberInput
+                                    min={0}
+                                    max={100}
+                                    value={draft.preflight?.min_content_score ?? 60}
+                                    onChange={(n) =>
+                                        patchPreflight({
+                                            min_content_score: Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 60,
+                                        })
+                                    }
+                                    className="w-20"
+                                />
+                            </Row>
                         )}
                     </>
                 )}
