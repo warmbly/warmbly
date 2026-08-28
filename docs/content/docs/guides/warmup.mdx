@@ -56,7 +56,21 @@ Turning off outbound warmup does not remove a healthy mailbox from the recipient
 
 At defaults a mailbox sends 10 on day one, 11 the next, and levels off at 40 after roughly a month. You can change these per mailbox, but conservative defaults build the most durable reputation.
 
-Three things shape the real daily number: sends are spread across your warmup hours with jitter, the target is capped by how many eligible partners exist, and a mailbox whose health drops gets reduced volume and wider spacing until it recovers.
+Four things shape the real daily number: sends are spread across your warmup hours with jitter, the target is capped by how many eligible partners exist, a mailbox whose health drops gets reduced volume and wider spacing until it recovers, and a recent spam placement holds the ramp where it is.
+
+### Holding the ramp on an early signal
+
+If any warmup email lands in a recipient's spam folder, that mailbox stops climbing immediately:
+
+- today's target is cut by about a quarter, for 48 hours
+- the daily increase pauses for three days
+- the paused days are subtracted rather than made up, so the ramp does not jump three steps in one morning when it resumes
+
+Another placement during a pause extends it and does not lift the ramp: repeated spam placement can only ever slow a mailbox down.
+
+Nothing needs to be switched on and no health band has to trip first. That matters because the bands need a sample before they can judge a mailbox at all (twenty warmup sends in seven days, a hundred delivered in thirty), which a mailbox in its first fortnight has not reached. Without this, the mailbox landing in spam on day three would keep adding an email a day until it had sent enough to be judged.
+
+The two windows end at different times, so between 48 and 72 hours a mailbox is back at full volume while the ramp is still paused. The mailbox drawer says which of the two is happening, how many emails were affected, and when the ramp resumes. Restarting warmup resets the ramp and clears any hold with it.
 
 <Callout type="info" title="Warmup and campaigns coexist">
   Keep warmup on after campaigns start. A mailbox backing a live campaign drops to at most five warmup messages per day, leaving the campaign as primary traffic. Warmup does not make repetitive or unwanted copy safe: you still need real targeting, personalization, suppression, and unsubscribe support.

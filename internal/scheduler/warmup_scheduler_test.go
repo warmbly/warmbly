@@ -3,6 +3,7 @@ package scheduler
 import (
 	"testing"
 
+	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -33,7 +34,7 @@ func TestAdjustmentFor(t *testing.T) {
 }
 
 func TestWarmupRampTarget(t *testing.T) {
-	const campCap = activeCampaignWarmupCap
+	const campCap = warmupramp.ActiveCampaignCap
 
 	tests := []struct {
 		name           string

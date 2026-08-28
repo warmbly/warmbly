@@ -152,6 +152,21 @@ type WarmupStatusInfo struct {
 	MaxVolume     int        `json:"max_volume"`
 	ReplyRate     int        `json:"reply_rate"`
 	DaysActive    int        `json:"days_active"`
+	// RampHold explains a ramp that is not climbing, so a target below the
+	// plain ramp is never an unexplained drop.
+	RampHold *WarmupRampHold `json:"ramp_hold,omitempty"`
+}
+
+// WarmupRampHold explains a ramp that is not climbing. Present for the whole
+// freeze; VolumeCut says whether today's volume is also reduced, which lasts a
+// shorter window.
+type WarmupRampHold struct {
+	// Placements and Sends cover the last 48 hours.
+	Placements int  `json:"placements"`
+	Sends      int  `json:"sends"`
+	VolumeCut  bool `json:"volume_cut"`
+	// ResumesAt is when the ramp climbs again if nothing else lands.
+	ResumesAt time.Time `json:"resumes_at"`
 }
 
 // Usage Overview

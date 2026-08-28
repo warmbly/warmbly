@@ -80,6 +80,41 @@ const Eyebrow = ({ children }: { children: React.ReactNode }) => (
     <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{children}</div>
 );
 
+// Warmup volume dropping, or a ramp that stops climbing, reads as a bug when
+// nothing says why. The two states end at different times, so they are worded
+// separately.
+function RampHoldNotice({ hold }: { hold: import("@/lib/api/models/app/analytics/AccountStatus").WarmupRampHold }) {
+    const hours = Math.max(0, Math.round((new Date(hold.resumes_at).getTime() - Date.now()) / 3_600_000));
+    const resumesIn = hours > 0 ? ` for about ${hours} more ${hours === 1 ? "hour" : "hours"}` : "";
+    return (
+        <div className="px-5 pb-4">
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+                <AlertTriangleIcon className="w-3.5 h-3.5 mt-px shrink-0 text-amber-600" />
+                <div className="min-w-0">
+                    <p className="text-[12.5px] font-medium text-amber-900">
+                        {hold.volume_cut ? "Warmup volume held back" : "Warmup ramp paused"}
+                    </p>
+                    <p className="text-[11.5px] text-amber-800/90 leading-relaxed mt-0.5">
+                        {hold.volume_cut ? (
+                            <>
+                                {hold.placements === 1 ? "1 warmup email" : `${hold.placements} warmup emails`} landed in spam in
+                                the last 48 hours{hold.sends > 0 ? ` out of ${hold.sends} sent` : ""}. Today's target is cut by a
+                                quarter and the daily increase is paused{resumesIn}.
+                            </>
+                        ) : (
+                            <>
+                                Volume is back to normal, but the daily increase stays paused{resumesIn} after a recent spam
+                                placement.
+                            </>
+                        )}{" "}
+                        It resumes on its own if nothing else lands in spam.
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function StatCard({ label, value, sub, accent }: { label: string; value: React.ReactNode; sub?: string; accent?: boolean }) {
     return (
         <div className="px-4 py-3.5">
@@ -416,6 +451,8 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
                 <StatCard label="Reply rate" value={ws ? `${ws.reply_rate}%` : "—"} sub="warmup replies" />
                 <StatCard label="Days warming" value={ws ? ws.days_active : "—"} sub={ws ? `max ${ws.max_volume}/day` : undefined} />
             </div>
+
+            {ws?.ramp_hold && <RampHoldNotice hold={ws.ramp_hold} />}
 
             {/* Errors */}
             {status?.errors && status.errors.length > 0 && (
