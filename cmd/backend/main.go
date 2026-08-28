@@ -66,6 +66,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/oidcauth"
 	"github.com/warmbly/warmbly/internal/app/organization"
+	orgrisk "github.com/warmbly/warmbly/internal/app/orgrisk"
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
 	"github.com/warmbly/warmbly/internal/app/passkey"
 	"github.com/warmbly/warmbly/internal/app/placement"
@@ -272,6 +273,7 @@ func main() {
 	var instanceChecksDB *pgxpool.Pool
 	var userRepoForHandler repository.UserRepository
 	var organizationRepoForHandler repository.OrganizationRepository
+	var orgRiskService orgrisk.Service
 	var warmupRoutingRepoForHandler repository.WarmupRoutingRepository
 	var webhookServiceForHandler webhook.Service
 	var integrationServiceForHandler integration.Service
@@ -605,6 +607,8 @@ func main() {
 		crmRepository := repository.NewCRMRepository(primaryDB.Pool)
 		advancedRepository := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
 		campaignAudienceRepository := repository.NewCampaignAudienceRepository(primaryDB)
+		orgRiskRepository := repository.NewOrgRiskRepository(primaryDB)
+		orgRiskService = orgrisk.NewService(orgRiskRepository)
 		templateRepository := repository.NewTemplateRepository(primaryDB.Pool)
 		warmupRepository := repository.NewWarmupRepository(primaryDB.Pool)
 		warmupRoutingRepository := repository.NewWarmupRoutingRepository(primaryDB.Pool)
@@ -734,6 +738,12 @@ func main() {
 		// Organization-wide audit trail (who did what, when, from where).
 		auditRepository := repository.NewAuditRepository(primaryDB.Pool)
 		auditService = audit.NewService(auditRepository, streamingPublisher)
+		// Transitions ride the audit spine, so a posture change reaches every
+		// teammate's dashboard without a bespoke emit site. Wired here rather
+		// than at construction because the audit service does not exist yet.
+		if aware, ok := orgRiskService.(orgrisk.AuditAware); ok && orgRiskService != nil {
+			aware.WireAudit(auditService)
+		}
 		// Bridge audited mutations to typed customer webhooks (campaign/contact/
 		// template/CRM/team/role/settings/subscription .created/.updated/.deleted).
 		auditService.WireWebhookDispatcher(webhookService)
@@ -1195,6 +1205,10 @@ func main() {
 		if aware, ok := schedulerService.(scheduler.OutreachAware); ok {
 			aware.WireOutreach(advancedRepository)
 		}
+		// A restricted organization sends less; a suspended one does not send.
+		if aware, ok := schedulerService.(scheduler.OrgRiskAware); ok {
+			aware.WireOrgRisk(orgRiskRepository)
+		}
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		// The launch gate refuses a list that is known to be largely
 		// undeliverable, using the same projection preflight reports.
@@ -1214,6 +1228,9 @@ func main() {
 			contactService.SetCampaignWaker(campaignService)
 		}
 		emailSendService = emailsend.NewService(taskRepository, emailRepostory, userRepostory, schedulerService, tasksClient, featureGateService, dailyThrottleService)
+		if aware, ok := emailSendService.(emailsend.OrgRiskAware); ok {
+			aware.WireOrgRisk(orgRiskRepository)
+		}
 		composeService = compose.NewService(emailRepostory, repository.NewComposeRepository(primaryDB))
 		// uniboxService is constructed here (rather than alongside the
 		// other service constructors above) because cancel-scheduled
@@ -1399,6 +1416,10 @@ func main() {
 			trackedLinkRepository,
 			integrationServiceForHandler, // AutomationRunner for campaign run_automation steps
 		)
+		// A restricted organization warms in the free pool, whatever it pays.
+		if aware, ok := tasksService.(tasks.OrgRiskAware); ok {
+			aware.WireOrgRisk(orgRiskRepository)
+		}
 		// Campaign "ai" sequence steps run over the same provider + credit
 		// ledger as the automation AI nodes. Nil provider leaves them
 		// returning a clean "not available".
@@ -1717,6 +1738,7 @@ func main() {
 
 		// Organization & IAM
 		OrganizationService: organizationService,
+		OrgRiskService:      orgRiskService,
 
 		// CRM
 		CRMService: crmService,

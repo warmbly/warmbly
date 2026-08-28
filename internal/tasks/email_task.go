@@ -174,6 +174,15 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		return nil
 	}
 
+	// A suspended workspace stops warming too: warmup is outbound mail from the
+	// same domains, so leaving it running would keep spending the reputation
+	// the suspension exists to protect.
+	if s.orgBlocksSending(ctx, account.OrganizationID) {
+		_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_org_suspended")
+		executionStatus = "completed"
+		return nil
+	}
+
 	if s.warmupHealth != nil {
 		if err := s.warmupHealth.EnsurePoolMembershipWithRole(ctx, account.ID, poolType, "sender_receiver"); err != nil {
 			return err
@@ -738,6 +747,12 @@ func (s *tasksService) resolveWarmupPoolType(ctx context.Context, account *Email
 	if account.OrganizationID == nil {
 		return "free"
 	}
+	// A restricted organization leaves the paid pool whatever it pays: the
+	// shared reputation paying customers depend on is not for spending on a
+	// risky tenant.
+	if s.orgSuspendedOrRestricted(ctx, *account.OrganizationID) {
+		return "free"
+	}
 	if s.featureGate != nil {
 		isPaid, xerr := s.featureGate.IsPaidOrganization(ctx, *account.OrganizationID)
 		if xerr == nil && !isPaid {
@@ -1078,4 +1093,30 @@ func (s *tasksService) directedWarmupPartner(ctx context.Context, taskID uuid.UU
 		return nil
 	}
 	return partner
+}
+
+// orgSuspendedOrRestricted reports whether the workspace's posture bars the
+// paid warmup pool. Fails open.
+func (s *tasksService) orgSuspendedOrRestricted(ctx context.Context, orgID uuid.UUID) bool {
+	if s.orgRiskRepo == nil {
+		return false
+	}
+	states, err := s.orgRiskRepo.GetOrgRiskStates(ctx, []uuid.UUID{orgID})
+	if err != nil {
+		return false
+	}
+	return states[orgID].ForcesFreeWarmupPool()
+}
+
+// orgBlocksSending reports whether the workspace is suspended. Fails open, for
+// the same reason every other risk read does.
+func (s *tasksService) orgBlocksSending(ctx context.Context, orgID *uuid.UUID) bool {
+	if s.orgRiskRepo == nil || orgID == nil {
+		return false
+	}
+	states, err := s.orgRiskRepo.GetOrgRiskStates(ctx, []uuid.UUID{*orgID})
+	if err != nil {
+		return false
+	}
+	return states[*orgID].BlocksSending()
 }

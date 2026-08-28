@@ -50,13 +50,17 @@ const (
 type AuditEntityType string
 
 const (
-	AuditEntityCampaign       AuditEntityType = "campaign"
-	AuditEntityContact        AuditEntityType = "contact"
-	AuditEntityEmailAccount   AuditEntityType = "email_account"
-	AuditEntityAPIKey         AuditEntityType = "api_key"
-	AuditEntitySequence       AuditEntityType = "step"
-	AuditEntityUser           AuditEntityType = "user"
-	AuditEntityOrganization   AuditEntityType = "organization"
+	AuditEntityCampaign     AuditEntityType = "campaign"
+	AuditEntityContact      AuditEntityType = "contact"
+	AuditEntityEmailAccount AuditEntityType = "email_account"
+	AuditEntityAPIKey       AuditEntityType = "api_key"
+	AuditEntitySequence     AuditEntityType = "step"
+	AuditEntityUser         AuditEntityType = "user"
+	AuditEntityOrganization AuditEntityType = "organization"
+	// AuditEntityOrgRisk carries a risk-posture transition. It rides the audit
+	// spine like every other entity, so a change reaches every teammate's
+	// dashboard without a bespoke emit site.
+	AuditEntityOrgRisk        AuditEntityType = "org_risk"
 	AuditEntityWorker         AuditEntityType = "worker"
 	AuditEntityAWSCredentials AuditEntityType = "aws_credentials"
 	AuditEntityWorkerProfile  AuditEntityType = "worker_profile"

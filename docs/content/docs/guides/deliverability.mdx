@@ -114,6 +114,23 @@ Complaint reports are read from IMAP and Gmail mailboxes. Microsoft Graph return
 
 **Domain authentication refusals** are separated from ordinary failures. When a receiving server refuses a message because your sending domain failed its checks (Microsoft's `5.7.515`, Gmail's `5.7.26`), that is not a bad recipient and not an outage: every send from that domain fails the same way until its DNS is fixed. Warmbly says so in the campaign's activity feed rather than blaming the address, does not suppress the recipient, and brings that domain's authentication check forward so the [domain authentication](/guides/deliverability/#domain-authentication) state reflects it.
 
+## Workspace sending posture
+
+Individual protections each watch one thing: a rate limit watches one user, warmup health watches one mailbox, verification watches one address. A workspace that is slightly wrong on several of those at once sits under every individual threshold and is never noticed. The workspace posture is the view that sees all of them together.
+
+| Posture | What it means | What changes |
+|---------|---------------|--------------|
+| `trusted` | The default | Nothing |
+| `watch` | Enough signal to keep an eye on | Nothing you can feel. It exists so evidence builds before anything is taken away |
+| `restricted` | Several signals agree | Daily volume per mailbox drops to a quarter, and warmup moves to the shared free pool |
+| `suspended` | Serious or confirmed abuse | Sending stops, pending review |
+
+When a workspace is restricted or suspended, a banner across the top of the dashboard says so and why. Nothing is ever taken away silently.
+
+<Callout type="info" title="Set by review, not automatically">
+Postures are currently set by platform operators. The signals that will feed them automatically are being added detector by detector, each running in observation first, so nothing throttles a real workspace on a scoring rule that has never been watched in practice.
+</Callout>
+
 ## How to read it
 
 1. Start with the headline numbers. Bounce at `5%` and complaints at `0.1%` are the highlighted danger lines.

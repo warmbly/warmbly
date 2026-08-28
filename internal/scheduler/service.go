@@ -46,6 +46,9 @@ type schedulerService struct {
 	// outreachRepo reads the org's send-time-optimization settings. Optional/
 	// nil-safe: without it sends stay on the sending mailbox's clock.
 	outreachRepo repository.AdvancedOutreachRepository
+	// orgRiskRepo reads the organization's fused abuse posture. Optional/
+	// nil-safe: without it no organization is ever risk-capped.
+	orgRiskRepo repository.OrgRiskRepository
 }
 
 // DomainAuthPolicy resolves whether the sending-domain authentication gate is
@@ -102,6 +105,34 @@ func (s *schedulerService) WireOutreach(r repository.AdvancedOutreachRepository)
 // outreach settings after construction.
 type OutreachAware interface {
 	WireOutreach(r repository.AdvancedOutreachRepository)
+}
+
+// WireOrgRisk attaches the organization risk posture.
+func (s *schedulerService) WireOrgRisk(r repository.OrgRiskRepository) {
+	s.orgRiskRepo = r
+}
+
+// OrgRiskAware is the optional capability the caller uses to attach org risk
+// after construction.
+type OrgRiskAware interface {
+	WireOrgRisk(r repository.OrgRiskRepository)
+}
+
+// orgRiskState is the organization's posture for one pass. Fails open to
+// trusted: a lookup error must never restrict a customer on a verdict nothing
+// established.
+func (s *schedulerService) orgRiskState(ctx context.Context, orgID *uuid.UUID) models.OrgRiskState {
+	if s.orgRiskRepo == nil || orgID == nil {
+		return models.OrgRiskTrusted
+	}
+	states, err := s.orgRiskRepo.GetOrgRiskStates(ctx, []uuid.UUID{*orgID})
+	if err != nil {
+		return models.OrgRiskTrusted
+	}
+	if state, ok := states[*orgID]; ok && state.Valid() {
+		return state
+	}
+	return models.OrgRiskTrusted
 }
 
 // sendTimePreference resolves the org's recipient-timezone policy for one

@@ -253,6 +253,18 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// ceiling below costs no query inside the candidate loop.
 	coldRamp := s.coldRampStates(ctx, accounts)
 
+	// The organization's own posture, resolved once. A restricted organization
+	// keeps sending at a fraction of the volume; a suspended one does not send
+	// at all, and is stopped here because campaign sends never pass through the
+	// manual send gate.
+	riskState := s.orgRiskState(ctx, campaign.OrganizationID)
+	if riskState.BlocksSending() {
+		s.logCampaignDecision(ctx, campaignID, "org_suspended",
+			"Sending is paused for this workspace while it is under review", nil)
+		return s.deferToNextDay(campaign), nil, accounts[0].ID, ErrCampaignDeferred
+	}
+	riskMultiplier := riskState.CapMultiplier()
+
 	effectiveCap := func(acct models.Email) int {
 		lim := min(acct.CampaignLimit, campaign.DailyLimit)
 		if campaign.RampEnabled {
@@ -262,6 +274,16 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		// full cold cap the day it joins a campaign. min() only, so it can lower
 		// a mailbox but never raise one.
 		lim = min(lim, coldCeilingFor(coldRamp[acct.ID], lim))
+		if riskMultiplier < 1 {
+			risked := int(float64(lim)*riskMultiplier + 0.5)
+			// A restricted organization still sends, just far less. Zeroing it
+			// here would stop the campaign without ever saying why; suspension
+			// is the band that stops sending, and it does so at the send gate.
+			if risked < 1 {
+				risked = 1
+			}
+			lim = min(lim, risked)
+		}
 		return lim
 	}
 

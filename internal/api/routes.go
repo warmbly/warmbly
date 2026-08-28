@@ -961,6 +961,9 @@ func Run(
 				org.POST("/switch/:id", h.SwitchOrganization)
 
 				org.GET("/current", h.GetCurrentOrganization)
+				// The workspace's own sending posture. Readable by any member:
+				// a capped workspace should be able to see that it is capped.
+				org.GET("/current/risk", m.RequireOrganization(), h.GetOrganizationRisk)
 				org.PATCH("/current", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.UpdateOrganization)
 				org.GET("/current/limits", m.RequireOrganization(), h.GetOrganizationLimits)
 

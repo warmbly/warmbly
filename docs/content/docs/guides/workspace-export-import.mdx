@@ -86,6 +86,7 @@ Some things belong to an instance rather than to a workspace, so they are not ap
 | Mailbox sync checkpoints | Replaying a checkpoint would make the destination skip everything that arrived between export and import, so it re-syncs from scratch |
 | Warmup pool membership | Pools are shared across every workspace on an instance, so membership is re-earned rather than asserted by a file |
 | Domain authentication timings | The verdict travels (public DNS reads the same anywhere), but the destination re-checks before it can stop any sending, so a mailbox is never blocked on an observation the new instance never made |
+| Risk and review status | A workspace's abuse posture is one platform's verdict about a tenant on its own infrastructure, reached from evidence the destination never saw. An archive can neither carry a restriction nor clear one |
 | Cold sending ramps | How far a mailbox had eased into cold volume raises its cap, and the destination never watched it send. Mailboxes re-graduate from their warmup maturity, which costs a few days and errs toward sending less |
 | Scheduled deletions | A pending deletion from the source must never follow the workspace to its new home |
 | Failure and delivery counters | A webhook endpoint's failure streak and auto-disable state, and whether a notification's email already went out, describe what happened on the source. They start fresh, so an endpoint is not pre-disabled on the new instance and a notification is not re-sent |

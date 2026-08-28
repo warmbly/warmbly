@@ -58,6 +58,20 @@ type emailSendService struct {
 	tasksClient   tasksched.Scheduler
 	featureGate   feature.FeatureGateService
 	dailyThrottle dailythrottle.Service
+	// orgRiskRepo stops a suspended workspace sending. Optional/nil-safe: no
+	// repository means no organization is ever gated on risk.
+	orgRiskRepo repository.OrgRiskRepository
+}
+
+// WireOrgRisk attaches the organization risk posture. Kept off the constructor
+// so the service stays constructible where risk is not wired.
+func (s *emailSendService) WireOrgRisk(r repository.OrgRiskRepository) {
+	s.orgRiskRepo = r
+}
+
+// OrgRiskAware is the optional capability the caller uses to attach org risk.
+type OrgRiskAware interface {
+	WireOrgRisk(r repository.OrgRiskRepository)
 }
 
 func NewService(
@@ -88,6 +102,17 @@ func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, account
 		if scope, scopeErr := s.userRepo.GetBanState(ctx, userID); scopeErr == nil {
 			if models.BanScope(scope).Has(models.BanScopeSend) {
 				return nil, errx.New(errx.Forbidden, "this account cannot send email")
+			}
+		}
+	}
+
+	// The organization's own posture, which is a different subject from the
+	// user's ban: a suspended workspace stops sending even for members who are
+	// not themselves banned.
+	if s.orgRiskRepo != nil {
+		if states, err := s.orgRiskRepo.GetOrgRiskStates(ctx, []uuid.UUID{orgID}); err == nil {
+			if states[orgID].BlocksSending() {
+				return nil, errx.New(errx.Forbidden, "this workspace is suspended from sending while it is under review")
 			}
 		}
 	}
