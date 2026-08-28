@@ -7,9 +7,13 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+
+	"github.com/warmbly/warmbly/internal/app/orgrisk"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/signuprisk"
 )
 
 // createAccount provisions a user, their organization and their trial. Both
@@ -18,7 +22,15 @@ import (
 //
 // invite, when it resolves, puts the account straight into the inviting
 // organization instead of a fresh empty one.
-func (s *authService) createAccount(ctx context.Context, address, passwordHash, referralCode, invite string) *errx.Error {
+// SignupOrigin is where a signup came from. Captured so accounts opened by one
+// actor can be correlated later; RegistrationStart used to take the address
+// only for the CAPTCHA check and then drop it.
+type SignupOrigin struct {
+	IP        string
+	UserAgent string
+}
+
+func (s *authService) createAccount(ctx context.Context, address, passwordHash, referralCode, invite string, origin SignupOrigin) *errx.Error {
 	email, perr := mail.ParseAddress(address)
 	if perr != nil {
 		return errx.ErrEmail
@@ -38,6 +50,8 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash, 
 	if err := s.userService.SaveUser(ctx, u); err != nil {
 		return err
 	}
+
+	s.recordSignupOrigin(ctx, u.ID, u.Email, origin)
 
 	// An invited account joins the inviting org and stops there: no second
 	// workspace, no trial of its own. A token that died between start and
@@ -65,6 +79,14 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash, 
 			sentry.CaptureException(orgErr)
 			// Don't fail registration if org creation fails
 		}
+	}
+
+	// Fold the signup's own risk into the new workspace's posture. A signup
+	// signal alone can only ever reach `watch`, which by definition changes
+	// nothing a customer can feel; it takes several detectors agreeing to
+	// restrict anything.
+	if org != nil {
+		s.recordSignupRisk(ctx, org.ID, u.Email, origin)
 	}
 
 	// Start 2-week free trial for new user (linked to organization)
@@ -268,4 +290,38 @@ func (s *authService) RegistrationMode(ctx context.Context) string {
 		return config.RegistrationClosed
 	}
 	return s.policy.Registration
+}
+
+// recordSignupRisk files the signup's finding as evidence on the new
+// workspace. Best-effort and never a reason to refuse an account.
+func (s *authService) recordSignupRisk(ctx context.Context, orgID uuid.UUID, email string, origin SignupOrigin) {
+	if s.orgRisk == nil {
+		return
+	}
+	risk := signuprisk.Score(email, origin.IP)
+	if risk.Score == 0 {
+		return
+	}
+	if _, err := s.orgRisk.RecordSignal(ctx, orgID, orgrisk.Signal{
+		Key:    "signup",
+		Weight: risk.Score,
+		Detail: strings.Join(risk.Reasons, "; "),
+	}); err != nil {
+		log.Warn().Str("organization_id", orgID.String()).Msg("could not record the signup risk signal")
+	}
+}
+
+// recordSignupOrigin persists where a signup came from and what its address
+// scored. Best-effort: an account is never refused because the evidence could
+// not be written, since that would turn a bookkeeping failure into a lost
+// customer.
+func (s *authService) recordSignupOrigin(ctx context.Context, userID uuid.UUID, email string, origin SignupOrigin) {
+	if s.userRepository == nil {
+		return
+	}
+	risk := signuprisk.Score(email, origin.IP)
+	if err := s.userRepository.RecordSignupMetadata(ctx, userID,
+		origin.IP, origin.UserAgent, risk.Score, signuprisk.Normalize(email)); err != nil {
+		log.Warn().Err(err).Str("user_id", userID.String()).Msg("could not record signup origin")
+	}
 }

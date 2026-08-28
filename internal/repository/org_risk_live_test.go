@@ -10,7 +10,7 @@ import (
 )
 
 // Issue #141: the fused org posture. These prove the parts that only the
-// database can decide — the concurrent-safe read/derive/write, and that an
+// database can decide: the concurrent-safe read/derive/write, and that an
 // operator's suspension is not undone by a detector clearing.
 //
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable \

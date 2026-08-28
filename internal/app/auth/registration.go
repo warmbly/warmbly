@@ -13,7 +13,8 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
 )
 
-func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipaddr string) (*models.AuthSession, *errx.Error) {
+func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, origin SignupOrigin) (*models.AuthSession, *errx.Error) {
+	ipaddr := origin.IP
 	if s.policy.DisablePasswordLogin {
 		return nil, errx.New(errx.Forbidden, "password sign-up is disabled on this deployment")
 	}
@@ -41,7 +42,7 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 	// nothing to confirm: create the account now rather than issuing a code
 	// nobody can receive. Every product surveyed defaults self-host to this.
 	if !s.policy.RequireEmailVerification || !s.mailDelivers {
-		if err := s.createAccount(ctx, data.Email, passwordHash, data.ReferralCode, data.Invite); err != nil {
+		if err := s.createAccount(ctx, data.Email, passwordHash, data.ReferralCode, data.Invite, origin); err != nil {
 			return nil, err
 		}
 		return &models.AuthSession{CodeRequired: false}, nil
@@ -107,7 +108,7 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ipa
 	}, nil
 }
 
-func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData, session, ipaddr string) *errx.Error {
+func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData, session string, origin SignupOrigin) *errx.Error {
 	token, err := s.tokenService.VerifyToken(session)
 	if err != nil {
 		return err
@@ -145,5 +146,5 @@ func (s *authService) RegistrationConfirm(ctx context.Context, data *ConfirmData
 		return err
 	}
 
-	return s.createAccount(ctx, token.Email, sess.PasswordHash, sess.ReferralCode, sess.Invite)
+	return s.createAccount(ctx, token.Email, sess.PasswordHash, sess.ReferralCode, sess.Invite, origin)
 }
