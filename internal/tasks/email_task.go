@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
@@ -485,6 +486,19 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 		domainsByID = nil
 	}
 
+	// This sender's recent record per recipient provider. Best-effort: a lookup
+	// error leaves the maps empty and weighting degrades to domain diversity.
+	// Providers are read UNFILTERED so every candidate the selector can offer
+	// resolves; a missing one would score an unpenalized 1.0.
+	providersByID, provErr := s.warmupRepo.GetPoolParticipantProviders(ctx, poolType, false)
+	if provErr != nil {
+		providersByID = nil
+	}
+	placementByProvider, placeErr := s.warmupRepo.SenderPlacementByProvider(ctx, account.ID, time.Now().Add(-providerPlacementWindow))
+	if placeErr != nil {
+		placementByProvider = nil
+	}
+
 	// Load customer routing rules (premium pool only — free pool ignores
 	// rules since trial mailboxes don't need provider-shape preferences).
 	var routingRules []models.WarmupRoutingRule
@@ -561,7 +575,15 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 	// CanParticipate re-evaluates and forces just-unblocked mailboxes into
 	// probation, matching the CLAUDE.md re-entry policy on the recipient surface.
 	for attempts := 0; attempts < 5 && len(availablePartners) > 0; attempts++ {
-		partnerID := pickWeightedPartner(availablePartners, domainsByID, domainCounts, routingRules, account.Email, emailsByID)
+		partnerID := pickWeightedPartner(availablePartners, partnerSignals{
+			domainsByID:         domainsByID,
+			domainCounts:        domainCounts,
+			providersByID:       providersByID,
+			placementByProvider: placementByProvider,
+			rules:               routingRules,
+			senderEmail:         account.Email,
+			emailsByID:          emailsByID,
+		})
 
 		if s.warmupHealth != nil {
 			if ok, _, _ := s.warmupHealth.CanParticipate(ctx, partnerID, poolType); !ok {
@@ -592,40 +614,72 @@ func removePartnerID(ids []uuid.UUID, target uuid.UUID) []uuid.UUID {
 	return out
 }
 
+const (
+	// weight *= 1/(1 + k*rate). Never an exclusion: a sender that stops mailing
+	// a provider cannot discover it recovered there.
+	providerPlacementPenaltyK = 4.0
+	// Below this sample a provider's rate is noise, not a pattern.
+	providerPlacementMinSends = 5
+	providerPlacementWindow   = 7 * 24 * time.Hour
+)
+
+// partnerSignals are the per-pick inputs to partner weighting.
+type partnerSignals struct {
+	domainsByID  map[uuid.UUID]string
+	domainCounts map[string]int
+	// Keyed by who RUNS the recipient's mail (models.ClassifyProvider).
+	providersByID       map[uuid.UUID]string
+	placementByProvider map[string]repository.ProviderPlacementStat
+	rules               []models.WarmupRoutingRule
+	senderEmail         string
+	emailsByID          map[uuid.UUID]string
+}
+
+// providerPenalty weights sending to one provider by how this sender has
+// recently landed there. 1.0 on too small a sample, and on every error path.
+func (sig partnerSignals) providerPenalty(partnerID uuid.UUID) float64 {
+	provider, ok := sig.providersByID[partnerID]
+	if !ok || len(sig.placementByProvider) == 0 {
+		return 1.0
+	}
+	stat, ok := sig.placementByProvider[provider]
+	if !ok || stat.Sends < providerPlacementMinSends {
+		return 1.0
+	}
+	return 1.0 / (1.0 + providerPlacementPenaltyK*stat.Rate())
+}
+
 // pickWeightedPartner picks a partner ID using a composite weight:
 //   - inverse-frequency on the partner's recipient domain (diversity)
+//   - this sender's recent junk rate at the partner's provider (feedback)
 //   - customer-defined routing rule multipliers (preference)
 //
 // Rules are evaluated in priority order; the first matching rule for a
 // (sender, recipient) pair applies its weight multiplier. A rule with
 // weight=0 hard-excludes the pair. Falls back to uniform when no signals
 // are available.
-func pickWeightedPartner(
-	candidates []uuid.UUID,
-	domainsByID map[uuid.UUID]string,
-	domainCounts map[string]int,
-	rules []models.WarmupRoutingRule,
-	senderEmail string,
-	emailsByID map[uuid.UUID]string,
-) uuid.UUID {
+func pickWeightedPartner(candidates []uuid.UUID, sig partnerSignals) uuid.UUID {
 	if len(candidates) == 1 {
 		return candidates[0]
 	}
-	if len(domainsByID) == 0 && len(rules) == 0 {
+	if len(sig.domainsByID) == 0 && len(sig.rules) == 0 && len(sig.placementByProvider) == 0 {
 		return candidates[rand.Intn(len(candidates))]
 	}
 
 	weights := make([]float64, len(candidates))
 	var total float64
 	for i, id := range candidates {
-		domain := domainsByID[id]
+		domain := sig.domainsByID[id]
 		// Diversity base weight.
-		w := 1.0 / float64(1+domainCounts[domain])
+		w := 1.0 / float64(1+sig.domainCounts[domain])
+
+		// Per-provider placement feedback.
+		w *= sig.providerPenalty(id)
 
 		// Routing rule multiplier (premium pool only, when configured).
-		if len(rules) > 0 && len(emailsByID) > 0 {
-			if recipientEmail, ok := emailsByID[id]; ok {
-				w *= routingMultiplier(rules, senderEmail, recipientEmail)
+		if len(sig.rules) > 0 && len(sig.emailsByID) > 0 {
+			if recipientEmail, ok := sig.emailsByID[id]; ok {
+				w *= routingMultiplier(sig.rules, sig.senderEmail, recipientEmail)
 			}
 		}
 

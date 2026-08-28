@@ -322,11 +322,19 @@ export default function DeliverabilityPage() {
                                     body="Once warmup is running, every verified delivery reports whether it reached the inbox or the spam folder, broken down by the recipient's domain."
                                 />
                             ) : (
-                                <div className="divide-y divide-slate-200/60">
-                                    {d!.warmup_placement.map((w) => (
-                                        <WarmupDomainRow key={w.domain} w={w} />
-                                    ))}
-                                </div>
+                                <>
+                                    <div className="divide-y divide-slate-200/60">
+                                        {d!.warmup_placement.map((w) => (
+                                            <WarmupDomainRow key={w.domain} w={w} />
+                                        ))}
+                                    </div>
+                                    <p className="px-4 py-3 text-[11.5px] text-slate-500 leading-relaxed">
+                                        Warmup partner selection reads these numbers: a mailbox landing in spam at one
+                                        provider is sent fewer partners there while the rate stays high, and more again
+                                        once it recovers. It is never cut off entirely, because a sender that stops
+                                        mailing a provider can never find out that it recovered.
+                                    </p>
+                                </>
                             )}
                         </>
                     )}

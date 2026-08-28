@@ -44,6 +44,16 @@ A mailbox belongs to exactly one pool at a time. When its plan changes the mailb
 
 The separation is never crossed silently. Warmbly spreads sends across many partners and recipient domains rather than looping the same two mailboxes, since tight reciprocal pairs are easy for providers to spot. **Pool quality matters more than pool size.**
 
+### Choosing partners
+
+Within a pool, partners are picked by weight rather than at random. Three things move the weight:
+
+- **Domain spread.** Recipient domains you have already used a lot recently are downweighted, so warmup does not loop through the same handful of inboxes.
+- **Where you are landing.** Warmbly tracks your spam-placement rate separately for each recipient provider over the last seven days, grouped by who actually runs that recipient's mail (Google, Microsoft, Yahoo and so on, the same grouping routing rules use). A mailbox landing in spam at Microsoft but not Google is sent fewer Microsoft partners until that rate falls, without waiting for an overall health band to trip.
+- **Your routing rules**, when you have configured any.
+
+A struggling provider is downweighted, never excluded: a sender that stops mailing a provider entirely can never discover that it recovered there. A provider is only judged once you have sent it at least five warmup emails in the window, so one bad delivery out of two is treated as noise rather than a pattern. You can see the per-domain numbers this reads under **Deliverability > Warmup placement by domain**.
+
 Turning off outbound warmup does not remove a healthy mailbox from the recipient pool. Disconnecting it, losing warmup-plan access, or entering a quarantined or blocked state does. Losing access removes the mailbox from its pool within minutes, whether or not it was still warming.
 
 ## The ramp
