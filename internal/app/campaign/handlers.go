@@ -13,6 +13,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
+	"github.com/warmbly/warmbly/internal/app/listgate"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -442,6 +443,17 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 						i+1, f.name,
 					))
 				}
+			}
+		}
+	}
+
+	// Refuse a launch whose list is known to be largely undeliverable. Only
+	// KNOWN-invalid addresses count: a list nobody has verified is not evidence
+	// of a bad list, and blocking on that would refuse nearly every launch.
+	if s.audienceRepo != nil {
+		if audience, aerr := s.audienceRepo.GetCampaignAudience(ctx, orgID, cID); aerr == nil {
+			if verdict := listgate.Project(audience); verdict.Block {
+				return errx.New(errx.BadRequest, verdict.Summary+" "+verdict.Remediation)
 			}
 		}
 	}

@@ -604,6 +604,7 @@ func main() {
 		idempotencyService = idempotencyapp.NewService(primaryDB.Pool)
 		crmRepository := repository.NewCRMRepository(primaryDB.Pool)
 		advancedRepository := repository.NewAdvancedOutreachRepository(primaryDB.Pool)
+		campaignAudienceRepository := repository.NewCampaignAudienceRepository(primaryDB)
 		templateRepository := repository.NewTemplateRepository(primaryDB.Pool)
 		warmupRepository := repository.NewWarmupRepository(primaryDB.Pool)
 		warmupRoutingRepository := repository.NewWarmupRoutingRepository(primaryDB.Pool)
@@ -1195,6 +1196,11 @@ func main() {
 			aware.WireOutreach(advancedRepository)
 		}
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
+		// The launch gate refuses a list that is known to be largely
+		// undeliverable, using the same projection preflight reports.
+		if aware, ok := campaignService.(campaign.AudienceAware); ok {
+			aware.WireAudience(campaignAudienceRepository)
+		}
 		// Delete drops attachment objects and duplicate copies them, so the
 		// campaign service needs the store the attachment handler writes to.
 		if aware, ok := campaignService.(campaign.AttachmentAware); ok {
@@ -1237,6 +1243,11 @@ func main() {
 			tasksClient,
 			warmupService,
 		)
+		// Preflight reports the same projection the launch gate acts on, so
+		// the dialog cannot say one thing and the launch another.
+		if aware, ok := advancedService.(advanced.AudienceAware); ok {
+			aware.WireAudience(campaignAudienceRepository)
+		}
 
 		// Shared AI tool registry: every tool calls a service-layer function as
 		// the invoking user, so the dashboard agent (M3) and MCP server (M8) can

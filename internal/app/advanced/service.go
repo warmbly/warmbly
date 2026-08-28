@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/listgate"
 	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -162,10 +163,13 @@ type service struct {
 	tasksClient          tasksched.Scheduler
 	warmupService        warmupapp.Service
 	dispatcher           EventDispatcher
-	notifier             Notifier
-	realtime             ReplyRealtimePublisher
-	automationRunner     AutomationRunner
-	inboxAgent           InboxAgent
+	// audienceRepo measures a campaign's list for the preflight report.
+	// Optional/nil-safe: without it the list check is simply absent.
+	audienceRepo     repository.CampaignAudienceRepository
+	notifier         Notifier
+	realtime         ReplyRealtimePublisher
+	automationRunner AutomationRunner
+	inboxAgent       InboxAgent
 }
 
 func NewService(
@@ -1593,6 +1597,10 @@ func (s *service) RunPreflight(ctx context.Context, organizationID, campaignID u
 		checks = append(checks, check)
 	}
 
+	if s.audienceRepo != nil {
+		checks = append(checks, s.listQualityCheck(ctx, organizationID, campaignID, &recommendations))
+	}
+
 	if settings.Preflight.CheckContentScore {
 		checks = append(checks, s.contentScoreCheck(ctx, campaignID, settings.Preflight.MinContentScore, &recommendations))
 	}
@@ -1813,4 +1821,44 @@ func (s *service) contentScoreCheck(ctx context.Context, campaignID uuid.UUID, f
 		Message:     fmt.Sprintf("Step %d scores %d/100 for spam signals (floor %d). %s", worstStep, worst, floor, issue),
 		Remediation: "Trim spam-trigger wording, links, images and stacked punctuation in that step.",
 	}
+}
+
+// listQualityCheck projects the campaign's bounce rate for the preflight
+// report, using the same rule StartCampaign refuses on, so the launch dialog
+// cannot say one thing and the launch another.
+func (s *service) listQualityCheck(ctx context.Context, orgID, campaignID uuid.UUID, recommendations *[]string) models.PreflightCheckResult {
+	audience, err := s.audienceRepo.GetCampaignAudience(ctx, orgID, campaignID)
+	if err != nil {
+		return models.PreflightCheckResult{
+			Key:      "list_quality",
+			Passed:   false,
+			Severity: "warning",
+			Message:  "Could not read the campaign's audience to check it.",
+		}
+	}
+	v := listgate.Project(audience)
+	check := models.PreflightCheckResult{
+		Key:         "list_quality",
+		Passed:      !v.Block && !v.Warn,
+		Severity:    "warning",
+		Message:     v.Summary,
+		Remediation: v.Remediation,
+	}
+	if v.Block {
+		check.Severity = "error"
+	}
+	if !check.Passed {
+		*recommendations = append(*recommendations, "Clean or verify the recipient list before sending at volume.")
+	}
+	return check
+}
+
+// WireAudience attaches the launch-time list measurement.
+func (s *service) WireAudience(r repository.CampaignAudienceRepository) {
+	s.audienceRepo = r
+}
+
+// AudienceAware is the optional capability the caller uses to attach it.
+type AudienceAware interface {
+	WireAudience(r repository.CampaignAudienceRepository)
 }

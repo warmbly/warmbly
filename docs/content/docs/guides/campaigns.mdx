@@ -169,6 +169,18 @@ A mailbox that never used warmup is not gated. This exists to smooth the warmup-
 
 </Callout>
 
+## The launch check on your list
+
+Starting a campaign measures its recipient list first and refuses to launch one that is known to be largely undeliverable. Mailbox providers put a sender under review at around a 5% bounce rate, so the number worth seeing is the one you can see beforehand.
+
+What it counts:
+
+- **Known-invalid addresses only.** Verification has to have actually rejected the address. A list nobody has verified is not evidence of a bad list, so it is never blocked on that basis, only pointed out.
+- **Deliverable recipients only.** Suppressed and unsubscribed leads are skipped at send time, so counting them would make a bad list look fine.
+- **Lists of at least 50.** Below that a share means nothing, and no launch is refused on it.
+
+Above `4%` projected bounce the launch is refused with the number and what to do about it. Between `2%` and `4%` it launches with a warning. The same projection appears in the launch dialog before you click, so a refusal is never a surprise.
+
 ## Safety posture
 
 Defaults are deliberately conservative, aiming at a low complaint rate rather than maximum throughput:

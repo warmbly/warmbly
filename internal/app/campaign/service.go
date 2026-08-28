@@ -68,6 +68,19 @@ type campaignService struct {
 	streamingPublisher *pubsub.StreamingPublisher
 	attachmentRepo     repository.AttachmentRepository
 	storage            storage.Store
+	// audienceRepo measures the campaign's list at launch. Optional/nil-safe:
+	// without it no launch is ever refused on list quality.
+	audienceRepo repository.CampaignAudienceRepository
+}
+
+// WireAudience attaches the launch-time list gate.
+func (s *campaignService) WireAudience(r repository.CampaignAudienceRepository) {
+	s.audienceRepo = r
+}
+
+// AudienceAware is the optional capability the caller uses to attach it.
+type AudienceAware interface {
+	WireAudience(r repository.CampaignAudienceRepository)
 }
 
 // AttachmentAware is implemented by the campaign service so main can hand it
