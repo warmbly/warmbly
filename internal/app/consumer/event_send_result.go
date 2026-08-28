@@ -179,6 +179,23 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 		}
 	}
 
+	// A refusal on the SENDING DOMAIN's authentication is not about this lead:
+	// the recipient received nothing, and every retry from that domain fails
+	// identically until its DNS is fixed. Give the reservation back without
+	// spending one of the lead's attempts, and bring the domain's re-check
+	// forward so the send gate stops choosing that mailbox. Another mailbox in
+	// the campaign's pool picks the lead up on the next tick.
+	if code == string(errx.MailErrorCodeDomainAuthRejected) {
+		s.recheckSendingDomainAuth(ctx, task.EmailAccountID)
+		if ct.ContactID != nil && ct.SequenceID != nil && s.CampaignProgressRepo != nil {
+			if relErr := s.CampaignProgressRepo.ReleaseSend(ctx, campaignID, *ct.ContactID, *ct.SequenceID, false); relErr != nil {
+				log.Warn().Err(relErr).Str("campaign_id", campaignID.String()).Msg("could not release a domain-auth refusal for retry")
+			}
+		}
+		s.logCampaignSendFailure(ctx, campaignID, ct, recipient, reason, code, 0, false, true, false)
+		return nil
+	}
+
 	attempts, exhausted, rolledBack := 0, false, false
 	if ct.ContactID != nil && ct.SequenceID != nil && s.CampaignProgressRepo != nil {
 		attempts, exhausted, rolledBack, err = s.CampaignProgressRepo.RecordSendFailure(ctx, campaignID, *ct.ContactID, *ct.SequenceID, reason)
@@ -304,6 +321,8 @@ func (s *JobsService) logCampaignSendFailure(ctx context.Context, campaignID uui
 	switch {
 	case code == string(errx.MailErrorCodeRecipientRejected):
 		msg = fmt.Sprintf("The mail server refused %s (hard bounce): %s", who, reason)
+	case code == string(errx.MailErrorCodeDomainAuthRejected):
+		msg = fmt.Sprintf("The receiving server refused the message because your sending domain failed its authentication checks, not because of %s. Fix the domain's SPF, DKIM and DMARC records: %s", who, reason)
 	case exhausted:
 		msg = fmt.Sprintf("Gave up on %s after %d failed attempts: %s", who, attempts, reason)
 	case rolledBack:
@@ -384,4 +403,26 @@ func campaignOrgID(campaign *models.Campaign) string {
 		return ""
 	}
 	return campaign.OrganizationID.String()
+}
+
+// recheckSendingDomainAuth brings forward the authentication sweep for the
+// mailbox's sending domain. Best-effort: missing it only delays the check.
+func (s *JobsService) recheckSendingDomainAuth(ctx context.Context, accountID uuid.UUID) {
+	if s.EmailRepository == nil {
+		return
+	}
+	account, xerr := s.EmailRepository.GetByID(ctx, accountID)
+	if xerr != nil || account == nil {
+		return
+	}
+	at := strings.LastIndex(account.Email, "@")
+	if at < 0 {
+		return
+	}
+	domain := strings.ToLower(account.Email[at+1:])
+	if err := s.EmailRepository.MarkDomainAuthRecheck(ctx, domain); err != nil {
+		log.Warn().Err(err).Str("domain", domain).Msg("could not bring the domain auth re-check forward")
+	} else {
+		log.Info().Str("domain", domain).Msg("sending domain refused on authentication; re-check queued")
+	}
 }

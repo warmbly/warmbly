@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/arf"
 	"github.com/warmbly/warmbly/internal/pkg/dsn"
 )
 
@@ -59,4 +60,32 @@ func headerFlagValue(flags []string, name string) string {
 		}
 	}
 	return ""
+}
+
+// maybeEmitComplaint emits INBOUND_COMPLAINT when a synced message is an abuse
+// feedback report for one of our sends. A complaint never arrives
+// synchronously; it comes back as mail, long after the send succeeded.
+//
+// IMAP and Gmail expose the report's machine-readable parts, so both work.
+// Microsoft Graph returns one rendered body and no parts, so a report synced
+// through Graph carries only its human notice and is not detected; reading
+// those needs a separate MIME fetch, which is not built.
+func (w *WMail) maybeEmitComplaint(msg *models.EmailMessageData) {
+	from := strings.Join(msg.From, " ")
+	if !arf.Detect(from, msg.Subject, headerFlagValue(msg.Flags, "Content-Type")) {
+		return
+	}
+
+	report := arf.Parse(msg.BodyPlain + "\n" + msg.BodyHTML)
+	if !report.IsComplaint || report.OriginalMessageID == "" {
+		return
+	}
+
+	_ = w.onEvent(models.JobEventTypeInboundComplaint, &models.JobEventInboundComplaint{
+		UserID:              w.UserID,
+		EmailID:             w.ID,
+		OriginalMessageID:   strings.Trim(report.OriginalMessageID, "<>"),
+		ComplainedRecipient: report.ComplainedRecipient,
+		Provider:            report.UserAgent,
+	})
 }

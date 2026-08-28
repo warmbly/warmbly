@@ -28,6 +28,7 @@ func (w *JobsService) InitEvents() {
 	w.eventHandlers = make(map[models.JobEventType]func(ctx context.Context, body any) error)
 	Register(w, models.JobEventTypeNewEmail, w.HandleNewEmail)
 	Register(w, models.JobEventTypeInboundBounce, w.HandleInboundBounce)
+	Register(w, models.JobEventTypeInboundComplaint, w.HandleInboundComplaint)
 	Register(w, models.JobEventTypeEmailUpdate, w.HandleUpdateEmail)
 	Register(w, models.JobEventTypeRemoveEmail, w.HandleRemoveEmail)
 	Register(w, models.JobEventTypeFlagsAdd, w.HandleFlagsAdd)

@@ -283,6 +283,11 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	}
 	for _, r := range to {
 		if err := client.Rcpt(r); err != nil {
+			// A domain-authentication refusal is about OUR domain, not this
+			// recipient; suppressing the address would punish the wrong party.
+			if isDomainAuthRejection(err) {
+				return errx.ErrMailDomainAuthRejected
+			}
 			// A refused RCPT is a recipient problem (bad address, policy
 			// rejection), not a dead server; classifying it as unreachable
 			// hid rejections from bounce accounting.
@@ -297,6 +302,11 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 		return errx.ErrMailServerUnreachable
 	}
 	if err := w.Close(); err != nil {
+		// The server's verdict on the whole message lands here, which is where
+		// Microsoft returns 5.7.515. Retrying it as an outage never succeeds.
+		if isDomainAuthRejection(err) {
+			return errx.ErrMailDomainAuthRejected
+		}
 		return errx.ErrMailServerUnreachable
 	}
 
