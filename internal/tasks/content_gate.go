@@ -16,18 +16,16 @@ import (
 // with 500 recipients writes one feed entry rather than 500.
 const contentWarningWindow = 24 * time.Hour
 
-// warnOnWeakContent scores the RENDERED copy for this send and, when it is
-// below the org's floor, writes one warning to the campaign feed.
-//
-// The editor check scores the template; this scores what the recipient will
-// actually receive, after merge fields, spintax and AI blocks have resolved.
-// Those are exactly where a clean template turns into "Hi ," or a wall of
-// trigger words. Advisory only: it never blocks or delays the send.
+// warnOnWeakContent scores the copy this send will actually deliver — after
+// merge fields, spintax, A/B and AI blocks resolve, which the editor's
+// template-time score cannot see. Advisory: it never blocks or delays a send.
 func (s *tasksService) warnOnWeakContent(ctx context.Context, orgID, campaignID, sequenceID uuid.UUID, step int, subject, bodyHTML, bodyPlain string, attachments int) {
 	if s.advanced == nil || s.campaignLogRepo == nil {
 		return
 	}
-	settings, xerr := s.advanced.GetOrganizationSettings(ctx, orgID)
+	// Campaign-effective, not org-only: a campaign that turned the check off or
+	// moved its floor must be honored here as it is at preflight.
+	settings, xerr := s.advanced.EffectiveSettings(ctx, orgID, campaignID)
 	if xerr != nil || settings == nil || !settings.Preflight.Enabled || !settings.Preflight.CheckContentScore {
 		return
 	}
@@ -42,11 +40,6 @@ func (s *tasksService) warnOnWeakContent(ctx context.Context, orgID, campaignID,
 	}
 
 	seq := sequenceID.String()
-	if seen, err := s.campaignLogRepo.HasRecentLogFor(ctx, campaignID, "content_warning", "sequence_id", seq,
-		time.Now().Add(-contentWarningWindow)); err != nil || seen {
-		return
-	}
-
 	detail := ""
 	for _, issue := range res.Issues {
 		if issue.Severity == "high" {
@@ -63,7 +56,7 @@ func (s *tasksService) warnOnWeakContent(ctx context.Context, orgID, campaignID,
 		codes = append(codes, issue.Code)
 	}
 
-	if err := s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+	if _, err := s.campaignLogRepo.CreateLogOnce(ctx, &repository.CampaignLogEntry{
 		CampaignID: campaignID,
 		EventType:  "content_warning",
 		Message: fmt.Sprintf("Step %d's copy scores %d/100 for spam signals as sent (floor %d).%s",
@@ -75,7 +68,7 @@ func (s *tasksService) warnOnWeakContent(ctx context.Context, orgID, campaignID,
 			"floor":       floor,
 			"issues":      codes,
 		},
-	}); err != nil {
+	}, "sequence_id", seq, time.Now().Add(-contentWarningWindow)); err != nil {
 		log.Warn().Err(err).Str("campaign_id", campaignID.String()).Msg("could not record the content warning")
 	}
 }
