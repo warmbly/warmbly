@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -451,7 +452,15 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 	// KNOWN-invalid addresses count: a list nobody has verified is not evidence
 	// of a bad list, and blocking on that would refuse nearly every launch.
 	if s.audienceRepo != nil {
-		if audience, aerr := s.audienceRepo.GetCampaignAudience(ctx, orgID, cID); aerr == nil {
+		audience, aerr := s.audienceRepo.GetCampaignAudience(ctx, orgID, cID)
+		switch {
+		case aerr != nil:
+			// Fail open, but never silently: a transient database error must
+			// not stop a customer launching, and it must not look like the
+			// list passed either.
+			log.Warn().Err(aerr).Str("campaign_id", cID.String()).
+				Msg("could not measure the campaign's list; launching without the check")
+		default:
 			if verdict := listgate.Project(audience); verdict.Block {
 				return errx.New(errx.BadRequest, verdict.Summary+" "+verdict.Remediation)
 			}

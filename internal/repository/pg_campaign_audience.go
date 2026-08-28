@@ -19,12 +19,16 @@ type CampaignAudience struct {
 	Risky    int
 	Unknown  int
 	CatchAll int
-	// Suppressed leads are skipped at send time, so a large share means the
-	// campaign delivers far less than its size suggests.
+	// Suppressed and Unsubscribed overlap: a contact can be both. Deliverable
+	// is counted separately in SQL rather than subtracted from Total, because
+	// subtracting two overlapping counts double-removes those contacts and
+	// inflates every share computed against the remainder.
 	Suppressed   int
 	Unsubscribed int
-	RoleAddress  int
-	FreeMail     int
+	// Deliverable is the count that will actually be sent to.
+	Deliverable int
+	RoleAddress int
+	FreeMail    int
 }
 
 // CampaignAudienceRepository reads a campaign's audience for the launch gate.
@@ -59,6 +63,11 @@ func (r *campaignAudienceRepository) GetCampaignAudience(ctx context.Context, or
 				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
 			)),
 			COUNT(*) FILTER (WHERE ct.subscribed IS FALSE),
+			COUNT(*) FILTER (WHERE ct.subscribed IS NOT FALSE AND NOT EXISTS (
+				SELECT 1 FROM suppressed_recipients sr
+				WHERE sr.organization_id = $1 AND lower(sr.email) = lower(ct.email)
+				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())
+			)),
 			COUNT(*) FILTER (WHERE split_part(lower(ct.email), '@', 1) IN (`+rolePrefixesSQL+`)),
 			COUNT(*) FILTER (WHERE split_part(lower(ct.email), '@', 2) IN (`+freeMailDomainsSQL+`))
 		FROM campaign_leads cl
@@ -67,7 +76,7 @@ func (r *campaignAudienceRepository) GetCampaignAudience(ctx context.Context, or
 		WHERE cl.campaign_id = $2 AND c.organization_id = $1
 	`, orgID, campaignID).Scan(
 		&a.Total, &a.Invalid, &a.Risky, &a.Unknown, &a.CatchAll,
-		&a.Suppressed, &a.Unsubscribed, &a.RoleAddress, &a.FreeMail,
+		&a.Suppressed, &a.Unsubscribed, &a.Deliverable, &a.RoleAddress, &a.FreeMail,
 	)
 	return a, err
 }

@@ -72,6 +72,11 @@ func TestLiveCampaignAudienceCountsEachClass(t *testing.T) {
 	if got.FreeMail != 1 {
 		t.Errorf("free mail = %d, want the gmail.com lead", got.FreeMail)
 	}
+	// Counted, not derived: the unsubscribed lead is excluded once even though
+	// it could also have been suppressed.
+	if got.Deliverable != got.Total-got.Unsubscribed {
+		t.Errorf("deliverable = %d, want %d", got.Deliverable, got.Total-got.Unsubscribed)
+	}
 }
 
 // The audience is scoped to ONE campaign and ONE organization: a gate that

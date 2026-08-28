@@ -1,11 +1,6 @@
-// Package listgate projects how badly a campaign's list will bounce, before it
-// sends anything.
-//
-// Per-recipient verification already drops a bad address at send time, but that
-// is one address at a time and after the campaign has started: a scraped list
-// still reveals itself through the damage. SES reviews an account at 5% bounce
-// and can pause it at 10%, so the number that matters is the one you can see
-// beforehand.
+// Package listgate projects a campaign's bounce rate before it sends anything.
+// Per-recipient verification only drops a bad address at send time, so a
+// scraped list otherwise reveals itself through the damage it does.
 package listgate
 
 import (
@@ -16,9 +11,8 @@ import (
 
 // Thresholds, in percent of the deliverable audience.
 const (
-	// BlockBouncePct is where a launch is refused. Chosen below the 5% at
-	// which SES puts an account under review: the platform should act before
-	// a provider does.
+	// BlockBouncePct sits below the 5% at which providers put a sender under
+	// review, so the platform acts first.
 	BlockBouncePct = 4.0
 	// WarnBouncePct is where a launch is allowed but flagged.
 	WarnBouncePct = 2.0
@@ -39,7 +33,9 @@ type Verdict struct {
 	ProjectedBouncePct float64
 	// Block is true when the launch should be refused.
 	Block bool
-	// Warn is true when it should be flagged but allowed.
+	// Warn is true when it should be flagged but allowed. Set for an
+	// unverified list too, so advice about it is actually shown: a preflight
+	// report only surfaces checks that did not pass.
 	Warn bool
 	// UnverifiedPct is the share of the audience nobody has checked. Reported,
 	// never blocked on: see Project.
@@ -51,10 +47,11 @@ type Verdict struct {
 }
 
 // Project estimates the audience's bounce rate. A list too small to judge, or
-// one with nothing deliverable, is never blocked: refusing a launch on a
-// sample that cannot support the number would be worse than letting it run.
+// with nothing deliverable, is never blocked.
 func Project(a repository.CampaignAudience) Verdict {
-	deliverable := a.Total - a.Suppressed - a.Unsubscribed
+	// Counted in SQL, not derived: a contact can be both suppressed and
+	// unsubscribed, and subtracting both counts would remove it twice.
+	deliverable := a.Deliverable
 	if deliverable < 0 {
 		deliverable = 0
 	}
@@ -95,6 +92,7 @@ func Project(a repository.CampaignAudience) Verdict {
 			v.ProjectedBouncePct, a.Invalid, deliverable)
 		v.Remediation = "Consider verifying the list before sending at volume."
 	case v.UnverifiedPct >= UnverifiedAdvisePct:
+		v.Warn = true
 		v.Summary = fmt.Sprintf("%.0f%% of this list has never been verified, so its bounce rate is unknown.", v.UnverifiedPct)
 		v.Remediation = "Verify the list to see its real bounce risk before sending at volume."
 	default:
