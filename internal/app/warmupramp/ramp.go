@@ -1,40 +1,33 @@
 // Package warmupramp holds the warmup volume policy: how many emails a mailbox
-// should aim to send today, and how an early adverse signal holds that number
-// down. It is pure (no context, no database) and lives outside the scheduler so
-// the dashboard reports the SAME target the scheduler will act on. Two copies
-// of this arithmetic is how a mailbox ends up showing "target 25" while it
-// sends 18.
+// should aim to send today, and how adverse signal holds that number down. Pure
+// and outside the scheduler so the dashboard reports the same target the
+// scheduler acts on.
 package warmupramp
 
 import "time"
 
 const (
-	// ActiveCampaignCap is the warmup volume for a mailbox that also backs a
-	// live campaign, so warmup does not stack on production sending pressure.
+	// ActiveCampaignCap is the warmup volume for a mailbox also backing a live
+	// campaign, so warmup does not stack on production sending pressure.
 	ActiveCampaignCap = 5
 
-	// SoftThrottleMultiplier is the ~25% cut applied on the first adverse
-	// signal, while the mailbox is still Healthy.
-	//
-	// Every band in the health model needs a sample floor (20 warmup sends in
-	// 7 days, 100 delivered in 30) before it can trip, which a mailbox in its
-	// first week cannot reach — so a new mailbox landing in junk would keep
-	// ramping +1/day until it had sent enough to be judged. Providers advise
-	// the opposite: cut about a quarter and hold at the FIRST sign.
+	// SoftThrottleMultiplier is the cut applied while a placement is fresh.
+	// The bands cannot do this: each needs a sample floor a new mailbox has
+	// not reached (20 warmup sends in 7 days, 100 delivered in 30).
 	SoftThrottleMultiplier = 0.75
 
-	// SoftSignalWindow is how recent a placement must be to still count as
-	// degradation rather than history the mailbox has recovered from.
+	// SoftSignalWindow is how recent a placement must be to still cut volume.
 	SoftSignalWindow = 48 * time.Hour
 
-	// FreezeWindow is how long the ramp holds after a placement.
+	// FreezeWindow is how long one placement holds the ramp.
 	FreezeWindow = 72 * time.Hour
+
+	// LookbackWindow bounds how far back placements are read.
+	LookbackWindow = 60 * 24 * time.Hour
 )
 
-// SoftAdjust returns the volume multiplier for an early adverse signal. Any
-// placement in the window cuts volume; a rate threshold is deliberately absent,
-// because waiting for a rate to clear a sample floor is the delay this exists
-// to remove.
+// SoftAdjust returns the volume multiplier for a fresh placement. Any placement
+// cuts; a rate threshold would reintroduce the sample floor this avoids.
 func SoftAdjust(placements int) float64 {
 	if placements > 0 {
 		return SoftThrottleMultiplier
@@ -42,33 +35,83 @@ func SoftAdjust(placements int) float64 {
 	return 1.0
 }
 
-// Days is the ramp day-count to use, holding the ramp where it stood when a
-// placement landed and resuming from there once the freeze expires. A freeze
-// SHIFTS the ramp back rather than letting it catch up: holding for three days
-// and then climbing three steps in one morning is the overnight spike the hold
-// exists to prevent.
-func Days(warmupStart time.Time, lastPlacement *time.Time, now time.Time, freeze time.Duration) int {
-	days := wholeDays(now.Sub(warmupStart))
-	if lastPlacement == nil || lastPlacement.Before(warmupStart) {
-		return days
+// Days is the ramp day-count: elapsed days minus days spent frozen. Subtracted
+// time rather than a held level, because freezing "at the last placement's
+// level" would raise it whenever a new placement arrived mid-hold. Input need
+// not be sorted or deduplicated.
+func Days(warmupStart time.Time, placements []time.Time, now time.Time, freeze time.Duration) int {
+	elapsed := now.Sub(warmupStart)
+	if elapsed <= 0 {
+		return 0
 	}
-	held := wholeDays(lastPlacement.Sub(warmupStart))
-	thawAt := lastPlacement.Add(freeze)
-	if now.Before(thawAt) {
-		return held
+	return wholeDays(elapsed - frozenDuration(warmupStart, placements, now, freeze))
+}
+
+// FrozenUntil is when the ramp climbs again, or nil when it already is. Covers
+// the whole freeze, not just the shorter window that also cuts volume.
+func FrozenUntil(placements []time.Time, now time.Time, freeze time.Duration) *time.Time {
+	var latest time.Time
+	for _, p := range placements {
+		if p.After(latest) {
+			latest = p
+		}
 	}
-	// Never claim more days than actually elapsed, or a freeze would end up
-	// accelerating the mailbox instead of slowing it.
-	if resumed := held + wholeDays(now.Sub(thawAt)); resumed < days {
-		return resumed
+	if latest.IsZero() {
+		return nil
 	}
-	return days
+	until := latest.Add(freeze)
+	if !until.After(now) {
+		return nil
+	}
+	return &until
+}
+
+// frozenDuration is the union of each placement's freeze window, clipped to
+// now. Union, not sum: two placements an hour apart freeze about one window.
+func frozenDuration(warmupStart time.Time, placements []time.Time, now time.Time, freeze time.Duration) time.Duration {
+	type span struct{ start, end time.Time }
+	spans := make([]span, 0, len(placements))
+	for _, p := range placements {
+		if p.Before(warmupStart) {
+			// From a previous warmup run: restarting warmup resets the ramp,
+			// so a stale freeze must not carry into the new one.
+			continue
+		}
+		start, end := p, p.Add(freeze)
+		if end.After(now) {
+			end = now
+		}
+		if end.After(start) {
+			spans = append(spans, span{start, end})
+		}
+	}
+	if len(spans) == 0 {
+		return 0
+	}
+	// Insertion sort by start: placements are rare, so this stays tiny and
+	// avoids pulling sort into a hot path.
+	for i := 1; i < len(spans); i++ {
+		for j := i; j > 0 && spans[j].start.Before(spans[j-1].start); j-- {
+			spans[j], spans[j-1] = spans[j-1], spans[j]
+		}
+	}
+	var total time.Duration
+	cur := spans[0]
+	for _, s := range spans[1:] {
+		if s.start.After(cur.end) {
+			total += cur.end.Sub(cur.start)
+			cur = s
+			continue
+		}
+		if s.end.After(cur.end) {
+			cur.end = s.end
+		}
+	}
+	return total + cur.end.Sub(cur.start)
 }
 
 // Target is the day's warmup volume before recipient-capacity, health-band and
-// early-signal adjustments. An actively-warming mailbox follows its ramp,
-// reduced to the in-campaign cap when it also backs a live campaign. A mailbox
-// kept warm only because it backs a campaign runs at the in-campaign cap.
+// early-signal adjustments.
 func Target(activelyWarming bool, base, increase, max, days int, inCampaign bool) int {
 	if !activelyWarming {
 		return ActiveCampaignCap
@@ -83,8 +126,8 @@ func Target(activelyWarming bool, base, increase, max, days int, inCampaign bool
 	return target
 }
 
-// Apply folds the early-signal cut into a target, never below one email: a
-// degraded mailbox keeps a heartbeat so the health sweep has fresh data.
+// Apply folds a multiplier into a target, never below one: a degraded mailbox
+// keeps a heartbeat so the health sweep has fresh data to judge it on.
 func Apply(target int, multiplier float64) int {
 	if multiplier >= 1.0 || target <= 0 {
 		return target

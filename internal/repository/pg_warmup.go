@@ -118,10 +118,10 @@ type WarmupRepository interface {
 	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
-	// LastSpamPlacementAt is when this sender's most recent warmup message was
-	// found in a recipient's junk folder, or nil if it never has been. The
-	// warmup ramp holds where it stood at that moment (see warmupRampDays).
-	LastSpamPlacementAt(ctx context.Context, accountID uuid.UUID) (*time.Time, error)
+	// SpamPlacementsSince lists when this sender's warmup mail was found in a
+	// recipient's junk folder. The ramp subtracts a freeze window per
+	// placement, so it needs all of them, not just the newest.
+	SpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) ([]time.Time, error)
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error)
 	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
@@ -637,20 +637,29 @@ func (r *warmupRepository) CountSpamPlacementsSince(ctx context.Context, account
 	return count, err
 }
 
-func (r *warmupRepository) LastSpamPlacementAt(ctx context.Context, accountID uuid.UUID) (*time.Time, error) {
-	query := `
-		SELECT MAX(created_at)
+func (r *warmupRepository) SpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) ([]time.Time, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT created_at
 		FROM warmup_spam_reports
 		WHERE reported_account_id = $1
 		  AND report_type = 'spam_placement'
-	`
-	// MAX over no rows is a SQL NULL, not ErrNoRows, so the nullable scan is
-	// what distinguishes "never placed" from a failure.
-	var at *time.Time
-	if err := r.db.QueryRow(ctx, query, accountID).Scan(&at); err != nil {
+		  AND created_at >= $2
+		ORDER BY created_at
+	`, accountID, since)
+	if err != nil {
 		return nil, err
 	}
-	return at, nil
+	defer rows.Close()
+
+	var out []time.Time
+	for rows.Next() {
+		var at time.Time
+		if err := rows.Scan(&at); err != nil {
+			return nil, err
+		}
+		out = append(out, at)
+	}
+	return out, rows.Err()
 }
 
 func (r *warmupRepository) SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {

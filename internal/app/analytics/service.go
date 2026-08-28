@@ -198,7 +198,7 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 	// Build warmup status if warmup has ever been enabled (active or paused).
 	var warmupStatus *models.WarmupStatusInfo
 	if email.Warmup != nil {
-		target, hold := s.warmupTargetAndHold(ctx, email)
+		target, hold := s.warmupTargetAndHold(ctx, email, warmupHealthState(warmupHealth))
 		warmupStatus = &models.WarmupStatusInfo{
 			Enabled:       true,
 			Paused:        email.WarmupPausedAt != nil,
@@ -233,6 +233,15 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 		WarmupHealth: warmupHealth,
 		InCampaign:   inCampaign,
 	}, nil
+}
+
+// warmupHealthState reads the band off the API shape, defaulting to healthy
+// for a mailbox in no pool — the same default resolveHealthState uses.
+func warmupHealthState(h *models.WarmupHealthInfo) models.WarmupHealthState {
+	if h == nil || h.State == "" {
+		return models.WarmupHealthHealthy
+	}
+	return models.WarmupHealthState(h.State)
 }
 
 // buildWarmupHealth looks up the mailbox's warmup-pool health (premium pool
@@ -400,43 +409,35 @@ func calculateAccountHealth(email *models.Email, errors []models.AccountError) m
 	return health
 }
 
-// warmupTargetAndHold reports the target the SCHEDULER will act on, and what is
-// holding it down when that is lower than the plain ramp. It runs the shared
-// warmupramp policy rather than its own arithmetic, because a dashboard that
-// says "target 25" while the mailbox sends 18 is worse than no number.
-func (s *analyticsService) warmupTargetAndHold(ctx context.Context, email *models.Email) (int, *models.WarmupRampHold) {
+// warmupTargetAndHold reports the target the SCHEDULER will act on, plus what
+// is holding it down. It runs the shared warmupramp policy rather than its own
+// arithmetic: a drawer saying "target 25" for a mailbox sending 18 is worse
+// than no number.
+func (s *analyticsService) warmupTargetAndHold(ctx context.Context, email *models.Email, health models.WarmupHealthState) (int, *models.WarmupRampHold) {
 	if email.Warmup == nil {
 		return 0, nil
 	}
-	now := time.Now()
-
-	var lastPlacement *time.Time
-	var placements, sends int
-	if s.warmupRepo != nil {
-		if at, err := s.warmupRepo.LastSpamPlacementAt(ctx, email.ID); err == nil {
-			lastPlacement = at
-		}
-		since := now.Add(-warmupramp.SoftSignalWindow)
-		if n, err := s.warmupRepo.CountSpamPlacementsSince(ctx, email.ID, since); err == nil {
-			placements = n
-		}
-		if n, err := s.warmupRepo.SumWarmupSentSince(ctx, email.ID, since); err == nil {
-			sends = n
-		}
+	plan := warmupramp.Resolve(ctx, s.warmupRepo, warmupramp.Input{
+		AccountID:       email.ID,
+		WarmupStart:     *email.Warmup,
+		ActivelyWarming: email.IsWarmingActive(),
+		Base:            email.WarmupBase,
+		Increase:        email.WarmupIncrease,
+		Max:             email.WarmupMax,
+		Health:          health,
+		Now:             time.Now(),
+	})
+	if plan.FrozenUntil == nil {
+		return plan.Target, nil
 	}
-
-	days := warmupramp.Days(*email.Warmup, lastPlacement, now, warmupramp.FreezeWindow)
-	target := warmupramp.Target(email.IsWarmingActive(), email.WarmupBase, email.WarmupIncrease, email.WarmupMax, days, false)
-	target = warmupramp.Apply(target, warmupramp.SoftAdjust(placements))
-
-	if placements == 0 || lastPlacement == nil {
-		return target, nil
-	}
-	return target, &models.WarmupRampHold{
-		Placements: placements,
-		Sends:      sends,
-		LastAt:     *lastPlacement,
-		ResumesAt:  lastPlacement.Add(warmupramp.FreezeWindow),
+	// Reported for the whole freeze, not just the shorter window that also
+	// cuts volume: otherwise a mailbox between 48 and 72 hours after a
+	// placement shows a ramp that is not climbing and no reason why.
+	return plan.Target, &models.WarmupRampHold{
+		Placements: plan.Placements,
+		Sends:      plan.Sends,
+		VolumeCut:  plan.Cut(),
+		ResumesAt:  *plan.FrozenUntil,
 	}
 }
 

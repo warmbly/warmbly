@@ -32,38 +32,6 @@ type healthAdjustment struct {
 	minWaitMultiplier float64 // applied to MinWaitTime between sends
 }
 
-// softRampSignal is the early-signal verdict for one scheduling pass.
-type softRampSignal struct {
-	multiplier      float64
-	placements      int
-	sends           int
-	lastPlacementAt *time.Time
-}
-
-// resolveSoftRampSignal reads the mailbox's recent junk placements. Every
-// lookup fails open to "no signal": warmup slowing itself down because a query
-// errored would be a worse outcome than one more day at the planned volume.
-func (s *schedulerService) resolveSoftRampSignal(ctx context.Context, accountID uuid.UUID) softRampSignal {
-	sig := softRampSignal{multiplier: 1.0}
-	if s.warmupRepo == nil {
-		return sig
-	}
-	since := time.Now().Add(-warmupramp.SoftSignalWindow)
-	placements, err := s.warmupRepo.CountSpamPlacementsSince(ctx, accountID, since)
-	if err != nil {
-		return sig
-	}
-	sig.placements = placements
-	sig.multiplier = warmupramp.SoftAdjust(placements)
-	if sends, serr := s.warmupRepo.SumWarmupSentSince(ctx, accountID, since); serr == nil {
-		sig.sends = sends
-	}
-	if at, aerr := s.warmupRepo.LastSpamPlacementAt(ctx, accountID); aerr == nil {
-		sig.lastPlacementAt = at
-	}
-	return sig
-}
-
 func adjustmentFor(state models.WarmupHealthState) healthAdjustment {
 	switch state {
 	case models.WarmupHealthThrottled:
@@ -212,38 +180,32 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		}
 	}
 
-	// STEP 2: Calculate target volume for today (before recipient-capacity and
-	// health adjustments). Pure policy in warmupRampTarget so it's unit-tested.
-	// The health state drives both the band adjustment (STEP 2.5) and whether
-	// the early-signal cut below applies, so it is resolved once here.
+	// STEP 2: One shared resolve, so this target and the one the mailbox
+	// drawer reports cannot drift apart.
 	healthState := s.resolveHealthState(ctx, accountID)
-
-	// Early adverse signal: a recent junk placement holds the ramp where it
-	// stood and cuts the day about a quarter, before any hard band can trip.
-	// Only while Healthy — a mailbox already in watch or throttled is being
-	// dampened harder by its band, and stacking the two would double-cut it.
-	soft := softRampSignal{multiplier: 1.0}
-	if healthState == models.WarmupHealthHealthy {
-		soft = s.resolveSoftRampSignal(ctx, accountID)
+	rampAnchor := time.Now()
+	if account.Warmup != nil {
+		rampAnchor = *account.Warmup
 	}
-
-	daysWarming := 0
-	if activelyWarming {
-		daysWarming = warmupramp.Days(*account.Warmup, soft.lastPlacementAt, time.Now(), warmupramp.FreezeWindow)
-	}
-	targetVolume := warmupRampTarget(activelyWarming, account.WarmupBase, account.WarmupIncrease, account.WarmupMax, daysWarming, inCampaign)
-
-	// The cut lands before the recipient-capacity clamp and the band
-	// adjustment, so it composes with both by min() rather than fighting them.
-	if cut := warmupramp.Apply(targetVolume, soft.multiplier); cut < targetVolume {
+	plan := warmupramp.Resolve(ctx, s.warmupRepo, warmupramp.Input{
+		AccountID:       accountID,
+		WarmupStart:     rampAnchor,
+		ActivelyWarming: activelyWarming,
+		Base:            account.WarmupBase,
+		Increase:        account.WarmupIncrease,
+		Max:             account.WarmupMax,
+		InCampaign:      inCampaign,
+		Health:          healthState,
+		Now:             time.Now(),
+	})
+	targetVolume := plan.Target
+	if plan.Cut() {
 		log.Info().
 			Str("email_account_id", accountID.String()).
-			Int("placements_48h", soft.placements).
-			Int("sends_48h", soft.sends).
-			Int("from", targetVolume).
-			Int("to", cut).
+			Int("placements_48h", plan.Placements).
+			Int("sends_48h", plan.Sends).
+			Int("target", targetVolume).
 			Msg("warmup volume cut on an early placement signal; ramp held")
-		targetVolume = cut
 	}
 
 	// Vary the day's target so a mailbox doesn't send an identical count every
@@ -281,25 +243,8 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		}
 	}
 
-	// STEP 2.5: Apply health-state adjustments. Throttled/watch participants
-	// run at reduced volume and wider spacing until the health sweep clears
-	// them back to healthy. We never zero out volume — even degraded mailboxes
-	// keep a small heartbeat so the sweep has fresh sample data to evaluate.
+	// Resolve owns the band's volume half; only its spacing half applies here.
 	adj := adjustmentFor(healthState)
-	if adj.volumeMultiplier < 1.0 {
-		floor := 1
-		if activelyWarming {
-			floor = account.WarmupBase
-		}
-		adjusted := int(float64(targetVolume)*adj.volumeMultiplier + 0.5)
-		if adjusted < floor {
-			adjusted = floor
-		}
-		if adjusted < 1 {
-			adjusted = 1
-		}
-		targetVolume = adjusted
-	}
 
 	// Spacing: a drawn gap from the profile when one is enabled, otherwise the
 	// mailbox's fixed min gap. The health-state multiplier still applies on top,

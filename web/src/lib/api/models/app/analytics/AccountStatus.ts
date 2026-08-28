@@ -36,15 +36,16 @@ export interface WarmupStatusInfo {
     max_volume: number;
     reply_rate: number;
     days_active: number;
-    /** Present when a recent junk placement cut the day and froze the ramp. */
+    /** Present while a recent junk placement is holding the ramp. */
     ramp_hold?: WarmupRampHold;
 }
 
-// Why today's warmup target is below the plain ramp.
+// Why the warmup ramp is not climbing. Present for the whole freeze;
+// volume_cut says whether today's volume is also reduced, which ends sooner.
 export interface WarmupRampHold {
     placements: number;
     sends: number;
-    last_placement_at: string;
+    volume_cut: boolean;
     resumes_at: string;
 }
 

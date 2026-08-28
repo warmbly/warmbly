@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -145,9 +144,9 @@ func TestLiveRecentPlacementCutsTheTargetAndExplainsItself(t *testing.T) {
 }
 
 func TestLiveOldPlacementNoLongerCutsButStillShiftsTheRamp(t *testing.T) {
-	// A placement 8 days ago is outside the 48h signal window, so the cut is
-	// gone; the ramp still resumed from where it was held rather than
-	// catching up, which is the whole point of the freeze.
+	// A placement 8 days ago is outside both windows: no cut, no hold reported.
+	// The three frozen days are still subtracted, so the ramp sits below where
+	// an unaffected mailbox of the same age would be.
 	f := newRampFixture(t, 10, 10, 1, 40)
 	f.placement(t, 8*24)
 
@@ -155,19 +154,24 @@ func TestLiveOldPlacementNoLongerCutsButStillShiftsTheRamp(t *testing.T) {
 	if held {
 		t.Error("a placement 8 days old must not still be reported as holding the ramp")
 	}
-	expectedDays := warmupramp.Days(
-		time.Now().Add(-10*24*time.Hour),
-		ptrTime(time.Now().Add(-8*24*time.Hour)),
-		time.Now(),
-		warmupramp.FreezeWindow,
-	)
-	want := warmupramp.Target(true, 10, 1, 40, expectedDays, false)
-	if target != want {
-		t.Errorf("target = %d, want %d (day %d after the freeze shift)", target, want, expectedDays)
-	}
-	if target >= 20 {
-		t.Errorf("target %d is at or above the unfrozen day-10 ramp of 20; the freeze was not applied", target)
+	if target != 17 {
+		t.Errorf("target = %d, want 17 (day 10 minus the 3 frozen days)", target)
 	}
 }
 
-func ptrTime(t time.Time) *time.Time { return &t }
+// Between 48 and 72 hours after a placement the volume cut has expired but the
+// ramp is still frozen. That used to report no hold at all, so the drawer
+// showed a ramp that was not climbing with nothing to explain it.
+func TestLiveRampStillReportsAHoldAfterTheCutExpires(t *testing.T) {
+	f := newRampFixture(t, 10, 10, 1, 40)
+	f.placement(t, 60)
+
+	target, held := f.status(t)
+	if !held {
+		t.Error("the ramp is still frozen at 60h but nothing explains it")
+	}
+	// The cut is gone, so the target is the frozen ramp at full volume.
+	if target != 17 {
+		t.Errorf("target = %d, want the uncut frozen ramp of 17", target)
+	}
+}

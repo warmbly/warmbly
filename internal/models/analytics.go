@@ -152,19 +152,20 @@ type WarmupStatusInfo struct {
 	MaxVolume     int        `json:"max_volume"`
 	ReplyRate     int        `json:"reply_rate"`
 	DaysActive    int        `json:"days_active"`
-	// RampHold explains a target below the plain ramp: set when a recent junk
-	// placement cut the day and froze the ramp. Empty when nothing is holding
-	// it. Without this the volume just drops and the owner cannot tell why.
+	// RampHold explains a ramp that is not climbing, so a target below the
+	// plain ramp is never an unexplained drop.
 	RampHold *WarmupRampHold `json:"ramp_hold,omitempty"`
 }
 
-// WarmupRampHold is the early-signal state behind a reduced warmup target.
+// WarmupRampHold explains a ramp that is not climbing. Present for the whole
+// freeze; VolumeCut says whether today's volume is also reduced, which lasts a
+// shorter window.
 type WarmupRampHold struct {
-	// Placements and Sends are the last 48 hours.
-	Placements int       `json:"placements"`
-	Sends      int       `json:"sends"`
-	LastAt     time.Time `json:"last_placement_at"`
-	// ResumesAt is when the ramp starts climbing again if nothing else lands.
+	// Placements and Sends cover the last 48 hours.
+	Placements int  `json:"placements"`
+	Sends      int  `json:"sends"`
+	VolumeCut  bool `json:"volume_cut"`
+	// ResumesAt is when the ramp climbs again if nothing else lands.
 	ResumesAt time.Time `json:"resumes_at"`
 }
 
