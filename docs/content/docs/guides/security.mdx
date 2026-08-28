@@ -61,6 +61,16 @@ Change your password under **Password**: current password, then a new one of at 
 
 **Sign-in alerts** notify you when your account is accessed from a new browser and OS combination, naming the device and location with a reminder to act if it was not you. They appear in your in-app feed by default; enable email under **Settings > Notifications**, Security section, Email channel. Your first sign-in is never alerted, as there is nothing to compare against.
 
+## What is recorded when you sign up
+
+Creating an account records the address it was created from, the browser's user-agent string, and a score for how the email address itself reads. This is anti-abuse evidence: it is what lets the platform notice one person opening many accounts, or a wave of signups from one place, without which every account looks unrelated to every other.
+
+- The email address is also stored in a normalized form, with plus-tags and Gmail dots collapsed, so `ada.lovelace+trial@gmail.com` and `adalovelace@gmail.com` are recognisable as the same person. This form is used only for correlation and never for signing in.
+- It is recorded for every signup, not only suspicious ones. Keeping it only for accounts that already look risky would leave exactly the patterns it exists to find half-empty.
+- It stays on the instance the account was created on. Workspace archives do not carry it.
+
+Nothing here refuses a signup on its own. A single weak signal is wrong too often, and turning a false positive into a rejected account leaves a real customer with no way through.
+
 ## Strongest setup
 
 1. **Add a passkey** so daily sign-in is fast and phishing-resistant.
