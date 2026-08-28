@@ -254,8 +254,16 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	coldRamp := s.coldRampStates(ctx, accounts)
 
 	// The organization's own posture, resolved once. A restricted organization
-	// keeps sending, at a fraction of the volume.
-	riskMultiplier := s.orgRiskCapMultiplier(ctx, campaign.OrganizationID)
+	// keeps sending at a fraction of the volume; a suspended one does not send
+	// at all, and is stopped here because campaign sends never pass through the
+	// manual send gate.
+	riskState := s.orgRiskState(ctx, campaign.OrganizationID)
+	if riskState.BlocksSending() {
+		s.logCampaignDecision(ctx, campaignID, "org_suspended",
+			"Sending is paused for this workspace while it is under review", nil)
+		return s.deferToNextDay(campaign), nil, accounts[0].ID, ErrCampaignDeferred
+	}
+	riskMultiplier := riskState.CapMultiplier()
 
 	effectiveCap := func(acct models.Email) int {
 		lim := min(acct.CampaignLimit, campaign.DailyLimit)

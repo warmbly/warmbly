@@ -6,11 +6,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// OrgRiskState is an organization's fused abuse posture.
-//
-// The bands mirror the warmup participant health machine on purpose: that one
-// works, operators already read it, and a second vocabulary for the same idea
-// would be one more thing to hold in your head.
+// OrgRiskState is an organization's fused abuse posture. The bands mirror the
+// warmup participant health machine, so operators read one vocabulary.
 type OrgRiskState string
 
 const (

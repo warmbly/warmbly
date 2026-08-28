@@ -118,22 +118,21 @@ type OrgRiskAware interface {
 	WireOrgRisk(r repository.OrgRiskRepository)
 }
 
-// orgRiskCapMultiplier is how much the organization's posture lowers a
-// per-mailbox cold cap. Fails open to 1: a lookup error must never cap a
-// customer's sending on a verdict nothing established.
-func (s *schedulerService) orgRiskCapMultiplier(ctx context.Context, orgID *uuid.UUID) float64 {
+// orgRiskState is the organization's posture for one pass. Fails open to
+// trusted: a lookup error must never restrict a customer on a verdict nothing
+// established.
+func (s *schedulerService) orgRiskState(ctx context.Context, orgID *uuid.UUID) models.OrgRiskState {
 	if s.orgRiskRepo == nil || orgID == nil {
-		return 1
+		return models.OrgRiskTrusted
 	}
 	states, err := s.orgRiskRepo.GetOrgRiskStates(ctx, []uuid.UUID{*orgID})
 	if err != nil {
-		return 1
+		return models.OrgRiskTrusted
 	}
-	state, ok := states[*orgID]
-	if !ok {
-		return 1
+	if state, ok := states[*orgID]; ok && state.Valid() {
+		return state
 	}
-	return state.CapMultiplier()
+	return models.OrgRiskTrusted
 }
 
 // sendTimePreference resolves the org's recipient-timezone policy for one

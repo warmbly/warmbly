@@ -1,7 +1,10 @@
 package orgrisk
 
 import (
+	"context"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -101,5 +104,72 @@ func TestBandEffects(t *testing.T) {
 	}
 	if !models.OrgRiskSuspended.BlocksSending() || models.OrgRiskSuspended.CapMultiplier() != 0 {
 		t.Error("suspended must stop sending")
+	}
+}
+
+type recordingAudit struct {
+	entries []string
+}
+
+func (r *recordingAudit) LogAction(_ context.Context, orgID, _ uuid.UUID, _ models.AuditAction,
+	entityType models.AuditEntityType, _ *uuid.UUID, _, _ string, changes, _ map[string]string) {
+	r.entries = append(r.entries, string(entityType)+":"+changes["risk_state"])
+	_ = orgID
+}
+
+type stubRiskRepo struct {
+	risk *models.OrgRisk
+}
+
+func (s *stubRiskRepo) GetOrgRisk(context.Context, uuid.UUID) (*models.OrgRisk, error) {
+	copy := *s.risk
+	return &copy, nil
+}
+func (s *stubRiskRepo) GetOrgRiskStates(context.Context, []uuid.UUID) (map[uuid.UUID]models.OrgRiskState, error) {
+	return nil, nil
+}
+func (s *stubRiskRepo) UpdateOrgRiskSignals(_ context.Context, _ uuid.UUID,
+	derive func(map[string]any) (map[string]any, models.OrgRiskState, int, string)) (*models.OrgRisk, error) {
+	signals, state, score, reason := derive(s.risk.Signals)
+	s.risk.Signals, s.risk.State, s.risk.Score, s.risk.Reason = signals, state, score, reason
+	copy := *s.risk
+	return &copy, nil
+}
+func (s *stubRiskRepo) SetOrgRiskState(_ context.Context, _ uuid.UUID, state models.OrgRiskState, reason string) (*models.OrgRisk, error) {
+	s.risk.State, s.risk.Reason = state, reason
+	copy := *s.risk
+	return &copy, nil
+}
+
+// A transition has to reach the audit spine, or the banner never updates for a
+// teammate and there is no trail of who was restricted when.
+func TestTransitionsAreAudited(t *testing.T) {
+	repo := &stubRiskRepo{risk: &models.OrgRisk{State: models.OrgRiskTrusted, Signals: map[string]any{}}}
+	rec := &recordingAudit{}
+	svc := NewService(repo)
+	svc.(AuditAware).WireAudit(rec)
+
+	org := uuid.New()
+	if _, err := svc.RecordSignal(context.Background(), org, Signal{Key: "a", Weight: 30, Detail: "something"}); err != nil {
+		t.Fatalf("RecordSignal: %v", err)
+	}
+	if len(rec.entries) != 1 || rec.entries[0] != "org_risk:trusted -> watch" {
+		t.Fatalf("entries = %v, want one trusted -> watch", rec.entries)
+	}
+
+	// A detector re-recording the same finding is not a transition and must not
+	// fill the feed with no-ops.
+	if _, err := svc.RecordSignal(context.Background(), org, Signal{Key: "a", Weight: 30, Detail: "something"}); err != nil {
+		t.Fatalf("RecordSignal: %v", err)
+	}
+	if len(rec.entries) != 1 {
+		t.Errorf("a no-op re-record logged again: %v", rec.entries)
+	}
+
+	if _, err := svc.SetState(context.Background(), org, models.OrgRiskSuspended, "manual"); err != nil {
+		t.Fatalf("SetState: %v", err)
+	}
+	if len(rec.entries) != 2 || rec.entries[1] != "org_risk:watch -> suspended" {
+		t.Errorf("entries = %v, want the operator transition logged", rec.entries)
 	}
 }
