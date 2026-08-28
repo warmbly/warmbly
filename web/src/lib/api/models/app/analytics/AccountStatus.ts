@@ -36,6 +36,17 @@ export interface WarmupStatusInfo {
     max_volume: number;
     reply_rate: number;
     days_active: number;
+    /** Present while a recent junk placement is holding the ramp. */
+    ramp_hold?: WarmupRampHold;
+}
+
+// Why the warmup ramp is not climbing. Present for the whole freeze;
+// volume_cut says whether today's volume is also reduced, which ends sooner.
+export interface WarmupRampHold {
+    placements: number;
+    sends: number;
+    volume_cut: boolean;
+    resumes_at: string;
 }
 
 // Warmup-pool reputation for this mailbox. Folded into health.score and also

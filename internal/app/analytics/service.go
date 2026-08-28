@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -197,16 +198,18 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 	// Build warmup status if warmup has ever been enabled (active or paused).
 	var warmupStatus *models.WarmupStatusInfo
 	if email.Warmup != nil {
+		target, hold := s.warmupTargetAndHold(ctx, email, warmupHealthState(warmupHealth))
 		warmupStatus = &models.WarmupStatusInfo{
 			Enabled:       true,
 			Paused:        email.WarmupPausedAt != nil,
 			PausedAt:      email.WarmupPausedAt,
 			StartedAt:     *email.Warmup,
 			CurrentVolume: usage.WarmupSent,
-			TargetVolume:  calculateTargetVolume(email),
+			TargetVolume:  target,
 			MaxVolume:     email.WarmupMax,
 			ReplyRate:     email.WarmupReplyRate,
 			DaysActive:    int(time.Since(*email.Warmup).Hours() / 24),
+			RampHold:      hold,
 		}
 	}
 
@@ -230,6 +233,15 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 		WarmupHealth: warmupHealth,
 		InCampaign:   inCampaign,
 	}, nil
+}
+
+// warmupHealthState reads the band off the API shape, defaulting to healthy
+// for a mailbox in no pool — the same default resolveHealthState uses.
+func warmupHealthState(h *models.WarmupHealthInfo) models.WarmupHealthState {
+	if h == nil || h.State == "" {
+		return models.WarmupHealthHealthy
+	}
+	return models.WarmupHealthState(h.State)
 }
 
 // buildWarmupHealth looks up the mailbox's warmup-pool health (premium pool
@@ -397,19 +409,36 @@ func calculateAccountHealth(email *models.Email, errors []models.AccountError) m
 	return health
 }
 
-func calculateTargetVolume(email *models.Email) int {
+// warmupTargetAndHold reports the target the SCHEDULER will act on, plus what
+// is holding it down. It runs the shared warmupramp policy rather than its own
+// arithmetic: a drawer saying "target 25" for a mailbox sending 18 is worse
+// than no number.
+func (s *analyticsService) warmupTargetAndHold(ctx context.Context, email *models.Email, health models.WarmupHealthState) (int, *models.WarmupRampHold) {
 	if email.Warmup == nil {
-		return 0
+		return 0, nil
 	}
-
-	daysActive := int(time.Since(*email.Warmup).Hours() / 24)
-	target := email.WarmupBase + (daysActive * email.WarmupIncrease)
-
-	if target > email.WarmupMax {
-		return email.WarmupMax
+	plan := warmupramp.Resolve(ctx, s.warmupRepo, warmupramp.Input{
+		AccountID:       email.ID,
+		WarmupStart:     *email.Warmup,
+		ActivelyWarming: email.IsWarmingActive(),
+		Base:            email.WarmupBase,
+		Increase:        email.WarmupIncrease,
+		Max:             email.WarmupMax,
+		Health:          health,
+		Now:             time.Now(),
+	})
+	if plan.FrozenUntil == nil {
+		return plan.Target, nil
 	}
-
-	return target
+	// Reported for the whole freeze, not just the shorter window that also
+	// cuts volume: otherwise a mailbox between 48 and 72 hours after a
+	// placement shows a ramp that is not climbing and no reason why.
+	return plan.Target, &models.WarmupRampHold{
+		Placements: plan.Placements,
+		Sends:      plan.Sends,
+		VolumeCut:  plan.Cut(),
+		ResumesAt:  *plan.FrozenUntil,
+	}
 }
 
 // Dashboard Analytics implementations

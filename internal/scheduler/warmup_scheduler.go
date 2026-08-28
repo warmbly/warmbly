@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
+
 	"github.com/warmbly/warmbly/internal/app/behavior"
+	"github.com/warmbly/warmbly/internal/app/warmupramp"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -18,7 +21,6 @@ var poolTypesForHealthLookup = []string{"premium", "free"}
 const (
 	minWarmupRecipientRecheck = 4 * time.Hour
 	maxWarmupRecipientRecheck = 8 * time.Hour
-	activeCampaignWarmupCap   = 5
 )
 
 // healthAdjustment captures how the throttled/watch health state should
@@ -59,22 +61,10 @@ func recipientRecheckTime() time.Time {
 	)) * time.Minute)
 }
 
-// warmupRampTarget computes the day's warmup volume before recipient-capacity
-// and health-state adjustments. An actively-warming mailbox follows its ramp
-// (base + daysWarming*increase, capped at max), reduced to the in-campaign cap
-// when it also backs a live campaign so warmup doesn't stack on production
-// sending pressure. A mailbox kept warm only because it backs a campaign (the
-// monitor lane) runs at the in-campaign cap. Pure (no DB) so the policy is
-// unit-testable.
+// warmupRampTarget is the scheduler's entry point into the shared ramp policy.
+// It stays here so the existing call sites and tests read unchanged.
 func warmupRampTarget(activelyWarming bool, base, increase, max, daysWarming int, inCampaign bool) int {
-	if !activelyWarming {
-		return activeCampaignWarmupCap
-	}
-	target := min(base+daysWarming*increase, max)
-	if inCampaign && target > activeCampaignWarmupCap {
-		target = activeCampaignWarmupCap
-	}
-	return target
+	return warmupramp.Target(activelyWarming, base, increase, max, daysWarming, inCampaign)
 }
 
 // dailyVolumeFactor returns a stable-per-day multiplier (0.75–1.10, with an
@@ -190,13 +180,33 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		}
 	}
 
-	// STEP 2: Calculate target volume for today (before recipient-capacity and
-	// health adjustments). Pure policy in warmupRampTarget so it's unit-tested.
-	daysWarming := 0
-	if activelyWarming {
-		daysWarming = int(time.Since(*account.Warmup).Hours() / 24)
+	// STEP 2: One shared resolve, so this target and the one the mailbox
+	// drawer reports cannot drift apart.
+	healthState := s.resolveHealthState(ctx, accountID)
+	rampAnchor := time.Now()
+	if account.Warmup != nil {
+		rampAnchor = *account.Warmup
 	}
-	targetVolume := warmupRampTarget(activelyWarming, account.WarmupBase, account.WarmupIncrease, account.WarmupMax, daysWarming, inCampaign)
+	plan := warmupramp.Resolve(ctx, s.warmupRepo, warmupramp.Input{
+		AccountID:       accountID,
+		WarmupStart:     rampAnchor,
+		ActivelyWarming: activelyWarming,
+		Base:            account.WarmupBase,
+		Increase:        account.WarmupIncrease,
+		Max:             account.WarmupMax,
+		InCampaign:      inCampaign,
+		Health:          healthState,
+		Now:             time.Now(),
+	})
+	targetVolume := plan.Target
+	if plan.Cut() {
+		log.Info().
+			Str("email_account_id", accountID.String()).
+			Int("placements_48h", plan.Placements).
+			Int("sends_48h", plan.Sends).
+			Int("target", targetVolume).
+			Msg("warmup volume cut on an early placement signal; ramp held")
+	}
 
 	// Vary the day's target so a mailbox doesn't send an identical count every
 	// day. Deterministic per (account, local day) so it's stable across the
@@ -233,25 +243,8 @@ func (s *schedulerService) CalculateNextWarmupTime(ctx context.Context, accountI
 		}
 	}
 
-	// STEP 2.5: Apply health-state adjustments. Throttled/watch participants
-	// run at reduced volume and wider spacing until the health sweep clears
-	// them back to healthy. We never zero out volume — even degraded mailboxes
-	// keep a small heartbeat so the sweep has fresh sample data to evaluate.
-	adj := adjustmentFor(s.resolveHealthState(ctx, accountID))
-	if adj.volumeMultiplier < 1.0 {
-		floor := 1
-		if activelyWarming {
-			floor = account.WarmupBase
-		}
-		adjusted := int(float64(targetVolume)*adj.volumeMultiplier + 0.5)
-		if adjusted < floor {
-			adjusted = floor
-		}
-		if adjusted < 1 {
-			adjusted = 1
-		}
-		targetVolume = adjusted
-	}
+	// Resolve owns the band's volume half; only its spacing half applies here.
+	adj := adjustmentFor(healthState)
 
 	// Spacing: a drawn gap from the profile when one is enabled, otherwise the
 	// mailbox's fixed min gap. The health-state multiplier still applies on top,
