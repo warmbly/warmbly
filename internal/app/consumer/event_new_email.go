@@ -241,6 +241,9 @@ func (s *JobsService) acceptWarmupEmail(ctx context.Context, e *models.JobEventN
 		s.markRiskBandFromWarmupHealth(ctx, token.SenderAccountID, health)
 	}
 
+	// Occasionally answer the sender, so the thread reads as a conversation.
+	s.scheduleWarmupReplyBack(ctx, token, e.Message.EmailID)
+
 	// Perform warmup actions
 	s.performWarmupActions(ctx, e)
 }

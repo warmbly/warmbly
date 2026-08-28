@@ -196,8 +196,14 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 		return errx.InternalError()
 	}
 
-	// STEP 5: Select warmup partner from pool
-	partner, err := s.selectWarmupPartner(ctx, *account)
+	// STEP 5: Select warmup partner. A task directed at one partner is a
+	// reply-back: someone mailed this mailbox and it is answering them, which
+	// is what makes a thread read as a conversation instead of two monologues.
+	// The directed partner still passes the same health gate as a drawn one.
+	partner := s.directedWarmupPartner(ctx, taskID, poolType)
+	if partner == nil {
+		partner, err = s.selectWarmupPartner(ctx, *account)
+	}
 	if err != nil {
 		_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "skipped_warmup_protected")
 		nextTime, scheduleErr := s.scheduler.CalculateNextWarmupTime(ctx, account.ID)
@@ -992,4 +998,26 @@ func warmupConversations() []Conversation {
 	}
 
 	return conversations
+}
+
+// directedWarmupPartner resolves a task's explicit reply-back target. Nil for
+// an ordinary task, or when the target is no longer eligible, in which case the
+// caller draws a partner as usual.
+func (s *tasksService) directedWarmupPartner(ctx context.Context, taskID uuid.UUID, poolType string) *Email {
+	warmupTask, err := s.taskRepo.GetWarmupTask(ctx, taskID)
+	if err != nil || warmupTask == nil || warmupTask.TargetAccountID == nil {
+		return nil
+	}
+	target := *warmupTask.TargetAccountID
+
+	if s.warmupHealth != nil {
+		if ok, _, herr := s.warmupHealth.CanParticipate(ctx, target, poolType); herr != nil || !ok {
+			return nil
+		}
+	}
+	partner, xerr := s.emailRepo.GetByID(ctx, target)
+	if xerr != nil || partner == nil {
+		return nil
+	}
+	return partner
 }
