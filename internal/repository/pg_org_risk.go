@@ -17,9 +17,9 @@ type OrgRiskRepository interface {
 	// GetOrgRiskStates resolves several organizations at once, for paths that
 	// gate a pool rather than a single org.
 	GetOrgRiskStates(ctx context.Context, orgIDs []uuid.UUID) (map[uuid.UUID]models.OrgRiskState, error)
-	// UpdateOrgRiskSignals reads the signal set, hands it to derive, and writes
-	// back what derive returns — all inside one row-locked transaction, so two
-	// detectors firing at once cannot each compute a band from a stale set.
+	// UpdateOrgRiskSignals reads, derives and writes in one row-locked
+	// transaction, so two detectors firing at once cannot each compute a band
+	// from a stale signal set.
 	UpdateOrgRiskSignals(ctx context.Context, orgID uuid.UUID,
 		derive func(map[string]any) (map[string]any, models.OrgRiskState, int, string)) (*models.OrgRisk, error)
 	// SetOrgRiskState is an operator override. It leaves the signals alone:

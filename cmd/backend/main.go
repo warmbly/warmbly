@@ -737,6 +737,12 @@ func main() {
 		// Organization-wide audit trail (who did what, when, from where).
 		auditRepository := repository.NewAuditRepository(primaryDB.Pool)
 		auditService = audit.NewService(auditRepository, streamingPublisher)
+		// Transitions ride the audit spine, so a posture change reaches every
+		// teammate's dashboard without a bespoke emit site. Wired here rather
+		// than at construction because the audit service does not exist yet.
+		if aware, ok := orgRiskService.(orgrisk.AuditAware); ok && orgRiskService != nil {
+			aware.WireAudit(auditService)
+		}
 		// Bridge audited mutations to typed customer webhooks (campaign/contact/
 		// template/CRM/team/role/settings/subscription .created/.updated/.deleted).
 		auditService.WireWebhookDispatcher(webhookService)

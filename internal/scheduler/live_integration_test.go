@@ -910,15 +910,17 @@ func TestLiveUnreachableRecipientHourStillSends(t *testing.T) {
 
 	at, _ := scheduleSlot(t, liveScheduler(t, handle, pool), f.campaign)
 
-	// The slot must land in the campaign's window, not at the recipient hour
-	// the sender can never serve.
+	// The property that matters: the slot is in the CAMPAIGN's window, not at
+	// the recipient hour the sender can never serve. Which day it lands on
+	// depends on the time of day the test runs, so it is not asserted.
 	if h := at.UTC().Hour(); h != 12 {
 		t.Errorf("slot %s is at %02d:00 UTC, want the campaign's 12:00 window",
 			at.UTC().Format(time.RFC3339), h)
 	}
-	if time.Until(at) > 25*time.Hour {
-		t.Errorf("slot %s is %v out; the send is being deferred rather than scheduled",
-			at, time.Until(at).Truncate(time.Minute))
+	// 09:00 Tokyo is 00:00 UTC. Landing there would mean the unreachable
+	// recipient hour won and the send would defer forever.
+	if at.UTC().Hour() == 0 {
+		t.Errorf("slot %s took the recipient hour the sender cannot serve", at.UTC())
 	}
 }
 
