@@ -75,14 +75,31 @@ func fetchTextParts(c *imapclient.Client, uid imap.UID, bs imap.BodyStructure) (
 	return strings.Join(plainParts, "\n\n"), strings.Join(htmlParts, "")
 }
 
-// selectTextParts walks the body structure and returns the text leaves that
-// make up the readable body, in document order.
+// reportPartTypes are the machine-readable parts of a multipart/report. They
+// are plain text on the wire and carry the whole point of the message: a
+// bounce's Status and returned headers, a feedback report's Feedback-Type and
+// the reported Message-ID.
+//
+// Selecting only text/plain and text/html left every one of them behind, so
+// the DSN and ARF parsers saw the human-readable notice and nothing else.
+var reportPartTypes = map[string]bool{
+	"message/delivery-status": true,
+	"message/feedback-report": true,
+	"message/rfc822":          true,
+	"message/rfc822-headers":  true,
+	"text/rfc822-headers":     true,
+}
+
+// selectTextParts walks the body structure and returns the leaves that make up
+// the readable body, in document order.
 //
 // Two rules do the work. Inside a multipart/alternative only the first part of
 // each type counts: the alternatives are the same content twice, not two pieces
 // of content. Anywhere else (multipart/mixed, multipart/related) sibling text
 // parts are additive. Parts marked as attachments are skipped so a .txt
 // attachment never stands in for the body.
+//
+// The report parts above are additionally selected, always as plain text.
 func selectTextParts(bs imap.BodyStructure) []textPart {
 	alternativeAt := make(map[string]bool)
 	claimed := make(map[string]bool) // parent path + type, for alternatives
@@ -98,10 +115,13 @@ func selectTextParts(bs imap.BodyStructure) []textPart {
 			return true
 		}
 		mediaType := single.MediaType()
-		if mediaType != "text/plain" && mediaType != "text/html" {
+		isReport := reportPartTypes[mediaType]
+		if mediaType != "text/plain" && mediaType != "text/html" && !isReport {
 			return true
 		}
-		if disp := single.Disposition(); disp != nil && strings.EqualFold(disp.Value, "attachment") {
+		// A report part is the message's content, not a file the reader
+		// detaches, so its disposition does not disqualify it.
+		if disp := single.Disposition(); !isReport && disp != nil && strings.EqualFold(disp.Value, "attachment") {
 			return true
 		}
 		if len(out) >= maxTextParts {

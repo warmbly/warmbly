@@ -66,3 +66,67 @@ func (s *service) RecordInboundBounce(ctx context.Context, emailAccountID uuid.U
 
 	return s.IngestDeliverabilityEvent(ctx, *account.OrganizationID, req)
 }
+
+// RecordInboundComplaint turns an abuse feedback report the worker parsed into
+// a complaint deliverability event, resolved against the original send. Keyed
+// idempotently so a re-synced report cannot double-count.
+func (s *service) RecordInboundComplaint(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, complainedRecipient, provider string) *errx.Error {
+	originalMessageID = strings.Trim(strings.TrimSpace(originalMessageID), "<>")
+	if originalMessageID == "" {
+		return nil
+	}
+
+	task, err := s.taskRepo.GetTaskByMessageID(ctx, originalMessageID)
+	if err != nil || task == nil {
+		// Warmup mail, a non-campaign send, or already pruned.
+		return nil
+	}
+	if task.EmailAccountID != emailAccountID {
+		// The report should reach the mailbox that sent it; do not attribute a
+		// complaint across accounts.
+		return nil
+	}
+
+	account, aerr := s.emailRepo.GetByID(ctx, emailAccountID)
+	if aerr != nil || account == nil || account.OrganizationID == nil {
+		return nil
+	}
+
+	if provider == "" {
+		provider = "inbound_fbl"
+	}
+	req := &models.IngestDeliverabilityEventRequest{
+		EventType:      models.DeliverabilityEventComplaint,
+		Provider:       provider,
+		TaskID:         &task.ID,
+		Reason:         "recipient reported the message as spam",
+		IdempotencyKey: "fbl:" + originalMessageID,
+	}
+
+	// Who gets suppressed comes from the RESOLVED SEND, never from the report.
+	// A report is unauthenticated mail that anyone able to reach this mailbox
+	// could forge; honouring the address it names would let a forger suppress
+	// a contact that send never went to. Bounded this way, the worst a forged
+	// report can do is suppress the one contact who actually received it,
+	// which is the same person a genuine complaint would suppress.
+	ct, cerr := s.taskRepo.GetCampaignTask(ctx, task.ID)
+	if cerr != nil || ct == nil || ct.ContactID == nil {
+		return nil
+	}
+	req.CampaignID = ct.CampaignID
+	req.ContactID = ct.ContactID
+
+	contact, conErr := s.contactRepo.GetByID(ctx, *ct.ContactID)
+	if conErr != nil || contact == nil || contact.Email == "" {
+		return nil
+	}
+	req.RecipientEmail = contact.Email
+
+	// When the provider did disclose an address, it must be the one we sent to.
+	// A mismatch means the report is not about this send.
+	if complainedRecipient != "" && !strings.EqualFold(strings.TrimSpace(complainedRecipient), contact.Email) {
+		return nil
+	}
+
+	return s.IngestDeliverabilityEvent(ctx, *account.OrganizationID, req)
+}

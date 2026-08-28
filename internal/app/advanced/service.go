@@ -45,6 +45,9 @@ type Service interface {
 	// the original campaign send via its Message-ID and records a bounce
 	// deliverability event. Best-effort: unresolvable bounces are a no-op.
 	RecordInboundBounce(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, failedRecipient, reason string) *errx.Error
+	// RecordInboundComplaint resolves an abuse feedback report (RFC 5965) back
+	// to the campaign send it names and records it as a complaint.
+	RecordInboundComplaint(ctx context.Context, emailAccountID uuid.UUID, originalMessageID, complainedRecipient, provider string) *errx.Error
 
 	ShouldSuppressRecipient(ctx context.Context, organizationID uuid.UUID, recipient string) (bool, string, *errx.Error)
 	// Unsubscribe suppresses a contact in response to a List-Unsubscribe action

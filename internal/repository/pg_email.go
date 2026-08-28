@@ -111,6 +111,11 @@ type EmailRepository interface {
 	// has not been evaluated since staleBefore (or never), oldest-first, capped
 	// at limit. Drives the background SPF/DKIM/DMARC sweep.
 	ListAuthCheckDue(ctx context.Context, staleBefore time.Time, limit int) ([]models.EmailAuthTarget, *errx.Error)
+	// MarkDomainAuthRecheck clears the sweep checkpoint for a sending domain so
+	// the next pass re-checks it first. Used when a receiving server refuses
+	// mail on authentication grounds: that is strong evidence, but DNS is the
+	// authority, so the sweep confirms rather than this asserting a verdict.
+	MarkDomainAuthRecheck(ctx context.Context, domain string) error
 	// UpdateDomainAuthState records the SPF/DKIM/DMARC result for every active
 	// mailbox on the given sending domain in one write (auth is a per-domain
 	// property). checkedAt stamps the evaluation so the sweep can skip fresh
@@ -1725,4 +1730,16 @@ func (r *emailRepository) SetWorkerID(ctx context.Context, emailAccountID, worke
 	}
 
 	return nil
+}
+
+func (r *emailRepository) MarkDomainAuthRecheck(ctx context.Context, domain string) error {
+	if strings.TrimSpace(domain) == "" {
+		return nil
+	}
+	_, err := r.DB.Pool.Exec(ctx, `
+		UPDATE email_accounts
+		   SET auth_checked_at = NULL
+		 WHERE lower(split_part(email, '@', 2)) = lower($1)
+	`, domain)
+	return err
 }
