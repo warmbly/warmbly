@@ -18,8 +18,7 @@ import (
 
 // Signal is one piece of evidence about an organization.
 type Signal struct {
-	// Key identifies the detector, e.g. "signup_email_risk". Recording the same
-	// key again replaces its previous value rather than accumulating duplicates.
+	// Key identifies the detector. Re-recording a key replaces its value.
 	Key string
 	// Weight is how many points this contributes, 0-100.
 	Weight int

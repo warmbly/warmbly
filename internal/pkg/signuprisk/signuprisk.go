@@ -1,9 +1,9 @@
 // Package signuprisk scores a signup's email address and source IP.
 //
 // It is pure: no DNS, no network, no database. Callers score at registration
-// and persist the result. Nothing here blocks a signup on its own — a single
-// weak signal is wrong too often, and refusing an account outright over one
-// heuristic turns a false positive into a lost customer with no recourse.
+// and persist the result. Nothing here blocks a signup on its own: a single
+// weak signal is wrong too often, and refusing an account over one heuristic
+// turns a false positive into a lost customer with no recourse.
 package signuprisk
 
 import (
@@ -77,7 +77,7 @@ func Score(email, ipaddr string) Result {
 	}
 
 	// A plus-address at a free provider is how one person opens many accounts.
-	// It is weak on its own — plenty of people tag their real mail this way.
+	// Weak on its own: plenty of people tag their real mail this way.
 	if local := localOf(email); strings.Contains(local, "+") && freeProviders[domain] {
 		res.Score += weightPlusAddress
 		res.Reasons = append(res.Reasons, "signup used a tagged address at a free provider")
