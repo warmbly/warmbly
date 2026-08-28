@@ -65,6 +65,11 @@ func headerFlagValue(flags []string, name string) string {
 // maybeEmitComplaint emits INBOUND_COMPLAINT when a synced message is an abuse
 // feedback report for one of our sends. A complaint never arrives
 // synchronously; it comes back as mail, long after the send succeeded.
+//
+// IMAP and Gmail expose the report's machine-readable parts, so both work.
+// Microsoft Graph returns one rendered body and no parts, so a report synced
+// through Graph carries only its human notice and is not detected; reading
+// those needs a separate MIME fetch, which is not built.
 func (w *WMail) maybeEmitComplaint(msg *models.EmailMessageData) {
 	from := strings.Join(msg.From, " ")
 	if !arf.Detect(from, msg.Subject, headerFlagValue(msg.Flags, "Content-Type")) {

@@ -55,16 +55,34 @@ func getSingleHeader(headers []*gmail.MessagePartHeader, name string) string {
 	return ""
 }
 
+// reportPartTypes are the machine-readable parts of a multipart/report. They
+// carry the whole point of the message — a bounce's Status and returned
+// headers, a feedback report's Feedback-Type and reported Message-ID — and are
+// plain text on the wire. Taking only text/plain and text/html left every one
+// of them behind, so the DSN and ARF parsers saw the human notice and nothing
+// else.
+var reportPartTypes = map[string]bool{
+	"message/delivery-status": true,
+	"message/feedback-report": true,
+	"message/rfc822":          true,
+	"message/rfc822-headers":  true,
+	"text/rfc822-headers":     true,
+}
+
 func extractBody(parts []*gmail.MessagePart) (plain, html string) {
 	for _, p := range parts {
 		if p == nil {
 			continue
 		}
-		if p.MimeType == "text/plain" && p.Body != nil && p.Body.Data != "" {
+		hasData := p.Body != nil && p.Body.Data != ""
+		switch {
+		case p.MimeType == "text/plain" && hasData:
 			plain += decodeBase64URL(p.Body.Data)
-		} else if p.MimeType == "text/html" && p.Body != nil && p.Body.Data != "" {
+		case p.MimeType == "text/html" && hasData:
 			html += decodeBase64URL(p.Body.Data)
-		} else if len(p.Parts) > 0 {
+		case reportPartTypes[p.MimeType] && hasData:
+			plain += "\n" + decodeBase64URL(p.Body.Data)
+		case len(p.Parts) > 0:
 			pPlain, pHTML := extractBody(p.Parts)
 			plain += pPlain
 			html += pHTML
