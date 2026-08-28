@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/mail"
 	"strings"
 	"time"
@@ -17,6 +18,10 @@ import (
 )
 
 type UserRepository interface {
+	// RecordSignupMetadata stores where a signup came from and what its address
+	// scored, for later correlation. Never used for authentication.
+	RecordSignupMetadata(ctx context.Context, userID uuid.UUID, ip, userAgent string, emailRisk int, normalizedEmail string) error
+
 	CreateUser(ctx context.Context, email *mail.Address, password string) (*models.User, error)
 	GetUser(ctx context.Context, id uuid.UUID) (*models.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
@@ -227,4 +232,30 @@ func (r *userRepository) SetUndoSendSeconds(ctx context.Context, userID uuid.UUI
 	const q = `UPDATE users SET undo_send_seconds = $2, updated_at = NOW() WHERE id = $1`
 	_, err := r.DB.Exec(ctx, q, userID, seconds)
 	return err
+}
+
+func (r *userRepository) RecordSignupMetadata(ctx context.Context, userID uuid.UUID, ip, userAgent string, emailRisk int, normalizedEmail string) error {
+	// An unparseable or absent address is stored as NULL rather than failing
+	// the write: the rest of the evidence is still worth keeping.
+	var addr any
+	if parsed := net.ParseIP(strings.TrimSpace(ip)); parsed != nil {
+		addr = parsed.String()
+	}
+	_, err := r.DB.Pool.Exec(ctx, `
+		UPDATE users
+		   SET signup_ip = $2::inet,
+		       signup_user_agent = NULLIF($3, ''),
+		       signup_email_risk = $4,
+		       signup_email_normalized = NULLIF($5, '')
+		 WHERE id = $1
+	`, userID, addr, truncate(userAgent, 512), emailRisk, normalizedEmail)
+	return err
+}
+
+// truncate bounds a client-supplied string before it reaches the database.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max]
 }

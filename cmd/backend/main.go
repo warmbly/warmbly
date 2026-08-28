@@ -771,6 +771,11 @@ func main() {
 			userRepostory,
 			userService,
 		)
+		// Signup findings are filed on the new workspace's posture. A signup
+		// signal alone can only reach `watch`, which changes nothing.
+		if aware, ok := authService.(auth.OrgRiskAware); ok && orgRiskService != nil {
+			aware.WireOrgRisk(orgRiskService)
+		}
 		// TOTP 2FA: the secret is sealed with a server-wide key (the per-user DEK
 		// is unreachable at login time). Wire the challenger into auth so the login
 		// gate can issue a pending challenge.
