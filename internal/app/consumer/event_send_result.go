@@ -54,6 +54,15 @@ func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEma
 	switch task.TaskType {
 	case "campaign":
 		s.repairCampaignSendStamp(ctx, task)
+		// Anchor the graduation ramp on the mailbox's first CONFIRMED cold
+		// send. Anchoring at dispatch would start the clock on a send the
+		// worker then failed, and the ramp is a proxy for days of proven
+		// sending. Idempotent in SQL, so every later send is a no-op.
+		if s.WarmupRepo != nil {
+			if err := s.WarmupRepo.StampColdRampStart(ctx, task.EmailAccountID); err != nil {
+				log.Warn().Err(err).Str("email_account_id", task.EmailAccountID.String()).Msg("could not anchor the cold ramp")
+			}
+		}
 	case "warmup":
 		// Without this the recipient has nothing to match a warmup email
 		// against when the verify header did not survive delivery.

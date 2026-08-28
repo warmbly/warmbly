@@ -220,6 +220,8 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 		}
 	}
 
+	coldRamp := s.coldRampInfo(ctx, email)
+
 	return &models.EmailAccountStatus{
 		ID:           email.ID,
 		Email:        email.Email,
@@ -232,6 +234,7 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 		WarmupStatus: warmupStatus,
 		WarmupHealth: warmupHealth,
 		InCampaign:   inCampaign,
+		ColdRamp:     coldRamp,
 	}, nil
 }
 
@@ -526,4 +529,48 @@ func (s *analyticsService) CompareCampaigns(ctx context.Context, userID uuid.UUI
 	}
 
 	return s.analyticsRepo.CompareCampaigns(ctx, userID, campaignIDs, from, to)
+}
+
+// coldRampInfo explains a graduation ceiling holding this mailbox below its own
+// cold cap. Nil when nothing is holding it, so the drawer stays quiet.
+func (s *analyticsService) coldRampInfo(ctx context.Context, email *models.Email) *models.ColdRampInfo {
+	if email.Warmup == nil || s.warmupRepo == nil || email.CampaignLimit <= 0 {
+		return nil
+	}
+	states, err := s.warmupRepo.ColdRampStateForAccounts(ctx,
+		[]uuid.UUID{email.ID}, time.Now().Add(-warmupramp.LookbackWindow))
+	if err != nil {
+		return nil
+	}
+	state, ok := states[email.ID]
+	if !ok || state.WarmupStartedAt == nil {
+		return nil
+	}
+
+	now := time.Now()
+	warmupDays := int(now.Sub(*state.WarmupStartedAt).Hours() / 24)
+	if warmupDays < 0 {
+		warmupDays = 0
+	}
+	var rampStart time.Time
+	if state.ColdRampStartedAt != nil {
+		rampStart = *state.ColdRampStartedAt
+	}
+
+	ceiling := warmupramp.ColdCeiling(warmupDays, rampStart, state.Placements, now, email.CampaignLimit)
+	if ceiling >= email.CampaignLimit {
+		return nil
+	}
+
+	remaining := email.CampaignLimit - ceiling
+	days := remaining / warmupramp.ColdRampIncrement
+	if remaining%warmupramp.ColdRampIncrement != 0 {
+		days++
+	}
+	return &models.ColdRampInfo{
+		Ceiling:       ceiling,
+		MailboxCap:    email.CampaignLimit,
+		DaysToFullCap: days,
+		Held:          warmupramp.ColdHeldUntil(rampStart, state.Placements, now, warmupramp.FreezeWindow) != nil,
+	}
 }

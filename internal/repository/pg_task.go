@@ -137,6 +137,11 @@ type TaskRepository interface {
 	// Task locking
 	CreateTaskWithLock(ctx context.Context, task *Task, campaignTask *CampaignTask) (bool, error)
 	CreateWarmupTaskWithLock(ctx context.Context, task *Task, warmupTask *WarmupTask) (bool, error)
+	// DirectPendingWarmupTask points a mailbox's pending warmup task at one
+	// partner and pulls it forward. Returns false when there is no pending task
+	// or it is already due sooner, so a reply-back can only ever make a mailbox
+	// answer earlier, never delay work it had already planned.
+	DirectPendingWarmupTask(ctx context.Context, accountID, targetAccountID uuid.UUID, at time.Time) (bool, error)
 	UpdateTaskStatusWithLock(ctx context.Context, taskID uuid.UUID, status string) error
 	UpdateTaskMessageID(ctx context.Context, taskID uuid.UUID, messageID string) error
 
@@ -755,6 +760,53 @@ func (r *taskRepository) CreateTaskWithLock(ctx context.Context, task *Task, cam
 
 // CreateWarmupTaskWithLock creates one pending warmup wakeup per mailbox.
 // It returns false when the account already has a pending warmup task.
+func (r *taskRepository) DirectPendingWarmupTask(ctx context.Context, accountID, targetAccountID uuid.UUID, at time.Time) (bool, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Same lock CreateWarmupTaskWithLock takes, so a reply-back and a normal
+	// reschedule cannot interleave on one mailbox.
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtext('warmup_task_' || $1::text))`, accountID); err != nil {
+		return false, err
+	}
+
+	var taskID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		UPDATE tasks
+		   SET scheduled_at = $2, updated_at = NOW()
+		 WHERE email_account_id = $1
+		   AND task_type = 'warmup'
+		   AND status = 'pending'
+		   AND (scheduled_at IS NULL OR scheduled_at > $2)
+		   AND id = (
+		       SELECT id FROM tasks
+		        WHERE email_account_id = $1 AND task_type = 'warmup' AND status = 'pending'
+		        ORDER BY scheduled_at NULLS FIRST
+		        LIMIT 1
+		   )
+		RETURNING id
+	`, accountID, at).Scan(&taskID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE warmup_tasks SET target_account_id = $2 WHERE task_id = $1`, taskID, targetAccountID); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (r *taskRepository) CreateWarmupTaskWithLock(ctx context.Context, task *Task, warmupTask *WarmupTask) (bool, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {

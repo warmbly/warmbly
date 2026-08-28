@@ -118,6 +118,13 @@ type WarmupRepository interface {
 	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	// ColdRampStateForAccounts returns a whole candidate pool's graduation
+	// inputs in one round trip. The scheduler reads this per pass, so it must
+	// not be per-account.
+	ColdRampStateForAccounts(ctx context.Context, accountIDs []uuid.UUID, since time.Time) (map[uuid.UUID]ColdRampState, error)
+	// StampColdRampStart records a mailbox's first cold send. Idempotent: a
+	// mailbox that already has an anchor keeps it.
+	StampColdRampStart(ctx context.Context, accountID uuid.UUID) error
 	// SpamPlacementsSince lists when this sender's warmup mail was found in a
 	// recipient's junk folder. The ramp subtracts a freeze window per
 	// placement, so it needs all of them, not just the newest.
@@ -642,6 +649,74 @@ func (r *warmupRepository) CountSpamPlacementsSince(ctx context.Context, account
 	var count int
 	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
 	return count, err
+}
+
+// ColdRampState is one mailbox's warmup-to-cold graduation inputs.
+type ColdRampState struct {
+	WarmupStartedAt   *time.Time
+	ColdRampStartedAt *time.Time
+	Placements        []time.Time
+}
+
+func (r *warmupRepository) ColdRampStateForAccounts(ctx context.Context, accountIDs []uuid.UUID, since time.Time) (map[uuid.UUID]ColdRampState, error) {
+	out := make(map[uuid.UUID]ColdRampState, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return out, nil
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT id, warmup, cold_ramp_started_at
+		FROM email_accounts
+		WHERE id = ANY($1::uuid[])
+	`, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var state ColdRampState
+		if err := rows.Scan(&id, &state.WarmupStartedAt, &state.ColdRampStartedAt); err != nil {
+			return nil, err
+		}
+		out[id] = state
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	placementRows, err := r.db.Query(ctx, `
+		SELECT reported_account_id, created_at
+		FROM warmup_spam_reports
+		WHERE reported_account_id = ANY($1::uuid[])
+		  AND report_type = 'spam_placement'
+		  AND created_at >= $2
+		ORDER BY created_at
+	`, accountIDs, since)
+	if err != nil {
+		return nil, err
+	}
+	defer placementRows.Close()
+	for placementRows.Next() {
+		var id uuid.UUID
+		var at time.Time
+		if err := placementRows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		state := out[id]
+		state.Placements = append(state.Placements, at)
+		out[id] = state
+	}
+	return out, placementRows.Err()
+}
+
+func (r *warmupRepository) StampColdRampStart(ctx context.Context, accountID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE email_accounts
+		   SET cold_ramp_started_at = NOW()
+		 WHERE id = $1 AND cold_ramp_started_at IS NULL
+	`, accountID)
+	return err
 }
 
 func (r *warmupRepository) SpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) ([]time.Time, error) {

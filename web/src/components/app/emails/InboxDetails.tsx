@@ -115,6 +115,36 @@ function RampHoldNotice({ hold }: { hold: import("@/lib/api/models/app/analytics
     );
 }
 
+// A cold cap below the configured one reads as a bug unless it says why.
+function ColdRampNotice({ ramp }: { ramp: import("@/lib/api/models/app/analytics/AccountStatus").ColdRampInfo }) {
+    return (
+        <div className="px-5 pb-4">
+            <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2.5 flex items-start gap-2">
+                <GaugeIcon className="w-3.5 h-3.5 mt-px shrink-0 text-sky-600" />
+                <div className="min-w-0">
+                    <p className="text-[12.5px] font-medium text-sky-900">
+                        Easing into cold sending: {ramp.ceiling} of {ramp.mailbox_cap} a day
+                    </p>
+                    <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
+                        {ramp.held ? (
+                            <>
+                                The climb is paused after a recent spam placement. It resumes on its own, then adds 5 a
+                                day until it reaches {ramp.mailbox_cap}.
+                            </>
+                        ) : (
+                            <>
+                                Going straight from warmup to a full cold cap is the volume jump mailbox providers
+                                penalise, so this adds 5 a day instead. At this rate it reaches {ramp.mailbox_cap} in
+                                about {ramp.days_to_full_cap} {ramp.days_to_full_cap === 1 ? "day" : "days"}.
+                            </>
+                        )}
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function StatCard({ label, value, sub, accent }: { label: string; value: React.ReactNode; sub?: string; accent?: boolean }) {
     return (
         <div className="px-4 py-3.5">
@@ -453,6 +483,7 @@ function OverviewTab({ status, loading, mailbox }: { status?: import("@/lib/api/
             </div>
 
             {ws?.ramp_hold && <RampHoldNotice hold={ws.ramp_hold} />}
+            {status?.cold_ramp && <ColdRampNotice ramp={status.cold_ramp} />}
 
             {/* Errors */}
             {status?.errors && status.errors.length > 0 && (

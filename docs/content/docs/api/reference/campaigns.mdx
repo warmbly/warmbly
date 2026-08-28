@@ -315,7 +315,9 @@ A `CampaignAdvancedSettings` object: the campaign id, the `overrides` block, and
       "check_unsubscribe_header": true,
       "check_ab_variant_configured": false,
       "check_daily_limit": true,
-      "check_schedule_window": true
+      "check_schedule_window": true,
+      "check_content_score": true,
+      "min_content_score": 60
     },
     "dashboard": { "enabled": true, "show_suppression_log": true, "show_intent_summary": true, "show_dlq_stats": true }
   },
@@ -347,7 +349,7 @@ Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org 
     "ab_testing": { "enabled": true, "default_winning_rule": "reply_rate", "auto_promote_winner": false, "min_sample_size": 30 },
     "reply_intent": { "enabled": true, "positive_keywords": [], "negative_keywords": [], "out_of_office_keywords": [], "question_keywords": [], "auto_create_crm_task": true, "auto_pause_on_negative": false, "auto_suppress_on_unsubscribe_keyword": true },
     "send_time_optimization": { "enabled": true, "use_contact_timezone": true, "default_contact_timezone": "UTC", "preferred_hours": [9, 14], "weekend_weight_multiplier": 0.5 },
-    "preflight": { "enabled": true, "check_tracking_domain": true, "check_unsubscribe_header": true, "check_ab_variant_configured": false, "check_daily_limit": true, "check_schedule_window": true },
+    "preflight": { "enabled": true, "check_tracking_domain": true, "check_unsubscribe_header": true, "check_ab_variant_configured": false, "check_daily_limit": true, "check_schedule_window": true, "check_content_score": true, "min_content_score": 60 },
     "dashboard": { "enabled": true, "show_suppression_log": true, "show_intent_summary": true, "show_dlq_stats": true }
   }
 }

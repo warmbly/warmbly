@@ -107,6 +107,22 @@ type EmailAccountStatus struct {
 	// When true a low-volume health-check warmup keeps running even if the
 	// user has warmup paused/off.
 	InCampaign bool `json:"in_campaign"`
+	// ColdRamp is the warmup-to-cold graduation ceiling, present only while it
+	// is below the mailbox's own cap. Without it the cap just reads lower than
+	// the number the owner configured.
+	ColdRamp *ColdRampInfo `json:"cold_ramp,omitempty"`
+}
+
+// ColdRampInfo explains a cold cap held below the mailbox's configured limit.
+type ColdRampInfo struct {
+	// Ceiling is today's allowance; MailboxCap is what the owner configured.
+	Ceiling    int `json:"ceiling"`
+	MailboxCap int `json:"mailbox_cap"`
+	// DaysToFullCap is how many clean days remain before Ceiling reaches
+	// MailboxCap, 0 when it arrives today.
+	DaysToFullCap int `json:"days_to_full_cap"`
+	// Held is set when a recent spam placement is pausing the climb.
+	Held bool `json:"held"`
 }
 
 type WarmupHealthInfo struct {
