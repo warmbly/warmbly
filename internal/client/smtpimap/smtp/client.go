@@ -213,11 +213,13 @@ func writeBase64Wrapped(w io.Writer, data []byte) {
 func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []byte) *errx.MailError {
 	var host string
 	var port int
+	var security string
 
 	switch c.AuthType {
 	case models.AuthPlain:
 		host = c.Credentials.Host
 		port = c.Credentials.Port
+		security = c.Credentials.Security
 	case models.AuthOAuth2:
 		host = c.Oauth2.Host
 		port = c.Oauth2.Port
@@ -231,9 +233,10 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 
 	var conn net.Conn
 	var err error
-	// Port 465 is implicit TLS (SMTPS): the server speaks TLS from the first
-	// byte, so a plaintext dial + STARTTLS never gets past the greeting.
-	implicitTLS := port == 465
+	// Implicit TLS (SMTPS) means the server speaks TLS from the first byte, so
+	// a plaintext dial + STARTTLS never gets past the greeting. The mode is
+	// the mailbox's stored choice, falling back to the port convention.
+	implicitTLS := models.ResolveSMTPSecurity(security, port) == models.MailSecurityTLS
 	if implicitTLS {
 		conn, err = netbind.TLSDialer(c.BindIP, tlsConf).DialContext(ctx, "tcp", addr)
 	} else {

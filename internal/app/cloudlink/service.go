@@ -391,8 +391,8 @@ func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*mode
 			return nil, xerr
 		}
 		req.SMTPIMAP = &models.SmtpImap{
-			SMTP: &models.Service{Host: creds.SMTPHost, Port: creds.SMTPPort, Username: creds.SMTPUser, Password: creds.SMTPPassword},
-			IMAP: &models.Service{Host: creds.IMAPHost, Port: creds.IMAPPort, Username: creds.IMAPUser, Password: creds.IMAPPassword},
+			SMTP: &models.Service{Host: creds.SMTPHost, Port: creds.SMTPPort, Username: creds.SMTPUser, Password: creds.SMTPPassword, Security: creds.SMTPSecurity},
+			IMAP: &models.Service{Host: creds.IMAPHost, Port: creds.IMAPPort, Username: creds.IMAPUser, Password: creds.IMAPPassword, Security: creds.IMAPSecurity},
 		}
 	default:
 		return nil, ErrOAuthMailbox

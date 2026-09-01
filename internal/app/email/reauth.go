@@ -218,14 +218,14 @@ func validateSMTPIMAPCredentials(creds *models.SmtpImap) *errx.Error {
 	if strings.TrimSpace(creds.SMTP.Host) == "" {
 		return errx.ErrEmailSMTPHost
 	}
-	if creds.SMTP.Port != 465 && creds.SMTP.Port != 587 {
+	if !validPort(creds.SMTP.Port) {
 		return errx.ErrEmailSMTPPort
 	}
 	if strings.TrimSpace(creds.IMAP.Host) == "" {
 		return errx.ErrEmailIMAPHost
 	}
-	if creds.IMAP.Port <= 0 {
+	if !validPort(creds.IMAP.Port) {
 		return errx.ErrEmailIMAPPort
 	}
-	return nil
+	return validateMailSecurity(creds.SMTP, creds.IMAP)
 }

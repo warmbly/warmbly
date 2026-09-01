@@ -8,13 +8,15 @@ import (
 	"net/smtp"
 
 	"github.com/warmbly/warmbly/internal/client/netbind"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
-func VerifySMTP(ctx context.Context, host string, port int, user, pass string) bool {
+// VerifySMTP probes a mailbox's SMTP credentials the same way the send path
+// connects: the caller's security mode decides implicit TLS versus STARTTLS,
+// and any port is accepted. security may be empty, in which case the port
+// convention decides.
+func VerifySMTP(ctx context.Context, host string, port int, user, pass, security string) bool {
 	addr := fmt.Sprintf("%s:%d", host, port)
-
-	var conn net.Conn
-	var err error
 
 	// Matches the send client's TLS policy: MAIL_TLS_INSECURE is a dev-only
 	// knob for the local self-signed sandbox, never set in production.
@@ -23,17 +25,16 @@ func VerifySMTP(ctx context.Context, host string, port int, user, pass string) b
 		InsecureSkipVerify: netbind.InsecureTLS(),
 	}
 
+	var conn net.Conn
+	var err error
+
 	// netbind dialers so validation probes leave from WORKER_BIND_IP exactly
 	// like the sends they are vouching for.
-	switch port {
-	case 465:
+	implicitTLS := models.ResolveSMTPSecurity(security, port) == models.MailSecurityTLS
+	if implicitTLS {
 		conn, err = netbind.TLSDialer(nil, tlsConf).DialContext(ctx, "tcp", addr)
-
-	case 587:
+	} else {
 		conn, err = netbind.Dialer(nil).DialContext(ctx, "tcp", addr)
-
-	default:
-		return false
 	}
 	// A bad host is ordinary user input, not an exceptional case: dial failed
 	// means conn is nil, and closing it would panic this goroutine and take
@@ -49,8 +50,14 @@ func VerifySMTP(ctx context.Context, host string, port int, user, pass string) b
 	}
 	defer c.Close()
 
-	if port == 587 {
-		if err := c.StartTLS(tlsConf); err != nil {
+	if !implicitTLS {
+		// TLS stays mandatory, with the same dev-only escape hatch the send
+		// path uses for the local no-STARTTLS sink.
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err := c.StartTLS(tlsConf); err != nil {
+				return false
+			}
+		} else if !netbind.InsecureTLS() {
 			return false
 		}
 	}

@@ -26,10 +26,12 @@ type SMTPCredentials struct {
 	SMTPPort     int
 	SMTPUser     string
 	SMTPPassword string
+	SMTPSecurity string
 	IMAPHost     string
 	IMAPPort     int
 	IMAPUser     string
 	IMAPPassword string
+	IMAPSecurity string
 }
 
 // OAuthCredentials holds OAuth token credentials
@@ -529,16 +531,18 @@ func (r *emailRepository) NewSMTPIMAPAccount(ctx context.Context, userID string,
 	query = `
 		INSERT INTO email_accounts_smtp_imap (
 		  email_account_id,
-		  smtp_host, smtp_port, smtp_user, smtp_password,
-		  imap_host, imap_port, imap_user, imap_password
+		  smtp_host, smtp_port, smtp_user, smtp_password, smtp_security,
+		  imap_host, imap_port, imap_user, imap_password, imap_security
 		) VALUES (
-		 $1, $2, $3, $4, $5, 
-		 $6, $7, $8, $9)
+		 $1, $2, $3, $4, $5, $6,
+		 $7, $8, $9, $10, $11)
 	`
 
 	params = []any{
 		id, smtphost, data.SMTP.Port, smtpuser, smtppass,
+		models.ResolveSMTPSecurity(data.SMTP.Security, data.SMTP.Port),
 		imaphost, data.IMAP.Port, imapuser, imappass,
+		models.ResolveIMAPSecurity(data.IMAP.Security, data.IMAP.Port),
 	}
 
 	_, err = tx.Exec(
@@ -1597,8 +1601,8 @@ func (r *emailRepository) GetSMTPCredentials(ctx context.Context, emailAccountID
 		return nil, errx.InternalError()
 	}
 	query := `
-		SELECT smtp_host, smtp_port, smtp_user, smtp_password,
-		       imap_host, imap_port, imap_user, imap_password
+		SELECT smtp_host, smtp_port, smtp_user, smtp_password, smtp_security,
+		       imap_host, imap_port, imap_user, imap_password, imap_security
 		FROM email_accounts_smtp_imap
 		WHERE email_account_id = $1
 	`
@@ -1607,8 +1611,8 @@ func (r *emailRepository) GetSMTPCredentials(ctx context.Context, emailAccountID
 	var smtpHost, smtpUser, smtpPassword, imapHost, imapUser, imapPassword string
 
 	err := r.DB.QueryRow(ctx, query, emailAccountID).Scan(
-		&smtpHost, &creds.SMTPPort, &smtpUser, &smtpPassword,
-		&imapHost, &creds.IMAPPort, &imapUser, &imapPassword,
+		&smtpHost, &creds.SMTPPort, &smtpUser, &smtpPassword, &creds.SMTPSecurity,
+		&imapHost, &creds.IMAPPort, &imapUser, &imapPassword, &creds.IMAPSecurity,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

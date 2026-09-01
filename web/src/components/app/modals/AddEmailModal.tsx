@@ -43,6 +43,13 @@ import { API_URL, APP_URL } from "@/lib/information";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import addEmail from "@/lib/api/client/app/emails/addEmail";
+import {
+    defaultImapSecurity,
+    defaultSmtpSecurity,
+    validPort,
+    type MailSecurity,
+} from "@/lib/api/models/app/emails/Service";
+import SecuritySelect from "@/components/app/emails/SecuritySelect";
 import onboardOAuthStart from "@/lib/api/client/app/emails/onboardOAuthStart";
 import onboardOAuthFinish from "@/lib/api/client/app/emails/onboardOAuthFinish";
 import { finishCloudOAuth, startCloudOAuth } from "@/lib/api/client/app/cloudlink/cloudLink";
@@ -653,11 +660,30 @@ function SmtpImapPanel({ onDone }: { onDone: () => void }) {
     const [imapPort, setImapPort] = React.useState("993");
     const [imapUser, setImapUser] = React.useState("");
     const [imapPass, setImapPass] = React.useState("");
+    const [imapSecurity, setImapSecurity] = React.useState<MailSecurity>("tls");
 
     const [smtpHost, setSmtpHost] = React.useState("");
     const [smtpPort, setSmtpPort] = React.useState("587");
     const [smtpUser, setSmtpUser] = React.useState("");
     const [smtpPass, setSmtpPass] = React.useState("");
+    const [smtpSecurity, setSmtpSecurity] = React.useState<MailSecurity>("starttls");
+
+    // The port implies the security mode for every conventional setup, so
+    // typing a port moves the selector with it. Once the user picks a mode by
+    // hand we stop guessing: that is exactly the non-standard case they came
+    // here for (a submission relay on 2525, IMAP on a custom port).
+    const imapSecurityTouched = React.useRef(false);
+    const smtpSecurityTouched = React.useRef(false);
+    React.useEffect(() => {
+        if (!imapSecurityTouched.current) {
+            setImapSecurity(defaultImapSecurity(Number(imapPort)));
+        }
+    }, [imapPort]);
+    React.useEffect(() => {
+        if (!smtpSecurityTouched.current) {
+            setSmtpSecurity(defaultSmtpSecurity(Number(smtpPort)));
+        }
+    }, [smtpPort]);
 
     // Single-credentials toggle — covers the 90% case where IMAP and SMTP
     // share the same login. The user can flip it off and supply distinct
@@ -685,8 +711,9 @@ function SmtpImapPanel({ onDone }: { onDone: () => void }) {
         if (!imapHost.trim() || !imapPort.trim() || !imapUser.trim() || !imapPass) return false;
         if (!smtpHost.trim() || !smtpPort.trim()) return false;
         if (!sameCreds && (!smtpUser.trim() || !smtpPass)) return false;
-        const p = Number(smtpPort);
-        if (p !== 465 && p !== 587) return false;
+        // Any routable port is allowed; the security mode carries how to
+        // connect, so 2525 and other non-standard ports work.
+        if (!validPort(Number(smtpPort)) || !validPort(Number(imapPort))) return false;
         return true;
     }
 
@@ -704,12 +731,14 @@ function SmtpImapPanel({ onDone }: { onDone: () => void }) {
                         password: imapPass,
                         host: imapHost.trim(),
                         port: Number(imapPort),
+                        security: imapSecurity,
                     },
                     smtp: {
                         username: eff.user.trim(),
                         password: eff.pass,
                         host: eff.host.trim(),
                         port: eff.port,
+                        security: smtpSecurity,
                     },
                 }),
                 {
@@ -748,6 +777,15 @@ function SmtpImapPanel({ onDone }: { onDone: () => void }) {
                         portPlaceholder="993"
                     />
                 </Field>
+                <Field label="Security">
+                    <SecuritySelect
+                        value={imapSecurity}
+                        onChange={(v) => {
+                            imapSecurityTouched.current = true;
+                            setImapSecurity(v);
+                        }}
+                    />
+                </Field>
                 <Field label="Username">
                     <TextInput
                         value={imapUser}
@@ -763,7 +801,7 @@ function SmtpImapPanel({ onDone }: { onDone: () => void }) {
                 </Field>
             </Section>
 
-            <Section title="SMTP" sub="Outgoing, 465 or 587" icon={<SendIcon className="w-3.5 h-3.5" />}>
+            <Section title="SMTP" sub="Outgoing, usually 587 or 465" icon={<SendIcon className="w-3.5 h-3.5" />}>
                 <Field label="Server">
                     <HostPortInput
                         host={smtpHost}
@@ -772,6 +810,15 @@ function SmtpImapPanel({ onDone }: { onDone: () => void }) {
                         port={smtpPort}
                         onPort={setSmtpPort}
                         portPlaceholder="587"
+                    />
+                </Field>
+                <Field label="Security">
+                    <SecuritySelect
+                        value={smtpSecurity}
+                        onChange={(v) => {
+                            smtpSecurityTouched.current = true;
+                            setSmtpSecurity(v);
+                        }}
                     />
                 </Field>
                 <label className="flex items-center gap-2 pl-[76px] pt-0.5 cursor-pointer">

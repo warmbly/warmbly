@@ -147,11 +147,59 @@ type EmailAuthTransition struct {
 	OrganizationID *uuid.UUID
 }
 
+// Mail connection security modes. TLS is mandatory either way; the difference
+// is whether it is negotiated before the protocol greeting or upgraded in-band
+// after it. Storing the mode explicitly is what lets a mailbox live on any
+// port: inferring it from the port only ever worked for 465/587/993/143.
+const (
+	// MailSecurityTLS is implicit TLS: the server speaks TLS from the first
+	// byte. SMTP 465 (SMTPS), IMAP 993 (IMAPS).
+	MailSecurityTLS = "tls"
+	// MailSecurityStartTLS is a plaintext greeting upgraded in-band with
+	// STARTTLS. SMTP 587/25/2525, IMAP 143.
+	MailSecurityStartTLS = "starttls"
+)
+
+// ValidMailSecurity reports whether s is a known security mode.
+func ValidMailSecurity(s string) bool {
+	return s == MailSecurityTLS || s == MailSecurityStartTLS
+}
+
+// ResolveSMTPSecurity returns the security mode to dial SMTP with: the stored
+// choice when it is set, otherwise the conventional default for the port. The
+// fallback keeps mailboxes connected across the rollout, when the stored value
+// is empty and events from older workers carry no mode at all.
+func ResolveSMTPSecurity(security string, port int) string {
+	if ValidMailSecurity(security) {
+		return security
+	}
+	if port == 465 {
+		return MailSecurityTLS
+	}
+	return MailSecurityStartTLS
+}
+
+// ResolveIMAPSecurity is ResolveSMTPSecurity for IMAP, where implicit TLS is
+// the norm (993) and 143 is the STARTTLS port.
+func ResolveIMAPSecurity(security string, port int) string {
+	if ValidMailSecurity(security) {
+		return security
+	}
+	if port == 143 {
+		return MailSecurityStartTLS
+	}
+	return MailSecurityTLS
+}
+
 type Service struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
+	// Security is the connection mode (see MailSecurity*). Empty means "infer
+	// from the port", which is how rows and events written before the field
+	// existed behave.
+	Security string `json:"security,omitempty"`
 }
 
 type Oauth2Service struct {

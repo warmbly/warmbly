@@ -691,8 +691,10 @@ Connects an SMTP/IMAP mailbox in a single call.
 |-------|------|----------|-------------|
 | `email` | string | yes | The mailbox address. |
 | `name` | string | no | Display name. |
-| `smtp` | object | yes | SMTP credentials: `username`, `password`, `host`, `port`. |
-| `imap` | object | yes | IMAP credentials: `username`, `password`, `host`, `port`. |
+| `smtp` | object | yes | SMTP credentials: `username`, `password`, `host`, `port`, `security`. |
+| `imap` | object | yes | IMAP credentials: `username`, `password`, `host`, `port`, `security`. |
+
+`security` is `tls` (implicit TLS, encrypted from the first byte) or `starttls` (plaintext greeting upgraded in-band). It is optional: omit it and the port decides, which is `tls` for SMTP 465 and IMAP 993, and `starttls` for SMTP 587 and IMAP 143. Set it explicitly for anything non-standard, such as a submission relay on 2525. Any port from 1 to 65535 is accepted; TLS itself is not optional.
 
 ```json
 {
@@ -702,13 +704,15 @@ Connects an SMTP/IMAP mailbox in a single call.
     "username": "sales@acme.com",
     "password": "app-specific-password",
     "host": "smtp.acme.com",
-    "port": 587
+    "port": 587,
+    "security": "starttls"
   },
   "imap": {
     "username": "sales@acme.com",
     "password": "app-specific-password",
     "host": "imap.acme.com",
-    "port": 993
+    "port": 993,
+    "security": "tls"
   }
 }
 ```

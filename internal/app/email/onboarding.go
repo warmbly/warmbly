@@ -309,14 +309,34 @@ func validateSMTPIMAPInput(data *models.NewSMTPIMAPAccount) *errx.Error {
 	if strings.TrimSpace(data.SMTP.Host) == "" {
 		return errx.ErrEmailSMTPHost
 	}
-	if data.SMTP.Port != 465 && data.SMTP.Port != 587 {
+	if !validPort(data.SMTP.Port) {
 		return errx.ErrEmailSMTPPort
 	}
 	if strings.TrimSpace(data.IMAP.Host) == "" {
 		return errx.ErrEmailIMAPHost
 	}
-	if data.IMAP.Port <= 0 {
+	if !validPort(data.IMAP.Port) {
 		return errx.ErrEmailIMAPPort
+	}
+	return validateMailSecurity(data.SMTP, data.IMAP)
+}
+
+// validPort accepts any routable TCP port. Mail submission is conventionally
+// 465/587 and IMAP 993/143, but plenty of providers and self-hosted servers
+// use 2525, 25, or something else entirely, and the security mode (not the
+// port) is what decides how we connect.
+func validPort(port int) bool {
+	return port > 0 && port <= 65535
+}
+
+// validateMailSecurity rejects an unknown security mode. Empty is allowed and
+// means "infer from the port", which is how existing clients behave.
+func validateMailSecurity(smtp, imap *models.Service) *errx.Error {
+	if smtp.Security != "" && !models.ValidMailSecurity(smtp.Security) {
+		return errx.ErrEmailSMTPSecurity
+	}
+	if imap.Security != "" && !models.ValidMailSecurity(imap.Security) {
+		return errx.ErrEmailIMAPSecurity
 	}
 	return nil
 }

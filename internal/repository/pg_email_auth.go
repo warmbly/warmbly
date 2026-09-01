@@ -24,10 +24,12 @@ func (r *emailRepository) GetSMTPIMAP(ctx context.Context, userID, emailAccountI
     	 smtp.smtp_port,
     	 smtp.smtp_user,
     	 smtp.smtp_password,
+    	 smtp.smtp_security,
    		 smtp.imap_host,
     	 smtp.imap_port,
     	 smtp.imap_user,
     	 smtp.imap_password,
+    	 smtp.imap_security,
     	 smtp.updated_at
 	 	FROM 
     	 email_accounts ea
@@ -48,8 +50,8 @@ func (r *emailRepository) GetSMTPIMAP(ctx context.Context, userID, emailAccountI
 		query,
 		params...,
 	).Scan(
-		&smtp.Host, &smtp.Port, &smtp.Username, &smtp.Password,
-		&imap.Host, &imap.Port, &imap.Username, &imap.Password,
+		&smtp.Host, &smtp.Port, &smtp.Username, &smtp.Password, &smtp.Security,
+		&imap.Host, &imap.Port, &imap.Username, &imap.Password, &imap.Security,
 		&ts,
 	)
 	if err != nil {
@@ -204,11 +206,14 @@ func (r *emailRepository) ReplaceSMTPIMAPCredentials(ctx context.Context, id uui
 	}
 	query := `
 		UPDATE email_accounts_smtp_imap
-		SET smtp_host = $1, smtp_port = $2, smtp_user = $3, smtp_password = $4,
-		    imap_host = $5, imap_port = $6, imap_user = $7, imap_password = $8
-		WHERE email_account_id = $9
+		SET smtp_host = $1, smtp_port = $2, smtp_user = $3, smtp_password = $4, smtp_security = $5,
+		    imap_host = $6, imap_port = $7, imap_user = $8, imap_password = $9, imap_security = $10
+		WHERE email_account_id = $11
 	`
-	if _, err := r.DB.Exec(ctx, query, sealed[0], creds.SMTP.Port, sealed[1], sealed[2], sealed[3], creds.IMAP.Port, sealed[4], sealed[5], id); err != nil {
+	if _, err := r.DB.Exec(ctx, query,
+		sealed[0], creds.SMTP.Port, sealed[1], sealed[2], models.ResolveSMTPSecurity(creds.SMTP.Security, creds.SMTP.Port),
+		sealed[3], creds.IMAP.Port, sealed[4], sealed[5], models.ResolveIMAPSecurity(creds.IMAP.Security, creds.IMAP.Port),
+		id); err != nil {
 		db.CaptureError(err, query, nil, "exec")
 		return err
 	}

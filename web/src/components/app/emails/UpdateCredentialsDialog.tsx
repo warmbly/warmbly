@@ -14,6 +14,13 @@ import { TextInput } from "@/components/ui/field";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import updateEmailCredentials from "@/lib/api/client/app/emails/updateEmailCredentials";
+import {
+    defaultImapSecurity,
+    defaultSmtpSecurity,
+    validPort,
+    type MailSecurity,
+} from "@/lib/api/models/app/emails/Service";
+import SecuritySelect from "@/components/app/emails/SecuritySelect";
 
 export default function UpdateCredentialsDialog({
     mailboxId,
@@ -38,8 +45,21 @@ export default function UpdateCredentialsDialog({
     const [smtpUser, setSmtpUser] = React.useState(mailboxEmail);
     const [smtpPass, setSmtpPass] = React.useState("");
 
+    const [imapSecurity, setImapSecurity] = React.useState<MailSecurity>("tls");
+    const [smtpSecurity, setSmtpSecurity] = React.useState<MailSecurity>("starttls");
     const [sameCreds, setSameCreds] = React.useState(true);
     const [submitting, setSubmitting] = React.useState(false);
+
+    // The port implies the mode until the user picks one by hand, matching the
+    // connect form.
+    const imapSecurityTouched = React.useRef(false);
+    const smtpSecurityTouched = React.useRef(false);
+    React.useEffect(() => {
+        if (!imapSecurityTouched.current) setImapSecurity(defaultImapSecurity(Number(imapPort)));
+    }, [imapPort]);
+    React.useEffect(() => {
+        if (!smtpSecurityTouched.current) setSmtpSecurity(defaultSmtpSecurity(Number(smtpPort)));
+    }, [smtpPort]);
 
     // Reset when reopened so a cancelled attempt never leaks a typed password.
     React.useEffect(() => {
@@ -52,6 +72,10 @@ export default function UpdateCredentialsDialog({
             setSmtpPort("587");
             setSmtpUser(mailboxEmail);
             setSmtpPass("");
+            imapSecurityTouched.current = false;
+            smtpSecurityTouched.current = false;
+            setImapSecurity("tls");
+            setSmtpSecurity("starttls");
             setSameCreds(true);
             setSubmitting(false);
         }
@@ -70,8 +94,8 @@ export default function UpdateCredentialsDialog({
         if (!imapHost.trim() || !imapPort.trim() || !imapUser.trim() || !imapPass) return false;
         if (!smtpHost.trim() || !smtpPort.trim()) return false;
         if (!sameCreds && (!smtpUser.trim() || !smtpPass)) return false;
-        const p = Number(smtpPort);
-        if (p !== 465 && p !== 587) return false;
+        // Any routable port; the security mode carries how to connect.
+        if (!validPort(Number(smtpPort)) || !validPort(Number(imapPort))) return false;
         return true;
     }
 
@@ -79,8 +103,8 @@ export default function UpdateCredentialsDialog({
         if (submitting || !valid()) return;
         setSubmitting(true);
         const smtp = sameCreds
-            ? { username: imapUser.trim(), password: imapPass, host: smtpHost.trim(), port: Number(smtpPort) }
-            : { username: smtpUser.trim(), password: smtpPass, host: smtpHost.trim(), port: Number(smtpPort) };
+            ? { username: imapUser.trim(), password: imapPass, host: smtpHost.trim(), port: Number(smtpPort), security: smtpSecurity }
+            : { username: smtpUser.trim(), password: smtpPass, host: smtpHost.trim(), port: Number(smtpPort), security: smtpSecurity };
         try {
             await toast.promise(
                 updateEmailCredentials(mailboxId, smtp, {
@@ -88,6 +112,7 @@ export default function UpdateCredentialsDialog({
                     password: imapPass,
                     host: imapHost.trim(),
                     port: Number(imapPort),
+                    security: imapSecurity,
                 }),
                 {
                     loading: "Verifying credentials…",
@@ -145,6 +170,15 @@ export default function UpdateCredentialsDialog({
                                 <Field label="Server">
                                     <HostPortInput host={imapHost} onHost={setImapHost} hostPlaceholder="imap.example.com" port={imapPort} onPort={setImapPort} portPlaceholder="993" />
                                 </Field>
+                                <Field label="Security">
+                                    <SecuritySelect
+                                        value={imapSecurity}
+                                        onChange={(v) => {
+                                            imapSecurityTouched.current = true;
+                                            setImapSecurity(v);
+                                        }}
+                                    />
+                                </Field>
                                 <Field label="Username">
                                     <TextInput value={imapUser} onChange={setImapUser} placeholder={mailboxEmail} />
                                 </Field>
@@ -156,6 +190,15 @@ export default function UpdateCredentialsDialog({
                             <Section title="SMTP" sub="Outgoing, 465 or 587" icon={<SendIcon className="w-3.5 h-3.5" />}>
                                 <Field label="Server">
                                     <HostPortInput host={smtpHost} onHost={setSmtpHost} hostPlaceholder="smtp.example.com" port={smtpPort} onPort={setSmtpPort} portPlaceholder="587" />
+                                </Field>
+                                <Field label="Security">
+                                    <SecuritySelect
+                                        value={smtpSecurity}
+                                        onChange={(v) => {
+                                            smtpSecurityTouched.current = true;
+                                            setSmtpSecurity(v);
+                                        }}
+                                    />
                                 </Field>
                                 <label className="flex items-center gap-2 pl-[76px] pt-0.5 cursor-pointer">
                                     <input

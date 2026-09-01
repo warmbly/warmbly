@@ -316,8 +316,8 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 		out.ImapSync = true
 		out.SmtpImap = &models.AddWorkerEmailSmtpImapData{
 			Credentials: &models.SmtpImap{
-				SMTP: &models.Service{Host: creds.SMTPHost, Port: creds.SMTPPort, Username: creds.SMTPUser, Password: creds.SMTPPassword},
-				IMAP: &models.Service{Host: creds.IMAPHost, Port: creds.IMAPPort, Username: creds.IMAPUser, Password: creds.IMAPPassword},
+				SMTP: &models.Service{Host: creds.SMTPHost, Port: creds.SMTPPort, Username: creds.SMTPUser, Password: creds.SMTPPassword, Security: creds.SMTPSecurity},
+				IMAP: &models.Service{Host: creds.IMAPHost, Port: creds.IMAPPort, Username: creds.IMAPUser, Password: creds.IMAPPassword, Security: creds.IMAPSecurity},
 			},
 			Mailboxes: s.mailboxesFor(ctx, userID, acc.ID),
 		}

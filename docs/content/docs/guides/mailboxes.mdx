@@ -24,7 +24,16 @@ SMTP   host: smtp.yourprovider.com   port: 465   username: you@yourdomain.com
 IMAP   host: imap.yourprovider.com   port: 993   username: you@yourdomain.com
 ```
 
-SMTP accepts port `465` (implicit TLS, the connection is encrypted from the first byte) or `587` (STARTTLS, upgraded in-band); both are fully supported for validation and sending. IMAP always connects over implicit TLS regardless of port, with `993` the common choice.
+Each side also has a **security** setting, which is what decides how the connection is encrypted:
+
+| Security | What happens | Usual ports |
+| --- | --- | --- |
+| SSL / TLS | Encrypted from the first byte | SMTP `465`, IMAP `993` |
+| STARTTLS | Connects in the clear, then upgrades in place before anything sensitive is sent | SMTP `587` or `2525`, IMAP `143` |
+
+The form picks the right one from the port as you type, so standard setups need no thought. Change it yourself when your server is unusual: any port from 1 to 65535 works, so a submission relay on `2525` or IMAP on a custom port is fine as long as the security setting matches what the server actually speaks. Encryption itself is not optional; Warmbly will not send credentials over an unencrypted connection.
+
+If a mailbox fails to connect with a server-unreachable error and the host and port are definitely right, the security setting is the first thing to check. A server expecting STARTTLS looks unreachable to a client attempting implicit TLS, and vice versa.
 
 With two-factor authentication on, generate an app password in your provider's security settings and use that.
 

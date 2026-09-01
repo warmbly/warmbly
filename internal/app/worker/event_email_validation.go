@@ -48,10 +48,10 @@ func (w *WorkerService) HandleEmailValidation(ctx context.Context, data models.E
 		}()
 	}
 	probe(func() bool {
-		return email.VerifyImap(ctx, data.Credentials.IMAP.Host, data.Credentials.IMAP.Port, data.Credentials.IMAP.Username, data.Credentials.IMAP.Password)
+		return email.VerifyImap(ctx, data.Credentials.IMAP.Host, data.Credentials.IMAP.Port, data.Credentials.IMAP.Username, data.Credentials.IMAP.Password, data.Credentials.IMAP.Security)
 	})
 	probe(func() bool {
-		return email.VerifySMTP(ctx, data.Credentials.SMTP.Host, data.Credentials.SMTP.Port, data.Credentials.SMTP.Username, data.Credentials.SMTP.Password)
+		return email.VerifySMTP(ctx, data.Credentials.SMTP.Host, data.Credentials.SMTP.Port, data.Credentials.SMTP.Username, data.Credentials.SMTP.Password, data.Credentials.SMTP.Security)
 	})
 
 	result1 := <-results

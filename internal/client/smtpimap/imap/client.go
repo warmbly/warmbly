@@ -65,21 +65,43 @@ type Client struct {
 }
 
 func (c *Client) Connect() *errx.MailError {
-	var addr string
+	var addr, host, security string
+	var port int
 	switch c.AuthType {
 	case models.AuthPlain:
-		addr = fmt.Sprintf("%s:%d", c.Credentials.Host, c.Credentials.Port)
+		host, port, security = c.Credentials.Host, c.Credentials.Port, c.Credentials.Security
 	case models.AuthOAuth2:
-		addr = fmt.Sprintf("%s:%d", c.Oauth2.Host, c.Oauth2.Port)
+		host, port = c.Oauth2.Host, c.Oauth2.Port
+	}
+	addr = fmt.Sprintf("%s:%d", host, port)
+
+	tlsConf := &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: netbind.InsecureTLS(),
 	}
 
-	dialer := netbind.TLSDialer(c.BindIP, &tls.Config{})
-	conn, err := dialer.DialContext(context.Background(), "tcp", addr)
-	if err != nil {
-		return errx.ErrMailServerUnreachable
+	var client *imapclient.Client
+	if models.ResolveIMAPSecurity(security, port) == models.MailSecurityStartTLS {
+		// Plaintext greeting, upgraded in-band. Dial through netbind so the
+		// STARTTLS path honours WORKER_BIND_IP like the implicit one.
+		conn, err := netbind.Dialer(c.BindIP).DialContext(context.Background(), "tcp", addr)
+		if err != nil {
+			return errx.ErrMailServerUnreachable
+		}
+		// NewStartTLS closes conn itself when the upgrade fails.
+		client, err = imapclient.NewStartTLS(conn, &imapclient.Options{TLSConfig: tlsConf})
+		if err != nil {
+			return errx.ErrMailServerUnreachable
+		}
+	} else {
+		conn, err := netbind.TLSDialer(c.BindIP, tlsConf).DialContext(context.Background(), "tcp", addr)
+		if err != nil {
+			return errx.ErrMailServerUnreachable
+		}
+		client = imapclient.New(conn, nil)
 	}
 
-	c.client = imapclient.New(conn, nil)
+	c.client = client
 	c.selected.Store(false)
 
 	var xerr *errx.MailError
