@@ -337,6 +337,16 @@ func resolveWorkerID() (uuid.UUID, string) {
 	if id, err := uuid.Parse(hostname); err == nil {
 		return id, "default route"
 	}
+
+	// A persisted id survives container recreates, which a random one does
+	// not: every fresh UUID orphans the mailboxes assigned to the old one.
+	if dir := os.Getenv("WORKER_STATE_DIR"); dir != "" {
+		if id, ok := claimStateID(dir); ok {
+			log.Printf("Using persisted worker ID %s from %s", id, dir)
+			return id, "default route"
+		}
+	}
+
 	id := uuid.New()
 	log.Printf("Hostname %q is not a UUID, using generated ID: %s", hostname, id)
 	return id, "default route"

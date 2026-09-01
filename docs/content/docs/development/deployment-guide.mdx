@@ -667,19 +667,20 @@ Each worker needs a stable UUID. It is resolved at boot in this order:
 1. `WORKER_ID` if set, used as-is
 2. a UUID derived from `WORKER_BIND_IP`, so each IP on a multi-IP box is its own worker
 3. the hostname, if the hostname is itself a UUID
-4. otherwise a **freshly generated UUID**
+4. a persisted id claimed from `WORKER_STATE_DIR`, when that variable is set
+5. otherwise a **freshly generated UUID**
 
-The compose worker hits case 4, so every recreate registers as a new worker and leaves the previous row behind, still holding the mailboxes that were assigned to it.
+The compose worker hits case 4: the shipped compose file mounts a `worker_state` volume at `/data/state` and sets `WORKER_STATE_DIR` to it. On boot each replica claims an id file from that volume under an exclusive lock and holds it for the life of the process, so a recreated container gets its predecessor's UUID back, and `--scale worker=3` still works because each replica locks a different file (the pool grows to the replica count). The id survives anything short of deleting the volume.
 
-Sending recovers on its own. Placement skips a worker once its heartbeat goes stale, and the reconciler releases any mailbox still pointing at one and places it on a live worker within its interval. Until that happens, sends from those mailboxes fail with `email account not found in worker`.
+If the state volume is removed (or `WORKER_STATE_DIR` unset), every recreate registers as a new worker and leaves the previous row behind, still holding the mailboxes that were assigned to it. Sending recovers on its own: placement skips a worker once its heartbeat goes stale, and the reconciler releases any mailbox still pointing at one and places it on a live worker within its interval. Until that happens, sends from those mailboxes fail with `email account not found in worker`.
 
-Pinning the identity avoids the gap, and the churn of mailboxes moving between workers:
+Pinning the identity explicitly also works:
 
 ```bash
 WORKER_ID=<a uuid you generate once>     # uuidgen
 ```
 
-Set it only when you run a single worker per host. Scaled replicas share one environment, so a pinned `WORKER_ID` would make them collide; leave it unset when using `--scale`.
+Set it only when you run a single worker per host. Scaled replicas share one environment, so a pinned `WORKER_ID` would make them collide; leave it unset when using `--scale` and let the state volume handle it.
 
 The remote installer handles this for you: it derives the UUID from the machine's public IPv4, so a reinstall on the same IP keeps the same identity and reputation.
 

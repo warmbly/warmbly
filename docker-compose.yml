@@ -377,9 +377,11 @@ services:
       ENCRYPTED_KEYS_PROVIDER: http
       ENCRYPTED_KEYS_BACKEND_URL: ${ENCRYPTED_KEYS_BACKEND_URL:-http://backend:8080}
       ENCRYPTED_KEYS_WORKER_TOKEN: ${INTERNAL_API_TOKEN:-local-dev-internal-token}
-      # Unset by default so each replica generates its own id and --scale works.
-      # Pin it only when running exactly one worker on this host.
+      # Explicit pin for a single worker; usually unnecessary. Without it each
+      # replica flock-claims a persistent id file in the worker_state volume,
+      # so ids survive container recreates and --scale still works.
       WORKER_ID: ${WORKER_ID:-}
+      WORKER_STATE_DIR: ${WORKER_STATE_DIR:-/data/state}
       WORKER_TIER: ${WORKER_TIER:-}
       WORKER_EGRESS_KIND: ${WORKER_EGRESS_KIND:-}
       BOX_GOOGLE_CLIENT_ID: ${BOX_GOOGLE_CLIENT_ID:-}
@@ -388,6 +390,7 @@ services:
       BOX_OUTLOOK_CLIENT_SECRET: ${BOX_OUTLOOK_CLIENT_SECRET:-}
     volumes:
       - blobs:/data/blobs
+      - worker_state:/data/state
     depends_on:
       backend: { condition: service_healthy }
       nats: { condition: service_healthy }
@@ -511,3 +514,4 @@ volumes:
   redis_data:
   nats_data:
   blobs:
+  worker_state:

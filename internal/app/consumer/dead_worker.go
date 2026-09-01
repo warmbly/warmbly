@@ -103,6 +103,11 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 		}
 
 		if len(accountIDs) == 0 {
+			// Nothing to move: retire the row so it stops being rescanned
+			// every interval. Churned ids without WORKER_ID accumulate here
+			// forever otherwise; a returning worker reactivates itself on its
+			// next heartbeat upsert.
+			s.deactivateIfLongDead(ctx, w)
 			continue
 		}
 
@@ -123,6 +128,11 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 				continue
 			}
 			reassigned++
+
+			// Keep the placement counters honest on both rows; without this
+			// every auto-reassignment permanently skews account_count.
+			_ = s.WorkerRepo.DecrementAccountCount(ctx, w.ID)
+			_ = s.WorkerRepo.IncrementAccountCount(ctx, replacement.ID)
 
 			account, aerr := s.EmailRepository.GetByID(ctx, accountID)
 			if aerr != nil || account == nil {
@@ -168,7 +178,26 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 
 			s.notifyWorkerDown(ctx, w.ID, affectedOrgs, true)
 		}
+
+		if reassigned == len(accountIDs) {
+			s.deactivateIfLongDead(ctx, w)
+		}
 	}
+}
+
+// deactivateIfLongDead retires a heartbeat-expired worker row, but only when
+// its registry timestamp is stale too. During a Redis outage every heartbeat
+// key vanishes at once while POSTed beats keep last_seen_at fresh; gating on
+// both signals keeps that from deactivating the whole live fleet.
+func (s *JobsService) deactivateIfLongDead(ctx context.Context, w models.Worker) {
+	if w.LastSeenAt != nil && time.Since(*w.LastSeenAt) < 10*time.Minute {
+		return
+	}
+	if err := s.WorkerRepo.DeactivateWorker(ctx, w.ID); err != nil {
+		log.Warn().Err(err).Str("worker_id", w.ID.String()).Msg("failed to deactivate dead worker")
+		return
+	}
+	log.Info().Str("worker_id", w.ID.String()).Msg("dead worker deactivated")
 }
 
 // accountOrgs resolves which orgs own the given accounts (org -> count).
