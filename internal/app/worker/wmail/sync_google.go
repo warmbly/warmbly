@@ -151,8 +151,11 @@ func (w *WMail) googleStore(ctx context.Context, msg *models.EmailMessageData) e
 }
 
 // googleBackfill imports the mailbox's recent history newest first, one
-// messages.list page at a time, resuming from the saved page token. The
-// query excludes what the IMAP path also skips: trash, spam, drafts, chats.
+// messages.list page at a time, resuming from the saved page token. The query
+// excludes what the IMAP path also skips: trash and spam (their history would
+// eat the message budget that belongs to real conversations; live sync still
+// files new mail into those scopes) plus chats. Drafts are imported, matching
+// IMAP, so the Drafts scope is not empty of everything written before connect.
 func (w *WMail) googleBackfill(ctx context.Context, stats *tickStats) *errx.MailError {
 	st := &w.tracker.state
 	if st.BackfillStatus == models.SyncBackfillComplete {
@@ -160,7 +163,7 @@ func (w *WMail) googleBackfill(ctx context.Context, stats *tickStats) *errx.Mail
 	}
 	policy := w.gov.Policy()
 	w.tracker.startBackfill(time.Now(), policy.BackfillDays)
-	q := fmt.Sprintf("after:%d -in:trash -in:spam -in:drafts -in:chats", st.BackfillSince.Unix())
+	q := fmt.Sprintf("after:%d -in:trash -in:spam -in:chats", st.BackfillSince.Unix())
 
 	for !stats.aborted && !stats.laneDenied(LaneBackfill) {
 		if st.BackfillSynced >= policy.BackfillMessages {

@@ -50,12 +50,14 @@ type listPage struct {
 
 // TrackedFolders are the well-known folders live sync follows: inbox and junk
 // for placement, sent so a conversation shows both sides (as the Gmail and
-// IMAP paths already do).
-var TrackedFolders = []string{FolderInbox, FolderJunk, FolderSent}
+// IMAP paths already do), and drafts so the Drafts scope is populated on
+// Outlook the way it is on the other two providers.
+var TrackedFolders = []string{FolderInbox, FolderJunk, FolderSent, FolderDrafts}
 
 // BackfillFolders are the folders the initial import walks. Junk is followed
-// live for placement signals but its history is not worth importing.
-var BackfillFolders = []string{FolderInbox, FolderSent, FolderArchive}
+// live for placement signals but its history is not worth importing, and would
+// consume the message budget that belongs to real conversations.
+var BackfillFolders = []string{FolderInbox, FolderSent, FolderArchive, FolderDrafts}
 
 // Sync walks the delta stream for the tracked folders and drives the
 // OnMessage* callbacks. It is the Graph equivalent of goog.FetchHistory and
@@ -229,6 +231,8 @@ func (m *GraphMessage) ToEmailData(folder string) *models.EmailMessageData {
 		data.Folder = models.FolderSent
 	case FolderArchive:
 		data.Folder = models.FolderArchive
+	case FolderDrafts:
+		data.Folder = models.FolderDrafts
 	case FolderInbox:
 		data.Folder = models.FolderInbox
 	}

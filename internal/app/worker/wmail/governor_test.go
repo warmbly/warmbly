@@ -153,7 +153,9 @@ func TestImapBackfillEligible(t *testing.T) {
 		{"Trash", []string{"\\Trash"}, false},
 		{"Junk", nil, false},
 		{"INBOX.Spam", nil, false},
-		{"Drafts", []string{"\\Drafts"}, false},
+		// Drafts is imported since the folder sidebar gave it a destination;
+		// trash and spam stay out so their history cannot eat the budget.
+		{"Drafts", []string{"\\Drafts"}, true},
 		{"[Gmail]", []string{"\\Noselect"}, false},
 	}
 	for _, tc := range cases {

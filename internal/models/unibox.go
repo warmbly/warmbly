@@ -212,14 +212,21 @@ func NormalizeFolder(folder string, flags []string) string {
 	if ValidFolder(folder) {
 		return folder
 	}
+	// Deletion outranks the rest: a message can carry \Deleted alongside a
+	// spam or draft flag, and the provider-driven paths treat trash as the
+	// stronger placement. Scanning for it first keeps a flag-ordering
+	// accident from filing deleted mail as spam.
+	for _, f := range flags {
+		if f == "\\Deleted" {
+			return FolderTrash
+		}
+	}
 	for _, f := range flags {
 		switch f {
 		case "SPAM", "\\Junk", "\\Spam", "Junk":
 			return FolderSpam
 		case "\\Draft":
 			return FolderDrafts
-		case "\\Deleted":
-			return FolderTrash
 		}
 	}
 	return FolderInbox

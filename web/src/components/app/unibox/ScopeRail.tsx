@@ -516,6 +516,10 @@ function FolderItem({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
+        // Only the row itself activates: keydown from the nested menu trigger
+        // bubbles here, and without this guard Enter on the three-dot button
+        // would navigate the folder instead of opening its menu.
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onOpen();

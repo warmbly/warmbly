@@ -1057,6 +1057,8 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 	// Per-folder counters, per THREAD like everything else. Zero-filled
 	// over all six canonical folders so the sidebar renders a stable list.
 	folderCounts := map[string]models.UniboxFolderOverview{}
+	// Snoozed threads are excluded, matching Search's default scope: a badge
+	// that counts rows the folder then hides reads as a bug.
 	folderRows, err := r.db.Query(ctx, `
 		SELECT
 			e.folder,
@@ -1064,6 +1066,12 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 			COUNT(DISTINCT COALESCE(NULLIF(e.thread_id, ''), e.id::text))                            AS total
 		FROM unibox_emails e
 		WHERE e.email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+		  AND NOT EXISTS (
+			SELECT 1 FROM unibox_snoozes s
+			WHERE s.user_id = e.user_id
+			  AND s.thread_id = e.thread_id
+			  AND s.snoozed_until > NOW()
+		  )
 		GROUP BY e.folder
 	`, orgID)
 	if err != nil {
@@ -1179,6 +1187,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 			SELECT e.user_id, e.thread_id, bool_or(NOT e.seen) AS has_unread
 			FROM unibox_emails e
 			WHERE e.user_id = $1
+			  AND e.folder NOT IN ('spam', 'trash')
 			  AND NOT EXISTS (
 				SELECT 1 FROM unibox_snoozes s
 				WHERE s.user_id = e.user_id AND s.thread_id = e.thread_id AND s.snoozed_until > NOW()

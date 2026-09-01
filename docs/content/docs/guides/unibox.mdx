@@ -22,6 +22,10 @@ Each message's folder follows the provider: IMAP special-use folder attributes, 
 
 Spam and Trash stay out of every other view: the **All** scope, the metric strip, and the unread badge only count the folders you actually work.
 
+<Callout type="info" title="Spam and Trash start from when you connect">
+The initial import that runs when a mailbox is first connected covers Inbox, Sent, Archive, and Drafts. It deliberately skips the existing contents of Spam and Trash, whose history would consume the import budget that belongs to real conversations. Both folders fill normally from the moment the mailbox is connected, so they show what arrives from then on rather than what was already there.
+</Callout>
+
 ## Scopes
 
 | View | Shows |

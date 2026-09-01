@@ -34,6 +34,7 @@ const (
 	FolderJunk    = "junkemail"
 	FolderSent    = "sentitems"
 	FolderArchive = "archive"
+	FolderDrafts  = "drafts"
 )
 
 // Client is a single Microsoft 365 mailbox reached over Graph.

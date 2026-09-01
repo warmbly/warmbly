@@ -77,8 +77,10 @@ func TestClaimStateID_SkipsCorruptFile(t *testing.T) {
 
 func TestResolveWorkerID_FromStateDir(t *testing.T) {
 	t.Cleanup(releaseClaim)
-	os.Unsetenv("WORKER_ID")
-	os.Unsetenv("WORKER_BIND_IP")
+	// t.Setenv (not Unsetenv) so the prior values are restored afterwards;
+	// resolveWorkerID treats empty exactly like unset.
+	t.Setenv("WORKER_ID", "")
+	t.Setenv("WORKER_BIND_IP", "")
 	dir := t.TempDir()
 	t.Setenv("WORKER_STATE_DIR", dir)
 

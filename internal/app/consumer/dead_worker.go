@@ -130,9 +130,16 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 			reassigned++
 
 			// Keep the placement counters honest on both rows; without this
-			// every auto-reassignment permanently skews account_count.
-			_ = s.WorkerRepo.DecrementAccountCount(ctx, w.ID)
-			_ = s.WorkerRepo.IncrementAccountCount(ctx, replacement.ID)
+			// every auto-reassignment permanently skews account_count. The
+			// move itself already succeeded, so a counter failure is logged
+			// rather than retried: capacity self-corrects on the next
+			// placement pass, and unwinding the move would strand the mailbox.
+			if cerr := s.WorkerRepo.DecrementAccountCount(ctx, w.ID); cerr != nil {
+				log.Warn().Err(cerr).Str("worker_id", w.ID.String()).Msg("dead worker reassign: account_count not decremented")
+			}
+			if cerr := s.WorkerRepo.IncrementAccountCount(ctx, replacement.ID); cerr != nil {
+				log.Warn().Err(cerr).Str("worker_id", replacement.ID.String()).Msg("dead worker reassign: account_count not incremented")
+			}
 
 			account, aerr := s.EmailRepository.GetByID(ctx, accountID)
 			if aerr != nil || account == nil {
@@ -189,8 +196,22 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 // its registry timestamp is stale too. During a Redis outage every heartbeat
 // key vanishes at once while POSTed beats keep last_seen_at fresh; gating on
 // both signals keeps that from deactivating the whole live fleet.
+//
+// The worker is re-read first because the caller's copy is a snapshot from the
+// top of the scan, which walks the whole fleet and can take a while: a worker
+// that booted during the scan must not be deactivated on stale evidence.
 func (s *JobsService) deactivateIfLongDead(ctx context.Context, w models.Worker) {
-	if w.LastSeenAt != nil && time.Since(*w.LastSeenAt) < 10*time.Minute {
+	current, err := s.WorkerRepo.GetByID(ctx, w.ID)
+	if err != nil || current == nil {
+		return
+	}
+	// Never seen at all means the age is unknown, not old. Leave it alone
+	// rather than retiring a row that may be mid-registration.
+	if current.LastSeenAt == nil || time.Since(*current.LastSeenAt) < 10*time.Minute {
+		return
+	}
+	// One last heartbeat check against the freshly-read row.
+	if n, herr := s.Cache.Exists(ctx, "worker:heartbeat:"+w.ID.String()).Result(); herr != nil || n > 0 {
 		return
 	}
 	if err := s.WorkerRepo.DeactivateWorker(ctx, w.ID); err != nil {

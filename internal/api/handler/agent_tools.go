@@ -6,8 +6,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -118,12 +120,21 @@ func (h *Handler) CallAgentTool(c *gin.Context) {
 		return
 	}
 
+	// Read rather than trusting ContentLength: a chunked request reports -1,
+	// and skipping the body there would silently run the tool with no
+	// arguments instead of the ones the model produced.
 	args := json.RawMessage(`{}`)
-	if c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&args); err != nil {
+	raw, rerr := io.ReadAll(c.Request.Body)
+	if rerr != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "the request body could not be read"))
+		return
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if !json.Valid(raw) {
 			errx.JSON(c, errx.New(errx.BadRequest, "the request body must be the tool's JSON argument object"))
 			return
 		}
+		args = json.RawMessage(raw)
 	}
 
 	out, err := h.AITools.Call(c.Request.Context(), inv, name, args)
@@ -142,9 +153,9 @@ func (h *Handler) CallAgentTool(c *gin.Context) {
 	}
 
 	var result any = out
-	var raw json.RawMessage
-	if json.Unmarshal([]byte(out), &raw) == nil {
-		result = raw
+	var decoded json.RawMessage
+	if json.Unmarshal([]byte(out), &decoded) == nil {
+		result = decoded
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"name": name, "result": result}})
 }

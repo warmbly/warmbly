@@ -31,6 +31,17 @@ type apiSpec struct {
 	child   string   // flag name filling {child}, e.g. "step"
 	query   []string // query parameters exposed as flags
 	sends   bool     // true when the command can put real mail on the wire
+	idLabel string   // what {id} is called in help, when it is not a uuid
+}
+
+// idPlaceholder is what the generated help shows for --id. Most resources are
+// uuid-keyed; the ones that are not say so, since a user who copies the
+// example verbatim would otherwise send a malformed identifier.
+func (s apiSpec) idPlaceholder() string {
+	if s.idLabel != "" {
+		return "<" + s.idLabel + ">"
+	}
+	return "<uuid>"
 }
 
 var apiSpecs = []apiSpec{
@@ -153,7 +164,7 @@ var apiSpecs = []apiSpec{
 	// Agent tools: the shared AI tool registry over REST, for function-calling
 	// agents that do not speak MCP. --id is the tool name, not a UUID.
 	{name: "tool list", summary: "List the tools this key may call; --format openai emits function-calling manifests", method: "GET", path: "/ai/tools", query: []string{"format"}},
-	{name: "tool call", summary: "Execute one registry tool; --data carries its JSON argument object", method: "POST", path: "/ai/tools/{id}/call", body: bodyOptional},
+	{name: "tool call", summary: "Execute one registry tool; --data carries its JSON argument object", method: "POST", path: "/ai/tools/{id}/call", body: bodyOptional, idLabel: "tool-name"},
 }
 
 // apiFamilyOrder keeps the top-level help stable; maps iterate randomly.
@@ -206,7 +217,11 @@ func runAPIResource(ctx context.Context, family string, args []string) error {
 
 	var id, child, data, idem *string
 	if strings.Contains(spec.path, "{id}") {
-		id = fs.String("id", "", "the resource id (required)")
+		label := "resource id"
+		if spec.idLabel != "" {
+			label = spec.idLabel
+		}
+		id = fs.String("id", "", "the "+label+" (required)")
 	}
 	if spec.child != "" {
 		child = fs.String(spec.child, "", "the "+spec.child+" id (required)")
@@ -303,7 +318,7 @@ func lookupAPISpec(name string) (apiSpec, bool) {
 func specExample(s apiSpec) string {
 	parts := []string{"warmblyctl", s.name}
 	if strings.Contains(s.path, "{id}") {
-		parts = append(parts, "--id <uuid>")
+		parts = append(parts, "--id "+s.idPlaceholder())
 	}
 	if s.child != "" {
 		parts = append(parts, "--"+s.child+" <uuid>")
