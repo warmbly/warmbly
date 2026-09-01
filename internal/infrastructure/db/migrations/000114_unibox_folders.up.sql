@@ -2,6 +2,14 @@
 -- standard folder sidebar (inbox/sent/drafts/archive/spam/trash) instead of
 -- one combined list. Written by the sync path from provider placement; the
 -- backfills below recover what past syncs recorded elsewhere.
+--
+-- Cost note: unibox_emails holds every synced message, so on a long-running
+-- instance the three backfill passes below are the expensive part of this
+-- migration, and the last one runs a correlated address match per row. The
+-- backend applies migrations at boot inside one transaction and blocks until
+-- they finish, so on a large instance deploy this in a window rather than
+-- alongside traffic. ADD COLUMN with a constant DEFAULT is metadata-only on
+-- PG 11+ and is not itself a rewrite.
 ALTER TABLE unibox_emails
     ADD COLUMN folder text NOT NULL DEFAULT 'inbox';
 
