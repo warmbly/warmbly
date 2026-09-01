@@ -24,6 +24,8 @@ SMTP   host: smtp.yourprovider.com   port: 465   username: you@yourdomain.com
 IMAP   host: imap.yourprovider.com   port: 993   username: you@yourdomain.com
 ```
 
+SMTP accepts port `465` (implicit TLS, the connection is encrypted from the first byte) or `587` (STARTTLS, upgraded in-band); both are fully supported for validation and sending. IMAP always connects over implicit TLS regardless of port, with `993` the common choice.
+
 With two-factor authentication on, generate an app password in your provider's security settings and use that.
 
 <Callout type="warn" title="Authentication runs on connect">

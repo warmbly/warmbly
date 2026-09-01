@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
-	"time"
 
 	"github.com/warmbly/warmbly/internal/client/netbind"
 )
@@ -24,17 +23,14 @@ func VerifySMTP(ctx context.Context, host string, port int, user, pass string) b
 		InsecureSkipVerify: netbind.InsecureTLS(),
 	}
 
+	// netbind dialers so validation probes leave from WORKER_BIND_IP exactly
+	// like the sends they are vouching for.
 	switch port {
 	case 465:
-		dialer := &tls.Dialer{
-			NetDialer: &net.Dialer{Timeout: 5 * time.Second},
-			Config:    tlsConf,
-		}
-		conn, err = dialer.DialContext(ctx, "tcp", addr)
+		conn, err = netbind.TLSDialer(nil, tlsConf).DialContext(ctx, "tcp", addr)
 
 	case 587:
-		dialer := &net.Dialer{Timeout: 5 * time.Second}
-		conn, err = dialer.DialContext(ctx, "tcp", addr)
+		conn, err = netbind.Dialer(nil).DialContext(ctx, "tcp", addr)
 
 	default:
 		return false

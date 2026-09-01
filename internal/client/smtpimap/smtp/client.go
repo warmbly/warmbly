@@ -224,8 +224,21 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	dialer := netbind.Dialer(c.BindIP)
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	tlsConf := &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: netbind.InsecureTLS(),
+	}
+
+	var conn net.Conn
+	var err error
+	// Port 465 is implicit TLS (SMTPS): the server speaks TLS from the first
+	// byte, so a plaintext dial + STARTTLS never gets past the greeting.
+	implicitTLS := port == 465
+	if implicitTLS {
+		conn, err = netbind.TLSDialer(c.BindIP, tlsConf).DialContext(ctx, "tcp", addr)
+	} else {
+		conn, err = netbind.Dialer(c.BindIP).DialContext(ctx, "tcp", addr)
+	}
 	if err != nil {
 		return errx.ErrMailServerUnreachable
 	}
@@ -238,19 +251,17 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	}
 	defer client.Quit()
 
-	tlsConf := &tls.Config{
-		ServerName:         host,
-		InsecureSkipVerify: netbind.InsecureTLS(),
-	}
 	// TLS is mandatory. The MAIL_TLS_INSECURE dev knob additionally allows a
 	// server with no STARTTLS at all (the local mailpit sink) — never taken in
 	// production, where the env var is unset.
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		if err := client.StartTLS(tlsConf); err != nil {
+	if !implicitTLS {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(tlsConf); err != nil {
+				return errx.ErrMailServerUnreachable
+			}
+		} else if !netbind.InsecureTLS() {
 			return errx.ErrMailServerUnreachable
 		}
-	} else if !netbind.InsecureTLS() {
-		return errx.ErrMailServerUnreachable
 	}
 
 	// --- Auth ---
