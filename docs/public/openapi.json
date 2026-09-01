@@ -72,6 +72,10 @@
     {
       "name": "deliverability-ops",
       "description": "Deliverability event ingest, suppression, and seed placement."
+    },
+    {
+      "name": "ai",
+      "description": "The AI tool registry over REST, for function-calling agents that do not speak MCP."
     }
   ],
   "paths": {
@@ -7505,7 +7509,7 @@
       "get": {
         "operationId": "unibox_list",
         "summary": "List incoming mail",
-        "description": "Org-wide inbox list, collapsed to one row per thread (newest message), with filtering and cursor pagination. Excludes snoozed threads unless `snoozed=true`.",
+        "description": "Org-wide inbox list, collapsed to one row per thread (newest message), with filtering and cursor pagination. Excludes snoozed threads unless `snoozed=true`, and the `spam` and `trash` folders unless `folder` selects one of them.",
         "tags": [
           "unibox"
         ],
@@ -7551,6 +7555,23 @@
             "description": "Filter by subject (substring).",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "folder",
+            "in": "query",
+            "required": false,
+            "description": "Canonical folder scope. Omit for every folder except `spam` and `trash`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inbox",
+                "sent",
+                "drafts",
+                "archive",
+                "spam",
+                "trash"
+              ]
             }
           },
           {
@@ -17911,6 +17932,225 @@
           }
         }
       }
+    },
+    "/ai/tools": {
+      "get": {
+        "operationId": "ai_tools_list",
+        "summary": "List agent tools",
+        "description": "The AI tool registry filtered to what the caller's credentials allow. `format=openai` (aliases `hermes`, `functions`) returns OpenAI function-calling objects; the default returns `{name, description, input_schema}` per tool. Send-class tools are never listed.",
+        "tags": [
+          "ai"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "description": "Manifest format.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "warmbly",
+                "openai",
+                "hermes",
+                "functions"
+              ],
+              "default": "warmbly"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The permitted tool catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "One tool, shaped by `format`."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown format, or no organization for this key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/tools/{name}/call": {
+      "post": {
+        "operationId": "ai_tools_call",
+        "summary": "Execute an agent tool",
+        "description": "Runs one registry tool. The request body is the tool's JSON argument object (empty body = no arguments). Each tool enforces its own permission; send-class tools are never callable here.",
+        "tags": [
+          "ai"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "The tool name from the list endpoint.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "The tool's argument object, matching its input schema."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The tool's output.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "name",
+                        "result"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "result": {
+                          "description": "The tool's output, embedded as JSON when the tool returned JSON."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed argument body, or no organization for this key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The credentials lack the permission for this tool.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown tool.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Tool-level failure; the message is meant for the model to read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -22640,6 +22880,13 @@
             "type": "integer",
             "description": "Max queued scheduled sends allowed."
           },
+          "folders": {
+            "type": "array",
+            "description": "Per-folder thread counts, always all six canonical folders in sidebar order, zero-filled.",
+            "items": {
+              "$ref": "#/components/schemas/UniboxOverviewFolder"
+            }
+          },
           "mailboxes": {
             "type": "array",
             "items": {
@@ -22669,6 +22916,33 @@
           "window_week_start": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "UniboxOverviewFolder": {
+        "type": "object",
+        "required": [
+          "folder",
+          "unread",
+          "total"
+        ],
+        "properties": {
+          "folder": {
+            "type": "string",
+            "enum": [
+              "inbox",
+              "sent",
+              "drafts",
+              "archive",
+              "spam",
+              "trash"
+            ]
+          },
+          "unread": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
           }
         }
       },
@@ -22708,10 +22982,7 @@
       },
       "UniboxMarkSeenRequest": {
         "type": "object",
-        "description": "Also the echoed response body.",
-        "required": [
-          "email_ids"
-        ],
+        "description": "Also the echoed response body. Send one of `email_ids` or `folder`, not both.",
         "properties": {
           "email_ids": {
             "type": "array",
@@ -22721,6 +22992,18 @@
             },
             "maxItems": 500,
             "description": "Message UUIDs to update (max 500)."
+          },
+          "folder": {
+            "type": "string",
+            "enum": [
+              "inbox",
+              "sent",
+              "drafts",
+              "archive",
+              "spam",
+              "trash"
+            ],
+            "description": "Sweep every message in this canonical folder instead of an id list."
           },
           "seen": {
             "type": "boolean",

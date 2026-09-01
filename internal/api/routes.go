@@ -525,6 +525,18 @@ func Run(
 				skillsGroup.DELETE("/:id", m.RequireAccess(models.PermManageSettings, models.APIPermAIAgent), h.DeleteSkill)
 			}
 
+			// REST tool surface for non-MCP agents (Hermes/OpenAI-style function
+			// calling). No route-level permission gate on purpose, matching the
+			// advisor apply path and the MCP endpoint: the registry enforces each
+			// tool's own permission bits, the list reflects only what the caller
+			// may use, and send-class tools are never exposed.
+			agentTools := protected.Group("/ai/tools")
+			agentTools.Use(m.RequireOrganization())
+			{
+				agentTools.GET("", m.RateLimitMiddleware(models.RateLimitRead), h.ListAgentTools)
+				agentTools.POST("/:name/call", m.RateLimitMiddleware(models.RateLimitWrite), h.CallAgentTool)
+			}
+
 			// Advisor. Reads are an analytics read of the org's sending
 			// posture. Apply/undo carry no gate here on purpose: the fix runs
 			// through the AI tool registry, which enforces whatever permission

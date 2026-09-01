@@ -10,6 +10,7 @@
     "permissions",
     "endpoints",
     "mcp",
+    "agent-tools",
     "openapi",
     "reference",
     "realtime",

@@ -1,0 +1,124 @@
+---
+title: Agent tools (REST)
+description: Use Warmbly's AI tool registry from any function-calling agent, no MCP client required. List the tools your credentials allow, export OpenAI and Hermes format manifests, and execute tools over plain HTTP.
+---
+
+Not every agent speaks MCP. Hermes-style models, OpenAI-compatible frameworks, LangChain agents, and plain scripts all do function calling over ordinary HTTP, so Warmbly exposes the same tool registry as the [MCP server](/api/mcp/) through two REST endpoints: one that lists the tools your credentials allow (in the manifest format your agent framework expects), and one that executes a tool.
+
+The rules are identical to MCP: every tool is gated by its own permission bits, the list only ever shows what the caller may use, and send-class tools (anything that puts real mail on the wire) are never exposed. An agent wired through this surface can read, search, label, and draft, but a human always presses send.
+
+- **List**: `GET https://api.warmbly.com/v1/ai/tools`
+- **Execute**: `POST https://api.warmbly.com/v1/ai/tools/{name}/call`
+- **Auth**: an API key or OAuth access token as a bearer header, or a dashboard JWT. For keys, each tool checks its own scope from the [permissions](/api/permissions/) table; for JWT members, the matching organization permission.
+
+## List the tools
+
+`GET /ai/tools` returns the catalog filtered to what the caller's credentials allow. Three formats:
+
+| `format` | Shape |
+| --- | --- |
+| `warmbly` (default) | `{ name, description, input_schema }` per tool |
+| `openai` | OpenAI function-calling objects: `{ type: "function", function: { name, description, parameters } }` |
+| `hermes`, `functions` | Aliases of `openai`; the same JSON schemas drop into a Hermes `<tools>` block verbatim |
+
+```bash
+curl -s "https://api.warmbly.com/v1/ai/tools?format=openai" \
+  -H "Authorization: Bearer wmbly_..."
+```
+
+```json
+{
+  "data": [
+    {
+      "type": "function",
+      "function": {
+        "name": "list_threads",
+        "description": "List unified-inbox conversation threads...",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "subject": { "type": "string" },
+            "folder": { "type": "string" },
+            "unseen_only": { "type": "boolean" },
+            "limit": { "type": "integer" }
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+Because the list is permission-filtered, you can hand the response straight to your agent: everything in it is callable with the same credential, and nothing in it can send mail.
+
+## Execute a tool
+
+`POST /ai/tools/{name}/call` runs one tool. The request body is the tool's JSON argument object, exactly as your model produced it in its tool call; an empty body means no arguments.
+
+```bash
+curl -s -X POST "https://api.warmbly.com/v1/ai/tools/list_threads/call" \
+  -H "Authorization: Bearer wmbly_..." \
+  -H "Content-Type: application/json" \
+  -d '{"folder": "inbox", "unseen_only": true, "limit": 10}'
+```
+
+```json
+{
+  "data": {
+    "name": "list_threads",
+    "result": { "threads": [], "count": 0 }
+  }
+}
+```
+
+`result` is the tool's output, embedded as JSON. Feed it back to the model as the tool-call result and continue the loop.
+
+Errors use the standard envelope with a stable `code`: an unknown tool is `404 not_found`, a tool your credential lacks the scope for is `403 forbidden`, a malformed argument body is `400 bad_request`, and a tool-level failure (a validation message, a missing record) is `422 unprocessable` with the tool's own message, which is meant for the model to read and react to.
+
+This is a side-effectful POST, so `Idempotency-Key` is honored like everywhere else in the API; per-key rate limits and usage logging apply.
+
+## Wiring a Hermes agent
+
+Hermes-format models (and anything served with an OpenAI-compatible tool-calling API) take the function schemas in the system prompt or the `tools` array, then emit tool calls you execute and answer. The loop against Warmbly:
+
+1. `GET /ai/tools?format=hermes` once at session start and give the `data` array to the model as its available tools.
+2. When the model emits a tool call `{ "name": ..., "arguments": ... }`, `POST /ai/tools/{name}/call` with the arguments object as the body.
+3. Return `data.result` to the model as the tool response, and repeat.
+
+```python
+import json, requests
+
+BASE = "https://api.warmbly.com/v1"
+HEADERS = {"Authorization": "Bearer wmbly_..."}
+
+tools = requests.get(f"{BASE}/ai/tools?format=hermes", headers=HEADERS).json()["data"]
+# system prompt: "You may call these tools:\n<tools>" + json.dumps(tools) + "</tools>"
+
+def run_tool(call):
+    r = requests.post(
+        f"{BASE}/ai/tools/{call['name']}/call",
+        headers=HEADERS,
+        json=call.get("arguments") or {},
+    )
+    body = r.json()
+    return body["data"]["result"] if r.ok else body  # errors are model-readable too
+```
+
+The same two calls back any framework's "custom tool" escape hatch: point the executor at `/ai/tools/{name}/call` and the discovery step at `/ai/tools`.
+
+## Choosing a surface
+
+| You have | Use |
+| --- | --- |
+| Claude Code, Claude Desktop, Cursor, any MCP client | The [MCP server](/api/mcp/) at `/v1/mcp` |
+| A Hermes / OpenAI-style function-calling agent | This REST surface |
+| The dashboard | The built-in assistant, which runs the same registry as the signed-in member |
+| A terminal | `warmblyctl tool list` and `warmblyctl tool call` |
+
+All four run the identical registry with identical gates, so a tool behaves the same no matter which door it came through.
+
+## See also
+
+- [MCP server](/api/mcp/) for the protocol-native version of this surface
+- [Permissions](/api/permissions/) for the scope each tool checks
+- [Realtime API](/api/realtime/) to stream events into a long-running agent instead of polling

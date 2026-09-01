@@ -91,7 +91,7 @@ var apiSpecs = []apiSpec{
 	{name: "mailbox release", summary: "Put a held mailbox back into campaign sending", method: "POST", path: "/emails/{id}/release"},
 
 	// Unified inbox.
-	{name: "inbox list", summary: "List inbox messages", method: "GET", path: "/unibox", query: []string{"limit", "cursor", "address", "direction", "from", "subject", "unseen", "awaiting_reply", "since", "until"}},
+	{name: "inbox list", summary: "List inbox messages", method: "GET", path: "/unibox", query: []string{"limit", "cursor", "address", "direction", "folder", "from", "subject", "unseen", "awaiting_reply", "since", "until"}},
 	{name: "inbox count", summary: "The unseen message count", method: "GET", path: "/unibox/count"},
 	{name: "inbox overview", summary: "Per-mailbox and per-tag inbox rollup", method: "GET", path: "/unibox/overview"},
 	{name: "inbox thread", summary: "One conversation thread", method: "GET", path: "/unibox/thread", query: []string{"thread_id", "email_id", "limit", "cursor"}},
@@ -149,12 +149,17 @@ var apiSpecs = []apiSpec{
 	{name: "crm pipelines", summary: "List pipelines with their stages", method: "GET", path: "/crm/pipelines"},
 	{name: "crm deals", summary: "Search deals; --data carries the filter body", method: "POST", path: "/crm/deals/search", body: bodyOptional},
 	{name: "crm tasks", summary: "Search CRM tasks; --data carries the filter body", method: "POST", path: "/crm/tasks/search", body: bodyOptional},
+
+	// Agent tools: the shared AI tool registry over REST, for function-calling
+	// agents that do not speak MCP. --id is the tool name, not a UUID.
+	{name: "tool list", summary: "List the tools this key may call; --format openai emits function-calling manifests", method: "GET", path: "/ai/tools", query: []string{"format"}},
+	{name: "tool call", summary: "Execute one registry tool; --data carries its JSON argument object", method: "POST", path: "/ai/tools/{id}/call", body: bodyOptional},
 }
 
 // apiFamilyOrder keeps the top-level help stable; maps iterate randomly.
 var apiFamilyOrder = []string{
 	"me", "campaign", "contact", "mailbox", "inbox", "analytics",
-	"settings", "webhook", "apikey", "template", "crm",
+	"settings", "webhook", "apikey", "template", "crm", "tool",
 }
 
 // apiFamilies drives top-level dispatch and help for the typed commands.
@@ -170,6 +175,7 @@ var apiFamilies = map[string]string{
 	"apikey":    "API keys",
 	"template":  "Reply templates",
 	"crm":       "Pipelines, deals, and CRM tasks",
+	"tool":      "AI agent tools (list and call the registry)",
 }
 
 // runAPIResource runs one typed command: `warmblyctl campaign start --id ...`.
