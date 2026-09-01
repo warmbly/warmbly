@@ -87,6 +87,16 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		params.Direction = &direction
 	}
 
+	// Folder scope. Absent = every folder except spam and trash; an
+	// unknown value is a 400 rather than silently widening the result.
+	if folder := c.Query("folder"); folder != "" {
+		if !models.ValidFolder(folder) {
+			errx.Handle(c, errx.ErrUniboxFolder)
+			return
+		}
+		params.Folder = &folder
+	}
+
 	// Parse subject filter
 	if subject := c.Query("subject"); subject != "" {
 		params.Subject = &subject

@@ -73,14 +73,21 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 		return nil
 	}
 
+	update := repository.UpdateUniboxEntry{Flags: email.Flags}
+	// A provider-side junking (Gmail SPAM label, IMAP \Junk) moves the
+	// message into the spam folder; trash placement is stronger and kept.
+	if containsSpamFlag(e.Flags) && email.Folder != models.FolderTrash && email.Folder != models.FolderSpam {
+		folder := models.FolderSpam
+		update.Folder = &folder
+		email.Folder = folder
+	}
+
 	if err := s.UniboxRepository.UpdateEntry(
 		ctx,
 		e.UserID,
 		e.EmailID,
 		e.ID,
-		&repository.UpdateUniboxEntry{
-			Flags: email.Flags,
-		},
+		&update,
 	); err != nil {
 		return err
 	}
@@ -133,14 +140,21 @@ func (s *JobsService) HandleFlagsRemove(ctx context.Context, e *models.JobEventF
 		return nil
 	}
 
+	update := repository.UpdateUniboxEntry{Flags: newFlags}
+	// Un-junking at the provider (spam label cleared while nothing else
+	// still marks it spam) restores the message to the inbox.
+	if email.Folder == models.FolderSpam && containsSpamFlag(e.Flags) && !containsSpamFlag(newFlags) {
+		folder := models.FolderInbox
+		update.Folder = &folder
+		email.Folder = folder
+	}
+
 	if err := s.UniboxRepository.UpdateEntry(
 		ctx,
 		e.UserID,
 		e.EmailID,
 		e.ID,
-		&repository.UpdateUniboxEntry{
-			Flags: newFlags,
-		},
+		&update,
 	); err != nil {
 		return err
 	}

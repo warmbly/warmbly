@@ -133,6 +133,7 @@ type EmailInboxEvent struct {
 	Subject        string `json:"subject,omitempty"`
 	From           string `json:"from,omitempty"`
 	Preview        string `json:"preview,omitempty"`
+	Folder         string `json:"folder,omitempty"`
 }
 
 // ContactEvent for contact changes

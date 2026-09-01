@@ -55,6 +55,7 @@ export default async function searchIncoming(
     // single email_id for legacy callers; we always use the multi form.
     usp.set("email_ids", p.accountIds.join(","));
   }
+  if (p.folder) usp.set("folder", p.folder);
   if (p.unseen) usp.set("unseen", "true");
   if (p.snoozed === true) usp.set("snoozed", "true");
   else if (p.snoozed === "any") usp.set("snoozed", "any");

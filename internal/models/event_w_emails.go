@@ -27,5 +27,9 @@ type JobEventEmailUpdate struct {
 	UID     uint32    `json:"uid"`
 	ModSeq  uint64    `json:"mod_seq"`
 	Mailbox uint32    `json:"mailbox"`
-	Flags   []string  `json:"flags"`
+	// Folder is the canonical folder the message now sits in; empty on events
+	// from workers predating folder tracking (the consumer then keeps the
+	// stored value).
+	Folder string   `json:"folder,omitempty"`
+	Flags  []string `json:"flags"`
 }

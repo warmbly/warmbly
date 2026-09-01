@@ -217,11 +217,20 @@ func (c *Client) ListMessagesSince(ctx context.Context, folder string, since tim
 	return out, pg.NextLink, nil
 }
 
-// ToEmailData maps a hydrated message; folder adds the junk placement flag.
+// ToEmailData maps a hydrated message; folder sets the canonical placement
+// and adds the junk flag warmup placement detection reads.
 func (m *GraphMessage) ToEmailData(folder string) *models.EmailMessageData {
 	data := m.toEmailData()
-	if folder == FolderJunk {
+	switch folder {
+	case FolderJunk:
 		data.Flags = append(data.Flags, "\\Junk")
+		data.Folder = models.FolderSpam
+	case FolderSent:
+		data.Folder = models.FolderSent
+	case FolderArchive:
+		data.Folder = models.FolderArchive
+	case FolderInbox:
+		data.Folder = models.FolderInbox
 	}
 	return data
 }

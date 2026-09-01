@@ -122,6 +122,7 @@ func (s *JobsService) emailInboxEvent(ctx context.Context, userID uuid.UUID, mes
 		Subject:        message.Subject,
 		From:           strings.Join(message.FromAddr, ", "),
 		Preview:        message.Snippet,
+		Folder:         models.NormalizeFolder(message.Folder, message.Flags),
 	}
 }
 

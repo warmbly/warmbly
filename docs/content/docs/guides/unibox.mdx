@@ -5,11 +5,28 @@ description: "A unified inbox across all connected mailboxes, with categories an
 
 One inbox for every connected mailbox. Read, sort, and reply from a single screen instead of logging into each account. Three columns: a **scope rail** for picking what to look at, a **conversation list**, and a **thread view** where you read and reply.
 
+## Folders
+
+The rail opens with the standard mail folders, so direction is visually clear instead of one combined list:
+
+| Folder | Shows |
+| --- | --- |
+| Inbox | Inbound mail, plus anything filed in a custom folder at the provider |
+| Drafts | Messages sitting in a mailbox's drafts folder |
+| Sent | Outbound mail, campaign and manual |
+| Archive | Archived at the provider (Gmail's All Mail, the Archive folder elsewhere) |
+| Spam | Junked at the provider |
+| Trash | Deleted at the provider |
+
+Each message's folder follows the provider: IMAP special-use folder attributes, Gmail labels, and Outlook well-known folders all map to the same six. Moves at the provider (junking a message, clearing it out of spam) follow on the next sync. The active folder is highlighted with a grey row and bold label, unread counts sit on the right, and each folder's three-dot menu offers **Mark all as read**.
+
+Spam and Trash stay out of every other view: the **All** scope, the metric strip, and the unread badge only count the folders you actually work.
+
 ## Scopes
 
 | View | Shows |
 | --- | --- |
-| All | Every conversation across every mailbox |
+| All | Every conversation across every mailbox (except Spam and Trash) |
 | Unread | At least one unread message |
 | Today / This week | Activity today, or in the last 7 days |
 | Awaiting reply | The other side is waiting on you |

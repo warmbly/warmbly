@@ -111,6 +111,7 @@ func (w *WMail) graphStore(ctx context.Context, msg *models.EmailMessageData) er
 		ID:           msg.ID,
 		EmailID:      w.ID,
 		Mailbox:      0,
+		Folder:       msg.Folder,
 		ThreadID:     msg.ThreadID,
 		MessageID:    msg.MessageID,
 		GmailID:      msg.GmailID,

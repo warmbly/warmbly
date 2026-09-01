@@ -42,6 +42,9 @@ type SmtpImapData struct {
 	SmtpClient *smtp.Client
 	Mailboxes  []*models.Mailbox
 	mailbox    uint32
+	// folder is the canonical folder of the mailbox currently being walked,
+	// set alongside mailbox and stamped on every stored/updated message.
+	folder string
 }
 
 type WMail struct {

@@ -18,6 +18,7 @@ func (d Deps) registerUniboxTools(r *Registry) {
 		InputSchema: objectSchema(map[string]any{
 			"subject":        strProp("Optional subject contains filter."),
 			"sender":         strProp("Optional sender email filter."),
+			"folder":         strProp("Optional folder: inbox, sent, drafts, archive, spam or trash. Omit for every folder except spam and trash."),
 			"unseen_only":    boolProp("Only threads with unread messages."),
 			"awaiting_reply": boolProp("Only threads whose LATEST message was sent by one of our mailboxes (we spoke last, still waiting on them)."),
 			"limit":          intProp("Max threads (1-50, default 20)."),
@@ -79,12 +80,16 @@ func (d Deps) listThreads(ctx context.Context, inv Invocation, args json.RawMess
 	in, err := decodeArgs[struct {
 		Subject       string `json:"subject"`
 		Sender        string `json:"sender"`
+		Folder        string `json:"folder"`
 		UnseenOnly    bool   `json:"unseen_only"`
 		AwaitingReply bool   `json:"awaiting_reply"`
 		Limit         int    `json:"limit"`
 	}](args)
 	if err != nil {
 		return "", err
+	}
+	if in.Folder != "" && !models.ValidFolder(in.Folder) {
+		return "", ErrInvalidArgs
 	}
 	limit := in.Limit
 	if limit <= 0 || limit > 50 {
@@ -96,6 +101,9 @@ func (d Deps) listThreads(ctx context.Context, inv Invocation, args json.RawMess
 	}
 	if in.Sender != "" {
 		params.Sender = &in.Sender
+	}
+	if in.Folder != "" {
+		params.Folder = &in.Folder
 	}
 	if in.UnseenOnly {
 		t := true

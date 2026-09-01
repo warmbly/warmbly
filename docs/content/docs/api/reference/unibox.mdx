@@ -18,6 +18,7 @@ Returns the inbox list, collapsed to one row per thread (the newest message), wi
 | `cursor` | query | string | Opaque pagination cursor from a previous response. |
 | `limit` | query | integer | Page size. Clamped to the server's min/max. |
 | `from` | query | string | Filter by sender address (substring). |
+| `folder` | query | string | One of `inbox`, `sent`, `drafts`, `archive`, `spam`, `trash`. Omit for every folder except `spam` and `trash` (junk never bleeds into the combined view). An unknown value returns `400`. |
 | `subject` | query | string | Filter by subject (substring). |
 | `unseen` | query | boolean | `true` returns only threads with unread messages. |
 | `awaiting_reply` | query | boolean | `true` returns only threads where the latest message was sent by you (recipient has not replied). |
@@ -82,7 +83,7 @@ Returns the org-wide unread message count, optionally scoped to one mailbox. Bac
 
 `GET /unibox/overview`
 
-Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-mailbox, per-tag, and per-conversation-label breakdowns. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Response
 
@@ -96,6 +97,14 @@ Rolls up the scope rail and top metric strip in one call: unread, today, week, s
   "awaiting_reply": 9,
   "scheduled_pending": 2,
   "scheduled_pending_max": 50,
+  "folders": [
+    { "folder": "inbox", "unread": 31, "total": 812 },
+    { "folder": "sent", "unread": 0, "total": 402 },
+    { "folder": "drafts", "unread": 0, "total": 4 },
+    { "folder": "archive", "unread": 6, "total": 66 },
+    { "folder": "spam", "unread": 2, "total": 9 },
+    { "folder": "trash", "unread": 0, "total": 3 }
+  ],
   "mailboxes": [
     {
       "id": "2a1b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
@@ -247,13 +256,14 @@ Returns the resulting label set in a `data` array.
 
 `PATCH /unibox/seen`
 
-Marks a batch of messages as read or unread, org-wide. Up to 500 ids per call. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+Marks messages as read or unread, org-wide: either an explicit batch of up to 500 ids, or a whole canonical folder at once. Send one of `email_ids` or `folder`; sending both returns `400`. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Request body
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `email_ids` | string[] | Yes | Message UUIDs to update (max 500). |
+| `email_ids` | string[] | No | Message UUIDs to update (max 500). |
+| `folder` | string | No | Sweep every message in this folder instead of an id list: one of `inbox`, `sent`, `drafts`, `archive`, `spam`, `trash`. |
 | `seen` | boolean | No | `true` marks as read, `false` marks as unread. |
 
 ```json

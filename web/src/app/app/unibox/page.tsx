@@ -118,6 +118,14 @@ export default function UniboxPage() {
         return { kind: "snoozed" };
       case "scheduled":
         return { kind: "scheduled" };
+      case "inbox":
+      case "sent":
+      case "drafts":
+      case "archive":
+      case "spam":
+      case "trash":
+        // Folder scopes are direct URL segments: /app/unibox/spam.
+        return { kind: "folder", folder: urlScope };
       case "mailbox":
         return urlScopeRef
           ? { kind: "mailbox", mailboxId: urlScopeRef }
@@ -138,6 +146,9 @@ export default function UniboxPage() {
   const setScope = React.useCallback(
     (s: UniboxScope) => {
       switch (s.kind) {
+        case "folder":
+          goTo({ scope: s.folder, ref: null });
+          return;
         case "mailbox":
           goTo({ scope: "mailbox", ref: s.mailboxId });
           return;
@@ -193,6 +204,9 @@ export default function UniboxPage() {
           break;
         case "snoozed":
           next.snoozed = true;
+          break;
+        case "folder":
+          next.folder = scope.folder;
           break;
         case "mailbox":
           next.accountIds = [scope.mailboxId];
@@ -250,6 +264,8 @@ export default function UniboxPage() {
         return "Snoozed";
       case "scheduled":
         return "Scheduled";
+      case "folder":
+        return scope.folder.charAt(0).toUpperCase() + scope.folder.slice(1);
       case "mailbox": {
         const m = overviewData?.mailboxes.find((x) => x.id === scope.mailboxId);
         return m ? m.email : "Mailbox";

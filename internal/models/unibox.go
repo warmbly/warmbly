@@ -61,6 +61,10 @@ type EmailMessageData struct { // used when for kafka when an email arrives
 	// Flags
 	Flags []string `json:"flags"`
 
+	// Canonical folder the provider reported the message in (Folder* consts);
+	// empty when the source path predates folder tracking.
+	Folder string `json:"folder,omitempty"`
+
 	// Envelope
 	BCC       []string  `json:"bcc"`
 	CC        []string  `json:"cc"`
@@ -88,9 +92,13 @@ type EmailMessageData struct { // used when for kafka when an email arrives
 }
 
 type EmailMessageStoreData struct {
-	ID           uuid.UUID `json:"id"`
-	EmailID      uuid.UUID `json:"email_id"`
-	Mailbox      uint32    `json:"mailbox"`
+	ID      uuid.UUID `json:"id"`
+	EmailID uuid.UUID `json:"email_id"`
+	Mailbox uint32    `json:"mailbox"`
+	// Folder is the canonical folder (see the Folder* constants) the message
+	// was in at sync time. Empty on events from workers predating the field;
+	// the consumer normalizes before storing.
+	Folder       string    `json:"folder,omitempty"`
 	ThreadID     string    `json:"thread_id"`
 	MessageID    string    `json:"message_id"`
 	GmailID      string    `json:"gmail_id"`
@@ -173,6 +181,50 @@ type MailThreadResult struct {
 	Pagination CPagination             `json:"pagination"`
 }
 
+// Canonical mail folders. Every unibox message carries exactly one, derived
+// from provider placement at sync time (IMAP special-use attributes, Gmail
+// labels, Graph well-known folders) and enforced by a CHECK on the column.
+const (
+	FolderInbox   = "inbox"
+	FolderSent    = "sent"
+	FolderDrafts  = "drafts"
+	FolderArchive = "archive"
+	FolderSpam    = "spam"
+	FolderTrash   = "trash"
+)
+
+// MailFolders lists every canonical folder, in sidebar order.
+var MailFolders = []string{FolderInbox, FolderSent, FolderDrafts, FolderArchive, FolderSpam, FolderTrash}
+
+// ValidFolder reports whether f is one of the canonical folder values.
+func ValidFolder(f string) bool {
+	switch f {
+	case FolderInbox, FolderSent, FolderDrafts, FolderArchive, FolderSpam, FolderTrash:
+		return true
+	}
+	return false
+}
+
+// NormalizeFolder resolves the folder to persist for a message: the worker's
+// value when it sent a valid one, otherwise a flag-derived fallback so events
+// from workers predating the folder field still file spam and drafts sanely.
+func NormalizeFolder(folder string, flags []string) string {
+	if ValidFolder(folder) {
+		return folder
+	}
+	for _, f := range flags {
+		switch f {
+		case "SPAM", "\\Junk", "\\Spam", "Junk":
+			return FolderSpam
+		case "\\Draft":
+			return FolderDrafts
+		case "\\Deleted":
+			return FolderTrash
+		}
+	}
+	return FolderInbox
+}
+
 type MailSearchResult struct {
 	Data       []EmailMessageStoreDataPreview `json:"data"`
 	Pagination CPagination                    `json:"pagination"`
@@ -215,13 +267,20 @@ type MailSearchParams struct {
 	// Uncategorized, when true, narrows to threads carrying no
 	// conversation labels at all. nil = no filter.
 	Uncategorized *bool
-	PageSize      int
-	Cursor        string
+	// Folder narrows to one canonical folder (inbox/sent/drafts/archive/
+	// spam/trash). nil = every folder except spam and trash, so junk never
+	// bleeds into the combined view.
+	Folder   *string
+	PageSize int
+	Cursor   string
 }
 
 type MarkSeen struct {
 	EmailIDs []uuid.UUID `json:"email_ids"`
-	Seen     bool        `json:"seen"`
+	// Folder, when set, marks every unread message in that folder for the
+	// whole workspace instead of the explicit id list.
+	Folder string `json:"folder,omitempty"`
+	Seen   bool   `json:"seen"`
 }
 
 // UniboxSnooze hides a thread from the user's inbox until SnoozedUntil
@@ -269,6 +328,15 @@ type UniboxCategoryOverview struct {
 	Total  int64     `json:"total"`
 }
 
+// UniboxFolderOverview gives the rail per-folder thread counts. Always
+// emitted for all six canonical folders, zero-filled, so the sidebar
+// renders a stable list.
+type UniboxFolderOverview struct {
+	Folder string `json:"folder"`
+	Unread int64  `json:"unread"`
+	Total  int64  `json:"total"`
+}
+
 // UniboxOverview powers the scope rail + top metric strip in one
 // request. Computed at /unibox/overview.
 type UniboxOverview struct {
@@ -286,6 +354,7 @@ type UniboxOverview struct {
 	// tasks per user. The dashboard shows current/max so the user
 	// sees how close they are to the limit before hitting it.
 	ScheduledPendingMax int64                    `json:"scheduled_pending_max"`
+	Folders             []UniboxFolderOverview   `json:"folders"`
 	Mailboxes           []UniboxMailboxOverview  `json:"mailboxes"`
 	Tags                []UniboxTagOverview      `json:"tags"`
 	Categories          []UniboxCategoryOverview `json:"categories"`

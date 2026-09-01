@@ -2,6 +2,24 @@
 // Mirrors backend models.MailSearchParams. Empty / undefined fields are
 // stripped before serialization so the URL stays clean.
 
+/** Canonical mail folders, mirroring the backend Folder* constants. */
+export type UniboxFolder =
+  | "inbox"
+  | "sent"
+  | "drafts"
+  | "archive"
+  | "spam"
+  | "trash";
+
+export const UNIBOX_FOLDERS: UniboxFolder[] = [
+  "inbox",
+  "sent",
+  "drafts",
+  "archive",
+  "spam",
+  "trash",
+];
+
 export interface UniboxSearchParams {
   query?: string; // Free text — currently matched as subject ILIKE
   from?: string; // Sender substring
@@ -29,6 +47,11 @@ export interface UniboxSearchParams {
    * (debug only).
    */
   snoozed?: true | "any";
+  /**
+   * Folder scope. Undefined = every folder except spam and trash (the
+   * combined view never shows junk).
+   */
+  folder?: UniboxFolder;
   /** Awaiting reply: threads where the last message was from us. */
   awaitingReply?: boolean;
   /** Agent drafts: threads with a pending inbox-agent reply draft. */

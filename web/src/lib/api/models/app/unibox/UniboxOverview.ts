@@ -26,6 +26,14 @@ export interface UniboxCategoryOverview {
   total: number;
 }
 
+// Per-folder thread counts, always emitted for all six canonical
+// folders in sidebar order.
+export interface UniboxFolderOverview {
+  folder: "inbox" | "sent" | "drafts" | "archive" | "spam" | "trash";
+  unread: number;
+  total: number;
+}
+
 export default interface UniboxOverview {
   total: number;
   unread: number;
@@ -45,6 +53,7 @@ export default interface UniboxOverview {
    * the user sees their position before hitting the wall.
    */
   scheduled_pending_max: number;
+  folders: UniboxFolderOverview[];
   mailboxes: UniboxMailboxOverview[];
   tags: UniboxTagOverview[];
   categories: UniboxCategoryOverview[];

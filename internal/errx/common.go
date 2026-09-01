@@ -175,6 +175,9 @@ var (
 	// Unibox
 	ErrUniboxLimit = New(BadRequest, fmt.Sprintf("Limit must be between %d and %d.", config.UniboxLimitMin, config.UniboxLimitMax))
 	ErrSeenMax     = New(BadRequest, "Cannot update more than 500 messages.")
+	// Folder scoping (unibox sidebar).
+	ErrUniboxFolder     = New(BadRequest, "Folder must be one of inbox, sent, drafts, archive, spam, trash.")
+	ErrSeenFolderAndIDs = New(BadRequest, "Provide either email_ids or folder, not both.")
 
 	// Servers
 	ErrIPAddr    = New(BadRequest, "Invalid IP Address.")

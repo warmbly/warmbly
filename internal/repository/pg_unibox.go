@@ -19,6 +19,7 @@ type UpdateUniboxEntry struct {
 	Flags   []string `json:"flags"`
 	ModSeq  *uint64  `json:"mod_seq"`
 	Mailbox *uint32  `json:"mailbox"`
+	Folder  *string  `json:"folder"`
 }
 
 type UniboxRepository interface {
@@ -38,6 +39,9 @@ type UniboxRepository interface {
 	GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error)
 	MarkSeen(ctx context.Context, userID, id uuid.UUID, seen bool) error
 	MarkSeenBulk(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, seen bool) error
+	// MarkSeenByFolder flips the read state of every message in one canonical
+	// folder for the whole workspace (the sidebar's "mark all as read").
+	MarkSeenByFolder(ctx context.Context, orgID uuid.UUID, folder string, seen bool) error
 	Delete(ctx context.Context, userID, id uuid.UUID) error
 
 	// Snooze: per (user, thread). UpsertSnooze adopts the new
@@ -105,7 +109,7 @@ var mailFieldsFull = []string{
 	"gmail_id", "parent_id", "uid", "mod_seq",
 	"flags", "bcc", "cc", "from_addr", "in_reply_to", "reply_to",
 	"to_addr", "subject", "size", "internal_date", "sent_date",
-	"snippet", "seen", "updated_at", "created_at",
+	"snippet", "seen", "updated_at", "created_at", "folder",
 }
 
 var mailFieldsPreview = []string{
@@ -120,13 +124,13 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 			gmail_id, parent_id, uid, mod_seq,
 			flags, bcc, cc, from_addr, in_reply_to, reply_to,
 			to_addr, subject, size, internal_date, sent_date,
-			snippet, seen, created_at, updated_at, body_text
+			snippet, seen, created_at, updated_at, body_text, folder
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10,
 			$11, $12, $13, $14, $15, $16,
 			$17, $18, $19, $20, $21,
-			$22, $23, $24, $25, $26
+			$22, $23, $24, $25, $26, $27
 		)
 		ON CONFLICT (id) DO NOTHING
 	`
@@ -140,6 +144,7 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 		textArray(e.InReplyTo), textArray(e.ReplyTo), textArray(e.ToAddr),
 		e.Subject, e.Size, e.InternalDate, e.SentDate,
 		e.Snippet, e.Seen, e.CreatedAt, e.UpdatedAt, e.BodyText,
+		models.NormalizeFolder(e.Folder, e.Flags),
 	)
 	return err
 }
@@ -176,6 +181,11 @@ func (r *uniboxRepository) UpdateEntry(ctx context.Context, userID, emailID, id 
 	if e.UID != nil {
 		setClauses = append(setClauses, fmt.Sprintf("uid = $%d", argPos))
 		args = append(args, *e.UID)
+		argPos++
+	}
+	if e.Folder != nil {
+		setClauses = append(setClauses, fmt.Sprintf("folder = $%d", argPos))
+		args = append(args, *e.Folder)
 		argPos++
 	}
 
@@ -234,7 +244,7 @@ func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*
 		&e.GmailID, &e.ParentID, &e.UID, &e.ModSeq,
 		&e.Flags, &e.BCC, &e.CC, &e.FromAddr, &e.InReplyTo, &e.ReplyTo,
 		&e.ToAddr, &e.Subject, &e.Size, &e.InternalDate, &e.SentDate,
-		&e.Snippet, &e.Seen, &e.UpdatedAt, &e.CreatedAt,
+		&e.Snippet, &e.Seen, &e.UpdatedAt, &e.CreatedAt, &e.Folder,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -273,7 +283,7 @@ func (r *uniboxRepository) GetByIDForOrg(ctx context.Context, orgID, id uuid.UUI
 		&e.GmailID, &e.ParentID, &e.UID, &e.ModSeq,
 		&e.Flags, &e.BCC, &e.CC, &e.FromAddr, &e.InReplyTo, &e.ReplyTo,
 		&e.ToAddr, &e.Subject, &e.Size, &e.InternalDate, &e.SentDate,
-		&e.Snippet, &e.Seen, &e.UpdatedAt, &e.CreatedAt,
+		&e.Snippet, &e.Seen, &e.UpdatedAt, &e.CreatedAt, &e.Folder,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -397,6 +407,16 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 			bool_or(NOT ue.seen)  OVER (PARTITION BY COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) AS has_unread
 		FROM unibox_emails ue
 		WHERE ue.email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)`, strings.Join(previewCols, ", "))
+
+	// Folder scoping. nil = every folder except spam and trash, so junk
+	// never bleeds into the combined view.
+	if params.Folder != nil {
+		inner += fmt.Sprintf(` AND ue.folder = $%d`, argPos)
+		args = append(args, *params.Folder)
+		argPos++
+	} else {
+		inner += ` AND ue.folder NOT IN ('spam', 'trash')`
+	}
 
 	// Snooze handling. nil = exclude snoozed (the inbox default), so
 	// threads with an active snooze never appear unless asked for.
@@ -584,7 +604,8 @@ func (r *uniboxRepository) GetUnseenCount(ctx context.Context, orgID uuid.UUID, 
 			`SELECT COUNT(DISTINCT COALESCE(NULLIF(thread_id, ''), id::text))
 			 FROM unibox_emails
 			 WHERE email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
-			   AND email_id = $2 AND seen = FALSE`,
+			   AND email_id = $2 AND seen = FALSE
+			   AND folder NOT IN ('spam', 'trash')`,
 			orgID, *emailAccountID,
 		).Scan(&count)
 		return count, err
@@ -593,7 +614,8 @@ func (r *uniboxRepository) GetUnseenCount(ctx context.Context, orgID uuid.UUID, 
 	err := r.db.QueryRow(ctx,
 		`SELECT COUNT(DISTINCT COALESCE(NULLIF(thread_id, ''), id::text))
 		 FROM unibox_emails
-		 WHERE email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1) AND seen = FALSE`,
+		 WHERE email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1) AND seen = FALSE
+		   AND folder NOT IN ('spam', 'trash')`,
 		orgID,
 	).Scan(&count)
 	return count, err
@@ -619,6 +641,18 @@ func (r *uniboxRepository) MarkSeenBulk(ctx context.Context, orgID uuid.UUID, id
 		`UPDATE unibox_emails SET seen = $1, updated_at = NOW()
 		 WHERE id = ANY($3) AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $2)`,
 		seen, orgID, ids,
+	)
+	return err
+}
+
+// MarkSeenByFolder flips the read state of every message in one folder,
+// org-scoped like MarkSeenBulk (the sidebar's "mark all as read").
+func (r *uniboxRepository) MarkSeenByFolder(ctx context.Context, orgID uuid.UUID, folder string, seen bool) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE unibox_emails SET seen = $1, updated_at = NOW()
+		 WHERE folder = $3 AND seen <> $1
+		   AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $2)`,
+		seen, orgID, folder,
 	)
 	return err
 }
@@ -976,6 +1010,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 				) AS is_snoozed
 			FROM unibox_emails e
 			WHERE e.email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+			  AND e.folder NOT IN ('spam', 'trash')
 		),
 		threads AS (
 			SELECT
@@ -1019,6 +1054,36 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 		return nil, err
 	}
 
+	// Per-folder counters, per THREAD like everything else. Zero-filled
+	// over all six canonical folders so the sidebar renders a stable list.
+	folderCounts := map[string]models.UniboxFolderOverview{}
+	folderRows, err := r.db.Query(ctx, `
+		SELECT
+			e.folder,
+			COUNT(DISTINCT COALESCE(NULLIF(e.thread_id, ''), e.id::text)) FILTER (WHERE NOT e.seen) AS unread,
+			COUNT(DISTINCT COALESCE(NULLIF(e.thread_id, ''), e.id::text))                            AS total
+		FROM unibox_emails e
+		WHERE e.email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+		GROUP BY e.folder
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer folderRows.Close()
+	for folderRows.Next() {
+		var f models.UniboxFolderOverview
+		if err := folderRows.Scan(&f.Folder, &f.Unread, &f.Total); err != nil {
+			return nil, err
+		}
+		folderCounts[f.Folder] = f
+	}
+	overview.Folders = make([]models.UniboxFolderOverview, 0, len(models.MailFolders))
+	for _, name := range models.MailFolders {
+		f := folderCounts[name]
+		f.Folder = name
+		overview.Folders = append(overview.Folders, f)
+	}
+
 	// Per-mailbox counters. LEFT JOIN against unibox_emails so empty
 	// mailboxes still show up in the rail with a zero count. Counts are
 	// per THREAD (distinct thread key, empty-thread-safe) to match the
@@ -1040,6 +1105,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 				)) AS total
 		FROM email_accounts ea
 		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id AND ue.user_id = ea.user_id
+			AND ue.folder NOT IN ('spam', 'trash')
 		WHERE ea.organization_id = $1
 		GROUP BY ea.id, ea.email, ea.name
 		ORDER BY ea.email ASC
@@ -1080,6 +1146,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 		LEFT JOIN email_tags et ON et.tag_id = t.id
 		LEFT JOIN email_accounts ea ON ea.id = et.email_id AND ea.user_id = t.user_id
 		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id AND ue.user_id = ea.user_id
+			AND ue.folder NOT IN ('spam', 'trash')
 		WHERE t.user_id = $1
 		GROUP BY t.id, t.title, t.color, t.position
 		ORDER BY t.position ASC, t.title ASC

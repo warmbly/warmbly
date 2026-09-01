@@ -12,26 +12,39 @@
 
 import React from "react";
 import {
+  ArchiveIcon,
   CalendarRangeIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ClockIcon,
+  FileTextIcon,
   InboxIcon,
   MailboxIcon,
   MoonIcon,
+  MoreHorizontalIcon,
+  OctagonAlertIcon,
   PenLineIcon,
   ReplyIcon,
   SearchIcon,
   SendIcon,
   SparkleIcon,
   SparklesIcon,
+  Trash2Icon,
 } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
+import useMarkSeen from "@/lib/api/hooks/app/unibox/useMarkSeen";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import ComposeDraftsItem from "@/components/app/unibox/compose/ComposeDraftsItem";
 import { useComposeStore } from "@/hooks/useComposeStore";
 import { cn } from "@/lib/utils";
 import { DitherMeter } from "@/components/ui/dither";
+import {
+  PopoverMenu,
+  PopoverMenuContent,
+  PopoverMenuItem,
+  PopoverMenuTrigger,
+} from "@/components/ui/popover-menu";
+import type { UniboxFolder } from "@/lib/api/models/app/unibox/UniboxSearch";
 
 export type UniboxScope =
   | { kind: "all" }
@@ -42,12 +55,15 @@ export type UniboxScope =
   | { kind: "agent_drafts" }
   | { kind: "snoozed" }
   | { kind: "scheduled" }
+  | { kind: "folder"; folder: UniboxFolder }
   | { kind: "mailbox"; mailboxId: string }
   | { kind: "tag"; tagId: string }
   | { kind: "category"; categoryId: string };
 
 export function scopeKey(s: UniboxScope): string {
   switch (s.kind) {
+    case "folder":
+      return `folder:${s.folder}`;
     case "mailbox":
       return `mailbox:${s.mailboxId}`;
     case "tag":
@@ -58,6 +74,39 @@ export function scopeKey(s: UniboxScope): string {
       return s.kind;
   }
 }
+
+const FOLDER_META: {
+  folder: UniboxFolder;
+  label: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    folder: "inbox",
+    label: "Inbox",
+    icon: <InboxIcon className="w-3.5 h-3.5" />,
+  },
+  {
+    folder: "drafts",
+    label: "Drafts",
+    icon: <FileTextIcon className="w-3.5 h-3.5" />,
+  },
+  { folder: "sent", label: "Sent", icon: <SendIcon className="w-3.5 h-3.5" /> },
+  {
+    folder: "archive",
+    label: "Archive",
+    icon: <ArchiveIcon className="w-3.5 h-3.5" />,
+  },
+  {
+    folder: "spam",
+    label: "Spam",
+    icon: <OctagonAlertIcon className="w-3.5 h-3.5" />,
+  },
+  {
+    folder: "trash",
+    label: "Trash",
+    icon: <Trash2Icon className="w-3.5 h-3.5" />,
+  },
+];
 
 const COLLAPSE_THRESHOLD = 8;
 const COLLAPSED_VISIBLE = 6;
@@ -70,8 +119,16 @@ interface ScopeRailProps {
 export function ScopeRail({ scope, onChange }: ScopeRailProps) {
   const overview = useUniboxOverview();
   const data = overview.data;
+  const markSeen = useMarkSeen();
 
   const active = scopeKey(scope);
+  const folderCounts = React.useMemo(() => {
+    const m = new Map<string, { unread: number; total: number }>();
+    for (const f of data?.folders ?? []) {
+      m.set(f.folder, { unread: f.unread, total: f.total });
+    }
+    return m;
+  }, [data?.folders]);
 
   return (
     <nav className="h-full bg-slate-50/60 border-r border-slate-200 overflow-y-auto py-2">
@@ -88,7 +145,30 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
         </ShortcutTooltip>
         <ComposeDraftsItem />
       </div>
-      <Section label="Inbox">
+      <Section label="Folders">
+        {FOLDER_META.map((f) => {
+          const counts = folderCounts.get(f.folder);
+          // Drafts reads better as a total; everywhere else the badge is
+          // the classic unread number.
+          const count =
+            f.folder === "drafts" ? counts?.total : counts?.unread;
+          return (
+            <FolderItem
+              key={f.folder}
+              icon={f.icon}
+              label={f.label}
+              count={count || undefined}
+              countTone={count ? "accent" : "muted"}
+              active={active === `folder:${f.folder}`}
+              onOpen={() => onChange({ kind: "folder", folder: f.folder })}
+              onMarkAllRead={() =>
+                markSeen.mutate({ folder: f.folder, seen: true })
+              }
+            />
+          );
+        })}
+      </Section>
+      <Section label="Views">
         <Item
           icon={<InboxIcon className="w-3.5 h-3.5" />}
           label="All"
@@ -404,6 +484,104 @@ function Section({
         </span>
       </div>
       <div className="px-1.5 space-y-px">{children}</div>
+    </div>
+  );
+}
+
+// FolderItem — one standard mail-folder row (issue #283): grey row + bold
+// label when active, unread badge, and a three-dot menu on the right. The
+// row is a div, not a button, because the menu trigger nests inside it and
+// nested buttons are invalid HTML; the trigger stops propagation so opening
+// the menu never also switches folders.
+function FolderItem({
+  icon,
+  label,
+  count,
+  countTone = "muted",
+  active,
+  onOpen,
+  onMarkAllRead,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  count?: number;
+  countTone?: "muted" | "accent";
+  active?: boolean;
+  onOpen: () => void;
+  onMarkAllRead: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className={cn(
+        "group/folder w-full h-7 pl-2 pr-1 rounded-md flex items-center gap-2 transition-colors text-left cursor-pointer",
+        active
+          ? "bg-slate-200/80 text-slate-900"
+          : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900",
+      )}
+      title={label}
+    >
+      <span
+        className={cn("shrink-0", active ? "text-slate-700" : "text-slate-500")}
+      >
+        {icon}
+      </span>
+      <span
+        className={cn(
+          "truncate min-w-0 flex-1 text-[12px]",
+          active && "font-semibold",
+        )}
+      >
+        {label}
+      </span>
+      {count !== undefined && count !== null && (
+        <span
+          className={cn(
+            "shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center",
+            active
+              ? "bg-white/80 text-slate-700"
+              : countTone === "accent"
+                ? "bg-sky-100 text-sky-700"
+                : "text-slate-400",
+          )}
+        >
+          {count}
+        </span>
+      )}
+      <PopoverMenu align="end">
+        {/* asChild: the trigger's own onClick already stops propagation, so
+            opening the menu never also fires the row's onOpen. */}
+        <PopoverMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`${label} folder actions`}
+            className={cn(
+              "shrink-0 size-5 rounded inline-flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-white/80 transition-colors",
+              active
+                ? "opacity-100"
+                : "opacity-100 md:opacity-0 md:group-hover/folder:opacity-100",
+            )}
+          >
+            <MoreHorizontalIcon className="w-3.5 h-3.5" />
+          </button>
+        </PopoverMenuTrigger>
+        <PopoverMenuContent>
+          <PopoverMenuItem
+            icon={<SparkleIcon className="w-3 h-3" />}
+            onSelect={onMarkAllRead}
+          >
+            Mark all as read
+          </PopoverMenuItem>
+        </PopoverMenuContent>
+      </PopoverMenu>
     </div>
   );
 }

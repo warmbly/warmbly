@@ -30,6 +30,11 @@ func (s *JobsService) HandleUpdateEmail(ctx context.Context, e *models.JobEventE
 	if email.ModSeq != e.ModSeq {
 		updateData.ModSeq = &e.ModSeq
 	}
+	// A folder move follows the provider. Events from workers predating the
+	// field carry "", which keeps the stored value.
+	if models.ValidFolder(e.Folder) && email.Folder != e.Folder {
+		updateData.Folder = &e.Folder
+	}
 
 	if err := s.UniboxRepository.UpdateEntry(ctx, e.UserID, e.EmailID, e.ID, &updateData); err != nil {
 		return err
@@ -39,6 +44,9 @@ func (s *JobsService) HandleUpdateEmail(ctx context.Context, e *models.JobEventE
 	email.UID = e.UID
 	email.Mailbox = e.Mailbox
 	email.ModSeq = e.ModSeq
+	if models.ValidFolder(e.Folder) {
+		email.Folder = e.Folder
+	}
 	s.publishEmailUpdated(ctx, e.UserID, email)
 	return nil
 }

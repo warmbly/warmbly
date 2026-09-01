@@ -109,6 +109,35 @@ func parseGmailDate(dateText string) time.Time {
 	return date
 }
 
+// gmailFolder maps Gmail labels to the canonical unibox folder. Precedence
+// mirrors Gmail's own UI: trash and spam are exclusive, a draft is a draft,
+// inbox wins over sent for self-addressed mail, and mail carrying none of
+// these labels is archived.
+func gmailFolder(labels []string) string {
+	var inbox, sent bool
+	for _, l := range labels {
+		switch l {
+		case "TRASH":
+			return models.FolderTrash
+		case "SPAM":
+			return models.FolderSpam
+		case "DRAFT":
+			return models.FolderDrafts
+		case "INBOX":
+			inbox = true
+		case "SENT":
+			sent = true
+		}
+	}
+	if inbox {
+		return models.FolderInbox
+	}
+	if sent {
+		return models.FolderSent
+	}
+	return models.FolderArchive
+}
+
 func GmailMessageToEmailData(msg *gmail.Message) *models.EmailMessageData {
 	var headers []*gmail.MessagePartHeader
 	if msg.Payload != nil {
@@ -124,6 +153,7 @@ func GmailMessageToEmailData(msg *gmail.Message) *models.EmailMessageData {
 		GmailID:  msg.Id,
 		UID:      0, // Gmail has no IMAP UID
 		ThreadID: msg.ThreadId,
+		Folder:   gmailFolder(msg.LabelIds),
 		Flags: func() []string {
 			flags := []string{}
 			// Gmail models read state inversely: the UNREAD label is present on
