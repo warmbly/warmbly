@@ -266,6 +266,9 @@ Changing Advisor settings (`PATCH /advisor/settings`) is JWT only, alongside the
 | GET | `/api-keys/:id` | `API_KEYS` |
 | PATCH | `/api-keys/:id` | `API_KEYS` |
 | DELETE | `/api-keys/:id` | `API_KEYS` |
+| DELETE | `/api-keys/self` | none |
+
+`DELETE /api-keys/self` revokes the key the request was made with, and is the one route here that needs no scope. A credential must always be able to end itself: requiring `API_KEYS` to sign out would leave a read-only key on a laptop someone is handing back live, which is what [`warmbly auth logout`](/api/cli/) promises to prevent. A JWT caller gets a `400`: there is no key in that request to end, only a session, which `POST /auth/logout` ends.
 
 ### OAuth apps
 
@@ -339,6 +342,8 @@ These never accept an API key. They depend on a human-bound session: billing flo
 
 `GET /auth/config` gained two fields: `invites_required` (boolean, true when an invitation token is needed to create an account) and `docs_url` (string, the deployment's link to the accounts and access documentation, for a client to surface next to a refusal).
 
+`GET /auth/config` also carries `websocket_url` and `app_url` (both strings, each omitted when the instance has none). They are the realtime gateway a developer client connects to and the dashboard origin a client sends someone to. Both are served here because on a self-hosted instance the host layout is whatever the operator chose, and there is no other way to discover it: the [CLI](/api/cli/) reads them for `warmbly events tail` and `warmbly browse`.
+
 `GET /auth/config` also carries `billing_enabled` (boolean). It is `false` when the deployment runs with `BILLING_PROVIDER=none`, which is the self-host default: every feature is unlocked server-side, so the dashboard shows the workspace as self-hosted instead of on a free trial and hides the billing and referral pages. `self_hosted` alone does not imply this, because a self-hosted install may still run Stripe.
 - `POST /auth/setup` (first-run claim: exchanges the one-time token printed at boot for the owner account. Refused once any account exists)
 - `GET /auth/providers`, `POST /auth/apple`, `POST /auth/google` (native-app social sign-in)
@@ -359,6 +364,7 @@ These never accept an API key. They depend on a human-bound session: billing flo
 - All of `/organization/*` (create, switch, members, invitations, transfer ownership, avatar, danger zone)
 - `GET /website-tracking/settings`, `PATCH /website-tracking/settings`, `POST /website-tracking/settings/rotate-key` (the [website tracking](/guides/website-tracking/) snippet's consent mode, location precision, allowed hosts and retention; JWT permission `MANAGE_SETTINGS`. The rotate is bodyless and safe to repeat, each call issues a new key)
 - All of `/subscription/*` (checkout, portal, cancel, change-plan, preview-change, enterprise-inquiry, discounts, referrals, etc.)
+- All of `/auth/cli/*` except the two handshake routes below (`GET /auth/cli/codes/:code`, `POST /auth/cli/codes/:code/approve`, `POST /auth/cli/codes/:code/deny`: the browser half of `warmbly auth login`, where a signed-in member reviews the code a CLI is showing and authorizes it. Approving mints an ordinary API key, so it requires the `MANAGE_API_KEYS` organization permission and is session-only: an API key must not be able to mint another one this way)
 - All of `/pool-link/*` and `/cloud-link/*` (the self-hosted warmup pool link: approving an instance's code, listing and unlinking instances, and on a self-hosted instance the connect flow and mailbox enrollment). `POST /pool-link/codes` and `POST /pool-link/poll` are public and per-IP rate limited: they are the device-code handshake an instance uses before it has a token, and `/pool-link/instance/*` accepts only an instance token. `/pool-link/instance/oauth/*`, `/pool-link/instance/mailboxes/:id/token`, `/pool-link/instance/workspace-mailboxes` and `/pool-link/instance/mailboxes/adopt` are the cloud-managed mailbox surface (Google and Microsoft sign-in on Warmbly's OAuth apps, brokered access tokens); their instance-side counterparts are `/cloud-link/oauth/*` and `/cloud-link/workspace-mailboxes/*`
 - All of `/admin/*`
 
@@ -437,6 +443,7 @@ External MCP servers whose tools the assistant can use (see [Connect MCP tools](
 ## Public
 
 - `GET /health`
+- `POST /auth/cli/code`, `POST /auth/cli/poll` (the [CLI](/api/cli/) device-code handshake, per-IP rate limited. Public by necessity: the CLI has no credential until the flow completes. `POST /auth/cli/code` returns `device_code`, `user_code`, `verification_uri`, `verification_uri_complete`, `expires_in` and `interval`; polling returns `{"status":"pending"}` until a member decides, then `{"status":"approved"}` carrying the minted key exactly once, or `{"status":"denied"}`. An unknown or expired `device_code` is a `404`, so a poller cannot probe for live handshakes)
 - `POST /webhooks/github/releases` (HMAC-SHA256 signature)
 - `POST /webhook/stripe` (Stripe signature)
 - `POST /webhook/campaign`, `/webhook/email`, `/webhook/user-email` (Google OIDC token from Cloud Tasks)

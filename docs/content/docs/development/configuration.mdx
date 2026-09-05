@@ -141,6 +141,7 @@ TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12
 | `DISABLE_PASSWORD_LOGIN` | Turns off email and password entirely, for single sign-on only deployments | `false` | yes |
 | `SSO_AUTO_PROVISION` | `true` lets a verified identity provider assertion create an account regardless of `DISABLE_REGISTRATION` | `false` | yes |
 | `AUTH_IP_RATE_LIMIT` | Unauthenticated auth requests allowed per source IP per 15 minutes | `60` | yes |
+| `CLI_AUTH_IP_RATE_LIMIT` | CLI sign-in handshake requests allowed per source IP per 15 minutes. Its own budget, because one `warmbly auth login` polls around 200 times and must not exhaust the allowance above | `500` | yes |
 | `WARMBLY_BOOTSTRAP_EMAIL` | First owner's address, read only while the users table is empty | unset | yes |
 | `WARMBLY_BOOTSTRAP_PASSWORD_HASH` | Argon2 PHC string for that owner. Preferred over the plaintext form | unset | yes |
 | `WARMBLY_BOOTSTRAP_PASSWORD` | Plaintext convenience form. Warns at boot, and leaves a password in your process environment | unset | yes |

@@ -23,6 +23,30 @@ func AppBaseURL() string {
 	return "https://app.warmbly.com"
 }
 
+// WebsocketURL is the realtime gateway clients connect to. It is deployment
+// configuration rather than a secret, which is why GET /v1/auth/config serves
+// it: a CLI or a developer client cannot otherwise find the socket on a
+// self-hosted instance, where the host layout is whatever the operator chose.
+func WebsocketURL() string {
+	v := strings.TrimRight(strings.TrimSpace(os.Getenv("WEBSOCKET_URL")), "/")
+	if v == "" {
+		return ""
+	}
+	// The variable is written three ways in the wild: a bare host, the Phoenix
+	// socket mount (".../socket"), and the full transport endpoint. Clients
+	// dial what this returns, so all three normalise to the last one. Matching
+	// on a "/socket" substring instead of the suffix left ".../socket"
+	// untouched, which is not a websocket endpoint.
+	switch {
+	case strings.HasSuffix(v, "/socket/websocket"):
+	case strings.HasSuffix(v, "/socket"):
+		v += "/websocket"
+	default:
+		v += "/socket/websocket"
+	}
+	return v
+}
+
 func GetPasswordResetURL(sessionToken string) string {
 	return AppBaseURL() + "/auth/reset-password/confirm?session=" + url.QueryEscape(sessionToken)
 }

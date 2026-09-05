@@ -240,6 +240,18 @@ func Run(
 		poolLinkPublic.POST("/poll", h.PoolLinkPoll)
 	}
 
+	// `warmbly auth login`. Unauthenticated by nature (the CLI has no key yet),
+	// so it is throttled per source IP, but on its OWN budget: one sign-in
+	// polls around 200 times, which would exhaust the auth allowance and then
+	// lock the same address out of the browser login for the rest of the
+	// window.
+	cliAuthPublic := v1.Group("/auth/cli")
+	cliAuthPublic.Use(m.CLIAuthIPRateLimitMiddleware())
+	{
+		cliAuthPublic.POST("/code", h.CLIAuthStart)
+		cliAuthPublic.POST("/poll", h.CLIAuthPoll)
+	}
+
 	auth := v1.Group("/auth")
 	// Every unauthenticated auth route shares one per-IP budget. Nothing
 	// throttled these before: RateLimitMiddleware is keyed on the user id and
@@ -754,6 +766,11 @@ func Run(
 			// API key management. JWT users need PermManageAPIKeys; API keys
 			// need the APIPermAPIKeys self-service bit. This lets an integration
 			// rotate its own keys without going through the dashboard.
+			// Self-revocation, outside the API_KEYS gate below on purpose: any
+			// valid key may end itself, which is what makes signing a machine
+			// out actually end its access.
+			protected.DELETE("/api-keys/self", m.RequireOrganization(), m.RateLimitMiddleware(models.RateLimitWrite), h.RevokeOwnAPIKey)
+
 			apiKeys := protected.Group("/api-keys")
 			apiKeys.Use(m.RequireOrganization(), m.RequireAccess(models.PermManageAPIKeys, models.APIPermAPIKeys))
 			apiKeys.Use(m.RateLimitMiddleware(models.RateLimitWrite))
@@ -1222,6 +1239,18 @@ func Run(
 				poolLink.POST("/codes/:code/deny", h.PoolLinkDenyCode)
 				poolLink.GET("/instances", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.PoolLinkListInstances)
 				poolLink.DELETE("/instances/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.PoolLinkRevokeInstance)
+			}
+
+			// Browser half of `warmbly auth login`: a member reviews the code
+			// and approves it into one of their workspaces. Session-only, like
+			// the pool link approval, because approving mints a credential and
+			// an API key must not be able to mint another CLI's key.
+			cliAuth := jwtOnly.Group("/auth/cli")
+			cliAuth.Use(m.RateLimitMiddleware(models.RateLimitWrite))
+			{
+				cliAuth.GET("/codes/:code", h.CLIAuthDescribeCode)
+				cliAuth.POST("/codes/:code/approve", h.CLIAuthApproveCode)
+				cliAuth.POST("/codes/:code/deny", h.CLIAuthDenyCode)
 			}
 			// The linked instance's own surface, authenticated by its token.
 			poolLinkInstance := base.Group("/pool-link/instance")
