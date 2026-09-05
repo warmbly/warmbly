@@ -174,34 +174,65 @@ func (s *service) pollBatchJob(ctx context.Context, job *models.WarmupGeneration
 	}
 	job.BatchStatus = state.Status
 
-	switch state.Status {
-	case "completed":
-		job.BatchOutputFileID = state.OutputFileID
-		// A batch whose requests all failed completes with no output file; the
-		// refusals are in the error file, which has the same JSONL shape. Read
-		// it instead of failing on the empty id, or the reason is never seen.
-		resultsFileID := state.OutputFileID
-		if resultsFileID == "" {
-			resultsFileID = state.ErrorFileID
-		}
-		return s.ingestBatch(ctx, job, resultsFileID, state.Counts)
-	case "failed", "expired", "cancelled":
-		now := time.Now()
-		job.Status = "failed"
-		job.FinishedAt = &now
-		if job.Error == "" {
-			// A batch that failed as a whole has no error file; this is the only account of why.
-			job.Error = fmt.Sprintf("batch %s", state.Status)
-			if state.FailureReason != "" {
-				job.Error += ": " + state.FailureReason
-			}
-		}
-		return s.repo.UpdateGenerationJob(ctx, job)
-	default:
+	if !batchEnded(state.Status) {
 		// validating | in_progress | finalizing | cancelling | submitted —
 		// still running; persist the latest status for visibility.
 		return s.repo.UpdateGenerationJob(ctx, job)
 	}
+
+	outcome := endedBatchOutcome(state)
+	if job.Error == "" {
+		job.Error = outcome.Error
+	}
+	if outcome.ResultsFileID != "" {
+		job.BatchOutputFileID = state.OutputFileID
+		return s.ingestBatch(ctx, job, outcome.ResultsFileID, state.Counts)
+	}
+
+	now := time.Now()
+	job.Status = "failed"
+	job.FinishedAt = &now
+	return s.repo.UpdateGenerationJob(ctx, job)
+}
+
+// batchEnded reports whether a batch status is terminal.
+func batchEnded(status string) bool {
+	switch status {
+	case "completed", "failed", "expired", "cancelled":
+		return true
+	}
+	return false
+}
+
+// batchOutcome is what the poller does with a batch that stopped running.
+type batchOutcome struct {
+	// ResultsFileID is the JSONL to ingest, empty when the batch left none.
+	ResultsFileID string
+	// Error is the reason to record, empty when the batch ended cleanly.
+	Error string
+}
+
+// endedBatchOutcome decides what a terminal batch leaves behind. A window that
+// closes early still hands back the requests it did finish, so an expired or
+// cancelled batch is ingested rather than discarded, with the reason recorded
+// so the shortfall is not read as a clean run.
+func endedBatchOutcome(state generation.BatchState) batchOutcome {
+	// Output holds the successes, the error file the refusals; same JSONL shape.
+	results := state.OutputFileID
+	if results == "" {
+		results = state.ErrorFileID
+	}
+	if state.Status == "completed" {
+		if results == "" {
+			return batchOutcome{Error: "batch completed with no output file"}
+		}
+		return batchOutcome{ResultsFileID: results}
+	}
+	reason := fmt.Sprintf("batch %s", state.Status)
+	if state.FailureReason != "" {
+		reason += ": " + state.FailureReason
+	}
+	return batchOutcome{ResultsFileID: results, Error: reason}
 }
 
 // ingestBatch downloads a completed batch's output, cleans, lints, and caches
