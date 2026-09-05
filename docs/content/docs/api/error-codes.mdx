@@ -26,10 +26,10 @@ All errors follow this structure:
 
 | Code | Error | Description |
 |------|-------|-------------|
-| 400 | Bad Request | Invalid request syntax or parameters |
+| 400 | Bad Request | Invalid request syntax or parameters, or a quota that would be passed (`storage_limit_reached`) |
 | 401 | Unauthorized | Missing or invalid authentication |
 | 402 | Payment Required | Out of AI credits (`insufficient_credits`) |
-| 403 | Forbidden | Authenticated but lacks permission |
+| 403 | Forbidden | Authenticated but lacks permission, or the workspace's mailbox allowance is full (`mailbox_allowance_reached`) |
 | 404 | Not Found | Resource doesn't exist |
 | 409 | Conflict | Resource already exists |
 | 422 | Unprocessable | Validation failed |
@@ -316,6 +316,41 @@ A `503` whose `code` is `mailbox_provider_not_configured` is not transient and r
 - Set `BOX_GOOGLE_CLIENT_ID` and `BOX_GOOGLE_CLIENT_SECRET`, or `BOX_OUTLOOK_CLIENT_ID` and `BOX_OUTLOOK_CLIENT_SECRET`, in the `.env` at your install root, then restart
 - Or connect the mailbox over SMTP and IMAP instead, which needs no configuration
 - Full walkthrough: [connect mailboxes](/development/deployment-guide/#connect-mailboxes)
+
+#### `mailbox_allowance_reached`
+
+A `403` whose `code` is `mailbox_allowance_reached` comes from every path that connects a mailbox: `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`, and per row inside `POST /emails/onboarding/smtp-imap/bulk`. It is not a permission problem: the workspace holds its whole [mailbox allowance](/guides/mailboxes/#mailbox-allowance), which on a paid plan is one mailbox for every send a day the plan includes, and `10` on a free workspace. Nothing was connected.
+
+```json
+{
+  "error": "Forbidden",
+  "message": "This workspace holds 15000 of its 15000 mailboxes. Request an increase, or move to a plan with more daily sends.",
+  "code": "mailbox_allowance_reached",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
+**How to fix:**
+- Read `GET /emails/allowance` first: `remaining` says how many connects will succeed, and `pending_request` whether an increase is already asked for
+- Submit a limit-increase request for `max_email_accounts` via `POST /organization/:orgId/limit-requests`, or move to a plan with more daily sends. An approved request raises the allowance immediately; retry the connect then
+- Reconnecting an existing mailbox never returns this code
+
+#### `storage_limit_reached`
+
+A `400` whose `code` is `storage_limit_reached` comes from `POST /campaigns/:id/attachments` and from a campaign duplicate that would copy attachments. The workspace's attachment storage, summed across every campaign, would pass its quota. The check and the write happen together under a per-workspace lock, so two uploads racing for the last of the quota cannot both get in. Nothing was stored.
+
+```json
+{
+  "error": "Bad Request",
+  "message": "Storage limit reached: 51190 MB of 51200 MB used, 12 MB to add. Remove attachments or upgrade your plan.",
+  "code": "storage_limit_reached",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
+**How to fix:**
+- `GET /organization/current/limits` reports `storage.used_bytes` and `storage.limit_bytes`, and `storage.over_quota` when a plan change left the workspace above the quota. Existing attachments keep sending either way
+- Delete attachments you no longer need (`DELETE /campaigns/:id/attachments/:attachmentId`), or move to a paid plan for the larger quota
 
 #### `mailbox_worker_unreachable`
 

@@ -97,7 +97,9 @@ type OrganizationService interface {
 	// Limit checks
 	CanAddMember(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
 	CanAddCampaign(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
-	CanAddEmailAccount(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error)
+	// MailboxAllowance resolves how many mailboxes the workspace may hold and
+	// why; every connect path checks it and GET /emails/allowance returns it.
+	MailboxAllowance(ctx context.Context, orgID uuid.UUID) (*models.MailboxAllowance, *errx.Error)
 	GetCampaignCounts(ctx context.Context, orgID uuid.UUID) (total int, active int, err *errx.Error)
 	GetOrganizationLimits(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimits, *errx.Error)
 	GetOrganizationCounts(ctx context.Context, orgID uuid.UUID) (*models.OrganizationCounts, *errx.Error)
@@ -907,25 +909,90 @@ func (s *organizationService) CanAddCampaign(ctx context.Context, orgID uuid.UUI
 	return true, nil
 }
 
-// CanAddEmailAccount checks if the organization can add more email accounts based on plan limits
-func (s *organizationService) CanAddEmailAccount(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
-	limits, err := s.GetEffectiveLimits(ctx, orgID)
+// MailboxAllowance resolves the workspace's mailbox allowance. Resolution:
+//
+//  1. no billing provider: unlimited
+//  2. an operator override: the override
+//  3. no paid subscription: FreeWorkspaceMailboxLimit
+//  4. the plan's explicit mailbox column, when it carries one
+//  5. the plan's daily sends divided by FairUseSendsPerMailbox
+//  6. a plan with no daily send cap: unlimited
+//
+// The count includes every connected mailbox, so a workspace that dropped to
+// a smaller plan simply cannot add until it is back under; nothing is removed.
+func (s *organizationService) MailboxAllowance(ctx context.Context, orgID uuid.UUID) (*models.MailboxAllowance, *errx.Error) {
+	count, err := s.orgRepo.GetEmailAccountCount(ctx, orgID)
 	if err != nil {
-		return false, err
+		sentry.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to get email account count")
+	}
+	a := &models.MailboxAllowance{Used: count, SendsPerMailbox: config.FairUseSendsPerMailbox}
+
+	if config.BillingProvider() == "none" {
+		a.Basis = models.MailboxAllowanceUnlimited
+		a.Paid = true
+		return a, nil
 	}
 
-	// No limit set = unlimited
-	if limits == nil || limits.MaxEmailAccounts == nil {
-		return true, nil
+	sub, serr := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if serr != nil {
+		sentry.CaptureException(serr)
+		return nil, errx.New(errx.Internal, "failed to get subscription")
+	}
+	a.Paid = sub != nil && sub.HasPaidSubscription()
+	if sub != nil && sub.Plan != nil {
+		if sub.Plan.Name != nil {
+			a.PlanName = *sub.Plan.Name
+		}
+		if sub.Plan.DailyCampaignLimit != nil && *sub.Plan.DailyCampaignLimit > 0 {
+			v := *sub.Plan.DailyCampaignLimit
+			a.PlanDailySends = &v
+		}
 	}
 
-	count, xerr := s.orgRepo.GetEmailAccountCount(ctx, orgID)
+	override, xerr := s.GetLimitOverrides(ctx, orgID)
 	if xerr != nil {
-		sentry.CaptureException(xerr)
-		return false, errx.New(errx.Internal, "failed to get email account count")
+		return nil, xerr
 	}
 
-	return count < *limits.MaxEmailAccounts, nil
+	set := func(v int, basis models.MailboxAllowanceBasis) {
+		a.Allowance = &v
+		rem := v - count
+		if rem < 0 {
+			rem = 0
+		}
+		a.Remaining = &rem
+		a.Basis = basis
+	}
+
+	switch {
+	case override != nil && override.MaxEmailAccounts > 0:
+		set(override.MaxEmailAccounts, models.MailboxAllowanceOverride)
+	case !a.Paid:
+		set(models.FreeWorkspaceMailboxLimit, models.MailboxAllowanceFree)
+	case sub.Plan != nil && sub.Plan.MaxEmailAccounts != nil && *sub.Plan.MaxEmailAccounts > 0:
+		set(*sub.Plan.MaxEmailAccounts, models.MailboxAllowancePlan)
+	case a.PlanDailySends != nil:
+		set((*a.PlanDailySends+config.FairUseSendsPerMailbox-1)/config.FairUseSendsPerMailbox, models.MailboxAllowanceFairUse)
+	default:
+		a.Basis = models.MailboxAllowanceUnlimited
+	}
+
+	// The open request, so the dashboard can show "asked for 5,000, pending"
+	// instead of offering a form that would be refused as a duplicate.
+	if a.Allowance != nil {
+		rows, rerr := s.orgRepo.ListLimitRequestsForOrg(ctx, orgID)
+		if rerr != nil {
+			sentry.CaptureException(rerr)
+		}
+		for i := range rows {
+			if rows[i].Field == "max_email_accounts" && rows[i].Status == models.LimitRequestStatusPending {
+				a.PendingRequest = &rows[i]
+				break
+			}
+		}
+	}
+	return a, nil
 }
 
 // GetCampaignCounts returns total and active campaign counts
@@ -1136,15 +1203,20 @@ func (s *organizationService) SetLimitOverrides(ctx context.Context, orgID uuid.
 //  2. plan != nil   → use plan column
 //  3. otherwise     → fall back to the product-level hard cap
 //
-// Never returns nil values: even an "unlimited" plan is bounded by the
-// product hard caps in config/constants.go. Admins can raise individual
-// caps per-org by writing an override.
+// Every field but mailboxes is never nil: an "unlimited" plan is bounded by
+// the product hard caps in config/constants.go. Mailboxes follow
+// MailboxAllowance instead, where nil really means unlimited. Admins can
+// raise individual caps per-org by writing an override.
 func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimits, *errx.Error) {
 	plan, err := s.GetOrganizationLimits(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
 	override, err := s.GetLimitOverrides(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	mailboxes, err := s.MailboxAllowance(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -1161,12 +1233,11 @@ func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid
 		return &v
 	}
 
-	var ovMaxCampaigns, ovMaxActive, ovMaxMembers, ovMaxEmails, ovMaxContacts, ovDaily int
+	var ovMaxCampaigns, ovMaxActive, ovMaxMembers, ovMaxContacts, ovDaily int
 	if override != nil {
 		ovMaxCampaigns = override.MaxCampaigns
 		ovMaxActive = override.MaxActiveCampaigns
 		ovMaxMembers = override.MaxTeamMembers
-		ovMaxEmails = override.MaxEmailAccounts
 		ovMaxContacts = override.MaxContacts
 		ovDaily = override.DailyCampaignLimit
 	}
@@ -1180,7 +1251,7 @@ func (s *organizationService) GetEffectiveLimits(ctx context.Context, orgID uuid
 		MaxCampaigns:       resolve(ovMaxCampaigns, planLimits.MaxCampaigns, config.HardCapCampaignsTotal),
 		MaxActiveCampaigns: resolve(ovMaxActive, planLimits.MaxActiveCampaigns, config.HardCapCampaignsActive),
 		MaxTeamMembers:     resolve(ovMaxMembers, planLimits.MaxTeamMembers, config.HardCapTeamMembers),
-		MaxEmailAccounts:   resolve(ovMaxEmails, planLimits.MaxEmailAccounts, config.HardCapMailboxes),
+		MaxEmailAccounts:   mailboxes.Allowance,
 		MaxContacts:        resolve(ovMaxContacts, planLimits.MaxContacts, config.HardCapContacts),
 		DailyCampaignLimit: resolve(ovDaily, planLimits.DailyCampaignLimit, config.HardCapDailyCampaignSends),
 	}, nil
@@ -1199,10 +1270,12 @@ func (s *organizationService) WebhookDispatchLimit(ctx context.Context, orgID uu
 	if err != nil || eff == nil {
 		return limit
 	}
-	if eff.MaxEmailAccounts != nil {
-		if scaled := *eff.MaxEmailAccounts * config.WebhookDispatchPerMailboxPerMinute; scaled > limit {
-			limit = scaled
-		}
+	if eff.MaxEmailAccounts == nil {
+		// Unlimited mailboxes: the ceiling is the only bound left.
+		return config.WebhookDispatchMaxPerMinute
+	}
+	if scaled := *eff.MaxEmailAccounts * config.WebhookDispatchPerMailboxPerMinute; scaled > limit {
+		limit = scaled
 	}
 	if limit > config.WebhookDispatchMaxPerMinute {
 		limit = config.WebhookDispatchMaxPerMinute
@@ -1272,6 +1345,9 @@ func (s *organizationService) SubmitLimitIncreaseRequest(ctx context.Context, or
 	effective, xerr := s.GetEffectiveLimits(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
+	}
+	if req.Field == "max_email_accounts" && effective.MaxEmailAccounts == nil {
+		return nil, errx.New(errx.BadRequest, "this workspace already holds unlimited mailboxes")
 	}
 	current := limitFieldEffective(req.Field, effective)
 	if req.Requested <= current {

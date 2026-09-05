@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -182,4 +184,73 @@ func (h *Handler) ConnectEmailSMTPIMAP(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusCreated, acc)
+}
+
+// OnboardingSMTPIMAPBulkRequest carries up to config.MailboxBulkBatchMax rows.
+type OnboardingSMTPIMAPBulkRequest struct {
+	Accounts []OnboardingSMTPIMAPRequest `json:"accounts"`
+}
+
+// ConnectEmailSMTPIMAPBulk is POST /emails/onboarding/smtp-imap/bulk: the
+// dashboard's CSV import streams a file through it in batches. The answer is
+// always 200 with a per-row status, so one bad row never hides the others.
+// Re-sending a batch is safe: a mailbox that is already connected is skipped.
+func (h *Handler) ConnectEmailSMTPIMAPBulk(c *gin.Context) {
+	userIDStr := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
+		return
+	}
+
+	var req OnboardingSMTPIMAPBulkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+	if len(req.Accounts) == 0 {
+		errx.Handle(c, errx.New(errx.BadRequest, "accounts must carry at least one row"))
+		return
+	}
+	if len(req.Accounts) > config.MailboxBulkBatchMax {
+		errx.Handle(c, errx.New(errx.BadRequest, fmt.Sprintf("accounts may carry at most %d rows per request", config.MailboxBulkBatchMax)))
+		return
+	}
+
+	rows := make([]models.NewSMTPIMAPAccount, len(req.Accounts))
+	for i, a := range req.Accounts {
+		rows[i] = models.NewSMTPIMAPAccount{Email: a.Email, Name: a.Name, SMTP: a.SMTP, IMAP: a.IMAP}
+	}
+
+	result := h.EmailService.OnboardSMTPIMAPBulk(c.Request.Context(), userIDStr, orgID, rows)
+	for _, r := range result.Data {
+		if r.Status != models.MailboxBulkConnected || r.ID == nil {
+			continue
+		}
+		h.auditOrg(c, models.AuditActionConnect, models.AuditEntityEmailAccount, r.ID, nil, map[string]string{
+			"provider": "smtp_imap",
+			"email":    r.Email,
+			"bulk":     "true",
+		})
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// GetMailboxAllowance is GET /emails/allowance: how many mailboxes the
+// workspace holds, how many it may hold and why, and any open request for
+// more. The dashboard reads it before a connect so the answer is never a
+// surprise after the credentials were typed.
+func (h *Handler) GetMailboxAllowance(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
+		return
+	}
+	a, xerr := h.OrganizationService.MailboxAllowance(c.Request.Context(), *orgID)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, a)
 }

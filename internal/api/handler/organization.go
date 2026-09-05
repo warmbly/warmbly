@@ -493,7 +493,10 @@ func (h *Handler) GetMyPendingInvitations(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": invitations})
 }
 
-// GetOrganizationLimits returns the organization's limits and current usage
+// GetOrganizationLimits returns the limits the server actually enforces for
+// the workspace (plan, then any approved override) beside the live counts,
+// plus the mailbox allowance and attachment storage, which have no plan
+// column of their own. A nil limit is unmetered.
 func (h *Handler) GetOrganizationLimits(c *gin.Context) {
 	orgID := middleware.GetOrganizationID(c)
 	if orgID == nil {
@@ -501,7 +504,7 @@ func (h *Handler) GetOrganizationLimits(c *gin.Context) {
 		return
 	}
 
-	limits, xerr := h.OrganizationService.GetOrganizationLimits(c.Request.Context(), *orgID)
+	limits, xerr := h.OrganizationService.GetEffectiveLimits(c.Request.Context(), *orgID)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return
@@ -513,8 +516,33 @@ func (h *Handler) GetOrganizationLimits(c *gin.Context) {
 		return
 	}
 
+	mailboxes, xerr := h.OrganizationService.MailboxAllowance(c.Request.Context(), *orgID)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+
+	// Storage is reported here because nothing else does: a workspace that
+	// dropped to a smaller plan is over its quota with no upload refused yet.
+	storage := gin.H{"used_bytes": int64(0), "limit_bytes": int64(0)}
+	if h.FeatureGateService != nil && h.AttachmentRepo != nil {
+		limit, xerr := h.FeatureGateService.GetStorageLimitBytes(c.Request.Context(), *orgID)
+		if xerr != nil {
+			errx.JSON(c, xerr)
+			return
+		}
+		used, err := h.AttachmentRepo.SumStorageUsedByOrg(c.Request.Context(), *orgID)
+		if err != nil {
+			errx.JSON(c, errx.InternalError())
+			return
+		}
+		storage = gin.H{"used_bytes": used, "limit_bytes": limit, "over_quota": used > limit}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"limits": limits,
-		"counts": counts,
+		"limits":    limits,
+		"counts":    counts,
+		"mailboxes": mailboxes,
+		"storage":   storage,
 	})
 }

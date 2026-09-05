@@ -129,7 +129,9 @@ func (h *Handler) UploadCampaignAttachment(c *gin.Context) {
 		return
 	}
 
-	// Plan-based overall storage quota (org-wide).
+	// Plan-based overall storage quota (org-wide). This read is only a fast
+	// refusal before the bytes are copied to storage; the check that counts
+	// is CreateWithinQuota below, which runs under the org's quota lock.
 	limit, xerr := h.FeatureGateService.GetStorageLimitBytes(c.Request.Context(), orgID)
 	if xerr != nil {
 		errx.JSON(c, xerr)
@@ -141,8 +143,7 @@ func (h *Handler) UploadCampaignAttachment(c *gin.Context) {
 		return
 	}
 	if used+fh.Size > limit {
-		errx.JSON(c, errx.New(errx.BadRequest, fmt.Sprintf(
-			"storage limit reached (%d MB of %d MB used) — remove attachments or upgrade your plan", mb(used), mb(limit))))
+		errx.JSON(c, errx.StorageLimitReached(used, limit, fh.Size))
 		return
 	}
 
@@ -178,9 +179,18 @@ func (h *Handler) UploadCampaignAttachment(c *gin.Context) {
 		MimeType:   mimeType,
 		S3Key:      key,
 	}
-	if err := h.AttachmentRepo.Create(c.Request.Context(), att); err != nil {
+	// The row is the reservation: it is written only if the total still fits
+	// once this upload is counted, so concurrent uploads cannot interleave
+	// past the limit. A refused file is removed from storage again.
+	created, used, err := h.AttachmentRepo.CreateWithinQuota(c.Request.Context(), att, orgID, limit)
+	if err != nil {
 		_ = h.Storage.Delete(c.Request.Context(), key) // best-effort cleanup
 		errx.JSON(c, errx.InternalError())
+		return
+	}
+	if !created {
+		_ = h.Storage.Delete(c.Request.Context(), key)
+		errx.JSON(c, errx.StorageLimitReached(used, limit, fh.Size))
 		return
 	}
 

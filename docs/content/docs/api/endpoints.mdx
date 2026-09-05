@@ -23,6 +23,7 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | GET | `/emails/:id` | `READ_EMAILS` |
 | PATCH | `/emails/:id` | `WRITE_EMAILS` |
 | PATCH | `/emails/tags` | `WRITE_EMAILS` |
+| GET | `/emails/allowance` | `READ_EMAILS` |
 | GET | `/emails/:id/track` | `READ_EMAILS` |
 | PATCH | `/emails/:id/track` | `WRITE_EMAILS` |
 | POST | `/emails/:id/track/verify` | `WRITE_EMAILS` |
@@ -49,6 +50,9 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | PATCH | `/campaigns/:id` | `WRITE_CAMPAIGNS` |
 | DELETE | `/campaigns/:id` | `WRITE_CAMPAIGNS` |
 | POST | `/campaigns/:id/duplicate` | `WRITE_CAMPAIGNS` |
+| GET | `/campaigns/:id/attachments` | `READ_CAMPAIGNS` |
+| POST | `/campaigns/:id/attachments` | `WRITE_CAMPAIGNS` |
+| DELETE | `/campaigns/:id/attachments/:attachmentId` | `WRITE_CAMPAIGNS` |
 | GET | `/campaigns/:id/segments` | `READ_CAMPAIGNS` |
 | PUT | `/campaigns/:id/segments` | `WRITE_CAMPAIGNS` |
 | GET | `/campaigns/:id/advanced` | `READ_CAMPAIGNS` |
@@ -202,6 +206,8 @@ The `/unibox/drafts` endpoints hold autosaved compose drafts, scoped to the call
 
 `POST /emails/:id/hold` keeps a mailbox out of campaign sending until `POST /emails/:id/release` puts it back; warmup is unaffected and the automatic rest logic never releases a hold. `release` is also the manual exit for a mailbox that is `resting` automatically. Both are bodyless and idempotent, so they take no `Idempotency-Key`. See [holding a mailbox yourself](/guides/mailboxes/#holding-a-mailbox-yourself).
 
+`GET /emails/allowance` reports how many mailboxes the workspace holds (`used`), how many it may hold (`allowance`, `null` for unlimited), `remaining`, and the `basis` of the number: `fair_use` (the plan's daily sends divided by `sends_per_mailbox`), `plan`, `override` (an approved request), `free`, or `unlimited`. `pending_request` is the open limit-increase request for mailboxes, if any. Every connect path refuses with `mailbox_allowance_reached` once `remaining` is `0`. See [mailbox allowance](/guides/mailboxes/#mailbox-allowance).
+
 `PATCH /emails/:id` accepts `save_to_sent` (boolean) on SMTP/IMAP mailboxes: when true, which is the default, the worker files a copy of each outbound message in the mailbox's Sent folder. It has no effect on Gmail and Outlook mailboxes, whose APIs file their own copy. See [keeping a copy of sent mail](/guides/mailboxes/#keeping-a-copy-of-sent-mail).
 
 `GET /unibox` and `GET /unibox/thread` return message previews: each row carries `snippet`, a one-line summary, not the message body. Read a full message with `GET /unibox/:id`, which returns `body_plain` plus `body_html`. The HTML is sanitized before it leaves the API (scripts, event handlers, embedded frames, and unsafe URL schemes are removed), so it is safe to render, and links carry `target="_blank"` with `rel="noopener"`. `body_truncated` is `true` on the rare message whose stored body could not be read, where `body_plain` falls back to the snippet.
@@ -342,6 +348,7 @@ These never accept an API key. They depend on a human-bound session: billing flo
 - `POST /auth/logout`, `POST /auth/logout-all`, `GET /auth/me`, `PATCH /auth/me/onboarding`
 - `POST /auth/me/avatar`, `DELETE /auth/me/avatar`
 - `POST /emails/onboarding/oauth/start`, `POST /emails/onboarding/oauth/finish`, `POST /emails/onboarding/smtp-imap`
+- `POST /emails/onboarding/smtp-imap/bulk` (up to `50` SMTP/IMAP rows in `accounts`, answered `200` with a per-row `status` of `connected`, `skipped` or `failed` and a `code`; rows past the workspace's [mailbox allowance](/guides/mailboxes/#mailbox-allowance) fail with `mailbox_allowance_reached` before any credential is dialled. Naturally retry-safe: an already connected mailbox is `skipped`, so it takes no `Idempotency-Key`)
 - `POST /emails/onboarding/oauth/reauth/:id`, `PUT /emails/onboarding/smtp-imap/:id` (reconnect an existing mailbox after a credential change; JWT permission `MANAGE_EMAILS`)
 - `GET /oauth/authorize/details`, `POST /oauth/authorize` (the consent flow: a human approves a third-party app)
 - `GET /oauth/authorized-apps`, `DELETE /oauth/authorized-apps/:id` (apps the user has authorized)

@@ -2,9 +2,10 @@
 // every control that acts on the subscription.
 //
 // Everything here reads real server state rather than the marketing catalog:
-// limits come from /subscription/limits and /organization/limits, capability
-// flags from /subscription/features, the trial countdown from
-// /subscription/trial. The catalog is only used for labels and colours.
+// limits, counts, the mailbox allowance and storage come from
+// /organization/current/limits, capability flags from /subscription/features,
+// the trial countdown from /subscription/trial. The catalog is only used for
+// labels and colours.
 
 import React from "react";
 import { Link } from "react-router-dom";
@@ -27,7 +28,6 @@ import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useUpgradeFlow from "@/hooks/useUpgradeFlow";
 import { useConfirm } from "@/hooks/context/confirm";
 import useSubscription from "@/lib/api/hooks/app/subscription/useSubscription";
-import useSubscriptionLimits from "@/lib/api/hooks/app/subscription/useSubscriptionLimits";
 import useTrialStatus from "@/lib/api/hooks/app/subscription/useTrialStatus";
 import useCancelSubscription from "@/lib/api/hooks/app/subscription/useCancelSubscription";
 import useOrganizationLimits from "@/lib/api/hooks/app/organizations/useOrganizationLimits";
@@ -36,14 +36,18 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { AnimatedNumber, DitherMeter, type DitherTone } from "@/components/ui/dither";
 import { PLAN_ACCENT_CLASSES, getPlan } from "@/lib/plans";
+import type OrganizationLimits from "@/lib/api/models/app/organizations/OrganizationLimits";
 import { Section } from "../_components/SectionShell";
 
 export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void }) {
     const access = useFeatureAccess();
     const sub = useSubscription();
     const trial = useTrialStatus();
-    const subLimits = useSubscriptionLimits();
     const orgLimits = useOrganizationLimits();
+    const limits = orgLimits.data?.limits;
+    const counts = orgLimits.data?.counts;
+    const mailboxes = orgLimits.data?.mailboxes;
+    const storage = orgLimits.data?.storage;
     const usage = useUsageOverview().data;
     const cancel = useCancelSubscription();
     const flow = useUpgradeFlow();
@@ -157,13 +161,13 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                                 <Stat
                                     label="Daily sends"
                                     value={
-                                        subLimits.data?.max_emails_per_day != null
-                                            ? subLimits.data.max_emails_per_day.toLocaleString()
+                                        limits?.daily_campaign_limit != null
+                                            ? limits.daily_campaign_limit.toLocaleString()
                                             : plan.sendsPerDay === Number.POSITIVE_INFINITY
                                               ? "Custom"
                                               : plan.sendsPerDay.toLocaleString()
                                     }
-                                    sub="per mailbox pool"
+                                    sub="across the workspace"
                                 />
                             </div>
                         </div>
@@ -255,33 +259,51 @@ export default function OverviewTab({ onChangePlan }: { onChangePlan: () => void
                     </Link>
                 }
             >
-                {orgLimits.isPending && subLimits.isPending ? (
+                {orgLimits.isPending ? (
                     <div className="h-32 rounded bg-slate-100 animate-pulse" />
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                         <UsageMeter
                             label="Mailboxes"
-                            hint="Connected sending and warmup mailboxes"
-                            current={usage?.email_accounts.total ?? orgLimits.data?.current_emails ?? 0}
-                            max={subLimits.data?.max_email_accounts}
+                            hint={mailboxHint(mailboxes)}
+                            current={mailboxes?.used ?? counts?.email_accounts ?? 0}
+                            max={mailboxes?.allowance}
+                            unmetered="unlimited"
+                        />
+                        <UsageMeter
+                            label="Sends today"
+                            hint="Campaign emails sent today against the workspace's daily allowance"
+                            current={counts?.emails_sent_today ?? 0}
+                            max={limits?.daily_campaign_limit}
                         />
                         <UsageMeter
                             label="Contacts"
                             hint="Recipient records stored in this workspace"
-                            current={orgLimits.data?.current_contacts ?? usage?.contacts.total ?? 0}
-                            max={orgLimits.data?.max_contacts ?? subLimits.data?.max_contacts}
+                            current={counts?.total_contacts ?? usage?.contacts.total ?? 0}
+                            max={limits?.max_contacts}
                         />
                         <UsageMeter
                             label="Campaigns"
                             hint="Campaigns created in this workspace"
-                            current={orgLimits.data?.current_campaigns ?? usage?.campaigns.total ?? 0}
-                            max={orgLimits.data?.max_campaigns ?? subLimits.data?.max_campaigns}
+                            current={counts?.total_campaigns ?? usage?.campaigns.total ?? 0}
+                            max={limits?.max_campaigns}
                         />
                         <UsageMeter
                             label="Team members"
                             hint="Seats used on this workspace"
-                            current={orgLimits.data?.current_members ?? 0}
-                            max={orgLimits.data?.max_members ?? subLimits.data?.max_team_members}
+                            current={counts?.total_members ?? 0}
+                            max={limits?.max_team_members}
+                        />
+                        <UsageMeter
+                            label="Attachment storage"
+                            hint={
+                                storage?.over_quota
+                                    ? "Over the quota after a plan change: existing files keep sending, new uploads wait until you are back under"
+                                    : "Files attached to campaign steps, across every campaign"
+                            }
+                            current={storage?.used_bytes ?? 0}
+                            max={storage?.limit_bytes}
+                            format={formatBytes}
                         />
                         <UsageMeter
                             label="Sends this period"
@@ -373,16 +395,49 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
     );
 }
 
+// mailboxHint explains the number rather than only stating it, because the
+// allowance is fair use and the reader should know what raises it.
+function mailboxHint(a: OrganizationLimits["mailboxes"] | undefined): string {
+    if (!a) return "Connected sending and warmup mailboxes";
+    switch (a.basis) {
+        case "fair_use":
+            return a.sends_per_mailbox <= 1
+                ? "Fair use: one mailbox for every send a day your plan includes"
+                : `Fair use: one mailbox for every ${a.sends_per_mailbox} sends a day your plan includes`;
+        case "override":
+            return "Raised for this workspace by an approved request";
+        case "free":
+            return "Free workspace allowance; every paid plan holds unlimited mailboxes";
+        case "plan":
+            return "Set by your plan";
+        default:
+            return "No cap on connected mailboxes";
+    }
+}
+
+function formatBytes(n: number): string {
+    if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(n >= 10 * (1 << 30) ? 0 : 1)} GB`;
+    if (n >= 1 << 20) return `${Math.round(n / (1 << 20))} MB`;
+    if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+    return `${n} B`;
+}
+
 function UsageMeter({
     label,
     hint,
     current,
     max,
+    unmetered = "unmetered",
+    format,
 }: {
     label: string;
     hint: string;
     current: number;
     max?: number | null;
+    /** The word shown instead of a cap when there is none. */
+    unmetered?: string;
+    /** Renders both numbers; defaults to a plain count. */
+    format?: (n: number) => string;
 }) {
     const capped = typeof max === "number" && max > 0 && Number.isFinite(max);
     const pct = capped ? Math.min(100, Math.round((current / (max as number)) * 100)) : 0;
@@ -392,9 +447,9 @@ function UsageMeter({
             <div className="flex items-baseline justify-between gap-2 mb-1">
                 <span className="text-[12px] text-slate-700 font-medium">{label}</span>
                 <span className="text-[11.5px] font-mono tabular-nums text-slate-700">
-                    <AnimatedNumber value={current} />
+                    {format ? format(current) : <AnimatedNumber value={current} />}
                     <span className="text-slate-400">
-                        {capped ? ` / ${(max as number).toLocaleString()}` : " / unmetered"}
+                        {capped ? ` / ${format ? format(max as number) : (max as number).toLocaleString()}` : ` / ${unmetered}`}
                     </span>
                 </span>
             </div>

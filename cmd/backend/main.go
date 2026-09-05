@@ -722,6 +722,13 @@ func main() {
 		// trial start (planRepo + creditService, both already constructed above).
 		trialService = trial.NewService(subscriptionRepository, userRepostory, planRepository, creditService)
 		featureGateService = feature.NewService(subscriptionRepository, planRepository)
+		// An approved daily-send increase must raise what is enforced, not
+		// only what the dashboard shows.
+		if g, ok := featureGateService.(interface {
+			WireLimitOverrides(feature.LimitOverrideReader)
+		}); ok {
+			g.WireLimitOverrides(organizationRepository)
+		}
 		workerAssignmentService = worker.NewAssignmentService(workerRepository, subscriptionRepository, planRepository)
 		subscriptionService = subscription.NewService(subscriptionRepository, planRepository)
 		// dailyThrottleService needs the cache that's constructed
@@ -1194,10 +1201,9 @@ func main() {
 		)
 		// Fan out email-account lifecycle events to customer webhooks.
 		emailService.WireWebhooks(webhookService)
-		// Same wire-after-construct pattern for the daily throttle —
-		// only the prod backend has a real cache; jobs / tests build
-		// emailService without one.
-		emailService.WireThrottle(dailyThrottleService)
+		// Every connect path checks the workspace's mailbox allowance
+		// (fair use for paid plans, the free cap otherwise).
+		emailService.WireMailboxAllowance(organizationService)
 		// Seed Graph delta cursors when the reconciler reloads mailboxes.
 		emailService.WireGraphDelta(repository.NewEmailGraphDeltaRepository(primaryDB))
 		// The Gmail equivalent: without it a reloaded mailbox re-bootstraps its

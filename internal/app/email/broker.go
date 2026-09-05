@@ -51,9 +51,6 @@ func (s *emailService) OAuthConnectWithCode(ctx context.Context, userID string, 
 	if name == "" {
 		name = deriveNameFromEmail(owner.Email)
 	}
-	if xerr := s.guardMailboxThrottle(ctx, orgID); xerr != nil {
-		return nil, xerr
-	}
 	acc, xerr := s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
 		OrganizationID: orgID,
 		Provider:       provider,

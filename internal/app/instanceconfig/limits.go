@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // LimitEntry is one number an operator may be looking for.
@@ -48,9 +49,17 @@ func Limits() []LimitGroup {
 			},
 		},
 		{
+			Title: "Mailbox allowance",
+			Entries: []LimitEntry{
+				{"Fair-use sends per mailbox", n(config.FairUseSendsPerMailbox), "sends/day", "A paid plan holds one mailbox for every this many daily sends it includes; a plan with no daily cap holds unlimited mailboxes."},
+				{"Free workspace mailboxes", n(models.FreeWorkspaceMailboxLimit), "per organization", "Without a paid plan."},
+				{"Bulk connect batch", n(config.MailboxBulkBatchMax), "rows/request", "The most SMTP/IMAP rows one bulk connect call carries; the dashboard streams a CSV through batches of this size."},
+				{"Bulk connect concurrency", n(config.MailboxBulkConcurrency), "validations", "Credentials dialled at the same time within one batch."},
+			},
+		},
+		{
 			Title: "Organization hard caps",
 			Entries: []LimitEntry{
-				{"Connected mailboxes", n(config.HardCapMailboxes), "per organization", "The backstop when neither a plan nor an override sets one."},
 				{"Campaigns created", n(config.HardCapCampaignsTotal), "per organization", "Total campaigns ever created."},
 				{"Active campaigns", n(config.HardCapCampaignsActive), "per organization", "Running at the same time."},
 				{"Team members", n(config.HardCapTeamMembers), "seats", "Members in one organization."},
@@ -62,7 +71,6 @@ func Limits() []LimitGroup {
 			Title: "Daily creation throttles",
 			Entries: []LimitEntry{
 				{"New campaigns", n(config.DailyThrottleNewCampaigns), "per organization/day", "Resets at UTC midnight. Not raisable per organization."},
-				{"Newly connected mailboxes", n(config.DailyThrottleNewMailboxes), "per organization/day", "Resets at UTC midnight."},
 				{"New workspaces", n(config.DailyThrottleNewOrgs), "per owner/day", "Resets at UTC midnight."},
 			},
 		},

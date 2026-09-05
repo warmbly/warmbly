@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -21,7 +22,16 @@ type DuplicateCampaignInput struct {
 	UserID      uuid.UUID
 	Name        string
 	Attachments []models.CampaignAttachment
+	// OrganizationID and StorageLimitBytes make the copied attachments count
+	// against the quota inside the same transaction that inserts them. A nil
+	// limit skips the check.
+	OrganizationID    uuid.UUID
+	StorageLimitBytes *int64
 }
+
+// ErrStorageQuotaExceeded is returned by Duplicate when the copied attachments
+// would take the organization past StorageLimitBytes. Nothing is written.
+var ErrStorageQuotaExceeded = errors.New("storage quota exceeded")
 
 // Delete removes a campaign and everything that only means something inside
 // it. The pending tasks parked for the campaign (its wakeup chain and any
@@ -160,6 +170,25 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 
 	if err := copyCampaignVariantsTx(ctx, tx, in.SourceID, in.NewID, stepIDs); err != nil {
 		return nil, err
+	}
+
+	if len(in.Attachments) > 0 && in.StorageLimitBytes != nil {
+		if err := LockStorageQuota(ctx, tx, in.OrganizationID); err != nil {
+			db.CaptureError(err, "", nil, "exec")
+			return nil, err
+		}
+		used, err := storageUsedTx(ctx, tx, in.OrganizationID)
+		if err != nil {
+			db.CaptureError(err, "", nil, "queryrow")
+			return nil, err
+		}
+		var adding int64
+		for _, att := range in.Attachments {
+			adding += att.Size
+		}
+		if used+adding > *in.StorageLimitBytes {
+			return nil, fmt.Errorf("%w: %d of %d bytes used, %d to add", ErrStorageQuotaExceeded, used, *in.StorageLimitBytes, adding)
+		}
 	}
 
 	const insertAttachment = `

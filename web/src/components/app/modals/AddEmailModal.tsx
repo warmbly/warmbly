@@ -9,6 +9,11 @@
 //   provider picker ──► gmail OAuth popup  ─┐
 //                  ──► outlook OAuth popup ─┼─► /emails/onboarding/oauth/finish
 //                  ──► smtp/imap form ──────────► /emails/onboarding/smtp-imap
+//                  ──► CSV bulk import ─────────► /emails/onboarding/smtp-imap/bulk
+//
+// Every path can run into the workspace's mailbox allowance; that answer
+// (code mailbox_allowance_reached) opens MailboxAllowanceDialog instead of a
+// toast, and the picker shows the allowance up front so it is never a surprise.
 //
 // OAuth popup posts {type:"email_oauth_callback", code, state} back here
 // via window.postMessage; we then call OAuth-finish with the user's bearer.
@@ -23,6 +28,7 @@ import {
     CheckIcon,
     ChevronRightIcon,
     CloudIcon,
+    FileSpreadsheetIcon,
     InboxIcon,
     KeyRoundIcon,
     Loader2Icon,
@@ -58,8 +64,20 @@ import useCloudPool from "@/hooks/useCloudPool";
 import type { CloudOAuthDoneMessage } from "@/app/cloud-oauth/done/page";
 import { Google, Outlook } from "@/components/svg";
 import { cn } from "@/lib/utils";
+import useFeatureAccess from "@/hooks/useFeatureAccess";
+import useMailboxAllowance from "@/lib/api/hooks/app/emails/useMailboxAllowance";
+import { allowanceFull } from "@/lib/api/models/app/emails/MailboxAllowance";
+import type MailboxAllowance from "@/lib/api/models/app/emails/MailboxAllowance";
+import MailboxAllowanceDialog from "@/components/app/emails/MailboxAllowanceDialog";
+import BulkConnectPanel from "@/components/app/emails/BulkConnectPanel";
+import { DitherMeter, type DitherTone } from "@/components/ui/dither";
 
-type View = "pick" | "gmail" | "outlook" | "smtp_imap";
+type View = "pick" | "gmail" | "outlook" | "smtp_imap" | "bulk";
+
+/** The one answer every connect path shares: open the allowance dialog. */
+function isAllowanceError(e: unknown): boolean {
+    return (e as AppError | undefined)?.code === "mailbox_allowance_reached";
+}
 type OAuthProvider = "gmail" | "outlook";
 
 interface OAuthCallbackMessage {
@@ -132,12 +150,32 @@ export default function AddEmailModal() {
     const pool = useCloudPool();
     const viaCloud = pool.connected;
 
+    // The allowance is read while the modal is open so the picker can show it
+    // and a refused connect can explain itself. Fetched from the same query
+    // the mailbox list invalidates, so it is live.
+    const access = useFeatureAccess();
+    const allowance = useMailboxAllowance(user.addEmail);
+    const [allowanceOpen, setAllowanceOpen] = React.useState(false);
+    const [allowanceReached, setAllowanceReached] = React.useState(false);
+    const openAllowance = React.useCallback((reached = false) => {
+        setAllowanceReached(reached);
+        setAllowanceOpen(true);
+    }, []);
+    // Route a refused connect to the dialog; everything else stays a toast.
+    const onConnectError = React.useCallback(
+        (e: unknown) => {
+            if (isAllowanceError(e)) openAllowance(true);
+        },
+        [openAllowance],
+    );
+
     // Reset when the modal closes.
     React.useEffect(() => {
         if (!user.addEmail) {
             setView("pick");
             setOauthBusy(null);
             setNotConfigured(null);
+            setAllowanceOpen(false);
             pendingState.current = null;
             pendingCloud.current = null;
         }
@@ -171,11 +209,13 @@ export default function AddEmailModal() {
                     success: "Mailbox connected. Warmbly Cloud warms it from now on.",
                     error: (e: AppError) => buildError(e),
                 },
-            ).finally(() => setOauthBusy(null));
+            )
+                .catch(onConnectError)
+                .finally(() => setOauthBusy(null));
         }
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [qc, user]);
+    }, [qc, user, onConnectError]);
 
     // Listen for the OAuth popup's postMessage. We only honour messages from an
     // origin we own and whose state matches the one we issued, which is what
@@ -211,11 +251,13 @@ export default function AddEmailModal() {
                     success: "Mailbox connected",
                     error: (e: AppError) => buildError(e),
                 },
-            ).finally(() => setOauthBusy(null));
+            )
+                .catch(onConnectError)
+                .finally(() => setOauthBusy(null));
         }
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [qc, user]);
+    }, [qc, user, onConnectError]);
 
     async function startOAuth(provider: OAuthProvider) {
         if (oauthBusy) return;
@@ -234,6 +276,10 @@ export default function AddEmailModal() {
             } catch (err) {
                 pendingCloud.current = null;
                 setOauthBusy(null);
+                if (isAllowanceError(err)) {
+                    openAllowance(true);
+                    return;
+                }
                 toast.error(buildError(err as AppError));
             }
             return;
@@ -253,6 +299,10 @@ export default function AddEmailModal() {
             const e = err as AppError;
             if (e.code === "mailbox_provider_not_configured") {
                 setNotConfigured(provider);
+                return;
+            }
+            if (isAllowanceError(e)) {
+                openAllowance(true);
                 return;
             }
             toast.error(buildError(e));
@@ -278,7 +328,10 @@ export default function AddEmailModal() {
                         exit={{ y: 8, opacity: 0 }}
                         transition={{ duration: 0.16 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full max-w-[560px] rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[88dvh]"
+                        className={cn(
+                            "w-full rounded-lg bg-white border border-slate-200 shadow-[0_24px_48px_-12px_rgba(15,23,42,0.18),0_8px_16px_-8px_rgba(15,23,42,0.1)] overflow-hidden flex flex-col max-h-[88dvh] transition-[max-width] duration-200",
+                            view === "bulk" ? "max-w-[760px]" : "max-w-[560px]",
+                        )}
                     >
                         <Header
                             view={view}
@@ -298,14 +351,20 @@ export default function AddEmailModal() {
                                     transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
                                 >
                                     {view === "pick" && (
-                                        <PickProvider
-                                            onPick={setView}
-                                            viaCloud={viaCloud}
-                                            onAdopted={() => {
-                                                qc.invalidateQueries({ queryKey: ["emails", "list"] });
-                                                user.setAddEmail(false);
-                                            }}
-                                        />
+                                        <>
+                                            <AllowanceStrip
+                                                allowance={allowance.data}
+                                                onOpen={() => openAllowance(allowanceFull(allowance.data))}
+                                            />
+                                            <PickProvider
+                                                onPick={setView}
+                                                viaCloud={viaCloud}
+                                                onAdopted={() => {
+                                                    qc.invalidateQueries({ queryKey: ["emails", "list"] });
+                                                    user.setAddEmail(false);
+                                                }}
+                                            />
+                                        </>
                                     )}
                                     {view === "gmail" && (
                                         notConfigured === "gmail" ? (
@@ -337,15 +396,94 @@ export default function AddEmailModal() {
                                                 qc.invalidateQueries({ queryKey: ["emails", "list"] });
                                                 user.setAddEmail(false);
                                             }}
+                                            onError={onConnectError}
+                                        />
+                                    )}
+                                    {view === "bulk" && (
+                                        <BulkConnectPanel
+                                            onDone={() => {
+                                                qc.invalidateQueries({ queryKey: ["emails", "list"] });
+                                                user.setAddEmail(false);
+                                            }}
+                                            onAllowance={() => openAllowance(allowanceFull(allowance.data))}
                                         />
                                     )}
                                 </motion.div>
                             </AnimatePresence>
                         </div>
                     </motion.div>
+                    <MailboxAllowanceDialog
+                        open={allowanceOpen}
+                        onClose={() => setAllowanceOpen(false)}
+                        allowance={allowance.data}
+                        reached={allowanceReached}
+                        currentPlan={access.plan}
+                    />
                 </motion.div>
             )}
         </AnimatePresence>
+    );
+}
+
+// AllowanceStrip — the workspace's mailbox allowance at the top of the
+// picker: quiet while there is plenty of room, a warning near the cap, and a
+// clear "full" state that leads to the request dialog rather than letting the
+// user type credentials that will be refused.
+function AllowanceStrip({ allowance: a, onOpen }: { allowance: MailboxAllowance | undefined; onOpen: () => void }) {
+    if (!a || a.allowance == null) return null;
+    const cap = a.allowance;
+    const remaining = a.remaining ?? 0;
+    const pct = Math.min(100, Math.round((a.used / cap) * 100));
+    const full = remaining <= 0;
+    const near = !full && (pct >= 80 || remaining <= 5);
+    if (!full && !near) {
+        return (
+            <div className="px-4 py-2 border-b border-slate-200/60 flex items-center gap-2 text-[11px] text-slate-500">
+                <span className="font-mono tabular-nums text-slate-700">
+                    {a.used.toLocaleString()} / {cap.toLocaleString()}
+                </span>
+                <span>mailboxes on this workspace</span>
+                {a.pending_request && <span className="text-amber-600">· increase requested</span>}
+                <button type="button" onClick={onOpen} className="ml-auto underline hover:text-slate-900 transition-colors">
+                    Need more?
+                </button>
+            </div>
+        );
+    }
+    const tone: DitherTone = full ? "rose" : "amber";
+    return (
+        <div className={cn("px-4 py-2.5 border-b", full ? "bg-rose-50/60 border-rose-200/60" : "bg-amber-50/60 border-amber-200/60")}>
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+                <span className={cn("text-[12px] font-medium", full ? "text-rose-900" : "text-amber-900")}>
+                    {full
+                        ? "Every mailbox slot is used"
+                        : `${remaining.toLocaleString()} ${remaining === 1 ? "slot" : "slots"} left`}
+                </span>
+                <span className="text-[11px] font-mono tabular-nums text-slate-700">
+                    {a.used.toLocaleString()} / {cap.toLocaleString()}
+                </span>
+            </div>
+            <DitherMeter frac={pct / 100} tone={tone} height={4} />
+            <div className="flex items-center justify-between gap-2 mt-1.5">
+                <span className={cn("text-[11px]", full ? "text-rose-800/90" : "text-amber-800/90")}>
+                    {a.pending_request
+                        ? `Increase to ${a.pending_request.requested.toLocaleString()} requested, pending review`
+                        : full
+                          ? "New connects are refused until the allowance is raised"
+                          : "Ask for more before a large batch"}
+                </span>
+                <button
+                    type="button"
+                    onClick={onOpen}
+                    className={cn(
+                        "h-6 px-2 rounded text-[11px] font-medium transition-colors shrink-0",
+                        full ? "bg-rose-600 hover:bg-rose-700 text-white" : "bg-amber-600 hover:bg-amber-700 text-white",
+                    )}
+                >
+                    {a.pending_request ? "View request" : full ? "Get more mailboxes" : "Request more"}
+                </button>
+            </div>
+        </div>
     );
 }
 
@@ -363,6 +501,7 @@ function Header({
         gmail: "Gmail or Google Workspace",
         outlook: "Outlook or Microsoft 365",
         smtp_imap: "Any provider via SMTP / IMAP",
+        bulk: "Many mailboxes from one CSV",
     };
     return (
         <div className="h-12 px-3 border-b border-slate-200 flex items-center gap-2.5 shrink-0">
@@ -496,6 +635,13 @@ function PickProvider({ onPick, viaCloud, onAdopted }: { onPick: (v: View) => vo
             icon: <Logo className="w-4 h-5 text-slate-700" />,
             title: "Other (SMTP / IMAP)",
             sub: "Any provider with manual host, port, and app password.",
+            tone: "neutral",
+        },
+        {
+            key: "bulk",
+            icon: <FileSpreadsheetIcon className="w-4 h-4 text-slate-700" />,
+            title: "Bulk import from CSV",
+            sub: "Hundreds or thousands of SMTP / IMAP mailboxes in one go, with a report of anything that failed.",
             tone: "neutral",
         },
     ];
@@ -652,7 +798,7 @@ function Scope({ children }: { children: React.ReactNode }) {
     );
 }
 
-function SmtpImapPanel({ onDone }: { onDone: () => void }) {
+function SmtpImapPanel({ onDone, onError }: { onDone: () => void; onError: (e: unknown) => void }) {
     const [name, setName] = React.useState("");
     const [email, setEmail] = React.useState("");
 
@@ -748,8 +894,9 @@ function SmtpImapPanel({ onDone }: { onDone: () => void }) {
                 },
             );
             onDone();
-        } catch {
-            /* surfaced by toast */
+        } catch (e) {
+            // Surfaced by the toast, except a full allowance, which gets its dialog.
+            onError(e);
         } finally {
             setSubmitting(false);
         }
