@@ -135,6 +135,25 @@ shellcheck, `--help`, `--demo`, `--print-env`, a compose file per answer shape,
 a pty width regression test, and the checksum). `make installer-demo` is how
 you see a UI change without installing anything.
 
+`site/public/cli.sh` is the second published script, served at
+`https://warmbly.com/cli.sh`, and it installs the `warmbly` CLI rather than an
+instance. Every rule above applies to it, plus two of its own:
+
+- **It verifies what it downloads.** The release publishes `checksums.txt`
+  next to the archives, and a mismatch installs nothing rather than warning.
+  Never weaken that to a warning
+- **Release assets are named without the version**, so
+  `releases/latest/download/warmbly_<os>_<arch>.tar.gz` resolves with no
+  GitHub API call. The unauthenticated API is rate limited per IP, which is
+  what breaks a curl installer on a shared runner. `scripts/build-cli.sh` and
+  the platform list in `cli.sh` have to agree; `make cli-check` fails when they
+  do not
+
+`make cli-check` runs the whole thing (POSIX parse, shellcheck, `--help`,
+`--dry-run`, a real install from a local mirror, checksum tampering, uninstall,
+the PowerShell parse and the checksum), and `make cli-sha` regenerates the
+checksum after any edit. `site/public/cli.ps1` is the Windows half.
+
 ### Verification: what to run, what to skip
 
 Keep the loop fast. The signals that matter are formatting, lint, and typecheck — not local builds or browser automation.
@@ -148,7 +167,8 @@ For frontend changes, run `pnpm typecheck` and `pnpm lint` in any tree you touch
 
 For a change to `site/public/install.sh`, run `make installer-check`; it is the
 same script CI runs and it regenerates nothing, so a stale checksum fails there
-exactly as it will in CI.
+exactly as it will in CI. For `site/public/cli.sh` or `cli.ps1`, the equivalent
+is `make cli-check` (and `make cli-sha` after any edit).
 
 Do not:
 
@@ -257,17 +277,18 @@ API keys with the `REALTIME_SUBSCRIBE` permission (bit 11) can connect to the sa
 - `cmd/backend`: API and business orchestration
 - `cmd/consumer`: consumes Kafka events and updates platform state
 - `cmd/worker`: execution worker for send/sync operations
+- `cmd/cli`: the `warmbly` CLI, the customer-facing one. A signed-in, multi-host client of the public REST API (`internal/cli/*` holds its config, HTTP client and renderers). It never serves HTTP and never touches Postgres; `cmd/warmblyctl` is the operator's CLI and keeps the database half. The directory is `cli` and the binary is `warmbly`, so every build target names its output explicitly (`-o warmbly`), and `go install` needs the rename documented in `docs/content/docs/api/cli.mdx`
 - `cmd/forms`: the public face of hosted lead-capture forms (`internal/formserver`): serves the built `forms/` app, per-form page shells (with the per-form embed CSP), the embed loader and public submissions on their own origin (`FORMS_DOMAIN`). No database; the backend's internal API is its only dependency, like the tracking service
 - `forms/`: the public form page app (React + TanStack Router/Query/Form, Vite CSR build). Renders a published form from the same-origin `/api/forms/:publicID`, submits to `/api/forms/:publicID/submit`; the Go forms service hosts the build
 - `tracking/`: open and click tracking service
 - `realtime/`: websocket fanout service
 - `web/`: in-product frontend (dashboard). Customer-facing only: it holds no platform-admin screens, and operator tooling must not be added back here
 - `admin/`: platform admin panel (:5174), the single operator surface. Workers, users, orgs, warmup, campaigns, analytics, audit. Every route sits behind `RequireAdmin` and the backend's `RequireAdminPermission` gates
-- `site/`: public marketing site (Astro 5 + Tailwind v4). `site/public/install.sh` is the self-host installer served at warmbly.com/install.sh, with its checksum next to it; see the rules above before touching it
+- `site/`: public marketing site (Astro 5 + Tailwind v4). `site/public/install.sh` is the self-host installer served at warmbly.com/install.sh and `site/public/cli.sh` is the CLI installer served at warmbly.com/cli.sh (with `cli.ps1` for Windows), each with its checksum next to it; see the rules above before touching either
 - `deploy/`: production deploy manifests, infrastructure, and runtime config
 - `docs/`: documentation site (docs.warmbly.com); product guides, API reference, and self-hosting/engineering docs under `content/docs/development/`
 - `scripts/`: one-off tooling (codegen, migrations, installer checks, local dev utilities)
-- `skills/`: agent playbooks shipped with the repo (`warmbly-api` for the product, `warmbly-ops` for instance administration, `warmbly-install` for standing an instance up and moving it). A command an operator can run is not usable by an agent until it is in one of these
+- `skills/`: agent playbooks shipped with the repo (`warmbly-cli` for the `warmbly` CLI, `warmbly-api` for the same product surface through `warmblyctl`, `warmbly-ops` for instance administration, `warmbly-install` for standing an instance up and moving it). A command an operator can run is not usable by an agent until it is in one of these
 
 ## Worker Topology
 

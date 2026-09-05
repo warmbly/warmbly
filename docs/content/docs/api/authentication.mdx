@@ -17,6 +17,28 @@ The `wmbly_` prefix identifies the key as a Warmbly key. The remaining 43 charac
 
 Keys are stored as a SHA-256 hash; the plaintext is shown exactly once on creation. To help you spot a key in the dashboard without exposing the secret, we store the first 8 characters (`key_prefix`, e.g. `wmbly_ab`) and the last 4 characters (`key_suffix`, e.g. `wxyz`). Render them as `wmbly_ab…wxyz`.
 
+## Three ways to get a key
+
+1. **The dashboard.** Settings > API keys, pick the scopes, copy the secret. This is the right path for a key a server will use.
+2. **The CLI.** [`warmbly auth login`](/api/cli/) opens a browser approval and mints a key named for the machine that asked, then stores it at 0600. This is the right path for a key you will use yourself, and it is the only one that does not involve pasting a secret into a shell.
+3. **The API.** `POST /v1/api-keys` with a key that carries `API_KEYS`. The secret is in that response and nowhere else.
+
+All three produce the same thing: a `wmbly_` key with a scope bitmask, listed under Settings > API keys, revocable there.
+
+### The CLI device flow
+
+`warmbly auth login` uses a device-code handshake, so the terminal never handles your password and the browser never handles the key:
+
+1. The CLI calls `POST /v1/auth/cli/code` with the scopes it wants and the machine's hostname. It gets back a `device_code` it keeps, a `user_code` it prints, and a `verification_uri_complete` it opens.
+2. You approve at `app.warmbly.com/cli`, choosing which workspace the key belongs to. The approval is what mints the key, so it requires the `MANAGE_API_KEYS` organization permission.
+3. The CLI polls `POST /v1/auth/cli/poll` and receives the key exactly once, on the first poll after approval.
+
+Codes expire after ten minutes, both halves are per-IP rate limited, and the `device_code` is stored hashed. Anything else can drive the same flow: it is two public endpoints and a browser.
+
+### Ending a key
+
+`DELETE /v1/api-keys/:id` revokes any key in the workspace and needs the `API_KEYS` scope. `DELETE /v1/api-keys/self` revokes the key the call was made with and needs no scope at all, so a narrowly scoped credential can always end itself. This is what `warmbly auth logout` uses.
+
 ## Using your API key
 
 Include your API key in the `Authorization` header of every request:

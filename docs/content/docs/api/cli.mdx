@@ -1,0 +1,382 @@
+---
+title: CLI
+description: The warmbly command line interface. Sign in once, then drive campaigns, contacts, mailboxes and the inbox from your terminal, from CI, or from an agent.
+---
+
+`warmbly` is the command line interface to Warmbly. It signs in as you, holds one credential per host, and speaks only the public REST API, so it works against the hosted service and against any self-hosted instance you can reach.
+
+```bash
+warmbly auth login
+warmbly campaign list
+warmbly inbox list --unseen
+warmbly api "/campaigns?limit=10"
+```
+
+<Callout type="info" title="This is not warmblyctl">
+There are two CLIs and they answer different questions. `warmbly` is the one you install on your machine to use the product. [`warmblyctl`](/development/warmblyctl/) is the operator's tool: it talks to Postgres directly, runs inside the backend container, and exists for recovery, accounts, health and backups. If you are asking "what is wrong with this install", that is the one you want.
+</Callout>
+
+## Install
+
+Pick one. All of them produce the same single binary.
+
+**macOS and Linux**
+
+```bash
+curl -fsSL https://warmbly.com/cli.sh | sh
+```
+
+Installs to `~/.local/bin`, so it needs no root and no toolchain. The script verifies what it downloaded against the published checksum and installs nothing if they disagree, writes shell completions, and tells you the one line to add to your profile if that directory is not already on your PATH.
+
+**Windows**
+
+```powershell
+irm https://warmbly.com/cli.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\Warmbly\bin` and adds it to your user PATH. No admin rights.
+
+**Homebrew** (macOS and Linux)
+
+```bash
+brew install warmbly/tap/warmbly
+```
+
+**Scoop** (Windows)
+
+```powershell
+scoop bucket add warmbly https://github.com/warmbly/homebrew-tap
+scoop install warmbly
+```
+
+**Docker**, for CI or anywhere installing a binary is more trouble than pulling one:
+
+```bash
+docker run --rm -e WARMBLY_TOKEN ghcr.io/warmbly/warmbly/cli campaign list
+```
+
+A container has no browser, so sign in with `WARMBLY_TOKEN` rather than `auth login`.
+
+**From source**, if you have Go:
+
+```bash
+go install github.com/warmbly/warmbly/cmd/cli@latest
+mv "$(go env GOPATH)/bin/cli" "$(go env GOPATH)/bin/warmbly"
+```
+
+The package directory is `cmd/cli`, so `go install` names the binary `cli`. Rename it, or use one of the channels above.
+
+**Already have a Warmbly instance?** The binary ships inside the backend image:
+
+```bash
+docker compose -p warmbly exec backend warmbly --help
+```
+
+### Keeping it current
+
+```bash
+warmbly version
+warmbly upgrade
+```
+
+`upgrade` replaces the binary in place, verifying the download against the release checksums first. When the CLI came from Homebrew or Scoop it says which command to run instead, rather than overwriting a file a package manager owns. The CLI also checks for a new release once a day and mentions it in one line; `WARMBLY_NO_UPDATE_CHECK=1` turns that off, and it never runs in CI or when output is piped.
+
+### Installer flags
+
+The install script takes flags after `--`, and every one of them is also an environment variable, so the same install runs from Ansible, cloud-init or a Dockerfile:
+
+```bash
+curl -fsSL https://warmbly.com/cli.sh | sh -s -- --dir /usr/local/bin
+curl -fsSL https://warmbly.com/cli.sh | sh -s -- --version v1.4.0
+curl -fsSL https://warmbly.com/cli.sh | sh -s -- --no-modify-path --no-completions
+curl -fsSL https://warmbly.com/cli.sh | sh -s -- --dry-run
+curl -fsSL https://warmbly.com/cli.sh | sh -s -- --uninstall
+```
+
+| Flag | Variable | What it does |
+|---|---|---|
+| `--dir PATH` | `WARMBLY_INSTALL_DIR` | Where the binary goes. Default `~/.local/bin` |
+| `--version TAG` | `WARMBLY_CLI_VERSION` | Pin a release instead of taking the newest |
+| `--base-url URL` | `WARMBLY_CLI_BASE_URL` | Download from an internal mirror of the release assets |
+| `--no-modify-path` | `WARMBLY_NO_MODIFY_PATH` | Never touch a shell profile |
+| `--no-completions` | `WARMBLY_NO_COMPLETIONS` | Skip the completion files |
+| `--dry-run` | | Print what would happen, change nothing |
+| `--uninstall` | | Remove the binary and completions, keep your sign-ins |
+
+`--help` lists them in the terminal. `sh -s -- --help` works through the pipe.
+
+### Reading it before you run it
+
+Piping a script into a shell is worth being careful about, which is why the checksum is published next to it:
+
+```bash
+curl -fsSLO https://warmbly.com/cli.sh
+curl -fsSLO https://warmbly.com/cli.sh.sha256
+sha256sum -c cli.sh.sha256
+less cli.sh && sh cli.sh
+```
+
+Every release archive is covered by `checksums.txt` on the release, and the installer verifies the archive against it before unpacking. If the two disagree it installs nothing and says so.
+
+### Completions
+
+The installer writes them for your shell. To do it by hand:
+
+```bash
+warmbly completion bash > /etc/bash_completion.d/warmbly
+warmbly completion zsh  > "${fpath[1]}/_warmbly"
+warmbly completion fish > ~/.config/fish/completions/warmbly.fish
+```
+
+## Signing in
+
+```bash
+warmbly auth login
+```
+
+It asks two questions: which instance (the hosted service, or a hostname of your own), and how (a browser approval, or pasting a key you already have).
+
+The browser path shows an eight character code, opens `app.warmbly.com/cli`, and waits. You approve there, choosing which workspace the CLI is signing in to. The approval creates **one API key named for your machine**, which appears under Settings > API keys and is revocable there or with `warmbly auth logout`. The terminal never handles your password, and the browser never handles the key.
+
+```
+  Your code: K4TM-9RQD
+  Approve at: https://app.warmbly.com/cli?code=K4TM-9RQD
+
+… Waiting for approval (the code expires in 10 minutes)
+✓ Signed in to warmbly.com as jane@example.com
+  Workspace Acme
+```
+
+Non-interactive forms, for a script or an agent:
+
+```bash
+warmbly auth login --hostname warmbly.acme.com --web
+echo "$WARMBLY_KEY" | warmbly auth login --with-token
+warmbly auth login --scopes read-only
+```
+
+### Scopes
+
+The CLI asks for full access by default, and the approval screen lists exactly what that means before you agree. Narrow it with `--scopes`:
+
+```bash
+warmbly auth login --scopes read-only
+warmbly auth login --scopes read_campaigns,read_contacts,send_campaigns
+```
+
+A key's scopes are fixed once created, so widening them means a new key. `warmbly auth refresh --scopes full` runs the sign-in again and revokes the key it replaces, which is why refreshing does not leave a trail of keys behind.
+
+Scope names are the ones in the [permissions reference](/api/permissions/), in either case, with `full` and `read-only` as shorthands.
+
+### Several instances
+
+The CLI holds one credential per host. The `*` in `auth status` is the one commands use.
+
+```bash
+warmbly auth login --hostname warmbly.acme.com
+warmbly auth status
+warmbly auth switch warmbly.acme.com
+warmbly campaign list --host warmbly.com   # one command, other host
+```
+
+`warmbly auth status` also tells you where the token came from, which is the answer nine times out of ten when a command fails unexpectedly:
+
+```
+* warmbly.com
+    ✓ signed in as jane@example.com
+    - workspace: Acme
+    - scopes: all 24
+    - api: https://api.warmbly.com
+    - token from: /home/jane/.config/warmbly/hosts.yml
+    - token: wmbly_ab********wxyz
+```
+
+### In CI
+
+Set `WARMBLY_TOKEN` and skip the login entirely. It overrides the file and is never written to it.
+
+```yaml
+env:
+  WARMBLY_TOKEN: ${{ secrets.WARMBLY_TOKEN }}
+  WARMBLY_HOST: warmbly.com     # omit for the hosted service
+run: warmbly campaign list --json
+```
+
+`warmbly auth token` prints the active token and nothing else, for handing to another tool.
+
+## Output
+
+Commands print a table on a terminal and JSON everywhere else, so the same command is readable by a person and parseable by a pipe.
+
+```bash
+warmbly campaign list                      # a table
+warmbly campaign list > campaigns.json     # JSON, no flag needed
+warmbly campaign list --json | jq '.data[].name'
+warmbly campaign list --fields name,status
+warmbly campaign list --template '{{range .data}}{{.name}}{{"\n"}}{{end}}'
+```
+
+`--all` walks the cursor on any list command and merges every page into one response.
+
+## Sending real mail
+
+Anything that puts mail on the wire asks first, and refuses rather than sending when there is no terminal to ask on:
+
+```
+$ warmbly campaign start 6f1c…
+! `warmbly campaign start` sends real mail. Continue? [y/N]
+```
+
+`--yes` is the only way past it, which makes it the flag to grep for in a script review. The commands that behave this way are `campaign start`, `campaign test`, `mailbox send`, `inbox reply`, `inbox compose` and `inbox approve-draft`.
+
+## Commands
+
+Run `warmbly <command> --help` for the flags, and `warmbly <command> <subcommand> --help` for one command's arguments.
+
+| Command | What it covers |
+|---|---|
+| `auth` | login, logout, status, token, switch, refresh |
+| `status` | one screen: mailboxes needing attention, what is sending, what is unread |
+| `browse` | open the dashboard, or one record, in a browser |
+| `campaign` | list, view, create, edit, steps, senders, segments, preflight, test, start, stop, logs |
+| `contact` | list, view, create, edit, delete, lookup, timeline, notes, import, export, verify |
+| `mailbox` | list, view, edit, health checks, sync state, sending behaviour, warmup, hold, send |
+| `inbox` | list, view, threads, read, reply, compose, drafts, scheduled sends, snoozes |
+| `suppression` | the addresses and domains that get no campaign mail |
+| `segment` | live audiences and their conditions |
+| `template` | reply templates |
+| `automation` | automations, their runs and test firing |
+| `form` | lead capture forms, submissions and stats |
+| `deal`, `pipeline`, `task` | the CRM |
+| `analytics` | dashboard, deliverability, warmup, per-mailbox and per-campaign numbers |
+| `audit` | the workspace's audit trail |
+| `advisor` | recommendations, and applying or dismissing them |
+| `webhook` | endpoints, deliveries, redelivery, event types |
+| `key` | API keys, their scopes and their usage |
+| `oauth-app` | OAuth applications you publish |
+| `integration` | third-party connections |
+| `org` | which workspace this credential belongs to |
+| `team` | named groups of members, for CRM ownership and routing |
+| `settings` | workspace-wide outreach and suppression settings |
+| `warmup-routing` | which mailboxes warm with which |
+| `tool` | the AI tool registry, listed and called |
+| `events` | the live event stream |
+| `api` | any endpoint at all |
+| `upgrade` | replace this binary with the newest release |
+| `config`, `alias`, `completion`, `version` | the CLI itself |
+
+### Examples
+
+```bash
+# Create a campaign, add a step, check it, start it
+warmbly campaign create --name "Q3 outbound" --daily-limit 40
+warmbly campaign add-step CAMPAIGN_ID --subject "Quick question" --wait-after 0
+warmbly campaign preflight CAMPAIGN_ID
+warmbly campaign start CAMPAIGN_ID
+
+# Mailbox health across the workspace
+warmbly mailbox list
+warmbly mailbox check MAILBOX_ID
+warmbly mailbox edit MAILBOX_ID --daily-limit 40
+
+# The inbox
+warmbly inbox list --unseen --limit 20
+warmbly inbox thread --email-id EMAIL_ID
+
+# Contacts in and out
+warmbly contact create --email jane@example.com --first-name Jane --company Acme
+warmbly contact list --all --json > contacts.json
+```
+
+## What needs the dashboard
+
+Three things the CLI deliberately does not do, because the API does not let a key do them:
+
+- **Connecting a mailbox.** It needs OAuth consent or a credential form in a browser. `warmbly browse mailboxes` opens the right page.
+- **Workspace administration.** Members, roles, invitations, workspace exports and the danger zone are session-only on the API: they depend on a human-bound session and refuse an API key. `warmbly browse members` and `warmbly browse settings` open them.
+- **Billing.** Plans, checkout and credits are session-only for the same reason. `warmbly browse billing`.
+
+`warmbly org view` still shows which workspace you are in, and `warmbly team`, `warmbly settings` and `warmbly audit` cover the workspace surface a key can reach.
+
+## Watching events
+
+`warmbly events tail` streams the developer WebSocket into your terminal: the same events the dashboard runs on, printed as they happen. It is the fastest way to see whether an integration is receiving what you think it is, without standing up a public endpoint first.
+
+```bash
+warmbly events tail
+warmbly events tail --intent EMAIL --intent CAMPAIGN
+warmbly events tail --json | jq 'select(.event_type == "EMAIL_REPLIED")'
+```
+
+It needs a key with `REALTIME_SUBSCRIBE`; `warmbly auth refresh --scopes full` gets one. The stream, its intents and its event types are documented under [Realtime](/api/realtime/).
+
+## Calling the API directly
+
+`warmbly api` reaches every endpoint, including the ones with no command of their own. Paths are relative to `/v1`.
+
+```bash
+warmbly api /me
+warmbly api "/campaigns?limit=10" --paginate
+warmbly api /contacts -f email=jane@example.com -f first_name=Jane
+warmbly api /campaigns/CAMPAIGN_ID -X PATCH -F daily_limit=40
+warmbly api /contacts/search -X POST --input filter.json
+warmbly api /webhooks/WEBHOOK_ID -X DELETE
+```
+
+`-f` keeps a value a string. `-F` guesses the type, so `true`, `false`, `null` and numbers arrive as themselves, `@file` reads a value from a file, `key[sub]=v` nests and repeated `key[]=v` builds an array. `--paginate` follows the cursor, `-i` includes the status and headers, `--idempotency-key` rides the [documented header](/api/authentication/).
+
+## Configuration
+
+Two files under `~/.config/warmbly` (or `XDG_CONFIG_HOME`, or `WARMBLY_CONFIG_DIR`):
+
+- `hosts.yml`, one credential per host, written 0600
+- `config.yml`, preferences and aliases
+
+Signing in records the instance's own API and dashboard URLs alongside the credential, taken from what the instance reports, so `browse` and `events tail` work on a self-hosted layout without anyone configuring a second address.
+
+```bash
+warmbly config list
+warmbly config set output json      # default to JSON even on a terminal
+warmbly config set confirm always   # confirm every write, not only sends
+warmbly config set browser firefox
+```
+
+### Aliases
+
+```bash
+warmbly alias set hot "campaign list --status active"
+warmbly hot --json
+```
+
+Anything you type after the alias is appended, so an alias is a starting point rather than a fixed command.
+
+### Environment
+
+| Variable | What it does |
+|---|---|
+| `WARMBLY_TOKEN` | The API key to use. Overrides `hosts.yml` and is never written to it |
+| `WARMBLY_API_KEY` | The same thing under the name `warmblyctl` uses |
+| `WARMBLY_HOST` | Which signed-in host to use |
+| `WARMBLY_API_URL` | The API base URL, when it is not derivable from the host |
+| `WARMBLY_CONFIG_DIR` | Where the two files live |
+| `WARMBLY_NO_UPDATE_CHECK` | Never check for a newer release |
+| `NO_COLOR` | Turns colour off, as everywhere else |
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | It worked |
+| `1` | The command failed, or you declined a prompt |
+| `2` | The command line was wrong, or an answer was needed with no terminal to ask on |
+| `4` | Not signed in, or the credential was rejected or lacks a scope |
+
+Every API failure prints the response's machine-readable `code` and `request_id` to stderr, so a script can branch without reading prose.
+
+## See also
+
+- [Authentication](/api/authentication/) for how the device flow mints a key
+- [Permissions](/api/permissions/) for what each scope allows
+- [Endpoint scope map](/api/endpoints/) for what `warmbly api` can reach
+- [Realtime](/api/realtime/) for the stream behind `warmbly events tail`
+- [warmblyctl](/development/warmblyctl/) for the operator's CLI

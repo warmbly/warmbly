@@ -3,6 +3,12 @@ title: warmblyctl
 description: The CLI for a Warmbly instance. The operator commands for accounts, health and recovery, and the API commands that let scripts and AI agents drive campaigns, contacts, mailboxes and the inbox with an API key.
 ---
 
+<Callout type="info" title="There are two CLIs. This is the operator's one.">
+`warmblyctl` is for running an instance: accounts, health, recovery, backups. It reads the database directly and is meant to be run inside the backend container.
+
+If you want to use the product from your terminal (campaigns, contacts, mailboxes, the inbox), you want [`warmbly`](/api/cli/): a signed-in, multi-host client you install on your own machine, with `warmbly auth login` instead of an exported key.
+</Callout>
+
 `warmblyctl` is the CLI for a Warmbly instance, and it has two halves with two trust models.
 
 The operator commands answer two questions: what state is this install in, and how do I get back in. They read and write the database directly, so they keep working when the sign-in page does not. Their authorization is container or host access, the same trust model as Sentry's `createuser`, Gitea's `admin user create` and authentik's `ak changepassword`, and it is the right one when the identity system is the thing that is broken.
@@ -10,6 +16,8 @@ The operator commands answer two questions: what state is this install in, and h
 The [API commands](#the-api-commands) drive a running instance over its public REST API with an API key, so they work from any machine against any instance you hold a key for, the hosted service included. They exist so scripts and AI agents can operate the product itself: campaigns, contacts, mailboxes, the inbox, settings. Everything they can do is bounded by the key's scopes.
 
 The CLI never serves HTTP. The API commands are a client of the already-gated public API, which adds no new surface to your instance.
+
+Those API commands predate the [`warmbly` CLI](/api/cli/) and still work exactly as documented below. For day-to-day product work prefer `warmbly`: it signs in for you, holds a credential per host, prints tables rather than raw JSON, and runs on your laptop rather than inside a container.
 
 ## Running it
 
@@ -462,7 +470,7 @@ Paths are relative to `/v1`. `--data` takes a JSON literal, `-` for stdin, or `@
 
 ### For AI agents
 
-The repository ships skills under `skills/` (`warmbly-api` for the product, `warmbly-ops` for instance administration, `warmbly-install` for standing an instance up and moving it) that teach a coding agent these commands, the conventions above, and the sending-safety rules. Install them the way your agent expects, for example `cp -r skills/warmbly-api ~/.claude/skills/` for Claude Code, or point the agent at the `SKILL.md` directly. An agent given a scoped key and those skills can operate a workspace end to end without touching the database.
+The repository ships skills under `skills/` (`warmbly-cli` for the [`warmbly` CLI](/api/cli/), `warmbly-api` for the same product surface through `warmblyctl`, `warmbly-ops` for instance administration, `warmbly-install` for standing an instance up and moving it) that teach a coding agent these commands, the conventions above, and the sending-safety rules. Install them the way your agent expects, for example `cp -r skills/warmbly-api ~/.claude/skills/` for Claude Code, or point the agent at the `SKILL.md` directly. An agent given a scoped key and those skills can operate a workspace end to end without touching the database.
 
 ## When Redis is down
 
