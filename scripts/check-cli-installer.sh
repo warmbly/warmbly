@@ -65,7 +65,11 @@ pass "--help works"
 # are set and `set -u` turns an unset variable into a fatal error. Only --help
 # and --dry-run were exercised, so nothing caught it.
 for bad in --nonsense --dir; do
-  out=$(sh "$SCRIPT" "$bad" 2>&1 || true)
+  # The exit status matters as much as the message: a script that explains the
+  # problem and then exits 0 tells every caller the install succeeded.
+  if out=$(sh "$SCRIPT" "$bad" 2>&1); then
+    fail "$bad exited 0; a rejected flag has to fail"
+  fi
   case "$out" in
     *"unbound variable"*) fail "$bad aborted with an unbound variable instead of an error message" ;;
   esac

@@ -85,8 +85,25 @@ func (h *Handler) ipRateLimiter(prefix string, defaultLimit int, env string, win
 			c.Next()
 			return
 		}
+		// A counter with no TTL never resets, so the address it belongs to
+		// stays blocked forever once it passes the limit. That is a worse
+		// outcome than not counting at all, so a failed EXPIRE drops the key
+		// and lets the request through, matching how the rest of this
+		// middleware handles a cache it cannot trust.
 		if n == 1 {
-			_ = h.Cache.Expire(c.Request.Context(), key, window).Err()
+			if err := h.Cache.Expire(c.Request.Context(), key, window).Err(); err != nil {
+				_ = h.Cache.Del(c.Request.Context(), key).Err()
+				c.Next()
+				return
+			}
+		} else if n > int64(limit) {
+			// Repair a key that lost its expiry some other way (an older
+			// build, a restore, an eviction between the INCR and the EXPIRE
+			// above). Only on the reject path, which is rare, so it costs a
+			// round trip nobody feels.
+			if ttl, terr := h.Cache.TTL(c.Request.Context(), key).Result(); terr == nil && ttl < 0 {
+				_ = h.Cache.Expire(c.Request.Context(), key, window).Err()
+			}
 		}
 
 		if n > int64(limit) {
