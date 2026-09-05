@@ -171,6 +171,37 @@ func (h *Handler) RevokeAPIKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }
 
+// RevokeOwnAPIKey revokes the key the request was made with.
+//
+// Deliberately outside the API_KEYS scope gate: a credential must always be
+// able to end itself. Requiring a privilege to sign out means a read-only key
+// on a laptop someone is handing back stays live, which is the opposite of
+// what a `warmbly auth logout` promises.
+func (h *Handler) RevokeOwnAPIKey(c *gin.Context) {
+	keyID := middleware.GetAPIKeyID(c)
+	if keyID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "this endpoint revokes the API key it is called with, and this request did not use one"))
+		return
+	}
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	reason := c.Query("reason")
+	if reason == "" {
+		reason = "Revoked by the credential itself"
+	}
+	if xerr := h.APIKeyService.Revoke(c.Request.Context(), *orgID, *keyID, reason); xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionRevoke, models.AuditEntityAPIKey, keyID, nil, map[string]string{"self": "true"})
+	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
+}
+
 // ListAPIPermissions lists all available API permissions
 // GET /api-keys/permissions
 func (h *Handler) ListAPIPermissions(c *gin.Context) {

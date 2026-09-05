@@ -89,6 +89,7 @@ import OnboardingPage from './app/onboarding/page';
 import SelectOrgPage from './app/select-org/page';
 import InviteAcceptPage from './app/invite/page';
 import ConnectPage from './app/connect/page';
+import CLIAuthPage from './app/cli/page';
 import CloudOAuthDonePage from './app/cloud-oauth/done/page';
 import WarmblyCloudSettingsPage from './app/app/settings/warmbly-cloud/page';
 import SetupPage from './app/setup/page';
@@ -208,6 +209,11 @@ const router = createBrowserRouter([
       {
         path: "connect",
         element: <ConnectPage />,
+      },
+      {
+        // Where `warmbly auth login` sends the browser to approve its code.
+        path: "cli",
+        element: <CLIAuthPage />,
       },
       {
         // Where Warmbly Cloud sends the Google/Microsoft popup back to on a linked instance.

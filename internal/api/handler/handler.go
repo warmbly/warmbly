@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/app/bootstrap"
 	"github.com/warmbly/warmbly/internal/app/campaign"
+	"github.com/warmbly/warmbly/internal/app/cliauth"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
 	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
@@ -310,6 +311,9 @@ type Handler struct {
 	// PoolLinkService (cloud side) and CloudLinkService (self-hosted side) are nil-safe: routes answer 501.
 	PoolLinkService  poollink.Service
 	CloudLinkService cloudlink.Service
+
+	// Device-code sign-in for the `warmbly` CLI. Nil-safe: routes answer 501.
+	CLIAuthService cliauth.Service
 
 	// Infrastructure liveness probes for the admin System Status page.
 	// Wired in cmd/backend/main.go where the concrete clients live.

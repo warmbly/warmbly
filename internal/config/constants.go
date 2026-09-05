@@ -282,6 +282,11 @@ const (
 	WarmupPoolFallbackMinAgeDays = 3  // other-tier mailboxes must be this old before they fill in
 	DailyThrottleNewOrgs         = 3  // new workspaces per owner per day
 
+	// CLI sign-in handshake (`warmbly auth login`). Shorter-lived than the pool
+	// link handshake because a person is watching the terminal while it runs.
+	CLIAuthCodeTTLMinutes      = 10
+	CLIAuthPollIntervalSeconds = 3
+
 	// DailyThrottleNewScheduledSends caps how many NEW scheduled-send
 	// schedules a single user can create in a rolling 24h window. The
 	// real defense against burst abuse — someone writing a loop that

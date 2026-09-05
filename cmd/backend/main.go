@@ -40,6 +40,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/bootstrap"
 	"github.com/warmbly/warmbly/internal/app/campaign"
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/app/cliauth"
 	"github.com/warmbly/warmbly/internal/app/cloudlink"
 	"github.com/warmbly/warmbly/internal/app/compose"
 	"github.com/warmbly/warmbly/internal/app/contact"
@@ -162,6 +163,7 @@ func main() {
 	var emailService email.EmailService
 	var poolLinkService poollink.Service
 	var cloudLinkService cloudlink.Service
+	var cliAuthService cliauth.Service
 	var campaignService campaign.CampaignService
 	var analyticsService analytics.AnalyticsService
 	var rateLimitService ratelimit.RateLimitService
@@ -1256,6 +1258,9 @@ func main() {
 		leadSyncServiceForHandler = leadsync.NewService(leadSyncRepository, integrationServiceForHandler, contactService)
 
 		apiKeyService = apikey.NewService(cache, apiKeyRepository)
+		// `warmbly auth login`: the browser approval mints an ordinary API key
+		// through the service above, so it has to be built after it.
+		cliAuthService = cliauth.NewService(repository.NewCLIAuthRepository(primaryDB.Pool), apiKeyService, organizationService, userService, organizationRepository)
 		crmService = crm.NewService(crmRepository)
 		teamRepository := repository.NewTeamRepository(primaryDB.Pool)
 		teamService = team.NewService(teamRepository)
@@ -1896,6 +1901,7 @@ func main() {
 
 		PoolLinkService:  poolLinkService,
 		CloudLinkService: cloudLinkService,
+		CLIAuthService:   cliAuthService,
 
 		TokenService:     tokenService,
 		PasskeyService:   passkeyService,
