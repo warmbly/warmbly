@@ -246,7 +246,7 @@ function Body({
 
             {!a.paid ? (
                 <div className="rounded-md border border-sky-200 bg-sky-50 p-3">
-                    <p className="text-[12.5px] font-medium text-sky-900">Every paid plan includes unlimited mailboxes</p>
+                    <p className="text-[12.5px] font-medium text-sky-900">A paid plan holds one mailbox for every send a day it includes</p>
                     <ul className="mt-1.5 space-y-0.5">
                         {PAID_PLANS.filter((id) => id !== "enterprise").map((id) => {
                             const n = planMailboxes(id, a.sends_per_mailbox);
@@ -265,9 +265,9 @@ function Body({
                         type="button"
                         onClick={() =>
                             openPlans(
-                                "Unlimited mailboxes",
+                                "More mailboxes",
                                 "starter",
-                                `A free workspace holds ${cap?.toLocaleString() ?? "10"} mailboxes. Every paid plan holds as many as its sending volume needs.`,
+                                `A free workspace holds ${cap?.toLocaleString() ?? "10"} mailboxes. A paid plan holds one for every send a day it includes, and more on request.`,
                             )
                         }
                         className="mt-2.5 h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
