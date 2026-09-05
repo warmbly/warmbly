@@ -59,8 +59,9 @@ func (s *emailService) OnboardSMTPIMAPBulk(ctx context.Context, userID string, o
 		}
 	}
 
-	// Duplicates inside the file are refused before they compete for the
-	// allowance; the first occurrence is the one that gets connected.
+	// Duplicates inside the file and mailboxes that are already connected are
+	// settled before anything competes for the allowance, so a re-uploaded
+	// file never spends a slot on a row that would create nothing.
 	seen := make(map[string]bool, len(rows))
 	eligible := make([]int, 0, len(rows))
 	for i := range rows {
@@ -70,6 +71,16 @@ func (s *emailService) OnboardSMTPIMAPBulk(ctx context.Context, userID string, o
 			continue
 		}
 		seen[key] = true
+		if exists, xerr := s.emailRepository.ExistsForUser(ctx, userID, strings.TrimSpace(rows[i].Email)); xerr != nil {
+			fail(i, xerr)
+			continue
+		} else if exists {
+			res.Data[i] = models.MailboxBulkRow{
+				Row: i, Email: rows[i].Email, Status: models.MailboxBulkSkipped,
+				Code: "already_connected", Message: errx.ErrEmailOnboardAlreadyExists.Message,
+			}
+			continue
+		}
 		if len(eligible) >= remaining {
 			used, limit := 0, 0
 			paid := true

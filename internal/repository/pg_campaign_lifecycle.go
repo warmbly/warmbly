@@ -22,11 +22,12 @@ type DuplicateCampaignInput struct {
 	UserID      uuid.UUID
 	Name        string
 	Attachments []models.CampaignAttachment
-	// OrganizationID and StorageLimitBytes make the copied attachments count
-	// against the quota inside the same transaction that inserts them. A nil
-	// limit skips the check.
-	OrganizationID    uuid.UUID
-	StorageLimitBytes *int64
+	// OrganizationID and StorageLimit make the copied attachments count
+	// against the quota inside the same transaction that inserts them; the
+	// limit is resolved under the quota lock. A nil StorageLimit skips the
+	// check.
+	OrganizationID uuid.UUID
+	StorageLimit   StorageLimitFunc
 }
 
 // ErrStorageQuotaExceeded is returned by Duplicate when the copied attachments
@@ -172,9 +173,13 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 		return nil, err
 	}
 
-	if len(in.Attachments) > 0 && in.StorageLimitBytes != nil {
+	if len(in.Attachments) > 0 && in.StorageLimit != nil {
 		if err := LockStorageQuota(ctx, tx, in.OrganizationID); err != nil {
 			db.CaptureError(err, "", nil, "exec")
+			return nil, err
+		}
+		limit, err := in.StorageLimit(ctx)
+		if err != nil {
 			return nil, err
 		}
 		used, err := storageUsedTx(ctx, tx, in.OrganizationID)
@@ -186,8 +191,8 @@ func (r *campaignRepository) Duplicate(ctx context.Context, in DuplicateCampaign
 		for _, att := range in.Attachments {
 			adding += att.Size
 		}
-		if used+adding > *in.StorageLimitBytes {
-			return nil, fmt.Errorf("%w: %d of %d bytes used, %d to add", ErrStorageQuotaExceeded, used, *in.StorageLimitBytes, adding)
+		if used+adding > limit {
+			return nil, fmt.Errorf("%w: %d of %d bytes used, %d to add", ErrStorageQuotaExceeded, used, limit, adding)
 		}
 	}
 

@@ -206,10 +206,16 @@ export function downloadTemplate() {
     downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }), "warmbly-mailboxes-template.csv");
 }
 
-/** The rows that did not connect, with the user's own columns plus the reason. */
+/** Columns never written to a download: a CSV in a Downloads folder is
+ *  synced, backed up and shared far more than the user intends. */
+const SECRET_COLUMNS = new Set(["password", "smtp_password", "imap_password"]);
+
+/** The rows that did not connect, with the user's own columns (minus
+ *  passwords) plus the reason. */
 export function failedRowsCSV(rows: BulkRow[], columns: string[]): string {
-    const header = [...columns, "error"];
-    const body = rows.map((r) => [...columns.map((c) => r.raw[c] ?? ""), r.problem ?? r.message ?? r.code ?? ""]);
+    const keep = columns.filter((c) => !SECRET_COLUMNS.has(c));
+    const header = [...keep, "error"];
+    const body = rows.map((r) => [...keep.map((c) => r.raw[c] ?? ""), r.problem ?? r.message ?? r.code ?? ""]);
     return Papa.unparse([header, ...body]);
 }
 

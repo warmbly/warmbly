@@ -407,7 +407,7 @@ function mailboxHint(a: OrganizationLimits["mailboxes"] | undefined): string {
         case "override":
             return "Raised for this workspace by an approved request";
         case "free":
-            return "Free workspace allowance; every paid plan holds unlimited mailboxes";
+            return "Free workspace allowance; a paid plan holds one mailbox for every send a day it includes";
         case "plan":
             return "Set by your plan";
         default:

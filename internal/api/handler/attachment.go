@@ -7,6 +7,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
@@ -69,6 +71,17 @@ func (h *Handler) attachmentCampaign(c *gin.Context) (campaignID, orgID uuid.UUI
 		return uuid.Nil, uuid.Nil, xerr
 	}
 	return campaignID, *org, nil
+}
+
+// deleteObjectDetached removes an object whose row was never written, on a
+// bounded context that is not cancelled with the request: a client that gives
+// up mid-upload must not leave bytes in storage that no quota counts.
+func (h *Handler) deleteObjectDetached(ctx context.Context, key string) {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := h.Storage.Delete(cleanup, key); err != nil {
+		sentry.CaptureException(fmt.Errorf("attachment %s: cleanup after refused reservation: %w", key, err))
+	}
 }
 
 // UploadCampaignAttachment — POST /campaigns/:id/attachments (multipart "file")
@@ -181,15 +194,25 @@ func (h *Handler) UploadCampaignAttachment(c *gin.Context) {
 	}
 	// The row is the reservation: it is written only if the total still fits
 	// once this upload is counted, so concurrent uploads cannot interleave
-	// past the limit. A refused file is removed from storage again.
-	created, used, err := h.AttachmentRepo.CreateWithinQuota(c.Request.Context(), att, orgID, limit)
+	// past the limit. The limit is re-read under the lock so a plan change
+	// that lands between the pre-check and the insert is honored. A refused
+	// file is removed from storage again, on a context that outlives the
+	// request so a cancelled upload cannot strand the object.
+	limitFn := func(ctx context.Context) (int64, error) {
+		l, xerr := h.FeatureGateService.GetStorageLimitBytes(ctx, orgID)
+		if xerr != nil {
+			return 0, xerr
+		}
+		return l, nil
+	}
+	created, used, limit, err := h.AttachmentRepo.CreateWithinQuota(c.Request.Context(), att, orgID, limitFn)
 	if err != nil {
-		_ = h.Storage.Delete(c.Request.Context(), key) // best-effort cleanup
+		h.deleteObjectDetached(c.Request.Context(), key)
 		errx.JSON(c, errx.InternalError())
 		return
 	}
 	if !created {
-		_ = h.Storage.Delete(c.Request.Context(), key)
+		h.deleteObjectDetached(c.Request.Context(), key)
 		errx.JSON(c, errx.StorageLimitReached(used, limit, fh.Size))
 		return
 	}

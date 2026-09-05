@@ -88,7 +88,7 @@ The dialog offers a template with these headers, and accepts the common spelling
 
 The run then streams the rows to the server in small batches. Every credential is verified against its own server before it is saved, the same as a single connect, so a large file takes a few seconds per mailbox; the dialog shows live progress and the mailbox list behind it fills in as they land, for everyone in the workspace. You can stop after the batch in flight. Closing the tab loses nothing that was already connected.
 
-**When it is done** you see how many connected, how many were already here, and how many did not connect, with a reason per row. **Download failed rows** gives you those rows exactly as you uploaded them (passwords included) plus an `error` column, so you can fix and upload that file. Re-uploading is always safe: a mailbox that is already connected is skipped, never doubled.
+**When it is done** you see how many connected, how many were already here, and how many did not connect, with a reason per row. **Retry failed** runs those rows again without leaving the dialog, passwords still in memory. **Download failed rows** gives you those rows as you uploaded them plus an `error` column, with the password columns left out so no credential lands in a Downloads folder; add them back before uploading the fixed file. Re-uploading is always safe: a mailbox that is already connected is skipped, never doubled.
 
 The same endpoint is available to the API as `POST /emails/onboarding/smtp-imap/bulk`, up to `50` rows per call, answered per row.
 

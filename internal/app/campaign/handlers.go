@@ -229,13 +229,13 @@ func (s *campaignService) Duplicate(ctx context.Context, orgID, userID uuid.UUID
 	}
 
 	campaign, err := s.campaignRepository.Duplicate(ctx, repository.DuplicateCampaignInput{
-		SourceID:          cID,
-		NewID:             newID,
-		UserID:            userID,
-		Name:              name,
-		Attachments:       copied,
-		OrganizationID:    orgID,
-		StorageLimitBytes: storageLimit,
+		SourceID:       cID,
+		NewID:          newID,
+		UserID:         userID,
+		Name:           name,
+		Attachments:    copied,
+		OrganizationID: orgID,
+		StorageLimit:   storageLimit,
 	})
 	if err != nil {
 		cleanup()
@@ -250,7 +250,7 @@ func (s *campaignService) Duplicate(ctx context.Context, orgID, userID uuid.UUID
 			used, _ := s.attachmentRepo.SumStorageUsedByOrg(ctx, orgID)
 			var limit int64
 			if storageLimit != nil {
-				limit = *storageLimit
+				limit, _ = storageLimit(ctx)
 			}
 			return nil, errx.StorageLimitReached(used, limit, adding)
 		}
@@ -290,7 +290,7 @@ func (s *campaignService) Duplicate(ctx context.Context, orgID, userID uuid.UUID
 // and the insert re-checks under the quota lock. An attachment whose bytes
 // cannot be read is reported and skipped rather than failing the whole
 // duplicate.
-func (s *campaignService) copyAttachments(ctx context.Context, orgID, src, dst uuid.UUID) ([]models.CampaignAttachment, *int64, func(), *errx.Error) {
+func (s *campaignService) copyAttachments(ctx context.Context, orgID, src, dst uuid.UUID) ([]models.CampaignAttachment, repository.StorageLimitFunc, func(), *errx.Error) {
 	noop := func() {}
 	if s.attachmentRepo == nil || s.storage == nil {
 		return nil, nil, noop, nil
@@ -303,13 +303,19 @@ func (s *campaignService) copyAttachments(ctx context.Context, orgID, src, dst u
 		return nil, nil, noop, nil
 	}
 
-	var limit *int64
+	var limit repository.StorageLimitFunc
 	if s.featureGate != nil {
 		l, xerr := s.featureGate.GetStorageLimitBytes(ctx, orgID)
 		if xerr != nil {
 			return nil, nil, noop, xerr
 		}
-		limit = &l
+		limit = func(ctx context.Context) (int64, error) {
+			v, xerr := s.featureGate.GetStorageLimitBytes(ctx, orgID)
+			if xerr != nil {
+				return 0, xerr
+			}
+			return v, nil
+		}
 		used, err := s.attachmentRepo.SumStorageUsedByOrg(ctx, orgID)
 		if err != nil {
 			return nil, nil, noop, errx.InternalError()
@@ -341,8 +347,12 @@ func (s *campaignService) copyAttachments(ctx context.Context, orgID, src, dst u
 		copied = append(copied, att)
 	}
 	return copied, limit, func() {
+		// The undo must outlive a cancelled request, or the copies are left in
+		// storage with no row counting them.
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
 		for _, att := range copied {
-			if err := s.storage.Delete(ctx, att.S3Key); err != nil {
+			if err := s.storage.Delete(cleanup, att.S3Key); err != nil {
 				sentry.CaptureException(fmt.Errorf("campaign %s duplicate undo: object %s: %w", src, att.S3Key, err))
 			}
 		}

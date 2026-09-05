@@ -220,20 +220,26 @@ type Oauth2SmtpImap struct {
 
 type NewOauthAccount struct {
 	OrganizationID *uuid.UUID
-	Provider       InboxProvider
-	Name           string
-	Email          string
-	AccessToken    string
-	RefreshToken   string
-	ExpiresAt      time.Time
+	// Allowance, when set, is enforced again inside the insert transaction
+	// under the organization's mailbox lock, so concurrent connects cannot
+	// both take the last slot.
+	Allowance    *MailboxAllowance
+	Provider     InboxProvider
+	Name         string
+	Email        string
+	AccessToken  string
+	RefreshToken string
+	ExpiresAt    time.Time
 }
 
 type NewSMTPIMAPAccount struct {
 	OrganizationID *uuid.UUID
-	Name           string
-	Email          string
-	SMTP           *Service
-	IMAP           *Service
+	// Allowance: see NewOauthAccount.
+	Allowance *MailboxAllowance
+	Name      string
+	Email     string
+	SMTP      *Service
+	IMAP      *Service
 }
 
 // EmailOnboardingState is stored in Redis for the lifetime of an OAuth round trip.

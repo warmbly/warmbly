@@ -27,7 +27,8 @@ func (s *emailService) OAuthConnectWithCode(ctx context.Context, userID string, 
 	if code = strings.TrimSpace(code); code == "" {
 		return nil, errx.ErrEmailOnboardCode
 	}
-	if xerr := s.guardInboxLimit(ctx, orgID); xerr != nil {
+	allowance, xerr := s.guardInboxLimit(ctx, orgID)
+	if xerr != nil {
 		return nil, xerr
 	}
 	cfg, xerr := s.oauthConfigFor(provider)
@@ -53,6 +54,7 @@ func (s *emailService) OAuthConnectWithCode(ctx context.Context, userID string, 
 	}
 	acc, xerr := s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
 		OrganizationID: orgID,
+		Allowance:      allowance,
 		Provider:       provider,
 		Name:           name,
 		Email:          owner.Email,

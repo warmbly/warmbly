@@ -8,8 +8,10 @@
 // pointed at a plan instead, because that is its only path to more.
 //
 // Layered above the connect modal: it marks itself data-floating so the modal
-// underneath ignores Escape while it is up, and stops mousedown so the
-// modal's backdrop handler never sees a click inside it.
+// underneath ignores Escape while it is up, and stops both mousedown and
+// click. The portal keeps it in the modal's React tree, so without that a
+// click anywhere in here would reach the modal's backdrop handler and close
+// the whole connect flow.
 
 import React from "react";
 import { createPortal } from "react-dom";
@@ -121,6 +123,7 @@ export default function MailboxAllowanceDialog({
                         e.stopPropagation();
                         onClose();
                     }}
+                    onClick={(e) => e.stopPropagation()}
                     className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/40 backdrop-blur-[2px] px-4"
                 >
                     <motion.div

@@ -286,7 +286,9 @@ export default function BulkConnectPanel({
     const skipped = rows.filter((r) => r.status === "skipped").length;
     const failed = rows.filter((r) => r.status === "failed").length;
     const pending = rows.filter((r) => r.status === "pending").length;
-    const total = ready + connected + skipped + failed + pending;
+    // `ready` already includes pending rows, so count the untouched ones alone.
+    const notStarted = rows.filter((r) => r.status === "ready").length;
+    const total = notStarted + connected + skipped + failed + pending;
 
     if (step === "run") {
         const done = connected + skipped + failed;
@@ -406,7 +408,7 @@ export default function BulkConnectPanel({
                             <button
                                 type="button"
                                 onClick={downloadFailed}
-                                title="The rows as you uploaded them, including passwords, plus an error column"
+                                title="The rows as you uploaded them, minus passwords, plus an error column"
                                 className="ml-auto h-6 px-2 rounded text-[11px] text-slate-700 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center gap-1 transition-colors"
                             >
                                 <DownloadIcon className="w-3 h-3" />
@@ -444,7 +446,7 @@ export default function BulkConnectPanel({
             <div className="px-4 py-2.5 border-t border-slate-200 bg-slate-50/60 flex items-center gap-2 min-w-0 sticky bottom-0">
                 <div className="text-[11px] text-slate-500 min-w-0 flex-1 truncate">
                     {failedRows.length > 0
-                        ? "Fix the failed rows in the download and upload that file; connected ones are skipped."
+                        ? "Retry keeps the passwords in memory. The download leaves them out; add them back before re-uploading."
                         : "Warmup and sync start on every new mailbox right away."}
                 </div>
                 {(canRetry || notSent > 0) && (
