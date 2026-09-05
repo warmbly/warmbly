@@ -25,6 +25,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jackc/pgx/v5 v5.9.0
 	github.com/meszmate/apple-go v0.0.0-20250828163208-7fea48c91b32
@@ -36,16 +37,19 @@ require (
 	github.com/oschwald/geoip2-golang/v2 v2.0.0
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/rs/zerolog v1.34.0
+	github.com/spf13/cobra v1.9.1
 	github.com/stripe/stripe-go/v76 v76.25.0
 	github.com/xuri/excelize/v2 v2.11.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.55.0
 	golang.org/x/net v0.58.0
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/term v0.45.0
 	google.golang.org/api v0.260.0
 	google.golang.org/grpc v1.82.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.1
 	google.golang.org/protobuf v1.36.11
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -261,7 +265,6 @@ require (
 	github.com/sourcegraph/go-diff v0.7.0 // indirect
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
-	github.com/spf13/cobra v1.9.1 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/spf13/viper v1.12.0 // indirect
@@ -326,7 +329,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.6.1 // indirect
 	mvdan.cc/gofumpt v0.7.0 // indirect
 	mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f // indirect
