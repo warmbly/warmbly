@@ -26,6 +26,14 @@ SUMFILE=site/public/cli.sh.sha256
 fail() { printf '\n\033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 pass() { printf '\033[32m✓\033[0m %s\n' "$*"; }
 
+# macOS ships shasum and not GNU sha256sum; this check has to run there too.
+sha256_all() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+}
+sha256_verify() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum -c "$@"; else shasum -a 256 -c "$@"; fi
+}
+
 [[ -f $SCRIPT ]] || fail "$SCRIPT is missing"
 [[ -f $PS_SCRIPT ]] || fail "$PS_SCRIPT is missing"
 
@@ -51,6 +59,23 @@ fi
 # variable under set -u would otherwise hide.
 sh "$SCRIPT" --help >/dev/null || fail "--help failed"
 pass "--help works"
+
+# A rejected flag has to print its message. This used to abort with
+# "C_RED: unbound variable" instead, because parse_args runs before the colours
+# are set and `set -u` turns an unset variable into a fatal error. Only --help
+# and --dry-run were exercised, so nothing caught it.
+for bad in --nonsense --dir; do
+  out=$(sh "$SCRIPT" "$bad" 2>&1 || true)
+  case "$out" in
+    *"unbound variable"*) fail "$bad aborted with an unbound variable instead of an error message" ;;
+  esac
+  case "$out" in
+    *"unknown option"*|*"needs a path"*) ;;
+    *) fail "$bad did not explain itself:
+$out" ;;
+  esac
+done
+pass "a rejected flag explains itself"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -104,7 +129,7 @@ case "$(uname -m)" in
 esac
 asset="warmbly_${host_os}_${host_arch}.tar.gz"
 tar -czf "$mirror/$asset" -C "$work/stage" .
-( cd "$mirror" && sha256sum "$asset" > checksums.txt )
+( cd "$mirror" && sha256_all "$asset" > checksums.txt )
 
 home="$work/home"
 mkdir -p "$home"
@@ -175,7 +200,7 @@ fi
 # ─────────────────────────────────────────────────────────────────────────
 
 [[ -f $SUMFILE ]] || fail "$SUMFILE is missing. Run: make cli-sha"
-( cd site/public && sha256sum -c "$(basename "$SUMFILE")" >/dev/null ) \
+( cd site/public && sha256_verify "$(basename "$SUMFILE")" >/dev/null ) \
   || fail "$SUMFILE does not match $SCRIPT. Run: make cli-sha"
 pass "published checksum matches"
 

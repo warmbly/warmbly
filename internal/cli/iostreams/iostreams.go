@@ -8,6 +8,7 @@ package iostreams
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -157,7 +158,13 @@ func (s *IOStreams) Input(question, def string) (string, error) {
 func (s *IOStreams) Secret(question string) (string, error) {
 	if !s.stdinTTY {
 		// A piped secret is the documented CI path, so read it plainly.
+		// ReadString returns io.EOF alongside the final line when the input
+		// ends without a newline, which `printf '%s' "$KEY" |` always does;
+		// treating that as a failure would reject the exact form CI uses.
 		line, err := bufio.NewReader(s.In).ReadString('\n')
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
 		return strings.TrimSpace(line), err
 	}
 	fmt.Fprint(s.ErrOut, question+": ")

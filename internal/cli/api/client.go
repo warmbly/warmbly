@@ -243,6 +243,10 @@ func (c *Client) Paginate(ctx context.Context, req Request, maxPages int) ([]byt
 		maxPages = 100
 	}
 	var merged []json.RawMessage
+	// The cursor the walk stopped on, empty when it reached the end. It is
+	// what tells the caller a --max-pages cut the list short rather than the
+	// data running out.
+	nextCursor := ""
 	query := url.Values{}
 	for k, v := range req.Query {
 		query[k] = v
@@ -290,20 +294,31 @@ func (c *Client) Paginate(ctx context.Context, req Request, maxPages int) ([]byt
 		}
 		merged = append(merged, rows...)
 		if !env.Pagination.HasMore || env.Pagination.NextCursor == nil || *env.Pagination.NextCursor == "" {
+			nextCursor = ""
 			break
 		}
+		nextCursor = *env.Pagination.NextCursor
 		query = cloneValues(query)
 		query.Set("cursor", *env.Pagination.NextCursor)
 	}
 
-	data, err := json.Marshal(merged)
-	if err != nil {
-		return nil, err
+	envelope := struct {
+		Data       []json.RawMessage `json:"data"`
+		Pagination struct {
+			Total      int     `json:"total"`
+			NextCursor *string `json:"next_cursor"`
+			HasMore    bool    `json:"has_more"`
+		} `json:"pagination"`
+	}{Data: merged}
+	if envelope.Data == nil {
+		envelope.Data = []json.RawMessage{}
 	}
-	if merged == nil {
-		data = []byte("[]")
+	envelope.Pagination.Total = len(merged)
+	if nextCursor != "" {
+		envelope.Pagination.HasMore = true
+		envelope.Pagination.NextCursor = &nextCursor
 	}
-	return []byte(`{"data":` + string(data) + `,"pagination":{"has_more":false,"next_cursor":null,"total":` + fmt.Sprint(len(merged)) + `}}`), nil
+	return json.Marshal(envelope)
 }
 
 // retryAfter reports how long a rate-limited response asked the caller to

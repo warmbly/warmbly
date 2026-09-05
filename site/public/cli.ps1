@@ -125,16 +125,18 @@ function Add-ToUserPath {
 function Install-Completions {
     param($Source)
 
-    $completion = Join-Path $Source 'completions\warmbly.powershell'
-    if (-not (Test-Path $completion)) { return }
-
     $profilePath = $PROFILE.CurrentUserAllHosts
     $marker = '# Added by the warmbly CLI installer'
 
+    # Reported before any path is built: the dry run has no unpacked archive,
+    # and Join-Path on an empty path is a terminating error under Stop.
     if ($DryRun) {
         Write-Host "    would add completions to $profilePath"
         return
     }
+
+    $completion = Join-Path $Source 'completions\warmbly.powershell'
+    if (-not (Test-Path $completion)) { return }
     if ((Test-Path $profilePath) -and (Select-String -Path $profilePath -Pattern ([regex]::Escape($marker)) -Quiet)) {
         return
     }

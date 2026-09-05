@@ -32,9 +32,16 @@ func WebsocketURL() string {
 	if v == "" {
 		return ""
 	}
-	// The variable is written both ways in the wild: with the Phoenix path and
-	// without. Clients want the full endpoint.
-	if !strings.Contains(v, "/socket") {
+	// The variable is written three ways in the wild: a bare host, the Phoenix
+	// socket mount (".../socket"), and the full transport endpoint. Clients
+	// dial what this returns, so all three normalise to the last one. Matching
+	// on a "/socket" substring instead of the suffix left ".../socket"
+	// untouched, which is not a websocket endpoint.
+	switch {
+	case strings.HasSuffix(v, "/socket/websocket"):
+	case strings.HasSuffix(v, "/socket"):
+		v += "/websocket"
+	default:
 		v += "/socket/websocket"
 	}
 	return v

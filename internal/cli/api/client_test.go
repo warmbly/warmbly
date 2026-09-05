@@ -177,3 +177,56 @@ func TestPaginateGivesUpOnAPermanentRateLimit(t *testing.T) {
 		t.Fatal("a permanent rate limit must surface as an error")
 	}
 }
+
+// A walk cut short by --max-pages has to say so. A caller that cannot tell a
+// truncated list from a complete one will act on a partial answer.
+func TestPaginateReportsTruncation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Always another page.
+		fmt.Fprint(w, `{"data":[{"id":"x"}],"pagination":{"has_more":true,"next_cursor":"more"}}`)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "wmbly_x", "test")
+	merged, err := c.Paginate(context.Background(), Request{Method: http.MethodGet, Path: "/campaigns"}, 2)
+	if err != nil {
+		t.Fatalf("paginate: %v", err)
+	}
+	var doc struct {
+		Data       []map[string]string `json:"data"`
+		Pagination struct {
+			HasMore    bool    `json:"has_more"`
+			NextCursor *string `json:"next_cursor"`
+			Total      int     `json:"total"`
+		} `json:"pagination"`
+	}
+	if err := json.Unmarshal(merged, &doc); err != nil {
+		t.Fatalf("merged payload: %v", err)
+	}
+	if len(doc.Data) != 2 {
+		t.Errorf("collected %d rows over 2 pages, want 2", len(doc.Data))
+	}
+	if !doc.Pagination.HasMore {
+		t.Error("a walk stopped by max-pages must report has_more")
+	}
+	if doc.Pagination.NextCursor == nil || *doc.Pagination.NextCursor != "more" {
+		t.Errorf("the cursor to resume from was lost: %+v", doc.Pagination.NextCursor)
+	}
+}
+
+// And a walk that genuinely ran out still reports the end.
+func TestPaginateReportsCompletion(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"x"}],"pagination":{"has_more":false,"next_cursor":null}}`)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "wmbly_x", "test")
+	merged, err := c.Paginate(context.Background(), Request{Method: http.MethodGet, Path: "/campaigns"}, 10)
+	if err != nil {
+		t.Fatalf("paginate: %v", err)
+	}
+	if !strings.Contains(string(merged), `"has_more":false`) || !strings.Contains(string(merged), `"next_cursor":null`) {
+		t.Errorf("a completed walk must report the end: %s", merged)
+	}
+}

@@ -157,3 +157,24 @@ func TestConfigSetRejectsUnknownAndInvalid(t *testing.T) {
 		t.Errorf("confirm default = %q, want sends", c.Get("confirm"))
 	}
 }
+
+// Every request carries a bearer token, so only this machine may be reached
+// over plaintext HTTP. A remote host that merely names a port must not be
+// downgraded, and the two URL helpers must not disagree about it.
+func TestRemoteHostWithAPortStaysHTTPS(t *testing.T) {
+	if got := DefaultAPIURL("acme.dev:8443"); got != "https://acme.dev:8443" {
+		t.Errorf("DefaultAPIURL = %q, want https", got)
+	}
+	if urls := CandidateAPIURLs("acme.dev:8443"); len(urls) != 1 || urls[0] != "https://acme.dev:8443" {
+		t.Errorf("CandidateAPIURLs = %v, want one https entry", urls)
+	}
+	for _, local := range []string{"localhost:8080", "127.0.0.1:8080", "localhost"} {
+		if got := DefaultAPIURL(local); got[:5] != "http:" {
+			t.Errorf("DefaultAPIURL(%q) = %q, want plaintext for the local machine", local, got)
+		}
+	}
+	// A host that merely starts with "localhost" is somebody else's domain.
+	if got := DefaultAPIURL("localhost.evil.example"); got[:6] != "https:" {
+		t.Errorf("DefaultAPIURL(localhost.evil.example) = %q, want https", got)
+	}
+}

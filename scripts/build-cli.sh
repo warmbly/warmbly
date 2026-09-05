@@ -34,6 +34,16 @@ LDFLAGS="-s -w
   -X ${MODULE}/internal/version.Commit=${COMMIT}
   -X ${MODULE}/internal/version.BuiltAt=${BUILT_AT}"
 
+# macOS ships shasum and not GNU sha256sum, and this script is meant to be
+# reproducible on a maintainer's laptop as well as on the release runner.
+sha256_all() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$@"
+  else
+    shasum -a 256 "$@"
+  fi
+}
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
@@ -83,7 +93,7 @@ done
 
 rm -rf "$OUT/.stage" "$OUT/.host" "$OUT/.completions"
 
-(cd "$OUT" && sha256sum warmbly_* > checksums.txt)
+(cd "$OUT" && sha256_all warmbly_* > checksums.txt)
 echo
 cat "$OUT/checksums.txt"
 

@@ -16,7 +16,26 @@ const (
 	// password, and far below what credential stuffing needs.
 	authIPWindow       = 15 * time.Minute
 	authIPDefaultLimit = 60
+
+	// The CLI sign-in handshake gets its own budget, on its own key.
+	//
+	// It cannot share the auth one: `warmbly auth login` polls every
+	// CLIAuthPollIntervalSeconds for up to CLIAuthCodeTTLMinutes, which is
+	// around 200 requests for a single sign-in. On the shared budget that
+	// exhausts the allowance in three minutes, and then blocks the person's
+	// actual login from the same address for the rest of the window. The
+	// allowance below covers two concurrent sign-ins from one NAT with slack.
+	cliAuthIPWindow       = 15 * time.Minute
+	cliAuthIPDefaultLimit = 500
 )
+
+// CLIAuthIPRateLimitMiddleware throttles the public CLI sign-in handshake per
+// source IP, on a key of its own so a long poll cannot lock the same address
+// out of signing in through the browser.
+func (h *Handler) CLIAuthIPRateLimitMiddleware() gin.HandlerFunc {
+	return h.ipRateLimiter("cli_auth_ip:", cliAuthIPDefaultLimit, "CLI_AUTH_IP_RATE_LIMIT", cliAuthIPWindow,
+		"Too many CLI sign-in requests from this address. Try again later.")
+}
 
 // AuthIPRateLimitMiddleware throttles the public /auth group per source IP.
 //
@@ -29,8 +48,15 @@ const (
 // Fails open on a cache error, deliberately: a Redis blip must not lock every
 // user out of their own instance.
 func (h *Handler) AuthIPRateLimitMiddleware() gin.HandlerFunc {
-	limit := authIPDefaultLimit
-	if v := os.Getenv("AUTH_IP_RATE_LIMIT"); v != "" {
+	return h.ipRateLimiter("auth_ip:", authIPDefaultLimit, "AUTH_IP_RATE_LIMIT", authIPWindow,
+		"Too many authentication attempts from this address. Try again later.")
+}
+
+// ipRateLimiter is the shared fixed-window limiter behind both. Each caller
+// brings its own Redis key prefix, so budgets never bleed into each other.
+func (h *Handler) ipRateLimiter(prefix string, defaultLimit int, env string, window time.Duration, message string) gin.HandlerFunc {
+	limit := defaultLimit
+	if v := os.Getenv(env); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
 			limit = parsed
 		}
@@ -53,21 +79,21 @@ func (h *Handler) AuthIPRateLimitMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		key := "auth_ip:" + ip
+		key := prefix + ip
 		n, err := h.Cache.Incr(c.Request.Context(), key).Result()
 		if err != nil {
 			c.Next()
 			return
 		}
 		if n == 1 {
-			_ = h.Cache.Expire(c.Request.Context(), key, authIPWindow).Err()
+			_ = h.Cache.Expire(c.Request.Context(), key, window).Err()
 		}
 
 		if n > int64(limit) {
-			c.Header("Retry-After", fmt.Sprintf("%d", int(authIPWindow.Seconds())))
+			c.Header("Retry-After", fmt.Sprintf("%d", int(window.Seconds())))
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error":   "rate_limit_exceeded",
-				"message": "Too many authentication attempts from this address. Try again later.",
+				"message": message,
 				"code":    "rate_limit_exceeded",
 			})
 			c.Abort()

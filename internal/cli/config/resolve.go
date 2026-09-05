@@ -97,6 +97,17 @@ func NormalizeHost(raw string) string {
 	return h
 }
 
+// isLoopback reports whether a host is this machine. That is the only case
+// where plaintext HTTP is acceptable, because every request carries a bearer
+// token: a remote host that merely names a port must still get https.
+func isLoopback(host string) bool {
+	name, _, found := strings.Cut(host, ":")
+	if !found {
+		name = host
+	}
+	return name == "localhost" || name == "127.0.0.1" || name == "[::1]" || name == "::1"
+}
+
 // DefaultAPIURL is the base URL to try first for a host. The hosted service is
 // known; a self-hosted host follows the layout the installer writes.
 func DefaultAPIURL(host string) string {
@@ -104,8 +115,13 @@ func DefaultAPIURL(host string) string {
 	if host == DefaultHost {
 		return "https://api." + DefaultHost
 	}
-	if strings.Contains(host, ":") || strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
+	if isLoopback(host) {
 		return "http://" + host
+	}
+	// A host that names a port is already an exact address, so no subdomain is
+	// invented for it; the scheme stays https.
+	if strings.Contains(host, ":") {
+		return "https://" + host
 	}
 	return "https://api." + host
 }
@@ -118,7 +134,7 @@ func CandidateAPIURLs(host string) []string {
 		return []string{strings.TrimRight(host, "/")}
 	}
 	scheme := "https"
-	if strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
+	if isLoopback(host) {
 		scheme = "http"
 	}
 	// A host with a port is already an exact address; do not invent subdomains.

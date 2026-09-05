@@ -441,7 +441,7 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [changes, migrations-ci, go-ci, web-ci, admin-ci, site-ci, forms-ci, installer-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images]
+    needs: [changes, migrations-ci, go-ci, web-ci, admin-ci, site-ci, forms-ci, installer-ci, cli-installer-ci, make-ci, rust-ci, elixir-ci, ios-ci, frontend-images]
     if: always()
     steps:
       - name: Check CI status

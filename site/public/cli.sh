@@ -71,7 +71,14 @@ USE_COLOR=1
 
 # ─────────────────────────────────────────────────────────────────────────
 # Output
+#
+# The colour variables are defined empty here rather than only in
+# setup_colors, because parse_args runs first and can call die: under `set -u`
+# an unset C_RED turns a "unknown option" message into an unbound-variable
+# error, which is what a mistyped flag would have printed.
 # ─────────────────────────────────────────────────────────────────────────
+
+C_RESET=""; C_DIM=""; C_BOLD=""; C_RED=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""
 
 setup_colors() {
     if [ -n "$USE_COLOR" ] && [ -t 2 ] && [ "${TERM:-dumb}" != "dumb" ] && [ -z "${NO_COLOR:-}" ]; then

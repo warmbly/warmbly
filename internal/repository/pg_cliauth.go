@@ -139,7 +139,21 @@ func (r *cliAuthRepository) ClaimCode(ctx context.Context, deviceCodeHash string
 	return &c, secret, nil
 }
 
+// DeleteExpiredCodes both destroys the plaintext secret on any expired row and
+// removes rows old enough to be of no interest.
+//
+// The two are separate on purpose. An approved code the CLI never came back
+// for would otherwise keep a usable key in plaintext for as long as the row
+// survived, which is exactly what the "held only between approval and the next
+// poll" intent rules out. Blanking it the moment the code expires bounds that
+// to the code's own ten minutes. The key itself stays: it was legitimately
+// created and is listed under Settings > API keys, but nobody holds its secret.
 func (r *cliAuthRepository) DeleteExpiredCodes(ctx context.Context) error {
+	query := `UPDATE cli_auth_codes SET api_key_secret = NULL WHERE api_key_secret IS NOT NULL AND expires_at < NOW()`
+	if _, err := r.db.Exec(ctx, query); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
 	_, err := r.db.Exec(ctx, `DELETE FROM cli_auth_codes WHERE expires_at < NOW() - INTERVAL '1 day'`)
 	return err
 }

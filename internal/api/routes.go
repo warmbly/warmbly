@@ -240,12 +240,13 @@ func Run(
 		poolLinkPublic.POST("/poll", h.PoolLinkPoll)
 	}
 
-	// `warmbly auth login`. Unauthenticated by nature (the CLI has no key
-	// yet), so it shares the per-IP budget with the other public handshakes.
-	// Registered above the /auth group because that group's own rate limiter
-	// is tuned for password work, and a poll every three seconds is not that.
+	// `warmbly auth login`. Unauthenticated by nature (the CLI has no key yet),
+	// so it is throttled per source IP, but on its OWN budget: one sign-in
+	// polls around 200 times, which would exhaust the auth allowance and then
+	// lock the same address out of the browser login for the rest of the
+	// window.
 	cliAuthPublic := v1.Group("/auth/cli")
-	cliAuthPublic.Use(m.AuthIPRateLimitMiddleware())
+	cliAuthPublic.Use(m.CLIAuthIPRateLimitMiddleware())
 	{
 		cliAuthPublic.POST("/code", h.CLIAuthStart)
 		cliAuthPublic.POST("/poll", h.CLIAuthPoll)
