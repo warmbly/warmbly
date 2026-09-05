@@ -19,7 +19,7 @@ func seedAdminAudit(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
 		{uuid.MustParse("00000000-0000-0000-0000-0000000000f1"), "user.banned", "user", UserViewerID, `{"reason":"seed example"}`},
 		{uuid.MustParse("00000000-0000-0000-0000-0000000000f2"), "user.unbanned", "user", UserViewerID, `{"reason":"seed example"}`},
 		{uuid.MustParse("00000000-0000-0000-0000-0000000000f3"), "worker.activated", "worker", WorkerFreeID, `{}`},
-		{uuid.MustParse("00000000-0000-0000-0000-0000000000f4"), "plan.created", "plan", PlanEnterpriseID, `{"name":"Enterprise"}`},
+		{uuid.MustParse("00000000-0000-0000-0000-0000000000f4"), "plan.created", "plan", PlanEnterpriseID, `{"name":"Business"}`},
 	}
 	for _, e := range entries {
 		_, err := pool.Exec(ctx, `

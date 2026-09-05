@@ -11,8 +11,6 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
-	"github.com/warmbly/warmbly/internal/app/dailythrottle"
-	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
@@ -30,7 +28,7 @@ func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uui
 
 	// Refuse early so we don't waste an OAuth round-trip on a request
 	// that the inbox-limit guard would reject after callback.
-	if xerr := s.guardInboxLimit(ctx, orgID); xerr != nil {
+	if _, xerr := s.guardInboxLimit(ctx, orgID); xerr != nil {
 		return nil, xerr
 	}
 
@@ -57,47 +55,42 @@ func (s *emailService) OAuthStart(ctx context.Context, userID string, orgID *uui
 	return &models.EmailOnboardingStartResponse{URL: url, State: state}, nil
 }
 
-// guardMailboxThrottle bounds new-mailbox connection rate per org per
-// day so abuse paths (or accidents) can't connect 200 mailboxes in
-// one tab session. The budget is keyed by org, so a request without
-// one is refused rather than exempted. The check fires only on the
-// actual create paths, not on OAuthStart, so retrying a failed flow
-// doesn't consume the day's budget.
-func (s *emailService) guardMailboxThrottle(ctx context.Context, orgID *uuid.UUID) *errx.Error {
+// guardInboxLimit refuses a connect that would take the workspace past its
+// mailbox allowance (fair use for paid plans, FreeWorkspaceMailboxLimit for
+// free ones, unlimited without billing) and returns the resolved allowance so
+// the insert can enforce it again under the organization's lock. The
+// allowance is counted per org, so no org means it cannot be applied and the
+// connect is refused. Without an allowance source wired, the feature gate's
+// free-or-paid split stands in and the insert is not re-checked.
+func (s *emailService) guardInboxLimit(ctx context.Context, orgID *uuid.UUID) (*models.MailboxAllowance, *errx.Error) {
 	if orgID == nil {
-		return errx.ErrNoOrganization
+		return nil, errx.ErrNoOrganization
 	}
-	if s.throttle == nil {
-		return nil
-	}
-	return s.throttle.CheckAndIncrement(ctx, *orgID, dailythrottle.ResourceMailbox, config.DailyThrottleNewMailboxes)
-}
-
-// guardInboxLimit enforces the per-org inbox cap for free-trial users.
-// Returns nil (allowed) for paid orgs and for trial orgs under the cap.
-// Trial orgs that have already connected one inbox get
-// ErrEmailOnboardInboxLimit; orgs without an active subscription or trial
-// get ErrEmailOnboardTrialExpired. The cap is counted per org, so no org
-// means the cap cannot be applied and the connect is refused.
-func (s *emailService) guardInboxLimit(ctx context.Context, orgID *uuid.UUID) *errx.Error {
-	if orgID == nil {
-		return errx.ErrNoOrganization
+	if s.allowance != nil {
+		a, xerr := s.allowance.MailboxAllowance(ctx, *orgID)
+		if xerr != nil {
+			return nil, xerr
+		}
+		if a.CanAdd(1) {
+			return a, nil
+		}
+		return nil, errx.MailboxAllowanceReached(a.Used, *a.Allowance, a.Paid)
 	}
 	if s.featureGate == nil {
-		return nil
+		return nil, nil
 	}
 	count, xerr := s.emailRepository.CountForOrganization(ctx, *orgID)
 	if xerr != nil {
-		return xerr
+		return nil, xerr
 	}
 	allowed, xerr := s.featureGate.CanAddInbox(ctx, *orgID, count)
 	if xerr != nil {
-		return xerr
+		return nil, xerr
 	}
 	if allowed {
-		return nil
+		return nil, nil
 	}
-	return errx.ErrEmailOnboardInboxLimit
+	return nil, errx.MailboxAllowanceReached(count, models.FreeWorkspaceMailboxLimit, false)
 }
 
 // OAuthFinish validates the state, exchanges the code for tokens, fetches the
@@ -120,10 +113,13 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 	}
 
 	// A reauth adds no mailbox, so an org over its inbox cap can still fix one.
+	var allowance *models.MailboxAllowance
 	if sess.EmailAccountID == nil {
-		if xerr := s.guardInboxLimit(ctx, sess.OrganizationID); xerr != nil {
+		a, xerr := s.guardInboxLimit(ctx, sess.OrganizationID)
+		if xerr != nil {
 			return nil, false, xerr
 		}
+		allowance = a
 	}
 
 	provider := models.InboxProvider(sess.Provider)
@@ -158,12 +154,9 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		name = deriveNameFromEmail(owner.Email)
 	}
 
-	if xerr := s.guardMailboxThrottle(ctx, sess.OrganizationID); xerr != nil {
-		return nil, false, xerr
-	}
-
 	acc, xerr := s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
 		OrganizationID: sess.OrganizationID,
+		Allowance:      allowance,
 		Provider:       provider,
 		Name:           name,
 		Email:          owner.Email,
@@ -189,7 +182,8 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 		return nil, xerr
 	}
 
-	if xerr := s.guardInboxLimit(ctx, orgID); xerr != nil {
+	allowance, xerr := s.guardInboxLimit(ctx, orgID)
+	if xerr != nil {
 		return nil, xerr
 	}
 
@@ -222,11 +216,8 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 		return nil, xerr
 	}
 
-	if xerr := s.guardMailboxThrottle(ctx, orgID); xerr != nil {
-		return nil, xerr
-	}
-
 	data.OrganizationID = orgID
+	data.Allowance = allowance
 
 	acc, xerr := s.emailRepository.NewSMTPIMAPAccount(ctx, userID, *data)
 	if xerr != nil {

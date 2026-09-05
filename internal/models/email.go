@@ -220,20 +220,26 @@ type Oauth2SmtpImap struct {
 
 type NewOauthAccount struct {
 	OrganizationID *uuid.UUID
-	Provider       InboxProvider
-	Name           string
-	Email          string
-	AccessToken    string
-	RefreshToken   string
-	ExpiresAt      time.Time
+	// Allowance, when set, is enforced again inside the insert transaction
+	// under the organization's mailbox lock, so concurrent connects cannot
+	// both take the last slot.
+	Allowance    *MailboxAllowance
+	Provider     InboxProvider
+	Name         string
+	Email        string
+	AccessToken  string
+	RefreshToken string
+	ExpiresAt    time.Time
 }
 
 type NewSMTPIMAPAccount struct {
 	OrganizationID *uuid.UUID
-	Name           string
-	Email          string
-	SMTP           *Service
-	IMAP           *Service
+	// Allowance: see NewOauthAccount.
+	Allowance *MailboxAllowance
+	Name      string
+	Email     string
+	SMTP      *Service
+	IMAP      *Service
 }
 
 // EmailOnboardingState is stored in Redis for the lifetime of an OAuth round trip.
@@ -338,4 +344,45 @@ type BulkEmailTags struct {
 	EmailIDs   []string `json:"email_ids" binding:"required,min=1,max=1000"`
 	AddTags    []string `json:"add_tags" binding:"max=100"`
 	RemoveTags []string `json:"remove_tags" binding:"max=100"`
+}
+
+// MailboxBulkRowStatus is the per-row outcome of a bulk SMTP/IMAP connect.
+type MailboxBulkRowStatus string
+
+const (
+	// MailboxBulkConnected: the mailbox was validated and connected.
+	MailboxBulkConnected MailboxBulkRowStatus = "connected"
+	// MailboxBulkSkipped: the mailbox was already connected, so re-uploading
+	// a file is safe.
+	MailboxBulkSkipped MailboxBulkRowStatus = "skipped"
+	// MailboxBulkFailed: the row was refused; Code says why.
+	MailboxBulkFailed MailboxBulkRowStatus = "failed"
+)
+
+// MailboxBulkRow is one row's answer. Row echoes the caller's own row number
+// so the dashboard can hand back the failed lines of the file it uploaded.
+type MailboxBulkRow struct {
+	Row     int                  `json:"row"`
+	Email   string               `json:"email"`
+	Status  MailboxBulkRowStatus `json:"status"`
+	Code    string               `json:"code,omitempty"`
+	Message string               `json:"message,omitempty"`
+	ID      *uuid.UUID           `json:"id,omitempty"`
+}
+
+// MailboxBulkSummary counts the batch.
+type MailboxBulkSummary struct {
+	Total     int `json:"total"`
+	Connected int `json:"connected"`
+	Skipped   int `json:"skipped"`
+	Failed    int `json:"failed"`
+}
+
+// MailboxBulkResult is the answer to POST /emails/onboarding/smtp-imap/bulk.
+type MailboxBulkResult struct {
+	Data    []MailboxBulkRow   `json:"data"`
+	Summary MailboxBulkSummary `json:"summary"`
+	// Allowance is the workspace's mailbox allowance after the batch, so the
+	// dashboard can say how many more rows will fit without another call.
+	Allowance *MailboxAllowance `json:"allowance,omitempty"`
 }

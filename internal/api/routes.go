@@ -411,6 +411,8 @@ func Run(
 				// Bulk tag add/remove across many mailboxes (set semantics,
 				// naturally idempotent). Static path beside /:id like /verify.
 				emails.PATCH("/tags", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), h.BulkTagEmails)
+				// How many mailboxes the workspace holds and may hold, and why.
+				emails.GET("/allowance", m.RequireOrganization(), m.RequireAccess(models.PermManageEmails, models.APIPermReadEmails), h.GetMailboxAllowance)
 				emails.GET("/:id/track", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmailTrackingDomain)
 				emails.PATCH("/:id/track", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.UpdateEmailTrackingDomain)
 				// Write-scoped like the auth-check refresh: persisting the
@@ -449,6 +451,9 @@ func Run(
 				onboardingEmails.POST("/oauth/start", h.StartEmailOAuth)
 				onboardingEmails.POST("/oauth/finish", h.FinishEmailOAuth)
 				onboardingEmails.POST("/smtp-imap", h.ConnectEmailSMTPIMAP)
+				// The CSV import: up to MailboxBulkBatchMax rows per call, answered
+				// per row. Same bar as a single connect.
+				onboardingEmails.POST("/smtp-imap/bulk", h.ConnectEmailSMTPIMAPBulk)
 				// Reconnect flows for an existing mailbox whose credential the
 				// provider invalidated (issue #274). They mutate an existing
 				// org asset, so unlike first connect they sit behind the same

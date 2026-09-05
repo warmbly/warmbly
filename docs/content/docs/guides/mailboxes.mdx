@@ -41,7 +41,56 @@ With two-factor authentication on, generate an app password in your provider's s
   Credentials and both connections are validated when you add the account, so wrong settings fail immediately rather than silently at send time. Tokens and credentials are sealed with envelope encryption before they touch storage.
 </Callout>
 
-**Limits**: `200` mailboxes per workspace by default (higher allowances come through a reviewed limit-increase request), and `5` new mailboxes per workspace per day as an abuse guardrail that resets daily. Spread large onboarding batches across days.
+## Mailbox allowance
+
+Mailboxes are unlimited on every paid plan. What keeps that honest is a fair-use allowance derived from the plan's sending volume: one mailbox for every send a day the plan includes.
+
+| Plan | Sends per day | Mailboxes |
+| --- | --- | --- |
+| Free workspace | none | `10` |
+| Starter | `150` | `150` |
+| Grow | `3,000` | `3,000` |
+| Business | `15,000` | `15,000` |
+| Enterprise | custom | as many as the volume needs |
+
+That is deliberately far more than safe sending ever needs: at the recommended `30` to `50` sends a day per mailbox, a Business workspace fills its volume with a few hundred mailboxes and still has room for tens of thousands. The allowance exists so that it is never the reason to run a mailbox hotter. A plan whose daily sends are uncapped holds unlimited mailboxes, and a self-hosted instance without billing never counts.
+
+The connect dialog shows the allowance up front: a quiet count while there is room, a warning near the cap, and a clear full state that leads to the request flow instead of letting you type credentials that would be refused. When a connect is refused the answer is the same dialog, not an error toast.
+
+**Getting more.** Two paths, both in the dialog:
+
+- **Move to a bigger plan.** The dialog names the next plan and how many mailboxes it holds; the change is prorated and takes effect immediately.
+- **Request an increase.** Keep your plan and ask for a higher allowance with a sentence on what you are sending. An operator reviews it, usually within a business day, and the new allowance applies to the workspace straight away. The dialog shows the open request while it is pending and lets you withdraw it. History lives under **Settings > Limits**.
+
+Nothing is ever removed for being over the allowance. A workspace that moves to a smaller plan keeps every mailbox sending and warming; it simply cannot add more until it is back under, or the allowance is raised.
+
+There is no daily cap on how many mailboxes you connect: a Business workspace can connect thousands in one afternoon, and the [bulk import](#connecting-many-mailboxes-at-once) exists for exactly that.
+
+## Connecting many mailboxes at once
+
+Pick **Bulk import from CSV** in the connect dialog to connect any number of SMTP and IMAP mailboxes from one file. Gmail and Outlook mailboxes sign in one at a time, because each needs its own consent.
+
+**The file.** One mailbox per row. `email`, `smtp_host` and `imap_host` are required, plus a password; everything else has a default.
+
+| Column | Default |
+| --- | --- |
+| `email` | required |
+| `name` | derived from the address (`alex.rivera@` becomes Alex Rivera) |
+| `smtp_host`, `imap_host` | required |
+| `smtp_port`, `imap_port` | `587` and `993` |
+| `smtp_user`, `imap_user` | the address, or a shared `username` column |
+| `smtp_password`, `imap_password` | a shared `password` column |
+| `smtp_security`, `imap_security` | inferred from the port (`465` and `993` are `tls`, `587` and `143` are `starttls`) |
+
+The dialog offers a template with these headers, and accepts the common spellings (`smtp_server`, `app_password`, `login`, and so on).
+
+**What happens.** The file is read in your browser and checked before anything is sent: rows missing something the connect needs are listed with the reason and left out of the run. The preview also says how many rows fit your allowance; if the file is larger, the first rows that fit are connected and the rest are reported as failed so you can request more and re-upload only those.
+
+The run then streams the rows to the server in small batches. Every credential is verified against its own server before it is saved, the same as a single connect, so a large file takes a few seconds per mailbox; the dialog shows live progress and the mailbox list behind it fills in as they land, for everyone in the workspace. You can stop after the batch in flight. Closing the tab loses nothing that was already connected.
+
+**When it is done** you see how many connected, how many were already here, and how many did not connect, with a reason per row. **Retry failed** runs those rows again without leaving the dialog, passwords still in memory. **Download failed rows** gives you those rows as you uploaded them plus an `error` column, with the password columns left out so no credential lands in a Downloads folder; add them back before uploading the fixed file. Re-uploading is always safe: a mailbox that is already connected is skipped, never doubled.
+
+The same endpoint is available to the API as `POST /emails/onboarding/smtp-imap/bulk`, up to `50` rows per call, answered per row.
 
 ## Reconnecting an account
 
@@ -52,7 +101,7 @@ When the provider stops accepting a mailbox's stored credential (a password chan
 
 A successful reconnect stores the new credential, clears the authentication error, reactivates the mailbox on its existing worker, and it resumes syncing from where it stopped. Nothing else changes: settings, history, warmup progress, and campaign membership all stay.
 
-Reconnecting never counts against the mailbox limit or the daily connect guardrail, so a workspace at its cap can still fix a broken mailbox. A mailbox whose sign-in is held by Warmbly Cloud is reconnected from your cloud workspace instead; the button says so if you try locally.
+Reconnecting never counts against the mailbox allowance, so a workspace at its cap can still fix a broken mailbox. A mailbox whose sign-in is held by Warmbly Cloud is reconnected from your cloud workspace instead; the button says so if you try locally.
 
 ## What gets synced
 

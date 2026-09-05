@@ -351,6 +351,56 @@ type UpdateOrgOverridesRequest struct {
 	Notes              *string `json:"notes,omitempty"`
 }
 
+// MailboxAllowanceBasis says where a workspace's mailbox allowance comes from,
+// so the dashboard can explain the number rather than only state it.
+type MailboxAllowanceBasis string
+
+const (
+	// MailboxAllowanceUnlimited: no billing provider, or a plan with no daily
+	// send cap. Allowance is nil.
+	MailboxAllowanceUnlimited MailboxAllowanceBasis = "unlimited"
+	// MailboxAllowanceFree: an unsubscribed workspace, FreeWorkspaceMailboxLimit.
+	MailboxAllowanceFree MailboxAllowanceBasis = "free"
+	// MailboxAllowanceOverride: an operator-approved limit-increase request.
+	MailboxAllowanceOverride MailboxAllowanceBasis = "override"
+	// MailboxAllowancePlan: the plan carries an explicit mailbox column.
+	MailboxAllowancePlan MailboxAllowanceBasis = "plan"
+	// MailboxAllowanceFairUse: the plan's daily sends divided by
+	// config.FairUseSendsPerMailbox.
+	MailboxAllowanceFairUse MailboxAllowanceBasis = "fair_use"
+)
+
+// MailboxAllowance is how many mailboxes a workspace may hold and why. It is
+// what every connect path checks and what GET /emails/allowance returns.
+type MailboxAllowance struct {
+	// Used is the number of mailboxes connected right now.
+	Used int `json:"used"`
+	// Allowance is the cap; nil means unlimited.
+	Allowance *int `json:"allowance"`
+	// Remaining is Allowance minus Used, never negative; nil when unlimited.
+	Remaining *int                  `json:"remaining"`
+	Basis     MailboxAllowanceBasis `json:"basis"`
+	// SendsPerMailbox is the fair-use divisor, so the dashboard can say
+	// "one mailbox per daily send" with the real number.
+	SendsPerMailbox int `json:"sends_per_mailbox"`
+	// PlanDailySends is the plan's daily send cap when it has one.
+	PlanDailySends *int   `json:"plan_daily_sends,omitempty"`
+	PlanName       string `json:"plan_name,omitempty"`
+	// Paid is false for a free workspace, whose path to more mailboxes is a
+	// plan rather than a request.
+	Paid bool `json:"paid"`
+	// PendingRequest is the open limit-increase request for mailboxes, if any.
+	PendingRequest *LimitIncreaseRequest `json:"pending_request,omitempty"`
+}
+
+// CanAdd reports whether n more mailboxes fit.
+func (a *MailboxAllowance) CanAdd(n int) bool {
+	if a == nil || a.Allowance == nil {
+		return true
+	}
+	return a.Used+n <= *a.Allowance
+}
+
 // LimitRequestStatus mirrors the postgres enum from migration 000046.
 type LimitRequestStatus string
 

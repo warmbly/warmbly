@@ -305,6 +305,29 @@ func (r *emailRepository) CountForOrganization(ctx context.Context, orgID uuid.U
 	return count, nil
 }
 
+// reserveMailboxSlotTx is the final allowance check, run inside the insert
+// transaction under a per-organization lock so two connects that both saw one
+// slot free cannot both take it. The service's earlier read is for feedback;
+// this is what enforces.
+func reserveMailboxSlotTx(ctx context.Context, tx pgx.Tx, orgID *uuid.UUID, a *models.MailboxAllowance) *errx.Error {
+	if a == nil || a.Allowance == nil || orgID == nil {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('email_accounts'), hashtext($1::text))`, orgID.String()); err != nil {
+		db.CaptureError(err, "", nil, "exec")
+		return errx.InternalError()
+	}
+	var count int
+	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM email_accounts WHERE organization_id = $1`, *orgID).Scan(&count); err != nil {
+		db.CaptureError(err, "", nil, "queryrow")
+		return errx.InternalError()
+	}
+	if count >= *a.Allowance {
+		return errx.MailboxAllowanceReached(count, *a.Allowance, a.Paid)
+	}
+	return nil
+}
+
 func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, data models.NewOauthAccount) (*models.Email, *errx.Error) {
 	if data.Provider == models.InboxProviderSMTPIMAP {
 		sentry.CaptureException(errors.New("invalid inbox provider"))
@@ -330,6 +353,10 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 		return nil, errx.InternalError()
 	}
 	defer tx.Rollback(ctx)
+
+	if xerr := reserveMailboxSlotTx(ctx, tx, data.OrganizationID, data.Allowance); xerr != nil {
+		return nil, xerr
+	}
 
 	sigplain := utils.GetSignaturePlain(data.Name)
 	sightml := utils.GetSignatureHTML(data.Name)
@@ -461,6 +488,10 @@ func (r *emailRepository) NewSMTPIMAPAccount(ctx context.Context, userID string,
 		return nil, errx.InternalError()
 	}
 	defer tx.Rollback(ctx)
+
+	if xerr := reserveMailboxSlotTx(ctx, tx, data.OrganizationID, data.Allowance); xerr != nil {
+		return nil, xerr
+	}
 
 	sigplain := utils.GetSignaturePlain(data.Name)
 	sightml := utils.GetSignatureHTML(data.Name)

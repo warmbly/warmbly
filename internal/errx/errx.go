@@ -44,6 +44,10 @@ func (e *Error) identifier() string {
 	return codeToIdentifier[e.Code]
 }
 
+// ResponseCode is the machine-readable `code` this error answers with, for
+// callers that embed errors in a body of their own (per-row results).
+func (e *Error) ResponseCode() string { return e.identifier() }
+
 // --- Predefined errors (exported) ---
 var (
 	ErrUnauthorized  = New(Unauthorized, "Token not found.")

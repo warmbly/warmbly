@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/cipher"
-	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/app/feature"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
@@ -65,6 +64,10 @@ type EmailService interface {
 	OAuthStart(ctx context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider) (*models.EmailOnboardingStartResponse, *errx.Error)
 	OAuthFinish(ctx context.Context, userID, code, state string) (*models.Email, bool, *errx.Error)
 	OnboardSMTPIMAP(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewSMTPIMAPAccount) (*models.Email, *errx.Error)
+	// OnboardSMTPIMAPBulk connects many SMTP/IMAP mailboxes in one call and
+	// answers per row, so one bad password never fails the file. Rows past the
+	// workspace's allowance are refused before any credential is dialled.
+	OnboardSMTPIMAPBulk(ctx context.Context, userID string, orgID *uuid.UUID, rows []models.NewSMTPIMAPAccount) *models.MailboxBulkResult
 	// OAuthReauth starts an OAuth round trip that renews the tokens of an
 	// existing Gmail/Outlook mailbox after the provider invalidated them.
 	OAuthReauth(ctx context.Context, userID string, orgID *uuid.UUID, accountID uuid.UUID) (*models.EmailOnboardingStartResponse, *errx.Error)
@@ -75,7 +78,9 @@ type EmailService interface {
 	// Optional: wire in the webhook dispatcher after construction. Once
 	// set, account-lifecycle events fan out to customer webhook endpoints.
 	WireWebhooks(w webhook.Service)
-	WireThrottle(t dailythrottle.Service)
+	// WireMailboxAllowance attaches the allowance resolver every connect path
+	// checks. Without it the feature gate's free-or-paid split stands in.
+	WireMailboxAllowance(src MailboxAllowanceSource)
 	// WireGraphDelta attaches the Graph delta-cursor repository so the worker
 	// reconciler can seed a mailbox's saved cursors when loading it.
 	WireGraphDelta(repo repository.EmailGraphDeltaRepository)
@@ -124,7 +129,7 @@ type emailService struct {
 	r                  *cache.Cache
 	oauthInbox         *config.Oauth2Inbox
 	workerAssignment   worker.WorkerAssignmentService
-	throttle           dailythrottle.Service
+	allowance          MailboxAllowanceSource
 	graphDelta         repository.EmailGraphDeltaRepository
 	historyID          repository.EmailHistoryIDRepository
 	syncState          repository.EmailSyncStateRepository
@@ -210,11 +215,15 @@ func (s *emailService) WirePoolLink(repo repository.PoolLinkRepository) {
 	s.poolLink = repo
 }
 
-// WireThrottle attaches the daily-creation throttle after construction
-// so callers without a Redis cache (jobs, tests) need not provide one.
-// When unset, guardMailboxThrottle is a no-op.
-func (s *emailService) WireThrottle(t dailythrottle.Service) {
-	s.throttle = t
+// MailboxAllowanceSource answers how many mailboxes a workspace may hold.
+// Satisfied by the organization service; injected post-construction so this
+// package needs no import of it.
+type MailboxAllowanceSource interface {
+	MailboxAllowance(ctx context.Context, orgID uuid.UUID) (*models.MailboxAllowance, *errx.Error)
+}
+
+func (s *emailService) WireMailboxAllowance(src MailboxAllowanceSource) {
+	s.allowance = src
 }
 
 // WireWebhooks attaches the webhook dispatcher after construction. Done

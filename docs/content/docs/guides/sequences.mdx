@@ -28,7 +28,7 @@ The Preview tab renders through the real send engine, so merge fields, condition
 Apply a saved template to a step, or save a step as a reusable one from the composer. Templates carry their subject and body and live in your shared library.
 </Callout>
 
-Upload attachments for a step below its composer by dragging and dropping files or clicking the upload area. A file uploaded there is sent with every email from that step and from no other step, and can be removed in the same place. Files attached to the campaign itself rather than to a step, which can only be added through the API, ride every step: they are listed under **Sent with every step** so each step shows everything it carries. Attachments count against your workspace storage limit, and removing a step deletes the files scoped to it.
+Upload attachments for a step below its composer by dragging and dropping files or clicking the upload area. A file uploaded there is sent with every email from that step and from no other step, and can be removed in the same place. Files attached to the campaign itself rather than to a step, which can only be added through the API, ride every step: they are listed under **Sent with every step** so each step shows everything it carries. Attachments count against your workspace storage limit, shown under **Settings > Billing**; an upload that would pass it is refused with `storage_limit_reached`, and two uploads racing for the last of the quota cannot both get in. Removing a step deletes the files scoped to it.
 
 ### Action steps
 

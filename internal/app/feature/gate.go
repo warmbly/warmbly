@@ -86,11 +86,21 @@ type featureGateService struct {
 	selfHost bool
 	// poolLink entitles a linked workspace to warm without a paid plan; nil when not wired.
 	poolLink PoolLinkReader
+	// overrides is the per-org limit override row, so an approved daily-send
+	// increase raises what the sender enforces and not only what the
+	// dashboard shows. Nil when not wired.
+	overrides LimitOverrideReader
 }
 
 // PoolLinkReader answers whether a workspace has a live self-hosted link.
 type PoolLinkReader interface {
 	HasActiveLink(ctx context.Context, orgID uuid.UUID) bool
+}
+
+// LimitOverrideReader reads the operator override row for an organization.
+// Satisfied by the organization repository.
+type LimitOverrideReader interface {
+	GetOrganizationLimitOverrides(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimitOverrides, error)
 }
 
 func NewService(subRepo repository.SubscriptionRepository, planRepo repository.PlanRepository) FeatureGateService {
@@ -103,6 +113,21 @@ func NewService(subRepo repository.SubscriptionRepository, planRepo repository.P
 
 // WirePoolLink attaches the pool-link entitlement after construction.
 func (s *featureGateService) WirePoolLink(r PoolLinkReader) { s.poolLink = r }
+
+// WireLimitOverrides attaches the override reader after construction.
+func (s *featureGateService) WireLimitOverrides(r LimitOverrideReader) { s.overrides = r }
+
+// dailyOverride is the operator-granted daily send cap, or 0 when none.
+func (s *featureGateService) dailyOverride(ctx context.Context, orgID uuid.UUID) int {
+	if s.overrides == nil {
+		return 0
+	}
+	o, err := s.overrides.GetOrganizationLimitOverrides(ctx, orgID)
+	if err != nil || o == nil {
+		return 0
+	}
+	return o.DailyCampaignLimit
+}
 
 // CanSendCampaignEmail checks if an organization can send campaign emails
 func (s *featureGateService) CanSendCampaignEmail(ctx context.Context, orgID uuid.UUID) (bool, *errx.Error) {
@@ -204,8 +229,11 @@ func (s *featureGateService) GetDailyEmailLimit(ctx context.Context, orgID uuid.
 		return FreeTierDailyEmailLimit, nil
 	}
 
-	// Paid users = plan limit or unlimited
+	// Paid users = approved override, else plan limit, else unlimited
 	if sub.HasPaidSubscription() {
+		if ov := s.dailyOverride(ctx, orgID); ov > 0 {
+			return ov, nil
+		}
 		plan, err := s.planRepo.GetByID(ctx, sub.PlanID)
 		if err != nil || plan == nil {
 			return UnlimitedEmails, nil // Default to unlimited if plan not found
@@ -262,7 +290,9 @@ func (s *featureGateService) GetSubscriptionStatus(ctx context.Context, orgID uu
 	if status.IsInFreeTrial && !status.IsPaidSubscriber {
 		status.DailyEmailLimit = FreeTierDailyEmailLimit
 	} else if status.IsPaidSubscriber {
-		if plan != nil && plan.DailyCampaignLimit != nil {
+		if ov := s.dailyOverride(ctx, orgID); ov > 0 {
+			status.DailyEmailLimit = ov
+		} else if plan != nil && plan.DailyCampaignLimit != nil {
 			status.DailyEmailLimit = *plan.DailyCampaignLimit
 		} else {
 			status.DailyEmailLimit = UnlimitedEmails

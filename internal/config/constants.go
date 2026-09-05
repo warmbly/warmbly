@@ -238,10 +238,9 @@ const (
 	WarmupVerifyHeader = "X-Mailtrace-Verify"
 
 	// Product-level hard caps. These are the backstop for plans that
-	// advertise "unlimited" — marketing can keep saying unlimited, but
-	// the runtime never grants truly unbounded usage. Each cap is the
-	// floor that GetEffectiveLimits falls back to when both the
-	// per-org override and the plan column are unset.
+	// advertise "unlimited" on campaigns, seats, contacts and daily sends.
+	// Each cap is the floor that GetEffectiveLimits falls back to when both
+	// the per-org override and the plan column are unset.
 	//
 	// Admins can grant strictly larger caps per-org through the
 	// override flow when there is a legitimate business reason. Growth
@@ -250,14 +249,30 @@ const (
 	// acknowledging the new ceiling.
 	//
 	// These numbers are deliberately generous enough that ordinary use
-	// never trips them, and conservative enough that "I want to spin up
-	// 5,000 mailboxes overnight" can't happen without explicit approval.
-	HardCapMailboxes          = 200       // total connected mailboxes per org
+	// never trips them. Mailboxes are not in this list: see
+	// FairUseSendsPerMailbox below.
 	HardCapCampaignsTotal     = 500       // total campaigns ever created
 	HardCapCampaignsActive    = 50        // simultaneously active campaigns
 	HardCapTeamMembers        = 100       // seats per org
 	HardCapContacts           = 1_000_000 // contacts per org
 	HardCapDailyCampaignSends = 1000      // campaign emails per org per day
+
+	// Mailboxes have no hard cap. A paid workspace's allowance is fair use
+	// derived from the daily sends its plan includes: one mailbox for every
+	// FairUseSendsPerMailbox sends a day. At 1 a 15,000/day plan holds 15,000
+	// mailboxes, one per daily send, which is deliberately far more than safe
+	// sending ever needs: the allowance must never be the reason a customer
+	// runs a mailbox hotter. A plan with no daily send cap holds unlimited
+	// mailboxes, and an approved limit-increase request raises the allowance
+	// for one workspace.
+	FairUseSendsPerMailbox = 1
+
+	// Bulk connect: how many SMTP/IMAP rows one request may carry, and how
+	// many of them are validated against a worker at the same time. The
+	// dashboard streams a CSV through batches of this size so a 3,000 row
+	// file shows live progress instead of one request that times out.
+	MailboxBulkBatchMax    = 50
+	MailboxBulkConcurrency = 8
 
 	// Daily creation throttles. The total caps above stop "you have
 	// 5000 campaigns on this org" — the throttles below stop "you
@@ -270,7 +285,6 @@ const (
 	// because the per-day shape protects abuse posture rather than
 	// product utility.
 	DailyThrottleNewCampaigns = 20 // new campaigns per org per day
-	DailyThrottleNewMailboxes = 5  // newly connected mailboxes per org per day
 
 	// Pool link: mailboxes a self-hosted instance may enroll in the hosted
 	// warmup pool without a paid pool plan, and the handshake lifetimes.
