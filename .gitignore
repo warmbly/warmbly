@@ -15,6 +15,7 @@
 /migrate
 /updater
 /warmblyctl
+/warmbly
 
 # Test binary, built with `go test -c`
 *.test
@@ -27,6 +28,10 @@ profile.cov
 
 # Dependency directories (remove the comment below to include it)
 vendor/
+
+# Local CLI builds (make warmbly / make warmbly-dist)
+/bin/
+/dist/
 
 # Go workspace file
 go.work

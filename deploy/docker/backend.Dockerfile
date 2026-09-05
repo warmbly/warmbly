@@ -32,7 +32,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=$CGO GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags "$TAGS" -ldflags="-s -w -X github.com/warmbly/warmbly/internal/version.Version=$VERSION -X github.com/warmbly/warmbly/internal/version.Commit=$COMMIT -X github.com/warmbly/warmbly/internal/version.BuiltAt=$BUILT_AT" -o /out/backend ./cmd/backend; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w -X github.com/warmbly/warmbly/internal/version.Version=$VERSION -X github.com/warmbly/warmbly/internal/version.Commit=$COMMIT -X github.com/warmbly/warmbly/internal/version.BuiltAt=$BUILT_AT" -o /out/seed ./cmd/seed; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w -X github.com/warmbly/warmbly/internal/version.Version=$VERSION -X github.com/warmbly/warmbly/internal/version.Commit=$COMMIT -X github.com/warmbly/warmbly/internal/version.BuiltAt=$BUILT_AT" -o /out/migrate ./cmd/migrate; \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w -X github.com/warmbly/warmbly/internal/version.Version=$VERSION -X github.com/warmbly/warmbly/internal/version.Commit=$COMMIT -X github.com/warmbly/warmbly/internal/version.BuiltAt=$BUILT_AT" -o /out/warmblyctl ./cmd/warmblyctl
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w -X github.com/warmbly/warmbly/internal/version.Version=$VERSION -X github.com/warmbly/warmbly/internal/version.Commit=$COMMIT -X github.com/warmbly/warmbly/internal/version.BuiltAt=$BUILT_AT" -o /out/warmblyctl ./cmd/warmblyctl; \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w -X github.com/warmbly/warmbly/internal/version.Version=$VERSION -X github.com/warmbly/warmbly/internal/version.Commit=$COMMIT -X github.com/warmbly/warmbly/internal/version.BuiltAt=$BUILT_AT" -o /out/warmbly ./cmd/cli
 
 # Runtime stage
 FROM alpine:3.23
@@ -59,6 +60,10 @@ COPY --from=builder /out/migrate /app/migrate
 # The operator CLI goes on PATH, not /app, so the documented recovery command is
 # `docker compose exec backend warmblyctl status` and not a path.
 COPY --from=builder /out/warmblyctl /usr/local/bin/warmblyctl
+
+# The customer CLI ships alongside it, so an operator who has exec on the box
+# can drive the product as well as recover it without installing anything.
+COPY --from=builder /out/warmbly /usr/local/bin/warmbly
 
 # Installer script the worker orchestrator uploads + runs over SSH, and serves
 # at GET /worker-install.sh. The mode is explicit because COPY otherwise keeps
