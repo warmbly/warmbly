@@ -786,6 +786,7 @@ var ExcludedTables = map[string]string{
 	"dedicated_worker_assignments": "Worker topology, which is a property of the instance rather than the workspace.",
 	"warmup_pools":                 "Instance-global pool definitions shared by every workspace on the instance.",
 	"pool_link_codes":              "In-flight link handshakes between a self-hosted instance and this cloud, valid for minutes.",
+	"cli_auth_codes":               "In-flight `warmbly auth login` handshakes, valid for minutes. The API key an approval mints does travel, with the api_keys rows.",
 	"pool_link_instances":          "Self-hosted instances linked to this workspace's pool allowance. The token hash only authenticates against this instance, and the enrolled mailboxes are mirrors of mailboxes that live elsewhere.",
 	"pool_link_mailboxes":          "Which mailbox rows are warmup-only mirrors for a linked instance. They follow pool_link_instances, which does not travel.",
 	"cloud_link":                   "This instance's own link to Warmbly Cloud: an instance property, not workspace data, and its token would be wrong on any other instance.",

@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [backend, consumer, worker, forms, updater]
+        service: [backend, consumer, worker, forms, updater, cli]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -214,9 +214,46 @@ jobs:
             -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:prod \
             $(printf '${{ env.IMAGE_PREFIX }}/${{ matrix.service }}@sha256:%s ' *)
 
+  # The `warmbly` CLI is a plain static binary, so it cross-compiles for every
+  # platform on one runner.
+  #
+  # Assets are named WITHOUT the version, so
+  # releases/latest/download/warmbly_linux_amd64.tar.gz always resolves. That is
+  # what lets the install script find the newest build with no GitHub API call,
+  # which matters because the unauthenticated API is rate limited and a curl
+  # installer that fails on a busy CI runner is not an installer.
+  build-cli:
+    name: Build CLI
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-compile and package
+        env:
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          BUILT_AT: ${{ github.event.head_commit.timestamp }}
+        run: |
+          set -euo pipefail
+          ./scripts/build-cli.sh dist
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: warmbly-cli
+          path: dist/
+          retention-days: 1
+
   create-release:
     name: Create GitHub Release
-    needs: [validate-tag, build-go, build-frontend, merge-native]
+    needs: [validate-tag, build-go, build-frontend, merge-native, build-cli]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -227,6 +264,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Download the CLI binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: warmbly-cli
+          path: /tmp/cli
 
       # The installer verifies what it pulled against this file, so it is what
       # makes "curl | sh" checkable after the fact rather than only before it.
@@ -284,6 +327,18 @@ jobs:
           Add `--wizard` to be asked where each store lives, what is kept and
           for how long, and how it is backed up.
 
+          ## The warmbly CLI
+
+          ```
+          curl -fsSL https://warmbly.com/cli.sh | sh          # macOS, Linux
+          irm https://warmbly.com/cli.ps1 | iex               # Windows
+          brew install warmbly/tap/warmbly                    # Homebrew
+          scoop install warmbly                               # Scoop
+          ```
+
+          Or take an archive below and unpack it yourself; `checksums.txt`
+          verifies every one of them. Already installed? `warmbly upgrade`.
+
           `images.json` below lists the manifest digest of every image in this
           release. The installer checks what it pulled against it, and you can
           too:
@@ -307,6 +362,7 @@ jobs:
           | Admin | `${{ env.IMAGE_PREFIX }}/admin:${{ github.ref_name }}` |
           | Forms | `${{ env.IMAGE_PREFIX }}/forms:${{ github.ref_name }}` |
           | Updater | `${{ env.IMAGE_PREFIX }}/updater:${{ github.ref_name }}` |
+          | CLI | `${{ env.IMAGE_PREFIX }}/cli:${{ github.ref_name }}` |
 
           ## Deployment
 
@@ -314,12 +370,50 @@ jobs:
           EOF
           } > /tmp/release-body.md
 
+      # The formula and manifest are generated with the archives, so their
+      # checksums can never drift from what they describe. Pushing them is
+      # skipped, loudly, when the tap token is not configured: a release must
+      # not fail because a downstream package repo is not set up yet.
+      - name: Publish the Homebrew formula and Scoop manifest
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not set; skipping the tap push."
+            echo "The formula and manifest are still attached to the release."
+            exit 0
+          fi
+          # A prerelease must never become the default `brew install`.
+          case "$TAG" in
+            *-*) echo "$TAG is a prerelease; not updating the taps."; exit 0 ;;
+          esac
+          git config --global user.name "warmbly-release"
+          git config --global user.email "release@warmbly.com"
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/warmbly/homebrew-tap.git" /tmp/tap
+          mkdir -p /tmp/tap/Formula /tmp/tap/bucket
+          cp /tmp/cli/warmbly.rb /tmp/tap/Formula/warmbly.rb
+          cp /tmp/cli/warmbly.json /tmp/tap/bucket/warmbly.json
+          cd /tmp/tap
+          git add Formula/warmbly.rb bucket/warmbly.json
+          if git diff --cached --quiet; then
+            echo "the tap already describes $TAG"
+          else
+            git commit -m "warmbly $TAG"
+            git push
+            echo "pushed warmbly $TAG to the tap"
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body_path: /tmp/release-body.md
-          files: /tmp/images.json
+          files: |
+            /tmp/images.json
+            /tmp/cli/*
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

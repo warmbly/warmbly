@@ -6,6 +6,7 @@
     "index",
     "authentication",
     "sdks",
+    "cli",
     "oauth",
     "permissions",
     "endpoints",

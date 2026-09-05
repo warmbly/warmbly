@@ -72,6 +72,18 @@ type DeploymentAuthConfig struct {
 	// DocsURL is where to send someone whose signup was refused by deployment
 	// policy rather than by anything they did wrong.
 	DocsURL string `json:"docs_url"`
+
+	// WebsocketURL is the realtime gateway. Served here because a developer
+	// client (the CLI's event stream, an SDK) has no other way to find the
+	// socket on a self-hosted instance. Empty when the instance runs no
+	// realtime service.
+	WebsocketURL string `json:"websocket_url,omitempty"`
+
+	// AppURL is the dashboard origin, the same one every emailed link is built
+	// from. A client that wants to send someone to a page (the CLI's `browse`,
+	// a chat integration) cannot derive it: on a self-hosted instance the host
+	// layout is whatever the operator chose.
+	AppURL string `json:"app_url,omitempty"`
 }
 
 // accountsDocsURL is the page every registration refusal points at.
@@ -104,5 +116,7 @@ func (h *Handler) AuthConfig(c *gin.Context) {
 		SetupRequired:     h.BootstrapService != nil && h.BootstrapService.Required(c.Request.Context()),
 		InvitesRequired:   registration == config.RegistrationInviteOnly,
 		DocsURL:           accountsDocsURL,
+		WebsocketURL:      config.WebsocketURL(),
+		AppURL:            config.AppBaseURL(),
 	})
 }
