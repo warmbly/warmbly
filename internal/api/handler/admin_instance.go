@@ -56,12 +56,21 @@ func (h *Handler) AdminInstanceHealth(c *gin.Context) {
 }
 
 // AdminGetInstanceSettings returns the database-backed settings document.
+//
+// Notification channel targets and secrets never leave the process in full: a
+// chat webhook URL is a bearer credential, so it reads back as a recognisable
+// preview and the panel sends the preview (or nothing) to mean "unchanged".
 func (h *Handler) AdminGetInstanceSettings(c *gin.Context) {
 	if h.InstanceSettings == nil {
-		c.JSON(http.StatusOK, instancesettings.Defaults())
+		c.JSON(http.StatusOK, redactSettings(instancesettings.Defaults()))
 		return
 	}
-	c.JSON(http.StatusOK, h.InstanceSettings.Get(c.Request.Context()))
+	c.JSON(http.StatusOK, redactSettings(h.InstanceSettings.Get(c.Request.Context())))
+}
+
+func redactSettings(doc instancesettings.Document) instancesettings.Document {
+	doc.Notifications.Channels = doc.Notifications.RedactedChannels()
+	return doc
 }
 
 // AdminPutInstanceSettings validates, clamps and stores the settings document.
@@ -103,7 +112,7 @@ func (h *Handler) AdminPutInstanceSettings(c *gin.Context) {
 		)
 	}
 
-	c.JSON(http.StatusOK, doc)
+	c.JSON(http.StatusOK, redactSettings(doc))
 }
 
 func instanceSettingsAuditDetails(doc instancesettings.Document) map[string]any {
@@ -120,6 +129,7 @@ func instanceSettingsAuditDetails(doc instancesettings.Document) map[string]any 
 		"retention_audit_log_days":           doc.Retention.AuditLogDays,
 		"deliverability_enforce_domain_auth": doc.Deliverability.EnforceDomainAuth,
 		"deliverability_auth_grace_hours":    doc.Deliverability.AuthGraceHours,
+		"notification_channels":              len(doc.Notifications.Channels),
 	}
 	return details
 }

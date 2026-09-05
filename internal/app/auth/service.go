@@ -54,6 +54,10 @@ type AuthService interface {
 	// referral attribution at signup).
 	WireReferral(r ReferralAttributor)
 
+	// WireOperatorNotifier attaches the instance-wide operator alert channel
+	// (post-construction; nil = no alerts).
+	WireOperatorNotifier(n OperatorNotifier)
+
 	// WireInstanceSettings attaches the database-backed instance settings
 	// (post-construction; nil keeps the permissive defaults).
 	WireInstanceSettings(s InstanceSettings)
@@ -104,6 +108,12 @@ type AuthService interface {
 	SSOExchange(ctx context.Context, code, binding string) (*models.LoginResult, *errx.Error)
 }
 
+// OperatorNotifier is the instance-wide operator alert surface, injected
+// post-construction so this package needs no import of it. Nil disables it.
+type OperatorNotifier interface {
+	NotifyOperator(key, title, summary string, fields map[string]string)
+}
+
 type authService struct {
 	// orgRisk files signup findings onto the new workspace's posture.
 	// Optional/nil-safe: without it signups are scored but not fused.
@@ -120,12 +130,14 @@ type authService struct {
 	trialService             trial.TrialService
 	organizationService      organization.OrganizationService
 	emailNotificationService notify.EmailNotificationService
-	cache                    *cache.Cache
-	captcha                  *captcha.Turnstile
-	appleIDTokens            IDTokenVerifier
-	googleIDTokens           IDTokenVerifier
-	twofa                    TwoFAChallenger
-	referral                 ReferralAttributor
+	// opsNotify raises instance-wide operator alerts. Nil is the default.
+	opsNotify      OperatorNotifier
+	cache          *cache.Cache
+	captcha        *captcha.Turnstile
+	appleIDTokens  IDTokenVerifier
+	googleIDTokens IDTokenVerifier
+	twofa          TwoFAChallenger
+	referral       ReferralAttributor
 	// settings is the operator-editable settings document, wired after
 	// construction because it needs the database pool.
 	settings InstanceSettings
@@ -158,6 +170,9 @@ func (s *authService) Policy() *config.AuthPolicy { return s.policy }
 func (s *authService) WireIdentities(r repository.IdentityRepository) { s.identities = r }
 
 func (s *authService) WireReferral(r ReferralAttributor) { s.referral = r }
+
+// WireOperatorNotifier attaches the operator alert channel.
+func (s *authService) WireOperatorNotifier(n OperatorNotifier) { s.opsNotify = n }
 
 // WireInstanceSettings attaches the instance settings document, so the signup
 // knobs on the admin page reach the registration paths.

@@ -45,6 +45,7 @@ import SystemStatusPage from "@/app/dashboard/SystemStatusPage";
 import HealthPage from "@/app/dashboard/HealthPage";
 import ConfigurationPage from "@/app/dashboard/ConfigurationPage";
 import InstanceSettingsPage from "@/app/dashboard/InstanceSettingsPage";
+import NotificationsPage from "@/app/dashboard/NotificationsPage";
 import LimitsPage from "@/app/dashboard/LimitsPage";
 import RealtimeManager from "@/lib/realtime/RealtimeManager";
 import { RequirePermission } from "@/components/layout/RequirePermission";
@@ -148,6 +149,17 @@ const router = createBrowserRouter([
                                 permissionLabel="Manage settings"
                             >
                                 <InstanceSettingsPage />
+                            </RequirePermission>
+                        ),
+                    },
+                    {
+                        path: "configuration/notifications",
+                        element: (
+                            <RequirePermission
+                                perm={AdminPerm.ManageSettings}
+                                permissionLabel="Manage settings"
+                            >
+                                <NotificationsPage />
                             </RequirePermission>
                         ),
                     },

@@ -108,13 +108,23 @@ type Service interface {
 	WireRealtime(r HealthRealtimePublisher, emailRepo repository.EmailRepository)
 }
 
+// OperatorNotifier is the instance-wide operator alert surface, injected
+// post-construction so this package needs no import of it. Nil disables it.
+type OperatorNotifier interface {
+	NotifyOperator(key, title, summary string, fields map[string]string)
+}
+
 type service struct {
 	repo      repository.WarmupRepository
 	emailRepo repository.EmailRepository
 	webhooks  WebhookDispatcher
 	realtime  HealthRealtimePublisher
+	opsNotify OperatorNotifier
 	now       func() time.Time
 }
+
+// WireOperatorNotifier attaches the operator alert channel.
+func (s *service) WireOperatorNotifier(n OperatorNotifier) { s.opsNotify = n }
 
 func NewService(repo repository.WarmupRepository) Service {
 	return &service{
@@ -418,6 +428,20 @@ func (s *service) SubmitAppeal(ctx context.Context, userID, accountID uuid.UUID,
 	if err != nil {
 		return uuid.Nil, errx.InternalError()
 	}
+
+	if s.opsNotify != nil {
+		s.opsNotify.NotifyOperator(
+			"warmup_appeal.created",
+			"Warmup ban appealed",
+			"A blocked mailbox asked to be let back into the warmup pool.",
+			map[string]string{
+				"Mailbox": accountID.String(),
+				"State":   string(health.HealthState),
+				"Reason":  reason,
+			},
+		)
+	}
+
 	return id, nil
 }
 

@@ -1,0 +1,79 @@
+---
+title: Operator notifications
+description: Send instance events to Discord, Slack, a signed webhook, or an email address.
+---
+
+Your instance can tell you when something happens on it: a new signup, a worker going offline, a workspace asking for more capacity. Configure the destinations in the admin panel under **Configuration > Notifications**.
+
+These are operator alerts, not customer alerts. They are instance-wide and go to you. The per-workspace event delivery your customers configure is [Webhooks](/guides/webhooks/), which is a separate, queued and retried system.
+
+## Channels
+
+A channel is one destination. You can add up to 25.
+
+| Type | What to paste | Notes |
+| --- | --- | --- |
+| Discord | An incoming webhook URL | Server settings, then Integrations, then New Webhook |
+| Slack | An incoming webhook URL | Create a Slack app with an incoming webhook |
+| Webhook | Any HTTPS endpoint | Receives the event as JSON, optionally signed |
+| Email | An address | Needs a working platform mail transport |
+
+Each channel picks which events it wants. Leave every event unchecked and it receives all of them, including ones added in later versions.
+
+Use **Test** on a channel to deliver a sample alert immediately. A test ignores the channel's on/off switch and its event selection, so it always sends, and it reports the transport error directly when delivery fails.
+
+### URL safety
+
+Webhook URLs must be HTTPS and resolve to a publicly routable host. Inline credentials are rejected. This is the same posture customer webhooks use, and it exists so a notification channel cannot be pointed at your internal network.
+
+To point a channel at a host on your own network, set `WARMBLY_ALLOW_UNSAFE_WEBHOOK_URLS=true`. That also permits plain HTTP. Only do this on a deployment where you control the network.
+
+### Signing
+
+A `webhook` channel with a signing secret sends:
+
+```
+X-Warmbly-Signature: t=<unix>,v1=<hex>
+X-Warmbly-Event: <event key>
+```
+
+`v1` is `HMAC-SHA256(secret, "<unix>." + body)`, the same scheme as customer webhooks, so an existing verifier works unchanged. The body is:
+
+```json
+{
+  "event": "worker.offline",
+  "title": "Worker stopped responding",
+  "summary": "No healthy replacement of the same tier was available…",
+  "severity": "urgent",
+  "fields": [{ "label": "Worker", "value": "…" }],
+  "link": "https://app.example.com",
+  "timestamp": "2026-01-01T00:00:00Z"
+}
+```
+
+### Credentials
+
+A chat webhook URL is a bearer credential: anyone holding it can post to that channel. The admin API never returns one in full. A saved channel reads back with its URL reduced to a host and the tail of its path, and its signing secret replaced by a placeholder. Sending those values back unchanged means "keep what is stored", so saving an unrelated toggle cannot wipe a credential. To change a URL or secret, type the new value in full.
+
+## Events
+
+| Event | Fires when |
+| --- | --- |
+| Enterprise inquiry submitted | Someone asks for enterprise pricing from the plan chooser |
+| Limit increase requested | A workspace asks for more capacity than its plan allows |
+| Payment failed | Stripe could not collect an invoice |
+| Workspace created | A new organization is created |
+| User registered | A new account finishes signing up |
+| Worker went offline | A worker stops heartbeating and no healthy replacement of its tier is available |
+| Warmup ban appealed | A blocked mailbox asks to rejoin the warmup pool |
+| Workspace risk escalated | Risk scoring moves a workspace into a different posture |
+
+A self-hosted instance is offered the subset that means something without billing, so the panel never lists an event that cannot fire there.
+
+Worker and risk alerts are deduplicated: a worker that stays down does not re-alert for six hours, and a risk alert only fires on an actual change of posture.
+
+## Delivery behaviour
+
+Delivery is best effort and deliberately so. An alert never blocks or fails the request that produced it, and a chat server that is slow or unreachable is not allowed to slow the product down. There is no retry queue. If a channel is down when an event fires, that alert is lost.
+
+If alerts stop arriving, use **Test** first: it is synchronous and tells you exactly what the transport said.

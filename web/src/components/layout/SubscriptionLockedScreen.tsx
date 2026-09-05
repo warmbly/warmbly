@@ -7,12 +7,20 @@ import { motion } from "framer-motion";
 import { ArrowRightIcon, CheckIcon, CloudIcon, InboxIcon, ServerIcon, SparklesIcon } from "lucide-react";
 import { getPlan } from "@/lib/plans";
 import { useAppStore } from "@/stores";
+import { useUpgradeDialog } from "@/hooks/context/upgrade";
 
 const SELF_HOST_DOCS = "https://docs.warmbly.com/development/deployment-guide/";
 
 export default function SubscriptionLockedScreen({ feature }: { feature: string }) {
     const isOwner = useAppStore((s) => s.currentOrganization?.role === "owner");
+    const upgradeDialog = useUpgradeDialog();
     const starter = getPlan("starter");
+    const openPlans = () =>
+        upgradeDialog.open({
+            feature,
+            minPlan: "starter",
+            blurb: "Campaigns, the unified inbox, contacts, CRM, automations and integrations on our infrastructure. Pick a plan and it is live the moment checkout completes.",
+        });
 
     return (
         <div className="relative min-h-full w-full overflow-hidden flex items-center justify-center px-4 py-10">
@@ -69,7 +77,7 @@ export default function SubscriptionLockedScreen({ feature }: { feature: string 
                         body="Campaigns, the unified inbox, contacts, CRM, automations and integrations on our infrastructure."
                         bullets={starter.bullets}
                         cta={isOwner ? "Choose a plan" : "See plans"}
-                        to="/app/settings/billing"
+                        onClick={openPlans}
                         primary
                     />
                 </div>
@@ -92,6 +100,7 @@ function Path({
     cta,
     to,
     href,
+    onClick,
     secondary,
     primary = false,
 }: {
@@ -103,6 +112,8 @@ function Path({
     cta: string;
     to?: string;
     href?: string;
+    /** Opens something in place (the upgrade dialog) instead of navigating. */
+    onClick?: () => void;
     secondary?: { label: string; to: string };
     primary?: boolean;
 }) {
@@ -128,7 +139,11 @@ function Path({
                 </ul>
             )}
             <div className="mt-auto pt-5 flex flex-wrap items-center gap-2">
-                {href ? (
+                {onClick ? (
+                    <button type="button" onClick={onClick} className={btn}>
+                        {cta} <ArrowRightIcon className="w-3.5 h-3.5" />
+                    </button>
+                ) : href ? (
                     <a href={href} target="_blank" rel="noreferrer" className={btn}>
                         {cta} <ArrowRightIcon className="w-3.5 h-3.5" />
                     </a>

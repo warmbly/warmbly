@@ -74,6 +74,11 @@ type JobsService struct {
 	// dead-worker job moves or strands their mailboxes. Nil disables it.
 	Notifier OrgNotifier
 
+	// OpsNotifier raises instance-wide operator alerts, which are a different
+	// audience from Notifier: the operator hears about the fleet, the tenant
+	// hears about their mailboxes. Nil disables it.
+	OpsNotifier OperatorNotifier
+
 	// Send-outcome handling (EMAIL_SENT / EMAIL_FAILED from workers). The task
 	// and campaign progress the control plane stamped at hand-off are walked
 	// back here when a worker reports it could not send. Nil TaskRepo disables

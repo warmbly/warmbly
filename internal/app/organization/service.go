@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,10 +35,20 @@ type InstanceSettings interface {
 	InviteLinksEnabled(ctx context.Context) bool
 }
 
+// OperatorNotifier is the instance-wide operator alert surface, injected
+// post-construction so this package needs no import of it. Nil disables every
+// alert below; a deployment with no channels configured is the normal case.
+type OperatorNotifier interface {
+	NotifyOperator(key, title, summary string, fields map[string]string)
+}
+
 // OrganizationService defines the interface for organization management
 type OrganizationService interface {
 	// WireAuthPolicy attaches the deployment auth policy after construction.
 	WireAuthPolicy(p *config.AuthPolicy)
+
+	// WireOperatorNotifier attaches the operator alert channel.
+	WireOperatorNotifier(n OperatorNotifier)
 
 	// WireInstanceSettings attaches the database-backed instance settings
 	// (post-construction; nil keeps the compiled defaults).
@@ -145,6 +156,21 @@ type organizationService struct {
 	// settings is the operator-editable invite configuration, wired after
 	// construction because it needs the database pool.
 	settings InstanceSettings
+	// opsNotify raises instance-wide operator alerts. Nil is the default.
+	opsNotify OperatorNotifier
+}
+
+// WireOperatorNotifier attaches the operator alert channel.
+func (s *organizationService) WireOperatorNotifier(n OperatorNotifier) {
+	s.opsNotify = n
+}
+
+// notifyOperator is the nil-safe emit helper.
+func (s *organizationService) notifyOperator(key, title, summary string, fields map[string]string) {
+	if s.opsNotify == nil {
+		return
+	}
+	s.opsNotify.NotifyOperator(key, title, summary, fields)
 }
 
 // WireAuthPolicy attaches the deployment auth policy, so invitations answer to
@@ -285,6 +311,16 @@ func (s *organizationService) Create(ctx context.Context, userID uuid.UUID, name
 			sentry.CaptureException(err)
 		}
 	}
+
+	s.notifyOperator(
+		"organization.created",
+		"New workspace: "+org.Name,
+		"A new organization was created on this instance.",
+		map[string]string{
+			"Workspace": org.Name,
+			"Owner":     user.Email,
+		},
+	)
 
 	return org, nil
 }
@@ -971,6 +1007,18 @@ func (s *organizationService) CreateEnterpriseInquiry(ctx context.Context, inqui
 		return nil, errx.New(errx.Internal, "failed to create enterprise inquiry")
 	}
 
+	s.notifyOperator(
+		"enterprise_inquiry.created",
+		"Enterprise inquiry from "+inquiry.CompanyName,
+		"Someone asked for enterprise pricing.",
+		map[string]string{
+			"Company": inquiry.CompanyName,
+			"Contact": inquiry.ContactName,
+			"Email":   inquiry.ContactEmail,
+			"Notes":   inquiry.Notes,
+		},
+	)
+
 	return inquiry, nil
 }
 
@@ -1253,6 +1301,20 @@ func (s *organizationService) SubmitLimitIncreaseRequest(ctx context.Context, or
 		sentry.CaptureException(err)
 		return nil, errx.New(errx.Internal, "failed to submit request")
 	}
+
+	s.notifyOperator(
+		"limit_request.created",
+		"Limit increase requested",
+		"A workspace asked for more capacity than its plan allows.",
+		map[string]string{
+			"Workspace": orgID.String(),
+			"Field":     req.Field,
+			"Current":   strconv.Itoa(current),
+			"Requested": strconv.Itoa(req.Requested),
+			"Reason":    req.Reason,
+		},
+	)
+
 	return lr, nil
 }
 

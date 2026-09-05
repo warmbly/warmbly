@@ -59,6 +59,9 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash, 
 	// would have accepted the signup anyway.
 	if invite != "" && s.organizationService != nil {
 		if _, err := s.organizationService.AcceptInvitation(ctx, invite, u.ID, u.Email); err == nil {
+			// An invited account finished signing up just as much as a
+			// self-serve one; it simply joined an existing workspace.
+			s.notifyOperatorSignup(u, "")
 			return u, nil
 		}
 		if inviteRequired {
@@ -105,7 +108,31 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash, 
 		}
 	}
 
+	workspace := ""
+	if org != nil {
+		workspace = org.Name
+	}
+	s.notifyOperatorSignup(u, workspace)
+
 	return u, nil
+}
+
+// notifyOperatorSignup raises the operator alert for a finished signup. Both
+// the invited and the self-serve path go through it so neither can be missed.
+func (s *authService) notifyOperatorSignup(u *models.User, workspace string) {
+	if s.opsNotify == nil || u == nil {
+		return
+	}
+	s.opsNotify.NotifyOperator(
+		"user.registered",
+		"New signup: "+u.Email,
+		"A new account finished signing up.",
+		map[string]string{
+			"Email":     u.Email,
+			"Name":      strings.TrimSpace(u.FirstName + " " + u.LastName),
+			"Workspace": workspace,
+		},
+	)
 }
 
 // signupAllowed enforces DISABLE_REGISTRATION.

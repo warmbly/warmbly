@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,39 @@ import (
 // *notification.Service; local interface to avoid an import cycle.
 type OrgNotifier interface {
 	NotifyOrg(ctx context.Context, orgID uuid.UUID, perm models.OrganizationPermission, exclude uuid.UUID, category models.NotificationCategory, title, body, link string, meta map[string]any, groupKey string)
+}
+
+// OperatorNotifier is the instance-wide operator alert surface, declared here
+// so this package needs no import of it. Nil disables it.
+type OperatorNotifier interface {
+	NotifyOperator(key, title, summary string, fields map[string]string)
+}
+
+// notifyOperatorWorkerDown alerts the operator that a worker is gone. It shares
+// the same once-per-incident SetNX guard shape as the tenant notice, under its
+// own key so the two audiences are independent.
+func (s *JobsService) notifyOperatorWorkerDown(ctx context.Context, workerID uuid.UUID, mailboxes int, reassigned bool) {
+	if s.OpsNotifier == nil || s.Cache == nil {
+		return
+	}
+	ok, err := s.Cache.SetNX(ctx, "worker:opsnotify:"+workerID.String(), "1", 6*time.Hour).Result()
+	if err != nil || !ok {
+		return
+	}
+	outcome := "Mailboxes were moved to a healthy worker automatically."
+	if !reassigned {
+		outcome = "No healthy replacement of the same tier was available, so sending from those mailboxes is paused."
+	}
+	s.OpsNotifier.NotifyOperator(
+		"worker.offline",
+		"Worker stopped responding",
+		outcome,
+		map[string]string{
+			"Worker":     workerID.String(),
+			"Mailboxes":  strconv.Itoa(mailboxes),
+			"Reassigned": map[bool]string{true: "yes", false: "no"}[reassigned],
+		},
+	)
 }
 
 // notifyWorkerDown tells each affected org's manage_emails members about a
@@ -116,6 +150,7 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 		if err != nil || replacement == nil {
 			log.Warn().Str("worker_id", w.ID.String()).Msg("no healthy replacement worker found")
 			s.notifyWorkerDown(ctx, w.ID, s.accountOrgs(ctx, accountIDs), false)
+			s.notifyOperatorWorkerDown(ctx, w.ID, len(accountIDs), false)
 			continue
 		}
 
@@ -184,6 +219,7 @@ func (s *JobsService) detectDeadWorkers(ctx context.Context) {
 			}
 
 			s.notifyWorkerDown(ctx, w.ID, affectedOrgs, true)
+			s.notifyOperatorWorkerDown(ctx, w.ID, reassigned, true)
 		}
 
 		if reassigned == len(accountIDs) {

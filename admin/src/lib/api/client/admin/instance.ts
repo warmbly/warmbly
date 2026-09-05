@@ -128,6 +128,71 @@ export interface InstanceSettings {
         enforce_domain_auth: boolean;
         auth_grace_hours: number;
     };
+    // Operator notification channels. Targets and secrets are redacted on
+    // read: a chat webhook URL is a bearer credential, so the server returns a
+    // recognisable preview and treats the preview (or an empty string) as
+    // "keep what is stored" on write.
+    // Optional so a client that does not manage channels (the instance
+    // settings page) can PUT without them; an absent section keeps the
+    // stored channels untouched.
+    notifications?: {
+        channels: NotifyChannel[];
+    };
+}
+
+export type NotifyChannelType = "discord" | "slack" | "webhook" | "email";
+
+export interface NotifyChannel {
+    id: string;
+    name: string;
+    type: NotifyChannelType;
+    /** Webhook URL, or the address for an email channel. Redacted on read. */
+    target: string;
+    /** HMAC secret for the generic webhook transport. Redacted on read. */
+    secret?: string;
+    /** Subscribed event keys. Empty means every event. */
+    events: string[];
+    enabled: boolean;
+}
+
+export type NotifySeverity = "info" | "warning" | "urgent";
+
+export interface NotifyEventDef {
+    key: string;
+    label: string;
+    description: string;
+    group: string;
+    severity: NotifySeverity;
+    self_host_relevant: boolean;
+}
+
+export interface NotifyEventsResult {
+    events: NotifyEventDef[];
+    self_hosted: boolean;
+}
+
+export function getNotificationEvents(): Promise<NotifyEventsResult> {
+    return Request({
+        method: "GET",
+        url: "/admin/instance/notifications/events",
+        authorization: true,
+    });
+}
+
+/** Send a test alert. Pass `id` for a saved channel, or the unsaved fields. */
+export function testNotificationChannel(body: {
+    id?: string;
+    type?: NotifyChannelType;
+    name?: string;
+    target?: string;
+    secret?: string;
+}): Promise<{ delivered: boolean }> {
+    return Request({
+        method: "POST",
+        url: "/admin/instance/notifications/test",
+        data: body,
+        authorization: true,
+    });
 }
 
 export function getInstanceSettings(): Promise<InstanceSettings> {

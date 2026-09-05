@@ -53,7 +53,9 @@ const plans = [
     features: [
       'Everything in Grow',
       '15,000 emails / day',
-      'Dedicated IPs',
+      // Not an IP product: the mechanism is a worker machine bound to one org,
+      // and what it buys is reputation isolation. index.astro words it the same.
+      'Sending kept apart from other customers',
       'Team roles + audit log',
       'Priority support',
     ],
@@ -94,7 +96,7 @@ const matrix = [
       ['Cold sends per day',        '150',        '3,000',       '15,000',      '15,000+'],
       ['Per-mailbox cold cap',      '100 / day',  '100 / day',   '100 / day',   'Custom'],
       ['Distributed workers',       'Shared',     'Shared',      'Dedicated',   'Dedicated'],
-      ['Dedicated sending IPs',     '—',          '—',           '✓',           '✓'],
+      ['Sending kept apart from others', '—',      '—',           '✓',           '✓'],
     ],
   },
   {

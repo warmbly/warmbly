@@ -5,6 +5,7 @@
 
 import { NavLink } from "react-router-dom";
 import {
+    Bell,
     Activity,
     BarChart3,
     Building2,
@@ -100,6 +101,12 @@ const GROUPS: NavGroup[] = [
                 to: "/configuration/settings",
                 label: "Instance settings",
                 icon: Settings2,
+                perm: AdminPerm.ManageSettings,
+            },
+            {
+                to: "/configuration/notifications",
+                label: "Notifications",
+                icon: Bell,
                 perm: AdminPerm.ManageSettings,
             },
             {

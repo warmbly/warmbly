@@ -99,6 +99,7 @@ type Document struct {
 	Sync           Sync           `json:"sync"`
 	Retention      Retention      `json:"retention"`
 	Deliverability Deliverability `json:"deliverability"`
+	Notifications  Notifications  `json:"notifications"`
 }
 
 // Defaults is the document a fresh instance behaves as if it had.
@@ -184,6 +185,7 @@ func (d *Document) Normalize() {
 	d.Sync.Normalize()
 	d.Retention.Normalize()
 	d.Deliverability.Normalize()
+	d.Notifications.Normalize()
 }
 
 // Normalize clamps the grace window. Zero and negative resolve to the compiled
@@ -256,6 +258,12 @@ type Patch struct {
 		EnforceDomainAuth *bool `json:"enforce_domain_auth"`
 		AuthGraceHours    *int  `json:"auth_grace_hours"`
 	} `json:"deliverability"`
+	// Channels replaces the whole list when present. A channel that comes back
+	// with a masked target or secret keeps the stored value, so the admin panel
+	// can round-trip a redacted read without wiping credentials.
+	Notifications *struct {
+		Channels *[]NotifyChannel `json:"channels"`
+	} `json:"notifications"`
 }
 
 // Apply merges a patch onto a document.
@@ -313,6 +321,9 @@ func (p Patch) Apply(doc Document) Document {
 				doc.Deliverability.AuthGraceHours = AuthGraceHoursMin
 			}
 		}
+	}
+	if p.Notifications != nil && p.Notifications.Channels != nil {
+		doc.Notifications.Channels = mergeChannels(doc.Notifications.Channels, *p.Notifications.Channels)
 	}
 	return doc
 }

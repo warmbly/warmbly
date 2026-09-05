@@ -5,8 +5,8 @@
 //   free       → no active subscription
 //   starter    → $29/mo, 150 sends/day
 //   grow       → $89/mo, 3k sends/day
-//   business   → $329/mo, 15k sends/day + dedicated IPs   (featured)
-//   enterprise → custom, 15k+ sends/day + dedicated IPs
+//   business   → $329/mo, 15k sends/day + isolated sending   (featured)
+//   enterprise → custom, 15k+ sends/day + isolated sending
 //
 // Gates here decide which dashboard features show up in the sidebar
 // + which surfaces render the LockedSurface overlay. The minimum
@@ -46,8 +46,8 @@ export interface FeatureAccess {
     hasInbox: boolean;
     /** Advanced outreach (AB tests, custom rules) — Business+. */
     hasAdvanced: boolean;
-    /** Dedicated IP pool — Business+. */
-    hasDedicatedIps: boolean;
+    /** Sending on infrastructure bound to this org alone — Business+. */
+    hasIsolatedSending: boolean;
     /** Realtime websocket events — every tier, baseline. */
     hasRealtime: boolean;
     /** Bulk import/edit on contacts — Starter+. */
@@ -88,7 +88,7 @@ export default function useFeatureAccess(): FeatureAccess {
             locked: false,
             hasInbox: true,
             hasAdvanced: true,
-            hasDedicatedIps: true,
+            hasIsolatedSending: true,
             hasRealtime: true,
             hasBulkOps: true,
             hasTeam: true,
@@ -123,7 +123,7 @@ export default function useFeatureAccess(): FeatureAccess {
         // names like "Pro" / "Free Trial" and would wrongly lock paid orgs.
         hasInbox: isPaid,
         hasAdvanced: isPaid && isAtLeast(plan, "business"),
-        hasDedicatedIps: isPaid && isAtLeast(plan, "business"),
+        hasIsolatedSending: isPaid && isAtLeast(plan, "business"),
         hasRealtime: true,
         hasBulkOps: isPaid && isAtLeast(plan, "starter"),
         hasTeam: isPaid && isAtLeast(plan, "starter"),

@@ -74,7 +74,7 @@ const GROUPS: SectionGroup[] = [
             { path: "ai-skills", label: "AI skills", icon: SparklesIcon, description: "Playbooks your AI features follow.", permission: "MANAGE_SETTINGS" },
             { path: "billing", label: "Billing", icon: CreditCardIcon, description: "Plan, payment, invoices.", ownerOnly: true, billingOnly: true },
             { path: "referral", label: "Refer & earn", icon: GiftIcon, description: "Invite teams and earn account credit.", ownerOnly: true, billingOnly: true },
-            { path: "limits", label: "Limits", icon: GaugeIcon, description: "Request more capacity than your plan allows.", ownerOnly: true },
+            { path: "limits", label: "Limits", icon: GaugeIcon, description: "Ask for a higher cap on mailboxes, contacts, seats or sends.", ownerOnly: true },
         ],
     },
     {

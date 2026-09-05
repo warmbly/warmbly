@@ -2,6 +2,7 @@ import LinkProvider from "@/hooks/LinkProvider";
 import SocketProvider from "@/hooks/SocketProvider";
 import { UserProvider } from "@/hooks/UserProvider";
 import ConfirmProvider from "@/hooks/ConfirmProvider";
+import UpgradeDialogProvider from "@/hooks/UpgradeDialogProvider";
 import { AppLayout } from "@/components/layout/AppLayout";
 
 import getToken from "@/lib/helper/getToken";
@@ -29,18 +30,22 @@ export default function RootAppLayout() {
     return <UserProvider>
         <DataSyncProvider>
             <ConfirmProvider>
-                <LinkProvider>
-                    <SocketProvider>
-                        <RealtimeManager>
-                            {/* OrgGate runs ahead of AppLayout — if
-                                the user has no workspaces it redirects
-                                to /select-org before any org-scoped
-                                query (e.g. /unibox) runs with no org. */}
-                            <OrgGate />
-                            <AppLayout />
-                        </RealtimeManager>
-                    </SocketProvider>
-                </LinkProvider>
+                {/* Plan-locked surfaces anywhere under /app open the full-screen
+                    plan chooser through useUpgradeDialog(). */}
+                <UpgradeDialogProvider>
+                    <LinkProvider>
+                        <SocketProvider>
+                            <RealtimeManager>
+                                {/* OrgGate runs ahead of AppLayout — if
+                                    the user has no workspaces it redirects
+                                    to /select-org before any org-scoped
+                                    query (e.g. /unibox) runs with no org. */}
+                                <OrgGate />
+                                <AppLayout />
+                            </RealtimeManager>
+                        </SocketProvider>
+                    </LinkProvider>
+                </UpgradeDialogProvider>
                 <TagsModal />
                 <FoldersModal />
                 <AddEmailModal />

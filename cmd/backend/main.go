@@ -70,6 +70,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
 	"github.com/warmbly/warmbly/internal/app/oidcauth"
+	"github.com/warmbly/warmbly/internal/app/opsnotify"
 	"github.com/warmbly/warmbly/internal/app/organization"
 	orgrisk "github.com/warmbly/warmbly/internal/app/orgrisk"
 	"github.com/warmbly/warmbly/internal/app/orgtransfer"
@@ -287,6 +288,10 @@ func main() {
 	// instanceSettings and the health registry are built after the handler
 	// dependencies, so the pool is hoisted out of the connection block.
 	var instanceSettings instancesettings.Service
+	// opsNotifier fans instance-wide operator alerts out to the Discord/Slack/
+	// webhook/email channels an admin configured. Nil-safe everywhere: a
+	// deployment with no channels simply never delivers anything.
+	var opsNotifier opsnotify.Notifier
 	var instanceChecksDB *pgxpool.Pool
 	var userRepoForHandler repository.UserRepository
 	var organizationRepoForHandler repository.OrganizationRepository
@@ -821,6 +826,29 @@ func main() {
 			authService.WireInstanceSettings(instanceSettings)
 			if organizationService != nil {
 				organizationService.WireInstanceSettings(instanceSettings)
+			}
+
+			// Operator alerts. The channel list lives in the same settings
+			// document, so this needs nothing else configured to work.
+			opsNotifier = opsnotify.NewService(instanceSettings, emailNotificationService, config.AppBaseURL())
+			authService.WireOperatorNotifier(opsNotifier)
+			if organizationService != nil {
+				organizationService.WireOperatorNotifier(opsNotifier)
+			}
+			if aware, ok := warmupService.(interface {
+				WireOperatorNotifier(warmupapp.OperatorNotifier)
+			}); ok && warmupService != nil {
+				aware.WireOperatorNotifier(opsNotifier)
+			}
+			if aware, ok := orgRiskService.(interface {
+				WireOperatorNotifier(orgrisk.OperatorNotifier)
+			}); ok && orgRiskService != nil {
+				aware.WireOperatorNotifier(opsNotifier)
+			}
+			if aware, ok := stripeService.(interface {
+				WireOperatorNotifier(stripe.OperatorNotifier)
+			}); ok && stripeService != nil {
+				aware.WireOperatorNotifier(opsNotifier)
 			}
 		}
 		log.Printf("Auth policy: login_code=%s registration=%s (DISABLE_REGISTRATION) email_verification=%t sso_auto_provision=%t",
@@ -1898,6 +1926,7 @@ func main() {
 		InstanceRuntime:  instanceRuntime,
 		InstanceChecks:   instanceChecks,
 		InstanceSettings: instanceSettings,
+		OpsNotifier:      opsNotifier,
 
 		PoolLinkService:  poolLinkService,
 		CloudLinkService: cloudLinkService,

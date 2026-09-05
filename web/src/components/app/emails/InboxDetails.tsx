@@ -1140,7 +1140,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
             {/* Upsell when warmup isn't available on the plan */}
             {!inCloud && off && !canWarmup && (
                 <div className="px-5 py-4">
-                    <div className="rounded-md border border-violet-100 bg-violet-50/70 px-3 py-2.5 text-[11.5px] text-violet-900/90 leading-relaxed">
+                    <div className="rounded-md border border-sky-100 bg-sky-50/70 px-3 py-2.5 text-[11.5px] text-sky-900/90 leading-relaxed">
                         Warmup is available on paid plans. Upgrade to build and protect sender reputation automatically.
                     </div>
                 </div>

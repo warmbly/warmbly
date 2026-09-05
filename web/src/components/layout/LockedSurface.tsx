@@ -3,10 +3,10 @@
 //
 // The page contents are still rendered behind the lock at reduced
 // opacity so the user gets a preview of what they'd unlock. The
-// overlay sits absolute with a backdrop-blur and a centered upgrade
-// card that shows: the feature name, the minimum plan that unlocks
-// it, that plan's price, and the bullets from `lib/plans` so the
-// user sees what they'd be paying for at the same time.
+// overlay sits absolute with a backdrop-blur and a centered card that
+// names the feature, the minimum plan and its price; the CTA opens the
+// full-screen upgrade dialog (plans, interval, one-click checkout)
+// instead of routing away to billing.
 //
 // Use it like:
 //
@@ -21,9 +21,9 @@
 //   </LockedSurface>
 
 import React from "react";
-import { Link } from "react-router-dom";
 import { CheckIcon, LockIcon, SparklesIcon } from "lucide-react";
 import { useAppStore } from "@/stores";
+import { useUpgradeDialog } from "@/hooks/context/upgrade";
 import { PLAN_ACCENT_CLASSES, getPlan, type PlanID } from "@/lib/plans";
 
 interface Props {
@@ -34,8 +34,6 @@ interface Props {
      *  price, color and the bullets shown in the card. */
     minPlan?: PlanID;
     children: React.ReactNode;
-    /** Where the upgrade button routes — defaults to /app/settings/billing. */
-    upgradeTo?: string;
     /** Optional override bullets — used when the feature has specifics
      *  beyond the plan's standard inclusion list. Falls back to the
      *  plan's own bullets when omitted. */
@@ -48,10 +46,10 @@ export function LockedSurface({
     blurb,
     minPlan = "starter",
     children,
-    upgradeTo = "/app/settings/billing",
     bullets,
 }: Props) {
     const isOwner = useAppStore((s) => s.currentOrganization?.role === "owner");
+    const upgradeDialog = useUpgradeDialog();
     const plan = getPlan(minPlan);
     const accent = PLAN_ACCENT_CLASSES[plan.accent];
 
@@ -61,6 +59,7 @@ export function LockedSurface({
     const priceLabel = plan.priceMonthly == null
         ? "Custom pricing"
         : `from $${plan.priceMonthly}/mo`;
+    const openUpgrade = () => upgradeDialog.open({ feature, minPlan, blurb, bullets: featureBullets });
 
     return (
         <div className="relative h-full">
@@ -125,19 +124,29 @@ export function LockedSurface({
                                 <span className="hidden sm:inline text-[11px] text-slate-400">
                                     Upgrade unlocks it instantly
                                 </span>
-                                <Link
-                                    to={upgradeTo}
+                                <button
+                                    type="button"
+                                    onClick={openUpgrade}
                                     className="ml-auto h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
                                 >
                                     <SparklesIcon className="w-3 h-3" />
                                     Upgrade to {plan.label}
-                                </Link>
+                                </button>
                             </>
                         ) : (
-                            <span className="text-[11.5px] text-slate-500">
-                                Ask your workspace owner to upgrade to{" "}
-                                <span className="font-medium text-slate-900">{plan.label}</span>.
-                            </span>
+                            <>
+                                <span className="text-[11.5px] text-slate-500">
+                                    Ask your workspace owner to upgrade to{" "}
+                                    <span className="font-medium text-slate-900">{plan.label}</span>.
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={openUpgrade}
+                                    className="ml-auto h-7 px-2.5 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] font-medium text-slate-700 hover:text-slate-900 inline-flex items-center gap-1.5 transition-colors shrink-0"
+                                >
+                                    See plans
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>

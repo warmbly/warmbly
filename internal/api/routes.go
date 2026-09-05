@@ -1485,6 +1485,11 @@ func Run(
 		adminRoutes.GET("/instance/limits", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminInstanceLimits)
 		adminRoutes.GET("/instance/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminGetInstanceSettings)
 		adminRoutes.PUT("/instance/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminPutInstanceSettings)
+		// Operator notification channels: the channels themselves are part of
+		// the settings document above; these two are the event catalog the
+		// panel renders and the on-demand delivery probe.
+		adminRoutes.GET("/instance/notifications/events", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminNotificationEvents)
+		adminRoutes.POST("/instance/notifications/test", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminTestNotificationChannel)
 		// Updates: the top-bar indicator polls the state; applying one goes
 		// through the host-side updater and restarts this process.
 		adminRoutes.GET("/instance/update", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminUpdateState)

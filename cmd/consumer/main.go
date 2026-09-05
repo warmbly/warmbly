@@ -27,6 +27,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/integration"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
+	"github.com/warmbly/warmbly/internal/app/opsnotify"
 	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
 	"github.com/warmbly/warmbly/internal/app/webhook"
@@ -341,6 +342,22 @@ func main() {
 		log.Printf("Warning: notification email disabled, EMAIL_NAME/EMAIL_ADDRESS not set: %v", ecErr)
 	}
 	notificationService.WireDelivery(notifEmail, integrationServiceC, repository.NewUserRepostory(primaryDB, kmsClient), orgRepoConsumer)
+
+	// Operator alerts. The dead-worker detector runs in this process, and a
+	// stranded fleet is the operator's problem, not a tenant's. Reads the same
+	// channel list the admin panel writes; a mail transport is optional (the
+	// chat and webhook transports do not need one).
+	var opsMailer opsnotify.Mailer
+	if notifEmail != nil {
+		if m, ok := notifEmail.(opsnotify.Mailer); ok {
+			opsMailer = m
+		}
+	}
+	opsNotifierC := opsnotify.NewService(
+		instancesettings.NewService(instancesettings.NewStore(primaryDB.Pool)),
+		opsMailer,
+		config.AppBaseURL(),
+	)
 	// Mobile push (APNs) fires from THIS process too: reply/bounce/complaint
 	// notifications are created here. Redis backs the immediate-then-digest
 	// window shared with the backend. The sender stays a nil interface (not a
@@ -400,6 +417,7 @@ func main() {
 		AdminRepo:                   repository.NewAdminRepository(primaryDB.Pool),
 		AssignmentService:           workerAssignmentSvc,
 		Notifier:                    notificationService,
+		OpsNotifier:                 opsNotifierC,
 		TaskRepo:                    taskRepo,
 		CampaignRepo:                campaignRepo,
 		CampaignProgressRepo:        campaignProgressRepo,

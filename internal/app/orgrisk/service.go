@@ -142,8 +142,9 @@ type Service interface {
 }
 
 type service struct {
-	repo  repository.OrgRiskRepository
-	audit AuditLogger
+	repo      repository.OrgRiskRepository
+	audit     AuditLogger
+	opsNotify OperatorNotifier
 }
 
 // AuditLogger is the narrow slice of the audit service a transition needs. It
@@ -161,6 +162,15 @@ func NewService(repo repository.OrgRiskRepository) Service {
 // WireAudit attaches the audit logger. A transition rides the audit spine, so
 // every teammate's dashboard reflects it without a bespoke emit site.
 func (s *service) WireAudit(a AuditLogger) { s.audit = a }
+
+// OperatorNotifier is the instance-wide operator alert surface, injected
+// post-construction so this package needs no import of it. Nil disables it.
+type OperatorNotifier interface {
+	NotifyOperator(key, title, summary string, fields map[string]string)
+}
+
+// WireOperatorNotifier attaches the operator alert channel.
+func (s *service) WireOperatorNotifier(n OperatorNotifier) { s.opsNotify = n }
 
 // AuditAware is the optional capability the caller uses to attach the logger.
 type AuditAware interface {
@@ -186,6 +196,22 @@ func (s *service) auditTransition(ctx context.Context, orgID uuid.UUID, before, 
 	from := string(models.OrgRiskTrusted)
 	if before != nil {
 		from = string(before.State)
+	}
+	// The same "only a real change" guard already applied above, so this
+	// cannot re-fire while a detector keeps recording the same finding.
+	if s.opsNotify != nil {
+		s.opsNotify.NotifyOperator(
+			"org_risk.escalated",
+			"Workspace risk changed to "+string(after.State),
+			"Risk scoring moved a workspace into a different posture.",
+			map[string]string{
+				"Workspace": orgID.String(),
+				"From":      from,
+				"To":        string(after.State),
+				"Score":     strconv.Itoa(after.Score),
+				"Reason":    after.Reason,
+			},
+		)
 	}
 	s.audit.LogAction(ctx, orgID, uuid.Nil, models.AuditActionUpdate, models.AuditEntityOrgRisk, &orgID, "", "",
 		map[string]string{"risk_state": from + " -> " + string(after.State)},

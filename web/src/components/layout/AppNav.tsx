@@ -34,6 +34,8 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useAppStore } from "@/stores";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { usePermission, type PermissionKey } from "@/hooks/usePermission";
+import { useUpgradeDialog } from "@/hooks/context/upgrade";
+import { PLAN_ACCENT_CLASSES, getPlan, type PlanID } from "@/lib/plans";
 import AccessLockedDialog from "./AccessLockedDialog";
 import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
@@ -105,16 +107,16 @@ interface NavItem {
         | "integrations";
 }
 
-// Plan badge shown on locked sidebar rows. Plan names + colors come
-// from lib/plans so the marketing site, header pill and sidebar
-// badge all agree on "what does Starter look like".
+// Minimum plan behind each sidebar gate. The badge label and colour come
+// from lib/plans so the marketing site, header pill, sidebar badge and the
+// upgrade dialog all agree on "what does Starter look like".
 //
-//   inbox    → Starter (any paid tier)
-//   advanced → Business (15k/day + dedicated IPs tier)
-const REQUIRES_TO_BADGE: Record<NonNullable<NavItem["requires"]>, { label: string; classes: string }> = {
-    inbox:    { label: "Starter",  classes: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-    subscription: { label: "Starter", classes: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-    advanced: { label: "Business", classes: "bg-indigo-50 text-indigo-700 border-indigo-100" },
+//   inbox / subscription → Starter (any paid tier)
+//   advanced             → Business (15k/day + isolated sending tier)
+const REQUIRES_TO_MIN_PLAN: Record<NonNullable<NavItem["requires"]>, PlanID> = {
+    inbox: "starter",
+    subscription: "starter",
+    advanced: "business",
 };
 
 interface NavSection {
@@ -173,6 +175,7 @@ function NavRow({ item }: { item: NavItem }) {
     const access = useFeatureAccess();
     const hasItemPermission = usePermission(item.permission ?? "VIEW_CAMPAIGNS");
     const [deniedOpen, setDeniedOpen] = useState(false);
+    const upgradeDialog = useUpgradeDialog();
     const active =
         pathname === item.url || pathname.startsWith(item.url + "/");
     const badge = item.badgeStoreKey === "unseenCount" ? unseen : undefined;
@@ -215,41 +218,33 @@ function NavRow({ item }: { item: NavItem }) {
         (item.requires === "advanced" && !access.hasAdvanced) ||
         (item.requires === "subscription" && access.locked);
 
-    const planBadge = locked && item.requires ? REQUIRES_TO_BADGE[item.requires] : null;
+    const minPlan = locked && item.requires ? REQUIRES_TO_MIN_PLAN[item.requires] : null;
+    const planBadge = minPlan
+        ? { label: getPlan(minPlan).label, classes: PLAN_ACCENT_CLASSES[getPlan(minPlan).accent].pill }
+        : null;
 
-    // Plan-gated items the org's plan doesn't include: lock the row and pop an
-    // upgrade dialog on click (mirroring the permission lock), instead of routing
-    // to a teasing empty page. Only the owner gets the direct upgrade CTA.
-    if (locked && planBadge) {
+    // Plan-gated items the org's plan doesn't include: lock the row and open
+    // the full-screen upgrade dialog on click (plans, interval, one-click
+    // checkout), instead of routing to a teasing empty page.
+    if (locked && minPlan && planBadge) {
         return (
-            <>
-                <button
-                    type="button"
-                    onClick={() => setDeniedOpen(true)}
-                    title={`${item.title} · ${planBadge.label} plan`}
-                    className="group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-400 hover:text-slate-700 hover:bg-slate-200/40 transition-colors duration-100"
+            <button
+                type="button"
+                onClick={() => upgradeDialog.open({ feature: item.title, minPlan })}
+                title={`${item.title} · ${planBadge.label} plan`}
+                className="group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-400 hover:text-slate-700 hover:bg-slate-200/40 transition-colors duration-100"
+            >
+                <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
+                <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
+                <span
+                    className={cn(
+                        "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
+                        planBadge.classes,
+                    )}
                 >
-                    <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
-                    <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
-                    <span
-                        className={cn(
-                            "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
-                            planBadge.classes,
-                        )}
-                    >
-                        {planBadge.label}
-                    </span>
-                </button>
-                <AccessLockedDialog
-                    open={deniedOpen}
-                    onClose={() => setDeniedOpen(false)}
-                    feature={item.title}
-                    variant="plan"
-                    planLabel={planBadge.label}
-                    upgradeTo={access.isOwner ? "/app/settings/billing" : "/app/settings/roles"}
-                    canUpgrade={access.isOwner}
-                />
-            </>
+                    {planBadge.label}
+                </span>
+            </button>
         );
     }
 

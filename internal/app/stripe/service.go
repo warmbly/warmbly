@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -116,6 +117,12 @@ type ReferralRewarder interface {
 	InviteeDiscountCode(ctx context.Context, inviteeOrgID uuid.UUID) string
 }
 
+// OperatorNotifier is the instance-wide operator alert surface, injected
+// post-construction so this package needs no import of it. Nil disables it.
+type OperatorNotifier interface {
+	NotifyOperator(key, title, summary string, fields map[string]string)
+}
+
 type stripeService struct {
 	cfg              *config.StripeConfig
 	subRepo          repository.SubscriptionRepository
@@ -125,7 +132,11 @@ type stripeService struct {
 	referral         ReferralRewarder
 	credits          CreditGranter
 	audit            AuditLogger
+	opsNotify        OperatorNotifier
 }
+
+// WireOperatorNotifier attaches the operator alert channel.
+func (s *stripeService) WireOperatorNotifier(n OperatorNotifier) { s.opsNotify = n }
 
 func (s *stripeService) WireReferral(r ReferralRewarder) { s.referral = r }
 
@@ -1161,8 +1172,60 @@ func (s *stripeService) handleChargeRefunded(ctx context.Context, event *stripe.
 }
 
 func (s *stripeService) handleInvoicePaymentFailed(ctx context.Context, event *stripe.Event) *errx.Error {
-	// Payment failed - subscription status will be updated via subscription.updated event
+	// The subscription's own status is updated by the subscription.updated
+	// event; this hook exists so an operator hears about the failure when it
+	// happens rather than discovering it from a churned customer.
+	if s.opsNotify != nil {
+		var inv struct {
+			CustomerEmail string `json:"customer_email"`
+			Customer      string `json:"customer"`
+			Number        string `json:"number"`
+			AmountDue     int64  `json:"amount_due"`
+			Currency      string `json:"currency"`
+		}
+		_ = json.Unmarshal(event.Data.Raw, &inv)
+		s.opsNotify.NotifyOperator(
+			"subscription.payment_failed",
+			"Payment failed",
+			"Stripe could not collect an invoice, so that workspace's sending is at risk.",
+			map[string]string{
+				"Customer": firstNonEmpty(inv.CustomerEmail, inv.Customer),
+				"Invoice":  inv.Number,
+				"Amount":   formatStripeAmount(inv.AmountDue, inv.Currency),
+			},
+		)
+	}
 	return nil
+}
+
+// zeroDecimalCurrencies have no minor unit, so their amounts are already whole
+// units and must not be divided. https://docs.stripe.com/currencies
+var zeroDecimalCurrencies = map[string]bool{
+	"bif": true, "clp": true, "djf": true, "gnf": true, "jpy": true, "kmf": true,
+	"krw": true, "mga": true, "pyg": true, "rwf": true, "ugx": true, "vnd": true,
+	"vuv": true, "xaf": true, "xof": true, "xpf": true,
+}
+
+// formatStripeAmount renders a Stripe amount for a human, honouring the
+// currency's exponent.
+func formatStripeAmount(amount int64, currency string) string {
+	code := strings.ToLower(strings.TrimSpace(currency))
+	if code == "" {
+		code = "usd"
+	}
+	if zeroDecimalCurrencies[code] {
+		return fmt.Sprintf("%d %s", amount, strings.ToUpper(code))
+	}
+	return fmt.Sprintf("%.2f %s", float64(amount)/100, strings.ToUpper(code))
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func mapStripeStatus(status stripe.SubscriptionStatus) models.SubscriptionStatus {

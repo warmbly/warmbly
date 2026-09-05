@@ -77,8 +77,8 @@ const faq = [
    'As many as you subscribe to. Each client is its own workspace with its own subscription, and workspaces stack, so capacity scales with the roster instead of with a seat count.'],
   ['Do I have to manage billing for every client?',
    'You own every workspace subscription as the agency. Clients do not see a Warmbly invoice unless you transfer ownership. Mark up whatever you want at the agency level.'],
-  ['Can a client get its own dedicated IPs?',
-   'Yes. By default every paid workspace shares the premium warmup and worker pool. For a client that needs its own reputation surface, you can move it to dedicated workers, each its own machine and IP, carrying only that client\'s mail.'],
+  ['Can a client get its own sending infrastructure?',
+   'Yes. By default every paid workspace shares the premium warmup and worker pool. For a client that needs its own reputation surface, you can move it onto sending infrastructure allocated to that client alone, carrying only their mail, so their reputation is not shared with anyone else. We do not sell or manage IPs as a product.'],
   ['What happens when a client\'s mailbox starts landing in spam?',
    'It steps down the health ladder (Healthy, Watch, Quarantined, Blocked) and is pulled from the shared pool well before mailbox providers penalize it, acting around 10% spam placement rather than 80%, then recovers inside its own workspace.'],
   ['Can clients log in to see their own data?',
@@ -262,7 +262,7 @@ const faq = [
       <div class="max-w-2xl mb-12">
         <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Sending infrastructure</div>
         <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Shared premium pool, or dedicated IPs per client.
+          Shared premium pool, or sending kept apart per client.
         </h2>
         <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
           Every paid workspace warms and sends on the shared premium pool. When a client grows big enough to want its own IPs, move it onto dedicated workers, each on its own machine, sending only that client's mail.
