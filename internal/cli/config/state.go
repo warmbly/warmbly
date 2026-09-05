@@ -37,6 +37,9 @@ func LoadState() *State {
 	return s
 }
 
+// Save is best effort on purpose. This file holds a timestamp and a version
+// string; a read-only home directory or a container with no writable HOME must
+// cost the user a redundant version check, not a failed command.
 func (s *State) Save() error {
 	raw, err := yaml.Marshal(s)
 	if err != nil {

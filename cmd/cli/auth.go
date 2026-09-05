@@ -193,9 +193,9 @@ func runAuthLogin(ctx context.Context, f *Factory, hostname, apiURL string, with
 	if err := hosts.Save(); err != nil {
 		return err
 	}
-	// The first sign-in, or an explicit one, becomes the active host: nobody
-	// expects to sign in and still be pointed somewhere else.
-	if cfg.ActiveHost == "" || len(hosts) == 1 || f.HostFlag == "" {
+	// Signing in makes that host the active one. Nobody expects to sign in and
+	// still have the next command talk to somewhere else.
+	if cfg.ActiveHost != host {
 		cfg.ActiveHost = host
 		if err := cfg.Save(); err != nil {
 			return err
