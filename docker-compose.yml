@@ -202,6 +202,13 @@ x-selfhost-env: &selfhost-env
   AI_MODEL_PAID: ${AI_MODEL_PAID:-}
   AI_BASE_URL: ${AI_BASE_URL:-}
   AI_FREE: ${AI_FREE:-}
+
+  # Pre-send verification. The HELO name must be a public FQDN for this host,
+  # or the probe is skipped and every address stays unknown.
+  EMAIL_VERIFY_HELO_HOST: ${EMAIL_VERIFY_HELO_HOST:-}
+  EMAIL_VERIFY_MAIL_FROM: ${EMAIL_VERIFY_MAIL_FROM:-}
+  EMAIL_VERIFY_MILLIONVERIFIER_API_KEY: ${EMAIL_VERIFY_MILLIONVERIFIER_API_KEY:-}
+
   SEARCH_PROVIDER: ${SEARCH_PROVIDER:-}
   SEARCH_API_URL: ${SEARCH_API_URL:-}
   SEARCH_API_KEY: ${SEARCH_API_KEY:-}

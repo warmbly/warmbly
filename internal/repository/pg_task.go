@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -293,19 +294,24 @@ func (r *taskRepository) GetTask(ctx context.Context, taskID uuid.UUID) (*Task, 
 	return task, err
 }
 
-// GetTaskByMessageID retrieves the latest task by RFC Message-ID.
+// GetTaskByMessageID retrieves the latest task by RFC Message-ID. Probes both
+// bracket forms: the stamp stores "<id@host>", an inbound In-Reply-To may not.
 func (r *taskRepository) GetTaskByMessageID(ctx context.Context, messageID string) (*Task, error) {
+	bare := strings.Trim(strings.TrimSpace(messageID), "<>")
+	if bare == "" {
+		return nil, nil
+	}
 	query := `
 		SELECT id, task_type, email_account_id, status, message_id,
 		       scheduled_at, completed_at, cloud_task_name, created_at, updated_at
 		FROM tasks
-		WHERE message_id = $1
+		WHERE message_id = $1 OR message_id = $2
 		ORDER BY created_at DESC
 		LIMIT 1
 	`
 
 	task := &Task{}
-	err := r.db.QueryRow(ctx, query, messageID).Scan(
+	err := r.db.QueryRow(ctx, query, bare, "<"+bare+">").Scan(
 		&task.ID,
 		&task.TaskType,
 		&task.EmailAccountID,

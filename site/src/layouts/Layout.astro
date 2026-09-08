@@ -33,7 +33,7 @@ const extraJsonLd = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
 // all: this is a build-time variable, so a build without it produces a site
 // with no analytics code in it, not a site that decides at runtime.
 const posthogKey = import.meta.env.PUBLIC_POSTHOG_KEY ?? '';
-const posthogHost = import.meta.env.PUBLIC_POSTHOG_HOST ?? 'https://eu.i.posthog.com';
+const posthogHost = import.meta.env.PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com';
 
 const siteOrigin = (Astro.site ?? new URL('https://warmbly.com')).toString().replace(/\/$/, '');
 const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://warmbly.com').toString();

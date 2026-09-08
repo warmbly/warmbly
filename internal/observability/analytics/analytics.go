@@ -29,9 +29,8 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 )
 
-// DefaultHost is PostHog Cloud EU. EU rather than US because the customers are
-// mostly European and the data never needs to leave.
-const DefaultHost = "https://eu.i.posthog.com"
+// DefaultHost is PostHog Cloud US, where most of the customers are.
+const DefaultHost = "https://us.i.posthog.com"
 
 // capturePath is PostHog's single-event capture endpoint.
 const capturePath = "/i/v0/e/"

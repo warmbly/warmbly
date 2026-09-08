@@ -404,11 +404,11 @@ These exist for the hosted service and are unset everywhere else. A self-hosted 
 | Variable | Read by | What it does | Default |
 |---|---|---|---|
 | `POSTHOG_KEY` | backend | Server-side product events (a completed signup, a started subscription). Unset means no client is built and nothing is sent | unset |
-| `POSTHOG_HOST` | backend | Capture host. Point it at a self-hosted PostHog if you run one | `https://eu.i.posthog.com` |
+| `POSTHOG_HOST` | backend | Capture host. Point it at a self-hosted PostHog if you run one | `https://us.i.posthog.com` |
 | `WARMBLY_POSTHOG_KEY` | web container | Browser analytics for the dashboard, read at container start. Unset means the SDK chunk is never fetched | unset |
-| `WARMBLY_POSTHOG_HOST` | web container | Capture host for the browser | `https://eu.i.posthog.com` |
+| `WARMBLY_POSTHOG_HOST` | web container | Capture host for the browser | `https://us.i.posthog.com` |
 | `PUBLIC_POSTHOG_KEY` | `site/` build | Marketing site analytics. Build-time: unset produces a site with no analytics code in it at all | unset |
-| `PUBLIC_POSTHOG_HOST` | `site/` build | Capture host for the site | `https://eu.i.posthog.com` |
+| `PUBLIC_POSTHOG_HOST` | `site/` build | Capture host for the site | `https://us.i.posthog.com` |
 
 Everything runs in PostHog's cookieless mode: nothing is stored in the visitor's browser, no `identify` is ever called, and no event property carries a user id, an organization id or an email. The admin panel gets none of it and never will; it is the operator surface and it ships to self-hosters.
 

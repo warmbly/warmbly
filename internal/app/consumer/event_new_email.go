@@ -93,7 +93,14 @@ func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewE
 	// campaign progress, gating replied_at so automated replies (auto_reply /
 	// out_of_office) never count as a human reply for stop_on_reply / branching.
 	if s.AdvancedService != nil {
-		_ = s.AdvancedService.ProcessIncomingReply(ctx, e.Message.EmailID, e.Message)
+		// Logged, not propagated: the ingest must survive it, but a silent
+		// failure here is indistinguishable from a reply that linked fine.
+		if xerr := s.AdvancedService.ProcessIncomingReply(ctx, e.Message.EmailID, e.Message); xerr != nil {
+			log.Warn().Err(xerr).
+				Str("email_account_id", e.Message.EmailID.String()).
+				Str("message_id", e.Message.MessageID).
+				Msg("Reply-intent automation failed; inbox ingest kept")
+		}
 	}
 
 	return nil
