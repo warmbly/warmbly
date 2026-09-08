@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/jobrun"
 )
 
 // StartWarmupHealthSweep runs a periodic health evaluation across all warmup pool participants.
@@ -13,29 +14,19 @@ func (s *JobsService) StartWarmupHealthSweep(ctx context.Context, interval time.
 	if s.WarmupService == nil {
 		return
 	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-			evaluated, changes, xerr := s.WarmupService.EvaluateAllParticipants(sweepCtx)
-			if xerr != nil {
-				cancel()
-				log.Warn().Str("error", xerr.Error()).Msg("warmup health sweep failed")
-				continue
-			}
-			if evaluated > 0 {
-				log.Info().Int("evaluated", evaluated).Int("state_changes", changes).Msg("warmup health sweep completed")
-			}
-			if changes > 0 {
-				s.rebalanceRisk(sweepCtx)
-			}
-			cancel()
+	jobrun.Loop(ctx, "warmup_health_sweep", interval, false, func(ctx context.Context) error {
+		sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		evaluated, changes, xerr := s.WarmupService.EvaluateAllParticipants(sweepCtx)
+		if xerr != nil {
+			return xerr
 		}
-	}
+		if evaluated > 0 {
+			log.Info().Int("evaluated", evaluated).Int("state_changes", changes).Msg("warmup health sweep completed")
+		}
+		if changes > 0 {
+			s.rebalanceRisk(sweepCtx)
+		}
+		return nil
+	})
 }

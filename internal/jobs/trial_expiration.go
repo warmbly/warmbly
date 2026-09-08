@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/notify/templates"
@@ -154,26 +155,9 @@ func NewTrialExpirationScheduler(job *TrialExpirationJob, interval time.Duration
 
 // Start begins the scheduled execution
 func (s *TrialExpirationScheduler) Start(ctx context.Context) {
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
-	// Run immediately on start
-	if err := s.job.Run(ctx); err != nil {
-		errs.CaptureException(err)
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			if err := s.job.Run(ctx); err != nil {
-				errs.CaptureException(err)
-			}
-		case <-s.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
+	ctx, cancel := stopContext(ctx, s.stopCh)
+	defer cancel()
+	jobrun.Loop(ctx, "trial_expiration", s.interval, true, s.job.Run)
 }
 
 // Stop halts the scheduled execution

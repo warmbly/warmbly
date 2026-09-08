@@ -22,7 +22,6 @@ import { DataTable, type Column } from "@/components/data/DataTable";
 import { useCursorPager } from "@/lib/useCursorPager";
 import { emptyRange, rangeActive, rangeWithin, rangeAfter, rangeBefore, type DateRange } from "@/lib/dateRange";
 import { listOrganizations } from "@/lib/api/client/admin/organizations";
-import { listPlans } from "@/lib/api/client/admin/plans";
 import type { AdminOrgListItem, OrgRiskState } from "@/lib/api/models/admin";
 import { RiskBadge } from "./OrganizationRiskCard";
 
@@ -216,7 +215,6 @@ export default function OrganizationsPage() {
     const nav = useNavigate();
     const [query, setQuery] = useState("");
     const [status, setStatus] = useState<StatusFilter>("active");
-    const [planId, setPlanId] = useState("");
     const [visibility, setVisibility] = useState<VisibilityFilter>("");
     const [subStatus, setSubStatus] = useState("");
     const [enterprise, setEnterprise] = useState(false);
@@ -251,14 +249,8 @@ export default function OrganizationsPage() {
     const pager = useCursorPager();
     const { reset } = pager;
 
-    const { data: plansData } = useQuery({ queryKey: ["admin", "plans", "facet"], queryFn: listPlans, staleTime: 5 * 60_000 });
-    const planOptions = [
-        { value: "any", label: "Any plan" },
-        ...(plansData?.data ?? []).map((p) => ({ value: p.id, label: p.name || "Untitled plan" })),
-    ];
-
     const filterKey = JSON.stringify({
-        query, status, planId, visibility, subStatus, enterprise, hasOverrides, risk, cancelAtPeriodEnd,
+        query, status, visibility, subStatus, enterprise, hasOverrides, risk, cancelAtPeriodEnd,
         hasActiveSubscription, noSubscription, ownerBanned, hasActiveCampaigns, hasEmailAccounts,
         utmSource, utmMedium, hasAcquisition, noAcquisition,
         memMin, memMax, mbMin, mbMax, campMin, campMax, created, trialEnd, periodEnd, updated, sort,
@@ -274,7 +266,6 @@ export default function OrganizationsPage() {
             listOrganizations({
                 q: query.trim() || undefined,
                 status: status === "all" ? "" : status,
-                plan_id: planId || undefined,
                 plan_visibility: visibility || undefined,
                 subscription_status: subStatus || undefined,
                 enterprise: enterprise || undefined,
@@ -322,7 +313,6 @@ export default function OrganizationsPage() {
     const activeCount =
         (query ? 1 : 0) +
         (status !== "active" ? 1 : 0) +
-        (planId ? 1 : 0) +
         (visibility ? 1 : 0) +
         (subStatus ? 1 : 0) +
         (risk ? 1 : 0) +
@@ -336,7 +326,6 @@ export default function OrganizationsPage() {
     function resetAll() {
         setQuery("");
         setStatus("active");
-        setPlanId("");
         setVisibility("");
         setSubStatus("");
         setEnterprise(false);
@@ -384,14 +373,6 @@ export default function OrganizationsPage() {
                                     { value: "pending_deletion", label: "Pending" },
                                     { value: "all", label: "All" },
                                 ]}
-                            />
-                        </FilterGroup>
-                        <FilterGroup label="Plan">
-                            <SelectFilter
-                                value={planId || "any"}
-                                onChange={(v) => setPlanId(v === "any" ? "" : v)}
-                                options={planOptions}
-                                placeholder="Any plan"
                             />
                         </FilterGroup>
                         <FilterGroup label="Plan visibility">

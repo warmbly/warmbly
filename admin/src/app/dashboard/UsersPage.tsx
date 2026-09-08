@@ -23,7 +23,6 @@ import { DataTable, type Column } from "@/components/data/DataTable";
 import { useCursorPager } from "@/lib/useCursorPager";
 import { emptyRange, rangeActive, rangeWithin, rangeAfter, rangeBefore, type DateRange } from "@/lib/dateRange";
 import { searchUsers } from "@/lib/api/client/admin/users";
-import { listPlans } from "@/lib/api/client/admin/plans";
 import type { AdminUserDetail } from "@/lib/api/models/admin";
 
 type StatusFilter = "active" | "banned" | "all";
@@ -108,7 +107,6 @@ export default function UsersPage() {
     const [query, setQuery] = useState("");
     const [status, setStatus] = useState<StatusFilter>("active");
     // Plan / subscription
-    const [planId, setPlanId] = useState("");
     const [subStatus, setSubStatus] = useState("");
     const [isEnterprise, setIsEnterprise] = useState(false);
     const [hasSubscription, setHasSubscription] = useState(false);
@@ -142,14 +140,8 @@ export default function UsersPage() {
     const pager = useCursorPager();
     const { reset } = pager;
 
-    const { data: plansData } = useQuery({ queryKey: ["admin", "plans", "facet"], queryFn: listPlans, staleTime: 5 * 60_000 });
-    const planOptions = [
-        { value: "any", label: "Any plan" },
-        ...(plansData?.data ?? []).map((p) => ({ value: p.id, label: p.name || "Untitled plan" })),
-    ];
-
     const filterKey = JSON.stringify({
-        query, status, planId, subStatus, isEnterprise, hasSubscription, hasActiveSubscription,
+        query, status, subStatus, isEnterprise, hasSubscription, hasActiveSubscription,
         adminOnly, hasOverrides, freeTrialUsed, onboardingCompleted, deletionScheduled, hasAvatar,
         hasActiveCampaign, hasBanRecord, hasDedicatedWorker,
         orgMin, orgMax, mbMin, mbMax, campMin, campMax, maxOrgMin, maxOrgMax,
@@ -166,7 +158,6 @@ export default function UsersPage() {
             searchUsers({
                 q: query.trim() || undefined,
                 status: status === "all" ? "" : status,
-                plan_id: planId || undefined,
                 subscription_status: subStatus || undefined,
                 is_enterprise: isEnterprise || undefined,
                 has_subscription: hasSubscription || undefined,
@@ -213,7 +204,6 @@ export default function UsersPage() {
     const activeCount =
         (query ? 1 : 0) +
         (status !== "active" ? 1 : 0) +
-        (planId ? 1 : 0) +
         (subStatus ? 1 : 0) +
         bools.filter(Boolean).length +
         ranges.filter(([a, b]) => a !== undefined || b !== undefined).length +
@@ -223,7 +213,6 @@ export default function UsersPage() {
     function resetAll() {
         setQuery("");
         setStatus("active");
-        setPlanId("");
         setSubStatus("");
         setIsEnterprise(false);
         setHasSubscription(false);
@@ -272,14 +261,6 @@ export default function UsersPage() {
                                     { value: "banned", label: "Banned" },
                                     { value: "all", label: "All" },
                                 ]}
-                            />
-                        </FilterGroup>
-                        <FilterGroup label="Plan">
-                            <SelectFilter
-                                value={planId || "any"}
-                                onChange={(v) => setPlanId(v === "any" ? "" : v)}
-                                options={planOptions}
-                                placeholder="Any plan"
                             />
                         </FilterGroup>
                         <FilterGroup label="Subscription">

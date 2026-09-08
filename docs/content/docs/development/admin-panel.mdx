@@ -1,0 +1,85 @@
+---
+title: Admin panel
+description: The operator surface on :5174, page by page, with the platform admin bit each one needs.
+---
+
+The admin panel is the operator's view of an instance: every worker, user, organization, mailbox and background loop, across every workspace. It is a separate app from the customer dashboard, it holds nothing a customer needs, and every page in it is gated on a [platform admin bit](/development/accounts-and-access/#platform-admins) rather than a workspace role.
+
+## Reaching it
+
+The panel runs on `:5174` in the default stack (`http://localhost:5174` on a stock install, or the host you proxied to it). Sign in with the same account as the dashboard. The first owner holds every admin bit from the moment they claim the instance, and `warmblyctl user create --admin` creates a further account that already holds them. A page the account has no bit for says which bit it needs instead of rendering.
+
+The old paths still redirect, so a bookmark or a link in an older version of these docs lands on the right tab.
+
+## Command palette
+
+`Cmd K` (`Ctrl K` on Linux and Windows) opens the command palette from any page. It jumps to any page by name and searches users, organizations, mailboxes and workers, so a support request that names an email address is one keystroke from the record.
+
+## Overview
+
+The landing page. Instance-wide counters and their trends, acquisition by channel, and a strip of open instance problems at the top, which is the same list as the Findings tab of [Setup and health](/development/instance-health/).
+
+## Operations
+
+| Page | What it answers |
+|---|---|
+| **Workers** | Every worker, its heartbeat, tier and the mailboxes placed on it. Detail pages carry stats, the assigned mailbox list, and reassignment |
+| **Fleet** | Capacity per worker with utilization, the control loops' decision log (what the placement and rebalance loops did and why), and dedicated worker bindings, with convert and release |
+| **Mailboxes** | Every connected mailbox across every workspace, with its state and the worker it sits on |
+| **Sync** | The platform copy of each mailbox's backfill progress and fair-use throttle, with clear-throttle and restart-backfill. The budgets it enforces are the four `sync.*` values under [Configuration > Settings](/development/configuration/#settings-stored-in-the-database); the worker-side engine is the sync governor described under [anti-abuse layers](/development/architecture/#anti-abuse-layers) |
+| **Warmup** | The pools, the blocked list, abuse signals (invalid warmup-token attempts), and the block and unblock history |
+| **Warmup Appeals** | Appeals from blocked mailboxes, to approve or reject |
+| **Warmup Content** | The generated and reviewed warmup conversation bank, its library and generation jobs |
+| **Campaigns** | Every campaign on the instance with its state and owner |
+| **Sends** | In-flight reservations no worker has answered, and the reclaimer that resolves them after 30 minutes; dead letters with replay; task failures; customer webhook delivery health, with reclaim |
+
+## Accounts
+
+| Page | What it answers |
+|---|---|
+| **Users** | Every account, with ban and unban, ban history and rate-limit overrides |
+| **Organizations** | Every workspace, with its members, plan, abuse posture, API keys, webhooks and transfer tabs |
+| **Limit requests** | Customer requests for a higher allowance, to approve or decline |
+| **Outreach** | Mail an operator sends from the instance to a user, a workspace or an address, and the delivery state of each message sent so far |
+| **Admins** | Who holds platform admin bits, and grant and revoke by preset or per bit. This replaces the CLI-only path; `warmblyctl user grant-admin` still works |
+
+## Insight
+
+| Page | What it answers |
+|---|---|
+| **Live Events** | The event bus as it happens |
+| **Audit Log** | Who did what, from where, across the instance |
+| **Jobs** | Every background loop on the instance with its last run, next run and last error, and a **Run now** that the owning process picks up within about 15 seconds. The backend's and the consumer's loops are in the same list |
+
+## Instance
+
+| Page | What it answers |
+|---|---|
+| **Setup and health** | Two tabs. **Findings** is the [instance health](/development/instance-health/) check list, and the sidebar badge counts its open findings. **Services** is the old System Status page: the per-service probes and the platform mail card with its connection check and send test |
+| **Configuration** | Four tabs. **Settings** is the database-backed settings document; **Notifications** is the [operator notification](/development/operator-notifications/) channels; **Environment** is the read-only [configuration reference](/development/configuration/) view of what the backend resolved; **Effective limits** lists the compiled pacing constants |
+| **Transfers** | Workspace export and import for any organization, from the operator side, with the same archives as `warmblyctl org export` and `org import`. A whole-instance backup stays `warmblyctl backup` and `restore` |
+
+## Permission per page
+
+| Page | Bit |
+|---|---|
+| Overview, Live Events | none beyond signing in as an admin |
+| Workers, Fleet | `view_workers` |
+| Mailboxes, Sync, Users | `view_users` |
+| Warmup, Warmup Content | `view_warmup_pool` |
+| Warmup Appeals | `review_appeals` |
+| Campaigns, Sends | `view_campaigns` |
+| Organizations, Limit requests, Outreach, Transfers | `view_organizations` |
+| Admins | `grant_admin_access` |
+| Audit Log | `view_audit_logs` |
+| Jobs, Setup and health | `view_analytics` |
+| Configuration | `manage_settings` |
+
+Detail pages need the same bit as the list they open from. Actions inside a page can need more than the page itself: reading an organization's abuse posture or the Outreach list needs `view_organizations`, while changing a posture or sending outreach needs `manage_organizations`, as [accounts and access](/development/accounts-and-access/#workspace-abuse-posture) lists.
+
+## See also
+
+- [Accounts and access](/development/accounts-and-access/) for the presets and the shell commands
+- [Instance health](/development/instance-health/) for every finding the Setup and health page can show
+- [Configuration reference](/development/configuration/) for what the Environment and Settings tabs hold
+- [warmblyctl](/development/warmblyctl/) for the operator commands the panel mirrors

@@ -2,11 +2,13 @@ package jobs
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
+	"github.com/warmbly/warmbly/internal/jobrun"
 )
 
 // EmailVerificationJob verifies a batch of contacts due for a check each run,
@@ -54,6 +56,7 @@ type EmailVerificationScheduler struct {
 	job      *EmailVerificationJob
 	interval time.Duration
 	stopCh   chan struct{}
+	mu       sync.Mutex
 }
 
 // NewEmailVerificationScheduler creates the scheduler.
@@ -67,26 +70,29 @@ func NewEmailVerificationScheduler(job *EmailVerificationJob, interval time.Dura
 
 // Start begins scheduled execution.
 func (s *EmailVerificationScheduler) Start(ctx context.Context) {
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
-	var wake <-chan struct{}
+	ctx, cancel := stopContext(ctx, s.stopCh)
+	defer cancel()
+	// A wake (import, re-verify) runs the same pass outside the tick; the
+	// mutex keeps it from overlapping a tick or a "run now".
+	run := func(ctx context.Context) error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.job.Run(ctx)
+	}
 	if s.job != nil && s.job.svc != nil {
-		wake = s.job.svc.Wake()
+		wake := s.job.svc.Wake()
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-wake:
+					jobrun.Run(ctx, "email_verification", s.interval, run)
+				}
+			}
+		}()
 	}
-	for {
-		select {
-		case <-ticker.C:
-		case <-wake:
-		case <-s.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-		if err := s.job.Run(ctx); err != nil {
-			errs.CaptureException(err)
-		}
-	}
+	jobrun.Loop(ctx, "email_verification", s.interval, false, run)
 }
 
 // Stop halts the scheduled execution.

@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Mail, RefreshCw, Send, XCircle } from "lucide-react";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

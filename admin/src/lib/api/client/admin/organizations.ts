@@ -113,3 +113,72 @@ export function clearOrganizationRiskSignal(
         authorization: true,
     });
 }
+
+// ---- API keys and webhooks (operator view) ----
+// Shapes mirror AdminOrgAPIKey / AdminWebhookEndpointRow in
+// internal/models/admin_ops.go.
+
+export interface AdminOrgAPIKey {
+    id: string;
+    name: string;
+    key_prefix: string;
+    key_suffix: string;
+    status: string;
+    permissions: number;
+    user_id: string;
+    user_email: string;
+    last_used_at?: string | null;
+    expires_at?: string | null;
+    revoked_at?: string | null;
+    created_at: string;
+    requests_last_7d: number;
+}
+
+export interface AdminWebhookEndpointRow {
+    id: string;
+    organization_id: string;
+    organization_name: string;
+    url: string;
+    description: string;
+    enabled: boolean;
+    event_types: string[] | null;
+    consecutive_failures: number;
+    last_success_at?: string | null;
+    last_failure_at?: string | null;
+    last_failure_reason: string;
+    deliveries_last_7d: number;
+    failed_last_7d: number;
+    drops_last_7d: number;
+}
+
+export function listOrganizationAPIKeys(id: string): Promise<{ data: AdminOrgAPIKey[] | null }> {
+    return Request({
+        method: "GET",
+        url: `/admin/organizations/${id}/api-keys`,
+        authorization: true,
+    });
+}
+
+// An empty reason is recorded as "revoked by platform admin" server-side.
+export function revokeOrganizationAPIKey(
+    id: string,
+    keyId: string,
+    reason?: string,
+): Promise<{ id: string; organization_id: string; status: string }> {
+    return Request({
+        method: "DELETE",
+        url: `/admin/organizations/${id}/api-keys/${keyId}`,
+        authorization: true,
+        data: reason ? { reason } : undefined,
+    });
+}
+
+export function listOrganizationWebhooks(
+    id: string,
+): Promise<{ data: AdminWebhookEndpointRow[] | null }> {
+    return Request({
+        method: "GET",
+        url: `/admin/organizations/${id}/webhooks`,
+        authorization: true,
+    });
+}

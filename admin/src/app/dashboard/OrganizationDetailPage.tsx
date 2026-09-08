@@ -1,20 +1,51 @@
 // Organization detail — composes /admin/organizations/:id and
 // /admin/organizations/:id/members into a single screen. Header summarises
-// owner + plan + lifecycle; the body shows usage-vs-limits side-by-side
-// and the members table.
+// owner + plan + lifecycle; the overview tab shows usage-vs-limits and the
+// members table, with API keys, webhooks and transfers on their own tabs
+// (?tab= so links deep-link).
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Crown, Shield, SlidersHorizontal } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import {
+    ArrowLeft,
+    ArrowLeftRight,
+    Ban,
+    Crown,
+    KeyRound,
+    LayoutDashboard,
+    Shield,
+    SlidersHorizontal,
+    Webhook,
+} from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { PageTabs } from "@/components/layout/PageTabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { ErrorState } from "@/components/ErrorState";
 import {
     getOrganization,
     getOrganizationMembers,
+    listOrganizationAPIKeys,
+    listOrganizationWebhooks,
+    revokeOrganizationAPIKey,
+    type AdminOrgAPIKey,
+    type AdminWebhookEndpointRow,
 } from "@/lib/api/client/admin/organizations";
+import { OrgTransferTab } from "./transfers/OrgTransferTab";
+import { fmtAgo, fmtDate, fmtDateTime } from "./fleet/format";
 import type {
     AdminOrgDetail,
     AdminOrgMember,
@@ -25,9 +56,35 @@ import type {
 import { OrganizationOverridesDialog } from "./OrganizationOverridesDialog";
 import { OrganizationRiskCard, RiskBadge } from "./OrganizationRiskCard";
 
+const TABS = [
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "api-keys", label: "API keys", icon: KeyRound },
+    { id: "webhooks", label: "Webhooks", icon: Webhook },
+    { id: "transfer", label: "Transfer", icon: ArrowLeftRight },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+function isTab(v: string | null): v is TabId {
+    return TABS.some((t) => t.id === v);
+}
+
 export default function OrganizationDetailPage() {
     const { id = "" } = useParams<{ id: string }>();
     const [overridesOpen, setOverridesOpen] = useState(false);
+    const [params, setParams] = useSearchParams();
+    const rawTab = params.get("tab");
+    const tab: TabId = isTab(rawTab) ? rawTab : "overview";
+
+    function setTab(next: string) {
+        setParams(
+            (p) => {
+                p.set("tab", next);
+                return p;
+            },
+            { replace: true },
+        );
+    }
 
     const orgQuery = useQuery({
         queryKey: ["admin", "organizations", id],
@@ -64,6 +121,14 @@ export default function OrganizationDetailPage() {
                 <StatusPills org={org} />
             </PageHeader>
 
+            <PageTabs tabs={[...TABS]} value={tab} onChange={setTab} />
+
+            {tab === "api-keys" && <APIKeysTab orgId={org.id} />}
+            {tab === "webhooks" && <WebhooksTab orgId={org.id} />}
+            {tab === "transfer" && <OrgTransferTab orgId={org.id} orgName={org.name} />}
+
+            {tab === "overview" && (
+            <>
             <div className="grid gap-4 md:grid-cols-3">
                 <SummaryCard title="Owner">
                     <div className="text-sm font-medium">
@@ -187,6 +252,8 @@ export default function OrganizationDetailPage() {
                     <MembersTable members={membersQuery.data?.data ?? []} />
                 )}
             </section>
+            </>
+            )}
         </div>
     );
 }
@@ -446,5 +513,254 @@ function DetailSkeleton() {
             <Skeleton className="h-48 w-full mb-4" />
             <Skeleton className="h-40 w-full" />
         </div>
+    );
+}
+
+// ---- API keys ----
+
+const KEY_STATUS_TONE: Record<string, string> = {
+    active: "border-emerald-300 bg-emerald-50 text-emerald-700",
+    revoked: "border-red-300 bg-red-50 text-red-700",
+    expired: "border-zinc-300 bg-zinc-50 text-zinc-500",
+};
+
+function APIKeysTab({ orgId }: { orgId: string }) {
+    const qc = useQueryClient();
+    const [revoking, setRevoking] = useState<AdminOrgAPIKey | null>(null);
+    const [reason, setReason] = useState("");
+
+    const keysQ = useQuery({
+        queryKey: ["admin", "organizations", orgId, "api-keys"],
+        queryFn: () => listOrganizationAPIKeys(orgId),
+    });
+
+    const revoke = useMutation({
+        mutationFn: (k: AdminOrgAPIKey) => revokeOrganizationAPIKey(orgId, k.id, reason.trim() || undefined),
+        onSuccess: () => {
+            toast.success("API key revoked");
+            qc.invalidateQueries({ queryKey: ["admin", "organizations", orgId, "api-keys"] });
+            setRevoking(null);
+            setReason("");
+        },
+        onError: (e: Error) => toast.error(e.message || "Revoke failed"),
+    });
+
+    const keys = keysQ.data?.data ?? [];
+
+    return (
+        <section>
+            <p className="mb-3 max-w-2xl text-[12.5px] text-muted-foreground">
+                Keys the workspace minted for the public API. The secret is never shown; revoking is immediate and is
+                recorded in the admin audit log with the reason.
+            </p>
+            {keysQ.isLoading ? (
+                <Skeleton className="h-32 w-full" />
+            ) : keysQ.error ? (
+                <ErrorState error={keysQ.error} title="Failed to load API keys" onRetry={() => keysQ.refetch()} />
+            ) : keys.length === 0 ? (
+                <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+                    This workspace has not created any API keys.
+                </div>
+            ) : (
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-muted/40 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                <tr>
+                                    <th className="px-3 py-2 text-left">Name</th>
+                                    <th className="px-3 py-2 text-left">Key</th>
+                                    <th className="px-3 py-2 text-left">Status</th>
+                                    <th className="px-3 py-2 text-left">User</th>
+                                    <th className="px-3 py-2 text-left">Last used</th>
+                                    <th className="px-3 py-2 text-right">Requests 7d</th>
+                                    <th className="px-3 py-2 text-left">Expires</th>
+                                    <th className="px-3 py-2 text-left">Created</th>
+                                    <th className="px-3 py-2 text-right" />
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {keys.map((k) => (
+                                    <tr key={k.id} className="border-t border-border">
+                                        <td className="px-3 py-2 font-medium">{k.name || <span className="text-muted-foreground">untitled</span>}</td>
+                                        <td className="px-3 py-2 font-mono text-[11px]">
+                                            {k.key_prefix}…{k.key_suffix}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <Badge variant="outline" className={`text-[10px] ${KEY_STATUS_TONE[k.status] ?? "border-zinc-300 text-zinc-600"}`}>
+                                                {k.status}
+                                            </Badge>
+                                        </td>
+                                        <td className="px-3 py-2 text-xs">{k.user_email || k.user_id.slice(0, 8)}</td>
+                                        <td className="px-3 py-2 text-xs text-muted-foreground" title={fmtDateTime(k.last_used_at)}>
+                                            {k.last_used_at ? fmtAgo(k.last_used_at) : "never"}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-xs tabular-nums">{k.requests_last_7d.toLocaleString()}</td>
+                                        <td className="px-3 py-2 text-xs text-muted-foreground">{k.expires_at ? fmtDate(k.expires_at) : "never"}</td>
+                                        <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDate(k.created_at)}</td>
+                                        <td className="px-3 py-2 text-right">
+                                            {k.status === "active" && (
+                                                <Button
+                                                    size="xs"
+                                                    variant="outline"
+                                                    className="text-red-700 hover:bg-red-50"
+                                                    onClick={() => {
+                                                        setReason("");
+                                                        setRevoking(k);
+                                                    }}
+                                                >
+                                                    <Ban className="size-3" />
+                                                    Revoke
+                                                </Button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            <Dialog
+                open={!!revoking}
+                onOpenChange={(v) => {
+                    if (!v && !revoke.isPending) setRevoking(null);
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Revoke this API key?</DialogTitle>
+                        <DialogDescription>
+                            {revoking?.name ? `"${revoking.name}"` : "This key"} ({revoking?.key_prefix}…{revoking?.key_suffix}) stops
+                            authenticating immediately. Anything the workspace built on it fails on its next request.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="revoke-reason" className="text-xs">
+                            Reason <span className="font-normal text-muted-foreground">(optional, goes to the audit log)</span>
+                        </Label>
+                        <Input
+                            id="revoke-reason"
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            placeholder="e.g. leaked in a public repository"
+                            className="h-8 text-[12.5px]"
+                            autoFocus
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setRevoking(null)} disabled={revoke.isPending}>
+                            Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={() => revoking && revoke.mutate(revoking)} disabled={revoke.isPending}>
+                            {revoke.isPending ? "Revoking…" : "Revoke key"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </section>
+    );
+}
+
+// ---- webhooks ----
+
+function WebhooksTab({ orgId }: { orgId: string }) {
+    const hooksQ = useQuery({
+        queryKey: ["admin", "organizations", orgId, "webhooks"],
+        queryFn: () => listOrganizationWebhooks(orgId),
+    });
+    const hooks = hooksQ.data?.data ?? [];
+
+    return (
+        <section>
+            <p className="mb-3 max-w-2xl text-[12.5px] text-muted-foreground">
+                Endpoints the workspace registered for event delivery. Consecutive failures and the last failure reason
+                are what the delivery loop sees; drops are events skipped because the endpoint was disabled or over its
+                failure ceiling.
+            </p>
+            {hooksQ.isLoading ? (
+                <Skeleton className="h-32 w-full" />
+            ) : hooksQ.error ? (
+                <ErrorState error={hooksQ.error} title="Failed to load webhooks" onRetry={() => hooksQ.refetch()} />
+            ) : hooks.length === 0 ? (
+                <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+                    This workspace has no webhook endpoints.
+                </div>
+            ) : (
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-muted/40 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                <tr>
+                                    <th className="px-3 py-2 text-left">Endpoint</th>
+                                    <th className="px-3 py-2 text-left">Enabled</th>
+                                    <th className="px-3 py-2 text-left">Events</th>
+                                    <th className="px-3 py-2 text-right">Failures in a row</th>
+                                    <th className="px-3 py-2 text-left">Last success</th>
+                                    <th className="px-3 py-2 text-left">Last failure</th>
+                                    <th className="px-3 py-2 text-right">7d delivered / failed / drops</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {hooks.map((h: AdminWebhookEndpointRow) => (
+                                    <tr key={h.id} className="border-t border-border align-top">
+                                        <td className="px-3 py-2">
+                                            <div className="max-w-xs truncate font-mono text-[11px]" title={h.url}>
+                                                {h.url}
+                                            </div>
+                                            {h.description && <div className="text-[11px] text-muted-foreground">{h.description}</div>}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <Badge
+                                                variant="outline"
+                                                className={`text-[10px] ${h.enabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-zinc-300 text-zinc-500"}`}
+                                            >
+                                                {h.enabled ? "enabled" : "disabled"}
+                                            </Badge>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <div className="flex max-w-xs flex-wrap gap-1">
+                                                {(h.event_types ?? []).length === 0 ? (
+                                                    <span className="text-xs text-muted-foreground">all</span>
+                                                ) : (
+                                                    (h.event_types ?? []).map((t) => (
+                                                        <Badge key={t} variant="outline" className="font-mono text-[9px]">
+                                                            {t}
+                                                        </Badge>
+                                                    ))
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className={`px-3 py-2 text-right text-xs tabular-nums ${h.consecutive_failures > 0 ? "font-medium text-red-600" : "text-muted-foreground"}`}>
+                                            {h.consecutive_failures}
+                                        </td>
+                                        <td className="px-3 py-2 text-xs text-muted-foreground" title={fmtDateTime(h.last_success_at)}>
+                                            {h.last_success_at ? fmtAgo(h.last_success_at) : "never"}
+                                        </td>
+                                        <td className="px-3 py-2 text-xs">
+                                            <div className="text-muted-foreground" title={fmtDateTime(h.last_failure_at)}>
+                                                {h.last_failure_at ? fmtAgo(h.last_failure_at) : "never"}
+                                            </div>
+                                            {h.last_failure_reason && (
+                                                <div className="max-w-xs truncate text-[11px] text-red-600" title={h.last_failure_reason}>
+                                                    {h.last_failure_reason}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-xs tabular-nums">
+                                            {h.deliveries_last_7d.toLocaleString()}
+                                            <span className="text-muted-foreground"> / </span>
+                                            <span className={h.failed_last_7d > 0 ? "text-red-600" : ""}>{h.failed_last_7d.toLocaleString()}</span>
+                                            <span className="text-muted-foreground"> / </span>
+                                            <span className={h.drops_last_7d > 0 ? "text-amber-700" : ""}>{h.drops_last_7d.toLocaleString()}</span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+        </section>
     );
 }

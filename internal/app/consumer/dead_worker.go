@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -91,20 +92,12 @@ func (s *JobsService) StartDeadWorkerDetection(ctx context.Context, interval tim
 	if s.WorkerRepo == nil {
 		return
 	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			detectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			s.detectDeadWorkers(detectCtx)
-			cancel()
-		}
-	}
+	jobrun.Loop(ctx, "dead_worker_detection", interval, false, func(ctx context.Context) error {
+		detectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		s.detectDeadWorkers(detectCtx)
+		return nil
+	})
 }
 
 func (s *JobsService) detectDeadWorkers(ctx context.Context) {

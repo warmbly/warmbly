@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -66,25 +67,9 @@ func NewAuditRetentionScheduler(job *AuditRetentionJob, interval time.Duration) 
 
 // Start begins scheduled execution, running once immediately on boot.
 func (s *AuditRetentionScheduler) Start(ctx context.Context) {
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
-	if err := s.job.Run(ctx); err != nil {
-		errs.CaptureException(err)
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			if err := s.job.Run(ctx); err != nil {
-				errs.CaptureException(err)
-			}
-		case <-s.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
+	ctx, cancel := stopContext(ctx, s.stopCh)
+	defer cancel()
+	jobrun.Loop(ctx, "audit_retention", s.interval, true, s.job.Run)
 }
 
 // Stop halts the scheduled execution.

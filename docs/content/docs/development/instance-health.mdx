@@ -7,7 +7,7 @@ Warmbly checks its own deployment and tells you what is wrong in the words of th
 
 ## Setup and health
 
-The page lives in the **admin panel** on `:5174`, under **Instance > Setup and health**. It is operator tooling, so it is not in the customer-facing dashboard, and every route behind it is gated on a platform admin permission.
+The page lives in the [admin panel](/development/admin-panel/) on `:5174`, under **Instance > Setup and health**, on its **Findings** tab; the **Services** tab next to it holds the per-service probes and the platform mail card. It is operator tooling, so it is not in the customer-facing dashboard, and every route behind it is gated on a platform admin permission.
 
 The same list is the top panel of the admin overview, and the sidebar entry carries a badge with the number of open findings, because nobody visits a health page speculatively.
 
@@ -195,7 +195,7 @@ The same for Sign in with Apple, which needs `APPLE_APP_ID` (the Services ID), `
 
 ### single_platform_admin
 
-Exactly one account holds platform admin permissions. If you lose access to it there is no way to grant admin from inside the product. Add a second from **Instance > Admins**, or with `warmblyctl user grant-admin`. See [platform admins](/development/accounts-and-access/#platform-admins).
+Exactly one account holds platform admin permissions. If you lose access to it there is no way to grant admin from inside the product. Add a second from **Accounts > Admins**, or with `warmblyctl user grant-admin`. See [platform admins](/development/accounts-and-access/#platform-admins).
 
 ### bootstrap_password_still_set
 
@@ -239,7 +239,7 @@ Redis is not reachable. Rate limits, the organization key cache, the realtime br
 
 The backend turned `WEBSOCKET_URL` into a `/health` URL and the realtime service did not answer it, so the dashboard will not update live and presence stays empty. Anything below a `500` counts as an answer, so an auth wall does not trip this.
 
-A reachable realtime service that still leaves the dashboard dead has a different cause, and no check reports it: `AUTH_SECRET` on the backend and `JWT_SECRET` on the realtime service must be identical or every token is rejected. **Instance > Configuration** shows a four character fingerprint for each sensitive value so you can compare the two without either being disclosed.
+A reachable realtime service that still leaves the dashboard dead has a different cause, and no check reports it: `AUTH_SECRET` on the backend and `JWT_SECRET` on the realtime service must be identical or every token is rejected. **Instance > Configuration > Environment** shows a four character fingerprint for each sensitive value so you can compare the two without either being disclosed.
 
 ## Storage
 

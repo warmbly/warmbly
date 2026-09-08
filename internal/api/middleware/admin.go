@@ -112,9 +112,9 @@ func IsAdmin(c *gin.Context) bool {
 	return GetAdminPermissions(c) > 0
 }
 
-// IsSuperAdmin returns true if the current user has all admin permissions
+// IsSuperAdmin returns true if the current user holds every live admin bit.
 func IsSuperAdmin(c *gin.Context) bool {
-	return GetAdminPermissions(c) == models.AllAdminPermissions
+	return GetAdminPermissions(c).IsSuperAdmin()
 }
 
 // getAdminPermissions fetches admin permissions for a user

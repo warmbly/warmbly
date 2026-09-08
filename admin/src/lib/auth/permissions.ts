@@ -1,12 +1,13 @@
 // Platform admin permission bits, mirroring internal/models/admin_permission.go.
 // /auth/me serializes the bitmask as a single uint32, so the frontend has to
 // know the bit positions to gate nav and pages the way the backend gates routes.
+//
+// Bits 2, 3 and 15 to 18 are retired (edit/impersonate users, enterprise
+// inquiries, plans, billing). They stay in stored masks and must not be reused.
 
 export const AdminPerm = {
     ViewUsers: 1 << 0,
     BanUsers: 1 << 1,
-    EditUsers: 1 << 2,
-    ImpersonateUsers: 1 << 3,
     ViewWorkers: 1 << 4,
     ManageWorkers: 1 << 5,
     ViewWarmupPool: 1 << 6,
@@ -18,10 +19,6 @@ export const AdminPerm = {
     ViewAuditLogs: 1 << 12,
     ManageRateLimits: 1 << 13,
     ManageSettings: 1 << 14,
-    ViewEnterpriseInquiries: 1 << 15,
-    ManageEnterpriseInquiries: 1 << 16,
-    ManagePlans: 1 << 17,
-    ManageBilling: 1 << 18,
     GrantAdminAccess: 1 << 19,
     ViewOrganizations: 1 << 20,
     ManageOrganizations: 1 << 21,

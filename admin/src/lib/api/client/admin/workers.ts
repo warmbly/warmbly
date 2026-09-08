@@ -185,3 +185,39 @@ export function listAllWorkerTags(): Promise<{ data: string[] }> {
         authorization: true,
     });
 }
+
+// ---- capacity and reassignment (used by the worker detail page) ----
+
+// WorkerStats in internal/models/admin.go.
+export interface WorkerStats {
+    worker_id: string;
+    total_emails_sent: number;
+    emails_sent_today: number;
+    emails_sent_this_week: number;
+    average_delivery_time_ms: number;
+    success_rate: number;
+    queue_depth: number;
+}
+
+export function getWorkerStats(id: string): Promise<WorkerStats> {
+    return Request({
+        method: "GET",
+        url: `/admin/workers/${id}/stats`,
+        authorization: true,
+    });
+}
+
+// POST /admin/workers/:id/reassign moves email_ids onto the worker in the
+// URL. ReassignEmailsRequest also requires new_worker_id; the handler ignores
+// it in favour of the path, so both name the target.
+export function reassignWorkerEmails(
+    targetWorkerId: string,
+    emailIds: string[],
+): Promise<{ message: string }> {
+    return Request({
+        method: "POST",
+        url: `/admin/workers/${targetWorkerId}/reassign`,
+        authorization: true,
+        data: { email_ids: emailIds, new_worker_id: targetWorkerId },
+    });
+}

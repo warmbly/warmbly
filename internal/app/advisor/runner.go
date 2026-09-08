@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -52,18 +53,10 @@ func (r *Runner) Run(ctx context.Context) {
 	if r.BatchSize <= 0 {
 		r.BatchSize = defaultBatchSize
 	}
-
-	tick := time.NewTicker(r.Interval)
-	defer tick.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			r.sweep(ctx)
-		}
-	}
+	jobrun.Loop(ctx, "advisor_sweep", r.Interval, false, func(ctx context.Context) error {
+		r.sweep(ctx)
+		return nil
+	})
 }
 
 func (r *Runner) sweep(ctx context.Context) {

@@ -110,3 +110,51 @@ export function rejectAppeal(
         data: body,
     });
 }
+
+// ---- abuse signals and admin action history ----
+// Shapes mirror AdminWarmupAbuseRow / AdminWarmupAction in
+// internal/models/admin_ops.go.
+
+export type WarmupAbuseWindow = "24h" | "7d" | "30d";
+
+export interface AdminWarmupAbuseRow {
+    email_account_id: string;
+    email: string;
+    organization_id?: string | null;
+    organization_name: string;
+    attempts: number;
+    last_attempt_at: string;
+    blocked: boolean;
+    spam_score: number;
+    health_state: string;
+}
+
+export interface AdminWarmupAction {
+    id: string;
+    admin_user_id: string;
+    admin_email: string;
+    email_account_id: string;
+    email: string;
+    action: string;
+    reason?: string | null;
+    created_at: string;
+}
+
+export function listWarmupAbuse(
+    window: WarmupAbuseWindow = "7d",
+    limit = 100,
+): Promise<{ data: AdminWarmupAbuseRow[] | null }> {
+    return Request({
+        method: "GET",
+        url: `/admin/warmup/abuse?window=${window}&limit=${limit}`,
+        authorization: true,
+    });
+}
+
+export function listWarmupActions(limit = 200): Promise<{ data: AdminWarmupAction[] | null }> {
+    return Request({
+        method: "GET",
+        url: `/admin/warmup/actions?limit=${limit}`,
+        authorization: true,
+    });
+}

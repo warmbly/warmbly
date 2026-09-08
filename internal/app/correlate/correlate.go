@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/orgrisk"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -74,16 +75,10 @@ func (s *Service) Start(ctx context.Context, interval time.Duration) {
 	if s == nil || s.repo == nil || s.orgRisk == nil {
 		return
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.Run(ctx)
-		}
-	}
+	jobrun.Loop(ctx, "correlation_sweep", interval, false, func(ctx context.Context) error {
+		s.Run(ctx)
+		return nil
+	})
 }
 
 // finding is one detector's verdict on one organization.

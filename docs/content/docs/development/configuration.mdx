@@ -8,7 +8,7 @@ The environment is authoritative. Warmbly never lets a web form overwrite a sett
 That rule has three consequences worth stating before the tables:
 
 - **Everything on this page is set in the environment of the running process.** With Docker Compose that is the `.env` next to `docker-compose.yml`. With Kubernetes it is the pod spec or a secret. With a bare binary it is the shell or the systemd unit.
-- **Most resolved values are visible, read only, in the admin panel** under **Instance > Configuration** (`http://localhost:5174/configuration` on a stock install). Each row shows the variable name, the value Warmbly actually resolved, where it came from (`env`, `default`, `derived` or `unset`), and whether changing it needs a restart. That page is how you answer "is my variable actually being picked up", without reading source.
+- **Most resolved values are visible, read only, in the admin panel** under **Instance > Configuration > Environment** (`http://localhost:5174/configuration?tab=environment` on a stock install). Each row shows the variable name, the value Warmbly actually resolved, where it came from (`env`, `default`, `derived` or `unset`), and whether changing it needs a restart. That page is how you answer "is my variable actually being picked up", without reading source.
 - **A handful of settings are stored in the database instead**, because no environment variable owns them. They are listed in [settings stored in the database](#settings-stored-in-the-database) and are the only settings editable from a browser.
 
 Secrets are never returned by any API. The configuration page shows a sensitive key as set or unset plus a four character fingerprint of its value, which is enough to confirm that two services hold the same `AUTH_SECRET` without disclosing it to anyone.
@@ -21,7 +21,7 @@ The configuration registry runs inside the backend process, so every value it sh
 
 | How | What you get |
 |---|---|
-| **Instance > Configuration** in the admin panel | The backend's entries with resolved value, source, group and restart requirement |
+| **Instance > Configuration > Environment** in the admin panel | The backend's entries with resolved value, source, group and restart requirement |
 | `make doctor` | The health checks from a shell, including the configuration problems they detect |
 | `GET /admin/instance/config` | The same list as JSON, behind the `manage_settings` admin permission |
 
@@ -502,7 +502,7 @@ The shipped default accepts a websocket upgrade from **any** origin. A token is 
 
 ## Settings stored in the database
 
-These are the only settings a browser can change, and no environment variable owns any of them. They live in the admin panel under **Instance > Instance settings** (`/configuration/settings`). Reads are cached for 30 seconds in each process, so a change takes effect everywhere within that window.
+These are the only settings a browser can change, and no environment variable owns any of them. They live in the admin panel under **Instance > Configuration > Settings** (`/configuration?tab=settings`). Reads are cached for 30 seconds in each process, so a change takes effect everywhere within that window.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
@@ -519,7 +519,7 @@ These are the only settings a browser can change, and no environment variable ow
 | `deliverability.enforce_domain_auth` | boolean | `true` | Whether a sending domain that fails SPF or DMARC stops cold campaign sending and warmup sending from every mailbox on it. Off keeps the check running and still shows the state and the Advisor card, it just never blocks |
 | `deliverability.auth_grace_hours` | integer, 1 to 720 | `72` | How long a domain must stay failing before the gate applies. The clock starts when the background check first sees the failure, so this is also how much warning the owner gets |
 
-The four `sync.*` values are read by the backend when a mailbox is loaded onto a worker (on connect, on reassignment, and by the reconciler's periodic republish), so a change reaches every mailbox within a few minutes without a restart. The fixed pacing numbers around them (burst per five minutes, hourly, backfill pace, the flood threshold and the chronic-overage rule) are compiled constants listed under **Instance > Limits**; see [Mailboxes](/guides/mailboxes/#what-gets-synced) for how the budgets behave.
+The four `sync.*` values are read by the backend when a mailbox is loaded onto a worker (on connect, on reassignment, and by the reconciler's periodic republish), so a change reaches every mailbox within a few minutes without a restart. The fixed pacing numbers around them (burst per five minutes, hourly, backfill pace, the flood threshold and the chronic-overage rule) are compiled constants listed under **Instance > Configuration > Effective limits**; see [Mailboxes](/guides/mailboxes/#what-gets-synced) for how the budgets behave. The four `sync.*` values also have a companion read view on **Operations > Sync**, which shows each mailbox's backfill progress and fair-use throttle against them and can clear a throttle or restart a backfill.
 
 The three `retention.*` values are read by the pruning sweeps on every pass, so shortening one takes effect on the next sweep rather than at the next restart. Deletion is permanent and there is no grace period: what already sits outside a shortened window goes on that sweep. See [data control](/development/data-control/#what-is-kept-and-for-how-long) for what each log holds and what a shorter window costs.
 

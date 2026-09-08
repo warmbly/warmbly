@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "./global.css";
 import {
@@ -6,31 +6,33 @@ import {
     Navigate,
     Outlet,
     RouterProvider,
+    useLocation,
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/600.css";
-import "@fontsource/poppins/600.css";
-import "@fontsource/poppins/700.css";
 
 import { initErrorReporting } from "@/lib/observability";
 
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { RequireAdmin } from "@/components/layout/RequireAdmin";
+import { RouteError } from "@/components/layout/RouteError";
 
 import LoginPage from "@/app/auth/LoginPage";
 import OverviewPage from "@/app/dashboard/OverviewPage";
 import WorkersPage from "@/app/dashboard/WorkersPage";
 import WorkerDetailPage from "@/app/dashboard/WorkerDetailPage";
 import WorkerNewPage from "@/app/dashboard/WorkerNewPage";
+import FleetPage from "@/app/dashboard/FleetPage";
 import AuditPage from "@/app/dashboard/AuditPage";
 import OrganizationsPage from "@/app/dashboard/OrganizationsPage";
 import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
 import UsersPage from "@/app/dashboard/UsersPage";
 import UserDetailPage from "@/app/dashboard/UserDetailPage";
+import AdminsPage from "@/app/dashboard/AdminsPage";
 import WarmupPage from "@/app/dashboard/WarmupPage";
 import WarmupAppealsPage from "@/app/dashboard/WarmupAppealsPage";
 import WarmupContentLayout from "@/app/dashboard/warmup-content/WarmupContentLayout";
@@ -38,21 +40,20 @@ import WarmupContentOverviewPage from "@/app/dashboard/warmup-content/OverviewPa
 import WarmupContentLibraryPage from "@/app/dashboard/warmup-content/LibraryPage";
 import WarmupContentJobsPage from "@/app/dashboard/warmup-content/JobsPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
+import SendsPage from "@/app/dashboard/SendsPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
-import AnalyticsPage from "@/app/dashboard/AnalyticsPage";
 import MailboxesPage from "@/app/dashboard/MailboxesPage";
+import SyncPage from "@/app/dashboard/SyncPage";
 import EventsPage from "@/app/dashboard/EventsPage";
-import SystemStatusPage from "@/app/dashboard/SystemStatusPage";
+import JobsPage from "@/app/dashboard/JobsPage";
 import HealthPage from "@/app/dashboard/HealthPage";
 import ConfigurationPage from "@/app/dashboard/ConfigurationPage";
-import InstanceSettingsPage from "@/app/dashboard/InstanceSettingsPage";
-import NotificationsPage from "@/app/dashboard/NotificationsPage";
-import LimitsPage from "@/app/dashboard/LimitsPage";
+import TransfersPage from "@/app/dashboard/TransfersPage";
+import NotFoundPage from "@/app/dashboard/NotFoundPage";
 import RealtimeManager from "@/lib/realtime/RealtimeManager";
 import { RequirePermission } from "@/components/layout/RequirePermission";
 import { AdminPerm } from "@/lib/auth/permissions";
-import { NotFoundPage } from "@/app/dashboard/StubPages";
 
 // Mirror of web/src/main.tsx's tuned defaults. The admin app sees less
 // traffic than the dashboard, so the staleness window is a touch wider:
@@ -74,6 +75,39 @@ const queryClient = new QueryClient({
     },
 });
 
+// Every gated route carries the same permission bit the backend gates its
+// endpoint on, with the human name RequirePermission shows on denial.
+const PERM_LABELS: Record<number, string> = {
+    [AdminPerm.ViewUsers]: "View users",
+    [AdminPerm.ViewWorkers]: "View workers",
+    [AdminPerm.ViewWarmupPool]: "View warmup pool",
+    [AdminPerm.ReviewAppeals]: "Review appeals",
+    [AdminPerm.ViewCampaigns]: "View campaigns",
+    [AdminPerm.ViewAnalytics]: "View analytics",
+    [AdminPerm.ViewAuditLogs]: "View audit logs",
+    [AdminPerm.ManageSettings]: "Manage settings",
+    [AdminPerm.GrantAdminAccess]: "Grant admin access",
+    [AdminPerm.ViewOrganizations]: "View organizations",
+};
+
+function gated(perm: number, page: ReactNode) {
+    return (
+        <RequirePermission perm={perm} permissionLabel={PERM_LABELS[perm] ?? "required"}>
+            {page}
+        </RequirePermission>
+    );
+}
+
+// Old paths that docs link. The query string travels so `?tab=` survives
+// and a moved page can pin the tab it replaced.
+function Redirect({ to, tab }: { to: string; tab?: string }) {
+    const location = useLocation();
+    const params = new URLSearchParams(location.search);
+    if (tab && !params.has("tab")) params.set("tab", tab);
+    const search = params.toString();
+    return <Navigate to={search ? `${to}?${search}` : to} replace />;
+}
+
 const router = createBrowserRouter([
     {
         path: "/auth/login",
@@ -85,110 +119,67 @@ const router = createBrowserRouter([
         children: [
             {
                 element: <AppShellWithKey />,
+                errorElement: <RouteError />,
                 children: [
-                    { index: true, element: <OverviewPage /> },
-                    { path: "workers", element: <WorkersPage /> },
-                    // Before :id so "new" isn't parsed as a worker id.
-                    { path: "workers/new", element: <WorkerNewPage /> },
-                    { path: "workers/:id", element: <WorkerDetailPage /> },
-                    { path: "mailboxes", element: <MailboxesPage /> },
-                    { path: "users", element: <UsersPage /> },
-                    { path: "users/:id", element: <UserDetailPage /> },
-                    { path: "organizations", element: <OrganizationsPage /> },
-                    { path: "organizations/:id", element: <OrganizationDetailPage /> },
-                    { path: "warmup", element: <WarmupPage /> },
-                    { path: "warmup/appeals", element: <WarmupAppealsPage /> },
                     {
-                        path: "warmup-content",
-                        element: <WarmupContentLayout />,
+                        // Pathless: a page that throws renders RouteError inside
+                        // the shell instead of replacing the whole app.
+                        errorElement: <RouteError />,
                         children: [
+                            { index: true, element: <OverviewPage /> },
+
+                            // Operations
+                            { path: "workers", element: gated(AdminPerm.ViewWorkers, <WorkersPage />) },
+                            // Before :id so "new" isn't parsed as a worker id.
+                            { path: "workers/new", element: gated(AdminPerm.ViewWorkers, <WorkerNewPage />) },
+                            { path: "workers/:id", element: gated(AdminPerm.ViewWorkers, <WorkerDetailPage />) },
+                            { path: "fleet", element: gated(AdminPerm.ViewWorkers, <FleetPage />) },
+                            { path: "mailboxes", element: gated(AdminPerm.ViewUsers, <MailboxesPage />) },
+                            { path: "sync", element: gated(AdminPerm.ViewUsers, <SyncPage />) },
+                            { path: "warmup", element: gated(AdminPerm.ViewWarmupPool, <WarmupPage />) },
+                            { path: "warmup/appeals", element: gated(AdminPerm.ReviewAppeals, <WarmupAppealsPage />) },
                             {
-                                index: true,
-                                element: (
-                                    <Navigate to="/warmup-content/overview" replace />
-                                ),
+                                path: "warmup-content",
+                                element: gated(AdminPerm.ViewWarmupPool, <WarmupContentLayout />),
+                                children: [
+                                    { index: true, element: <Navigate to="/warmup-content/overview" replace /> },
+                                    { path: "overview", element: <WarmupContentOverviewPage /> },
+                                    { path: "library", element: <WarmupContentLibraryPage /> },
+                                    { path: "jobs", element: <WarmupContentJobsPage /> },
+                                ],
                             },
-                            { path: "overview", element: <WarmupContentOverviewPage /> },
-                            { path: "library", element: <WarmupContentLibraryPage /> },
-                            { path: "jobs", element: <WarmupContentJobsPage /> },
+                            { path: "campaigns", element: gated(AdminPerm.ViewCampaigns, <CampaignsPage />) },
+                            { path: "sends", element: gated(AdminPerm.ViewCampaigns, <SendsPage />) },
+
+                            // Accounts
+                            { path: "users", element: gated(AdminPerm.ViewUsers, <UsersPage />) },
+                            { path: "users/:id", element: gated(AdminPerm.ViewUsers, <UserDetailPage />) },
+                            { path: "organizations", element: gated(AdminPerm.ViewOrganizations, <OrganizationsPage />) },
+                            { path: "organizations/:id", element: gated(AdminPerm.ViewOrganizations, <OrganizationDetailPage />) },
+                            { path: "limit-requests", element: gated(AdminPerm.ViewOrganizations, <LimitRequestsPage />) },
+                            { path: "outreach", element: gated(AdminPerm.ViewOrganizations, <OutreachPage />) },
+                            { path: "admins", element: gated(AdminPerm.GrantAdminAccess, <AdminsPage />) },
+
+                            // Insight
+                            { path: "events", element: <EventsPage /> },
+                            { path: "audit", element: gated(AdminPerm.ViewAuditLogs, <AuditPage />) },
+                            { path: "jobs", element: gated(AdminPerm.ViewAnalytics, <JobsPage />) },
+
+                            // Instance
+                            { path: "health", element: gated(AdminPerm.ViewAnalytics, <HealthPage />) },
+                            { path: "configuration", element: gated(AdminPerm.ManageSettings, <ConfigurationPage />) },
+                            { path: "transfers", element: gated(AdminPerm.ViewOrganizations, <TransfersPage />) },
+
+                            // Retired paths that docs still link.
+                            { path: "analytics", element: <Redirect to="/" /> },
+                            { path: "system", element: <Redirect to="/health" tab="services" /> },
+                            { path: "configuration/settings", element: <Redirect to="/configuration" tab="settings" /> },
+                            { path: "configuration/notifications", element: <Redirect to="/configuration" tab="notifications" /> },
+                            { path: "limits", element: <Redirect to="/configuration" tab="limits" /> },
+
+                            { path: "*", element: <NotFoundPage /> },
                         ],
                     },
-                    { path: "campaigns", element: <CampaignsPage /> },
-                    { path: "limit-requests", element: <LimitRequestsPage /> },
-                    { path: "outreach", element: <OutreachPage /> },
-                    { path: "analytics", element: <AnalyticsPage /> },
-                    { path: "events", element: <EventsPage /> },
-                    // Instance: the operator's view of this deployment. Each
-                    // route carries the same permission bit the backend gates
-                    // its endpoint on.
-                    {
-                        path: "health",
-                        element: (
-                            <RequirePermission
-                                perm={AdminPerm.ViewAnalytics}
-                                permissionLabel="View analytics"
-                            >
-                                <HealthPage />
-                            </RequirePermission>
-                        ),
-                    },
-                    {
-                        path: "configuration",
-                        element: (
-                            <RequirePermission
-                                perm={AdminPerm.ManageSettings}
-                                permissionLabel="Manage settings"
-                            >
-                                <ConfigurationPage />
-                            </RequirePermission>
-                        ),
-                    },
-                    {
-                        path: "configuration/settings",
-                        element: (
-                            <RequirePermission
-                                perm={AdminPerm.ManageSettings}
-                                permissionLabel="Manage settings"
-                            >
-                                <InstanceSettingsPage />
-                            </RequirePermission>
-                        ),
-                    },
-                    {
-                        path: "configuration/notifications",
-                        element: (
-                            <RequirePermission
-                                perm={AdminPerm.ManageSettings}
-                                permissionLabel="Manage settings"
-                            >
-                                <NotificationsPage />
-                            </RequirePermission>
-                        ),
-                    },
-                    {
-                        path: "limits",
-                        element: (
-                            <RequirePermission
-                                perm={AdminPerm.ViewAnalytics}
-                                permissionLabel="View analytics"
-                            >
-                                <LimitsPage />
-                            </RequirePermission>
-                        ),
-                    },
-                    {
-                        path: "system",
-                        element: (
-                            <RequirePermission
-                                perm={AdminPerm.ViewAnalytics}
-                                permissionLabel="View analytics"
-                            >
-                                <SystemStatusPage />
-                            </RequirePermission>
-                        ),
-                    },
-                    { path: "audit", element: <AuditPage /> },
-                    { path: "*", element: <NotFoundPage /> },
                 ],
             },
         ],

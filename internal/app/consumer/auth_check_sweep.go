@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/dnsauth"
 )
@@ -26,20 +27,12 @@ func (s *JobsService) StartAuthCheckSweep(ctx context.Context, interval, staleAf
 	if s.EmailRepository == nil {
 		return
 	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-			s.runAuthCheckSweep(sweepCtx, staleAfter)
-			cancel()
-		}
-	}
+	jobrun.Loop(ctx, "auth_check_sweep", interval, false, func(ctx context.Context) error {
+		sweepCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		s.runAuthCheckSweep(sweepCtx, staleAfter)
+		return nil
+	})
 }
 
 func (s *JobsService) runAuthCheckSweep(ctx context.Context, staleAfter time.Duration) {

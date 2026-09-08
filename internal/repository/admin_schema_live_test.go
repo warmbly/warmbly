@@ -85,28 +85,6 @@ func newAdminFixture(t *testing.T, pool *pgxpool.Pool) *adminFixture {
 	return f
 }
 
-// ensureDuration returns the id of the durations row with this title, creating
-// it for the duration of the test if the instance does not have one.
-func ensureDuration(t *testing.T, pool *pgxpool.Pool, title string) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-	var id uuid.UUID
-	err := pool.QueryRow(ctx, `SELECT id FROM durations WHERE title = $1`, title).Scan(&id)
-	if err == nil {
-		return id
-	}
-	id = uuid.New()
-	if _, err := pool.Exec(ctx, `INSERT INTO durations (id, title) VALUES ($1, $2)`, id, title); err != nil {
-		t.Fatalf("create durations row %q: %v", title, err)
-	}
-	t.Cleanup(func() {
-		if _, err := pool.Exec(context.Background(), `DELETE FROM durations WHERE id = $1`, id); err != nil {
-			t.Errorf("cleanup durations row %q: %v", title, err)
-		}
-	})
-	return id
-}
-
 // The email-account section of the user preview compared a uuid column against
 // a text parameter, so the query errored and the caller swallowed it: every
 // user looked like they had no mailboxes.
@@ -217,82 +195,6 @@ func TestLiveAdminForceStopLeavesTerminalCampaignsAlone(t *testing.T) {
 		if got != status {
 			t.Fatalf("a %s campaign is now %q; the stop overwrote a state it had no business touching", status, got)
 		}
-	}
-}
-
-// plans stores the billing period as duration_id (FK to durations); the admin
-// writes named a `duration` column that does not exist.
-func TestLiveAdminPlanRoundTripsDuration(t *testing.T) {
-	_, pool := liveContactDB(t)
-	repo := NewAdminRepository(pool)
-	ctx := context.Background()
-
-	// A bare install ships only the monthly duration (migration 000080); the
-	// yearly one arrives with the seed. Add whatever is missing and take it
-	// back out again, so this runs on either.
-	monthID := ensureDuration(t, pool, "month")
-	yearID := ensureDuration(t, pool, "year")
-
-	resolved, err := repo.DurationIDByTitle(ctx, "month")
-	if err != nil {
-		t.Fatalf("DurationIDByTitle(month): %v", err)
-	}
-	if resolved == nil || *resolved != monthID {
-		t.Fatalf("DurationIDByTitle(month) = %v, want %v", resolved, monthID)
-	}
-	if unknown, err := repo.DurationIDByTitle(ctx, "fortnight"); err != nil || unknown != nil {
-		t.Fatalf("DurationIDByTitle(fortnight) = %v, %v; want nil, nil so the API can answer 400", unknown, err)
-	}
-
-	name := "Issue 209 plan"
-	plan := &models.Plan{
-		ID:             uuid.New(),
-		Name:           &name,
-		MaxContacts:    1000,
-		DailyEmails:    50,
-		AccountLimit:   3,
-		Price:          49,
-		Duration:       models.DurationMonth,
-		MonthlyCredits: 25,
-	}
-	t.Cleanup(func() {
-		if _, err := pool.Exec(context.Background(), `DELETE FROM plans WHERE id = $1`, plan.ID); err != nil {
-			t.Errorf("cleanup plan: %v", err)
-		}
-	})
-
-	if err := repo.CreatePlan(ctx, plan, monthID); err != nil {
-		t.Fatalf("CreatePlan: %v", err)
-	}
-
-	got, err := repo.GetPlan(ctx, plan.ID)
-	if err != nil {
-		t.Fatalf("GetPlan: %v", err)
-	}
-	if got == nil {
-		t.Fatal("GetPlan found nothing for a plan that was just created")
-	}
-	if got.Duration != models.DurationMonth {
-		t.Fatalf("plan reads back duration %q, want %q", got.Duration, models.DurationMonth)
-	}
-	if got.MonthlyCredits != 25 {
-		t.Fatalf("plan reads back %d monthly credits, want 25", got.MonthlyCredits)
-	}
-
-	got.Duration = models.DurationYear
-	got.Price = 490
-	if err := repo.UpdatePlan(ctx, got, yearID); err != nil {
-		t.Fatalf("UpdatePlan: %v", err)
-	}
-	after, err := repo.GetPlan(ctx, plan.ID)
-	if err != nil {
-		t.Fatalf("GetPlan after update: %v", err)
-	}
-	if after.Duration != models.DurationYear {
-		t.Fatalf("plan reads back duration %q after switching to yearly, want %q", after.Duration, models.DurationYear)
-	}
-	if after.Price != 490 {
-		t.Fatalf("plan reads back price %v, want 490", after.Price)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/warmbly/warmbly/internal/app/dangerzone"
+	"github.com/warmbly/warmbly/internal/jobrun"
 )
 
 // DangerZoneJob ticks the dangerzone subsystem: it executes any pending
@@ -53,21 +54,12 @@ func NewDangerZoneScheduler(job *DangerZoneJob, interval time.Duration) *DangerZ
 
 // Start runs Run() on every tick until ctx is cancelled or Stop() is called.
 func (s *DangerZoneScheduler) Start(ctx context.Context) {
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
-	s.job.Run(ctx)
-
-	for {
-		select {
-		case <-ticker.C:
-			s.job.Run(ctx)
-		case <-s.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
+	ctx, cancel := stopContext(ctx, s.stopCh)
+	defer cancel()
+	jobrun.Loop(ctx, "danger_zone", s.interval, true, func(ctx context.Context) error {
+		s.job.Run(ctx)
+		return nil
+	})
 }
 
 // Stop halts the scheduler.

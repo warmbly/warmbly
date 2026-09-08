@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/lifecycle"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -22,16 +23,10 @@ func (s *JobsService) StartLifecycleRebalancer(ctx context.Context, interval tim
 	if s.LifecycleRepo == nil {
 		return
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.rebalanceLifecycles(ctx)
-		}
-	}
+	jobrun.Loop(ctx, "lifecycle_rebalancer", interval, false, func(ctx context.Context) error {
+		s.rebalanceLifecycles(ctx)
+		return nil
+	})
 }
 
 func (s *JobsService) rebalanceLifecycles(ctx context.Context) {

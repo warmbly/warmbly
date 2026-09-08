@@ -4,9 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/warmbly/warmbly/internal/observability/errs"
-
 	emailverifyapp "github.com/warmbly/warmbly/internal/app/emailverify"
+	"github.com/warmbly/warmbly/internal/jobrun"
 )
 
 // DeliveryEvidenceJob turns campaign sends that never bounced into
@@ -28,23 +27,15 @@ func NewDeliveryEvidenceJob(evidence *emailverifyapp.Evidence, interval time.Dur
 // Start runs the job on its interval until ctx ends. A full batch repeats
 // at once so a backlog drains.
 func (j *DeliveryEvidenceJob) Start(ctx context.Context) {
-	ticker := time.NewTicker(j.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			return
-		}
+	jobrun.Loop(ctx, "delivery_evidence", j.interval, false, func(ctx context.Context) error {
 		for {
 			n, err := j.evidence.CreditCleanDeliveries(ctx, j.batch)
 			if err != nil {
-				errs.CaptureException(err)
-				break
+				return err
 			}
 			if n < j.batch || ctx.Err() != nil {
-				break
+				return nil
 			}
 		}
-	}
+	})
 }

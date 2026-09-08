@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -43,18 +44,7 @@ func (q *QuarantineEvaluator) defaults() {
 
 func (q *QuarantineEvaluator) Run(ctx context.Context) {
 	q.defaults()
-	tick := time.NewTicker(q.Interval)
-	defer tick.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			if err := q.tick(ctx); err != nil {
-				log.Warn().Err(err).Msg("quarantine tick failed")
-			}
-		}
-	}
+	jobrun.Loop(ctx, "fleet_quarantine", q.Interval, false, q.tick)
 }
 
 func (q *QuarantineEvaluator) tick(ctx context.Context) error {

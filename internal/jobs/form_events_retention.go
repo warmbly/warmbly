@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -44,15 +45,5 @@ func (j *FormEventsRetentionJob) Run(ctx context.Context) error {
 
 // Start runs the job once on boot and then on the interval until ctx ends.
 func (j *FormEventsRetentionJob) Start(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	_ = j.Run(ctx)
-	for {
-		select {
-		case <-ticker.C:
-			_ = j.Run(ctx)
-		case <-ctx.Done():
-			return
-		}
-	}
+	jobrun.Loop(ctx, "form_events_retention", interval, true, j.Run)
 }

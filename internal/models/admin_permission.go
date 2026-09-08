@@ -3,12 +3,14 @@ package models
 // AdminPermission represents platform-level admin permissions as a bitmask
 type AdminPermission uint32
 
+// Bit positions are stored in users.admin_permissions, so a retired bit keeps
+// its placeholder here and is never reused.
 const (
 	// User Management (bits 0-3)
-	AdminPermViewUsers        AdminPermission = 1 << iota // View user profiles
-	AdminPermBanUsers                                     // Ban/unban users
-	AdminPermEditUsers                                    // Edit user details
-	AdminPermImpersonateUsers                             // Login as user (support)
+	AdminPermViewUsers AdminPermission = 1 << iota // View user profiles
+	AdminPermBanUsers                              // Ban/unban users
+	adminPermReserved2                             // Retired (edit users), never reuse
+	adminPermReserved3                             // Retired (impersonate users), never reuse
 
 	// Worker Management (bits 4-5)
 	AdminPermViewWorkers   // View worker list
@@ -31,11 +33,11 @@ const (
 	AdminPermManageRateLimits // User rate limits
 	AdminPermManageSettings   // Platform settings
 
-	// Enterprise (bits 15-18)
-	AdminPermViewEnterpriseInquiries   // View inquiries
-	AdminPermManageEnterpriseInquiries // Process inquiries
-	AdminPermManagePlans               // Create/edit custom plans
-	AdminPermManageBilling             // Refunds, adjust billing
+	// Retired enterprise bits (15-18), never reuse
+	adminPermReserved15 // Retired (view enterprise inquiries)
+	adminPermReserved16 // Retired (manage enterprise inquiries)
+	adminPermReserved17 // Retired (manage plans)
+	adminPermReserved18 // Retired (manage billing)
 
 	// Super Admin (bit 19)
 	AdminPermGrantAdminAccess // Grant/revoke admin permissions
@@ -45,9 +47,27 @@ const (
 	AdminPermManageOrganizations // Set per-org limit overrides, ban scope, etc.
 )
 
-// AllAdminPermissions contains all admin permissions. Bump the shift
-// whenever a new bit is added above.
+// AllAdminPermissions is the full mask, retired bits included: it is what
+// existing super admins hold in the database. Bump the shift whenever a new
+// bit is added above.
 const AllAdminPermissions AdminPermission = (1 << 22) - 1
+
+// LiveAdminPermissions ORs every bit that still gates a route.
+const LiveAdminPermissions AdminPermission = AdminPermViewUsers | AdminPermBanUsers |
+	AdminPermViewWorkers | AdminPermManageWorkers |
+	AdminPermViewWarmupPool | AdminPermManageWarmupBans | AdminPermReviewAppeals |
+	AdminPermViewCampaigns | AdminPermStopCampaigns |
+	AdminPermViewAnalytics | AdminPermViewAuditLogs |
+	AdminPermManageRateLimits | AdminPermManageSettings |
+	AdminPermGrantAdminAccess |
+	AdminPermViewOrganizations | AdminPermManageOrganizations
+
+// retiredAdminPermissions are the bits that no longer gate anything.
+const retiredAdminPermissions = adminPermReserved2 | adminPermReserved3 |
+	adminPermReserved15 | adminPermReserved16 | adminPermReserved17 | adminPermReserved18
+
+// Compile-time check: every bit in AllAdminPermissions is live or retired.
+var _ [0]struct{} = [AllAdminPermissions ^ (LiveAdminPermissions | retiredAdminPermissions)]struct{}{}
 
 // HasPermission checks if the permission bitmask contains the specified permission
 func (p AdminPermission) HasPermission(perm AdminPermission) bool {
@@ -69,9 +89,9 @@ func (p AdminPermission) IsAdmin() bool {
 	return p > 0
 }
 
-// IsSuperAdmin returns true if the user has all admin permissions
+// IsSuperAdmin returns true if the user holds every live admin permission
 func (p AdminPermission) IsSuperAdmin() bool {
-	return p == AllAdminPermissions
+	return p&LiveAdminPermissions == LiveAdminPermissions
 }
 
 // AdminRoleName represents predefined admin role names
@@ -89,7 +109,7 @@ var AdminRolePermissions = map[AdminRoleName]AdminPermission{
 	AdminRoleSuper: AllAdminPermissions,
 	AdminRoleSupport: AdminPermViewUsers | AdminPermViewCampaigns | AdminPermViewWarmupPool |
 		AdminPermManageWarmupBans | AdminPermReviewAppeals | AdminPermViewAuditLogs |
-		AdminPermViewEnterpriseInquiries | AdminPermViewOrganizations,
+		AdminPermViewOrganizations,
 	AdminRoleOps: AdminPermViewWorkers | AdminPermManageWorkers | AdminPermViewAnalytics |
 		AdminPermViewAuditLogs | AdminPermManageRateLimits | AdminPermViewOrganizations,
 	AdminRoleAnalyst: AdminPermViewUsers | AdminPermViewCampaigns | AdminPermViewAnalytics |
@@ -112,14 +132,12 @@ type PermissionInfo struct {
 	Category    string          `json:"category"`
 }
 
-// GetAllPermissionInfos returns information about all admin permissions
+// GetAllPermissionInfos returns information about all live admin permissions
 func GetAllPermissionInfos() []PermissionInfo {
 	return []PermissionInfo{
 		// User Management
 		{Name: "view_users", Permission: AdminPermViewUsers, Description: "View user profiles and details", Category: "User Management"},
 		{Name: "ban_users", Permission: AdminPermBanUsers, Description: "Ban and unban users", Category: "User Management"},
-		{Name: "edit_users", Permission: AdminPermEditUsers, Description: "Edit user details", Category: "User Management"},
-		{Name: "impersonate_users", Permission: AdminPermImpersonateUsers, Description: "Login as user for support", Category: "User Management"},
 
 		// Worker Management
 		{Name: "view_workers", Permission: AdminPermViewWorkers, Description: "View worker list and status", Category: "Worker Management"},
@@ -141,12 +159,6 @@ func GetAllPermissionInfos() []PermissionInfo {
 		// Settings
 		{Name: "manage_rate_limits", Permission: AdminPermManageRateLimits, Description: "Manage user rate limits", Category: "Settings"},
 		{Name: "manage_settings", Permission: AdminPermManageSettings, Description: "Manage platform settings", Category: "Settings"},
-
-		// Enterprise
-		{Name: "view_enterprise_inquiries", Permission: AdminPermViewEnterpriseInquiries, Description: "View enterprise inquiries", Category: "Enterprise"},
-		{Name: "manage_enterprise_inquiries", Permission: AdminPermManageEnterpriseInquiries, Description: "Process enterprise inquiries", Category: "Enterprise"},
-		{Name: "manage_plans", Permission: AdminPermManagePlans, Description: "Create and edit custom plans", Category: "Enterprise"},
-		{Name: "manage_billing", Permission: AdminPermManageBilling, Description: "Manage refunds and billing", Category: "Enterprise"},
 
 		// Super Admin
 		{Name: "grant_admin_access", Permission: AdminPermGrantAdminAccess, Description: "Grant or revoke admin permissions", Category: "Super Admin"},

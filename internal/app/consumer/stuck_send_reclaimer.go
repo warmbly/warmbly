@@ -7,6 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -31,18 +32,12 @@ func (s *JobsService) StartStuckSendReclaimer(ctx context.Context, interval time
 	if s.TaskRepo == nil || s.CampaignProgressRepo == nil {
 		return
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			sweepCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			s.reclaimStuckSends(sweepCtx)
-			cancel()
-		}
-	}
+	jobrun.Loop(ctx, "stuck_send_reclaimer", interval, false, func(ctx context.Context) error {
+		sweepCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		s.reclaimStuckSends(sweepCtx)
+		return nil
+	})
 }
 
 func (s *JobsService) reclaimStuckSends(ctx context.Context) {

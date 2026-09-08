@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -46,21 +47,8 @@ func (s *Scaler) defaults() {
 
 func (s *Scaler) Run(ctx context.Context) {
 	s.defaults()
-	tick := time.NewTicker(s.Interval)
-	defer tick.Stop()
-	// Run once immediately on boot so an admin doesn't wait an hour for the
-	// first signal.
-	_ = s.tick(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			if err := s.tick(ctx); err != nil {
-				log.Warn().Err(err).Msg("fleet scale tick failed")
-			}
-		}
-	}
+	// Runs once on boot so an admin doesn't wait an hour for the first signal.
+	jobrun.Loop(ctx, "fleet_scale", s.Interval, true, s.tick)
 }
 
 func (s *Scaler) tick(ctx context.Context) error {

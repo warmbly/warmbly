@@ -122,6 +122,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/jobs"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
@@ -272,6 +273,16 @@ func main() {
 
 	// Workspace archives (export/import between instances)
 	var orgTransferService orgtransfer.Service
+
+	// Admin operations pages and the scheduled job registry.
+	var (
+		adminSyncRepo         repository.AdminSyncRepository
+		adminSendsRepo        repository.AdminSendsRepository
+		adminFleetRepo        repository.AdminFleetRepository
+		adminInsightRepo      repository.AdminInsightRepository
+		jobRunRepo            repository.JobRunRepository
+		webhookRepoForHandler repository.WebhookRepository
+	)
 
 	// Organization-wide audit trail
 	var auditService audit.AuditService
@@ -690,6 +701,16 @@ func main() {
 		webhookRepository := repository.NewWebhookRepository(primaryDB.Pool)
 		webhookService := webhook.NewService(webhookRepository)
 		webhookServiceForHandler = webhookService
+		webhookRepoForHandler = webhookRepository
+
+		// Every background loop in this process records to scheduled_job_runs
+		// from here on, and the admin panel can ask any of them to run now.
+		jobRunRepo = repository.NewJobRunRepository(primaryDB)
+		jobrun.Configure(jobRunRepo, "backend")
+		adminSyncRepo = repository.NewAdminSyncRepository(primaryDB)
+		adminSendsRepo = repository.NewAdminSendsRepository(primaryDB)
+		adminFleetRepo = repository.NewAdminFleetRepository(primaryDB)
+		adminInsightRepo = repository.NewAdminInsightRepository(primaryDB)
 
 		integrationRepository := repository.NewIntegrationRepository(primaryDB.Pool)
 		// OAuth 2.1 authorization server (third-party app registration + token flow).
@@ -1032,20 +1053,7 @@ func main() {
 		// rebalance + scale + quarantine evaluators see fresh rolling
 		// metrics. The materialized view is what aggregates the 1h windows
 		// across all workers.
-		go func() {
-			tick := time.NewTicker(time.Minute)
-			defer tick.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-tick.C:
-					if err := workerRepository.RefreshWorkerCapacityView(ctx); err != nil {
-						log.Printf("worker_capacity_view refresh: %v", err)
-					}
-				}
-			}
-		}()
+		go jobrun.Loop(ctx, "worker_capacity_refresh", time.Minute, false, workerRepository.RefreshWorkerCapacityView)
 
 		go (&fleet.Rebalancer{
 			WorkerRepo: workerRepository,
@@ -2021,7 +2029,6 @@ func main() {
 		WorkerOrchestrator: workerOrchestrator,
 		WorkerRepo:         workerRepoForHandler,
 		CredentialsRepo:    credentialsRepository,
-		ReleasesService:    releasesService,
 		UpdatesService:     updatesService,
 
 		// Notifications
@@ -2099,6 +2106,14 @@ func main() {
 
 		// Admin System Status probes
 		SystemChecker: systemChecker,
+
+		// Admin operations pages.
+		AdminSyncRepo:    adminSyncRepo,
+		AdminSendsRepo:   adminSendsRepo,
+		AdminFleetRepo:   adminFleetRepo,
+		AdminInsightRepo: adminInsightRepo,
+		JobRuns:          jobRunRepo,
+		WebhookRepo:      webhookRepoForHandler,
 
 		// Organization-wide audit trail, backed by Postgres. The no-op
 		// fallback (audit.NewNoOpService) remains for entrypoints without

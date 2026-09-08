@@ -1,14 +1,18 @@
 // Left rail navigation. Mirrors the dashboard's general structure
-// (icon + label rows, collapsible sections) but uses the admin-tinted
+// (icon + label rows, grouped sections) but uses the admin-tinted
 // sidebar background and amber accent for active items so it never
 // gets confused with the dashboard's sidebar.
+//
+// NAV_GROUPS is the one nav model: the mobile drawer, the command palette
+// and the document title all read it, so a route added here is reachable
+// and titled everywhere at once.
 
 import { NavLink } from "react-router-dom";
 import {
-    Bell,
     Activity,
-    BarChart3,
+    ArrowLeftRight,
     Building2,
+    CalendarClock,
     FileText,
     Flame,
     Gauge,
@@ -16,14 +20,16 @@ import {
     LayoutDashboard,
     Mailbox,
     Megaphone,
+    Network,
     Radio,
-    Ruler,
+    RefreshCw,
     Send,
+    SendHorizonal,
     Server,
-    Settings2,
     ShieldCheck,
     SlidersHorizontal,
     Sparkles,
+    UserCog,
     Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -34,7 +40,7 @@ import { findingCount, useInstanceHealth, worstSeverity } from "@/hooks/useInsta
 import type { CheckSeverity } from "@/lib/api/client/admin/instance";
 import { AdminBadge } from "./AdminBadge";
 
-interface NavItem {
+export interface NavItem {
     to: string;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
@@ -45,39 +51,46 @@ interface NavItem {
     healthBadge?: boolean;
 }
 
-interface NavGroup {
+export interface NavGroup {
     label: string;
     items: NavItem[];
 }
 
-const GROUPS: NavGroup[] = [
+export const NAV_GROUPS: NavGroup[] = [
+    {
+        label: "Overview",
+        items: [{ to: "/", label: "Overview", icon: LayoutDashboard, end: true }],
+    },
     {
         label: "Operations",
         items: [
-            { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
-            { to: "/workers", label: "Workers", icon: Server, end: true },
-            { to: "/mailboxes", label: "Mailboxes", icon: Mailbox },
-            { to: "/warmup", label: "Warmup", icon: Flame, end: true },
-            { to: "/warmup/appeals", label: "Warmup Appeals", icon: ShieldCheck },
-            { to: "/warmup-content", label: "Warmup Content", icon: Sparkles },
-            { to: "/campaigns", label: "Campaigns", icon: Megaphone },
+            { to: "/workers", label: "Workers", icon: Server, end: true, perm: AdminPerm.ViewWorkers },
+            { to: "/fleet", label: "Fleet", icon: Network, perm: AdminPerm.ViewWorkers },
+            { to: "/mailboxes", label: "Mailboxes", icon: Mailbox, perm: AdminPerm.ViewUsers },
+            { to: "/sync", label: "Sync", icon: RefreshCw, perm: AdminPerm.ViewUsers },
+            { to: "/warmup", label: "Warmup", icon: Flame, end: true, perm: AdminPerm.ViewWarmupPool },
+            { to: "/warmup/appeals", label: "Warmup Appeals", icon: ShieldCheck, perm: AdminPerm.ReviewAppeals },
+            { to: "/warmup-content", label: "Warmup Content", icon: Sparkles, perm: AdminPerm.ViewWarmupPool },
+            { to: "/campaigns", label: "Campaigns", icon: Megaphone, perm: AdminPerm.ViewCampaigns },
+            { to: "/sends", label: "Sends", icon: SendHorizonal, perm: AdminPerm.ViewCampaigns },
         ],
     },
     {
         label: "Accounts",
         items: [
-            { to: "/users", label: "Users", icon: Users },
-            { to: "/organizations", label: "Organizations", icon: Building2 },
-            { to: "/limit-requests", label: "Limit requests", icon: Gauge },
-            { to: "/outreach", label: "Outreach", icon: Send },
+            { to: "/users", label: "Users", icon: Users, perm: AdminPerm.ViewUsers },
+            { to: "/organizations", label: "Organizations", icon: Building2, perm: AdminPerm.ViewOrganizations },
+            { to: "/limit-requests", label: "Limit requests", icon: Gauge, perm: AdminPerm.ViewOrganizations },
+            { to: "/outreach", label: "Outreach", icon: Send, perm: AdminPerm.ViewOrganizations },
+            { to: "/admins", label: "Admins", icon: UserCog, perm: AdminPerm.GrantAdminAccess },
         ],
     },
     {
         label: "Insight",
         items: [
-            { to: "/analytics", label: "Analytics", icon: BarChart3 },
             { to: "/events", label: "Live Events", icon: Radio },
-            { to: "/audit", label: "Audit Log", icon: FileText },
+            { to: "/audit", label: "Audit Log", icon: FileText, perm: AdminPerm.ViewAuditLogs },
+            { to: "/jobs", label: "Jobs", icon: CalendarClock, perm: AdminPerm.ViewAnalytics },
         ],
     },
     {
@@ -95,44 +108,29 @@ const GROUPS: NavGroup[] = [
                 label: "Configuration",
                 icon: SlidersHorizontal,
                 perm: AdminPerm.ManageSettings,
-                end: true,
             },
             {
-                to: "/configuration/settings",
-                label: "Instance settings",
-                icon: Settings2,
-                perm: AdminPerm.ManageSettings,
-            },
-            {
-                to: "/configuration/notifications",
-                label: "Notifications",
-                icon: Bell,
-                perm: AdminPerm.ManageSettings,
-            },
-            {
-                to: "/limits",
-                label: "Effective limits",
-                icon: Ruler,
-                perm: AdminPerm.ViewAnalytics,
-            },
-            {
-                to: "/system",
-                label: "System Status",
-                icon: Activity,
-                perm: AdminPerm.ViewAnalytics,
+                to: "/transfers",
+                label: "Transfers",
+                icon: ArrowLeftRight,
+                perm: AdminPerm.ViewOrganizations,
             },
         ],
     },
 ];
 
-export function Sidebar() {
-    const { data: me } = useMe();
-    const mask = me?.admin_permissions;
-    const canReadHealth = hasAdminPerm(mask, AdminPerm.ViewAnalytics);
-    const healthQ = useInstanceHealth({ enabled: canReadHealth });
-    const findings = findingCount(healthQ.data);
-    const worst = worstSeverity(healthQ.data);
+// visibleNavGroups drops every item the signed-in admin cannot open and
+// every group that ends up empty.
+export function visibleNavGroups(mask: number | undefined): NavGroup[] {
+    return NAV_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter(
+            (item) => item.perm === undefined || hasAdminPerm(mask, item.perm),
+        ),
+    })).filter((group) => group.items.length > 0);
+}
 
+export function Sidebar() {
     return (
         <aside
             className={cn(
@@ -142,48 +140,12 @@ export function Sidebar() {
         >
             {/* h-14 matches the Topbar so the two headers sit on one line. */}
             <div className="flex h-14 shrink-0 items-center justify-between gap-2 px-4 border-b border-sidebar-border">
-                <div className="flex items-center gap-2 min-w-0">
-                    <Logo className="size-6 shrink-0 text-foreground" />
-                    <div className="min-w-0 leading-none">
-                        <div className="text-sm font-semibold text-sidebar-foreground leading-none truncate">
-                            Warmbly
-                        </div>
-                        <div className="text-[11px] text-muted-foreground mt-1">
-                            Control plane
-                        </div>
-                    </div>
-                </div>
+                <SidebarBrand />
                 <AdminBadge compact />
             </div>
 
             <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-5">
-                {GROUPS.map((group) => {
-                    const items = group.items.filter(
-                        (item) => item.perm === undefined || hasAdminPerm(mask, item.perm),
-                    );
-                    if (items.length === 0) return null;
-                    return (
-                        <div key={group.label}>
-                            <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                {group.label}
-                            </div>
-                            <ul className="space-y-0.5">
-                                {items.map((item) => (
-                                    <li key={item.to}>
-                                        <SidebarLink
-                                            {...item}
-                                            badge={
-                                                item.healthBadge && findings > 0
-                                                    ? { count: findings, severity: worst }
-                                                    : undefined
-                                            }
-                                        />
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    );
-                })}
+                <NavList />
             </nav>
 
             <div className="px-4 py-3 border-t border-sidebar-border flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -191,6 +153,62 @@ export function Sidebar() {
                 <span>Admin surface · do not share</span>
             </div>
         </aside>
+    );
+}
+
+export function SidebarBrand() {
+    return (
+        <div className="flex items-center gap-2 min-w-0">
+            <Logo className="size-6 shrink-0 text-foreground" />
+            <div className="min-w-0 leading-none">
+                <div className="text-sm font-semibold text-sidebar-foreground leading-none truncate">
+                    Warmbly
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                    Control plane
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// NavList renders the permission-filtered groups. Shared by the desktop rail
+// and the mobile drawer; onNavigate lets the drawer close itself on a tap.
+export function NavList({ onNavigate }: { onNavigate?: () => void }) {
+    const { data: me } = useMe();
+    const mask = me?.admin_permissions;
+    const canReadHealth = hasAdminPerm(mask, AdminPerm.ViewAnalytics);
+    const healthQ = useInstanceHealth({ enabled: canReadHealth });
+    const findings = findingCount(healthQ.data);
+    const worst = worstSeverity(healthQ.data);
+
+    return (
+        <>
+            {visibleNavGroups(mask).map((group) => (
+                <div key={group.label}>
+                    {group.label !== "Overview" && (
+                        <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {group.label}
+                        </div>
+                    )}
+                    <ul className="space-y-0.5">
+                        {group.items.map((item) => (
+                            <li key={item.to}>
+                                <SidebarLink
+                                    {...item}
+                                    onNavigate={onNavigate}
+                                    badge={
+                                        item.healthBadge && findings > 0
+                                            ? { count: findings, severity: worst }
+                                            : undefined
+                                    }
+                                />
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ))}
+        </>
     );
 }
 
@@ -205,11 +223,19 @@ const BADGE_TONES: Record<CheckSeverity, string> = {
     info: "bg-sky-600 text-white",
 };
 
-function SidebarLink({ to, label, icon: Icon, end, badge }: NavItem & { badge?: CountBadge }) {
+function SidebarLink({
+    to,
+    label,
+    icon: Icon,
+    end,
+    badge,
+    onNavigate,
+}: NavItem & { badge?: CountBadge; onNavigate?: () => void }) {
     return (
         <NavLink
             to={to}
             end={end}
+            onClick={onNavigate}
             className={({ isActive }) =>
                 cn(
                     "group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors",
@@ -238,8 +264,3 @@ function SidebarLink({ to, label, icon: Icon, end, badge }: NavItem & { badge?: 
         </NavLink>
     );
 }
-
-// Standalone export so other surfaces (mobile drawer, breadcrumbs)
-// can reuse the same icon-per-route mapping if needed later.
-export const NAV_GROUPS = GROUPS;
-export type { NavItem };

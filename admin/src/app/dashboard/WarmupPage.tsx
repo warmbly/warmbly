@@ -7,21 +7,28 @@
 //   3. Blocked account list with unblock action
 //   4. Pending appeals with one-click approve/reject
 //
-// Everything refetches on a 30s interval so an ops investigator sees
-// pool drift in near-real time without needing to reload the tab.
+// Nothing here polls: the realtime spine's warmup group invalidates
+// ["admin","warmup"] on ACCOUNT and WARMUP events. The abuse and action
+// history tabs (?tab=) come from /admin/warmup/abuse and /admin/warmup/actions.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
     Activity,
     AlertTriangle,
     CheckCircle2,
     Flame,
+    History,
+    LayoutDashboard,
+    ShieldAlert,
     ShieldOff,
     XCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { PageTabs } from "@/components/layout/PageTabs";
+import { SegmentedFilter } from "@/components/data/Explorer";
 import { StateLegend } from "@/components/StateLegend";
 import { MAILBOX_HEALTH_LEGEND } from "@/lib/legends";
 import { Badge } from "@/components/ui/badge";
@@ -42,17 +49,46 @@ import {
     approveAppeal,
     getWarmupHealthSummary,
     listBlockedWarmupAccounts,
+    listWarmupAbuse,
+    listWarmupActions,
     listWarmupAppeals,
     listWarmupPools,
     rejectAppeal,
     unblockWarmupAccount,
+    type WarmupAbuseWindow,
 } from "@/lib/api/client/admin/warmup";
 import type {
     AdminBlockedAccount,
     WarmupAppeal,
 } from "@/lib/api/models/admin";
 
+const TABS = [
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "abuse", label: "Abuse signals", icon: ShieldAlert },
+    { id: "actions", label: "Admin actions", icon: History },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+function isTab(v: string | null): v is TabId {
+    return TABS.some((t) => t.id === v);
+}
+
 export default function WarmupPage() {
+    const [params, setParams] = useSearchParams();
+    const raw = params.get("tab");
+    const tab: TabId = isTab(raw) ? raw : "overview";
+
+    function setTab(next: string) {
+        setParams(
+            (p) => {
+                p.set("tab", next);
+                return p;
+            },
+            { replace: true },
+        );
+    }
+
     return (
         <div>
             <PageHeader
@@ -62,6 +98,18 @@ export default function WarmupPage() {
                 <StateLegend label="Health states explained" entries={MAILBOX_HEALTH_LEGEND} />
             </PageHeader>
 
+            <PageTabs tabs={[...TABS]} value={tab} onChange={setTab} />
+
+            {tab === "abuse" && <AbuseTab />}
+            {tab === "actions" && <ActionsTab />}
+            {tab === "overview" && <Overview />}
+        </div>
+    );
+}
+
+function Overview() {
+    return (
+        <div>
             <HealthSummary />
 
             <section className="mt-6">
@@ -86,7 +134,6 @@ function HealthSummary() {
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "warmup", "health"],
         queryFn: getWarmupHealthSummary,
-        refetchInterval: 30_000,
     });
 
     if (isLoading) {
@@ -229,7 +276,6 @@ function PoolsList() {
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "warmup", "pools"],
         queryFn: listWarmupPools,
-        refetchInterval: 60_000,
     });
 
     if (isLoading) return <Skeleton className="h-24" />;
@@ -302,7 +348,6 @@ function BlockedAccounts() {
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "warmup", "blocked"],
         queryFn: () => listBlockedWarmupAccounts(),
-        refetchInterval: 30_000,
     });
 
     const unblock = useMutation({
@@ -405,7 +450,6 @@ function AppealsQueue() {
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "warmup", "appeals", "pending"],
         queryFn: () => listWarmupAppeals("pending"),
-        refetchInterval: 30_000,
     });
 
     if (isLoading) return <Skeleton className="h-32" />;
@@ -565,5 +609,190 @@ function ReviewAppealDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+    );
+}
+
+// ---- abuse signals ----
+
+const HEALTH_TONE: Record<string, string> = Object.fromEntries(
+    MAILBOX_HEALTH_LEGEND.map((e) => [e.term, e.tone ?? ""]),
+);
+
+function AbuseTab() {
+    const [win, setWin] = useState<WarmupAbuseWindow>("7d");
+    const { data, isLoading, error, refetch } = useQuery({
+        queryKey: ["admin", "warmup", "abuse", win],
+        queryFn: () => listWarmupAbuse(win, 200),
+    });
+    const rows = data?.data ?? [];
+
+    return (
+        <div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <p className="max-w-2xl text-[12.5px] text-muted-foreground">
+                    Mailboxes ranked by invalid warmup-token attempts: a warmup mail that arrives with a missing, expired
+                    or mismatched token is either a forged pool message or a mailbox misbehaving. Three or more invalid
+                    attempts in 24 hours auto-block the mailbox from the pool, as does a spam score above 50.
+                </p>
+                <div className="w-48">
+                    <SegmentedFilter<WarmupAbuseWindow>
+                        value={win}
+                        onChange={setWin}
+                        options={[
+                            { value: "24h", label: "24h" },
+                            { value: "7d", label: "7d" },
+                            { value: "30d", label: "30d" },
+                        ]}
+                    />
+                </div>
+            </div>
+
+            {isLoading ? (
+                <Skeleton className="h-40 w-full" />
+            ) : error ? (
+                <ErrorState error={error} title="Failed to load abuse signals" onRetry={() => refetch()} />
+            ) : rows.length === 0 ? (
+                <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+                    No invalid warmup-token attempts in the last {win}. Rows appear when a pool mailbox receives
+                    warmup mail whose token does not verify.
+                </div>
+            ) : (
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-muted/40 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                <tr>
+                                    <th className="px-3 py-2 text-left">Mailbox</th>
+                                    <th className="px-3 py-2 text-left">Workspace</th>
+                                    <th className="px-3 py-2 text-right">Invalid attempts</th>
+                                    <th className="px-3 py-2 text-left">Last attempt</th>
+                                    <th className="px-3 py-2 text-left">Blocked</th>
+                                    <th className="px-3 py-2 text-right">Spam score</th>
+                                    <th className="px-3 py-2 text-left">Health</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((r) => (
+                                    <tr key={r.email_account_id} className="border-t border-border">
+                                        <td className="px-3 py-2 font-mono text-xs">{r.email}</td>
+                                        <td className="px-3 py-2 text-xs">
+                                            {r.organization_id ? (
+                                                <Link
+                                                    to={`/organizations/${r.organization_id}`}
+                                                    className="font-medium text-[var(--admin-accent-strong)] hover:underline"
+                                                >
+                                                    {r.organization_name || r.organization_id.slice(0, 8)}
+                                                </Link>
+                                            ) : (
+                                                <span className="text-muted-foreground">—</span>
+                                            )}
+                                        </td>
+                                        <td
+                                            className={`px-3 py-2 text-right tabular-nums ${
+                                                r.attempts >= 3 ? "font-medium text-red-600" : ""
+                                            }`}
+                                        >
+                                            {r.attempts}
+                                        </td>
+                                        <td className="px-3 py-2 text-xs text-muted-foreground">
+                                            {new Date(r.last_attempt_at).toLocaleString()}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {r.blocked ? (
+                                                <Badge variant="outline" className="border-red-300 bg-red-50 text-[10px] text-red-700">
+                                                    blocked
+                                                </Badge>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">no</span>
+                                            )}
+                                        </td>
+                                        <td
+                                            className={`px-3 py-2 text-right tabular-nums text-xs ${
+                                                r.spam_score > 50 ? "font-medium text-red-600" : r.spam_score > 25 ? "text-amber-700" : ""
+                                            }`}
+                                        >
+                                            {r.spam_score}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            {r.health_state ? (
+                                                <Badge
+                                                    variant="outline"
+                                                    className={`text-[10px] ${HEALTH_TONE[r.health_state] ?? "border-zinc-300 text-zinc-600"}`}
+                                                >
+                                                    {r.health_state}
+                                                </Badge>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">—</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ---- admin action history ----
+
+function ActionsTab() {
+    const { data, isLoading, error, refetch } = useQuery({
+        queryKey: ["admin", "warmup", "actions"],
+        queryFn: () => listWarmupActions(200),
+    });
+    const rows = data?.data ?? [];
+
+    return (
+        <div>
+            <p className="mb-3 max-w-2xl text-[12.5px] text-muted-foreground">
+                Every manual block, unblock and appeal decision an admin made on a warmup mailbox, newest first.
+            </p>
+            {isLoading ? (
+                <Skeleton className="h-40 w-full" />
+            ) : error ? (
+                <ErrorState error={error} title="Failed to load action history" onRetry={() => refetch()} />
+            ) : rows.length === 0 ? (
+                <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
+                    No admin actions recorded yet. Blocking or unblocking a mailbox, or reviewing an appeal, writes a row
+                    here.
+                </div>
+            ) : (
+                <div className="overflow-hidden rounded-lg border border-border bg-card">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-muted/40 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                <tr>
+                                    <th className="px-3 py-2 text-left">When</th>
+                                    <th className="px-3 py-2 text-left">Admin</th>
+                                    <th className="px-3 py-2 text-left">Mailbox</th>
+                                    <th className="px-3 py-2 text-left">Action</th>
+                                    <th className="px-3 py-2 text-left">Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rows.map((a) => (
+                                    <tr key={a.id} className="border-t border-border">
+                                        <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                                            {new Date(a.created_at).toLocaleString()}
+                                        </td>
+                                        <td className="px-3 py-2 text-xs">{a.admin_email || a.admin_user_id.slice(0, 8)}</td>
+                                        <td className="px-3 py-2 font-mono text-xs">{a.email || a.email_account_id.slice(0, 8)}</td>
+                                        <td className="px-3 py-2">
+                                            <Badge variant="outline" className="font-mono text-[10px]">
+                                                {a.action}
+                                            </Badge>
+                                        </td>
+                                        <td className="px-3 py-2 text-xs max-w-md">{a.reason || <span className="text-muted-foreground">—</span>}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }

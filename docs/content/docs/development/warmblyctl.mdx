@@ -254,7 +254,7 @@ docker compose -p warmbly exec backend warmblyctl user grant-admin --email you@e
 
 The role replaces the account's existing mask rather than adding to it, and re-granting the role it already holds is reported as no change. The permissions are read from the session, so the account has to sign out and back in before the panel reflects the grant.
 
-The account must already exist. `make grant-admin EMAIL=... ROLE=...` wraps this for a compose install.
+The account must already exist. `make grant-admin EMAIL=... ROLE=...` wraps this for a compose install. The admin panel now offers the same under **Accounts > Admins**, by preset or per bit, so this command is no longer the only way to add a second admin.
 
 ## user revoke-admin
 
@@ -360,7 +360,7 @@ docker compose -p warmbly exec backend warmblyctl org export \
   --org you@example.com --out /tmp/workspace.warmbly.zip
 ```
 
-Writes one workspace to a single archive file: the organization, its members and roles, mailboxes, campaigns, sequences, contacts, suppression, CRM, inbox history, and the send state that stops a migrated mailbox from sending twice its daily volume on the day it moves. It is the same archive the dashboard produces under **Settings > Data**, so either side of a migration can use either tool.
+Writes one workspace to a single archive file: the organization, its members and roles, mailboxes, campaigns, sequences, contacts, suppression, CRM, inbox history, and the send state that stops a migrated mailbox from sending twice its daily volume on the day it moves. It is the same archive the dashboard produces under **Settings > Data**, so either side of a migration can use either tool. The admin panel now offers the same for any organization under **Instance > Transfers**.
 
 | Flag | Does |
 |---|---|
@@ -403,7 +403,7 @@ Applies an archive to a workspace on this instance. It always prints what the ar
 | `--passphrase-stdin` | Reads that passphrase from stdin |
 | `--dry-run` | Prints the report and writes nothing |
 
-Run it with `--dry-run` first. The report is the same preflight the dashboard shows, and it costs nothing.
+Run it with `--dry-run` first. The report is the same preflight the dashboard shows, and it costs nothing. The admin panel offers the same import, preflight included, under **Instance > Transfers**.
 
 The whole import runs in one transaction: if any part fails, nothing lands and the workspace is untouched. Members are matched to accounts on this instance by email address, and anyone without one has their rows reassigned to the workspace owner, named in the report before you commit. An archive carries no password material, so it can never create an account here.
 

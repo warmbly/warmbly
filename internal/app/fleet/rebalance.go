@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -60,18 +61,7 @@ func (r *Rebalancer) defaults() {
 // Run blocks until ctx is cancelled, ticking every Interval.
 func (r *Rebalancer) Run(ctx context.Context) {
 	r.defaults()
-	tick := time.NewTicker(r.Interval)
-	defer tick.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-			if err := r.tick(ctx); err != nil {
-				log.Warn().Err(err).Msg("fleet rebalance tick failed")
-			}
-		}
-	}
+	jobrun.Loop(ctx, "fleet_rebalance", r.Interval, false, r.tick)
 }
 
 func (r *Rebalancer) tick(ctx context.Context) error {

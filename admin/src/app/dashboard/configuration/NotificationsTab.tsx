@@ -24,7 +24,6 @@ import {
     Trash2,
     Webhook,
 } from "lucide-react";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
 import {
@@ -109,7 +108,13 @@ function newChannel(): NotifyChannel {
     };
 }
 
-export default function NotificationsPage() {
+interface NotificationsTabProps {
+    // Reported on every change so the page can confirm before a tab switch or
+    // a navigation throws the edits away.
+    onDirtyChange?: (dirty: boolean) => void;
+}
+
+export function NotificationsTab({ onDirtyChange }: NotificationsTabProps) {
     const queryClient = useQueryClient();
     const settings = useQuery({ queryKey: SETTINGS_KEY, queryFn: getInstanceSettings });
     const catalog = useQuery({ queryKey: EVENTS_KEY, queryFn: getNotificationEvents });
@@ -153,10 +158,6 @@ export default function NotificationsPage() {
         return order.map((g) => ({ group: g, events: byGroup.get(g)! }));
     }, [catalog.data]);
 
-    if (settings.isError) {
-        return <ErrorState error={settings.error as Error} onRetry={() => settings.refetch()} />;
-    }
-
     function update(id: string, patch: Partial<NotifyChannel>) {
         setChannels((prev) => (prev ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)));
     }
@@ -198,6 +199,16 @@ export default function NotificationsPage() {
     const dirty =
         !!settings.data &&
         JSON.stringify(list) !== JSON.stringify(settings.data.notifications?.channels ?? []);
+
+    useEffect(() => {
+        onDirtyChange?.(dirty);
+        return () => onDirtyChange?.(false);
+    }, [dirty, onDirtyChange]);
+
+    if (settings.isError) {
+        return <ErrorState error={settings.error as Error} onRetry={() => settings.refetch()} />;
+    }
+
     // Changing a channel's type clears its target on purpose, so a save with
     // one still empty would drop the channel server-side. Block it here and
     // say which one needs attention.
@@ -205,32 +216,35 @@ export default function NotificationsPage() {
 
     return (
         <div className="space-y-6">
-            <PageHeader
-                title="Notifications"
-                description="Where this instance tells you something happened. Add a Discord or Slack webhook, a signed endpoint, or an address."
-            >
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setChannels([...(channels ?? []), newChannel()])}
-                >
-                    <Plus className="h-4 w-4" />
-                    Add channel
-                </Button>
-                <Button
-                    size="sm"
-                    disabled={!dirty || incomplete.length > 0 || save.isPending}
-                    title={
-                        incomplete.length > 0
-                            ? "Every channel needs a destination before you can save"
-                            : undefined
-                    }
-                    onClick={() => save.mutate(list)}
-                >
-                    <Save className="h-4 w-4" />
-                    {save.isPending ? "Saving…" : "Save"}
-                </Button>
-            </PageHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                    Where this instance tells you something happened. Add a Discord or Slack
+                    webhook, a signed endpoint, or an address.
+                </p>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setChannels([...(channels ?? []), newChannel()])}
+                    >
+                        <Plus className="h-4 w-4" />
+                        Add channel
+                    </Button>
+                    <Button
+                        size="sm"
+                        disabled={!dirty || incomplete.length > 0 || save.isPending}
+                        title={
+                            incomplete.length > 0
+                                ? "Every channel needs a destination before you can save"
+                                : undefined
+                        }
+                        onClick={() => save.mutate(list)}
+                    >
+                        <Save className="h-4 w-4" />
+                        {save.isPending ? "Saving…" : "Save"}
+                    </Button>
+                </div>
+            </div>
 
             {settings.isLoading ? (
                 <Skeleton className="h-64 w-full" />

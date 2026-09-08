@@ -44,6 +44,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/notify"
 	"github.com/warmbly/warmbly/internal/observability"
@@ -399,6 +400,10 @@ func main() {
 	advancedService.WireInboxAgent(inboxAgentServiceC)
 
 	eventsPublisher := events.NewPublisher(consumerBus, s3Client, consumerCodec, cipherService)
+
+	// Every consumer loop records to scheduled_job_runs, so the admin panel
+	// lists it next to the backend's and can ask it to run now.
+	jobrun.Configure(repository.NewJobRunRepository(primaryDB), "consumer")
 
 	// JobsService
 	jobsService := &jobs.JobsService{

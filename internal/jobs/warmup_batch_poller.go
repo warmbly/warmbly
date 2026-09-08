@@ -7,6 +7,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/warmbly/warmbly/internal/app/warmupcontent"
+	"github.com/warmbly/warmbly/internal/jobrun"
 )
 
 // WarmupBatchPoller reconciles in-flight OpenAI Batch API warmup-generation jobs:
@@ -47,21 +48,9 @@ func (p *WarmupBatchPoller) Run(ctx context.Context) error {
 
 // Start begins scheduled execution on the configured interval.
 func (p *WarmupBatchPoller) Start(ctx context.Context) {
-	ticker := time.NewTicker(p.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if err := p.Run(ctx); err != nil {
-				errs.CaptureException(err)
-			}
-		case <-p.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
+	ctx, cancel := stopContext(ctx, p.stopCh)
+	defer cancel()
+	jobrun.Loop(ctx, "warmup_batch_poller", p.interval, false, p.Run)
 }
 
 // Stop halts scheduled execution.

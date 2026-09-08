@@ -1509,11 +1509,56 @@ func Run(
 		adminRoutes.GET("/analytics/emails/hourly", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetHourlyEmailStats)
 		adminRoutes.GET("/analytics/users/growth", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetUserGrowthStats)
 
-		// Removed for self-host: worker load + email-distribution analytics
-		// (premised on multi-worker IP spread, moot when the mail provider owns the
-		// egress IP), and the SaaS commercial surfaces — plans, discount/promo
-		// codes, and the enterprise-sales inquiry queue — which have no role in a
-		// single-org, billing-disabled deployment.
+		// Signups by channel and trial conversion, from organization_acquisition.
+		adminRoutes.GET("/analytics/acquisition", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminGetAcquisition)
+
+		// Mailbox sync governor: the platform copy of every mailbox's sync
+		// state. Actions re-ship the mailbox to its worker so the worker's live
+		// copy follows.
+		adminRoutes.GET("/sync", middleware.RequireAdminPermission(models.AdminPermViewUsers), h.AdminSearchSync)
+		adminRoutes.POST("/sync/:id/clear-throttle", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSyncClearThrottle)
+		adminRoutes.POST("/sync/:id/restart-backfill", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminSyncRestartBackfill)
+
+		// Send outcome loop and task queues.
+		adminRoutes.GET("/sends/in-flight", middleware.RequireAdminPermission(models.AdminPermViewCampaigns), h.AdminInFlightSends)
+		adminRoutes.GET("/tasks/dead-letters", middleware.RequireAdminPermission(models.AdminPermViewCampaigns), h.AdminListDeadLetters)
+		adminRoutes.POST("/tasks/dead-letters/:id/replay", middleware.RequireAdminPermission(models.AdminPermStopCampaigns), h.AdminReplayDeadLetter)
+		adminRoutes.GET("/tasks/failures", middleware.RequireAdminPermission(models.AdminPermViewCampaigns), h.AdminRecentTaskFailures)
+		adminRoutes.GET("/webhooks/health", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminWebhookHealth)
+		adminRoutes.POST("/webhooks/reclaim", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminWebhookReclaim)
+
+		// Scheduled jobs: every background loop on the instance, with "run now".
+		adminRoutes.GET("/jobs", middleware.RequireAdminPermission(models.AdminPermViewAnalytics), h.AdminListJobs)
+		adminRoutes.POST("/jobs/:name/run", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminRunJob)
+
+		// Fleet placement: capacity per worker, the control loops' decision
+		// log, and dedicated worker bindings.
+		adminRoutes.GET("/fleet/capacity", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetCapacity)
+		adminRoutes.GET("/fleet/decisions", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetDecisions)
+		adminRoutes.GET("/fleet/dedicated", middleware.RequireAdminPermission(models.AdminPermViewWorkers), h.AdminFleetDedicated)
+		adminRoutes.POST("/fleet/dedicated/:orgId/release", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminFleetReleaseDedicated)
+		adminRoutes.POST("/workers/:id/convert-dedicated", middleware.RequireAdminPermission(models.AdminPermManageWorkers), h.AdminConvertWorkerToDedicated)
+
+		// Workspace transfers: the same archive service the owner uses from
+		// Settings > Data, driven by the operator for any workspace.
+		adminRoutes.GET("/transfers", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListTransfers)
+		adminRoutes.GET("/organizations/:id/exports", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrgExports)
+		adminRoutes.POST("/organizations/:id/exports", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminCreateOrgExport)
+		adminRoutes.GET("/organizations/:id/exports/:exportId", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrgExport)
+		adminRoutes.GET("/organizations/:id/exports/:exportId/download", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminDownloadOrgExport)
+		adminRoutes.DELETE("/organizations/:id/exports/:exportId", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminDeleteOrgExport)
+		adminRoutes.GET("/organizations/:id/imports", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrgImports)
+		adminRoutes.POST("/organizations/:id/imports/preflight", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminPreflightOrgImport)
+		adminRoutes.POST("/organizations/:id/imports", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminCreateOrgImport)
+
+		// Per-workspace developer surface: keys and webhook endpoints.
+		adminRoutes.GET("/organizations/:id/api-keys", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrgAPIKeys)
+		adminRoutes.DELETE("/organizations/:id/api-keys/:keyId", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRevokeOrgAPIKey)
+		adminRoutes.GET("/organizations/:id/webhooks", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrgWebhooks)
+
+		// Warmup abuse signals and the block/unblock history.
+		adminRoutes.GET("/warmup/abuse", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminWarmupAbuse)
+		adminRoutes.GET("/warmup/actions", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminWarmupActions)
 
 		// Admin Management
 		adminRoutes.GET("/admins", middleware.RequireAdminPermission(models.AdminPermGrantAdminAccess), h.AdminListAdmins)

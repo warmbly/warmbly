@@ -3,7 +3,9 @@
 // apply config) sit in the header; the destructive and rarely-used ones (rotate
 // keys, OS update, reboot, uninstall, delete) are grouped in a Maintenance card
 // so they can't be hit by accident. Logs panel tails journald with a selectable
-// line count and an optional follow mode.
+// line count and an optional follow mode. The worker row, its mailboxes and
+// its stats are keyed under ["admin","workers"] so the realtime workers spine
+// refreshes them; only the SSH probes (live status, log follow) still poll.
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -11,8 +13,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
     ArrowLeft,
+    ArrowRightLeft,
     ArrowUpCircle,
+    Check,
     Copy,
+    Gauge,
     Download,
     Hammer,
     KeyRound,
@@ -25,6 +30,7 @@ import {
     SlidersHorizontal,
     StopCircle,
     Trash2,
+    X,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StateLegend } from "@/components/StateLegend";
@@ -41,6 +47,15 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import {
     applyWorkerConfig,
     deleteWorker,
@@ -48,6 +63,9 @@ import {
     getWorkerEmails,
     getWorkerLogs,
     getWorkerLiveStatus,
+    getWorkerStats,
+    listManagedWorkers,
+    reassignWorkerEmails,
     installWorker,
     rebootWorker,
     restartWorker,
@@ -56,7 +74,9 @@ import {
     testWorker,
     uninstallWorker,
     upgradeWorker,
+    type WorkerStats,
 } from "@/lib/api/client/admin/workers";
+import type { AdminWorkerEmail, ManagedWorker } from "@/lib/api/models/admin";
 
 // Risk band (mailbox reputation tier) + health state (warmup/worker) tones.
 const RISK_TONE: Record<string, string> = {
@@ -79,10 +99,16 @@ export default function WorkerDetailPage() {
     const navigate = useNavigate();
 
     const workerQ = useQuery({
-        queryKey: ["admin", "worker", id],
+        queryKey: ["admin", "workers", id],
         queryFn: () => getManagedWorker(id),
         enabled: !!id,
-        refetchInterval: 15_000,
+    });
+
+    const statsQ = useQuery({
+        queryKey: ["admin", "workers", id, "stats"],
+        queryFn: () => getWorkerStats(id),
+        enabled: !!id,
+        retry: false,
     });
 
     const liveQ = useQuery({
@@ -123,15 +149,33 @@ export default function WorkerDetailPage() {
     };
 
     const emailsQ = useQuery({
-        queryKey: ["admin", "worker", id, "emails"],
+        queryKey: ["admin", "workers", id, "emails"],
         queryFn: () => getWorkerEmails(id),
         enabled: !!id,
-        staleTime: 30_000,
     });
 
+    // Mailbox selection for the reassign action; cleared when the list changes.
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [reassignOpen, setReassignOpen] = useState(false);
+    const mailboxes = emailsQ.data?.data ?? [];
+    const allSelected = mailboxes.length > 0 && mailboxes.every((m) => selected.has(m.id));
+
+    function toggleOne(mid: string) {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(mid)) next.delete(mid);
+            else next.add(mid);
+            return next;
+        });
+    }
+
+    function toggleAll() {
+        setSelected(allSelected ? new Set() : new Set(mailboxes.map((m) => m.id)));
+    }
+
     const invalidate = () => {
+        qc.invalidateQueries({ queryKey: ["admin", "workers"] });
         qc.invalidateQueries({ queryKey: ["admin", "worker", id] });
-        qc.invalidateQueries({ queryKey: ["admin", "workers", "managed"] });
     };
 
     const testMut = useMutation({
@@ -404,7 +448,7 @@ export default function WorkerDetailPage() {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-3">
                 <Card>
                     <CardHeader>
                         <CardTitle>SSH target</CardTitle>
@@ -498,14 +542,31 @@ export default function WorkerDetailPage() {
                         )}
                     </CardContent>
                 </Card>
+
+                <CapacityCard stats={statsQ.data} loading={statsQ.isLoading} error={statsQ.isError} />
             </div>
 
             <Card className="mt-4">
                 <CardHeader>
-                    <CardTitle>Mailboxes</CardTitle>
+                    <CardTitle className="flex flex-wrap items-center justify-between gap-2">
+                        <span>Mailboxes</span>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={mailboxes.length === 0}
+                            onClick={() => {
+                                if (selected.size === 0) setSelected(new Set(mailboxes.map((m) => m.id)));
+                                setReassignOpen(true);
+                            }}
+                        >
+                            <ArrowRightLeft className="size-4" />
+                            {selected.size > 0 ? `Move ${selected.size} to worker…` : "Move all to worker…"}
+                        </Button>
+                    </CardTitle>
                     <CardDescription>
                         Inboxes assigned to this worker and their health. Risk band drives which
                         workers a mailbox may share — low-health inboxes are kept off trusted workers.
+                        Select rows to move them to another worker of the same tier.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0">
@@ -524,6 +585,13 @@ export default function WorkerDetailPage() {
                                     <table className="w-full text-sm">
                                         <thead className="text-muted-foreground text-xs uppercase">
                                             <tr>
+                                                <th className="w-8 px-2 py-1.5">
+                                                    <Checkbox
+                                                        checked={allSelected}
+                                                        onCheckedChange={toggleAll}
+                                                        aria-label="Select all mailboxes"
+                                                    />
+                                                </th>
                                                 <th className="text-left px-2 py-1.5 font-medium">Mailbox</th>
                                                 <th className="text-left px-2 py-1.5 font-medium">Provider</th>
                                                 <th className="text-left px-2 py-1.5 font-medium">Status</th>
@@ -535,7 +603,18 @@ export default function WorkerDetailPage() {
                                         </thead>
                                         <tbody>
                                             {(emailsQ.data.data ?? []).map((m) => (
-                                                <tr key={m.id} className="border-t border-border">
+                                                <tr
+                                                    key={m.id}
+                                                    onClick={() => toggleOne(m.id)}
+                                                    className={`border-t border-border cursor-pointer ${selected.has(m.id) ? "bg-[var(--admin-accent-soft)]" : "hover:bg-muted/40"}`}
+                                                >
+                                                    <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                                                        <Checkbox
+                                                            checked={selected.has(m.id)}
+                                                            onCheckedChange={() => toggleOne(m.id)}
+                                                            aria-label={`Select ${m.email}`}
+                                                        />
+                                                    </td>
                                                     <td className="px-2 py-1.5 font-mono text-xs">{m.email}</td>
                                                     <td className="px-2 py-1.5 text-xs">
                                                         {m.provider}
@@ -590,6 +669,23 @@ export default function WorkerDetailPage() {
                         ))}
                 </CardContent>
             </Card>
+
+            <SelectionBar
+                count={selected.size}
+                onMove={() => setReassignOpen(true)}
+                onClear={() => setSelected(new Set())}
+            />
+
+            <ReassignDialog
+                open={reassignOpen}
+                onOpenChange={setReassignOpen}
+                source={w}
+                mailboxes={mailboxes.filter((m) => selected.has(m.id))}
+                onDone={() => {
+                    setSelected(new Set());
+                    invalidate();
+                }}
+            />
 
             <Card className="mt-4">
                 <CardHeader>
@@ -776,5 +872,210 @@ function KV({
                 {value}
             </span>
         </div>
+    );
+}
+
+function CapacityCard({
+    stats,
+    loading,
+    error,
+}: {
+    stats: WorkerStats | undefined;
+    loading: boolean;
+    error: boolean;
+}) {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-1.5">
+                    <Gauge className="size-4" />
+                    Capacity
+                </CardTitle>
+                <CardDescription>Send throughput and queue depth for this worker.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0 text-sm space-y-2">
+                {loading && <Skeleton className="h-4 w-2/3" />}
+                {error && <div className="text-xs text-muted-foreground">Stats unavailable.</div>}
+                {stats && (
+                    <>
+                        <KV label="Sent today" value={stats.emails_sent_today.toLocaleString()} />
+                        <KV label="This week" value={stats.emails_sent_this_week.toLocaleString()} />
+                        <KV label="All time" value={stats.total_emails_sent.toLocaleString()} />
+                        <KV
+                            label="Success"
+                            value={
+                                <span className={stats.success_rate < 90 && stats.total_emails_sent > 0 ? "text-amber-700" : ""}>
+                                    {stats.success_rate.toFixed(1)}%
+                                </span>
+                            }
+                        />
+                        <KV label="Avg delivery" value={`${Math.round(stats.average_delivery_time_ms)} ms`} />
+                        <KV
+                            label="Queue"
+                            value={<span className={stats.queue_depth > 0 ? "font-medium" : ""}>{stats.queue_depth.toLocaleString()}</span>}
+                        />
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+// Floating bottom-center bar for the mailbox selection. Fixed, so it stays
+// in view however long the table is.
+function SelectionBar({ count, onMove, onClear }: { count: number; onMove: () => void; onClear: () => void }) {
+    if (count === 0) return null;
+    return (
+        <div className="fixed bottom-4 left-1/2 z-30 flex max-w-[calc(100vw-16px)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-md border border-border bg-card px-2 py-1.5 shadow-[0_6px_20px_-4px_rgba(15,23,42,0.18),0_2px_4px_rgba(15,23,42,0.06)]">
+            <div className="inline-flex h-7 items-center gap-1.5 rounded bg-[var(--admin-accent-soft)] px-2 text-[12px] font-medium text-[var(--admin-accent-strong)]">
+                <Check className="size-3" />
+                <span>{count} selected</span>
+            </div>
+            <button
+                type="button"
+                onClick={onMove}
+                className="inline-flex h-7 items-center gap-1.5 rounded px-2.5 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
+            >
+                <ArrowRightLeft className="size-3" />
+                Move to worker…
+            </button>
+            <button
+                type="button"
+                onClick={onClear}
+                className="grid size-7 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Clear selection"
+            >
+                <X className="size-3.5" />
+            </button>
+        </div>
+    );
+}
+
+const HEALTH_LABEL: Record<string, string> = {
+    healthy: "healthy",
+    watch: "watch",
+    throttled: "throttled",
+    quarantined: "quarantined",
+    blocked: "blocked",
+};
+
+// Pick a target worker for the selected mailboxes. Mailboxes keep their
+// tier, so a worker in the other tier is listed but cannot be chosen.
+function ReassignDialog({
+    open,
+    onOpenChange,
+    source,
+    mailboxes,
+    onDone,
+}: {
+    open: boolean;
+    onOpenChange: (v: boolean) => void;
+    source: ManagedWorker;
+    mailboxes: AdminWorkerEmail[];
+    onDone: () => void;
+}) {
+    const [target, setTarget] = useState("");
+
+    const workersQ = useQuery({
+        queryKey: ["admin", "workers", "managed"],
+        queryFn: listManagedWorkers,
+        enabled: open,
+        staleTime: 30_000,
+    });
+    const candidates = (workersQ.data?.data ?? []).filter((x) => x.id !== source.id);
+    const chosen = candidates.find((x) => x.id === target) ?? null;
+
+    const mutation = useMutation({
+        mutationFn: () =>
+            reassignWorkerEmails(
+                target,
+                mailboxes.map((m) => m.id),
+            ),
+        onSuccess: () => {
+            toast.success(`${mailboxes.length} mailbox${mailboxes.length === 1 ? "" : "es"} moved to ${chosen?.name || target.slice(0, 8)}`);
+            setTarget("");
+            onDone();
+            onOpenChange(false);
+        },
+        onError: (e: Error) => toast.error(e.message || "Reassign failed"),
+    });
+
+    const sameTier = !!chosen && chosen.free_tier === source.free_tier;
+
+    return (
+        <Dialog
+            open={open}
+            onOpenChange={(v) => {
+                if (!v && mutation.isPending) return;
+                if (!v) setTarget("");
+                onOpenChange(v);
+            }}
+        >
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Move {mailboxes.length} mailbox{mailboxes.length === 1 ? "" : "es"} to another worker</DialogTitle>
+                    <DialogDescription>
+                        Sending and sync for these mailboxes continue from the target on its next heartbeat. Tier
+                        placement is strict: a {source.free_tier ? "free" : "premium"}-tier mailbox only runs on a{" "}
+                        {source.free_tier ? "free" : "premium"}-tier worker.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-3">
+                    <div className="max-h-28 overflow-auto rounded-md border border-border bg-muted/30 p-2 font-mono text-[11px] leading-relaxed">
+                        {mailboxes.map((m) => (
+                            <div key={m.id} className="truncate">
+                                {m.email}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Target worker</div>
+                        <Select value={target || undefined} onValueChange={setTarget}>
+                            <SelectTrigger className="h-8 w-full text-[12.5px]">
+                                <SelectValue placeholder={workersQ.isLoading ? "Loading workers…" : "Pick a worker"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {candidates.length === 0 && (
+                                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No other workers.</div>
+                                )}
+                                {candidates.map((x) => {
+                                    const mismatch = x.free_tier !== source.free_tier;
+                                    return (
+                                        <SelectItem key={x.id} value={x.id} disabled={mismatch} className="text-[12.5px]">
+                                            {x.name || x.id.slice(0, 8)} · {x.free_tier ? "free" : "premium"} · {x.worker_type} ·{" "}
+                                            {HEALTH_LABEL[x.health_state] ?? x.health_state} · {x.account_count} mailbox{x.account_count === 1 ? "" : "es"}
+                                            {mismatch ? " (other tier)" : ""}
+                                        </SelectItem>
+                                    );
+                                })}
+                            </SelectContent>
+                        </Select>
+                        {chosen && chosen.worker_type === "dedicated" && (
+                            <p className="text-[11px] text-amber-700">
+                                That worker is dedicated to one workspace; only move mailboxes that belong to it.
+                            </p>
+                        )}
+                        {chosen && chosen.health_state !== "healthy" && (
+                            <p className="text-[11px] text-amber-700">
+                                That worker is {chosen.health_state}; the assignment loop would not place new mailboxes there.
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
+                        Cancel
+                    </Button>
+                    <Button onClick={() => mutation.mutate()} disabled={!chosen || !sameTier || mailboxes.length === 0 || mutation.isPending}>
+                        {mutation.isPending
+                            ? "Moving…"
+                            : `Move ${mailboxes.length} to ${chosen ? chosen.name || chosen.id.slice(0, 8) : "worker"}`}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }

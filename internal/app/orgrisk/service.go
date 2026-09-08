@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -341,16 +342,10 @@ func StartExpirySweep(ctx context.Context, svc Service, interval time.Duration) 
 	if svc == nil || interval <= 0 {
 		return
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			svc.SweepExpired(ctx)
-		}
-	}
+	jobrun.Loop(ctx, "org_risk_expiry_sweep", interval, false, func(ctx context.Context) error {
+		svc.SweepExpired(ctx)
+		return nil
+	})
 }
 
 // apply mutates the signal set and re-derives score, band and reason from it,

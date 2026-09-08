@@ -183,7 +183,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173          # dashbo
 
 If one does not print `200`, `make logs backend` (or the service in question) will say why, and [troubleshooting](#troubleshooting) covers the usual causes.
 
-The admin panel's **System Status** page shows the same probes plus the platform mail transport, with a live connection check and a send-test button.
+The admin panel's **Instance > Setup and health > Services** tab shows the same probes plus the platform mail transport, with a live connection check and a send-test button.
 
 ## What is running
 
@@ -415,7 +415,7 @@ Credentials are never sent over an unencrypted connection. If the relay does not
 
 The backend dials the relay once at boot and logs the result, so a broken configuration shows up in `docker compose logs backend` rather than as a failed password reset weeks later.
 
-The admin panel's **System Status** page has a Platform mail card with the current transport, a live connection check that shows the SMTP error verbatim, and a send-test button.
+The admin panel's **Instance > Setup and health > Services** tab has a Platform mail card with the current transport, a live connection check that shows the SMTP error verbatim, and a send-test button.
 
 ### Deliverability
 

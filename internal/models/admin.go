@@ -494,17 +494,6 @@ type HourlyEmailStats struct {
 	TotalSent int64 `json:"total_sent"`
 }
 
-// WorkerLoadStats represents worker load statistics
-type WorkerLoadStats struct {
-	WorkerID        uuid.UUID `json:"worker_id"`
-	WorkerName      string    `json:"worker_name"`
-	EmailsSentToday int64     `json:"emails_sent_today"`
-	QueuedEmails    int64     `json:"queued_emails"`
-	ConnectedEmails int64     `json:"connected_emails"`
-	CPUUsage        float64   `json:"cpu_usage,omitempty"`
-	MemoryUsage     float64   `json:"memory_usage,omitempty"`
-}
-
 // UserGrowthStats represents user growth statistics
 type UserGrowthStats struct {
 	Date       time.Time `json:"date"`
@@ -518,111 +507,6 @@ type AnalyticsTrends struct {
 	EmailsGrowthPercent    float64 `json:"emails_growth_percent"`
 	CampaignsGrowthPercent float64 `json:"campaigns_growth_percent"`
 	RevenueGrowthPercent   float64 `json:"revenue_growth_percent"`
-}
-
-// CreatePlanRequest represents the request to create a custom plan
-type CreatePlanRequest struct {
-	Name               string   `json:"name" binding:"required"`
-	MaxContacts        uint     `json:"max_contacts"`
-	DailyEmails        uint     `json:"daily_emails"`
-	AIGeneration       bool     `json:"ai_generation"`
-	AccountLimit       uint     `json:"account_limit"`
-	Price              float32  `json:"price"`
-	DiscountedPrice    float32  `json:"discounted_price"`
-	Duration           Duration `json:"duration"` // month/year
-	DedicatedWorkers   int      `json:"dedicated_workers"`
-	DailyCampaignLimit *int     `json:"daily_campaign_limit,omitempty"`
-	MaxCampaigns       *int     `json:"max_campaigns,omitempty"`
-	MaxActiveCampaigns *int     `json:"max_active_campaigns,omitempty"`
-	MaxTeamMembers     *int     `json:"max_team_members,omitempty"`
-	MaxEmailAccounts   *int     `json:"max_email_accounts,omitempty"`
-	Public             bool     `json:"public"` // false for enterprise-only
-}
-
-// UpdatePlanRequest represents the request to update a plan
-type UpdatePlanRequest struct {
-	Name               *string   `json:"name,omitempty"`
-	MaxContacts        *uint     `json:"max_contacts,omitempty"`
-	DailyEmails        *uint     `json:"daily_emails,omitempty"`
-	AIGeneration       *bool     `json:"ai_generation,omitempty"`
-	AccountLimit       *uint     `json:"account_limit,omitempty"`
-	Price              *float32  `json:"price,omitempty"`
-	DiscountedPrice    *float32  `json:"discounted_price,omitempty"`
-	Duration           *Duration `json:"duration,omitempty"`
-	DedicatedWorkers   *int      `json:"dedicated_workers,omitempty"`
-	DailyCampaignLimit *int      `json:"daily_campaign_limit,omitempty"`
-	MaxCampaigns       *int      `json:"max_campaigns,omitempty"`
-	MaxActiveCampaigns *int      `json:"max_active_campaigns,omitempty"`
-	MaxTeamMembers     *int      `json:"max_team_members,omitempty"`
-	MaxEmailAccounts   *int      `json:"max_email_accounts,omitempty"`
-	Public             *bool     `json:"public,omitempty"`
-}
-
-// AdminEnterpriseInquiry represents an enterprise inquiry with admin details
-type AdminEnterpriseInquiry struct {
-	ID                 uuid.UUID  `json:"id"`
-	UserID             *uuid.UUID `json:"user_id,omitempty"`
-	CompanyName        string     `json:"company_name"`
-	ContactName        string     `json:"contact_name"`
-	ContactEmail       string     `json:"contact_email"`
-	Phone              *string    `json:"phone,omitempty"`
-	TeamSize           *string    `json:"team_size,omitempty"`
-	EstimatedVolume    *int       `json:"estimated_volume,omitempty"`
-	MonthlyEmailVolume *string    `json:"monthly_email_volume,omitempty"`
-	Message            *string    `json:"message,omitempty"`
-	Status             string     `json:"status"`
-	AssignedTo         *uuid.UUID `json:"assigned_to,omitempty"`
-	Notes              *string    `json:"notes,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-
-	// Joined data
-	User          *AdminUserSummary `json:"user,omitempty"`
-	AssignedAdmin *AdminUserSummary `json:"assigned_admin,omitempty"`
-}
-
-// AdminEnterpriseInquiriesResult represents paginated inquiries
-type AdminEnterpriseInquiriesResult struct {
-	Data       []AdminEnterpriseInquiry `json:"data"`
-	Pagination Pagination               `json:"pagination"`
-}
-
-// AdminEnterpriseInquirySearch are the query params for the enterprise inquiry
-// queue. Mirrors AdminOrgSearch tag conventions.
-type AdminEnterpriseInquirySearch struct {
-	Query      string `form:"q"`
-	Status     string `form:"status"`     // pending, contacted, converted, declined, all
-	Assignment string `form:"assignment"` // assigned, unassigned
-	Linkage    string `form:"linkage"`    // linked, anonymous
-
-	HasNotes  bool `form:"has_notes"`
-	HasPhone  bool `form:"has_phone"`
-	Processed bool `form:"processed"`
-
-	// Count ranges
-	TeamSizeMin        *int `form:"team_size_min"`
-	TeamSizeMax        *int `form:"team_size_max"`
-	EstimatedVolumeMin *int `form:"estimated_volume_min"`
-	EstimatedVolumeMax *int `form:"estimated_volume_max"`
-
-	// Date ranges (YYYY-MM-DD, UTC)
-	CreatedWithin int        `form:"created_within"`
-	CreatedAfter  *time.Time `form:"created_after" time_format:"2006-01-02" time_utc:"true"`
-	CreatedBefore *time.Time `form:"created_before" time_format:"2006-01-02" time_utc:"true"`
-	UpdatedAfter  *time.Time `form:"updated_after" time_format:"2006-01-02" time_utc:"true"`
-	UpdatedBefore *time.Time `form:"updated_before" time_format:"2006-01-02" time_utc:"true"`
-
-	Cursor   *uuid.UUID `form:"cursor"`
-	Limit    int        `form:"limit"`
-	SortBy   string     `form:"sort_by"` // created_at, updated_at, company_name, contact_email, status, team_size, estimated_volume
-	SortDesc bool       `form:"sort_desc"`
-}
-
-// UpdateEnterpriseInquiryRequest represents the request to update an inquiry
-type UpdateEnterpriseInquiryRequest struct {
-	Status     *string    `json:"status,omitempty"`
-	AssignedTo *uuid.UUID `json:"assigned_to,omitempty"`
-	Notes      *string    `json:"notes,omitempty"`
 }
 
 // AdminInfo represents an admin user for listing
@@ -764,14 +648,6 @@ type WorkerStats struct {
 	AverageDeliveryTime float64   `json:"average_delivery_time_ms"`
 	SuccessRate         float64   `json:"success_rate"`
 	QueueDepth          int64     `json:"queue_depth"`
-}
-
-// EmailDistribution represents email distribution across workers
-type EmailDistribution struct {
-	WorkerID   uuid.UUID `json:"worker_id"`
-	WorkerName string    `json:"worker_name"`
-	EmailCount int64     `json:"email_count"`
-	Percentage float64   `json:"percentage"`
 }
 
 // AdminOrgSearch are the query params for the admin organization listing.
@@ -921,43 +797,6 @@ type AdminLimitRequestSearch struct {
 type AdminLimitRequestsResult struct {
 	Data       []LimitIncreaseRequest `json:"data"`
 	Pagination Pagination             `json:"pagination"`
-}
-
-// AdminPlanSearch are the query params for the admin plan catalog listing.
-// Mirrors AdminOrgSearch tag conventions. price_* bind to *int (whole-dollar
-// filtering against the numeric price column).
-type AdminPlanSearch struct {
-	Query      string `form:"q"`
-	Visibility string `form:"visibility"` // public, private, "" = any
-	Duration   string `form:"duration"`   // month, year, "" = any (durations.title)
-
-	AIGeneration   bool `form:"ai_generation"`
-	HasStripe      bool `form:"has_stripe"`
-	HasSubscribers bool `form:"has_subscribers"`
-
-	// Numeric ranges
-	PriceMin        *int `form:"price_min"`
-	PriceMax        *int `form:"price_max"`
-	DailyEmailsMin  *int `form:"daily_emails_min"`
-	DailyEmailsMax  *int `form:"daily_emails_max"`
-	AccountLimitMin *int `form:"account_limit_min"`
-	AccountLimitMax *int `form:"account_limit_max"`
-
-	// Date range
-	CreatedWithin int        `form:"created_within"` // days; 0 = any
-	CreatedAfter  *time.Time `form:"created_after" time_format:"2006-01-02" time_utc:"true"`
-	CreatedBefore *time.Time `form:"created_before" time_format:"2006-01-02" time_utc:"true"`
-
-	Cursor   *uuid.UUID `form:"cursor"`
-	Limit    int        `form:"limit"`
-	SortBy   string     `form:"sort_by"` // price, name, daily_emails, account_limit, created_at
-	SortDesc bool       `form:"sort_desc"`
-}
-
-// AdminPlansResult is the paginated response for the admin plan listing.
-type AdminPlansResult struct {
-	Data       []Plan     `json:"data"`
-	Pagination Pagination `json:"pagination"`
 }
 
 // AdminOrgDetail is the full payload for the org detail page. Carries

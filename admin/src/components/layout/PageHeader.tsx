@@ -33,17 +33,3 @@ export function PageHeader({ title, description, children, className }: PageHead
         </div>
     );
 }
-
-// Used by stub pages so the "coming soon" treatment is visually
-// consistent across the app instead of every page reinventing it.
-export function ComingSoon({ label }: { label: string }) {
-    return (
-        <div className="rounded-lg border border-dashed border-border p-10 text-center">
-            <div className="text-sm font-medium text-foreground">{label}</div>
-            <div className="text-xs text-muted-foreground mt-1">
-                This surface is part of the admin app, but the page implementation
-                will land in a follow-up iteration.
-            </div>
-        </div>
-    );
-}

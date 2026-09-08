@@ -114,8 +114,6 @@ function AppealsTab() {
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "warmup", "appeals", status, pager.cursor],
         queryFn: () => listWarmupAppeals(status, pager.cursor),
-        // Keep the pending queue current without a manual refresh.
-        refetchInterval: status === "pending" ? 15_000 : false,
         placeholderData: keepPreviousData,
         staleTime: 10_000,
     });
@@ -401,7 +399,6 @@ function BlockedTab() {
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "warmup", "blocked", pager.cursor],
         queryFn: () => listBlockedWarmupAccounts(pager.cursor),
-        refetchInterval: 30_000,
         placeholderData: keepPreviousData,
         staleTime: 10_000,
     });

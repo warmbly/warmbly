@@ -53,7 +53,7 @@ The plaintext variant works, and then keeps sitting in your process environment 
 | `invite_only` (self-host default) | Refused, and the dashboard does not render the form | Works. The link carries the token that permits the signup | Provisions only for an address that holds a live invitation, or when `SSO_AUTO_PROVISION=true` |
 | `true` | Refused | Refused, and members cannot create new invitations either | Refused unless `SSO_AUTO_PROVISION=true` |
 
-One database-backed setting sits on top of `invite_only`. Turning **`access.allow_invited_signup`** off under **Instance > Instance settings** makes an invitation stop being a self-service signup capability: both the password path and the single sign-on path then answer with `registration_closed`, and an administrator creates every account with `warmblyctl user create`. It is on by default, so the table above is what a stock instance does.
+One database-backed setting sits on top of `invite_only`. Turning **`access.allow_invited_signup`** off under **Instance > Configuration > Settings** makes an invitation stop being a self-service signup capability: both the password path and the single sign-on path then answer with `registration_closed`, and an administrator creates every account with `warmblyctl user create`. It is on by default, so the table above is what a stock instance does.
 
 ### The first-launch exemption
 
@@ -180,13 +180,13 @@ The cleanest fix is still to point `MAIL_TRANSPORT` at a real relay. See [platfo
 
 | Property | Behavior |
 |---|---|
-| Expiry | 7 days by default. Change it with `invitations.ttl_hours` under **Instance > Instance settings**, clamped to 1 to 720 hours. It is read when the invitation is written, so a change applies to new invitations, not to outstanding ones |
+| Expiry | 7 days by default. Change it with `invitations.ttl_hours` under **Instance > Configuration > Settings**, clamped to 1 to 720 hours. It is read when the invitation is written, so a change applies to new invitations, not to outstanding ones |
 | Address binding | The invitation is bound to the address it was issued for. Registering a different address with the same token is refused |
 | Re-inviting the same address | Replaces the row in place: one row per address per workspace, a rotated token, a reset expiry, and the previously copied link dead |
 | Copy link | Returns the token for a pending invitation so you can build and share the URL yourself |
 | Cancel | Revokes it immediately |
 | Expired rows | No longer shown in the dashboard. Re-inviting the address replaces the expired row |
-| Turning links off | Set `invitations.links_enabled` to false under **Instance > Instance settings** if invitations must arrive by mail and nowhere else. The copy action then fails with an explanation instead of returning a token. Only do this once mail actually delivers |
+| Turning links off | Set `invitations.links_enabled` to false under **Instance > Configuration > Settings** if invitations must arrive by mail and nowhere else. The copy action then fails with an explanation instead of returning a token. Only do this once mail actually delivers |
 
 Invitations join an existing workspace and never create one. To stand up a **second organization** you need `DISABLE_REGISTRATION=false`, or an administrator running `warmblyctl user create`.
 
@@ -226,9 +226,9 @@ Pair single sign-on with `DISABLE_PASSWORD_LOGIN=true` for an SSO-only deploymen
 
 ## Platform admins
 
-A workspace role and a platform admin bit are different things. Roles govern what someone can do inside one organization. The platform admin bits govern the operator panel on `:5174`: workers, users, organizations, warmup, analytics and audit across the whole instance.
+A workspace role and a platform admin bit are different things. Roles govern what someone can do inside one organization. The platform admin bits govern the [admin panel](/development/admin-panel/) on `:5174`: workers, users, organizations, warmup, the overview and audit across the whole instance.
 
-The first owner receives every admin bit when they claim the instance. After that, admins are granted from **Instance > Admins** in the admin panel, either by preset or per bit.
+The first owner receives every admin bit when they claim the instance. After that, admins are granted from **Accounts > Admins** in the admin panel, either by preset or per bit, or from a shell as below.
 
 | Preset | Roughly |
 |---|---|

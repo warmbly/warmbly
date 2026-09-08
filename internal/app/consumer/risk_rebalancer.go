@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -30,25 +31,19 @@ func (s *JobsService) StartRiskRebalancer(ctx context.Context, interval time.Dur
 		return
 	}
 
-	// Initial run right after boot so a fresh deploy converges quickly.
-	go func() {
-		boot, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		defer cancel()
-		s.rebalanceRisk(boot)
-	}()
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-			s.rebalanceRisk(runCtx)
-			cancel()
+	// The boot pass (so a fresh deploy converges quickly) keeps its shorter budget.
+	first := true
+	jobrun.Loop(ctx, "risk_rebalancer", interval, true, func(ctx context.Context) error {
+		timeout := 10 * time.Minute
+		if first {
+			first = false
+			timeout = 5 * time.Minute
 		}
-	}
+		runCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		s.rebalanceRisk(runCtx)
+		return nil
+	})
 }
 
 func (s *JobsService) rebalanceRisk(ctx context.Context) {

@@ -45,7 +45,6 @@ import (
 	"github.com/warmbly/warmbly/internal/app/poollink"
 	"github.com/warmbly/warmbly/internal/app/ratelimit"
 	"github.com/warmbly/warmbly/internal/app/referral"
-	"github.com/warmbly/warmbly/internal/app/releases"
 	"github.com/warmbly/warmbly/internal/app/research"
 	"github.com/warmbly/warmbly/internal/app/segment"
 	"github.com/warmbly/warmbly/internal/app/sequence"
@@ -163,7 +162,6 @@ type Handler struct {
 	WorkerOrchestrator *worker_orchestrator.Orchestrator
 	WorkerRepo         repository.WorkerRepository
 	CredentialsRepo    repository.CredentialsRepository
-	ReleasesService    *releases.Service
 	// UpdatesService backs the admin panel's update indicator and button.
 	UpdatesService *updates.Service
 
@@ -319,6 +317,18 @@ type Handler struct {
 	// Infrastructure liveness probes for the admin System Status page.
 	// Wired in cmd/backend/main.go where the concrete clients live.
 	SystemChecker *sysstatus.Checker
+
+	// Admin operations pages: cross-workspace reads of mailbox sync, the send
+	// outcome loop, fleet placement and abuse signals, plus the scheduled job
+	// registry every background loop records to. Nil-safe: the endpoints
+	// answer 501 when the repository is not wired.
+	AdminSyncRepo    repository.AdminSyncRepository
+	AdminSendsRepo   repository.AdminSendsRepository
+	AdminFleetRepo   repository.AdminFleetRepository
+	AdminInsightRepo repository.AdminInsightRepository
+	JobRuns          repository.JobRunRepository
+	// WebhookRepo backs the operator's "reclaim stuck deliveries" action.
+	WebhookRepo repository.WebhookRepository
 
 	// Operator visibility (admin panel, Instance section).
 	//

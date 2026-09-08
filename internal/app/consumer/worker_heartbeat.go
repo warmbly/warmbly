@@ -7,6 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/jobrun"
 )
 
 // StartWorkerHeartbeatSync mirrors workers' Redis heartbeat timestamps into
@@ -19,20 +20,12 @@ func (s *JobsService) StartWorkerHeartbeatSync(ctx context.Context, interval tim
 	if s.WorkerRepo == nil || s.Cache == nil {
 		return
 	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-			s.syncHeartbeats(runCtx)
-			cancel()
-		}
-	}
+	jobrun.Loop(ctx, "worker_heartbeat_sync", interval, false, func(ctx context.Context) error {
+		runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		s.syncHeartbeats(runCtx)
+		return nil
+	})
 }
 
 func (s *JobsService) syncHeartbeats(ctx context.Context) {

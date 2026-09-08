@@ -7,6 +7,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/warmbly/warmbly/internal/app/placement"
+	"github.com/warmbly/warmbly/internal/jobrun"
 )
 
 // PlacementPoller reconciles pending seed inbox-placement results: each tick it
@@ -49,21 +50,9 @@ func (p *PlacementPoller) Run(ctx context.Context) error {
 
 // Start begins scheduled execution on the configured interval.
 func (p *PlacementPoller) Start(ctx context.Context) {
-	ticker := time.NewTicker(p.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if err := p.Run(ctx); err != nil {
-				errs.CaptureException(err)
-			}
-		case <-p.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
+	ctx, cancel := stopContext(ctx, p.stopCh)
+	defer cancel()
+	jobrun.Loop(ctx, "placement_poller", p.interval, false, p.Run)
 }
 
 // Stop halts scheduled execution.

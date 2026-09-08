@@ -8,6 +8,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/warmbly/warmbly/internal/app/guardrail"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -69,21 +70,12 @@ func NewGuardrailScheduler(job *GuardrailJob, interval time.Duration) *Guardrail
 
 // Start runs Run() on every tick until ctx is cancelled or Stop() is called.
 func (s *GuardrailScheduler) Start(ctx context.Context) {
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
-	s.job.Run(ctx)
-
-	for {
-		select {
-		case <-ticker.C:
-			s.job.Run(ctx)
-		case <-s.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
+	ctx, cancel := stopContext(ctx, s.stopCh)
+	defer cancel()
+	jobrun.Loop(ctx, "guardrail_sweep", s.interval, true, func(ctx context.Context) error {
+		s.job.Run(ctx)
+		return nil
+	})
 }
 
 // Stop halts the scheduler.

@@ -8,6 +8,7 @@ import (
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/warmbly/warmbly/internal/app/warmupcontent"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -79,21 +80,9 @@ func NewWarmupGenerationScheduler(job *WarmupGenerationJob, interval time.Durati
 
 // Start begins scheduled execution.
 func (s *WarmupGenerationScheduler) Start(ctx context.Context) {
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if err := s.job.Run(ctx); err != nil {
-				errs.CaptureException(err)
-			}
-		case <-s.stopCh:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
+	ctx, cancel := stopContext(ctx, s.stopCh)
+	defer cancel()
+	jobrun.Loop(ctx, "warmup_generation", s.interval, false, s.job.Run)
 }
 
 // Stop halts the scheduled execution.

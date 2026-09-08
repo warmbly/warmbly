@@ -160,7 +160,6 @@ export default function WorkersPage() {
     const { data, isLoading, error, refetch } = useQuery({
         queryKey: ["admin", "workers", "managed"],
         queryFn: listManagedWorkers,
-        refetchInterval: 15_000,
     });
 
     const [query, setQuery] = useState("");

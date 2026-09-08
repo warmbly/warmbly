@@ -1,13 +1,11 @@
-// Instance settings: the only writable configuration in the product. These
-// keys are deliberately disjoint from the environment, so there is no
+// Configuration, settings: the only writable configuration in the product.
+// These keys are deliberately disjoint from the environment, so there is no
 // precedence to resolve and nothing here can be overwritten at the next boot.
 
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Save, SlidersHorizontal } from "lucide-react";
-import { PageHeader } from "@/components/layout/PageHeader";
+import { Save } from "lucide-react";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
 import {
@@ -157,7 +155,14 @@ function syncFieldValid(raw: string, min: number, max: number): boolean {
     return raw.trim() !== "" && Number.isInteger(n) && n >= min && n <= max;
 }
 
-export default function InstanceSettingsPage() {
+interface SettingsTabProps {
+    // Reported on every change so the page can confirm before a tab switch or
+    // a navigation throws the edits away.
+    onDirtyChange?: (dirty: boolean) => void;
+    onSwitchTab?: (tab: "environment" | "limits") => void;
+}
+
+export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
     const qc = useQueryClient();
     const [form, setForm] = useState<FormState | null>(null);
 
@@ -204,6 +209,11 @@ export default function InstanceSettingsPage() {
             form.authGraceHours !== String(server.deliverability.auth_grace_hours) ||
             retentionDirty ||
             syncDirty);
+
+    useEffect(() => {
+        onDirtyChange?.(dirty);
+        return () => onDirtyChange?.(false);
+    }, [dirty, onDirtyChange]);
     const syncValid =
         form !== null && SYNC_FIELDS.every((f) => syncFieldValid(form.sync[f.key], f.min, f.max));
     const retentionValid =
@@ -275,16 +285,11 @@ export default function InstanceSettingsPage() {
 
     return (
         <div>
-            <PageHeader
-                title="Instance settings"
-                description="These settings are stored in the database and are not read from the environment."
-            >
-                <Button size="sm" variant="outline" asChild>
-                    <Link to="/configuration">
-                        <SlidersHorizontal className="size-4" />
-                        Configuration
-                    </Link>
-                </Button>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                    Stored in the database and never read from the environment. Everything the
+                    environment owns is on the Environment tab.
+                </p>
                 <Button
                     size="sm"
                     onClick={save}
@@ -293,7 +298,7 @@ export default function InstanceSettingsPage() {
                     <Save className="size-4" />
                     {saveMut.isPending ? "Saving..." : "Save changes"}
                 </Button>
-            </PageHeader>
+            </div>
 
             {settingsQ.isLoading && (
                 <div className="space-y-3">
@@ -372,7 +377,11 @@ export default function InstanceSettingsPage() {
                             <CardTitle>Access</CardTitle>
                             <CardDescription>
                                 Who may create an account on this instance. The registration mode
-                                itself is owned by the environment and is listed on Configuration.
+                                itself is owned by the environment and is listed under{" "}
+                                <TabLink onClick={() => onSwitchTab?.("environment")}>
+                                    Environment
+                                </TabLink>
+                                .
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="pt-0">
@@ -404,7 +413,8 @@ export default function InstanceSettingsPage() {
                                 rolls; nothing is dropped, and replies to the mailbox&apos;s own
                                 outreach are never held. Changes apply the next time a mailbox is
                                 loaded onto a worker (within a few minutes). The fixed pacing
-                                numbers are listed under Limits.
+                                numbers are listed under{" "}
+                                <TabLink onClick={() => onSwitchTab?.("limits")}>Limits</TabLink>.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="grid grid-cols-1 gap-3 pt-0 md:grid-cols-2">
@@ -613,5 +623,18 @@ export default function InstanceSettingsPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+// An inline link inside descriptive copy that switches tabs instead of leaving the page.
+function TabLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="font-medium text-[var(--admin-accent-strong)] hover:underline"
+        >
+            {children}
+        </button>
     );
 }

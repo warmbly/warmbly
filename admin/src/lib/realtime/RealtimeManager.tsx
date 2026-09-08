@@ -50,6 +50,16 @@ const SPINE: SpineGroup[] = [
         match: (n) => n.includes("WORKER"),
         keys: [["admin", "workers"]],
     },
+    {
+        id: "sync",
+        match: (n) => n.includes("SYNC_STATE") || n.includes("EMAIL_ACCOUNT") || n.includes("ACCOUNT"),
+        keys: [["admin", "sync"]],
+    },
+    {
+        id: "audit",
+        match: (n) => n.includes("AUDIT"),
+        keys: [["admin", "audit"]],
+    },
 ];
 
 export default function RealtimeManager() {

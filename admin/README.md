@@ -45,9 +45,8 @@ Role bitmasks mirror `AdminRolePermissions` in
 `internal/models/admin_permission.go`. For one-off permission combinations,
 pass a raw `BITMASK=N` instead of `ROLE`.
 
-Once a super-admin exists they can grant the rest through the in-app user
-management screen, which goes through the audited `GrantAdminPermissions`
-path instead of raw SQL.
+Once a super-admin exists they can grant the rest from **Accounts > Admins**,
+which goes through the audited `GrantAdminPermissions` path instead of raw SQL.
 
 Set up `.env.local` from `.env.example`:
 
@@ -74,25 +73,21 @@ This app is intentionally tinted differently from the dashboard. If you find you
 
 These signals are layered on purpose. A single one (e.g. just the badge) is easy to overlook in a tab strip. Stacked, they make it obvious that the user is in the privileged surface.
 
-## What's wired vs. stubbed
+## What is in it
 
-**Real data:**
+Every nav entry is backed by real endpoints under `/admin/*`; there are no stub pages.
 
-- Overview — `/admin/analytics/overview` plus `/admin/workers/managed` for the fleet card
-- Workers list — `/admin/workers/managed`
-- Worker detail — `/admin/workers/:id/managed`, `/admin/workers/:id/live-status`, `/admin/workers/:id/logs`, plus the SSH lifecycle mutations (`test`, `install`, `restart`, `uninstall`)
-- Audit Log — `/admin/audit-logs`
-- Settings (Encryption, Storage, Messaging, Cache, Transports) — `/admin/settings/backends` with `kind` filter; renders an "endpoint pending" placeholder when the registry isn't wired yet
+| Group | Pages |
+| --- | --- |
+| Overview | counters, trends, signups by channel, the instance problems strip |
+| Operations | Workers, Fleet (capacity, decision log, dedicated bindings), Mailboxes, Sync (backfill and fair-use throttle per mailbox), Warmup (pools, abuse signals, action history), Warmup Appeals, Warmup Content, Campaigns, Sends (in-flight reservations, dead letters, task failures, webhook delivery health) |
+| Accounts | Users, Organizations (with API keys, webhooks and transfer tabs), Limit requests, Outreach, Admins |
+| Insight | Live Events (the `admin:platform` socket firehose), Audit Log, Jobs (every background loop with last run, next run and "run now") |
+| Instance | Setup and health (findings and service probes), Configuration (settings, notifications, environment, effective limits), Transfers (workspace export and import) |
 
-**Stubs (page exists, no backend wire-up yet):**
+Cmd/Ctrl K opens a command palette that jumps to any page and searches users, organizations, mailboxes and workers. Lists stay live through the realtime invalidation spine in `src/lib/realtime/RealtimeManager.tsx`; only pages whose data has no event (service probes, jobs, in-flight sends, capacity) poll.
 
-- Mailboxes
-- Users
-- Organizations
-- Plans & Billing
-- Warmup pools
-- Campaigns
-- Analytics (cross-platform charts; the Overview page already feeds from the same family of endpoints)
+The customer docs describe the panel page by page at `docs/content/docs/development/admin-panel.mdx`.
 
 ## Layout
 
@@ -111,13 +106,13 @@ admin/
     ├── global.css           # design tokens (mirror of web/) + admin-only tokens
     ├── app/
     │   ├── auth/LoginPage.tsx
-    │   ├── dashboard/       # Overview, Workers, Audit, stubs
-    │   └── settings/        # Encryption/Storage/Messaging/Cache/Transports
+    │   └── dashboard/       # one file per page, tab bodies in subfolders
     ├── components/
-    │   ├── layout/          # AppShell, Sidebar, Topbar, AdminBadge, EnvPill, …
+    │   ├── data/            # DataTable, Explorer facet rail
+    │   ├── layout/          # AppShell, Sidebar, MobileNav, Topbar, CommandPalette, PageTabs, …
     │   └── ui/              # shadcn primitives copied from web/src/components/ui
     ├── hooks/
-    │   └── useMe.ts
+    │   └── useMe.ts, useDocumentTitle.ts, useInstanceHealth.ts, …
     └── lib/
         ├── env.ts
         ├── utils.ts
@@ -126,6 +121,6 @@ admin/
             ├── client.ts    # axios instance + Request<T>
             ├── client/
             │   ├── auth/    # login, getMe, logout
-            │   └── admin/   # workers, audit, analytics, settings
+            │   └── admin/   # one module per backend area (workers, sync, sends, jobs, fleet, …)
             └── models/
 ```

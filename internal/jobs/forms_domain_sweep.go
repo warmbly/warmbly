@@ -7,6 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/pkg/trackdns"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -71,15 +72,5 @@ func (j *FormsDomainSweep) Run(ctx context.Context) error {
 
 // Start runs the sweep once on boot and then on the interval until ctx ends.
 func (j *FormsDomainSweep) Start(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	_ = j.Run(ctx)
-	for {
-		select {
-		case <-ticker.C:
-			_ = j.Run(ctx)
-		case <-ctx.Done():
-			return
-		}
-	}
+	jobrun.Loop(ctx, "forms_domain_sweep", interval, true, j.Run)
 }

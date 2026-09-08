@@ -1,11 +1,9 @@
-// Effective limits: what this instance is actually enforcing right now,
+// Configuration, limits: what this instance is actually enforcing right now,
 // after configuration, plan and product defaults have all been applied.
 // Read only, because every number here is owned by one of those layers.
 
-import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { SlidersHorizontal } from "lucide-react";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +12,11 @@ import {
     type InstanceLimitGroup,
 } from "@/lib/api/client/admin/instance";
 
-export default function LimitsPage() {
+interface LimitsTabProps {
+    onSwitchTab?: (tab: "environment") => void;
+}
+
+export function LimitsTab({ onSwitchTab }: LimitsTabProps) {
     const limitsQ = useQuery({
         queryKey: ["admin", "instance", "limits"],
         queryFn: getInstanceLimits,
@@ -25,17 +27,17 @@ export default function LimitsPage() {
 
     return (
         <div>
-            <PageHeader
-                title="Effective limits"
-                description="The caps and defaults this instance enforces, resolved from configuration and the product defaults. Read-only: change the matching variable or the organization's override instead."
-            >
-                <Button size="sm" variant="outline" asChild>
-                    <Link to="/configuration">
-                        <SlidersHorizontal className="size-4" />
-                        Configuration
-                    </Link>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                    The caps and defaults this instance enforces, resolved from configuration and
+                    the product defaults. Read only: change the matching variable or the
+                    organization&apos;s override instead.
+                </p>
+                <Button size="sm" variant="outline" onClick={() => onSwitchTab?.("environment")}>
+                    <SlidersHorizontal className="size-4" />
+                    Environment
                 </Button>
-            </PageHeader>
+            </div>
 
             {limitsQ.isLoading && (
                 <div className="space-y-3">

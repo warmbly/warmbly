@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/jobrun"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -18,18 +19,10 @@ func (s *JobsService) StartWarmupEngagementPoller(ctx context.Context, interval 
 	if s.WarmupEngagementRepo == nil || s.Publisher == nil {
 		return
 	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.drainDueEngagements(ctx)
-		}
-	}
+	jobrun.Loop(ctx, "warmup_engagement_poller", interval, false, func(ctx context.Context) error {
+		s.drainDueEngagements(ctx)
+		return nil
+	})
 }
 
 func (s *JobsService) drainDueEngagements(ctx context.Context) {

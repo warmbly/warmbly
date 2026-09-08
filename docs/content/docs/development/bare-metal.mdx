@@ -610,7 +610,7 @@ Restore into an empty database before the backend starts, then start it and it a
 | Opens and clicks are not recorded | `TRACKING_DOMAIN` does not match the host nginx proxies to `:3000`, or `BACKEND_INTERNAL_URL` is unreachable from the tracking service |
 | Mailbox connects, then fails about an hour later | The worker env is missing the `BOX_*` OAuth client; only the worker refreshes tokens |
 
-`warmblyctl status` runs the same instance checks the admin panel's System Status page shows and exits non-zero on anything at error severity. The [troubleshooting](/development/troubleshooting/) page covers symptoms that are not specific to running without Docker.
+`warmblyctl status` runs the same instance checks the admin panel's **Instance > Setup and health > Services** tab shows and exits non-zero on anything at error severity. The [troubleshooting](/development/troubleshooting/) page covers symptoms that are not specific to running without Docker.
 
 ## Quick reference
 
