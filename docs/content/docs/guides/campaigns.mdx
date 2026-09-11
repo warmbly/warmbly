@@ -53,7 +53,7 @@ Whichever mode you pick, it decides which mailbox **starts** a lead. Every mailb
 
 The Leads tab shows each lead's mailbox in its **Sender** column, and a contact's Activity tab shows it beside their progress. A lead has none until its first email goes out.
 
-**ESP matching** optionally aligns sender and recipient providers (Gmail to Gmail). **Prefer same** falls back to any mailbox when no same-provider one is free; **Strict same** makes the contact wait instead. An unknown recipient provider never blocks a send. Like rotation, it applies to a lead's first email: a follow-up goes out from the mailbox the contact already knows.
+**ESP matching** optionally aligns sender and recipient providers (Gmail to Gmail). **Prefer same** falls back to any mailbox when no same-provider one is free; **Strict same** makes the contact wait instead. A contact left waiting this way waits alone: the campaign moves on to the next lead in the queue rather than stopping, and comes back to them when a matching mailbox is free. An unknown recipient provider never blocks a send. Like rotation, it applies to a lead's first email: a follow-up goes out from the mailbox the contact already knows.
 
 ### When a lead's mailbox is busy, or gone
 
@@ -128,16 +128,18 @@ Engagement updates live as opens, clicks and replies arrive; no refresh is neede
 
 Open a contact and go to **Activity**: the panel at the top lists every campaign the contact is in, with the flow drawn step by step (sent, opened, clicked, replied, bounced or failed on each), the lead status, the last thing that happened, and the next action.
 
-The next action is worked out on the spot by the scheduler, through the same rules a real send goes through: the delay before the first email, the step's wait, the campaign's start date and sending windows, each mailbox's daily cap and spacing, and the new-lead limit. Nothing is stored per contact, because a campaign is a single task that picks the next lead each time it runs. So the panel shows one of:
+The next action is worked out on the spot by the scheduler, through the same rules a real send goes through: the delay before the first email, the step's wait, the campaign's start date and sending windows, each mailbox's daily cap and spacing, and the new-lead limit. Nothing is stored per contact, because a campaign is a single task that picks the next lead each time it runs. The times it shows are the constraints themselves, never the send spacing, so reading the panel twice gives the same answer twice. So the panel shows one of:
 
 | State | Meaning |
 |-------|---------|
-| Due | The step is due now. The time shown is the slot the scheduler would give it on the next pass; leads queued ahead of this one can still push it later |
+| Due | The step is due now. The time shown is when the campaign next works through its queue, not a slot held for this contact; leads queued ahead of this one can still push it to a later pass |
 | Waiting | A hard constraint holds the step back. The panel names it (`Waiting 2 days before the first email`, `Waiting 3 days after Email 1`, `Outside the campaign's sending window`, `Today's new-lead limit is reached`) and shows the earliest the step can go, not a promised time |
 | Paused | The campaign is not running, so nothing is scheduled |
 | Blocked | The campaign cannot send at all right now: no mailbox attached, every sending domain failing authentication, or past its end date |
 
 When a step's branches are still undecided (`if they open within 3 days`), the panel says the next step depends on their response and when that window closes. A lead that has finished, replied, bounced, failed or unsubscribed shows why the flow ended instead.
+
+One lead that cannot be sent right now never holds up the campaign. Each pass walks the queue in order and sends the first lead it can place, so a contact waiting for a same-provider mailbox, for the mailbox their conversation belongs to, or for their own working hours is skipped for that pass while the leads behind them go out. The campaign only waits when every lead in the queue is waiting, and it comes back and looks again within fifteen minutes.
 
 A step counts as sent only once the sending worker has handed it to the mailbox provider. If the worker cannot send (the mailbox was still loading, the provider refused the message, a storage hiccup), the step goes back to the queue, the failure appears in **Needs attention** with the reason, and the next pass retries it. After five failed attempts the lead is marked **Failed** and dropped from the campaign, so a mailbox that can never send does not loop forever. A recipient the mail server refuses outright is not retried: it is recorded as a **Bounced** lead straight away and goes through the same bounce handling (suppression, guardrails, webhooks) as a bounce notice. A campaign that finished while a send was still in flight reopens to retry it.
 

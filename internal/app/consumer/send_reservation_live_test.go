@@ -53,11 +53,14 @@ func liveJobsService(handle *db.DB) *JobsService {
 // nextPair asks routing what it would send next, exactly as the scheduler does.
 func (f *sendResultFixture) nextPair(t *testing.T, s *JobsService) *repository.ContactSequencePair {
 	t.Helper()
-	pair, _, _, err := s.CampaignProgressRepo.FindNextRoutedPair(context.Background(), f.campaign, "created_at", "asc", "", false, false, nil)
+	pairs, _, _, err := s.CampaignProgressRepo.FindRoutedPairs(context.Background(), f.campaign, "created_at", "asc", "", false, false, nil, 1)
 	if err != nil {
 		t.Fatalf("next pair: %v", err)
 	}
-	return pair
+	if len(pairs) == 0 {
+		return nil
+	}
+	return &pairs[0]
 }
 
 // TestLiveDispatchedSendIsNeverOfferedTwice is the regression the issue asks

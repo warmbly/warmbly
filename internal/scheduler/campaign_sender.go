@@ -274,7 +274,7 @@ func (s *schedulerService) pacedSenders(ctx context.Context, p *campaignPass, ac
 		if gate.paced {
 			back := gate.reopensAt
 			if back.IsZero() {
-				back = s.deferToNextDay(p.campaign)
+				back = s.deferToNextDay(p.campaign, false)
 			}
 			paced[acct.ID] = back
 		}

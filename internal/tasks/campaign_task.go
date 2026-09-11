@@ -441,7 +441,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to update campaign task tracking")
 	}
 
-	// stop_on_reply is enforced inside FindNextRoutedPair (STEP 6), and it is now
+	// stop_on_reply is enforced inside FindRoutedPairs (STEP 6), and it is now
 	// ROUTE-AWARE: a contact who replied is only handed back when their next step
 	// is part of the reply flow (the reply branch's own path). The normal cold
 	// sequence stops there, so there is no longer a blanket "contact has replied,

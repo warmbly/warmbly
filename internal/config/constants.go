@@ -116,6 +116,18 @@ const (
 	// follow-up early; a task that fired on time always passes.
 	CampaignNotDueGraceSeconds = 60
 
+	// CampaignPlacementCandidates is how many due leads one scheduling pass
+	// routes and tries to place before it gives up and defers the campaign.
+	// Placement can refuse a single lead for a reason that is entirely that
+	// lead's (ESP-strict has no mailbox for their provider, their own mailbox
+	// is busy, their preferred hours are hours away); the leads behind them are
+	// still sendable, so the pass moves on instead of parking the campaign on
+	// the first refusal (issue #437). Every extra candidate costs a handful of
+	// reads and only on a pass that is being refused, so this is deliberately
+	// generous — but bounded, because a campaign whose every lead is refused
+	// must still end the pass rather than walk a million-row list.
+	CampaignPlacementCandidates = 25
+
 	// CampaignMaxDeferMinutes bounds how far ahead a DEFERRED campaign tick may
 	// park its successor. A deferral means "nothing is sendable right now", and
 	// the reasons it says that (no lead is due, the new-lead cap is spent, no

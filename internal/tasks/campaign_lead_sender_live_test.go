@@ -325,3 +325,38 @@ func TestLiveABusySenderHoldsItsOwnLeadOnly(t *testing.T) {
 		t.Fatalf("lead 2 sent from the mailbox that has no budget left")
 	}
 }
+
+// TestLiveBoundLeadInItsMailboxGapDoesNotHoldTheQueue is the same rule for
+// spacing rather than budget (issue #437). A lead bound to a mailbox that sent
+// a moment ago has to wait out that mailbox's minimum gap; the leads behind it,
+// which another mailbox can take right now, must not wait with it.
+func TestLiveBoundLeadInItsMailboxGapDoesNotHoldTheQueue(t *testing.T) {
+	f := newStickyFixture(t, 2, 2)
+
+	f.tick(t)
+	first := f.sendsByLead(t)[f.leads[0]]
+	if len(first) != 1 {
+		t.Fatalf("first step did not send: %v", first)
+	}
+
+	// An hour of spacing on every mailbox. Lead 1 is bound to one that has just
+	// sent, so its follow-up cannot go for an hour; lead 2 has no mailbox yet
+	// and the other one has never sent.
+	if _, err := f.pool.Exec(context.Background(),
+		`UPDATE email_accounts SET min_wait_time = 3600 WHERE organization_id = $1`, f.org); err != nil {
+		t.Fatalf("widen the gap: %v", err)
+	}
+
+	f.tick(t)
+	sends := f.sendsByLead(t)
+	if got := sends[f.leads[0]]; len(got) != 1 {
+		t.Fatalf("lead 1 was emailed again from %v inside its own mailbox's minimum gap", got)
+	}
+	got := sends[f.leads[1]]
+	if len(got) != 1 {
+		t.Fatalf("lead 2 did not send while the other mailbox was free and idle: %v", got)
+	}
+	if got[0] == first[0] {
+		t.Fatalf("lead 2 sent from the mailbox that is inside its minimum gap")
+	}
+}
