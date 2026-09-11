@@ -29,6 +29,39 @@ func TestHandleErrorTransportIsNotNil(t *testing.T) {
 	}
 }
 
+// A "try again later" response code is not a broken mailbox. UNAVAILABLE used
+// to fall through to the unknown-IMAP error, which is CRITICAL with resolve
+// method RELOAD, so a few minutes of provider maintenance told every mailbox
+// on that provider to reconnect.
+func TestHandleErrorTransientResponseCodes(t *testing.T) {
+	c := &Client{}
+
+	for _, tc := range []struct {
+		code goimap.ResponseCode
+		want errx.MailErrorCode
+	}{
+		{goimap.ResponseCodeUnavailable, errx.MailErrorCodeServerUnreachable},
+		{goimap.ResponseCodeInUse, errx.MailErrorCodeServerUnreachable},
+		{goimap.ResponseCodeNonExistent, errx.MailErrorCodeNotFound},
+	} {
+		t.Run(string(tc.code), func(t *testing.T) {
+			got := c.handleError(&goimap.Error{Type: goimap.StatusResponseTypeNo, Code: tc.code, Text: "try later"})
+			if got == nil {
+				t.Fatalf("handleError(%s) = nil, want a mail error", tc.code)
+			}
+			if got.Code != tc.want {
+				t.Errorf("Code = %q, want %q", got.Code, tc.want)
+			}
+			if got.Type == errx.MailErrorCritical {
+				t.Errorf("%s is a transient refusal; Type = CRITICAL parks a mailbox error the user has to clear", tc.code)
+			}
+			if got.ResolveMethod != errx.MailErrorResolveMethodRetry {
+				t.Errorf("ResolveMethod = %q, want %q", got.ResolveMethod, errx.MailErrorResolveMethodRetry)
+			}
+		})
+	}
+}
+
 // A NO/BAD carries a response code only when the server chooses to send one.
 // A codeless one used to render as "Something went wrong: " with nothing after
 // the colon (issue #405, IONOS), which tells the customer nothing and leaves a

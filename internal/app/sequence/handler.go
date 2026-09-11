@@ -3,12 +3,14 @@ package sequence
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 )
 
 func (s *sequenceService) Create(ctx context.Context, userID, campaignID string) (*models.Sequence, *errx.Error) {
@@ -20,11 +22,46 @@ func (s *sequenceService) Get(ctx context.Context, userID, campaignID string) ([
 }
 
 func (s *sequenceService) Update(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error) {
+	s.deriveBodyHTML(ctx, userID, campaignID, sequenceID, data)
 	// Branch routing is resolved (and made safe against deleted/dangling targets
 	// and loops) at schedule time in the repository's finder; the repository also
 	// validates branch shape before persisting. No cross-step write validation is
 	// needed here — the canvas only ever points a branch at a real step or stop.
 	return s.sequenceRepository.Update(ctx, userID, campaignID, sequenceID, data)
+}
+
+// deriveBodyHTML fills in the HTML part for a plain-only write.
+//
+// The API and the agent tools set body_plain and nothing else, while the send
+// path puts body_html on the wire as the text/html alternative that every
+// modern client prefers. A step left on the composer's empty placeholder
+// therefore arrived blank, with the real copy only in the text fallback.
+//
+// Only when the stored HTML has nothing in it: an author who wrote both parts
+// keeps the HTML they designed, and a caller that sends body_html explicitly
+// is never second-guessed.
+func (s *sequenceService) deriveBodyHTML(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) {
+	if data == nil || data.BodyPlain == nil || data.BodyHTML != nil {
+		return
+	}
+	if strings.TrimSpace(*data.BodyPlain) == "" {
+		return
+	}
+	steps, xerr := s.sequenceRepository.Get(ctx, userID, campaignID)
+	if xerr != nil {
+		return
+	}
+	for _, step := range steps {
+		if step.ID.String() != sequenceID {
+			continue
+		}
+		if mailhtml.HasContent(step.BodyHTML) {
+			return
+		}
+		derived := mailhtml.FromText(*data.BodyPlain)
+		data.BodyHTML = &derived
+		return
+	}
 }
 
 // UpdateLayout persists only step canvas coordinates (drag-to-stick). Cosmetic

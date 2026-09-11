@@ -53,3 +53,38 @@ func TestPreviewTemplatesWithUsesTheGivenLink(t *testing.T) {
 		t.Fatalf("default preview link changed: %q", q.BodyHTML)
 	}
 }
+
+// A step created through the API or an agent tool carries the composer's empty
+// <div></div> under body_html. It is not an empty string, so it shipped as the
+// text/html alternative and the recipient opened a blank message with the real
+// copy only in the fallback part.
+func TestFinishBodyDropsATextlessHTMLPart(t *testing.T) {
+	h, p := finishBody("<div></div>", "Hi Ana, quick question.", false, nil, nil, "")
+	if h != "" {
+		t.Errorf("HTML part = %q, want it dropped so the plain part is what ships", h)
+	}
+	if p != "Hi Ana, quick question." {
+		t.Errorf("plain part = %q, want the step's own text", p)
+	}
+}
+
+// The guard must not touch a body that renders something, including one whose
+// only content is an image.
+func TestFinishBodyKeepsABodyThatRenders(t *testing.T) {
+	if h, _ := finishBody("<div>Hi</div>", "Hi", false, nil, nil, ""); h != "<div>Hi</div>" {
+		t.Errorf("HTML part = %q, want it kept", h)
+	}
+	img := `<div><img src="https://example.com/a.png"></div>`
+	if h, _ := finishBody(img, "see the image", false, nil, nil, ""); h == "" {
+		t.Error("an image-only body was dropped; it renders for the recipient")
+	}
+}
+
+// With no plain part either there is nothing to fall back to, so dropping the
+// HTML would send an empty message. The start-time guard is what stops that
+// campaign existing; here the body is left alone.
+func TestFinishBodyKeepsAnEmptyHTMLPartWhenThereIsNoPlainText(t *testing.T) {
+	if h, _ := finishBody("<div></div>", "", false, nil, nil, ""); h == "" {
+		t.Error("dropped the only part the message had")
+	}
+}

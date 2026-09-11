@@ -21,6 +21,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/pkg/trackdns"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/scheduler"
@@ -475,6 +476,18 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 						i+1, f.name,
 					))
 				}
+			}
+			// An email step with nothing in either body sends a blank message
+			// to every lead it reaches. A step created through the API carries
+			// the composer's empty placeholder, which is not an empty string,
+			// so this asks whether the body would RENDER anything.
+			if seq.Kind == "email" &&
+				!mailhtml.HasContent(seq.BodyHTML) &&
+				strings.TrimSpace(seq.BodyPlain) == "" {
+				return errx.NewWithIdentifier(errx.BadRequest, "empty_step_body", fmt.Sprintf(
+					"Step %d has no email body, so it would send a blank message. Write the body before starting.",
+					i+1,
+				))
 			}
 		}
 	}

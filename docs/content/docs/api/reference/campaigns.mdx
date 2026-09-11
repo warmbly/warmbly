@@ -177,7 +177,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `schedule_windows` | array | no | Per-day sending windows, 7 arrays indexed by weekday (Sunday = 0) of `{start, end}` minute-of-day intervals. When non-empty it supersedes `days`, `start_time` and `end_time`. |
 | `email_tag_ids` | string[] | no | Mailbox tag ids that resolve the sender pool (tags strategy). |
 | `folder_ids` | string[] | no | Folder ids to file the campaign under. |
-| `sender_strategy` | string | no | `tags` (default) or `explicit`. |
+| `sender_strategy` | string | no | `tags` (default) or `explicit`. `tags` resolves the pool from `email_tag_ids`, and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. `explicit` sends only from the mailboxes in `senders`: it never falls back, so a pool that empties out parks the campaign at `paused_no_accounts` instead of widening to the whole workspace. |
 | `rotation_mode` | string | no | How volume spreads across the chosen mailboxes. |
 | `senders` | object[] | no | Explicit-strategy mailbox pool (see sender input below). |
 | `ramp_enabled` | boolean | no | Enable per-campaign daily ramp-up. |
@@ -732,6 +732,8 @@ Start (activate) the campaign so it begins sending real mail. Works from `draft`
 
 A start refused because every remaining lead was refused by address verification answers `leads_undeliverable` and parks the campaign at `paused_undeliverable`; re-verify the leads or mark them deliverable with [`POST /contacts/verification`](/api/reference/contacts/#verify-or-override-contacts), which resumes it.
 
+A campaign whose email step has nothing in either body is refused with `empty_step_body` rather than started, because it would send a blank message to every lead it reached.
+
 ### Response
 
 ```json
@@ -832,7 +834,7 @@ Atomically replace the campaign's explicit sender pool with the supplied list. *
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `senders` | object[] | yes | The full new sender pool. Each item: `email_account_id` (uuid, required), `weight` (integer, optional), `enabled` (boolean, optional). |
+| `senders` | object[] | yes | The full new sender pool. Each item: `email_account_id` (uuid, required), `weight` (integer, optional), `enabled` (boolean, optional). An empty array clears the pool. What that means depends on the campaign's `sender_strategy`: a `tags` campaign falls back to its tags or to every active mailbox, while an `explicit` one is left with no mailbox to send from and parks itself at `paused_no_accounts`. |
 
 ```json
 {
@@ -1020,7 +1022,7 @@ All fields optional.
 | `name` | string | no | Step label. |
 | `subject` | string | no | Subject template. |
 | `body_plain` | string | no | Plain-text body template. Leave it empty and the send path renders one from `body_html`, keeping list bullets, table rows and link destinations, and leaving out the stylesheet. |
-| `body_html` | string | no | HTML body template. Sent as written, including a whole document with its own `<head>`. Any `<style>` block is inlined onto the elements it matches at send time; see [the sequences guide](/guides/sequences/). |
+| `body_html` | string | no | HTML body template. Sent as written, including a whole document with its own `<head>`. Any `<style>` block is inlined onto the elements it matches at send time; see [the sequences guide](/guides/sequences/). Send `body_plain` on its own and the HTML part is rendered from it, because a step with a plain body and an empty HTML one would otherwise arrive blank: every modern client prefers the HTML alternative. A step that already has an HTML body is never overwritten. |
 | `body_sync` | boolean | no | Keep plain and HTML bodies in sync. |
 | `body_code` | boolean | no | The body is authored as raw HTML. The dashboard editor opens it as markup instead of parsing it into the visual editor, which keeps only what its schema can represent. It does not change what is sent. |
 | `wait_after` | integer | no | Days to wait before this step, counted from the contact's previous step (`0` to `60`). Spacing belongs to the target step, so there is no standalone wait node for email steps. |

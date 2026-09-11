@@ -22,6 +22,17 @@ func (c *Client) handleError(err error) *errx.MailError {
 			}
 		case imap.ResponseCodeAuthorizationFailed:
 			return errx.ErrMailAuthorizationFailed
+		case imap.ResponseCodeUnavailable, imap.ResponseCodeInUse:
+			// RFC 5530's "try again later" pair: the server is up and the
+			// credentials are fine, it just refused this command for a few
+			// minutes. Falling through to the unknown-IMAP error told every
+			// mailbox on the provider to reconnect (resolve method RELOAD) over
+			// a blip the next pass clears on its own.
+			return errx.ErrMailServerUnreachable
+		case imap.ResponseCodeNonExistent:
+			// The folder or message asked for is gone, which the folder walk
+			// recovers from by re-listing. Not a reason to reconnect a mailbox.
+			return errx.ErrMailResourceNotFound
 		default:
 			return errx.ErrMailUnknownImapError(imapErrDetail(imapErr))
 		}

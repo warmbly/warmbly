@@ -104,6 +104,11 @@ func finishBody(bodyHTML, bodyPlain string, textOnly bool, account *models.Email
 	if textOnly {
 		bodyHTML = ""
 	}
+	// The send path's guard against a blank HTML alternative, so the preview
+	// and the test send show the same message a recipient gets.
+	if bodyHTML != "" && !mailhtml.HasContent(bodyHTML) && strings.TrimSpace(bodyPlain) != "" {
+		bodyHTML = ""
+	}
 	// After the plain part is derived, so plain text keeps the URL it needs.
 	linkText := ""
 	if optOut != nil {

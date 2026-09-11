@@ -94,9 +94,11 @@ func HTTPCheck(url string) func(ctx context.Context) error {
 	}
 }
 
-// TCPCheck probes the first address of a comma-separated host:port list.
+// TCPCheck probes the first address of a comma-separated list. Each entry may
+// be a bare host:port or a full URL, because the variables these come from
+// (NATS_URL, the broker list) are connection strings, not dial addresses.
 func TCPCheck(addrs string) func(ctx context.Context) error {
-	addr := strings.TrimSpace(strings.Split(addrs, ",")[0])
+	addr := DialAddr(strings.Split(addrs, ",")[0])
 	return func(ctx context.Context) error {
 		var d net.Dialer
 		conn, err := d.DialContext(ctx, "tcp", addr)
@@ -105,4 +107,24 @@ func TCPCheck(addrs string) func(ctx context.Context) error {
 		}
 		return conn.Close()
 	}
+}
+
+// DialAddr reduces a connection string to the host:port net.Dial accepts.
+// Credentials in the authority are the reason this exists: net.Dial reads
+// "user:pass@host:4222" as an address with too many colons, so a credentialed
+// NATS_URL reported the bus down while everything worked.
+func DialAddr(raw string) string {
+	addr := strings.TrimSpace(raw)
+	if i := strings.Index(addr, "://"); i >= 0 {
+		addr = addr[i+3:]
+	}
+	// Last "@": a password may legitimately contain one.
+	if i := strings.LastIndex(addr, "@"); i >= 0 {
+		addr = addr[i+1:]
+	}
+	// Anything after the authority (path, query, fragment) is not dialled.
+	if i := strings.IndexAny(addr, "/?#"); i >= 0 {
+		addr = addr[:i]
+	}
+	return addr
 }
