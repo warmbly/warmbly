@@ -22,6 +22,7 @@ import toast from "react-hot-toast";
 import { useUserProfile } from "@/hooks/context/user";
 import useClickOutside from "@/hooks/useClickOutside";
 import useFlipPlacement from "@/hooks/useFlipPlacement";
+import clippedTitle from "@/lib/helper/titleWhenClipped";
 import useCreateCategory from "@/lib/api/hooks/app/categories/useCreateCategory";
 import type Category from "@/lib/api/models/app/Category";
 
@@ -218,14 +219,19 @@ export function CategoryChip({
     category,
     onRemove,
     compact,
+    clamp,
 }: {
     category: { id: string; title: string; color: string };
     onRemove?: () => void;
     compact?: boolean;
+    // For a chip sharing a line with text that has to stay readable (a contact's
+    // name in the list): hold the label to one width at every breakpoint, and
+    // hand the rest to a tooltip.
+    clamp?: boolean;
 }) {
     return (
         <span
-            className={`inline-flex items-center gap-1 ${compact ? "h-4 pl-1 pr-1 text-[10px]" : "h-5 pl-1.5 pr-1 text-[11px]"} rounded font-medium`}
+            className={`inline-flex items-center gap-1 min-w-0 ${compact ? "h-4 pl-1 pr-1 text-[10px]" : "h-5 pl-1.5 pr-1 text-[11px]"} rounded font-medium`}
             style={{
                 backgroundColor: hexToRgba(category.color, 0.12),
                 color: category.color,
@@ -236,7 +242,12 @@ export function CategoryChip({
                 className={`${compact ? "size-1.5" : "size-2"} rounded-full shrink-0`}
                 style={{ backgroundColor: category.color }}
             />
-            <span className="truncate max-w-[72px] md:max-w-none">{category.title}</span>
+            <span
+                className={`truncate min-w-0 ${clamp ? "max-w-[72px]" : "max-w-[72px] md:max-w-none"}`}
+                {...clippedTitle}
+            >
+                {category.title}
+            </span>
             {onRemove && (
                 <button
                     type="button"
