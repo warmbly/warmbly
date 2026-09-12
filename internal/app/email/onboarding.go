@@ -529,6 +529,34 @@ func anyGranted(granted map[string]bool, accepted []string) bool {
 	return false
 }
 
+// maxProviderBody bounds what is read from a provider before it is looked at,
+// so a broken or hostile intermediary cannot make onboarding read an arbitrary
+// amount into memory.
+const maxProviderBody = 64 << 10
+
+// diagnosticDetailLimit is how much of a failure body is recorded. A provider
+// error payload has no length contract.
+const diagnosticDetailLimit = 512
+
+// diagnosticBody decides how much of the provider's response may be recorded.
+//
+// Nothing at all from a 2xx. A decode failure and a missing address both carry
+// status 200, and that body is a SUCCESSFUL profile payload: for Gmail it is
+// the mailbox address, for Outlook the address and display name. Recording it
+// would put the mailbox owner's identity into the log stream and into error
+// tracking. The decision lives here rather than at the call sites so that
+// adding a new failure stage cannot get it wrong.
+func diagnosticBody(status int, body []byte) string {
+	if status >= 200 && status < 300 {
+		return ""
+	}
+	detail := strings.TrimSpace(string(body))
+	if len(detail) > diagnosticDetailLimit {
+		detail = detail[:diagnosticDetailLimit] + "…"
+	}
+	return detail
+}
+
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 func fetchGmailOwner(ctx context.Context, token string) (*inboxOwner, *errx.Error) {
@@ -540,7 +568,7 @@ func fetchGmailOwner(ctx context.Context, token string) (*inboxOwner, *errx.Erro
 		return nil, ownerLookupFailed(ctx, "gmail", "transport", 0, nil, err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxProviderBody))
 	if resp.StatusCode != http.StatusOK {
 		return nil, ownerLookupFailed(ctx, "gmail", "status", resp.StatusCode, body, nil)
 	}
@@ -567,10 +595,7 @@ func fetchGmailOwner(ctx context.Context, token string) (*inboxOwner, *errx.Erro
 // indistinguishable from a revoked token. A handled 400 raises no exception,
 // so without this there is nothing in the logs or in error tracking either.
 func ownerLookupFailed(ctx context.Context, provider, stage string, status int, body []byte, cause error) *errx.Error {
-	detail := strings.TrimSpace(string(body))
-	if len(detail) > 512 {
-		detail = detail[:512] + "…"
-	}
+	detail := diagnosticBody(status, body)
 	opts := []errs.Option{
 		errs.Tag("provider", provider),
 		errs.Tag("stage", stage),
@@ -604,7 +629,7 @@ func fetchOutlookOwner(ctx context.Context, token string) (*inboxOwner, *errx.Er
 		return nil, ownerLookupFailed(ctx, "outlook", "transport", 0, nil, err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxProviderBody))
 	if resp.StatusCode != http.StatusOK {
 		return nil, ownerLookupFailed(ctx, "outlook", "status", resp.StatusCode, body, nil)
 	}

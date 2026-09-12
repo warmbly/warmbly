@@ -172,3 +172,53 @@ func TestOutlookPartialConsentIsRefused(t *testing.T) {
 		t.Errorf("got %q", xerr.Message)
 	}
 }
+
+// ── what may be recorded ─────────────────────────────────────────────────────
+
+// A decode failure and a missing address both carry status 200, and that body
+// is a successful profile payload: the mailbox owner's address. It must never
+// reach the log stream or error tracking.
+func TestDiagnosticBodyNeverRecordsASuccessfulPayload(t *testing.T) {
+	profile := []byte(`{"emailAddress":"someone@example.com","messagesTotal":42}`)
+
+	for _, status := range []int{200, 201, 204, 299} {
+		if got := diagnosticBody(status, profile); got != "" {
+			t.Errorf("status %d recorded a success body: %q", status, got)
+		}
+	}
+}
+
+// A failure body is the provider's own error payload and is what makes the
+// failure diagnosable, so it is kept.
+func TestDiagnosticBodyKeepsFailurePayloads(t *testing.T) {
+	body := []byte(`{"error":{"code":403,"message":"Gmail API has not been used in project 1010273043313"}}`)
+	got := diagnosticBody(403, body)
+	if !strings.Contains(got, "has not been used in project") {
+		t.Fatalf("a failure payload should be recorded, got %q", got)
+	}
+}
+
+func TestDiagnosticBodyTruncatesToTheLimit(t *testing.T) {
+	got := diagnosticBody(500, []byte(strings.Repeat("x", 5000)))
+	if len(got) != diagnosticDetailLimit+len("…") {
+		t.Fatalf("got %d bytes, want the %d-byte prefix plus the marker", len(got), diagnosticDetailLimit)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Error("a truncated body should say so")
+	}
+}
+
+// The reads are bounded before anything looks at them, so a provider that
+// streams forever cannot be turned into unbounded memory here.
+func TestProviderBodyReadIsBounded(t *testing.T) {
+	swapTransport(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		huge := strings.Repeat("y", maxProviderBody*4)
+		_, _ = w.Write([]byte(huge))
+	}))
+
+	owner, xerr := fetchGmailOwner(context.Background(), "token")
+	if owner != nil || xerr == nil {
+		t.Fatal("expected the lookup to fail")
+	}
+}
