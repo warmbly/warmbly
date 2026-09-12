@@ -166,6 +166,8 @@ A link that already carries one of these keeps the hand-written value; only the 
 
 Campaigns send only inside the **weekly sending windows** you define, in the campaign's timezone. Each day is independent, with different hours or several windows per day, set from presets like `Mon-Fri 9-5` or by dragging on the grid (which is Monday-first).
 
+A step whose turn comes while the window is shut waits for the next one; it is never sent late to catch up. That holds however overdue it is, so a follow-up whose wait elapsed at two in the afternoon does not go out at eleven at night because the campaign happened to look at it then. The step keeps its place in the queue and leaves in the next window that has mailbox capacity.
+
 Within a window Warmbly spreads the day's emails evenly, adds random jitter, and rounds to natural send times so nothing arrives in obvious bursts. A mailbox with its own timezone is also kept inside its local business hours (`8am` to `8pm`).
 
 The spread covers every mailbox on the campaign, not one at a time: the day's remaining capacity across the whole sending pool is paced across the hours left in the window. Adding a second healthy mailbox roughly doubles how fast a campaign works through its leads, while each mailbox still stays inside its own daily cap, hourly ceiling and minimum gap.
@@ -180,7 +182,7 @@ The delay counts from when that contact entered the campaign, not from when the 
 
 Follow-up spacing is separate and unaffected: that is each step's own wait, set on the connection into it (see [Sequences](/guides/sequences/#wait-and-spacing)). Every lead carries the moment it was enrolled, so turning a delay on does not re-delay people who joined weeks ago: their wait is already long past. Leads enrolled before this setting existed have no recorded moment and fall back to the campaign's creation date, which has the same effect. Changing the delay on a running campaign takes effect on save.
 
-Optional **campaign dates** bound when it may send. Leave both blank to run open-ended. Picking today as the start date means "start now", and clearing a start date on a running campaign removes the wait entirely. Schedule changes on an active campaign take effect immediately: the next send is recomputed on save, so a campaign waiting on a future start date starts sending as soon as you clear or shorten it.
+Optional **campaign dates** bound when it may send. Leave both blank to run open-ended. Picking today as the start date means "start now", and clearing a start date on a running campaign removes the wait entirely. Schedule changes on an active campaign take effect immediately: the next send is recomputed on save, so a campaign waiting on a future start date starts sending as soon as you clear or shorten it. Past the end date nothing goes out at all, including a follow-up that came due before it: the campaign finishes instead, and its activity log says it reached its end date.
 
 ## Start and stop
 

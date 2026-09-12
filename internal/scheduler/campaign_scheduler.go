@@ -311,6 +311,20 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 		baseTime = *nextPair.NotBefore
 	}
 
+	// An OVERDUE step's earliest possible send is now, never the moment it
+	// became due. Every schedule gate below is asked about `baseTime`, and for
+	// a follow-up whose wait elapsed hours ago that instant is in the past —
+	// where nextScheduleSlot deliberately keeps an instant that was already
+	// inside a sending window, and the end-date comparison finds a candidate
+	// that predates the end date. So a step that came due at 2pm passed both
+	// gates at 11pm: hardFloor sat in the past, STEP 14.5 read it as due, and
+	// the task sent it hours after the window closed, or days after the
+	// campaign ended. The window has to be asked about the send that is
+	// actually about to happen, which is this one, now.
+	if baseTime.Before(time.Now()) {
+		baseTime = time.Now()
+	}
+
 	// STEP 5: Apply campaign schedule constraints
 	// Fall back to UTC if campaign has no timezone set (account timezone checked later)
 	campaignTZName := campaign.Timezone
