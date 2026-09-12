@@ -28,7 +28,7 @@ RUN mix release
 # the crypto NIF fails to load against an older libcrypto (missing symbols).
 FROM alpine:3.23
 
-RUN apk add --no-cache libstdc++ openssl ncurses-libs wget
+RUN apk add --no-cache libstdc++ openssl ncurses-libs
 RUN adduser -D -u 1000 warmbly
 
 # Amazon RDS presents a chain rooted in an RDS CA that is in no public trust

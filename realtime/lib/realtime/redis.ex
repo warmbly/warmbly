@@ -37,8 +37,8 @@ defmodule Realtime.Redis do
   # Erlang's default hostname check does not match a wildcard certificate, and
   # every managed Redis presents one (`*.upstash.io`, ElastiCache, Redis Cloud).
   # Without the https match fun the handshake fails with
-  # {:bad_cert, :hostname_check_failed} on all #{@pool_size} connections and the
-  # pool never comes up, which reads as "Redis unavailable" and fails open.
+  # {:bad_cert, :hostname_check_failed} on every connection in the pool, which
+  # reads as "Redis unavailable" and fails open rather than as an error.
   #
   # Redix drops only the keys given here from its own defaults, so verify_peer
   # and the system CA store still apply.
