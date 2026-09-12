@@ -132,6 +132,15 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		return nil, false, errx.ErrEmailOnboardExchange
 	}
 
+	// A consent screen lets the person untick individual permissions and still
+	// returns a token, so this is the last point at which a half-granted
+	// mailbox can be refused. Storing one instead means a mailbox that looks
+	// connected and fails on its first send, days later, with a provider 403
+	// nobody can trace back to a checkbox.
+	if xerr := checkGrantedScopes(ctx, provider, cfg.Scopes, tok); xerr != nil {
+		return nil, false, xerr
+	}
+
 	owner, xerr := fetchInboxOwner(ctx, provider, tok.AccessToken)
 	if xerr != nil {
 		return nil, false, xerr
@@ -146,6 +155,22 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		return nil, false, xerr
 	} else if exists {
 		return nil, false, errx.ErrEmailOnboardAlreadyExists
+	}
+
+	// A first connect with no refresh token is a mailbox with about an hour to
+	// live: the access token expires and nothing can renew it. reauth.go
+	// deliberately tolerates an absent one because it keeps the stored value,
+	// but here there is nothing stored to fall back on, so refuse now rather
+	// than hand back a mailbox that stops by itself.
+	if strings.TrimSpace(tok.RefreshToken) == "" {
+		log.Warn().
+			Str("provider", string(provider)).
+			Msg("mailbox onboarding: first connect returned no refresh token")
+		errs.CaptureMessageContext(ctx, fmt.Sprintf("%s first connect returned no refresh token", provider),
+			errs.Tag("provider", string(provider)))
+		return nil, false, errx.New(errx.BadRequest,
+			"The provider did not return a long-lived token for this mailbox, so it would stop working within the hour. "+
+				"Remove Warmbly's access in your account settings and connect it again.")
 	}
 
 	name := strings.TrimSpace(owner.Name)
@@ -387,6 +412,121 @@ func fetchInboxOwner(ctx context.Context, provider models.InboxProvider, accessT
 	default:
 		return nil, errx.ErrEmailOnboardProvider
 	}
+}
+
+// grantedScopes reads what the provider actually authorised. Both Google and
+// Microsoft return a space-separated "scope" alongside the token; an empty or
+// absent one means the provider did not say, which is not the same as "nothing
+// was granted" and must not be read as a denial.
+func grantedScopes(tok *oauth2.Token) (map[string]bool, bool) {
+	raw, _ := tok.Extra("scope").(string)
+	if strings.TrimSpace(raw) == "" {
+		return nil, false
+	}
+	out := make(map[string]bool)
+	for _, sc := range strings.Fields(raw) {
+		out[sc] = true
+	}
+	return out, true
+}
+
+// scopeSatisfiedBy maps a scope we ask for to every scope that confers it.
+// Google's Gmail scopes nest: gmail.modify covers reading and sending, and
+// gmail.compose covers sending. Without this, someone who granted the broader
+// permission but not the narrower one would be turned away for a capability
+// they actually have.
+var scopeSatisfiedBy = map[string][]string{
+	"https://www.googleapis.com/auth/gmail.readonly": {
+		"https://www.googleapis.com/auth/gmail.readonly",
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://mail.google.com/",
+	},
+	"https://www.googleapis.com/auth/gmail.send": {
+		"https://www.googleapis.com/auth/gmail.send",
+		"https://www.googleapis.com/auth/gmail.compose",
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://mail.google.com/",
+	},
+	"https://www.googleapis.com/auth/gmail.metadata": {
+		"https://www.googleapis.com/auth/gmail.metadata",
+		"https://www.googleapis.com/auth/gmail.readonly",
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://mail.google.com/",
+	},
+	"https://www.googleapis.com/auth/gmail.modify": {
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://mail.google.com/",
+	},
+}
+
+// scopeLabel names a permission the way the consent screen does, so the error
+// tells someone which checkbox to go back and tick.
+var scopeLabel = map[string]string{
+	"https://www.googleapis.com/auth/gmail.readonly":       "read your email",
+	"https://www.googleapis.com/auth/gmail.send":           "send email on your behalf",
+	"https://www.googleapis.com/auth/gmail.modify":         "manage your email",
+	"https://www.googleapis.com/auth/gmail.compose":        "compose and send email",
+	"https://www.googleapis.com/auth/gmail.metadata":       "read email metadata",
+	"https://www.googleapis.com/auth/gmail.settings.basic": "manage your mail settings",
+	"https://graph.microsoft.com/Mail.Send":                "send mail",
+	"https://graph.microsoft.com/Mail.ReadWrite":           "read and write mail",
+	"https://graph.microsoft.com/User.Read":                "read your profile",
+}
+
+// checkGrantedScopes refuses a connection the provider only partly authorised.
+func checkGrantedScopes(ctx context.Context, provider models.InboxProvider, want []string, tok *oauth2.Token) *errx.Error {
+	granted, told := grantedScopes(tok)
+	if !told {
+		// Nothing to check against. Recorded rather than guessed at, because a
+		// provider that stops returning the scope would otherwise turn this
+		// into a silent no-op.
+		errs.CaptureMessageContext(ctx, fmt.Sprintf("%s returned no scope with the token; granted permissions were not verified", provider),
+			errs.Tag("provider", string(provider)))
+		return nil
+	}
+
+	var missing []string
+	for _, w := range want {
+		accepted, ok := scopeSatisfiedBy[w]
+		if !ok {
+			accepted = []string{w}
+		}
+		if !anyGranted(granted, accepted) {
+			missing = append(missing, w)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	labels := make([]string, 0, len(missing))
+	for _, m := range missing {
+		if l, ok := scopeLabel[m]; ok {
+			labels = append(labels, l)
+		} else {
+			labels = append(labels, m)
+		}
+	}
+	log.Warn().
+		Str("provider", string(provider)).
+		Strs("missing", missing).
+		Msg("mailbox onboarding: refused a partly granted consent")
+	errs.CaptureMessageContext(ctx, fmt.Sprintf("%s mailbox connected with missing permissions", provider),
+		errs.Tag("provider", string(provider)),
+		errs.Extra("missing", strings.Join(missing, " ")))
+
+	return errx.New(errx.BadRequest, fmt.Sprintf(
+		"Warmbly was not given every permission it needs for this mailbox. Missing: %s. Connect it again and leave all the permissions ticked.",
+		strings.Join(labels, ", ")))
+}
+
+func anyGranted(granted map[string]bool, accepted []string) bool {
+	for _, a := range accepted {
+		if granted[a] {
+			return true
+		}
+	}
+	return false
 }
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
