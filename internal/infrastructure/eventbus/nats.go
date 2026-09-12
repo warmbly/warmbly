@@ -86,6 +86,15 @@ func NewNATS(cfg NATSConfig) (*NATSBus, error) {
 		nats.ReconnectWait(2 * time.Second),
 	}, cfg.Options...)
 
+	// A JWT credential cannot travel in the URL, so it is resolved separately.
+	creds, err := credsOption()
+	if err != nil {
+		return nil, err
+	}
+	if creds != nil {
+		opts = append(opts, creds)
+	}
+
 	nc, err := nats.Connect(cfg.URL, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("eventbus nats: connect: %w", err)
