@@ -12,7 +12,7 @@ import Document from "@tiptap/extension-document";
 import Text from "@tiptap/extension-text";
 import Link from "@tiptap/extension-link";
 import { emailDesignExtensions, EmailParagraph } from "./emailHtml";
-import { EmailButton, readableTextColor } from "./EmailButtonNode";
+import { BUTTON_SWATCHES, EmailButton, readableTextColor } from "./EmailButtonNode";
 
 const extensions = [
     Document,
@@ -59,7 +59,7 @@ describe("the call-to-action button", () => {
         const out = render({ label: "Book a call", href: "https://cal.test/me" });
         // The cell, not the anchor, holds both: Outlook lays out with Word,
         // which ignores display:inline-block and drops the anchor's padding.
-        expect(out).toContain('bgcolor="#0284c7"');
+        expect(out).toContain('bgcolor="#0369a1"');
         expect(out).toContain("padding: 12px 24px");
         expect(out).toContain("border-radius: 6px");
         expect(out).toContain('href="https://cal.test/me"');
@@ -99,7 +99,7 @@ describe("the call-to-action button", () => {
         // two values allowed, or editing the markup would silently undo itself.
         const attrs = buttonAttrs(
             '<table data-warmbly-button="" align="center"><tbody><tr>' +
-                '<td bgcolor="#0284c7" style="border-radius:4px;padding:10px 30px">' +
+                '<td bgcolor="#0369a1" style="border-radius:4px;padding:10px 30px">' +
                 '<a href="https://x.test" style="color:#ffffff;font-size:15px">Talk to us</a>' +
                 "</td></tr></tbody></table>",
         );
@@ -180,10 +180,21 @@ describe("the call-to-action button", () => {
         }
     });
 
-    it("picks a label colour the background can carry", () => {
+    it("picks whichever label colour reads better on the background", () => {
         expect(readableTextColor("#0f172a")).toBe("#ffffff");
-        expect(readableTextColor("#d97706")).toBe("#ffffff");
+        expect(readableTextColor("#0369a1")).toBe("#ffffff");
+        // A mid-tone is under any luminance threshold that keeps white off
+        // yellow, and still reads better in dark type: 5.6:1 against 3.2:1.
+        expect(readableTextColor("#d97706")).toBe("#0f172a");
         expect(readableTextColor("#fde047")).toBe("#0f172a");
         expect(readableTextColor("nonsense")).toBe("#ffffff");
+    });
+
+    it("offers only backgrounds a white label passes AA on", () => {
+        // The palette is picked so the colour someone chooses is legible, not
+        // just so the function would cope if it were not.
+        for (const swatch of BUTTON_SWATCHES) {
+            expect(readableTextColor(swatch.value)).toBe("#ffffff");
+        }
     });
 });

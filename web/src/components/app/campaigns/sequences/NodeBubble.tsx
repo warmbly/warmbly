@@ -61,16 +61,17 @@ export function NodeBubble({ anchor, children }: { anchor: NodeAnchor; children:
             style={{ position: "fixed", top: anchor.top, left: anchor.left, zIndex: 60 }}
             ref={(el) => {
                 // Placed from the bar's own size rather than a guess at it:
-                // these bars are one row or two depending on what they edit,
-                // and a fixed offset covers the node it is meant to sit above.
-                // Nothing in a floating bar may sit off-screen either, so a
-                // node near the right edge pulls it back in.
+                // these bars are one row or two depending on what they edit, so
+                // a fixed offset either leaves a gap or covers the node. Above
+                // the node when there is room and below it when there is not,
+                // then clamped inside the viewport on every edge, because a
+                // control that is off-screen is a control nobody has.
                 if (!el) return;
                 const box = el.getBoundingClientRect();
                 const above = anchor.top - box.height - 6;
-                el.style.top = `${above < 8 ? anchor.bottom + 6 : above}px`;
-                const overflow = box.right - window.innerWidth + 8;
-                if (overflow > 0) el.style.left = `${Math.max(8, anchor.left - overflow)}px`;
+                const top = above >= 8 ? above : anchor.bottom + 6;
+                el.style.top = `${Math.max(8, Math.min(top, window.innerHeight - box.height - 8))}px`;
+                el.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8))}px`;
             }}
             className="flex max-w-[calc(100vw-16px)] flex-col gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)]"
         >

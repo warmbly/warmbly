@@ -39,26 +39,61 @@ export const BUTTON_RADII: { label: string; title: string; value: string }[] = [
 
 const BUTTON_DEFAULT_RADIUS = "6px";
 
+// The house colours, at the shade that can carry a white label: sky, emerald
+// and amber are all under 4.5:1 against white one step lighter than this, and a
+// call to action nobody can read is the one thing a button may not be. Any
+// colour still gets whichever label reads better (readableTextColor); these are
+// the ones offered because they read well and look like the product.
+export const BUTTON_SWATCHES: { label: string; value: string }[] = [
+    { label: "Sky", value: "#0369a1" },
+    { label: "Indigo", value: "#4f46e5" },
+    { label: "Emerald", value: "#047857" },
+    { label: "Amber", value: "#b45309" },
+    { label: "Rose", value: "#e11d48" },
+    { label: "Slate", value: "#334155" },
+    { label: "Black", value: "#0f172a" },
+];
+
 export const BUTTON_DEFAULT_LABEL = "Book a call";
-export const BUTTON_DEFAULT_BACKGROUND = "#0284c7";
+export const BUTTON_DEFAULT_BACKGROUND = "#0369a1";
+
+// The two colours a label may be. Nothing in between: a button is one solid
+// block, and the only question is which of these two can be read on it.
+const LABEL_LIGHT = "#ffffff";
+const LABEL_DARK = "#0f172a";
 
 // The font stack is written out because a button is the one place in a body
 // that must not inherit a template's decorative face and fall back at random.
 const BUTTON_FONT = "Arial, Helvetica, sans-serif";
 
-// readableTextColor picks the label colour the background can carry, so a
-// yellow button is not white-on-yellow. WCAG relative luminance, with the
-// threshold where white stops being the better of the two.
-export function readableTextColor(background: string): string {
-    const hex = background.trim().replace(/^#/, "");
+// luminance is WCAG 2's relative luminance, or null for anything that is not a
+// hex colour (a named colour, a gradient, a value someone mistyped).
+function luminance(color: string): number | null {
+    const hex = color.trim().replace(/^#/, "");
     const full = hex.length === 3 ? [...hex].map((c) => c + c).join("") : hex;
-    if (!/^[0-9a-f]{6}$/i.test(full)) return "#ffffff";
+    if (!/^[0-9a-f]{6}$/i.test(full)) return null;
     const channel = (at: number) => {
         const c = Number.parseInt(full.slice(at, at + 2), 16) / 255;
         return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
     };
-    const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
-    return luminance > 0.45 ? "#0f172a" : "#ffffff";
+    return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+}
+
+function contrast(a: number, b: number): number {
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+const LIGHT_LUMINANCE = luminance(LABEL_LIGHT) as number;
+const DARK_LUMINANCE = luminance(LABEL_DARK) as number;
+
+// readableTextColor picks the label colour the background can actually carry.
+// It compares the two contrast ratios rather than testing luminance against a
+// threshold: a mid-tone like amber is under any threshold that keeps white on
+// yellow, and still reads better in dark type than in white.
+export function readableTextColor(background: string): string {
+    const l = luminance(background);
+    if (l === null) return LABEL_LIGHT;
+    return contrast(l, LIGHT_LUMINANCE) >= contrast(l, DARK_LUMINANCE) ? LABEL_LIGHT : LABEL_DARK;
 }
 
 // decl reads one declaration off an element's own style attribute. The DOM

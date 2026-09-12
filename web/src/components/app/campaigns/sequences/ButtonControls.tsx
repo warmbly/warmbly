@@ -20,23 +20,12 @@ import { BubbleBtn, BubbleDivider, NodeBubble, selectedNode, useNodeAnchor } fro
 import {
     BUTTON_RADII,
     BUTTON_SIZES,
+    BUTTON_SWATCHES,
     BUTTON_DEFAULT_LABEL,
     readableTextColor,
     type ButtonAlign,
 } from "./nodes/EmailButtonNode";
 import { absoluteHref } from "./nodes/EmailImageNode";
-
-// The same house colours the text palette offers, minus the ones that make no
-// sense behind a label: a button has to be a solid block a light word sits on.
-const BUTTON_SWATCHES: { label: string; value: string }[] = [
-    { label: "Sky", value: "#0284c7" },
-    { label: "Indigo", value: "#4f46e5" },
-    { label: "Emerald", value: "#059669" },
-    { label: "Amber", value: "#d97706" },
-    { label: "Rose", value: "#e11d48" },
-    { label: "Slate", value: "#334155" },
-    { label: "Black", value: "#0f172a" },
-];
 
 const ALIGNMENTS: { value: ButtonAlign; title: string; Icon: typeof AlignLeftIcon }[] = [
     { value: "left", title: "Align left", Icon: AlignLeftIcon },
