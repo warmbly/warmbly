@@ -416,3 +416,28 @@ func (h *Handler) PoolLinkVerifyWarmupToken(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"valid": valid})
 }
+
+// PoolLinkVerifyWarmupDelivery answers for warmup mail that reached the mailbox
+// without its verify header, which the instance cannot recognise on its own.
+func (h *Handler) PoolLinkVerifyWarmupDelivery(c *gin.Context) {
+	inst := middleware.GetPoolLinkInstance(c)
+	if inst == nil {
+		errx.JSON(c, errx.ErrUnauthorized)
+		return
+	}
+	remoteID, ok := poolLinkRemoteID(c)
+	if !ok {
+		return
+	}
+	var q models.PoolLinkWarmupDeliveryQuery
+	if err := c.ShouldBindJSON(&q); err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "invalid request body"))
+		return
+	}
+	valid, xerr := h.PoolLinkService.VerifyWarmupDelivery(c.Request.Context(), inst, remoteID, q)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"valid": valid})
+}

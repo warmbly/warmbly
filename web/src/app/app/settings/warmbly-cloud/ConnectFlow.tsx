@@ -39,6 +39,9 @@ export default function ConnectFlow({
     const [nudged, setNudged] = React.useState(false);
     const [linked, setLinked] = React.useState(status.connected);
     const [enrolledCount, setEnrolledCount] = React.useState(0);
+    // The status prop was read before the handshake, so the workspace name has
+    // to come from the poll that completed it.
+    const [orgName, setOrgName] = React.useState(status.link?.organization_name ?? "");
 
     const issue = step === 0 && !linked ? "Approve the code on Warmbly Cloud first" : null;
     React.useEffect(() => {
@@ -80,14 +83,16 @@ export default function ConnectFlow({
                                 <LinkStep
                                     status={status}
                                     linked={linked}
-                                    onLinked={() => {
+                                    orgName={orgName}
+                                    onLinked={(name) => {
+                                        setOrgName(name);
                                         setLinked(true);
                                         setTimeout(() => goTo(1), 650);
                                     }}
                                 />
                             )}
                             {step === 1 && <MailboxesStep onCountChange={setEnrolledCount} />}
-                            {step === 2 && <DoneStep status={status} enrolledCount={enrolledCount} />}
+                            {step === 2 && <DoneStep orgName={orgName} enrolledCount={enrolledCount} />}
                         </motion.div>
                     </AnimatePresence>
                 </div>
@@ -202,19 +207,8 @@ function Footer({ step, issue, nudged, onBack, onNext }: { step: Step; issue: st
 }
 
 // Step 1: the shared link card.
-function LinkStep({ status, linked, onLinked }: { status: CloudLinkStatus; linked: boolean; onLinked: () => void }) {
-    const [orgName, setOrgName] = React.useState(status.link?.organization_name ?? "");
-    return (
-        <CloudLinkCard
-            linked={linked}
-            orgName={orgName}
-            cloudUrl={status.default_cloud_url}
-            onLinked={(name) => {
-                setOrgName(name);
-                onLinked();
-            }}
-        />
-    );
+function LinkStep({ status, linked, orgName, onLinked }: { status: CloudLinkStatus; linked: boolean; orgName: string; onLinked: (orgName: string) => void }) {
+    return <CloudLinkCard linked={linked} orgName={orgName} cloudUrl={status.default_cloud_url} onLinked={onLinked} />;
 }
 
 // Step 2: pick mailboxes.
@@ -296,7 +290,7 @@ function MailboxesStep({ onCountChange }: { onCountChange: (n: number) => void }
     );
 }
 
-function DoneStep({ status, enrolledCount }: { status: CloudLinkStatus; enrolledCount: number }) {
+function DoneStep({ orgName, enrolledCount }: { orgName: string; enrolledCount: number }) {
     return (
         <div className="flex flex-col items-center justify-center text-center gap-3 py-8">
             <motion.span
@@ -312,7 +306,7 @@ function DoneStep({ status, enrolledCount }: { status: CloudLinkStatus; enrolled
                     {enrolledCount === 0 ? "You are all set" : `${enrolledCount} mailbox${enrolledCount === 1 ? "" : "es"} warming in the pool`}
                 </p>
                 <p className="text-[12.5px] text-slate-500 mt-0.5 max-w-md">
-                    {status.link?.organization_name ? `Linked to ${status.link.organization_name}. ` : ""}
+                    {orgName ? `Linked to ${orgName}. ` : ""}
                     Warmup starts on the first slot of each mailbox's window and ramps daily. Health and volume show up on this page as they arrive.
                 </p>
             </div>

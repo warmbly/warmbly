@@ -304,3 +304,23 @@ func (s *service) VerifyWarmupToken(ctx context.Context, inst *models.PoolLinkIn
 	}
 	return t != nil && t.RecipientAccountID == m.EmailAccountID, nil
 }
+
+// VerifyWarmupDelivery answers for warmup mail whose verify header did not
+// survive delivery, which is every send from a Microsoft mailbox.
+func (s *service) VerifyWarmupDelivery(ctx context.Context, inst *models.PoolLinkInstance, remoteID uuid.UUID, q models.PoolLinkWarmupDeliveryQuery) (bool, *errx.Error) {
+	m, err := s.repo.GetMailboxByRemote(ctx, inst.ID, remoteID)
+	if err != nil {
+		return false, errx.InternalError()
+	}
+	if m == nil {
+		return false, ErrMailboxNotFound
+	}
+	if s.warmup == nil {
+		return false, nil
+	}
+	ok, err := s.warmup.IsWarmupDelivery(ctx, m.EmailAccountID, q.Sender, q.MessageID, q.Subject)
+	if err != nil {
+		return false, errx.InternalError()
+	}
+	return ok, nil
+}

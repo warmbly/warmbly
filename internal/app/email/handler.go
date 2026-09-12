@@ -397,9 +397,28 @@ func (s *emailService) canUseWarmupPool(ctx context.Context, account *models.Ema
 	if account == nil || account.Status != "active" || account.OrganizationID == nil || s.featureGate == nil {
 		return false
 	}
+	// A mailbox Warmbly Cloud warms is no longer a partner here: warmup this
+	// instance sent it carries a token the cloud cannot vouch for, so it would
+	// be filed as ordinary mail in the owner's inbox.
+	if s.cloudLink != nil {
+		if m, err := s.cloudLink.GetByAccount(ctx, account.ID); err == nil && m != nil {
+			return false
+		}
+	}
 
 	canWarmup, err := s.featureGate.CanUseWarmup(ctx, *account.OrganizationID)
 	return err == nil && canWarmup
+}
+
+// SyncWarmupPool re-evaluates one mailbox's local warmup pool membership, for
+// callers that changed something the membership depends on but not the mailbox
+// row itself (enrolling it in, or releasing it from, Warmbly Cloud).
+func (s *emailService) SyncWarmupPool(ctx context.Context, accountID uuid.UUID) {
+	account, xerr := s.emailRepository.GetByID(ctx, accountID)
+	if xerr != nil {
+		return
+	}
+	s.syncWarmupPoolMembership(ctx, account)
 }
 
 // orgSuspendedOrRestricted reports whether the workspace's posture bars the

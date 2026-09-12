@@ -35,3 +35,25 @@ func TestJSONIncludesStableCodeAndRequestID(t *testing.T) {
 		t.Fatalf("unexpected body: %+v", body)
 	}
 }
+
+// A Code outside the table used to map to status 0, which gin leaves at 200.
+// Every error carrying an upstream status (the Warmbly Cloud client is the one
+// that does) would then be reported to the caller as a success.
+func TestJSONAnswersAnUnknownCodeAsAnError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	JSON(c, New(Code(599), "upstream fell over"))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	var body response
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != "internal_error" {
+		t.Fatalf("code = %q", body.Code)
+	}
+}

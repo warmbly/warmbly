@@ -193,6 +193,10 @@ x-selfhost-env: &selfhost-env
   REDIS: ${REDIS:-redis://redis:6379}
   AUTH_SECRET: ${AUTH_SECRET:-local-dev-auth-secret-minimum-32-characters-long}
   INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-local-dev-internal-token}
+  # The broker routes (open a data key, sign a blob operation, mint a managed
+  # mailbox's access token). Optional; empty falls back to the token above, and
+  # every service that needs it reads it from here so the two never disagree.
+  NODE_BROKER_TOKEN: ${NODE_BROKER_TOKEN:-}
 
   # AI assistant. Omit AI_PROVIDER to run with AI off (endpoints return 503).
   AI_PROVIDER: ${AI_PROVIDER:-}

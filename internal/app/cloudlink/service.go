@@ -27,6 +27,7 @@ var (
 	ErrCodeExpired     = errx.NewWithIdentifier(errx.NotFound, "cloud_link_code_expired", "The code expired before it was approved. Start again.")
 	ErrOAuthMailbox    = errx.NewWithIdentifier(errx.Unprocessable, "cloud_link_oauth_mailbox", "Google and Microsoft sign-in mailboxes cannot be warmed by Warmbly Cloud yet, because their refresh grant is bound to this instance's own OAuth app. Connect the mailbox with SMTP/IMAP (an app password) to enroll it.")
 	ErrMailboxInactive = errx.NewWithIdentifier(errx.Unprocessable, "cloud_link_mailbox_inactive", "Only active mailboxes can be enrolled.")
+	ErrNoCredentialKey = errx.NewWithIdentifier(errx.Conflict, "cloud_link_no_key", "This instance has no CREDENTIALS_ENCRYPTION_KEY, so it cannot store the Warmbly Cloud token. Set one and restart before connecting.")
 )
 
 // cloudURLAllowed requires TLS: the token and mailbox passwords travel on
@@ -111,6 +112,8 @@ type Service interface {
 	IsEnrolled(ctx context.Context, accountID uuid.UUID) bool
 	// VerifyWarmupToken is the consumer's check that warmup mail in an enrolled mailbox is the cloud's.
 	VerifyWarmupToken(ctx context.Context, accountID uuid.UUID, token string) (bool, error)
+	// IsCloudWarmupDelivery is the same check for warmup mail whose verify header did not survive.
+	IsCloudWarmupDelivery(ctx context.Context, accountID uuid.UUID, sender, messageID, subject string) (bool, error)
 }
 
 type service struct {
@@ -169,6 +172,11 @@ func (s *service) Status(ctx context.Context) (*models.CloudLinkStatus, *errx.Er
 func (s *service) StartConnect(ctx context.Context, userID uuid.UUID, cloudURL string) (*PendingConnect, *errx.Error) {
 	if l, err := s.repo.Get(ctx); err == nil && l != nil {
 		return nil, ErrAlreadyLinked
+	}
+	// The handshake is one-time: refuse it now rather than lose the token
+	// after a member has already approved the code on the cloud.
+	if err := s.repo.CanStore(); err != nil {
+		return nil, ErrNoCredentialKey
 	}
 	cloudURL = strings.TrimRight(strings.TrimSpace(cloudURL), "/")
 	if cloudURL == "" {
@@ -279,9 +287,14 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 		return xerr
 	}
 	// Managed mirrors have no credential of their own; they end with the link.
+	var released []uuid.UUID
 	if rows, err := s.repo.List(ctx); err == nil {
 		for _, m := range rows {
-			if !m.Managed || s.emailSvc == nil {
+			if !m.Managed {
+				released = append(released, m.EmailAccountID)
+				continue
+			}
+			if s.emailSvc == nil {
 				continue
 			}
 			if acc, xerr := s.emails.GetByID(ctx, m.EmailAccountID); xerr == nil {
@@ -295,6 +308,10 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 	}
 	if err := s.repo.Delete(ctx); err != nil {
 		return errx.InternalError()
+	}
+	// The mailboxes the cloud was warming rejoin this instance's pool.
+	for _, id := range released {
+		s.syncLocalPool(ctx, id)
 	}
 	return nil
 }
@@ -332,7 +349,9 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 	}
 
 	rows := make([]models.CloudLinkMailboxRow, 0, len(accounts))
-	for _, a := range accounts {
+	seen := make(map[uuid.UUID]bool, len(accounts))
+	add := func(a *models.Email) {
+		seen[a.ID] = true
 		row := models.CloudLinkMailboxRow{ID: a.ID, Email: a.Email, Name: a.Name, Provider: a.Provider, Status: a.Status}
 		if e, ok := byAccount[a.ID]; ok {
 			at := e.EnrolledAt
@@ -342,6 +361,22 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 			row.Cloud = cloudByRemote[e.RemoteID]
 		}
 		rows = append(rows, row)
+	}
+	for i := range accounts {
+		add(&accounts[i])
+	}
+	// An enrolled mailbox the cloud still warms stays listed after it goes
+	// inactive; the scope query above returns active ones only, and dropping it
+	// would leave no way to see, pause or unenroll it.
+	for _, e := range enrolled {
+		if seen[e.EmailAccountID] {
+			continue
+		}
+		acc, xerr := s.emails.GetByID(ctx, e.EmailAccountID)
+		if xerr != nil || acc.OrganizationID == nil || *acc.OrganizationID != orgID {
+			continue
+		}
+		add(acc)
 	}
 	return rows, nil
 }
@@ -359,17 +394,35 @@ func (s *service) row(ctx context.Context, orgID, accountID uuid.UUID) (*models.
 	return nil, errx.ErrNotFound
 }
 
-func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*models.CloudLinkMailboxRow, *errx.Error) {
-	l, xerr := s.link(ctx)
-	if xerr != nil {
-		return nil, xerr
-	}
+// ownedAccount refuses a mailbox from another workspace before anything acts on it.
+func (s *service) ownedAccount(ctx context.Context, orgID, accountID uuid.UUID) (*models.Email, *errx.Error) {
 	acc, xerr := s.emails.GetByID(ctx, accountID)
 	if xerr != nil {
 		return nil, xerr
 	}
 	if acc.OrganizationID == nil || *acc.OrganizationID != orgID {
 		return nil, errx.ErrNotFound
+	}
+	return acc, nil
+}
+
+// syncLocalPool re-reads the mailbox's local warmup pool membership. An
+// enrolled mailbox must leave the local pool: warmup sent to it from here
+// carries a token the cloud cannot vouch for, so it lands in the user's inbox.
+func (s *service) syncLocalPool(ctx context.Context, accountID uuid.UUID) {
+	if s.emailSvc != nil {
+		s.emailSvc.SyncWarmupPool(ctx, accountID)
+	}
+}
+
+func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*models.CloudLinkMailboxRow, *errx.Error) {
+	l, xerr := s.link(ctx)
+	if xerr != nil {
+		return nil, xerr
+	}
+	acc, xerr := s.ownedAccount(ctx, orgID, accountID)
+	if xerr != nil {
+		return nil, xerr
 	}
 	if acc.Status != "active" {
 		return nil, ErrMailboxInactive
@@ -409,16 +462,14 @@ func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*mode
 		}
 		return nil, errx.InternalError()
 	}
+	s.syncLocalPool(ctx, acc.ID)
 	return s.row(ctx, orgID, accountID)
 }
 
 func (s *service) Unenroll(ctx context.Context, orgID, accountID uuid.UUID) *errx.Error {
-	acc, xerr := s.emails.GetByID(ctx, accountID)
+	acc, xerr := s.ownedAccount(ctx, orgID, accountID)
 	if xerr != nil {
 		return xerr
-	}
-	if acc.OrganizationID == nil || *acc.OrganizationID != orgID {
-		return errx.ErrNotFound
 	}
 	m, err := s.repo.GetByAccount(ctx, accountID)
 	if err != nil {
@@ -443,6 +494,7 @@ func (s *service) Unenroll(ctx context.Context, orgID, accountID uuid.UUID) *err
 			return xerr
 		}
 	}
+	s.syncLocalPool(ctx, accountID)
 	return nil
 }
 
@@ -452,6 +504,9 @@ func (s *service) SetLifecycle(ctx context.Context, orgID, accountID uuid.UUID, 
 	}
 	l, xerr := s.link(ctx)
 	if xerr != nil {
+		return nil, xerr
+	}
+	if _, xerr := s.ownedAccount(ctx, orgID, accountID); xerr != nil {
 		return nil, xerr
 	}
 	m, err := s.repo.GetByAccount(ctx, accountID)

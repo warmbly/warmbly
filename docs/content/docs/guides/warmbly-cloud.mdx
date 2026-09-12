@@ -17,7 +17,8 @@ Your instance keeps a single link to a Warmbly Cloud workspace. When you enroll 
 
 - Warmbly Cloud sends the mailbox's warmup mail, replies to partners, and rescues, opens and stars the warmup mail it receives, on Warmbly's own workers
 - the cloud reads only verified warmup mail from the mailbox. Everything else that arrives is dropped unread; no history is imported and nothing is stored
-- your instance stops its own warmup for that mailbox and keeps sending campaigns from it as usual
+- your instance stops its own warmup for that mailbox and takes it out of the local warmup pool, so no mailbox on your server writes to it any more, and keeps sending campaigns from it as usual
+- your instance recognises the cloud's warmup mail arriving in the mailbox and leaves it out of your unibox, asking the cloud to vouch for anything it cannot identify on its own
 - health, daily volume and 7 day totals show up in your instance's settings as the cloud reports them
 
 Unenrolling an SMTP/IMAP mailbox, or disconnecting the instance, deletes its credential on the cloud immediately. A mailbox that was signed in through Warmbly Cloud stays in the cloud workspace when you remove it from the instance; disconnecting the instance removes its mirrors of such mailboxes, since they cannot send without the link.

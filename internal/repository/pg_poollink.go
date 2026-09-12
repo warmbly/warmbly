@@ -36,7 +36,6 @@ type PoolLinkRepository interface {
 	GetMailboxByRemote(ctx context.Context, instanceID, remoteID uuid.UUID) (*models.PoolLinkMailbox, error)
 	GetMailboxByAccount(ctx context.Context, accountID uuid.UUID) (*models.PoolLinkMailbox, error)
 	ListMailboxes(ctx context.Context, instanceID uuid.UUID) ([]models.PoolLinkMailbox, error)
-	CountMailboxesForOrganization(ctx context.Context, orgID uuid.UUID) (int, error)
 	DeleteMailbox(ctx context.Context, instanceID, remoteID uuid.UUID) error
 	// TouchMailboxToken records when a managed mailbox last drew an access token.
 	TouchMailboxToken(ctx context.Context, instanceID, remoteID uuid.UUID) error
@@ -150,7 +149,19 @@ func (r *poolLinkRepository) ClaimCode(ctx context.Context, deviceCodeHash strin
 	return &c, token, nil
 }
 
+// DeleteExpiredCodes blanks the plaintext instance token on any expired row and
+// removes rows old enough to be of no interest. The two are separate on
+// purpose: an approved code the instance never came back for would otherwise
+// keep a usable bearer token in plaintext for as long as the row survived,
+// which is what "held only between approval and the next poll" rules out. The
+// instance itself stays, listed under Settings > Linked instances, where it can
+// be revoked.
 func (r *poolLinkRepository) DeleteExpiredCodes(ctx context.Context) error {
+	query := `UPDATE pool_link_codes SET instance_token = NULL WHERE instance_token IS NOT NULL AND expires_at < NOW()`
+	if _, err := r.db.Exec(ctx, query); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
 	_, err := r.db.Exec(ctx, `DELETE FROM pool_link_codes WHERE expires_at < NOW() - INTERVAL '1 day'`)
 	return err
 }
@@ -312,20 +323,6 @@ func (r *poolLinkRepository) ListMailboxes(ctx context.Context, instanceID uuid.
 		out = append(out, m)
 	}
 	return out, rows.Err()
-}
-
-func (r *poolLinkRepository) CountMailboxesForOrganization(ctx context.Context, orgID uuid.UUID) (int, error) {
-	var n int
-	query := `
-		SELECT COUNT(*) FROM pool_link_mailboxes m
-		JOIN pool_link_instances i ON i.id = m.instance_id
-		WHERE i.organization_id = $1 AND i.revoked_at IS NULL
-	`
-	if err := r.db.QueryRow(ctx, query, orgID).Scan(&n); err != nil {
-		db.CaptureError(err, query, []any{orgID}, "queryrow")
-		return 0, err
-	}
-	return n, nil
 }
 
 func (r *poolLinkRepository) DeleteMailbox(ctx context.Context, instanceID, remoteID uuid.UUID) error {
