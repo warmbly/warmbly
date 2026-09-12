@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/mail"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -395,23 +397,62 @@ func fetchGmailOwner(ctx context.Context, token string) (*inboxOwner, *errx.Erro
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "gmail", "transport", 0, nil, err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "gmail", "status", resp.StatusCode, body, nil)
 	}
 	var out struct {
 		EmailAddress string `json:"emailAddress"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "gmail", "decode", resp.StatusCode, body, err)
 	}
 	if out.EmailAddress == "" {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "gmail", "no_address", resp.StatusCode, body, nil)
 	}
 	return &inboxOwner{Email: out.EmailAddress}, nil
+}
+
+// ownerLookupFailed reports why the provider would not name the mailbox and
+// returns the one error the user sees.
+//
+// The user-facing message stays deliberately vague, because the cause is ours
+// and not theirs. What is NOT vague any more is the record: this call used to
+// read the status and the body and then discard both, so five distinct
+// failures arrived as one sentence with nothing behind it, and the most common
+// of them by far ("the Gmail API has not been enabled in this project") was
+// indistinguishable from a revoked token. A handled 400 raises no exception,
+// so without this there is nothing in the logs or in error tracking either.
+func ownerLookupFailed(ctx context.Context, provider, stage string, status int, body []byte, cause error) *errx.Error {
+	detail := strings.TrimSpace(string(body))
+	if len(detail) > 512 {
+		detail = detail[:512] + "…"
+	}
+	opts := []errs.Option{
+		errs.Tag("provider", provider),
+		errs.Tag("stage", stage),
+		errs.Extra("status", status),
+	}
+	// Only present on a failure response, where it is the provider's own error
+	// payload rather than anything belonging to the mailbox owner.
+	if detail != "" {
+		opts = append(opts, errs.Extra("response", detail))
+	}
+	if cause != nil {
+		errs.CaptureExceptionContext(ctx, fmt.Errorf("%s owner lookup failed at %s: %w", provider, stage, cause), opts...)
+	} else {
+		errs.CaptureMessageContext(ctx, fmt.Sprintf("%s owner lookup failed at %s (status %d)", provider, stage, status), opts...)
+	}
+	log.Warn().
+		Str("provider", provider).
+		Str("stage", stage).
+		Int("status", status).
+		Str("response", detail).
+		Msg("mailbox onboarding: provider would not name the account")
+	return errx.ErrEmailOnboardUserInfo
 }
 
 func fetchOutlookOwner(ctx context.Context, token string) (*inboxOwner, *errx.Error) {
@@ -420,12 +461,12 @@ func fetchOutlookOwner(ctx context.Context, token string) (*inboxOwner, *errx.Er
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "outlook", "transport", 0, nil, err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "outlook", "status", resp.StatusCode, body, nil)
 	}
 	var out struct {
 		Mail              string `json:"mail"`
@@ -433,14 +474,14 @@ func fetchOutlookOwner(ctx context.Context, token string) (*inboxOwner, *errx.Er
 		DisplayName       string `json:"displayName"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "outlook", "decode", resp.StatusCode, body, err)
 	}
 	addr := out.Mail
 	if addr == "" {
 		addr = out.UserPrincipalName
 	}
 	if addr == "" {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "outlook", "no_address", resp.StatusCode, nil, nil)
 	}
 	return &inboxOwner{Email: addr, Name: out.DisplayName}, nil
 }
