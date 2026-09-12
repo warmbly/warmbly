@@ -353,7 +353,6 @@ The variable must be set on the backend in every environment. The file itself is
 | `WORKER_BIND_IP` | Source address to bind outbound connections to, and the seed for a derived `WORKER_ID` | unset | yes |
 | `WORKER_PUBLIC_IP` | The address the worker reports to the control plane | detected | yes |
 | `WARMBLY_NODE_REGION` | Free-form label for where this node egresses from, e.g. `eu-central`. Placement prefers a worker near where a mailbox's provider expects sign-ins; unset scores neutral. Written by the join script from `--region` | unset | yes |
-| `WORKER_IMAGE` | Image the remote installer pulls. The built-in default does not match what CI publishes, so set it | built-in | yes |
 | `ENCRYPTED_KEYS_BACKEND_URL` | Backend base the worker fetches organization keys from | unset | yes |
 | `ENCRYPTED_KEYS_WORKER_TOKEN` | The worker's copy of `INTERNAL_API_TOKEN` | unset | yes |
 | `MAIL_TLS_INSECURE` | Skips certificate verification on mailbox connections | `false` | yes |

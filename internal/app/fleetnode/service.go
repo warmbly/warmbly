@@ -182,6 +182,26 @@ func (s *Service) desiredVersion(ctx context.Context, nodeID uuid.UUID) string {
 	return s.withVariant(state.DesiredVersion())
 }
 
+// DefaultJoinTag is what a machine joining an instance with no resolved
+// release is told to run. It has to be a tag this project actually publishes:
+// `latest` is not one, and a node sent there fails on the image pull before it
+// ever heartbeats. The floating release tag is `prod`.
+const DefaultJoinTag = "prod"
+
+// JoinVersion is what a machine joining right now should start on.
+//
+// It differs from the heartbeat's answer in exactly one way. To a node that is
+// already running something, an unresolved release means "no opinion" and must
+// stay empty, because the alternative is a control-plane hiccup rolling the
+// fleet. A joining node has nothing to keep running, so it has to be told a
+// tag, and the fallback is the published floating one.
+func (s *Service) JoinVersion(ctx context.Context, nodeID uuid.UUID) string {
+	if v := s.desiredVersion(ctx, nodeID); v != "" {
+		return v
+	}
+	return s.withVariant(DefaultJoinTag)
+}
+
 // List returns the fleet, with each node's resolved target attached so a
 // caller can see at a glance which machines are behind.
 func (s *Service) List(ctx context.Context, role models.NodeRole) ([]models.FleetNode, error) {

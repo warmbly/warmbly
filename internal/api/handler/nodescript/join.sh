@@ -170,7 +170,10 @@ enrol() {
 
   [ -n "$NODE_ID" ] || die "the control plane did not return a node id"
   [ -n "$NODE_ENV" ] || die "the control plane returned no configuration for this node"
-  [ -n "$DESIRED_VERSION" ] || DESIRED_VERSION="latest"
+  # The control plane names a tag, including when it has no release resolved.
+  # This only catches a backend too old to do that, and it names the tag the
+  # project publishes: there is no `latest`.
+  [ -n "$DESIRED_VERSION" ] || DESIRED_VERSION="prod"
   log "Enrolled as $WARMBLY_ROLE node $NODE_ID"
 }
 
