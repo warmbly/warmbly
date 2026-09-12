@@ -329,7 +329,7 @@ DEPLOYMENT_MODE=self_hosted
 # AWS_SECRET_ACCESS_KEY=
 # KMS_PROVIDER=aws
 # KMS_AWS_KEY_ID=alias/warmbly
-# EVENTBUS_PROVIDER=kafka           # needs images built with GO_TAGS=kafka
+# EVENTBUS_PROVIDER=kafka           # needs the -kafka images (see below)
 # KAFKA_BOOTSTRAP_SERVERS=broker:9092
 # PRIMARY_DB=postgres://user:pass@host:5432/warmbly?sslmode=require
 # REDIS=redis://host:6379
@@ -633,7 +633,16 @@ Pair it with `DISABLE_PASSWORD_LOGIN=true` for an SSO-only deployment.
 Three things to know:
 
 - **Bare binaries default to the cloud values** (`kafka`, `avro`, `s3`, `aws`). Compose, the Makefile, and both env templates set the local values for you. A hand-rolled environment must set them or the process exits at boot.
-- Kafka and Avro are also build-time opt-ins: `--build-arg GO_TAGS=kafka` for Go, `--build-arg CARGO_FEATURES=kafka` for tracking.
+- Kafka and Avro are build-time opt-ins, so `EVENTBUS_PROVIDER=kafka` needs a build that has them. Each release publishes those builds as a second tag on the same image, suffixed `-kafka`, for the four services that touch the bus:
+
+  ```
+  ghcr.io/warmbly/warmbly/backend:prod-kafka
+  ghcr.io/warmbly/warmbly/consumer:prod-kafka
+  ghcr.io/warmbly/warmbly/worker:prod-kafka
+  ghcr.io/warmbly/warmbly/tracking:prod-kafka
+  ```
+
+  `forms`, `updater`, `realtime`, `web`, and `admin` never read the bus and have one image each. To build your own instead, pass `--build-arg GO_TAGS=kafka` (Go) or `--build-arg CARGO_FEATURES=kafka` (tracking); cgo cannot cross-compile, so each architecture has to be built on a machine of that architecture.
 - `PUBSUB_ENABLED` must match across backend, consumer, and realtime.
 
 ## Optional subsystems
