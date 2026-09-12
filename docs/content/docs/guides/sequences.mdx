@@ -107,7 +107,7 @@ A step written in the visual editor gets its plain-text half as you type, and it
 
 This only applies when there is no plain-text body to send. Set `body_plain` through the API and that text is sent as written; leave it empty and the send path renders one from the HTML.
 
-The reverse holds too. A step written through the API or an agent tool usually carries `body_plain` and nothing else, and the HTML half is rendered from that text: the lines are kept and bare URLs become links, so click tracking has something to wrap. Without it the step would arrive blank, because every modern client prefers the HTML alternative and there was none to show. A step that already has an HTML body is never overwritten.
+The reverse holds too. A step written through the API or an agent tool usually carries `body_plain` and nothing else, and the HTML half is rendered from that text: the lines are kept and bare URLs become links, so click tracking has something to wrap. The step is stored with the composer's empty HTML document until then, and that empty document, not the absence of one, is what used to arrive as a blank email: clients prefer the HTML alternative and would show an empty one in place of the text. A step that already has an HTML body is never overwritten.
 
 A step with nothing in either body is refused at start rather than sent: a blank email to every lead is not a campaign anyone meant to launch.
 

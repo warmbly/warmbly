@@ -93,3 +93,16 @@ func TestFromTextOutputHasContent(t *testing.T) {
 		}
 	}
 }
+
+// The send path renders the body with text/template, which escapes nothing by
+// design, so an anchor built around a templated URL would let a contact value
+// containing a quote break out of the href. Such a URL stays plain text.
+func TestFromTextDoesNotAnchorATemplatedURL(t *testing.T) {
+	got := FromText("Book here: https://cal.example.com/?ref={{.Company}}")
+	if strings.Contains(got, "<a href") {
+		t.Errorf("FromText anchored a URL carrying a merge field: %q", got)
+	}
+	if !strings.Contains(got, "https://cal.example.com/?ref={{.Company}}") {
+		t.Errorf("FromText mangled the URL: %q", got)
+	}
+}

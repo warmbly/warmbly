@@ -1810,9 +1810,9 @@ func main() {
 		systemChecker.Add("redis", func(ctx context.Context) error { return cache.Ping(ctx).Err() })
 		switch bus.Name() {
 		case "kafka":
-			systemChecker.Add("kafka", sysstatus.TCPCheck(kafkaBootstrapServers))
+			systemChecker.Add("kafka", sysstatus.TCPCheck(kafkaBootstrapServers, "9092"))
 		case "nats":
-			systemChecker.Add("nats", sysstatus.TCPCheck(getenvDefault("NATS_URL", "nats://localhost:4222")))
+			systemChecker.Add("nats", sysstatus.TCPCheck(getenvDefault("NATS_URL", "nats://localhost:4222"), "4222"))
 		}
 		if sr := os.Getenv("SCHEMA_REGISTRY_URL"); sr != "" {
 			systemChecker.Add("schema-registry", sysstatus.HTTPCheck(strings.TrimRight(sr, "/")+"/subjects"))

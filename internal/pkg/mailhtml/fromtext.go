@@ -64,8 +64,17 @@ var textEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 func linkifyEscaped(line string) string {
 	escaped := textEscaper.Replace(line)
 	return bareURL.ReplaceAllStringFunc(escaped, func(match string) string {
-		// The href carries the same escaped text: it holds no quote, so it
-		// is attribute-safe as it stands.
+		// A URL carrying a merge field is left as text. The send path renders
+		// the body with text/template, which by design performs no escaping
+		// (see internal/tasks/template.go), so a contact value containing a
+		// quote would break out of the href this would otherwise build. Plain
+		// bodies had no anchors at all before, so declining to add one here
+		// costs nothing that existed.
+		if strings.Contains(match, "{{") {
+			return match
+		}
+		// Otherwise the href is literal text the author typed, already through
+		// textEscaper and holding no quote, so it is attribute-safe as it is.
 		return `<a href="` + match + `">` + match + `</a>`
 	})
 }

@@ -465,30 +465,36 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 	// conditional (e.g. an {{if}} with no {{end}}) silently degrades to literal
 	// template text in the sent email — better to catch it here with a clear,
 	// step-scoped error than to ship {{if ...}} to recipients.
-	if seqs, serr := s.campaignRepository.GetSequencesByCampaignID(ctx, cID); serr == nil {
-		for i, seq := range seqs {
-			for _, f := range []struct {
-				name, val string
-			}{{"subject", seq.Subject}, {"body", seq.BodyHTML}, {"plain-text body", seq.BodyPlain}} {
-				if terr := tasks.TemplateError(f.val); terr != nil {
-					return errx.New(errx.BadRequest, fmt.Sprintf(
-						"Step %d's %s has a template error — fix the {{if}}/{{end}} or {{eq}} syntax before starting.",
-						i+1, f.name,
-					))
-				}
-			}
-			// An email step with nothing in either body sends a blank message
-			// to every lead it reaches. A step created through the API carries
-			// the composer's empty placeholder, which is not an empty string,
-			// so this asks whether the body would RENDER anything.
-			if seq.Kind == "email" &&
-				!mailhtml.HasContent(seq.BodyHTML) &&
-				strings.TrimSpace(seq.BodyPlain) == "" {
-				return errx.NewWithIdentifier(errx.BadRequest, "empty_step_body", fmt.Sprintf(
-					"Step %d has no email body, so it would send a blank message. Write the body before starting.",
-					i+1,
+	// Fail closed. This read backs two refusals (a malformed template, and a
+	// step with no body at all), so skipping it on a query error would start a
+	// campaign that sends {{if}} literals or blank mail to every lead.
+	seqs, serr := s.campaignRepository.GetSequencesByCampaignID(ctx, cID)
+	if serr != nil {
+		errs.CaptureException(serr)
+		return errx.InternalError()
+	}
+	for i, seq := range seqs {
+		for _, f := range []struct {
+			name, val string
+		}{{"subject", seq.Subject}, {"body", seq.BodyHTML}, {"plain-text body", seq.BodyPlain}} {
+			if terr := tasks.TemplateError(f.val); terr != nil {
+				return errx.New(errx.BadRequest, fmt.Sprintf(
+					"Step %d's %s has a template error — fix the {{if}}/{{end}} or {{eq}} syntax before starting.",
+					i+1, f.name,
 				))
 			}
+		}
+		// An email step with nothing in either body sends a blank message
+		// to every lead it reaches. A step created through the API carries
+		// the composer's empty placeholder, which is not an empty string,
+		// so this asks whether the body would RENDER anything.
+		if seq.Kind == "email" &&
+			!mailhtml.HasContent(seq.BodyHTML) &&
+			strings.TrimSpace(seq.BodyPlain) == "" {
+			return errx.NewWithIdentifier(errx.BadRequest, "empty_step_body", fmt.Sprintf(
+				"Step %d has no email body, so it would send a blank message. Write the body before starting.",
+				i+1,
+			))
 		}
 	}
 

@@ -97,8 +97,14 @@ func HTTPCheck(url string) func(ctx context.Context) error {
 // TCPCheck probes the first address of a comma-separated list. Each entry may
 // be a bare host:port or a full URL, because the variables these come from
 // (NATS_URL, the broker list) are connection strings, not dial addresses.
-func TCPCheck(addrs string) func(ctx context.Context) error {
-	addr := DialAddr(strings.Split(addrs, ",")[0])
+//
+// defaultPort is the port the client library assumes when the URL names none,
+// and it has to be supplied because that is protocol knowledge this package
+// does not have. Without it a perfectly good NATS_URL of "nats://host" is
+// reported down: the client connects on 4222 and net.Dial refuses an address
+// with no port at all.
+func TCPCheck(addrs, defaultPort string) func(ctx context.Context) error {
+	addr := withPort(DialAddr(strings.Split(addrs, ",")[0]), defaultPort)
 	return func(ctx context.Context) error {
 		var d net.Dialer
 		conn, err := d.DialContext(ctx, "tcp", addr)
@@ -127,4 +133,24 @@ func DialAddr(raw string) string {
 		addr = addr[:i]
 	}
 	return addr
+}
+
+// withPort appends the caller's default port to an address that names none.
+// IPv6 literals are left alone unless they are bracketed, since "::1" is all
+// colons and guessing where the port would go is how this gets worse.
+func withPort(addr, defaultPort string) string {
+	if addr == "" || defaultPort == "" {
+		return addr
+	}
+	if strings.HasPrefix(addr, "[") {
+		// [::1]:4222 has a port, [::1] does not.
+		if strings.Contains(addr[strings.Index(addr, "]"):], ":") {
+			return addr
+		}
+		return addr + ":" + defaultPort
+	}
+	if strings.Contains(addr, ":") {
+		return addr
+	}
+	return addr + ":" + defaultPort
 }

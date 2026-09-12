@@ -51,10 +51,12 @@ export default function LoginPage() {
     const [session, setSession] = useState("");
     const [code, setCode] = useState("");
     const [captcha, setCaptcha] = useState(false);
-    // Whether this deployment verifies a captcha token at all. True until the
-    // deployment says otherwise, so a config request that fails keeps the
-    // widget instead of skipping a check the backend does enforce.
-    const [captchaRequired, setCaptchaRequired] = useState(true);
+    // Whether this deployment verifies a captcha token at all. null until the
+    // answer arrives: nothing is mounted before then, so an instance with no
+    // route to Cloudflare does not raise a widget error on a screen nobody has
+    // submitted. A failed fetch resolves to true rather than leaving it
+    // pending, so the check is never skipped on an instance that enforces it.
+    const [captchaRequired, setCaptchaRequired] = useState<boolean | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [resendIn, setResendIn] = useState(0);
@@ -73,7 +75,8 @@ export default function LoginPage() {
                 if (!cancelled) setCaptchaRequired(cfg.captcha);
             })
             .catch(() => {
-                // Fail safe: keep the widget.
+                // Fail safe: assume the check is enforced.
+                if (!cancelled) setCaptchaRequired(true);
             });
         return () => {
             cancelled = true;
