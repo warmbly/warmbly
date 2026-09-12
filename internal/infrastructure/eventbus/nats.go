@@ -34,6 +34,11 @@ type NATSBus struct {
 	stream string
 	prefix string
 
+	// Held rather than passed: ensureStream retries after a failure, and the
+	// retry callers have no config to hand it.
+	maxAge   time.Duration
+	maxBytes int64
+
 	mu           sync.Mutex
 	subscribers  []jetstream.ConsumeContext
 	streamEnsure sync.Once
@@ -58,6 +63,11 @@ type NATSConfig struct {
 	// MaxAge bounds how long unacknowledged messages are retained. Zero means
 	// "use the stream's existing setting or 7 days for new streams".
 	MaxAge time.Duration
+
+	// MaxBytes caps the stream on disk. Zero leaves it unbounded, which a
+	// managed account may refuse: Synadia's "Max Bytes Required" rejects any
+	// stream created without one.
+	MaxBytes int64
 
 	// Options passed to nats.Connect (auth, TLS, etc).
 	Options []nats.Option
@@ -110,11 +120,14 @@ func NewNATS(cfg NATSConfig) (*NATSBus, error) {
 		js:     js,
 		stream: cfg.StreamName,
 		prefix: cfg.SubjectPrefix,
+
+		maxAge:   cfg.MaxAge,
+		maxBytes: cfg.MaxBytes,
 	}
 	// Eagerly ensure the stream so misconfiguration surfaces at boot rather
 	// than on the first publish. Failures are non-fatal here — the lazy
 	// retry inside Publish/Subscribe will surface them to callers.
-	if err := b.ensureStream(context.Background(), cfg.MaxAge); err != nil {
+	if err := b.ensureStream(context.Background()); err != nil {
 		log.Warn().Err(err).Msg("eventbus nats: deferred stream setup")
 	}
 	return b, nil
@@ -152,7 +165,7 @@ func (b *NATSBus) durable(group string, topics []string) string {
 	return sb.String()
 }
 
-func (b *NATSBus) ensureStream(ctx context.Context, maxAge time.Duration) error {
+func (b *NATSBus) ensureStream(ctx context.Context) error {
 	b.streamEnsure.Do(func() {
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
@@ -162,11 +175,12 @@ func (b *NATSBus) ensureStream(ctx context.Context, maxAge time.Duration) error 
 			Subjects:  []string{filter},
 			Retention: jetstream.LimitsPolicy,
 			Storage:   jetstream.FileStorage,
-			MaxAge:    maxAge,
+			MaxAge:    b.maxAge,
+			MaxBytes:  maxBytesOrUnlimited(b.maxBytes),
 			Discard:   jetstream.DiscardOld,
 		})
 		if err != nil {
-			b.streamErr = fmt.Errorf("eventbus nats: ensure stream %q: %w", b.stream, err)
+			b.streamErr = fmt.Errorf("eventbus nats: ensure stream %q: %w%s", b.stream, err, maxBytesHint(err, b.maxBytes))
 			b.streamEnsure = sync.Once{} // allow retry on next call
 		}
 	})
@@ -184,7 +198,7 @@ func (b *NATSBus) Publish(ctx context.Context, topic, key string, payload []byte
 	}
 	b.mu.Unlock()
 
-	if err := b.ensureStream(ctx, 0); err != nil {
+	if err := b.ensureStream(ctx); err != nil {
 		return err
 	}
 
@@ -218,7 +232,7 @@ func (b *NATSBus) Subscribe(ctx context.Context, topics []string, group string, 
 	if handler == nil {
 		return errors.New("eventbus nats: handler required")
 	}
-	if err := b.ensureStream(ctx, 0); err != nil {
+	if err := b.ensureStream(ctx); err != nil {
 		return err
 	}
 
@@ -334,3 +348,24 @@ func natsURLFromEnv() string {
 
 // Compile-time interface check.
 var _ EventBus = (*NATSBus)(nil)
+
+// maxBytesOrUnlimited maps an unset ceiling onto JetStream's own spelling for
+// it. Zero in a StreamConfig means zero bytes, not unlimited.
+func maxBytesOrUnlimited(v int64) int64 {
+	if v <= 0 {
+		return -1
+	}
+	return v
+}
+
+// maxBytesHint turns the server's refusal into the thing to do about it. The
+// bare error names a policy the operator has probably never heard of.
+func maxBytesHint(err error, maxBytes int64) string {
+	if maxBytes > 0 || err == nil {
+		return ""
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "max bytes") {
+		return ""
+	}
+	return " (this account requires every stream to declare a size; set NATS_MAX_BYTES, e.g. NATS_MAX_BYTES=1GiB)"
+}
