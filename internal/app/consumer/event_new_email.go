@@ -219,6 +219,11 @@ func (s *JobsService) handleUnmarkedWarmupEmail(ctx context.Context, e *models.J
 	return true
 }
 
+// cloudWarmupCheckTimeout bounds the one call this handler makes off-box. It
+// runs on every message in an enrolled mailbox, so a slow cloud would otherwise
+// hold up ingest for everything behind it.
+const cloudWarmupCheckTimeout = 5 * time.Second
+
 // isCloudWarmupDelivery asks the cloud whether an unrecognised message in a
 // mailbox it warms is its own warmup mail. Best-effort: an unreachable cloud
 // files the message as ordinary mail rather than dropping the owner's.
@@ -234,6 +239,8 @@ func (s *JobsService) isCloudWarmupDelivery(ctx context.Context, e *models.JobEv
 	if !s.CloudLink.IsEnrolled(ctx, e.Message.EmailID) {
 		return false
 	}
+	ctx, cancel := context.WithTimeout(ctx, cloudWarmupCheckTimeout)
+	defer cancel()
 	ok, err := s.CloudLink.IsCloudWarmupDelivery(ctx, e.Message.EmailID, sender, e.Message.MessageID, e.Message.Subject)
 	if err != nil {
 		log.Warn().Err(err).Str("email_account_id", e.Message.EmailID.String()).Msg("cloud warmup delivery check failed; filing as ordinary mail")
