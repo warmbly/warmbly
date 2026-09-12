@@ -169,6 +169,9 @@ type WarmupRepository interface {
 	// FindDeliveredWarmupToken resolves the pending token for an inbound
 	// message that carries no verify header.
 	FindDeliveredWarmupToken(ctx context.Context, recipientAccountID uuid.UUID, senderAddress, messageID, subject string) (*models.WarmupToken, error)
+	// IsWarmupDelivery answers the same question for a second reader of the
+	// same mailbox, which must not depend on who consumed the token first.
+	IsWarmupDelivery(ctx context.Context, recipientAccountID uuid.UUID, senderAddress, messageID, subject string) (bool, error)
 	RecordInvalidTokenAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string) error
 	CountRecentInvalidAttempts(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
@@ -1198,6 +1201,52 @@ func (r *warmupRepository) FindDeliveredWarmupToken(ctx context.Context, recipie
 		ORDER BY ` + matchesMessageID + ` DESC, wt.created_at DESC
 		LIMIT 1`
 	return scanWarmupToken(r.db.QueryRow(ctx, query, recipientAccountID, messageID, senderAddress, subject))
+}
+
+// IsWarmupDelivery reports whether an inbound message is warmup mail this
+// deployment sent to the mailbox. It deliberately ignores consumed_at: the
+// caller is a linked instance reading the same mailbox as this deployment, so
+// a consumed-only match would depend on which of the two synced first.
+func (r *warmupRepository) IsWarmupDelivery(ctx context.Context, recipientAccountID uuid.UUID, senderAddress, messageID, subject string) (bool, error) {
+	messageID = strings.Trim(strings.TrimSpace(messageID), "<>")
+	senderAddress = strings.TrimSpace(senderAddress)
+	subject = strings.TrimSpace(subject)
+	if messageID == "" && (senderAddress == "" || subject == "") {
+		return false, nil
+	}
+	query := `
+		SELECT EXISTS (
+		    SELECT 1 FROM warmup_received wr
+		    WHERE wr.email_account_id = $1
+		      AND $2 <> ''
+		      AND btrim(wr.message_id, '<>') = $2
+		  ) OR EXISTS (
+		    SELECT 1 FROM warmup_tokens wt
+		    WHERE wt.recipient_account_id = $1
+		      AND wt.created_at > NOW() - INTERVAL '7 days'
+		      AND (
+		        ($2 <> '' AND wt.sent_message_id <> '' AND btrim(wt.sent_message_id, '<>') = $2)
+		        OR (
+		          $3 <> '' AND $4 <> ''
+		          -- Only when one side has no Message-ID to compare. Two known
+		          -- ids that differ are a different message, and matching on
+		          -- sender and subject alone would drop the owner's real mail.
+		          AND ($2 = '' OR wt.sent_message_id = '')
+		          AND wt.created_at > NOW() - INTERVAL '2 days'
+		          AND wt.subject <> ''
+		          AND lower(btrim(wt.subject)) = lower($4)
+		          AND EXISTS (
+		              SELECT 1 FROM email_accounts ea
+		              WHERE ea.id = wt.sender_account_id AND lower(ea.email) = lower($3)
+		          )
+		        )
+		      )
+		  )`
+	var ok bool
+	if err := r.db.QueryRow(ctx, query, recipientAccountID, messageID, senderAddress, subject).Scan(&ok); err != nil {
+		return false, err
+	}
+	return ok, nil
 }
 
 // RecordInvalidTokenAttempt records an invalid warmup token attempt

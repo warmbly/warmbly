@@ -75,7 +75,7 @@ The cost is one HTTPS call per DEK open, which Redis caches, and one per blob op
 
 Two limits are worth knowing. A signed URL covers one verb on one key, and only for the prefixes a node reaches: transport bodies, campaign attachments, and the mailbox bodies a sync stores. Avatars, form assets and workspace export archives cannot be signed for at all, so the credential a node holds is not a credential for the bucket.
 
-That credential is `NODE_BROKER_TOKEN`. It falls back to `INTERNAL_API_TOKEN`, which is what a single-machine install uses, but set it to its own value here: the tracking and forms services are internet-facing and carry the shared token, and there is no reason for what they hold to be enough to open a data key.
+That credential is `NODE_BROKER_TOKEN`. It falls back to `INTERNAL_API_TOKEN`, which is what a single-machine install uses, but set it to its own value here: the tracking and forms services are internet-facing and carry the shared token, and there is no reason for what they hold to be enough to open a data key. The same token covers the third broker route, which mints a provider access token for a mailbox Warmbly Cloud manages.
 
 ## Building it
 

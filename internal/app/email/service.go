@@ -111,6 +111,9 @@ type EmailService interface {
 	// LoadAccountOntoWorker assigns a worker if needed and ships the mailbox
 	// to it (idempotent; the reconciler calls it too).
 	LoadAccountOntoWorker(ctx context.Context, accountID uuid.UUID) error
+	// SyncWarmupPool re-evaluates one mailbox's local warmup pool membership,
+	// for a change outside the mailbox row (Warmbly Cloud enrollment).
+	SyncWarmupPool(ctx context.Context, accountID uuid.UUID)
 	// GetSyncState is the dashboard's view of a mailbox's sync: nil state when
 	// the worker has not reported yet.
 	GetSyncState(ctx context.Context, userID, emailID string) (*models.SyncState, models.SyncPolicy, *errx.Error)

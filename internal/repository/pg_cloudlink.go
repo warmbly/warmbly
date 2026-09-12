@@ -15,6 +15,10 @@ import (
 
 // CloudLinkRepository is the self-hosted side of pool link.
 type CloudLinkRepository interface {
+	// CanStore reports whether the instance token can be sealed at all. The
+	// handshake is one-time: a token that cannot be written is gone, and the
+	// link is left standing on the cloud with nobody holding it.
+	CanStore() error
 	Get(ctx context.Context) (*models.CloudLink, error)
 	Put(ctx context.Context, link *models.CloudLink) error
 	Delete(ctx context.Context) error
@@ -39,6 +43,13 @@ var errNoLinkEncrypter = errors.New("credential encrypter not configured (set CR
 // NewCloudLinkRepository seals the instance token with the mailbox credential key.
 func NewCloudLinkRepository(db *pgxpool.Pool, enc *encrypt.Encrypter) CloudLinkRepository {
 	return &cloudLinkRepository{db: db, encrypt: enc}
+}
+
+func (r *cloudLinkRepository) CanStore() error {
+	if r.encrypt == nil {
+		return errNoLinkEncrypter
+	}
+	return nil
 }
 
 func (r *cloudLinkRepository) Get(ctx context.Context) (*models.CloudLink, error) {

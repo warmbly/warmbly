@@ -74,9 +74,9 @@ type Service interface {
 	ListWorkspaceMailboxes(ctx context.Context, inst *models.PoolLinkInstance) ([]models.PoolLinkWorkspaceMailbox, *errx.Error)
 	Adopt(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkAdoptRequest) (*models.PoolLinkMailboxState, *errx.Error)
 	VerifyWarmupToken(ctx context.Context, inst *models.PoolLinkInstance, remoteID, token uuid.UUID) (bool, *errx.Error)
+	// VerifyWarmupDelivery is the same answer for warmup mail that arrived without its verify header.
+	VerifyWarmupDelivery(ctx context.Context, inst *models.PoolLinkInstance, remoteID uuid.UUID, q models.PoolLinkWarmupDeliveryQuery) (bool, *errx.Error)
 
-	// IsLinkedMailbox is the consumer's hot-path warmup-only check.
-	IsLinkedMailbox(ctx context.Context, accountID uuid.UUID) bool
 	// HasActiveLink entitles a workspace to warm its linked mailboxes.
 	HasActiveLink(ctx context.Context, orgID uuid.UUID) bool
 	// Plan is the allowance the workspace currently has.
@@ -657,11 +657,6 @@ func (s *service) Unenroll(ctx context.Context, inst *models.PoolLinkInstance, r
 		return errx.InternalError()
 	}
 	return nil
-}
-
-func (s *service) IsLinkedMailbox(ctx context.Context, accountID uuid.UUID) bool {
-	m, err := s.repo.GetMailboxByAccount(ctx, accountID)
-	return err == nil && m != nil
 }
 
 func (s *service) HasActiveLink(ctx context.Context, orgID uuid.UUID) bool {

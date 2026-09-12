@@ -41,7 +41,20 @@ func (e *Error) identifier() string {
 	if e.Identifier != "" {
 		return e.Identifier
 	}
-	return codeToIdentifier[e.Code]
+	if id, ok := codeToIdentifier[e.Code]; ok {
+		return id
+	}
+	return codeToIdentifier[Internal]
+}
+
+// resolve is the HTTP status and title to answer with. A Code outside the
+// table maps to 0, which gin leaves at 200, so an error would be reported as a
+// success; anything unknown is an internal error instead.
+func (e *Error) resolve() (int, string) {
+	if status, ok := codeToHTTP[e.Code]; ok {
+		return status, codeToString[e.Code]
+	}
+	return codeToHTTP[Internal], codeToString[Internal]
 }
 
 // ResponseCode is the machine-readable `code` this error answers with, for
@@ -74,8 +87,7 @@ func Handle(c *gin.Context, err error) {
 	var bizErr *Error
 	if errors.As(err, &bizErr) {
 		// Business error – send clean JSON
-		httpCode := codeToHTTP[bizErr.Code]
-		httpError := codeToString[bizErr.Code]
+		httpCode, httpError := bizErr.resolve()
 		c.JSON(httpCode, response{
 			Error:     httpError,
 			Message:   bizErr.Message,
@@ -91,8 +103,7 @@ func Handle(c *gin.Context, err error) {
 
 // JSON sends a business error as JSON response
 func JSON(c *gin.Context, err *Error) {
-	httpCode := codeToHTTP[err.Code]
-	httpError := codeToString[err.Code]
+	httpCode, httpError := err.resolve()
 	c.JSON(httpCode, response{
 		Error:     httpError,
 		Message:   err.Message,

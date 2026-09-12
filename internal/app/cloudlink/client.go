@@ -69,7 +69,7 @@ func (c *client) do(ctx context.Context, method, path string, body any, out any)
 	if res.StatusCode >= 400 {
 		var re remoteError
 		_ = json.Unmarshal(raw, &re)
-		code := errx.Code(res.StatusCode)
+		code := remoteCode(res.StatusCode)
 		if re.Message == "" {
 			re.Message = fmt.Sprintf("Warmbly Cloud answered %d", res.StatusCode)
 		}
@@ -84,4 +84,22 @@ func (c *client) do(ctx context.Context, method, path string, body any, out any)
 		}
 	}
 	return nil
+}
+
+// remoteCode maps the cloud's status onto one errx can answer with. errx.JSON
+// writes status 0 for a code outside its table, which gin turns into a 200, so
+// an unmapped answer (a proxy's 502) would report a failed call as a success.
+func remoteCode(status int) errx.Code {
+	switch status {
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden,
+		http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusTooManyRequests,
+		http.StatusInternalServerError, http.StatusNotImplemented, http.StatusServiceUnavailable:
+		return errx.Code(status)
+	case http.StatusGone:
+		return errx.NotFound
+	}
+	if status >= 500 {
+		return errx.ServiceUnavailable
+	}
+	return errx.BadRequest
 }

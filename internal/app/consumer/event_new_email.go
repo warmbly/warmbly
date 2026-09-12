@@ -53,6 +53,10 @@ func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewE
 		// mailbox sends this way, so without this branch its warmup mail is
 		// filed as ordinary inbox mail at every recipient.
 		return nil
+	} else if s.isCloudWarmupDelivery(ctx, e) {
+		// The same message, in a mailbox Warmbly Cloud warms: the token lives
+		// there, so only the cloud can recognise it.
+		return nil
 	}
 
 	// A pool-linked mailbox is warmup-only: everything else is dropped unread.
@@ -213,6 +217,36 @@ func (s *JobsService) handleUnmarkedWarmupEmail(ctx context.Context, e *models.J
 		Msg("verified warmup mail that arrived without its verify header")
 	s.acceptWarmupEmail(ctx, e, token)
 	return true
+}
+
+// cloudWarmupCheckTimeout bounds the one call this handler makes off-box. It
+// runs on every message in an enrolled mailbox, so a slow cloud would otherwise
+// hold up ingest for everything behind it.
+const cloudWarmupCheckTimeout = 5 * time.Second
+
+// isCloudWarmupDelivery asks the cloud whether an unrecognised message in a
+// mailbox it warms is its own warmup mail. Best-effort: an unreachable cloud
+// files the message as ordinary mail rather than dropping the owner's.
+func (s *JobsService) isCloudWarmupDelivery(ctx context.Context, e *models.JobEventNewEmail) bool {
+	if s.CloudLink == nil || e.Message == nil {
+		return false
+	}
+	// Nothing the cloud could match on: skip both lookups.
+	sender := firstSenderAddress(e.Message.FromAddr)
+	if e.Message.MessageID == "" && (sender == "" || e.Message.Subject == "") {
+		return false
+	}
+	if !s.CloudLink.IsEnrolled(ctx, e.Message.EmailID) {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, cloudWarmupCheckTimeout)
+	defer cancel()
+	ok, err := s.CloudLink.IsCloudWarmupDelivery(ctx, e.Message.EmailID, sender, e.Message.MessageID, e.Message.Subject)
+	if err != nil {
+		log.Warn().Err(err).Str("email_account_id", e.Message.EmailID.String()).Msg("cloud warmup delivery check failed; filing as ordinary mail")
+		return false
+	}
+	return ok
 }
 
 // firstSenderAddress pulls the bare address out of the first From value

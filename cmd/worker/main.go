@@ -109,8 +109,14 @@ func main() {
 		log.Fatal(err)
 	}
 	// Mailboxes managed by Warmbly Cloud send with access tokens the backend
-	// brokers; the refresh grant never reaches the worker.
-	tokenBroker, err := repository.NewHTTPBrokeredTokenClient(internalBaseURL, internalToken)
+	// brokers; the refresh grant never reaches the worker. Minting one is a
+	// broker operation, so it carries NODE_BROKER_TOKEN where the instance
+	// issues a separate one and the shared internal token otherwise.
+	brokerToken := os.Getenv("NODE_BROKER_TOKEN")
+	if brokerToken == "" {
+		brokerToken = internalToken
+	}
+	tokenBroker, err := repository.NewHTTPBrokeredTokenClient(internalBaseURL, brokerToken)
 	if err != nil {
 		log.Fatal(err)
 	}

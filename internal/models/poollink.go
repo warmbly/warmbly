@@ -181,6 +181,15 @@ type PoolLinkWorkspaceMailbox struct {
 	Status   string    `json:"status"`
 }
 
+// PoolLinkWarmupDeliveryQuery asks the cloud whether one message that arrived
+// in a mailbox it warms is its own warmup mail. The verify header does not
+// survive every provider, so the instance cannot always tell on its own.
+type PoolLinkWarmupDeliveryQuery struct {
+	Sender    string `json:"sender"`
+	MessageID string `json:"message_id"`
+	Subject   string `json:"subject"`
+}
+
 // PoolLinkMailboxState is the per-mailbox view shown in both dashboards.
 type PoolLinkMailboxState struct {
 	RemoteID       uuid.UUID              `json:"remote_id"`

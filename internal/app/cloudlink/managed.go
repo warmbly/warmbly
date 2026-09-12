@@ -107,6 +107,12 @@ func (s *service) mirror(ctx context.Context, l *models.CloudLink, orgID, userID
 		if s.emailSvc != nil {
 			_ = s.emailSvc.Delete(ctx, userID.String(), acc.ID.String())
 		}
+		// Release the cloud side too: a mailbox left linked to this instance
+		// with no mirror here is hidden from the adoptable list and refused on
+		// a second attempt, so it could never be recovered from either side.
+		if rerr := s.clientFor(l).do(ctx, http.MethodDelete, "/instance/mailboxes/"+state.RemoteID.String(), nil, nil); rerr != nil {
+			log.Error().Str("remote_id", state.RemoteID.String()).Str("code", rerr.Identifier).Msg("cloud link: local mirror row failed and the cloud link could not be released")
+		}
 		return nil, errx.InternalError()
 	}
 	if s.emailSvc != nil {
@@ -216,6 +222,32 @@ func (s *service) VerifyWarmupToken(ctx context.Context, accountID uuid.UUID, to
 		Valid bool `json:"valid"`
 	}
 	if xerr := s.clientFor(l).do(ctx, http.MethodGet, "/instance/mailboxes/"+m.RemoteID.String()+"/warmup-tokens/"+url.PathEscape(token), nil, &out); xerr != nil {
+		return false, xerr
+	}
+	return out.Valid, nil
+}
+
+// IsCloudWarmupDelivery asks the cloud whether a message that arrived without a
+// verify header is its own warmup mail. Every send from a Microsoft mailbox
+// loses the header in transit, so without this the cloud's warmup would be
+// filed as ordinary mail in the owner's inbox.
+func (s *service) IsCloudWarmupDelivery(ctx context.Context, accountID uuid.UUID, sender, messageID, subject string) (bool, error) {
+	if messageID == "" && (sender == "" || subject == "") {
+		return false, nil
+	}
+	m, err := s.repo.GetByAccount(ctx, accountID)
+	if err != nil || m == nil {
+		return false, err
+	}
+	l, xerr := s.link(ctx)
+	if xerr != nil {
+		return false, xerr
+	}
+	var out struct {
+		Valid bool `json:"valid"`
+	}
+	q := models.PoolLinkWarmupDeliveryQuery{Sender: sender, MessageID: messageID, Subject: subject}
+	if xerr := s.clientFor(l).do(ctx, http.MethodPost, "/instance/mailboxes/"+m.RemoteID.String()+"/warmup-deliveries", q, &out); xerr != nil {
 		return false, xerr
 	}
 	return out.Valid, nil
