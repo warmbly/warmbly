@@ -287,20 +287,25 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 		return xerr
 	}
 	// Managed mirrors have no credential of their own; they end with the link.
+	// Enumerating them has to succeed before the link row goes: afterwards
+	// there is nothing left to retry from, and the mailboxes would be left
+	// warming nowhere.
+	rows, err := s.repo.List(ctx)
+	if err != nil {
+		return errx.InternalError()
+	}
 	var released []uuid.UUID
-	if rows, err := s.repo.List(ctx); err == nil {
-		for _, m := range rows {
-			if !m.Managed {
-				released = append(released, m.EmailAccountID)
-				continue
-			}
-			if s.emailSvc == nil {
-				continue
-			}
-			if acc, xerr := s.emails.GetByID(ctx, m.EmailAccountID); xerr == nil {
-				s.forgetToken(m.EmailAccountID)
-				_ = s.emailSvc.Delete(ctx, acc.UserID, acc.ID.String())
-			}
+	for _, m := range rows {
+		if !m.Managed {
+			released = append(released, m.EmailAccountID)
+			continue
+		}
+		if s.emailSvc == nil {
+			continue
+		}
+		if acc, xerr := s.emails.GetByID(ctx, m.EmailAccountID); xerr == nil {
+			s.forgetToken(m.EmailAccountID)
+			_ = s.emailSvc.Delete(ctx, acc.UserID, acc.ID.String())
 		}
 	}
 	if err := s.repo.UnenrollAll(ctx); err != nil {

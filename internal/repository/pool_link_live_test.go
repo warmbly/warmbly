@@ -148,6 +148,18 @@ func TestLivePoolLinkWarmupDeliveryMatchesAndRefuses(t *testing.T) {
 		t.Fatal("a recorded warmup delivery should be recognised by its message id")
 	}
 
+	// A pool partner's real email, sharing a subject with a token whose own
+	// Message-ID is known and different. Two known ids that differ are a
+	// different message, so the sender/subject fallback must not claim it.
+	f.token(t, "<warm-2@test.local>", "Quick sync", false)
+	ok, err = f.warmup.IsWarmupDelivery(ctx, f.recipient, f.senderTo, "<genuine-reply@test.local>", "Quick sync")
+	if err != nil {
+		t.Fatalf("IsWarmupDelivery conflicting ids: %v", err)
+	}
+	if ok {
+		t.Fatal("a message whose id differs from the token's must not match on sender and subject")
+	}
+
 	// Real mail from someone else must never be dropped.
 	ok, err = f.warmup.IsWarmupDelivery(ctx, f.recipient, "prospect@elsewhere.test", "<real-mail@elsewhere.test>", "Are you free Thursday?")
 	if err != nil {

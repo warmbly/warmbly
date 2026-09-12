@@ -1228,6 +1228,10 @@ func (r *warmupRepository) IsWarmupDelivery(ctx context.Context, recipientAccoun
 		        ($2 <> '' AND wt.sent_message_id <> '' AND btrim(wt.sent_message_id, '<>') = $2)
 		        OR (
 		          $3 <> '' AND $4 <> ''
+		          -- Only when one side has no Message-ID to compare. Two known
+		          -- ids that differ are a different message, and matching on
+		          -- sender and subject alone would drop the owner's real mail.
+		          AND ($2 = '' OR wt.sent_message_id = '')
 		          AND wt.created_at > NOW() - INTERVAL '2 days'
 		          AND wt.subject <> ''
 		          AND lower(btrim(wt.subject)) = lower($4)
