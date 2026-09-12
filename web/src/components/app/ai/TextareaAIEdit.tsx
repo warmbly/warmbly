@@ -73,12 +73,15 @@ export default function TextareaAIEdit({
     const rootRef = React.useRef<HTMLDivElement>(null);
     // The selection being edited, frozen when the popover opens.
     const frozen = React.useRef<Selection | null>(null);
-    // Last applied run, for Undo / Again.
+    // Last applied run, for Undo / Again. The range it replaced is recorded
+    // rather than derived from the lengths afterwards: maxLen can cut the tail
+    // off the rewrite, and the arithmetic then reconstructs a range that was
+    // never selected.
     const lastRun = React.useRef<{
         instruction: string;
         prevValue: string;
         start: number;
-        newLen: number;
+        origEnd: number;
     } | null>(null);
     // Value we last wrote ourselves; external edits while open close the UI.
     const expectedValue = React.useRef<string | null>(null);
@@ -240,8 +243,13 @@ export default function TextareaAIEdit({
                     }
                 },
                 () => {
-                    const newRange = { start: target.start, end: target.start + applied.length, text: applied };
-                    lastRun.current = { instruction, prevValue, start: target.start, newLen: applied.length };
+                    // What the box holds, not what the model sent: maxLen can
+                    // cut the tail off, and a range recorded past the end would
+                    // have Undo and Again working on text that is not there.
+                    const settled = cap(prefix + applied + suffix);
+                    const end = Math.min(target.start + applied.length, settled.length);
+                    const newRange = { start: target.start, end, text: settled.slice(target.start, end) };
+                    lastRun.current = { instruction, prevValue, start: target.start, origEnd: target.end };
                     frozen.current = newRange;
                     const ta = textareaRef.current;
                     if (ta) {
@@ -303,31 +311,29 @@ export default function TextareaAIEdit({
         expectedValue.current = last.prevValue;
         onChange(last.prevValue);
         const ta = textareaRef.current;
-        const origEnd = last.prevValue.length - (value.length - (last.start + last.newLen));
         const restored = {
             start: last.start,
-            end: origEnd,
-            text: last.prevValue.slice(last.start, origEnd),
+            end: last.origEnd,
+            text: last.prevValue.slice(last.start, last.origEnd),
         };
         frozen.current = restored;
-        if (ta) ta.setSelectionRange(last.start, origEnd);
+        if (ta) ta.setSelectionRange(last.start, last.origEnd);
         syncRects(restored, true);
         lastRun.current = null;
         setPhase("idle");
-    }, [onChange, syncRects, textareaRef, typewriter, value]);
+    }, [onChange, syncRects, textareaRef, typewriter]);
 
     const retry = React.useCallback(() => {
         const last = lastRun.current;
         if (!last) return;
-        const origEnd = last.prevValue.length - (value.length - (last.start + last.newLen));
         const target = {
             start: last.start,
-            end: origEnd,
-            text: last.prevValue.slice(last.start, origEnd),
+            end: last.origEnd,
+            text: last.prevValue.slice(last.start, last.origEnd),
         };
         frozen.current = target;
         run(last.instruction, target, last.prevValue);
-    }, [run, value]);
+    }, [run]);
 
     const openEditor = () => {
         if (!sel) return;
