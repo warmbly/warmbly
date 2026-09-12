@@ -21,10 +21,110 @@ ALTER TABLE public.tags       ADD COLUMN IF NOT EXISTS organization_id uuid;
 ALTER TABLE public.categories ADD COLUMN IF NOT EXISTS organization_id uuid;
 ALTER TABLE public.folders    ADD COLUMN IF NOT EXISTS organization_id uuid;
 
+-- Split pass: a user in two workspaces saw one label list, so the same row can
+-- be attached to records in both. It can only land in one of them, and the
+-- reference from the other would then point across a tenancy boundary: the
+-- chip renders as nothing because the other workspace never lists the label,
+-- and a title from a foreign workspace is readable where it is joined without
+-- a scope check. Each extra workspace gets its own copy of the label instead,
+-- and its own rows are repointed at it, so nothing is lost and nothing dangles.
+--
+-- ON COMMIT DROP: this whole migration is one transaction.
+CREATE TEMP TABLE label_split (registry text, original_id uuid, org uuid, new_id uuid) ON COMMIT DROP;
+
+WITH usage AS (
+    SELECT et.tag_id AS id, ea.organization_id AS org
+    FROM public.email_tags et
+    JOIN public.email_accounts ea ON ea.id = et.email_id
+    WHERE ea.organization_id IS NOT NULL
+    UNION
+    SELECT cet.tag_id, c.organization_id
+    FROM public.campaign_email_tags cet
+    JOIN public.campaigns c ON c.id = cet.campaign_id
+    WHERE c.organization_id IS NOT NULL
+),
+keep AS (
+    SELECT id, (array_agg(org ORDER BY org))[1] AS org
+    FROM usage GROUP BY id HAVING COUNT(*) > 1
+)
+INSERT INTO label_split
+SELECT 'tags', u.id, u.org, gen_random_uuid()
+FROM usage u JOIN keep k ON k.id = u.id AND u.org <> k.org;
+
+WITH usage AS (
+    SELECT cc.category_id AS id, c.organization_id AS org
+    FROM public.contact_categories cc
+    JOIN public.contacts c ON c.id = cc.contact_id
+    WHERE c.organization_id IS NOT NULL
+    UNION
+    SELECT fc.category_id, f.organization_id
+    FROM public.form_categories fc
+    JOIN public.forms f ON f.id = fc.form_id
+),
+keep AS (
+    SELECT id, (array_agg(org ORDER BY org))[1] AS org
+    FROM usage GROUP BY id HAVING COUNT(*) > 1
+)
+INSERT INTO label_split
+SELECT 'categories', u.id, u.org, gen_random_uuid()
+FROM usage u JOIN keep k ON k.id = u.id AND u.org <> k.org;
+
+WITH usage AS (
+    SELECT cf.folder_id AS id, c.organization_id AS org
+    FROM public.campaign_folders cf
+    JOIN public.campaigns c ON c.id = cf.campaign_id
+    WHERE c.organization_id IS NOT NULL
+),
+keep AS (
+    SELECT id, (array_agg(org ORDER BY org))[1] AS org
+    FROM usage GROUP BY id HAVING COUNT(*) > 1
+)
+INSERT INTO label_split
+SELECT 'folders', u.id, u.org, gen_random_uuid()
+FROM usage u JOIN keep k ON k.id = u.id AND u.org <> k.org;
+
+-- The copies carry the same name and colour, so the workspace that loses the
+-- original sees no change at all.
+INSERT INTO public.tags (id, organization_id, user_id, title, color, "position", created_at, updated_at)
+SELECT s.new_id, s.org, t.user_id, t.title, t.color, t."position", t.created_at, now()
+FROM label_split s JOIN public.tags t ON t.id = s.original_id WHERE s.registry = 'tags';
+
+INSERT INTO public.categories (id, organization_id, user_id, title, color, "position", created_at, updated_at)
+SELECT s.new_id, s.org, c.user_id, c.title, c.color, c."position", c.created_at, now()
+FROM label_split s JOIN public.categories c ON c.id = s.original_id WHERE s.registry = 'categories';
+
+INSERT INTO public.folders (id, organization_id, user_id, title, color, "position", created_at, updated_at)
+SELECT s.new_id, s.org, f.user_id, f.title, f.color, f."position", f.created_at, now()
+FROM label_split s JOIN public.folders f ON f.id = s.original_id WHERE s.registry = 'folders';
+
+UPDATE public.email_tags et SET tag_id = s.new_id
+FROM label_split s, public.email_accounts ea
+WHERE s.registry = 'tags' AND et.tag_id = s.original_id
+  AND ea.id = et.email_id AND ea.organization_id = s.org;
+
+UPDATE public.campaign_email_tags cet SET tag_id = s.new_id
+FROM label_split s, public.campaigns c
+WHERE s.registry = 'tags' AND cet.tag_id = s.original_id
+  AND c.id = cet.campaign_id AND c.organization_id = s.org;
+
+UPDATE public.contact_categories cc SET category_id = s.new_id
+FROM label_split s, public.contacts c
+WHERE s.registry = 'categories' AND cc.category_id = s.original_id
+  AND c.id = cc.contact_id AND c.organization_id = s.org;
+
+UPDATE public.form_categories fc SET category_id = s.new_id
+FROM label_split s, public.forms f
+WHERE s.registry = 'categories' AND fc.category_id = s.original_id
+  AND f.id = fc.form_id AND f.organization_id = s.org;
+
+UPDATE public.campaign_folders cf SET folder_id = s.new_id
+FROM label_split s, public.campaigns c
+WHERE s.registry = 'folders' AND cf.folder_id = s.original_id
+  AND c.id = cf.campaign_id AND c.organization_id = s.org;
+
 -- Backfill pass 1: where the label is already attached to something, that
--- something names the workspace it belongs to. Only unambiguous cases are
--- taken (every use points at one organization), which is what makes this safe
--- for a user who is a member of more than one.
+-- something names the workspace it belongs to. After the split every used
+-- label points at exactly one organization, so this now claims all of them.
 UPDATE public.tags t
 SET organization_id = u.org
 FROM (
@@ -167,12 +267,41 @@ COMMENT ON COLUMN public.folders.user_id    IS 'Who created it. Attribution only
 
 ALTER TABLE public.unibox_thread_labels ADD COLUMN IF NOT EXISTS organization_id uuid;
 
+-- The thread the label hangs on is the authoritative source: it belongs to a
+-- mailbox, and the mailbox names the workspace. Matching on the labeller's own
+-- mailboxes keeps it deterministic when a provider thread id appears twice.
+UPDATE public.unibox_thread_labels utl
+SET organization_id = t.org
+FROM (
+    SELECT DISTINCT ue.user_id, ue.thread_id, ea.organization_id AS org
+    FROM public.unibox_emails ue
+    JOIN public.email_accounts ea ON ea.id = ue.email_id
+    WHERE ea.organization_id IS NOT NULL AND ue.thread_id <> ''
+) t
+WHERE utl.thread_id = t.thread_id AND utl.user_id = t.user_id AND utl.organization_id IS NULL;
+
+-- A label on a thread whose messages are gone falls back to its category.
 UPDATE public.unibox_thread_labels utl
 SET organization_id = c.organization_id
 FROM public.categories c
 WHERE c.id = utl.category_id AND utl.organization_id IS NULL;
 
 DELETE FROM public.unibox_thread_labels WHERE organization_id IS NULL;
+
+-- Follow the split: a thread in this workspace must point at this workspace's
+-- copy of the category, never at the one that stayed behind in another.
+UPDATE public.unibox_thread_labels utl
+SET category_id = s.new_id
+FROM label_split s
+WHERE s.registry = 'categories'
+  AND utl.category_id = s.original_id
+  AND utl.organization_id = s.org;
+
+-- Anything still pointing across a boundary is unreachable from its own
+-- workspace and would show that workspace a foreign category's name.
+DELETE FROM public.unibox_thread_labels utl
+USING public.categories c
+WHERE c.id = utl.category_id AND c.organization_id <> utl.organization_id;
 
 -- Two members who labelled the same thread with the same category collapse to
 -- one row under the new key.

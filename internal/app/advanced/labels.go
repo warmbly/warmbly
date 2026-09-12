@@ -18,16 +18,15 @@ func (s *service) LabelThread(ctx context.Context, orgID uuid.UUID, threadID str
 }
 
 // LabelLatestThreadForContact resolves the contact's most recent conversation in
-// userID's unibox and labels it for the workspace. Backs the "label_email"
-// campaign step action, which knows the contact but not the thread id (off a
-// reply branch the most recent thread IS the reply). Returns the labeled thread
-// id, or "" when the contact has no conversation yet (a logged no-op for the
-// caller).
-func (s *service) LabelLatestThreadForContact(ctx context.Context, orgID, userID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error) {
+// the workspace's unibox and labels it. Backs the "label_email" campaign step
+// action, which knows the contact but not the thread id (off a reply branch the
+// most recent thread IS the reply). Returns the labeled thread id, or "" when
+// the contact has no conversation yet (a logged no-op for the caller).
+func (s *service) LabelLatestThreadForContact(ctx context.Context, orgID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error) {
 	if s.uniboxRepo == nil || contactEmail == "" || len(categoryIDs) == 0 {
 		return "", nil
 	}
-	threadID, err := s.uniboxRepo.LatestThreadIDForContact(ctx, userID, contactEmail)
+	threadID, err := s.uniboxRepo.LatestThreadIDForContact(ctx, orgID, contactEmail)
 	if err != nil {
 		return "", err
 	}

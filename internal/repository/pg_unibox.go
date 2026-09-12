@@ -72,10 +72,10 @@ type UniboxRepository interface {
 	ListThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string) ([]models.MiniCategory, error)
 	// AddThreadLabels attaches labels to a thread WITHOUT removing existing ones
 	// (additive; for automation/step "label email" actions). LatestThreadIDForContact
-	// finds the user's most recent conversation with an address, so a campaign
+	// finds the workspace's most recent conversation with an address, so a campaign
 	// step that knows the contact but not the thread can still label it.
 	AddThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
-	LatestThreadIDForContact(ctx context.Context, userID uuid.UUID, email string) (string, error)
+	LatestThreadIDForContact(ctx context.Context, orgID uuid.UUID, email string) (string, error)
 	// LatestMessageIDInThread returns the newest RFC Message-ID in a thread, so
 	// a reply that arrives with only a provider thread id can still carry the
 	// In-Reply-To header the recipient's mail client threads on.
@@ -548,7 +548,7 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID uuid.UUID, params *
 				(
 					SELECT json_agg(json_build_object('id', c.id, 'title', c.title, 'color', c.color) ORDER BY c.position ASC, c.title ASC)
 					FROM unibox_thread_labels utl
-					JOIN categories c ON c.id = utl.category_id
+					JOIN categories c ON c.id = utl.category_id AND c.organization_id = utl.organization_id
 					WHERE utl.organization_id = $1 AND utl.thread_id = b.thread_id
 				), '[]'::json
 			) AS labels
@@ -853,7 +853,7 @@ func (r *uniboxRepository) ListThreadLabels(ctx context.Context, orgID uuid.UUID
 	rows, err := r.db.Query(ctx, `
 		SELECT c.id, c.title, c.color
 		FROM unibox_thread_labels utl
-		JOIN categories c ON c.id = utl.category_id
+		JOIN categories c ON c.id = utl.category_id AND c.organization_id = utl.organization_id
 		WHERE utl.organization_id = $1 AND utl.thread_id = $2
 		ORDER BY c.position ASC, c.title ASC
 	`, orgID, threadID)
@@ -893,7 +893,7 @@ func (r *uniboxRepository) AddThreadLabels(ctx context.Context, orgID uuid.UUID,
 }
 
 // LatestThreadIDForContact returns the thread id of the most recent conversation
-// where the address SENT a message into the user's unibox (an inbound reply), or
+// where the address SENT a message into the workspace's unibox (an inbound reply), or
 // "" when there is none. Matching on from_addr (not to_addr) is deliberate: the
 // "label email" action only makes sense once the contact has replied, so a
 // contact that never responded resolves to "" and the action is a clean no-op.
@@ -901,7 +901,7 @@ func (r *uniboxRepository) AddThreadLabels(ctx context.Context, orgID uuid.UUID,
 // address is extracted (the text inside angle brackets, else the trimmed value)
 // and compared case-insensitively — never a substring contains, so a@b.com does
 // not match xa@b.com or a@b.com.evil.
-func (r *uniboxRepository) LatestThreadIDForContact(ctx context.Context, userID uuid.UUID, email string) (string, error) {
+func (r *uniboxRepository) LatestThreadIDForContact(ctx context.Context, orgID uuid.UUID, email string) (string, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
 		return "", nil
@@ -909,14 +909,15 @@ func (r *uniboxRepository) LatestThreadIDForContact(ctx context.Context, userID 
 	rows, err := r.db.Query(ctx, `
 		SELECT thread_id
 		FROM unibox_emails
-		WHERE user_id = $1 AND thread_id <> ''
+		WHERE email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
+		  AND thread_id <> ''
 		  AND EXISTS (
 			SELECT 1 FROM unnest(from_addr) a
 			WHERE lower(coalesce(substring(a from '<([^>]*)>'), substring(a from '\(([^()]*)\)\s*$'), btrim(a))) = lower($2)
 		  )
 		ORDER BY internal_date DESC
 		LIMIT 1
-	`, userID, email)
+	`, orgID, email)
 	if err != nil {
 		return "", err
 	}

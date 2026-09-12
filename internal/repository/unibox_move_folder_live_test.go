@@ -179,7 +179,7 @@ func TestLiveUniboxLatestThreadIDMatchesTheParenthesisedForm(t *testing.T) {
 	ctx := context.Background()
 
 	id := f.message(t, repo, models.FolderInbox)
-	threadID, err := repo.LatestThreadIDForContact(ctx, f.user, "support@centous.com")
+	threadID, err := repo.LatestThreadIDForContact(ctx, f.org, "support@centous.com")
 	if err != nil {
 		t.Fatalf("LatestThreadIDForContact: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestLiveUniboxLatestThreadIDMatchesTheParenthesisedForm(t *testing.T) {
 	}
 
 	// Still an exact match, never a substring one.
-	other, err := repo.LatestThreadIDForContact(ctx, f.user, "upport@centous.com")
+	other, err := repo.LatestThreadIDForContact(ctx, f.org, "upport@centous.com")
 	if err != nil {
 		t.Fatalf("LatestThreadIDForContact: %v", err)
 	}

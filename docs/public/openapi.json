@@ -30738,6 +30738,14 @@
       "Label": {
         "type": "object",
         "description": "One entry in a workspace label registry (a folder, tag or category). Registries belong to the organization, so every member sees and can edit the same set.",
+        "required": [
+          "id",
+          "title",
+          "color",
+          "position",
+          "created_at",
+          "updated_at"
+        ],
         "properties": {
           "id": {
             "type": "string",
@@ -30809,6 +30817,10 @@
       "LabelOrder": {
         "type": "object",
         "description": "One label's place in the registry after a move.",
+        "required": [
+          "id",
+          "position"
+        ],
         "properties": {
           "id": {
             "type": "string",

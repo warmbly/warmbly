@@ -338,7 +338,7 @@ Mutating API requests may include an `Idempotency-Key` header. Warmbly stores th
 
 ### Labels
 
-Folders (on campaigns), tags (on mailboxes) and categories (on contacts and inbox conversations) are three registries with the same shape. Each belongs to the **workspace**, not to whoever created it: every member sees and can edit the same set. The current set is read from `GET /auth/me`, which returns `folders`, `tags` and `categories` for the session's selected workspace; there is no separate list endpoint.
+Folders (on campaigns), tags (on mailboxes) and categories (on contacts and inbox conversations) are three registries with the same shape. Each belongs to the **workspace**, not to whoever created it. Every member sees the same set, whoever created it, and reads it from `GET /auth/me`, which returns `folders`, `tags` and `categories` for the session's selected workspace; there is no separate list endpoint and no read scope of its own. Changing a registry is gated like the records it labels, so it takes the API permission in the table below, or the matching JWT permission `MANAGE_CAMPAIGNS`, `MANAGE_EMAILS` or `MANAGE_CONTACTS`. Membership alone is read-only.
 
 `position` is the order within its own registry, `0`-based and contiguous. A move returns the full new ordering. A registry holds at most `100` entries.
 

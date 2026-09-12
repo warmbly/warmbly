@@ -1,9 +1,11 @@
 -- Reverses 000147. Labels go back to being owned by whoever created them.
 --
--- Two things do not come back: the per-user position numbering the up
--- migration collapsed into one sequence per workspace, and the duplicate
--- conversation labels it merged. Both are cosmetic; the labels themselves and
--- everything they are attached to survive the round trip.
+-- Three things do not come back: the per-user position numbering the up
+-- migration collapsed into one sequence per workspace, the duplicate
+-- conversation labels it merged, and the identity of a label it had to copy
+-- because two workspaces shared one row (the copy stays, as its own label).
+-- All three are cosmetic; the labels themselves and everything they are
+-- attached to survive the round trip.
 
 BEGIN;
 

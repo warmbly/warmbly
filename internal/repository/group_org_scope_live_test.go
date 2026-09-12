@@ -287,3 +287,50 @@ func TestLiveConversationLabelsAreOrganizationWide(t *testing.T) {
 		t.Fatalf("the label rail does not list %s: %+v", cat.ID, overview.Categories)
 	}
 }
+
+// The registries are only safe if nothing points at a label from outside its
+// workspace: the label reads join on id, so a stray link would render another
+// workspace's title. The migration splits a label two workspaces shared rather
+// than leaving one of them dangling, and every write path is scope-guarded, so
+// this must hold for the whole database at all times.
+func TestLiveNoLabelIsReferencedAcrossWorkspaces(t *testing.T) {
+	_, pool := liveContactDB(t)
+	ctx := context.Background()
+
+	for _, c := range []struct {
+		name  string
+		query string
+	}{
+		{"email_tags", `SELECT count(*) FROM email_tags et
+			JOIN tags t ON t.id = et.tag_id
+			JOIN email_accounts ea ON ea.id = et.email_id
+			WHERE ea.organization_id IS NOT NULL AND ea.organization_id <> t.organization_id`},
+		{"campaign_email_tags", `SELECT count(*) FROM campaign_email_tags cet
+			JOIN tags t ON t.id = cet.tag_id
+			JOIN campaigns c ON c.id = cet.campaign_id
+			WHERE c.organization_id IS NOT NULL AND c.organization_id <> t.organization_id`},
+		{"contact_categories", `SELECT count(*) FROM contact_categories cc
+			JOIN categories cat ON cat.id = cc.category_id
+			JOIN contacts c ON c.id = cc.contact_id
+			WHERE c.organization_id IS NOT NULL AND c.organization_id <> cat.organization_id`},
+		{"form_categories", `SELECT count(*) FROM form_categories fc
+			JOIN categories cat ON cat.id = fc.category_id
+			JOIN forms f ON f.id = fc.form_id
+			WHERE f.organization_id <> cat.organization_id`},
+		{"campaign_folders", `SELECT count(*) FROM campaign_folders cf
+			JOIN folders fo ON fo.id = cf.folder_id
+			JOIN campaigns c ON c.id = cf.campaign_id
+			WHERE c.organization_id IS NOT NULL AND c.organization_id <> fo.organization_id`},
+		{"unibox_thread_labels", `SELECT count(*) FROM unibox_thread_labels u
+			JOIN categories cat ON cat.id = u.category_id
+			WHERE u.organization_id <> cat.organization_id`},
+	} {
+		var n int
+		if err := pool.QueryRow(ctx, c.query).Scan(&n); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if n != 0 {
+			t.Errorf("%s holds %d links to a label in another workspace", c.name, n)
+		}
+	}
+}

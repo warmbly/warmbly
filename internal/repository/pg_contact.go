@@ -2783,9 +2783,14 @@ func (r *contactRepository) ResolveCategoryNames(ctx context.Context, orgID, use
 			len(wanted), MaxImportCategoryNames))
 	}
 
+	// Ordered, and the first match wins: the migration that made this registry
+	// workspace-wide deliberately did not merge two members' identically named
+	// categories, so a title can resolve to more than one row. Without an order
+	// an import would file the same name under a different category run to run.
 	rows, err := r.DB.Query(ctx, `
 		SELECT id, LOWER(title) FROM categories
 		WHERE organization_id = $1 AND LOWER(title) = ANY($2::text[])
+		ORDER BY "position" ASC, created_at ASC, id ASC
 	`, orgID, wanted)
 	if err != nil {
 		db.CaptureError(err, "", nil, "ResolveCategoryNames query")
@@ -2799,7 +2804,9 @@ func (r *contactRepository) ResolveCategoryNames(ctx context.Context, orgID, use
 			db.CaptureError(err, "", nil, "ResolveCategoryNames scan")
 			return nil, errx.InternalError()
 		}
-		out[lower] = id
+		if _, taken := out[lower]; !taken {
+			out[lower] = id
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {

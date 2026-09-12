@@ -113,11 +113,10 @@ type Service interface {
 	// No-op on empty input; foreign categories are silently ignored.
 	LabelThread(ctx context.Context, orgID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
 	// LabelLatestThreadForContact finds the contact's most recent conversation in
-	// userID's unibox and labels it for the workspace, for the "label_email"
-	// campaign step action (which knows the contact but not the thread id).
-	// Returns the labeled thread id, or "" when the contact has no conversation
-	// yet.
-	LabelLatestThreadForContact(ctx context.Context, orgID, userID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error)
+	// the workspace's unibox and labels it, for the "label_email" campaign step
+	// action (which knows the contact but not the thread id). Returns the
+	// labeled thread id, or "" when the contact has no conversation yet.
+	LabelLatestThreadForContact(ctx context.Context, orgID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error)
 	// LatestInboundFromContact returns the subject + snippet of the newest email
 	// received from the contact ("" when none). Backs the campaign AI step's
 	// incoming-email context.

@@ -1197,11 +1197,7 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 		if len(cfg.LabelIDs) == 0 || campaign.OrganizationID == nil {
 			return nil
 		}
-		owner, perr := uuid.Parse(campaign.UserID)
-		if perr != nil {
-			return nil
-		}
-		if _, xerr := s.advanced.LabelLatestThreadForContact(ctx, *campaign.OrganizationID, owner, contact.Email, cfg.LabelIDs); xerr != nil {
+		if _, xerr := s.advanced.LabelLatestThreadForContact(ctx, *campaign.OrganizationID, contact.Email, cfg.LabelIDs); xerr != nil {
 			return xerr
 		}
 		return nil

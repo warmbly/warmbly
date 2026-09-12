@@ -35,11 +35,24 @@ type RelationSyncInput struct {
 // are cast to uuid explicitly. The SELECT casts the related id back to ::text
 // so it scans cleanly into a Go string.
 func SyncRelation(input RelationSyncInput) ([]string, *errx.Error) {
+	// The current set is read WITHIN the scope, not just by parent id. A link
+	// to another workspace's label (only a migration can leave one behind, but
+	// the diff must not depend on that) is invisible here, so it is never
+	// echoed back to the client as if it were part of the set.
 	querySelect := fmt.Sprintf(`SELECT %s::text FROM %s WHERE %s = $1::uuid`,
 		input.ColRelated, input.Table, input.ColMain)
 
 	params := []any{
 		input.MainID,
+	}
+
+	if input.ScopeTable != "" {
+		querySelect = fmt.Sprintf(
+			`SELECT r.%s::text FROM %s r JOIN %s g ON g.id = r.%s
+			 WHERE r.%s = $1::uuid AND g.organization_id = $2::uuid`,
+			input.ColRelated, input.Table, input.ScopeTable, input.ColRelated,
+			input.ColMain)
+		params = append(params, input.OrgID)
 	}
 
 	rows, err := input.Tx.Query(
