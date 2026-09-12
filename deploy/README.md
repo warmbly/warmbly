@@ -42,7 +42,9 @@ docker build -f web/Dockerfile                    -t warmbly/web      web/
 docker build -f admin/Dockerfile                  -t warmbly/admin    admin/
 ```
 
-The default builds have no Kafka/Avro support; add `--build-arg GO_TAGS=kafka` (Go images) or `--build-arg CARGO_FEATURES=kafka` (tracking) to opt in.
+The default builds have no Kafka/Avro support; add `--build-arg GO_TAGS=kafka` (Go images) or `--build-arg CARGO_FEATURES=kafka` (tracking) to opt in. Those builds link librdkafka through cgo, which cannot cross-compile, so each architecture has to be built on a machine of that architecture.
+
+CI already publishes them, so you rarely need to: `backend`, `consumer`, `worker`, and `tracking` each get a second tag with a `-kafka` suffix (`ghcr.io/warmbly/warmbly/backend:prod-kafka`).
 
 GitHub Actions publishes these to GHCR automatically. See [the self-hosting guide](https://docs.warmbly.com/development/deployment-guide/).
 
