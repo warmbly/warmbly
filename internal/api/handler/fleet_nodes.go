@@ -217,6 +217,10 @@ var nodeEnvKeys = []string{
 	"APP_ENV",
 	"EVENTBUS_PROVIDER",
 	"NATS_URL",
+	// Base64, not a path: a node has no file to point at, and the env file
+	// docker reads cannot hold a multi-line value.
+	"NATS_CREDS_B64",
+	"NATS_MAX_BYTES",
 	"KAFKA_BOOTSTRAP_SERVERS",
 	"KAFKA_SASL_USERNAME",
 	"KAFKA_SASL_PASSWORD",

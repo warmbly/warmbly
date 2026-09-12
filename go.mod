@@ -32,8 +32,10 @@ require (
 	github.com/meszmate/apple-go v0.0.0-20250828163208-7fea48c91b32
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mileusna/useragent v1.3.5
+	github.com/nats-io/jwt/v2 v2.8.1
 	github.com/nats-io/nats-server/v2 v2.14.1
 	github.com/nats-io/nats.go v1.52.0
+	github.com/nats-io/nkeys v0.4.15
 	github.com/openai/openai-go/v2 v2.7.1
 	github.com/oschwald/geoip2-golang/v2 v2.0.0
 	github.com/posthog/posthog-go v1.25.1
@@ -227,8 +229,6 @@ require (
 	github.com/moricho/tparallel v0.3.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nakabonne/nestif v0.3.1 // indirect
-	github.com/nats-io/jwt/v2 v2.8.1 // indirect
-	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect

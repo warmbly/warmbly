@@ -23,10 +23,12 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      # JSON lists consumed as matrix inputs. `go` services cross-compile both
-      # arches on one runner; `native` services (Rust, Elixir) have no
-      # cross-compiler, so each arch builds on a native runner and the digests
-      # are merged into one manifest.
+      # JSON consumed as matrix inputs. `go` is a list of service names that
+      # cross-compile both arches on one runner. `native` is a list of
+      # {service, suffix, args} objects that cannot cross-compile, so each arch
+      # builds on a native runner and the digests are merged into one manifest:
+      # Rust and Elixir have no cross-compiler, and the Kafka variants of the Go
+      # services link librdkafka through cgo, which needs a native toolchain.
       go: ${{ steps.matrix.outputs.go }}
       native: ${{ steps.matrix.outputs.native }}
     steps:
@@ -87,28 +89,53 @@ jobs:
           UPDATER: ${{ steps.filter.outputs.updater }}
           TRACKING: ${{ steps.filter.outputs.tracking }}
           REALTIME: ${{ steps.filter.outputs.realtime }}
+          BUILT_AT: ${{ github.event.head_commit.timestamp }}
         run: |
           go=""
           native=""
+          # A service that talks to the event bus gets a second, Kafka-linked
+          # image published as :<tag>-kafka. backend, consumer, worker and
+          # tracking are the four that do; forms and updater never touch it, and
+          # realtime is fed by the others rather than reading the bus itself.
+          add() {
+            case "$1" in
+              backend|consumer|worker)
+                go="$go\"$1\","
+                native="$native{\"service\":\"$1\",\"suffix\":\"-kafka\",\"args\":\"GO_TAGS=kafka\\nBUILT_AT=$BUILT_AT\"},"
+                ;;
+              forms|updater)
+                go="$go\"$1\","
+                ;;
+              tracking)
+                native="$native{\"service\":\"tracking\",\"suffix\":\"\",\"args\":\"\"},"
+                native="$native{\"service\":\"tracking\",\"suffix\":\"-kafka\",\"args\":\"CARGO_FEATURES=kafka\"},"
+                ;;
+              realtime)
+                native="$native{\"service\":\"realtime\",\"suffix\":\"\",\"args\":\"\"},"
+                ;;
+            esac
+          }
           if [ "$EVENT" = "workflow_dispatch" ]; then
             sel="${SELECTED:-all}"
-            for s in backend consumer worker forms updater; do
-              if [ "$sel" = "all" ] || [ "$sel" = "$s" ]; then go="$go\"$s\","; fi
-            done
-            for s in tracking realtime; do
-              if [ "$sel" = "all" ] || [ "$sel" = "$s" ]; then native="$native\"$s\","; fi
+            for s in backend consumer worker forms updater tracking realtime; do
+              if [ "$sel" = "all" ] || [ "$sel" = "$s" ]; then add "$s"; fi
             done
           else
-            if [ "$BACKEND" = "true" ]; then go="$go\"backend\","; fi
-            if [ "$CONSUMER" = "true" ]; then go="$go\"consumer\","; fi
-            if [ "$WORKER" = "true" ]; then go="$go\"worker\","; fi
-            if [ "$FORMS" = "true" ]; then go="$go\"forms\","; fi
-            if [ "$UPDATER" = "true" ]; then go="$go\"updater\","; fi
-            if [ "$TRACKING" = "true" ]; then native="$native\"tracking\","; fi
-            if [ "$REALTIME" = "true" ]; then native="$native\"realtime\","; fi
+            [ "$BACKEND" = "true" ] && add backend
+            [ "$CONSUMER" = "true" ] && add consumer
+            [ "$WORKER" = "true" ] && add worker
+            [ "$FORMS" = "true" ] && add forms
+            [ "$UPDATER" = "true" ] && add updater
+            [ "$TRACKING" = "true" ] && add tracking
+            [ "$REALTIME" = "true" ] && add realtime
+            true
           fi
-          echo "go=[${go%,}]" >> "$GITHUB_OUTPUT"
-          echo "native=[${native%,}]" >> "$GITHUB_OUTPUT"
+          # printf, not echo: the Go Kafka args carry a literal \n separating two
+          # build-args, and echo expands backslash escapes in some shells, which
+          # would split the value across two lines and break both the JSON and
+          # the single-line $GITHUB_OUTPUT format.
+          printf 'go=[%s]\n' "${go%,}" >> "$GITHUB_OUTPUT"
+          printf 'native=[%s]\n' "${native%,}" >> "$GITHUB_OUTPUT"
 
   # Go services: the Dockerfiles build on $BUILDPLATFORM and cross-compile to
   # each target arch, so one amd64 runner produces both platforms without QEMU.
@@ -154,18 +181,19 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-  # Rust (tracking) and Elixir (realtime) have no cross-compiler; an emulated
-  # arm64 build under QEMU runs for an hour or more. Build each arch on a
-  # native runner and merge the digests into one manifest (the
+  # Everything that cannot cross-compile: Rust (tracking), Elixir (realtime),
+  # and the Kafka variants of the Go services, which link librdkafka through
+  # cgo. An emulated arm64 build under QEMU runs for an hour or more, so build
+  # each arch on a native runner and merge the digests into one manifest (the
   # Docker-documented multi-runner pattern).
   build-native:
-    name: Build ${{ matrix.service }} (${{ matrix.platform }})
+    name: Build ${{ matrix.target.service }}${{ matrix.target.suffix }} (${{ matrix.platform }})
     needs: changes
     if: needs.changes.outputs.native != '[]'
     strategy:
       fail-fast: false
       matrix:
-        service: ${{ fromJSON(needs.changes.outputs.native) }}
+        target: ${{ fromJSON(needs.changes.outputs.native) }}
         platform: [linux/amd64, linux/arm64]
     runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
@@ -174,11 +202,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare platform pair
+      # `key` is the per-variant identifier: the image name plus the tag suffix,
+      # so a Kafka build never shares a cache scope or a digest artifact with
+      # the plain build of the same service.
+      - name: Prepare identifiers
         id: prep
-        run: echo "pair=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "pair=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+          echo "key=${SERVICE}${SUFFIX}" >> "$GITHUB_OUTPUT"
         env:
           PLATFORM: ${{ matrix.platform }}
+          SERVICE: ${{ matrix.target.service }}
+          SUFFIX: ${{ matrix.target.suffix }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -194,15 +229,16 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.service == 'tracking' && './tracking' || '.' }}
-          file: ${{ matrix.service == 'tracking' && './tracking/Dockerfile' || format('deploy/docker/{0}.Dockerfile', matrix.service) }}
+          context: ${{ matrix.target.service == 'tracking' && './tracking' || '.' }}
+          file: ${{ matrix.target.service == 'tracking' && './tracking/Dockerfile' || format('deploy/docker/{0}.Dockerfile', matrix.target.service) }}
           platforms: ${{ matrix.platform }}
           build-args: |
             VERSION=dev-${{ github.sha }}
             COMMIT=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.service }}-${{ steps.prep.outputs.pair }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ steps.prep.outputs.pair }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
+            ${{ matrix.target.args }}
+          cache-from: type=gha,scope=${{ steps.prep.outputs.key }}-${{ steps.prep.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.key }}-${{ steps.prep.outputs.pair }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -213,19 +249,19 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.service }}-${{ steps.prep.outputs.pair }}
+          name: digests-${{ steps.prep.outputs.key }}-${{ steps.prep.outputs.pair }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
   merge-native:
-    name: Merge ${{ matrix.service }} manifest
+    name: Merge ${{ matrix.target.service }}${{ matrix.target.suffix }} manifest
     needs: [changes, build-native]
     if: needs.changes.outputs.native != '[]'
     strategy:
       fail-fast: false
       matrix:
-        service: ${{ fromJSON(needs.changes.outputs.native) }}
+        target: ${{ fromJSON(needs.changes.outputs.native) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -235,7 +271,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-${{ matrix.service }}-*
+          pattern: digests-${{ matrix.target.service }}${{ matrix.target.suffix }}-linux-*
           merge-multiple: true
 
       - name: Log in to GHCR
@@ -252,9 +288,9 @@ jobs:
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create \
-            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} \
-            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:dev \
-            $(printf '${{ env.IMAGE_PREFIX }}/${{ matrix.service }}@sha256:%s ' *)
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }}:${{ github.sha }}${{ matrix.target.suffix }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }}:dev${{ matrix.target.suffix }} \
+            $(printf '${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }}@sha256:%s ' *)
 
   # A package on GHCR is created private and does not inherit the repository's
   # visibility, and no API can change that: an owner has to flip it by hand.

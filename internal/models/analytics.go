@@ -79,9 +79,9 @@ type CampaignSummary struct {
 	// (Apple MPP prefetch, UA-less clients). Human opens = unique - machine.
 	MachineOpens int `json:"machine_opens"`
 	UniqueClicks int `json:"unique_clicks"`
-	// MachineClicks counts steps whose only clicks came from automated
-	// fetchers (security gateways walking the links). They are not part of
-	// UniqueClicks, which only ever counts a person's click.
+	// MachineClicks counts the contacts whose only clicks on a step came from
+	// automated fetchers (security gateways walking the links). They are not
+	// part of UniqueClicks, which only ever counts a person's click.
 	MachineClicks int `json:"machine_clicks"`
 	Replies       int `json:"replies"`
 	Bounces       int `json:"bounces"`
@@ -99,9 +99,22 @@ type SequenceStats struct {
 	Position   int       `json:"position"`
 	EmailsSent int       `json:"emails_sent"`
 	Opens      int       `json:"opens"`
-	Clicks     int       `json:"clicks"`
-	Replies    int       `json:"replies"`
-	Bounces    int       `json:"bounces"`
+	// MachineOpens is the subset of Opens from automated fetchers, by the
+	// same rule the summary uses. Human opens = Opens - MachineOpens.
+	MachineOpens int `json:"machine_opens"`
+	Clicks       int `json:"clicks"`
+	// MachineClicks counts this step's contacts whose only clicks were
+	// automated; they are not part of Clicks.
+	MachineClicks int `json:"machine_clicks"`
+	Replies       int `json:"replies"`
+	Bounces       int `json:"bounces"`
+
+	// Rates are percentages of this step's own EmailsSent, so steps that
+	// reached different numbers of contacts still compare.
+	OpenRate   float64 `json:"open_rate"`
+	ClickRate  float64 `json:"click_rate"`
+	ReplyRate  float64 `json:"reply_rate"`
+	BounceRate float64 `json:"bounce_rate"`
 }
 
 type CampaignDailyStats struct {
@@ -276,8 +289,8 @@ type DashboardOverallStats struct {
 	// MachineOpens is the subset of TotalOpens from automated fetchers.
 	MachineOpens int `json:"machine_opens"`
 	TotalClicks  int `json:"total_clicks"`
-	// MachineClicks counts steps clicked only by automated fetchers; they are
-	// not part of TotalClicks.
+	// MachineClicks counts the contacts whose only clicks on a step came from
+	// automated fetchers; they are not part of TotalClicks.
 	MachineClicks   int     `json:"machine_clicks"`
 	TotalReplies    int     `json:"total_replies"`
 	TotalBounces    int     `json:"total_bounces"`

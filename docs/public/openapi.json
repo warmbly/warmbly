@@ -26560,14 +26560,42 @@
           "opens": {
             "type": "integer"
           },
+          "machine_opens": {
+            "type": "integer",
+            "description": "Subset of opens from automated fetchers. Human opens are opens minus machine_opens."
+          },
           "clicks": {
             "type": "integer"
+          },
+          "machine_clicks": {
+            "type": "integer",
+            "description": "Contacts on this step whose only clicks were automated. Not part of clicks."
           },
           "replies": {
             "type": "integer"
           },
           "bounces": {
             "type": "integer"
+          },
+          "open_rate": {
+            "type": "number",
+            "format": "double",
+            "description": "Opens as a percentage of this step's own emails_sent. 0 while the step has sent nothing."
+          },
+          "click_rate": {
+            "type": "number",
+            "format": "double",
+            "description": "Clicks as a percentage of this step's own emails_sent. 0 while the step has sent nothing."
+          },
+          "reply_rate": {
+            "type": "number",
+            "format": "double",
+            "description": "Replies as a percentage of this step's own emails_sent. 0 while the step has sent nothing."
+          },
+          "bounce_rate": {
+            "type": "number",
+            "format": "double",
+            "description": "Bounces as a percentage of this step's own emails_sent. 0 while the step has sent nothing."
           }
         }
       },

@@ -289,8 +289,11 @@ On `filesystem`, a remote worker writes blobs to its own disk rather than a volu
 
 | Variable | What it does | Default | Restart needed |
 |---|---|---|---|
-| `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs images built with `GO_TAGS=kafka` | `nats` under compose, `kafka` for a bare binary | yes |
+| `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs the `-kafka` images, or a build with `GO_TAGS=kafka` | `nats` under compose, `kafka` for a bare binary | yes |
 | `NATS_URL` | JetStream address. Credentials in the URL are honored by every service, including the Rust tracking publisher: `nats://user:pass@host:4222` for a user, `nats://token@host:4222` for a token, `tls://` for TLS | `nats://nats:4222` | yes |
+| `NATS_CREDS` | Path to a NATS credentials file (user JWT plus nkey seed), for a bus that authenticates with JWT rather than a token. Synadia Cloud and any nsc-managed account issue one | unset | yes |
+| `NATS_CREDS_B64` | The same file, base64 encoded, as a single line. This is the form the fleet uses: a node receives environment variables rather than files, and the env file docker reads cannot express a multi-line value. Takes precedence over `NATS_CREDS` | unset | yes |
+| `NATS_MAX_BYTES` | Ceiling on the stream's size on disk. Accepts a plain byte count or a size (`2GiB`, `512MB`, `1G`). Unset leaves the stream bounded only by `NATS_STREAM_MAX_AGE` and the account's own quota, which a managed bus may refuse: Synadia's "Max Bytes Required" rejects any stream created without one | unset (unlimited) | yes |
 | `NATS_STREAM_NAME`, `NATS_SUBJECT_PREFIX` | Stream and subject naming | `warmbly` | yes |
 | `KAFKA_BOOTSTRAP_SERVERS` | Broker list when `EVENTBUS_PROVIDER=kafka` | unset | yes |
 | `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | Broker credentials | unset | yes |
@@ -299,6 +302,11 @@ On `filesystem`, a remote worker writes blobs to its own disk rather than a volu
 | `EVENTBUS_HANDLER_TIMEOUT` | How long one handler may take before the delivery is abandoned | `30s` | yes |
 | `PUBSUB_ENABLED` | `false` uses the Redis bridge for realtime fanout, `true` uses Google Pub/Sub | `false` | yes |
 | `GCP_PROJECT_ID` | Project when `PUBSUB_ENABLED=true` | unset | yes |
+
+<Callout title="Topics are created by the bus, not by hand">
+A worker's command topic is named after the node id issued when it joined, so the set of topics is not knowable in advance. The Kafka backend creates what it uses, once per topic per process, rather than depending on the broker's `auto.create.topics.enable` — which is off by default on Confluent Cloud and configurable only on Dedicated clusters, not on Basic, Standard, Enterprise or Freight. The credential therefore needs `CREATE` on topics as well as read and write.
+</Callout>
+
 
 `CODEC_PROVIDER=json` is required wherever workers run: the worker command and result envelopes carry untyped bodies Avro cannot serialize, so any other value makes every worker command fail to encode. `PUBSUB_ENABLED` must agree across backend, consumer and realtime.
 
@@ -558,7 +566,7 @@ The Rust open and click service. It reads its own environment, so these have to 
 | `TRACKING_SCANNER_NETWORKS` | Extra scanner sources, comma separated, each a CIDR or `asn:<number>` with an optional label. For sources that never carry a person's own request, so their pixel fetches and their clicks are both treated as automated | empty |
 | `TRACKING_SCANNER_CLICK_NETWORKS` | The same, for sources that also proxy a mail client's own image fetches. Only their click tickets are treated as automated, because their pixel fetches are genuine opens | empty |
 | `TRACKING_SCANNER_ASN_HEADER` | Header a trusted proxy sets with the source ASN, which is what makes `asn:` entries match. Read only from a proxy in `TRACKING_TRUSTED_PROXIES`. On Cloudflare, a transform rule writing `ip.src.asnum`. Empty disables ASN matching | empty |
-| `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs an image built with `CARGO_FEATURES=kafka` | `nats` |
+| `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs the `tracking:*-kafka` image, or a build with `CARGO_FEATURES=kafka` | `nats` |
 | `NATS_URL`, `NATS_SUBJECT_PREFIX` | JetStream address and subject prefix. The publish subject is `<prefix>.<topic>` | `nats://localhost:4222`, `warmbly` |
 | `KAFKA_TRACKING_TOPIC` | Event topic, read by the Rust publisher **and** the Go subscriber | `tracking-events` |
 | `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | Broker transport when `EVENTBUS_PROVIDER=kafka` | unset |

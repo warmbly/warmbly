@@ -214,11 +214,15 @@ export default function CampaignOverview() {
                     )}
 
                     <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
-                        <SectionBar label="Step performance" count={sequences.length || undefined} />
+                        <SectionBar label="Step performance" count={sequences.length || undefined}>
+                            <span className="ml-auto hidden md:inline text-[10px] text-slate-400">
+                                count and % of that step's sends
+                            </span>
+                        </SectionBar>
                         {loading ? (
                             <div className="divide-y divide-slate-200/60">
                                 {[...Array(2)].map((_, i) => (
-                                    <div key={i} className="h-11 px-5 flex items-center gap-3">
+                                    <div key={i} className="h-12 px-5 flex items-center gap-3">
                                         <div className="size-1.5 rounded-full bg-slate-200" />
                                         <div className="h-3 w-40 bg-slate-100 rounded animate-pulse" />
                                         <div className="ml-auto h-3 w-48 bg-slate-100 rounded animate-pulse" />
@@ -238,13 +242,13 @@ export default function CampaignOverview() {
                                 <div className="h-8 px-5 flex items-center gap-3 text-[10px] uppercase tracking-[0.12em] text-slate-400 font-medium">
                                     <span className="flex-1 min-w-0">Step</span>
                                     <span className="w-14 text-right">Sent</span>
-                                    <span className="w-14 text-right">Opens</span>
-                                    <span className="w-14 text-right hidden md:block">Clicks</span>
-                                    <span className="w-14 text-right">Replies</span>
+                                    <span className="w-16 text-right">Opens</span>
+                                    <span className="w-16 text-right hidden md:block">Clicks</span>
+                                    <span className="w-16 text-right">Replies</span>
                                     <span className="w-16 text-right hidden md:block">Bounces</span>
                                 </div>
                                 {sequences.map((s) => (
-                                    <div key={s.step_id} className="h-11 px-5 flex items-center gap-3">
+                                    <div key={s.step_id} className="h-12 px-5 flex items-center gap-3">
                                         <span className="flex items-center gap-2 flex-1 min-w-0">
                                             <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">
                                                 {s.position}
@@ -254,18 +258,40 @@ export default function CampaignOverview() {
                                         <span className="w-14 text-right font-mono text-[11.5px] text-slate-700 tabular-nums">
                                             <AnimatedNumber value={s.emails_sent ?? 0} />
                                         </span>
-                                        <span className="w-14 text-right font-mono text-[11.5px] text-emerald-600 tabular-nums">
-                                            <AnimatedNumber value={s.opens ?? 0} />
-                                        </span>
-                                        <span className="w-14 text-right font-mono text-[11.5px] text-violet-600 tabular-nums hidden md:block">
-                                            <AnimatedNumber value={s.clicks ?? 0} />
-                                        </span>
-                                        <span className="w-14 text-right font-mono text-[11.5px] text-amber-600 tabular-nums">
-                                            <AnimatedNumber value={s.replies ?? 0} />
-                                        </span>
-                                        <span className="w-16 text-right font-mono text-[11.5px] text-rose-600 tabular-nums hidden md:block">
-                                            <AnimatedNumber value={s.bounces ?? 0} />
-                                        </span>
+                                        <StepMetric
+                                            label="Opens"
+                                            count={s.opens ?? 0}
+                                            rate={s.open_rate}
+                                            sent={s.emails_sent ?? 0}
+                                            tone="text-emerald-600"
+                                            auto={s.machine_opens}
+                                            autoTip={AUTO_OPENS_TIP}
+                                        />
+                                        <StepMetric
+                                            label="Clicks"
+                                            count={s.clicks ?? 0}
+                                            rate={s.click_rate}
+                                            sent={s.emails_sent ?? 0}
+                                            tone="text-violet-600"
+                                            auto={s.machine_clicks}
+                                            autoTip={AUTO_CLICKS_TIP}
+                                            desktopOnly
+                                        />
+                                        <StepMetric
+                                            label="Replies"
+                                            count={s.replies ?? 0}
+                                            rate={s.reply_rate}
+                                            sent={s.emails_sent ?? 0}
+                                            tone="text-amber-600"
+                                        />
+                                        <StepMetric
+                                            label="Bounces"
+                                            count={s.bounces ?? 0}
+                                            rate={s.bounce_rate}
+                                            sent={s.emails_sent ?? 0}
+                                            tone="text-rose-600"
+                                            desktopOnly
+                                        />
                                     </div>
                                 ))}
                             </div>
@@ -330,6 +356,57 @@ export default function CampaignOverview() {
                 </aside>
             </div>
         </div>
+    );
+}
+
+// One step-performance cell: the count, and under it the same number as a
+// share of that step's own sends, which is what makes two steps comparable
+// when a follow-up reached far fewer contacts than the first touch.
+function StepMetric({
+    label,
+    count,
+    rate,
+    sent,
+    tone,
+    auto,
+    autoTip,
+    desktopOnly,
+}: {
+    label: string;
+    count: number;
+    rate: number | undefined;
+    sent: number;
+    tone: string;
+    auto?: number;
+    autoTip?: string;
+    desktopOnly?: boolean;
+}) {
+    // A step that has not sent has no rate, and 0.0% would read as a result.
+    const share = sent > 0 ? `${(rate ?? 0).toFixed(1)}%` : "—";
+    const flagged = !!auto && !!autoTip;
+    const title = [
+        `${label}: ${count.toLocaleString()}`,
+        sent > 0 ? `${share} of ${sent.toLocaleString()} sent` : "nothing sent yet",
+        flagged ? `${auto} automated. ${autoTip}` : null,
+    ]
+        .filter(Boolean)
+        .join(" · ");
+    return (
+        <span
+            className={`w-16 text-right font-mono text-[11.5px] tabular-nums ${desktopOnly ? "hidden md:block" : ""}`}
+            title={title}
+        >
+            <span className={`block leading-none ${tone}`}>
+                <AnimatedNumber value={count} />
+            </span>
+            <span
+                className={`block leading-none mt-1 text-[9.5px] text-slate-400 ${
+                    flagged ? "underline decoration-dotted decoration-slate-300 underline-offset-2" : ""
+                }`}
+            >
+                {share}
+            </span>
+        </span>
     );
 }
 

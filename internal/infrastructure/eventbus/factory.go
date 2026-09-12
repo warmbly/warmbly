@@ -46,10 +46,15 @@ func FromEnv(bootstrap string, sasl *kafka.SASLConfig) (EventBus, error) {
 			SASL:      sasl,
 		})
 	case "nats":
+		maxBytes, err := parseByteSize(os.Getenv("NATS_MAX_BYTES"))
+		if err != nil {
+			return nil, err
+		}
 		return NewNATS(NATSConfig{
 			URL:           natsURLFromEnv(),
 			StreamName:    os.Getenv("NATS_STREAM_NAME"),
 			SubjectPrefix: os.Getenv("NATS_SUBJECT_PREFIX"),
+			MaxBytes:      maxBytes,
 		})
 	default:
 		return nil, fmt.Errorf("eventbus: unknown EVENTBUS_PROVIDER %q (want: kafka, nats)", provider)

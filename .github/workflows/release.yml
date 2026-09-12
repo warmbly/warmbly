@@ -129,17 +129,28 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-  # Rust (tracking) and Elixir (realtime) have no cross-compiler; an emulated
-  # arm64 build under QEMU runs for an hour or more. Build each arch on a
-  # native runner and merge the digests into one manifest (the
-  # Docker-documented multi-runner pattern).
+  # Everything that cannot cross-compile: Rust (tracking), Elixir (realtime),
+  # and the Kafka variants of the bus-facing Go services, which link librdkafka
+  # through cgo. An emulated arm64 build under QEMU runs for an hour or more, so
+  # build each arch on a native runner and merge the digests into one manifest
+  # (the Docker-documented multi-runner pattern).
+  #
+  # The Kafka variants publish under the same image names with a -kafka tag
+  # suffix, so an operator on Kafka pins ...:prod-kafka and gets the same
+  # release built with EVENTBUS_PROVIDER=kafka available.
   build-native:
-    name: Build ${{ matrix.service }} (${{ matrix.platform }})
+    name: Build ${{ matrix.target.service }}${{ matrix.target.suffix }} (${{ matrix.platform }})
     needs: validate-tag
     strategy:
       fail-fast: false
       matrix:
-        service: [tracking, realtime]
+        target:
+          - { service: tracking, suffix: "", args: "" }
+          - { service: tracking, suffix: "-kafka", args: "CARGO_FEATURES=kafka" }
+          - { service: realtime, suffix: "", args: "" }
+          - { service: backend, suffix: "-kafka", args: "GO_TAGS=kafka" }
+          - { service: consumer, suffix: "-kafka", args: "GO_TAGS=kafka" }
+          - { service: worker, suffix: "-kafka", args: "GO_TAGS=kafka" }
         platform: [linux/amd64, linux/arm64]
     runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
@@ -148,11 +159,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare platform pair
+      # `key` is the per-variant identifier: the image name plus the tag suffix,
+      # so a Kafka build never shares a cache scope or a digest artifact with
+      # the plain build of the same service.
+      - name: Prepare identifiers
         id: prep
-        run: echo "pair=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "pair=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+          echo "key=${SERVICE}${SUFFIX}" >> "$GITHUB_OUTPUT"
         env:
           PLATFORM: ${{ matrix.platform }}
+          SERVICE: ${{ matrix.target.service }}
+          SUFFIX: ${{ matrix.target.suffix }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -168,15 +186,16 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.service == 'tracking' && './tracking' || '.' }}
-          file: ${{ matrix.service == 'tracking' && './tracking/Dockerfile' || format('deploy/docker/{0}.Dockerfile', matrix.service) }}
+          context: ${{ matrix.target.service == 'tracking' && './tracking' || '.' }}
+          file: ${{ matrix.target.service == 'tracking' && './tracking/Dockerfile' || format('deploy/docker/{0}.Dockerfile', matrix.target.service) }}
           platforms: ${{ matrix.platform }}
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.service }}-${{ steps.prep.outputs.pair }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ steps.prep.outputs.pair }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
+            ${{ matrix.target.args }}
+          cache-from: type=gha,scope=${{ steps.prep.outputs.key }}-${{ steps.prep.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.key }}-${{ steps.prep.outputs.pair }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -187,18 +206,24 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.service }}-${{ steps.prep.outputs.pair }}
+          name: digests-${{ steps.prep.outputs.key }}-${{ steps.prep.outputs.pair }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
   merge-native:
-    name: Merge ${{ matrix.service }} manifest
+    name: Merge ${{ matrix.target.service }}${{ matrix.target.suffix }} manifest
     needs: [validate-tag, build-native]
     strategy:
       fail-fast: false
       matrix:
-        service: [tracking, realtime]
+        target:
+          - { service: tracking, suffix: "" }
+          - { service: tracking, suffix: "-kafka" }
+          - { service: realtime, suffix: "" }
+          - { service: backend, suffix: "-kafka" }
+          - { service: consumer, suffix: "-kafka" }
+          - { service: worker, suffix: "-kafka" }
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -208,7 +233,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-${{ matrix.service }}-*
+          pattern: digests-${{ matrix.target.service }}${{ matrix.target.suffix }}-linux-*
           merge-multiple: true
 
       - name: Log in to GHCR
@@ -225,11 +250,11 @@ jobs:
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create \
-            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.ref_name }} \
-            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.minor }} \
-            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.major }} \
-            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:prod \
-            $(printf '${{ env.IMAGE_PREFIX }}/${{ matrix.service }}@sha256:%s ' *)
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }}:${{ github.ref_name }}${{ matrix.target.suffix }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }}:v${{ needs.validate-tag.outputs.minor }}${{ matrix.target.suffix }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }}:v${{ needs.validate-tag.outputs.major }}${{ matrix.target.suffix }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }}:prod${{ matrix.target.suffix }} \
+            $(printf '${{ env.IMAGE_PREFIX }}/${{ matrix.target.service }}@sha256:%s ' *)
 
   # The `warmbly` CLI is a plain static binary, so it cross-compiles for every
   # platform on one runner.
