@@ -543,9 +543,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 		case budgetSpent > 0 || hoursClosed > 0:
 			// Resume when the first of them can send again: tomorrow for a
 			// spent budget, the reopening of the mailbox's own 8am-8pm band
-			// otherwise. A closed band is routine and short, so it earns no
-			// line in the activity log; a pool whose every usable mailbox is
-			// capped does.
+			// otherwise.
 			var resume time.Time
 			if budgetSpent > 0 {
 				resume = s.deferToNextDay(campaign, preview)
@@ -555,10 +553,34 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 					resume = open
 				}
 			}
-			if hoursClosed == 0 {
+			// What the feed is told. A closed 8am-8pm band on its own is
+			// routine and short and earns no line. Every usable mailbox capped
+			// earns "sending resumes tomorrow", which is only true while
+			// nothing in the pool is merely asleep: a mailbox that reopens
+			// today makes tomorrow a lie, which is why that line stays off for
+			// a mixed pool.
+			//
+			// The mix itself fell between the two and said NOTHING, so a
+			// campaign whose sending had stopped for hours sat active with an
+			// empty feed and no way for its owner to find out why. It gets its
+			// own line, under the event type the other "the pool cannot serve
+			// you right now" reasons already use, and carries the moment it
+			// comes back rather than promising a day.
+			switch {
+			case budgetSpent > 0 && hoursClosed == 0:
 				logDecisionOnce("daily_cap_reached",
 					"Every available mailbox has used its daily budget; sending resumes tomorrow",
 					map[string]interface{}{"capped_mailboxes": budgetSpent, "pool_size": len(accounts)})
+			case budgetSpent > 0:
+				logDecisionOnce("mailboxes_unavailable",
+					fmt.Sprintf("No mailbox can send right now: %d out of budget for today, %d outside their own sending hours",
+						budgetSpent, hoursClosed),
+					map[string]interface{}{
+						"capped_mailboxes": budgetSpent,
+						"hours_closed":     hoursClosed,
+						"pool_size":        len(accounts),
+						"resumes_at":       resume.UTC().Format(time.RFC3339),
+					})
 			}
 			return resume, nil, accounts[0].ID, ErrCampaignDeferred
 		case lifecycleGated == len(accounts):
