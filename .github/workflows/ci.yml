@@ -136,6 +136,12 @@ jobs:
       - name: Verify protobuf files are up to date
         run: make check-proto
 
+      # The Kafka backend sits behind a build tag, so the default build never
+      # compiles it and it can rot unnoticed. Vet rather than test: it needs
+      # CGO and a broker, but a compile error is the failure that matters.
+      - name: Verify the Kafka build still compiles
+        run: go vet -tags kafka ./...
+
       - name: Run tests with coverage
         run: |
           go test -race -coverprofile=coverage.out -covermode=atomic ./...
