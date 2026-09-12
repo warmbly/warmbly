@@ -29,6 +29,7 @@ RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-target,target=/app/target \
     set -eux; \
     if [ -n "$CARGO_FEATURES" ]; then FEAT="--features $CARGO_FEATURES"; else FEAT=""; fi; \
+    export OPENSSL_STATIC=1; \
     cargo build --release $FEAT; \
     cp target/release/tracking /tracking
 
