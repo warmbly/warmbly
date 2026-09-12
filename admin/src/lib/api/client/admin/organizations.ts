@@ -11,6 +11,8 @@ import type {
     OrganizationLimitOverrides,
     OrgRisk,
     SetOrgRiskOverrideRequest,
+    AdminPlan,
+    ManagedPlan,
     UpdateOrgOverridesRequest,
 } from "@/lib/api/models/admin";
 
@@ -65,6 +67,45 @@ export function updateOrganizationOverrides(
         url: `/admin/organizations/${id}/overrides`,
         authorization: true,
         data: body,
+    });
+}
+
+/** Every plan, private ones included. The customer endpoint returns public
+ *  plans only, and a grant is usually onto a private one. */
+export function listAdminPlans(): Promise<{ plans: AdminPlan[] }> {
+    return Request({
+        method: "GET",
+        url: `/admin/plans`,
+        authorization: true,
+    });
+}
+
+/** A plan an operator granted rather than Stripe. */
+export function getOrganizationManagedPlan(id: string): Promise<ManagedPlan> {
+    return Request({
+        method: "GET",
+        url: `/admin/organizations/${id}/managed-plan`,
+        authorization: true,
+    });
+}
+
+export function grantOrganizationManagedPlan(
+    id: string,
+    body: { plan_id: string; reason: string; until?: string | null },
+): Promise<ManagedPlan> {
+    return Request({
+        method: "PUT",
+        url: `/admin/organizations/${id}/managed-plan`,
+        authorization: true,
+        data: body,
+    });
+}
+
+export function revokeOrganizationManagedPlan(id: string): Promise<ManagedPlan> {
+    return Request({
+        method: "DELETE",
+        url: `/admin/organizations/${id}/managed-plan`,
+        authorization: true,
     });
 }
 

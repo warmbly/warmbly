@@ -100,6 +100,13 @@ type OrganizationService interface {
 	// MailboxAllowance resolves how many mailboxes the workspace may hold and
 	// why; every connect path checks it and GET /emails/allowance returns it.
 	MailboxAllowance(ctx context.Context, orgID uuid.UUID) (*models.MailboxAllowance, *errx.Error)
+
+	// GrantManagedPlan / RevokeManagedPlan are the operator-granted plan: paid
+	// entitlements without Stripe, for internal workspaces, design partners
+	// and support gestures.
+	GrantManagedPlan(ctx context.Context, orgID, planID, adminID uuid.UUID, reason string, until *time.Time) (*models.ManagedPlan, *errx.Error)
+	RevokeManagedPlan(ctx context.Context, orgID uuid.UUID) (*models.ManagedPlan, *errx.Error)
+	GetManagedPlan(ctx context.Context, orgID uuid.UUID) (*models.ManagedPlan, *errx.Error)
 	GetCampaignCounts(ctx context.Context, orgID uuid.UUID) (total int, active int, err *errx.Error)
 	GetOrganizationLimits(ctx context.Context, orgID uuid.UUID) (*models.OrganizationLimits, *errx.Error)
 	GetOrganizationCounts(ctx context.Context, orgID uuid.UUID) (*models.OrganizationCounts, *errx.Error)
@@ -151,6 +158,9 @@ type organizationService struct {
 	orgRepo  repository.OrganizationRepository
 	subRepo  repository.SubscriptionRepository
 	userRepo repository.UserRepository
+	// planRepo validates a granted plan id before it is written, so a typo is
+	// a 400 naming the problem rather than a foreign-key violation.
+	planRepo repository.PlanRepository
 	throttle dailythrottle.Service
 	// authPolicy is wired after construction, because the policy is loaded
 	// alongside the mail transport and not available at this call site.
@@ -213,11 +223,13 @@ func NewService(
 	orgRepo repository.OrganizationRepository,
 	subRepo repository.SubscriptionRepository,
 	userRepo repository.UserRepository,
+	planRepo repository.PlanRepository,
 	throttle dailythrottle.Service,
 ) OrganizationService {
 	return &organizationService{
 		orgRepo:  orgRepo,
 		subRepo:  subRepo,
+		planRepo: planRepo,
 		userRepo: userRepo,
 		throttle: throttle,
 	}
@@ -1676,4 +1688,61 @@ func (s *organizationService) DeleteRole(ctx context.Context, orgID, actorID, ro
 		return errx.New(errx.Internal, "failed to delete role")
 	}
 	return nil
+}
+
+// GetManagedPlan reports the grant on a workspace, if any.
+func (s *organizationService) GetManagedPlan(ctx context.Context, orgID uuid.UUID) (*models.ManagedPlan, *errx.Error) {
+	sub, err := s.subRepo.GetByOrganizationID(ctx, orgID)
+	if err != nil {
+		errs.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to read the subscription")
+	}
+	if sub == nil {
+		return nil, errx.New(errx.NotFound, "that workspace has no subscription")
+	}
+	return managedPlanOf(sub), nil
+}
+
+// GrantManagedPlan puts a workspace on a plan without Stripe.
+func (s *organizationService) GrantManagedPlan(ctx context.Context, orgID, planID, adminID uuid.UUID, reason string, until *time.Time) (*models.ManagedPlan, *errx.Error) {
+	// A grant into the past is almost certainly a timezone or unit mistake,
+	// and it would read as "granted" in the audit trail while entitling
+	// nothing at all.
+	if until != nil && !until.After(time.Now()) {
+		return nil, errx.New(errx.BadRequest, "the grant would already have expired; leave it open-ended or pick a future date")
+	}
+	if s.planRepo != nil {
+		plan, perr := s.planRepo.GetByID(ctx, planID)
+		if perr != nil || plan == nil {
+			return nil, errx.New(errx.BadRequest, "that plan does not exist")
+		}
+	}
+	if err := s.subRepo.SetManagedPlan(ctx, orgID, planID, adminID, reason, until); err != nil {
+		errs.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to grant the plan")
+	}
+	return s.GetManagedPlan(ctx, orgID)
+}
+
+// RevokeManagedPlan ends a grant. The workspace keeps the plan row it was on
+// and stops counting as paid, which is where an expired grant leaves it too.
+func (s *organizationService) RevokeManagedPlan(ctx context.Context, orgID uuid.UUID) (*models.ManagedPlan, *errx.Error) {
+	if err := s.subRepo.ClearManagedPlan(ctx, orgID); err != nil {
+		errs.CaptureException(err)
+		return nil, errx.New(errx.Internal, "failed to revoke the plan")
+	}
+	return s.GetManagedPlan(ctx, orgID)
+}
+
+func managedPlanOf(sub *models.Subscription) *models.ManagedPlan {
+	out := &models.ManagedPlan{
+		Managed:   sub.IsManaged(),
+		Expired:   sub.ManagedExpired(),
+		GrantedAt: sub.ManagedAt,
+		GrantedBy: sub.ManagedBy,
+		Reason:    sub.ManagedReason,
+		Until:     sub.ManagedUntil,
+		PlanID:    sub.PlanID,
+	}
+	return out
 }

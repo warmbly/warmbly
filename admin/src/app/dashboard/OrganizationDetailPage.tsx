@@ -55,6 +55,7 @@ import type {
 } from "@/lib/api/models/admin";
 import { OrganizationOverridesDialog } from "./OrganizationOverridesDialog";
 import { OrganizationRiskCard, RiskBadge } from "./OrganizationRiskCard";
+import { OrganizationManagedPlanCard } from "./OrganizationManagedPlanCard";
 
 const TABS = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -192,6 +193,11 @@ export default function OrganizationDetailPage() {
                     )}
                 </SummaryCard>
             </div>
+
+            <section className="mt-6">
+                <h2 className="text-sm font-semibold mb-2">Plan</h2>
+                <OrganizationManagedPlanCard orgId={org.id} />
+            </section>
 
             <section className="mt-6">
                 <h2 className="text-sm font-semibold mb-2">Abuse posture</h2>

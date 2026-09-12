@@ -108,6 +108,7 @@ func (c *conn) orgService() organization.OrganizationService {
 		repository.NewOrganizationRepository(c.db.Pool),
 		repository.NewSubscriptionRepository(c.db.Pool),
 		c.users,
+		repository.NewPlanRepository(c.db.Pool),
 		nil,
 	)
 }
