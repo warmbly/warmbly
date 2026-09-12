@@ -34,6 +34,10 @@ type KafkaBus struct {
 	mu        sync.Mutex
 	consumers []*kafka.Consumer
 	closed    bool
+
+	// Kafka topics must exist before use, and a worker's command topic is
+	// named after a node id issued at join time. See kafka_topics.go.
+	topics topicEnsurer
 }
 
 // NewKafka constructs a KafkaBus and opens the shared producer connection.
@@ -53,6 +57,7 @@ func NewKafka(cfg KafkaConfig) (*KafkaBus, error) {
 		producer:  prod,
 		bootstrap: cfg.Bootstrap,
 		sasl:      cfg.SASL,
+		topics:    topicEnsurer{known: map[string]struct{}{}},
 	}, nil
 }
 
@@ -67,6 +72,7 @@ func NewKafkaFromProducer(p *kafka.Producer, cfg KafkaConfig) *KafkaBus {
 		producer:  p,
 		bootstrap: cfg.Bootstrap,
 		sasl:      cfg.SASL,
+		topics:    topicEnsurer{known: map[string]struct{}{}},
 	}
 }
 
@@ -86,6 +92,11 @@ func (b *KafkaBus) Publish(ctx context.Context, topic, key string, payload []byt
 	if closed {
 		return errors.New("eventbus kafka: bus closed")
 	}
+	// A worker's command topic is named after its node id, so the first
+	// publish to it is the first time anything knows the name.
+	if err := b.ensureTopics(ctx, topic); err != nil {
+		return err
+	}
 	return b.producer.Produce(topic, []byte(key), payload)
 }
 
@@ -102,6 +113,12 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 	}
 	if handler == nil {
 		return errors.New("eventbus kafka: handler required")
+	}
+
+	// Subscribing to a topic that does not exist yet returns no messages and
+	// no error, so a worker would sit silent rather than fail.
+	if err := b.ensureTopics(ctx, topics...); err != nil {
+		return err
 	}
 
 	cc := kafka.NewConsumer(b.bootstrap)
@@ -152,6 +169,16 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 // Close flushes the producer and closes every consumer that was opened via
 // Subscribe.
 func (b *KafkaBus) Close() error {
+	// Marked closed before the client is cleared, so a Publish racing past the
+	// closed check cannot open a replacement that outlives shutdown.
+	b.topics.mu.Lock()
+	b.topics.closed = true
+	if b.topics.admin != nil {
+		b.topics.admin.Close()
+		b.topics.admin = nil
+	}
+	b.topics.mu.Unlock()
+
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()

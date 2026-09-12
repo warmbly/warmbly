@@ -303,6 +303,11 @@ On `filesystem`, a remote worker writes blobs to its own disk rather than a volu
 | `PUBSUB_ENABLED` | `false` uses the Redis bridge for realtime fanout, `true` uses Google Pub/Sub | `false` | yes |
 | `GCP_PROJECT_ID` | Project when `PUBSUB_ENABLED=true` | unset | yes |
 
+<Callout title="Topics are created by the bus, not by hand">
+A worker's command topic is named after the node id issued when it joined, so the set of topics is not knowable in advance. The Kafka backend creates what it uses, once per topic per process, rather than depending on the broker's `auto.create.topics.enable` — which is off by default on Confluent Cloud and configurable only on Dedicated clusters, not on Basic, Standard, Enterprise or Freight. The credential therefore needs `CREATE` on topics as well as read and write.
+</Callout>
+
+
 `CODEC_PROVIDER=json` is required wherever workers run: the worker command and result envelopes carry untyped bodies Avro cannot serialize, so any other value makes every worker command fail to encode. `PUBSUB_ENABLED` must agree across backend, consumer and realtime.
 
 <Callout type="warn" title="The tracking topic is read by two languages">
