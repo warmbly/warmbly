@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/mail"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
@@ -130,6 +132,15 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		return nil, false, errx.ErrEmailOnboardExchange
 	}
 
+	// A consent screen lets the person untick individual permissions and still
+	// returns a token, so this is the last point at which a half-granted
+	// mailbox can be refused. Storing one instead means a mailbox that looks
+	// connected and fails on its first send, days later, with a provider 403
+	// nobody can trace back to a checkbox.
+	if xerr := checkGrantedScopes(ctx, provider, cfg.Scopes, tok); xerr != nil {
+		return nil, false, xerr
+	}
+
 	owner, xerr := fetchInboxOwner(ctx, provider, tok.AccessToken)
 	if xerr != nil {
 		return nil, false, xerr
@@ -144,6 +155,22 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		return nil, false, xerr
 	} else if exists {
 		return nil, false, errx.ErrEmailOnboardAlreadyExists
+	}
+
+	// A first connect with no refresh token is a mailbox with about an hour to
+	// live: the access token expires and nothing can renew it. reauth.go
+	// deliberately tolerates an absent one because it keeps the stored value,
+	// but here there is nothing stored to fall back on, so refuse now rather
+	// than hand back a mailbox that stops by itself.
+	if strings.TrimSpace(tok.RefreshToken) == "" {
+		log.Warn().
+			Str("provider", string(provider)).
+			Msg("mailbox onboarding: first connect returned no refresh token")
+		errs.CaptureMessageContext(ctx, fmt.Sprintf("%s first connect returned no refresh token", provider),
+			errs.Tag("provider", string(provider)))
+		return nil, false, errx.New(errx.BadRequest,
+			"The provider did not return a long-lived token for this mailbox, so it would stop working within the hour. "+
+				"Remove Warmbly's access in your account settings and connect it again.")
 	}
 
 	name := strings.TrimSpace(owner.Name)
@@ -387,6 +414,149 @@ func fetchInboxOwner(ctx context.Context, provider models.InboxProvider, accessT
 	}
 }
 
+// grantedScopes reads what the provider actually authorised. Both Google and
+// Microsoft return a space-separated "scope" alongside the token; an empty or
+// absent one means the provider did not say, which is not the same as "nothing
+// was granted" and must not be read as a denial.
+func grantedScopes(tok *oauth2.Token) (map[string]bool, bool) {
+	raw, _ := tok.Extra("scope").(string)
+	if strings.TrimSpace(raw) == "" {
+		return nil, false
+	}
+	out := make(map[string]bool)
+	for _, sc := range strings.Fields(raw) {
+		out[sc] = true
+	}
+	return out, true
+}
+
+// scopeSatisfiedBy maps a scope we ask for to every scope that confers it.
+// Google's Gmail scopes nest: gmail.modify covers reading and sending, and
+// gmail.compose covers sending. Without this, someone who granted the broader
+// permission but not the narrower one would be turned away for a capability
+// they actually have.
+var scopeSatisfiedBy = map[string][]string{
+	"https://www.googleapis.com/auth/gmail.readonly": {
+		"https://www.googleapis.com/auth/gmail.readonly",
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://mail.google.com/",
+	},
+	"https://www.googleapis.com/auth/gmail.send": {
+		"https://www.googleapis.com/auth/gmail.send",
+		"https://www.googleapis.com/auth/gmail.compose",
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://mail.google.com/",
+	},
+	"https://www.googleapis.com/auth/gmail.metadata": {
+		"https://www.googleapis.com/auth/gmail.metadata",
+		"https://www.googleapis.com/auth/gmail.readonly",
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://mail.google.com/",
+	},
+	"https://www.googleapis.com/auth/gmail.modify": {
+		"https://www.googleapis.com/auth/gmail.modify",
+		"https://mail.google.com/",
+	},
+}
+
+// scopeLabel names a permission the way the consent screen does, so the error
+// tells someone which checkbox to go back and tick.
+var scopeLabel = map[string]string{
+	"https://www.googleapis.com/auth/gmail.readonly":       "read your email",
+	"https://www.googleapis.com/auth/gmail.send":           "send email on your behalf",
+	"https://www.googleapis.com/auth/gmail.modify":         "manage your email",
+	"https://www.googleapis.com/auth/gmail.compose":        "compose and send email",
+	"https://www.googleapis.com/auth/gmail.metadata":       "read email metadata",
+	"https://www.googleapis.com/auth/gmail.settings.basic": "manage your mail settings",
+	"https://graph.microsoft.com/Mail.Send":                "send mail",
+	"https://graph.microsoft.com/Mail.ReadWrite":           "read and write mail",
+	"https://graph.microsoft.com/User.Read":                "read your profile",
+}
+
+// checkGrantedScopes refuses a connection the provider only partly authorised.
+func checkGrantedScopes(ctx context.Context, provider models.InboxProvider, want []string, tok *oauth2.Token) *errx.Error {
+	granted, told := grantedScopes(tok)
+	if !told {
+		// Nothing to check against. Recorded rather than guessed at, because a
+		// provider that stops returning the scope would otherwise turn this
+		// into a silent no-op.
+		errs.CaptureMessageContext(ctx, fmt.Sprintf("%s returned no scope with the token; granted permissions were not verified", provider),
+			errs.Tag("provider", string(provider)))
+		return nil
+	}
+
+	var missing []string
+	for _, w := range want {
+		accepted, ok := scopeSatisfiedBy[w]
+		if !ok {
+			accepted = []string{w}
+		}
+		if !anyGranted(granted, accepted) {
+			missing = append(missing, w)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	labels := make([]string, 0, len(missing))
+	for _, m := range missing {
+		if l, ok := scopeLabel[m]; ok {
+			labels = append(labels, l)
+		} else {
+			labels = append(labels, m)
+		}
+	}
+	log.Warn().
+		Str("provider", string(provider)).
+		Strs("missing", missing).
+		Msg("mailbox onboarding: refused a partly granted consent")
+	errs.CaptureMessageContext(ctx, fmt.Sprintf("%s mailbox connected with missing permissions", provider),
+		errs.Tag("provider", string(provider)),
+		errs.Extra("missing", strings.Join(missing, " ")))
+
+	return errx.New(errx.BadRequest, fmt.Sprintf(
+		"Warmbly was not given every permission it needs for this mailbox. Missing: %s. Connect it again and leave all the permissions ticked.",
+		strings.Join(labels, ", ")))
+}
+
+func anyGranted(granted map[string]bool, accepted []string) bool {
+	for _, a := range accepted {
+		if granted[a] {
+			return true
+		}
+	}
+	return false
+}
+
+// maxProviderBody bounds what is read from a provider before it is looked at,
+// so a broken or hostile intermediary cannot make onboarding read an arbitrary
+// amount into memory.
+const maxProviderBody = 64 << 10
+
+// diagnosticDetailLimit is how much of a failure body is recorded. A provider
+// error payload has no length contract.
+const diagnosticDetailLimit = 512
+
+// diagnosticBody decides how much of the provider's response may be recorded.
+//
+// Nothing at all from a 2xx. A decode failure and a missing address both carry
+// status 200, and that body is a SUCCESSFUL profile payload: for Gmail it is
+// the mailbox address, for Outlook the address and display name. Recording it
+// would put the mailbox owner's identity into the log stream and into error
+// tracking. The decision lives here rather than at the call sites so that
+// adding a new failure stage cannot get it wrong.
+func diagnosticBody(status int, body []byte) string {
+	if status >= 200 && status < 300 {
+		return ""
+	}
+	detail := strings.TrimSpace(string(body))
+	if len(detail) > diagnosticDetailLimit {
+		detail = detail[:diagnosticDetailLimit] + "…"
+	}
+	return detail
+}
+
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 func fetchGmailOwner(ctx context.Context, token string) (*inboxOwner, *errx.Error) {
@@ -395,23 +565,59 @@ func fetchGmailOwner(ctx context.Context, token string) (*inboxOwner, *errx.Erro
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "gmail", "transport", 0, nil, err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxProviderBody))
 	if resp.StatusCode != http.StatusOK {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "gmail", "status", resp.StatusCode, body, nil)
 	}
 	var out struct {
 		EmailAddress string `json:"emailAddress"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "gmail", "decode", resp.StatusCode, body, err)
 	}
 	if out.EmailAddress == "" {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "gmail", "no_address", resp.StatusCode, body, nil)
 	}
 	return &inboxOwner{Email: out.EmailAddress}, nil
+}
+
+// ownerLookupFailed reports why the provider would not name the mailbox and
+// returns the one error the user sees.
+//
+// The user-facing message stays deliberately vague, because the cause is ours
+// and not theirs. What is NOT vague any more is the record: this call used to
+// read the status and the body and then discard both, so five distinct
+// failures arrived as one sentence with nothing behind it, and the most common
+// of them by far ("the Gmail API has not been enabled in this project") was
+// indistinguishable from a revoked token. A handled 400 raises no exception,
+// so without this there is nothing in the logs or in error tracking either.
+func ownerLookupFailed(ctx context.Context, provider, stage string, status int, body []byte, cause error) *errx.Error {
+	detail := diagnosticBody(status, body)
+	opts := []errs.Option{
+		errs.Tag("provider", provider),
+		errs.Tag("stage", stage),
+		errs.Extra("status", status),
+	}
+	// Only present on a failure response, where it is the provider's own error
+	// payload rather than anything belonging to the mailbox owner.
+	if detail != "" {
+		opts = append(opts, errs.Extra("response", detail))
+	}
+	if cause != nil {
+		errs.CaptureExceptionContext(ctx, fmt.Errorf("%s owner lookup failed at %s: %w", provider, stage, cause), opts...)
+	} else {
+		errs.CaptureMessageContext(ctx, fmt.Sprintf("%s owner lookup failed at %s (status %d)", provider, stage, status), opts...)
+	}
+	log.Warn().
+		Str("provider", provider).
+		Str("stage", stage).
+		Int("status", status).
+		Str("response", detail).
+		Msg("mailbox onboarding: provider would not name the account")
+	return errx.ErrEmailOnboardUserInfo
 }
 
 func fetchOutlookOwner(ctx context.Context, token string) (*inboxOwner, *errx.Error) {
@@ -420,12 +626,12 @@ func fetchOutlookOwner(ctx context.Context, token string) (*inboxOwner, *errx.Er
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "outlook", "transport", 0, nil, err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxProviderBody))
 	if resp.StatusCode != http.StatusOK {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "outlook", "status", resp.StatusCode, body, nil)
 	}
 	var out struct {
 		Mail              string `json:"mail"`
@@ -433,14 +639,14 @@ func fetchOutlookOwner(ctx context.Context, token string) (*inboxOwner, *errx.Er
 		DisplayName       string `json:"displayName"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "outlook", "decode", resp.StatusCode, body, err)
 	}
 	addr := out.Mail
 	if addr == "" {
 		addr = out.UserPrincipalName
 	}
 	if addr == "" {
-		return nil, errx.ErrEmailOnboardUserInfo
+		return nil, ownerLookupFailed(ctx, "outlook", "no_address", resp.StatusCode, nil, nil)
 	}
 	return &inboxOwner{Email: addr, Name: out.DisplayName}, nil
 }
