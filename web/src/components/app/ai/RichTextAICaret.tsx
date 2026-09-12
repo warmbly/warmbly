@@ -21,18 +21,9 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import formatUsage from "@/components/app/ai/usage";
 import { useAnchoredFloating, caretReference } from "@/hooks/useAnchoredFloating";
+import { passageHTML, passageText, replacePassage } from "./richTextPassage";
 
 const CONTEXT_WINDOW = 1500;
-
-// Minimal plain-model-text → TipTap HTML (paragraphs on blank lines, hard breaks
-// inside). Matches RichTextAIEdit's converter.
-function plainToHTML(text: string): string {
-    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return text
-        .split(/\n{2,}/)
-        .map((p) => `<p>${esc(p).replace(/\n/g, "<br>")}</p>`)
-        .join("");
-}
 
 type Phase = "idle" | "busy" | "applied";
 
@@ -166,7 +157,7 @@ export default function RichTextAICaret({ editor }: { editor: Editor }) {
             const pos = frozenPos.current;
             if (pos === null || writeMut.isPending) return;
             const prevHTML = editor.getHTML();
-            const before = editor.state.doc.textBetween(Math.max(0, pos - CONTEXT_WINDOW), pos, "\n", " ");
+            const before = passageText(editor, Math.max(0, pos - CONTEXT_WINDOW), pos);
             const prompt =
                 raw +
                 "\n\nYou are writing text to insert into an email draft at the cursor. Return ONLY the text to insert: no preamble, no subject line, no signature, no quotes around it. Match the draft's language and tone." +
@@ -179,7 +170,12 @@ export default function RichTextAICaret({ editor }: { editor: Editor }) {
                     onSuccess: (res) => {
                         if (!openRef.current) return;
                         setUsage({ charged: res.credits_charged ?? 0, tokens: res.tokens_used ?? 0 });
-                        editor.chain().focus().insertContentAt(pos, plainToHTML(res.text)).run();
+                        // Paste semantics, so writing into the middle of a
+                        // sentence extends it instead of splitting the
+                        // paragraph, and the merge variables the prompt asks
+                        // for land as chips rather than literal text.
+                        replacePassage(editor, pos, pos, passageHTML(res.text));
+                        editor.commands.focus();
                         lastRun.current = { instruction: raw, prevHTML };
                         setPhase("applied");
                     },

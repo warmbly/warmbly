@@ -18,6 +18,8 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { Kbd } from "@/components/ui/shortcut-tooltip";
 import AIEditPopover, { type AIEditPhase } from "./AIEditPopover";
+import { AI_CARD_WIDTH, clampCardLeft } from "./floatingBounds";
+import { clampContext } from "./richTextPassage";
 import textareaRangeRect, {
     textareaRangeRects,
     type LineRect,
@@ -65,6 +67,7 @@ export default function TextareaAIEdit({
     const [highlights, setHighlights] = React.useState<LineRect[]>([]);
     const [open, setOpen] = React.useState(false);
     const [phase, setPhase] = React.useState<AIEditPhase>("idle");
+    const [changed, setChanged] = React.useState(true);
     const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
 
     const rootRef = React.useRef<HTMLDivElement>(null);
@@ -214,6 +217,11 @@ export default function TextareaAIEdit({
             tokens: number,
         ) => {
             setUsage({ charged, tokens });
+            // A model that hands the passage back untouched must say so rather
+            // than report a rewrite nobody can see (issue #432). The server
+            // trims what it returns, so the comparison trims both sides or a
+            // selection with a trailing space never matches.
+            setChanged(text.trim() !== target.text.trim());
             const prefix = prevValue.slice(0, target.start);
             const suffix = prevValue.slice(target.end);
             const cap = (s: string) => (maxLen ? s.slice(0, maxLen) : s);
@@ -259,7 +267,7 @@ export default function TextareaAIEdit({
                 {
                     text: t.text,
                     instruction,
-                    context: getContext?.() ?? prevValue,
+                    context: clampContext(getContext?.() ?? prevValue),
                 },
                 {
                     onSuccess: (res) => {
@@ -335,10 +343,10 @@ export default function TextareaAIEdit({
 
     const showPill = !open && !!sel && !!rect && sel.text.trim().length > 1;
 
-    // Popover placement: above the selection when there is room, else below.
-    const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
+    // Popover placement: above the selection when there is room, else below,
+    // and never outside the composer it belongs to.
     const popAbove = (rect?.top ?? 0) > 200;
-    const popLeft = Math.min(Math.max((rect?.centerX ?? 0) - 150, 8), vw - 308);
+    const popLeft = clampCardLeft(rect?.centerX ?? 0, AI_CARD_WIDTH, textareaRef.current);
 
     return createPortal(
         <div ref={rootRef} data-floating="">
@@ -403,6 +411,7 @@ export default function TextareaAIEdit({
                     >
                         <AIEditPopover
                             phase={phase}
+                            changed={changed}
                             usage={usage}
                             onRun={(instruction) => run(instruction)}
                             onUndo={undo}

@@ -4,6 +4,10 @@
 // the selected range and stays selected for review; Undo restores a pre-edit
 // HTML snapshot, which reverts the whole rewrite in one step rather than
 // unwinding it through the editor's own history.
+//
+// The passage leaves and re-enters the document through richTextPassage, so
+// merge variables and the other chips survive the trip and the replacement
+// lands with paste semantics instead of splitting the paragraph it sits in.
 
 import React from "react";
 import { createPortal } from "react-dom";
@@ -15,28 +19,22 @@ import useGenerateEdit from "@/lib/api/hooks/app/generation/useGenerateEdit";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import AIEditPopover, { type AIEditPhase } from "./AIEditPopover";
+import { AI_CARD_WIDTH, clampCardLeft } from "./floatingBounds";
+import { clampContext, passageAIConfigs, passageHTML, passageText, replacePassage } from "./richTextPassage";
 
 interface EditorRange {
     from: number;
     to: number;
     text: string;
+    // Config of every AI block inside the range, so a token the model echoes
+    // comes back as the block it was rather than an empty one.
+    aiConfigs: Map<string, string>;
 }
 
 interface Anchor {
     top: number;
     bottom: number;
     centerX: number;
-}
-
-// Plain model text back to minimal TipTap HTML: paragraphs on blank lines,
-// hard breaks inside them.
-function plainToHTML(text: string): string {
-    const esc = (s: string) =>
-        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return text
-        .split(/\n{2,}/)
-        .map((p) => `<p>${esc(p).replace(/\n/g, "<br>")}</p>`)
-        .join("");
 }
 
 function anchorFor(editor: Editor, from: number, to: number): Anchor | null {
@@ -60,6 +58,7 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
     const [anchor, setAnchor] = React.useState<Anchor | null>(null);
     const [open, setOpen] = React.useState(false);
     const [phase, setPhase] = React.useState<AIEditPhase>("idle");
+    const [changed, setChanged] = React.useState(true);
     const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
 
     const rootRef = React.useRef<HTMLDivElement>(null);
@@ -90,8 +89,12 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
                 setAnchor(null);
                 return;
             }
-            const text = editor.state.doc.textBetween(from, to, "\n");
-            setRange({ from, to, text });
+            setRange({
+                from,
+                to,
+                text: passageText(editor, from, to),
+                aiConfigs: passageAIConfigs(editor, from, to),
+            });
             setAnchor(anchorFor(editor, from, to));
         };
         editor.on("selectionUpdate", onSelection);
@@ -151,18 +154,23 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
             tokens: number,
         ) => {
             setUsage({ charged, tokens });
-            editor
-                .chain()
-                .focus()
-                .insertContentAt({ from: target.from, to: target.to }, plainToHTML(text))
-                .run();
-            // insertContentAt leaves the caret at the end of the insertion;
-            // stretch the selection back to cover it so the change is visible.
-            const newTo = editor.state.selection.to;
-            editor.commands.setTextSelection({ from: target.from, to: newTo });
+            const html = passageHTML(text, target.aiConfigs);
+            const newTo = replacePassage(editor, target.from, target.to, html);
+            editor.commands.focus();
             lastRun.current = { instruction, prevHTML, range: target };
-            frozen.current = { from: target.from, to: newTo, text };
-            setAnchor(anchorFor(editor, target.from, newTo));
+            // A rewrite that changed nothing is reported as nothing, not as a
+            // rewrite that did not show up in the body (issue #432).
+            setChanged(newTo !== null);
+            const end = newTo ?? target.to;
+            // Re-read the range that is now there, so chaining another
+            // instruction onto the result edits what the body actually holds.
+            frozen.current = {
+                from: target.from,
+                to: end,
+                text: passageText(editor, target.from, end),
+                aiConfigs: passageAIConfigs(editor, target.from, end),
+            };
+            setAnchor(anchorFor(editor, target.from, end));
             setPhase("applied");
         },
         [editor],
@@ -175,7 +183,7 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
             const prevHTML = baseHTML ?? editor.getHTML();
             setPhase("busy");
             editMut.mutate(
-                { text: t.text, instruction, context: editor.getText() },
+                { text: t.text, instruction, context: clampContext(editor.getText()) },
                 {
                     onSuccess: (res) => {
                         if (!openRef.current) return;
@@ -225,9 +233,8 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
     if (typeof document === "undefined") return null;
 
     const showPill = !open && !!range && !!anchor && range.text.trim().length > 1;
-    const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
     const popAbove = (anchor?.top ?? 0) > 200;
-    const popLeft = Math.min(Math.max((anchor?.centerX ?? 0) - 150, 8), vw - 308);
+    const popLeft = clampCardLeft(anchor?.centerX ?? 0, AI_CARD_WIDTH, editor.view.dom);
 
     return createPortal(
         <div ref={rootRef} data-floating="">
@@ -274,6 +281,7 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
                     >
                         <AIEditPopover
                             phase={phase}
+                            changed={changed}
                             usage={usage}
                             onRun={(instruction) => run(instruction)}
                             onUndo={undo}
