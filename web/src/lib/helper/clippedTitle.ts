@@ -7,19 +7,22 @@
 
 import type { MouseEvent } from "react";
 
-// Only ever remove a title this module put there. An element with its own
-// `title` prop keeps it: React rewrites that attribute only when the prop value
-// changes, so taking it away once would lose it for good.
-const ours = new WeakSet<HTMLElement>();
+// The exact string this module last wrote on an element. Anything else in the
+// attribute belongs to the caller and is left alone: React rewrites a `title`
+// prop only when its value changes, so clobbering it once would lose it for
+// good. Matching on the value rather than the element matters because a caller
+// can start supplying a title after we have already titled it.
+const ours = new WeakMap<HTMLElement, string>();
 
 function titleWhenClipped(e: MouseEvent<HTMLElement>) {
     const el = e.currentTarget;
-    if (el.hasAttribute("title") && !ours.has(el)) return;
+    const current = el.getAttribute("title");
+    if (current !== null && current !== ours.get(el)) return;
     const text = el.textContent ?? "";
     if (text && el.scrollWidth > el.clientWidth) {
         el.title = text;
-        ours.add(el);
-    } else if (ours.has(el)) {
+        ours.set(el, text);
+    } else if (current !== null) {
         el.removeAttribute("title");
         ours.delete(el);
     }
@@ -27,7 +30,7 @@ function titleWhenClipped(e: MouseEvent<HTMLElement>) {
 
 function clearTitle(e: MouseEvent<HTMLElement>) {
     const el = e.currentTarget;
-    if (!ours.has(el)) return;
+    if (el.getAttribute("title") !== ours.get(el)) return;
     el.removeAttribute("title");
     ours.delete(el);
 }

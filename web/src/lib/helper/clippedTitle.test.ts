@@ -58,6 +58,19 @@ describe("clippedTitle", () => {
         expect(el.getAttribute("title")).toBe("Could not send: mailbox rejected the recipient");
     });
 
+    // A caller can start supplying a title after we have already titled the
+    // element, so ownership has to be judged on the value, not the element.
+    it("stands down when a caller titles an element it had titled", () => {
+        const el = span("Queued", 420, 160);
+        fire(clippedTitle.onMouseEnter, el);
+        expect(el.getAttribute("title")).toBe("Queued");
+        el.title = "Could not send: mailbox rejected the recipient";
+        fire(clippedTitle.onMouseEnter, el);
+        expect(el.getAttribute("title")).toBe("Could not send: mailbox rejected the recipient");
+        fire(clippedTitle.onMouseLeave, el);
+        expect(el.getAttribute("title")).toBe("Could not send: mailbox rejected the recipient");
+    });
+
     // Nothing removes the attribute on re-render, so it must not outlive the
     // hover that set it: a row whose text changes underneath a resting cursor
     // would otherwise show the previous value.

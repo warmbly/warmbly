@@ -1625,7 +1625,10 @@ function LeadStatusPill({ lead }: { lead?: ContactCampaignProgress | null }) {
                 <Icon className="w-3 h-3 shrink-0" />
             )}
             <span className="sr-only">{meta.label}</span>
-            <span aria-hidden className="hidden sm:inline truncate" {...(title ? {} : clippedTitle)}>
+            {/* The reason, when there is one, is worth more than the word it
+                covers — and React owning the attribute is what clears any word
+                the tooltip helper left here before the lead changed state. */}
+            <span aria-hidden className="hidden sm:inline truncate" title={title} {...(title ? {} : clippedTitle)}>
                 {meta.label}
             </span>
         </span>
