@@ -1233,9 +1233,10 @@ function ContactsTableBody({
                         {!embedded && <Th className={phoneCol}>Phone</Th>}
                         <Th className="w-12 sm:w-32">
                             {/* Below sm the pill is its icon alone, so the column
-                                narrows to it. The label goes to screen readers
-                                rather than away, or the column loses its name. */}
-                            <span className="sr-only sm:not-sr-only">{embedded ? "Progress" : "Status"}</span>
+                                narrows to it and the label waits for the room —
+                                but never leaves the accessibility tree. */}
+                            <span className="sr-only">{embedded ? "Progress" : "Status"}</span>
+                            <span aria-hidden className="hidden sm:inline">{embedded ? "Progress" : "Status"}</span>
                         </Th>
                         {embedded && (
                             <>
@@ -1522,18 +1523,23 @@ function Th({ children, className }: { children: React.ReactNode; className?: st
 }
 
 function StatusPill({ subscribed }: { subscribed: boolean }) {
-    if (subscribed) {
-        return (
-            <span className="inline-flex items-center gap-1 max-w-full text-[10.5px] font-medium text-emerald-700 uppercase tracking-[0.08em]">
-                <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-                <span className="hidden sm:inline truncate" {...clippedTitle}>subscribed</span>
-            </span>
-        );
-    }
+    const label = subscribed ? "subscribed" : "unsubscribed";
     return (
-        <span className="inline-flex items-center gap-1 max-w-full text-[10.5px] font-medium text-slate-500 uppercase tracking-[0.08em]">
-            <span className="size-1.5 shrink-0 rounded-full bg-slate-300" />
-            <span className="hidden sm:inline truncate" {...clippedTitle}>unsubscribed</span>
+        <span
+            className={`inline-flex items-center gap-1 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${
+                subscribed ? "text-emerald-700" : "text-slate-500"
+            }`}
+        >
+            <span
+                className={`size-1.5 shrink-0 rounded-full ${subscribed ? "bg-emerald-500" : "bg-slate-300"}`}
+            />
+            {/* The dot carries the state on its own below sm, so the word stays
+                for screen readers at every width and the visible copy is the
+                one that comes and goes. */}
+            <span className="sr-only">{label}</span>
+            <span aria-hidden className="hidden sm:inline truncate" {...clippedTitle}>
+                {label}
+            </span>
         </span>
     );
 }
@@ -1620,7 +1626,8 @@ function LeadStatusPill({ lead }: { lead?: ContactCampaignProgress | null }) {
             ) : (
                 <Icon className="w-3 h-3 shrink-0" />
             )}
-            <span className="hidden sm:inline truncate" {...(title ? {} : clippedTitle)}>
+            <span className="sr-only">{meta.label}</span>
+            <span aria-hidden className="hidden sm:inline truncate" {...(title ? {} : clippedTitle)}>
                 {meta.label}
             </span>
         </span>
