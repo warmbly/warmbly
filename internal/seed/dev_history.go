@@ -340,10 +340,10 @@ func seedDevUnibox(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	for _, l := range labels {
 		if _, err := pool.Exec(ctx, `
-			INSERT INTO unibox_thread_labels (user_id, thread_id, category_id)
-			VALUES ($1, $2, $3)
+			INSERT INTO unibox_thread_labels (organization_id, user_id, thread_id, category_id)
+			VALUES ($1, $2, $3, $4)
 			ON CONFLICT DO NOTHING
-		`, DevUserID, l.threadID, l.category); err != nil {
+		`, DevOrgID, DevUserID, l.threadID, l.category); err != nil {
 			return fmt.Errorf("thread label %s: %w", l.threadID, err)
 		}
 	}

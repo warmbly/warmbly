@@ -14,6 +14,27 @@ func GetGroupID(c *gin.Context) string {
 	return c.Param("gid")
 }
 
+// scope resolves the workspace every group call is keyed on, plus the group id
+// on the path for the routes that carry one. Labels belong to the organization,
+// not to whoever created them, so a request without one is refused rather than
+// run against a single member's rows.
+func scope(c *gin.Context, withID bool) (uuid.UUID, uuid.UUID, bool) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
+		return uuid.Nil, uuid.Nil, false
+	}
+	if !withID {
+		return *orgID, uuid.Nil, true
+	}
+	gid, err := uuid.Parse(GetGroupID(c))
+	if err != nil {
+		errx.Handle(c, errx.ErrUuid)
+		return uuid.Nil, uuid.Nil, false
+	}
+	return *orgID, gid, true
+}
+
 // entityType maps the group's name ("folders"/"tags"/"categories") to the
 // matching audit entity type.
 func (h *Handler) entityType() models.AuditEntityType {
@@ -45,12 +66,13 @@ func (h *Handler) logAudit(c *gin.Context, action models.AuditAction, entityID *
 }
 
 func (h *Handler) Create(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
+	orgID, _, ok := scope(c, false)
+	if !ok {
 		return
 	}
+	// Attribution only; an API key has no human behind it, so a failed parse
+	// records a nil creator rather than refusing the write.
+	uid, _ := middleware.GetUserUUID(c)
 
 	var data models.GroupCreate
 
@@ -59,7 +81,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	group, xerr := h.service.Create(c.Request.Context(), uid, &data)
+	group, xerr := h.service.Create(c.Request.Context(), orgID, uid, &data)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -71,16 +93,8 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 func (h *Handler) Update(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
-		return
-	}
-	groupID := GetGroupID(c)
-	gid, err := uuid.Parse(groupID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUuid)
+	orgID, gid, ok := scope(c, true)
+	if !ok {
 		return
 	}
 
@@ -91,7 +105,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
-	group, xerr := h.service.Update(c.Request.Context(), uid, gid, &data)
+	group, xerr := h.service.Update(c.Request.Context(), orgID, gid, &data)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -103,16 +117,8 @@ func (h *Handler) Update(c *gin.Context) {
 }
 
 func (h *Handler) Move(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
-		return
-	}
-	groupID := GetGroupID(c)
-	gid, err := uuid.Parse(groupID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUuid)
+	orgID, gid, ok := scope(c, true)
+	if !ok {
 		return
 	}
 
@@ -123,7 +129,7 @@ func (h *Handler) Move(c *gin.Context) {
 		return
 	}
 
-	orders, xerr := h.service.Move(c.Request.Context(), uid, gid, data.Position)
+	orders, xerr := h.service.Move(c.Request.Context(), orgID, gid, data.Position)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -135,20 +141,12 @@ func (h *Handler) Move(c *gin.Context) {
 }
 
 func (h *Handler) Delete(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
-		return
-	}
-	groupID := GetGroupID(c)
-	gid, err := uuid.Parse(groupID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUuid)
+	orgID, gid, ok := scope(c, true)
+	if !ok {
 		return
 	}
 
-	if xerr := h.service.Delete(c.Request.Context(), uid, gid); xerr != nil {
+	if xerr := h.service.Delete(c.Request.Context(), orgID, gid); xerr != nil {
 		errx.Handle(c, xerr)
 		return
 	}

@@ -467,7 +467,7 @@ func (s *service) Enroll(ctx context.Context, inst *models.PoolLinkInstance, req
 		return nil, errx.InternalError()
 	}
 
-	s.applyWarmupSettings(ctx, userID, acc.ID, req.Warmup)
+	s.applyWarmupSettings(ctx, orgID, userID, acc.ID, req.Warmup)
 	if _, xerr := s.emailSvc.SetWarmupLifecycle(ctx, userID, acc.ID.String(), "start"); xerr != nil {
 		log.Warn().Str("account_id", acc.ID.String()).Msg("pool link: warmup start failed after enrollment")
 	}
@@ -480,7 +480,7 @@ func (s *service) Enroll(ctx context.Context, inst *models.PoolLinkInstance, req
 	return s.GetMailbox(ctx, inst, req.RemoteID)
 }
 
-func (s *service) applyWarmupSettings(ctx context.Context, userID string, accountID uuid.UUID, w models.PoolLinkWarmupSettings) {
+func (s *service) applyWarmupSettings(ctx context.Context, orgID uuid.UUID, userID string, accountID uuid.UUID, w models.PoolLinkWarmupSettings) {
 	upd := &models.UpdateEmail{}
 	set := false
 	if w.Base > 0 {
@@ -510,7 +510,7 @@ func (s *service) applyWarmupSettings(ctx context.Context, userID string, accoun
 	if !set {
 		return
 	}
-	if _, xerr := s.emailSvc.Update(ctx, userID, accountID.String(), upd); xerr != nil {
+	if _, xerr := s.emailSvc.Update(ctx, orgID.String(), userID, accountID.String(), upd); xerr != nil {
 		log.Warn().Str("account_id", accountID.String()).Msg("pool link: warmup settings update failed")
 	}
 }
@@ -616,7 +616,7 @@ func (s *service) PatchMailbox(ctx context.Context, inst *models.PoolLinkInstanc
 		reload = true
 	}
 	if patch.Warmup != nil {
-		s.applyWarmupSettings(ctx, userID, m.EmailAccountID, *patch.Warmup)
+		s.applyWarmupSettings(ctx, inst.OrganizationID, userID, m.EmailAccountID, *patch.Warmup)
 	}
 	switch patch.Lifecycle {
 	case "pause", "resume":

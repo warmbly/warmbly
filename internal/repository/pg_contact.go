@@ -62,9 +62,9 @@ type ContactRepository interface {
 	SetContactESP(ctx context.Context, contactID uuid.UUID, provider string) error
 	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	// ResolveCategoryNames maps category titles (as typed in an imported file)
-	// to the caller's category IDs, creating the ones that don't exist yet.
+	// to the workspace's category IDs, creating the ones that don't exist yet.
 	// Keys of the returned map are the lowercased titles.
-	ResolveCategoryNames(ctx context.Context, userID uuid.UUID, names []string) (map[string]uuid.UUID, *errx.Error)
+	ResolveCategoryNames(ctx context.Context, orgID, userID uuid.UUID, names []string) (map[string]uuid.UUID, *errx.Error)
 	Search(ctx context.Context, userID string, category *string, cursor *paging.SortCursor, filters models.SearchContacts, limit int32) (*models.ContactsResult, *errx.Error)
 	// SearchIDs returns the ids of every contact matching the same request
 	// Search runs, capped at max+1 rows so the caller can tell "exactly max"
@@ -466,7 +466,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 		ncontacts[i].Campaigns = linked
 	}
 
-	// Link categories. Scoped to the user's own categories so a
+	// Link categories. Scoped to the workspace's own categories so a
 	// malicious or stale ID can't attach foreign data.
 	for i, cats := range categoryIDs {
 		if len(cats) == 0 {
@@ -476,10 +476,10 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 			INSERT INTO contact_categories (contact_id, category_id)
 			SELECT $1, cat.id
 			FROM   categories cat
-			WHERE  cat.id = ANY($2) AND cat.user_id = $3
+			WHERE  cat.id = ANY($2) AND cat.organization_id = $3
 			ON CONFLICT (contact_id, category_id) DO NOTHING
 			RETURNING category_id
-		`, ncontacts[i].ID, cats, userID)
+		`, ncontacts[i].ID, cats, orgID)
 		if err != nil {
 			db.CaptureError(err, "", nil, "contact_categories insert")
 			return nil, errx.InternalError()
@@ -495,9 +495,9 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 			SELECT cat.id, cat.title, cat.color
 			FROM   categories cat
 			JOIN   contact_categories cc ON cc.category_id = cat.id
-			WHERE  cc.contact_id = $1 AND cat.user_id = $2
+			WHERE  cc.contact_id = $1 AND cat.organization_id = $2
 			ORDER BY cat.position ASC, cat.title ASC
-		`, ncontacts[i].ID, userID)
+		`, ncontacts[i].ID, orgID)
 		if err != nil {
 			db.CaptureError(err, "", nil, "contact_categories select")
 			return nil, errx.InternalError()
@@ -1447,11 +1447,13 @@ func (r *contactRepository) Search(
 
 	// Main query.
 	//
-	// Both the `campaigns` and `categories` agg subqueries need the
-	// user_id so they can't leak rows from other users that happen to
-	// share a contact id (theoretically impossible thanks to the outer
-	// WHERE, but cheap defence-in-depth). They reuse the same $%d
-	// placeholder so we only append userID once.
+	// Both the `campaigns` and `categories` agg subqueries scope on the
+	// organization so they can't leak rows from another workspace that happens
+	// to share a contact id (theoretically impossible thanks to the outer
+	// WHERE, but cheap defence-in-depth). They reuse the same $%d placeholder
+	// so the org id is appended once. The categories one compared that id
+	// against categories.user_id until #436, which matched nothing, so every
+	// row in the contact list came back with no categories at all.
 	query := fmt.Sprintf(`
 		SELECT
 			c.id, c.first_name, c.last_name, c.email, c.company, c.phone,
@@ -1473,7 +1475,7 @@ func (r *contactRepository) Search(
 					FROM contact_categories cc
 					JOIN categories cat ON cc.category_id = cat.id
 					WHERE cc.contact_id = c.id
-					AND cat.user_id = $%d
+					AND cat.organization_id = $%d
 				), '[]'::json
 			) AS categories,
 			%s AS lead_progress,
@@ -2277,14 +2279,14 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 		if perr != nil {
 			return nil, perr
 		}
-		// Drop everything not in the (user-owned) wanted set, then insert the
-		// rest; RETURNING on both sides is what feeds the timeline.
+		// Drop everything not in the (workspace-owned) wanted set, then insert
+		// the rest; RETURNING on both sides is what feeds the timeline.
 		drows, err := tx.Query(ctx, `
 			DELETE FROM contact_categories
 			WHERE contact_id = $1
-			  AND category_id NOT IN (SELECT id FROM categories WHERE id = ANY($2) AND user_id = $3)
+			  AND category_id NOT IN (SELECT id FROM categories WHERE id = ANY($2) AND organization_id = $3)
 			RETURNING category_id
-		`, contactID, ids, userID)
+		`, contactID, ids, orgID)
 		if err != nil {
 			db.CaptureError(err, "", nil, "categories wipe")
 			return nil, errx.InternalError()
@@ -2300,10 +2302,10 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 				INSERT INTO contact_categories (contact_id, category_id)
 				SELECT $1, cat.id
 				FROM   categories cat
-				WHERE  cat.id = ANY($2) AND cat.user_id = $3
+				WHERE  cat.id = ANY($2) AND cat.organization_id = $3
 				ON CONFLICT (contact_id, category_id) DO NOTHING
 				RETURNING category_id
-			`, contactID, ids, userID)
+			`, contactID, ids, orgID)
 			if err != nil {
 				db.CaptureError(err, "", nil, "categories insert")
 				return nil, errx.InternalError()
@@ -2326,10 +2328,10 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 				INSERT INTO contact_categories (contact_id, category_id)
 				SELECT $1, cat.id
 				FROM   categories cat
-				WHERE  cat.id = ANY($2) AND cat.user_id = $3
+				WHERE  cat.id = ANY($2) AND cat.organization_id = $3
 				ON CONFLICT (contact_id, category_id) DO NOTHING
 				RETURNING category_id
-			`, contactID, ids, userID)
+			`, contactID, ids, orgID)
 			if err != nil {
 				db.CaptureError(err, "", nil, "categories add")
 				return nil, errx.InternalError()
@@ -2376,11 +2378,11 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 					SELECT json_agg(json_build_object('id', cat.id, 'title', cat.title, 'color', cat.color) ORDER BY cat.position ASC, cat.title ASC)
 					FROM contact_categories cc
 					JOIN categories cat ON cc.category_id = cat.id
-					WHERE cc.contact_id = $1 AND cat.user_id = $2
+					WHERE cc.contact_id = $1 AND cat.organization_id = $2
 				),
 				'[]'::json
 			)
-		`, contactID, userID).Scan(&catJSON); err != nil {
+		`, contactID, orgID).Scan(&catJSON); err != nil {
 			db.CaptureError(err, "", nil, "categories reload")
 			return nil, errx.InternalError()
 		}
@@ -2531,10 +2533,10 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 		         WHERE c.organization_id = $1
 		           AND c.id = ANY($2)
 		           AND cat.id = ANY($3::uuid[])
-		           AND cat.user_id = $4
+		           AND cat.organization_id = $1
 		         ON CONFLICT DO NOTHING
 		         RETURNING contact_id, category_id`,
-			models.ActivityCategoryAdded, logCategoryLinks, orgID, data.Contacts, data.AddCategories, userID); xerr != nil {
+			models.ActivityCategoryAdded, logCategoryLinks, orgID, data.Contacts, data.AddCategories); xerr != nil {
 			return nil, xerr
 		}
 	}
@@ -2609,7 +2611,7 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 					SELECT json_agg(json_build_object('id', cam.id, 'name', cam.name))
 					FROM campaign_leads cl
 					JOIN campaigns cam ON cl.campaign_id = cam.id
-					WHERE cl.contact_id =c.id AND cam.organization_id = $3
+					WHERE cl.contact_id =c.id AND cam.organization_id = $2
 				),
 				'[]'::json
 			) AS campaigns,
@@ -2618,17 +2620,16 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 					SELECT json_agg(json_build_object('id', cat.id, 'title', cat.title, 'color', cat.color) ORDER BY cat.position ASC, cat.title ASC)
 					FROM contact_categories cc
 					JOIN categories cat ON cc.category_id = cat.id
-					WHERE cc.contact_id = c.id AND cat.user_id = $2
+					WHERE cc.contact_id = c.id AND cat.organization_id = $2
 				),
 				'[]'::json
 			) AS categories
 		FROM contacts c
-		WHERE c.organization_id = $3 AND c.id = ANY($1)
+		WHERE c.organization_id = $2 AND c.id = ANY($1)
 	`
 
 	params := []any{
 		data.Contacts,
-		userID,
 		orgID,
 	}
 	rows, err := tx.Query(
@@ -2753,7 +2754,7 @@ func (r *contactRepository) Delete(ctx context.Context, userID string, orgID uui
 // otherwise mint a category per row.
 const MaxImportCategoryNames = 100
 
-func (r *contactRepository) ResolveCategoryNames(ctx context.Context, userID uuid.UUID, names []string) (map[string]uuid.UUID, *errx.Error) {
+func (r *contactRepository) ResolveCategoryNames(ctx context.Context, orgID, userID uuid.UUID, names []string) (map[string]uuid.UUID, *errx.Error) {
 	out := make(map[string]uuid.UUID, len(names))
 	wanted := make([]string, 0, len(names))
 	seen := make(map[string]string, len(names)) // lowered -> original casing
@@ -2782,10 +2783,15 @@ func (r *contactRepository) ResolveCategoryNames(ctx context.Context, userID uui
 			len(wanted), MaxImportCategoryNames))
 	}
 
+	// Ordered, and the first match wins: the migration that made this registry
+	// workspace-wide deliberately did not merge two members' identically named
+	// categories, so a title can resolve to more than one row. Without an order
+	// an import would file the same name under a different category run to run.
 	rows, err := r.DB.Query(ctx, `
 		SELECT id, LOWER(title) FROM categories
-		WHERE user_id = $1 AND LOWER(title) = ANY($2::text[])
-	`, userID, wanted)
+		WHERE organization_id = $1 AND LOWER(title) = ANY($2::text[])
+		ORDER BY "position" ASC, created_at ASC, id ASC
+	`, orgID, wanted)
 	if err != nil {
 		db.CaptureError(err, "", nil, "ResolveCategoryNames query")
 		return nil, errx.InternalError()
@@ -2798,7 +2804,9 @@ func (r *contactRepository) ResolveCategoryNames(ctx context.Context, userID uui
 			db.CaptureError(err, "", nil, "ResolveCategoryNames scan")
 			return nil, errx.InternalError()
 		}
-		out[lower] = id
+		if _, taken := out[lower]; !taken {
+			out[lower] = id
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -2816,21 +2824,21 @@ func (r *contactRepository) ResolveCategoryNames(ctx context.Context, userID uui
 		return out, nil
 	}
 
-	// Positions continue after whatever the user already has, so the new
-	// categories land at the end of their list instead of colliding.
+	// Positions continue after whatever the workspace already has, so the new
+	// categories land at the end of the list instead of colliding.
 	var nextPos int32
 	if err := r.DB.QueryRow(ctx,
-		`SELECT COALESCE(MAX(position), -1) + 1 FROM categories WHERE user_id = $1`,
-		userID).Scan(&nextPos); err != nil {
+		`SELECT COALESCE(MAX(position), -1) + 1 FROM categories WHERE organization_id = $1`,
+		orgID).Scan(&nextPos); err != nil {
 		db.CaptureError(err, "", nil, "ResolveCategoryNames position")
 		return nil, errx.InternalError()
 	}
 	for _, lower := range missing {
 		id := uuid.New()
 		if _, err := r.DB.Exec(ctx, `
-			INSERT INTO categories (id, user_id, title, color, position)
-			VALUES ($1, $2, $3, $4, $5)
-		`, id, userID, seen[lower], defaultGroupColor(nextPos), nextPos); err != nil {
+			INSERT INTO categories (id, organization_id, user_id, title, color, position)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, id, orgID, userID, seen[lower], defaultGroupColor(nextPos), nextPos); err != nil {
 			db.CaptureError(err, "", nil, "ResolveCategoryNames insert")
 			return nil, errx.InternalError()
 		}
@@ -2985,14 +2993,16 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 	var campaignsJSON, categoriesJSON []byte
 	// Scope the contact row to the org so teammates can open each other's
 	// contacts. Without an org (e.g. an API key with no selected org) fall
-	// back to the legacy user scope. Campaigns are org assets, so the badge
-	// subselect follows the same scope (issue #187); the category subselect
-	// stays user-scoped because categories has no organization_id column.
-	rowScope := "c.user_id = $1"
-	campScope := "cam.user_id = $1"
+	// back to the legacy user scope. Campaigns and categories are org assets,
+	// so their badge subselects follow the same scope (issues #187, #436).
+	// $1 is the contact and $2 is whichever of the two scopes applies, so the
+	// statement never carries a parameter nothing references (Postgres cannot
+	// infer a type for one of those and rejects the whole query).
+	rowScope, campScope, catScope := "c.user_id = $2", "cam.user_id = $2", "cat.user_id = $2"
+	scopeArg := any(userID)
 	if orgID != nil {
-		rowScope = "c.organization_id = $3"
-		campScope = "cam.organization_id = $3"
+		rowScope, campScope, catScope = "c.organization_id = $2", "cam.organization_id = $2", "cat.organization_id = $2"
+		scopeArg = *orgID
 	}
 	mainQuery := fmt.Sprintf(`
 		SELECT
@@ -3012,16 +3022,13 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 					SELECT json_agg(json_build_object('id', cat.id, 'title', cat.title, 'color', cat.color) ORDER BY cat.position ASC, cat.title ASC)
 					FROM   contact_categories cc
 					JOIN   categories cat ON cat.id = cc.category_id
-					WHERE  cc.contact_id = c.id AND cat.user_id = $1
+					WHERE  cc.contact_id = c.id AND %s
 				), '[]'::json
 			) AS categories
 		FROM contacts c
-		WHERE c.id = $2 AND %s
-	`, campScope, rowScope)
-	mainArgs := []any{userID, contactID}
-	if orgID != nil {
-		mainArgs = append(mainArgs, *orgID)
-	}
+		WHERE c.id = $1 AND %s
+	`, campScope, catScope, rowScope)
+	mainArgs := []any{contactID, scopeArg}
 	err := r.DB.QueryRow(ctx, mainQuery, mainArgs...).Scan(
 		&detail.ID, &detail.FirstName, &detail.LastName, &detail.Email,
 		&detail.Company, &detail.Phone, &detail.CustomFields, &detail.Subscribed,

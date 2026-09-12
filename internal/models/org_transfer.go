@@ -118,14 +118,14 @@ type OrgDataGroupInfo struct {
 // import, it would abort it. Nullable crossings need no entry — the importer
 // blanks those when their target is not part of the run.
 var OrgDataGroupCatalog = []OrgDataGroupInfo{
-	{Key: OrgDataGroupCore, Label: "Workspace", Description: "Organization, members, roles, teams, mailboxes, API keys, webhooks, and settings.", Required: true},
+	{Key: OrgDataGroupCore, Label: "Workspace", Description: "Organization, members, roles, teams, mailboxes, mailbox tags, API keys, webhooks, and settings.", Required: true},
 	{Key: OrgDataGroupContacts, Label: "Contacts", Description: "Contacts, categories, notes, activities, and the suppression list."},
-	{Key: OrgDataGroupCampaigns, Label: "Campaigns", Description: "Campaigns, sequences, senders, attachments, and per-campaign settings.", Requires: []OrgDataGroup{OrgDataGroupContacts}},
+	{Key: OrgDataGroupCampaigns, Label: "Campaigns", Description: "Campaigns, folders, sequences, senders, attachments, and per-campaign settings.", Requires: []OrgDataGroup{OrgDataGroupContacts}},
 	{Key: OrgDataGroupCRM, Label: "CRM", Description: "Pipelines, deals, tasks, and meeting bookings."},
 	{Key: OrgDataGroupAutomations, Label: "Automations", Description: "Automations, connected integrations, and lead sync sources."},
 	{Key: OrgDataGroupAI, Label: "Assistant", Description: "Assistant sessions and messages, skills, MCP servers, and AI settings."},
 	{Key: OrgDataGroupWarmup, Label: "Warmup", Description: "Warmup participation, routing rules, statistics, and appeals."},
-	{Key: OrgDataGroupInbox, Label: "Inbox", Description: "Unified inbox threads, message bodies, and mailbox sync state.", Heavy: true, Requires: []OrgDataGroup{OrgDataGroupContacts}},
+	{Key: OrgDataGroupInbox, Label: "Inbox", Description: "Unified inbox threads, message bodies, conversation labels, and mailbox sync state.", Heavy: true, Requires: []OrgDataGroup{OrgDataGroupContacts}},
 	{Key: OrgDataGroupSending, Label: "Send history", Description: "Queued and completed send tasks with their payloads.", Heavy: true},
 	{Key: OrgDataGroupEvents, Label: "Delivery events", Description: "Bounces, complaints, opens, clicks, and placement tests.", Heavy: true},
 	{Key: OrgDataGroupLogs, Label: "Logs", Description: "Audit log, campaign logs, and notifications.", Heavy: true, Requires: []OrgDataGroup{OrgDataGroupCampaigns}},

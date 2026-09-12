@@ -40,7 +40,7 @@ func (s *stubRemovalRepo) record(step string) {
 	}
 }
 
-func (s *stubRemovalRepo) Update(ctx context.Context, userID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error) {
+func (s *stubRemovalRepo) Update(ctx context.Context, orgID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error) {
 	if udata.Status != nil {
 		s.statusSet = append(s.statusSet, *udata.Status)
 	}
@@ -156,7 +156,7 @@ func TestDisablingAMailboxTellsTheWorkerToDropIt(t *testing.T) {
 	f := newRemovalFixture(t)
 	inactive := "inactive"
 
-	if _, xerr := f.svc.Update(context.Background(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &inactive}); xerr != nil {
+	if _, xerr := f.svc.Update(context.Background(), f.org.String(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &inactive}); xerr != nil {
 		t.Fatalf("update: %v", xerr)
 	}
 
@@ -187,7 +187,7 @@ func TestRevokingAMailboxAlsoDropsItFromTheWorker(t *testing.T) {
 	f := newRemovalFixture(t)
 	revoked := "revoked"
 
-	if _, xerr := f.svc.Update(context.Background(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &revoked}); xerr != nil {
+	if _, xerr := f.svc.Update(context.Background(), f.org.String(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &revoked}); xerr != nil {
 		t.Fatalf("update: %v", xerr)
 	}
 	if len(f.pub.removed) != 1 {
@@ -202,7 +202,7 @@ func TestReenablingAMailboxShipsItBackToItsWorker(t *testing.T) {
 	f := newRemovalFixture(t)
 	active := "active"
 
-	if _, xerr := f.svc.Update(context.Background(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &active}); xerr != nil {
+	if _, xerr := f.svc.Update(context.Background(), f.org.String(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &active}); xerr != nil {
 		t.Fatalf("update: %v", xerr)
 	}
 
@@ -220,7 +220,7 @@ func TestAPatchThatLeavesTheStatusAloneDoesNotTouchTheWorker(t *testing.T) {
 	f := newRemovalFixture(t)
 	name := "New name"
 
-	if _, xerr := f.svc.Update(context.Background(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Name: &name}); xerr != nil {
+	if _, xerr := f.svc.Update(context.Background(), f.org.String(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Name: &name}); xerr != nil {
 		t.Fatalf("update: %v", xerr)
 	}
 	if len(f.pub.removed) != 0 || len(f.pub.added) != 0 {
@@ -235,7 +235,7 @@ func TestAFailedStatusWriteNeverReachesTheWorker(t *testing.T) {
 	f.repo.updateErr = errx.InternalError()
 	inactive := "inactive"
 
-	if _, xerr := f.svc.Update(context.Background(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &inactive}); xerr == nil {
+	if _, xerr := f.svc.Update(context.Background(), f.org.String(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &inactive}); xerr == nil {
 		t.Fatal("a failed status write was reported as success")
 	}
 	if len(f.pub.removed) != 0 || f.repo.workerCalls != 0 {
@@ -250,7 +250,7 @@ func TestDisablingSucceedsEvenWhenTheBusIsDown(t *testing.T) {
 	f.pub.removeErr = errBusDown
 	inactive := "inactive"
 
-	if _, xerr := f.svc.Update(context.Background(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &inactive}); xerr != nil {
+	if _, xerr := f.svc.Update(context.Background(), f.org.String(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &inactive}); xerr != nil {
 		t.Fatalf("a bus failure blocked the status change: %v", xerr)
 	}
 	if len(f.pub.removed) != 1 {

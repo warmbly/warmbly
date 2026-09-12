@@ -21,7 +21,7 @@ func TestLiveFormLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	category := uuid.New()
-	if _, err := pool.Exec(ctx, `INSERT INTO categories (id, user_id, title, color, position) VALUES ($1, $2, 'Form leads', '#00ff00', 0)`, category, f.owner); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO categories (id, organization_id, user_id, title, color, position) VALUES ($1, $2, $3, 'Form leads', '#00ff00', 0)`, category, f.org, f.owner); err != nil {
 		t.Fatalf("fixture category: %v", err)
 	}
 	t.Cleanup(func() {

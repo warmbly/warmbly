@@ -172,20 +172,21 @@ func (a Adapter) AddToCampaign(ctx context.Context, orgID, actorID, contactID, c
 // LabelThread applies unibox conversation labels to a thread on behalf of the
 // mailbox owner (the advanced service guards category ownership). The error is
 // already a plain error, so it passes straight through.
-func (a Adapter) LabelThread(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error {
-	return a.Adv.LabelThread(ctx, userID, threadID, categoryIDs)
+func (a Adapter) LabelThread(ctx context.Context, orgID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error {
+	return a.Adv.LabelThread(ctx, orgID, threadID, categoryIDs)
 }
 
 // ListCategories / CreateCategory / ListPipelines back the AI agent step's
 // argument-based tag/label/deal tools (the model picks a name, resolved live).
-// Categories are owner-scoped (tags == unibox labels); pipelines are org-scoped
-// with stages hydrated. All three delegate straight to the advanced service.
-func (a Adapter) ListCategories(ctx context.Context, ownerID uuid.UUID) ([]models.MiniCategory, error) {
-	return a.Adv.ListCategories(ctx, ownerID)
+// Categories and pipelines are both org-scoped (tags == unibox labels;
+// pipelines hydrate their stages). All three delegate straight to the
+// advanced service.
+func (a Adapter) ListCategories(ctx context.Context, orgID uuid.UUID) ([]models.MiniCategory, error) {
+	return a.Adv.ListCategories(ctx, orgID)
 }
 
-func (a Adapter) CreateCategory(ctx context.Context, ownerID uuid.UUID, title, color string) (models.MiniCategory, error) {
-	return a.Adv.CreateCategory(ctx, ownerID, title, color)
+func (a Adapter) CreateCategory(ctx context.Context, orgID uuid.UUID, title, color string) (models.MiniCategory, error) {
+	return a.Adv.CreateCategory(ctx, orgID, title, color)
 }
 
 func (a Adapter) ListPipelines(ctx context.Context, orgID uuid.UUID) ([]models.Pipeline, error) {

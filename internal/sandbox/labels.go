@@ -1,6 +1,6 @@
 package sandbox
 
-// Label registry for the sandbox user, plus the bindings that make labels
+// Label registry for the sandbox workspace, plus the bindings that make labels
 // visible across the product: mailbox tags, campaign folders, contact
 // categories, and inbox thread labels. Idempotent like the rest of the seeder.
 
@@ -42,14 +42,15 @@ func seedLabels(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	for _, g := range groups {
 		if _, err := pool.Exec(ctx, `
-			INSERT INTO `+g.table+` (id, user_id, title, color, position, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
+			INSERT INTO `+g.table+` (id, organization_id, user_id, title, color, position, created_at, updated_at)
+			VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
 			ON CONFLICT (id) DO UPDATE SET
+				organization_id = EXCLUDED.organization_id,
 				title = EXCLUDED.title,
 				color = EXCLUDED.color,
 				position = EXCLUDED.position,
 				updated_at = NOW()
-		`, g.id, sandboxUser, g.title, g.color, g.pos); err != nil {
+		`, g.id, sandboxOrg, sandboxUser, g.title, g.color, g.pos); err != nil {
 			return fmt.Errorf("%s %s: %w", g.table, g.title, err)
 		}
 	}
@@ -139,10 +140,10 @@ func seedLabels(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	for _, tl := range threadLabels {
 		if _, err := pool.Exec(ctx, `
-			INSERT INTO unibox_thread_labels (user_id, thread_id, category_id, created_at)
-			VALUES ($1,$2,$3,NOW())
+			INSERT INTO unibox_thread_labels (organization_id, user_id, thread_id, category_id, created_at)
+			VALUES ($1,$2,$3,$4,NOW())
 			ON CONFLICT DO NOTHING
-		`, sandboxUser, tl.threadID, tl.category); err != nil {
+		`, sandboxOrg, sandboxUser, tl.threadID, tl.category); err != nil {
 			return fmt.Errorf("thread label %s: %w", tl.threadID, err)
 		}
 	}

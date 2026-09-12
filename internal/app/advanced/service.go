@@ -108,21 +108,21 @@ type Service interface {
 	// just because a deal hasn't been created yet.
 	MoveContactDealStage(ctx context.Context, orgID, contactID, pipelineID, stageID uuid.UUID) (*models.Deal, *errx.Error)
 
-	// LabelThread additively applies unibox conversation labels (categories owned
-	// by userID) to a thread, for the "label_email" automation action. No-op on
-	// empty input; categories not owned by userID are silently ignored.
-	LabelThread(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
+	// LabelThread additively applies unibox conversation labels (categories the
+	// workspace owns) to a thread, for the "label_email" automation action.
+	// No-op on empty input; foreign categories are silently ignored.
+	LabelThread(ctx context.Context, orgID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
 	// LabelLatestThreadForContact finds the contact's most recent conversation in
-	// userID's unibox and labels it, for the "label_email" campaign step action
-	// (which knows the contact but not the thread id). Returns the labeled thread
-	// id, or "" when the contact has no conversation yet.
-	LabelLatestThreadForContact(ctx context.Context, userID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error)
+	// the workspace's unibox and labels it, for the "label_email" campaign step
+	// action (which knows the contact but not the thread id). Returns the
+	// labeled thread id, or "" when the contact has no conversation yet.
+	LabelLatestThreadForContact(ctx context.Context, orgID uuid.UUID, contactEmail string, categoryIDs []uuid.UUID) (string, error)
 	// LatestInboundFromContact returns the subject + snippet of the newest email
 	// received from the contact ("" when none). Backs the campaign AI step's
 	// incoming-email context.
 	LatestInboundFromContact(ctx context.Context, userID uuid.UUID, contactEmail string) (string, string, error)
 
-	// ListCategories returns the user's contact categories, which double as
+	// ListCategories returns the workspace's contact categories, which double as
 	// unibox conversation labels (same registry). An AI agent step offers these
 	// by name and resolves the model's pick to an id. CreateCategory mints a new
 	// one for the agent's create-on-the-fly path (opt-in per step).
@@ -492,12 +492,13 @@ func (s *service) MoveContactDealStage(ctx context.Context, orgID, contactID, pi
 	return updated, nil
 }
 
-// ListCategories returns the user's categories (contact tags == unibox labels).
-func (s *service) ListCategories(ctx context.Context, userID uuid.UUID) ([]models.MiniCategory, error) {
+// ListCategories returns the workspace's categories (contact tags == unibox
+// labels).
+func (s *service) ListCategories(ctx context.Context, orgID uuid.UUID) ([]models.MiniCategory, error) {
 	if s.categoryRepo == nil {
 		return nil, nil
 	}
-	groups, err := s.categoryRepo.List(ctx, userID)
+	groups, err := s.categoryRepo.List(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -510,15 +511,16 @@ func (s *service) ListCategories(ctx context.Context, userID uuid.UUID) ([]model
 
 // CreateCategory mints a new category (tag/label) for the agent's opt-in
 // create-on-the-fly path. GroupRepository.Create validates the title (1-50) and
-// enforces the per-user cap; color defaults to slate when blank.
-func (s *service) CreateCategory(ctx context.Context, userID uuid.UUID, title, color string) (models.MiniCategory, error) {
+// enforces the per-workspace cap; color defaults to slate when blank. The
+// creator is nil: an automation has no human behind it.
+func (s *service) CreateCategory(ctx context.Context, orgID uuid.UUID, title, color string) (models.MiniCategory, error) {
 	if s.categoryRepo == nil {
 		return models.MiniCategory{}, errx.New(errx.BadRequest, "categories are not available")
 	}
 	if strings.TrimSpace(color) == "" {
 		color = "#64748b"
 	}
-	g, err := s.categoryRepo.Create(ctx, userID, &models.GroupCreate{Title: strings.TrimSpace(title), Color: color})
+	g, err := s.categoryRepo.Create(ctx, orgID, uuid.Nil, &models.GroupCreate{Title: strings.TrimSpace(title), Color: color})
 	if err != nil {
 		return models.MiniCategory{}, err
 	}

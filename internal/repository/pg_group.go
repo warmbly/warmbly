@@ -16,12 +16,16 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 )
 
+// GroupRepository is the CRUD for one label registry (folders, tags or
+// categories). Every method is scoped by organization: a label is a workspace
+// asset, so a teammate must see and edit what anyone else created. userID is
+// carried on Create for attribution only.
 type GroupRepository interface {
-	Create(ctx context.Context, userID uuid.UUID, data *models.GroupCreate) (*models.Group, *errx.Error)
-	Delete(ctx context.Context, userID, id uuid.UUID) *errx.Error
-	Move(ctx context.Context, userID, id uuid.UUID, position int32) ([]models.Order, *errx.Error)
-	Update(ctx context.Context, userID, id uuid.UUID, data *models.GroupUpdate) (*models.Group, *errx.Error)
-	List(ctx context.Context, userID uuid.UUID) ([]models.Group, *errx.Error)
+	Create(ctx context.Context, orgID, userID uuid.UUID, data *models.GroupCreate) (*models.Group, *errx.Error)
+	Delete(ctx context.Context, orgID, id uuid.UUID) *errx.Error
+	Move(ctx context.Context, orgID, id uuid.UUID, position int32) ([]models.Order, *errx.Error)
+	Update(ctx context.Context, orgID, id uuid.UUID, data *models.GroupUpdate) (*models.Group, *errx.Error)
+	List(ctx context.Context, orgID uuid.UUID) ([]models.Group, *errx.Error)
 }
 
 type groupRepository struct {
@@ -54,7 +58,7 @@ func defaultGroupColor(position int32) string {
 	return groupDefaultPalette[int(position)%len(groupDefaultPalette)]
 }
 
-func (r *groupRepository) Create(ctx context.Context, userID uuid.UUID, data *models.GroupCreate) (*models.Group, *errx.Error) {
+func (r *groupRepository) Create(ctx context.Context, orgID, userID uuid.UUID, data *models.GroupCreate) (*models.Group, *errx.Error) {
 	title := strings.TrimSpace(data.Title)
 	l := len(title)
 	if l < 1 || l > 50 {
@@ -79,11 +83,11 @@ func (r *groupRepository) Create(ctx context.Context, userID uuid.UUID, data *mo
 	var position int32
 
 	query := fmt.Sprintf(`
-		SELECT COUNT(*) FROM %s WHERE user_id = $1
+		SELECT COUNT(*) FROM %s WHERE organization_id = $1
 	`, r.Group)
 
 	var params = []any{
-		userID,
+		orgID,
 	}
 
 	err = tx.QueryRow(
@@ -111,13 +115,21 @@ func (r *groupRepository) Create(ctx context.Context, userID uuid.UUID, data *mo
 	// right call here. The previous tx.QueryRow + Scan would always
 	// fail with "sql: no rows in result set" once it got this far.
 	query = fmt.Sprintf(`
-		INSERT INTO %s (id, user_id, title, color, position, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $6)
+		INSERT INTO %s (id, organization_id, user_id, title, color, position, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 	`, r.Group)
+
+	// userID is attribution: a uuid.Nil creator (no human behind the call)
+	// is stored as NULL rather than a uuid that references no user row.
+	var creator any
+	if userID != uuid.Nil {
+		creator = userID
+	}
 
 	params = []any{
 		id,
-		userID,
+		orgID,
+		creator,
 		data.Title,
 		data.Color,
 		position,
@@ -151,7 +163,7 @@ func (r *groupRepository) Create(ctx context.Context, userID uuid.UUID, data *mo
 	}, nil
 }
 
-func (r *groupRepository) Delete(ctx context.Context, userID, id uuid.UUID) *errx.Error {
+func (r *groupRepository) Delete(ctx context.Context, orgID, id uuid.UUID) *errx.Error {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -163,12 +175,12 @@ func (r *groupRepository) Delete(ctx context.Context, userID, id uuid.UUID) *err
 
 	query := fmt.Sprintf(`
 		DELETE FROM %s
-		WHERE user_id = $1 AND id = $2
+		WHERE organization_id = $1 AND id = $2
 		RETURNING position
 	`, r.Group)
 
 	params := []any{
-		userID,
+		orgID,
 		id,
 	}
 
@@ -185,14 +197,16 @@ func (r *groupRepository) Delete(ctx context.Context, userID, id uuid.UUID) *err
 		return errx.InternalError()
 	}
 
-	query = `
-		UPDATE tags
+	// r.Group, not a literal: this used to say "tags", so deleting a folder
+	// or a category renumbered the tag registry and left a hole in its own.
+	query = fmt.Sprintf(`
+		UPDATE %s
 		SET position = position - 1
-		WHERE user_id = $1 AND position > $2
-	`
+		WHERE organization_id = $1 AND position > $2
+	`, r.Group)
 
 	params = []any{
-		userID, pos,
+		orgID, pos,
 	}
 
 	if _, err := tx.Exec(
@@ -212,7 +226,7 @@ func (r *groupRepository) Delete(ctx context.Context, userID, id uuid.UUID) *err
 	return nil
 }
 
-func (r *groupRepository) Move(ctx context.Context, userID, id uuid.UUID, newPos int32) ([]models.Order, *errx.Error) {
+func (r *groupRepository) Move(ctx context.Context, orgID, id uuid.UUID, newPos int32) ([]models.Order, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -222,12 +236,12 @@ func (r *groupRepository) Move(ctx context.Context, userID, id uuid.UUID, newPos
 
 	query := fmt.Sprintf(`
 		SELECT id, position FROM %s
-		WHERE user_id = $1
+		WHERE organization_id = $1
 		ORDER BY position FOR UPDATE
 	`, r.Group)
 
 	params := []any{
-		userID,
+		orgID,
 	}
 
 	rows, err := tx.Query(
@@ -282,7 +296,7 @@ func (r *groupRepository) Move(ctx context.Context, userID, id uuid.UUID, newPos
 		UPDATE %s e
 		SET position = n.pos
 		FROM new_values n
-		WHERE e.id = n.id AND e.user_id = $3
+		WHERE e.id = n.id AND e.organization_id = $3
 	`, r.Group)
 	ids := make([]uuid.UUID, len(newOrdered))
 	poss := make([]int32, len(newOrdered))
@@ -290,7 +304,7 @@ func (r *groupRepository) Move(ctx context.Context, userID, id uuid.UUID, newPos
 		ids[i] = c.id
 		poss[i] = int32(i)
 	}
-	if _, err := tx.Exec(ctx, updateQuery, ids, poss, userID); err != nil {
+	if _, err := tx.Exec(ctx, updateQuery, ids, poss, orgID); err != nil {
 		db.CaptureError(err, query, params, "exec")
 		return nil, errx.InternalError()
 	}
@@ -300,7 +314,9 @@ func (r *groupRepository) Move(ctx context.Context, userID, id uuid.UUID, newPos
 		return nil, errx.InternalError()
 	}
 
-	var resp []models.Order = make([]models.Order, len(newOrdered))
+	// make(..., 0, n): the length form prefixed the response with n zero
+	// Orders, so the client rebuilt its ordering from ids it had never seen.
+	resp := make([]models.Order, 0, len(newOrdered))
 	for i := range newOrdered {
 		resp = append(resp, models.Order{
 			ID:       ids[i],
@@ -311,9 +327,9 @@ func (r *groupRepository) Move(ctx context.Context, userID, id uuid.UUID, newPos
 	return resp, nil
 }
 
-func (r *groupRepository) Update(ctx context.Context, userID, id uuid.UUID, data *models.GroupUpdate) (*models.Group, *errx.Error) {
+func (r *groupRepository) Update(ctx context.Context, orgID, id uuid.UUID, data *models.GroupUpdate) (*models.Group, *errx.Error) {
 	setClauses := []string{}
-	args := []any{userID, id}
+	args := []any{orgID, id}
 	argPos := 3
 	if data.Title != nil {
 		trimmed := strings.TrimSpace(*data.Title)
@@ -342,7 +358,7 @@ func (r *groupRepository) Update(ctx context.Context, userID, id uuid.UUID, data
 	query := fmt.Sprintf(
 		`
 			UPDATE %s SET %s
-			WHERE user_id = $1 AND id = $2
+			WHERE organization_id = $1 AND id = $2
 			RETURNING id, title, color, position, created_at, updated_at
 		`,
 		r.Group,
@@ -358,6 +374,11 @@ func (r *groupRepository) Update(ctx context.Context, userID, id uuid.UUID, data
 
 	err := row.Scan(&t.ID, &t.Title, &t.Color, &t.Position, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
+		// No row means the id is unknown to this workspace, which is a 404 and
+		// not a server fault; the scope is what decides it either way.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errx.ErrNotFound
+		}
 		db.CaptureError(err, "", nil, "scan")
 		return nil, errx.InternalError()
 	}
@@ -365,28 +386,28 @@ func (r *groupRepository) Update(ctx context.Context, userID, id uuid.UUID, data
 	return &t, nil
 }
 
-// List returns every group of the repository's type belonging to userID,
-// ordered by position. The /auth/me handler calls this once per group
-// type (folders, tags, categories) to populate the User payload so the
-// frontend doesn't have to issue three extra requests on every page
-// load — and so created items still appear after a refresh.
-func (r *groupRepository) List(ctx context.Context, userID uuid.UUID) ([]models.Group, *errx.Error) {
+// List returns every group of the repository's type belonging to the
+// organization, ordered by position. The /auth/me handler calls this once per
+// group type (folders, tags, categories) to populate the User payload so the
+// frontend doesn't have to issue three extra requests on every page load — and
+// so created items still appear after a refresh.
+func (r *groupRepository) List(ctx context.Context, orgID uuid.UUID) ([]models.Group, *errx.Error) {
 	query := fmt.Sprintf(
 		`SELECT id, title, color, position, created_at, updated_at
 		   FROM %s
-		  WHERE user_id = $1
+		  WHERE organization_id = $1
 		  ORDER BY position ASC, created_at ASC`,
 		r.Group,
 	)
 
-	rows, err := r.DB.Query(ctx, query, userID)
+	rows, err := r.DB.Query(ctx, query, orgID)
 	if err != nil {
-		db.CaptureError(err, query, []any{userID}, "query")
+		db.CaptureError(err, query, []any{orgID}, "query")
 		return nil, errx.InternalError()
 	}
 	defer rows.Close()
 
-	// Non-nil so JSON marshals as [] not null when the user has none.
+	// Non-nil so JSON marshals as [] not null when the workspace has none.
 	out := make([]models.Group, 0)
 	for rows.Next() {
 		var g models.Group

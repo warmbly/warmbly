@@ -46,8 +46,8 @@ func (s *emailService) Get(ctx context.Context, orgID, emailAccountID string) (*
 	return s.emailRepository.Get(ctx, orgID, emailAccountID)
 }
 
-func (s *emailService) Update(ctx context.Context, userID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error) {
-	account, err := s.emailRepository.Update(ctx, userID, emailAccountID, udata)
+func (s *emailService) Update(ctx context.Context, orgID, userID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error) {
+	account, err := s.emailRepository.Update(ctx, orgID, emailAccountID, udata)
 	if err != nil {
 		return nil, err
 	}
@@ -84,11 +84,11 @@ func (s *emailService) applyStatusToWorker(ctx context.Context, userID string, a
 // BulkUpdateTags is a pure tag-link rewrite: no warmup pool or worker state
 // depends on tags, so no per-account fanout is needed (the caller audits
 // once and the spine refreshes lists).
-func (s *emailService) BulkUpdateTags(ctx context.Context, userID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error) {
+func (s *emailService) BulkUpdateTags(ctx context.Context, orgID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error) {
 	if len(addTags) == 0 && len(removeTags) == 0 {
 		return 0, errx.ErrNotEnough
 	}
-	return s.emailRepository.BulkUpdateTags(ctx, userID, emailIDs, addTags, removeTags)
+	return s.emailRepository.BulkUpdateTags(ctx, orgID, emailIDs, addTags, removeTags)
 }
 
 // SetWarmupLifecycle applies a warmup start/pause/resume/disable transition,

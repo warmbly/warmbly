@@ -126,7 +126,7 @@ func TestLiveDisablingAMailboxRemovesItFromItsWorker(t *testing.T) {
 	f := newRemovalLiveFixture(t)
 	inactive := "inactive"
 
-	account, xerr := f.svc.Update(context.Background(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &inactive})
+	account, xerr := f.svc.Update(context.Background(), f.org.String(), f.user.String(), f.mailbox.String(), &models.UpdateEmail{Status: &inactive})
 	if xerr != nil {
 		t.Fatalf("update: %v", xerr)
 	}

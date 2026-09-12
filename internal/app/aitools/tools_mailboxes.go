@@ -168,7 +168,7 @@ func (d Deps) updateMailbox(ctx context.Context, inv Invocation, args json.RawMe
 		WarmupReplyRate: in.WarmupReplyRate,
 		WarmupDays:      in.WarmupDays,
 	}
-	mb, xerr := d.Emails.Update(ctx, inv.UserID.String(), in.EmailAccountID, upd)
+	mb, xerr := d.Emails.Update(ctx, inv.OrgID.String(), inv.UserID.String(), in.EmailAccountID, upd)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}

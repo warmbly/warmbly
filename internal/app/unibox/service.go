@@ -22,7 +22,6 @@ type UniboxService interface {
 	Search(
 		ctx context.Context,
 		orgID uuid.UUID,
-		userID uuid.UUID,
 		params *models.MailSearchParams,
 	) (*models.MailSearchResult, *errx.Error)
 	GetByID(
@@ -57,8 +56,8 @@ type UniboxService interface {
 
 	// Conversation labels. SetThreadLabels replaces a thread's full
 	// label set (idempotent); ListThreadLabels reads the current set.
-	SetThreadLabels(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, *errx.Error)
-	ListThreadLabels(ctx context.Context, userID uuid.UUID, threadID string) ([]models.MiniCategory, *errx.Error)
+	SetThreadLabels(ctx context.Context, orgID, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, *errx.Error)
+	ListThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string) ([]models.MiniCategory, *errx.Error)
 
 	// Scheduled-sends review + cancel. CancelScheduled is DB-only: we
 	// flip status to 'cancelled' and let the queued Cloud Task fire as

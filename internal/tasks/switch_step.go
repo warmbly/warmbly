@@ -433,7 +433,7 @@ const (
 // empty pool is unrestricted and resolved against the live category list (with
 // optional create for add). label_email applies the picked category as a unibox
 // label; add_tag/remove_tag as a contact tag. It can be called repeatedly.
-func (s *tasksService) campaignTagTool(campaign *models.Campaign, contact *models.Contact, sequenceID uuid.UUID, cfg *models.ActionConfig, owner uuid.UUID, kind string, pool []models.AITagRef, live []models.MiniCategory) generation.ToolDef {
+func (s *tasksService) campaignTagTool(campaign *models.Campaign, contact *models.Contact, sequenceID uuid.UUID, cfg *models.ActionConfig, orgID uuid.UUID, kind string, pool []models.AITagRef, live []models.MiniCategory) generation.ToolDef {
 	allowCreate := cfg.AIAllowCreateTags && kind != "remove_tag"
 	enum := aiagentargs.TagEnum(pool, live)
 	verb := map[string]string{"add_tag": "Add the tag", "remove_tag": "Remove the tag", "label_email": "Apply the label"}[kind]
@@ -464,7 +464,7 @@ func (s *tasksService) campaignTagTool(campaign *models.Campaign, contact *model
 			}
 			_ = json.Unmarshal(args, &in)
 			id, err := aiagentargs.ResolveTag(pool, live, allowCreate, in.Tag, func(title string) (uuid.UUID, error) {
-				c, cerr := s.advanced.CreateCategory(ctx, owner, title, "")
+				c, cerr := s.advanced.CreateCategory(ctx, orgID, title, "")
 				if cerr != nil {
 					return uuid.Nil, cerr
 				}
@@ -617,10 +617,10 @@ func (s *tasksService) execSequenceAIAgentStep(ctx context.Context, campaign *mo
 		return errors.New("AI steps need an organization-owned campaign")
 	}
 
-	// Owner scopes the tag/label reads + writes (categories are per-user). The
-	// live category list (tags == unibox labels) is fetched once, only when a
-	// tag/label capability is enabled, so an unrestricted pool can offer any.
-	owner, _ := uuid.Parse(campaign.UserID)
+	// The workspace scopes the tag/label reads + writes. The live category list
+	// (tags == unibox labels) is fetched once, only when a tag/label capability
+	// is enabled, so an unrestricted pool can offer any.
+	orgID := *campaign.OrganizationID
 	needCats := false
 	for _, raw := range cfg.AIAllowedActions {
 		switch strings.TrimSpace(raw) {
@@ -630,7 +630,7 @@ func (s *tasksService) execSequenceAIAgentStep(ctx context.Context, campaign *mo
 	}
 	var liveCats []models.MiniCategory
 	if needCats {
-		liveCats, _ = s.advanced.ListCategories(ctx, owner)
+		liveCats, _ = s.advanced.ListCategories(ctx, orgID)
 	}
 
 	// Argument-based tools: the model supplies the specifics (which tag, task
@@ -646,11 +646,11 @@ func (s *tasksService) execSequenceAIAgentStep(ctx context.Context, campaign *mo
 		seen[t] = true
 		switch t {
 		case "add_tag":
-			tools = append(tools, s.campaignTagTool(campaign, contact, sequenceID, cfg, owner, "add_tag", cfg.AIAddTags, liveCats))
+			tools = append(tools, s.campaignTagTool(campaign, contact, sequenceID, cfg, orgID, "add_tag", cfg.AIAddTags, liveCats))
 		case "remove_tag":
-			tools = append(tools, s.campaignTagTool(campaign, contact, sequenceID, cfg, owner, "remove_tag", cfg.AIRemoveTags, liveCats))
+			tools = append(tools, s.campaignTagTool(campaign, contact, sequenceID, cfg, orgID, "remove_tag", cfg.AIRemoveTags, liveCats))
 		case "label_email":
-			tools = append(tools, s.campaignTagTool(campaign, contact, sequenceID, cfg, owner, "label_email", cfg.AILabels, liveCats))
+			tools = append(tools, s.campaignTagTool(campaign, contact, sequenceID, cfg, orgID, "label_email", cfg.AILabels, liveCats))
 		case "create_task":
 			tools = append(tools, s.campaignTaskTool(campaign, contact, sequenceID, cfg))
 		case "create_deal":

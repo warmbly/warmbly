@@ -54,6 +54,11 @@ func (h *Handler) GetEmail(c *gin.Context) {
 }
 
 func (h *Handler) UpdateEmail(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
+		return
+	}
 	userIDStr := middleware.GetUserID(c)
 
 	emailAccountID := c.Param("id")
@@ -65,7 +70,7 @@ func (h *Handler) UpdateEmail(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.EmailService.Update(c.Request.Context(), userIDStr, emailAccountID, &data)
+	resp, err := h.EmailService.Update(c.Request.Context(), orgID.String(), userIDStr, emailAccountID, &data)
 	if err != nil {
 		errx.Handle(c, err)
 		return
@@ -84,7 +89,11 @@ func (h *Handler) UpdateEmail(c *gin.Context) {
 // are safe without an Idempotency-Key.
 // PATCH /emails/tags
 func (h *Handler) BulkTagEmails(c *gin.Context) {
-	userIDStr := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
+		return
+	}
 
 	var data models.BulkEmailTags
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -114,6 +123,15 @@ func (h *Handler) BulkTagEmails(c *gin.Context) {
 		errx.Handle(c, errx.ErrUuid)
 		return
 	}
+	// The mailbox scope here is the workspace, so a restricted API key needs
+	// the same allowlist check the per-id routes get from
+	// RequireAPIKeyEmailAccountParam; there is no path param to gate on.
+	for _, id := range emailIDs {
+		if !middleware.APIKeyAllowsEmailAccount(c, id) {
+			errx.Handle(c, errx.New(errx.Forbidden, "email account is not allowed for this API key"))
+			return
+		}
+	}
 	addTags, ok := parse(data.AddTags)
 	if !ok {
 		errx.Handle(c, errx.ErrUuid)
@@ -125,7 +143,7 @@ func (h *Handler) BulkTagEmails(c *gin.Context) {
 		return
 	}
 
-	updated, err := h.EmailService.BulkUpdateTags(c.Request.Context(), userIDStr, emailIDs, addTags, removeTags)
+	updated, err := h.EmailService.BulkUpdateTags(c.Request.Context(), orgID.String(), emailIDs, addTags, removeTags)
 	if err != nil {
 		errx.Handle(c, err)
 		return

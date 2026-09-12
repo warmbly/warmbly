@@ -38,10 +38,10 @@ type User struct {
 	DeletionScheduledAt  *time.Time `json:"deletion_scheduled_at,omitempty"`
 	DeletionScheduledFor *time.Time `json:"deletion_scheduled_for,omitempty"`
 
-	// Per-user label groups. Always serialized as arrays (never null)
-	// so the frontend can iterate without optional-chaining every
-	// access. Populated by the /auth/me handler after the base user
-	// load.
+	// The workspace's label registries, for the organization the session
+	// currently has selected. Always serialized as arrays (never null) so the
+	// frontend can iterate without optional-chaining every access. Populated
+	// by the /auth/me handler after the base user load.
 	Folders    []Group `json:"folders"`
 	Tags       []Group `json:"tags"`
 	Categories []Group `json:"categories"`

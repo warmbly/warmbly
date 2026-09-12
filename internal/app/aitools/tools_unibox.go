@@ -114,7 +114,7 @@ func (d Deps) listThreads(ctx context.Context, inv Invocation, args json.RawMess
 		params.AwaitingReply = &t
 	}
 
-	res, xerr := d.Unibox.Search(ctx, inv.OrgID, inv.UserID, params)
+	res, xerr := d.Unibox.Search(ctx, inv.OrgID, params)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}

@@ -196,13 +196,11 @@ var Tables = []Table{
 		Scope: `email_account_id IN ` + orgMailboxes,
 	},
 	{
+		// Below organization_members: user_id names the creator, and the
+		// importer needs that row present or it blanks the attribution.
 		Name: "tags", Group: models.OrgDataGroupCore,
-		// Labels are user-scoped in the schema, so they are collected by what
-		// the organization's own rows reference. Scoping them by owning user
-		// instead would drag that user's other workspaces into the archive.
-		Scope: `id IN (SELECT tag_id FROM email_tags WHERE email_id IN ` + orgMailboxes + `)
-		     OR id IN (SELECT tag_id FROM campaign_email_tags WHERE campaign_id IN ` + orgCampaigns + `)`,
-		Note: "Only tags this workspace actually uses travel; tags are owned by a user, not an organization.",
+		Scope: scopeOrg,
+		Note:  "The whole tag registry travels, including tags nothing is filed under yet.",
 	},
 	{
 		Name: "email_tags", Group: models.OrgDataGroupCore,
@@ -246,9 +244,8 @@ var Tables = []Table{
 	// ---------- contacts ----------
 	{
 		Name: "categories", Group: models.OrgDataGroupContacts,
-		Scope: `id IN (SELECT category_id FROM contact_categories WHERE contact_id IN ` + orgContacts + `)
-		     OR id IN (SELECT category_id FROM unibox_thread_labels WHERE thread_id IN ` + orgThreads + `)`,
-		Note: "Same user-scoped-label rule as tags.",
+		Scope: scopeOrg,
+		Note:  "The whole category registry travels, including ones no contact or conversation carries yet.",
 	},
 	{
 		Name: "contacts", Group: models.OrgDataGroupContacts,
@@ -303,7 +300,8 @@ var Tables = []Table{
 	// ---------- campaigns ----------
 	{
 		Name: "folders", Group: models.OrgDataGroupCampaigns,
-		Scope: `id IN (SELECT folder_id FROM campaign_folders WHERE campaign_id IN ` + orgCampaigns + `)`,
+		Scope: scopeOrg,
+		Note:  "The whole folder registry travels, including empty folders.",
 	},
 	{
 		Name: "campaigns", Group: models.OrgDataGroupCampaigns,
@@ -576,7 +574,7 @@ var Tables = []Table{
 	},
 	{
 		Name: "unibox_thread_labels", Group: models.OrgDataGroupInbox,
-		Scope: `thread_id IN ` + orgThreads,
+		Scope: scopeOrg,
 	},
 	{
 		Name: "unibox_snoozes", Group: models.OrgDataGroupInbox,

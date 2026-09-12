@@ -560,10 +560,15 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 		campaign.OrganizationID = orgID
 	}
 
-	// Sender pool — email tag links.
+	// Sender pool — email tag links. The tag registry is workspace-scoped, so
+	// linking one without a workspace would quietly drop every id rather than
+	// say why.
 	campaign.EmailTags = make([]string, 0)
+	if (len(data.EmailTagIDs) > 0 || len(data.FolderIDs) > 0) && orgID == nil {
+		return nil, errx.ErrNoOrganization
+	}
 	if len(data.EmailTagIDs) > 0 {
-		tags, xerr := SyncCampaignEmailTags(ctx, tx, campaign.ID.String(), data.EmailTagIDs)
+		tags, xerr := SyncCampaignEmailTags(ctx, tx, orgID, campaign.ID.String(), data.EmailTagIDs)
 		if xerr != nil {
 			return nil, xerr
 		}
@@ -573,7 +578,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 	// Folder links.
 	campaign.Folders = make([]string, 0)
 	if len(data.FolderIDs) > 0 {
-		folders, xerr := SyncCampaignFolders(ctx, tx, campaign.ID.String(), data.FolderIDs)
+		folders, xerr := SyncCampaignFolders(ctx, tx, orgID, campaign.ID.String(), data.FolderIDs)
 		if xerr != nil {
 			return nil, xerr
 		}
@@ -1343,20 +1348,36 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 	}
 
 	campaign.EmailTags = make([]string, 0)
-	if data.EmailTags != nil {
-		var err *errx.Error
-		campaign.EmailTags, err = SyncCampaignEmailTags(ctx, tx, campaignID, data.EmailTags)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	campaign.Folders = make([]string, 0)
-	if data.Folders != nil {
-		var err *errx.Error
-		campaign.Folders, err = SyncCampaignFolders(ctx, tx, campaignID, data.Folders)
-		if err != nil {
-			return nil, err
+	if data.EmailTags != nil || data.Folders != nil {
+		// The campaign's own workspace bounds which tags and folders may be
+		// linked. CAMPAIGN_SELECT does not carry it, so read it here rather
+		// than trusting ids the client sent.
+		var orgID *uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT organization_id FROM campaigns WHERE id = $1`, campaignID).Scan(&orgID); err != nil {
+			db.CaptureError(err, "campaign org lookup", []any{campaignID}, "queryrow")
+			return nil, errx.InternalError()
+		}
+		// Without one the scope check matches nothing, which would read as
+		// "clear every tag and folder" instead of as the refusal it is.
+		if orgID == nil {
+			return nil, errx.ErrNoOrganization
+		}
+
+		if data.EmailTags != nil {
+			var err *errx.Error
+			campaign.EmailTags, err = SyncCampaignEmailTags(ctx, tx, orgID, campaignID, data.EmailTags)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		if data.Folders != nil {
+			var err *errx.Error
+			campaign.Folders, err = SyncCampaignFolders(ctx, tx, orgID, campaignID, data.Folders)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -5,7 +5,7 @@ description: Read, search, and triage incoming mail across every mailbox, then r
 
 The unified inbox (unibox) is the org-wide view of everything that lands in your connected mailboxes. These endpoints power the dashboard's inbox list, thread view, scope rail, conversation labels, snoozes, and scheduled-send queue. Every route is gated on the unified-inbox feature, so the calling organization needs an active trial or paid subscription; without it the endpoint returns `403`.
 
-The list, thread, overview, and snooze data is org-scoped, not per-user. Two members of the same organization see the same inbox, the same unread badge, and the same threads. Snoozes and conversation labels are attached to the calling user.
+The list, thread, overview, conversation-label, and snooze data is org-scoped, not per-user. Two members of the same organization see the same inbox, the same unread badge, the same threads, and the same conversation labels, whoever applied them. Snoozes are the one exception: they are attached to the calling user.
 
 ## List incoming mail
 
@@ -198,7 +198,7 @@ The response is a `data` plus `pagination` envelope. Each item is a full message
 
 `GET /unibox/thread/labels`
 
-Returns the conversation labels (your categories) attached to a thread. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Returns the conversation labels (the workspace's categories) attached to a thread. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -220,7 +220,7 @@ The response wraps the labels in a `data` array.
 
 `PUT /unibox/thread/labels`
 
-Replaces the full conversation-label set on a thread. The body's `category_ids` is the desired set, so the call is idempotent and retries are naturally safe. Only your own categories are attached. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+Replaces the full conversation-label set on a thread, for the whole workspace. The body's `category_ids` is the desired set, so the call is idempotent and retries are naturally safe. Only the workspace's own categories are attached; an id belonging to another organization is dropped. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Request body
 

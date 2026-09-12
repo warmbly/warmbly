@@ -205,7 +205,7 @@ type aiActionConfig struct {
 
 	// AddTags / RemoveTags / Labels are OPTIONAL pools an agent-mode step's
 	// tag/label tools pick from by name. An empty pool means unrestricted: the
-	// executor lists the org owner's tags/labels live at run time and the agent
+	// executor lists the workspace's tags/labels live at run time and the agent
 	// may use any (tags and unibox labels are the same category registry).
 	// AllowCreateTags additionally lets an empty-pool pick mint a new tag/label.
 	AddTags         []models.AITagRef `json:"ai_add_tags"`
@@ -477,12 +477,11 @@ func aiToolName(action models.IntegrationAction) string {
 // the agent may call, mirroring the campaign AI step. The model supplies the
 // specifics (which tag, task title, deal name/pipeline) and the executor
 // resolves them live: an optional pool restricts a tag/label choice, an empty
-// pool means any of the owner's tags (with optional create). Guarded two ways:
+// pool means any of the workspace's tags (with optional create). Guarded two ways:
 // only isAllowlistedAIAction ids become tools (never a send/reply or connection
 // action), and every tool dispatches through the existing native executor. On a
 // dry run each tool reports what it would do without applying anything.
 func (s *service) guardedAITools(ctx context.Context, a models.Automation, n models.AutomationNode, cfg aiActionConfig, data map[string]any, feedPause bool) []generation.ToolDef {
-	// The org owner scopes tag/label reads + writes (categories are per user).
 	// The live category list (tags == unibox labels) is fetched once, only when a
 	// tag/label capability is enabled, so an unrestricted pool can offer any.
 	needCats := false
@@ -492,13 +491,9 @@ func (s *service) guardedAITools(ctx context.Context, a models.Automation, n mod
 			needCats = true
 		}
 	}
-	var owner uuid.UUID
-	if o, err := s.native.OrgOwner(ctx, a.OrganizationID); err == nil {
-		owner = o
-	}
 	var liveCats []models.MiniCategory
-	if needCats && owner != uuid.Nil {
-		liveCats, _ = s.native.ListCategories(ctx, owner)
+	if needCats {
+		liveCats, _ = s.native.ListCategories(ctx, a.OrganizationID)
 	}
 
 	seen := map[models.IntegrationAction]bool{}
@@ -511,11 +506,11 @@ func (s *service) guardedAITools(ctx context.Context, a models.Automation, n mod
 		seen[action] = true
 		switch action {
 		case models.IntegrationActionAddTag:
-			tools = append(tools, s.aiTagTool(a, n, data, feedPause, owner, action, cfg.AddTags, liveCats, cfg.AllowCreateTags))
+			tools = append(tools, s.aiTagTool(a, n, data, feedPause, a.OrganizationID, action, cfg.AddTags, liveCats, cfg.AllowCreateTags))
 		case models.IntegrationActionRemoveTag:
-			tools = append(tools, s.aiTagTool(a, n, data, feedPause, owner, action, cfg.RemoveTags, liveCats, false))
+			tools = append(tools, s.aiTagTool(a, n, data, feedPause, a.OrganizationID, action, cfg.RemoveTags, liveCats, false))
 		case models.IntegrationActionLabelEmail:
-			tools = append(tools, s.aiTagTool(a, n, data, feedPause, owner, action, cfg.LabelPool, liveCats, cfg.AllowCreateTags))
+			tools = append(tools, s.aiTagTool(a, n, data, feedPause, a.OrganizationID, action, cfg.LabelPool, liveCats, cfg.AllowCreateTags))
 		case models.IntegrationActionCreateTask:
 			tools = append(tools, s.aiTaskTool(a, n, data, feedPause))
 		case models.IntegrationActionCreateDeal:
@@ -545,7 +540,7 @@ func (s *service) dispatchSynthetic(ctx context.Context, a models.Automation, n 
 // enum), while an empty pool is unrestricted and resolved against the live
 // category list (with optional create for add/label). It can be called
 // repeatedly.
-func (s *service) aiTagTool(a models.Automation, n models.AutomationNode, data map[string]any, feedPause bool, owner uuid.UUID, action models.IntegrationAction, pool []models.AITagRef, live []models.MiniCategory, allowCreate bool) generation.ToolDef {
+func (s *service) aiTagTool(a models.Automation, n models.AutomationNode, data map[string]any, feedPause bool, orgID uuid.UUID, action models.IntegrationAction, pool []models.AITagRef, live []models.MiniCategory, allowCreate bool) generation.ToolDef {
 	kind := aiToolName(action)
 	allowCreate = allowCreate && action != models.IntegrationActionRemoveTag
 	enum := aiagentargs.TagEnum(pool, live)
@@ -580,7 +575,7 @@ func (s *service) aiTagTool(a models.Automation, n models.AutomationNode, data m
 				return "(test run: would " + kind + " " + strings.TrimSpace(in.Tag) + ")", nil
 			}
 			id, err := aiagentargs.ResolveTag(pool, live, allowCreate, in.Tag, func(title string) (uuid.UUID, error) {
-				c, cerr := s.native.CreateCategory(ctx, owner, title, "")
+				c, cerr := s.native.CreateCategory(ctx, orgID, title, "")
 				if cerr != nil {
 					return uuid.Nil, cerr
 				}
