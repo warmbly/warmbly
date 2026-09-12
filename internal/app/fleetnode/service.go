@@ -12,6 +12,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -37,6 +38,11 @@ type Service struct {
 	nodes    repository.FleetNodeRepository
 	workers  repository.WorkerRepository
 	settings repository.FleetSettingsRepository
+
+	// variant is appended to every version this service hands a node, because
+	// a version names an image and some builds of an image are not
+	// interchangeable. See imageVariant.
+	variant string
 }
 
 func New(
@@ -44,7 +50,39 @@ func New(
 	workers repository.WorkerRepository,
 	settings repository.FleetSettingsRepository,
 ) *Service {
-	return &Service{nodes: nodes, workers: workers, settings: settings}
+	return &Service{nodes: nodes, workers: workers, settings: settings, variant: imageVariant()}
+}
+
+// imageVariant is the tag suffix a node must add to reach an image that can
+// talk to this instance's event bus.
+//
+// The default images are CGO-free and carry no librdkafka, so a node running
+// one cannot speak Kafka at all: it would take EVENTBUS_PROVIDER=kafka from
+// its rendered env and fail at boot. The Kafka builds are published under the
+// same image name with a "-kafka" tag suffix, so the fix is to name that tag,
+// and the control plane is the only side that knows which bus it runs.
+//
+// FLEET_IMAGE_VARIANT overrides it for anyone publishing their own images
+// under a different convention. Set and empty means "no suffix", which is how
+// an operator whose own Kafka build is tagged plainly opts out.
+func imageVariant() string {
+	if v, ok := os.LookupEnv("FLEET_IMAGE_VARIANT"); ok {
+		return v
+	}
+	if strings.EqualFold(os.Getenv("EVENTBUS_PROVIDER"), "kafka") {
+		return "-kafka"
+	}
+	return ""
+}
+
+// withVariant appends the image variant to a resolved version. An empty
+// version stays empty: "no opinion" must never become a bare "-kafka", which
+// the node would dutifully try to pull.
+func (s *Service) withVariant(version string) string {
+	if version == "" || s.variant == "" || strings.HasSuffix(version, s.variant) {
+		return version
+	}
+	return version + s.variant
 }
 
 // IssueJoinToken mints a new instance join token, stores only its hash, and
@@ -135,13 +173,13 @@ func (s *Service) Heartbeat(ctx context.Context, beat models.NodeHeartbeat) (*mo
 // hiccup rolling the whole fleet.
 func (s *Service) desiredVersion(ctx context.Context, nodeID uuid.UUID) string {
 	if node, err := s.nodes.Get(ctx, nodeID); err == nil && node != nil && node.PinnedVersion != "" {
-		return node.PinnedVersion
+		return s.withVariant(node.PinnedVersion)
 	}
 	state, err := s.settings.GetRelease(ctx)
 	if err != nil {
 		return ""
 	}
-	return state.DesiredVersion()
+	return s.withVariant(state.DesiredVersion())
 }
 
 // List returns the fleet, with each node's resolved target attached so a
@@ -155,10 +193,10 @@ func (s *Service) List(ctx context.Context, role models.NodeRole) ([]models.Flee
 	if err != nil {
 		return nil, err
 	}
-	fleetTarget := state.DesiredVersion()
+	fleetTarget := s.withVariant(state.DesiredVersion())
 	for i := range nodes {
 		if nodes[i].PinnedVersion != "" {
-			nodes[i].DesiredVersion = nodes[i].PinnedVersion
+			nodes[i].DesiredVersion = s.withVariant(nodes[i].PinnedVersion)
 			continue
 		}
 		nodes[i].DesiredVersion = fleetTarget
@@ -173,13 +211,13 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*models.FleetNode, err
 		return nil, err
 	}
 	if node.PinnedVersion != "" {
-		node.DesiredVersion = node.PinnedVersion
+		node.DesiredVersion = s.withVariant(node.PinnedVersion)
 		return node, nil
 	}
 	state, err := s.settings.GetRelease(ctx)
 	if err != nil {
 		return nil, err
 	}
-	node.DesiredVersion = state.DesiredVersion()
+	node.DesiredVersion = s.withVariant(state.DesiredVersion())
 	return node, nil
 }

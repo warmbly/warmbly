@@ -780,6 +780,8 @@ warmblyctl fleet pin <node> v1.4.1  # hold or canary one machine
 
 Setting a tag also pins the channel, so a release landing later does not silently undo a deliberate rollback. `fleet channel stable` resumes following releases.
 
+The version a node is told to run also names which build of the image it runs. An instance on `EVENTBUS_PROVIDER=kafka` hands its nodes `v1.4.2-kafka`, because the default images are CGO-free and carry no librdkafka: a node running one would take `EVENTBUS_PROVIDER=kafka` from its config and fail at boot. The suffix is added to whatever the version resolved to, including a pin, so `fleet pin <node> v1.4.1` still reaches the machine as something it can run. Set `FLEET_IMAGE_VARIANT` on the backend to change or disable it if you publish your own images under a different convention; setting it empty turns it off.
+
 The backend is deliberately excluded: it is the thing that tells every node what version to be, so it is upgraded the same way as the rest of your infrastructure. Upgrade the backend, and the fleet follows.
 
 ### Watching the fleet
