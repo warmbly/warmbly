@@ -33,6 +33,12 @@ pub struct Config {
     /// The event topic/subject name (shared by both backends). Default
     /// "tracking-events".
     pub kafka_topic: String,
+    /// Wire format for published events: "json" (default) or "avro". It has to
+    /// match the consumer's CODEC_PROVIDER, which is one setting covering both
+    /// topics it reads, and worker envelopes cannot be Avro. So json is what a
+    /// working deployment uses; avro needs a Schema Registry.
+    #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
+    pub codec_provider: String,
     /// Kafka transport settings (only read by the kafka-feature build).
     #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub kafka_brokers: String,
@@ -134,6 +140,11 @@ impl Config {
         let nats_subject_prefix =
             env::var("NATS_SUBJECT_PREFIX").unwrap_or_else(|_| "warmbly".to_string());
         info!("Event bus provider: {}", eventbus_provider);
+
+        let codec_provider = env::var("CODEC_PROVIDER")
+            .unwrap_or_else(|_| "json".to_string())
+            .to_lowercase();
+        info!("Event codec: {}", codec_provider);
 
         // Event topic/subject name (shared by both backends).
         let kafka_topic = Self::get_optional(
@@ -277,6 +288,7 @@ impl Config {
             host,
             port,
             eventbus_provider,
+            codec_provider,
             nats_url,
             nats_subject_prefix,
             kafka_topic,
@@ -362,6 +374,7 @@ impl Config {
             host,
             port,
             eventbus_provider: "kafka".to_string(),
+            codec_provider: "json".to_string(),
             nats_url: env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string()),
             nats_subject_prefix: env::var("NATS_SUBJECT_PREFIX")
                 .unwrap_or_else(|_| "warmbly".to_string()),

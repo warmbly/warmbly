@@ -17,7 +17,11 @@ Message encoding is orthogonal to transport, selected by `CODEC_PROVIDER`:
 - `json`: plain JSON, no external dependencies. Required for the self-host stack (the worker command and result envelopes carry untyped bodies Avro cannot serialize).
 - `avro`: Avro with Confluent Schema Registry (`SCHEMA_REGISTRY_URL` plus optional key/secret), also behind the `kafka` build tag. The topic name is used as the Schema Registry subject.
 
-The Rust tracking service follows the same switch: it publishes JSON to JetStream by default, and only speaks Kafka plus Avro when compiled with its `kafka` cargo feature, which is what the `tracking:*-kafka` image is.
+The Rust tracking service follows both switches. It speaks Kafka only when compiled with its `kafka` cargo feature, which is what the `tracking:*-kafka` image is, and it encodes with `CODEC_PROVIDER` on either transport. So a Kafka deployment on `CODEC_PROVIDER=json` needs no Schema Registry at all, and `avro` there is refused at boot without `SCHEMA_REGISTRY_URL` rather than failing at the first published event.
+
+<Callout type="warn" title="One codec covers both topics">
+The consumer decodes `jobs.worker-events` and `tracking-events` with the same `CODEC_PROVIDER`, and worker envelopes cannot be Avro. That makes `json` the only value a working deployment uses, and it is why the tracking publisher has to read the setting rather than always writing Avro: a JSON consumer handed Avro drops every open and click with nothing but a deserialize warning.
+</Callout>
 
 ## Topics
 
