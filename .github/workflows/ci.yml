@@ -343,6 +343,24 @@ jobs:
       - name: Run tests
         run: cargo test
 
+      # The Kafka publisher is behind a cargo feature, so none of the steps
+      # above compile it: `cargo clippy` on the default build never opens
+      # kafka.rs. That file ships as the published tracking:*-kafka image, so a
+      # break in it would otherwise surface at release time rather than here.
+      # This is the Rust half of the `go build -tags kafka` step above.
+      # The Debian equivalents of what tracking/Dockerfile installs on alpine
+      # for this build. libcurl is needed even though rdkafka-sys configures
+      # with -DWITH_CURL=0: librdkafka's rdkafka_conf.c includes curl/curl.h
+      # unconditionally, so the build fails at the first object without it.
+      - name: Install librdkafka build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake pkg-config libssl-dev libcurl4-openssl-dev libsasl2-dev zlib1g-dev
+
+      - name: Run Clippy (kafka feature)
+        run: cargo clippy --features kafka --all-targets -- -D warnings
+
   elixir-ci:
     name: Elixir CI
     needs: changes
