@@ -10,7 +10,12 @@ import { VARIABLES, SAMPLE, HTML_CHUNK_RE } from "@/lib/templateVars";
 export { VARIABLES, SAMPLE };
 
 // Derive plain text from the editor HTML so both alternatives ship populated.
-export function htmlToPlain(html: string): string {
+//
+// `links` is on because the text/plain half of an email is unusable without the
+// destinations, and off for text that will be fed back into an editor: an
+// autolinked "x.test" whose href is "http://x.test" would gain the address on
+// every round trip and grow a tail (the AI-block prompt is stored that way).
+export function htmlToPlain(html: string, { links = true }: { links?: boolean } = {}): string {
     const withBreaks = html
         // An image has no text of its own, so the plain-text alternative would
         // silently lose whatever it carried. Its alt text stands in for it.
@@ -33,6 +38,20 @@ export function htmlToPlain(html: string): string {
     doc.querySelectorAll<HTMLElement>("[style]").forEach((el) => {
         if (/display\s*:\s*none/i.test(el.getAttribute("style") ?? "")) el.remove();
     });
+    // A link's destination is the only way the text-only half of the email can
+    // be followed, and a button or a linked image is nothing but its
+    // destination. This is what the server renders for a body written in HTML
+    // (internal/pkg/mailhtml), so the two halves agree.
+    if (links) {
+        doc.querySelectorAll("a[href]").forEach((a) => {
+            const href = (a.getAttribute("href") ?? "").trim();
+            // A merge token resolves per recipient and is not an address yet.
+            if (!/^(https?:|mailto:)/i.test(href)) return;
+            const label = (a.textContent ?? "").replace(/\s+/g, " ").trim();
+            if (!label) a.textContent = href;
+            else if (label !== href && `mailto:${label}` !== href) a.append(` (${href})`);
+        });
+    }
     return (doc.body.textContent || "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 }
 

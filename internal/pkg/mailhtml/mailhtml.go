@@ -67,6 +67,7 @@ func newDisplayPolicy() *bluemonday.Policy {
 		"border-color", "border-radius", "border-style", "border-width",
 		"width", "min-width", "max-width", "height", "min-height", "max-height",
 		"display", "float", "clear", "list-style-type", "opacity", "table-layout",
+		"border-collapse", "border-spacing",
 	).Globally()
 
 	// Images: remote (http/https) and inline data: URIs. cid: references point

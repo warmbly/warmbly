@@ -1,9 +1,9 @@
 // Rich email-body editor for campaign Steps, built on TipTap (no deprecated
 // execCommand). Controlled by an HTML string; emits HTML on change. Ships a
 // house-theme toolbar (undo/redo, headings, bold/italic/underline/strike,
-// lists, link, images), a one-click {{variable}} inserter, a spintax `{a|b}`
-// helper, and an HTML source view. Personalization tokens are just text, so
-// they survive serialization untouched.
+// lists, link, images, call-to-action buttons), a one-click {{variable}}
+// inserter, a spintax `{a|b}` helper, and an HTML source view. Personalization
+// tokens are just text, so they survive serialization untouched.
 //
 // Paste is normalised on the way in (pasteHtml.ts): a message copied out of
 // Gmail, Outlook or Word brings its own blank-line scaffolding, which our own
@@ -62,7 +62,9 @@ import RichTextAIEdit from "@/components/app/ai/RichTextAIEdit";
 import RichTextAICaret from "@/components/app/ai/RichTextAICaret";
 import { useForms } from "@/lib/api/hooks/app/forms";
 import { EmailImage } from "./nodes/EmailImageNode";
+import { EmailButton } from "./nodes/EmailButtonNode";
 import { ImageBubble, ImageMenu } from "./ImageControls";
+import { ButtonBubble, ButtonInsert } from "./ButtonControls";
 import { AlignMenu, ColorMenu, TableMenu, TypeMenu } from "./DesignControls";
 import { insertImage, isSupportedImageFile, useImageUpload } from "./imageUpload";
 import { normalizePastedHTML } from "./pasteHtml";
@@ -177,6 +179,7 @@ export default function RichTextEditor({
             ListItem,
             Link.configure({ openOnClick: false, autolink: true }),
             EmailImage,
+            EmailButton,
             // Real email markup: table layout, <div> containers, colours,
             // fonts and alignment. Without these a pasted design keeps its
             // words and loses everything that made it a design.
@@ -201,6 +204,20 @@ export default function RichTextEditor({
                 } leading-relaxed text-slate-800 focus:outline-none`,
             },
             transformPastedHTML: (pasted) => normalizePastedHTML(pasted),
+            handleDOMEvents: {
+                // An <a> this editor renders itself — the wrapper around a
+                // linked image, the anchor inside a button — sits in a node
+                // that is not contenteditable, so a plain click follows it and
+                // the dashboard navigates away mid-edit. Ctrl/Cmd still opens
+                // it, which is how a link is opened from an editor anywhere.
+                click: (_view, event) => {
+                    const target = event.target as HTMLElement | null;
+                    if (!event.metaKey && !event.ctrlKey && target?.closest?.("a[href]")) {
+                        event.preventDefault();
+                    }
+                    return false;
+                },
+            },
             handlePaste: (_view, event) => {
                 if (minimalRef.current) return false;
                 const files = Array.from(event.clipboardData?.files ?? []).filter(isSupportedImageFile);
@@ -334,8 +351,10 @@ export default function RichTextEditor({
             )}
             {!code && (
                 <>
-                    {/* Select an image → size, alignment and alt text over it. */}
+                    {/* Select an image → size, alignment, alt text and link over it. */}
                     <ImageBubble editor={editor} />
+                    {/* Select a button → its text, link, colour, size and shape. */}
+                    <ButtonBubble editor={editor} />
                     {/* Select text → floating "Edit with AI" pill over the selection. */}
                     <RichTextAIEdit editor={editor} />
                     {/* Collapsed caret → sparkle companion + ⌘J to write with AI. */}
@@ -508,6 +527,7 @@ function Toolbar({
                 <Link2Icon className="w-3.5 h-3.5" />
             </Btn>
             <ImageMenu editor={editor} />
+            <ButtonInsert editor={editor} />
             <Divider />
             <TypeMenu editor={editor} />
             <ColorMenu editor={editor} />

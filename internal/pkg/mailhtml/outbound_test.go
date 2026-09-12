@@ -231,6 +231,21 @@ func TestToPlainTextLinkThatIsItsOwnLabel(t *testing.T) {
 	}
 }
 
+// A button and a linked image are nothing but their destination once the
+// markup is gone, so the text/plain half has to carry it (issue #433).
+func TestToPlainTextKeepsAButtonAndALinkedImage(t *testing.T) {
+	button := ToPlainText(`<table data-warmbly-button=""><tbody><tr><td>` +
+		`<a href="https://cal.test/me" style="display:inline-block">Book a call</a></td></tr></tbody></table>`)
+	if button != "Book a call (https://cal.test/me)" {
+		t.Errorf("a button is its label and where it goes: %q", button)
+	}
+
+	image := ToPlainText(`<a href="https://x.test/demo"><img src="https://x.test/a.png" alt="Watch the demo"></a>`)
+	if image != "[Watch the demo] (https://x.test/demo)" {
+		t.Errorf("a linked image stands in as its alt text: %q", image)
+	}
+}
+
 func TestToPlainTextEntitiesAndBreaks(t *testing.T) {
 	got := ToPlainText(`<p>Tom &amp; Jerry<br>next line</p>`)
 	if got != "Tom & Jerry\nnext line" {

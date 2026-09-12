@@ -19,10 +19,11 @@ func TestSanitizeDropsScriptAndStyleContent(t *testing.T) {
 }
 
 func TestSanitizeKeepsLayoutMarkup(t *testing.T) {
-	in := `<table width="600" cellpadding="0" bgcolor="#ffffff"><tr><td align="center" style="font-size:14px;color:#111">` +
+	in := `<table width="600" cellpadding="0" bgcolor="#ffffff" style="border-collapse:separate"><tr>` +
+		`<td align="center" style="font-size:14px;color:#111">` +
 		`<a href="https://example.com">Link</a><img src="https://example.com/a.png" width="20"></td></tr></table>`
 	out := Sanitize(in)
-	for _, want := range []string{`width="600"`, `bgcolor="#ffffff"`, `align="center"`, "font-size", `href="https://example.com"`, `target="_blank"`, "<img"} {
+	for _, want := range []string{`width="600"`, `bgcolor="#ffffff"`, `align="center"`, "font-size", "border-collapse", `href="https://example.com"`, `target="_blank"`, "<img"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in output: %s", want, out)
 		}
