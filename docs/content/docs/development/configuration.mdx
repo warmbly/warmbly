@@ -293,6 +293,7 @@ On `filesystem`, a remote worker writes blobs to its own disk rather than a volu
 | `NATS_URL` | JetStream address. Credentials in the URL are honored by every service, including the Rust tracking publisher: `nats://user:pass@host:4222` for a user, `nats://token@host:4222` for a token, `tls://` for TLS | `nats://nats:4222` | yes |
 | `NATS_CREDS` | Path to a NATS credentials file (user JWT plus nkey seed), for a bus that authenticates with JWT rather than a token. Synadia Cloud and any nsc-managed account issue one | unset | yes |
 | `NATS_CREDS_B64` | The same file, base64 encoded, as a single line. This is the form the fleet uses: a node receives environment variables rather than files, and the env file docker reads cannot express a multi-line value. Takes precedence over `NATS_CREDS` | unset | yes |
+| `NATS_MAX_BYTES` | Ceiling on the stream's size on disk. Accepts a plain byte count or a size (`2GiB`, `512MB`, `1G`). Unset leaves the stream bounded only by `NATS_STREAM_MAX_AGE` and the account's own quota, which a managed bus may refuse: Synadia's "Max Bytes Required" rejects any stream created without one | unset (unlimited) | yes |
 | `NATS_STREAM_NAME`, `NATS_SUBJECT_PREFIX` | Stream and subject naming | `warmbly` | yes |
 | `KAFKA_BOOTSTRAP_SERVERS` | Broker list when `EVENTBUS_PROVIDER=kafka` | unset | yes |
 | `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | Broker credentials | unset | yes |
