@@ -105,6 +105,11 @@ export default function TextareaAIEdit({
         setHighlights([]);
         frozen.current = null;
         expectedValue.current = null;
+        // A parked range the layout effect never consumed (an unchanged result
+        // commits no new value, so nothing re-renders for it to run on) would
+        // otherwise be applied to whatever value commits next, moving the
+        // caret long after this popover is gone.
+        pendingSelection.current = null;
     }, []);
 
     React.useLayoutEffect(() => {

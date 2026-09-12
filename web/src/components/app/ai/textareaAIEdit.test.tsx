@@ -127,6 +127,18 @@ describe("TextareaAIEdit against the composer's length cap", () => {
         expect(ta.value).toBe("abcdefg");
         await screen.findByText("No change");
         expect(screen.queryByText("Rewritten")).toBeNull();
+
+        // Nothing committed, so the range parked for the review selection was
+        // never consumed. Closing has to drop it, or the next unrelated edit
+        // wears it and the caret jumps.
+        await act(async () => {
+            fireEvent.click(screen.getByText("Done"));
+        });
+        await act(async () => {
+            fireEvent.change(ta, { target: { value: "abcdefgh" } });
+        });
+        // The stale range would reselect "fg"; nothing should have touched it.
+        expect([ta.selectionStart, ta.selectionEnd]).not.toEqual([5, 7]);
     });
 
     it("leaves Undo pointing at the words that were selected, not a derived range", async () => {
