@@ -10,14 +10,14 @@ Warmbly's services communicate asynchronously through a pluggable event bus. The
 The bus is an abstraction (`internal/infrastructure/eventbus/`) with two providers, selected by `EVENTBUS_PROVIDER`:
 
 - `nats`: NATS JetStream. One durable stream (default name `warmbly`) holds every topic as a subject under a prefix: topic `jobs.worker-events` becomes subject `warmbly.jobs.worker-events`. Messages are retained for 7 days, consumer groups map to JetStream durable consumers, and failed handlers are redelivered up to 10 times. This is what `docker-compose.yml` runs.
-- `kafka`: Apache Kafka behind the `kafka` Go build tag. The default binaries do not include it (no librdkafka, no CGO); build with `GO_TAGS=kafka` to enable it, otherwise `EVENTBUS_PROVIDER=kafka` fails at boot with a clear error.
+- `kafka`: Apache Kafka behind the `kafka` Go build tag. The default binaries do not include it (no librdkafka, no CGO), so `EVENTBUS_PROVIDER=kafka` on a default build fails at boot with a clear error. Every service that reads the bus publishes a second image for it, the same tag with a `-kafka` suffix: `ghcr.io/warmbly/warmbly/backend:prod-kafka`, and the same for `consumer`, `worker`, and `tracking`. Building your own needs `GO_TAGS=kafka` (Go) or `CARGO_FEATURES=kafka` (tracking).
 
 Message encoding is orthogonal to transport, selected by `CODEC_PROVIDER`:
 
 - `json`: plain JSON, no external dependencies. Required for the self-host stack (the worker command and result envelopes carry untyped bodies Avro cannot serialize).
 - `avro`: Avro with Confluent Schema Registry (`SCHEMA_REGISTRY_URL` plus optional key/secret), also behind the `kafka` build tag. The topic name is used as the Schema Registry subject.
 
-The Rust tracking service follows the same switch: it publishes JSON to JetStream by default, and only speaks Kafka plus Avro when compiled with its `kafka` cargo feature.
+The Rust tracking service follows the same switch: it publishes JSON to JetStream by default, and only speaks Kafka plus Avro when compiled with its `kafka` cargo feature, which is what the `tracking:*-kafka` image is.
 
 ## Topics
 
