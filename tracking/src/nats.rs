@@ -1,4 +1,6 @@
 use async_nats::jetstream;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 
 use crate::config::Config;
 use crate::events::TrackingEvent;
@@ -27,6 +29,22 @@ impl NatsProducer {
                 None => opts.token(user.to_string()),
             };
         }
+        // A managed bus authenticates with a user JWT and nkey seed, which no
+        // URL can carry. NATS_CREDS_B64 is the single-line form the fleet needs
+        // (docker --env-file cannot express a multi-line value); NATS_CREDS is
+        // a path, for containers and local development.
+        if let Ok(b64) = std::env::var("NATS_CREDS_B64") {
+            if !b64.trim().is_empty() {
+                let raw = BASE64.decode(b64.trim())?;
+                opts = opts.credentials(std::str::from_utf8(&raw)?)?;
+            }
+        } else if let Ok(path) = std::env::var("NATS_CREDS") {
+            if !path.trim().is_empty() {
+                let contents = std::fs::read_to_string(path.trim())?;
+                opts = opts.credentials(&contents)?;
+            }
+        }
+
         let client = opts.connect(addr).await?;
         let js = jetstream::new(client);
         let subject = format!("{}.{}", config.nats_subject_prefix, config.kafka_topic);
