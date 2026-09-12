@@ -1,385 +1,124 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 
-/* -----------------------------------------------------------------
-   Contact page — full redesign.
-
-   Hero treatment: "Split postcard."
-   A two-pane hero. Left pane is a sky panel with a single drifting
-   cloud and a soft horizon wash. Right pane is a white postcard
-   card carrying the page title, intro, and the primary call to
-   action. Deliberately quieter than HeroAtmosphere, which is used
-   on warmup / campaigns / pricing / etc.
-
-   Theme tokens used (see src/styles/global.css):
-     --sky-1 .. --sky-6   accents
-     --brand, --brand-strong   primary blues
-     --surface-2          band background
-     --border, --border-strong link/divider color
-     --heading, --foreground, --muted-foreground text colors
-
-   Astro JSX parser quirk reminder: `<` and `<=` inside `{}`
-   expressions can be misread as tag openers. All computed numbers
-   are hoisted into the frontmatter where possible.
-   ----------------------------------------------------------------- */
-
+// Every link here is one that already exists elsewhere on the site
+// (header, footer, trust, terms). Nothing on this page is invented.
 const channels = [
   {
     icon: 'mail',
-    title: 'Email us',
-    email: 'team@warmbly.com',
-    topic: 'Account questions, custom plans, dedicated workers, BYOK, SSO, volume pricing, procurement, partnerships, feedback, or simply saying hello.',
-    sla: 'within 1 business day',
-  },
-];
-
-const steps = [
-  {
-    n: '01',
-    title: 'You send',
-    body: 'Send us a note. One human gets the message, not a triage queue.',
+    title: 'Email',
+    label: 'team@warmbly.com',
+    href: 'mailto:team@warmbly.com',
+    body: 'Sales, billing, account questions, self-host help, partnerships, security reports.',
+    external: false,
   },
   {
-    n: '02',
-    title: 'We route',
-    body: 'The owning team picks it up. Whoever covers your topic reads it first, so it does not bounce between people.',
+    icon: 'discord',
+    title: 'Discord',
+    label: 'dc.warmbly.com',
+    href: 'https://dc.warmbly.com',
+    body: 'Ask questions, share what you are building, talk to other people running Warmbly.',
+    external: true,
   },
   {
-    n: '03',
-    title: 'You hear back',
-    body: 'A real reply within the response time published above. No tracker, no autoresponder loop.',
-  },
-];
-
-const faqs = [
-  {
-    q: 'Do you offer phone support?',
-    a: 'No. We keep support over email so the answer is searchable, attributable, and reviewable later. For an enterprise plan, your account team will set up a dedicated Slack channel.',
+    icon: 'warning',
+    title: 'Bug reports',
+    label: 'github.com/warmbly/warmbly/issues',
+    href: 'https://github.com/warmbly/warmbly/issues',
+    body: 'Something broken in the app, the CLI or the self-host installer.',
+    external: true,
   },
   {
-    q: 'How fast do you actually respond?',
-    a: 'Within one business day, usually faster. Business hours are 09:00 to 18:00 US Eastern, Monday through Friday, excluding US federal holidays.',
+    icon: 'users',
+    title: 'Feature requests',
+    label: 'github.com/warmbly/warmbly/discussions',
+    href: 'https://github.com/warmbly/warmbly/discussions',
+    body: 'Ideas, feedback and questions about where the product is going.',
+    external: true,
   },
   {
-    q: 'Are you hiring?',
-    a: 'Sometimes. Open roles are listed on the careers page when they exist. If nothing is posted but you think you would be a strong fit, send a note to team@warmbly.com with a short pitch and a link to your work.',
+    icon: 'code',
+    title: 'Documentation',
+    label: 'docs.warmbly.com',
+    href: 'https://docs.warmbly.com',
+    body: 'Product guides, API reference, self-hosting and deliverability fundamentals.',
+    external: true,
+  },
+  {
+    icon: 'check',
+    title: 'Status',
+    label: 'status.warmbly.com',
+    href: 'https://status.warmbly.com',
+    body: 'Uptime and incident history for the hosted service.',
+    external: true,
   },
 ];
 ---
 <Layout
-  title="Contact Sales & Support | Warmbly"
-  description="Reach the team directly. One inbox, owned by a person, with a published response time."
+  title="Contact | Warmbly"
+  description="Email the team, join the Discord, or open an issue on GitHub."
 >
-  <!-- =====================================================
-       HERO · Split postcard
-       Left pane: sky panel with single drifting cloud.
-       Right pane: white card with eyebrow, title, intro.
-       ===================================================== -->
-  <section class="relative isolate overflow-hidden border-b border-[color:var(--border)]">
-    <!-- soft pale wash that bleeds across the whole section,
-         keeps the right pane from feeling detached -->
-    <div
-      aria-hidden="true"
-      class="absolute inset-0 pointer-events-none"
-      style="background: linear-gradient(180deg, #f8fbff 0%, #ffffff 70%);"
-    ></div>
-
-    <div class="container-page relative pt-14 md:pt-20 pb-14 md:pb-20">
-      <div class="grid lg:grid-cols-[1.05fr_1fr] gap-8 lg:gap-10 items-stretch">
-
-        <!-- LEFT · sky postcard panel -->
-        <div
-          class="relative overflow-hidden rounded-[18px] ring-1 ring-[color:var(--border)] min-h-[320px] md:min-h-[400px]"
-          style="background:
-            radial-gradient(120% 90% at 80% 18%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 55%),
-            linear-gradient(165deg, #0284c7 0%, #0369a1 45%, #075985 100%);
-            box-shadow: var(--shadow-sm);"
-        >
-          <!-- horizon glow strip near the bottom -->
-          <div
-            aria-hidden="true"
-            class="absolute inset-x-0 bottom-0 h-1/2 pointer-events-none"
-            style="background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(186,230,253,0.18) 60%, rgba(224,242,254,0.32) 100%);"
-          ></div>
-
-          <!-- single drifting cloud accent -->
-          <div
-            class="absolute pointer-events-none cloud-drift cloud-2"
-            style="top: -6%; right: -8%; width: 380px; opacity: 0.55; mix-blend-mode: screen;"
-          >
-            <Cloud variant={3} opacity={1} eager />
-          </div>
-          <div
-            class="absolute pointer-events-none cloud-drift cloud-3"
-            style="bottom: -8%; left: -10%; width: 280px; opacity: 0.35; mix-blend-mode: screen;"
-          >
-            <Cloud variant={1} opacity={1} />
-          </div>
-
-          <!-- copy stacked at the bottom of the panel,
-               postcard-style with a stamp-like meta in the corner -->
-          <div class="relative h-full p-7 md:p-10 flex flex-col justify-between gap-10">
-            <div class="flex items-start justify-between gap-6">
-              <div class="text-[10.5px] uppercase tracking-[0.22em] text-white/65 font-mono">
-                Contact / Warmbly
-              </div>
-              <!-- "stamp" -->
-              <div
-                class="hidden sm:block text-right text-[9.5px] uppercase tracking-[0.16em] text-white/70 font-mono ring-1 ring-white/25 rounded-[6px] px-2.5 py-1.5"
-                style="background: rgba(255,255,255,0.08); backdrop-filter: blur(2px);"
-              >
-                Real humans<br/>Published SLAs
-              </div>
-            </div>
-
-            <div>
-              <div class="text-[10.5px] uppercase tracking-[0.22em] text-white/60 font-mono mb-3">
-                From the team
-              </div>
-              <p class="text-white/90 text-[15.5px] md:text-[16.5px] leading-[1.55] max-w-md">
-                Your message lands with a small group of people who actually own the answer, not a triage queue.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <!-- RIGHT · white card with title and intro -->
-        <div
-          class="relative rounded-[18px] bg-white ring-1 ring-[color:var(--border)] p-8 md:p-10 flex flex-col justify-between"
-          style="box-shadow: var(--shadow-sm);"
-        >
-          <div>
-            <div class="text-[11px] uppercase tracking-[0.2em] text-[color:var(--brand)] font-mono mb-4">
-              Contact
-            </div>
-            <h1 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.025em] leading-[1.05] text-heading">
-              Send one email.<br/>We will pick up the rest.
-            </h1>
-            <p class="mt-5 text-[15.5px] text-foreground/75 leading-relaxed max-w-md">
-              No support black hole and no chatbot. One inbox, owned by a person, with a response time we publish in writing.
-            </p>
-          </div>
-
-          <div class="mt-8 pt-6 border-t border-[color:var(--border)] flex flex-wrap items-center gap-x-6 gap-y-3 text-[13px]">
-            <a
-              href="#channels"
-              class="inline-flex items-center gap-1.5 font-semibold text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] transition-colors"
-            >
-              Email the team
-              <Icon name="arrowRight" size={14} />
-            </a>
-            <a
-              href="mailto:team@warmbly.com"
-              class="inline-flex items-center gap-1.5 text-foreground/75 hover:text-heading transition-colors font-mono"
-            >
-              <Icon name="mail" size={13} />
-              team@warmbly.com
-            </a>
-          </div>
-        </div>
+  <section class="border-b border-[color:var(--border)]">
+    <div class="container-page pt-16 md:pt-24 pb-12 md:pb-16">
+      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">
+        Contact
       </div>
+      <h1 class="text-[34px] md:text-[48px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading max-w-2xl">
+        Get in touch.
+      </h1>
+      <p class="mt-5 text-[15.5px] md:text-[16.5px] text-foreground/75 leading-relaxed max-w-xl">
+        Warmbly is a small team. Email reaches us directly, and everything else happens in public on Discord and GitHub.
+      </p>
     </div>
   </section>
 
-  <!-- =====================================================
-       CHANNEL DIRECTORY · two prominent cards.
-       Each card is a real <a> that mailto:s the channel.
-       2-col grid on md+, stacks on mobile. Larger surface,
-       larger icon, larger email so the page does not feel
-       sparse with only two entries.
-       ===================================================== -->
-  <section id="channels" class="py-16 md:py-24">
+  <section class="py-12 md:py-16">
     <div class="container-page">
-      <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8 md:mb-10">
-        <div>
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">
-            Channels
-          </div>
-          <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] leading-[1.1] text-heading max-w-2xl">
-            One inbox. A real owner.
-          </h2>
-        </div>
-        <p class="text-[13.5px] text-muted-foreground max-w-xs md:text-right">
-          Response times are commitments, not aspirations. Counted from when the message arrives.
-        </p>
-      </div>
-
-      <div class="grid md:grid-cols-2 gap-5 md:gap-6">
+      <ul class="divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
         {channels.map((c) => (
-          <a
-            href={`mailto:${c.email}`}
-            class="group relative flex flex-col rounded-[16px] bg-white ring-1 ring-[color:var(--border)] p-7 md:p-9 hover:ring-[color:var(--brand)]/40 hover:-translate-y-0.5 transition-all"
-            style="box-shadow: var(--shadow-sm);"
-          >
-            <div class="flex items-start justify-between gap-4">
-              <div class="w-12 h-12 rounded-[12px] bg-[color:var(--brand-soft)] text-[color:var(--brand)] ring-1 ring-[color:var(--brand)]/15 inline-flex items-center justify-center shrink-0">
-                <Icon name={c.icon} size={22} />
-              </div>
-              <div class="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
-                <span class="w-1.5 h-1.5 rounded-full bg-[color:var(--brand)]"></span>
-                {c.sla}
-              </div>
-            </div>
-
-            <div class="mt-6">
-              <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-2">
-                {c.title}
-              </div>
-              <div class="text-[20px] md:text-[22px] font-mono text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)] tracking-[-0.01em] break-all">
-                {c.email}
-              </div>
-            </div>
-
-            <p class="mt-5 text-[14px] text-foreground/75 leading-relaxed">
-              {c.topic}
-            </p>
-
-            <div class="mt-7 pt-5 border-t border-[color:var(--border)] flex items-center justify-between text-[13px]">
-              <span class="inline-flex items-center gap-1.5 font-semibold text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)]">
-                Open in mail
-                <Icon name="arrowRight" size={13} />
-              </span>
-              <span class="text-muted-foreground font-mono text-[11px] uppercase tracking-[0.12em]">
-                One owner
-              </span>
-            </div>
-          </a>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       WHAT TO EXPECT · short three-step list
-       ===================================================== -->
-  <section class="bg-[color:var(--surface-2)] border-y border-[color:var(--border)] py-16 md:py-20">
-    <div class="container-page">
-      <div class="grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20">
-        <div class="lg:sticky lg:top-24 self-start">
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">
-            What happens next
-          </div>
-          <h2 class="text-[26px] md:text-[32px] font-semibold tracking-[-0.025em] leading-[1.1] text-heading">
-            From send to reply, in three steps.
-          </h2>
-          <p class="mt-4 text-[14.5px] text-foreground/75 leading-relaxed max-w-sm">
-            We do not put a ticket form between you and the team. The shape below is the whole process.
-          </p>
-        </div>
-
-        <ol class="grid sm:grid-cols-3 gap-5">
-          {steps.map((s) => (
-            <li
-              class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-6"
-              style="box-shadow: var(--shadow-sm);"
+          <li>
+            <a
+              href={c.href}
+              target={c.external ? '_blank' : undefined}
+              rel={c.external ? 'noopener noreferrer' : undefined}
+              class="group grid sm:grid-cols-[180px_1fr_auto] gap-x-8 gap-y-1.5 items-baseline py-5 md:py-6 hover:bg-[color:var(--surface-2)] -mx-4 px-4 rounded-[8px] transition-colors"
             >
-              <div class="text-[11px] font-mono text-[color:var(--brand)] tracking-[0.16em]">{s.n}</div>
-              <div class="mt-3 text-[15px] font-semibold text-heading">{s.title}</div>
-              <p class="mt-2 text-[13.5px] text-foreground/75 leading-relaxed">{s.body}</p>
-            </li>
-          ))}
-        </ol>
-      </div>
+              <span class="inline-flex items-center gap-2 text-[14.5px] font-semibold text-heading">
+                <Icon name={c.icon} size={15} class="text-[color:var(--brand)]" />
+                {c.title}
+              </span>
+              <span class="text-[14px] text-foreground/75 leading-relaxed">
+                {c.body}
+              </span>
+              <span class="inline-flex items-center gap-1.5 font-mono text-[13px] text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)] break-all sm:justify-self-end">
+                {c.label}
+                <Icon name={c.external ? 'arrowUpRight' : 'arrowRight'} size={12} />
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
     </div>
   </section>
 
-  <!-- =====================================================
-       OFFICE + POSTAL
-       Async-first description on the left,
-       monospaced postal block on the right.
-       ===================================================== -->
-  <section class="py-16 md:py-24">
-    <div class="container-page grid md:grid-cols-2 gap-10 md:gap-16">
-      <div>
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">
-          Office
-        </div>
-        <h2 class="text-[24px] md:text-[32px] font-semibold tracking-[-0.025em] text-heading leading-[1.1]">
-          Async-first, distributed.
-        </h2>
-        <p class="mt-4 text-[14.5px] text-foreground/75 leading-relaxed max-w-md">
-          Warmbly Labs, Inc. is registered in Delaware. The team works across New York, Berlin, and Lisbon. Meetings are by appointment, scheduled through your account contact.
-        </p>
-
-        <div class="mt-6 flex flex-wrap items-center gap-4 text-[13px] text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5">
-            <Icon name="globe" size={13} />
-            Three time zones
-          </span>
-          <span class="inline-flex items-center gap-1.5">
-            <Icon name="clock" size={13} />
-            Business hours, US Eastern
-          </span>
-        </div>
-      </div>
-
-      <div
-        class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-6 self-start"
-        style="box-shadow: var(--shadow-sm);"
-      >
-        <div class="text-[10.5px] uppercase tracking-[0.16em] font-mono text-muted-foreground mb-3">
-          Postal mail
-        </div>
-        <div class="text-[14px] text-foreground/85 leading-relaxed font-mono">
-          Warmbly Labs, Inc.<br/>
-          1209 N. Orange Street<br/>
-          Wilmington, DE 19801<br/>
-          USA
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       SHORT FAQ · 3 questions max
-       ===================================================== -->
-  <section class="bg-[color:var(--surface-2)] border-t border-[color:var(--border)] py-16 md:py-20">
+  <section class="pb-16 md:pb-24">
     <div class="container-page">
       <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">
-        Quick answers
+        Company
       </div>
-      <h2 class="text-[24px] md:text-[30px] font-semibold tracking-[-0.025em] text-heading leading-[1.15] max-w-2xl">
-        Before you write in.
-      </h2>
-
-      <div class="mt-8 grid md:grid-cols-3 gap-5">
-        {faqs.map((f) => (
-          <div
-            class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] p-6"
-            style="box-shadow: var(--shadow-sm);"
-          >
-            <div class="text-[14.5px] font-semibold text-heading tracking-[-0.005em]">{f.q}</div>
-            <p class="mt-2 text-[13.5px] text-foreground/75 leading-relaxed">{f.a}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       CLOSING FOOTER · this page IS the CTA,
-       so close quietly. No <CTA /> block.
-       ===================================================== -->
-  <section class="py-14 md:py-20">
-    <div class="container-page">
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-5 border-t border-[color:var(--border)] pt-10">
-        <p class="text-[14px] text-foreground/75 max-w-md">
-          Not sure where to start? Send a note to <a href="mailto:team@warmbly.com" class="font-mono text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">team@warmbly.com</a> and we will route it internally.
-        </p>
-        <div class="flex items-center gap-5 text-[13px]">
-          <a href="/trust/" class="inline-flex items-center gap-1.5 text-foreground/75 hover:text-heading">
-            <Icon name="shield" size={13} /> Trust
-          </a>
-          <a href="/brand/" class="inline-flex items-center gap-1.5 text-foreground/75 hover:text-heading">
-            <Icon name="star" size={13} /> Brand
-          </a>
-          <a href="/about/" class="inline-flex items-center gap-1.5 text-foreground/75 hover:text-heading">
-            <Icon name="users" size={13} /> About
-          </a>
-        </div>
-      </div>
+      <p class="text-[14px] text-foreground/75 leading-relaxed max-w-xl">
+        Warmbly is operated by Mindroot Ltd, registered in England and Wales, company number 16543299.
+      </p>
+      <address class="mt-3 not-italic font-mono text-[13.5px] text-foreground/85 leading-relaxed">
+        Mindroot Ltd<br/>
+        71-75 Shelton Street<br/>
+        London WC2H 9JQ<br/>
+        United Kingdom
+      </address>
+      <p class="mt-4 text-[13px] text-muted-foreground">
+        Legal notices and data requests: <a href="mailto:team@warmbly.com" class="font-mono text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">team@warmbly.com</a>. See the <a href="/terms/" class="underline underline-offset-2 hover:text-heading">terms</a> and <a href="/privacy/" class="underline underline-offset-2 hover:text-heading">privacy policy</a>.
+      </p>
     </div>
   </section>
 </Layout>
