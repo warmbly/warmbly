@@ -137,10 +137,10 @@ jobs:
         run: make check-proto
 
       # The Kafka backend sits behind a build tag, so the default build never
-      # compiles it and it can rot unnoticed. Vet rather than test: it needs
-      # CGO and a broker, but a compile error is the failure that matters.
-      - name: Verify the Kafka build still compiles
-        run: go vet -tags kafka ./...
+      # compiles it and it can rot unnoticed. Build rather than vet: vet does
+      # not link, and a CGO backend's characteristic failure is a link error.
+      - name: Verify the Kafka build still compiles and links
+        run: go build -tags kafka ./...
 
       - name: Run tests with coverage
         run: |

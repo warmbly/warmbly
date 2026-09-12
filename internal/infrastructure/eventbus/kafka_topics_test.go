@@ -5,6 +5,7 @@ package eventbus
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // A topic already created by this process must not reach the broker again:
@@ -45,5 +46,49 @@ func TestBothConstructorsInitialiseTopicMap(t *testing.T) {
 	b := NewKafkaFromProducer(nil, KafkaConfig{Bootstrap: "localhost:0"})
 	if b.topics.known == nil {
 		t.Fatal("NewKafkaFromProducer left the topic map nil")
+	}
+}
+
+// A bus that has been closed must not open a new admin connection. Publish
+// checks b.closed and then calls ensureTopics, so a Close landing between the
+// two used to resurrect a client that nothing would ever shut.
+func TestEnsureTopicsRefusesAfterClose(t *testing.T) {
+	b := &KafkaBus{
+		bootstrap: "localhost:0",
+		topics:    topicEnsurer{known: map[string]struct{}{}, closed: true},
+	}
+	if err := b.ensureTopics(context.Background(), "w.something"); err == nil {
+		t.Fatal("a closed bus accepted a topic creation")
+	}
+	if b.topics.admin != nil {
+		t.Error("a closed bus opened an admin connection")
+	}
+	if _, err := b.adminClient(); err == nil {
+		t.Error("adminClient handed out a client after close")
+	}
+}
+
+// The lock must not be held across the broker call, or one slow creation
+// stalls Publish, Subscribe and Close for every other topic. Asserted by
+// taking the lock and confirming the read-only path still completes.
+func TestUnknownTopicsDoesNotHoldLockForCaller(t *testing.T) {
+	b := &KafkaBus{
+		bootstrap: "localhost:0",
+		topics:    topicEnsurer{known: map[string]struct{}{"a": {}}},
+	}
+	missing, err := b.unknownTopics([]string{"a"})
+	if err != nil {
+		t.Fatalf("unknownTopics: %v", err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("a known topic was reported missing: %v", missing)
+	}
+	// The lock is free the moment unknownTopics returns.
+	done := make(chan struct{})
+	go func() { b.topics.mu.Lock(); b.topics.mu.Unlock(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the topic lock was still held after unknownTopics returned")
 	}
 }

@@ -169,9 +169,10 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 // Close flushes the producer and closes every consumer that was opened via
 // Subscribe.
 func (b *KafkaBus) Close() error {
-	// The admin client is a separate connection; Close is the only place that
-	// knows it was ever opened.
+	// Marked closed before the client is cleared, so a Publish racing past the
+	// closed check cannot open a replacement that outlives shutdown.
 	b.topics.mu.Lock()
+	b.topics.closed = true
 	if b.topics.admin != nil {
 		b.topics.admin.Close()
 		b.topics.admin = nil

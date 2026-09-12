@@ -100,8 +100,9 @@ split-cloud-check:
 	@./scripts/check-split-cloud.sh
 
 # The Kafka backend is behind a build tag, so nothing else compiles it.
+# Build, not vet: vet does not link, and this backend links librdkafka.
 kafka-check:
-	go vet -tags kafka ./...
+	go build -tags kafka ./...
 
 # web and admin on a static host. They read their configuration from a
 # config.js the container entrypoint renders at start, and a static host has no
