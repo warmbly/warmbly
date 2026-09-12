@@ -123,6 +123,65 @@ func TestDesiredVersionAppliesVariantToPinsAndFleetTarget(t *testing.T) {
 	}
 }
 
+// A joining node has nothing installed, so "no opinion" is not an answer it
+// can act on. It used to fall through to join.sh's `latest`, which this
+// project has never published, so the machine died on the image pull.
+func TestJoinVersionFallsBackToAPublishedTag(t *testing.T) {
+	id := uuid.New()
+
+	unresolved := &Service{
+		nodes:    stubNodes{node: &models.FleetNode{ID: id}},
+		settings: stubSettings{release: ""},
+		variant:  "-kafka",
+	}
+	if got := unresolved.JoinVersion(context.Background(), id); got != "prod-kafka" {
+		t.Errorf("unresolved release: got %q, want prod-kafka", got)
+	}
+
+	plain := &Service{
+		nodes:    stubNodes{node: &models.FleetNode{ID: id}},
+		settings: stubSettings{release: ""},
+	}
+	if got := plain.JoinVersion(context.Background(), id); got != "prod" {
+		t.Errorf("unresolved release, no variant: got %q, want prod", got)
+	}
+
+	// A resolved release still wins; the fallback is only for having nothing.
+	resolved := &Service{
+		nodes:    stubNodes{node: &models.FleetNode{ID: id}},
+		settings: stubSettings{release: "v0.4.5"},
+		variant:  "-kafka",
+	}
+	if got := resolved.JoinVersion(context.Background(), id); got != "v0.4.5-kafka" {
+		t.Errorf("resolved release: got %q, want v0.4.5-kafka", got)
+	}
+
+	// And a pin still wins over both.
+	pinned := &Service{
+		nodes:    stubNodes{node: &models.FleetNode{ID: id, PinnedVersion: "v0.4.4"}},
+		settings: stubSettings{release: "v0.4.5"},
+		variant:  "-kafka",
+	}
+	if got := pinned.JoinVersion(context.Background(), id); got != "v0.4.4-kafka" {
+		t.Errorf("pinned node: got %q, want v0.4.4-kafka", got)
+	}
+}
+
+// The heartbeat must NOT gain the fallback: a node that is already running
+// something has to be left alone when the control plane cannot resolve a
+// release, or one hiccup rolls the whole fleet.
+func TestHeartbeatKeepsNoOpinionEmpty(t *testing.T) {
+	id := uuid.New()
+	s := &Service{
+		nodes:    stubNodes{node: &models.FleetNode{ID: id}},
+		settings: stubSettings{release: ""},
+		variant:  "-kafka",
+	}
+	if got := s.desiredVersion(context.Background(), id); got != "" {
+		t.Errorf("unresolved release must stay empty on the heartbeat, got %q", got)
+	}
+}
+
 // List and Get feed the admin panel's "is this machine behind" column. A node
 // reports the WARMBLY_VERSION the join script wrote, which already carries the
 // suffix, so the target it is compared against has to carry it too or every

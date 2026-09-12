@@ -131,10 +131,12 @@ func (h *Handler) FleetJoin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, fleetJoinResponse{
-		NodeID:           nodeID,
-		Role:             string(role),
-		EnvB64:           base64.StdEncoding.EncodeToString([]byte(renderNodeEnv(nodeID, role, req.Region))),
-		DesiredVersion:   reply.DesiredVersion,
+		NodeID: nodeID,
+		Role:   string(role),
+		EnvB64: base64.StdEncoding.EncodeToString([]byte(renderNodeEnv(nodeID, role, req.Region))),
+		// Not reply.DesiredVersion: an empty answer is "no opinion" to a node
+		// that is already running something, but this one has nothing to run.
+		DesiredVersion:   h.FleetNodes.JoinVersion(ctx, nodeID),
 		HeartbeatSeconds: nodeHeartbeatSeconds(reply.LivenessSeconds),
 	})
 }
