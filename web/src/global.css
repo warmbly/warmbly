@@ -449,7 +449,10 @@ svg.loading circle {
    a sensible ceiling, and a visible ring while the image is the selection the
    floating size/alignment bar acts on. */
 .tiptap-body img { max-width: 100%; height: auto; border-radius: 2px; }
-.tiptap-body img.ProseMirror-selectednode {
+.tiptap-body img.ProseMirror-selectednode,
+/* A linked image is an <a> wrapping the <img>, so the selection lands on the
+   anchor and the ring has to be able to live there too. */
+.tiptap-body a.ProseMirror-selectednode {
   outline: 2px solid #38bdf8; /* sky-400 */
   outline-offset: 1px;
 }
@@ -471,6 +474,18 @@ svg.loading circle {
 .tiptap-body .selectedCell::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: rgba(2, 132, 199, 0.08); /* sky-600 */
+}
+
+/* Call-to-action buttons. The sent markup is a one-cell table, which the
+   layout-table rules above would otherwise stretch to the container and draw a
+   dashed editing grid on. Everything else about a button (its colour, padding,
+   corners and margins) is inline, so the editing surface shows the box the
+   recipient gets rather than a dashboard-only approximation of it. */
+.tiptap-body table[data-warmbly-button]:not([width]) { width: auto; }
+.tiptap-body table[data-warmbly-button] td { border: 0; }
+.tiptap-body table[data-warmbly-button].ProseMirror-selectednode {
+  outline: 2px solid #38bdf8; /* sky-400 */
+  outline-offset: 2px;
 }
 
 /* The signature is other people's markup mounted in the dashboard's own DOM,

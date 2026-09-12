@@ -22,7 +22,7 @@ A step has an internal **name** (never seen by recipients), a **subject** with a
 
 ### The body editor
 
-The toolbar carries undo and redo (`Ctrl+Z` and `Ctrl+Shift+Z`, or `Cmd` on a Mac), bold, italic, underline and strikethrough, a heading, bullet and numbered lists, links, images, the font menu, text and highlight colour, alignment, tables, the personalization menu, an AI block, a condition, spintax, and a form link. `Shift+Enter` puts a line break inside a paragraph rather than starting a new one.
+The toolbar carries undo and redo (`Ctrl+Z` and `Ctrl+Shift+Z`, or `Cmd` on a Mac), bold, italic, underline and strikethrough, a heading, bullet and numbered lists, links, images, buttons, the font menu, text and highlight colour, alignment, tables, the personalization menu, an AI block, a condition, spintax, and a form link. `Shift+Enter` puts a line break inside a paragraph rather than starting a new one.
 
 **Alignment** is left, centre, right and justify, applied to whichever blocks the selection covers. Pressing the alignment a block already has clears it again, so a body can go back to inheriting rather than pinning one on every paragraph.
 
@@ -50,10 +50,24 @@ Uploads go to a library shared by the whole workspace, so a logo uploaded once i
 
 Select a placed image and a small bar appears over it: quarter, half or full column width (or the image's own size), left, center or right alignment, and the alt text. Alt text is worth filling in. Most clients block remote images until the reader allows them, so alt text is what the first look actually shows, and it is what the plain-text version of the email carries in the image's place.
 
+The same bar is where an image becomes a link. Put an address in the link field and the image ships wrapped in an anchor, so the picture itself is clickable, and the unlink button next to the field takes it off again. An address typed without `https://` gets it added when you leave the field, because a mail client reads one without a scheme as a path inside itself and it goes nowhere. A linked image is tracked and counted like any other link in the body, the click report names it by its alt text, and the plain-text half carries the alt text with the destination after it.
+
 Deleting an image from the library also deletes the file, so it stops loading in mail already sent. The dashboard asks before it does.
 
 <Callout type="warn" title="Images cost you deliverability">
 Cold email from a real person rarely has images. An image-heavy body reads as a marketing blast to filters that cannot read the picture, and the content check flags it. One signature logo or one product shot is usually the most a first touch should carry.
+</Callout>
+
+#### Buttons
+
+The button beside the image button drops a call to action into the body and opens its bar: the text, the address it opens, a colour, three sizes, square, rounded or pill corners, left, centre or right, and a switch that stretches it to the full width of the column. The text colour follows the colour you pick, so a light button gets dark type rather than white on yellow. The label takes merge fields and spintax like any other copy, so `Book a call, {{.FirstName}}` works there too.
+
+What it writes is a one-cell table, not a styled link. Outlook on Windows lays out with Word, which ignores `display: inline-block`, so a padded anchor arrives there as a coloured word with no box around it. Putting the colour and the padding on a table cell instead is the shape that holds everywhere, which is also why a button shows up as a small table in the HTML view.
+
+A button with no address ships as the box it looks like and nothing else, rather than as a link to nowhere. Its link field stays amber until you fill it in, and fills in `https://` for you the same way the image's does.
+
+<Callout type="warn" title="A button is a marketing signal">
+A first touch that looks like a newsletter gets read like one. In cold outreach a plain sentence with a link in it usually beats a button, and filters read heavy markup as a blast. Save the button for a later step, an event invitation, or a reply to someone already in a conversation.
 </Callout>
 
 #### Writing the HTML yourself
@@ -88,6 +102,8 @@ None of it blocks a send. It is there because writing email HTML means writing f
 Every HTML email ships with a plain-text alternative beside it, and inbox providers read it.
 
 For a step written in HTML in the dashboard, Warmbly stores no plain-text half and renders one when the email sends: headings and paragraphs keep their line breaks, list items are bulleted, table rows become lines, each link keeps its destination in brackets after its text, and the stylesheet and any hidden preheader are left out. The mailbox's plain-text signature and the opt-out line follow it. The Preview tab shows the result, so you can read what a text-only client gets.
+
+A step written in the visual editor gets its plain-text half as you type, and it keeps the same things: an image stands in as its alt text in brackets, and a link, a linked image and a button all keep their destination in brackets after the label. Without that a text-only reader gets a button with nowhere to go.
 
 This only applies when there is no plain-text body to send. Set `body_plain` through the API and that text is sent as written; leave it empty and the send path renders one from the HTML.
 

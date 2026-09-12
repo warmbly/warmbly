@@ -83,3 +83,46 @@ describe("htmlToPlain with images", () => {
         expect(htmlToPlain('<p>Hi</p><img src="https://x.test/a.png">')).toBe("Hi");
     });
 });
+
+describe("htmlToPlain with links", () => {
+    it("keeps a link's destination after its text", () => {
+        expect(htmlToPlain('<p>See our <a href="https://x.test/pricing">pricing</a></p>')).toBe(
+            "See our pricing (https://x.test/pricing)",
+        );
+    });
+
+    it("gives a linked image its alt text and its destination", () => {
+        expect(
+            htmlToPlain('<a href="https://x.test/demo"><img src="https://x.test/a.png" alt="Watch the demo"></a>'),
+        ).toBe("[Watch the demo] (https://x.test/demo)");
+    });
+
+    it("renders a button as its label and where it goes", () => {
+        expect(
+            htmlToPlain(
+                '<table data-warmbly-button=""><tbody><tr><td><a href="https://cal.test/me">Book a call</a></td></tr></tbody></table>',
+            ),
+        ).toBe("Book a call (https://cal.test/me)");
+    });
+
+    it("says an address once when the text already is the address", () => {
+        expect(htmlToPlain('<p><a href="https://x.test">https://x.test</a></p>')).toBe("https://x.test");
+        expect(htmlToPlain('<p><a href="mailto:sam@x.test">sam@x.test</a></p>')).toBe("sam@x.test");
+    });
+
+    it("leaves a merge token alone, because it is not an address yet", () => {
+        expect(htmlToPlain('<p><a href="{{.UnsubscribeLink}}">Unsubscribe</a></p>')).toBe("Unsubscribe");
+    });
+
+    it("leaves them alone for text that goes back into an editor", () => {
+        // An autolinked address would gain a copy of itself on every round
+        // trip, which is how the AI-block prompt is stored.
+        expect(htmlToPlain('<p>See <a href="https://x.test/a">our page</a></p>', { links: false })).toBe(
+            "See our page",
+        );
+    });
+
+    it("falls back to the address when the link has no text", () => {
+        expect(htmlToPlain('<p><a href="https://x.test/a"></a></p>')).toBe("https://x.test/a");
+    });
+});
