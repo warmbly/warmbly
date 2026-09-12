@@ -90,6 +90,10 @@ describe("TextareaAIEdit against the composer's length cap", () => {
         expect(ta.value).toBe("one TWO IS MUCH LONG");
         expect(ta.value.length).toBe(MAX);
 
+        // The rewrite is left selected, which only holds if the range survives
+        // React's own write of the value.
+        expect([ta.selectionStart, ta.selectionEnd]).toEqual([4, MAX]);
+
         // …and Again still re-sends the words that were selected, rather than a
         // range worked back out of the lengths the truncation invalidated.
         await act(async () => {
@@ -98,7 +102,7 @@ describe("TextareaAIEdit against the composer's length cap", () => {
         expect(sent?.text).toBe("two");
     });
 
-    it("undoes back to exactly the body that was there", async () => {
+    it("leaves Undo pointing at the words that were selected, not a derived range", async () => {
         const initial = "one two three";
         const { container } = render(
             <QueryClientProvider client={new QueryClient()}>
@@ -124,5 +128,16 @@ describe("TextareaAIEdit against the composer's length cap", () => {
             fireEvent.click(screen.getByText("Undo"));
         });
         expect(ta.value).toBe(initial);
+        expect([ta.selectionStart, ta.selectionEnd]).toEqual([4, 7]);
+
+        // Undo restores the body whatever the range says, so what it leaves
+        // behind is what has to be checked: the next run must target the words
+        // that were selected, not a range the truncation invalidated.
+        const again = await screen.findByPlaceholderText("Tell AI how to change it…");
+        await act(async () => {
+            fireEvent.change(again, { target: { value: "try once more" } });
+            fireEvent.keyDown(again, { key: "Enter" });
+        });
+        expect(sent?.text).toBe("two");
     });
 });

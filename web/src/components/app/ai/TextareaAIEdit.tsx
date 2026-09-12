@@ -85,6 +85,12 @@ export default function TextareaAIEdit({
     } | null>(null);
     // Value we last wrote ourselves; external edits while open close the UI.
     const expectedValue = React.useRef<string | null>(null);
+    // A selection to put back once the value it belongs to is on screen. React
+    // writes the textarea's value during commit, after our handler returns, and
+    // that write moves the cursor to the end: setting the range inline is
+    // undone a moment later. It is set both ways, because a restore to the
+    // value already showing re-renders nothing for the effect to run on.
+    const pendingSelection = React.useRef<{ start: number; end: number } | null>(null);
 
     const openRef = React.useRef(open);
     openRef.current = open;
@@ -100,6 +106,17 @@ export default function TextareaAIEdit({
         frozen.current = null;
         expectedValue.current = null;
     }, []);
+
+    React.useLayoutEffect(() => {
+        const range = pendingSelection.current;
+        if (!range) return;
+        pendingSelection.current = null;
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.setSelectionRange(range.start, range.end);
+        setRect(textareaRangeRect(ta, range.start, range.end));
+        setHighlights(textareaRangeRects(ta, range.start, range.end));
+    }, [value, textareaRef]);
 
     // Re-measures the anchor rect and the painted selection for a range.
     const syncRects = React.useCallback(
@@ -252,11 +269,10 @@ export default function TextareaAIEdit({
                     lastRun.current = { instruction, prevValue, start: target.start, origEnd: target.end };
                     frozen.current = newRange;
                     const ta = textareaRef.current;
-                    if (ta) {
-                        // Leave the rewrite selected so it reads as "this changed"
-                        // and a follow-up edit can chain on it.
-                        ta.setSelectionRange(newRange.start, newRange.end);
-                    }
+                    // Leave the rewrite selected so it reads as "this changed"
+                    // and a follow-up edit can chain on it.
+                    pendingSelection.current = { start: newRange.start, end: newRange.end };
+                    if (ta) ta.setSelectionRange(newRange.start, newRange.end);
                     syncRects(newRange, true);
                     setPhase("applied");
                 },
@@ -317,6 +333,7 @@ export default function TextareaAIEdit({
             text: last.prevValue.slice(last.start, last.origEnd),
         };
         frozen.current = restored;
+        pendingSelection.current = { start: last.start, end: last.origEnd };
         if (ta) ta.setSelectionRange(last.start, last.origEnd);
         syncRects(restored, true);
         lastRun.current = null;
