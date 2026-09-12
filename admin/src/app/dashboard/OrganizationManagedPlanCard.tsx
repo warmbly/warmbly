@@ -24,6 +24,15 @@ import {
 } from "@/lib/api/client/admin/organizations";
 import type { ManagedPlan } from "@/lib/api/models/admin";
 
+/** A date input gives "YYYY-MM-DD" with no time. Reading that with `new Date`
+ *  yields UTC midnight, so a grant made for today is already expired for
+ *  anyone west of UTC, and the date displayed back can be the previous day.
+ *  The grant runs to the end of the chosen day in the operator's own zone. */
+function endOfLocalDay(day: string): string {
+    const [y, m, d] = day.split("-").map(Number);
+    return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+}
+
 function fmt(ts?: string | null) {
     if (!ts) return null;
     return new Date(ts).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -85,7 +94,7 @@ export function OrganizationManagedPlanCard({ orgId }: { orgId: string }) {
             grantOrganizationManagedPlan(orgId, {
                 plan_id: planId,
                 reason: reason.trim(),
-                until: until ? new Date(until).toISOString() : null,
+                until: until ? endOfLocalDay(until) : null,
             }),
         onSuccess: (m) => {
             applied("Plan granted")(m);

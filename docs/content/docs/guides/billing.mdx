@@ -57,7 +57,9 @@ A managed plan entitles exactly what the plan entitles. Nothing about the produc
 
 Operators grant one from the admin panel on the workspace, under **Plan**. The organization list marks granted workspaces with a `managed` badge and can filter to them, so "who is paid because we said so" is answerable without checking Stripe. A grant that has lapsed keeps its reason on file and is shown as `grant lapsed` rather than disappearing.
 
-Revoking a grant returns the workspace to whatever it actually pays for, which for most is the free plan.
+A grant is held beside the plan a workspace pays for, never on top of it, so a paying workspace that is granted a different plan goes back to the one it pays for when the grant ends. Revoking returns the workspace to whatever it actually pays for, which for most is the free plan.
+
+One thing a grant does not do: monthly AI credits are granted when an invoice is paid, and a granted plan raises no invoice, so a managed workspace does not receive a recurring credit allowance. Top up its balance directly if it needs credits.
 
 ## Self-hosted deployments
 

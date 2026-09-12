@@ -1713,7 +1713,11 @@ func (s *organizationService) GrantManagedPlan(ctx context.Context, orgID, planI
 	}
 	if s.planRepo != nil {
 		plan, perr := s.planRepo.GetByID(ctx, planID)
-		if perr != nil || plan == nil {
+		if perr != nil {
+			errs.CaptureException(perr)
+			return nil, errx.New(errx.Internal, "failed to look up the plan")
+		}
+		if plan == nil {
 			return nil, errx.New(errx.BadRequest, "that plan does not exist")
 		}
 	}
@@ -1742,7 +1746,7 @@ func managedPlanOf(sub *models.Subscription) *models.ManagedPlan {
 		GrantedBy: sub.ManagedBy,
 		Reason:    sub.ManagedReason,
 		Until:     sub.ManagedUntil,
-		PlanID:    sub.PlanID,
+		PlanID:    sub.EffectivePlanID(),
 	}
 	return out
 }

@@ -140,6 +140,10 @@ type Subscription struct {
 	ManagedBy     *uuid.UUID `json:"managed_by,omitempty"`
 	ManagedReason *string    `json:"managed_reason,omitempty"`
 	ManagedUntil  *time.Time `json:"managed_until,omitempty"`
+	// ManagedPlanID is held beside PlanID, never on top of it, so a workspace
+	// paying Stripe for one plan and granted another goes back to the one it
+	// pays for when the grant ends.
+	ManagedPlanID *uuid.UUID `json:"managed_plan_id,omitempty"`
 
 	// Stripe trial info
 	TrialStart *time.Time `json:"trial_start,omitempty"`
@@ -200,6 +204,20 @@ func (s *Subscription) IsManaged() bool {
 		return true
 	}
 	return time.Now().Before(*s.ManagedUntil)
+}
+
+// EffectivePlanID is the plan that decides entitlements: the granted one while
+// a grant is in force, otherwise the plan the workspace actually pays for.
+// Every lookup of a subscription's plan goes through this; using PlanID
+// directly silently ignores the grant.
+func (s *Subscription) EffectivePlanID() uuid.UUID {
+	if s == nil {
+		return uuid.Nil
+	}
+	if s.IsManaged() && s.ManagedPlanID != nil {
+		return *s.ManagedPlanID
+	}
+	return s.PlanID
 }
 
 // ManagedExpired separates "was granted, has lapsed" from "never granted", so

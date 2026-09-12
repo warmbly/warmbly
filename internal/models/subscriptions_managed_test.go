@@ -85,3 +85,50 @@ func TestManagedHelpersTolerateNil(t *testing.T) {
 		t.Error("nil must answer false rather than panic")
 	}
 }
+
+// A workspace paying Stripe for one plan and granted another must go back to
+// the plan it pays for when the grant ends. Writing the grant over plan_id
+// would have stranded it on the granted plan forever.
+func TestEffectivePlanIDKeepsThePaidPlanIntact(t *testing.T) {
+	paid := uuid.New()
+	granted := uuid.New()
+	now := time.Now()
+
+	sub := managed(ptr(now.Add(-time.Hour)), nil)
+	sub.PlanID = paid
+	sub.ManagedPlanID = &granted
+
+	if got := sub.EffectivePlanID(); got != granted {
+		t.Errorf("an in-force grant should decide entitlements, got %v want %v", got, granted)
+	}
+
+	// The grant lapses; the plan they pay for is untouched underneath.
+	sub.ManagedUntil = ptr(now.Add(-time.Minute))
+	if got := sub.EffectivePlanID(); got != paid {
+		t.Errorf("a lapsed grant must fall back to the paid plan, got %v want %v", got, paid)
+	}
+	if sub.PlanID != paid {
+		t.Error("the paid plan must never be overwritten by a grant")
+	}
+}
+
+// A grant recorded without a plan id entitles nothing, so it must not shadow
+// the real plan. The migration's CHECK refuses to store one, but the helper
+// should not depend on that to be safe.
+func TestEffectivePlanIDIgnoresAGrantWithNoPlan(t *testing.T) {
+	paid := uuid.New()
+	sub := managed(ptr(time.Now().Add(-time.Hour)), nil)
+	sub.PlanID = paid
+	sub.ManagedPlanID = nil
+
+	if got := sub.EffectivePlanID(); got != paid {
+		t.Errorf("got %v, want the paid plan %v", got, paid)
+	}
+}
+
+func TestEffectivePlanIDTeleratesNil(t *testing.T) {
+	var sub *Subscription
+	if got := sub.EffectivePlanID(); got != uuid.Nil {
+		t.Errorf("nil should answer uuid.Nil, got %v", got)
+	}
+}
