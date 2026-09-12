@@ -117,11 +117,34 @@ const columns: Column<AdminOrgListItem>[] = [
                             enterprise
                         </Badge>
                     )}
+                    {/* Paid because we said so. Worth seeing in the table: it is
+                        the difference between revenue and a grant. */}
+                    {o.managed_plan && (
+                        <Badge
+                            variant="outline"
+                            className="text-[10px] border-sky-300 bg-sky-50 text-sky-700"
+                            title={o.managed_plan_reason ?? "Granted by an operator"}
+                        >
+                            managed
+                        </Badge>
+                    )}
+                    {o.managed_plan_expired && (
+                        <Badge
+                            variant="outline"
+                            className="text-[10px] border-amber-300 bg-amber-50 text-amber-700"
+                            title={o.managed_plan_reason ?? "The grant has lapsed"}
+                        >
+                            grant lapsed
+                        </Badge>
+                    )}
                 </div>
             ) : (
                 <span className="text-xs text-muted-foreground">—</span>
             ),
-        csv: (o) => o.plan_name || "",
+        csv: (o) =>
+            [o.plan_name || "", o.managed_plan ? "managed" : "", o.managed_plan_expired ? "grant lapsed" : ""]
+                .filter(Boolean)
+                .join(" "),
     },
     {
         id: "channel",
@@ -218,6 +241,7 @@ export default function OrganizationsPage() {
     const [visibility, setVisibility] = useState<VisibilityFilter>("");
     const [subStatus, setSubStatus] = useState("");
     const [enterprise, setEnterprise] = useState(false);
+    const [managedPlan, setManagedPlan] = useState(false);
     const [hasOverrides, setHasOverrides] = useState(false);
     const [risk, setRisk] = useState<RiskFilter>("");
     const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
@@ -250,7 +274,7 @@ export default function OrganizationsPage() {
     const { reset } = pager;
 
     const filterKey = JSON.stringify({
-        query, status, visibility, subStatus, enterprise, hasOverrides, risk, cancelAtPeriodEnd,
+        query, status, visibility, subStatus, enterprise, managedPlan, hasOverrides, risk, cancelAtPeriodEnd,
         hasActiveSubscription, noSubscription, ownerBanned, hasActiveCampaigns, hasEmailAccounts,
         utmSource, utmMedium, hasAcquisition, noAcquisition,
         memMin, memMax, mbMin, mbMax, campMin, campMax, created, trialEnd, periodEnd, updated, sort,
@@ -269,6 +293,7 @@ export default function OrganizationsPage() {
                 plan_visibility: visibility || undefined,
                 subscription_status: subStatus || undefined,
                 enterprise: enterprise || undefined,
+                managed_plan: managedPlan || undefined,
                 has_overrides: hasOverrides || undefined,
                 risk_state: risk && risk !== "flagged" ? risk : undefined,
                 risk_flagged: risk === "flagged" || undefined,
@@ -308,7 +333,7 @@ export default function OrganizationsPage() {
 
     const rows = data?.data ?? [];
 
-    const bools = [enterprise, hasOverrides, cancelAtPeriodEnd, hasActiveSubscription, noSubscription, ownerBanned, hasActiveCampaigns, hasEmailAccounts, hasAcquisition, noAcquisition];
+    const bools = [enterprise, managedPlan, hasOverrides, cancelAtPeriodEnd, hasActiveSubscription, noSubscription, ownerBanned, hasActiveCampaigns, hasEmailAccounts, hasAcquisition, noAcquisition];
     const ranges = [[memMin, memMax], [mbMin, mbMax], [campMin, campMax]];
     const activeCount =
         (query ? 1 : 0) +
@@ -329,6 +354,7 @@ export default function OrganizationsPage() {
         setVisibility("");
         setSubStatus("");
         setEnterprise(false);
+        setManagedPlan(false);
         setHasOverrides(false);
         setCancelAtPeriodEnd(false);
         setHasActiveSubscription(false);
@@ -399,6 +425,7 @@ export default function OrganizationsPage() {
                             />
                             <div className="mt-2 flex flex-col gap-2">
                                 <ToggleFilter checked={enterprise} onChange={setEnterprise} label="Enterprise plan" />
+                                <ToggleFilter checked={managedPlan} onChange={setManagedPlan} label="Managed plan" />
                                 <ToggleFilter checked={hasActiveSubscription} onChange={setHasActiveSubscription} label="Active subscription" />
                                 <ToggleFilter checked={cancelAtPeriodEnd} onChange={setCancelAtPeriodEnd} label="Canceling at period end" />
                                 <ToggleFilter checked={noSubscription} onChange={setNoSubscription} label="No subscription" />

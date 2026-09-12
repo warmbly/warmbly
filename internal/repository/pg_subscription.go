@@ -17,7 +17,7 @@ import (
 // order. With `SELECT *`, the trailing NULL free-trial timestamps land in the
 // non-nullable created_at/updated_at scan slots and pgx fails with
 // "cannot scan NULL into *time.Time", 500-ing every subscription read.
-const subscriptionColumns = `id, user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, trial_start, trial_end, free_trial_started_at, free_trial_ends_at, is_enterprise, created_at, updated_at`
+const subscriptionColumns = `id, user_id, organization_id, plan_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status, current_period_start, current_period_end, cancel_at_period_end, canceled_at, trial_start, trial_end, free_trial_started_at, free_trial_ends_at, is_enterprise, created_at, updated_at, managed_at, managed_by, managed_reason, managed_until, managed_plan_id`
 
 type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *models.Subscription) error
@@ -27,6 +27,11 @@ type SubscriptionRepository interface {
 	GetByOrganizationID(ctx context.Context, orgID uuid.UUID) (*models.Subscription, error)
 	GetByStripeCustomerID(ctx context.Context, customerID string) (*models.Subscription, error)
 	GetByStripeSubscriptionID(ctx context.Context, subscriptionID string) (*models.Subscription, error)
+
+	// SetManagedPlan / ClearManagedPlan are the operator-granted plan, kept
+	// off Update so a Stripe webhook cannot clear a grant as a side effect.
+	SetManagedPlan(ctx context.Context, orgID, planID, adminID uuid.UUID, reason string, until *time.Time) error
+	ClearManagedPlan(ctx context.Context, orgID uuid.UUID) error
 
 	// With limits - for realtime
 	GetWithLimits(ctx context.Context, orgID uuid.UUID) (*models.SubscriptionWithLimits, error)
@@ -133,6 +138,7 @@ func (r *subscriptionRepository) scanSubscription(ctx context.Context, query str
 		&sub.CancelAtPeriodEnd, &sub.CanceledAt, &sub.TrialStart, &sub.TrialEnd,
 		&sub.FreeTrialStartedAt, &sub.FreeTrialEndsAt,
 		&sub.IsEnterprise, &sub.CreatedAt, &sub.UpdatedAt,
+		&sub.ManagedAt, &sub.ManagedBy, &sub.ManagedReason, &sub.ManagedUntil, &sub.ManagedPlanID,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -151,6 +157,7 @@ func (r *subscriptionRepository) GetWithLimits(ctx context.Context, orgID uuid.U
 			s.cancel_at_period_end, s.canceled_at, s.trial_start, s.trial_end,
 			s.free_trial_started_at, s.free_trial_ends_at,
 			s.is_enterprise, s.created_at, s.updated_at,
+			s.managed_at, s.managed_by, s.managed_reason, s.managed_until, s.managed_plan_id,
 			COALESCE(url.limit_ws_message_pm, prl.limit_ws_message_pm, 120) as limit_ws_message_pm,
 			COALESCE(url.limit_ws_join_pm, prl.limit_ws_join_pm, 30) as limit_ws_join_pm,
 			COALESCE(url.limit_ws_event_pm, prl.limit_ws_event_pm, 60) as limit_ws_event_pm,
@@ -172,6 +179,7 @@ func (r *subscriptionRepository) GetWithLimits(ctx context.Context, orgID uuid.U
 		&result.CancelAtPeriodEnd, &result.CanceledAt, &result.TrialStart, &result.TrialEnd,
 		&result.FreeTrialStartedAt, &result.FreeTrialEndsAt,
 		&result.IsEnterprise, &result.CreatedAt, &result.UpdatedAt,
+		&result.ManagedAt, &result.ManagedBy, &result.ManagedReason, &result.ManagedUntil, &result.ManagedPlanID,
 		&limits.LimitWSMessagePM, &limits.LimitWSJoinPM, &limits.LimitWSEventPM, &limits.MaxConnections,
 	)
 	if err == pgx.ErrNoRows {
@@ -200,5 +208,38 @@ func (r *subscriptionRepository) WebhookEventExists(ctx context.Context, eventID
 func (r *subscriptionRepository) RecordWebhookEvent(ctx context.Context, event *models.StripeWebhookEvent) error {
 	query := `INSERT INTO stripe_webhook_events (id, event_type, processed_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`
 	_, err := r.db.Exec(ctx, query, event.ID, event.EventType, event.ProcessedAt)
+	return err
+}
+
+// SetManagedPlan records an operator-granted plan. Kept out of Update so a
+// routine subscription write, in particular a Stripe webhook, can never clear
+// a grant as a side effect.
+func (r *subscriptionRepository) SetManagedPlan(ctx context.Context, orgID, planID, adminID uuid.UUID, reason string, until *time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE subscriptions
+		SET managed_plan_id = $2,
+		    managed_at      = NOW(),
+		    managed_by      = $3,
+		    managed_reason  = $4,
+		    managed_until   = $5,
+		    updated_at      = NOW()
+		WHERE organization_id = $1`,
+		orgID, planID, adminID, reason, until)
+	return err
+}
+
+// ClearManagedPlan revokes a grant. plan_id was never touched by the grant, so
+// the workspace is already on whatever it actually pays for and simply stops
+// counting as paid, which is where an expired grant leaves it too.
+func (r *subscriptionRepository) ClearManagedPlan(ctx context.Context, orgID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE subscriptions
+		SET managed_at      = NULL,
+		    managed_by      = NULL,
+		    managed_reason  = NULL,
+		    managed_until   = NULL,
+		    managed_plan_id = NULL,
+		    updated_at      = NOW()
+		WHERE organization_id = $1`, orgID)
 	return err
 }

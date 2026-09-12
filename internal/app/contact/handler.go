@@ -35,7 +35,7 @@ func (s *contactService) checkContactLimit(ctx context.Context, userID string, a
 	if err != nil || sub == nil {
 		return nil
 	}
-	plan, err := s.planRepo.GetByID(ctx, sub.PlanID)
+	plan, err := s.planRepo.GetByID(ctx, sub.EffectivePlanID())
 	if err != nil || plan == nil || plan.MaxContacts <= 0 {
 		return nil
 	}

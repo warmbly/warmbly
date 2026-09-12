@@ -809,6 +809,9 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 	if search.Enterprise {
 		where += ` AND s.is_enterprise = TRUE`
 	}
+	if search.ManagedPlan {
+		where += ` AND s.managed_at IS NOT NULL`
+	}
 	if search.CreatedWithin > 0 {
 		where += ` AND o.created_at >= NOW() - ($` + itoa(argNum) + `::int * INTERVAL '1 day')`
 		args = append(args, search.CreatedWithin)
@@ -945,7 +948,8 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 
 	query := `
 		SELECT ` + adminOrgListColumns + `,
-			p.name, p.public, COALESCE(s.is_enterprise, FALSE)
+			p.name, p.public, COALESCE(s.is_enterprise, FALSE),
+			s.managed_at, s.managed_reason, s.managed_until
 		FROM organizations o
 		JOIN users u ON u.id = o.owner_user_id
 		LEFT JOIN subscriptions s ON s.organization_id = o.id
@@ -966,6 +970,9 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 		var planName *string
 		var planPublic *bool
 		var isEnterprise bool
+		var managedAt *time.Time
+		var managedReason *string
+		var managedUntil *time.Time
 		if err := rows.Scan(
 			&item.ID, &item.Name, &item.Slug, &item.OwnerUserID,
 			&item.OwnerEmail, &item.OwnerFirstName, &item.OwnerLastName, &item.OwnerBannedAt,
@@ -974,12 +981,23 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 			&item.RiskState,
 			&item.UTMSource, &item.UTMMedium, &item.UTMCampaign, &item.LandingPath,
 			&planName, &planPublic, &isEnterprise,
+			&managedAt, &managedReason, &managedUntil,
 		); err != nil {
 			return nil, err
 		}
 		item.PlanName = planName
 		item.PlanPublic = planPublic
 		item.IsEnterprise = isEnterprise
+		// Resolved here rather than in SQL so the in-force rule lives in one
+		// place, models.Subscription.IsManaged, and cannot drift between the
+		// list and the entitlement check.
+		if managedAt != nil {
+			probe := models.Subscription{ManagedAt: managedAt, ManagedUntil: managedUntil}
+			item.ManagedPlan = probe.IsManaged()
+			item.ManagedPlanExpired = probe.ManagedExpired()
+			item.ManagedPlanReason = managedReason
+			item.ManagedPlanUntil = managedUntil
+		}
 		items = append(items, item)
 	}
 

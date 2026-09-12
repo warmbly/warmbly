@@ -334,7 +334,7 @@ func (s *workerAssignmentService) hasIsolatedEgress(ctx context.Context, orgID u
 	if err != nil || sub == nil {
 		return false
 	}
-	plan, err := s.planRepo.GetByID(ctx, sub.PlanID)
+	plan, err := s.planRepo.GetByID(ctx, sub.EffectivePlanID())
 	if err != nil || plan == nil {
 		return false
 	}

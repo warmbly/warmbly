@@ -49,6 +49,18 @@ Need a single limit raised without moving plan? Request an increase from **Setti
 
 **Payment** links out to the Stripe billing portal. Cards and the billing email are held by Stripe and never touch Warmbly, so they are read and changed there. Invoices and PDF receipts live in the portal too.
 
+## Plans granted by an operator
+
+A workspace can be put on a plan without paying for it. Warmbly calls this a **managed plan**, and it exists for internal workspaces, design partners and support gestures.
+
+A managed plan entitles exactly what the plan entitles. Nothing about the product behaves differently, and nothing is charged: no Stripe subscription is created, no invoice is raised, and the billing page still shows what the workspace would pay. The grant carries the reason it was made and who made it, and it can be open-ended or given an expiry date, in which case it lapses on its own.
+
+Operators grant one from the admin panel on the workspace, under **Plan**. The organization list marks granted workspaces with a `managed` badge and can filter to them, so "who is paid because we said so" is answerable without checking Stripe. A grant that has lapsed keeps its reason on file and is shown as `grant lapsed` rather than disappearing.
+
+A grant is held beside the plan a workspace pays for, never on top of it, so a paying workspace that is granted a different plan goes back to the one it pays for when the grant ends. Revoking returns the workspace to whatever it actually pays for, which for most is the free plan.
+
+One thing a grant does not do: monthly AI credits are granted when an invoice is paid, and a granted plan raises no invoice, so a managed workspace does not receive a recurring credit allowance. Top up its balance directly if it needs credits.
+
 ## Self-hosted deployments
 
 A self-hosted instance running without a billing provider has every feature unlocked and no billing page. See [Warmbly Cloud](/guides/warmbly-cloud/) for how a self-hosted instance links to a hosted workspace.

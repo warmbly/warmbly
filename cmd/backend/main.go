@@ -761,7 +761,7 @@ func main() {
 		if dailyThrottleService == nil {
 			dailyThrottleService = dailythrottle.NewService(cache)
 		}
-		organizationService = organization.NewService(organizationRepository, subscriptionRepository, userRepostory, dailyThrottleService)
+		organizationService = organization.NewService(organizationRepository, subscriptionRepository, userRepostory, planRepository, dailyThrottleService)
 
 		// Plan-based webhook/integration fan-out throttle. The cap scales with
 		// the org's effective mailbox allowance (see WebhookDispatchLimit) so a

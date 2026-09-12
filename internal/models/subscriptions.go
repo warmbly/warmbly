@@ -134,6 +134,17 @@ type Subscription struct {
 	CancelAtPeriodEnd  bool       `json:"cancel_at_period_end"`
 	CanceledAt         *time.Time `json:"canceled_at,omitempty"`
 
+	// A plan an operator granted rather than Stripe: internal workspaces,
+	// design partners, support gestures. ManagedUntil nil is open-ended.
+	ManagedAt     *time.Time `json:"managed_at,omitempty"`
+	ManagedBy     *uuid.UUID `json:"managed_by,omitempty"`
+	ManagedReason *string    `json:"managed_reason,omitempty"`
+	ManagedUntil  *time.Time `json:"managed_until,omitempty"`
+	// ManagedPlanID is held beside PlanID, never on top of it, so a workspace
+	// paying Stripe for one plan and granted another goes back to the one it
+	// pays for when the grant ends.
+	ManagedPlanID *uuid.UUID `json:"managed_plan_id,omitempty"`
+
 	// Stripe trial info
 	TrialStart *time.Time `json:"trial_start,omitempty"`
 	TrialEnd   *time.Time `json:"trial_end,omitempty"`
@@ -173,7 +184,50 @@ func (s *Subscription) IsFreeTrialExpired() bool {
 
 // HasPaidSubscription returns true if user has an active paid Stripe subscription
 func (s *Subscription) HasPaidSubscription() bool {
+	// A granted plan is paid without Stripe ever being involved. Checked
+	// first so a workspace that later subscribes for real is not affected
+	// either way.
+	if s.IsManaged() {
+		return true
+	}
 	return s.StripeSubscriptionID != nil && s.Status.IsActive()
+}
+
+// IsManaged reports whether an operator granted this plan and the grant is
+// still in force. An expired ManagedUntil lapses on its own, so a time-boxed
+// grant needs nobody to remember to revoke it.
+func (s *Subscription) IsManaged() bool {
+	if s == nil || s.ManagedAt == nil {
+		return false
+	}
+	if s.ManagedUntil == nil {
+		return true
+	}
+	return time.Now().Before(*s.ManagedUntil)
+}
+
+// EffectivePlanID is the plan that decides entitlements: the granted one while
+// a grant is in force, otherwise the plan the workspace actually pays for.
+// Every lookup of a subscription's plan goes through this; using PlanID
+// directly silently ignores the grant.
+func (s *Subscription) EffectivePlanID() uuid.UUID {
+	if s == nil {
+		return uuid.Nil
+	}
+	if s.IsManaged() && s.ManagedPlanID != nil {
+		return *s.ManagedPlanID
+	}
+	return s.PlanID
+}
+
+// ManagedExpired separates "was granted, has lapsed" from "never granted", so
+// the admin panel can show a grant that ran out instead of silently dropping
+// the workspace back to free with no explanation.
+func (s *Subscription) ManagedExpired() bool {
+	if s == nil || s.ManagedAt == nil || s.ManagedUntil == nil {
+		return false
+	}
+	return !time.Now().Before(*s.ManagedUntil)
 }
 
 // CanSendEmails returns true if user can send campaign emails
@@ -262,4 +316,18 @@ type StripeWebhookEvent struct {
 // simply re-converges.
 func (p *Plan) IsolatedEgress() bool {
 	return p != nil && p.DedicatedWorkers > 0
+}
+
+// ManagedPlan is the admin-facing view of an operator-granted plan. Managed
+// and Expired are deliberately separate: a lapsed grant is not the same as a
+// workspace that was never granted one, and the reason stays readable after
+// it lapses.
+type ManagedPlan struct {
+	Managed   bool       `json:"managed"`
+	Expired   bool       `json:"expired"`
+	PlanID    uuid.UUID  `json:"plan_id"`
+	GrantedAt *time.Time `json:"granted_at,omitempty"`
+	GrantedBy *uuid.UUID `json:"granted_by,omitempty"`
+	Reason    *string    `json:"reason,omitempty"`
+	Until     *time.Time `json:"until,omitempty"`
 }

@@ -749,6 +749,13 @@ export interface AdminOrgListItem {
     plan_name?: string | null;
     plan_public?: boolean | null;
     is_enterprise: boolean;
+    /** Paid because an operator said so, not because Stripe says so. */
+    managed_plan: boolean;
+    /** A grant that lapsed. Distinct from never having had one: the workspace
+     *  is back on free and the reason is still on file. */
+    managed_plan_expired: boolean;
+    managed_plan_reason?: string | null;
+    managed_plan_until?: string | null;
 }
 
 /** The workspace's fused abuse posture. */
@@ -880,6 +887,8 @@ export interface AdminOrgSearch {
     created_within?: number; // days; omit for any
     has_overrides?: boolean;
     enterprise?: boolean;
+    /** Plans an operator granted rather than Stripe. */
+    managed_plan?: boolean;
     risk_state?: OrgRiskState | "";
     risk_flagged?: boolean;
     // Acquisition channel
@@ -917,4 +926,25 @@ export interface AdminOrgSearch {
     limit?: number;
     sort_by?: "created_at" | "name" | "owner_email" | "member_count" | "email_account_count" | "campaign_count";
     sort_desc?: boolean;
+}
+
+/** A plan an operator granted rather than Stripe, for internal workspaces,
+ *  design partners and support gestures. */
+export interface ManagedPlan {
+    managed: boolean;
+    expired: boolean;
+    plan_id: string;
+    granted_at?: string | null;
+    granted_by?: string | null;
+    reason?: string | null;
+    until?: string | null;
+}
+
+/** A plan row as the admin plans endpoint returns it. Only the fields the
+ *  grant picker needs. */
+export interface AdminPlan {
+    id: string;
+    name?: string | null;
+    public?: boolean | null;
+    price?: number | string | null;
 }

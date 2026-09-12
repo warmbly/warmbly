@@ -1435,6 +1435,12 @@ func Run(
 		adminRoutes.GET("/organizations/:id/members", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrganizationMembers)
 		adminRoutes.GET("/organizations/:id/overrides", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrgOverrides)
 		adminRoutes.PUT("/organizations/:id/overrides", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminUpdateOrgOverrides)
+		// A plan granted by an operator rather than Stripe. Same permission as
+		// the overrides above: it changes what a workspace is entitled to.
+		adminRoutes.GET("/plans", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListPlans)
+		adminRoutes.GET("/organizations/:id/managed-plan", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetOrgManagedPlan)
+		adminRoutes.PUT("/organizations/:id/managed-plan", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminGrantOrgManagedPlan)
+		adminRoutes.DELETE("/organizations/:id/managed-plan", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRevokeOrgManagedPlan)
 
 		// Workspace abuse posture. The customer route withholds the evidence;
 		// this is where an operator reads it, pins a decision over it, and
