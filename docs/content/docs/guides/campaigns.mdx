@@ -37,7 +37,7 @@ Pick mailboxes in **Sending accounts** three ways, and the first two combine:
 - **Individually**: specific mailboxes by hand.
 - **All active mailboxes**: the default when you pick neither.
 
-A campaign set through the API to `sender_strategy: "explicit"` is the exception to the third line: it sends from the mailboxes it names and never falls back. If that list empties out, because the mailboxes were disconnected or the list was replaced with nothing, the campaign pauses itself rather than widening to every mailbox in the workspace. See [replace senders](/api/reference/campaigns/#replace-senders).
+A campaign set through the API to `sender_strategy: "explicit"` is the exception to the third line: it never falls back to every active mailbox. If its list empties out, because the mailboxes were disconnected or the list was replaced with nothing, it uses any tags it also has, and with none it pauses itself rather than widening to every mailbox in the workspace. See [replace senders](/api/reference/campaigns/#replace-senders).
 
 Sending accounts always resolve inside the campaign's own workspace. If you belong to more than one workspace, a tag you reuse across them still only picks up mailboxes belonging to the workspace that owns the campaign, so one workspace's sending reputation, daily caps, and warmup are never spent on another's traffic.
 

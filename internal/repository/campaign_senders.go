@@ -79,11 +79,15 @@ const CampaignSenderStrategyExplicit = "explicit"
 //
 // It is what stops the "all active mailboxes" fallback from widening a
 // campaign that asked for three mailboxes into one sending from every mailbox
-// in the workspace. An explicit pool can empty out on its own — the mailboxes
-// are disconnected, or the pool is replaced with nothing — and before this the
-// campaign silently carried on from every address the tenant owns. An empty
-// pool now resolves to no mailboxes, which parks the campaign as
-// paused_no_accounts with a reason in its activity log.
+// in the workspace. An explicit pool can empty out on its own (the mailboxes
+// are disconnected, or the pool is replaced with nothing) and before this the
+// campaign silently carried on from every address the tenant owns.
+//
+// The tag union above still applies, which is what migration 000013 designed:
+// an explicit campaign that also carries tags falls back to those. What it can
+// no longer do is fall back to the whole workspace. With neither it resolves to
+// no mailboxes, which parks it as paused_no_accounts with a reason in its
+// activity log.
 //
 // Only 'explicit' is special-cased: 'tags' is the default and the value the
 // dashboard writes, so nothing about the existing tag or "all" behaviour moves.

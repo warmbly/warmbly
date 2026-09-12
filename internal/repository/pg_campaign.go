@@ -2010,7 +2010,6 @@ func (r *campaignRepository) GetCampaignSenders(ctx context.Context, campaignID 
 // 'explicit' one resolves to no mailboxes at all rather than widening to the
 // whole workspace (see ExplicitSenderPool).
 func (r *campaignRepository) ReplaceCampaignSenders(ctx context.Context, campaignID uuid.UUID, in []models.CampaignSenderInput) ([]models.CampaignSender, *errx.Error) {
-
 	// Resolve the campaign owner + organization so we can validate mailbox
 	// ownership against the org (the senders route is org-scoped).
 	var userID string

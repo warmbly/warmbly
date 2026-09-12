@@ -177,7 +177,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `schedule_windows` | array | no | Per-day sending windows, 7 arrays indexed by weekday (Sunday = 0) of `{start, end}` minute-of-day intervals. When non-empty it supersedes `days`, `start_time` and `end_time`. |
 | `email_tag_ids` | string[] | no | Mailbox tag ids that resolve the sender pool (tags strategy). |
 | `folder_ids` | string[] | no | Folder ids to file the campaign under. |
-| `sender_strategy` | string | no | `tags` (default) or `explicit`. `tags` resolves the pool from `email_tag_ids`, and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. `explicit` sends only from the mailboxes in `senders`: it never falls back, so a pool that empties out parks the campaign at `paused_no_accounts` instead of widening to the whole workspace. |
+| `sender_strategy` | string | no | `tags` (default) or `explicit`. `tags` resolves the pool from `email_tag_ids`, and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. `explicit` sends from the mailboxes in `senders`, plus any `email_tag_ids` set alongside them. It never falls back to every active mailbox, so a pool that empties out parks the campaign at `paused_no_accounts` instead of widening to the whole workspace. |
 | `rotation_mode` | string | no | How volume spreads across the chosen mailboxes. |
 | `senders` | object[] | no | Explicit-strategy mailbox pool (see sender input below). |
 | `ramp_enabled` | boolean | no | Enable per-campaign daily ramp-up. |
@@ -834,7 +834,7 @@ Atomically replace the campaign's explicit sender pool with the supplied list. *
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `senders` | object[] | yes | The full new sender pool. Each item: `email_account_id` (uuid, required), `weight` (integer, optional), `enabled` (boolean, optional). An empty array clears the pool. What that means depends on the campaign's `sender_strategy`: a `tags` campaign falls back to its tags or to every active mailbox, while an `explicit` one is left with no mailbox to send from and parks itself at `paused_no_accounts`. |
+| `senders` | object[] | yes | The full new sender pool. Each item: `email_account_id` (uuid, required), `weight` (integer, optional), `enabled` (boolean, optional). An empty array clears the pool. What that means depends on the campaign's `sender_strategy`: a `tags` campaign falls back to its tags or to every active mailbox, while an `explicit` one falls back to its tags only, and with none it is left with no mailbox to send from and parks itself at `paused_no_accounts`. |
 
 ```json
 {

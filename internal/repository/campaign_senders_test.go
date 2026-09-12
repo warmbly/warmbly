@@ -87,3 +87,26 @@ func TestResolveCampaignSenderPoolExplicitUsesItsOwnMailboxes(t *testing.T) {
 		t.Error("a populated explicit pool still consulted every active mailbox")
 	}
 }
+
+// An explicit campaign that also carries tags falls back to those, which is
+// what migration 000013 designed. Only the whole-workspace fallback is gone.
+func TestResolveCampaignSenderPoolExplicitStillUnionsItsTags(t *testing.T) {
+	tagged := models.Email{ID: uuid.New()}
+	src := &stubSenderSource{
+		tagged: []models.Email{tagged},
+		all:    []models.Email{{ID: uuid.New()}, {ID: uuid.New()}},
+	}
+	campaign := testCampaign("explicit")
+	campaign.EmailTags = []string{"founders"}
+
+	pool, err := ResolveCampaignSenderPool(context.Background(), src, campaign)
+	if err != nil {
+		t.Fatalf("ResolveCampaignSenderPool: %v", err)
+	}
+	if len(pool.Accounts) != 1 || pool.Accounts[0].ID != tagged.ID {
+		t.Errorf("pool = %+v, want the tagged mailbox", pool.Accounts)
+	}
+	if src.allCalls != 0 {
+		t.Error("the explicit strategy still reached for every active mailbox")
+	}
+}

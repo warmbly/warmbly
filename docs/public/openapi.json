@@ -20215,7 +20215,7 @@
           },
           "sender_strategy": {
             "type": "string",
-            "description": "How the campaign resolves its sending mailboxes. \"tags\" reads email_tag_ids and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. \"explicit\" sends only from the campaign_senders pool and never falls back: an empty pool parks the campaign at paused_no_accounts instead of widening to the whole workspace.",
+            "description": "How the campaign resolves its sending mailboxes. \"tags\" reads email_tag_ids and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. \"explicit\" sends from the campaign_senders pool and any email_tag_ids set alongside it, and never falls back to every active mailbox: an empty pool with no tags parks the campaign at paused_no_accounts instead of widening to the whole workspace.",
             "enum": [
               "tags",
               "explicit"
@@ -20391,7 +20391,7 @@
           },
           "sender_strategy": {
             "type": "string",
-            "description": "How the campaign resolves its sending mailboxes. \"tags\" reads email_tag_ids and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. \"explicit\" sends only from the campaign_senders pool and never falls back: an empty pool parks the campaign at paused_no_accounts instead of widening to the whole workspace.",
+            "description": "How the campaign resolves its sending mailboxes. \"tags\" reads email_tag_ids and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. \"explicit\" sends from the campaign_senders pool and any email_tag_ids set alongside it, and never falls back to every active mailbox: an empty pool with no tags parks the campaign at paused_no_accounts instead of widening to the whole workspace.",
             "enum": [
               "tags",
               "explicit"
@@ -20558,7 +20558,7 @@
           },
           "sender_strategy": {
             "type": "string",
-            "description": "How the campaign resolves its sending mailboxes. \"tags\" reads email_tag_ids and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. \"explicit\" sends only from the campaign_senders pool and never falls back: an empty pool parks the campaign at paused_no_accounts instead of widening to the whole workspace.",
+            "description": "How the campaign resolves its sending mailboxes. \"tags\" reads email_tag_ids and falls back to every active mailbox in the workspace when no tag and no explicit sender is set. \"explicit\" sends from the campaign_senders pool and any email_tag_ids set alongside it, and never falls back to every active mailbox: an empty pool with no tags parks the campaign at paused_no_accounts instead of widening to the whole workspace.",
             "enum": [
               "tags",
               "explicit"

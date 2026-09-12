@@ -335,10 +335,17 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 // with its cursors held, so ONE legacy or malformed sender parked every later
 // message on the account for good.
 //
-// Folder name, UIDVALIDITY and UID, which is what identifies a message on an
-// IMAP server when the sender gave it no identity of its own. It re-derives to
-// the same string on the next pass, so the message is recognised as known
-// rather than stored again, and it cannot collide with a real Message-ID.
+// Folder name, UIDVALIDITY and UID: RFC 9051 makes that triple the identity of
+// a message on a server, which is what is left when the sender gave it none of
+// its own. It re-derives to the same string on the next pass, so the message is
+// recognised as known rather than stored again, and it cannot collide with a
+// real Message-ID.
+//
+// The folder name is in it deliberately, even though a RENAME keeps UIDVALIDITY
+// and would therefore change the key. Dropping it would key on a pair two
+// folders can in principle share, and the failure there is a message silently
+// treated as already stored. A rename re-importing the handful of messages that
+// carried no Message-ID is the cheaper of the two.
 //
 // Threading is unaffected: a message with no Message-ID roots its own thread
 // on this key, and nothing can ever reply to an id that was never on the wire.
@@ -362,6 +369,7 @@ func (w *WMail) ensureMessageKey(msg *models.EmailMessageData) {
 //
 // A message that answers nothing has no parent, and the caller roots its
 // thread on its own Message-ID.
+//
 // A blank entry is skipped rather than returned: an empty parent id is not a
 // key either, and the map lookup it would cause ends the pass exactly as a
 // missing Message-ID used to (see ensureMessageKey).

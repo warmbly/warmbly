@@ -567,14 +567,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		bodyHTML = ""
 	}
 
-	// An HTML part with nothing in it is worse than no HTML part: every modern
-	// client prefers text/html, so the recipient reads a blank message while
-	// the real copy sits unread in the text alternative. Dropping it here makes
-	// that impossible whatever produced the row (the composer's placeholder on
-	// an API-created step, a variant with HTML-only spintax that resolved away).
-	if bodyHTML != "" && !mailhtml.HasContent(bodyHTML) && strings.TrimSpace(bodyPlain) != "" {
-		bodyHTML = ""
-	}
+	// A blank HTML alternative never ships as the part the client prefers.
+	// Shared with the preview and the test send (see dropBlankHTMLPart).
+	bodyHTML = dropBlankHTMLPart(bodyHTML, bodyPlain)
 
 	// STEP 10.7: A hand-placed {{.UnsubscribeLink}} resolved to the bare signed
 	// URL; give it an anchor so the recipient reads "Unsubscribe" and not the
