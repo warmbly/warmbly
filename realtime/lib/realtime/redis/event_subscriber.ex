@@ -24,7 +24,10 @@ defmodule Realtime.Redis.EventSubscriber do
   def init(_opts) do
     redis_url = Application.get_env(:realtime, :redis_url, "redis://localhost:6379/0")
 
-    case Redix.PubSub.start_link(redis_url) do
+    # Same TLS options as the command pool: a managed Redis presents a wildcard
+    # certificate that Erlang's default hostname check rejects, and this
+    # connection is the one that delivers every realtime event.
+    case Redix.PubSub.start_link(redis_url, Realtime.Redis.tls_opts(redis_url)) do
       {:ok, conn} ->
         {:ok, _ref} = Redix.PubSub.subscribe(conn, @channel, self())
         Logger.info("Realtime Redis event bridge subscribing to '#{@channel}'")
