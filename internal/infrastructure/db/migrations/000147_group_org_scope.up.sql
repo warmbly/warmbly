@@ -70,7 +70,10 @@ SELECT 'categories', u.id, u.org, gen_random_uuid()
 FROM usage u JOIN keep k ON k.id = u.id AND u.org <> k.org;
 
 WITH usage AS (
-    SELECT cf.folder_id AS id, c.organization_id AS org
+    -- DISTINCT, because unlike the two above this has no UNION to dedupe it:
+    -- a folder on two campaigns in one workspace would otherwise count as two
+    -- workspaces, and mint two copies of itself in the same one.
+    SELECT DISTINCT cf.folder_id AS id, c.organization_id AS org
     FROM public.campaign_folders cf
     JOIN public.campaigns c ON c.id = cf.campaign_id
     WHERE c.organization_id IS NOT NULL
