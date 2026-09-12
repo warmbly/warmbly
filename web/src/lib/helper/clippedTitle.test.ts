@@ -2,7 +2,7 @@
 // reachable on hover — but only where it was actually cut off.
 
 import { describe, it, expect } from "vitest";
-import clippedTitle from "./titleWhenClipped";
+import clippedTitle from "./clippedTitle";
 
 function span(text: string, scrollWidth: number, clientWidth: number) {
     const el = document.createElement("span");

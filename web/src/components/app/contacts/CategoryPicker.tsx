@@ -22,7 +22,7 @@ import toast from "react-hot-toast";
 import { useUserProfile } from "@/hooks/context/user";
 import useClickOutside from "@/hooks/useClickOutside";
 import useFlipPlacement from "@/hooks/useFlipPlacement";
-import clippedTitle from "@/lib/helper/titleWhenClipped";
+import clippedTitle from "@/lib/helper/clippedTitle";
 import useCreateCategory from "@/lib/api/hooks/app/categories/useCreateCategory";
 import type Category from "@/lib/api/models/app/Category";
 

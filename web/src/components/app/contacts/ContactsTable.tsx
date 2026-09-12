@@ -61,7 +61,7 @@ import {
 import toast from "react-hot-toast";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
-import clippedTitle from "@/lib/helper/titleWhenClipped";
+import clippedTitle from "@/lib/helper/clippedTitle";
 import FilterBar from "./filters/FilterBar";
 import { hasNarrowingFilters, isCompleteCustomFilter, scopeSearch } from "./filters/helpers";
 import ContactEdit from "./ContactEdit";
