@@ -163,20 +163,20 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 	tokenUUID, err := uuid.Parse(tokenStr)
 	if err != nil {
 		// Invalid format → record attempt
-		s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, 0)
+		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, uuid.Nil, 0)
 		return false, nil // Process as normal email
 	}
 
 	token, err := s.WarmupRepo.GetWarmupToken(ctx, tokenUUID)
 	if err != nil || token == nil {
-		// Token not found/expired → suspicious
-		s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, 5)
+		// Consumed, expired, or gone: not a verdict on its own.
+		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, tokenUUID, 5)
 		return false, nil
 	}
 
 	// Verify recipient matches
 	if token.RecipientAccountID != e.Message.EmailID {
-		s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, 0)
+		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, tokenUUID, 0)
 		return false, nil
 	}
 
@@ -408,6 +408,58 @@ func (s *JobsService) recipientProviderDomain(ctx context.Context, accountID uui
 		domain = strings.ToLower(acc.Email[at+1:])
 	}
 	return acc.Provider, domain
+}
+
+// recordSuspiciousWarmupToken records an unverifiable token only when it could
+// not be the mailbox's own mail. A mailbox re-reading its own history is the
+// common case and is not tampering: its Sent copy carries the recipient's
+// token, a re-synced message carries one that has since expired, and a
+// reconnect gives the mailbox a new row while warmup_tokens cascades off the
+// old one, leaving tokens that resolve to nothing. Only the remainder is signal.
+func (s *JobsService) recordSuspiciousWarmupToken(ctx context.Context, e *models.JobEventNewEmail, tokenStr string, tokenID uuid.UUID, scoreDelta int) {
+	if s.warmupTokenOwnMail(ctx, e, tokenID) {
+		return
+	}
+	s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, scoreDelta)
+}
+
+// warmupTokenIsOwnMail reports whether the message holding this token is the
+// mailbox's own, in any of the three shapes a sync produces. Pure so the
+// decision can be exercised without a mailbox or a token store.
+//
+// folder is the canonical folder the message sits in, tok the token row with
+// GetWarmupToken's consumed/expired filters removed (nil when it no longer
+// exists), and mailboxAge how long the mailbox row has existed.
+func warmupTokenIsOwnMail(folder string, accountID uuid.UUID, tok *models.WarmupToken, mailboxAge time.Duration) bool {
+	// The sender's Sent copy carries the recipient's token by construction.
+	if folder == models.FolderSent {
+		return true
+	}
+	// Still on file, just consumed or expired: a re-read, not a forgery.
+	if tok != nil && (tok.RecipientAccountID == accountID || tok.SenderAccountID == accountID) {
+		return true
+	}
+	// A reconnected mailbox replays a history whose tokens cascaded away with
+	// the row it used to be.
+	return mailboxAge >= 0 && mailboxAge < time.Duration(config.WarmupReconnectGraceMinutes)*time.Minute
+}
+
+// warmupTokenOwnMail gathers the facts warmupTokenIsOwnMail decides on.
+func (s *JobsService) warmupTokenOwnMail(ctx context.Context, e *models.JobEventNewEmail, tokenID uuid.UUID) bool {
+	var tok *models.WarmupToken
+	if tokenID != uuid.Nil && s.WarmupRepo != nil {
+		if t, err := s.WarmupRepo.FindWarmupToken(ctx, tokenID); err == nil {
+			tok = t
+		}
+	}
+	age := time.Duration(-1)
+	if s.EmailRepository != nil {
+		if acc, err := s.EmailRepository.GetByID(ctx, e.Message.EmailID); err == nil && acc != nil && !acc.CreatedAt.IsZero() {
+			age = time.Since(acc.CreatedAt)
+		}
+	}
+	folder := models.NormalizeFolder(e.Message.Folder, e.Message.Flags)
+	return warmupTokenIsOwnMail(folder, e.Message.EmailID, tok, age)
 }
 
 func (s *JobsService) applyInvalidWarmupAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string, scoreDelta int) {
