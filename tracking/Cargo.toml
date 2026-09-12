@@ -27,7 +27,11 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # Kafka with Avro (optional; enabled with `--features kafka`). rdkafka is the
 # only native/librdkafka dependency, so the default build compiles far faster
 # and needs no libcurl/libsasl system headers.
-rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
+# "ssl" is not optional in practice: every managed broker speaks SASL_SSL, and
+# without it librdkafka is built with -DWITH_SSL=0 and refuses
+# security.protocol=SASL_SSL at runtime with "OpenSSL not available at build
+# time". gssapi is deliberately left out; PLAIN and SCRAM need no cyrus-sasl.
+rdkafka = { version = "0.36", features = ["cmake-build", "ssl"], optional = true }
 apache-avro = { version = "0.21", features = ["derive"], optional = true }
 schema_registry_converter = { version = "4.0", features = ["avro", "blocking"], optional = true }
 
