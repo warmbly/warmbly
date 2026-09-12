@@ -105,6 +105,8 @@ A thread draft is grounded in the whole conversation, the contact's record and c
 
 Select any text for a floating **Edit with AI** pill: quick actions (improve, shorten, expand, fix grammar, friendlier, more formal) or a free instruction, rewriting just the selection with **Undo** and **Again** one click away. One credit per rewrite. The same control works in the campaign step editor.
 
+An edit applies your instruction and leaves everything else alone: it does not rewrite the passage into a fresh email, and "fix the grammar" changes the grammar and nothing more. Personalization tokens, conditions, spintax, AI blocks, form links and links (their destinations included) are carried through unchanged, so rewriting copy never drops a `{{.FirstName}}` or an opt-out link. Bold, italic and headings inside the rewritten selection are not preserved, so select around them when the styling matters. When the model decides the passage already satisfies the instruction, the review row says **No change** rather than claiming a rewrite you cannot see.
+
 Set your voice profile under **Settings, Workspace**: what you sell, who to, and how you want to sound. It grounds every AI writing surface.
 
 For drafts written automatically on every inbound reply and held for approval, turn on the [inbox agent](/guides/inbox-agent/). It never sends on its own.

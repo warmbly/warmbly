@@ -18,6 +18,8 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { Kbd } from "@/components/ui/shortcut-tooltip";
 import AIEditPopover, { type AIEditPhase } from "./AIEditPopover";
+import { AI_CARD_WIDTH, clampCardLeft } from "./floatingBounds";
+import { clampContext, restoreEdges } from "./richTextPassage";
 import textareaRangeRect, {
     textareaRangeRects,
     type LineRect,
@@ -65,20 +67,30 @@ export default function TextareaAIEdit({
     const [highlights, setHighlights] = React.useState<LineRect[]>([]);
     const [open, setOpen] = React.useState(false);
     const [phase, setPhase] = React.useState<AIEditPhase>("idle");
+    const [changed, setChanged] = React.useState(true);
     const [usage, setUsage] = React.useState<{ charged: number; tokens: number } | null>(null);
 
     const rootRef = React.useRef<HTMLDivElement>(null);
     // The selection being edited, frozen when the popover opens.
     const frozen = React.useRef<Selection | null>(null);
-    // Last applied run, for Undo / Again.
+    // Last applied run, for Undo / Again. The range it replaced is recorded
+    // rather than derived from the lengths afterwards: maxLen can cut the tail
+    // off the rewrite, and the arithmetic then reconstructs a range that was
+    // never selected.
     const lastRun = React.useRef<{
         instruction: string;
         prevValue: string;
         start: number;
-        newLen: number;
+        origEnd: number;
     } | null>(null);
     // Value we last wrote ourselves; external edits while open close the UI.
     const expectedValue = React.useRef<string | null>(null);
+    // A selection to put back once the value it belongs to is on screen. React
+    // writes the textarea's value during commit, after our handler returns, and
+    // that write moves the cursor to the end: setting the range inline is
+    // undone a moment later. It is set both ways, because a restore to the
+    // value already showing re-renders nothing for the effect to run on.
+    const pendingSelection = React.useRef<{ start: number; end: number } | null>(null);
 
     const openRef = React.useRef(open);
     openRef.current = open;
@@ -93,7 +105,23 @@ export default function TextareaAIEdit({
         setHighlights([]);
         frozen.current = null;
         expectedValue.current = null;
+        // A parked range the layout effect never consumed (an unchanged result
+        // commits no new value, so nothing re-renders for it to run on) would
+        // otherwise be applied to whatever value commits next, moving the
+        // caret long after this popover is gone.
+        pendingSelection.current = null;
     }, []);
+
+    React.useLayoutEffect(() => {
+        const range = pendingSelection.current;
+        if (!range) return;
+        pendingSelection.current = null;
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.setSelectionRange(range.start, range.end);
+        setRect(textareaRangeRect(ta, range.start, range.end));
+        setHighlights(textareaRangeRects(ta, range.start, range.end));
+    }, [value, textareaRef]);
 
     // Re-measures the anchor rect and the painted selection for a range.
     const syncRects = React.useCallback(
@@ -214,11 +242,21 @@ export default function TextareaAIEdit({
             tokens: number,
         ) => {
             setUsage({ charged, tokens });
+            // The server returns its answer trimmed, so the author's own edges
+            // go back on before anything is written or compared: what lands in
+            // the box IS what "did it change?" is answered from (issue #432).
+            const applied = restoreEdges(target.text, text);
             const prefix = prevValue.slice(0, target.start);
             const suffix = prevValue.slice(target.end);
             const cap = (s: string) => (maxLen ? s.slice(0, maxLen) : s);
+            // Against the value that will actually be in the box, not against
+            // the model's answer: a rewrite that falls past the composer's cap
+            // leaves the body exactly as it was, and "Rewritten" over an
+            // unchanged body is the thing this signal exists to prevent.
+            const settled = cap(prefix + applied + suffix);
+            setChanged(settled !== prevValue);
             typewriter.run(
-                text,
+                applied,
                 (partial) => {
                     const next = cap(prefix + partial + suffix);
                     expectedValue.current = next;
@@ -232,15 +270,18 @@ export default function TextareaAIEdit({
                     }
                 },
                 () => {
-                    const newRange = { start: target.start, end: target.start + text.length, text };
-                    lastRun.current = { instruction, prevValue, start: target.start, newLen: text.length };
+                    // What the box holds, not what the model sent: maxLen can
+                    // cut the tail off, and a range recorded past the end would
+                    // have Undo and Again working on text that is not there.
+                    const end = Math.min(target.start + applied.length, settled.length);
+                    const newRange = { start: target.start, end, text: settled.slice(target.start, end) };
+                    lastRun.current = { instruction, prevValue, start: target.start, origEnd: target.end };
                     frozen.current = newRange;
                     const ta = textareaRef.current;
-                    if (ta) {
-                        // Leave the rewrite selected so it reads as "this changed"
-                        // and a follow-up edit can chain on it.
-                        ta.setSelectionRange(newRange.start, newRange.end);
-                    }
+                    // Leave the rewrite selected so it reads as "this changed"
+                    // and a follow-up edit can chain on it.
+                    pendingSelection.current = { start: newRange.start, end: newRange.end };
+                    if (ta) ta.setSelectionRange(newRange.start, newRange.end);
                     syncRects(newRange, true);
                     setPhase("applied");
                 },
@@ -259,7 +300,7 @@ export default function TextareaAIEdit({
                 {
                     text: t.text,
                     instruction,
-                    context: getContext?.() ?? prevValue,
+                    context: clampContext(getContext?.() ?? prevValue),
                 },
                 {
                     onSuccess: (res) => {
@@ -295,31 +336,30 @@ export default function TextareaAIEdit({
         expectedValue.current = last.prevValue;
         onChange(last.prevValue);
         const ta = textareaRef.current;
-        const origEnd = last.prevValue.length - (value.length - (last.start + last.newLen));
         const restored = {
             start: last.start,
-            end: origEnd,
-            text: last.prevValue.slice(last.start, origEnd),
+            end: last.origEnd,
+            text: last.prevValue.slice(last.start, last.origEnd),
         };
         frozen.current = restored;
-        if (ta) ta.setSelectionRange(last.start, origEnd);
+        pendingSelection.current = { start: last.start, end: last.origEnd };
+        if (ta) ta.setSelectionRange(last.start, last.origEnd);
         syncRects(restored, true);
         lastRun.current = null;
         setPhase("idle");
-    }, [onChange, syncRects, textareaRef, typewriter, value]);
+    }, [onChange, syncRects, textareaRef, typewriter]);
 
     const retry = React.useCallback(() => {
         const last = lastRun.current;
         if (!last) return;
-        const origEnd = last.prevValue.length - (value.length - (last.start + last.newLen));
         const target = {
             start: last.start,
-            end: origEnd,
-            text: last.prevValue.slice(last.start, origEnd),
+            end: last.origEnd,
+            text: last.prevValue.slice(last.start, last.origEnd),
         };
         frozen.current = target;
         run(last.instruction, target, last.prevValue);
-    }, [run, value]);
+    }, [run]);
 
     const openEditor = () => {
         if (!sel) return;
@@ -335,10 +375,10 @@ export default function TextareaAIEdit({
 
     const showPill = !open && !!sel && !!rect && sel.text.trim().length > 1;
 
-    // Popover placement: above the selection when there is room, else below.
-    const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
+    // Popover placement: above the selection when there is room, else below,
+    // and never outside the composer it belongs to.
     const popAbove = (rect?.top ?? 0) > 200;
-    const popLeft = Math.min(Math.max((rect?.centerX ?? 0) - 150, 8), vw - 308);
+    const popLeft = clampCardLeft(rect?.centerX ?? 0, AI_CARD_WIDTH, textareaRef.current);
 
     return createPortal(
         <div ref={rootRef} data-floating="">
@@ -403,6 +443,7 @@ export default function TextareaAIEdit({
                     >
                         <AIEditPopover
                             phase={phase}
+                            changed={changed}
                             usage={usage}
                             onRun={(instruction) => run(instruction)}
                             onUndo={undo}
