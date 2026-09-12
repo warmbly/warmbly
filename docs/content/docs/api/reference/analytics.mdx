@@ -256,9 +256,15 @@ Returns a single campaign's performance summary plus per-sequence-step stats. Th
       "position": 1,
       "emails_sent": 500,
       "opens": 260,
+      "machine_opens": 31,
       "clicks": 61,
+      "machine_clicks": 2,
       "replies": 28,
-      "bounces": 3
+      "bounces": 3,
+      "open_rate": 52.0,
+      "click_rate": 12.2,
+      "reply_rate": 5.6,
+      "bounce_rate": 0.6
     }
   ],
   "engagement": {
@@ -271,7 +277,9 @@ Returns a single campaign's performance summary plus per-sequence-step stats. Th
 
 `engagement` groups the campaign's human opens and clicks by country (ISO code), mail client or browser, and device type (`desktop`, `mobile`, `tablet`), counting distinct contacts per bucket; a click counts as an open. Each list holds the busiest eight; an empty `key` is unknown. Country needs the GeoLite2 database on the consumer, otherwise every country row is unknown.
 
-`machine_opens` is the subset of `unique_opens` from automated fetchers (Apple MPP prefetch, UA-less clients, opens inside the instance's automated-open window, which starts when the step is dispatched to a worker); human opens are `unique_opens` minus `machine_opens`. `machine_clicks` counts steps whose only clicks were automated (a security gateway walking the links); those are not part of `unique_clicks` or `total_clicks`, which only ever count a person's click.
+`machine_opens` is the subset of `unique_opens` from automated fetchers (Apple MPP prefetch, UA-less clients, opens inside the instance's automated-open window, which starts when the step is dispatched to a worker); human opens are `unique_opens` minus `machine_opens`. `machine_clicks` counts the contacts whose only clicks on a step were automated (a security gateway walking the links); those are not part of `unique_clicks` or `total_clicks`, which only ever count a person's click.
+
+Each entry in `steps` carries that step's own rates: `open_rate`, `click_rate`, `reply_rate` and `bounce_rate` are percentages of that step's `emails_sent`, not of the campaign's, so a follow-up that reached a tenth of the contacts still compares against the first touch. They are `0` while the step has sent nothing. `machine_opens` and `machine_clicks` follow the same rules as their summary counterparts, scoped to the step.
 
 ## Get campaign daily stats
 

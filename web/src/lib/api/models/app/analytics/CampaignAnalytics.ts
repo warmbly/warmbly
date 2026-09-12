@@ -36,9 +36,18 @@ export interface SequenceStats {
     position: number
     emails_sent: number
     opens: number
+    // Subset of opens from automated fetchers; human opens = opens - machine_opens.
+    machine_opens: number
     clicks: number
+    // Contacts on this step whose only clicks were automated; not part of clicks.
+    machine_clicks: number
     replies: number
     bounces: number
+    // Percentages of this step's own emails_sent.
+    open_rate: number
+    click_rate: number
+    reply_rate: number
+    bounce_rate: number
 }
 
 // One slice of the engagement breakdown: distinct contacts who opened and
