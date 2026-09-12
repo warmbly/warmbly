@@ -68,10 +68,51 @@ if config_env() == :prod do
     secret_key_base: secret_key_base,
     check_origin: System.get_env("CHECK_ORIGIN", "false") == "true"
 
+  # Postgrex verifies the server against the system CA store, which has no
+  # Amazon RDS root in it, so an RDS database needs DATABASE_SSL_CA_FILE
+  # pointing at a bundle. The image ships AWS's at
+  # /etc/ssl/rds/global-bundle.pem. It is opt-in rather than the default for
+  # the same reason the backend makes sslrootcert opt-in: pointing every
+  # install at an RDS-only store would break a Postgres fronted by a public CA.
+  #
+  # A name that is present but blank counts as unset, the same rule the error
+  # DSN below follows: compose passes every optional variable through as "", and
+  # `cacertfile: ~c""` with verify_peer is no CA source at all, so it fails the
+  # handshake instead of falling back to the system store.
+  database_ssl_ca_file =
+    case System.get_env("DATABASE_SSL_CA_FILE") do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
+
+  database_ssl =
+    cond do
+      System.get_env("DATABASE_SSL", "true") != "true" ->
+        false
+
+      database_ssl_ca_file ->
+        [
+          verify: :verify_peer,
+          cacertfile: to_charlist(database_ssl_ca_file),
+          customize_hostname_check: [
+            match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+          ]
+        ]
+
+      true ->
+        true
+    end
+
   # Ecto Repo configuration (for API key validation)
   config :realtime, Realtime.Repo,
     url: database_url,
-    ssl: System.get_env("DATABASE_SSL", "true") == "true",
+    ssl: database_ssl,
     pool_size: String.to_integer(System.get_env("DATABASE_POOL_SIZE") || "10"),
     show_sensitive_data_on_connection_error: true
 

@@ -43,7 +43,7 @@ The backend reaches Postgres and Redis on every request, so the round trips betw
 ## Two things that are not optional
 
 <Callout title="RDS needs AWS's certificate bundle">
-Amazon RDS presents a chain rooted in an RDS CA that is in no public trust store, so `sslmode=verify-full` fails with `x509: certificate signed by unknown authority` against the system bundle alone. The backend and consumer images ship AWS's truststore at `/etc/ssl/rds/global-bundle.pem`; point `sslrootcert` at it, as above.
+Amazon RDS presents a chain rooted in an RDS CA that is in no public trust store, so `sslmode=verify-full` fails with `x509: certificate signed by unknown authority` against the system bundle alone. The backend, consumer and realtime images ship AWS's truststore at `/etc/ssl/rds/global-bundle.pem`; point `sslrootcert` at it, as above. Realtime is Elixir and reads no DSN parameters, so it takes the same bundle through `DATABASE_SSL_CA_FILE` instead.
 
 `sslmode=require` is the fallback if you cannot. It still encrypts, and `rds.force_ssl=1` still forces TLS server side, but nothing verifies the server's identity, so a caller that reaches the wrong host will not notice.
 </Callout>

@@ -324,6 +324,7 @@ A worker's command topic is named after the node id issued when it joined, so th
 | `DATABASE_URL` | The realtime service's own name for the same database | the compose postgres | yes |
 | `DATABASE_POOL_SIZE` | Maximum pooled connections **for the realtime service only**. The Go services use the driver default and do not read it | `10` | yes |
 | `DATABASE_SSL` | Whether the realtime service connects to Postgres over TLS | `true`, and `false` under compose | yes |
+| `DATABASE_SSL_CA_FILE` | CA bundle the realtime service verifies Postgres against. Unset verifies against the system store, which has no Amazon RDS root in it, so an RDS database needs this set to `/etc/ssl/rds/global-bundle.pem` (shipped in the image) | unset | yes |
 
 Migrations are embedded in the backend binary and applied on boot. There is no separate migration step, and a standalone `/app/migrate` binary ships in the image for the cases where you want one.
 

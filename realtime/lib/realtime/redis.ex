@@ -20,16 +20,40 @@ defmodule Realtime.Redis do
   @impl true
   def init(_opts) do
     redis_url = Application.get_env(:realtime, :redis_url, "redis://localhost:6379/0")
+    opts = tls_opts(redis_url)
 
     children =
       for i <- 0..(@pool_size - 1) do
         Supervisor.child_spec(
-          {Redix, {redis_url, [name: :"redix_#{i}"]}},
+          {Redix, {redis_url, [name: :"redix_#{i}"] ++ opts}},
           id: {Redix, i}
         )
       end
 
     Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  @doc false
+  # Erlang's default hostname check does not match a wildcard certificate, and
+  # every managed Redis presents one (`*.upstash.io`, ElastiCache, Redis Cloud).
+  # Without the https match fun the handshake fails with
+  # {:bad_cert, :hostname_check_failed} on every connection in the pool, which
+  # reads as "Redis unavailable" and fails open rather than as an error.
+  #
+  # Redix drops only the keys given here from its own defaults, so verify_peer
+  # and the system CA store still apply.
+  def tls_opts(url) do
+    if String.starts_with?(url, "rediss://") do
+      [
+        socket_opts: [
+          customize_hostname_check: [
+            match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+          ]
+        ]
+      ]
+    else
+      []
+    end
   end
 
   @doc """
