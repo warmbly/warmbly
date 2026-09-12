@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Logo } from "@/components/Logo";
 import { TurnstileModal } from "@/components/captcha/TurnstileModal";
-import { login, loginConfirm, verifyTwoFA } from "@/lib/api/client/auth";
+import { getAuthConfig, login, loginConfirm, verifyTwoFA } from "@/lib/api/client/auth";
 import type { LoginResponse } from "@/lib/api/models/auth";
 import { setToken } from "@/lib/auth/storage";
 import { APIError } from "@/lib/api/client";
@@ -51,6 +51,12 @@ export default function LoginPage() {
     const [session, setSession] = useState("");
     const [code, setCode] = useState("");
     const [captcha, setCaptcha] = useState(false);
+    // Whether this deployment verifies a captcha token at all. null until the
+    // answer arrives: nothing is mounted before then, so an instance with no
+    // route to Cloudflare does not raise a widget error on a screen nobody has
+    // submitted. A failed fetch resolves to true rather than leaving it
+    // pending, so the check is never skipped on an instance that enforces it.
+    const [captchaRequired, setCaptchaRequired] = useState<boolean | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [resendIn, setResendIn] = useState(0);
@@ -58,6 +64,24 @@ export default function LoginPage() {
     const confirmInFlight = useRef(false);
 
     const busy = submitting || captcha;
+
+    // What this deployment can do, read before anything mounts a widget. A
+    // self-host with CAPTCHA_PROVIDER=none cannot reach Cloudflare, so an
+    // invisible Turnstile there can only time out and lock the operator out.
+    useEffect(() => {
+        let cancelled = false;
+        getAuthConfig()
+            .then((cfg) => {
+                if (!cancelled) setCaptchaRequired(cfg.captcha);
+            })
+            .catch(() => {
+                // Fail safe: assume the check is enforced.
+                if (!cancelled) setCaptchaRequired(true);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     // Resend cooldown tick.
     useEffect(() => {
@@ -311,7 +335,12 @@ export default function LoginPage() {
                                                 )}
                                             </Button>
 
-                                            <TurnstileModal visible={captcha} onToken={onToken} onError={onCaptchaError} />
+                                            <TurnstileModal
+                                                visible={captcha}
+                                                required={captchaRequired}
+                                                onToken={onToken}
+                                                onError={onCaptchaError}
+                                            />
                                         </form>
                                     </motion.div>
                                 ) : (

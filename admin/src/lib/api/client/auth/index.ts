@@ -4,6 +4,7 @@
 
 import { Request } from "@/lib/api/client";
 import type {
+    DeploymentAuthConfig,
     LoginRequest,
     LoginStartResponse,
     LoginConfirmRequest,
@@ -12,6 +13,17 @@ import type {
     TwoFAVerifyRequest,
     AdminProfile,
 } from "@/lib/api/models/auth";
+
+// What this deployment's auth can do. Public and unauthenticated: it is the
+// first request the sign-in screen makes, and the answer decides whether a
+// Turnstile widget is mounted at all.
+export function getAuthConfig(): Promise<DeploymentAuthConfig> {
+    return Request<DeploymentAuthConfig>({
+        method: "GET",
+        url: "/v1/auth/config",
+        timeout: 10_000,
+    });
+}
 
 // Step 1: verify password + captcha. Emails a one-time code, returns a session.
 export function login(input: LoginRequest): Promise<LoginStartResponse> {

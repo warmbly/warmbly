@@ -5,6 +5,20 @@
 // the backend's TURNSTILE_BYPASS_TOKEN accepts; in prod it renders the
 // invisible Turnstile widget and delivers a real token. Either way the parent
 // gets a token via onToken and sends it as `turnstile` on login.
+//
+// `required` is the deployment's own answer, read from /v1/auth/config. With
+// CAPTCHA_PROVIDER=none the backend verifies no token, and mounting the widget
+// anyway meant an air-gapped or self-hosted instance could only sit on
+// challenges.cloudflare.com until it timed out: the operator was locked out of
+// their own admin panel.
+//
+// null means the answer has not arrived. Nothing is mounted and no token is
+// delivered while it is pending, because mounting optimistically loads the
+// Cloudflare script on an instance that may have no route to it, and its load
+// failure raises an error on a screen the operator has not even submitted yet.
+// A submit made in that window is held by the effect and resolves as soon as
+// the config lands. A fetch that fails resolves to true, so the check is never
+// skipped on an instance that does enforce it.
 
 import { useCallback, useEffect, useRef, type ComponentProps } from "react";
 import Turnstile, { type BoundTurnstileObject } from "react-turnstile";
@@ -12,15 +26,22 @@ import { TURNSTILE_KEY } from "@/lib/env";
 
 interface Props {
     visible: boolean;
+    required: boolean | null;
     onToken: (token: string) => void;
     onError?: (message?: string) => void;
 }
 
-export function TurnstileModal({ visible, onToken, onError }: Props) {
+export function TurnstileModal({ visible, required, onToken, onError }: Props) {
     const defaultDevBypassToken = "warmbly-local-turnstile-bypass";
-    const bypassToken = import.meta.env.DEV
+    const devBypassToken = import.meta.env.DEV
         ? import.meta.env.VITE_TURNSTILE_BYPASS_TOKEN?.trim() || defaultDevBypassToken
         : "";
+    // The dev bypass is its own answer and needs no deployment config.
+    const pending = required === null && devBypassToken === "";
+    // No widget, and the token the parent gets is whatever the backend will
+    // accept: the dev bypass string, or "" when nothing is verified at all.
+    const skipWidget = required === false || devBypassToken !== "";
+    const bypassToken = devBypassToken;
 
     const tokenRef = useRef("");
     const waitingRef = useRef(false);
@@ -77,7 +98,10 @@ export function TurnstileModal({ visible, onToken, onError }: Props) {
     }, [fail]);
 
     useEffect(() => {
-        if (visible && bypassToken) {
+        // Hold a submit made before the deployment answered; this effect runs
+        // again the moment it does, with visible still true.
+        if (pending) return;
+        if (visible && skipWidget) {
             onTokenRef.current(bypassToken);
             return;
         }
@@ -96,9 +120,9 @@ export function TurnstileModal({ visible, onToken, onError }: Props) {
             }
             waitingRef.current = false;
         }
-    }, [visible, bypassToken, deliver, execute]);
+    }, [visible, pending, skipWidget, bypassToken, deliver, execute]);
 
-    if (bypassToken) return null;
+    if (pending || skipWidget) return null;
 
     const turnstileProps = {
         ref: turnstileRef,

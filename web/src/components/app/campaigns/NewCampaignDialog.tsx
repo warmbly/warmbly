@@ -354,6 +354,12 @@ export function NewCampaignDialog({ open, onClose }: Props) {
         return () => document.removeEventListener("keydown", onKey);
     }, [open, requestClose]);
 
+    // The wizard writes plain text, so it sends plain text. The backend renders
+    // the HTML part from it: it used to be built here with an escapeHtml that
+    // turned the quotes in a conditional ({{if eq .Company "Acme"}}) into
+    // entities, which makes the template fail to parse at send time and ships
+    // the literal {{if}} to the recipient. The server's version also links bare
+    // URLs, so a wizard-written step gets click tracking like any other.
     function buildSteps() {
         return draft.sequences
             .filter((s) => s.subject.trim().length > 0 || s.body_plain.trim().length > 0)
@@ -361,7 +367,6 @@ export function NewCampaignDialog({ open, onClose }: Props) {
                 name: draft.kind === "one_time" ? "Email" : `Step ${i + 1}`,
                 subject: s.subject.trim(),
                 body_plain: s.body_plain,
-                body_html: `<div>${escapeHtml(s.body_plain).replace(/\n/g, "<br/>")}</div>`,
                 wait_after: i === 0 ? 0 : Math.max(0, s.wait_after),
             }));
     }
@@ -1476,11 +1481,3 @@ function EstimatePanel({
     );
 }
 
-function escapeHtml(s: string): string {
-    return s
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-}
