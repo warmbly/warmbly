@@ -39,7 +39,11 @@ pub const TRACKING_EVENT_SCHEMA: &str = r#"
 pub struct KafkaProducer {
     producer: Arc<FutureProducer>,
     topic: String,
-    encoder: Arc<RwLock<AvroEncoder<'static>>>,
+    /// Some only under CODEC_PROVIDER=avro. JSON is the default because the Go
+    /// consumer decodes both of its topics with one codec and worker envelopes
+    /// cannot be Avro, so a JSON consumer handed Avro drops every open and
+    /// click with nothing but a deserialize warning.
+    encoder: Option<Arc<RwLock<AvroEncoder<'static>>>>,
 }
 
 /// Avro encoding for the shared TrackingEvent (Kafka path only). The struct
@@ -132,37 +136,45 @@ impl KafkaProducer {
         let producer: FutureProducer = client_config.create()?;
         info!("Kafka producer connected to {}", config.kafka_brokers);
 
-        // Configure Schema Registry
-        let sr_settings = if let Some((key, secret)) = config.schema_registry_auth() {
-            SrSettings::new_builder(config.schema_registry_url.clone())
-                .set_basic_authorization(&key, Some(&secret))
-                .build()?
+        // Schema Registry is only built for the Avro codec. Building it for JSON
+        // would demand a registry URL that a JSON deployment has no reason to
+        // have, and an empty one fails at the first publish rather than at boot.
+        let encoder = if config.codec_provider == "avro" {
+            if config.schema_registry_url.is_empty() {
+                return Err(
+                    "CODEC_PROVIDER=avro needs SCHEMA_REGISTRY_URL; set it, or use CODEC_PROVIDER=json"
+                        .into(),
+                );
+            }
+            let sr_settings = if let Some((key, secret)) = config.schema_registry_auth() {
+                SrSettings::new_builder(config.schema_registry_url.clone())
+                    .set_basic_authorization(&key, Some(&secret))
+                    .build()?
+            } else {
+                SrSettings::new(config.schema_registry_url.clone())
+            };
+            info!(
+                "Schema Registry connected to {}",
+                config.schema_registry_url
+            );
+            Some(Arc::new(RwLock::new(AvroEncoder::new(sr_settings))))
         } else {
-            SrSettings::new(config.schema_registry_url.clone())
+            info!("Publishing tracking events as JSON");
+            None
         };
-
-        let encoder = AvroEncoder::new(sr_settings);
-        info!(
-            "Schema Registry connected to {}",
-            config.schema_registry_url
-        );
 
         Ok(Self {
             producer: Arc::new(producer),
             topic: config.kafka_topic.clone(),
-            encoder: Arc::new(RwLock::new(encoder)),
+            encoder,
         })
     }
 
     pub async fn publish(&self, event: TrackingEvent) {
-        // Serialize event using Avro with Schema Registry
-        let payload = match self.serialize_avro(&event).await {
+        let payload = match self.serialize(&event).await {
             Ok(p) => p,
             Err(e) => {
-                observability::report_issue(
-                    "Failed to serialize tracking event with Avro",
-                    &e.to_string(),
-                );
+                observability::report_issue("Failed to serialize tracking event", &e.to_string());
                 return;
             }
         };
@@ -195,11 +207,16 @@ impl KafkaProducer {
         }
     }
 
-    async fn serialize_avro(
+    /// JSON unless an Avro encoder was built, which is the same bytes the NATS
+    /// path writes, so the Go consumer decodes Kafka and NATS identically.
+    async fn serialize(
         &self,
         event: &TrackingEvent,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        let encoder = self.encoder.read().await;
+        let Some(encoder) = &self.encoder else {
+            return Ok(serde_json::to_vec(event)?);
+        };
+        let encoder = encoder.read().await;
 
         // Use schema registry encoder to serialize with proper schema ID prefix
         let payload = encoder

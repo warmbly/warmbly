@@ -569,6 +569,7 @@ The Rust open and click service. It reads its own environment, so these have to 
 | `TRACKING_SCANNER_ASN_HEADER` | Header a trusted proxy sets with the source ASN, which is what makes `asn:` entries match. Read only from a proxy in `TRACKING_TRUSTED_PROXIES`. On Cloudflare, a transform rule writing `ip.src.asnum`. Empty disables ASN matching | empty |
 | `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs the `tracking:*-kafka` image, or a build with `CARGO_FEATURES=kafka` | `nats` |
 | `NATS_URL`, `NATS_SUBJECT_PREFIX` | JetStream address and subject prefix. The publish subject is `<prefix>.<topic>` | `nats://localhost:4222`, `warmbly` |
+| `CODEC_PROVIDER` | `json` or `avro`, and it has to match the consumer's. `avro` is refused at boot without `SCHEMA_REGISTRY_URL` | `json` |
 | `KAFKA_TRACKING_TOPIC` | Event topic, read by the Rust publisher **and** the Go subscriber | `tracking-events` |
 | `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_SASL_USERNAME`, `KAFKA_SASL_PASSWORD` | Broker transport when `EVENTBUS_PROVIDER=kafka` | unset |
 | `SCHEMA_REGISTRY_URL`, `SCHEMA_REGISTRY_KEY`, `SCHEMA_REGISTRY_SECRET` | Registry for the Avro codec | unset |
