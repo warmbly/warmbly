@@ -1194,14 +1194,14 @@ func (s *tasksService) executeActionNode(ctx context.Context, campaign *models.C
 	case "label_email":
 		// Apply unibox labels to the contact's most recent conversation. A no-op
 		// when the contact has no thread yet (returns "" thread, nil error).
-		if len(cfg.LabelIDs) == 0 {
+		if len(cfg.LabelIDs) == 0 || campaign.OrganizationID == nil {
 			return nil
 		}
 		owner, perr := uuid.Parse(campaign.UserID)
 		if perr != nil {
 			return nil
 		}
-		if _, xerr := s.advanced.LabelLatestThreadForContact(ctx, owner, contact.Email, cfg.LabelIDs); xerr != nil {
+		if _, xerr := s.advanced.LabelLatestThreadForContact(ctx, *campaign.OrganizationID, owner, contact.Email, cfg.LabelIDs); xerr != nil {
 			return xerr
 		}
 		return nil

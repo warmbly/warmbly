@@ -137,7 +137,7 @@ func TestLiveUniboxMoveFolderLeavesTheProviderPlacementAlone(t *testing.T) {
 	}
 
 	// And the message really has left every default view.
-	res, err := repo.Search(ctx, f.org, f.user, &models.MailSearchParams{})
+	res, err := repo.Search(ctx, f.org, &models.MailSearchParams{})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}

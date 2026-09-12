@@ -148,7 +148,7 @@ func (d Deps) setThreadLabels(ctx context.Context, inv Invocation, args json.Raw
 		}
 		catIDs = append(catIDs, id)
 	}
-	labels, xerr := d.Unibox.SetThreadLabels(ctx, inv.UserID, in.ThreadID, catIDs)
+	labels, xerr := d.Unibox.SetThreadLabels(ctx, inv.OrgID, inv.UserID, in.ThreadID, catIDs)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}

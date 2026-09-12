@@ -40,7 +40,7 @@ type UniboxRepository interface {
 	GetByIDForOrg(ctx context.Context, orgID, id uuid.UUID) (*models.EmailMessageStoreData, uuid.UUID, error)
 	GetByThread(ctx context.Context, orgID, emailID uuid.UUID, threadID string, limit int, cursor string) (*models.MailSearchResult, error)
 	GetBySender(ctx context.Context, userID uuid.UUID, sender string, limit int, cursor string) (*models.MailSearchResult, error)
-	Search(ctx context.Context, orgID, userID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error)
+	Search(ctx context.Context, orgID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error)
 	GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error)
 	MarkSeen(ctx context.Context, userID, id uuid.UUID, seen bool) error
 	MarkSeenBulk(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, seen bool) error
@@ -64,17 +64,17 @@ type UniboxRepository interface {
 	// so the client doesn't fan out N+M queries for each mailbox/tag.
 	Overview(ctx context.Context, orgID uuid.UUID) (*models.UniboxOverview, error)
 
-	// Conversation labels. SetThreadLabels replaces the full label set
-	// on a thread (idempotent PUT semantics, only the user's own
-	// categories are attached). ListThreadLabels returns the current
-	// set for one thread.
-	SetThreadLabels(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, error)
-	ListThreadLabels(ctx context.Context, userID uuid.UUID, threadID string) ([]models.MiniCategory, error)
+	// Conversation labels, workspace-scoped like the inbox they hang off.
+	// SetThreadLabels replaces the full label set on a thread (idempotent PUT
+	// semantics, only the workspace's own categories are attached);
+	// ListThreadLabels returns the current set for one thread.
+	SetThreadLabels(ctx context.Context, orgID, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, error)
+	ListThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string) ([]models.MiniCategory, error)
 	// AddThreadLabels attaches labels to a thread WITHOUT removing existing ones
 	// (additive; for automation/step "label email" actions). LatestThreadIDForContact
 	// finds the user's most recent conversation with an address, so a campaign
 	// step that knows the contact but not the thread can still label it.
-	AddThreadLabels(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
+	AddThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
 	LatestThreadIDForContact(ctx context.Context, userID uuid.UUID, email string) (string, error)
 	// LatestMessageIDInThread returns the newest RFC Message-ID in a thread, so
 	// a reply that arrives with only a provider thread id can still carry the
@@ -406,16 +406,16 @@ func (r *uniboxRepository) GetBySender(ctx context.Context, userID uuid.UUID, se
 //     content filter (the default inbox) that's the whole thread.
 //   - thread/representative-level filters (awaiting reply, category)
 //     and keyset pagination run on the collapsed row.
-func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error) {
+func (r *uniboxRepository) Search(ctx context.Context, orgID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error) {
 	previewCols := make([]string, len(mailFieldsPreview))
 	for i, c := range mailFieldsPreview {
 		previewCols[i] = "ue." + c
 	}
 
-	// $1 = orgID (scope mail to the workspace's mailboxes); $2 = userID
-	// (per-user thread labels stay personal). Dynamic filters start at $3.
-	args := []any{orgID, userID}
-	argPos := 3
+	// $1 = orgID, which scopes both the mail (through the workspace's
+	// mailboxes) and the conversation labels. Dynamic filters start at $2.
+	args := []any{orgID}
+	argPos := 2
 
 	// ── Inner windowed subquery: row-level filters + per-thread aggs ──
 	// Partition by the thread, but treat an empty thread_id (the column
@@ -549,7 +549,7 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 					SELECT json_agg(json_build_object('id', c.id, 'title', c.title, 'color', c.color) ORDER BY c.position ASC, c.title ASC)
 					FROM unibox_thread_labels utl
 					JOIN categories c ON c.id = utl.category_id
-					WHERE utl.user_id = $2 AND utl.thread_id = b.thread_id
+					WHERE utl.organization_id = $1 AND utl.thread_id = b.thread_id
 				), '[]'::json
 			) AS labels
 		FROM (%s) b
@@ -581,7 +581,7 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 		query += fmt.Sprintf(`
 			AND EXISTS (
 				SELECT 1 FROM unibox_thread_labels utl
-				WHERE utl.user_id = $2
+				WHERE utl.organization_id = $1
 				  AND utl.thread_id = b.thread_id
 				  AND utl.category_id = ANY($%d)
 			)`, argPos)
@@ -593,7 +593,7 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID, userID uuid.UUID, 
 		query += `
 			AND NOT EXISTS (
 				SELECT 1 FROM unibox_thread_labels utl
-				WHERE utl.user_id = $2
+				WHERE utl.organization_id = $1
 				  AND utl.thread_id = b.thread_id
 			)`
 	}
@@ -793,10 +793,13 @@ func (r *uniboxRepository) queryThreadList(ctx context.Context, query string, ar
 // ── Conversation labels ─────────────────────────────────────────────────
 
 // SetThreadLabels replaces the full label set on a thread. Only the
-// user's own categories are attached (a SELECT-guarded insert), so a
-// bogus or someone else's category_id is silently dropped rather than
+// workspace's own categories are attached (a SELECT-guarded insert), so a
+// bogus or another workspace's category_id is silently dropped rather than
 // trusted. Idempotent: re-sending the same set is a no-op.
-func (r *uniboxRepository) SetThreadLabels(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, error) {
+//
+// The label belongs to the workspace, like the inbox it hangs off: a teammate
+// must see how a conversation was filed. userID records who filed it.
+func (r *uniboxRepository) SetThreadLabels(ctx context.Context, orgID, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) ([]models.MiniCategory, error) {
 	if threadID == "" {
 		return nil, errors.New("threadID required")
 	}
@@ -814,21 +817,25 @@ func (r *uniboxRepository) SetThreadLabels(ctx context.Context, userID uuid.UUID
 	// clears every label (category_id = ANY('{}') is false → NOT false).
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM unibox_thread_labels
-		WHERE user_id = $1 AND thread_id = $2 AND NOT (category_id = ANY($3))
-	`, userID, threadID, categoryIDs); err != nil {
+		WHERE organization_id = $1 AND thread_id = $2 AND NOT (category_id = ANY($3))
+	`, orgID, threadID, categoryIDs); err != nil {
 		return nil, err
 	}
 
 	// Add the rest, but only categories that actually belong to the
-	// user. ON CONFLICT keeps the upsert idempotent.
+	// workspace. ON CONFLICT keeps the upsert idempotent.
 	if len(categoryIDs) > 0 {
+		var applier any
+		if userID != uuid.Nil {
+			applier = userID
+		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO unibox_thread_labels (user_id, thread_id, category_id)
-			SELECT $1, $2, c.id
+			INSERT INTO unibox_thread_labels (organization_id, user_id, thread_id, category_id)
+			SELECT $1, $2, $3, c.id
 			FROM categories c
-			WHERE c.user_id = $1 AND c.id = ANY($3)
-			ON CONFLICT (user_id, thread_id, category_id) DO NOTHING
-		`, userID, threadID, categoryIDs); err != nil {
+			WHERE c.organization_id = $1 AND c.id = ANY($4)
+			ON CONFLICT (organization_id, thread_id, category_id) DO NOTHING
+		`, orgID, applier, threadID, categoryIDs); err != nil {
 			return nil, err
 		}
 	}
@@ -837,19 +844,19 @@ func (r *uniboxRepository) SetThreadLabels(ctx context.Context, userID uuid.UUID
 		return nil, err
 	}
 
-	return r.ListThreadLabels(ctx, userID, threadID)
+	return r.ListThreadLabels(ctx, orgID, threadID)
 }
 
 // ListThreadLabels returns the conversation's current labels, ordered to
 // match the category palette ordering used everywhere else.
-func (r *uniboxRepository) ListThreadLabels(ctx context.Context, userID uuid.UUID, threadID string) ([]models.MiniCategory, error) {
+func (r *uniboxRepository) ListThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string) ([]models.MiniCategory, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT c.id, c.title, c.color
 		FROM unibox_thread_labels utl
 		JOIN categories c ON c.id = utl.category_id
-		WHERE utl.user_id = $1 AND utl.thread_id = $2
+		WHERE utl.organization_id = $1 AND utl.thread_id = $2
 		ORDER BY c.position ASC, c.title ASC
-	`, userID, threadID)
+	`, orgID, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -868,19 +875,20 @@ func (r *uniboxRepository) ListThreadLabels(ctx context.Context, userID uuid.UUI
 
 // AddThreadLabels additively attaches labels to a thread (never removes any),
 // so an automation/step action can tag a conversation without clobbering labels
-// a teammate set by hand. Only the user's own categories are attached
+// a teammate set by hand. Only the workspace's own categories are attached
 // (SELECT-guarded), mirroring SetThreadLabels; a bogus id is silently dropped.
-func (r *uniboxRepository) AddThreadLabels(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error {
+// An automation has no human behind it, so the applier is left NULL.
+func (r *uniboxRepository) AddThreadLabels(ctx context.Context, orgID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error {
 	if threadID == "" || len(categoryIDs) == 0 {
 		return nil
 	}
 	_, err := r.db.Exec(ctx, `
-		INSERT INTO unibox_thread_labels (user_id, thread_id, category_id)
+		INSERT INTO unibox_thread_labels (organization_id, thread_id, category_id)
 		SELECT $1, $2, c.id
 		FROM categories c
-		WHERE c.user_id = $1 AND c.id = ANY($3)
-		ON CONFLICT (user_id, thread_id, category_id) DO NOTHING
-	`, userID, threadID, categoryIDs)
+		WHERE c.organization_id = $1 AND c.id = ANY($3)
+		ON CONFLICT (organization_id, thread_id, category_id) DO NOTHING
+	`, orgID, threadID, categoryIDs)
 	return err
 }
 
@@ -1168,7 +1176,9 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 
 	// Per-tag counters. Mailbox tags live in `tags` + `email_tags`.
 	// Per THREAD (distinct thread key) so threads aren't over-counted by
-	// message multiplicity or the email_tags fan-out.
+	// message multiplicity or the email_tags fan-out. Every join is on the
+	// workspace: this used to compare the registry's user_id against the org
+	// id it is handed, so the rail was always empty.
 	tagRows, err := r.db.Query(ctx, `
 		SELECT
 			t.id,
@@ -1177,19 +1187,19 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 			COUNT(DISTINCT COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) FILTER (WHERE ue.id IS NOT NULL AND NOT ue.seen
 				AND NOT EXISTS (
 					SELECT 1 FROM unibox_snoozes s
-					WHERE s.user_id = t.user_id AND s.thread_id = ue.thread_id AND s.snoozed_until > NOW()
+					WHERE s.user_id = ue.user_id AND s.thread_id = ue.thread_id AND s.snoozed_until > NOW()
 				)) AS unread,
 			COUNT(DISTINCT COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) FILTER (WHERE ue.id IS NOT NULL
 				AND NOT EXISTS (
 					SELECT 1 FROM unibox_snoozes s
-					WHERE s.user_id = t.user_id AND s.thread_id = ue.thread_id AND s.snoozed_until > NOW()
+					WHERE s.user_id = ue.user_id AND s.thread_id = ue.thread_id AND s.snoozed_until > NOW()
 				)) AS total
 		FROM tags t
 		LEFT JOIN email_tags et ON et.tag_id = t.id
-		LEFT JOIN email_accounts ea ON ea.id = et.email_id AND ea.user_id = t.user_id
-		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id AND ue.user_id = ea.user_id
+		LEFT JOIN email_accounts ea ON ea.id = et.email_id AND ea.organization_id = t.organization_id
+		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id
 			AND ue.folder NOT IN ('spam', 'trash')
-		WHERE t.user_id = $1
+		WHERE t.organization_id = $1
 		GROUP BY t.id, t.title, t.color, t.position
 		ORDER BY t.position ASC, t.title ASC
 	`, orgID)
@@ -1218,24 +1228,24 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 	overview.Categories = make([]models.UniboxCategoryOverview, 0)
 	catRows, err := r.db.Query(ctx, `
 		WITH thread_state AS (
-			SELECT e.user_id, e.thread_id, bool_or(NOT e.seen) AS has_unread
+			SELECT e.thread_id, bool_or(NOT e.seen) AS has_unread
 			FROM unibox_emails e
-			WHERE e.user_id = $1
+			WHERE e.email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
 			  AND e.folder NOT IN ('spam', 'trash')
 			  AND NOT EXISTS (
 				SELECT 1 FROM unibox_snoozes s
 				WHERE s.user_id = e.user_id AND s.thread_id = e.thread_id AND s.snoozed_until > NOW()
 			  )
-			GROUP BY e.user_id, e.thread_id
+			GROUP BY e.thread_id
 		)
 		SELECT
 			c.id, c.title, c.color,
 			COUNT(*) FILTER (WHERE ts.thread_id IS NOT NULL AND ts.has_unread) AS unread,
 			COUNT(*) FILTER (WHERE ts.thread_id IS NOT NULL)                   AS total
 		FROM categories c
-		LEFT JOIN unibox_thread_labels utl ON utl.category_id = c.id AND utl.user_id = c.user_id
-		LEFT JOIN thread_state ts ON ts.user_id = utl.user_id AND ts.thread_id = utl.thread_id
-		WHERE c.user_id = $1
+		LEFT JOIN unibox_thread_labels utl ON utl.category_id = c.id AND utl.organization_id = c.organization_id
+		LEFT JOIN thread_state ts ON ts.thread_id = utl.thread_id
+		WHERE c.organization_id = $1
 		GROUP BY c.id, c.title, c.color, c.position
 		ORDER BY c.position ASC, c.title ASC
 	`, orgID)

@@ -283,14 +283,14 @@ func (s *service) executeInstantActionNode(ctx context.Context, campaign *models
 	case "label_email":
 		// Label the conversation the contact just replied on. The most recent
 		// thread for the contact in the campaign owner's unibox is that reply.
-		if len(cfg.LabelIDs) == 0 {
+		if len(cfg.LabelIDs) == 0 || campaign.OrganizationID == nil {
 			return
 		}
 		owner, perr := uuid.Parse(campaign.UserID)
 		if perr != nil {
 			return
 		}
-		if _, xerr := s.LabelLatestThreadForContact(ctx, owner, contact.Email, cfg.LabelIDs); xerr != nil {
+		if _, xerr := s.LabelLatestThreadForContact(ctx, *campaign.OrganizationID, owner, contact.Email, cfg.LabelIDs); xerr != nil {
 			s.logActionErr(campaign, contact, cfg.Type, eventKind, xerr)
 		}
 	case "unsubscribe":

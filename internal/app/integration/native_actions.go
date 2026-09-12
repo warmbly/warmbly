@@ -173,7 +173,7 @@ type NativeActions interface {
 	// LabelThread additively applies unibox conversation labels to a thread, on
 	// behalf of the mailbox-owner userID (categories are per user). Backs the
 	// "label_email" action; userID + threadID come from the reply event data.
-	LabelThread(ctx context.Context, userID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
+	LabelThread(ctx context.Context, orgID uuid.UUID, threadID string, categoryIDs []uuid.UUID) error
 
 	// UpsertContact creates the contact or enriches the one already holding
 	// its email (the same write the contacts API does), owned by actorID.
@@ -186,11 +186,11 @@ type NativeActions interface {
 
 	// ListCategories / CreateCategory / ListPipelines back the AI agent step's
 	// argument-based tools: the model picks a tag/label/pipeline by name and the
-	// executor resolves it live (empty pool = any of the owner's tags). Keyed by
-	// the org OWNER (categories are per user); pipelines are org-scoped with
-	// stages hydrated in position order. Mirrors the campaign agent tools.
-	ListCategories(ctx context.Context, ownerID uuid.UUID) ([]models.MiniCategory, error)
-	CreateCategory(ctx context.Context, ownerID uuid.UUID, title, color string) (models.MiniCategory, error)
+	// executor resolves it live (empty pool = any of the workspace's tags). All
+	// three are org-scoped; pipelines hydrate their stages in position order.
+	// Mirrors the campaign agent tools.
+	ListCategories(ctx context.Context, orgID uuid.UUID) ([]models.MiniCategory, error)
+	CreateCategory(ctx context.Context, orgID uuid.UUID, title, color string) (models.MiniCategory, error)
 	ListPipelines(ctx context.Context, orgID uuid.UUID) ([]models.Pipeline, error)
 }
 
@@ -426,18 +426,17 @@ func (s *service) execNativeAction(ctx context.Context, a models.Automation, n m
 	}
 
 	// label_email tags the conversation the event belongs to; it needs the
-	// thread + mailbox owner (carried by reply triggers), not a resolved contact.
+	// thread (carried by reply triggers), not a resolved contact.
 	if n.Action == models.IntegrationActionLabelEmail {
 		threadID := stringFromMap(data, "thread_id")
-		ownerID, perr := uuid.Parse(stringFromMap(data, "_user_id"))
-		if threadID == "" || perr != nil {
+		if threadID == "" {
 			return fmt.Errorf("label-email needs a reply thread (use it on a reply trigger)")
 		}
 		catIDs := parseUUIDList(cfg.LabelIDs)
 		if len(catIDs) == 0 {
 			return fmt.Errorf("a label action needs at least one label")
 		}
-		return s.native.LabelThread(ctx, ownerID, threadID, catIDs)
+		return s.native.LabelThread(ctx, a.OrganizationID, threadID, catIDs)
 	}
 
 	contactID := stringFromMap(data, "contact_id")

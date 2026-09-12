@@ -193,7 +193,7 @@ func seedDevMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-// seedDevLabels creates the dev user's folders, tags, and categories.
+// seedDevLabels creates the dev workspace's folders, tags, and categories.
 func seedDevLabels(ctx context.Context, pool *pgxpool.Pool) error {
 	entries := []struct {
 		table string
@@ -213,14 +213,15 @@ func seedDevLabels(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	for _, e := range entries {
 		if _, err := pool.Exec(ctx, `
-			INSERT INTO `+e.table+` (id, user_id, title, color, position, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
+			INSERT INTO `+e.table+` (id, organization_id, user_id, title, color, position, created_at, updated_at)
+			VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
 			ON CONFLICT (id) DO UPDATE SET
+				organization_id = EXCLUDED.organization_id,
 				title = EXCLUDED.title,
 				color = EXCLUDED.color,
 				position = EXCLUDED.position,
 				updated_at = NOW()
-		`, e.id, DevUserID, e.title, e.color, e.pos); err != nil {
+		`, e.id, DevOrgID, DevUserID, e.title, e.color, e.pos); err != nil {
 			return fmt.Errorf("%s %s: %w", e.table, e.title, err)
 		}
 	}

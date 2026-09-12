@@ -84,7 +84,7 @@ func newImportFixture(t *testing.T) *importFixture {
 			{`DELETE FROM segment_members WHERE segment_id IN (SELECT id FROM segments WHERE organization_id = $1)`, f.org},
 			{`DELETE FROM segments WHERE organization_id = $1`, f.org},
 			{`DELETE FROM contacts WHERE organization_id = $1`, f.org},
-			{`DELETE FROM categories WHERE user_id = $1`, f.user},
+			{`DELETE FROM categories WHERE organization_id = $1`, f.org},
 			{`DELETE FROM organization_members WHERE organization_id = $1`, f.org},
 			{`DELETE FROM organizations WHERE id = $1`, f.org},
 			{`DELETE FROM users WHERE id = $1`, f.user},
@@ -109,8 +109,8 @@ func (f *importFixture) newCategory(t *testing.T, title string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
 	if _, err := f.pool.Exec(context.Background(),
-		`INSERT INTO categories (id, user_id, title, color, position) VALUES ($1, $2, $3, '#38bdf8', 0)`,
-		id, f.user, title); err != nil {
+		`INSERT INTO categories (id, organization_id, user_id, title, color, position) VALUES ($1, $2, $3, $4, '#38bdf8', 0)`,
+		id, f.org, f.user, title); err != nil {
 		t.Fatalf("create category: %v", err)
 	}
 	return id

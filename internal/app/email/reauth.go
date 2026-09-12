@@ -175,8 +175,11 @@ func (s *emailService) reconnectAccount(ctx context.Context, accountID uuid.UUID
 	if account == nil {
 		return nil, errx.ErrNotFound
 	}
+	if account.OrganizationID == nil {
+		return nil, errx.ErrNoOrganization
+	}
 	status := "active"
-	updated, xerr := s.Update(ctx, account.UserID, account.ID.String(), &models.UpdateEmail{Status: &status})
+	updated, xerr := s.Update(ctx, account.OrganizationID.String(), account.UserID, account.ID.String(), &models.UpdateEmail{Status: &status})
 	if xerr != nil {
 		return nil, xerr
 	}

@@ -33,13 +33,6 @@ func (h *Handler) gateUnibox(c *gin.Context) bool {
 }
 
 func (h *Handler) GetUniboxIncoming(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
-		return
-	}
-
 	orgID := middleware.GetOrganizationID(c)
 	if orgID == nil {
 		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
@@ -187,7 +180,7 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		}
 	}
 
-	resp, xerr := h.UniboxService.Search(c.Request.Context(), *orgID, uid, params)
+	resp, xerr := h.UniboxService.Search(c.Request.Context(), *orgID, params)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -302,10 +295,9 @@ func (h *Handler) GetUniboxThreadLabels(c *gin.Context) {
 	if !h.gateUnibox(c) {
 		return
 	}
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
 		return
 	}
 
@@ -318,7 +310,7 @@ func (h *Handler) GetUniboxThreadLabels(c *gin.Context) {
 		return
 	}
 
-	labels, xerr := h.UniboxService.ListThreadLabels(c.Request.Context(), uid, threadID)
+	labels, xerr := h.UniboxService.ListThreadLabels(c.Request.Context(), *orgID, threadID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -328,19 +320,20 @@ func (h *Handler) GetUniboxThreadLabels(c *gin.Context) {
 
 // SetUniboxThreadLabels replaces the full conversation-label set on a
 // thread. Idempotent (PUT semantics): the body's category_ids is the
-// desired set, so retries are naturally safe. Only the user's own
+// desired set, so retries are naturally safe. Only the workspace's own
 // categories are attached.
 // PUT /unibox/thread/labels
 func (h *Handler) SetUniboxThreadLabels(c *gin.Context) {
 	if !h.gateUnibox(c) {
 		return
 	}
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.ErrNoOrganization)
 		return
 	}
+	// Attribution only; a label an API key applies has no human behind it.
+	uid, _ := middleware.GetUserUUID(c)
 
 	var req models.UniboxThreadLabels
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -348,7 +341,7 @@ func (h *Handler) SetUniboxThreadLabels(c *gin.Context) {
 		return
 	}
 
-	labels, xerr := h.UniboxService.SetThreadLabels(c.Request.Context(), uid, req.ThreadID, req.CategoryIDs)
+	labels, xerr := h.UniboxService.SetThreadLabels(c.Request.Context(), *orgID, uid, req.ThreadID, req.CategoryIDs)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return

@@ -10,6 +10,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/auth"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 const authRequestTimeout = 15 * time.Second
@@ -151,20 +152,27 @@ func (h *Handler) GetUser(c *gin.Context) {
 		return
 	}
 
-	// Populate the per-user label groups so the frontend can render
+	// Populate the workspace's label registries so the frontend can render
 	// folder/tag pickers on initial page load without three extra
-	// round-trips. Without this, anything the user created in a
-	// previous session would disappear after a refresh: the cache
-	// would optimistic-update from a Create response, but on reload
-	// the /auth/me payload had empty folders/tags/categories.
-	if folders, ferr := h.FolderService.List(ctx, uid); ferr == nil {
-		u.Folders = folders
-	}
-	if tags, terr := h.TagService.List(ctx, uid); terr == nil {
-		u.Tags = tags
-	}
-	if cats, cerr := h.CategoryService.List(ctx, uid); cerr == nil {
-		u.Categories = cats
+	// round-trips. Without this, anything created in a previous session
+	// would disappear after a refresh: the cache would optimistic-update
+	// from a Create response, but on reload the /auth/me payload had empty
+	// folders/tags/categories.
+	//
+	// Scoped to the session's current organization, not the caller: labels
+	// are workspace assets, so a teammate must see what the owner created
+	// (issue #436). A session with no workspace selected gets empty lists.
+	u.Folders, u.Tags, u.Categories = []models.Group{}, []models.Group{}, []models.Group{}
+	if orgID := middleware.GetOrganizationID(c); orgID != nil {
+		if folders, ferr := h.FolderService.List(ctx, *orgID); ferr == nil {
+			u.Folders = folders
+		}
+		if tags, terr := h.TagService.List(ctx, *orgID); terr == nil {
+			u.Tags = tags
+		}
+		if cats, cerr := h.CategoryService.List(ctx, *orgID); cerr == nil {
+			u.Categories = cats
+		}
 	}
 
 	c.JSON(http.StatusOK, u)

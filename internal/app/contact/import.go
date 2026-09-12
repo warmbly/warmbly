@@ -309,14 +309,14 @@ func (s *contactService) ImportCommit(
 	}
 
 	// Resolve every category title the file mentions in one round trip,
-	// creating the ones the user doesn't have yet.
+	// creating the ones the workspace doesn't have yet.
 	titleToID := map[string]uuid.UUID{}
 	var allTitles []string
 	for i := range parsed {
 		allTitles = append(allTitles, parsed[i].categories...)
 	}
 	if len(allTitles) > 0 {
-		titleToID, xerr = s.contactRepository.ResolveCategoryNames(ctx, uid, allTitles)
+		titleToID, xerr = s.contactRepository.ResolveCategoryNames(ctx, orgID, uid, allTitles)
 		if xerr != nil {
 			return nil, xerr
 		}

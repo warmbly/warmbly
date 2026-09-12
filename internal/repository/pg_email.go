@@ -89,12 +89,12 @@ type EmailRepository interface {
 	GetOAuthCredentials(ctx context.Context, emailAccountID uuid.UUID) (*OAuthCredentials, *errx.Error)
 	GetWorkerID(ctx context.Context, emailAccountID uuid.UUID) (*uuid.UUID, *errx.Error)
 	SetWorkerID(ctx context.Context, emailAccountID, workerID uuid.UUID) *errx.Error
-	Update(ctx context.Context, userID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error)
-	// BulkUpdateTags adds/removes tag links across many of the user's
+	Update(ctx context.Context, orgID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error)
+	// BulkUpdateTags adds/removes tag links across many of the workspace's
 	// mailboxes in one transaction; ownership of both mailboxes and tags is
 	// enforced in SQL, unknown ids are skipped. Returns how many of the
-	// requested mailboxes the caller owns.
-	BulkUpdateTags(ctx context.Context, userID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error)
+	// requested mailboxes the workspace owns.
+	BulkUpdateTags(ctx context.Context, orgID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error)
 	// SetWarmupLifecycle starts, pauses, resumes, or disables warmup for a
 	// mailbox. "start"/"resume" preserve ramp progress (a paused mailbox
 	// resumes where it left off); "pause" keeps progress; "disable" turns
@@ -807,9 +807,13 @@ func (r *emailRepository) Get(ctx context.Context, orgID, emailAccountID string)
 	return &i, nil
 }
 
-func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error) {
+// Update writes a mailbox's settings. Scoped by organization, like Get, Search
+// and UpdateTrackingDomain: a mailbox is a workspace asset and the route admits
+// any member holding manage_emails, so keying on the user who happened to
+// connect it turned that permission into a 404 for everyone else.
+func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID string, udata *models.UpdateEmail) (*models.Email, *errx.Error) {
 	setClauses := []string{}
-	args := []any{userID, emailAccountID}
+	args := []any{orgID, emailAccountID}
 	argPos := 3
 
 	if udata.Name != nil {
@@ -999,7 +1003,11 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 		argPos++
 	}
 
-	if argPos == 3 {
+	// Tags are not a column on the row, so a patch that only moves them still
+	// leaves setClauses empty. Refusing it made the mailbox drawer's tag
+	// picker unable to save on its own, which is how the dashboard sends it:
+	// only the fields that actually changed.
+	if argPos == 3 && udata.Tags == nil {
 		return nil, errx.ErrNotEnough
 	}
 
@@ -1015,7 +1023,7 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 	query := fmt.Sprintf(`
 		UPDATE email_accounts
 		SET %s
-		WHERE user_id = $1 AND id = $2
+		WHERE organization_id = $1 AND id = $2
 		RETURNING id, organization_id, email, name, signature_plain, signature_html, signature_sync, signature_code, provider, status,
 		          COALESCE(last_synced_at, created_at) AS last_synced_at, last_id, campaign_limit, min_wait_time, reply_to, tracking_domain, tracking_domain_verified, tracking_domain_verified_at,
 		          auth_state, auth_spf, auth_dkim, auth_dmarc, auth_dmarc_policy, auth_reason, auth_checked_at, auth_failing_since,
@@ -1045,7 +1053,7 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 	i.Tags = make([]string, 0)
 	if udata.Tags != nil {
 		var err *errx.Error
-		i.Tags, err = SyncEmailTags(ctx, tx, emailAccountID, udata.Tags)
+		i.Tags, err = SyncEmailTags(ctx, tx, orgID, emailAccountID, udata.Tags)
 		if err != nil {
 			return nil, err
 		}
@@ -1059,7 +1067,10 @@ func (r *emailRepository) Update(ctx context.Context, userID, emailAccountID str
 	return &i, nil
 }
 
-func (r *emailRepository) BulkUpdateTags(ctx context.Context, userID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error) {
+// BulkUpdateTags rewrites tag links across many mailboxes at once. Both sides
+// are scoped by organization: the mailboxes because they belong to the
+// workspace, and the tag definitions because the registry does too.
+func (r *emailRepository) BulkUpdateTags(ctx context.Context, orgID string, emailIDs, addTags, removeTags []uuid.UUID) (int, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -1068,25 +1079,25 @@ func (r *emailRepository) BulkUpdateTags(ctx context.Context, userID string, ema
 	defer tx.Rollback(ctx)
 
 	var owned int
-	countQuery := `SELECT count(*) FROM email_accounts WHERE user_id = $1 AND id = ANY($2)`
-	if err := tx.QueryRow(ctx, countQuery, userID, emailIDs).Scan(&owned); err != nil {
-		db.CaptureError(err, countQuery, []any{userID}, "queryrow")
+	countQuery := `SELECT count(*) FROM email_accounts WHERE organization_id = $1 AND id = ANY($2)`
+	if err := tx.QueryRow(ctx, countQuery, orgID, emailIDs).Scan(&owned); err != nil {
+		db.CaptureError(err, countQuery, []any{orgID}, "queryrow")
 		return 0, errx.InternalError()
 	}
 
 	if len(addTags) > 0 {
-		// Cross join owned mailboxes with the caller's own tag definitions;
+		// Cross join the workspace's mailboxes with its tag definitions;
 		// the composite PK makes re-adding an existing link a no-op.
 		insertQuery := `
 			INSERT INTO email_tags (email_id, tag_id)
 			SELECT a.id, t.id
 			FROM email_accounts a
 			CROSS JOIN tags t
-			WHERE a.user_id = $1 AND a.id = ANY($2)
-			  AND t.user_id = $1 AND t.id = ANY($3)
+			WHERE a.organization_id = $1 AND a.id = ANY($2)
+			  AND t.organization_id = $1 AND t.id = ANY($3)
 			ON CONFLICT (email_id, tag_id) DO NOTHING`
-		if _, err := tx.Exec(ctx, insertQuery, userID, emailIDs, addTags); err != nil {
-			db.CaptureError(err, insertQuery, []any{userID}, "exec")
+		if _, err := tx.Exec(ctx, insertQuery, orgID, emailIDs, addTags); err != nil {
+			db.CaptureError(err, insertQuery, []any{orgID}, "exec")
 			return 0, errx.InternalError()
 		}
 	}
@@ -1095,9 +1106,9 @@ func (r *emailRepository) BulkUpdateTags(ctx context.Context, userID string, ema
 		deleteQuery := `
 			DELETE FROM email_tags
 			WHERE tag_id = ANY($3)
-			  AND email_id IN (SELECT id FROM email_accounts WHERE user_id = $1 AND id = ANY($2))`
-		if _, err := tx.Exec(ctx, deleteQuery, userID, emailIDs, removeTags); err != nil {
-			db.CaptureError(err, deleteQuery, []any{userID}, "exec")
+			  AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1 AND id = ANY($2))`
+		if _, err := tx.Exec(ctx, deleteQuery, orgID, emailIDs, removeTags); err != nil {
+			db.CaptureError(err, deleteQuery, []any{orgID}, "exec")
 			return 0, errx.InternalError()
 		}
 	}

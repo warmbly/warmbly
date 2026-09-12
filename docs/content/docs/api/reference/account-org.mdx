@@ -372,7 +372,9 @@ Auth: Session only (not available to API keys).
 
 `GET /auth/me`
 
-Returns the signed-in user, including admin flags and the per-user label groups (folders, tags, categories) the dashboard needs on initial load.
+Returns the signed-in user, including admin flags and the label registries (folders, tags, categories) the dashboard needs on initial load.
+
+The registries belong to the workspace, not to the caller: every member of an organization sees the same folders, tags and categories, whoever created them. They are read for the session's currently selected workspace, so switching workspaces changes what comes back.
 
 Auth: Session only (not available to API keys).
 

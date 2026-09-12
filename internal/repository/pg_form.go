@@ -178,7 +178,7 @@ func (r *formRepository) Create(ctx context.Context, orgID uuid.UUID, createdBy 
 		db.CaptureError(err, "forms create", nil, "insert")
 		return nil, errx.InternalError()
 	}
-	if xerr := setFormCategories(ctx, tx, id, f.CategoryIDs); xerr != nil {
+	if xerr := setFormCategories(ctx, tx, orgID, id, f.CategoryIDs); xerr != nil {
 		return nil, xerr
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -220,7 +220,7 @@ func (r *formRepository) Update(ctx context.Context, orgID uuid.UUID, f *models.
 		db.CaptureError(err, "forms update", nil, "categories clear")
 		return nil, errx.InternalError()
 	}
-	if xerr := setFormCategories(ctx, tx, f.ID, f.CategoryIDs); xerr != nil {
+	if xerr := setFormCategories(ctx, tx, orgID, f.ID, f.CategoryIDs); xerr != nil {
 		return nil, xerr
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -230,9 +230,10 @@ func (r *formRepository) Update(ctx context.Context, orgID uuid.UUID, f *models.
 	return r.Get(ctx, orgID, f.ID)
 }
 
-// setFormCategories links the picked categories, quietly dropping ids that
-// no longer exist (a stale picker must not fail the save).
-func setFormCategories(ctx context.Context, tx pgx.Tx, formID uuid.UUID, categoryIDs []uuid.UUID) *errx.Error {
+// setFormCategories links the picked categories, quietly dropping ids that no
+// longer exist or belong to another workspace (a stale picker must not fail the
+// save, and a borrowed id must not file leads under a foreign category).
+func setFormCategories(ctx context.Context, tx pgx.Tx, orgID, formID uuid.UUID, categoryIDs []uuid.UUID) *errx.Error {
 	if len(categoryIDs) == 0 {
 		return nil
 	}
@@ -241,9 +242,9 @@ func setFormCategories(ctx context.Context, tx pgx.Tx, formID uuid.UUID, categor
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO form_categories (form_id, category_id)
-		SELECT $1, c.id FROM categories c WHERE c.id = ANY($2)
+		SELECT $1, c.id FROM categories c WHERE c.id = ANY($2) AND c.organization_id = $3
 		ON CONFLICT (form_id, category_id) DO NOTHING
-	`, formID, categoryIDs)
+	`, formID, categoryIDs, orgID)
 	if err != nil {
 		db.CaptureError(err, "forms categories", nil, "insert")
 		return errx.InternalError()

@@ -336,6 +336,27 @@ Mutating API requests may include an `Idempotency-Key` header. Warmbly stores th
 
 `GET /me` returns who the active credential belongs to: `user_id`, `email`, `name`, `organization_id`, `organization_name`, `auth_type` (`api_key`, `oauth`, or `jwt`), and the granted `scopes`. It requires no specific permission, so it is the right call for validating a connection and rendering a human-readable label. Unlike `/auth/me` (JWT only), it is reachable by API keys and OAuth tokens.
 
+### Labels
+
+Folders (on campaigns), tags (on mailboxes) and categories (on contacts and inbox conversations) are three registries with the same shape. Each belongs to the **workspace**, not to whoever created it: every member sees and can edit the same set. The current set is read from `GET /auth/me`, which returns `folders`, `tags` and `categories` for the session's selected workspace; there is no separate list endpoint.
+
+`position` is the order within its own registry, `0`-based and contiguous. A move returns the full new ordering. A registry holds at most `100` entries.
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| POST | `/folders` | `WRITE_CAMPAIGNS` |
+| PATCH | `/folders/:id` | `WRITE_CAMPAIGNS` |
+| PATCH | `/folders/:id/move` | `WRITE_CAMPAIGNS` |
+| DELETE | `/folders/:id` | `WRITE_CAMPAIGNS` |
+| POST | `/tags` | `WRITE_EMAILS` |
+| PATCH | `/tags/:id` | `WRITE_EMAILS` |
+| PATCH | `/tags/:id/move` | `WRITE_EMAILS` |
+| DELETE | `/tags/:id` | `WRITE_EMAILS` |
+| POST | `/categories` | `WRITE_CONTACTS` |
+| PATCH | `/categories/:id` | `WRITE_CONTACTS` |
+| PATCH | `/categories/:id/move` | `WRITE_CONTACTS` |
+| DELETE | `/categories/:id` | `WRITE_CONTACTS` |
+
 ### Reference data
 
 | Method | Path | API Permission |

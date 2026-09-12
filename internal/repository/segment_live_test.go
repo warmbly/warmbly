@@ -46,7 +46,7 @@ func newSegmentFixture(t *testing.T) (*segmentFixture, SegmentRepository) {
 	contact(f.bob, "bob", "globex", `{"title":"Engineer"}`, false)
 	contact(f.carol, "carol", "acme", `{}`, true)
 
-	exec(`INSERT INTO categories (id, user_id, title, color, position) VALUES ($1, $2, 'Hot', '#ff0000', 0)`, f.category, f.owner)
+	exec(`INSERT INTO categories (id, organization_id, user_id, title, color, position) VALUES ($1, $2, $3, 'Hot', '#ff0000', 0)`, f.category, f.org, f.owner)
 	exec(`INSERT INTO contact_categories (contact_id, category_id) VALUES ($1, $2)`, f.alice, f.category)
 	exec(`INSERT INTO campaign_leads (campaign_id, contact_id) VALUES ($1, $2)`, f.campaign, f.alice)
 	seq := uuid.New()

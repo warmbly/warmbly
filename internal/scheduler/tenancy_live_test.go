@@ -84,8 +84,8 @@ func tagMailboxes(t *testing.T, pool *pgxpool.Pool, f *liveFixture, mailboxes ..
 	ctx := context.Background()
 	tag := uuid.New()
 	if _, err := pool.Exec(ctx,
-		`INSERT INTO tags (id, user_id, title, color, "position") VALUES ($1, $2, 'senders', '#aabbcc', 0)`,
-		tag, f.user); err != nil {
+		`INSERT INTO tags (id, organization_id, user_id, title, color, "position") VALUES ($1, $2, $3, 'senders', '#aabbcc', 0)`,
+		tag, f.org, f.user); err != nil {
 		t.Fatalf("insert tag: %v", err)
 	}
 	for _, mailbox := range mailboxes {
