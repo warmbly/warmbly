@@ -2,8 +2,10 @@ package wmail
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	goimap "github.com/emersion/go-imap/v2"
@@ -255,6 +257,7 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 
 	var fresh []*imap.Fetched
 	for _, f := range fetched {
+		w.ensureMessageKey(f.Email)
 		internal, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, f.Email.MessageID)
 		if err != nil {
 			return false, w.controlPlaneError(err, stats)
@@ -326,6 +329,33 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 	return all, nil
 }
 
+// ensureMessageKey gives a message without a Message-ID header one that is
+// stable for this mailbox, because the empty string is not a key: the map
+// endpoint refuses it with 400 and the failed lookup ends the whole sync pass
+// with its cursors held, so ONE legacy or malformed sender parked every later
+// message on the account for good.
+//
+// Folder name, UIDVALIDITY and UID: RFC 9051 makes that triple the identity of
+// a message on a server, which is what is left when the sender gave it none of
+// its own. It re-derives to the same string on the next pass, so the message is
+// recognised as known rather than stored again, and it cannot collide with a
+// real Message-ID.
+//
+// The folder name is in it deliberately, even though a RENAME keeps UIDVALIDITY
+// and would therefore change the key. Dropping it would key on a pair two
+// folders can in principle share, and the failure there is a message silently
+// treated as already stored. A rename re-importing the handful of messages that
+// carried no Message-ID is the cheaper of the two.
+//
+// Threading is unaffected: a message with no Message-ID roots its own thread
+// on this key, and nothing can ever reply to an id that was never on the wire.
+func (w *WMail) ensureMessageKey(msg *models.EmailMessageData) {
+	if msg == nil || strings.TrimSpace(msg.MessageID) != "" {
+		return
+	}
+	msg.MessageID = fmt.Sprintf("no-msgid/%s/%d/%d", w.SmtpImapData.folderPath, w.SmtpImapData.mailbox, msg.UID)
+}
+
 // threadParentID is the message this one answers, and the key its thread is
 // built on. Only In-Reply-To carries that.
 //
@@ -339,11 +369,20 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 //
 // A message that answers nothing has no parent, and the caller roots its
 // thread on its own Message-ID.
+//
+// A blank entry is skipped rather than returned: an empty parent id is not a
+// key either, and the map lookup it would cause ends the pass exactly as a
+// missing Message-ID used to (see ensureMessageKey).
 func threadParentID(msg *models.EmailMessageData) string {
-	if msg == nil || len(msg.InReplyTo) == 0 {
+	if msg == nil {
 		return ""
 	}
-	return msg.InReplyTo[len(msg.InReplyTo)-1]
+	for i := len(msg.InReplyTo) - 1; i >= 0; i-- {
+		if id := strings.TrimSpace(msg.InReplyTo[i]); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // imapStore threads a new message and hands it to storeNew.

@@ -103,11 +103,24 @@ func (s *schedulerService) placeWithinBehavior(ctx context.Context, r behavior.R
 // arithmetic sequence; the configured min_wait_time is the fallback for every
 // mailbox that has not opted in.
 func (s *schedulerService) behaviorGap(r behavior.Resolved, at time.Time, fallbackSeconds int) int {
+	return s.behaviorGapWith(r, at, fallbackSeconds, rand.Float64)
+}
+
+// behaviorGapFloor is behaviorGap without the draw: the shortest gap the
+// profile allows. A read-only preview uses it so the same unchanged state
+// answers with the same time twice in a row — a "not before" that moved on
+// every refresh is what made the contact drawer look like it was guessing
+// (issue #437).
+func (s *schedulerService) behaviorGapFloor(r behavior.Resolved, at time.Time, fallbackSeconds int) int {
+	return s.behaviorGapWith(r, at, fallbackSeconds, func() float64 { return 0 })
+}
+
+func (s *schedulerService) behaviorGapWith(r behavior.Resolved, at time.Time, fallbackSeconds int, rnd func() float64) int {
 	if !r.Enabled {
 		return fallbackSeconds
 	}
 	plan := r.PlanOn(behavior.PlanDateFor(at, r.Loc))
-	gap := behavior.DrawGap(plan, rand.Float64)
+	gap := behavior.DrawGap(plan, rnd)
 	secs := int(gap / time.Second)
 	if secs < 1 {
 		return fallbackSeconds

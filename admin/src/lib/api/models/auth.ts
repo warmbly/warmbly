@@ -2,6 +2,17 @@
 
 import type { AdminToken } from "@/lib/auth/storage";
 
+// The slice of GET /v1/auth/config the admin sign-in needs.
+//
+// Only `captcha` today, and it exists because the login screen used to guess.
+// A self-host with CAPTCHA_PROVIDER=none verifies no token, but the screen
+// mounted the invisible Turnstile widget anyway and waited on a challenge it
+// could not reach, so the operator was locked out of their own instance with
+// "Verification timed out".
+export interface DeploymentAuthConfig {
+    captcha: boolean;
+}
+
 export interface LoginRequest {
     email: string;
     password: string;

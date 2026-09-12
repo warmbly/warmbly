@@ -16,6 +16,12 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 )
 
+// emptyBodyHTML is what a step with no body carries: the dashboard composer's
+// own empty document, so opening a blank step in the editor shows an empty
+// canvas rather than nothing at all. It is NOT an empty string, which is why
+// every "does this step have a body" check goes through mailhtml.HasContent.
+const emptyBodyHTML = "<div></div>"
+
 type SequenceRepository interface {
 	Create(ctx context.Context, userID, campaignID string) (*models.Sequence, *errx.Error)
 	Get(ctx context.Context, userID, campaignID string) ([]models.Sequence, *errx.Error)
@@ -194,7 +200,7 @@ func (r *sequenceRepository) Create(ctx context.Context, userID string, campaign
 		config.SequenceDefaultName,
 		"",
 		"",
-		"<div></div>",
+		emptyBodyHTML,
 		nextPos,
 	}
 

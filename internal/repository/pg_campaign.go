@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/utils/paging"
 	"github.com/warmbly/warmbly/internal/utils/validate"
 )
@@ -620,9 +621,17 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			if seq.BodyCode != nil {
 				bodyCode = *seq.BodyCode
 			}
+			// A step given a plain body and no HTML is the API/agent shape.
+			// The placeholder below is what the composer stores for an empty
+			// step, and the send path puts body_html on the wire as the
+			// text/html alternative, so leaving it would ship a blank email
+			// with the real copy only in the fallback part.
 			bodyHTML := seq.BodyHTML
+			if !mailhtml.HasContent(bodyHTML) {
+				bodyHTML = mailhtml.FromText(seq.BodyPlain)
+			}
 			if bodyHTML == "" {
-				bodyHTML = "<div></div>"
+				bodyHTML = emptyBodyHTML
 			}
 			seqInsert := `
 				INSERT INTO sequences (
@@ -1609,6 +1618,19 @@ func (r *campaignRepository) ValidateCampaignReady(ctx context.Context, campaign
 	if senderCount > 0 || tagCount > 0 {
 		return nil
 	}
+	// A campaign that named its mailboxes by hand does NOT fall back to every
+	// active mailbox (see ExplicitSenderPool), so the check must not either:
+	// a check that passes a pool the scheduler would find empty is how a
+	// campaign starts and then parks itself on its first tick (issue #340 is
+	// the same mistake in the other direction).
+	var strategy string
+	if err := r.DB.QueryRow(ctx, `SELECT sender_strategy FROM campaigns WHERE id = $1`, campaignID).Scan(&strategy); err != nil {
+		return err
+	}
+	if strategy == CampaignSenderStrategyExplicit {
+		return errx.New(errx.BadRequest,
+			"this campaign sends from mailboxes picked by hand and none are left; pick its sending accounts again, or switch it back to selecting by tag")
+	}
 	var activeMailboxes int
 	if err := r.DB.QueryRow(ctx, `
 		SELECT COUNT(*) FROM email_accounts
@@ -1979,15 +2001,15 @@ func (r *campaignRepository) GetCampaignSenders(ctx context.Context, campaignID 
 	return senders, nil
 }
 
-// ReplaceCampaignSenders atomically swaps the explicit sender pool. An empty
-// list is rejected — clearing senders should be done by switching the campaign
-// back to sender_strategy='tags'.
+// ReplaceCampaignSenders atomically swaps the explicit sender pool.
+//
+// An empty list is allowed and clears the pool: it is how the dashboard's
+// sending-accounts picker deselects everything. What that then means depends
+// on the campaign's sender_strategy, which is the safety boundary — a 'tags'
+// campaign falls back to its tags or to every active mailbox, and an
+// 'explicit' one resolves to no mailboxes at all rather than widening to the
+// whole workspace (see ExplicitSenderPool).
 func (r *campaignRepository) ReplaceCampaignSenders(ctx context.Context, campaignID uuid.UUID, in []models.CampaignSenderInput) ([]models.CampaignSender, *errx.Error) {
-	// An empty list is allowed: it clears the explicit sender pool, so the
-	// campaign falls back to its email tags or, with neither, to every active
-	// mailbox of the owner. syncCampaignSendersTx handles the empty set safely
-	// (it deletes all current rows and inserts none).
-
 	// Resolve the campaign owner + organization so we can validate mailbox
 	// ownership against the org (the senders route is org-scoped).
 	var userID string

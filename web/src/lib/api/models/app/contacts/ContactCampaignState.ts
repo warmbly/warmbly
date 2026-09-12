@@ -20,7 +20,7 @@ export interface ContactCampaignStep {
     in_flight?: boolean;
 }
 
-// due: the step is due and the scheduler produced a slot for it.
+// due: the step is due; scheduled_at is when the campaign next works its queue.
 // waiting: a hard constraint holds it back; not_before is the earliest.
 // paused: the campaign is not active.
 // blocked: the campaign cannot send at all right now.
@@ -35,7 +35,9 @@ export interface ContactNextAction {
     subject?: string;
 
     state: ContactNextActionState;
-    // Only when due now; contacts ahead in the queue can still push it later.
+    // Only when due now, and then it is the campaign chain's own next wakeup,
+    // not a slot reserved for this contact: leads queued ahead can still push
+    // this step to a later pass. Absent while the chain is being re-seeded.
     scheduled_at?: string | null;
     not_before?: string | null;
     constraint?: string;

@@ -107,6 +107,10 @@ A step written in the visual editor gets its plain-text half as you type, and it
 
 This only applies when there is no plain-text body to send. Set `body_plain` through the API and that text is sent as written; leave it empty and the send path renders one from the HTML.
 
+The reverse holds too. A step written through the API or an agent tool usually carries `body_plain` and nothing else, and the HTML half is rendered from that text: the lines are kept and bare URLs become links, so click tracking has something to wrap. The step is stored with the composer's empty HTML document until then, and that empty document, not the absence of one, is what used to arrive as a blank email: clients prefer the HTML alternative and would show an empty one in place of the text. A step that already has an HTML body is never overwritten.
+
+A step with nothing in either body is refused at start rather than sent: a blank email to every lead is not a campaign anyone meant to launch.
+
 ### Preview and test
 
 The Preview tab renders through the real send engine, so merge fields, conditionals, and spintax resolve exactly as they will at send time. It draws the body the way a mail client would, in its own frame, rather than the way the editor does. **Preview as** picks who it renders for: a built-in sample contact, one of the campaign's leads, or any contact you search for, so a custom field your list does not actually have shows up as an unresolved token instead of looking fine. The mailbox picker next to it adds that sender's signature and shows the From name recipients will see. When the campaign is known the preview also appends the opt-out footer and lists the files attached to the campaign. Malformed templates (an `{{if}}` with no `{{end}}`) are flagged before you start the campaign. See [Personalization](/guides/expressions/) for everything you can put in copy.

@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -72,7 +73,10 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 			excludeNewLeads = true
 		}
 	}
-	nextPair, recheckAt, senderWait, err := s.campaignProgressRepo.FindNextRoutedPair(
+	// The due leads this pass may try, in routing order. More than one, because
+	// placement can refuse a lead for a reason that is that lead's alone while
+	// the lead behind them is sendable this second (issue #437).
+	candidates, recheckAt, senderWait, err := s.campaignProgressRepo.FindRoutedPairs(
 		ctx,
 		campaignID,
 		campaign.ContactOrderBy,
@@ -81,29 +85,30 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		campaign.PrioritizeNewLeads,
 		excludeNewLeads,
 		paced,
+		config.CampaignPlacementCandidates,
 	)
 	if err != nil {
 		return time.Time{}, nil, uuid.Nil, err
 	}
 
-	if nextPair == nil {
+	if len(candidates) == 0 {
 		// When the new-lead cap is active and only new-lead pairs remain,
-		// FindNextRoutedPair returns nil with exclude on but WOULD return a pair
-		// without it. In that case defer to the next day so follow-ups keep
+		// FindRoutedPairs returns nothing with exclude on but WOULD return a
+		// pair without it. In that case defer to the next day so follow-ups keep
 		// progressing and new leads resume tomorrow — do NOT complete.
 		if excludeNewLeads {
-			again, againDue, againSenderWait, aerr := s.campaignProgressRepo.FindNextRoutedPair(
+			again, againDue, againSenderWait, aerr := s.campaignProgressRepo.FindRoutedPairs(
 				ctx, campaignID, campaign.ContactOrderBy, campaign.ContactOrderDir, orderField,
-				campaign.PrioritizeNewLeads, false, paced,
+				campaign.PrioritizeNewLeads, false, paced, 1,
 			)
 			switch {
 			case aerr != nil:
 				// Fall through to the ordinary wait/complete decision below.
-			case again != nil:
+			case len(again) > 0:
 				s.logCampaignDecision(ctx, campaignID, "new_lead_cap_reached",
 					"Daily new-lead cap reached; deferring remaining new leads to tomorrow",
 					map[string]interface{}{"max_new_leads_per_day": campaign.MaxNewLeadsPerDay})
-				deferTime := s.deferToNextDay(campaign)
+				deferTime := s.deferToNextDay(campaign, false)
 				// A follow-up that comes due before tomorrow must not wait for
 				// the new-lead cap to reset.
 				if recheckAt != nil && recheckAt.Before(deferTime) {
@@ -149,14 +154,37 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 		return time.Time{}, nil, uuid.Nil, ErrCampaignCompleted
 	}
 
-	// Branch routing is resolved inside FindNextRoutedPair: the chosen step is the
+	// Branch routing is resolved inside FindRoutedPairs: the chosen step is the
 	// route out of the contact's last-sent step — conditional branches first
 	// (first match wins, evaluated against opened/clicked/replied), then the
 	// explicit "else" catch-all, then linear position+1 only when a step defines
 	// no branches. A step is sent only if the flow reaches it; STOP/end and
 	// already-sent loops drop the contact in the finder. Conditions are evaluated
 	// at schedule time (a known, accepted race vs. last-moment engagement).
-	return s.placeCampaignSend(ctx, campaign, accounts, senderMetaByID, nextPair, pass, false)
+	//
+	// Place the due leads in order and send the first one the pool can take. A
+	// refusal that is about THIS lead (ErrLeadDeferred: ESP-strict has no
+	// mailbox for their provider, their own mailbox is busy, their preferred
+	// hours are hours away) moves to the lead behind them; anything else is the
+	// pool's answer for every lead and ends the pass immediately. Only when
+	// every candidate is refused does the campaign defer, at the soonest of
+	// their slots.
+	var leadSlot time.Time
+	leadAccount := accounts[0].ID
+	for i := range candidates {
+		at, sendable, accountID, perr := s.placeCampaignSend(ctx, campaign, accounts, senderMetaByID, &candidates[i], pass, false)
+		if !errors.Is(perr, ErrLeadDeferred) {
+			return at, sendable, accountID, perr
+		}
+		if leadSlot.IsZero() || (!at.IsZero() && at.Before(leadSlot)) {
+			leadSlot, leadAccount = at, accountID
+		}
+	}
+	// Every due lead was refused for its own reason. Re-check on the deferral
+	// horizon rather than completing: the leads are still there, and what
+	// refuses them (a mailbox under budget again, a recipient's morning) comes
+	// back from outside this chain.
+	return leadSlot, nil, leadAccount, ErrCampaignDeferred
 }
 
 // humanizeMinutes renders a delay as the largest whole unit it divides into
@@ -313,7 +341,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	if pass.risk.BlocksSending() {
 		logDecision("org_suspended",
 			"Sending is paused for this workspace while it is under review", nil)
-		return s.deferToNextDay(campaign), nil, accounts[0].ID, ErrCampaignDeferred
+		return s.deferToNextDay(campaign, preview), nil, accounts[0].ID, ErrCampaignDeferred
 	}
 
 	// providerMatches reports whether a mailbox's provider satisfies the
@@ -506,7 +534,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 			// capped does.
 			var resume time.Time
 			if budgetSpent > 0 {
-				resume = s.deferToNextDay(campaign)
+				resume = s.deferToNextDay(campaign, preview)
 			}
 			if hoursClosed > 0 {
 				if open := nextScheduleSlot(reopensAt, windows, campaignTZ); resume.IsZero() || open.Before(resume) {
@@ -526,7 +554,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 			logDecisionOnce("mailboxes_resting",
 				"No mailbox is in cold rotation: all are resting or held in reserve",
 				map[string]interface{}{"resting_mailboxes": lifecycleGated, "pool_size": len(accounts)})
-			return s.deferToNextDay(campaign), nil, accounts[0].ID, ErrCampaignDeferred
+			return s.deferToNextDay(campaign, preview), nil, accounts[0].ID, ErrCampaignDeferred
 		case healthHeld > 0 || lifecycleGated > 0:
 			var why []string
 			if healthHeld > 0 {
@@ -542,7 +570,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 				"No mailbox can send right now: "+strings.Join(why, ", "),
 				map[string]interface{}{"health_held": healthHeld, "resting_mailboxes": lifecycleGated,
 					"auth_gated": authGated, "pool_size": len(accounts)})
-			return s.deferToNextDay(campaign), nil, accounts[0].ID, ErrCampaignDeferred
+			return s.deferToNextDay(campaign, preview), nil, accounts[0].ID, ErrCampaignDeferred
 		}
 		// What is left was gated by a sending-behaviour profile with no working
 		// days, which no amount of waiting fixes.
@@ -574,14 +602,17 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 		switch campaign.ESPMatchMode {
 		case "strict":
 			if len(matching) == 0 {
-				// No matching mailbox under budget today: defer to the next slot
-				// rather than complete or send cross-provider.
-				logDecision("provider_match_deferred",
-					"No same-provider mailbox available; deferring to next slot",
+				// No matching mailbox under budget today: leave THIS lead for
+				// later rather than complete or send cross-provider. It is the
+				// recipient's own domain that has no mailbox, so the lead behind
+				// them may still be sendable; logged once a day, because the
+				// pass now re-finds this for every refused lead.
+				logDecisionOnce("provider_match_deferred",
+					"No same-provider mailbox available; those leads wait for one",
 					map[string]interface{}{"recipient_provider": recipientProvider})
 				// Deferral, not a send: nil pair + sentinel so the caller reschedules
 				// instead of sending this contact from a cross-provider mailbox.
-				return s.deferToNextDay(campaign), nil, accounts[0].ID, ErrCampaignDeferred
+				return s.deferToNextDay(campaign, preview), nil, accounts[0].ID, ErrLeadDeferred
 			}
 			candidates = matching
 		case "prefer":
@@ -613,12 +644,21 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 					map[string]interface{}{"mailbox": bound.Email, "reason": gate.reason})
 				resume := gate.reopensAt
 				if resume.IsZero() {
-					resume = s.deferToNextDay(campaign)
+					resume = s.deferToNextDay(campaign, preview)
 				}
 				return resume, nil, bound.ID, ErrSenderBusy
 			}
 		}
-		selected = selectAccountByRotationMode(campaign.RotationMode, candidates)
+		if preview {
+			// Rotation is a draw, and a read that draws answers a different
+			// mailbox — and so a different min-gap — every time it is called.
+			// A preview picks the same one every time instead; which mailbox
+			// rotation will really hand this lead is not knowable in advance
+			// anyway, and the drawer is reporting a time, not a sender.
+			selected = stableCandidate(candidates)
+		} else {
+			selected = selectAccountByRotationMode(campaign.RotationMode, candidates)
+		}
 	}
 	if selected == nil {
 		return time.Time{}, nil, uuid.Nil, ErrNoEligibleMailbox
@@ -628,14 +668,30 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 
 	// STEP 8.75: Send-to-send spacing for THIS send. With a behaviour profile
 	// the gap is drawn fresh from the mailbox's range, so the intervals between
-	// its sends are irregular; otherwise it is the mailbox's fixed min gap.
-	gapSeconds := s.behaviorGap(selected.Behavior, candidateTime, account.MinWaitTime)
+	// its sends are irregular; otherwise it is the mailbox's fixed min gap. A
+	// preview takes the shortest gap the profile allows instead of a draw, so
+	// it answers the same question the same way twice.
+	var gapSeconds int
+	if preview {
+		gapSeconds = s.behaviorGapFloor(selected.Behavior, candidateTime, account.MinWaitTime)
+	} else {
+		gapSeconds = s.behaviorGap(selected.Behavior, candidateTime, account.MinWaitTime)
+	}
+
+	// leadFloor records that the hard floor below belongs to THIS lead and not
+	// to the pool, so a refusal moves the pass to the next lead instead of
+	// parking the campaign (issue #437).
+	leadFloor := false
 
 	// Move the candidate onto the mailbox's own workday before the spacing
 	// maths below runs, so distribution is computed against the window the send
 	// will actually land in.
 	if selected.OpenAt != nil && selected.OpenAt.After(candidateTime) {
 		candidateTime = *selected.OpenAt
+		// Waiting for a mailbox to reopen is this lead's own wait only when the
+		// lead is BOUND to it, for the reason spelled out at the min-gap below:
+		// an unbound lead is one rotation places, and rotation gets another go.
+		leadFloor = bound != nil && bound.ID == account.ID
 	}
 
 	// hardFloor is the earliest moment this send is ALLOWED: wait_after,
@@ -643,6 +699,14 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// with the mailbox min-gap folded in below. Pacing added after this point
 	// (distribution, jitter, curve) shapes the slot but never gates a send.
 	hardFloor := candidateTime
+
+	// A preview reports that FLOOR and stops there. Steps 9 to 13 below are
+	// spacing: drawn fresh from a random source and measured from time.Now(),
+	// so running them for a read made two reads of one unchanged campaign
+	// answer minutes apart, and the drawer showed a time that walked forward on
+	// every refresh while the step sat there marked Due (issue #437). Every
+	// real constraint — the mailbox min-gap, the recipient's hours, the sending
+	// windows — still runs.
 
 	// STEP 9: Even distribution across the candidate day's sending window. With
 	// a behaviour profile that is the mailbox's own rolled workday (lunch
@@ -656,8 +720,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// per-mailbox guard still binds afterwards — each mailbox's own daily cap
 	// and hourly ceiling gated it into this set, and the min-gap plus conflict
 	// resolution below space its own sends.
-	remainingEmails := poolRemainingOn(pool, candidateTime)
-	if remainingEmails > 0 {
+	if remainingEmails := poolRemainingOn(pool, candidateTime); !preview && remainingEmails > 0 {
 		remainingMinutes, ok := remainingSendMinutes(selected, candidateTime, windows, campaignTZ)
 		if ok && remainingMinutes > 0 {
 			// Vary the pace multiplicatively (bursts and lulls) — evenly
@@ -692,6 +755,21 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 		}
 		if hardFloor.Before(earliestNext) {
 			hardFloor = nextScheduleSlot(earliestNext, windows, campaignTZ)
+			// A bound lead has one address and must wait out ITS mailbox's gap,
+			// which is this lead's wait and nobody else's: the lead behind it,
+			// on another mailbox, can still go now.
+			//
+			// An unbound lead keeps the pool-wide answer. Selection does not
+			// look at the min-gap, so rotation can hand an unbound lead a
+			// mailbox that has just sent — but round_robin and
+			// least_recently_used both pick the least-used mailbox, which is
+			// the one that has NOT just sent, and weighted re-draws on the next
+			// tick. Skipping the lead would spend the whole candidate budget
+			// re-deriving one shared gap on a single-mailbox campaign, which is
+			// most of them.
+			if bound != nil && bound.ID == account.ID {
+				leadFloor = true
+			}
 		}
 	}
 
@@ -703,25 +781,27 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// the slot, capped at the original 20 minutes, keeps the irregularity
 	// without erasing the pacing. Deliberately NOT rounded to a 5-minute grid —
 	// a fleet that only ever sends at :x0/:x5 marks is a detectable pattern.
-	if spread := min(int(time.Until(candidateTime).Minutes())/2, 20); spread > 0 {
-		candidateTime = candidateTime.Add(time.Minute * time.Duration(randomJitter(-spread, spread)))
+	if !preview {
+		if spread := min(int(time.Until(candidateTime).Minutes())/2, 20); spread > 0 {
+			candidateTime = candidateTime.Add(time.Minute * time.Duration(randomJitter(-spread, spread)))
+		}
 	}
 	candidateTime = notBefore(candidateTime)
 
 	// STEP 12: Check conflicts with other scheduled tasks
-	dateToCheck := candidateTime
-	scheduledTasks, err := s.taskRepo.GetScheduledTasksForAccount(ctx, account.ID, dateToCheck)
-	if err != nil {
-		return time.Time{}, nil, uuid.Nil, err
+	if !preview {
+		scheduledTasks, terr := s.taskRepo.GetScheduledTasksForAccount(ctx, account.ID, candidateTime)
+		if terr != nil {
+			return time.Time{}, nil, uuid.Nil, terr
+		}
+		candidateTime = resolveConflicts(candidateTime, scheduledTasks, gapSeconds)
 	}
-
-	candidateTime = resolveConflicts(candidateTime, scheduledTasks, gapSeconds)
 
 	// STEP 13: Apply human-like distribution (favor morning/afternoon peaks).
 	// Skipped for behaviour-profiled mailboxes: the profile already describes
 	// this mailbox's workday and its own lunch break, and layering the generic
 	// curve on top would drag sends away from the hours the customer chose.
-	if !selected.Behavior.Enabled {
+	if !preview && !selected.Behavior.Enabled {
 		candidateTime = applyDistributionCurve(candidateTime, campaignTZ)
 	}
 
@@ -733,6 +813,9 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 			recipientContact, sendPref, campaign.EndDate); ok && snapped.After(candidateTime) {
 			candidateTime = snapped
 			hardFloor = snapped
+			// One recipient's morning is nobody else's: the lead behind this one
+			// may be awake right now.
+			leadFloor = true
 		}
 	}
 
@@ -748,20 +831,66 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// one. Report it deferred instead: the caller reschedules at the computed
 	// slot without sending. A task that fired at its own slot always passes.
 	if time.Until(hardFloor) > config.CampaignNotDueGraceSeconds*time.Second {
-		return finalSlot(candidateTime), nil, account.ID, ErrCampaignDeferred
+		if leadFloor {
+			return scheduledSlot(candidateTime, preview), nil, account.ID, ErrLeadDeferred
+		}
+		return scheduledSlot(candidateTime, preview), nil, account.ID, ErrCampaignDeferred
 	}
 
 	// STEP 15: Randomise the sub-minute component so sends never land on :00.
-	return finalSlot(candidateTime), nextPair, account.ID, nil
+	return scheduledSlot(candidateTime, preview), nextPair, account.ID, nil
+}
+
+// stableCandidate is the preview's stand-in for rotation: the strongest
+// candidate, ties broken by mailbox id so the same pool always answers with the
+// same mailbox.
+func stableCandidate(candidates []AccountCandidate) *AccountCandidate {
+	var best *AccountCandidate
+	for i := range candidates {
+		c := &candidates[i]
+		if best == nil || c.Weight > best.Weight ||
+			(c.Weight == best.Weight && c.Account.ID.String() < best.Account.ID.String()) {
+			best = c
+		}
+	}
+	return best
+}
+
+// scheduledSlot is finalSlot for a real scheduled_at and a bare future clamp
+// for a preview: the sub-minute randomisation exists so the fleet does not send
+// at second :00, and a read-only answer that moved by up to a minute between
+// two refreshes was reporting that jitter as if it were news.
+func scheduledSlot(t time.Time, preview bool) time.Time {
+	if preview {
+		return notBefore(t)
+	}
+	return finalSlot(t)
 }
 
 // deferToNextDay pushes a candidate time to the next valid campaign day within
 // the campaign's send window. Used by the ESP-strict, new-lead-cap and
 // daily-cap deferral paths so a campaign reschedules instead of completing,
 // pausing or busy-looping.
-func (s *schedulerService) deferToNextDay(campaign *models.Campaign) time.Time {
+//
+// A preview gets the FLOOR of the same answer instead: the first open minute of
+// the campaign's next sending day. Two things made the scheduler's own value
+// wrong to show in a drawer — it is measured from the instant it is asked
+// ("24 hours from now", so 3pm today means 3pm tomorrow) and it then adds up to
+// half an hour of jitter so a fleet of deferred chains does not all wake
+// together. Neither means anything to a reader, and between them they moved the
+// drawer's "not before" on every refresh for the commonest waiting reason
+// there is: every mailbox having spent its daily budget (issue #437). The
+// floor is the honest answer anyway, because what the step is waiting for is
+// the day rolling over, not the wake-up the chain happens to have picked.
+func (s *schedulerService) deferToNextDay(campaign *models.Campaign, preview bool) time.Time {
 	tz := loadLocation(campaign.Timezone)
-	t := nextScheduleSlot(time.Now().Add(24*time.Hour), effectiveWindows(campaign), tz)
+	windows := effectiveWindows(campaign)
+	if preview {
+		local := time.Now().In(tz)
+		midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, tz).AddDate(0, 0, 1)
+		return nextScheduleSlot(midnight, windows, tz)
+	}
+	t := nextScheduleSlot(time.Now().Add(24*time.Hour), windows, tz)
 	// Add a small jitter so deferred tasks don't all wake at the same instant.
 	return t.Add(time.Minute * time.Duration(randomJitter(0, 30)))
 }

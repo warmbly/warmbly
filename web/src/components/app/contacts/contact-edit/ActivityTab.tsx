@@ -469,8 +469,8 @@ function NextActionFact({
                     {stateLabel}
                 </span>
                 {next.state === "due" && next.scheduled_at && (
-                    <span title="The slot the scheduler would give this step on its next pass. Leads queued ahead can still push it later.">
-                        next slot {fmtAbsolute(next.scheduled_at)}
+                    <span title="When this campaign next works through its queue. Leads queued ahead can still push this step to a later pass.">
+                        next pass {fmtAbsolute(next.scheduled_at)}
                     </span>
                 )}
                 {next.state !== "due" && next.not_before && (

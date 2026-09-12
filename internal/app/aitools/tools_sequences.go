@@ -49,7 +49,8 @@ func (d Deps) registerSequenceTools(r *Registry) {
 			"step_id":     strProp("The step (sequence) UUID."),
 			"name":        strProp("New step name."),
 			"subject":     strProp("New email subject."),
-			"body":        strProp("New email body text."),
+			"body":        strProp("New email body text. Sent as the plain-text part; when the step has no HTML of its own, the HTML part is rendered from it."),
+			"body_html":   strProp("New email body as HTML, for a designed email. Optional: omit it and the HTML part is rendered from body."),
 			"wait_days":   intProp("Days to wait before this step runs."),
 		}, "campaign_id", "step_id"),
 		Risk:            generation.RiskWrite,
@@ -114,6 +115,7 @@ func (d Deps) updateCampaignStep(ctx context.Context, inv Invocation, args json.
 		Name       *string `json:"name"`
 		Subject    *string `json:"subject"`
 		Body       *string `json:"body"`
+		BodyHTML   *string `json:"body_html"`
 		WaitDays   *int    `json:"wait_days"`
 	}](args)
 	if err != nil {
@@ -130,6 +132,7 @@ func (d Deps) updateCampaignStep(ctx context.Context, inv Invocation, args json.
 		Name:      in.Name,
 		Subject:   in.Subject,
 		BodyPlain: in.Body,
+		BodyHTML:  in.BodyHTML,
 		WaitAfter: in.WaitDays,
 	}
 	step, xerr := d.Sequences.Update(ctx, inv.UserID.String(), in.CampaignID, in.StepID, upd)

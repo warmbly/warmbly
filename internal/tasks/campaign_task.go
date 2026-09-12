@@ -441,7 +441,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to update campaign task tracking")
 	}
 
-	// stop_on_reply is enforced inside FindNextRoutedPair (STEP 6), and it is now
+	// stop_on_reply is enforced inside FindRoutedPairs (STEP 6), and it is now
 	// ROUTE-AWARE: a contact who replied is only handed back when their next step
 	// is part of the reply flow (the reply branch's own path). The normal cold
 	// sequence stops there, so there is no longer a blanket "contact has replied,
@@ -566,6 +566,10 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		}
 		bodyHTML = ""
 	}
+
+	// A blank HTML alternative never ships as the part the client prefers.
+	// Shared with the preview and the test send (see dropBlankHTMLPart).
+	bodyHTML = dropBlankHTMLPart(bodyHTML, bodyPlain)
 
 	// STEP 10.7: A hand-placed {{.UnsubscribeLink}} resolved to the bare signed
 	// URL; give it an anchor so the recipient reads "Unsubscribe" and not the
@@ -1066,16 +1070,56 @@ func (s *tasksService) clearIdle(ctx context.Context, campaign *models.Campaign)
 // reason is carried through to the activity log because "paused_no_accounts"
 // covers several very different fixes (connect a mailbox, widen a sending
 // window, repair DNS) and the status alone cannot tell them apart.
+//
+// It is deliberately LOUD. This runs unattended, hours after anyone touched
+// the campaign, and a pause nobody is told about is a campaign that quietly
+// stops sending: an error-level line in the operator's log, an error-level
+// entry in the activity feed so the dashboard tints it red, and an org-scoped
+// realtime pulse so every teammate's campaign list moves to "paused — no
+// accounts" without a refresh.
 func (s *tasksService) autoPauseCampaign(ctx context.Context, campaignID, taskID uuid.UUID, reason string) {
 	s.campaignRepo.UpdateStatusWithLock(ctx, campaignID, "paused_no_accounts")
-	s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
-	if s.campaignLogRepo != nil {
-		s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
-			CampaignID: campaignID,
-			EventType:  "auto_paused",
-			Message:    reason,
-		})
+	if taskID != uuid.Nil {
+		s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
 	}
+
+	log.Error().Str("campaign_id", campaignID.String()).Str("reason", reason).
+		Msg("campaign auto-paused: no mailbox can send for it")
+
+	// CreateLogOnce, not CreateLog: the reconciler re-checks paused campaigns
+	// too, and a repeat of the SAME reason must not fill the feed or re-pulse
+	// the dashboard every pass. Keyed on the reason rather than the code, so a
+	// pause whose cause changed (DNS, then no mailbox at all) still says so.
+	// The write also reports whether this pause is news, which is what gates
+	// the announcement below.
+	if s.campaignLogRepo == nil {
+		return
+	}
+	entry := &repository.CampaignLogEntry{
+		CampaignID: campaignID,
+		EventType:  "auto_paused",
+		Message:    reason,
+		Metadata: map[string]interface{}{
+			"level":  "error",
+			"code":   "no_accounts",
+			"reason": reason,
+		},
+	}
+	written, err := s.campaignLogRepo.CreateLogOnce(ctx, entry, "reason", reason, time.Now().Add(-time.Hour))
+	if err != nil || !written || s.streamingPublisher == nil {
+		return
+	}
+	campaign, gerr := s.campaignRepo.GetByID(ctx, campaignID)
+	if gerr != nil || campaign == nil {
+		return
+	}
+	s.streamingPublisher.PublishCampaignEvent(ctx, &pubsub.CampaignEvent{
+		BaseEvent:  pubsub.BaseEvent{EventType: pubsub.EventCampaignPaused, UserID: campaign.UserID},
+		OrgID:      campaignOrgID(campaign),
+		CampaignID: campaignID.String(),
+		Name:       campaign.Name,
+		Status:     "paused_no_accounts",
+	})
 }
 
 // haltOrglessCampaign stops a campaign that reached the send path with no

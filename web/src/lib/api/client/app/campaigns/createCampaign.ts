@@ -59,7 +59,10 @@ export interface CreateCampaignInput {
         name: string;
         subject: string;
         body_plain: string;
-        body_html: string;
+        // Optional: leave it off for a plain-text step and the backend renders
+        // the HTML part from body_plain, keeping the line structure and turning
+        // bare URLs into links so click tracking has hrefs to wrap.
+        body_html?: string;
         body_sync?: boolean;
         body_code?: boolean;
         wait_after?: number;
