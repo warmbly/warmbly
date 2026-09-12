@@ -164,11 +164,14 @@ func TestLiveHandleEmailFailedWalksBackAndRetriesUntilCap(t *testing.T) {
 	}
 	nextPair := func() *repository.ContactSequencePair {
 		t.Helper()
-		pair, _, _, err := s.CampaignProgressRepo.FindNextRoutedPair(ctx, f.campaign, "created_at", "asc", "", false, false, nil)
+		pairs, _, _, err := s.CampaignProgressRepo.FindRoutedPairs(ctx, f.campaign, "created_at", "asc", "", false, false, nil, 1)
 		if err != nil {
 			t.Fatalf("next pair: %v", err)
 		}
-		return pair
+		if len(pairs) == 0 {
+			return nil
+		}
+		return &pairs[0]
 	}
 
 	// First failure: the stamped step is walked back, the day's counters give

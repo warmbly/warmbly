@@ -157,7 +157,7 @@ func (s *service) fireInstantActions(ctx context.Context, campaignID, contactID,
 		s.executeInstantActionNode(ctx, campaign, contact, &cfg, eventKind)
 
 		// Stamp this action node as "sent" for the contact. The scheduler's
-		// FindNextRoutedPair loop-guard (sentIDs) skips steps with sent_at set, so
+		// FindRoutedPairs loop-guard (sentIDs) skips steps with sent_at set, so
 		// this is what stops the scheduler from re-running the very same chain when
 		// it later routes the contact through this branch at the next step boundary.
 		// Without it the chain would double-fire (deals/tasks/webhooks) whenever the

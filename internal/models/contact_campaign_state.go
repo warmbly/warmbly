@@ -57,7 +57,7 @@ type ContactCampaignStep struct {
 }
 
 // ContactNextActionState says how firm the next action's timing is; only
-// "due" carries a slot.
+// "due" carries the campaign's next wakeup.
 type ContactNextActionState string
 
 const (
@@ -76,8 +76,11 @@ type ContactNextAction struct {
 	Subject   string     `json:"subject,omitempty"`
 
 	State ContactNextActionState `json:"state"`
-	// ScheduledAt is set only when due; NotBefore is the earliest the hard
-	// constraints allow; Constraint names the gate in user-facing words.
+	// ScheduledAt is set only when due, and is then when the campaign's chain
+	// next wakes up and works its queue — a stored wakeup, so it reads the same
+	// on every refresh instead of a freshly paced slot that walked forward
+	// every time the drawer polled (issue #437). NotBefore is the earliest the
+	// hard constraints allow; Constraint names the gate in user-facing words.
 	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
 	NotBefore   *time.Time `json:"not_before,omitempty"`
 	Constraint  string     `json:"constraint,omitempty"`

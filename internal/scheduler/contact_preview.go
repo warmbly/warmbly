@@ -33,7 +33,14 @@ const (
 )
 
 // ContactSendPreview is a read-only "what happens next" for one contact in
-// one campaign; ScheduledAt is set only when the step is due now.
+// one campaign. It is a pure read in both senses: it writes nothing, and it
+// answers the same unchanged state with the same times on every call, because
+// the drawer polls it and a figure that walked forward on every refresh read as
+// a product that could not make up its mind (issue #437).
+//
+// ScheduledAt is set only when the step is due now, and is then the campaign
+// chain's own next wakeup. NotBefore is the step's hard floor, never a paced
+// slot.
 type ContactSendPreview struct {
 	Route       *repository.ContactRoute
 	State       models.ContactNextActionState
@@ -96,11 +103,19 @@ func (s *schedulerService) PreviewContactSend(ctx context.Context, campaignID, c
 	switch {
 	case perr == nil && sendable != nil:
 		pv.State = models.NextActionDue
-		slot := at
-		pv.ScheduledAt = &slot
+		// A due step is not waiting for a time of its own; it is waiting for the
+		// campaign's own chain to wake up and reach it. Report THAT instant,
+		// which is a stored scheduled_at and therefore the same answer on every
+		// read, rather than rolling a fresh slot for a send that is already due
+		// (issue #437). No wakeup means the chain is being re-seeded, and the
+		// honest answer is no time at all.
+		pv.ScheduledAt = s.campaignWakeup(ctx, campaignID)
 		return pv, nil
 	case errors.Is(perr, ErrCampaignDeferred):
 		pv.State = models.NextActionWaiting
+		// `at` is the step's hard floor here, not a paced slot: a preview runs
+		// placement with the spacing, jitter and distribution layers off, so the
+		// same unchanged campaign answers with the same instant every time.
 		slot := at
 		if route.DueAt != nil && route.DueAt.After(slot) {
 			slot = *route.DueAt
@@ -171,4 +186,25 @@ func projectRampLevel(c *models.Campaign, now time.Time) {
 	}
 	c.RampLevel = min(c.RampCeiling, max(c.RampLevel, c.RampStart)+c.RampIncrement)
 	c.RampLevelDate = &today
+}
+
+// campaignWakeup is when the campaign's chain next runs: the earliest pending
+// campaign task. Nil when the campaign has none, which the reconciler fixes
+// within its own interval.
+func (s *schedulerService) campaignWakeup(ctx context.Context, campaignID uuid.UUID) *time.Time {
+	tasks, err := s.campaignRepo.GetPendingCampaignTasks(ctx, campaignID)
+	if err != nil {
+		return nil
+	}
+	var next *time.Time
+	for i := range tasks {
+		at := tasks[i].ScheduledAt
+		if at == nil {
+			continue
+		}
+		if next == nil || at.Before(*next) {
+			next = at
+		}
+	}
+	return next
 }

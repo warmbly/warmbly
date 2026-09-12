@@ -211,28 +211,35 @@ type CampaignProgressRepository interface {
 	CountEmailsSentTodayByOrganization(ctx context.Context, organizationID uuid.UUID) (int, error)
 	GetLatestCampaignSequenceForContact(ctx context.Context, contactID uuid.UUID) (*CampaignSequencePair, error)
 
-	// FindNextRoutedPair selects the next (contact, step) to send by following
-	// each contact's step rules (the branching tree) rather than a flat position
-	// order. prioritizeNewLeads sorts first-step pairs first; excludeNewLeads
-	// drops first-step pairs entirely so the new-lead/day cap can be enforced
-	// while follow-ups keep flowing. The second return value, when the pair is
-	// nil, is the soonest time a waiting contact's condition window elapses — the
+	// FindRoutedPairs selects the (contact, step) pairs that are due now by
+	// following each contact's step rules (the branching tree) rather than a
+	// flat position order, in routing order, up to limit of them.
+	// prioritizeNewLeads sorts first-step pairs first; excludeNewLeads drops
+	// first-step pairs entirely so the new-lead/day cap can be enforced while
+	// follow-ups keep flowing. The second return value, when NO pair is due, is
+	// the soonest time a waiting contact's condition window elapses — the
 	// scheduler should defer and re-check then rather than completing.
 	// paced names the pool mailboxes that cannot take a send right now but will
 	// be able to on their own, mapped to when; a lead already bound to one is
 	// skipped for this pass and reported through the next-due time instead of
 	// parking every lead behind it. Nil applies no sender gate.
 	//
+	// More than one pair is returned because placement can refuse a SINGLE
+	// lead (ESP-strict finds no same-provider mailbox, the lead's own mailbox
+	// is busy, the recipient's preferred hours are hours away) and the leads
+	// behind them are still sendable. One pair and one refusal used to park the
+	// whole campaign.
+	//
 	// waitingOnSender reports that the returned next-due moment is a lead
 	// waiting for its own mailbox rather than for a step's wait or a condition
 	// window, so the caller can say which.
-	FindNextRoutedPair(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, paced PacedSenders) (pair *ContactSequencePair, nextDue *time.Time, waitingOnSender bool, err error)
+	FindRoutedPairs(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, paced PacedSenders, limit int) (pairs []ContactSequencePair, nextDue *time.Time, waitingOnSender bool, err error)
 	// RouteContact runs the same routing for ONE contact and reports where
 	// their flow goes next, plus the pre-send gate that excludes them, so a
 	// per-contact preview reads the facts the send path reads.
 	RouteContact(ctx context.Context, campaignID, contactID uuid.UUID) (*ContactRoute, error)
 
-	// CountUndeliverableLeads counts the leads FindNextRoutedPair excludes
+	// CountUndeliverableLeads counts the leads FindRoutedPairs excludes
 	// because address verification refused them. Reported when a campaign
 	// finishes, so "completed" never silently means "skipped everybody".
 	CountUndeliverableLeads(ctx context.Context, campaignID uuid.UUID) (int, error)
@@ -968,7 +975,7 @@ func (r *campaignProgressRepository) GetLatestCampaignSequenceForContact(ctx con
 // undeliverableClause is the ONE definition of "the campaign will never send to
 // this lead": address verification marked it invalid, or marked it risky while
 // the campaign's "send to risky emails" toggle is off. Routing excludes these
-// (see FindNextRoutedPair), the campaign task's pre-send gates refuse them, and
+// (see FindRoutedPairs), the campaign task's pre-send gates refuse them, and
 // the Leads view reports them as undeliverable, so all three read the same rule
 // rather than three copies that can drift apart.
 //
@@ -982,7 +989,7 @@ func undeliverableClause(cp string) string {
 	)
 }
 
-// FindNextRoutedPair selects the next (contact, step) to send by FOLLOWING THE
+// FindRoutedPairs selects the (contact, step) pairs to send by FOLLOWING THE
 // FLOW graph. For each contact, the next step is the route out of their
 // last-sent step:
 //  1. conditional branches (first match wins, evaluated against engagement),
@@ -1010,10 +1017,12 @@ func undeliverableClause(cp string) string {
 // whose next step isn't decidable yet (an engagement window still open) is not
 // returned.
 //
-// Only a pair that is DUE is returned: a new lead is due once the campaign's
+// Only pairs that are DUE are returned: a new lead is due once the campaign's
 // entry delay has elapsed since they entered it (immediately when there is
 // none); a routed step is due wait_after days after the contact's last step
-// (plus a wait node's minutes). The first due contact in list order wins.
+// (plus a wait node's minutes). The first `limit` due contacts in list order
+// win, in order, so the caller can move on to the next one when placement
+// refuses the one in front.
 // Contacts whose next step is due later never block the ones behind them: without this, the one lead
 // routed to a "wait 3 days" follow-up parks the whole campaign for 3 days while
 // every other lead's first email sits queued. When nothing is due, the second
@@ -1028,8 +1037,11 @@ func undeliverableClause(cp string) string {
 // that is NOT coming back on its own is deliberately absent from `paced`: the
 // lead is offered, and the placer moves it to another mailbox.
 //
-// Returns a nil pair and a nil next-due when the campaign is genuinely complete.
-func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, paced PacedSenders) (*ContactSequencePair, *time.Time, bool, error) {
+// Returns no pairs and a nil next-due when the campaign is genuinely complete.
+func (r *campaignProgressRepository) FindRoutedPairs(ctx context.Context, campaignID uuid.UUID, orderBy, orderDir, orderField string, prioritizeNewLeads, excludeNewLeads bool, paced PacedSenders, limit int) ([]ContactSequencePair, *time.Time, bool, error) {
+	if limit < 1 {
+		limit = 1
+	}
 	router, err := r.loadRouter(ctx, campaignID)
 	if err != nil {
 		return nil, nil, false, err
@@ -1125,6 +1137,7 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 	// wait elapses or a condition window that closes. Only reported when no
 	// contact is due right now.
 	var nextDue *time.Time
+	pairs := make([]ContactSequencePair, 0, limit)
 	// waitingOnSender is true while the soonest moment belongs to a lead
 	// waiting for its own mailbox, so the caller can say "waiting for its
 	// mailbox" rather than "waiting for a step's delay".
@@ -1169,10 +1182,18 @@ func (r *campaignProgressRepository) FindNextRoutedPair(ctx context.Context, cam
 			noteDue(back, true)
 			continue
 		}
-		return &ContactSequencePair{ContactID: contactID, SequenceID: *res.Target, IsNewLead: res.IsNewLead, NotBefore: res.DueAt, AssignedSender: in.sender}, nil, false, nil
+		pairs = append(pairs, ContactSequencePair{ContactID: contactID, SequenceID: *res.Target, IsNewLead: res.IsNewLead, NotBefore: res.DueAt, AssignedSender: in.sender})
+		if len(pairs) >= limit {
+			break
+		}
 	}
 	if rerr := rows.Err(); rerr != nil {
 		return nil, nil, false, rerr
+	}
+	// A due pair makes the deferral times collected so far irrelevant: the
+	// caller is sending, not waiting.
+	if len(pairs) > 0 {
+		return pairs, nil, false, nil
 	}
 	// Nobody sendable now. Hand back the soonest moment somebody will be so the
 	// scheduler defers until then rather than completing.
@@ -1205,7 +1226,7 @@ type ContactRoute struct {
 
 // RouteContact runs the campaign's routing for ONE contact and reports where
 // their flow goes next, including the gate that would exclude them. It reads
-// exactly what FindNextRoutedPair reads, so a preview never disagrees with
+// exactly what FindRoutedPairs reads, so a preview never disagrees with
 // the send path.
 func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignID, contactID uuid.UUID) (*ContactRoute, error) {
 	router, err := r.loadRouter(ctx, campaignID)
