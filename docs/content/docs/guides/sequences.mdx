@@ -36,6 +36,12 @@ Pasting copy from Gmail, Outlook, Word or another email tool keeps its paragraph
 
 Tables are worth knowing about: they are the only layout Outlook on Windows renders reliably, because it lays messages out with Word rather than a browser engine. Anything built with `position`, `flex` or `grid` collapses there. The table menu inserts a two by two grid and, once the cursor is inside one, adds and removes rows and columns, merges cells and deletes the table. The dashed cell borders you see while editing are the editing surface only; the sent email carries whatever borders the markup asks for.
 
+#### Writing and editing with AI
+
+Two AI surfaces live in the body itself. With the cursor somewhere in the copy, a sparkle appears in the right gutter: click it, or press **⌘J**, to ask for text at the cursor or to continue the draft. Select some text instead and a floating **Edit with AI** pill appears over it, with quick actions (improve, shorten, expand, fix grammar, friendlier, more formal) or a free instruction. Both cost [AI credits](/guides/ai-credits/) and both offer **Undo** and **Again** before you move on.
+
+An edit changes what you asked for and leaves the rest of the passage as you wrote it. Merge fields, conditions, spintax, AI blocks, form links and links travel through the model as themselves and come back as themselves, so a rewrite never quietly drops a `{{.FirstName}}`, empties an AI block or unlinks your booking or opt-out link. Bold, italic and headings inside the selection are the exception: they are not preserved, so select around them when the styling matters. A rewrite that lands inside a sentence stays inside it rather than breaking the paragraph in two, and when the model concludes the copy already satisfies the instruction the review row says **No change** instead of reporting a rewrite that is not there.
+
 #### Images
 
 The image button offers three ways in: upload a file, paste an address, or pick something already in the workspace library. You can also drag an image straight onto the body, or paste a screenshot from the clipboard.
