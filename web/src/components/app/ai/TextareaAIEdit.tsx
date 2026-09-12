@@ -19,7 +19,7 @@ import buildError from "@/lib/helper/buildError";
 import { Kbd } from "@/components/ui/shortcut-tooltip";
 import AIEditPopover, { type AIEditPhase } from "./AIEditPopover";
 import { AI_CARD_WIDTH, clampCardLeft } from "./floatingBounds";
-import { clampContext } from "./richTextPassage";
+import { clampContext, restoreEdges } from "./richTextPassage";
 import textareaRangeRect, {
     textareaRangeRects,
     type LineRect,
@@ -217,16 +217,16 @@ export default function TextareaAIEdit({
             tokens: number,
         ) => {
             setUsage({ charged, tokens });
-            // A model that hands the passage back untouched must say so rather
-            // than report a rewrite nobody can see (issue #432). The server
-            // trims what it returns, so the comparison trims both sides or a
-            // selection with a trailing space never matches.
-            setChanged(text.trim() !== target.text.trim());
+            // The server returns its answer trimmed, so the author's own edges
+            // go back on before anything is written or compared: what lands in
+            // the box IS what "did it change?" is answered from (issue #432).
+            const applied = restoreEdges(target.text, text);
+            setChanged(applied !== target.text);
             const prefix = prevValue.slice(0, target.start);
             const suffix = prevValue.slice(target.end);
             const cap = (s: string) => (maxLen ? s.slice(0, maxLen) : s);
             typewriter.run(
-                text,
+                applied,
                 (partial) => {
                     const next = cap(prefix + partial + suffix);
                     expectedValue.current = next;
@@ -240,8 +240,8 @@ export default function TextareaAIEdit({
                     }
                 },
                 () => {
-                    const newRange = { start: target.start, end: target.start + text.length, text };
-                    lastRun.current = { instruction, prevValue, start: target.start, newLen: text.length };
+                    const newRange = { start: target.start, end: target.start + applied.length, text: applied };
+                    lastRun.current = { instruction, prevValue, start: target.start, newLen: applied.length };
                     frozen.current = newRange;
                     const ta = textareaRef.current;
                     if (ta) {

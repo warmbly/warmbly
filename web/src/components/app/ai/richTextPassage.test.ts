@@ -3,7 +3,7 @@
 // treated as markup.
 
 import { describe, it, expect } from "vitest";
-import { passageHTML } from "./richTextPassage";
+import { passageHTML, restoreEdges } from "./richTextPassage";
 
 describe("passageHTML", () => {
     it("starts a paragraph on a blank line and breaks on a single newline", () => {
@@ -68,5 +68,36 @@ describe("passageHTML", () => {
 
     it("keeps an empty line as an empty paragraph", () => {
         expect(passageHTML("")).toBe("<p><br></p>");
+    });
+
+    it("keeps a blank paragraph the author used as spacing", () => {
+        // Two separators in a row is an empty block between two others; a
+        // greedy split swallowed it and the spacing disappeared on every edit.
+        expect(passageHTML("one\n\n\n\ntwo")).toBe("<p>one</p><p><br></p><p>two</p>");
+    });
+
+    it("drops a stray newline at a block edge rather than rendering a break", () => {
+        expect(passageHTML("one\n\n\ntwo")).toBe("<p>one</p><p>two</p>");
+    });
+
+    it("keeps a destination that carries a paren or a space", () => {
+        expect(passageHTML("read [the article](<https://en.wikipedia.org/wiki/Foo_(bar)>) now")).toBe(
+            '<p>read <a href="https://en.wikipedia.org/wiki/Foo_(bar)">the article</a> now</p>',
+        );
+    });
+});
+
+describe("restoreEdges", () => {
+    it("gives back the spaces the model trimmed off", () => {
+        expect(restoreEdges(" word ", "REWRITE")).toBe(" REWRITE ");
+        expect(restoreEdges("word", "REWRITE")).toBe("REWRITE");
+    });
+
+    it("makes an unchanged answer compare equal to what was selected", () => {
+        expect(restoreEdges("Already fine. ", "Already fine.")).toBe("Already fine. ");
+    });
+
+    it("leaves an all-whitespace selection alone", () => {
+        expect(restoreEdges("   ", "anything")).toBe("   ");
     });
 });

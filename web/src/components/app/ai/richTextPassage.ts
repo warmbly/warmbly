@@ -30,8 +30,10 @@ import { FIELD_TOKEN_RE, FORM_LINK_RE } from "@/lib/templateVars";
 
 const AI_TOKEN_SOURCE = "\\[\\[ai:[A-Za-z0-9_-]{1,64}\\]\\]";
 // A markdown link, as passageText writes one. The destination may be a merge
-// token ({{.UnsubscribeLink}}), so it is anything without a space or a paren.
-const MD_LINK_SOURCE = "\\[[^\\]\\n]*\\]\\([^)\\s]+\\)";
+// token ({{.UnsubscribeLink}}), so it is anything without a space or a paren,
+// or anything at all inside angle brackets: a URL is allowed both, and a
+// Wikipedia article ending in ")" is the common one.
+const MD_LINK_SOURCE = "\\[[^\\]\\n]*\\]\\((?:<[^>\\n]*>|[^)\\s]+)\\)";
 const CONDITIONAL_SOURCE = "\\{\\{\\s*if\\s[\\s\\S]*?\\{\\{\\s*end\\s*\\}\\}";
 
 // One scan over the model's text, widest structure first: a conditional wraps
@@ -47,7 +49,7 @@ const TOKEN_SOURCE = [
 ].join("|");
 
 const AI_TOKEN_RE = /^\[\[ai:([A-Za-z0-9_-]{1,64})\]\]$/;
-const MD_LINK_RE = /^\[([^\]\n]*)\]\(([^)\s]+)\)$/;
+const MD_LINK_RE = /^\[([^\]\n]*)\]\((?:<([^>\n]*)>|([^)\s]+))\)$/;
 // Only a destination that is actually a destination becomes an anchor, so a
 // "[note](see below)" the author wrote stays the text they wrote.
 const HREF_RE = /^(https?:\/\/|mailto:|tel:|\{\{)/i;
@@ -71,10 +73,11 @@ function plainHTML(s: string): string {
 function chipHTML(token: string, aiConfigs: Map<string, string>): string {
     const md = token.match(MD_LINK_RE);
     if (md) {
-        if (!HREF_RE.test(md[2])) return plainHTML(token);
+        const href = md[2] ?? md[3] ?? "";
+        if (!HREF_RE.test(href)) return plainHTML(token);
         // The label is copy like any other, so the tokens inside it are chipped
         // too. It cannot hold another link: the pattern stops at a "]".
-        return `<a href="${escapeAttr(md[2])}">${inlineHTML(md[1], aiConfigs)}</a>`;
+        return `<a href="${escapeAttr(href)}">${inlineHTML(md[1], aiConfigs)}</a>`;
     }
     const ai = token.match(AI_TOKEN_RE);
     if (ai) {
@@ -114,16 +117,29 @@ export function clampContext(text: string): string {
     return points.length <= CONTEXT_LIMIT ? text : points.slice(0, CONTEXT_LIMIT).join("");
 }
 
+// The model returns its answer trimmed, so an edit of a selection that started
+// or ended on a space would eat that space and glue the rewrite to the word
+// next to it. The author's edges are put back, which also makes "did anything
+// change?" an exact comparison rather than a trimmed one.
+export function restoreEdges(original: string, edited: string): string {
+    const lead = /^\s*/.exec(original)?.[0] ?? "";
+    const trail = /\s*$/.exec(original)?.[0] ?? "";
+    return original.trim() === "" ? original : lead + edited.trim() + trail;
+}
+
 function linkHref(node: PMNode): string {
     return String(node.marks.find((m) => m.type.name === "link")?.attrs.href ?? "");
 }
 
 // A link is only written as markdown when the markdown reads back as the same
-// link. A "]" in the label or a ")" in the destination would come back as
-// literal brackets in the body, which is worse than an unmarked run of words.
+// link; anything else would come back as literal brackets in the body, which is
+// worse than an unmarked run of words. A destination carrying a ")" or a space
+// goes in angle brackets, the markdown form for exactly that.
 function markdownLink(label: string, href: string): string {
-    const safe = !label.includes("]") && !label.includes("\n") && !/[)\s]/.test(href);
-    return safe ? `[${label}](${href})` : label;
+    if (label.includes("]") || label.includes("\n") || !href) return label;
+    if (!/[)\s<>]/.test(href)) return `[${label}](${href})`;
+    if (href.includes(">") || href.includes("\n")) return label;
+    return `[${label}](<${href}>)`;
 }
 
 // passageText reads a document range as the model should see it: chips as their
@@ -186,10 +202,17 @@ export function passageAIConfigs(editor: Editor, from: number, to: number): Map<
 
 // passageHTML turns model text back into editor HTML: a blank line starts a
 // paragraph, a single newline is a line break, and every token becomes its chip.
+//
+// The split consumes ONE separator per break, the exact inverse of the "\n\n"
+// passageText joins blocks with, so an empty paragraph between two others comes
+// back as an empty paragraph instead of being swallowed by a greedy \n{2,}. An
+// odd newline left over at a block's edge is the model's own spacing noise and
+// is dropped rather than rendered as a stray break.
 export function passageHTML(text: string, aiConfigs?: Map<string, string>): string {
     const configs = aiConfigs ?? new Map<string, string>();
     return text
-        .split(/\n{2,}/)
+        .split("\n\n")
+        .map((block) => block.replace(/^\n+|\n+$/g, ""))
         .map((block) => `<p>${inlineHTML(block, configs) || "<br>"}</p>`)
         .join("");
 }
@@ -200,17 +223,22 @@ function parseSlice(editor: Editor, html: string): Slice {
     });
 }
 
-// replacePassage swaps a range for parsed HTML the way a paste would, leaving
-// the result selected. Returns the end of the new content, or null when the
-// document did not change — a rewrite that changed nothing must not be reported
-// as one that did.
+// replacePassage swaps a range for parsed HTML the way a paste would. A
+// replacement is left selected, for review; an insertion at a caret leaves the
+// caret after what was written, so the next keystroke continues it. Returns the
+// end of the new content, or null when the document did not change — a rewrite
+// that changed nothing must not be reported as one that did.
 export function replacePassage(editor: Editor, from: number, to: number, html: string): number | null {
+    const inserting = from === to;
     const tr = editor.state.tr.replaceRange(from, to, parseSlice(editor, html));
     // docChanged only says a step ran: replacing a passage with the same words
     // still produces one. The documents themselves are compared instead.
     if (tr.doc.eq(editor.state.doc)) return null;
-    const end = tr.mapping.map(to, -1);
-    tr.setSelection(TextSelection.between(tr.doc.resolve(Math.min(from, end)), tr.doc.resolve(end)));
+    // An inserted-at position maps to itself unless it associates rightwards,
+    // which would leave the caret in front of the text just written.
+    const end = tr.mapping.map(to, inserting ? 1 : -1);
+    const $end = tr.doc.resolve(end);
+    tr.setSelection(inserting ? TextSelection.near($end, -1) : TextSelection.between(tr.doc.resolve(Math.min(from, end)), $end));
     editor.view.dispatch(tr.scrollIntoView());
     return end;
 }

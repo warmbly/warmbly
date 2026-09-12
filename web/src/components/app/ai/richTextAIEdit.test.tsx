@@ -152,6 +152,15 @@ describe("Edit with AI in the campaign body", () => {
         expect(saved.html).toBe(editor.getHTML());
     });
 
+    it("wraps a destination the plain markdown form cannot hold", async () => {
+        const url = "https://en.wikipedia.org/wiki/Foo_(bar)";
+        const { editor } = mountBody(`<p>See <a href="${url}">the page</a>.</p>`);
+        reply = { text: "unused", credits_charged: 1, tokens_used: 10 };
+        await select(editor, 1, editor.state.doc.content.size - 1);
+        await rewrite();
+        expect(sent?.text).toBe(`See [the page](<${url}>).`);
+    });
+
     it("replaces the whole selection and reports the new body upward", async () => {
         const { editor, saved } = mountBody("<p>Original one.</p><p>Original two.</p>");
         reply = { text: "New one.\n\nNew two.", credits_charged: 1, tokens_used: 10 };
@@ -210,6 +219,15 @@ describe("Edit with AI in the campaign body", () => {
         expect(screen.queryByText("Rewritten")).toBeNull();
     });
 
+    it("gives back the space the selection ended on", async () => {
+        const { editor } = mountBody("<p>One two three four.</p>");
+        // "two three " including the trailing space; the server trims its answer.
+        reply = { text: "TWO AND THREE", credits_charged: 1, tokens_used: 10 };
+        await select(editor, 5, 15);
+        await rewrite();
+        expect(editor.getHTML()).toBe("<p>One TWO AND THREE four.</p>");
+    });
+
     it("undoes the rewrite back to the body that was there", async () => {
         const { editor, saved } = mountBody("<p>Original one.</p>");
         reply = { text: "New one.", credits_charged: 1, tokens_used: 10 };
@@ -250,6 +268,17 @@ describe("Write with AI at the caret", () => {
         await writeAtCaret(editor, 5, "add the middle");
         expect(editor.getHTML()).toBe("<p>One two threefour.</p>");
         expect(saved.html).toBe(editor.getHTML());
+    });
+
+    it("leaves the caret after what it wrote, not in front of it", async () => {
+        const { editor } = mountBody("<p>One four.</p>");
+        written = { text: "two three ", credits_charged: 1, tokens_used: 10 };
+        await writeAtCaret(editor, 5, "add the middle");
+        expect(editor.getHTML()).toBe("<p>One two three four.</p>");
+        // Continuing to type has to continue the sentence, which it cannot do
+        // from a caret parked in front of the insertion.
+        expect(editor.state.selection.empty).toBe(true);
+        expect(editor.state.selection.from).toBe(15);
     });
 
     it("lands the merge variable it was told to use as a chip", async () => {

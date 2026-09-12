@@ -180,10 +180,8 @@ func TestGenerateEditSendsTheEditPromptAndReturnsTheText(t *testing.T) {
 	if !strings.Contains(provider.got.Prompt, "Instruction: fix the grammar") {
 		t.Errorf("wrong user prompt:\n%s", provider.got.Prompt)
 	}
-	// An edit returns the whole passage, and the passage may be editMaxTextLen
-	// characters, so the writing assistant's 1024-token cap would truncate it.
-	if provider.got.MaxTokens < 2048 {
-		t.Errorf("max tokens %d truncates a full-body rewrite", provider.got.MaxTokens)
+	if provider.got.MaxTokens != editTokenFloor {
+		t.Errorf("a short passage should get the floor, got %d", provider.got.MaxTokens)
 	}
 
 	var body struct {
@@ -198,5 +196,54 @@ func TestGenerateEditSendsTheEditPromptAndReturnsTheText(t *testing.T) {
 	}
 	if body.Text != "edited passage" || body.Charged != 1 || body.Tokens != 12 || body.Model != "test-model" {
 		t.Errorf("unexpected response: %+v", body)
+	}
+}
+
+// An edit returns the WHOLE passage, so the completion cap has to cover it. A
+// flat cap is wrong for one script or the other: 8000 runes of English is about
+// 2k tokens and 8000 runes of Chinese is about 8k.
+func TestEditCompletionTokensCoversThePassage(t *testing.T) {
+	if got := editCompletionTokens("short"); got != editTokenFloor {
+		t.Errorf("short passage: got %d, want the %d floor", got, editTokenFloor)
+	}
+	// A full-length CJK passage: every rune may come back as its own token.
+	long := strings.Repeat("文", editMaxTextLen)
+	if got := editCompletionTokens(long); got < editMaxTextLen {
+		t.Errorf("a %d-rune passage would be truncated at %d tokens", editMaxTextLen, got)
+	}
+	if got := editCompletionTokens(long); got > editTokenCeiling {
+		t.Errorf("got %d, above the %d ceiling", got, editTokenCeiling)
+	}
+	// Between the two, the cap tracks the passage plus headroom.
+	mid := strings.Repeat("a", 3000)
+	if got := editCompletionTokens(mid); got != 3000+editTokenHeadroom {
+		t.Errorf("got %d, want %d", got, 3000+editTokenHeadroom)
+	}
+}
+
+// The limits count characters, not bytes: the same body must be editable in
+// every language, and a byte cap is three times stricter for Cyrillic or CJK.
+func TestEditLimitsCountRunes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	provider := &editProvider{}
+	h := &Handler{FeatureGateService: editGate{}, CreditService: editCredits{}, AIProvider: provider}
+
+	// 5000 runes of Cyrillic is 10000 bytes: under the rune cap, over a byte one.
+	passage := strings.Repeat("ф", 5000)
+	body, err := json.Marshal(map[string]string{"text": passage, "instruction": "shorten"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set(middleware.OrganizationIDKey, uuid.New())
+	c.Request = httptest.NewRequest(http.MethodPost, "/generation/edit", strings.NewReader(string(body)))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.GenerateEdit(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a 5000-rune Cyrillic passage was refused: %d %s", rec.Code, rec.Body.String())
 	}
 }

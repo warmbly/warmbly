@@ -20,7 +20,14 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import AIEditPopover, { type AIEditPhase } from "./AIEditPopover";
 import { AI_CARD_WIDTH, clampCardLeft } from "./floatingBounds";
-import { clampContext, passageAIConfigs, passageHTML, passageText, replacePassage } from "./richTextPassage";
+import {
+    clampContext,
+    passageAIConfigs,
+    passageHTML,
+    passageText,
+    replacePassage,
+    restoreEdges,
+} from "./richTextPassage";
 
 interface EditorRange {
     from: number;
@@ -154,7 +161,7 @@ export default function RichTextAIEdit({ editor }: { editor: Editor }) {
             tokens: number,
         ) => {
             setUsage({ charged, tokens });
-            const html = passageHTML(text, target.aiConfigs);
+            const html = passageHTML(restoreEdges(target.text, text), target.aiConfigs);
             const newTo = replacePassage(editor, target.from, target.to, html);
             editor.commands.focus();
             lastRun.current = { instruction, prevHTML, range: target };
