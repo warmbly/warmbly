@@ -4,6 +4,12 @@
 // decides to show the tip, long after mouseenter fires. The title comes off
 // again on the way out, because React does not manage an attribute it was never
 // given and would otherwise leave a stale one behind on the next render.
+//
+// Known bound: text replaced by a realtime update while the cursor is already
+// resting on the cell shows the previous value until the pointer leaves and
+// returns, since nothing fires in between. Closing that would mean measuring on
+// every mousemove — a layout read per row per frame — for a sub-second window on
+// a tooltip, so it is left as is deliberately.
 
 import type { MouseEvent } from "react";
 
