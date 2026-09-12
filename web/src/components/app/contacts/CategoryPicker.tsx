@@ -219,15 +219,10 @@ export function CategoryChip({
     category,
     onRemove,
     compact,
-    clamp,
 }: {
     category: { id: string; title: string; color: string };
     onRemove?: () => void;
     compact?: boolean;
-    // For a chip sharing a line with text that has to stay readable (a contact's
-    // name in the list): hold the label to one width at every breakpoint, and
-    // hand the rest to a tooltip.
-    clamp?: boolean;
 }) {
     return (
         <span
@@ -243,7 +238,7 @@ export function CategoryChip({
                 style={{ backgroundColor: category.color }}
             />
             <span
-                className={`truncate min-w-0 ${clamp ? "max-w-[72px]" : "max-w-[72px] md:max-w-none"}`}
+                className="truncate min-w-0 max-w-[72px] md:max-w-none"
                 {...clippedTitle}
             >
                 {category.title}

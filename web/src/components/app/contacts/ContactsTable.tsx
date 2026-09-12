@@ -1335,21 +1335,19 @@ function ContactsTableBody({
                                         <div className="flex-1 min-w-0">
                                             <div className={`text-[12.5px] font-medium truncate leading-tight flex items-center gap-1.5 ${processed ? "text-slate-400" : "text-slate-900"}`}>
                                                 <span className="truncate" {...clippedTitle}>{name}</span>
-                                                {/* Neither side of this line may eat the other: shrink-0 chips
-                                                    take a fixed-width Name cell whole and leave no name, while
-                                                    a freely shrinking group collapses to bare colour dots. Cap
-                                                    the tags at 45% and let both ellipsize into their tooltip. */}
+                                                {/* One tag, then a count. The Name column is a fixed width
+                                                    now, and two tags sharing it with a name left each of them
+                                                    about three legible characters. The tags take at most 45%
+                                                    of the line, and the +N tooltip names the rest in full. */}
                                                 {c.categories && c.categories.length > 0 && (
                                                     <span className="inline-flex items-center gap-0.5 min-w-0 max-w-[45%]">
-                                                        {c.categories.slice(0, 2).map((cat) => (
-                                                            <CategoryChip key={cat.id} category={cat} compact clamp />
-                                                        ))}
-                                                        {c.categories.length > 2 && (
+                                                        <CategoryChip category={c.categories[0]} compact />
+                                                        {c.categories.length > 1 && (
                                                             <span
                                                                 className="inline-flex items-center h-4 px-1 shrink-0 rounded text-[10px] font-medium bg-slate-100 text-slate-500"
-                                                                title={c.categories.slice(2).map((x) => x.title).join(", ")}
+                                                                title={c.categories.slice(1).map((x) => x.title).join(", ")}
                                                             >
-                                                                +{c.categories.length - 2}
+                                                                +{c.categories.length - 1}
                                                             </span>
                                                         )}
                                                     </span>
