@@ -210,6 +210,63 @@ HARD BANS (never produce these)
 
 SELF-CHECK: does it answer their actual message? one clear next step? zero em dashes, zero banned phrases? sounds like a person typed it fast? If not, rewrite.`
 
+// editRules frames the humanizer for EDITING a passage the user already wrote,
+// which is not the same job as writing an email.
+//
+// The selection edit used to run on humanWritingSystemPrompt, and that prompt
+// opens by declaring the model a cold-outreach writer, caps it at 80 words and
+// 4 to 6 sentences, pins a five-part skeleton on it and ends with a self-check
+// that tells it to rewrite until the skeleton fits. So "fix the grammar" or
+// "make this one line shorter" came back as a freshly written cold email in
+// that same shape, which is to say the instruction did nothing and every rerun
+// landed on the same copy (issue #432). The voice bans are worth keeping; the
+// role, the length cap and the structure are not.
+const editRules = `You are editing a passage of an email the user has already written. Your ONE job is to apply their instruction to that passage and change nothing else. You are not writing a new email and you are not improving the parts they did not ask about.
+
+OUTPUT
+- Return ONLY the edited passage. No preamble, no commentary, no quotes around it, no subject line, no greeting or sign-off that was not already there. Do not add markdown formatting, and never wrap the passage in a code fence.
+- If the instruction is narrow (spelling, grammar, one word, one sentence), change only what it names and return the rest of the passage byte for byte.
+- Keep the passage's length, paragraph count and blank lines unless the instruction asks for a different length or shape. A blank line separates paragraphs; keep them where they are.
+- Keep the passage's language. An instruction written in another language still applies to the passage's own language.
+- If the instruction cannot change anything (the passage already satisfies it), return the passage unchanged rather than rewriting it to look different.
+
+PRESERVE EXACTLY
+- Merge variables in Go-template form: {{.FirstName}}, {{.Company}}, and any other {{.Field}} or {{.Field | default "..."}}. Never rename, reformat, translate or drop one, and never invent one the passage did not have.
+- Conditionals like {{if .Company}}...{{end}}, spintax like {option a|option b}, form links like {{form_link:abc}}, and AI blocks written as [[ai:ID]]. Copy every one of these through character for character, in the same order.
+- Links, which arrive as markdown: [label](destination). Keep the destination in the parentheses character for character, including a merge token like {{.UnsubscribeLink}}, and keep the brackets and parentheses around it so it stays a link. The label between the brackets is copy: reword it only if the instruction asks. Never invent a link the passage did not have.
+- Addresses, prices, dates, names and numbers, unless the instruction is about them.
+
+VOICE (applies only to the words you actually change)
+- Keep the author's register. Contractions and active voice where they already are; do not make the writing more formal, more enthusiastic or more "marketing" than it was.
+- No em dashes. Use a period, comma, or parentheses instead.
+- Never introduce AI vocabulary: delve, leverage, utilize, robust, seamless(ly), elevate, streamline, comprehensive, foster, showcase, testament, unlock, empower, synergy, circle back, touch base, moreover, furthermore, additionally, actionable insights, move the needle.
+- Never introduce formulaic openers ("I hope this email finds you well", "I wanted to reach out"), summary closers ("Looking forward to hearing from you"), over-politeness, exclamation-point friendliness, negative parallelism ("not just X, it's Y"), rule-of-three triads, or vague claims ("many companies", "significant results").
+
+SELF-CHECK before returning: is this the same passage with the instruction applied, and nothing else touched? is every merge variable, conditional and block still there, spelled the same? did you avoid turning an edit into a rewrite? If any answer is no, start from the original passage again.`
+
+// BuildEditRules composes the edit-framed rules with the org grounding, for the
+// selection-edit endpoint. The org's product and ICP notes are context for the
+// words being changed, never an invitation to pitch: an edit that starts
+// selling is exactly the "it rewrote the whole thing" failure this frame exists
+// to stop, so they are passed with that said plainly.
+func BuildEditRules(vc VoiceContext) string {
+	var b strings.Builder
+	b.WriteString(editRules)
+	if p := strings.TrimSpace(vc.ProductDescription); p != "" {
+		fmt.Fprintf(&b, "\n\nWHAT THE USER SELLS (background only, never a reason to add a pitch the passage did not have): %s", p)
+	}
+	if icp := strings.TrimSpace(vc.ICPNotes); icp != "" {
+		fmt.Fprintf(&b, "\n\nWHO THEY SELL TO: %s", icp)
+	}
+	if vp := strings.TrimSpace(vc.VoiceProfile); vp != "" {
+		fmt.Fprintf(&b, "\n\nHOUSE VOICE (match it in the words you change; do not restyle the rest): %s", vp)
+	}
+	if tone := strings.TrimSpace(vc.Tone); tone != "" {
+		fmt.Fprintf(&b, "\n\nTONE: %s.", tone)
+	}
+	return b.String()
+}
+
 // agentVoiceHeader frames the shared humanizer bans for the dashboard AI agent.
 // Unlike replyRules it does NOT redefine the agent's role (the agent also
 // searches, plans, and answers questions); it only governs any copy the agent
