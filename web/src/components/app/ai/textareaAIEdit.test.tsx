@@ -44,13 +44,13 @@ import TextareaAIEdit from "./TextareaAIEdit";
 
 const MAX = 20;
 
-function Host({ initial }: { initial: string }) {
+function Host({ initial, max = MAX }: { initial: string; max?: number }) {
     const ref = React.useRef<HTMLTextAreaElement>(null);
     const [value, setValue] = React.useState(initial);
     return (
         <>
             <textarea ref={ref} value={value} onChange={(e) => setValue(e.target.value)} />
-            <TextareaAIEdit textareaRef={ref} value={value} onChange={setValue} maxLen={MAX} />
+            <TextareaAIEdit textareaRef={ref} value={value} onChange={setValue} maxLen={max} />
         </>
     );
 }
@@ -100,6 +100,33 @@ describe("TextareaAIEdit against the composer's length cap", () => {
             fireEvent.click(screen.getByText("Again"));
         });
         expect(sent?.text).toBe("two");
+    });
+
+    it("says No change when the cap swallows the rewrite whole", async () => {
+        const { container } = render(
+            <QueryClientProvider client={new QueryClient()}>
+                <Host initial="abcdefg" max={7} />
+            </QueryClientProvider>,
+        );
+        const ta = container.querySelector("textarea")!;
+        await act(async () => {
+            ta.focus();
+            ta.setSelectionRange(5, 7);
+            document.dispatchEvent(new Event("selectionchange"));
+        });
+        // Everything this adds lands past the cap, so the body cannot move.
+        reply = { text: "fg extra", credits_charged: 1, tokens_used: 10 };
+        await act(async () => {
+            fireEvent.mouseDown(await screen.findByText("Edit with AI"));
+        });
+        const input = await screen.findByPlaceholderText("Tell AI how to change it…");
+        await act(async () => {
+            fireEvent.change(input, { target: { value: "expand" } });
+            fireEvent.keyDown(input, { key: "Enter" });
+        });
+        expect(ta.value).toBe("abcdefg");
+        await screen.findByText("No change");
+        expect(screen.queryByText("Rewritten")).toBeNull();
     });
 
     it("leaves Undo pointing at the words that were selected, not a derived range", async () => {

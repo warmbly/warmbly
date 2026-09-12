@@ -241,10 +241,15 @@ export default function TextareaAIEdit({
             // go back on before anything is written or compared: what lands in
             // the box IS what "did it change?" is answered from (issue #432).
             const applied = restoreEdges(target.text, text);
-            setChanged(applied !== target.text);
             const prefix = prevValue.slice(0, target.start);
             const suffix = prevValue.slice(target.end);
             const cap = (s: string) => (maxLen ? s.slice(0, maxLen) : s);
+            // Against the value that will actually be in the box, not against
+            // the model's answer: a rewrite that falls past the composer's cap
+            // leaves the body exactly as it was, and "Rewritten" over an
+            // unchanged body is the thing this signal exists to prevent.
+            const settled = cap(prefix + applied + suffix);
+            setChanged(settled !== prevValue);
             typewriter.run(
                 applied,
                 (partial) => {
@@ -263,7 +268,6 @@ export default function TextareaAIEdit({
                     // What the box holds, not what the model sent: maxLen can
                     // cut the tail off, and a range recorded past the end would
                     // have Undo and Again working on text that is not there.
-                    const settled = cap(prefix + applied + suffix);
                     const end = Math.min(target.start + applied.length, settled.length);
                     const newRange = { start: target.start, end, text: settled.slice(target.start, end) };
                     lastRun.current = { instruction, prevValue, start: target.start, origEnd: target.end };
