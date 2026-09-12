@@ -43,7 +43,10 @@ defmodule Realtime.Application do
     opts = [strategy: :one_for_one, name: Realtime.Supervisor]
 
     Logger.info("Starting Realtime application...")
-    Logger.info("Redis URL: #{Application.get_env(:realtime, :redis_url, "not configured")}")
+
+    Logger.info(
+      "Redis URL: #{redact_userinfo(Application.get_env(:realtime, :redis_url, "not configured"))}"
+    )
 
     Logger.info(
       "Connection limits: user=#{Application.get_env(:realtime, :max_connections_per_user, 10)}, ip=#{Application.get_env(:realtime, :max_connections_per_ip, 50)}, global=#{Application.get_env(:realtime, :max_connections_global, 100_000)}"
@@ -60,6 +63,20 @@ defmodule Realtime.Application do
   # transport (local dev and any non-GCP env). In Pub/Sub environments the
   # Broadway subscriber handles fan-out, so this stays off and events are never
   # delivered twice.
+  # The Redis URL carries its password in the userinfo, and this line put it in
+  # plain text in the boot log of every deployment. Logs are read, shipped and
+  # pasted far more casually than the variable itself, so the address stays
+  # (it is what makes this line useful) and the credential goes.
+  @doc false
+  def redact_userinfo(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{userinfo: nil} -> url
+      %URI{} = uri -> URI.to_string(%{uri | userinfo: "***"})
+    end
+  end
+
+  def redact_userinfo(other), do: other
+
   defp event_bridge_children do
     if Application.get_env(:realtime, :pubsub_enabled, false) do
       []
