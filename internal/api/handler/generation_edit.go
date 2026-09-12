@@ -37,31 +37,14 @@ const creditsPerEdit = 1
 const (
 	editMaxTextLen        = 8000
 	editMaxInstructionLen = 2000
-	// editTokenFloor and editTokenCeiling bound the completion. An edit returns
-	// the WHOLE passage, so a flat cap truncates: the writing assistant's 1024
-	// cut a long rewrite mid-sentence, and any fixed number is wrong for one
-	// script or the other, since a rune of English is about a third of a token
-	// and a rune of Chinese is about one. The cap is derived per request from
-	// the passage instead.
-	editTokenFloor    = 1024
-	editTokenHeadroom = 512
-	editTokenCeiling  = 8192
+	// editMaxTokens caps the completion. An edit returns the WHOLE passage, so
+	// the writing assistant's 1024 cut a long rewrite off mid-sentence. 4096 is
+	// as high as it may go: it is the smallest completion cap in common use, and
+	// asking a backend for more than it allows earns a 400 naming max_tokens,
+	// which openAIProvider.adaptParams reads as a request-shape incompatibility
+	// and latches for the life of the process, degrading every later call.
+	editMaxTokens = 4096
 )
-
-// editCompletionTokens sizes the completion for the passage being edited: room
-// for every rune to come back as its own token, plus headroom for an
-// instruction that lengthens the copy. Only what the model actually generates
-// is billed, so the ceiling costs nothing until it is used.
-func editCompletionTokens(passage string) int {
-	want := utf8.RuneCountInString(passage) + editTokenHeadroom
-	if want < editTokenFloor {
-		return editTokenFloor
-	}
-	if want > editTokenCeiling {
-		return editTokenCeiling
-	}
-	return want
-}
 
 const (
 	editFenceBegin = "<<<UNTRUSTED_CONTENT>>>"
@@ -167,7 +150,7 @@ func (h *Handler) GenerateEdit(c *gin.Context) {
 		System:    generation.BuildEditRules(voice),
 		Prompt:    buildEditPrompt(req),
 		Model:     model,
-		MaxTokens: editCompletionTokens(req.Text),
+		MaxTokens: editMaxTokens,
 	})
 	if gerr != nil {
 		if !local {

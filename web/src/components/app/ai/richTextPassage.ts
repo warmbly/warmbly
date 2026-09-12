@@ -30,10 +30,13 @@ import { FIELD_TOKEN_RE, FORM_LINK_RE } from "@/lib/templateVars";
 
 const AI_TOKEN_SOURCE = "\\[\\[ai:[A-Za-z0-9_-]{1,64}\\]\\]";
 // A markdown link, as passageText writes one. The destination may be a merge
-// token ({{.UnsubscribeLink}}), so it is anything without a space or a paren,
-// or anything at all inside angle brackets: a URL is allowed both, and a
-// Wikipedia article ending in ")" is the common one.
-const MD_LINK_SOURCE = "\\[[^\\]\\n]*\\]\\((?:<[^>\\n]*>|[^)\\s]+)\\)";
+// token ({{.UnsubscribeLink}}), and it may carry parentheses of its own: a
+// Wikipedia article ending in ")" is the common case. Both markdown forms are
+// read, because the model is free to normalise the angle-bracket one it was
+// given back to the plain one, and stopping at the first ")" would then hand
+// back a truncated destination rather than no link at all.
+const MD_DEST_PLAIN = "(?:[^()\\s]|\\([^()\\s]*\\))+";
+const MD_LINK_SOURCE = `\\[[^\\]\\n]*\\]\\((?:<[^>\\n]*>|${MD_DEST_PLAIN})\\)`;
 const CONDITIONAL_SOURCE = "\\{\\{\\s*if\\s[\\s\\S]*?\\{\\{\\s*end\\s*\\}\\}";
 
 // One scan over the model's text, widest structure first: a conditional wraps
@@ -49,7 +52,7 @@ const TOKEN_SOURCE = [
 ].join("|");
 
 const AI_TOKEN_RE = /^\[\[ai:([A-Za-z0-9_-]{1,64})\]\]$/;
-const MD_LINK_RE = /^\[([^\]\n]*)\]\((?:<([^>\n]*)>|([^)\s]+))\)$/;
+const MD_LINK_RE = new RegExp(`^\\[([^\\]\\n]*)\\]\\((?:<([^>\\n]*)>|(${MD_DEST_PLAIN}))\\)$`);
 // Only a destination that is actually a destination becomes an anchor, so a
 // "[note](see below)" the author wrote stays the text they wrote.
 const HREF_RE = /^(https?:\/\/|mailto:|tel:|\{\{)/i;
@@ -121,10 +124,16 @@ export function clampContext(text: string): string {
 // or ended on a space would eat that space and glue the rewrite to the word
 // next to it. The author's edges are put back, which also makes "did anything
 // change?" an exact comparison rather than a trimmed one.
+//
+// Spaces and tabs only. A selection that runs to the start of the next
+// paragraph ends on a block separator, and handing that back would add a blank
+// paragraph nobody typed; replacing across a paragraph break should join the
+// two, which is what dropping it leaves replaceRange to do.
 export function restoreEdges(original: string, edited: string): string {
-    const lead = /^\s*/.exec(original)?.[0] ?? "";
-    const trail = /\s*$/.exec(original)?.[0] ?? "";
-    return original.trim() === "" ? original : lead + edited.trim() + trail;
+    if (original.trim() === "") return original;
+    const lead = /^[^\S\n]*/.exec(original)?.[0] ?? "";
+    const trail = /[^\S\n]*$/.exec(original)?.[0] ?? "";
+    return lead + edited.trim() + trail;
 }
 
 function linkHref(node: PMNode): string {

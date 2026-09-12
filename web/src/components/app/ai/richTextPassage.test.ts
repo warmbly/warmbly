@@ -85,6 +85,14 @@ describe("passageHTML", () => {
             '<p>read <a href="https://en.wikipedia.org/wiki/Foo_(bar)">the article</a> now</p>',
         );
     });
+
+    it("reads the plain form the model may normalise the angle one back to", () => {
+        // Stopping at the first ")" would hand back a truncated destination and
+        // leave a stray paren in the copy, which is worse than no link at all.
+        expect(passageHTML("read [the article](https://en.wikipedia.org/wiki/Foo_(bar)) now")).toBe(
+            '<p>read <a href="https://en.wikipedia.org/wiki/Foo_(bar)">the article</a> now</p>',
+        );
+    });
 });
 
 describe("restoreEdges", () => {
@@ -99,5 +107,12 @@ describe("restoreEdges", () => {
 
     it("leaves an all-whitespace selection alone", () => {
         expect(restoreEdges("   ", "anything")).toBe("   ");
+    });
+
+    it("does not hand back a paragraph break as if it were a space", () => {
+        // A selection running to the start of the next paragraph ends on a
+        // block separator; giving it back would add a blank paragraph.
+        expect(restoreEdges("One two\n\n", "REWRITE")).toBe("REWRITE");
+        expect(restoreEdges(" One two\n\n ", "REWRITE")).toBe(" REWRITE ");
     });
 });

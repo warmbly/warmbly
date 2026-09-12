@@ -180,8 +180,8 @@ func TestGenerateEditSendsTheEditPromptAndReturnsTheText(t *testing.T) {
 	if !strings.Contains(provider.got.Prompt, "Instruction: fix the grammar") {
 		t.Errorf("wrong user prompt:\n%s", provider.got.Prompt)
 	}
-	if provider.got.MaxTokens != editTokenFloor {
-		t.Errorf("a short passage should get the floor, got %d", provider.got.MaxTokens)
+	if provider.got.MaxTokens != editMaxTokens {
+		t.Errorf("max tokens %d, want %d", provider.got.MaxTokens, editMaxTokens)
 	}
 
 	var body struct {
@@ -199,25 +199,15 @@ func TestGenerateEditSendsTheEditPromptAndReturnsTheText(t *testing.T) {
 	}
 }
 
-// An edit returns the WHOLE passage, so the completion cap has to cover it. A
-// flat cap is wrong for one script or the other: 8000 runes of English is about
-// 2k tokens and 8000 runes of Chinese is about 8k.
-func TestEditCompletionTokensCoversThePassage(t *testing.T) {
-	if got := editCompletionTokens("short"); got != editTokenFloor {
-		t.Errorf("short passage: got %d, want the %d floor", got, editTokenFloor)
+// An edit returns the WHOLE passage, so the cap has to be generous, but asking
+// a backend for more than its own completion limit earns a 400 naming
+// max_tokens, which openAIProvider.adaptParams latches process-wide.
+func TestEditMaxTokensStaysWithinEveryBackend(t *testing.T) {
+	if editMaxTokens < 3072 {
+		t.Errorf("%d truncates a long rewrite", editMaxTokens)
 	}
-	// A full-length CJK passage: every rune may come back as its own token.
-	long := strings.Repeat("文", editMaxTextLen)
-	if got := editCompletionTokens(long); got < editMaxTextLen {
-		t.Errorf("a %d-rune passage would be truncated at %d tokens", editMaxTextLen, got)
-	}
-	if got := editCompletionTokens(long); got > editTokenCeiling {
-		t.Errorf("got %d, above the %d ceiling", got, editTokenCeiling)
-	}
-	// Between the two, the cap tracks the passage plus headroom.
-	mid := strings.Repeat("a", 3000)
-	if got := editCompletionTokens(mid); got != 3000+editTokenHeadroom {
-		t.Errorf("got %d, want %d", got, 3000+editTokenHeadroom)
+	if editMaxTokens > 4096 {
+		t.Errorf("%d exceeds the smallest completion cap in common use", editMaxTokens)
 	}
 }
 

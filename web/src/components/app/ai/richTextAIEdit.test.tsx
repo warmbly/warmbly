@@ -228,6 +228,15 @@ describe("Edit with AI in the campaign body", () => {
         expect(editor.getHTML()).toBe("<p>One TWO AND THREE four.</p>");
     });
 
+    it("joins the paragraphs a selection ran across, without inventing a blank one", async () => {
+        const { editor, saved } = mountBody("<p>One two</p><p>Three four.</p>");
+        reply = { text: "TWO!", credits_charged: 1, tokens_used: 10 };
+        await select(editor, 5, 10); // mid paragraph one to the start of paragraph two
+        await rewrite();
+        expect(editor.getHTML()).toBe("<p>One TWO!Three four.</p>");
+        expect(saved.html).toBe(editor.getHTML());
+    });
+
     it("undoes the rewrite back to the body that was there", async () => {
         const { editor, saved } = mountBody("<p>Original one.</p>");
         reply = { text: "New one.", credits_charged: 1, tokens_used: 10 };
