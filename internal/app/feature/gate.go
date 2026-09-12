@@ -332,7 +332,11 @@ func (s *featureGateService) CanUseWritingAssistant(ctx context.Context, orgID u
 	if sub == nil {
 		return false, nil
 	}
-	return sub.HasPaidSubscription() || sub.IsInFreeTrial(), nil
+	// Paid only, like the inbox agent. The free plan carries no credit
+	// allowance, so admitting a trial here would put the assistant in front of
+	// someone who can only ever be told they have no credits, which reads as a
+	// broken feature rather than a locked one.
+	return sub.HasPaidSubscription(), nil
 }
 
 // CanUseInboxAgent gates the inbox agent to paid subscribers only. Unlike the
