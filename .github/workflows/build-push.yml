@@ -89,6 +89,7 @@ jobs:
           UPDATER: ${{ steps.filter.outputs.updater }}
           TRACKING: ${{ steps.filter.outputs.tracking }}
           REALTIME: ${{ steps.filter.outputs.realtime }}
+          BUILT_AT: ${{ github.event.head_commit.timestamp }}
         run: |
           go=""
           native=""
@@ -100,7 +101,7 @@ jobs:
             case "$1" in
               backend|consumer|worker)
                 go="$go\"$1\","
-                native="$native{\"service\":\"$1\",\"suffix\":\"-kafka\",\"args\":\"GO_TAGS=kafka\"},"
+                native="$native{\"service\":\"$1\",\"suffix\":\"-kafka\",\"args\":\"GO_TAGS=kafka\\nBUILT_AT=$BUILT_AT\"},"
                 ;;
               forms|updater)
                 go="$go\"$1\","
@@ -129,8 +130,12 @@ jobs:
             [ "$REALTIME" = "true" ] && add realtime
             true
           fi
-          echo "go=[${go%,}]" >> "$GITHUB_OUTPUT"
-          echo "native=[${native%,}]" >> "$GITHUB_OUTPUT"
+          # printf, not echo: the Go Kafka args carry a literal \n separating two
+          # build-args, and echo expands backslash escapes in some shells, which
+          # would split the value across two lines and break both the JSON and
+          # the single-line $GITHUB_OUTPUT format.
+          printf 'go=[%s]\n' "${go%,}" >> "$GITHUB_OUTPUT"
+          printf 'native=[%s]\n' "${native%,}" >> "$GITHUB_OUTPUT"
 
   # Go services: the Dockerfiles build on $BUILDPLATFORM and cross-compile to
   # each target arch, so one amd64 runner produces both platforms without QEMU.
@@ -230,7 +235,6 @@ jobs:
           build-args: |
             VERSION=dev-${{ github.sha }}
             COMMIT=${{ github.sha }}
-            BUILT_AT=${{ github.event.head_commit.timestamp }}
             ${{ matrix.target.args }}
           cache-from: type=gha,scope=${{ steps.prep.outputs.key }}-${{ steps.prep.outputs.pair }}
           cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.key }}-${{ steps.prep.outputs.pair }}
