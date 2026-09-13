@@ -163,20 +163,20 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 	tokenUUID, err := uuid.Parse(tokenStr)
 	if err != nil {
 		// Invalid format → record attempt
-		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, uuid.Nil, 0)
+		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, uuid.Nil, nil, 0)
 		return false, nil // Process as normal email
 	}
 
 	token, err := s.WarmupRepo.GetWarmupToken(ctx, tokenUUID)
 	if err != nil || token == nil {
 		// Consumed, expired, or gone: not a verdict on its own.
-		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, tokenUUID, 5)
+		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, tokenUUID, nil, 5)
 		return false, nil
 	}
 
 	// Verify recipient matches
 	if token.RecipientAccountID != e.Message.EmailID {
-		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, tokenUUID, 0)
+		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, tokenUUID, token, 0)
 		return false, nil
 	}
 
@@ -416,8 +416,11 @@ func (s *JobsService) recipientProviderDomain(ctx context.Context, accountID uui
 // token, a re-synced message carries one that has since expired, and a
 // reconnect gives the mailbox a new row while warmup_tokens cascades off the
 // old one, leaving tokens that resolve to nothing. Only the remainder is signal.
-func (s *JobsService) recordSuspiciousWarmupToken(ctx context.Context, e *models.JobEventNewEmail, tokenStr string, tokenID uuid.UUID, scoreDelta int) {
-	if s.warmupTokenOwnMail(ctx, e, tokenID) {
+//
+// known is the token row the caller already resolved: passing it keeps a failed
+// re-read from turning a token we know names another pair into an unknown one.
+func (s *JobsService) recordSuspiciousWarmupToken(ctx context.Context, e *models.JobEventNewEmail, tokenStr string, tokenID uuid.UUID, known *models.WarmupToken, scoreDelta int) {
+	if s.resolveWarmupTokenOwnership(ctx, e, tokenID, known) {
 		return
 	}
 	s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, scoreDelta)
@@ -429,25 +432,30 @@ func (s *JobsService) recordSuspiciousWarmupToken(ctx context.Context, e *models
 //
 // folder is the canonical folder the message sits in, tok the token row with
 // GetWarmupToken's consumed/expired filters removed (nil when it no longer
-// exists), and mailboxAge how long the mailbox row has existed.
+// exists), and mailboxAge how long the mailbox row has existed, negative when
+// that could not be established.
 func warmupTokenIsOwnMail(folder string, accountID uuid.UUID, tok *models.WarmupToken, mailboxAge time.Duration) bool {
 	// The sender's Sent copy carries the recipient's token by construction.
 	if folder == models.FolderSent {
 		return true
 	}
-	// Still on file, just consumed or expired: a re-read, not a forgery.
-	if tok != nil && (tok.RecipientAccountID == accountID || tok.SenderAccountID == accountID) {
-		return true
+	// Still on file, just consumed or expired: a re-read when we are a party to
+	// it. A row naming neither side is a stranger's token, the one shape that
+	// was ever evidence, so it is signal at any age and must not reach the
+	// window below.
+	if tok != nil {
+		return tok.RecipientAccountID == accountID || tok.SenderAccountID == accountID
 	}
-	// A reconnected mailbox replays a history whose tokens cascaded away with
-	// the row it used to be.
+	// Nothing resolves: either a reconnected mailbox replaying a history whose
+	// tokens cascaded away with the row it used to be, or a token that never
+	// existed. Only the young mailbox gets the benefit of the doubt.
 	return mailboxAge >= 0 && mailboxAge < time.Duration(config.WarmupReconnectGraceMinutes)*time.Minute
 }
 
-// warmupTokenOwnMail gathers the facts warmupTokenIsOwnMail decides on.
-func (s *JobsService) warmupTokenOwnMail(ctx context.Context, e *models.JobEventNewEmail, tokenID uuid.UUID) bool {
-	var tok *models.WarmupToken
-	if tokenID != uuid.Nil && s.WarmupRepo != nil {
+// resolveWarmupTokenOwnership gathers the facts warmupTokenIsOwnMail decides on.
+func (s *JobsService) resolveWarmupTokenOwnership(ctx context.Context, e *models.JobEventNewEmail, tokenID uuid.UUID, known *models.WarmupToken) bool {
+	tok := known
+	if tok == nil && tokenID != uuid.Nil && s.WarmupRepo != nil {
 		if t, err := s.WarmupRepo.FindWarmupToken(ctx, tokenID); err == nil {
 			tok = t
 		}

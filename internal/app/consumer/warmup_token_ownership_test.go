@@ -40,6 +40,12 @@ func TestWarmupTokenIsOwnMail(t *testing.T) {
 		{"a token that belongs to neither side is signal", models.FolderInbox, strangers, old, false},
 		{"an unknown token on an established mailbox is signal", models.FolderInbox, nil, old, false},
 		{"an unknown token with no mailbox age is signal", models.FolderInbox, nil, -1, false},
+		// The reconnect window forgives a token that resolves to nothing. A
+		// token that resolves to another pair is the only shape that was ever
+		// evidence, so the window must not reach it: otherwise a mailbox that
+		// keeps reconnecting is never charged for probing.
+		{"a stranger's token on a young mailbox is still signal", models.FolderInbox, strangers, grace / 2, false},
+		{"our own expired token on a young mailbox is not", models.FolderInbox, own, grace / 2, true},
 	}
 
 	for _, tc := range tests {
