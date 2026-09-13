@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -64,7 +63,7 @@ func (f *liveFixture) addSentLead(t *testing.T) {
 		f.campaign, contact); err != nil {
 		t.Fatalf("link lead: %v", err)
 	}
-	f.completeCampaignTask(t, &contact, &step, time.Now().Add(-2*time.Hour))
+	f.completeCampaignTask(t, &contact, &step, earlierToday(2*time.Hour))
 }
 
 // loggedScheduler is liveScheduler with the activity log wired, for the
@@ -72,10 +71,6 @@ func (f *liveFixture) addSentLead(t *testing.T) {
 func loggedScheduler(t *testing.T, f *liveFixture) SchedulerService {
 	t.Helper()
 	handle, pool := liveDB(t)
-	enc, err := encrypt.NewEncrypter([]byte("0123456789abcdef0123456789abcdef"))
-	if err != nil {
-		t.Fatalf("encrypter: %v", err)
-	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM campaign_logs WHERE campaign_id = $1`, f.campaign)
 	})
@@ -83,7 +78,7 @@ func loggedScheduler(t *testing.T, f *liveFixture) SchedulerService {
 		repository.NewTaskRepository(pool),
 		repository.NewWarmupRepository(pool),
 		repository.NewCampaignProgressRepository(pool),
-		repository.NewEmailRepostory(handle, enc),
+		repository.NewEmailRepostory(handle, testEncrypter(t)),
 		repository.NewCampaignRepostory(handle),
 		repository.NewContactRepostory(handle),
 		repository.NewCampaignLogRepository(handle),
@@ -101,7 +96,7 @@ func TestLiveWakeupsDoNotSpendTheDailyBudget(t *testing.T) {
 	// Fifty completed wake-ups, the last one seconds ago: exactly the cap, and
 	// inside the 600s min-gap.
 	for i := 0; i < 50; i++ {
-		f.completeCampaignTask(t, nil, nil, time.Now().Add(-time.Duration(i)*time.Second))
+		f.completeCampaignTask(t, nil, nil, earlierToday(time.Duration(i)*time.Second))
 	}
 
 	taskRepo := repository.NewTaskRepository(pool)
@@ -142,12 +137,13 @@ func TestLiveRealSendsStillSpendTheDailyBudget(t *testing.T) {
 	// A send whose reservation is gone but whose task carries the worker's
 	// Message-ID (a step walked back and re-sent, or one that predates the
 	// reservation).
-	confirmed := f.completeCampaignTask(t, nil, nil, time.Now().Add(-time.Hour))
+	confirmedAt := earlierToday(time.Hour)
+	confirmed := f.completeCampaignTask(t, nil, nil, confirmedAt)
 	if _, err := pool.Exec(ctx, `UPDATE tasks SET message_id = '<confirmed@test.local>' WHERE id = $1`, confirmed); err != nil {
 		t.Fatal(err)
 	}
 	// And one wake-up, which must not count.
-	f.completeCampaignTask(t, nil, nil, time.Now().Add(-time.Minute))
+	f.completeCampaignTask(t, nil, nil, earlierToday(time.Minute))
 
 	taskRepo := repository.NewTaskRepository(pool)
 	sent, err := taskRepo.CountCampaignEmailsSentToday(ctx, f.mailbox)
@@ -161,8 +157,10 @@ func TestLiveRealSendsStillSpendTheDailyBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("last email time: %v", err)
 	}
-	if last == nil || time.Since(*last) < 50*time.Minute || time.Since(*last) > 70*time.Minute {
-		t.Fatalf("GetLastEmailTime = %v, want the confirmed send an hour ago, not the wake-up a minute ago", last)
+	// Compare against the timestamp actually written rather than a "roughly an
+	// hour ago" band, which earlierToday's midnight floor would fall outside.
+	if last == nil || last.UTC().Sub(confirmedAt).Abs() > time.Second {
+		t.Fatalf("GetLastEmailTime = %v, want the confirmed send at %s, not the wake-up a minute ago", last, confirmedAt)
 	}
 }
 

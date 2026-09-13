@@ -15,6 +15,8 @@ Everything here is per mailbox and lives in its own timezone, so a London mailbo
 
 It is off by default. A mailbox that has not opted in keeps its fixed daily cap and minimum gap exactly as before, so switching this on is the only thing that changes its behavior.
 
+While it is off, the rest of the tab is greyed out and read-only, because none of it applies. Turn the switch on to edit the ranges.
+
 ## What gets randomized
 
 | Setting | Default range | What it controls |
@@ -36,6 +38,8 @@ A new mailbox has no timezone set, and that is a valid state rather than a gap: 
 The roll happens once per mailbox per local day, and the result is stored. That matters: the scheduler recomputes a mailbox's next slot many times a day, and a fresh random workday on every calculation would mean the mailbox never actually keeps to one.
 
 The **Sending** tab shows today's rolled workday at the top: the hours, the break, the spacing band, the hourly ceiling, and how much of the day's target is already spent. That is the answer to "why is nothing sending right now".
+
+Only emails that actually went out count against the day's target. A campaign wakes itself up far more often than it sends, and most of those wake-ups find nothing to do: every mailbox is mid-gap, the workday has not opened yet, or no contact is due. Those are not sends. They do not show up in the count, they do not spend the plan, and neither does the run the campaign has queued next.
 
 Editing the ranges does not change today. Today keeps the workday it already started, and the new ranges take effect on the next roll.
 

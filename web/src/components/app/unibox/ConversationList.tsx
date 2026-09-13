@@ -16,6 +16,7 @@ import React from "react";
 import { Loader2Icon, SearchIcon, Settings2Icon } from "lucide-react";
 import { ConversationItem } from "./ConversationItem";
 import useUniboxSearch from "@/lib/api/hooks/app/unibox/useUniboxSearch";
+import { useShortcutActions } from "@/hooks/useShortcutActions";
 import useDebouncedValue from "@/hooks/useDebouncedValue";
 import { useScrollMemory } from "@/hooks/useScrollMemory";
 import { useAppStore } from "@/stores";
@@ -139,91 +140,68 @@ export function ConversationList({
     return groups;
   }, [emails]);
 
-  // Keyboard navigation. We work off `emails` (flat order) so j/k
-  // moves across bucket boundaries naturally. Ignoring shortcuts
-  // while typing into any input/textarea, and while the filter
-  // sheet is open, keeps the bindings out of the user's way.
-  React.useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (sheetOpen) return;
-      const target = e.target as HTMLElement | null;
-      if (target) {
-        const tag = target.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable) {
-          // Allow Escape from search to deselect.
-          if (e.key === "Escape" && target === searchRef.current) {
-            searchRef.current?.blur();
-          }
+  // Keyboard navigation. We work off `emails` (flat order) so j/k moves across
+  // bucket boundaries naturally. The keys themselves live in the global
+  // registry (useKeyboardShortcuts); this only says what they mean here, so the
+  // `?` modal and the dispatcher cannot disagree about whether they work.
+  const selectRow = React.useCallback(
+    (row: (typeof emails)[number] | undefined) => {
+      if (!row) return;
+      const id = row.thread_id || row.id;
+      setSelectedThreadId(id);
+      setSelectedAccountId(row.email_id ?? null);
+      // Bring the newly selected row into view if the list scrolled.
+      requestAnimationFrame(() => {
+        const el = listRef.current?.querySelector<HTMLElement>(
+          `[data-thread-id="${id}"]`,
+        );
+        el?.scrollIntoView({ block: "nearest" });
+      });
+    },
+    [setSelectedThreadId, setSelectedAccountId],
+  );
+
+  const currentIndex = React.useCallback(
+    () =>
+      selectedThreadId
+        ? emails.findIndex((row) => (row.thread_id || row.id) === selectedThreadId)
+        : -1,
+    [emails, selectedThreadId],
+  );
+
+  useShortcutActions(
+    {
+      listMove: (delta) => {
+        if (emails.length === 0) return;
+        const from = currentIndex();
+        // Nothing selected yet: j takes the top of the list and k the bottom.
+        // Treating "no selection" as index 0 made the first j skip the row the
+        // user was already looking at.
+        if (from < 0) {
+          selectRow(delta > 0 ? emails[0] : emails[emails.length - 1]);
           return;
         }
-      }
-
-      const currentIdx = selectedThreadId
-        ? emails.findIndex(
-            (row) => (row.thread_id || row.id) === selectedThreadId,
-          )
-        : -1;
-
-      const move = (delta: number) => {
-        if (emails.length === 0) return;
-        const next = Math.max(
-          0,
-          Math.min(
-            emails.length - 1,
-            (currentIdx < 0 ? 0 : currentIdx) + delta,
-          ),
+        selectRow(
+          emails[Math.max(0, Math.min(emails.length - 1, from + delta))],
         );
-        const row = emails[next];
-        if (!row) return;
-        setSelectedThreadId(row.thread_id || row.id);
-        setSelectedAccountId(row.email_id ?? null);
-        // Bring the focused row into view if the list scrolled.
-        requestAnimationFrame(() => {
-          const el = listRef.current?.querySelector<HTMLElement>(
-            `[data-thread-id="${row.thread_id || row.id}"]`,
-          );
-          el?.scrollIntoView({ block: "nearest" });
-        });
-        e.preventDefault();
-      };
-
-      switch (e.key) {
-        case "j":
-          move(1);
-          return;
-        case "k":
-          move(-1);
-          return;
-        case "Enter":
-          if (currentIdx < 0 && emails[0]) {
-            const row = emails[0];
-            setSelectedThreadId(row.thread_id || row.id);
-            setSelectedAccountId(row.email_id ?? null);
-            e.preventDefault();
-          }
-          return;
-        case "Escape":
-          if (selectedThreadId) {
-            setSelectedThreadId(null);
-            setSelectedAccountId(null);
-            e.preventDefault();
-          }
-          return;
-        case "/":
-          searchRef.current?.focus();
-          e.preventDefault();
-          return;
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [
-    emails,
-    selectedThreadId,
-    sheetOpen,
-    setSelectedThreadId,
-    setSelectedAccountId,
-  ]);
+      },
+      listEdge: (edge) =>
+        selectRow(edge === "first" ? emails[0] : emails[emails.length - 1]),
+      listOpen: () => {
+        // A row is opened by selecting it; Enter is only meaningful before
+        // anything is selected, where it takes the top of the list.
+        if (currentIndex() < 0) selectRow(emails[0]);
+      },
+      listDeselect: () => {
+        if (!selectedThreadId) return;
+        setSelectedThreadId(null);
+        setSelectedAccountId(null);
+      },
+      focusSearch: () => searchRef.current?.focus(),
+    },
+    // The filter sheet owns the keyboard while it is open.
+    { suspended: sheetOpen },
+  );
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -233,6 +211,11 @@ export function ConversationList({
           ref={searchRef}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          // Escape gives the keyboard back to the list instead of bubbling up
+          // to the global dispatcher, which ignores keys typed into an input.
+          onKeyDown={(e) => {
+            if (e.key === "Escape") e.currentTarget.blur();
+          }}
           placeholder={`Search ${scopeLabel.toLowerCase()}… (/)`}
           className="flex-1 min-w-0 h-7 bg-transparent text-[12.5px] text-slate-900 placeholder:text-slate-400 outline-none"
         />

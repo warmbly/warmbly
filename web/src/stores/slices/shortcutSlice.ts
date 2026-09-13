@@ -1,20 +1,17 @@
 import type { StateCreator } from 'zustand'
 
+// Multi-key sequences only (g then a letter). The selection state that used to
+// live here — selectedIndex / listLength / moveSelection — was written by
+// nobody and read by nobody, which is what made j, k, gg and G dead keys: the
+// dispatcher called moveSelection and it returned on `listLength === 0` every
+// time. A screen now offers list navigation through useShortcutActions, where
+// the list that owns the rows also owns their state.
 export interface ShortcutSlice {
-  // Sequence state for multi-key shortcuts (e.g., g + e)
   keySequence: string[]
   sequenceTimeout: ReturnType<typeof setTimeout> | null
 
-  // List navigation state
-  selectedIndex: number
-  listLength: number
-
-  // Actions
   addToSequence: (key: string) => void
   clearSequence: () => void
-  setSelectedIndex: (index: number) => void
-  setListLength: (length: number) => void
-  moveSelection: (direction: 'up' | 'down' | 'first' | 'last') => void
 }
 
 const SEQUENCE_TIMEOUT = 500 // ms
@@ -22,8 +19,6 @@ const SEQUENCE_TIMEOUT = 500 // ms
 export const createShortcutSlice: StateCreator<ShortcutSlice, [], [], ShortcutSlice> = (set, get) => ({
   keySequence: [],
   sequenceTimeout: null,
-  selectedIndex: -1,
-  listLength: 0,
 
   addToSequence: (key) => {
     const { sequenceTimeout } = get()
@@ -50,33 +45,5 @@ export const createShortcutSlice: StateCreator<ShortcutSlice, [], [], ShortcutSl
       clearTimeout(sequenceTimeout)
     }
     set({ keySequence: [], sequenceTimeout: null })
-  },
-
-  setSelectedIndex: (selectedIndex) => set({ selectedIndex }),
-
-  setListLength: (listLength) => set({ listLength }),
-
-  moveSelection: (direction) => {
-    const { selectedIndex, listLength } = get()
-
-    if (listLength === 0) return
-
-    let newIndex: number
-    switch (direction) {
-      case 'up':
-        newIndex = selectedIndex <= 0 ? listLength - 1 : selectedIndex - 1
-        break
-      case 'down':
-        newIndex = selectedIndex >= listLength - 1 ? 0 : selectedIndex + 1
-        break
-      case 'first':
-        newIndex = 0
-        break
-      case 'last':
-        newIndex = listLength - 1
-        break
-    }
-
-    set({ selectedIndex: newIndex })
   },
 })

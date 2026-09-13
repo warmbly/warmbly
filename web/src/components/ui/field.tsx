@@ -96,6 +96,9 @@ export function SearchInput({
         )}>
             <SearchIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <input
+                // What the `/` shortcut looks for. Every screen that searches
+                // through this primitive gets the key for free.
+                data-search-input=""
                 value={value}
                 placeholder={placeholder}
                 autoFocus={autoFocus}

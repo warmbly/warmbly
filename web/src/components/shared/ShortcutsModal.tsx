@@ -5,7 +5,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useAppStore } from '@/stores'
-import { shortcutDefinitions } from '@/hooks/useKeyboardShortcuts'
+import {
+  shortcutGroupTitles,
+  visibleShortcuts,
+  type ShortcutGroupId,
+  type ShortcutRow,
+} from '@/hooks/useKeyboardShortcuts'
 
 function KeyboardKey({ children }: { children: React.ReactNode }) {
   return (
@@ -15,7 +20,7 @@ function KeyboardKey({ children }: { children: React.ReactNode }) {
   )
 }
 
-function ShortcutRow({ keys, description }: { keys: string[]; description: string }) {
+function ShortcutRowView({ keys, description }: ShortcutRow) {
   return (
     <div className="flex items-center justify-between py-1.5">
       <span className="text-sm text-foreground">{description}</span>
@@ -31,21 +36,20 @@ function ShortcutRow({ keys, description }: { keys: string[]; description: strin
   )
 }
 
-function ShortcutGroup({
-  title,
-  shortcuts,
-}: {
-  title: string
-  shortcuts: { keys: string[]; description: string }[]
-}) {
+// A group with nothing live on this screen renders nothing. Every row below is
+// one the dispatcher will actually run right now.
+function ShortcutGroup({ group }: { group: ShortcutGroupId }) {
+  const rows = visibleShortcuts(group)
+  if (rows.length === 0) return null
+
   return (
     <div className="space-y-1">
       <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-        {title}
+        {shortcutGroupTitles[group]}
       </h3>
       <div className="divide-y divide-border">
-        {shortcuts.map((shortcut, i) => (
-          <ShortcutRow key={i} keys={shortcut.keys} description={shortcut.description} />
+        {rows.map((row, i) => (
+          <ShortcutRowView key={i} {...row} />
         ))}
       </div>
     </div>
@@ -65,12 +69,12 @@ export function ShortcutsModal() {
 
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-6">
-            <ShortcutGroup title="Navigation" shortcuts={shortcutDefinitions.navigation} />
-            <ShortcutGroup title="Assistant" shortcuts={shortcutDefinitions.assistant} />
+            <ShortcutGroup group="navigation" />
           </div>
           <div className="space-y-6">
-            <ShortcutGroup title="List Navigation" shortcuts={shortcutDefinitions.list} />
-            <ShortcutGroup title="Actions" shortcuts={shortcutDefinitions.actions} />
+            <ShortcutGroup group="list" />
+            <ShortcutGroup group="actions" />
+            <ShortcutGroup group="assistant" />
           </div>
         </div>
 
