@@ -971,10 +971,10 @@ func (s *stripeService) handleSubscriptionCreated(ctx context.Context, event *st
 // bounded by the same window, which is far narrower than the webhook
 // idempotency check that runs before either of them.
 //
-// Unlike the signup event there is no browser request to join: Stripe called
-// us, not the customer. So this lands as its own cookieless visitor and is
-// useful as a count and a plan mix, not as the end of a session funnel.
-// Nothing here names the organization or the person.
+// There is no browser request to join: Stripe called us, not the customer.
+// The subscription names the account that opened it, so the event lands on
+// that person and in the workspace's group, which is what makes the funnel
+// from signup to paying complete in PostHog.
 func (s *stripeService) countSubscriptionStarted(ctx context.Context, sub *models.Subscription, plan *models.Plan, stripeSub *stripe.Subscription) {
 	if s.productAnalytics == nil || stripeSub == nil {
 		return
@@ -998,7 +998,19 @@ func (s *stripeService) countSubscriptionStarted(ctx context.Context, sub *model
 		}
 	}
 
-	s.productAnalytics.Capture("subscription_started", analytics.Request{}, props)
+	req := analytics.Request{}
+	if sub != nil {
+		if sub.UserID != uuid.Nil {
+			req.UserID = sub.UserID.String()
+		}
+		if sub.OrganizationID != uuid.Nil {
+			req.OrganizationID = sub.OrganizationID.String()
+		}
+		if plan != nil && plan.Name != nil {
+			req.Plan = *plan.Name
+		}
+	}
+	s.productAnalytics.Capture("subscription_started", req, props)
 }
 
 func (s *stripeService) handleSubscriptionUpdated(ctx context.Context, event *stripe.Event) *errx.Error {

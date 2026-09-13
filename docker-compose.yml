@@ -615,6 +615,7 @@ services:
       WARMBLY_POSTHOG_KEY: ${WARMBLY_POSTHOG_KEY:-}
       WARMBLY_POSTHOG_HOST: ${WARMBLY_POSTHOG_HOST:-}
       WARMBLY_POSTHOG_ERROR_TRACKING: ${WARMBLY_POSTHOG_ERROR_TRACKING:-}
+      WARMBLY_POSTHOG_SESSION_REPLAY: ${WARMBLY_POSTHOG_SESSION_REPLAY:-}
       # The other error-tracking backend. Unset means the dashboard contacts no
       # Sentry host. Point it at your own project to collect browser errors.
       WARMBLY_SENTRY_DSN: ${WARMBLY_SENTRY_DSN:-}
@@ -639,6 +640,7 @@ services:
       WARMBLY_POSTHOG_KEY: ${WARMBLY_POSTHOG_KEY:-}
       WARMBLY_POSTHOG_HOST: ${WARMBLY_POSTHOG_HOST:-}
       WARMBLY_POSTHOG_ERROR_TRACKING: ${WARMBLY_POSTHOG_ERROR_TRACKING:-}
+      WARMBLY_POSTHOG_SESSION_REPLAY: ${WARMBLY_POSTHOG_SESSION_REPLAY:-}
       WARMBLY_SENTRY_DSN: ${WARMBLY_SENTRY_DSN:-}
     depends_on:
       backend: { condition: service_healthy }

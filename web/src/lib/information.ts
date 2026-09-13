@@ -24,20 +24,23 @@ export const SENTRY_ENVIRONMENT = runtimeEnv("SENTRY_ENVIRONMENT", import.meta.e
 // release the source maps were uploaded under, and a container variable set
 // after the bundle was built could not.
 export const SENTRY_RELEASE = import.meta.env.VITE_SENTRY_RELEASE ?? "";
-// Cookieless product analytics and error tracking, one key for both. Empty
-// means the SDK is never loaded and no PostHog host is contacted. See
-// lib/posthog.
+// Product analytics, session replay and error tracking, one key for all of
+// them. Empty means the SDK is never loaded and no PostHog host is contacted.
+// See lib/posthog.
 export const POSTHOG_KEY = runtimeEnv("POSTHOG_KEY", import.meta.env.VITE_POSTHOG_KEY);
 export const POSTHOG_HOST = runtimeEnv("POSTHOG_HOST", import.meta.env.VITE_POSTHOG_HOST, "https://us.i.posthog.com");
-// Error tracking is on wherever a key is set. "false" keeps the key for product
-// analytics and reports no exceptions, which is what an install that already
-// reports to Sentry wants.
 // Where the PostHog app itself lives, as opposed to where events are sent.
 // They differ whenever api_host is a reverse proxy: without this the SDK builds
 // toolbar and session-replay links against the proxy, which does not serve the
 // app, so they lead nowhere.
 export const POSTHOG_UI_HOST = runtimeEnv("POSTHOG_UI_HOST", import.meta.env.VITE_POSTHOG_UI_HOST, "https://us.posthog.com");
+// Error tracking is on wherever a key is set. "false" keeps the key for product
+// analytics and reports no exceptions, which is what an install that already
+// reports to Sentry wants.
 export const POSTHOG_ERROR_TRACKING = runtimeEnv("POSTHOG_ERROR_TRACKING", import.meta.env.VITE_POSTHOG_ERROR_TRACKING, "true") !== "false";
+// Session replay is on wherever a key is set. "false" keeps everything else
+// and records no sessions.
+export const POSTHOG_SESSION_REPLAY = runtimeEnv("POSTHOG_SESSION_REPLAY", import.meta.env.VITE_POSTHOG_SESSION_REPLAY, "true") !== "false";
 export const HUMAN_VERIFICATION_FAIL = "We couldn’t verify you’re human. Please try the security check again or reload the page.";
 export const PASSWORD_FAIL = "The password must be at least 8 characters long and contain both uppercase and lowercase letters, as well as a number."
 export const TOKEN_KEY = "auth_token";

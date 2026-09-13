@@ -243,9 +243,9 @@ The `warmbly` CLI runs on your own machine and reports nowhere, ever. It has not
 
 There are none. A self-hosted instance loads no analytics script and sends no usage data, not aggregated, not anonymised, not "to help us improve the product".
 
-The hosted service at warmbly.com does measure its own marketing site and dashboard, and the code for that ships in the same images you run. It is inert without a key: the installer never asks for one, the `.env` template does not mention it, and a build without one contains no analytics script for you to block. If you want to check, `grep posthog` the served assets of your own dashboard.
+The hosted service at warmbly.com does measure its own marketing site, dashboard and admin panel, including session replay in the two apps, and the code for that ships in the same images you run. It is inert without a key: the installer never asks for one, the `.env` template does not mention it, and a build without one contains no analytics script for you to block. If you want to check, `grep posthog` the served assets of your own dashboard.
 
-If you do want product analytics on your own instance, the variables are on [configuration](/development/configuration/#product-analytics) and they accept a self-hosted PostHog. It is the same key as the error tracking above, so setting one for errors also enables the handful of product events; `POSTHOG_ERROR_TRACKING` and the analytics variables are separate switches if you want only one of the two. That is your decision to make, and nothing about it points at us.
+If you do want product analytics on your own instance, the variables are on [configuration](/development/configuration/#product-analytics-and-session-replay) and they accept a self-hosted PostHog. It is the same key as the error tracking above, so setting one for errors also turns on the analytics and session replay; `POSTHOG_ERROR_TRACKING` and `WARMBLY_POSTHOG_SESSION_REPLAY` are separate switches if you want only part of it. That is your decision to make, and nothing about it points at us.
 
 ## See also
 

@@ -3,6 +3,7 @@
 // surface an error. Submits are recorded server-side by the submit pipeline.
 
 import { apiHeaders, personalToken } from "./api";
+import { track } from "./observability";
 
 const VISITOR_KEY_STORAGE = "wf_vk";
 
@@ -66,11 +67,13 @@ export function makeTracker(publicId: string, pagesTotal: number): Tracker {
         view() {
             if (viewed) return;
             viewed = true;
+            track("form_viewed", publicId);
             sendEvent(publicId, { type: "view", page_index: 0, pages_total: pagesTotal });
         },
         start() {
             if (started) return;
             started = true;
+            track("form_started", publicId);
             sendEvent(publicId, { type: "start", page_index: Math.max(maxPage, 0), pages_total: pagesTotal });
         },
         page(index: number) {

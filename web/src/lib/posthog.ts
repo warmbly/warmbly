@@ -1,45 +1,57 @@
 // The dashboard's one PostHog client.
 //
-// Product analytics and error tracking are the same project and the same key,
-// so they are the same SDK instance: two `posthog.init` calls would be two
-// visitors, two pageview streams and two sets of global error handlers.
-// `lib/productAnalytics` owns what we measure and `lib/observability` owns what
-// we report; this file owns the client both of them borrow.
-//
-// Three rules decide the configuration below.
+// Product analytics, session replay and error tracking are the same project
+// and the same key, so they are the same SDK instance: two `posthog.init` calls
+// would be two visitors, two pageview streams and two sets of global error
+// handlers. `lib/productAnalytics` owns what we name, `lib/observability` owns
+// what we report; this file owns the client both of them borrow.
 //
 // It is hosted-only. The dashboard image is the same for the hosted service and
 // for a self-host, so the key comes from the container-injected runtime config
 // and an unset key means the SDK chunk is never fetched and no PostHog host is
 // ever contacted. A self-host therefore ships this code path and never runs it.
 //
-// It is cookieless, so there is no banner. `cookieless_mode: 'always'` stores
-// nothing in the browser: no cookie, no localStorage, no sessionStorage. The
-// visitor is derived server-side from a daily-rotated salt plus IP, root domain
-// and user agent, and the salt is deleted at the end of the day, so there is no
-// identifier to consent to. That only holds if we never call identify, which is
-// why `person_profiles: 'never'` is set and why no analytics event property
-// anywhere carries a user id, an organization id or an email.
+// It is identified. A signed-in user is `identify`d by their account id, with
+// their email and name as person properties, and their workspace is a group,
+// so every event, replay and exception is attributable to the account and the
+// workspace it happened in. The SDK keeps its device id in localStorage plus a
+// cookie, which is what ties the anonymous visit before sign-in to the person
+// after it and what makes sessions exist at all: session replay and session
+// analytics have no session to hang off in the cookieless mode this used to
+// run in.
 //
-// Exceptions are the one exception. An error nobody can trace to an account is
-// an error nobody can answer a support message about, so `$exception` events,
-// and only those, carry the workspace and user they happened to. That is a
-// property on one event type, not an identity: no profile is created, nothing
-// is stored in the browser, and analytics stays anonymous.
-//
-// Session replay stays off deliberately: it would record mailbox and contact
-// screens. Exception steps are the alternative, and they are why an issue shows
-// the route the user was on and the request that failed just before it.
+// Everything the SDK can observe is on: autocapture, pageviews and pageleaves,
+// heatmaps, rage and dead clicks, web vitals, network timing, session replay
+// with console logs, surveys and exceptions. The only thing masked is what a
+// password field holds, which is never ours to see. The privacy page on the
+// marketing site describes exactly this and has to change with it.
 import type { CaptureResult, PostHog, Properties } from "posthog-js";
-import { maskIds } from "./maskIds";
-import { POSTHOG_ERROR_TRACKING, POSTHOG_HOST, POSTHOG_KEY, POSTHOG_UI_HOST, SENTRY_ENVIRONMENT, SENTRY_RELEASE } from "./information";
+import {
+    POSTHOG_ERROR_TRACKING,
+    POSTHOG_HOST,
+    POSTHOG_KEY,
+    POSTHOG_SESSION_REPLAY,
+    POSTHOG_UI_HOST,
+    SENTRY_ENVIRONMENT,
+    SENTRY_RELEASE,
+} from "./information";
+
+export type PostHogIdentity = {
+    userId: string;
+    email?: string | null;
+    name?: string | null;
+    organizationId?: string | null;
+    organizationName?: string | null;
+    plan?: string | null;
+};
 
 let client: PostHog | null = null;
 let loading: Promise<PostHog | null> | null = null;
 
-// identity is attached to exceptions only. Held here rather than registered as
-// a super property so it can never reach an analytics event.
-let identity: Record<string, string> | null = null;
+// identity is the last one applied, so a client that finishes loading after
+// sign-in still learns who is signed in, and so exceptions can carry the ids
+// as plain searchable properties as well as through the person.
+let identity: PostHogIdentity | null = null;
 
 // loadPostHog resolves the initialised client, or null when no key is
 // configured or the chunk could not be fetched. It initialises on the first
@@ -53,37 +65,46 @@ export function loadPostHog(): Promise<PostHog | null> {
             posthog.init(POSTHOG_KEY, {
                 api_host: POSTHOG_HOST,
                 ui_host: POSTHOG_UI_HOST,
-                cookieless_mode: "always",
-                person_profiles: "never",
-                // The dashboard is a private tool behind a login. Autocapturing
-                // every click would ship contact names and subject lines in
-                // element text; the named events in productAnalytics are
-                // deliberate instead.
-                autocapture: false,
+                // A person profile is created on identify and not before, so
+                // a visitor who never signs in is a device, not a person.
+                person_profiles: "identified_only",
+                autocapture: true,
                 // The dashboard is a single-page app, so page loads happen
                 // once and every navigation after that is a history change.
                 // Plain `true` would report one pageview per session.
                 capture_pageview: "history_change",
-                disable_session_recording: true,
-                respect_dnt: true,
-                // Error tracking. Console errors stay off: they are mostly
-                // third-party noise and they would carry logged values.
+                capture_pageleave: true,
+                capture_dead_clicks: true,
+                capture_heatmaps: true,
+                rageclick: true,
+                capture_performance: { web_vitals: true, network_timing: true },
+                disable_session_recording: !POSTHOG_SESSION_REPLAY,
+                session_recording: {
+                    // Only what is typed into a password field is hidden. A
+                    // mailbox's app password and an API secret are both
+                    // password inputs, so that is exactly the credential set.
+                    maskAllInputs: false,
+                    maskInputOptions: { password: true },
+                },
+                enable_recording_console_log: true,
+                respect_dnt: false,
                 capture_exceptions: POSTHOG_ERROR_TRACKING
                     ? {
                           capture_unhandled_errors: true,
                           capture_unhandled_rejections: true,
-                          capture_console_errors: false,
+                          capture_console_errors: true,
                       }
                     : false,
                 before_send: decorate,
             });
             // Registered rather than passed per call so an autocaptured
-            // exception carries them too, and so dashboard events are
-            // separable from the admin panel's in a shared project.
+            // event carries them too, and so dashboard events are separable
+            // from the admin panel's in a shared project.
             posthog.register(SENTRY_RELEASE
                 ? { service: "dashboard", environment: SENTRY_ENVIRONMENT, release: SENTRY_RELEASE }
                 : { service: "dashboard", environment: SENTRY_ENVIRONMENT });
             client = posthog;
+            if (identity) applyIdentity(posthog, identity);
             return posthog;
         })
         .catch(() => {
@@ -100,18 +121,30 @@ export function postHogClient(): PostHog | null {
     return client;
 }
 
-// setPostHogIdentity names the workspace and user that later exceptions belong
-// to. Null on sign-out, so a shared machine's next session is not attributed to
-// whoever used it last.
-export function setPostHogIdentity(next: { organizationId?: string | null; userId?: string | null } | null): void {
-    if (!next) {
-        identity = null;
-        return;
+// setPostHogIdentity names the signed-in user and their workspace. Null on
+// sign-out resets the SDK, so a shared machine's next session gets a fresh
+// device id and is not attributed to whoever used it last.
+export function setPostHogIdentity(next: PostHogIdentity | null): void {
+    identity = next;
+    if (!client) return;
+    if (next) {
+        applyIdentity(client, next);
+    } else {
+        client.reset();
     }
-    const resolved: Record<string, string> = {};
-    if (next.organizationId) resolved.organization_id = next.organizationId;
-    if (next.userId) resolved.user_id = next.userId;
-    identity = Object.keys(resolved).length > 0 ? resolved : null;
+}
+
+function applyIdentity(posthog: PostHog, next: PostHogIdentity): void {
+    const person: Properties = {};
+    if (next.email) person.email = next.email;
+    if (next.name) person.name = next.name;
+    posthog.identify(next.userId, person);
+    if (next.organizationId) {
+        const group: Properties = {};
+        if (next.organizationName) group.name = next.organizationName;
+        if (next.plan) group.plan = next.plan;
+        posthog.group("organization", next.organizationId, group);
+    }
 }
 
 // notePostHogStep records one step on the trail attached to the next exception.
@@ -123,22 +156,12 @@ export function notePostHogStep(message: string, properties?: Properties): void 
     client?.addExceptionStep(message, properties);
 }
 
-// decorate is the last thing to touch an event before it is sent.
+// decorate is the last thing to touch an event before it is sent. Exceptions
+// get the account and workspace ids as flat properties on top of the person,
+// so "every error this workspace hit" is a property filter.
 function decorate(event: CaptureResult | null): CaptureResult | null {
-    const masked = maskIdsInURLs(event);
-    if (!masked?.properties || masked.event !== "$exception") return masked;
-    if (identity) Object.assign(masked.properties, identity);
-    return masked;
-}
-
-// A pageview or an error event would otherwise ship the record id in the path.
-function maskIdsInURLs(event: CaptureResult | null): CaptureResult | null {
-    if (!event?.properties) return event;
-    for (const key of ["$current_url", "$pathname", "$referrer"] as const) {
-        const value = event.properties[key];
-        if (typeof value === "string") {
-            event.properties[key] = maskIds(value);
-        }
-    }
+    if (!event?.properties || event.event !== "$exception" || !identity) return event;
+    event.properties.user_id = identity.userId;
+    if (identity.organizationId) event.properties.organization_id = identity.organizationId;
     return event;
 }

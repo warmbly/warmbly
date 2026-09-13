@@ -8,7 +8,6 @@
 
 import axios, { type AxiosRequestConfig } from "axios";
 import { API_URL } from "@/lib/env";
-import { maskIds } from "@/lib/maskIds";
 import { noteStep } from "@/lib/observability";
 import {
     clearToken,
@@ -146,11 +145,11 @@ export async function Request<T>(config: AuthRequestConfig): Promise<T> {
 // own and obvious next to "GET /admin/orgs/:id 500 req-abc123". The request id
 // is the backend's own, so the same incident is findable in its logs.
 //
-// Ids in the path are masked and nothing else about the call travels: no query
-// string, no body, no header.
+// The path and nothing else about the call travels: no query string, no body,
+// no header.
 function noteFailure(config: AuthRequestConfig, failure: APIError): void {
     const method = config.method?.toUpperCase() ?? "REQUEST";
-    const path = maskIds(config.url?.split("?")[0] ?? "");
+    const path = config.url?.split("?")[0] ?? "";
 
     const properties: Record<string, string | number | boolean> = {
         method,

@@ -18,15 +18,17 @@
 // Two things make a reported error answerable rather than just countable, and
 // both are fanned out from here:
 //
-//   - `setErrorIdentity` names the workspace and user an exception belongs to,
-//     so "this customer says the campaign page breaks" is a search.
+//   - `setErrorIdentity` names the user and workspace an exception belongs to,
+//     so "this customer says the campaign page breaks" is a search. On PostHog
+//     it is also the identify call product analytics and session replay hang
+//     off, so one place decides who the signed-in person is.
 //   - `noteStep` leaves a trail (route changes, failed requests with their
 //     request id) that the next exception carries, so the issue shows what led
-//     to it without recording anybody's screen.
+//     to it even where the session replay is missing or was turned off.
 import { POSTHOG_ERROR_TRACKING, POSTHOG_KEY, SENTRY_DSN, SENTRY_ENVIRONMENT, SENTRY_RELEASE } from "./information";
-import { loadPostHog, notePostHogStep, setPostHogIdentity } from "./posthog";
+import { loadPostHog, notePostHogStep, setPostHogIdentity, type PostHogIdentity } from "./posthog";
 
-export type Identity = { organizationId?: string | null; userId?: string | null } | null;
+export type Identity = PostHogIdentity | null;
 export type StepProperties = Record<string, string | number | boolean>;
 
 type Backend = {
@@ -88,8 +90,13 @@ export function initErrorReporting(): void {
                 settle({
                     capture: (error) => void Sentry.captureException(error),
                     identify: (next) =>
-                        Sentry.setUser(next?.userId
-                            ? { id: next.userId, organization_id: next.organizationId ?? undefined }
+                        Sentry.setUser(next
+                            ? {
+                                  id: next.userId,
+                                  email: next.email ?? undefined,
+                                  username: next.name ?? undefined,
+                                  organization_id: next.organizationId ?? undefined,
+                              }
                             : null),
                     step: (message, properties) =>
                         Sentry.addBreadcrumb({ category: "app", message, data: properties, level: "info" }),
@@ -109,17 +116,15 @@ export function captureException(error: unknown): void {
     for (const backend of backends) backend.capture(error);
 }
 
-// setErrorIdentity names the workspace and user later exceptions belong to.
-// Pass null on sign-out. Analytics never sees this: it is attached to exception
-// events only, and no profile is created for it.
+// setErrorIdentity names the user and workspace later events belong to. Pass
+// null on sign-out, which resets the PostHog device as well.
 export function setErrorIdentity(next: Identity): void {
     identity = next;
     for (const backend of backends) backend.identify(next);
 }
 
 // noteStep adds one step to the trail the next exception carries. Keep the
-// message bounded, a route pattern rather than a record id, and keep it and the
-// properties free of a contact's name, an email address or a subject line.
+// message bounded and the properties flat.
 export function noteStep(message: string, properties?: StepProperties): void {
     if (awaiting > 0 && earlySteps.length < EARLY_LIMIT) earlySteps.push({ message, properties });
     for (const backend of backends) backend.step(message, properties);

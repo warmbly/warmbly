@@ -410,6 +410,7 @@ func TestFormShellStampsBrowserReporting(t *testing.T) {
 	shell := []byte(`<!doctype html><html><head>` +
 		`<meta name="wf-posthog-key" content="" />` +
 		`<meta name="wf-posthog-host" content="" />` +
+		`<meta name="wf-posthog-errors" content="" />` +
 		`<meta name="wf-sentry-dsn" content="" />` +
 		`<meta name="wf-release" content="" />` +
 		`</head><body></body></html>`)
@@ -421,14 +422,16 @@ func TestFormShellStampsBrowserReporting(t *testing.T) {
 		}
 	}
 
-	set := string(stampMeta(stampMeta(stampMeta(stampMeta(shell,
+	set := string(stampMeta(stampMeta(stampMeta(stampMeta(stampMeta(shell,
 		"wf-posthog-key", "phc_example"),
 		"wf-posthog-host", "https://eu.i.posthog.com"),
+		"wf-posthog-errors", "false"),
 		"wf-sentry-dsn", `https://k@example.invalid/1`),
 		"wf-release", "v1.2.3"))
 	for _, want := range []string{
 		`<meta name="wf-posthog-key" content="phc_example" />`,
 		`<meta name="wf-posthog-host" content="https://eu.i.posthog.com" />`,
+		`<meta name="wf-posthog-errors" content="false" />`,
 		`<meta name="wf-sentry-dsn" content="https://k@example.invalid/1" />`,
 		`<meta name="wf-release" content="v1.2.3" />`,
 	} {

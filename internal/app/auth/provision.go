@@ -77,7 +77,9 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 			// failed invitation either refuses or falls through to a
 			// self-serve signup, and only one of those is a signup.
 			s.notifyOperatorSignup(u, "")
-			s.countSignup(attr, origin)
+			// The workspace joined is the inviter's, not one of this
+			// account's own, so only the person is named here.
+			s.countSignup(u, nil, attr, origin)
 			return u, nil
 		}
 		if inviteRequired {
@@ -128,11 +130,7 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 			// Counted here rather than in the browser because this is where
 			// the trial actually starts; a self-host with billing off never
 			// reaches this line and so never reports one.
-			s.productAnalytics.Capture("trial_started", analytics.Request{
-				IP:        origin.IP,
-				UserAgent: origin.UserAgent,
-				Host:      s.analyticsHost,
-			}, nil)
+			s.productAnalytics.Capture("trial_started", s.analyticsRequest(u, org, origin), nil)
 		}
 	}
 
@@ -149,45 +147,72 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 		workspace = org.Name
 	}
 	s.notifyOperatorSignup(u, workspace)
-	s.countSignup(attr, origin)
+	s.countSignup(u, org, attr, origin)
 
 	return u, nil
 }
 
-// countSignup records the finished signup in product analytics, carrying the
-// channel it came from and nothing that names the person: no user id, no
-// organization id, no email. The request's address and user agent are only
-// forwarded so PostHog's cookieless hash matches this browser's own events;
-// it deletes both once it has hashed them.
-func (s *authService) countSignup(attr SignupAttribution, origin SignupOrigin) {
+// analyticsRequest names the new account and workspace on a server-side
+// event, under the same user id the dashboard identifies the browser with,
+// so the signup and the session that led to it are one person in PostHog.
+// The request's address and user agent ride along so the event is geolocated
+// and attributed to the right device.
+func (s *authService) analyticsRequest(u *models.User, org *models.Organization, origin SignupOrigin) analytics.Request {
+	req := analytics.Request{
+		IP:        origin.IP,
+		UserAgent: origin.UserAgent,
+		Host:      s.analyticsHost,
+	}
+	if u != nil {
+		req.UserID = u.ID.String()
+		req.Email = u.Email
+		req.Name = strings.TrimSpace(u.FirstName + " " + u.LastName)
+	}
+	if org != nil {
+		req.OrganizationID = org.ID.String()
+		req.OrganizationName = org.Name
+	}
+	return req
+}
+
+// countSignup records the finished signup in product analytics. The channel
+// it came from goes on the event and, write-once, on the person: where
+// somebody came from does not change later, and it is what a funnel from the
+// marketing site to a paying workspace is built on.
+func (s *authService) countSignup(u *models.User, org *models.Organization, attr SignupAttribution, origin SignupOrigin) {
 	if s.productAnalytics == nil {
 		return
 	}
 	acq := attr.Acquisition.Normalize()
-	props := map[string]any{}
+	channel := map[string]any{}
 	if acq.UTMSource != "" {
-		props["utm_source"] = acq.UTMSource
+		channel["utm_source"] = acq.UTMSource
 	}
 	if acq.UTMMedium != "" {
-		props["utm_medium"] = acq.UTMMedium
+		channel["utm_medium"] = acq.UTMMedium
 	}
 	if acq.UTMCampaign != "" {
-		props["utm_campaign"] = acq.UTMCampaign
+		channel["utm_campaign"] = acq.UTMCampaign
 	}
 	if acq.LandingPath != "" {
-		props["landing_path"] = acq.LandingPath
+		channel["landing_path"] = acq.LandingPath
 	}
 	if acq.ReferrerHost != "" {
-		props["referrer_host"] = acq.ReferrerHost
+		channel["referrer_host"] = acq.ReferrerHost
 	}
-	props["invited"] = attr.Invite != ""
-	props["referred"] = attr.ReferralCode != ""
+	props := map[string]any{
+		"invited":  attr.Invite != "",
+		"referred": attr.ReferralCode != "",
+	}
+	for k, v := range channel {
+		props[k] = v
+	}
 
-	s.productAnalytics.Capture("signup_completed", analytics.Request{
-		IP:        origin.IP,
-		UserAgent: origin.UserAgent,
-		Host:      s.analyticsHost,
-	}, props)
+	req := s.analyticsRequest(u, org, origin)
+	if len(channel) > 0 {
+		req.SetOnce = channel
+	}
+	s.productAnalytics.Capture("signup_completed", req, props)
 }
 
 // notifyOperatorSignup raises the operator alert for a finished signup. Both

@@ -47,10 +47,13 @@ type Config struct {
 	BackendURL    string
 	InternalToken string
 	// BrowserPostHogKey and BrowserPostHogHost are stamped into the page shell
-	// so the form app can report browser errors to PostHog. An empty key, which
-	// is the default, means the app never loads the SDK.
-	BrowserPostHogKey  string
-	BrowserPostHogHost string
+	// so the form app can report pageviews, web vitals and browser errors to
+	// PostHog. An empty key, which is the default, means the app never loads
+	// the SDK. BrowserPostHogErrorTracking false keeps the analytics and
+	// reports no exceptions.
+	BrowserPostHogKey           string
+	BrowserPostHogHost          string
+	BrowserPostHogErrorTracking bool
 	// BrowserSentryDSN is the same for an operator who reports to Sentry
 	// instead. Either backend, both, or neither.
 	BrowserSentryDSN string
@@ -96,6 +99,9 @@ func New(cfg Config) (*Server, error) {
 	// placeholders stay empty and the page loads no reporting SDK at all.
 	shell = stampMeta(shell, "wf-posthog-key", cfg.BrowserPostHogKey)
 	shell = stampMeta(shell, "wf-posthog-host", cfg.BrowserPostHogHost)
+	if !cfg.BrowserPostHogErrorTracking {
+		shell = stampMeta(shell, "wf-posthog-errors", "false")
+	}
 	shell = stampMeta(shell, "wf-sentry-dsn", cfg.BrowserSentryDSN)
 	shell = stampMeta(shell, "wf-release", cfg.Release)
 	shell = stampMeta(shell, "wf-environment", cfg.Environment)

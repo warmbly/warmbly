@@ -156,15 +156,22 @@ const websiteJsonLd = {
       Cookieless analytics. Nothing is written to this browser: no cookie, no
       localStorage, no sessionStorage, and so no consent banner. The visitor is
       derived on PostHog's side from a daily-rotated salt plus IP, root domain
-      and user agent, and the salt is deleted at the end of the day.
+      and user agent, and the salt is deleted at the end of the day. That only
+      holds if nobody is ever identified, which is what person_profiles:
+      'never' enforces.
 
-      That only holds if nobody is ever identified, which is what
-      person_profiles: 'never' enforces. Autocapture and session recording stay
-      off: this is a marketing site, page views are the question.
+      Everything that works without a stored session is on: pageviews and
+      pageleaves with scroll depth, autocapture, heatmaps, rage and dead
+      clicks, web vitals and exceptions, with the country resolved from the
+      request on PostHog's side. Session replay is the one thing that cannot
+      run here: the SDK has no session manager in cookieless mode, and a
+      session needs a cookie, which needs a consent banner. The dashboard
+      records sessions; this site counts.
 
-      The root domain is one of the hash inputs, so a visit here and the signup
-      on app.warmbly.com are one visitor within a day, with no cross-domain
-      wiring on our side.
+      The dashboard identifies the person on sign-in, and the acquisition
+      parameters this page carries into the signup link (below) land on that
+      person from the server, so where a customer came from survives the
+      daily salt rotation without anything being stored in this browser.
     -->
     {posthogKey && (
       <script is:inline define:vars={{ posthogKey, posthogHost, posthogUiHost }}>
@@ -174,11 +181,18 @@ const websiteJsonLd = {
           ui_host: posthogUiHost,
           cookieless_mode: 'always',
           person_profiles: 'never',
-          autocapture: false,
+          autocapture: true,
           capture_pageview: true,
+          capture_pageleave: true,
+          capture_dead_clicks: true,
+          capture_heatmaps: true,
+          rageclick: true,
+          capture_performance: { web_vitals: true },
+          capture_exceptions: true,
           disable_session_recording: true,
-          respect_dnt: true,
+          respect_dnt: false,
         });
+        window.posthog.register({ service: 'site' });
       </script>
     )}
     <!--
