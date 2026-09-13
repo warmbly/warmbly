@@ -125,8 +125,16 @@ export function TurnstileModal({ visible, required, onToken, onError }: Props) {
     if (pending || skipWidget) return null;
 
     const turnstileProps = {
-        ref: turnstileRef,
         sitekey: TURNSTILE_KEY,
+        // The widget instance only arrives through a callback: `Turnstile` is
+        // a plain function component, not forwardRef, and its `userRef` prop
+        // is the container div. onLoad fires when the widget renders;
+        // onAfterInteractive below only fires once a human has acted, which
+        // with appearance="interaction-only" may never happen.
+        onLoad: (_widgetId: string, bound: BoundTurnstileObject) => {
+            turnstileRef.current = bound;
+            if (visible && waitingRef.current) bound.execute();
+        },
         onVerify: handleVerify,
         onExpire: () => {
             tokenRef.current = "";
@@ -138,7 +146,13 @@ export function TurnstileModal({ visible, required, onToken, onError }: Props) {
             turnstileRef.current = bound;
             if (visible && waitingRef.current) bound.execute();
         },
-        size: "invisible" as const,
+        // Cloudflare removed the "invisible" size: it now answers
+        // "expected compact, flexible, or normal" and the widget never
+        // renders, so no token is ever produced. execution=execute defers the
+        // challenge until .execute() is called and interaction-only keeps it
+        // out of the layout unless a human actually has to do something.
+        execution: "execute" as const,
+        appearance: "interaction-only" as const,
     };
     return <Turnstile {...(turnstileProps as unknown as ComponentProps<typeof Turnstile>)} />;
 }
