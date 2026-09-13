@@ -61,6 +61,11 @@ func (s *subscriptionService) GetWithLimits(ctx context.Context, orgID uuid.UUID
 	if sub == nil {
 		return nil, errx.New(errx.NotFound, "no subscription found")
 	}
+	// The plan that decides entitlements, which is the granted one while a
+	// grant is in force. Without this the dashboard has no plan to name and
+	// falls back to whatever the org row says.
+	sub.Plan, _ = s.planRepo.GetByID(ctx, sub.EffectivePlanID())
+	sub.Managed = sub.IsManaged()
 	return sub, nil
 }
 

@@ -138,7 +138,13 @@ export function TurnstileModal({ visible, required, onToken, onError }: Props) {
             turnstileRef.current = bound;
             if (visible && waitingRef.current) bound.execute();
         },
-        size: "invisible" as const,
+        // Cloudflare removed the "invisible" size: it now answers
+        // "expected compact, flexible, or normal" and the widget never
+        // renders, so no token is ever produced. execution=execute defers the
+        // challenge until .execute() is called and interaction-only keeps it
+        // out of the layout unless a human actually has to do something.
+        execution: "execute" as const,
+        appearance: "interaction-only" as const,
     };
     return <Turnstile {...(turnstileProps as unknown as ComponentProps<typeof Turnstile>)} />;
 }
