@@ -19,7 +19,7 @@ Check these in order:
 - Complaint rate. Amazon SES puts an account under review around 0.1% and may pause sending around 0.5%. Google's bulk-sender guidance says keep user-reported spam under 0.10% and never reach 0.30%. Above 0.10% is the fire.
 - Bounce rate. SES flags at 5% and may pause at 10%. A high hard-bounce rate points at list quality, not content.
 - Authentication. Run your From domain through an SPF, DKIM, and DMARC check. SPF has a 10 DNS-lookup limit, and DMARC needs SPF or DKIM to align with the visible From domain, so both can pass while DMARC alignment fails.
-- Warmup token behavior, if you're on a pool. Warmbly quarantines a mailbox at 3 or more invalid warmup tokens in 24 hours, which usually means someone's gaming the pool or your mailbox is misclassifying.
+- How you treated warmup mail, if you're on a pool. Deleting or spam-flagging warmup messages you received counts against you, because you are the only one who can do that; a token arriving in your inbox never does, since you did not put it there.
 
 Keep these separate. A bounce problem is a list problem. A complaint problem is a content or targeting problem. Collapsing them into one "reputation" number hides the repair. Our [deliverability](/deliverability/) page walks the same signal-by-signal split.
 
@@ -61,7 +61,7 @@ A mailbox doesn't go back into rotation because time passed. It requalifies. The
 
 - Authentication intact: SPF within the 10-lookup limit, DKIM signing, DMARC aligned to the visible From domain.
 - No recent complaint or bounce spikes. Complaints back under 0.10%, bounces under 5%.
-- Clean token behavior: no recent invalid or forged warmup tokens.
+- Clean handling of received warmup mail: nothing deleted or flagged as spam.
 - Spam-folder placement back under 10% on a fresh probation sample, not on the old poisoned data.
 - Willingness to re-warm from low volume, 5 to 10 a day, instead of resuming at the old cap.
 

@@ -591,6 +591,8 @@ func (s *service) evaluateAndPersist(ctx context.Context, accountID uuid.UUID, p
 		return nil, fail("load_metrics", err)
 	}
 
+	// The floor that keeps a block from being overturned by a fresh reading is
+	// applied by UpdateParticipantHealth against the row as it is at write time.
 	decision := evaluateMetrics(metrics, s.now().UTC())
 	if err := s.repo.UpdateParticipantHealth(ctx, accountID, decision.State, decision.BlockedUntil, decision.Reason, decision.Score); err != nil {
 		return nil, fail("persist", err)
@@ -709,6 +711,10 @@ func evaluateMetrics(metrics *models.WarmupHealthMetrics, now time.Time) evaluat
 		Score: metrics.SpamPlacementRate,
 	}
 
+	// No live path records an invalid-token attempt any more: the inbound
+	// header path was the only feeder, and it charged the wrong party (#481).
+	// The band stays for a future signal that can attribute a forged token to
+	// whoever sent it; until then this branch cannot fire.
 	if metrics.InvalidAttemptsLast24 >= invalidTokenBlockThreshold {
 		until := now.Add(warmupBlockDuration)
 		return evaluationDecision{
@@ -865,6 +871,14 @@ func maxFloat(a, b float64) float64 {
 // EvaluateAllParticipants runs a health evaluation sweep across all warmup pool participants.
 // Returns the number evaluated and the number of state changes.
 func (s *service) EvaluateAllParticipants(ctx context.Context) (int, int, *errx.Error) {
+	// The standing of a removed mailbox is held against its address for a
+	// fixed window; this is where the window is enforced.
+	if purged, err := s.repo.PurgeExpiredReputationLedger(ctx); err != nil {
+		log.Warn().Err(err).Msg("warmup: could not purge the expired reputation ledger")
+	} else if purged > 0 {
+		log.Info().Int64("purged", purged).Msg("warmup: reputation ledger rows lapsed")
+	}
+
 	accountIDs, err := s.repo.GetAllParticipantAccountIDs(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("warmup: health sweep could not list participants")

@@ -43,7 +43,7 @@ Named sources land in the same range. Postmark describes domain warmup as slowly
 
 A pool only works if the messages inside it are genuine warmup traffic. If a mailbox could claim it sent warmup mail without delivering it, or an outsider could forge pool messages, the reputation signal would be worthless. So every Warmbly warmup message carries a signed HMAC verification token, embedded as a footer reference line.
 
-When the receiving side classifies a warmup message, it validates that token on five checks: the HMAC signature, a 48-hour expiry, a single-use ULID so a token can't be replayed, pool membership, and a sender/recipient match. A message that fails these isn't counted as valid warmup. Failed tokens are also an abuse signal. A mailbox that logs 3 or more invalid tokens in 24 hours gets quarantined, because forged or malformed tokens usually mean someone's trying to inflate warmup numbers without doing the sending.
+When the receiving side classifies a warmup message, it validates that token on five checks: the HMAC signature, a 48-hour expiry, a single-use ULID so a token can't be replayed, pool membership, and a sender/recipient match. A message that fails these isn't counted as valid warmup. A failed token is not held against the receiving mailbox, which did not put it there; what is held against a mailbox is deleting or spam-flagging warmup mail it received. A mailbox that does that repeatedly gets quarantined, because forged or malformed tokens usually mean someone's trying to inflate warmup numbers without doing the sending.
 
 <Callout title="Tokens catch gaming, not deliverability problems">
   A clean token record means the warmup happened as claimed. It says nothing about whether those

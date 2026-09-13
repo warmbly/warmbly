@@ -106,7 +106,7 @@ Warmbly recognizes inbound warmup by its token and files it automatically, inclu
 
 ## Pool safety
 
-Shared pools only work if participants behave, so each mailbox accumulates a spam score from negative signals: complaints, spam-folder placement, bounces, invalid or forged tokens, and tampering with delivered warmup mail.
+Shared pools only work if participants behave, so each mailbox accumulates a spam score from negative signals: complaints, spam-folder placement, bounces, and tampering with warmup mail it received, such as deleting it or flagging it as spam.
 
 | State | Meaning | Effect |
 |-------|---------|--------|
@@ -116,13 +116,17 @@ Shared pools only work if participants behave, so each mailbox accumulates a spa
 | `quarantined` | Clear problem | Out of the shared pool for a cooldown |
 | `blocked` | Serious or repeated abuse | Out for longer, review required |
 
-Quarantined and blocked mailboxes are selected as neither sender nor recipient. Auto-block also fires on clear abuse, such as repeated invalid tokens in a short window.
+Quarantined and blocked mailboxes are selected as neither sender nor recipient. Mail arriving in a mailbox is never held against it: every warmup message carries a single-use token bound to its recipient, so a token cannot be replayed or redirected, and one that lands where it does not belong is simply filed as ordinary mail.
 
 <Callout type="warn" title="Acting early protects everyone">
   Warmbly intervenes well before providers would penalize a mailbox. One landing in spam a large share of the time is already dangerous to the pool, so it is throttled or removed rather than left collecting negative signals.
 </Callout>
 
-Getting back in requires requalifying, not just waiting: healthy authentication, no recent complaints or hard-bounce spikes, no recent invalid-token attempts, and spam placement back to a low level. Return is gradual, not a jump back to the old ceiling.
+Getting back in requires requalifying, not just waiting: healthy authentication, no recent complaints or hard-bounce spikes, and spam placement back to a low level. Return is gradual, not a jump back to the old ceiling.
+
+A quarantine or a block also holds for its full term. The signals behind it age out of their windows long before it ends, and that does not release it early; a more serious finding can still replace it. A throttle is different and lifts as soon as the mailbox recovers, as the table says.
+
+The standing follows the address, not the connection. Removing a mailbox from the workspace and adding it back, or dropping out of the pool and rejoining, does not clear its score or its block: the same address in the same workspace rejoins with the standing it left with. That standing is kept for 90 days after the block ends or after the mailbox was removed, whichever is later; a block that requires review never lapses. A mailbox in good standing leaves nothing behind.
 
 ## Graduating to cold sending
 

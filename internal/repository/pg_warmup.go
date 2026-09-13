@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -96,8 +97,14 @@ type WarmupRepository interface {
 	GetPoolByType(ctx context.Context, poolType string) (*WarmupPool, error)
 	GetPoolParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
 	GetPoolRecipientParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
-	// MoveToPool joins this pool, or moves an existing membership over.
+	// MoveToPool joins this pool, or moves an existing membership over. A new
+	// member starts from the standing mirrored for its address (see migration
+	// 000152), so re-adding a mailbox is not a reset.
 	MoveToPool(ctx context.Context, poolID, accountID uuid.UUID, role string) error
+	// PurgeExpiredReputationLedger forgets the mirrored standing of addresses
+	// with no live pool row once the retention window has lapsed, and reports
+	// how many.
+	PurgeExpiredReputationLedger(ctx context.Context) (int64, error)
 	// MoveExistingToPool moves an existing member, keeping its role; a mailbox in no pool stays out.
 	MoveExistingToPool(ctx context.Context, poolID, accountID uuid.UUID) (bool, error)
 	// LeaveAllPools removes the mailbox from warmup. Removal is never pool-scoped: the caller
@@ -339,16 +346,72 @@ func (r *warmupRepository) GetPoolRecipientParticipants(ctx context.Context, poo
 // mailbox in the other pool moves and keeps every reputation column: changing pool cannot
 // launder a penalty, and no mailbox can hold two memberships.
 func (r *warmupRepository) MoveToPool(ctx context.Context, poolID, accountID uuid.UUID, role string) error {
-	query := `
-		INSERT INTO warmup_pool_participants (pool_id, email_account_id, joined_at, spam_score, participant_role)
-		VALUES ($1::uuid, $2::uuid, NOW(), 0, $3::text)
-		ON CONFLICT (email_account_id) DO UPDATE
-		SET pool_id = EXCLUDED.pool_id,
-		    participant_role = EXCLUDED.participant_role
-	`
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
 
-	_, err := r.db.Exec(ctx, query, poolID, accountID, role)
-	return err
+	// An existing member keeps everything it has; only its pool and role move.
+	// The mirror is not touched, so a standing cannot be consumed by a mailbox
+	// that never inherited it.
+	moved, err := tx.Exec(ctx, `
+		UPDATE warmup_pool_participants
+		   SET pool_id = $1::uuid, participant_role = $3::text
+		 WHERE email_account_id = $2::uuid
+	`, poolID, accountID, role)
+	if err != nil {
+		return err
+	}
+	if moved.RowsAffected() == 0 {
+		// A new member starts from whatever standing its address holds and is
+		// still within the retention window. health_signals_from is
+		// deliberately left at its default: the history behind the old standing
+		// is gone, so new signals count from now, while the verdict is kept.
+		// The insert is itself a write, so the trigger re-mirrors it.
+		_, err = tx.Exec(ctx, `
+			INSERT INTO warmup_pool_participants
+			    (pool_id, email_account_id, joined_at, spam_score, participant_role,
+			     health_state, blocked_at, blocked_until, blocked_reason, last_health_score, last_health_reason)
+			SELECT $1::uuid, $2::uuid, NOW(), COALESCE(l.spam_score, 0), $3::text,
+			       COALESCE(l.health_state, 'healthy'), l.blocked_at, l.blocked_until, l.blocked_reason,
+			       COALESCE(l.last_health_score, 0), l.last_health_reason
+			  FROM email_accounts a
+			  LEFT JOIN warmup_reputation_ledger l
+			    ON l.organization_id = a.organization_id
+			   AND l.email = lower(btrim(a.email))
+			   AND (l.standing_until IS NULL
+			        OR GREATEST(l.standing_until, l.recorded_at) + ($4::int * interval '1 day') > now())
+			 WHERE a.id = $2::uuid
+			ON CONFLICT (email_account_id) DO UPDATE
+			SET pool_id = EXCLUDED.pool_id,
+			    participant_role = EXCLUDED.participant_role
+		`, poolID, accountID, role, config.WarmupReputationLedgerDays)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *warmupRepository) PurgeExpiredReputationLedger(ctx context.Context) (int64, error) {
+	// A standing that requires review (standing_until NULL) never lapses, and
+	// nothing is forgotten while a live pool row still backs it.
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM warmup_reputation_ledger l
+		 WHERE l.standing_until IS NOT NULL
+		   AND GREATEST(l.standing_until, l.recorded_at) + ($1::int * interval '1 day') <= now()
+		   AND NOT EXISTS (
+		       SELECT 1
+		         FROM warmup_pool_participants p
+		         JOIN email_accounts a ON a.id = p.email_account_id
+		        WHERE a.organization_id = l.organization_id
+		          AND lower(btrim(a.email)) = l.email)
+	`, config.WarmupReputationLedgerDays)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // MoveExistingToPool corrects a member's pool and leaves its role alone, so the reconciler
@@ -370,7 +433,18 @@ func (r *warmupRepository) MoveExistingToPool(ctx context.Context, poolID, accou
 
 // LeaveAllPools removes the mailbox from warmup entirely.
 func (r *warmupRepository) LeaveAllPools(ctx context.Context, accountID uuid.UUID) error {
+	// The standing is already mirrored by address; leaving only restarts its
+	// retention window, so a mailbox that leaves on an auth error or a lapsed
+	// plan and rejoins weeks later still meets the standing it left with.
 	query := `
+		WITH bumped AS (
+			UPDATE warmup_reputation_ledger l
+			   SET recorded_at = now()
+			  FROM email_accounts a
+			 WHERE a.id = $1
+			   AND l.organization_id = a.organization_id
+			   AND l.email = lower(btrim(a.email))
+		)
 		DELETE FROM warmup_pool_participants
 		WHERE email_account_id = $1
 	`
@@ -582,26 +656,62 @@ func (r *warmupRepository) UpdateParticipantHealth(ctx context.Context, accountI
 	// FROM. It refused the whole statement with 42P08, so this UPDATE never ran
 	// for any account in any pool and no warmup health state was ever persisted
 	// (issue #195). Keep the casts.
+	//
+	// A block is a sentence, not a reading. The bands read windows far shorter
+	// than the terms they hand out (seven days of placement against a 30-day
+	// block), and a re-added mailbox arrives with no history at all, so a
+	// decision from fresh metrics must not lower a quarantine or a block while
+	// its blocked_until is in the future; a decision at least as severe applies,
+	// and one of equal severity keeps the later end so a 90-day term is not cut
+	// to 30 by a milder reading. Throttled is not floored: the docs promise it
+	// lifts on recovery. Deciding it here, against the row as it is at write
+	// time, is what keeps an admin unblock that lands mid-sweep from being
+	// overwritten by the block the sweep read a moment earlier.
 	query := `
-		UPDATE warmup_pool_participants
+		WITH cur AS (
+			SELECT email_account_id, health_state, blocked_until,
+			       CASE health_state
+			           WHEN 'blocked' THEN 5 WHEN 'quarantined' THEN 4 WHEN 'throttled' THEN 3
+			           WHEN 'watch' THEN 2 WHEN 'healthy' THEN 1 ELSE 0 END AS cur_rank,
+			       CASE $1::text
+			           WHEN 'blocked' THEN 5 WHEN 'quarantined' THEN 4 WHEN 'throttled' THEN 3
+			           WHEN 'watch' THEN 2 WHEN 'healthy' THEN 1 ELSE 0 END AS new_rank
+			  FROM warmup_pool_participants
+			 WHERE email_account_id = $5::uuid
+		),
+		eff AS (
+			SELECT email_account_id,
+			       (blocked_until IS NOT NULL AND blocked_until > now() AND cur_rank >= 4 AND new_rank < cur_rank) AS held,
+			       CASE WHEN blocked_until IS NOT NULL AND blocked_until > now() AND cur_rank >= 4 AND new_rank < cur_rank
+			            THEN health_state ELSE $1::text END AS state,
+			       CASE WHEN blocked_until IS NOT NULL AND blocked_until > now() AND cur_rank >= 4 AND new_rank < cur_rank
+			            THEN blocked_until
+			            WHEN new_rank = cur_rank AND cur_rank >= 4 AND blocked_until IS NOT NULL AND $2::timestamptz IS NOT NULL
+			            THEN GREATEST(blocked_until, $2::timestamptz)
+			            ELSE $2::timestamptz END AS until
+			  FROM cur
+		)
+		UPDATE warmup_pool_participants p
 		SET
-			health_state = $1::text,
-			blocked_until = $2::timestamptz,
+			health_state = eff.state,
+			blocked_until = eff.until,
 			blocked_at = CASE
-				WHEN $2::timestamptz IS NOT NULL AND (blocked_at IS NULL OR blocked_until IS DISTINCT FROM $2::timestamptz) THEN NOW()
-				WHEN $2::timestamptz IS NULL AND blocked_until IS NOT NULL THEN NULL
-				ELSE blocked_at
+				WHEN eff.until IS NOT NULL AND (p.blocked_at IS NULL OR p.blocked_until IS DISTINCT FROM eff.until) THEN NOW()
+				WHEN eff.until IS NULL AND p.blocked_until IS NOT NULL THEN NULL
+				ELSE p.blocked_at
 			END,
 			blocked_reason = CASE
-				WHEN $2::timestamptz IS NOT NULL OR $1::text = 'blocked' THEN $3::text
-				WHEN $1::text = 'healthy' THEN NULL
-				ELSE COALESCE($3::text, blocked_reason)
+				WHEN eff.held THEN p.blocked_reason
+				WHEN eff.until IS NOT NULL OR eff.state = 'blocked' THEN $3::text
+				WHEN eff.state = 'healthy' THEN NULL
+				ELSE COALESCE($3::text, p.blocked_reason)
 			END,
 			last_health_score = $4::double precision,
 			last_health_reason = NULLIF($3::text, ''),
 			last_health_evaluated_at = NOW()
-		WHERE email_account_id = $5::uuid
-		  AND NOT (blocked_at IS NOT NULL AND blocked_until IS NULL AND health_state = 'blocked')
+		FROM eff
+		WHERE p.email_account_id = eff.email_account_id
+		  AND NOT (p.blocked_at IS NOT NULL AND p.blocked_until IS NULL AND p.health_state = 'blocked')
 	`
 	_, err := r.db.Exec(ctx, query, state, blockedUntil, reason, score, accountID)
 	return err

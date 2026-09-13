@@ -46,7 +46,7 @@ The sample floors matter as much as the thresholds. A strict threshold read off 
 
 ## Token forgery is its own quarantine
 
-Placement and complaints are reputation signals. Token behavior is an abuse signal, and it gets its own trigger. Every warmup message carries a signed verification token, and a mailbox that logs 3 or more invalid tokens in 24 hours gets quarantined regardless of its placement, because forged or malformed tokens usually mean someone is inflating warmup numbers without doing the sending. The [token mechanics](/blog/how-email-warmup-actually-works/) are in the warmup walkthrough.
+Placement and complaints are reputation signals. Tampering is an abuse signal, and it gets its own trigger. Every warmup message carries a single-use token bound to its recipient, so a message cannot be replayed or redirected to inflate anyone's numbers, and a token that lands somewhere it does not belong is simply filed as ordinary mail rather than held against the mailbox that received it. What is held against a mailbox is deleting or spam-flagging warmup mail it received, because only its owner can do that. The [token mechanics](/blog/how-email-warmup-actually-works/) are in the warmup walkthrough.
 
 <Callout title="Where the numbers come from">
   Google asks senders to keep reported spam under 0.10% and to never reach 0.30%. Amazon SES puts

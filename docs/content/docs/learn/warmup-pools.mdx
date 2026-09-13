@@ -23,7 +23,7 @@ A pool of 500 vetted, warmed, monitored mailboxes across the major receivers is 
 - **Monitored**: every member has spam-score tracking; misbehaviour removes the mailbox from the pool.
 - **Conversational**: reply rate inside the pool ~30%; the pool exchanges threads, not one-off blasts.
 - **Avoidance-aware**: the same two mailboxes don't pair up over and over (recent-partner gap of 7 days or more).
-- **Token-verified**: every message carries a verification token; invalid tokens flag the sender.
+- **Token-verified**: every message carries a single-use token bound to its recipient, so warmup mail cannot be replayed or redirected, and mail arriving in a mailbox is never held against it.
 
 ## Free vs premium pools
 
@@ -56,7 +56,7 @@ A quarantined mailbox shouldn't automatically re-enter the pool just because tim
 
 - Healthy SPF, DKIM, DMARC.
 - No recent complaints or hard-bounce spikes.
-- No recent invalid warmup-token attempts.
+- No recent tampering with received warmup mail.
 - Spam-folder placement under 10% on a probation sample.
 - Gradual ramp on re-entry, starting at 5–10/day warmup.
 

@@ -1322,6 +1322,24 @@ func (r *emailRepository) Delete(ctx context.Context, userID, emailAccountID str
 	}
 	defer tx.Rollback(ctx)
 
+	// The mailbox's standing is already mirrored by address (see migration
+	// 000152); removing the row only restarts the retention window on it, so
+	// the standing is kept for the full window after the removal rather than
+	// after the last time it changed. Same predicate as the delete below.
+	bump := `
+		UPDATE warmup_reputation_ledger l
+		   SET recorded_at = now()
+		  FROM email_accounts a
+		 WHERE a.user_id = $1 AND a.id = $2
+		   AND l.organization_id = a.organization_id
+		   AND l.email = lower(btrim(a.email))
+	`
+	bumpParams := []any{userID, emailAccountID}
+	if _, err := tx.Exec(ctx, bump, bumpParams...); err != nil {
+		db.CaptureError(err, bump, bumpParams, "exec")
+		return errx.InternalError()
+	}
+
 	query := `
 		DELETE FROM email_accounts
 		WHERE user_id = $1 AND id = $2

@@ -128,11 +128,12 @@ const (
 	// must still end the pass rather than walk a million-row list.
 	CampaignPlacementCandidates = 25
 
-	// WarmupReconnectGraceMinutes is how long after a mailbox row is created
-	// its unverifiable warmup tokens are ignored. Reconnecting a mailbox makes
-	// a new row, and warmup_tokens cascades off the old one, so the first sync
-	// re-reads its own history holding tokens that no longer exist.
-	WarmupReconnectGraceMinutes = 60
+	// WarmupReputationLedgerDays is how long the standing of a removed mailbox
+	// is held against its address, counted from the later of its removal and
+	// the end of its block. Long enough that removing and re-adding a mailbox
+	// is never a shortcut past a block, short enough that the address of a
+	// mailbox nobody re-added is not kept indefinitely. Fixed, not a setting.
+	WarmupReputationLedgerDays = 90
 
 	// CampaignMaxDeferMinutes bounds how far ahead a DEFERRED campaign tick may
 	// park its successor. A deferral means "nothing is sendable right now", and

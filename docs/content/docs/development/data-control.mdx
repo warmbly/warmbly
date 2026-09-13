@@ -90,6 +90,10 @@ There is no grace period and no copy. Take a backup first if you are not sure.
 
 The **minimal retention** preset in the admin panel and in the installer sets all three to 30 days.
 
+### Warmup standing by address
+
+Warmup keeps the standing of every penalised mailbox (score, state, and any block) against its address as well as its row, so removing the mailbox or dropping out of the pool and coming back does not start it clean. The copy is cleared as soon as the mailbox recovers, and once the mailbox is gone it is kept for 90 days after the block ends or after the removal, whichever is later; a block that requires review is kept until an operator lifts it. A mailbox in good standing has no such copy. The window is fixed rather than a setting, and the rows are purged by the same sweep.
+
 ### Set them at install time
 
 The installer writes the answers into `.env` as one document, applied on the first boot of a fresh database:

@@ -137,7 +137,7 @@ Vendor "deliverability scores" without a published formula are unauditable and g
 
 ## When you spot a problem
 
-The trigger to run this playbook is any one of: spam placement above 10% on a 20-delivery rolling window, complaint rate above 0.03% on at least 100 delivered messages, hard bounce rate above 1%, or three or more invalid warmup-token attempts in 24 hours (Warmbly's specific tripwire for token forgery).
+The trigger to run this playbook is any one of: spam placement above 10% on a 20-delivery rolling window, complaint rate above 0.03% on at least 100 delivered messages, hard bounce rate above 1%, or repeated tampering with received warmup mail (Warmbly attributes deleting or spam-flagging warmup mail to the mailbox that received it, since only its owner can do that).
 
 1. Pause campaigns from the affected mailbox immediately.
 2. Check the mailbox health band. If "watch" or worse, do not resume yet.

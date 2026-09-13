@@ -630,9 +630,9 @@ function AbuseTab() {
         <div>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <p className="max-w-2xl text-[12.5px] text-muted-foreground">
-                    Mailboxes ranked by invalid warmup-token attempts: a warmup mail that arrives with a missing, expired
-                    or mismatched token is either a forged pool message or a mailbox misbehaving. Three or more invalid
-                    attempts in 24 hours auto-block the mailbox from the pool, as does a spam score above 50.
+                    Historical invalid warmup-token attempts. Nothing records a new one: the only path that did charged
+                    the mailbox that received a token, which it never controlled, so the signal was retired. Blocks now
+                    come from a spam score above 50 and from tampering with received warmup mail.
                 </p>
                 <div className="w-48">
                     <SegmentedFilter<WarmupAbuseWindow>
