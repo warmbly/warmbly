@@ -483,7 +483,7 @@ Exceptions still carry the context that makes them answerable, as searchable pro
 | `http_route`, `http_method` | server panics | The route pattern, never the raw path: one issue per route instead of one per record, and a probe for `/wp-admin` cannot mint issues |
 | `service`, `environment`, `release` | everything | Which process, which deployment, which build |
 
-Browser exceptions also carry a trail of steps: the routes visited and the API calls that failed just before, each with its method, route, status and request id. Record ids in a path are masked to `:id` before anything is sent. There is no session recording anywhere; the dashboard renders mailboxes and contacts.
+Browser exceptions also carry a trail of steps: the routes visited and the API calls that failed just before, each with its method, path, status and request id. In the dashboard and the admin panel the exception also sits next to the session replay it happened in, when `WARMBLY_POSTHOG_SESSION_REPLAY` is on; see the analytics section below for what those two surfaces record.
 
 The `admin` panel and the dashboard also tag events with the build they were served from. That value is baked at image build time, because it has to match the release the source maps were uploaded under, so it cannot be changed by a container variable afterwards.
 

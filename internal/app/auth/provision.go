@@ -69,7 +69,7 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 	// confirm only falls through to a personal org when open registration
 	// would have accepted the signup anyway.
 	if attr.Invite != "" && s.organizationService != nil {
-		if _, err := s.organizationService.AcceptInvitation(ctx, attr.Invite, u.ID, u.Email); err == nil {
+		if member, err := s.organizationService.AcceptInvitation(ctx, attr.Invite, u.ID, u.Email); err == nil {
 			// An invited account finished signing up just as much as a
 			// self-serve one; it simply joined an existing workspace. It is
 			// counted here rather than at the end because this path returns
@@ -77,9 +77,17 @@ func (s *authService) createAccount(ctx context.Context, address, passwordHash s
 			// failed invitation either refuses or falls through to a
 			// self-serve signup, and only one of those is a signup.
 			s.notifyOperatorSignup(u, "")
-			// The workspace joined is the inviter's, not one of this
-			// account's own, so only the person is named here.
-			s.countSignup(u, nil, attr, origin)
+			// The workspace joined is the inviter's, so it comes from the
+			// membership rather than from the account's own (owned)
+			// organizations, of which an invited account has none. Failing
+			// to resolve it only leaves the group off the event.
+			var joined *models.Organization
+			if member != nil {
+				if org, oerr := s.organizationService.Get(ctx, member.OrganizationID); oerr == nil {
+					joined = org
+				}
+			}
+			s.countSignup(u, joined, attr, origin)
 			return u, nil
 		}
 		if inviteRequired {

@@ -981,12 +981,17 @@ func (s *stripeService) countSubscriptionStarted(ctx context.Context, sub *model
 	}
 
 	props := map[string]any{"status": string(stripeSub.Status)}
-	if plan != nil {
-		props["plan"] = plan.Name
+	// Resolved once, because it goes on the event and on the workspace group.
+	planName := ""
+	if plan != nil && plan.Name != nil {
+		planName = *plan.Name
 	} else if sub != nil {
-		if p, err := s.planRepo.GetByID(ctx, sub.PlanID); err == nil && p != nil {
-			props["plan"] = p.Name
+		if p, err := s.planRepo.GetByID(ctx, sub.PlanID); err == nil && p != nil && p.Name != nil {
+			planName = *p.Name
 		}
+	}
+	if planName != "" {
+		props["plan"] = planName
 	}
 	if len(stripeSub.Items.Data) > 0 {
 		if price := stripeSub.Items.Data[0].Price; price != nil {
@@ -1006,9 +1011,7 @@ func (s *stripeService) countSubscriptionStarted(ctx context.Context, sub *model
 		if sub.OrganizationID != uuid.Nil {
 			req.OrganizationID = sub.OrganizationID.String()
 		}
-		if plan != nil && plan.Name != nil {
-			req.Plan = *plan.Name
-		}
+		req.Plan = planName
 	}
 	s.productAnalytics.Capture("subscription_started", req, props)
 }

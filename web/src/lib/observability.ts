@@ -67,7 +67,10 @@ export function initErrorReporting(): void {
             settle(client
                 ? {
                       capture: (error) => void client.captureException(error),
-                      identify: setPostHogIdentity,
+                      // Identity is handed to PostHog directly in
+                      // setErrorIdentity, so it arrives even when exceptions
+                      // are off; nothing to do per backend here.
+                      identify: () => {},
                       step: notePostHogStep,
                   }
                 : null),
@@ -118,8 +121,13 @@ export function captureException(error: unknown): void {
 
 // setErrorIdentity names the user and workspace later events belong to. Pass
 // null on sign-out, which resets the PostHog device as well.
+//
+// PostHog gets it directly rather than through the backend list, because with
+// POSTHOG_ERROR_TRACKING=false no PostHog backend is ever settled and product
+// analytics and session replay would stay anonymous despite a configured key.
 export function setErrorIdentity(next: Identity): void {
     identity = next;
+    setPostHogIdentity(next);
     for (const backend of backends) backend.identify(next);
 }
 

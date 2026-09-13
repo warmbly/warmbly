@@ -75,7 +75,7 @@ const sections = [
     Once you sign in to the dashboard, we measure how you use it under your account: which screens you open, what you click, how fast pages load, any error the app hits and where you are connecting from, together with your account id, email, name and organization. We also record your sessions in the dashboard as replays: a reconstruction of the screen, your clicks and the browser's console, kept by PostHog for the retention period configured there. Anything typed into a password field is masked in the browser before it is sent and never leaves your machine. PostHog stores an identifier in your browser for this, in local storage and a cookie, so that your sessions belong to you and not to a stranger.
   </p>
   <p>
-    We use this to find and fix problems, to understand which parts of the product are used and how, and to support you when something breaks. A self-hosted Warmbly instance loads none of this. Public forms hosted by Warmbly on behalf of a customer use only the cookieless website measurement above and are never recorded.
+    We use this to find and fix problems, to understand which parts of the product are used and how, and to support you when something breaks. A self-hosted Warmbly instance loads none of this. Public forms hosted by Warmbly on behalf of a customer use only the cookieless website measurement above, plus three events that say a form was viewed, started and submitted, each carrying the form's public id and nothing about you; those pages are never recorded.
   </p>
   <h3>How you found us</h3>
   <p>

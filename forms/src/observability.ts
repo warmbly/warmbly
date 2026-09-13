@@ -20,6 +20,13 @@ import type { PostHog } from "posthog-js";
 
 let client: PostHog | null = null;
 
+// Funnel events fired before the SDK chunk resolves are held here and flushed
+// once it does. `form_viewed` fires on mount, which is almost always earlier
+// than a dynamic import returns, so without this the first step of every
+// funnel would be dropped. Bounded, and emptied if the SDK never loads.
+const PENDING_LIMIT = 20;
+let pending: Array<{ event: Event; form: string }> | null = null;
+
 function meta(name: string): string {
     return document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content?.trim() ?? "";
 }
@@ -31,6 +38,7 @@ export function initErrorReporting(): void {
     const posthogKey = meta("wf-posthog-key");
     if (posthogKey) {
         const errors = meta("wf-posthog-errors") !== "false";
+        pending = [];
         void import("posthog-js").then(({ posthog }) => {
             posthog.init(posthogKey, {
                 api_host: meta("wf-posthog-host") || "https://us.i.posthog.com",
@@ -60,8 +68,11 @@ export function initErrorReporting(): void {
                 ? { service: "forms", environment, release }
                 : { service: "forms", environment });
             client = posthog;
+            for (const { event, form } of pending ?? []) posthog.capture(event, { form });
+            pending = null;
         }).catch(() => {
             // A blocked or failed SDK load must never stop the form rendering.
+            pending = null;
         });
     }
 
@@ -92,9 +103,14 @@ export function initErrorReporting(): void {
 // customer's own numbers; these feed ours.
 export type Event = "form_viewed" | "form_started" | "form_submitted";
 
-// track reports one named event. A no-op until the SDK has loaded, and forever
-// when no key was stamped. The form's public id is the one property: it names
-// the form, never the person filling it in.
+// track reports one named event: sent when the SDK is loaded, held while it is
+// still in flight, and dropped forever when no key was stamped. The form's
+// public id is the one property: it names the form, never the person filling
+// it in.
 export function track(event: Event, form: string): void {
-    client?.capture(event, { form });
+    if (client) {
+        client.capture(event, { form });
+        return;
+    }
+    if (pending && pending.length < PENDING_LIMIT) pending.push({ event, form });
 }

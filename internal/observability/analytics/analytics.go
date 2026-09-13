@@ -25,7 +25,9 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -74,11 +76,27 @@ func New(key, host string) *Client {
 	if host == "" {
 		host = DefaultHost
 	}
+	// Events name a person, so a plaintext host off this machine hands their
+	// email and address to the network. Not refused: a self-hosted PostHog on
+	// a private network over http is a supported shape, and refusing would
+	// silently turn analytics off. Said once, loudly.
+	if u, err := url.Parse(host); err == nil && u.Scheme == "http" && !isLoopback(u.Hostname()) {
+		log.Printf("product analytics: POSTHOG_HOST %s is plaintext http; identified events (email, name, IP) will cross the network unencrypted", host)
+	}
 	return &Client{
 		key:  key,
 		host: host,
 		http: &http.Client{Timeout: sendTimeout},
 	}
+}
+
+// isLoopback reports whether the host is this machine, where plaintext is fine.
+func isLoopback(hostname string) bool {
+	if hostname == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(hostname)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Request is who the event happened to and the browser request it came from.
