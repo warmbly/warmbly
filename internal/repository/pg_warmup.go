@@ -99,7 +99,7 @@ type WarmupRepository interface {
 	GetPoolRecipientParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
 	// MoveToPool joins this pool, or moves an existing membership over. A new
 	// member starts from the standing mirrored for its address (see migration
-	// 000150), so re-adding a mailbox is not a reset.
+	// 000152), so re-adding a mailbox is not a reset.
 	MoveToPool(ctx context.Context, poolID, accountID uuid.UUID, role string) error
 	// PurgeExpiredReputationLedger forgets the mirrored standing of addresses
 	// with no live pool row once the retention window has lapsed, and reports

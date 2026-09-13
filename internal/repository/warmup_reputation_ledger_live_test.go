@@ -14,7 +14,7 @@ import (
 // Issue #476: everything warmup knows about a mailbox cascades off its row,
 // and the pool row alone dies on paths that never touch the mailbox, so a
 // penalised address rejoined clean. These prove the mirror that now holds the
-// standing by address (migration 000150), and the floor that keeps a block for
+// standing by address (migration 000152), and the floor that keeps a block for
 // its term, against the real schema.
 //
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_ledger?sslmode=disable \

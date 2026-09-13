@@ -1323,7 +1323,7 @@ func (r *emailRepository) Delete(ctx context.Context, userID, emailAccountID str
 	defer tx.Rollback(ctx)
 
 	// The mailbox's standing is already mirrored by address (see migration
-	// 000150); removing the row only restarts the retention window on it, so
+	// 000152); removing the row only restarts the retention window on it, so
 	// the standing is kept for the full window after the removal rather than
 	// after the last time it changed. Same predicate as the delete below.
 	bump := `
