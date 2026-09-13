@@ -37,13 +37,16 @@ export default function AdvisorNavBadge({
 
     if (dot) {
         return (
+            // A white knockout ring, not the chrome colour: the same dot sits
+            // on the active row's slate fill and on the hovered one, where an
+            // off-white ring reads as a halo instead of separation.
             <span
-                title={label}
-                aria-label={label}
-                className={`absolute right-1 top-1 size-1.5 rounded-full ring-2 ring-[#f5f6f8] ${
+                className={`absolute right-1 top-1 size-1.5 rounded-full ring-2 ring-white ${
                     counts.critical > 0 ? "bg-rose-500" : "bg-orange-500"
                 }`}
-            />
+            >
+                <span className="sr-only">{label}</span>
+            </span>
         );
     }
 

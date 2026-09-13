@@ -27,8 +27,10 @@ import {
     installLayoutShims,
     mount,
     resetScrollTops,
+    resizeViewportTo,
     setViewportWidth,
     settle,
+    SUITE,
 } from "./uniboxHarness";
 
 beforeAll(() => {
@@ -72,11 +74,6 @@ vi.mock("@/hooks/context/socket", async (orig) => {
     };
 });
 
-// Mounting the whole shell in jsdom is slow, and slower again when the two
-// unibox suites run alongside each other, so these get more than the 5s
-// default rather than flaking on a loaded machine.
-const SUITE = { timeout: 30_000 };
-
 function separator(): HTMLElement {
     return screen.getByRole("separator", { name: /resize the conversation list/i });
 }
@@ -85,6 +82,16 @@ function listColumn(): HTMLElement {
     const el = separator().previousElementSibling as HTMLElement | null;
     if (!el) throw new Error("conversation list column not found");
     return el;
+}
+
+// Pointer capture routes the move and the release back to the separator, so
+// that is where the test drives them too.
+async function drag(fromX: number, toX: number) {
+    await act(async () => {
+        fireEvent.pointerDown(separator(), { clientX: fromX, button: 0, pointerId: 1 });
+        fireEvent.pointerMove(separator(), { clientX: toX, pointerId: 1 });
+        fireEvent.pointerUp(separator(), { clientX: toX, pointerId: 1 });
+    });
 }
 
 async function openThread(subject: string) {
@@ -126,11 +133,14 @@ describe("unibox desktop layout (#473)", SUITE, () => {
 
             expect(useAppStore.getState().sidebarCollapsed).toBe(true);
             expect(aside.className).toContain("md:w-14");
-            // Same destination, no visible label: an icon-only row. The name
-            // moves to aria-label, because lucide marks its svg aria-hidden and
-            // the link would otherwise announce as nothing at all.
-            expect(settingsLink().textContent).toBe("");
-            expect(settingsLink().getAttribute("aria-label")).toBe("Settings");
+            // Same destination, no VISIBLE label: the name moves into a
+            // visually hidden span, because lucide marks its svg aria-hidden
+            // and the link would otherwise announce as nothing at all. It must
+            // not become an aria-label: that would override the whole subtree
+            // and silence the unread count nested in the same link.
+            expect(settingsLink().getAttribute("aria-label")).toBeNull();
+            expect(settingsLink().textContent).toBe("Settings");
+            expect(settingsLink().querySelector("span")?.className).toContain("sr-only");
 
             // `b` is the documented shortcut for the same thing. It was wired to
             // the store while nothing rendered from it; this is what makes it
@@ -163,28 +173,27 @@ describe("unibox desktop layout (#473)", SUITE, () => {
 
             expect(listColumn().style.getPropertyValue("--unibox-list-w")).toBe("360px");
 
-            // jsdom reports every rect as zero, so clientX IS the width here.
-            await act(async () => {
-                fireEvent.pointerDown(separator(), { clientX: 360 });
-                window.dispatchEvent(
-                    new MouseEvent("pointermove", { clientX: 480, bubbles: true }),
-                );
-                window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
-            });
+            // Pressing inside the 6px handle and not moving must not resize:
+            // the drag is relative to where it was grabbed, so the divider
+            // stays under the cursor instead of jumping out to meet it.
+            await drag(366, 366);
+            expect(useAppStore.getState().uniboxListWidth).toBe(
+                UNIBOX_LIST_DEFAULT_WIDTH,
+            );
 
+            // And a real drag moves by the distance travelled.
+            await drag(360, 480);
             expect(useAppStore.getState().uniboxListWidth).toBe(480);
             expect(listColumn().style.getPropertyValue("--unibox-list-w")).toBe("480px");
 
             // Past the far bound the handle parks rather than swallowing the
             // thread pane.
-            await act(async () => {
-                fireEvent.pointerDown(separator(), { clientX: 480 });
-                window.dispatchEvent(
-                    new MouseEvent("pointermove", { clientX: 4000, bubbles: true }),
-                );
-                window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
-            });
+            await drag(480, 4000);
             expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_MAX_WIDTH);
+
+            // ...and past the near bound it parks at the minimum.
+            await drag(UNIBOX_LIST_MAX_WIDTH, 0);
+            expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_MIN_WIDTH);
         });
 
         it("takes the ARIA window-splitter keys", async () => {
@@ -205,17 +214,26 @@ describe("unibox desktop layout (#473)", SUITE, () => {
             expect(await press("Enter")).toBe(UNIBOX_LIST_DEFAULT_WIDTH);
         });
 
-        it("keeps the chosen width when a thread is opened", async () => {
+        it("ignores a non-primary button, so a right-click cannot strand a drag", async () => {
             await mount("/app/unibox/all");
             await settle();
 
             await act(async () => {
-                fireEvent.pointerDown(separator(), { clientX: 360 });
-                window.dispatchEvent(
-                    new MouseEvent("pointermove", { clientX: 500, bubbles: true }),
-                );
-                window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+                fireEvent.pointerDown(separator(), { clientX: 360, button: 2, pointerId: 1 });
+                fireEvent.pointerMove(separator(), { clientX: 600, pointerId: 1 });
             });
+
+            expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_DEFAULT_WIDTH);
+            // A context menu eats the pointerup, so a drag that started here
+            // would leave the whole app unselectable.
+            expect(document.body.style.userSelect).toBe("");
+        });
+
+        it("keeps the chosen width when a thread is opened", async () => {
+            await mount("/app/unibox/all");
+            await settle();
+
+            await drag(360, 500);
 
             await openThread("Subject 4");
             expect(listColumn().style.getPropertyValue("--unibox-list-w")).toBe("500px");
@@ -248,6 +266,29 @@ describe("unibox desktop layout (#473)", SUITE, () => {
             });
             await openThread("Subject 6");
             expect(screen.getByLabelText("Hide contact panel")).toBeTruthy();
+        });
+
+        it("does not bring the narrow overlay back after a trip up past lg", async () => {
+            await mount("/app/unibox/all");
+            await settle();
+            await openThread("Subject 4");
+
+            // Narrow: the panel is an overlay on top of the thread, and starts
+            // closed there whatever the wide-screen preference says.
+            await resizeViewportTo(900);
+            expect(screen.getByLabelText("Show contact panel")).toBeTruthy();
+
+            // Open the overlay, then widen and narrow again. The overlay state
+            // has to be dropped on the way up, or the drawer and its backdrop
+            // land back over the thread with nobody asking for them.
+            await act(async () => {
+                fireEvent.click(screen.getByLabelText("Show contact panel"));
+            });
+            expect(screen.getAllByLabelText("Hide contact panel").length).toBeGreaterThan(0);
+
+            await resizeViewportTo(1512);
+            await resizeViewportTo(900);
+            expect(screen.getByLabelText("Show contact panel")).toBeTruthy();
         });
     });
 });

@@ -16,6 +16,7 @@ import {
     mount,
     resetScrollTops,
     settle,
+    SUITE,
 } from "./uniboxHarness";
 
 beforeAll(installLayoutShims);
@@ -53,11 +54,6 @@ vi.mock("@/hooks/context/socket", async (orig) => {
         useChannelSubscription: () => {},
     };
 });
-
-// Mounting the whole shell in jsdom is slow, and slower again when the two
-// unibox suites run alongside each other, so these get more than the 5s
-// default rather than flaking on a loaded machine.
-const SUITE = { timeout: 30_000 };
 
 function scroller(): HTMLElement {
     const row = document.querySelector("[data-thread-id]");

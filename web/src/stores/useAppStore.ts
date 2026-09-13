@@ -3,7 +3,7 @@ import { devtools, persist } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
 import { createUserSlice, type UserSlice } from './slices/userSlice'
 import { createOrganizationSlice, type OrganizationSlice } from './slices/organizationSlice'
-import { createUISlice, type UISlice } from './slices/uiSlice'
+import { createUISlice, clampUniboxListWidth, type UISlice } from './slices/uiSlice'
 import { createShortcutSlice, type ShortcutSlice } from './slices/shortcutSlice'
 import { createDataSlice, type DataSlice } from './slices/dataSlice'
 import { createRealtimeSlice, type RealtimeSlice } from './slices/realtimeSlice'
@@ -38,6 +38,27 @@ export const useAppStore = create<AppStore>()(
       }),
       {
         name: 'warmbly-storage',
+        // v1: `sidebarCollapsed` was persisted and toggled by the documented `b`
+        // key for a long time while nothing rendered from it, so anyone who ever
+        // pressed it has `true` sitting in localStorage for an action they do not
+        // remember. Now that the rail reads the flag, that would silently greet
+        // them with an icon-only nav. Reset it once, on the upgrade only.
+        version: 1,
+        migrate: (persisted, from) =>
+          from < 1
+            ? { ...(persisted as Record<string, unknown>), sidebarCollapsed: false }
+            : persisted,
+        // Rehydration does not go through the slice setters, so re-clamp the one
+        // stored value that has bounds. Without this a value from an older build
+        // (or a hand-edited one) renders as `width: NaNpx`.
+        merge: (persisted, current) => {
+          const p = (persisted ?? {}) as Partial<AppStore>
+          return {
+            ...current,
+            ...p,
+            uniboxListWidth: clampUniboxListWidth(p.uniboxListWidth),
+          }
+        },
         partialize: (state) => ({
           // Only persist UI preferences
           theme: state.theme,

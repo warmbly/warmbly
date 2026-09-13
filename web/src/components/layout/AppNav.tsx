@@ -61,7 +61,7 @@ import type { AdvisorSurface } from "@/lib/api/models/app/advisor/Advisor";
 import { UserNav } from "./UserNav";
 import { Logo } from "@/components/svg";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Kbd } from "@/components/ui/shortcut-tooltip";
+import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -187,7 +187,10 @@ function NavTip({
 }) {
     if (!collapsed) return children;
     return (
-        <Tooltip>
+        // The shared Tooltip mounts its own provider per instance, so there is
+        // no shared skip-delay across the rail: without a delay every row the
+        // cursor crosses on its way down pops one.
+        <Tooltip delayDuration={300}>
             <TooltipTrigger asChild>{children}</TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
                 {label}
@@ -196,8 +199,12 @@ function NavTip({
     );
 }
 
-// The collapsed rail is 56px wide, so a row is a centred 32px icon target.
+// The two row shapes. Collapsed, the rail is 56px wide, so a row is a centred
+// 32px icon target; expanded it is a full-width label row. Both are constants
+// because four call sites branch between them.
 const ICON_ROW = "group relative mx-auto flex size-8 items-center justify-center rounded-md transition-colors duration-100";
+const LABEL_ROW = "group relative mx-2 w-[calc(100%-1rem)] flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] transition-colors duration-100";
+const rowClass = (collapsed: boolean) => (collapsed ? ICON_ROW : LABEL_ROW);
 
 function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolean }) {
     const { pathname } = useLocation();
@@ -226,19 +233,19 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
                 <button
                     type="button"
                     onClick={() => setDeniedOpen(true)}
-                    // Collapsed the row is an icon and lucide marks its svg
-                    // aria-hidden, so without this the control has no name.
-                    aria-label={collapsed ? `${item.title} · no access` : undefined}
-                    title={collapsed ? undefined : `${item.title} · no access`}
                     className={cn(
+                        rowClass(collapsed),
                         "text-slate-400 hover:text-slate-600 hover:bg-slate-200/40",
-                        collapsed
-                            ? ICON_ROW
-                            : "group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] transition-colors duration-100",
                     )}
                 >
                     <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
-                    {!collapsed && <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>}
+                    {/* Collapsed, lucide marks its svg aria-hidden, so the name
+                        comes from a visually hidden span. NOT aria-label: that
+                        would override the whole subtree, silencing the badges
+                        the collapsed rail exists to keep. */}
+                    <span className={collapsed ? "sr-only" : "truncate flex-1 min-w-0 text-left"}>
+                        {collapsed ? `${item.title} · no access` : item.title}
+                    </span>
                 </button>
                 </NavTip>
                 <AccessLockedDialog
@@ -272,28 +279,24 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
             <button
                 type="button"
                 onClick={() => upgradeDialog.open({ feature: item.title, minPlan })}
-                aria-label={collapsed ? `${item.title} · ${planBadge.label} plan` : undefined}
-                title={collapsed ? undefined : `${item.title} · ${planBadge.label} plan`}
                 className={cn(
+                    rowClass(collapsed),
                     "text-slate-400 hover:text-slate-700 hover:bg-slate-200/40",
-                    collapsed
-                        ? ICON_ROW
-                        : "group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] transition-colors duration-100",
                 )}
             >
                 <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
+                <span className={collapsed ? "sr-only" : "truncate flex-1 min-w-0 text-left"}>
+                    {collapsed ? `${item.title} · ${planBadge.label} plan` : item.title}
+                </span>
                 {!collapsed && (
-                    <>
-                        <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
-                        <span
-                            className={cn(
-                                "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
-                                planBadge.classes,
-                            )}
-                        >
-                            {planBadge.label}
-                        </span>
-                    </>
+                    <span
+                        className={cn(
+                            "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
+                            planBadge.classes,
+                        )}
+                    >
+                        {planBadge.label}
+                    </span>
                 )}
             </button>
             </NavTip>
@@ -322,7 +325,6 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
             <NavTip collapsed label={item.title}>
                 <Link
                     to={item.url}
-                    aria-label={item.title}
                     className={cn(
                         ICON_ROW,
                         active
@@ -333,15 +335,18 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
                     )}
                 >
                     {icon}
+                    {/* The name is a hidden span rather than an aria-label so it
+                        composes with the count below it: an aria-label on the
+                        link would replace the whole subtree and announce
+                        "Inbox" where the expanded row announces "Inbox 12". */}
+                    <span className="sr-only">{item.title}</span>
                     {item.advisorSurface && !locked && (
                         <AdvisorNavBadge surface={item.advisorSurface} dot />
                     )}
                     {badge != null && badge > 0 && (
-                        <span
-                            aria-label={`${badge} unread`}
-                            className="absolute -right-0.5 -top-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-medium leading-none flex items-center justify-center tabular-nums ring-2 ring-[#f5f6f8]"
-                        >
-                            {badge > 9 ? "9+" : badge}
+                        <span className="absolute -right-0.5 -top-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-medium leading-none flex items-center justify-center tabular-nums ring-2 ring-white">
+                            <span className="sr-only">{badge} unread</span>
+                            <span aria-hidden>{badge > 9 ? "9+" : badge}</span>
                         </span>
                     )}
                 </Link>
@@ -354,7 +359,7 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
             to={item.url}
             title={planBadge ? `${item.title} · ${planBadge.label} plan` : undefined}
             className={cn(
-                "group mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] transition-colors duration-100",
+                LABEL_ROW,
                 active
                     ? "bg-slate-200/70 text-slate-900 font-medium"
                     : locked
@@ -771,22 +776,22 @@ function LivePanel({ collapsed = false }: { collapsed?: boolean }) {
     // today's volume and how much of the day's capacity it used — and drops
     // the sparkline and the chips, which need the label column to be readable.
     if (collapsed) {
+        const summary =
+            capacity > 0
+                ? `${sentToday.toLocaleString()} of ${capacity.toLocaleString()} sent today`
+                : `${sentToday.toLocaleString()} sent today`;
         return (
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Link
                         to="/app/analytics"
-                        aria-label={
-                            capacity > 0
-                                ? `Analytics · ${sentToday} of ${capacity} sent today`
-                                : `Analytics · ${sentToday} sent today`
-                        }
                         className="group mx-auto mt-2 mb-3 flex w-8 flex-col items-center gap-1 rounded-md border border-slate-200/70 bg-white/80 px-1 py-1.5 transition-colors hover:border-slate-300 hover:bg-white"
                     >
-                        <span className="text-[10px] font-semibold leading-none tabular-nums text-slate-900">
+                        <span className="sr-only">Analytics · {summary}</span>
+                        <span aria-hidden className="text-[10px] font-semibold leading-none tabular-nums text-slate-900">
                             {compactN(sentToday)}
                         </span>
-                        <span className="h-1 w-full overflow-hidden rounded-full bg-sky-100">
+                        <span aria-hidden className="h-1 w-full overflow-hidden rounded-full bg-sky-100">
                             <span
                                 className="block h-full rounded-full bg-sky-500 transition-[width] duration-700 ease-out"
                                 style={{ width: `${pct}%` }}
@@ -795,9 +800,7 @@ function LivePanel({ collapsed = false }: { collapsed?: boolean }) {
                     </Link>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8}>
-                    {capacity > 0
-                        ? `${sentToday.toLocaleString()} of ${capacity.toLocaleString()} sent today`
-                        : `${sentToday.toLocaleString()} sent today`}
+                    {summary}
                 </TooltipContent>
             </Tooltip>
         );
@@ -1149,9 +1152,12 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
 }
 
 // The rail's own collapse control. `b` does the same thing from anywhere, and
-// the tooltip says so — a shortcut nobody can discover is a shortcut nobody
-// uses. Hidden below md, where the sidebar is a full-width drawer and there is
-// nothing to reclaim.
+// the tooltip says so. Hidden below md, where the sidebar is a full-width
+// drawer and there is nothing to reclaim.
+//
+// No aria-pressed: the accessible name already flips, and the APG is explicit
+// that a toggle must do one or the other. Carrying both announces
+// "Expand sidebar, pressed" at the moment the sidebar is collapsed.
 function CollapseToggle({
     collapsed,
     onToggle,
@@ -1161,35 +1167,31 @@ function CollapseToggle({
 }) {
     const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
     return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <button
-                    type="button"
-                    onClick={onToggle}
-                    aria-label={label}
-                    aria-pressed={collapsed}
-                    className={cn(
-                        collapsed
-                            ? ICON_ROW
-                            : "group mx-2 w-[calc(100%-1rem)] items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] transition-colors duration-100",
-                        // After the branch, so tailwind-merge drops ICON_ROW's
-                        // `flex` for `hidden` at the base breakpoint: collapsing
-                        // is meaningless in the mobile drawer.
-                        "hidden md:flex text-slate-500 hover:text-slate-900 hover:bg-slate-200/40",
-                    )}
-                >
-                    {collapsed ? (
-                        <PanelLeftOpenIcon className="w-[14px] h-[14px] shrink-0 text-slate-400 group-hover:text-slate-600" strokeWidth={1.6} />
-                    ) : (
-                        <PanelLeftCloseIcon className="w-[14px] h-[14px] shrink-0 text-slate-400 group-hover:text-slate-600" strokeWidth={1.6} />
-                    )}
-                    {!collapsed && <span className="truncate flex-1 min-w-0 text-left">Collapse</span>}
-                </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={8} className="flex items-center gap-1.5">
-                {label}
-                <Kbd combo="b" />
-            </TooltipContent>
-        </Tooltip>
+        <ShortcutTooltip label={label} combo="b" side="right">
+            <button
+                type="button"
+                onClick={onToggle}
+                // Safe here where it is not on a nav row: this control has no
+                // badge to swallow, and the visible "Collapse" is a prefix of
+                // the name, so the label-in-name rule holds.
+                aria-label={label}
+                className={cn(
+                    rowClass(collapsed),
+                    // After the branch, so tailwind-merge drops ICON_ROW's
+                    // `flex` for `hidden` at the base breakpoint: collapsing
+                    // is meaningless in the mobile drawer.
+                    "hidden md:flex text-slate-500 hover:text-slate-900 hover:bg-slate-200/40",
+                )}
+            >
+                {collapsed ? (
+                    <PanelLeftOpenIcon className="w-[14px] h-[14px] shrink-0 text-slate-400 group-hover:text-slate-600" strokeWidth={1.6} />
+                ) : (
+                    <PanelLeftCloseIcon className="w-[14px] h-[14px] shrink-0 text-slate-400 group-hover:text-slate-600" strokeWidth={1.6} />
+                )}
+                {!collapsed && (
+                    <span className="truncate flex-1 min-w-0 text-left">Collapse</span>
+                )}
+            </button>
+        </ShortcutTooltip>
     );
 }

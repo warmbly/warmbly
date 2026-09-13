@@ -2,16 +2,21 @@ import type { StateCreator } from 'zustand'
 
 export type Theme = 'light' | 'dark' | 'system'
 
-// Unibox list-column bounds. The max keeps a readable thread pane on a laptop;
-// the element also carries a `max-w: calc(100% - 360px)` so a width stored on a
-// wide monitor cannot crush the thread on a narrow one.
+// Unibox list-column bounds. These are the preference's bounds; what the column
+// can actually render is additionally capped against the viewport at the drag
+// site, so the stored value survives a narrow window instead of being rewritten
+// by it.
 export const UNIBOX_LIST_MIN_WIDTH = 280
 export const UNIBOX_LIST_MAX_WIDTH = 620
 export const UNIBOX_LIST_DEFAULT_WIDTH = 360
 
-const clampListWidth = (w: number): number => {
-  if (!Number.isFinite(w)) return UNIBOX_LIST_DEFAULT_WIDTH
-  return Math.round(Math.min(UNIBOX_LIST_MAX_WIDTH, Math.max(UNIBOX_LIST_MIN_WIDTH, w)))
+// Exported because rehydration bypasses the setter: zustand's default merge
+// writes localStorage straight into state, so the clamp has to run there too or
+// a hand-edited (or newly out-of-range) value reaches the DOM unchecked.
+export const clampUniboxListWidth = (w: unknown): number => {
+  const n = typeof w === 'number' ? w : Number(w)
+  if (!Number.isFinite(n)) return UNIBOX_LIST_DEFAULT_WIDTH
+  return Math.round(Math.min(UNIBOX_LIST_MAX_WIDTH, Math.max(UNIBOX_LIST_MIN_WIDTH, n)))
 }
 
 export interface UISlice {
@@ -131,7 +136,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
 
   // Actions - Unibox layout
   setUniboxListWidth: (width) => {
-    const uniboxListWidth = clampListWidth(width)
+    const uniboxListWidth = clampUniboxListWidth(width)
     set((state) => (state.uniboxListWidth === uniboxListWidth ? state : { uniboxListWidth }))
   },
   setUniboxContactRailOpen: (uniboxContactRailOpen) =>

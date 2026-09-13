@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- test helper, not a component module */
 // Shared harness for the unibox route tests.
 //
 // Both suites mount the REAL shell (RootAppLayout -> AppShell -> RouteBoundary
@@ -47,29 +48,53 @@ export function resetScrollTops() {
 // jsdom implements matchMedia but never evaluates a query, so every one of them
 // reports `matches: false`. A layout that branches on `lg` would therefore only
 // ever be tested in its narrow form. Evaluate min-/max-width against a width the
-// test sets, and keep window.innerWidth in step for the hooks that read it.
+// test sets, and notify subscribers when it changes, so a suite can cross a
+// breakpoint the way a rotated tablet does.
+let viewportWidth = 1024;
+const mediaListeners = new Set<() => void>();
+
+function evaluate(query: string): boolean {
+    const min = /min-width:\s*([\d.]+)(px|rem)/.exec(query);
+    const max = /max-width:\s*([\d.]+)(px|rem)/.exec(query);
+    const px = (m: RegExpExecArray) => Number(m[1]) * (m[2] === "rem" ? 16 : 1);
+    return (
+        (!min || viewportWidth >= px(min)) && (!max || viewportWidth <= px(max))
+    );
+}
+
 export function setViewportWidth(width: number) {
-    Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
-    const listeners = new Set<() => void>();
+    viewportWidth = width;
+    Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        writable: true,
+        value: width,
+    });
     Object.defineProperty(window, "matchMedia", {
         configurable: true,
         writable: true,
-        value: (query: string): MediaQueryList => {
-            const min = /min-width:\s*(\d+)px/.exec(query);
-            const max = /max-width:\s*(\d+)px/.exec(query);
-            const matches =
-                (!min || width >= Number(min[1])) && (!max || width <= Number(max[1]));
-            return {
-                matches,
+        value: (query: string): MediaQueryList =>
+            ({
+                get matches() {
+                    return evaluate(query);
+                },
                 media: query,
                 onchange: null,
-                addEventListener: (_: string, fn: () => void) => listeners.add(fn),
-                removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+                addEventListener: (_: string, fn: () => void) => mediaListeners.add(fn),
+                removeEventListener: (_: string, fn: () => void) => mediaListeners.delete(fn),
                 addListener: () => {},
                 removeListener: () => {},
                 dispatchEvent: () => false,
-            } as unknown as MediaQueryList;
-        },
+            }) as unknown as MediaQueryList,
+    });
+    // Subscribers hold a MediaQueryList whose `matches` is a live getter, so
+    // one notification per change is enough for every query.
+    for (const fn of [...mediaListeners]) fn();
+}
+
+/** Cross a breakpoint the way a resize does, inside act(). */
+export async function resizeViewportTo(width: number) {
+    await act(async () => {
+        setViewportWidth(width);
     });
 }
 
@@ -118,8 +143,13 @@ export function route(url: string): unknown {
         return { total: ROWS.length, unread: 0, awaiting_reply: 0, snoozed: 0, today: 0, week: 0, mailboxes: [], tags: [], categories: [], folders: [] };
     }
     if (url.startsWith("/unibox/count")) return { count: 0 };
+    // Before the /unibox/thread arm, which would otherwise swallow it.
+    if (url.startsWith("/unibox/thread/labels")) return [];
     if (url.startsWith("/unibox/thread")) {
-        const id = /thread\/([^/?]+)/.exec(url)?.[1];
+        // getThread sends the id as a QUERY PARAM, not a path segment. Matching
+        // a path here silently served ROWS[0] for every thread, which made
+        // "thread after thread" assertions open the same conversation twice.
+        const id = /[?&]thread_id=([^&]+)/.exec(url)?.[1];
         const row = ROWS.find((r) => r.thread_id === id) ?? ROWS[0];
         return { data: [{ ...row, seen: true }], pagination: { has_more: false, next_cursor: null } };
     }
@@ -162,6 +192,11 @@ export async function mount(initial = "/app/unibox/all") {
     );
     return router;
 }
+
+// Mounting the whole shell in jsdom is slow, and slower again when the two
+// unibox suites run alongside each other, so they get more than the 5s default
+// rather than flaking on a loaded machine.
+export const SUITE = { timeout: 30_000 };
 
 export async function settle() {
     await act(async () => {

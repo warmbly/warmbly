@@ -188,6 +188,14 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
   const setRailPref = useAppStore((s) => s.setUniboxContactRailOpen);
   const [overlayOpen, setOverlayOpen] = React.useState(false);
   const crmOpen = isWide ? railPref : overlayOpen;
+
+  // Widening drops the overlay state on the floor, so clear it: otherwise an
+  // overlay opened while narrow is still "open" on the way back down and the
+  // drawer plus its backdrop reappear over the thread with nobody asking. This
+  // is the invariant the removed matchMedia effect used to hold.
+  React.useEffect(() => {
+    if (isWide) setOverlayOpen(false);
+  }, [isWide]);
   const setCrmOpen = React.useCallback(
     (open: boolean) => {
       if (isWide) setRailPref(open);

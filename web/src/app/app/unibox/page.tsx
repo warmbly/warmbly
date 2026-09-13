@@ -32,6 +32,8 @@ import {
   UNIBOX_LIST_MAX_WIDTH,
   UNIBOX_LIST_MIN_WIDTH,
 } from "@/stores";
+import { uniboxListMaxWidth, uniboxThreadReserve } from "@/lib/uniboxLayout";
+import { useMediaQuery, LG_QUERY } from "@/hooks/useMediaQuery";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { cn } from "@/lib/utils";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
@@ -58,58 +60,19 @@ export default function UniboxPage() {
   const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
 
   // ── Pane widths ────────────────────────────────────────────────
-  // The list column is drag-resizable against the thread pane and the width
-  // is persisted (warmbly-storage), so a long-subject layout survives a
-  // reload. The store clamps the value; the element's own max-width clamps it
-  // again against the viewport, so a width chosen on a 27" monitor cannot
-  // leave a laptop with a 200px thread.
+  // The list column is drag-resizable against the thread pane and the width is
+  // persisted (warmbly-storage). Two separate bounds apply: the preference's
+  // own 280-620 (clamped in the store) and what the viewport can actually give
+  // it right now, measured below. The rendered width is the smaller of the two,
+  // and that is the number ARIA reports, so the splitter never announces a
+  // width the column does not have.
   const listWidth = useAppStore((s) => s.uniboxListWidth);
   const setListWidth = useAppStore((s) => s.setUniboxListWidth);
+  const contactRailOpen = useAppStore((s) => s.uniboxContactRailOpen);
+  const isWide = useMediaQuery(LG_QUERY);
+  const rowRef = React.useRef<HTMLDivElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
-
-  const startListResize = React.useCallback(
-    (e: React.PointerEvent) => {
-      const el = listRef.current;
-      if (!el) return;
-      e.preventDefault();
-      const left = el.getBoundingClientRect().left;
-      // The cursor and the text-selection lock go on <body> for the duration:
-      // without them a fast drag selects half the conversation list.
-      const prevCursor = document.body.style.cursor;
-      const prevSelect = document.body.style.userSelect;
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      const onMove = (ev: PointerEvent) => setListWidth(ev.clientX - left);
-      const onUp = () => {
-        document.body.style.cursor = prevCursor;
-        document.body.style.userSelect = prevSelect;
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
-    },
-    [setListWidth],
-  );
-
-  // The ARIA window-splitter keys: arrows nudge, Home/End go to the bounds,
-  // Enter restores the default (which is also what a double-click does).
-  const onListResizeKey = React.useCallback(
-    (e: React.KeyboardEvent) => {
-      const step = e.shiftKey ? 48 : 16;
-      if (e.key === "ArrowLeft") setListWidth(listWidth - step);
-      else if (e.key === "ArrowRight") setListWidth(listWidth + step);
-      else if (e.key === "Home") setListWidth(UNIBOX_LIST_MIN_WIDTH);
-      else if (e.key === "End") setListWidth(UNIBOX_LIST_MAX_WIDTH);
-      else if (e.key === "Enter" || e.key === " ")
-        setListWidth(UNIBOX_LIST_DEFAULT_WIDTH);
-      else return;
-      e.preventDefault();
-    },
-    [listWidth, setListWidth],
-  );
+  const [maxWidth, setMaxWidth] = React.useState(UNIBOX_LIST_MAX_WIDTH);
 
   // ── URL state ──────────────────────────────────────────────────
   // Readable, path-based URLs: /app/unibox/<scope>[/<threadId>]. The scope is a
@@ -121,6 +84,139 @@ export default function UniboxPage() {
   const urlScope = routeParams.scope ?? "all";
   const urlThread = routeParams.threadId ?? null;
   const urlScopeRef = searchParams.get("ref");
+
+  // The contact rail is a flex sibling inside the thread pane, so the thread's
+  // reserve has to include it whenever it is actually showing.
+  const threadReserve = uniboxThreadReserve(
+    !!urlThread && isWide && contactRailOpen,
+  );
+
+  const measureMax = React.useCallback(() => {
+    const row = rowRef.current;
+    const list = listRef.current;
+    if (!row || !list) return UNIBOX_LIST_MAX_WIDTH;
+    return uniboxListMaxWidth({
+      rowRight: row.getBoundingClientRect().right,
+      listLeft: list.getBoundingClientRect().left,
+      reservedForThread: threadReserve,
+    });
+  }, [threadReserve]);
+
+  // Re-measure on any layout change, not just window resize: collapsing the app
+  // nav or opening the contact rail moves the same edges.
+  React.useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const sync = () => setMaxWidth(measureMax());
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [measureMax]);
+
+  const renderedWidth = Math.min(listWidth, maxWidth);
+
+  // Drag state. Pointer capture routes every move back to the separator, which
+  // matters because the pane being dragged into renders each message body in an
+  // iframe: with window listeners the drag dies the moment the cursor crosses
+  // one, and the pointerup that would have cleaned up never arrives.
+  const dragRef = React.useRef<{ startX: number; startWidth: number; max: number } | null>(null);
+  const liveWidthRef = React.useRef(renderedWidth);
+
+  const endDrag = React.useCallback(() => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    document.body.style.removeProperty("cursor");
+    document.body.style.removeProperty("user-select");
+    setListWidth(liveWidthRef.current);
+  }, [setListWidth]);
+
+  // A drag interrupted by an unmount would otherwise leave the whole app with
+  // `user-select: none`.
+  React.useEffect(() => () => {
+    if (!dragRef.current) return;
+    document.body.style.removeProperty("cursor");
+    document.body.style.removeProperty("user-select");
+  }, []);
+
+  const startListResize = React.useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      const el = listRef.current;
+      if (!el) return;
+      const sep = e.currentTarget;
+      // Deliberately no preventDefault: it would suppress the compatibility
+      // mousedown, and with it both the focus this control needs for its
+      // keyboard path and the mousedown every click-outside listener in the
+      // app is registered on. The body user-select lock below is what stops
+      // the drag selecting text.
+      try {
+        sep.setPointerCapture(e.pointerId);
+      } catch {
+        // jsdom, and any browser that has already lost the pointer.
+      }
+      sep.focus();
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      dragRef.current = {
+        // The grab offset inside the 6px handle is part of the start width, so
+        // the divider stays under the cursor instead of jumping to meet it.
+        startX: e.clientX,
+        startWidth: el.getBoundingClientRect().width || renderedWidth,
+        max: measureMax(),
+      };
+      liveWidthRef.current = renderedWidth;
+    },
+    [measureMax, renderedWidth],
+  );
+
+  const onListResizeMove = React.useCallback((e: React.PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const next = Math.round(
+      Math.min(
+        drag.max,
+        Math.max(UNIBOX_LIST_MIN_WIDTH, drag.startWidth + (e.clientX - drag.startX)),
+      ),
+    );
+    if (next === liveWidthRef.current) return;
+    liveWidthRef.current = next;
+    // Straight to the DOM for the duration. Routing every pointer frame through
+    // the store would re-render the whole inbox and, because the store is
+    // persisted, serialise and write localStorage on each one.
+    listRef.current?.style.setProperty("--unibox-list-w", `${next}px`);
+  }, []);
+
+  // The ARIA window-splitter keys: arrows nudge (shift for a coarse step),
+  // Home/End go to the bounds, Enter restores the default, which is also what a
+  // double-click does.
+  const onListResizeKey = React.useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = e.shiftKey ? 48 : 16;
+      const current = useAppStore.getState().uniboxListWidth;
+      switch (e.key) {
+        case "ArrowLeft":
+          setListWidth(current - step);
+          break;
+        case "ArrowRight":
+          setListWidth(current + step);
+          break;
+        case "Home":
+          setListWidth(UNIBOX_LIST_MIN_WIDTH);
+          break;
+        case "End":
+          setListWidth(UNIBOX_LIST_MAX_WIDTH);
+          break;
+        case "Enter":
+          setListWidth(UNIBOX_LIST_DEFAULT_WIDTH);
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+    },
+    [setListWidth],
+  );
 
   // goTo writes the URL by merging the requested changes over the current path
   // (an omitted field keeps its current value; pass null to clear).
@@ -375,7 +471,7 @@ export default function UniboxPage() {
           onChange={setScope}
         />
 
-        <div className="flex-1 min-h-0 flex">
+        <div ref={rowRef} className="flex-1 min-h-0 flex">
           <aside className="hidden lg:flex w-[220px] shrink-0 h-full">
             <ScopeRail scope={scope} onChange={setScope} />
           </aside>
@@ -390,14 +486,13 @@ export default function UniboxPage() {
             <>
               <div
                 ref={listRef}
-                // The stored width only applies from md up; below it the list
-                // is the whole screen and the thread replaces it. The two
-                // max-widths keep a readable thread pane at every viewport:
-                // 360px for it below lg, 360 + the 220px rail from lg.
-                style={{ "--unibox-list-w": `${listWidth}px` } as React.CSSProperties}
+                id="unibox-conversation-list"
+                // The width only applies from md up; below it the list is the
+                // whole screen and the thread replaces it. Already measured
+                // against the viewport, so no CSS cap is needed on top.
+                style={{ "--unibox-list-w": `${renderedWidth}px` } as React.CSSProperties}
                 className={cn(
-                  "w-full shrink-0 overflow-hidden flex-col",
-                  "md:w-[var(--unibox-list-w)] md:max-w-[calc(100%-360px)] lg:max-w-[calc(100%-580px)]",
+                  "w-full shrink-0 overflow-hidden flex-col md:w-[var(--unibox-list-w)]",
                   urlThread ? "hidden md:flex" : "flex",
                 )}
               >
@@ -416,14 +511,19 @@ export default function UniboxPage() {
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize the conversation list"
-                aria-valuenow={listWidth}
+                aria-controls="unibox-conversation-list"
+                aria-valuenow={renderedWidth}
                 aria-valuemin={UNIBOX_LIST_MIN_WIDTH}
-                aria-valuemax={UNIBOX_LIST_MAX_WIDTH}
+                aria-valuemax={Math.min(UNIBOX_LIST_MAX_WIDTH, maxWidth)}
+                aria-valuetext={`Conversation list ${renderedWidth} pixels`}
                 tabIndex={0}
                 onPointerDown={startListResize}
+                onPointerMove={onListResizeMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                onLostPointerCapture={endDrag}
                 onKeyDown={onListResizeKey}
                 onDoubleClick={() => setListWidth(UNIBOX_LIST_DEFAULT_WIDTH)}
-                title="Drag to resize · double-click to reset"
                 className="group hidden md:flex w-1.5 shrink-0 cursor-col-resize items-stretch justify-center touch-none outline-none"
               >
                 {/* The hairline is the whole control, so focus has to thicken
