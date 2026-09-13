@@ -1,14 +1,367 @@
-import { useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+// Every keyboard shortcut in the dashboard, declared once.
+//
+// The rule this file exists to enforce: **a shortcut the `?` modal shows is a
+// shortcut the dispatcher runs.** They used to be two unrelated literals in
+// here, so nine rows had no implementation at all and one more was shadowed by
+// a single-key branch that returned before the sequence could resolve (#484).
+// Now the modal renders this registry and the dispatcher walks it, so a row
+// with nothing behind it cannot be written: `run` is required, and a row that
+// needs something the current screen does not provide is hidden rather than
+// shown dead.
+
+import { useCallback, useEffect, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useNavigate, type NavigateFunction } from 'react-router-dom'
 import { useAppStore } from '@/stores'
 import { useComposeStore } from '@/hooks/useComposeStore'
 import { checkPermission } from '@/hooks/usePermission'
+import { shortcutAction, type ShortcutActions } from '@/hooks/useShortcutActions'
 
-export interface ShortcutDefinition {
+export type ShortcutGroupId = 'navigation' | 'list' | 'actions' | 'assistant'
+
+export interface ShortcutRow {
+  /** As shown in the modal. */
   keys: string[]
-  action: () => void
   description: string
-  category: 'navigation' | 'list' | 'actions' | 'modal'
+  group: ShortcutGroupId
+  /** The screen-provided action this needs; without a provider the row is hidden. */
+  needs?: keyof ShortcutActions
+  /** Any further condition (a permission, a viewport) for the row being live. */
+  available?: () => boolean
+}
+
+type Ctx = { navigate: NavigateFunction }
+
+export interface GlobalShortcut extends ShortcutRow {
+  /** Single-press form. */
+  match?: (e: KeyboardEvent) => boolean
+  /** Multi-key form, e.g. ['g', 'k']. */
+  sequence?: string[]
+  /** Fires even while the caret is in an input (modifier combos only). */
+  whileTyping?: boolean
+  run: (ctx: Ctx) => void
+}
+
+// A bare key with no modifier held. Every single-press shortcut goes through
+// this, so none of them can collide with a Ctrl/Cmd combo.
+const plain = (k: string) => (e: KeyboardEvent) =>
+  !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === k
+
+const mod = (e: KeyboardEvent) => e.ctrlKey || e.metaKey
+
+// Enter belongs to whatever the user has focused. Without this the list's
+// "open selected item" would both steal the key from a focused button and
+// cancel its activation.
+const onAControl = (t: EventTarget | null) =>
+  !!(t as HTMLElement | null)?.closest?.(
+    'button, a[href], select, summary, [role="button"], [role="menuitem"], [role="tab"]',
+  )
+
+// Escape belongs to the innermost layer: a dialog, the confirm, or any of the
+// app's popovers (they all carry data-floating). Clearing a list selection
+// behind an open layer is not what the key was pressed for.
+const layerOpen = () =>
+  typeof document !== 'undefined' &&
+  !!document.querySelector('[role="dialog"], [role="alertdialog"], [data-floating]')
+
+const navRoutes: [key: string, path: string, label: string][] = [
+  ['e', '/app/emails', 'Email Accounts'],
+  ['c', '/app/contacts', 'Contacts'],
+  ['m', '/app/campaigns', 'Campaigns'],
+  ['u', '/app/unibox', 'Unibox'],
+  ['a', '/app/analytics', 'Analytics'],
+  ['p', '/app/crm/pipelines', 'Pipelines'],
+  ['d', '/app/crm/deals', 'Deals'],
+  ['t', '/app/crm/tasks', 'Tasks'],
+  ['l', '/app/templates', 'Templates'],
+  ['k', '/app/api-keys', 'API Keys'],
+  ['s', '/app/settings', 'Settings'],
+]
+
+// The first visible search box on the page, for screens that have one but no
+// keyboard integration of their own. `data-search-input` is on the shared
+// SearchInput primitive, so this follows the convention rather than a list.
+function pageSearchInput(): HTMLInputElement | null {
+  if (typeof document === 'undefined') return null
+  const nodes = Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[data-search-input]'),
+  )
+  const usable = nodes.filter((el) => !el.disabled)
+  // Prefer one that is actually on screen: a responsive page can render a
+  // mobile and a desktop search box and hide one of them. offsetParent is null
+  // inside a display:none subtree, and a fixed-position input has none either,
+  // hence the rects check. Neither works in a layout-less environment, so fall
+  // back to the first rather than reporting the page has no search at all.
+  return (
+    usable.find((el) => el.offsetParent !== null || el.getClientRects().length > 0) ??
+    usable[0] ??
+    null
+  )
+}
+
+export const globalShortcuts: GlobalShortcut[] = [
+  // ── Modifier combos: these fire while typing too ──────────────────────────
+  {
+    keys: ['Ctrl', 'i'],
+    description: 'Open / close the assistant',
+    group: 'assistant',
+    whileTyping: true,
+    available: () => checkPermission('USE_AI'),
+    match: (e) => mod(e) && e.key.toLowerCase() === 'i',
+    run: () => {
+      const s = useAppStore.getState()
+      // Minimized means docked to the status bar, so the combo restores it
+      // rather than closing a panel the user cannot see.
+      if (s.aiAssistantOpen && s.agentMinimized) {
+        s.setAgentMinimized(false)
+        return
+      }
+      if (!s.aiAssistantOpen) s.setAgentMinimized(false)
+      s.toggleAIAssistant()
+    },
+  },
+  {
+    keys: ['Ctrl', 'k'],
+    description: 'Command palette',
+    group: 'actions',
+    whileTyping: true,
+    match: (e) => mod(e) && e.key.toLowerCase() === 'k',
+    run: () => useAppStore.getState().setCommandPaletteOpen(true),
+  },
+
+  // ── Navigation: g then a letter ───────────────────────────────────────────
+  ...navRoutes.map<GlobalShortcut>(([key, path, label]) => ({
+    keys: ['g', key],
+    description: `Go to ${label}`,
+    group: 'navigation',
+    sequence: ['g', key],
+    run: ({ navigate }) => navigate(path),
+  })),
+
+  // ── List navigation: only on screens that register a list ─────────────────
+  {
+    keys: ['j'],
+    description: 'Move down in list',
+    group: 'list',
+    needs: 'listMove',
+    match: plain('j'),
+    run: () => shortcutAction('listMove')?.(1),
+  },
+  {
+    keys: ['k'],
+    description: 'Move up in list',
+    group: 'list',
+    needs: 'listMove',
+    match: plain('k'),
+    run: () => shortcutAction('listMove')?.(-1),
+  },
+  {
+    keys: ['g', 'g'],
+    description: 'Go to first item',
+    group: 'list',
+    needs: 'listEdge',
+    sequence: ['g', 'g'],
+    run: () => shortcutAction('listEdge')?.('first'),
+  },
+  {
+    keys: ['G'],
+    description: 'Go to last item',
+    group: 'list',
+    needs: 'listEdge',
+    match: (e) => !mod(e) && !e.altKey && e.shiftKey && e.key.toLowerCase() === 'g',
+    run: () => shortcutAction('listEdge')?.('last'),
+  },
+  {
+    keys: ['Enter'],
+    description: 'Open selected item',
+    group: 'list',
+    needs: 'listOpen',
+    match: (e) => !mod(e) && !e.altKey && e.key === 'Enter' && !onAControl(e.target),
+    run: () => shortcutAction('listOpen')?.(),
+  },
+  {
+    keys: ['Escape'],
+    description: 'Clear the selection',
+    group: 'list',
+    needs: 'listDeselect',
+    match: (e) => e.key === 'Escape' && !layerOpen(),
+    run: () => shortcutAction('listDeselect')?.(),
+  },
+  {
+    keys: ['c'],
+    description: 'Label the open conversation',
+    group: 'list',
+    needs: 'labelThread',
+    match: plain('c'),
+    run: () => shortcutAction('labelThread')?.(),
+  },
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+  {
+    keys: ['/'],
+    description: 'Focus search',
+    group: 'actions',
+    available: () => !!shortcutAction('focusSearch') || !!pageSearchInput(),
+    match: plain('/'),
+    run: () => {
+      const own = shortcutAction('focusSearch')
+      if (own) {
+        own()
+        return
+      }
+      pageSearchInput()?.focus()
+    },
+  },
+  {
+    keys: ['n'],
+    description: 'Compose a new email',
+    group: 'actions',
+    match: plain('n'),
+    run: () => useComposeStore.getState().openCompose(),
+  },
+  {
+    keys: ['b'],
+    description: 'Collapse / expand the sidebar',
+    group: 'actions',
+    match: plain('b'),
+    run: () => useAppStore.getState().toggleSidebar(),
+  },
+  {
+    keys: ['?'],
+    description: 'Show shortcuts',
+    group: 'actions',
+    match: (e) => !mod(e) && !e.altKey && (e.key === '?' || (e.shiftKey && e.key === '/')),
+    run: () => useAppStore.getState().setShortcutsModalOpen(true),
+  },
+]
+
+// Which single keys open a multi-key sequence. Derived, so adding a `g x` route
+// needs no second edit here.
+const sequenceStarters = new Set(
+  globalShortcuts.flatMap((s) => (s.sequence ? [s.sequence[0]] : [])),
+)
+
+// ── Panel-scoped shortcuts ──────────────────────────────────────────────────
+// These fire from the assistant panel's own onKeyDown (they must not reach the
+// page while focus is inside a textarea), but they are declared here so the
+// modal has one source for every shortcut in the product.
+
+export type PanelCtx = {
+  close: () => void
+  cycleTab: (dir: number) => void
+  newTab: () => void
+  closeTab: () => void
+  minimize: () => void
+  togglePopOut: () => void
+  /** Pop-out is desktop-only and unavailable while expanded. */
+  canPopOut: boolean
+}
+
+export interface PanelShortcut extends ShortcutRow {
+  match: (e: ReactKeyboardEvent) => boolean
+  run: (ctx: PanelCtx) => void
+}
+
+const assistantAvailable = () => checkPermission('USE_AI')
+
+export const panelShortcuts: PanelShortcut[] = [
+  {
+    keys: ['Esc'],
+    description: 'Close the panel',
+    group: 'assistant',
+    available: assistantAvailable,
+    match: (e) => e.key === 'Escape',
+    run: (c) => c.close(),
+  },
+  {
+    keys: ['Ctrl', ']'],
+    description: 'Next conversation tab',
+    group: 'assistant',
+    available: assistantAvailable,
+    match: (e) => (e.metaKey || e.ctrlKey) && !e.altKey && e.key === ']',
+    run: (c) => c.cycleTab(1),
+  },
+  {
+    keys: ['Ctrl', '['],
+    description: 'Previous conversation tab',
+    group: 'assistant',
+    available: assistantAvailable,
+    match: (e) => (e.metaKey || e.ctrlKey) && !e.altKey && e.key === '[',
+    run: (c) => c.cycleTab(-1),
+  },
+  // Alt combos match on e.code because macOS Option remaps e.key to a symbol.
+  {
+    keys: ['Alt', 'n'],
+    description: 'New chat',
+    group: 'assistant',
+    available: assistantAvailable,
+    match: (e) => e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyN',
+    run: (c) => c.newTab(),
+  },
+  {
+    keys: ['Alt', 'w'],
+    description: 'Close tab',
+    group: 'assistant',
+    available: assistantAvailable,
+    match: (e) => e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyW',
+    run: (c) => c.closeTab(),
+  },
+  {
+    keys: ['Alt', 'm'],
+    description: 'Minimize to dock',
+    group: 'assistant',
+    available: assistantAvailable,
+    match: (e) => e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyM',
+    run: (c) => c.minimize(),
+  },
+  {
+    keys: ['Alt', 'p'],
+    description: 'Pop out / dock the panel',
+    group: 'assistant',
+    available: () =>
+      assistantAvailable() &&
+      typeof window !== 'undefined' &&
+      !!window.matchMedia?.('(min-width: 40rem)').matches,
+    match: (e) => e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyP',
+    run: (c) => {
+      if (c.canPopOut) c.togglePopOut()
+    },
+  },
+]
+
+export function dispatchPanelShortcut(e: ReactKeyboardEvent, ctx: PanelCtx): boolean {
+  for (const s of panelShortcuts) {
+    if (!s.match(e)) continue
+    if (s.available && !s.available()) continue
+    e.stopPropagation()
+    // Escape has no default to cancel and the panel is not a form, so only the
+    // combos that a browser binds get preventDefault.
+    if (e.key !== 'Escape') e.preventDefault()
+    s.run(ctx)
+    return true
+  }
+  return false
+}
+
+// ── The modal's view of all of it ───────────────────────────────────────────
+
+export const shortcutGroupTitles: Record<ShortcutGroupId, string> = {
+  navigation: 'Navigation',
+  list: 'Lists',
+  actions: 'Actions',
+  assistant: 'Assistant',
+}
+
+const allRows: ShortcutRow[] = [...globalShortcuts, ...panelShortcuts]
+
+export function isShortcutAvailable(s: ShortcutRow): boolean {
+  if (s.needs && !shortcutAction(s.needs)) return false
+  if (s.available && !s.available()) return false
+  return true
+}
+
+/** The rows worth showing for a group right now. Empty groups are not rendered. */
+export function visibleShortcuts(group: ShortcutGroupId): ShortcutRow[] {
+  return allRows.filter((s) => s.group === group && isShortcutAvailable(s))
 }
 
 export function useKeyboardShortcuts() {
@@ -16,199 +369,65 @@ export function useKeyboardShortcuts() {
   const keySequence = useAppStore((state) => state.keySequence)
   const addToSequence = useAppStore((state) => state.addToSequence)
   const clearSequence = useAppStore((state) => state.clearSequence)
-  const moveSelection = useAppStore((state) => state.moveSelection)
-  const setShortcutsModalOpen = useAppStore((state) => state.setShortcutsModalOpen)
-  const setCommandPaletteOpen = useAppStore((state) => state.setCommandPaletteOpen)
-  const toggleSidebar = useAppStore((state) => state.toggleSidebar)
-  const toggleAIAssistant = useAppStore((state) => state.toggleAIAssistant)
-
-  // Navigation shortcuts (g + key)
-  const navigationShortcuts: Record<string, string> = {
-    'g,e': '/app/emails',
-    'g,c': '/app/contacts',
-    'g,m': '/app/campaigns',
-    'g,u': '/app/unibox',
-    'g,a': '/app/analytics',
-    'g,p': '/app/crm/pipelines',
-    'g,d': '/app/crm/deals',
-    'g,t': '/app/crm/tasks',
-    'g,l': '/app/templates',
-    'g,k': '/app/api-keys',
-    'g,s': '/app/settings',
-  }
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      // Cmd/Ctrl+I toggles the AI assistant from anywhere (even while typing),
-      // since it is a modifier combo, not text input. When the panel is docked
-      // (minimized), it restores instead of closing.
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'i') {
-        event.preventDefault()
-        if (!checkPermission('USE_AI')) return
-        const s = useAppStore.getState()
-        if (s.aiAssistantOpen && s.agentMinimized) {
-          s.setAgentMinimized(false)
-        } else {
-          if (!s.aiAssistantOpen) s.setAgentMinimized(false)
-          toggleAIAssistant()
-        }
-        return
-      }
-
-      // Ignore if typing in an input, textarea, or contenteditable
-      const target = event.target as HTMLElement
+      const target = event.target as HTMLElement | null
       const isEditing =
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable ||
-        target.closest('[role="textbox"]')
-
-      if (isEditing) return
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          !!target.closest?.('[role="textbox"]'))
 
       const key = event.key.toLowerCase()
+      const ctx = { navigate }
 
-      // Handle Ctrl/Cmd + K for command palette
-      if ((event.ctrlKey || event.metaKey) && key === 'k') {
+      // Escape always abandons a half-typed sequence, typing or not.
+      if (key === 'escape' && keySequence.length > 0) clearSequence()
+
+      // A pending sequence owns the next letter. Without this the single-press
+      // handler for that letter runs first and the sequence never resolves,
+      // which is exactly how `g k` lost the API keys route to `k`.
+      if (!isEditing && keySequence.length > 0 && /^[a-z]$/.test(key)) {
         event.preventDefault()
-        setCommandPaletteOpen(true)
-        return
-      }
-
-      // Handle Escape
-      if (key === 'escape') {
+        const seq = [...keySequence, key].join(',')
         clearSequence()
+        const hit = globalShortcuts.find((s) => s.sequence?.join(',') === seq)
+        if (hit && isShortcutAvailable(hit)) hit.run(ctx)
         return
       }
 
-      // Handle ? for shortcuts modal
-      if (key === '?' || (event.shiftKey && key === '/')) {
+      for (const s of globalShortcuts) {
+        if (!s.match) continue
+        if (isEditing && !s.whileTyping) continue
+        if (!s.match(event)) continue
+        // An unavailable shortcut falls through rather than swallowing the key:
+        // `/` with no search box on screen should type nothing, not nothing at
+        // all costs.
+        if (!isShortcutAvailable(s)) continue
         event.preventDefault()
-        setShortcutsModalOpen(true)
+        s.run(ctx)
         return
       }
 
-      // Handle b for sidebar collapse (AppNav renders from navCollapsed)
-      if (key === 'b' && !event.ctrlKey && !event.metaKey) {
+      if (isEditing) return
+      if (
+        sequenceStarters.has(key) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
         event.preventDefault()
-        toggleSidebar()
-        return
-      }
-
-      // Handle n for a new email (opens the global compose window)
-      if (key === 'n' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-        event.preventDefault()
-        useComposeStore.getState().openCompose()
-        return
-      }
-
-      // Handle / for search focus
-      if (key === '/') {
-        event.preventDefault()
-        const searchInput = document.querySelector<HTMLInputElement>('[data-search-input]')
-        searchInput?.focus()
-        return
-      }
-
-      // List navigation (vim-style)
-      if (key === 'j') {
-        event.preventDefault()
-        moveSelection('down')
-        return
-      }
-      if (key === 'k') {
-        event.preventDefault()
-        moveSelection('up')
-        return
-      }
-      if (key === 'g' && keySequence.length === 1 && keySequence[0] === 'g') {
-        event.preventDefault()
-        moveSelection('first')
-        clearSequence()
-        return
-      }
-
-      // Handle G (shift + g) for last item
-      if (event.shiftKey && key === 'g') {
-        event.preventDefault()
-        moveSelection('last')
-        return
-      }
-
-      // Build sequence for navigation shortcuts
-      if (key.match(/^[a-z]$/)) {
         addToSequence(key)
-        const sequence = [...keySequence, key].join(',')
-
-        // Check if this sequence matches a navigation shortcut
-        const route = navigationShortcuts[sequence]
-        if (route) {
-          event.preventDefault()
-          navigate(route)
-          clearSequence()
-        }
       }
     },
-    [
-      keySequence,
-      addToSequence,
-      clearSequence,
-      navigate,
-      moveSelection,
-      setShortcutsModalOpen,
-      setCommandPaletteOpen,
-      toggleSidebar,
-      toggleAIAssistant,
-      navigationShortcuts,
-    ]
+    [keySequence, addToSequence, clearSequence, navigate],
   )
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
-}
-
-// Export shortcut definitions for display in the modal
-export const shortcutDefinitions = {
-  navigation: [
-    { keys: ['g', 'e'], description: 'Go to Email Accounts' },
-    { keys: ['g', 'c'], description: 'Go to Contacts' },
-    { keys: ['g', 'm'], description: 'Go to Campaigns' },
-    { keys: ['g', 'u'], description: 'Go to Unibox' },
-    { keys: ['g', 'a'], description: 'Go to Analytics' },
-    { keys: ['g', 'p'], description: 'Go to Pipelines' },
-    { keys: ['g', 'd'], description: 'Go to Deals' },
-    { keys: ['g', 't'], description: 'Go to Tasks' },
-    { keys: ['g', 'l'], description: 'Go to Templates' },
-    { keys: ['g', 'k'], description: 'Go to API Keys' },
-    { keys: ['g', 's'], description: 'Go to Settings' },
-  ],
-  list: [
-    { keys: ['j'], description: 'Move down in list' },
-    { keys: ['k'], description: 'Move up in list' },
-    { keys: ['g', 'g'], description: 'Go to first item' },
-    { keys: ['G'], description: 'Go to last item' },
-    { keys: ['Enter'], description: 'Open selected item' },
-    { keys: ['Escape'], description: 'Close modal / Deselect' },
-    { keys: ['x'], description: 'Select/deselect item' },
-  ],
-  actions: [
-    { keys: ['/'], description: 'Focus search' },
-    { keys: ['n'], description: 'Compose a new email' },
-    { keys: ['e'], description: 'Edit selected item' },
-    { keys: ['b'], description: 'Collapse / expand the sidebar' },
-    { keys: ['?'], description: 'Show shortcuts' },
-    { keys: ['Ctrl', 'k'], description: 'Command palette' },
-  ],
-  // Panel-scoped shortcuts fire while focus is inside the assistant panel.
-  assistant: [
-    { keys: ['Ctrl', 'i'], description: 'Open / close the assistant' },
-    { keys: ['Ctrl', ']'], description: 'Next conversation tab' },
-    { keys: ['Ctrl', '['], description: 'Previous conversation tab' },
-    { keys: ['Alt', 'n'], description: 'New chat' },
-    { keys: ['Alt', 'w'], description: 'Close tab' },
-    { keys: ['Alt', 'm'], description: 'Minimize to dock' },
-    { keys: ['Alt', 'p'], description: 'Pop out / dock the panel' },
-    { keys: ['Esc'], description: 'Close the panel' },
-  ],
 }

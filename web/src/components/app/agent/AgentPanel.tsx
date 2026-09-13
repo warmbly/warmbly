@@ -39,6 +39,8 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useConfirm } from "@/hooks/context/confirm";
 import { usePermission } from "@/hooks/usePermission";
+import { capturePointerDrag, useResizablePane } from "@/hooks/useResizablePane";
+import { dispatchPanelShortcut } from "@/hooks/useKeyboardShortcuts";
 import useAiMetered from "@/hooks/useAiMetered";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores";
@@ -46,6 +48,9 @@ import {
     AGENT_FLOAT_MIN_W,
     AGENT_FLOAT_MAX_W,
     AGENT_FLOAT_MIN_H,
+    AGENT_MIN_WIDTH,
+    AGENT_DEFAULT_WIDTH,
+    agentDockedMaxWidth,
     type AgentFloatRect,
     type AgentTab,
     type AgentTurn,
@@ -130,6 +135,15 @@ export default function AgentPanel() {
         m.addEventListener("change", fn);
         return () => m.removeEventListener("change", fn);
     }, []);
+    // The docked width is capped by the viewport as well as by its own bounds,
+    // so the cap has to follow a window resize.
+    const [viewportW, setViewportW] = React.useState(() => window.innerWidth);
+    React.useEffect(() => {
+        const fn = () => setViewportW(window.innerWidth);
+        window.addEventListener("resize", fn);
+        return () => window.removeEventListener("resize", fn);
+    }, []);
+
     const isFloat = floating && !expanded && smUp;
     const rect = React.useMemo(
         () => (isFloat ? clampFloatRect(floatRect ?? defaultFloatRect()) : null),
@@ -138,6 +152,7 @@ export default function AgentPanel() {
 
     const navigate = useNavigate();
     const location = useLocation();
+    const panelRef = React.useRef<HTMLElement>(null);
     const scrollRef = React.useRef<HTMLDivElement>(null);
     const inputRef = React.useRef<HTMLTextAreaElement>(null);
     const hydrating = React.useRef<Set<string>>(new Set());
@@ -425,59 +440,45 @@ export default function AgentPanel() {
         useAppStore.getState().agentSetActive(next.key);
     }
 
-    // Panel-scoped shortcuts (fire only while focus is inside the panel).
-    // Alt combos match on e.code because macOS Option remaps e.key to symbols.
+    // Panel-scoped shortcuts: they fire only while focus is inside the panel,
+    // but they are declared alongside every other shortcut in the product
+    // (useKeyboardShortcuts) so the `?` modal cannot drift from what runs.
     function onPanelKeyDown(e: React.KeyboardEvent) {
-        if (e.key === "Escape") {
-            e.stopPropagation();
-            closePanel();
-            return;
-        }
-        const mod = e.metaKey || e.ctrlKey;
-        if (mod && !e.altKey && (e.key === "]" || e.key === "[")) {
-            e.preventDefault();
-            e.stopPropagation();
-            cycleTab(e.key === "]" ? 1 : -1);
-            return;
-        }
-        if (e.altKey && !mod) {
-            switch (e.code) {
-                case "KeyN":
-                    e.preventDefault();
-                    useAppStore.getState().agentNewTab();
-                    return;
-                case "KeyW":
-                    e.preventDefault();
-                    if (activeTab) closeTab(activeTab.key);
-                    return;
-                case "KeyM":
-                    e.preventDefault();
-                    setMinimized(true);
-                    return;
-                case "KeyP":
-                    e.preventDefault();
-                    if (smUp && !expanded) setFloating(!floating);
-                    return;
-            }
-        }
+        dispatchPanelShortcut(e, {
+            close: closePanel,
+            cycleTab,
+            newTab: () => useAppStore.getState().agentNewTab(),
+            closeTab: () => {
+                if (activeTab) closeTab(activeTab.key);
+            },
+            minimize: () => setMinimized(true),
+            togglePopOut: () => setFloating(!floating),
+            canPopOut: smUp && !expanded,
+        });
     }
 
-    // Drag the panel's inner edge to resize (persisted via the store clamp).
-    function startResize(e: React.PointerEvent) {
-        if (expanded || isFloat) return;
-        e.preventDefault();
-        const onMove = (ev: PointerEvent) => {
-            const w =
-                side === "right" ? window.innerWidth - ev.clientX : ev.clientX;
-            useAppStore.getState().setAgentWidth(w);
-        };
-        const onUp = () => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-        };
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
-    }
+    // Drag the panel's inner edge to resize. Shared with the unibox splitter:
+    // pointer capture (the drag crosses page content, which on the inbox route
+    // is one iframe per message), one store write per gesture rather than per
+    // frame, and the keyboard map a separator owes assistive tech.
+    const setAgentWidth = useAppStore((s) => s.setAgentWidth);
+    const dockedMax = agentDockedMaxWidth(viewportW);
+    const { width: dockedWidth, separatorProps } = useResizablePane({
+        value: width,
+        onChange: setAgentWidth,
+        min: AGENT_MIN_WIDTH,
+        max: dockedMax,
+        defaultValue: AGENT_DEFAULT_WIDTH,
+        measureMax: () => agentDockedMaxWidth(window.innerWidth),
+        paneRef: panelRef,
+        cssVar: "--agent-w",
+        // The handle sits on the panel's inner edge, so on the right it widens
+        // as the pointer moves left.
+        direction: side === "right" ? -1 : 1,
+        label: "Resize the assistant panel",
+        controls: "agent-panel",
+        valueText: (w) => `Assistant panel ${w} pixels`,
+    });
 
     // Keep the floating window inside the viewport when the browser resizes.
     React.useEffect(() => {
@@ -505,28 +506,24 @@ export default function AgentPanel() {
         let offY = r ? startY - r.y : 0;
         let torn = isFloat;
 
-        const onMove = (ev: PointerEvent) => {
-            if (!torn) {
-                if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 16) return;
-                const base = defaultFloatRect();
-                r = { ...base, w: Math.min(base.w, useAppStore.getState().agentWidth) };
-                offX = Math.min(r.w / 2, 200);
-                offY = 24;
-                torn = true;
-                useAppStore.getState().setAgentFloating(true);
-            }
-            if (!r) return;
-            ev.preventDefault();
-            useAppStore
-                .getState()
-                .setAgentFloatRect(clampFloatRect({ ...r, x: ev.clientX - offX, y: ev.clientY - offY }));
-        };
-        const onUp = () => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-        };
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
+        capturePointerDrag(e, {
+            onMove: (ev) => {
+                if (!torn) {
+                    if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 16) return;
+                    const base = defaultFloatRect();
+                    r = { ...base, w: Math.min(base.w, useAppStore.getState().agentWidth) };
+                    offX = Math.min(r.w / 2, 200);
+                    offY = 24;
+                    torn = true;
+                    useAppStore.getState().setAgentFloating(true);
+                }
+                if (!r) return;
+                ev.preventDefault();
+                useAppStore
+                    .getState()
+                    .setAgentFloatRect(clampFloatRect({ ...r, x: ev.clientX - offX, y: ev.clientY - offY }));
+            },
+        });
     }
 
     // Resize the floating window from any edge or corner.
@@ -537,29 +534,25 @@ export default function AgentPanel() {
         const start = { ...rect };
         const sx = e.clientX;
         const sy = e.clientY;
-        const onMove = (ev: PointerEvent) => {
-            ev.preventDefault();
-            const dx = ev.clientX - sx;
-            const dy = ev.clientY - sy;
-            let { x, y, w, h } = start;
-            if (dir.includes("e")) w = start.w + dx;
-            if (dir.includes("s")) h = start.h + dy;
-            if (dir.includes("w")) {
-                w = start.w - dx;
-                x = start.x + Math.min(dx, start.w - AGENT_FLOAT_MIN_W);
-            }
-            if (dir.includes("n")) {
-                h = start.h - dy;
-                y = start.y + Math.min(dy, start.h - AGENT_FLOAT_MIN_H);
-            }
-            useAppStore.getState().setAgentFloatRect(clampFloatRect({ x, y, w, h }));
-        };
-        const onUp = () => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-        };
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
+        capturePointerDrag(e, {
+            onMove: (ev) => {
+                ev.preventDefault();
+                const dx = ev.clientX - sx;
+                const dy = ev.clientY - sy;
+                let { x, y, w, h } = start;
+                if (dir.includes("e")) w = start.w + dx;
+                if (dir.includes("s")) h = start.h + dy;
+                if (dir.includes("w")) {
+                    w = start.w - dx;
+                    x = start.x + Math.min(dx, start.w - AGENT_FLOAT_MIN_W);
+                }
+                if (dir.includes("n")) {
+                    h = start.h - dy;
+                    y = start.y + Math.min(dy, start.h - AGENT_FLOAT_MIN_H);
+                }
+                useAppStore.getState().setAgentFloatRect(clampFloatRect({ x, y, w, h }));
+            },
+        });
     }
 
     if (!canAI) return null;
@@ -587,6 +580,8 @@ export default function AgentPanel() {
                 />
             )}
             <motion.aside
+                ref={panelRef}
+                id="agent-panel"
                 initial={false}
                 animate={
                     isFloat
@@ -604,13 +599,13 @@ export default function AgentPanel() {
                 style={
                     isFloat && rect
                         ? ({
-                              "--agent-w": `${width}px`,
+                              "--agent-w": `${dockedWidth}px`,
                               left: rect.x,
                               top: rect.y,
                               width: rect.w,
                               height: rect.h,
                           } as React.CSSProperties)
-                        : ({ "--agent-w": `${width}px` } as React.CSSProperties)
+                        : ({ "--agent-w": `${dockedWidth}px` } as React.CSSProperties)
                 }
                 className={cn(
                     "fixed z-50 bg-white flex",
@@ -654,10 +649,10 @@ export default function AgentPanel() {
                 {/* Drag handle on the inner edge (desktop, docked mode). */}
                 {!expanded && !isFloat && (
                     <div
-                        onPointerDown={startResize}
-                        title="Drag to resize"
+                        {...separatorProps}
                         className={cn(
-                            "hidden sm:block absolute top-0 h-full w-1.5 cursor-col-resize touch-none z-10 hover:bg-sky-400/40 active:bg-sky-500/50 transition-colors",
+                            "hidden sm:block absolute top-0 h-full w-1.5 cursor-col-resize z-10 outline-none",
+                            "hover:bg-sky-400/40 active:bg-sky-500/50 focus-visible:bg-sky-500/50 transition-colors",
                             side === "right" ? "left-0" : "right-0",
                         )}
                     />

@@ -6,7 +6,6 @@ export {
   useSidebar,
   useCurrentOrg,
   useOrganizations,
-  useKeyboardNavigation,
   useCachedData,
   useConnectionStatus,
   useUnseenCount,

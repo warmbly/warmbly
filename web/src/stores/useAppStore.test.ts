@@ -5,6 +5,11 @@ import {
   UNIBOX_LIST_MAX_WIDTH,
   UNIBOX_LIST_MIN_WIDTH,
 } from './slices/uiSlice'
+import {
+  AGENT_MAX_WIDTH,
+  AGENT_MIN_WIDTH,
+  agentDockedMaxWidth,
+} from './slices/agentSlice'
 
 describe('useAppStore', () => {
   beforeEach(() => {
@@ -89,6 +94,16 @@ describe('useAppStore', () => {
       // A non-finite value falls back rather than rendering `width: NaNpx`.
       setUniboxListWidth(Number.NaN)
       expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_DEFAULT_WIDTH)
+    })
+
+    it('caps the assistant panel at what the viewport can show', () => {
+      // The docked panel's own CSS stops at 94vw, so the drag has to stop
+      // there too: past a bound the stylesheet already enforces, the handle
+      // moves nothing and reads as broken.
+      expect(agentDockedMaxWidth(1920)).toBe(AGENT_MAX_WIDTH)
+      expect(agentDockedMaxWidth(700)).toBe(658)
+      // ...and never below the panel's own minimum, whatever the window.
+      expect(agentDockedMaxWidth(320)).toBe(AGENT_MIN_WIDTH)
     })
 
     // Rehydration does NOT go through the setters: zustand merges the stored
@@ -219,25 +234,6 @@ describe('useAppStore', () => {
       clearSequence()
 
       expect(useAppStore.getState().keySequence).toEqual([])
-    })
-
-    it('should move selection', () => {
-      const { setListLength, setSelectedIndex, moveSelection } = useAppStore.getState()
-
-      setListLength(5)
-      setSelectedIndex(0)
-
-      moveSelection('down')
-      expect(useAppStore.getState().selectedIndex).toBe(1)
-
-      moveSelection('up')
-      expect(useAppStore.getState().selectedIndex).toBe(0)
-
-      moveSelection('last')
-      expect(useAppStore.getState().selectedIndex).toBe(4)
-
-      moveSelection('first')
-      expect(useAppStore.getState().selectedIndex).toBe(0)
     })
   })
 

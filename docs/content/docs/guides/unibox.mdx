@@ -19,6 +19,21 @@ How wide the list can get depends on the window: the thread always keeps enough 
 
 On a screen narrower than 1024px the contact panel is an overlay rather than a column, so it always starts closed there. Below 768px the list and the thread take turns on the full screen instead of sitting side by side.
 
+## Keyboard
+
+The conversation list takes the keyboard, so a triage pass never needs the mouse. Press `?` anywhere in Warmbly for the full list; these are the ones that act on the inbox.
+
+| Key | Does |
+| --- | --- |
+| `j` / `k` | Move down and up the list. From no selection, `j` takes the newest conversation and `k` the oldest. |
+| `g g` / `G` | Jump to the first or last conversation. |
+| `Enter` | Open the top conversation when nothing is selected yet. |
+| `Escape` | Clear the selection. Inside the search box it gives the keyboard back to the list. |
+| `/` | Put the caret in the list's search box. |
+| `c` | Label the open conversation. |
+
+The shortcuts modal only lists what the screen you are on can actually do, so these rows appear while the inbox is open and not elsewhere.
+
 ## Folders
 
 The rail opens with the standard mail folders, so direction is visually clear instead of one combined list:

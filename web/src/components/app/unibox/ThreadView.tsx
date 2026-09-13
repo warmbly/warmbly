@@ -37,6 +37,7 @@ import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { useMediaQuery, LG_QUERY } from "@/hooks/useMediaQuery";
+import { useShortcutActions } from "@/hooks/useShortcutActions";
 import { ThreadLabelMenu } from "./ThreadLabelMenu";
 import ContactContextPanel from "./ContactContextPanel";
 import BookACallButton from "@/components/app/integrations/BookACallButton";
@@ -204,25 +205,10 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     [isWide, setRailPref],
   );
 
-  // `c` opens the label menu while a thread is open — ignored while
-  // typing into the composer / any input so it never eats keystrokes.
-  React.useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement | null;
-      if (t) {
-        const tag = t.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable)
-          return;
-      }
-      if (e.key === "c") {
-        setLabelMenuOpen(true);
-        e.preventDefault();
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, []);
+  // `c` labels the open conversation. The key itself is declared in the global
+  // shortcut registry; registering the action here is what makes the row live
+  // (and shown in the `?` modal) only while a thread is actually open.
+  useShortcutActions({ labelThread: () => setLabelMenuOpen(true) });
 
   // Composer is opt-in. Default: no reply UI mounted. The user has
   // to click Reply (per-message or the footer CTA) before any blank

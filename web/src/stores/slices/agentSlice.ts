@@ -68,6 +68,15 @@ export const AGENT_MIN_WIDTH = 360
 export const AGENT_MAX_WIDTH = 720
 export const AGENT_DEFAULT_WIDTH = 440
 
+// The docked panel's own CSS caps it at 94vw, so the drag handle has to stop
+// there too: past a bound the stylesheet already enforces, the handle moves
+// nothing and reads as broken.
+export const agentDockedMaxWidth = (viewportWidth: number): number =>
+  Math.max(
+    AGENT_MIN_WIDTH,
+    Math.min(AGENT_MAX_WIDTH, Math.floor(viewportWidth * 0.94)),
+  )
+
 // Floating-window geometry bounds (desktop only; mobile stays a sheet).
 export const AGENT_FLOAT_MIN_W = 360
 export const AGENT_FLOAT_MAX_W = 920

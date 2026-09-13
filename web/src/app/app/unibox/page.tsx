@@ -33,6 +33,7 @@ import {
   UNIBOX_LIST_MIN_WIDTH,
 } from "@/stores";
 import { uniboxListMaxWidth, uniboxThreadReserve } from "@/lib/uniboxLayout";
+import { useResizablePane } from "@/hooks/useResizablePane";
 import { useMediaQuery, LG_QUERY } from "@/hooks/useMediaQuery";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { cn } from "@/lib/utils";
@@ -114,126 +115,22 @@ export default function UniboxPage() {
     return () => ro.disconnect();
   }, [measureMax]);
 
-  const renderedWidth = Math.min(listWidth, maxWidth);
-
-  // Drag state. Pointer capture routes every move back to the separator, which
-  // matters because the pane being dragged into renders each message body in an
-  // iframe: with window listeners the drag dies the moment the cursor crosses
-  // one, and the pointerup that would have cleaned up never arrives.
-  const dragRef = React.useRef<{
-    startX: number;
-    startWidth: number;
-    max: number;
-    moved: boolean;
-  } | null>(null);
-  const liveWidthRef = React.useRef(renderedWidth);
-
-  const endDrag = React.useCallback(() => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    dragRef.current = null;
-    document.body.style.removeProperty("cursor");
-    document.body.style.removeProperty("user-select");
-    // Only a drag that actually moved writes the preference. A press-and-release
-    // on a window too narrow to show the stored width would otherwise quietly
-    // overwrite it with the capped one, losing the width chosen on a big screen.
-    if (drag.moved) setListWidth(liveWidthRef.current);
-  }, [setListWidth]);
-
-  // A drag interrupted by an unmount would otherwise leave the whole app with
-  // `user-select: none`.
-  React.useEffect(() => () => {
-    if (!dragRef.current) return;
-    document.body.style.removeProperty("cursor");
-    document.body.style.removeProperty("user-select");
-  }, []);
-
-  const startListResize = React.useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
-      const el = listRef.current;
-      if (!el) return;
-      const sep = e.currentTarget;
-      // Deliberately no preventDefault: it would suppress the compatibility
-      // mousedown, and with it both the focus this control needs for its
-      // keyboard path and the mousedown every click-outside listener in the
-      // app is registered on. The body user-select lock below is what stops
-      // the drag selecting text.
-      try {
-        sep.setPointerCapture(e.pointerId);
-      } catch {
-        // jsdom, and any browser that has already lost the pointer.
-      }
-      sep.focus();
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      dragRef.current = {
-        // The grab offset inside the 6px handle is part of the start width, so
-        // the divider stays under the cursor instead of jumping to meet it.
-        startX: e.clientX,
-        startWidth: el.getBoundingClientRect().width || renderedWidth,
-        max: measureMax(),
-        moved: false,
-      };
-      liveWidthRef.current = renderedWidth;
-    },
-    [measureMax, renderedWidth],
-  );
-
-  const onListResizeMove = React.useCallback((e: React.PointerEvent) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const next = Math.round(
-      Math.min(
-        drag.max,
-        Math.max(UNIBOX_LIST_MIN_WIDTH, drag.startWidth + (e.clientX - drag.startX)),
-      ),
-    );
-    if (next === liveWidthRef.current) return;
-    drag.moved = true;
-    liveWidthRef.current = next;
-    // Straight to the DOM for the duration. Routing every pointer frame through
-    // the store would re-render the whole inbox and, because the store is
-    // persisted, serialise and write localStorage on each one.
-    listRef.current?.style.setProperty("--unibox-list-w", `${next}px`);
-  }, []);
-
-  // The ARIA window-splitter keys: arrows nudge (shift for a coarse step),
-  // Home/End go to the bounds, Enter restores the default, which is also what a
-  // double-click does.
-  const onListResizeKey = React.useCallback(
-    (e: React.KeyboardEvent) => {
-      const step = e.shiftKey ? 48 : 16;
-      // From what is on screen, not from the stored preference: on a window
-      // that caps the column, nudging from the stored number would move it
-      // through values the viewport cannot render and look like nothing
-      // happened.
-      const max = measureMax();
-      const current = Math.min(useAppStore.getState().uniboxListWidth, max);
-      const to = (w: number) => setListWidth(Math.min(max, w));
-      switch (e.key) {
-        case "ArrowLeft":
-          to(current - step);
-          break;
-        case "ArrowRight":
-          to(current + step);
-          break;
-        case "Home":
-          to(UNIBOX_LIST_MIN_WIDTH);
-          break;
-        case "End":
-          to(UNIBOX_LIST_MAX_WIDTH);
-          break;
-        case "Enter":
-          to(UNIBOX_LIST_DEFAULT_WIDTH);
-          break;
-        default:
-          return;
-      }
-      e.preventDefault();
-    },
-    [measureMax, setListWidth],
-  );
+  // The splitter itself: pointer capture, the body lock, the window-splitter
+  // keys and the ARIA bundle all live in the shared hook, which the assistant
+  // panel's edge handle uses too.
+  const { width: renderedWidth, separatorProps } = useResizablePane({
+    value: listWidth,
+    onChange: setListWidth,
+    min: UNIBOX_LIST_MIN_WIDTH,
+    max: maxWidth,
+    defaultValue: UNIBOX_LIST_DEFAULT_WIDTH,
+    measureMax,
+    paneRef: listRef,
+    cssVar: "--unibox-list-w",
+    label: "Resize the conversation list",
+    controls: "unibox-conversation-list",
+    valueText: (w) => `Conversation list ${w} pixels`,
+  });
 
   // goTo writes the URL by merging the requested changes over the current path
   // (an omitted field keeps its current value; pass null to clear).
@@ -525,23 +422,8 @@ export default function UniboxPage() {
                   hairline centred in it, so the grab area never overlaps
                   either pane's scrollbar. */}
               <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize the conversation list"
-                aria-controls="unibox-conversation-list"
-                aria-valuenow={renderedWidth}
-                aria-valuemin={UNIBOX_LIST_MIN_WIDTH}
-                aria-valuemax={Math.min(UNIBOX_LIST_MAX_WIDTH, maxWidth)}
-                aria-valuetext={`Conversation list ${renderedWidth} pixels`}
-                tabIndex={0}
-                onPointerDown={startListResize}
-                onPointerMove={onListResizeMove}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-                onLostPointerCapture={endDrag}
-                onKeyDown={onListResizeKey}
-                onDoubleClick={() => setListWidth(UNIBOX_LIST_DEFAULT_WIDTH)}
-                className="group hidden md:flex w-1.5 shrink-0 cursor-col-resize items-stretch justify-center touch-none outline-none"
+                {...separatorProps}
+                className="group hidden md:flex w-1.5 shrink-0 cursor-col-resize items-stretch justify-center outline-none"
               >
                 {/* The hairline is the whole control, so focus has to thicken
                     and colour it: there is no outline to fall back on. */}
