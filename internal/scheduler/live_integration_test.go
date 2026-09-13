@@ -370,15 +370,17 @@ func withID(b models.SendingBehavior, id uuid.UUID) models.SendingBehavior {
 	return b
 }
 
-// bookTask inserts a pending campaign task for the fixture's mailbox at a given
-// instant. Pending tasks count against the plan's budgets, because a booked
-// slot has already spent it even though the mail has not gone out yet.
+// bookTask spends one of the fixture mailbox's slots at a given instant, by
+// recording the send that would have taken it.
 func (f *liveFixture) bookTask(t *testing.T, at time.Time) {
 	t.Helper()
 	id := uuid.New()
+	// A COMPLETED task carrying the worker's Message-ID, which is what a send
+	// leaves behind. A pending task would not do: it is the chain's next
+	// wake-up, and since issue #469 neither budget counts one as spent.
 	if _, err := f.pool.Exec(context.Background(), `
-		INSERT INTO tasks (id, task_type, email_account_id, status, message_id, scheduled_at)
-		VALUES ($1, 'campaign', $2, 'pending', '', $3)`, id, f.mailbox, at); err != nil {
+		INSERT INTO tasks (id, task_type, email_account_id, status, message_id, scheduled_at, completed_at)
+		VALUES ($1, 'campaign', $2, 'completed', '<booked@test.local>', $3, $3)`, id, f.mailbox, at); err != nil {
 		t.Fatalf("book task: %v", err)
 	}
 	if _, err := f.pool.Exec(context.Background(),
