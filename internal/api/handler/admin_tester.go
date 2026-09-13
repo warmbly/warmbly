@@ -115,11 +115,15 @@ func (h *Handler) AdminCreateTester(c *gin.Context) {
 	}
 	org, oerr := h.OrganizationService.Create(c.Request.Context(), created.ID, orgName)
 	if oerr != nil {
-		// The account and its exemption committed together, so it is already
-		// in the tester list and can be revoked from there. Say so, rather
-		// than leaving the operator to guess what survived.
-		errx.JSON(c, errx.New(errx.Internal,
-			"the account was created but its workspace was not. It is listed under Testers; revoke it there and try again."))
+		// Undo the account rather than leave the address taken by something
+		// unusable: revoking would not free it, and a retry would fail on the
+		// existing-email check, so the operator would have nowhere to go.
+		if derr := h.UserRepo.DeleteOrphanExemptUser(c.Request.Context(), created.ID); derr != nil {
+			errx.JSON(c, errx.New(errx.Internal,
+				"the workspace could not be created and the half-made account could not be removed; it is listed under Testers"))
+			return
+		}
+		errx.JSON(c, errx.New(errx.Internal, "could not create the workspace, so nothing was created. Try again."))
 		return
 	}
 	if h.TrialService != nil {

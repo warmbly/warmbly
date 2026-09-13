@@ -42,6 +42,11 @@ type UserRepository interface {
 	// transaction, so a failure cannot leave an account that holds no
 	// exemption and therefore appears in no list.
 	CreateExemptUser(ctx context.Context, email *mail.Address, passwordHash, reason string, by *uuid.UUID) (*models.User, error)
+
+	// DeleteOrphanExemptUser undoes a tester creation whose workspace step
+	// failed. The predicate is the safety: it only matches an account that is
+	// exempt AND belongs to no organization, which a real user never is.
+	DeleteOrphanExemptUser(ctx context.Context, id uuid.UUID) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	SetFreeTrialUsed(ctx context.Context, userID uuid.UUID) error
 	UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error
@@ -383,4 +388,20 @@ func (r *userRepository) CreateExemptUser(ctx context.Context, email *mail.Addre
 		return nil, err
 	}
 	return created, nil
+}
+
+// DeleteOrphanExemptUser removes a half-created tester.
+//
+// Without it the address is taken by an account that cannot be used and cannot
+// be recreated, so the operator is stuck. The WHERE clause is what makes this
+// safe to expose at all: an account that holds an exemption and belongs to no
+// organization is one this handler made moments ago and failed to finish. A
+// real user always has a workspace, so no predicate match means no delete.
+func (r *userRepository) DeleteOrphanExemptUser(ctx context.Context, id uuid.UUID) error {
+	_, err := r.DB.Exec(ctx, `
+		DELETE FROM users
+		WHERE id = $1
+		  AND login_code_exempt
+		  AND NOT EXISTS (SELECT 1 FROM organization_members m WHERE m.user_id = users.id)`, id)
+	return err
 }
