@@ -3,7 +3,7 @@ import { devtools, persist } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
 import { createUserSlice, type UserSlice } from './slices/userSlice'
 import { createOrganizationSlice, type OrganizationSlice } from './slices/organizationSlice'
-import { createUISlice, type UISlice } from './slices/uiSlice'
+import { createUISlice, clampUniboxListWidth, type UISlice } from './slices/uiSlice'
 import { createShortcutSlice, type ShortcutSlice } from './slices/shortcutSlice'
 import { createDataSlice, type DataSlice } from './slices/dataSlice'
 import { createRealtimeSlice, type RealtimeSlice } from './slices/realtimeSlice'
@@ -38,15 +38,29 @@ export const useAppStore = create<AppStore>()(
       }),
       {
         name: 'warmbly-storage',
+        // Rehydration does not go through the slice setters, so re-clamp the one
+        // stored value that has bounds. Without this a value from an older build
+        // (or a hand-edited one) renders as `width: NaNpx`.
+        merge: (persisted, current) => {
+          const p = (persisted ?? {}) as Partial<AppStore>
+          return {
+            ...current,
+            ...p,
+            uniboxListWidth: clampUniboxListWidth(p.uniboxListWidth),
+          }
+        },
         partialize: (state) => ({
           // Only persist UI preferences
           theme: state.theme,
-          sidebarCollapsed: state.sidebarCollapsed,
+          navCollapsed: state.navCollapsed,
           // Assistant panel layout (edge + width + floating window geometry)
           agentSide: state.agentSide,
           agentWidth: state.agentWidth,
           agentFloating: state.agentFloating,
           agentFloatRect: state.agentFloatRect,
+          // Unibox layout (list column width + CRM rail default)
+          uniboxListWidth: state.uniboxListWidth,
+          uniboxContactRailOpen: state.uniboxContactRailOpen,
           // Persist current organization selection
           currentOrganization: state.currentOrganization,
         }),
@@ -65,7 +79,7 @@ export const useTheme = () =>
   useAppStore(useShallow((state) => ({ theme: state.theme, resolvedTheme: state.resolvedTheme })))
 export const useSidebar = () =>
   useAppStore(useShallow((state) => ({
-    collapsed: state.sidebarCollapsed,
+    collapsed: state.navCollapsed,
     mobileOpen: state.sidebarMobileOpen,
     toggle: state.toggleSidebar,
     setCollapsed: state.setSidebarCollapsed,
