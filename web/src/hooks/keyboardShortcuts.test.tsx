@@ -112,6 +112,18 @@ describe("navigation sequences", () => {
         expect(path()).toBe("/app/unibox");
     });
 
+    it("leaves a modifier combo alone mid-sequence", () => {
+        mount();
+        press("g");
+        // Half a second of `g` must not turn the command palette into a route.
+        press("k", { ctrlKey: true });
+        expect(path()).toBe("/app/start");
+        expect(useAppStore.getState().commandPaletteOpen).toBe(true);
+        // ...and the abandoned sequence goes with it, so the next letter is
+        // not read as the second half of a `g`.
+        expect(useAppStore.getState().keySequence).toEqual([]);
+    });
+
     it("swallows a letter that completes no sequence", () => {
         mount();
         press("g");

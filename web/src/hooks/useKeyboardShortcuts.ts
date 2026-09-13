@@ -386,10 +386,18 @@ export function useKeyboardShortcuts() {
       // Escape always abandons a half-typed sequence, typing or not.
       if (key === 'escape' && keySequence.length > 0) clearSequence()
 
-      // A pending sequence owns the next letter. Without this the single-press
-      // handler for that letter runs first and the sequence never resolves,
-      // which is exactly how `g k` lost the API keys route to `k`.
-      if (!isEditing && keySequence.length > 0 && /^[a-z]$/.test(key)) {
+      // A pending sequence owns the next BARE letter. Without this the
+      // single-press handler for that letter runs first and the sequence never
+      // resolves, which is exactly how `g k` lost the API keys route to `k`.
+      // Modifiers are excluded or `g` followed within half a second by Ctrl+K
+      // would navigate instead of opening the command palette.
+      const bareLetter =
+        /^[a-z]$/.test(key) &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey
+      if (!isEditing && keySequence.length > 0 && bareLetter) {
         event.preventDefault()
         const seq = [...keySequence, key].join(',')
         clearSequence()
@@ -407,6 +415,10 @@ export function useKeyboardShortcuts() {
         // all costs.
         if (!isShortcutAvailable(s)) continue
         event.preventDefault()
+        // A shortcut that fires mid-sequence ends the sequence; leaving it
+        // pending would hand the next letter to a `g` the user has moved on
+        // from.
+        if (keySequence.length > 0) clearSequence()
         s.run(ctx)
         return
       }
