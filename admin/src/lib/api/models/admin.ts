@@ -948,3 +948,20 @@ export interface AdminPlan {
     public?: boolean | null;
     price?: number | string | null;
 }
+
+/** An account excused from the emailed login code. */
+export interface LoginCodeExemption {
+    user_id: string;
+    email: string;
+    reason?: string | null;
+    granted_at?: string | null;
+}
+
+/** The one time the password is readable. It is not stored in a form anyone
+ *  can recover, so losing it means making another tester. */
+export interface CreatedTester {
+    user_id: string;
+    email: string;
+    organization_id: string;
+    password: string;
+}

@@ -29,6 +29,7 @@ import WorkerNewPage from "@/app/dashboard/WorkerNewPage";
 import FleetPage from "@/app/dashboard/FleetPage";
 import AuditPage from "@/app/dashboard/AuditPage";
 import OrganizationsPage from "@/app/dashboard/OrganizationsPage";
+import TestersPage from "@/app/dashboard/TestersPage";
 import OrganizationDetailPage from "@/app/dashboard/OrganizationDetailPage";
 import UsersPage from "@/app/dashboard/UsersPage";
 import UserDetailPage from "@/app/dashboard/UserDetailPage";
@@ -159,6 +160,7 @@ const router = createBrowserRouter([
                             { path: "limit-requests", element: gated(AdminPerm.ViewOrganizations, <LimitRequestsPage />) },
                             { path: "outreach", element: gated(AdminPerm.ViewOrganizations, <OutreachPage />) },
                             { path: "admins", element: gated(AdminPerm.GrantAdminAccess, <AdminsPage />) },
+                            { path: "testers", element: gated(AdminPerm.ViewUsers, <TestersPage />) },
 
                             // Insight
                             { path: "events", element: <EventsPage /> },

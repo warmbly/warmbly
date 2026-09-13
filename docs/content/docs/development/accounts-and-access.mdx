@@ -108,6 +108,8 @@ warmblyctl user login-code-exempt --email reviewer@example.com --reason "Google 
 
 A reason is required, and the database refuses a blank one. The exemption removes the emailed code and nothing else: the password, the captcha and the sign-in risk assessment all still apply, and a transport that cannot deliver still short-circuits ahead of it. A failed lookup is not read as an exemption.
 
+The admin panel has the same thing under **Testers**: create one, see the password once, and revoke an exemption when the reason no longer holds. The account survives a revoke, so anything it did stays attributable; it simply stops bypassing the code.
+
 `warmblyctl status` lists every exempt account on each run with its reason and the date, because the way this goes wrong is not granting one, it is forgetting it. Remove one with:
 
 ```bash
