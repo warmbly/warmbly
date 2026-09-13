@@ -435,20 +435,20 @@ func (s *JobsService) recordSuspiciousWarmupToken(ctx context.Context, e *models
 // exists), and mailboxAge how long the mailbox row has existed, negative when
 // that could not be established.
 func warmupTokenIsOwnMail(folder string, accountID uuid.UUID, tok *models.WarmupToken, mailboxAge time.Duration) bool {
-	// The sender's Sent copy carries the recipient's token by construction.
-	if folder == models.FolderSent {
-		return true
-	}
-	// Still on file, just consumed or expired: a re-read when we are a party to
-	// it. A row naming neither side is a stranger's token, the one shape that
-	// was ever evidence, so it is signal at any age and must not reach the
-	// window below.
+	// Whenever the token still resolves it is the whole answer: we are a party
+	// to it and this is a re-read, or we are not and it is a stranger's, which
+	// is the one shape that was ever evidence. Folder and age cannot excuse
+	// that, or appending a harvested token to Sent would launder it.
 	if tok != nil {
 		return tok.RecipientAccountID == accountID || tok.SenderAccountID == accountID
 	}
-	// Nothing resolves: either a reconnected mailbox replaying a history whose
-	// tokens cascaded away with the row it used to be, or a token that never
-	// existed. Only the young mailbox gets the benefit of the doubt.
+	// Nothing resolves. Our own Sent copy carries the recipient's token by
+	// construction, so a vanished one there is still our own outbound mail.
+	if folder == models.FolderSent {
+		return true
+	}
+	// Otherwise only a mailbox young enough to still be replaying the history
+	// its old row's tokens cascaded away from gets the benefit of the doubt.
 	return mailboxAge >= 0 && mailboxAge < time.Duration(config.WarmupReconnectGraceMinutes)*time.Minute
 }
 
@@ -456,9 +456,14 @@ func warmupTokenIsOwnMail(folder string, accountID uuid.UUID, tok *models.Warmup
 func (s *JobsService) resolveWarmupTokenOwnership(ctx context.Context, e *models.JobEventNewEmail, tokenID uuid.UUID, known *models.WarmupToken) bool {
 	tok := known
 	if tok == nil && tokenID != uuid.Nil && s.WarmupRepo != nil {
-		if t, err := s.WarmupRepo.FindWarmupToken(ctx, tokenID); err == nil {
-			tok = t
+		t, err := s.WarmupRepo.FindWarmupToken(ctx, tokenID)
+		if err != nil {
+			// This lookup is what separates a re-read from a forgery, and a
+			// missing row comes back (nil, nil). An error is a failed question,
+			// not an answer, so fail open rather than charge the mailbox for it.
+			return true
 		}
+		tok = t
 	}
 	age := time.Duration(-1)
 	if s.EmailRepository != nil {
