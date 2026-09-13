@@ -318,8 +318,8 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
     );
 
     // Collapsed rail: the label and the ambient count clusters have nowhere to
-    // go, so the row keeps only its icon plus the two signals that are worth
-    // interrupting for — unread inbox and an open Advisor finding — as dots.
+    // go, so the row keeps its icon plus the two signals worth interrupting
+    // for: the unread count, and an Advisor finding as a severity dot.
     if (collapsed) {
         return (
             <NavTip collapsed label={item.title}>
