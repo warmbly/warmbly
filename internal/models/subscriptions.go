@@ -144,6 +144,13 @@ type Subscription struct {
 	// paying Stripe for one plan and granted another goes back to the one it
 	// pays for when the grant ends.
 	ManagedPlanID *uuid.UUID `json:"managed_plan_id,omitempty"`
+	// Managed is IsManaged resolved server-side, carried on the base type so
+	// every endpoint that returns a subscription reports it. A granted plan
+	// never touches Stripe, so Status stays whatever it was ("incomplete" on a
+	// workspace that never subscribed); a client deciding "paid" from Status
+	// alone locks a workspace entitled to everything. Not a column: set by the
+	// service, so a repository scan never has to know about it.
+	Managed bool `json:"managed"`
 
 	// Stripe trial info
 	TrialStart *time.Time `json:"trial_start,omitempty"`
@@ -264,12 +271,6 @@ const FreeWorkspaceMailboxLimit = 10
 type SubscriptionWithLimits struct {
 	Subscription
 	RateLimits *RealtimeRateLimits `json:"rate_limits,omitempty"`
-	// Managed is IsManaged resolved server-side. A granted plan never touches
-	// Stripe, so Status stays whatever it was ("incomplete" on a workspace
-	// that never subscribed) and a client deciding "paid" from Status alone
-	// locks a workspace that is entitled to everything. Expiry is applied
-	// here so no client has to reimplement it.
-	Managed bool `json:"managed"`
 }
 
 // RealtimeRateLimits contains WebSocket-specific rate limits

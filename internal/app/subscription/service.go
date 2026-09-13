@@ -50,6 +50,7 @@ func (s *subscriptionService) Get(ctx context.Context, orgID uuid.UUID) (*models
 	// Load plan
 	plan, _ := s.planRepo.GetByID(ctx, sub.EffectivePlanID())
 	sub.Plan = plan
+	sub.Managed = sub.IsManaged()
 
 	return sub, nil
 }
