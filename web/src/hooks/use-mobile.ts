@@ -1,19 +1,10 @@
-import * as React from "react"
+import { MD_QUERY, useMediaQuery } from "./useMediaQuery"
 
-const MOBILE_BREAKPOINT = 768
-
+// Below Tailwind's `md`, where the sidebar is an off-canvas drawer. Built on
+// useMediaQuery so the first render is already correct: the previous
+// effect-initialised version reported "not mobile" for one frame, which the
+// nav's collapsed rail (a JS branch, not a `md:` class) rendered as a
+// label-less drawer.
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
-
-  React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    }
-    mql.addEventListener("change", onChange)
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    return () => mql.removeEventListener("change", onChange)
-  }, [])
-
-  return !!isMobile
+  return !useMediaQuery(MD_QUERY)
 }
