@@ -106,9 +106,15 @@ export default function useFeatureAccess(): FeatureAccess {
     // that's in flight, fall back to the org row's plan field so a
     // paying customer doesn't see "Locked" for a beat on first load.
     const subSaysPaid = status === "active" || status === "trialing";
+    // A plan an operator granted never touches Stripe, so `status` stays
+    // whatever it was ("incomplete" on a workspace that never subscribed).
+    // Deciding paid from status alone locks a workspace that is entitled to
+    // everything, which is what the plan pill and the credit balance already
+    // show correctly. The server resolves expiry, so this is just a read.
+    const managed = sub.data?.managed === true;
     const orgImpliesPaid =
         sub.isPending && !!currentOrg?.plan && currentOrg.plan.toLowerCase() !== "free";
-    const isPaid = subSaysPaid || orgImpliesPaid;
+    const isPaid = subSaysPaid || managed || orgImpliesPaid;
 
     return {
         loading: sub.isPending || authConfig.isLoading,

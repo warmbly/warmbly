@@ -8,6 +8,11 @@ export const API_URL = runtimeEnv("API_URL", import.meta.env.VITE_API_URL);
 // (no path), so this is the single place the /v1 prefix is applied.
 export const API_BASE_URL = `${API_URL}/v1`;
 export const TURNSTILE_KEY = runtimeEnv("TURNSTILE_KEY", import.meta.env.VITE_TURNSTILE_KEY);
+
+// Shown once in a dialog and then as a header pill. Empty means this is not a
+// preview deployment and nothing renders, which is what production wants
+// without anyone having to remember to unset it.
+export const BETA_NOTICE = runtimeEnv("BETA_NOTICE", import.meta.env.VITE_BETA_NOTICE);
 // Empty means the Sentry backend is never initialised. PostHog is the default
 // one; either, both or neither can be configured. See lib/observability.
 export const SENTRY_DSN = runtimeEnv("SENTRY_DSN", import.meta.env.VITE_SENTRY_DSN);

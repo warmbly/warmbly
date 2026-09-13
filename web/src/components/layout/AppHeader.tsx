@@ -23,6 +23,7 @@ import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
 import OutboxIndicator from "@/components/app/unibox/compose/OutboxIndicator";
 import { NotificationBell } from "./NotificationBell";
 import { OrgSwitcher } from "./OrgSwitcher";
+import { BetaPill } from "./BetaPill";
 import { PlanPill } from "./PlanPill";
 import { VersionPill } from "./VersionPill";
 import { CreditsMeter } from "./CreditsMeter";
@@ -144,6 +145,10 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
             </div>
 
             <div className="flex items-center gap-2 px-2 sm:px-4 shrink-0">
+                {/* Outside the sm-only group on purpose: once the dialog is
+                    dismissed this pill is the only way back to it, and a phone
+                    is exactly where someone dismisses it fastest. */}
+                <BetaPill />
                 <div className="hidden sm:flex items-center gap-2">
                     <PlanPill />
                     <VersionPill />

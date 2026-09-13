@@ -264,6 +264,12 @@ const FreeWorkspaceMailboxLimit = 10
 type SubscriptionWithLimits struct {
 	Subscription
 	RateLimits *RealtimeRateLimits `json:"rate_limits,omitempty"`
+	// Managed is IsManaged resolved server-side. A granted plan never touches
+	// Stripe, so Status stays whatever it was ("incomplete" on a workspace
+	// that never subscribed) and a client deciding "paid" from Status alone
+	// locks a workspace that is entitled to everything. Expiry is applied
+	// here so no client has to reimplement it.
+	Managed bool `json:"managed"`
 }
 
 // RealtimeRateLimits contains WebSocket-specific rate limits
