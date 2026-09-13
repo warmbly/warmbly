@@ -105,7 +105,7 @@ describe("unibox desktop layout (#473)", SUITE, () => {
     beforeEach(() => {
         resetScrollTops();
         useAppStore.setState({
-            sidebarCollapsed: false,
+            navCollapsed: false,
             uniboxListWidth: UNIBOX_LIST_DEFAULT_WIDTH,
             uniboxContactRailOpen: true,
         });
@@ -131,7 +131,7 @@ describe("unibox desktop layout (#473)", SUITE, () => {
                 fireEvent.click(collapse);
             });
 
-            expect(useAppStore.getState().sidebarCollapsed).toBe(true);
+            expect(useAppStore.getState().navCollapsed).toBe(true);
             expect(aside.className).toContain("md:w-14");
             // Same destination, no VISIBLE label: the name moves into a
             // visually hidden span, because lucide marks its svg aria-hidden
@@ -162,7 +162,7 @@ describe("unibox desktop layout (#473)", SUITE, () => {
                 fireEvent.keyDown(search, { key: "b" });
             });
 
-            expect(useAppStore.getState().sidebarCollapsed).toBe(false);
+            expect(useAppStore.getState().navCollapsed).toBe(false);
         });
     });
 

@@ -87,7 +87,7 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // Handle b for sidebar collapse (AppNav renders from sidebarCollapsed)
+      // Handle b for sidebar collapse (AppNav renders from navCollapsed)
       if (key === 'b' && !event.ctrlKey && !event.metaKey) {
         event.preventDefault()
         toggleSidebar()

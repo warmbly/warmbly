@@ -14,14 +14,21 @@ export const UNIBOX_LIST_DEFAULT_WIDTH = 360
 // writes localStorage straight into state, so the clamp has to run there too or
 // a hand-edited (or newly out-of-range) value reaches the DOM unchecked.
 export const clampUniboxListWidth = (w: unknown): number => {
-  const n = typeof w === 'number' ? w : Number(w)
-  if (!Number.isFinite(n)) return UNIBOX_LIST_DEFAULT_WIDTH
-  return Math.round(Math.min(UNIBOX_LIST_MAX_WIDTH, Math.max(UNIBOX_LIST_MIN_WIDTH, n)))
+  // Only a real number survives. Coercing would be worse than useless here:
+  // `Number(null)` is 0, so a null in storage would silently become the minimum
+  // width instead of falling back to the default.
+  if (typeof w !== 'number' || !Number.isFinite(w)) return UNIBOX_LIST_DEFAULT_WIDTH
+  return Math.round(Math.min(UNIBOX_LIST_MAX_WIDTH, Math.max(UNIBOX_LIST_MIN_WIDTH, w)))
 }
 
 export interface UISlice {
-  // Sidebar
-  sidebarCollapsed: boolean
+  // Sidebar. Deliberately NOT the old `sidebarCollapsed` key: that one was
+  // persisted and toggled by `b` for a long time while nothing rendered from
+  // it, so a stored `true` reflects a keystroke nobody remembers. A new key
+  // starts everyone expanded without needing a migration, which zustand would
+  // not have run anyway: it only migrates a store whose version is a number,
+  // and every store written before this had no version field at all.
+  navCollapsed: boolean
   sidebarMobileOpen: boolean
 
   // Theme
@@ -82,7 +89,7 @@ const getResolvedTheme = (_theme: Theme): 'light' | 'dark' => {
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) => ({
   // Sidebar
-  sidebarCollapsed: false,
+  navCollapsed: false,
   sidebarMobileOpen: false,
 
   // Theme
@@ -102,9 +109,9 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   uniboxContactRailOpen: true,
 
   // Actions - Sidebar
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  setSidebarCollapsed: (sidebarCollapsed) =>
-    set((state) => (state.sidebarCollapsed === sidebarCollapsed ? state : { sidebarCollapsed })),
+  toggleSidebar: () => set((state) => ({ navCollapsed: !state.navCollapsed })),
+  setSidebarCollapsed: (navCollapsed) =>
+    set((state) => (state.navCollapsed === navCollapsed ? state : { navCollapsed })),
   setSidebarMobileOpen: (sidebarMobileOpen) =>
     set((state) => (state.sidebarMobileOpen === sidebarMobileOpen ? state : { sidebarMobileOpen })),
 

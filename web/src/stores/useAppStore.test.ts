@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { useAppStore } from './useAppStore'
 import {
   UNIBOX_LIST_DEFAULT_WIDTH,
@@ -16,7 +16,7 @@ describe('useAppStore', () => {
       isAuthenticated: false,
       isLoading: true,
       theme: 'system',
-      sidebarCollapsed: false,
+      navCollapsed: false,
       sidebarMobileOpen: false,
       tagsModalOpen: false,
       foldersModalOpen: false,
@@ -35,14 +35,14 @@ describe('useAppStore', () => {
 
   describe('UI Slice', () => {
     it('should toggle sidebar', () => {
-      const { toggleSidebar, sidebarCollapsed } = useAppStore.getState()
-      expect(sidebarCollapsed).toBe(false)
+      const { toggleSidebar, navCollapsed } = useAppStore.getState()
+      expect(navCollapsed).toBe(false)
 
       toggleSidebar()
-      expect(useAppStore.getState().sidebarCollapsed).toBe(true)
+      expect(useAppStore.getState().navCollapsed).toBe(true)
 
       toggleSidebar()
-      expect(useAppStore.getState().sidebarCollapsed).toBe(false)
+      expect(useAppStore.getState().navCollapsed).toBe(false)
     })
 
     it('should set theme', () => {
@@ -86,9 +86,57 @@ describe('useAppStore', () => {
       setUniboxListWidth(400.6)
       expect(useAppStore.getState().uniboxListWidth).toBe(401)
 
-      // A rehydrated garbage value falls back rather than rendering NaN.
+      // A non-finite value falls back rather than rendering `width: NaNpx`.
       setUniboxListWidth(Number.NaN)
       expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_DEFAULT_WIDTH)
+    })
+
+    // Rehydration does NOT go through the setters: zustand merges the stored
+    // object into state directly, so the clamp above proves nothing about what
+    // localStorage can put on screen. These drive the real persist path.
+    describe('rehydration', () => {
+      const original = useAppStore.persist.getOptions().storage
+
+      const rehydrateFrom = async (value: unknown) => {
+        useAppStore.persist.setOptions({
+          storage: {
+            getItem: () => value as never,
+            setItem: () => {},
+            removeItem: () => {},
+          },
+        })
+        await useAppStore.persist.rehydrate()
+      }
+
+      afterEach(() => {
+        useAppStore.persist.setOptions({ storage: original })
+      })
+
+      it('clamps a stored width that is out of range or not a number', async () => {
+        await rehydrateFrom({ state: { uniboxListWidth: 99999 } })
+        expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_MAX_WIDTH)
+
+        await rehydrateFrom({ state: { uniboxListWidth: 4 } })
+        expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_MIN_WIDTH)
+
+        await rehydrateFrom({ state: { uniboxListWidth: null } })
+        expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_DEFAULT_WIDTH)
+      })
+
+      it('ignores the old key that `b` filled in while nothing rendered it', async () => {
+        // A store written before this feature carries `sidebarCollapsed: true`
+        // for a keystroke the user does not remember, and no version field at
+        // all — so zustand would not have run a migrate even if one existed
+        // (it only migrates when the stored version is a number). The new key
+        // sidesteps the whole problem: it is simply absent, so the nav opens
+        // expanded.
+        await rehydrateFrom({ state: { sidebarCollapsed: true } })
+        expect(useAppStore.getState().navCollapsed).toBe(false)
+
+        // A collapse made deliberately since then is honoured.
+        await rehydrateFrom({ state: { navCollapsed: true } })
+        expect(useAppStore.getState().navCollapsed).toBe(true)
+      })
     })
 
     it('remembers the unibox contact rail toggle', () => {

@@ -70,7 +70,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
     // The logo zone spans the sidebar column, so it has to collapse with it or
     // the breadcrumb stops lining up with the content panel below.
     const isMobile = useIsMobile();
-    const navCollapsed = useAppStore((s) => s.sidebarCollapsed) && !isMobile;
+    const navCollapsed = useAppStore((s) => s.navCollapsed) && !isMobile;
 
     // Path under /app — first segment is the section ("emails", "admin", ...),
     // subsequent ones are subpages. Don't show UUID-looking segments verbatim

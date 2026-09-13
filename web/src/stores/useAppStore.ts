@@ -38,16 +38,6 @@ export const useAppStore = create<AppStore>()(
       }),
       {
         name: 'warmbly-storage',
-        // v1: `sidebarCollapsed` was persisted and toggled by the documented `b`
-        // key for a long time while nothing rendered from it, so anyone who ever
-        // pressed it has `true` sitting in localStorage for an action they do not
-        // remember. Now that the rail reads the flag, that would silently greet
-        // them with an icon-only nav. Reset it once, on the upgrade only.
-        version: 1,
-        migrate: (persisted, from) =>
-          from < 1
-            ? { ...(persisted as Record<string, unknown>), sidebarCollapsed: false }
-            : persisted,
         // Rehydration does not go through the slice setters, so re-clamp the one
         // stored value that has bounds. Without this a value from an older build
         // (or a hand-edited one) renders as `width: NaNpx`.
@@ -62,7 +52,7 @@ export const useAppStore = create<AppStore>()(
         partialize: (state) => ({
           // Only persist UI preferences
           theme: state.theme,
-          sidebarCollapsed: state.sidebarCollapsed,
+          navCollapsed: state.navCollapsed,
           // Assistant panel layout (edge + width + floating window geometry)
           agentSide: state.agentSide,
           agentWidth: state.agentWidth,
@@ -89,7 +79,7 @@ export const useTheme = () =>
   useAppStore(useShallow((state) => ({ theme: state.theme, resolvedTheme: state.resolvedTheme })))
 export const useSidebar = () =>
   useAppStore(useShallow((state) => ({
-    collapsed: state.sidebarCollapsed,
+    collapsed: state.navCollapsed,
     mobileOpen: state.sidebarMobileOpen,
     toggle: state.toggleSidebar,
     setCollapsed: state.setSidebarCollapsed,

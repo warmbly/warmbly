@@ -1063,7 +1063,7 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
     // off-canvas drawer with the whole viewport to itself, so collapsing it
     // there would only take away the labels for nothing.
     const isMobile = useIsMobile();
-    const collapsed = useAppStore((s) => s.sidebarCollapsed);
+    const collapsed = useAppStore((s) => s.navCollapsed);
     const toggleSidebar = useAppStore((s) => s.toggleSidebar);
     const iconOnly = collapsed && !isMobile;
 
