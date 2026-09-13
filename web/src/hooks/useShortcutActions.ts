@@ -66,9 +66,3 @@ export function shortcutAction<K extends keyof ShortcutActions>(
     }
     return null;
 }
-
-// Test seam: a module-level registry outlives a test's render tree only if a
-// component leaks, but an assertion is cheaper than a debugging session.
-export function __shortcutProviderCount() {
-    return stack.length;
-}
