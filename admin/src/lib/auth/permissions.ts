@@ -20,6 +20,7 @@ export const AdminPerm = {
     ManageRateLimits: 1 << 13,
     ManageSettings: 1 << 14,
     GrantAdminAccess: 1 << 19,
+    ManageTesters: 1 << 22,
     ViewOrganizations: 1 << 20,
     ManageOrganizations: 1 << 21,
 } as const;
