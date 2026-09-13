@@ -123,10 +123,6 @@ type WarmupPoolHealthSummary struct {
 type WarmupHealthMetrics struct {
 	SentLast7d int `json:"sent_last_7d"`
 
-	// SpamReportsLast7d is the combined warmup-pool spam signal (placement +
-	// user complaints). Retained for callers that want a single number.
-	SpamReportsLast7d int `json:"spam_reports_last_7d"`
-
 	// SpamPlacementsLast7d counts warmup messages that landed in the
 	// recipient's Junk/Spam folder on delivery. SpamPlacementRate is the
 	// ratio against SentLast7d.

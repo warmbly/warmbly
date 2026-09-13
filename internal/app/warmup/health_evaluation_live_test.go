@@ -18,16 +18,14 @@ import (
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable \
 //	  go test ./internal/app/warmup/ -run Live -v
 //
-// Issue #195: the invalid-token band never fired. GetParticipantHealth compared
-// the driver's not-found error with `err == sql.ErrNoRows`, but the pool is pgx,
-// whose ErrNoRows is a proxy error that wraps sql.ErrNoRows rather than being
-// it. The comparison was therefore always false and "this account is not in
-// this pool" surfaced as a hard error. evaluateAndPersistAnyPool probes
-// "premium" first, so for every free-pool account the very first probe failed
-// and the account's own pool was never reached: no evaluation, ever.
-//
-// The pool probe is pure SQL and the whole failure lives in the driver
-// boundary, so it only reproduces against a real database.
+// Issue #195: health evaluation never ran for a free-pool account.
+// GetParticipantHealth compared the driver's not-found error with
+// `err == sql.ErrNoRows`, but the pool is pgx, whose ErrNoRows wraps
+// sql.ErrNoRows rather than being it, so "not in this pool" surfaced as a hard
+// error and the account's own pool was never reached. The probe is pure SQL and
+// the failure lives in the driver boundary, so it only reproduces live. The
+// floor test proves health_signals_from with spam placements, a band that
+// still exists.
 
 func liveWarmupRepo(t *testing.T) (repository.WarmupRepository, *db.DB) {
 	t.Helper()
@@ -52,17 +50,11 @@ type freePoolAccount struct {
 
 func newFreePoolAccount(t *testing.T, handle *db.DB) *freePoolAccount {
 	t.Helper()
-	ctx := context.Background()
 	pool := handle.Pool
 
 	f := &freePoolAccount{user: uuid.New(), org: uuid.New(), account: uuid.New()}
 
-	exec := func(sql string, args ...any) {
-		t.Helper()
-		if _, err := pool.Exec(ctx, sql, args...); err != nil {
-			t.Fatalf("fixture %q: %v", sql[:min(60, len(sql))], err)
-		}
-	}
+	exec := func(sql string, args ...any) { t.Helper(); execSQL(t, pool, sql, args...) }
 
 	exec(`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Health', 'Live')`,
 		f.user, "wh-"+f.user.String()[:8]+"@test.local")
@@ -73,10 +65,9 @@ func newFreePoolAccount(t *testing.T, handle *db.DB) *freePoolAccount {
 	      VALUES ($1, $2, $3, $4, 'Health', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
 		f.account, f.user, f.org, "wh-"+f.account.String()[:8]+"@test.local")
 
-	ensureWarmupPools(t, pool)
+	pools := ensureWarmupPools(t, pool)
 	// Free pool only. No premium row, which is the whole point.
-	exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id)
-	      SELECT id, $1 FROM warmup_pools WHERE pool_type = 'free' ORDER BY created_at LIMIT 1`, f.account)
+	exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id) VALUES ($1, $2)`, pools["free"], f.account)
 
 	t.Cleanup(func() {
 		c := context.Background()
@@ -154,23 +145,19 @@ func TestLiveHealthSignalsBeforeTheFloorAreNotCounted(t *testing.T) {
 	f := newFreePoolAccount(t, handle)
 	svc := NewService(repo)
 	ctx := context.Background()
-	exec := func(sql string, args ...any) {
-		t.Helper()
-		if _, err := handle.Pool.Exec(ctx, sql, args...); err != nil {
-			t.Fatalf("fixture %q: %v", sql[:min(60, len(sql))], err)
-		}
-	}
-
-	// A full placement sample, every send landing in spam, and all of it from
-	// before the floor. Sends are counted by day, so they stay in view; the
+	// placements is one placement per send, a full sample, stamped at the
+	// given offset from now. Sends are counted by day, so they stay in view;
 	// placements carry a timestamp, which is what the floor is applied to.
-	exec(`INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
-	      VALUES ($1, CURRENT_DATE, $2, 0, $2)`, f.account, minSpamPlacementSample)
-	for i := 0; i < minSpamPlacementSample; i++ {
-		exec(`INSERT INTO warmup_spam_reports (reporter_account_id, reported_account_id, message_id, report_type, created_at)
-		      VALUES ($1, $1, $2, 'spam_placement', NOW() - INTERVAL '2 hours')`, f.account, uuid.NewString())
+	placements := func(offset string) {
+		execSQL(t, handle.Pool, `
+			INSERT INTO warmup_spam_reports (reporter_account_id, reported_account_id, message_id, report_type, created_at)
+			SELECT $1, $1, gen_random_uuid()::text, 'spam_placement', NOW() - $2::interval
+			FROM generate_series(1, $3)`, f.account, offset, minSpamPlacementSample)
 	}
-	exec(`UPDATE warmup_pool_participants SET health_signals_from = NOW() - INTERVAL '1 hour'
+	execSQL(t, handle.Pool, `INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
+	      VALUES ($1, CURRENT_DATE, $2, 0, $2)`, f.account, minSpamPlacementSample)
+	placements("2 hours")
+	execSQL(t, handle.Pool, `UPDATE warmup_pool_participants SET health_signals_from = NOW() - INTERVAL '1 hour'
 	      WHERE email_account_id = $1`, f.account)
 
 	health, err := svc.(*service).evaluateAndPersistAnyPool(ctx, f.account)
@@ -183,10 +170,7 @@ func TestLiveHealthSignalsBeforeTheFloorAreNotCounted(t *testing.T) {
 	}
 
 	// The same placements after the floor are the catastrophic band.
-	for i := 0; i < minSpamPlacementSample; i++ {
-		exec(`INSERT INTO warmup_spam_reports (reporter_account_id, reported_account_id, message_id, report_type)
-		      VALUES ($1, $1, $2, 'spam_placement')`, f.account, uuid.NewString())
-	}
+	placements("0 seconds")
 	health, err = svc.(*service).evaluateAndPersistAnyPool(ctx, f.account)
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)

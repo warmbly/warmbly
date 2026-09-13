@@ -204,7 +204,7 @@ const faq = [
   ['Is deliverability tracked per mailbox or per account?',
    'Per mailbox. Each one is scored and capped on its own, so a single account can hold five mailboxes in five different states at once.'],
   ['What pulls a mailbox out of the pool automatically?',
-   'Any of these: three bad warmup tokens in 24 hours, spam placement at or above 20% with at least 20 warmup deliveries in the last 7 days, a complaint rate at or above 0.10%, or a bounce rate at or above 5%.'],
+   'Any of these: spam placement at or above 20% with at least 20 warmup deliveries in the last 7 days, a complaint rate at or above 0.10%, a bounce rate at or above 5%, or tampering with warmup mail the mailbox received.'],
   ['How does suppression carry across campaigns?',
    'Bounces, complaints, and unsubscribes are workspace-wide. Once someone is suppressed, every running campaign skips them on the next send, and nothing else ever queues to them.'],
   ['Why is the cap only 50 a day?',

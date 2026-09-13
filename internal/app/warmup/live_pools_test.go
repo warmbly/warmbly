@@ -4,25 +4,33 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ensureWarmupPools creates the free and premium pools when they are missing.
-// Pools are seed data, not migration data, so a scratch database has none;
-// before this the package's live fixtures either skipped on that or inserted
-// a participant row for a pool that was not there and failed on its absence,
-// which is why they had never run on a fresh database. A seeded database is
-// left as it is.
-func ensureWarmupPools(t *testing.T, pool *pgxpool.Pool) {
+// The canonical pool ids the sandbox seeds; every live suite that needs a pool
+// keys on them, so a scratch database ends up with the same rows a dev one has.
+var livePoolIDs = map[string]uuid.UUID{
+	"free":    uuid.MustParse("77777777-aaaa-0000-0000-000000000001"),
+	"premium": uuid.MustParse("77777777-aaaa-0000-0000-000000000002"),
+}
+
+// ensureWarmupPools creates the canonical pools when absent. Pools are seed
+// data, not migration data, so a scratch database has none until this runs.
+func ensureWarmupPools(t *testing.T, pool *pgxpool.Pool) map[string]uuid.UUID {
 	t.Helper()
-	ctx := context.Background()
-	for _, p := range []struct{ kind, name string }{{"free", "Free warmup pool"}, {"premium", "Premium warmup pool"}} {
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO warmup_pools (pool_type, name)
-			SELECT $1::warmup_pool_type, $2
-			WHERE NOT EXISTS (SELECT 1 FROM warmup_pools WHERE pool_type = $1::warmup_pool_type)`,
-			p.kind, p.name); err != nil {
-			t.Fatalf("ensure %s pool: %v", p.kind, err)
-		}
+	execSQL(t, pool, `
+		INSERT INTO warmup_pools (id, pool_type, name, description, max_participants)
+		VALUES ($1, 'free', 'Free warmup pool', 'Created by the live tests', 1000),
+		       ($2, 'premium', 'Premium warmup pool', 'Created by the live tests', 1000)
+		ON CONFLICT (id) DO NOTHING`, livePoolIDs["free"], livePoolIDs["premium"])
+	return livePoolIDs
+}
+
+// execSQL runs one fixture statement and fails the test on error.
+func execSQL(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), sql, args...); err != nil {
+		t.Fatalf("fixture %q: %v", sql[:min(60, len(sql))], err)
 	}
 }

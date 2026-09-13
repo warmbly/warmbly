@@ -8,12 +8,12 @@
 //   4. Pending appeals with one-click approve/reject
 //
 // Nothing here polls: the realtime spine's warmup group invalidates
-// ["admin","warmup"] on ACCOUNT and WARMUP events. The abuse and action
+// ["admin","warmup"] on ACCOUNT and WARMUP events. The action
 // history tab (?tab=) comes from /admin/warmup/actions.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Activity, AlertTriangle, CheckCircle2, Flame, History, LayoutDashboard, ShieldOff, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";

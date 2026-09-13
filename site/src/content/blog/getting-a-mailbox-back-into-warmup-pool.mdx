@@ -43,7 +43,6 @@ Match the fix to the signal you found:
 | Complaints over 0.10% | Content, targeting, no easy unsubscribe | Tighten targeting, add one-click unsubscribe, cut frequency |
 | Bounces over 5% | Stale or unverified list | Verify addresses, remove hard bounces, stop importing scraped lists |
 | DMARC alignment fails | SPF/DKIM pass but don't align to From | Align the visible From domain with a signing or SPF-authorized domain |
-| Invalid warmup tokens | Pool gaming or misclassification | Investigate the mailbox before requalifying |
 
 Google requires SPF, DKIM, and DMARC with alignment plus one-click unsubscribe for bulk and marketing mail. If any of that is missing, add it now. It's the entry requirement, and you can't recover reputation while failing it.
 

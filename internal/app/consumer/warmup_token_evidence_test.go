@@ -30,22 +30,12 @@ func (s *stubWarmupTokenRepo) FindWarmupToken(context.Context, uuid.UUID) (*mode
 	panic("FindWarmupToken: the inbound path has no reason to read a token twice")
 }
 
-// Every invalid-token attempt on a live self-host was the mailbox re-reading
-// its own mail: 88 of 211 a message whose token had expired, 67 the Sent copy
-// carrying the recipient's token, and 56 a reconnected mailbox replaying a
-// history whose tokens had cascaded away. None was tampering, and three in a
-// day blocked a mailbox from the pool for a month.
-//
-// The rule that survives that data is that no inbound token is evidence
-// against the mailbox that received it. The one shape that looked like
-// evidence, a token naming another pair, is the one an attacker can put in
-// any inbox at will, and the recipient check already makes it worthless.
-// Since #482 there is nothing left to charge with: the signal, its band and
-// its table are gone. What remains to pin is that no other shape is filed as
-// warmup and that the path reads the token exactly once. Acceptance of a
-// live token for this mailbox is exercised against the real store in
+// No inbound token is evidence against the mailbox that received it (#468,
+// #481, #482): whatever is not a live token for this mailbox is filed as
+// ordinary mail, and the path reads the token exactly once. Acceptance of a
+// live token is exercised against the real store in
 // warmup_verification_live_test.go.
-func TestHandleWarmupEmailNeverChargesTheRecipient(t *testing.T) {
+func TestHandleWarmupEmailFilesOtherTokensAsOrdinaryMail(t *testing.T) {
 	mailbox := uuid.New()
 	partner := uuid.New()
 	token := uuid.New()

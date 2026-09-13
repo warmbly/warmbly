@@ -690,7 +690,7 @@ Signals used:
 
 Current auto-block thresholds in code:
 
-- spam score `> 50`
+- spam score `> 50` is documented intent, not code: nothing reads `spam_score` to decide a state (#491); the bands that act are placement, complaint, bounce and tampering
 
 Relevant code:
 
@@ -715,7 +715,6 @@ Use separate metrics for separate failure modes:
 - user complaint rate: recipients explicitly mark mail as spam
 - spam-folder placement rate: warmup or seed observations indicate messages are landing in junk/spam
 - bounce rate: especially hard bounces
-- suspicious warmup-token behavior
 - mailbox-sync abuse and provider throttling
 
 Recommended internal policy for shared paid pools:

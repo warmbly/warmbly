@@ -1,6 +1,4 @@
--- Reverses 000153: the table comes back empty, as it was in the baseline. The
--- rows it held were attempts charged to the wrong party, so nothing of value
--- is lost in either direction.
+-- Reverses 000153: the table returns empty, as the baseline created it.
 CREATE TABLE public.warmup_invalid_token_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     email_account_id uuid NOT NULL,

@@ -651,7 +651,6 @@ func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID, signalsF
 
 	return &models.WarmupHealthMetrics{
 		SentLast7d:           sentLast7d,
-		SpamReportsLast7d:    spamPlacementsLast7d + userComplaintsLast7d,
 		SpamPlacementsLast7d: spamPlacementsLast7d,
 		SpamPlacementRate:    placementRate,
 		UserComplaintsLast7d: userComplaintsLast7d,

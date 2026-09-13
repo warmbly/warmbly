@@ -9,7 +9,7 @@ import (
 
 // Operator-facing read models for the admin panel's operations pages: mailbox
 // sync, in-flight sends, dead letters, scheduled jobs, fleet placement,
-// workspace transfers and abuse signals. Every row here is instance-wide and
+// workspace transfers and insight. Every row here is instance-wide and
 // carries the organization it belongs to, because the operator reads across
 // workspaces.
 

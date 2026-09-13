@@ -26,7 +26,6 @@ func TestEvaluateMetricsSpamThresholds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			decision := evaluateMetrics(&models.WarmupHealthMetrics{
 				SentLast7d:        20,
-				SpamReportsLast7d: 4,
 				SpamPlacementRate: tc.rate,
 			}, now)
 
@@ -160,7 +159,6 @@ func TestEvaluateMetricsIgnoresSmallSamples(t *testing.T) {
 
 	decision := evaluateMetrics(&models.WarmupHealthMetrics{
 		SentLast7d:        19,
-		SpamReportsLast7d: 19,
 		SpamPlacementRate: 100,
 	}, now)
 
