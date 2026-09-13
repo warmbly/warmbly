@@ -117,6 +117,16 @@ func (s *authService) loginCodeRequired(ctx context.Context, userID uuid.UUID, u
 	if !s.mailDelivers {
 		return false
 	}
+	// A named account an operator excused, for a reviewer or auditor who has
+	// to sign in and cannot read this instance's mail. Checked before the
+	// policy so it holds under "always" too, which is the mode that would
+	// otherwise make such a review impossible. A read failure is not an
+	// exemption: the code is still demanded.
+	if exempt, err := s.userRepository.IsLoginCodeExempt(ctx, userID); err != nil {
+		errs.CaptureExceptionContext(ctx, err, errs.Tag("area", "login_code_exempt"))
+	} else if exempt {
+		return false
+	}
 	switch s.policy.LoginCode {
 	case config.LoginCodeOff:
 		// An operator who turned codes off has made that choice explicitly,

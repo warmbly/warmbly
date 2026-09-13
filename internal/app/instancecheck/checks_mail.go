@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/warmbly/warmbly/internal/config"
 )
@@ -18,6 +19,7 @@ func mailChecks() []check {
 		{id: "mail_identity_unset", run: checkMailIdentityUnset},
 		{id: "mail_from_domain_mismatch", run: checkMailFromDomainMismatch},
 		{id: "login_code_demoted", run: checkLoginCodeDemoted},
+		{id: "login_code_exempt_accounts", run: checkLoginCodeExemptAccounts},
 	}
 }
 
@@ -95,5 +97,52 @@ func checkLoginCodeDemoted(ctx context.Context, d Deps, in Input) *Finding {
 	return result(CategoryMail, SeverityInfo, "Login codes were demoted",
 		"AUTH_LOGIN_CODE is set to always, but the mail transport does not deliver, so it has been demoted to new_device. "+
 			"Otherwise nobody could ever complete a login.",
+		docsLoginCodes)
+}
+
+// checkLoginCodeExemptAccounts lists accounts excused from the emailed login
+// code. Granted deliberately and for a reason, so this is not an error; it is
+// here because the failure mode is forgetting. An exemption granted for a
+// two-week vendor review is still there a year later unless something says so
+// on every run.
+func checkLoginCodeExemptAccounts(ctx context.Context, d Deps, in Input) *Finding {
+	if d.DB == nil {
+		return nil
+	}
+	rows, err := d.DB.Query(ctx, `
+		SELECT email, login_code_exempt_reason, login_code_exempt_at
+		FROM users
+		WHERE login_code_exempt
+		ORDER BY login_code_exempt_at NULLS FIRST`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var lines []string
+	for rows.Next() {
+		var email string
+		var reason *string
+		var at *time.Time
+		if err := rows.Scan(&email, &reason, &at); err != nil {
+			return nil
+		}
+		line := email
+		if reason != nil && strings.TrimSpace(*reason) != "" {
+			line += " (" + strings.TrimSpace(*reason) + ")"
+		}
+		if at != nil {
+			line += ", since " + at.Format("2 Jan 2006")
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+
+	return result(CategoryMail, SeverityWarning, "Accounts are exempt from the login code",
+		fmt.Sprintf("%s signs in with a password and captcha alone, with no emailed code, whatever AUTH_LOGIN_CODE says. "+
+			"Remove an exemption whose reason no longer holds with `warmblyctl user login-code-exempt --email <address> --clear`.",
+			strings.Join(lines, "; ")),
 		docsLoginCodes)
 }

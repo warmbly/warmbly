@@ -102,6 +102,7 @@ var commands = []command{
 	{"user list", "List accounts; --admin answers whether any platform admin survives", composeExec + "user list --admin"},
 	{"user reset-password", "Print a one-time reset link, or set the password from stdin", composeExec + "user reset-password --email you@example.com"},
 	{"user grant-admin", "Give an account a platform admin role", composeExec + "user grant-admin --email you@example.com --role super"},
+	{"user login-code-exempt", "Excuse one account from the emailed login code, for a reviewer who cannot read this instance's mail", composeExec + "user login-code-exempt --email reviewer@example.com --reason 'Google OAuth verification'"},
 	{"user revoke-admin", "Take platform admin away from an account", composeExec + "user revoke-admin --email old@example.com"},
 	{"user disable-2fa", "Clear an account's TOTP enrollment after a lost authenticator", composeExec + "user disable-2fa --email you@example.com"},
 	{"hash-password", "Print an argon2 hash for WARMBLY_BOOTSTRAP_PASSWORD_HASH", "printf '%s' 'your-password' | docker compose -p warmbly exec -T backend warmblyctl hash-password"},

@@ -24,6 +24,19 @@ type UserRepository interface {
 
 	CreateUser(ctx context.Context, email *mail.Address, password string) (*models.User, error)
 	GetUser(ctx context.Context, id uuid.UUID) (*models.User, error)
+
+	// IsLoginCodeExempt reports whether this account skips the emailed login
+	// code. Read on the login path, so it is a single boolean rather than a
+	// whole user load.
+	IsLoginCodeExempt(ctx context.Context, id uuid.UUID) (bool, error)
+
+	// SetLoginCodeExempt grants or clears the exemption. A reason is required
+	// to grant one; the database refuses a blank one too.
+	SetLoginCodeExempt(ctx context.Context, id uuid.UUID, exempt bool, reason string, by *uuid.UUID) error
+
+	// ListLoginCodeExempt returns every exempt account, for the instance check
+	// that keeps a forgotten exemption visible.
+	ListLoginCodeExempt(ctx context.Context) ([]models.LoginCodeExemption, error)
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	SetFreeTrialUsed(ctx context.Context, userID uuid.UUID) error
 	UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error
@@ -258,4 +271,63 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max]
+}
+
+// IsLoginCodeExempt reads the one flag the login path needs.
+func (r *userRepository) IsLoginCodeExempt(ctx context.Context, id uuid.UUID) (bool, error) {
+	var exempt bool
+	err := r.DB.QueryRow(ctx, `SELECT login_code_exempt FROM users WHERE id = $1`, id).Scan(&exempt)
+	if err == pgx.ErrNoRows {
+		return false, nil
+	}
+	return exempt, err
+}
+
+// SetLoginCodeExempt grants or clears the exemption. Clearing wipes the
+// reason with it, so a cleared row cannot be mistaken for a live exemption.
+func (r *userRepository) SetLoginCodeExempt(ctx context.Context, id uuid.UUID, exempt bool, reason string, by *uuid.UUID) error {
+	if !exempt {
+		_, err := r.DB.Exec(ctx, `
+			UPDATE users
+			SET login_code_exempt = false,
+			    login_code_exempt_reason = NULL,
+			    login_code_exempt_by = NULL,
+			    login_code_exempt_at = NULL,
+			    updated_at = NOW()
+			WHERE id = $1`, id)
+		return err
+	}
+	_, err := r.DB.Exec(ctx, `
+		UPDATE users
+		SET login_code_exempt = true,
+		    login_code_exempt_reason = $2,
+		    login_code_exempt_by = $3,
+		    login_code_exempt_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1`, id, reason, by)
+	return err
+}
+
+// ListLoginCodeExempt is ordered oldest first, because the exemption most
+// likely to have been forgotten is the one that has been there longest.
+func (r *userRepository) ListLoginCodeExempt(ctx context.Context) ([]models.LoginCodeExemption, error) {
+	rows, err := r.DB.Query(ctx, `
+		SELECT id, email, login_code_exempt_reason, login_code_exempt_at
+		FROM users
+		WHERE login_code_exempt
+		ORDER BY login_code_exempt_at NULLS FIRST`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []models.LoginCodeExemption{}
+	for rows.Next() {
+		var e models.LoginCodeExemption
+		if err := rows.Scan(&e.UserID, &e.Email, &e.Reason, &e.GrantedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
