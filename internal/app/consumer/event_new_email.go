@@ -154,7 +154,9 @@ func extractHeaderValue(msg *models.EmailMessageStoreData, headerName string) st
 	return ""
 }
 
-// handleWarmupEmail handles a detected warmup email
+// handleWarmupEmail verifies a message carrying a warmup token. Only a live
+// token naming this mailbox as recipient is accepted; everything else is filed
+// as ordinary mail, and charged against the mailbox only when it is evidence.
 func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventNewEmail, tokenStr string) (bool, error) {
 	if s.WarmupRepo == nil {
 		return false, nil
@@ -162,26 +164,23 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 
 	tokenUUID, err := uuid.Parse(tokenStr)
 	if err != nil {
-		// Invalid format → record attempt
-		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, uuid.Nil, nil, 0)
-		return false, nil // Process as normal email
+		// Not a token this instance minted. It cannot be redeemed for anyone's
+		// credit, so it is a mangled marker, not a forgery, and not an attempt.
+		return false, nil
 	}
 
 	token, err := s.WarmupRepo.GetWarmupToken(ctx, tokenUUID)
-	if err != nil || token == nil {
-		// Consumed, expired, or gone: not a verdict on its own.
-		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, tokenUUID, nil, 5)
-		return false, nil
+	if err != nil {
+		// A failed lookup is a failed question, not an answer.
+		return false, fmt.Errorf("warmup token lookup: %w", err)
+	}
+	if token != nil && token.RecipientAccountID == e.Message.EmailID {
+		s.acceptWarmupEmail(ctx, e, token)
+		return true, nil
 	}
 
-	// Verify recipient matches
-	if token.RecipientAccountID != e.Message.EmailID {
-		s.recordSuspiciousWarmupToken(ctx, e, tokenStr, tokenUUID, token, 0)
-		return false, nil
-	}
-
-	s.acceptWarmupEmail(ctx, e, token)
-	return true, nil
+	s.recordForeignWarmupToken(ctx, e, tokenStr, tokenUUID, token)
+	return false, nil
 }
 
 // handleUnmarkedWarmupEmail verifies warmup mail that arrived without its
@@ -410,69 +409,42 @@ func (s *JobsService) recipientProviderDomain(ctx context.Context, accountID uui
 	return acc.Provider, domain
 }
 
-// recordSuspiciousWarmupToken records an unverifiable token only when it could
-// not be the mailbox's own mail. A mailbox re-reading its own history is the
-// common case and is not tampering: its Sent copy carries the recipient's
-// token, a re-synced message carries one that has since expired, and a
-// reconnect gives the mailbox a new row while warmup_tokens cascades off the
-// old one, leaving tokens that resolve to nothing. Only the remainder is signal.
+// recordForeignWarmupToken charges the mailbox for the one token shape that
+// is evidence of tampering: a token that still exists and names neither side
+// of this mailbox. Every other unverifiable token is either the mailbox's own
+// mail coming back around (its Sent copy carries the recipient's token, a
+// resync re-reads one that has since expired, a reconnect cascades the old
+// row's tokens away) or a marker that resolves to nothing, and none of those
+// can be redeemed for credit, so none is worth an attempt. On a live self-host
+// that distinction was the whole difference: 211 attempts recorded, 0 evidence.
 //
-// known is the token row the caller already resolved: passing it keeps a failed
-// re-read from turning a token we know names another pair into an unknown one.
-func (s *JobsService) recordSuspiciousWarmupToken(ctx context.Context, e *models.JobEventNewEmail, tokenStr string, tokenID uuid.UUID, known *models.WarmupToken, scoreDelta int) {
-	if s.resolveWarmupTokenOwnership(ctx, e, tokenID, known) {
-		return
-	}
-	s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, scoreDelta)
-}
-
-// warmupTokenIsOwnMail reports whether the message holding this token is the
-// mailbox's own, in any of the three shapes a sync produces. Pure so the
-// decision can be exercised without a mailbox or a token store.
-//
-// folder is the canonical folder the message sits in, tok the token row with
-// GetWarmupToken's consumed/expired filters removed (nil when it no longer
-// exists), and mailboxAge how long the mailbox row has existed, negative when
-// that could not be established.
-func warmupTokenIsOwnMail(folder string, accountID uuid.UUID, tok *models.WarmupToken, mailboxAge time.Duration) bool {
-	// Whenever the token still resolves it is the whole answer: we are a party
-	// to it and this is a re-read, or we are not and it is a stranger's, which
-	// is the one shape that was ever evidence. Folder and age cannot excuse
-	// that, or appending a harvested token to Sent would launder it.
-	if tok != nil {
-		return tok.RecipientAccountID == accountID || tok.SenderAccountID == accountID
-	}
-	// Nothing resolves. Our own Sent copy carries the recipient's token by
-	// construction, so a vanished one there is still our own outbound mail.
-	if folder == models.FolderSent {
-		return true
-	}
-	// Otherwise only a mailbox young enough to still be replaying the history
-	// its old row's tokens cascaded away from gets the benefit of the doubt.
-	return mailboxAge >= 0 && mailboxAge < time.Duration(config.WarmupReconnectGraceMinutes)*time.Minute
-}
-
-// resolveWarmupTokenOwnership gathers the facts warmupTokenIsOwnMail decides on.
-func (s *JobsService) resolveWarmupTokenOwnership(ctx context.Context, e *models.JobEventNewEmail, tokenID uuid.UUID, known *models.WarmupToken) bool {
-	tok := known
-	if tok == nil && tokenID != uuid.Nil && s.WarmupRepo != nil {
-		t, err := s.WarmupRepo.FindWarmupToken(ctx, tokenID)
+// live is the token as GetWarmupToken returned it, so a token that is still
+// valid is not read twice.
+func (s *JobsService) recordForeignWarmupToken(ctx context.Context, e *models.JobEventNewEmail, tokenStr string, tokenUUID uuid.UUID, live *models.WarmupToken) {
+	tok := live
+	if tok == nil {
+		// Consumed and expired tokens still count: a harvested token does not
+		// stop being someone else's when it lapses.
+		t, err := s.WarmupRepo.FindWarmupToken(ctx, tokenUUID)
 		if err != nil {
-			// This lookup is what separates a re-read from a forgery, and a
-			// missing row comes back (nil, nil). An error is a failed question,
-			// not an answer, so fail open rather than charge the mailbox for it.
-			return true
+			CaptureError(e.UserID, e.Message.EmailID, fmt.Errorf("warmup token lookup: %w", err))
+			return
 		}
 		tok = t
 	}
-	age := time.Duration(-1)
-	if s.EmailRepository != nil {
-		if acc, err := s.EmailRepository.GetByID(ctx, e.Message.EmailID); err == nil && acc != nil && !acc.CreatedAt.IsZero() {
-			age = time.Since(acc.CreatedAt)
-		}
+	if !warmupTokenIsForeign(e.Message.EmailID, tok) {
+		return
 	}
-	folder := models.NormalizeFolder(e.Message.Folder, e.Message.Flags)
-	return warmupTokenIsOwnMail(folder, e.Message.EmailID, tok, age)
+	s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, config.WarmupForeignTokenScore)
+}
+
+// warmupTokenIsForeign reports whether tok is evidence against accountID: it
+// resolves, and this mailbox is neither its sender nor its recipient. A token
+// that resolves to nothing is deliberately not evidence. It cannot be redeemed,
+// so presenting one has no payoff, and every reading of it that charged the
+// mailbox turned out to be the mailbox's own history.
+func warmupTokenIsForeign(accountID uuid.UUID, tok *models.WarmupToken) bool {
+	return tok != nil && tok.RecipientAccountID != accountID && tok.SenderAccountID != accountID
 }
 
 func (s *JobsService) applyInvalidWarmupAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string, scoreDelta int) {

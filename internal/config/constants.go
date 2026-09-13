@@ -128,11 +128,11 @@ const (
 	// must still end the pass rather than walk a million-row list.
 	CampaignPlacementCandidates = 25
 
-	// WarmupReconnectGraceMinutes is how long after a mailbox row is created
-	// its unverifiable warmup tokens are ignored. Reconnecting a mailbox makes
-	// a new row, and warmup_tokens cascades off the old one, so the first sync
-	// re-reads its own history holding tokens that no longer exist.
-	WarmupReconnectGraceMinutes = 60
+	// WarmupForeignTokenScore is the spam score a mailbox earns for presenting
+	// a warmup token that resolves to another pair, the one token shape that is
+	// evidence of tampering. The attempt count blocks on its own at
+	// invalidTokenBlockThreshold; this is what the score band sees.
+	WarmupForeignTokenScore = 5
 
 	// CampaignMaxDeferMinutes bounds how far ahead a DEFERRED campaign tick may
 	// park its successor. A deferral means "nothing is sendable right now", and

@@ -683,8 +683,8 @@ Warmup has the clearest explicit abuse-detection path in the repo.
 Signals used:
 
 - every warmup email carries a verification token
-- invalid token format is recorded
-- missing, expired, or mismatched tokens are treated as suspicious
+- a token is evidence only when it resolves and names neither side of the mailbox (`warmupTokenIsForeign`); that is the one shape with a payoff, since a token that cannot be redeemed for credit is worth nothing to a forger
+- an unparseable marker, a token that resolves to nothing, an expired or consumed token of the mailbox's own mail, and its Sent copy carrying the recipient's token are all filed as ordinary mail and never recorded. On a live self-host every one of 211 recorded attempts was one of those, and 0 were evidence (#468); do not reintroduce a window, folder check or clock to tell them apart, each was a way to be wrong (#477, #480)
 - invalid token attempts are counted over time
 - spam score is accumulated for abusive or suspicious behavior
 - accounts can be auto-blocked from warmup pools
