@@ -128,12 +128,6 @@ const (
 	// must still end the pass rather than walk a million-row list.
 	CampaignPlacementCandidates = 25
 
-	// WarmupForeignTokenScore is the spam score a mailbox earns for presenting
-	// a warmup token that resolves to another pair, the one token shape that is
-	// evidence of tampering. The attempt count blocks on its own at
-	// invalidTokenBlockThreshold; this is what the score band sees.
-	WarmupForeignTokenScore = 5
-
 	// CampaignMaxDeferMinutes bounds how far ahead a DEFERRED campaign tick may
 	// park its successor. A deferral means "nothing is sendable right now", and
 	// the reasons it says that (no lead is due, the new-lead cap is spent, no

@@ -154,9 +154,14 @@ func extractHeaderValue(msg *models.EmailMessageStoreData, headerName string) st
 	return ""
 }
 
-// handleWarmupEmail verifies a message carrying a warmup token. Only a live
-// token naming this mailbox as recipient is accepted; everything else is filed
-// as ordinary mail, and charged against the mailbox only when it is evidence.
+// handleWarmupEmail verifies a message carrying a warmup token: a live token
+// naming this mailbox as recipient is accepted, anything else is filed as
+// ordinary mail. Nothing here is evidence against the mailbox. It did not
+// present the token, its worker synced whatever landed in its inbox, and
+// inbound mail is attacker-controlled: every pool member holds tokens naming
+// itself and a partner, and forwarding three of them to another member used to
+// block that member for 30 days. The recipient check already makes a token
+// worthless anywhere but its own destination, so a charge protected nothing.
 func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventNewEmail, tokenStr string) (bool, error) {
 	if s.WarmupRepo == nil {
 		return false, nil
@@ -164,23 +169,30 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 
 	tokenUUID, err := uuid.Parse(tokenStr)
 	if err != nil {
-		// Not a token this instance minted. It cannot be redeemed for anyone's
-		// credit, so it is a mangled marker, not a forgery, and not an attempt.
 		return false, nil
 	}
 
 	token, err := s.WarmupRepo.GetWarmupToken(ctx, tokenUUID)
 	if err != nil {
-		// A failed lookup is a failed question, not an answer.
 		return false, fmt.Errorf("warmup token lookup: %w", err)
 	}
-	if token != nil && token.RecipientAccountID == e.Message.EmailID {
-		s.acceptWarmupEmail(ctx, e, token)
-		return true, nil
+	if token == nil {
+		return false, nil
+	}
+	if token.RecipientAccountID != e.Message.EmailID {
+		// Someone else's warmup mail, forwarded or copied here. Worth seeing
+		// in the logs (a forwarding rule between pool members wastes both
+		// mailboxes' warmup), never worth a mark against this mailbox.
+		log.Info().
+			Str("email_account_id", e.Message.EmailID.String()).
+			Str("token_sender", token.SenderAccountID.String()).
+			Str("token_recipient", token.RecipientAccountID.String()).
+			Msg("warmup token for another mailbox arrived; filed as ordinary mail")
+		return false, nil
 	}
 
-	s.recordForeignWarmupToken(ctx, e, tokenStr, tokenUUID, token)
-	return false, nil
+	s.acceptWarmupEmail(ctx, e, token)
+	return true, nil
 }
 
 // handleUnmarkedWarmupEmail verifies warmup mail that arrived without its
@@ -407,69 +419,6 @@ func (s *JobsService) recipientProviderDomain(ctx context.Context, accountID uui
 		domain = strings.ToLower(acc.Email[at+1:])
 	}
 	return acc.Provider, domain
-}
-
-// recordForeignWarmupToken charges the mailbox for the one token shape that
-// is evidence of tampering: a token that still exists and names neither side
-// of this mailbox. Every other unverifiable token is either the mailbox's own
-// mail coming back around (its Sent copy carries the recipient's token, a
-// resync re-reads one that has since expired, a reconnect cascades the old
-// row's tokens away) or a marker that resolves to nothing, and none of those
-// can be redeemed for credit, so none is worth an attempt. On a live self-host
-// that distinction was the whole difference: 211 attempts recorded, 0 evidence.
-//
-// live is the token as GetWarmupToken returned it, so a token that is still
-// valid is not read twice.
-func (s *JobsService) recordForeignWarmupToken(ctx context.Context, e *models.JobEventNewEmail, tokenStr string, tokenUUID uuid.UUID, live *models.WarmupToken) {
-	tok := live
-	if tok == nil {
-		// Consumed and expired tokens still count: a harvested token does not
-		// stop being someone else's when it lapses.
-		t, err := s.WarmupRepo.FindWarmupToken(ctx, tokenUUID)
-		if err != nil {
-			CaptureError(e.UserID, e.Message.EmailID, fmt.Errorf("warmup token lookup: %w", err))
-			return
-		}
-		tok = t
-	}
-	if !warmupTokenIsForeign(e.Message.EmailID, tok) {
-		return
-	}
-	s.applyInvalidWarmupAttempt(ctx, e.Message.EmailID, tokenStr, config.WarmupForeignTokenScore)
-}
-
-// warmupTokenIsForeign reports whether tok is evidence against accountID: it
-// resolves, and this mailbox is neither its sender nor its recipient. A token
-// that resolves to nothing is deliberately not evidence. It cannot be redeemed,
-// so presenting one has no payoff, and every reading of it that charged the
-// mailbox turned out to be the mailbox's own history.
-func warmupTokenIsForeign(accountID uuid.UUID, tok *models.WarmupToken) bool {
-	return tok != nil && tok.RecipientAccountID != accountID && tok.SenderAccountID != accountID
-}
-
-func (s *JobsService) applyInvalidWarmupAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string, scoreDelta int) {
-	if s.WarmupService != nil {
-		if health, err := s.WarmupService.ApplyInvalidTokenAttempt(ctx, accountID, attemptedToken, scoreDelta); err == nil {
-			s.markRiskBandFromWarmupHealth(ctx, accountID, health)
-			return
-		}
-	}
-
-	if s.WarmupRepo == nil {
-		return
-	}
-
-	// Degraded mode (no warmup service): record the raw signal only. All
-	// blocking is owned by the banded health model (evaluateMetrics), which
-	// already enforces the invalid-token threshold with a blocked_until and an
-	// appeal path. The old checkAndAutoBlock issued permanent blocks
-	// (blocked_until = NULL) that UpdateParticipantHealth then refused to ever
-	// re-evaluate — a divergent dead-end that is now removed.
-	_ = s.WarmupRepo.RecordInvalidTokenAttempt(ctx, accountID, attemptedToken)
-	if scoreDelta > 0 {
-		_, _ = s.WarmupRepo.IncrementSpamScore(ctx, accountID, scoreDelta)
-	}
-	s.markRiskBandFromWarmupHealth(ctx, accountID, nil)
 }
 
 // containsSpamFlag checks if any flag is a spam flag

@@ -682,16 +682,15 @@ Warmup has the clearest explicit abuse-detection path in the repo.
 
 Signals used:
 
-- every warmup email carries a verification token
-- a token is evidence only when it resolves and names neither side of the mailbox (`warmupTokenIsForeign`); that is the one shape with a payoff, since a token that cannot be redeemed for credit is worth nothing to a forger
-- an unparseable marker, a token that resolves to nothing, an expired or consumed token of the mailbox's own mail, and its Sent copy carrying the recipient's token are all filed as ordinary mail and never recorded. On a live self-host every one of 211 recorded attempts was one of those, and 0 were evidence (#468); do not reintroduce a window, folder check or clock to tell them apart, each was a way to be wrong (#477, #480)
-- invalid token attempts are counted over time
+- every warmup email carries a verification token, minted by the platform, single-use, bound to its recipient
+- no inbound token is evidence against the mailbox that received it. It did not present the token; its worker synced whatever landed in its inbox, and inbound mail is attacker-controlled: every pool member holds tokens naming itself and a partner, and forwarding three to another member used to block that member for 30 days. The recipient check already makes a token worthless anywhere but its own destination, so nothing is charged on that path (#468, #481). Do not reintroduce a charge there, whether gated by a window, a folder check, a clock or by which pair the token names; each of those was tried and each was a way to be wrong (#477, #480)
+- tampering with warmup mail a mailbox verifiably received (deleting it, flagging it as spam) is attributed to that mailbox, because only its owner can do it
 - spam score is accumulated for abusive or suspicious behavior
 - accounts can be auto-blocked from warmup pools
 
 Current auto-block thresholds in code:
 
-- `>= 3` invalid warmup-token attempts in `24h`
+- `>= 3` invalid warmup-token attempts in `24h` (no live path records one since #481; the band is unreachable until a signal can attribute a forged token to its sender)
 - spam score `> 50`
 
 Relevant code:

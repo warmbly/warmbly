@@ -709,6 +709,10 @@ func evaluateMetrics(metrics *models.WarmupHealthMetrics, now time.Time) evaluat
 		Score: metrics.SpamPlacementRate,
 	}
 
+	// No live path records an invalid-token attempt any more: the inbound
+	// header path was the only feeder, and it charged the wrong party (#481).
+	// The band stays for a future signal that can attribute a forged token to
+	// whoever sent it; until then this branch cannot fire.
 	if metrics.InvalidAttemptsLast24 >= invalidTokenBlockThreshold {
 		until := now.Add(warmupBlockDuration)
 		return evaluationDecision{
