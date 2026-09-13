@@ -30,6 +30,7 @@ import {
     SlidersHorizontal,
     Sparkles,
     UserCog,
+    FlaskConical,
     Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -83,6 +84,7 @@ export const NAV_GROUPS: NavGroup[] = [
             { to: "/limit-requests", label: "Limit requests", icon: Gauge, perm: AdminPerm.ViewOrganizations },
             { to: "/outreach", label: "Outreach", icon: Send, perm: AdminPerm.ViewOrganizations },
             { to: "/admins", label: "Admins", icon: UserCog, perm: AdminPerm.GrantAdminAccess },
+            { to: "/testers", label: "Testers", icon: FlaskConical, perm: AdminPerm.ViewUsers },
         ],
     },
     {

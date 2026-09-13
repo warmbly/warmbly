@@ -24,6 +24,29 @@ type UserRepository interface {
 
 	CreateUser(ctx context.Context, email *mail.Address, password string) (*models.User, error)
 	GetUser(ctx context.Context, id uuid.UUID) (*models.User, error)
+
+	// IsLoginCodeExempt reports whether this account skips the emailed login
+	// code. Read on the login path, so it is a single boolean rather than a
+	// whole user load.
+	IsLoginCodeExempt(ctx context.Context, id uuid.UUID) (bool, error)
+
+	// SetLoginCodeExempt grants or clears the exemption. A reason is required
+	// to grant one; the database refuses a blank one too.
+	SetLoginCodeExempt(ctx context.Context, id uuid.UUID, exempt bool, reason string, by *uuid.UUID) error
+
+	// ListLoginCodeExempt returns every exempt account, for the instance check
+	// that keeps a forgotten exemption visible.
+	ListLoginCodeExempt(ctx context.Context) ([]models.LoginCodeExemption, error)
+
+	// CreateExemptUser creates an account and its login-code exemption in one
+	// transaction, so a failure cannot leave an account that holds no
+	// exemption and therefore appears in no list.
+	CreateExemptUser(ctx context.Context, email *mail.Address, passwordHash, reason string, by *uuid.UUID) (*models.User, error)
+
+	// DeleteOrphanExemptUser undoes a tester creation whose workspace step
+	// failed. The predicate is the safety: it only matches an account that is
+	// exempt AND belongs to no organization, which a real user never is.
+	DeleteOrphanExemptUser(ctx context.Context, id uuid.UUID) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	SetFreeTrialUsed(ctx context.Context, userID uuid.UUID) error
 	UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error
@@ -258,4 +281,127 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max]
+}
+
+// IsLoginCodeExempt reads the one flag the login path needs.
+func (r *userRepository) IsLoginCodeExempt(ctx context.Context, id uuid.UUID) (bool, error) {
+	var exempt bool
+	err := r.DB.QueryRow(ctx, `SELECT login_code_exempt FROM users WHERE id = $1`, id).Scan(&exempt)
+	if err == pgx.ErrNoRows {
+		return false, nil
+	}
+	return exempt, err
+}
+
+// SetLoginCodeExempt grants or clears the exemption. Clearing wipes the
+// reason with it, so a cleared row cannot be mistaken for a live exemption.
+func (r *userRepository) SetLoginCodeExempt(ctx context.Context, id uuid.UUID, exempt bool, reason string, by *uuid.UUID) error {
+	if !exempt {
+		_, err := r.DB.Exec(ctx, `
+			UPDATE users
+			SET login_code_exempt = false,
+			    login_code_exempt_reason = NULL,
+			    login_code_exempt_by = NULL,
+			    login_code_exempt_at = NULL,
+			    updated_at = NOW()
+			WHERE id = $1`, id)
+		return err
+	}
+	_, err := r.DB.Exec(ctx, `
+		UPDATE users
+		SET login_code_exempt = true,
+		    login_code_exempt_reason = $2,
+		    login_code_exempt_by = $3,
+		    login_code_exempt_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1`, id, reason, by)
+	return err
+}
+
+// ListLoginCodeExempt is ordered oldest first, because the exemption most
+// likely to have been forgotten is the one that has been there longest.
+func (r *userRepository) ListLoginCodeExempt(ctx context.Context) ([]models.LoginCodeExemption, error) {
+	rows, err := r.DB.Query(ctx, `
+		SELECT id, email, login_code_exempt_reason, login_code_exempt_at
+		FROM users
+		WHERE login_code_exempt
+		ORDER BY login_code_exempt_at NULLS FIRST`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []models.LoginCodeExemption{}
+	for rows.Next() {
+		var e models.LoginCodeExemption
+		if err := rows.Scan(&e.UserID, &e.Email, &e.Reason, &e.GrantedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// CreateExemptUser is CreateUser plus the exemption, atomically.
+//
+// Creating them separately meant a failure between the two left an account
+// with no exemption: invisible to the tester list, un-retryable because the
+// address was taken, and reachable by whoever held the password.
+func (r *userRepository) CreateExemptUser(ctx context.Context, email *mail.Address, passwordHash, reason string, by *uuid.UUID) (*models.User, error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Rolls back unless the commit below succeeds; a commit makes this a no-op.
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	id := uuid.New()
+	firstName := "Unknown"
+	if parts := strings.SplitN(email.Address, "@", 2); len(parts) == 2 {
+		firstName = parts[0]
+	}
+	now := time.Now()
+	if _, ierr := tx.Exec(ctx, `
+		INSERT INTO users (id, email, password_hash, first_name, last_name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, '', $5, $5)`,
+		id, email.Address, passwordHash, firstName, now); ierr != nil {
+		return nil, ierr
+	}
+	created := &models.User{
+		ID:        id,
+		FirstName: firstName,
+		Email:     email.Address,
+		Roles:     make([]uuid.UUID, 0),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if _, eerr := tx.Exec(ctx, `
+		UPDATE users
+		SET login_code_exempt = true,
+		    login_code_exempt_reason = $2,
+		    login_code_exempt_by = $3,
+		    login_code_exempt_at = NOW()
+		WHERE id = $1`, created.ID, reason, by); eerr != nil {
+		return nil, eerr
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+// DeleteOrphanExemptUser removes a half-created tester.
+//
+// Without it the address is taken by an account that cannot be used and cannot
+// be recreated, so the operator is stuck. The WHERE clause is what makes this
+// safe to expose at all: an account that holds an exemption and belongs to no
+// organization is one this handler made moments ago and failed to finish. A
+// real user always has a workspace, so no predicate match means no delete.
+func (r *userRepository) DeleteOrphanExemptUser(ctx context.Context, id uuid.UUID) error {
+	_, err := r.DB.Exec(ctx, `
+		DELETE FROM users
+		WHERE id = $1
+		  AND login_code_exempt
+		  AND NOT EXISTS (SELECT 1 FROM organization_members m WHERE m.user_id = users.id)`, id)
+	return err
 }

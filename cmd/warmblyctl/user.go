@@ -49,6 +49,8 @@ func runUser(ctx context.Context, args []string) error {
 		return runUserRevokeAdmin(ctx, args[1:])
 	case "disable-2fa":
 		return runUserDisable2FA(ctx, args[1:])
+	case "login-code-exempt":
+		return runUserLoginCodeExempt(ctx, args[1:])
 	}
 
 	userUsage(os.Stderr)
@@ -543,4 +545,68 @@ func adminHint() string {
 		return "Admin panel: " + v
 	}
 	return "The admin panel is a separate app from the dashboard (ADMIN_URL, port 5174 in the default stack)."
+}
+
+// runUserLoginCodeExempt excuses one account from the emailed login code.
+//
+// AUTH_LOGIN_CODE is instance-wide and boot-only, so without this the only way
+// to let a vendor's reviewer sign in is to turn codes off for everyone, for as
+// long as the review takes. This is the narrow version: one named account,
+// with the reason recorded next to it.
+func runUserLoginCodeExempt(ctx context.Context, args []string) error {
+	fs := newFlagSet("user login-code-exempt")
+	address := fs.String("email", "", "address of the account to exempt (required)")
+	reason := fs.String("reason", "", "why this account is exempt (required unless --clear)")
+	by := fs.String("by", "", "address of the operator accountable for this exemption (required unless --clear)")
+	clear := fs.Bool("clear", false, "remove the exemption instead of granting one")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := noExtraArgs(fs); err != nil {
+		return err
+	}
+
+	parsed, err := requireEmail(*address)
+	if err != nil {
+		return err
+	}
+	trimmed := strings.TrimSpace(*reason)
+	if !*clear && trimmed == "" {
+		return errors.New("--reason is required: an exemption nobody can explain is worse than no exemption")
+	}
+	// This command talks to Postgres directly and has no signed-in operator to
+	// attribute the grant to, so the accountable account is named explicitly.
+	// The admin panel passes the acting admin and asks for nothing.
+	if !*clear && strings.TrimSpace(*by) == "" {
+		return errors.New("--by is required: name the operator accountable for this exemption, e.g. --by you@example.com")
+	}
+
+	c, err := connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.close()
+
+	u, err := lookupUser(ctx, c, parsed.Address)
+	if err != nil {
+		return err
+	}
+
+	if *clear {
+		if err := c.users.SetLoginCodeExempt(ctx, u.ID, false, "", nil); err != nil {
+			return fmt.Errorf("clearing the exemption: %w", err)
+		}
+		fmt.Printf("%s is no longer exempt; it follows AUTH_LOGIN_CODE like every other account.\n", u.Email)
+		return nil
+	}
+
+	grantor, gerr := lookupUser(ctx, c, strings.TrimSpace(*by))
+	if gerr != nil {
+		return fmt.Errorf("resolving --by: %w", gerr)
+	}
+	if err := c.users.SetLoginCodeExempt(ctx, u.ID, true, trimmed, &grantor.ID); err != nil {
+		return fmt.Errorf("granting the exemption: %w", err)
+	}
+	fmt.Printf("%s will not be asked for an emailed login code.\n\n  Reason  %s\n\nEvery other protection still applies: the password, the captcha, and the\nrisk assessment. Remove it when the reason no longer holds:\n  warmblyctl user login-code-exempt --email %s --clear\n", u.Email, trimmed, u.Email)
+	return nil
 }

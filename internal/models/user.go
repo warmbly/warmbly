@@ -54,3 +54,12 @@ type User struct {
 func (u *User) IsPendingDeletion() bool {
 	return u.DeletionScheduledFor != nil
 }
+
+// LoginCodeExemption is one account excused from the emailed login code, as
+// the instance check and the operator CLI report it.
+type LoginCodeExemption struct {
+	UserID    uuid.UUID  `json:"user_id"`
+	Email     string     `json:"email"`
+	Reason    *string    `json:"reason,omitempty"`
+	GrantedAt *time.Time `json:"granted_at,omitempty"`
+}
