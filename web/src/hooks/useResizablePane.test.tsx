@@ -247,9 +247,14 @@ describe("capturePointerDrag", () => {
         fireEvent.pointerDown(grip, { pointerId: 3, button: 0 });
         fireEvent.pointerMove(grip, { pointerId: 3, clientX: 10 });
         expect(onMove).toHaveBeenCalledTimes(1);
+        // The body lock is what lets the callers skip preventDefault on
+        // pointerdown, which would suppress the mousedown every click-outside
+        // listener in the app is registered on.
+        expect(document.body.style.userSelect).toBe("none");
 
         fireEvent.pointerUp(grip, { pointerId: 3 });
         expect(onEnd).toHaveBeenCalledTimes(1);
+        expect(document.body.style.userSelect).toBe("");
 
         fireEvent.pointerMove(grip, { pointerId: 3, clientX: 20 });
         expect(onMove).toHaveBeenCalledTimes(1);

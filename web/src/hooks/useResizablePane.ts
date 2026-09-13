@@ -234,10 +234,20 @@ export function useResizablePane({
  */
 export function capturePointerDrag(
     e: React.PointerEvent<Element>,
-    handlers: { onMove: (e: PointerEvent) => void; onEnd?: () => void },
+    handlers: {
+        onMove: (e: PointerEvent) => void;
+        onEnd?: () => void;
+        /** Hold the page still for the gesture instead of preventDefault. */
+        cursor?: string;
+    },
 ) {
     const el = e.currentTarget as HTMLElement;
     const pointerId = e.pointerId;
+    // Locking the body is what lets the caller skip preventDefault on
+    // pointerdown, which would take the compatibility mousedown with it and so
+    // leave every open popover on screen (they all close on mousedown).
+    document.body.style.userSelect = "none";
+    if (handlers.cursor) document.body.style.cursor = handlers.cursor;
     try {
         el.setPointerCapture(pointerId);
     } catch {
@@ -255,6 +265,8 @@ export function capturePointerDrag(
         el.removeEventListener("pointerup", end);
         el.removeEventListener("pointercancel", end);
         el.removeEventListener("lostpointercapture", end);
+        document.body.style.removeProperty("user-select");
+        document.body.style.removeProperty("cursor");
         handlers.onEnd?.();
     };
     el.addEventListener("pointermove", move);

@@ -523,13 +523,16 @@ export default function AgentPanel() {
                     .getState()
                     .setAgentFloatRect(clampFloatRect({ ...r, x: ev.clientX - offX, y: ev.clientY - offY }));
             },
+            cursor: "grabbing",
         });
     }
 
     // Resize the floating window from any edge or corner.
     function startFloatResize(e: React.PointerEvent, dir: ResizeDir) {
-        if (!isFloat || !rect) return;
-        e.preventDefault();
+        if (!isFloat || !rect || e.button !== 0) return;
+        // stopPropagation keeps the corner from also starting a header drag; no
+        // preventDefault, which would suppress the mousedown that closes
+        // popovers. The body lock below is what stops the drag selecting text.
         e.stopPropagation();
         const start = { ...rect };
         const sx = e.clientX;
@@ -552,6 +555,7 @@ export default function AgentPanel() {
                 }
                 useAppStore.getState().setAgentFloatRect(clampFloatRect({ x, y, w, h }));
             },
+            cursor: window.getComputedStyle(e.currentTarget).cursor,
         });
     }
 
