@@ -99,7 +99,7 @@ function pageSearchInput(): HTMLInputElement | null {
 }
 
 export const globalShortcuts: GlobalShortcut[] = [
-  // ── Modifier combos: these fire while typing too ──────────────────────────
+  // ── The assistant, which is reachable while typing ───────────────────────
   {
     keys: ['Ctrl', 'i'],
     description: 'Open / close the assistant',
@@ -119,15 +119,6 @@ export const globalShortcuts: GlobalShortcut[] = [
       s.toggleAIAssistant()
     },
   },
-  {
-    keys: ['Ctrl', 'k'],
-    description: 'Command palette',
-    group: 'actions',
-    whileTyping: true,
-    match: (e) => mod(e) && e.key.toLowerCase() === 'k',
-    run: () => useAppStore.getState().setCommandPaletteOpen(true),
-  },
-
   // ── Navigation: g then a letter ───────────────────────────────────────────
   ...navRoutes.map<GlobalShortcut>(([key, path, label]) => ({
     keys: ['g', key],
@@ -231,6 +222,16 @@ export const globalShortcuts: GlobalShortcut[] = [
     group: 'actions',
     match: (e) => !mod(e) && !e.altKey && (e.key === '?' || (e.shiftKey && e.key === '/')),
     run: () => useAppStore.getState().setShortcutsModalOpen(true),
+  },
+  {
+    // Listed last but matched anywhere in this array: a modifier combo
+    // cannot collide with the bare keys above it.
+    keys: ['Ctrl', 'k'],
+    description: 'Command palette',
+    group: 'actions',
+    whileTyping: true,
+    match: (e) => mod(e) && e.key.toLowerCase() === 'k',
+    run: () => useAppStore.getState().setCommandPaletteOpen(true),
   },
 ]
 
