@@ -192,7 +192,7 @@ The proxy forwards only what PostHog needs to read the request. Cookies and `Aut
 | `CAPTCHA_PROVIDER` | `none` or `turnstile` | derived, see below | yes |
 | `TURNSTILE_SECRET` | Cloudflare Turnstile secret, read by the backend | unset | yes |
 | `WARMBLY_TURNSTILE_KEY` | The Turnstile site key, read by the dashboard and admin panel at container start | a test key under compose | yes (container start) |
-| `WARMBLY_BETA_NOTICE` | One sentence shown to everyone in the dashboard: once in a dialog on first visit, then as a `Beta` pill in the header that reopens it. Empty renders nothing, so a production deployment needs nothing unset | unset | no (read per load) |
+| `WARMBLY_BETA_NOTICE` | One sentence shown to everyone in the dashboard: once in a dialog on first visit, then as a `Beta` pill in the header that reopens it. Empty renders nothing, so a production deployment needs nothing set. Written into `config.js` when the container starts (or when the Pages build runs), so a change needs a restart or a rebuild rather than a reload | unset | yes |
 | `WARMBLY_CONFIG_OUT` | Where the dashboard and admin panel write their runtime `config.js`. Defaults to the path nginx serves; a static host sets it to the build output so the same script renders the file at build time instead of container start | the nginx path | yes (build or container start) |
 | `TURNSTILE_BYPASS_TOKEN` | A token that skips verification. Only honoured when `APP_ENV=dev` | unset | yes |
 | `TURNSTILE_SITE_KEY` | The public Turnstile widget key. The backend hands it to the forms service, which renders it on hosted form pages that enable spam protection. The frontends carry their own copy in `WARMBLY_TURNSTILE_KEY` | unset | no (read per request) |

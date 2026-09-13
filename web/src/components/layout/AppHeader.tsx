@@ -145,8 +145,11 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
             </div>
 
             <div className="flex items-center gap-2 px-2 sm:px-4 shrink-0">
+                {/* Outside the sm-only group on purpose: once the dialog is
+                    dismissed this pill is the only way back to it, and a phone
+                    is exactly where someone dismisses it fastest. */}
+                <BetaPill />
                 <div className="hidden sm:flex items-center gap-2">
-                    <BetaPill />
                     <PlanPill />
                     <VersionPill />
                     <CreditsMeter />
