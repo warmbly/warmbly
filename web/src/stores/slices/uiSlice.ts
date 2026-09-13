@@ -2,9 +2,33 @@ import type { StateCreator } from 'zustand'
 
 export type Theme = 'light' | 'dark' | 'system'
 
+// Unibox list-column bounds. These are the preference's bounds; what the column
+// can actually render is additionally capped against the viewport at the drag
+// site, so the stored value survives a narrow window instead of being rewritten
+// by it.
+export const UNIBOX_LIST_MIN_WIDTH = 280
+export const UNIBOX_LIST_MAX_WIDTH = 620
+export const UNIBOX_LIST_DEFAULT_WIDTH = 360
+
+// Exported because rehydration bypasses the setter: zustand's default merge
+// writes localStorage straight into state, so the clamp has to run there too or
+// a hand-edited (or newly out-of-range) value reaches the DOM unchecked.
+export const clampUniboxListWidth = (w: unknown): number => {
+  // Only a real number survives. Coercing would be worse than useless here:
+  // `Number(null)` is 0, so a null in storage would silently become the minimum
+  // width instead of falling back to the default.
+  if (typeof w !== 'number' || !Number.isFinite(w)) return UNIBOX_LIST_DEFAULT_WIDTH
+  return Math.round(Math.min(UNIBOX_LIST_MAX_WIDTH, Math.max(UNIBOX_LIST_MIN_WIDTH, w)))
+}
+
 export interface UISlice {
-  // Sidebar
-  sidebarCollapsed: boolean
+  // Sidebar. Deliberately NOT the old `sidebarCollapsed` key: that one was
+  // persisted and toggled by `b` for a long time while nothing rendered from
+  // it, so a stored `true` reflects a keystroke nobody remembers. A new key
+  // starts everyone expanded without needing a migration, which zustand would
+  // not have run anyway: it only migrates a store whose version is a number,
+  // and every store written before this had no version field at all.
+  navCollapsed: boolean
   sidebarMobileOpen: boolean
 
   // Theme
@@ -20,6 +44,12 @@ export interface UISlice {
 
   // AI assistant panel (right-side, persistent across routes)
   aiAssistantOpen: boolean
+
+  // Unibox layout preferences (persisted). The list column is drag-resizable
+  // against the thread pane; the CRM rail remembers the last explicit toggle
+  // so closing it survives opening the next thread.
+  uniboxListWidth: number
+  uniboxContactRailOpen: boolean
 
   // Actions - Sidebar
   toggleSidebar: () => void
@@ -38,6 +68,10 @@ export interface UISlice {
   setCommandPaletteOpen: (open: boolean) => void
   setAIAssistantOpen: (open: boolean) => void
   toggleAIAssistant: () => void
+
+  // Actions - Unibox layout
+  setUniboxListWidth: (width: number) => void
+  setUniboxContactRailOpen: (open: boolean) => void
 }
 
 const getInitialTheme = (): Theme => {
@@ -55,7 +89,7 @@ const getResolvedTheme = (_theme: Theme): 'light' | 'dark' => {
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) => ({
   // Sidebar
-  sidebarCollapsed: false,
+  navCollapsed: false,
   sidebarMobileOpen: false,
 
   // Theme
@@ -70,10 +104,14 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   commandPaletteOpen: false,
   aiAssistantOpen: false,
 
+  // Unibox layout
+  uniboxListWidth: UNIBOX_LIST_DEFAULT_WIDTH,
+  uniboxContactRailOpen: true,
+
   // Actions - Sidebar
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  setSidebarCollapsed: (sidebarCollapsed) =>
-    set((state) => (state.sidebarCollapsed === sidebarCollapsed ? state : { sidebarCollapsed })),
+  toggleSidebar: () => set((state) => ({ navCollapsed: !state.navCollapsed })),
+  setSidebarCollapsed: (navCollapsed) =>
+    set((state) => (state.navCollapsed === navCollapsed ? state : { navCollapsed })),
   setSidebarMobileOpen: (sidebarMobileOpen) =>
     set((state) => (state.sidebarMobileOpen === sidebarMobileOpen ? state : { sidebarMobileOpen })),
 
@@ -102,4 +140,14 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   setAIAssistantOpen: (aiAssistantOpen) =>
     set((state) => (state.aiAssistantOpen === aiAssistantOpen ? state : { aiAssistantOpen })),
   toggleAIAssistant: () => set((state) => ({ aiAssistantOpen: !state.aiAssistantOpen })),
+
+  // Actions - Unibox layout
+  setUniboxListWidth: (width) => {
+    const uniboxListWidth = clampUniboxListWidth(width)
+    set((state) => (state.uniboxListWidth === uniboxListWidth ? state : { uniboxListWidth }))
+  },
+  setUniboxContactRailOpen: (uniboxContactRailOpen) =>
+    set((state) =>
+      state.uniboxContactRailOpen === uniboxContactRailOpen ? state : { uniboxContactRailOpen },
+    ),
 })
