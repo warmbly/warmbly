@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -64,7 +65,24 @@ func (s *subscriptionService) GetWithLimits(ctx context.Context, orgID uuid.UUID
 	// The plan that decides entitlements, which is the granted one while a
 	// grant is in force. Without this the dashboard has no plan to name and
 	// falls back to whatever the org row says.
-	sub.Plan, _ = s.planRepo.GetByID(ctx, sub.EffectivePlanID())
+	//
+	// A lookup failure and a missing row are different and are answered
+	// differently: the first is this instance being broken, the second is one
+	// workspace pointing at a plan that is gone. Failing the whole request on
+	// the second would take the billing page down for a data problem the user
+	// cannot act on, so it is reported and the response goes out without a
+	// plan, which the client already tolerates.
+	plan, perr := s.planRepo.GetByID(ctx, sub.EffectivePlanID())
+	if perr != nil {
+		errs.CaptureException(perr)
+		return nil, errx.New(errx.Internal, "failed to load the plan")
+	}
+	if plan == nil {
+		errs.CaptureMessageContext(ctx, "subscription references a plan that does not exist",
+			errs.Tag("organization_id", orgID.String()),
+			errs.Extra("plan_id", sub.EffectivePlanID().String()))
+	}
+	sub.Plan = plan
 	sub.Managed = sub.IsManaged()
 	return sub, nil
 }

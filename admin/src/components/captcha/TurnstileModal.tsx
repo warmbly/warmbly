@@ -125,8 +125,16 @@ export function TurnstileModal({ visible, required, onToken, onError }: Props) {
     if (pending || skipWidget) return null;
 
     const turnstileProps = {
-        ref: turnstileRef,
         sitekey: TURNSTILE_KEY,
+        // The widget instance only arrives through a callback: `Turnstile` is
+        // a plain function component, not forwardRef, and its `userRef` prop
+        // is the container div. onLoad fires when the widget renders;
+        // onAfterInteractive below only fires once a human has acted, which
+        // with appearance="interaction-only" may never happen.
+        onLoad: (_widgetId: string, bound: BoundTurnstileObject) => {
+            turnstileRef.current = bound;
+            if (visible && waitingRef.current) bound.execute();
+        },
         onVerify: handleVerify,
         onExpire: () => {
             tokenRef.current = "";
