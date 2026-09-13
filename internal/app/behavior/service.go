@@ -130,7 +130,12 @@ func (s *service) Today(ctx context.Context, accountID uuid.UUID) (*models.Daily
 	plan := r.PlanOn(PlanDateFor(now, r.Loc))
 
 	from, to := s.localDayRange(now, r.Loc)
-	sent := s.sentInRange(ctx, accountID, from, to)
+	// The view reports, so it propagates the read error instead of taking the
+	// schedulers' fail-closed sentinel: "sent today" is a number a human reads.
+	sent, err := s.countSends(ctx, accountID, from, to)
+	if err != nil {
+		return nil, err
+	}
 	remaining := plan.DailyLimit - sent
 	if remaining < 0 {
 		remaining = 0
@@ -277,8 +282,15 @@ func (s *service) localDayRange(t time.Time, loc *time.Location) (time.Time, tim
 	return start, start.AddDate(0, 0, 1)
 }
 
+// countSends is the mailbox's real cold sends in a range: completed campaign
+// tasks that dispatched an email. Deferral and pause wake-ups are not sends and
+// pending tasks have not sent yet, so neither spends the day's plan (#469).
+func (s *service) countSends(ctx context.Context, accountID uuid.UUID, from, to time.Time) (int, error) {
+	return s.behaviorRepo.CountSendsBetween(ctx, accountID, "campaign", from, to)
+}
+
 func (s *service) sentInRange(ctx context.Context, accountID uuid.UUID, from, to time.Time) int {
-	n, err := s.behaviorRepo.CountSendsBetween(ctx, accountID, "campaign", from, to)
+	n, err := s.countSends(ctx, accountID, from, to)
 	if err != nil {
 		// Fail closed on the count: an unknown spend is treated as the budget
 		// being fully consumed, which delays a send rather than over-sending

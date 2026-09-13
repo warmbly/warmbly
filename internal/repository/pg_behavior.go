@@ -36,11 +36,10 @@ type BehaviorRepository interface {
 	// PurgePlansBefore drops plans older than a cutoff date.
 	PurgePlansBefore(ctx context.Context, before time.Time) (int64, error)
 
-	// CountSendsBetween counts a mailbox's sends in a half-open time range.
-	// Pending and active tasks count alongside completed ones: a slot that is
-	// already booked has consumed the budget even though the mail has not gone
-	// out yet, and without that the scheduler would happily stack a day's worth
-	// of tasks into one hour.
+	// CountSendsBetween counts a mailbox's real sends in a half-open time
+	// range: completed tasks that actually put an email on the wire, the same
+	// thing CountCampaignEmailsSentToday counts. See the query for why a
+	// pending task is not a booked slot.
 	CountSendsBetween(ctx context.Context, accountID uuid.UUID, taskType string, from, to time.Time) (int, error)
 }
 
@@ -214,16 +213,30 @@ func (r *behaviorRepository) PurgePlansBefore(ctx context.Context, before time.T
 	return tag.RowsAffected(), nil
 }
 
+// CountSendsBetween is the sending profile's half of the mailbox budget, and
+// it counts exactly what the fixed-schedule counter counts (issue #469):
+// completed tasks that dispatched an email, over the SAME taskDispatchedEmail
+// fragment CountCampaignEmailsSentToday uses.
+//
+// Neither half of what it used to count was a send. A completed campaign task
+// is usually a wake-up that sent nothing (issue #306), and the deferral path
+// wakes the chain every CampaignMaxDeferMinutes, so a mailbox outside its
+// rolled workday overnight charged its whole daily plan to phantoms before the
+// workday opened. And a pending campaign task is the chain's next wake-up, not
+// a booked slot: CreateTaskWithLock allows exactly one per campaign, it may
+// defer again instead of sending, and the real reservation is
+// campaign_contact_progress.dispatched_at, which is written during the send
+// this query already counts once the task completes.
 func (r *behaviorRepository) CountSendsBetween(ctx context.Context, accountID uuid.UUID, taskType string, from, to time.Time) (int, error) {
 	query := `
 		SELECT COUNT(*)
-		FROM tasks
-		WHERE email_account_id = $1
-		  AND task_type = $2::task_type
-		  AND (
-		        (status = 'completed' AND completed_at >= $3 AND completed_at < $4)
-		     OR (status IN ('pending', 'active') AND scheduled_at >= $3 AND scheduled_at < $4)
-		  )`
+		FROM tasks t
+		WHERE t.email_account_id = $1
+		  AND t.task_type = $2::task_type
+		  AND t.status = 'completed'
+		  AND t.completed_at >= $3
+		  AND t.completed_at < $4
+		  AND ` + taskDispatchedEmail
 
 	var count int
 	err := r.db.QueryRow(ctx, query, accountID, taskType, from, to).Scan(&count)
