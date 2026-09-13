@@ -120,15 +120,24 @@ export default function UniboxPage() {
   // matters because the pane being dragged into renders each message body in an
   // iframe: with window listeners the drag dies the moment the cursor crosses
   // one, and the pointerup that would have cleaned up never arrives.
-  const dragRef = React.useRef<{ startX: number; startWidth: number; max: number } | null>(null);
+  const dragRef = React.useRef<{
+    startX: number;
+    startWidth: number;
+    max: number;
+    moved: boolean;
+  } | null>(null);
   const liveWidthRef = React.useRef(renderedWidth);
 
   const endDrag = React.useCallback(() => {
-    if (!dragRef.current) return;
+    const drag = dragRef.current;
+    if (!drag) return;
     dragRef.current = null;
     document.body.style.removeProperty("cursor");
     document.body.style.removeProperty("user-select");
-    setListWidth(liveWidthRef.current);
+    // Only a drag that actually moved writes the preference. A press-and-release
+    // on a window too narrow to show the stored width would otherwise quietly
+    // overwrite it with the capped one, losing the width chosen on a big screen.
+    if (drag.moved) setListWidth(liveWidthRef.current);
   }, [setListWidth]);
 
   // A drag interrupted by an unmount would otherwise leave the whole app with
@@ -164,6 +173,7 @@ export default function UniboxPage() {
         startX: e.clientX,
         startWidth: el.getBoundingClientRect().width || renderedWidth,
         max: measureMax(),
+        moved: false,
       };
       liveWidthRef.current = renderedWidth;
     },
@@ -180,6 +190,7 @@ export default function UniboxPage() {
       ),
     );
     if (next === liveWidthRef.current) return;
+    drag.moved = true;
     liveWidthRef.current = next;
     // Straight to the DOM for the duration. Routing every pointer frame through
     // the store would re-render the whole inbox and, because the store is
@@ -193,29 +204,35 @@ export default function UniboxPage() {
   const onListResizeKey = React.useCallback(
     (e: React.KeyboardEvent) => {
       const step = e.shiftKey ? 48 : 16;
-      const current = useAppStore.getState().uniboxListWidth;
+      // From what is on screen, not from the stored preference: on a window
+      // that caps the column, nudging from the stored number would move it
+      // through values the viewport cannot render and look like nothing
+      // happened.
+      const max = measureMax();
+      const current = Math.min(useAppStore.getState().uniboxListWidth, max);
+      const to = (w: number) => setListWidth(Math.min(max, w));
       switch (e.key) {
         case "ArrowLeft":
-          setListWidth(current - step);
+          to(current - step);
           break;
         case "ArrowRight":
-          setListWidth(current + step);
+          to(current + step);
           break;
         case "Home":
-          setListWidth(UNIBOX_LIST_MIN_WIDTH);
+          to(UNIBOX_LIST_MIN_WIDTH);
           break;
         case "End":
-          setListWidth(UNIBOX_LIST_MAX_WIDTH);
+          to(UNIBOX_LIST_MAX_WIDTH);
           break;
         case "Enter":
-          setListWidth(UNIBOX_LIST_DEFAULT_WIDTH);
+          to(UNIBOX_LIST_DEFAULT_WIDTH);
           break;
         default:
           return;
       }
       e.preventDefault();
     },
-    [setListWidth],
+    [measureMax, setListWidth],
   );
 
   // goTo writes the URL by merging the requested changes over the current path
