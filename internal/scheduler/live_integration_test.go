@@ -47,6 +47,32 @@ func liveDB(t *testing.T) (*db.DB, *pgxpool.Pool) {
 	return handle, handle.Pool
 }
 
+// earlierToday is `ago` before now, floored at the start of today. Both send
+// counters read a CALENDAR day (`DATE(completed_at) = CURRENT_DATE`, and the
+// profile's own local-day range), so a fixture that just subtracts a duration
+// from now writes YESTERDAY's send whenever the suite runs inside `ago` of
+// midnight, and the send it meant to record stops counting.
+func earlierToday(ago time.Duration) time.Time {
+	now := time.Now().UTC()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if at := now.Add(-ago); at.After(start) {
+		return at
+	}
+	return start
+}
+
+// testEncrypter is the throwaway key every live fixture builds its email
+// repository with. Any 32-byte key works: these graphs store no sealed
+// credentials, and nothing under test decrypts.
+func testEncrypter(t *testing.T) *encrypt.Encrypter {
+	t.Helper()
+	enc, err := encrypt.NewEncrypter([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatalf("encrypter: %v", err)
+	}
+	return enc
+}
+
 // liveFixture builds an isolated org/user/mailbox/campaign/contact graph and
 // returns the ids, removing the whole graph on cleanup.
 type liveFixture struct {
@@ -152,13 +178,7 @@ func (f *liveFixture) setProfile(t *testing.T, b models.SendingBehavior) {
 
 func liveScheduler(t *testing.T, handle *db.DB, pool *pgxpool.Pool) SchedulerService {
 	t.Helper()
-	// Any 32-byte key works: these fixtures store no sealed credentials, and
-	// the scheduler never decrypts. It is only needed to build the repository.
-	enc, err := encrypt.NewEncrypter([]byte("0123456789abcdef0123456789abcdef"))
-	if err != nil {
-		t.Fatalf("encrypter: %v", err)
-	}
-	emailRepo := repository.NewEmailRepostory(handle, enc)
+	emailRepo := repository.NewEmailRepostory(handle, testEncrypter(t))
 	s := NewSchedulerService(
 		repository.NewTaskRepository(pool),
 		repository.NewWarmupRepository(pool),
@@ -370,15 +390,17 @@ func withID(b models.SendingBehavior, id uuid.UUID) models.SendingBehavior {
 	return b
 }
 
-// bookTask inserts a pending campaign task for the fixture's mailbox at a given
-// instant. Pending tasks count against the plan's budgets, because a booked
-// slot has already spent it even though the mail has not gone out yet.
+// bookTask spends one of the fixture mailbox's slots at a given instant, by
+// recording the send that would have taken it.
 func (f *liveFixture) bookTask(t *testing.T, at time.Time) {
 	t.Helper()
 	id := uuid.New()
+	// A COMPLETED task carrying the worker's Message-ID, which is what a send
+	// leaves behind. A pending task would not do: it is the chain's next
+	// wake-up, and since issue #469 neither budget counts one as spent.
 	if _, err := f.pool.Exec(context.Background(), `
-		INSERT INTO tasks (id, task_type, email_account_id, status, message_id, scheduled_at)
-		VALUES ($1, 'campaign', $2, 'pending', '', $3)`, id, f.mailbox, at); err != nil {
+		INSERT INTO tasks (id, task_type, email_account_id, status, message_id, scheduled_at, completed_at)
+		VALUES ($1, 'campaign', $2, 'completed', '<booked@test.local>', $3, $3)`, id, f.mailbox, at); err != nil {
 		t.Fatalf("book task: %v", err)
 	}
 	if _, err := f.pool.Exec(context.Background(),
