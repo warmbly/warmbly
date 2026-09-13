@@ -16,7 +16,7 @@ const defaults = [
   { k: 'Volume ceiling',      v: '40 / day',       why: 'Maintains reputation without crowding the cold-campaign budget.' },
   { k: 'Recent-partner gap',  v: '7 days',         why: 'Stops two mailboxes from forming a degenerate warmup pair.' },
   { k: 'Spam-score block',    v: '> 50',           why: 'Removes proactively, before mailbox providers act.' },
-  { k: 'Invalid token block', v: '≥ 3 / 24h',      why: 'A flurry of malformed tokens is the token-forgery signature.' },
+  { k: 'Token check',         v: 'single-use',     why: 'Every warmup message carries a token bound to its recipient, so nothing can be replayed or redirected.' },
   { k: 'Re-entry probation',  v: '20 deliveries',  why: 'Enough fresh data to confirm health, not just dormancy.' },
 ];
 
@@ -44,7 +44,7 @@ const pools = [
 const faq = [
   ['How long does warmup take?', 'Plan on 3 to 6 weeks for a brand new mailbox to reach a stable warmed state. We ramp +1 / day from a 10 / day start with a 40 / day ceiling.'],
   ['Do free and premium pools mix?', 'Only on proven terms. Paid mailboxes are always served from the premium pool first. When a tier runs thin, partner selection borrows the other tier\'s mailboxes that have been healthy members for at least three days, so nothing unproven ever reaches a paying mailbox. Dedicated workers still participate in the premium pool by default.'],
-  ['What triggers quarantine?', '3 or more invalid warmup tokens in 24h, spam score above 50, complaint rate over 0.10%, or spam-folder placement over 20% on at least 20 deliveries in 7 days.'],
+  ['What triggers quarantine?', 'Spam score above 50, complaint rate over 0.10%, spam-folder placement over 20% on at least 20 deliveries in 7 days, or tampering with received warmup mail.'],
   ['Can I keep warming after campaigns start?', 'Yes, and you should. Warmup runs in parallel with cold sending so any reputation dip is caught and offset before campaigns hit it.'],
 ];
 
@@ -225,7 +225,7 @@ for (let wk = 0; wk < 5; wk++) {
             ))}
           </div>
           <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11.5px] font-mono">
-            <span class="text-muted-foreground">≥ 3 invalid tokens / 24h →</span>
+            <span class="text-muted-foreground">≥ 20% spam placement →</span>
             <span class="inline-flex items-center gap-1 text-rose-700"><span class="w-1 h-1 rounded-full bg-rose-500"></span> mailbox quarantine</span>
           </div>
         </div>

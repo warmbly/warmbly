@@ -572,7 +572,7 @@ Warmup pools are mailbox pools, not campaign lists.
 The intent is:
 
 - only other participating mailboxes are used as warmup recipients
-- recipients can be blocked from the pool if their spam score or invalid-token behavior looks bad
+- recipients can be blocked from the pool if their spam score or their treatment of received warmup mail looks bad
 - repeated pairings should be reduced
 - warmup should look like low-volume natural traffic, not repetitive synthetic blasting
 
@@ -580,7 +580,7 @@ Pool safety signals in code include:
 
 - recent-partner avoidance
 - warmup token validation
-- invalid-token attempt counting
+- single-use, recipient-bound tokens, so warmup mail cannot be replayed or redirected
 - spam-score tracking
 - auto-blocking from pools
 
@@ -629,7 +629,7 @@ Instead, the codebase uses layered abuse controls and trust signals across auth,
 - CAPTCHA on auth-sensitive entry points
 - per-user API rate limiting
 - WebSocket rate limiting
-- warmup-token verification and invalid-attempt tracking
+- warmup-token verification (single-use, recipient-bound)
 - warmup spam-score tracking and auto-blocking from pools
 - tracking-event deduplication and replay resistance
 - deliverability-event idempotency and suppression lists
@@ -690,7 +690,7 @@ Signals used:
 
 Current auto-block thresholds in code:
 
-- `>= 3` invalid warmup-token attempts in `24h` (no live path records one since #481; the band is unreachable until a signal can attribute a forged token to its sender)
+- `>= 3` invalid warmup-token attempts in `24h`: unreachable since #481, when the only path that recorded one was removed for charging the mailbox that received a token rather than whoever sent it; #482 retires the band
 - spam score `> 50`
 
 Relevant code:
@@ -736,14 +736,14 @@ Suggested automatic actions:
   spam-folder placement `>= 20%`
   or complaint rate `>= 0.10%`
   or bounce rate `>= 5%`
-  or repeated suspicious warmup-token failures
+  or repeated tampering with received warmup mail
   Action: immediately remove mailbox from the shared paid warmup pool for `7 days`
 
 - hard block band:
   spam-folder placement `>= 40%`
   or complaint rate `>= 0.30%`
   or bounce rate `>= 10%`
-  or clear abuse indicators such as token forgery patterns or repeated spam flags
+  or clear abuse indicators such as repeated spam flags on received warmup mail
   Action: block mailbox from shared paid pool for `30 days` and require review before re-entry
 
 - catastrophic band:
@@ -775,14 +775,14 @@ Do not automatically restore a blocked mailbox just because time elapsed.
 
 Two mechanisms make the sentence real, and both are easy to undo by accident:
 
-- a timed block holds until `blocked_until` whatever fresh metrics say (`holdActiveBlock` in `internal/app/warmup/service.go`). The bands read windows shorter than the blocks they hand out (seven days of placement or complaints against a 30-day block), so a decision from metrics alone would clear every block within a week, and a re-added mailbox with no history on the next sweep
-- the standing follows the address within the workspace: `emailRepository.Delete` snapshots a penalised mailbox into `warmup_reputation_ledger` in its own transaction and `MoveToPool` consumes it when the same address rejoins, so removing and re-adding a mailbox is not a reset (#476). Held for `config.WarmupReputationLedgerDays`; a mailbox in good standing leaves no row
+- a quarantine or block holds until `blocked_until` whatever fresh metrics say. The floor is inside `UpdateParticipantHealth`'s SQL (`internal/repository/pg_warmup.go`), decided against the row at write time, so it is compare-and-swap and an admin unblock landing mid-sweep is not overwritten by the block the sweep read earlier. Equal severity keeps the later end (a 90-day catastrophic block is not cut to 30 by a milder reading); throttled is not floored because the docs promise it lifts on recovery. The bands read windows shorter than the terms they hand out (seven days of placement against a 30-day block), so without this every block cleared within a week, and a re-added mailbox with no history on the next sweep
+- the standing follows the address within the workspace: `warmup_reputation_ledger` is a mirror of the address's worst live standing, written only by the `warmup_reputation_mirror` trigger on `warmup_pool_participants` (migration 000150), so every path that writes a standing keeps it current and no caller can bypass it. The pool row dies on paths that never touch the mailbox (`LeaveAllPools` on an auth error, a lapsed plan, warmup toggled off) and on `HardDeleteUser`'s cascade, which is why a snapshot at mailbox deletion was not enough. `MoveToPool` seeds a new row from it and never consumes it; `Delete` and `LeaveAllPools` only restart its retention window (`config.WarmupReputationLedgerDays`, applied by the purge in `EvaluateAllParticipants`, never while a live row backs it). A review-required block (`blocked_until NULL`) never lapses. A mailbox in good standing has no row, and recovery clears it (#476)
 
 Require the mailbox to pass re-entry checks such as:
 
 - authentication still healthy: SPF, DKIM, DMARC, PTR where relevant
 - no recent provider complaints or hard-bounce spikes
-- no recent invalid warmup-token attempts
+- no recent tampering with received warmup mail
 - spam-folder placement back below `10%` on a fresh probation sample
 - gradual re-entry with low volume, for example `5-10/day` warmup at first
 
@@ -808,7 +808,7 @@ For this repo, the most practical implementation is:
   warmup spam flags
   deliverability complaints
   bounce events
-  invalid warmup-token attempts
+  tampering with received warmup mail (deletion, spam flag)
   provider rate-limit or abuse signals
 - make pool selection exclude any mailbox not in `healthy`
 - keep positive engagement as a weak positive signal only; it should not instantly offset complaints or spam placement

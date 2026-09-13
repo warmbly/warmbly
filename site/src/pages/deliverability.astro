@@ -54,7 +54,7 @@ const defaults = [
   { k: 'Warmup ramp',       v: '+1 / day',   why: 'One more warmup message per day. Faster ramps look odd to the receiver.' },
   { k: 'Sync burst limit',  v: '100 / 5m',   why: 'If a mailbox pulls in more than 100 new messages in five minutes, the worker throttles it.' },
   { k: 'Sync hourly limit', v: '500 / hr',   why: 'Past this we pause the mailbox ourselves, before the provider has to.' },
-  { k: 'Invalid token block', v: '3 / 24h',  why: 'Three malformed warmup tokens in a day drop the mailbox from the pool.' },
+  { k: 'Tampering block',     v: 'on review', why: 'Deleting or spam-flagging warmup mail a mailbox received removes it from the pool until an operator reviews it.' },
 ];
 
 // =========================================================================

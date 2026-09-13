@@ -591,8 +591,9 @@ func (s *service) evaluateAndPersist(ctx context.Context, accountID uuid.UUID, p
 		return nil, fail("load_metrics", err)
 	}
 
-	now := s.now().UTC()
-	decision := holdActiveBlock(participant, evaluateMetrics(metrics, now), now)
+	// The floor that keeps a block from being overturned by a fresh reading is
+	// applied by UpdateParticipantHealth against the row as it is at write time.
+	decision := evaluateMetrics(metrics, s.now().UTC())
 	if err := s.repo.UpdateParticipantHealth(ctx, accountID, decision.State, decision.BlockedUntil, decision.Reason, decision.Score); err != nil {
 		return nil, fail("persist", err)
 	}
@@ -702,34 +703,6 @@ type evaluationDecision struct {
 	BlockedUntil *time.Time
 	Reason       string
 	Score        float64
-}
-
-// holdActiveBlock keeps a sentence from being overturned by a fresh reading.
-// The bands read windows far shorter than the blocks they hand out (the
-// placement and complaint bands read seven days against a 30-day block), and a mailbox
-// re-added under its old standing arrives with no history at all, so metrics
-// evaluated on their own would clear every block within a day or two. While
-// blocked_until is in the future the current state is a floor: a decision at
-// least as severe replaces it, anything milder is discarded and the current
-// state is re-asserted with the fresh score. Once the term ends the reading
-// stands, which is how a served sentence is released.
-func holdActiveBlock(current *models.WarmupParticipantHealth, decision evaluationDecision, now time.Time) evaluationDecision {
-	if current == nil || current.BlockedUntil == nil || !current.BlockedUntil.After(now) {
-		return decision
-	}
-	if decision.State.Rank() >= current.HealthState.Rank() {
-		return decision
-	}
-	reason := ""
-	if current.BlockedReason != nil {
-		reason = *current.BlockedReason
-	}
-	return evaluationDecision{
-		State:        current.HealthState,
-		BlockedUntil: current.BlockedUntil,
-		Reason:       reason,
-		Score:        decision.Score,
-	}
 }
 
 func evaluateMetrics(metrics *models.WarmupHealthMetrics, now time.Time) evaluationDecision {

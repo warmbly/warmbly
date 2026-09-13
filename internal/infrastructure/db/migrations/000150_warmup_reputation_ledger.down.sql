@@ -1,6 +1,7 @@
--- Reverses 000150. The standing of every removed mailbox is forgotten, so an
--- address removed while penalised rejoins clean on its next connection, which
--- is what happened before the ledger existed. Nothing else is touched: current
--- pool rows keep their state, and MoveToPool tolerates the table's absence only
--- at the version this migration is paired with.
+-- Reverses 000150. The standing of every address is forgotten, so a penalised
+-- address rejoins clean on its next connection, which is what happened before
+-- the mirror existed. Current pool rows keep their state; only the copy that
+-- outlives them goes.
+DROP TRIGGER IF EXISTS warmup_reputation_mirror ON public.warmup_pool_participants;
+DROP FUNCTION IF EXISTS public.warmup_reputation_mirror();
 DROP TABLE IF EXISTS public.warmup_reputation_ledger;

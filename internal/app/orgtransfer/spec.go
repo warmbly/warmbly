@@ -559,7 +559,7 @@ var Tables = []Table{
 	{
 		Name: "warmup_reputation_ledger", Group: models.OrgDataGroupWarmup,
 		Scope: `organization_id = $1`,
-		Note:  "The standing of a removed mailbox, keyed by address so adding it back is not a reset. It travels: a block is about the mailbox's conduct rather than this instance, and an export would otherwise be a way past it.",
+		Note:  "The standing of every penalised address, current or removed, kept by a trigger on the pool rows so adding a mailbox back is not a reset. It travels: a block is about the mailbox's conduct rather than this instance, and since pool rows do not, this is how a blocked mailbox arrives blocked.",
 	},
 	{
 		Name: "warmup_admin_actions", Group: models.OrgDataGroupWarmup,

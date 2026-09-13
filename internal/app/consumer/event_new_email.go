@@ -180,14 +180,18 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 		return false, nil
 	}
 	if token.RecipientAccountID != e.Message.EmailID {
-		// Someone else's warmup mail, forwarded or copied here. Worth seeing
-		// in the logs (a forwarding rule between pool members wastes both
-		// mailboxes' warmup), never worth a mark against this mailbox.
-		log.Info().
-			Str("email_account_id", e.Message.EmailID.String()).
-			Str("token_sender", token.SenderAccountID.String()).
-			Str("token_recipient", token.RecipientAccountID.String()).
-			Msg("warmup token for another mailbox arrived; filed as ordinary mail")
+		// The sender's own Sent copy carries the recipient's token and reaches
+		// here on every send: routine, not worth a line. Anyone else's warmup
+		// mail landing here is worth seeing (a forwarding rule between pool
+		// members wastes both mailboxes' warmup), never a mark against this
+		// mailbox.
+		if token.SenderAccountID != e.Message.EmailID {
+			log.Info().
+				Str("email_account_id", e.Message.EmailID.String()).
+				Str("token_sender", token.SenderAccountID.String()).
+				Str("token_recipient", token.RecipientAccountID.String()).
+				Msg("warmup token for another mailbox arrived; filed as ordinary mail")
+		}
 		return false, nil
 	}
 

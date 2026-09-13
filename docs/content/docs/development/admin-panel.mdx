@@ -27,7 +27,7 @@ The landing page. Instance-wide counters and their trends, acquisition by channe
 | **Fleet** | Capacity per worker with utilization, the control loops' decision log (what the placement and rotation loops did and why), and isolated-egress reservations, with reserve and release |
 | **Mailboxes** | Every connected mailbox across every workspace, with its state and the worker it sits on |
 | **Sync** | The platform copy of each mailbox's backfill progress and fair-use throttle, with clear-throttle and restart-backfill. The budgets it enforces are the four `sync.*` values under [Configuration > Settings](/development/configuration/#settings-stored-in-the-database); the worker-side engine is the sync governor described under [anti-abuse layers](/development/architecture/#anti-abuse-layers) |
-| **Warmup** | The pools, the blocked list, abuse signals (invalid warmup-token attempts), and the block and unblock history |
+| **Warmup** | The pools, the blocked list, the historical invalid warmup-token attempts (nothing records new ones), and the block and unblock history |
 | **Warmup Appeals** | Appeals from blocked mailboxes, to approve or reject |
 | **Warmup Content** | The generated and reviewed warmup conversation bank, its library and generation jobs |
 | **Campaigns** | Every campaign on the instance with its state and owner |

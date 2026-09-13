@@ -40,8 +40,8 @@ Each mailbox sits in a band, shown as a colored chip. The band controls how Warm
 | Band | Spam placement | Complaint rate | Bounce rate | Other triggers |
 | --- | --- | --- | --- | --- |
 | Watch | `>= 10%` | `>= 0.03%` | n/a | n/a |
-| Quarantine | `>= 20%` | `>= 0.10%` | `>= 5%` | Repeated suspicious warmup-token failures |
-| Blocked | `>= 40%` | `>= 0.30%` | `>= 10%` | Clear abuse signals (token forgery, repeated spam flags) |
+| Quarantine | `>= 20%` | `>= 0.10%` | `>= 5%` | Repeated tampering with received warmup mail |
+| Blocked | `>= 40%` | `>= 0.30%` | `>= 10%` | Clear abuse signals (repeated spam flags on received warmup mail) |
 | Catastrophic | `>= 80%` | n/a | n/a | n/a |
 
 A mailbox enters a band by crossing any single threshold. What each band does:
@@ -60,7 +60,7 @@ Warmbly never acts on the composite score alone. Complaint rate, spam placement,
 
 ### Re-entry after a block
 
-Time elapsing is not enough. A blocked mailbox must requalify: SPF, DKIM, and DMARC still healthy; no recent complaints or hard-bounce spikes; no recent invalid warmup-token attempts; spam placement back under `10%` on a fresh probation sample. Re-entry then starts low, around `5-10/day` of warmup.
+Time elapsing is not enough. A blocked mailbox must requalify: SPF, DKIM, and DMARC still healthy; no recent complaints or hard-bounce spikes; no recent tampering with received warmup mail; spam placement back under `10%` on a fresh probation sample. Re-entry then starts low, around `5-10/day` of warmup.
 
 ## Domain authentication
 
