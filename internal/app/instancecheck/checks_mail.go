@@ -136,6 +136,11 @@ func checkLoginCodeExemptAccounts(ctx context.Context, d Deps, in Input) *Findin
 		}
 		lines = append(lines, line)
 	}
+	// A halted iteration leaves the rows read before the error, and reporting
+	// those as the complete list would understate what is exempt.
+	if rows.Err() != nil {
+		return nil
+	}
 	if len(lines) == 0 {
 		return nil
 	}

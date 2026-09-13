@@ -37,6 +37,11 @@ type UserRepository interface {
 	// ListLoginCodeExempt returns every exempt account, for the instance check
 	// that keeps a forgotten exemption visible.
 	ListLoginCodeExempt(ctx context.Context) ([]models.LoginCodeExemption, error)
+
+	// CreateExemptUser creates an account and its login-code exemption in one
+	// transaction, so a failure cannot leave an account that holds no
+	// exemption and therefore appears in no list.
+	CreateExemptUser(ctx context.Context, email *mail.Address, passwordHash, reason string, by *uuid.UUID) (*models.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	SetFreeTrialUsed(ctx context.Context, userID uuid.UUID) error
 	UpdateOnboarding(ctx context.Context, userID uuid.UUID, firstName, lastName, referralSource, role, teamSize string) error
@@ -330,4 +335,52 @@ func (r *userRepository) ListLoginCodeExempt(ctx context.Context) ([]models.Logi
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// CreateExemptUser is CreateUser plus the exemption, atomically.
+//
+// Creating them separately meant a failure between the two left an account
+// with no exemption: invisible to the tester list, un-retryable because the
+// address was taken, and reachable by whoever held the password.
+func (r *userRepository) CreateExemptUser(ctx context.Context, email *mail.Address, passwordHash, reason string, by *uuid.UUID) (*models.User, error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Rolls back unless the commit below succeeds; a commit makes this a no-op.
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	id := uuid.New()
+	firstName := "Unknown"
+	if parts := strings.SplitN(email.Address, "@", 2); len(parts) == 2 {
+		firstName = parts[0]
+	}
+	now := time.Now()
+	if _, ierr := tx.Exec(ctx, `
+		INSERT INTO users (id, email, password_hash, first_name, last_name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, '', $5, $5)`,
+		id, email.Address, passwordHash, firstName, now); ierr != nil {
+		return nil, ierr
+	}
+	created := &models.User{
+		ID:        id,
+		FirstName: firstName,
+		Email:     email.Address,
+		Roles:     make([]uuid.UUID, 0),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if _, eerr := tx.Exec(ctx, `
+		UPDATE users
+		SET login_code_exempt = true,
+		    login_code_exempt_reason = $2,
+		    login_code_exempt_by = $3,
+		    login_code_exempt_at = NOW()
+		WHERE id = $1`, created.ID, reason, by); eerr != nil {
+		return nil, eerr
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return created, nil
 }

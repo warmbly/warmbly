@@ -99,7 +99,11 @@ func (h *Handler) AdminCreateTester(c *gin.Context) {
 		return
 	}
 
-	created, cerr := h.UserRepo.CreateUser(c.Request.Context(), parsed, hash)
+	// One transaction, so a failure cannot leave an account that holds no
+	// exemption: that account would be invisible to the tester list,
+	// un-retryable because the address was taken, and reachable by whoever
+	// held the password.
+	created, cerr := h.UserRepo.CreateExemptUser(c.Request.Context(), parsed, hash, reason, adminID)
 	if cerr != nil {
 		errx.JSON(c, errx.New(errx.Internal, "could not create the account"))
 		return
@@ -111,20 +115,17 @@ func (h *Handler) AdminCreateTester(c *gin.Context) {
 	}
 	org, oerr := h.OrganizationService.Create(c.Request.Context(), created.ID, orgName)
 	if oerr != nil {
-		errx.JSON(c, errx.New(errx.Internal, "the account was created but its workspace was not; remove it and try again"))
+		// The account and its exemption committed together, so it is already
+		// in the tester list and can be revoked from there. Say so, rather
+		// than leaving the operator to guess what survived.
+		errx.JSON(c, errx.New(errx.Internal,
+			"the account was created but its workspace was not. It is listed under Testers; revoke it there and try again."))
 		return
 	}
 	if h.TrialService != nil {
 		// Best effort: without it the workspace has no subscription row and
 		// reads as unpaid, which is recoverable from the admin panel.
 		_ = h.TrialService.StartFreeTrialWithOrg(c.Request.Context(), created.ID, org.ID)
-	}
-
-	// The exemption is the point: the holder cannot read this instance's mail,
-	// so an emailed code would lock them out.
-	if eerr := h.UserRepo.SetLoginCodeExempt(c.Request.Context(), created.ID, true, reason, adminID); eerr != nil {
-		errx.JSON(c, errx.New(errx.Internal, "the account was created but the login-code exemption was not applied"))
-		return
 	}
 
 	h.logTesterAction(c, *adminID, created.ID, "create_tester", map[string]any{

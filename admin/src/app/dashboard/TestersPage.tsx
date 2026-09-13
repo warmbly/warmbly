@@ -28,7 +28,7 @@ function fmt(ts?: string | null) {
 
 export default function TestersPage() {
     const qc = useQueryClient();
-    const canManage = useAdminPerm(AdminPerm.BanUsers);
+    const canManage = useAdminPerm(AdminPerm.ManageTesters);
 
     const [email, setEmail] = useState("");
     const [orgName, setOrgName] = useState("");
@@ -157,6 +157,14 @@ export default function TestersPage() {
                 </div>
                 {testers.isLoading ? (
                     <div className="p-3"><Skeleton className="h-16 w-full" /></div>
+                ) : testers.isError ? (
+                    // Never fall through to the empty state here: "nothing is
+                    // skipping the login code" is exactly the wrong thing to
+                    // tell someone when the query failed.
+                    <div className="p-3 text-xs text-red-600">
+                        Could not load tester accounts, so this list is not authoritative. Retry before
+                        concluding that none exist.
+                    </div>
                 ) : rows.length === 0 ? (
                     <div className="p-3 text-xs text-muted-foreground">
                         None. Nothing on this instance is skipping the login code.

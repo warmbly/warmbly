@@ -45,12 +45,17 @@ const (
 	// Organization (Workspace) Management (bits 20-21)
 	AdminPermViewOrganizations   // View workspaces and their plan/usage
 	AdminPermManageOrganizations // Set per-org limit overrides, ban scope, etc.
+
+	// Tester accounts (bit 22). Its own bit rather than reusing ban_users:
+	// creating an account, excusing it from the login code and being handed
+	// its password is a different and larger capability than suspending one.
+	AdminPermManageTesters
 )
 
 // AllAdminPermissions is the full mask, retired bits included: it is what
 // existing super admins hold in the database. Bump the shift whenever a new
 // bit is added above.
-const AllAdminPermissions AdminPermission = (1 << 22) - 1
+const AllAdminPermissions AdminPermission = (1 << 23) - 1
 
 // LiveAdminPermissions ORs every bit that still gates a route.
 const LiveAdminPermissions AdminPermission = AdminPermViewUsers | AdminPermBanUsers |
@@ -60,7 +65,8 @@ const LiveAdminPermissions AdminPermission = AdminPermViewUsers | AdminPermBanUs
 	AdminPermViewAnalytics | AdminPermViewAuditLogs |
 	AdminPermManageRateLimits | AdminPermManageSettings |
 	AdminPermGrantAdminAccess |
-	AdminPermViewOrganizations | AdminPermManageOrganizations
+	AdminPermViewOrganizations | AdminPermManageOrganizations |
+	AdminPermManageTesters
 
 // retiredAdminPermissions are the bits that no longer gate anything.
 const retiredAdminPermissions = adminPermReserved2 | adminPermReserved3 |
@@ -138,6 +144,7 @@ func GetAllPermissionInfos() []PermissionInfo {
 		// User Management
 		{Name: "view_users", Permission: AdminPermViewUsers, Description: "View user profiles and details", Category: "User Management"},
 		{Name: "ban_users", Permission: AdminPermBanUsers, Description: "Ban and unban users", Category: "User Management"},
+		{Name: "manage_testers", Permission: AdminPermManageTesters, Description: "Create tester accounts and excuse them from the login code", Category: "User Management"},
 
 		// Worker Management
 		{Name: "view_workers", Permission: AdminPermViewWorkers, Description: "View worker list and status", Category: "Worker Management"},

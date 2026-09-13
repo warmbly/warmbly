@@ -557,6 +557,7 @@ func runUserLoginCodeExempt(ctx context.Context, args []string) error {
 	fs := newFlagSet("user login-code-exempt")
 	address := fs.String("email", "", "address of the account to exempt (required)")
 	reason := fs.String("reason", "", "why this account is exempt (required unless --clear)")
+	by := fs.String("by", "", "address of the operator accountable for this exemption (required unless --clear)")
 	clear := fs.Bool("clear", false, "remove the exemption instead of granting one")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -572,6 +573,12 @@ func runUserLoginCodeExempt(ctx context.Context, args []string) error {
 	trimmed := strings.TrimSpace(*reason)
 	if !*clear && trimmed == "" {
 		return errors.New("--reason is required: an exemption nobody can explain is worse than no exemption")
+	}
+	// This command talks to Postgres directly and has no signed-in operator to
+	// attribute the grant to, so the accountable account is named explicitly.
+	// The admin panel passes the acting admin and asks for nothing.
+	if !*clear && strings.TrimSpace(*by) == "" {
+		return errors.New("--by is required: name the operator accountable for this exemption, e.g. --by you@example.com")
 	}
 
 	c, err := connect(ctx)
@@ -593,7 +600,11 @@ func runUserLoginCodeExempt(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	if err := c.users.SetLoginCodeExempt(ctx, u.ID, true, trimmed, nil); err != nil {
+	grantor, gerr := lookupUser(ctx, c, strings.TrimSpace(*by))
+	if gerr != nil {
+		return fmt.Errorf("resolving --by: %w", gerr)
+	}
+	if err := c.users.SetLoginCodeExempt(ctx, u.ID, true, trimmed, &grantor.ID); err != nil {
 		return fmt.Errorf("granting the exemption: %w", err)
 	}
 	fmt.Printf("%s will not be asked for an emailed login code.\n\n  Reason  %s\n\nEvery other protection still applies: the password, the captcha, and the\nrisk assessment. Remove it when the reason no longer holds:\n  warmblyctl user login-code-exempt --email %s --clear\n", u.Email, trimmed, u.Email)
