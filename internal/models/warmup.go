@@ -140,11 +140,10 @@ type WarmupHealthMetrics struct {
 	UserComplaintsLast7d int     `json:"user_complaints_last_7d"`
 	WarmupComplaintRate  float64 `json:"warmup_complaint_rate"`
 
-	InvalidAttemptsLast24 int     `json:"invalid_attempts_last_24h"`
-	SpamScore             int     `json:"spam_score"`
-	ComplaintsLast30d     int     `json:"complaints_last_30d"`
-	DeliveredLast30d      int     `json:"delivered_last_30d"`
-	ComplaintRate         float64 `json:"complaint_rate"`
-	BouncesLast30d        int     `json:"bounces_last_30d"`
-	BounceRate            float64 `json:"bounce_rate"`
+	SpamScore         int     `json:"spam_score"`
+	ComplaintsLast30d int     `json:"complaints_last_30d"`
+	DeliveredLast30d  int     `json:"delivered_last_30d"`
+	ComplaintRate     float64 `json:"complaint_rate"`
+	BouncesLast30d    int     `json:"bounces_last_30d"`
+	BounceRate        float64 `json:"bounce_rate"`
 }

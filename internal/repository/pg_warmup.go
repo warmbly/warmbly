@@ -179,8 +179,6 @@ type WarmupRepository interface {
 	// IsWarmupDelivery answers the same question for a second reader of the
 	// same mailbox, which must not depend on who consumed the token first.
 	IsWarmupDelivery(ctx context.Context, recipientAccountID uuid.UUID, senderAddress, messageID, subject string) (bool, error)
-	RecordInvalidTokenAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string) error
-	CountRecentInvalidAttempts(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
 	// Warmup conversation support
 	GetRecentlyUsedPartners(ctx context.Context, accountID uuid.UUID, since time.Time) ([]uuid.UUID, error)
@@ -1357,29 +1355,6 @@ func (r *warmupRepository) IsWarmupDelivery(ctx context.Context, recipientAccoun
 		return false, err
 	}
 	return ok, nil
-}
-
-// RecordInvalidTokenAttempt records an invalid warmup token attempt
-func (r *warmupRepository) RecordInvalidTokenAttempt(ctx context.Context, accountID uuid.UUID, attemptedToken string) error {
-	query := `
-		INSERT INTO warmup_invalid_token_attempts (email_account_id, attempted_token)
-		VALUES ($1, $2)
-	`
-	_, err := r.db.Exec(ctx, query, accountID, attemptedToken)
-	return err
-}
-
-// CountRecentInvalidAttempts counts invalid token attempts since a given time
-func (r *warmupRepository) CountRecentInvalidAttempts(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
-	query := `
-		SELECT COUNT(*)
-		FROM warmup_invalid_token_attempts
-		WHERE email_account_id = $1 AND created_at > $2
-	`
-
-	var count int
-	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
-	return count, err
 }
 
 // GetRecentlyUsedPartners returns partner account IDs the sender has targeted since the provided timestamp.

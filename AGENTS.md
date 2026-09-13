@@ -690,7 +690,6 @@ Signals used:
 
 Current auto-block thresholds in code:
 
-- `>= 3` invalid warmup-token attempts in `24h`: unreachable since #481, when the only path that recorded one was removed for charging the mailbox that received a token rather than whoever sent it; #482 retires the band
 - spam score `> 50`
 
 Relevant code:

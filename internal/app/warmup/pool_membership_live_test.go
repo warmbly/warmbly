@@ -39,13 +39,7 @@ func newPoolMailbox(t *testing.T, handle *db.DB, poolType string) *poolMailbox {
 	ctx := context.Background()
 	pool := handle.Pool
 
-	var pools int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM warmup_pools`).Scan(&pools); err != nil {
-		t.Fatalf("count pools: %v", err)
-	}
-	if pools == 0 {
-		t.Skip("no warmup pools on this database")
-	}
+	ensureWarmupPools(t, pool)
 
 	f := &poolMailbox{user: uuid.New(), org: uuid.New(), account: uuid.New(), handle: handle}
 

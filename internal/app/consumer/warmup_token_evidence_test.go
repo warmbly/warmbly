@@ -7,8 +7,6 @@ import (
 
 	"github.com/google/uuid"
 
-	warmupapp "github.com/warmbly/warmbly/internal/app/warmup"
-	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -32,19 +30,6 @@ func (s *stubWarmupTokenRepo) FindWarmupToken(context.Context, uuid.UUID) (*mode
 	panic("FindWarmupToken: the inbound path has no reason to read a token twice")
 }
 
-// stubWarmupService observes the one thing that matters: was the mailbox
-// charged. markRiskBandFromWarmupHealth is a no-op without a WorkerRepo.
-type stubWarmupService struct {
-	warmupapp.Service
-
-	charged []int
-}
-
-func (s *stubWarmupService) ApplyInvalidTokenAttempt(_ context.Context, _ uuid.UUID, _ string, scoreDelta int) (*models.WarmupParticipantHealth, *errx.Error) {
-	s.charged = append(s.charged, scoreDelta)
-	return nil, nil
-}
-
 // Every invalid-token attempt on a live self-host was the mailbox re-reading
 // its own mail: 88 of 211 a message whose token had expired, 67 the Sent copy
 // carrying the recipient's token, and 56 a reconnected mailbox replaying a
@@ -55,8 +40,11 @@ func (s *stubWarmupService) ApplyInvalidTokenAttempt(_ context.Context, _ uuid.U
 // against the mailbox that received it. The one shape that looked like
 // evidence, a token naming another pair, is the one an attacker can put in
 // any inbox at will, and the recipient check already makes it worthless.
-// Acceptance of a live token for this mailbox is exercised against the real
-// store in warmup_verification_live_test.go; this covers every other path.
+// Since #482 there is nothing left to charge with: the signal, its band and
+// its table are gone. What remains to pin is that no other shape is filed as
+// warmup and that the path reads the token exactly once. Acceptance of a
+// live token for this mailbox is exercised against the real store in
+// warmup_verification_live_test.go.
 func TestHandleWarmupEmailNeverChargesTheRecipient(t *testing.T) {
 	mailbox := uuid.New()
 	partner := uuid.New()
@@ -82,17 +70,13 @@ func TestHandleWarmupEmailNeverChargesTheRecipient(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := &stubWarmupService{}
-			s := &JobsService{WarmupRepo: tc.repo, WarmupService: svc}
+			s := &JobsService{WarmupRepo: tc.repo}
 			handled, err := s.handleWarmupEmail(context.Background(), e, tc.tokStr)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
 			}
 			if handled {
 				t.Fatal("filed a token that was not this mailbox's as warmup")
-			}
-			if len(svc.charged) != 0 {
-				t.Fatalf("the recipient was charged %v for mail it merely received", svc.charged)
 			}
 			if tc.repo.reads != tc.reads {
 				t.Fatalf("GetWarmupToken called %d times, want %d", tc.repo.reads, tc.reads)

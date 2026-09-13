@@ -543,10 +543,6 @@ var Tables = []Table{
 		Scope: `email_account_id IN ` + orgMailboxes,
 	},
 	{
-		Name: "warmup_invalid_token_attempts", Group: models.OrgDataGroupWarmup,
-		Scope: `email_account_id IN ` + orgMailboxes,
-	},
-	{
 		Name: "warmup_spam_reports", Group: models.OrgDataGroupWarmup,
 		Scope: `reporter_account_id IN ` + orgMailboxes,
 	},
