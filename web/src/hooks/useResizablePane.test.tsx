@@ -273,6 +273,22 @@ describe("capturePointerDrag", () => {
         expect(onMove).not.toHaveBeenCalled();
     });
 
+    it("releases the page even when the handle is unmounted mid-drag", () => {
+        const onEnd = vi.fn();
+        const { unmount } = render(<Draggable onMove={vi.fn()} onEnd={onEnd} />);
+        const grip = screen.getByTestId("grip");
+
+        fireEvent.pointerDown(grip, { pointerId: 7, button: 0 });
+        expect(document.body.style.userSelect).toBe("none");
+
+        // The listeners live on the element, so they go with it; without a net
+        // on window the whole app stays unselectable for the session.
+        unmount();
+        fireEvent.pointerUp(window, { pointerId: 7 });
+        expect(document.body.style.userSelect).toBe("");
+        expect(onEnd).toHaveBeenCalledTimes(1);
+    });
+
     it("ignores a second finger", () => {
         const onMove = vi.fn();
         render(<Draggable onMove={onMove} />);

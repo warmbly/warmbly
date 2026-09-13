@@ -259,12 +259,17 @@ export function capturePointerDrag(
     const move = (ev: Event) => {
         if (mine(ev)) handlers.onMove(ev as PointerEvent);
     };
+    // Removing a listener mid-dispatch keeps it off the rest of THIS event too,
+    // so the element's handler taking the window pair down is enough: `end`
+    // cannot run twice for one gesture.
     const end = (ev: Event) => {
         if (!mine(ev)) return;
         el.removeEventListener("pointermove", move);
         el.removeEventListener("pointerup", end);
         el.removeEventListener("pointercancel", end);
         el.removeEventListener("lostpointercapture", end);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
         document.body.style.removeProperty("user-select");
         document.body.style.removeProperty("cursor");
         handlers.onEnd?.();
@@ -275,4 +280,8 @@ export function capturePointerDrag(
     // sends pointerup; without these the listeners outlive the drag.
     el.addEventListener("pointercancel", end);
     el.addEventListener("lostpointercapture", end);
+    // Last resort: the element itself can be unmounted mid-drag, taking its
+    // listeners with it and leaving the whole app locked to `user-select: none`.
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
 }
