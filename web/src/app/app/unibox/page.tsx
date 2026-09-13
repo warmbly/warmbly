@@ -5,7 +5,7 @@
 //   ├──────────┬────────────────────────┬─────────────────────────┤
 //   │  Scope   │ Conversation list      │ Thread (live fetch)     │
 //   │  rail    │ (search + dense rows)  │ (deep-linkable URL)     │
-//   │ (220px)  │       (360px)          │  flex-1                 │
+//   │ (220px)  │  (drag-resizable)      │  flex-1                 │
 //   └──────────┴────────────────────────┴─────────────────────────┘
 //
 // All counts in the rail and strip come from /unibox/overview in one
@@ -26,7 +26,12 @@ import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { LockedSurface } from "@/components/layout/LockedSurface";
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
-import { useAppStore } from "@/stores";
+import {
+  useAppStore,
+  UNIBOX_LIST_DEFAULT_WIDTH,
+  UNIBOX_LIST_MAX_WIDTH,
+  UNIBOX_LIST_MIN_WIDTH,
+} from "@/stores";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { cn } from "@/lib/utils";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
@@ -51,6 +56,60 @@ export default function UniboxPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
+
+  // ── Pane widths ────────────────────────────────────────────────
+  // The list column is drag-resizable against the thread pane and the width
+  // is persisted (warmbly-storage), so a long-subject layout survives a
+  // reload. The store clamps the value; the element's own max-width clamps it
+  // again against the viewport, so a width chosen on a 27" monitor cannot
+  // leave a laptop with a 200px thread.
+  const listWidth = useAppStore((s) => s.uniboxListWidth);
+  const setListWidth = useAppStore((s) => s.setUniboxListWidth);
+  const listRef = React.useRef<HTMLDivElement>(null);
+
+  const startListResize = React.useCallback(
+    (e: React.PointerEvent) => {
+      const el = listRef.current;
+      if (!el) return;
+      e.preventDefault();
+      const left = el.getBoundingClientRect().left;
+      // The cursor and the text-selection lock go on <body> for the duration:
+      // without them a fast drag selects half the conversation list.
+      const prevCursor = document.body.style.cursor;
+      const prevSelect = document.body.style.userSelect;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (ev: PointerEvent) => setListWidth(ev.clientX - left);
+      const onUp = () => {
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevSelect;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    [setListWidth],
+  );
+
+  // The ARIA window-splitter keys: arrows nudge, Home/End go to the bounds,
+  // Enter restores the default (which is also what a double-click does).
+  const onListResizeKey = React.useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = e.shiftKey ? 48 : 16;
+      if (e.key === "ArrowLeft") setListWidth(listWidth - step);
+      else if (e.key === "ArrowRight") setListWidth(listWidth + step);
+      else if (e.key === "Home") setListWidth(UNIBOX_LIST_MIN_WIDTH);
+      else if (e.key === "End") setListWidth(UNIBOX_LIST_MAX_WIDTH);
+      else if (e.key === "Enter" || e.key === " ")
+        setListWidth(UNIBOX_LIST_DEFAULT_WIDTH);
+      else return;
+      e.preventDefault();
+    },
+    [listWidth, setListWidth],
+  );
 
   // ── URL state ──────────────────────────────────────────────────
   // Readable, path-based URLs: /app/unibox/<scope>[/<threadId>]. The scope is a
@@ -330,8 +389,15 @@ export default function UniboxPage() {
           ) : (
             <>
               <div
+                ref={listRef}
+                // The stored width only applies from md up; below it the list
+                // is the whole screen and the thread replaces it. The two
+                // max-widths keep a readable thread pane at every viewport:
+                // 360px for it below lg, 360 + the 220px rail from lg.
+                style={{ "--unibox-list-w": `${listWidth}px` } as React.CSSProperties}
                 className={cn(
-                  "w-full md:w-[360px] shrink-0 border-r border-slate-200 overflow-hidden flex-col",
+                  "w-full shrink-0 overflow-hidden flex-col",
+                  "md:w-[var(--unibox-list-w)] md:max-w-[calc(100%-360px)] lg:max-w-[calc(100%-580px)]",
                   urlThread ? "hidden md:flex" : "flex",
                 )}
               >
@@ -341,6 +407,28 @@ export default function UniboxPage() {
                   params={params}
                   setParams={setParams}
                 />
+              </div>
+
+              {/* The divider IS the drag handle: a 6px column with the
+                  hairline centred in it, so the grab area never overlaps
+                  either pane's scrollbar. */}
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize the conversation list"
+                aria-valuenow={listWidth}
+                aria-valuemin={UNIBOX_LIST_MIN_WIDTH}
+                aria-valuemax={UNIBOX_LIST_MAX_WIDTH}
+                tabIndex={0}
+                onPointerDown={startListResize}
+                onKeyDown={onListResizeKey}
+                onDoubleClick={() => setListWidth(UNIBOX_LIST_DEFAULT_WIDTH)}
+                title="Drag to resize · double-click to reset"
+                className="group hidden md:flex w-1.5 shrink-0 cursor-col-resize items-stretch justify-center touch-none outline-none"
+              >
+                {/* The hairline is the whole control, so focus has to thicken
+                    and colour it: there is no outline to fall back on. */}
+                <span className="w-px bg-slate-200 transition-[background-color,width] group-hover:bg-sky-400 group-active:bg-sky-500 group-focus-visible:w-0.5 group-focus-visible:bg-sky-500" />
               </div>
 
               <div

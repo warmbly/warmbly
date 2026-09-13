@@ -36,6 +36,7 @@ import AgentDraftCard from "./AgentDraftCard";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
+import { useMediaQuery, LG_QUERY } from "@/hooks/useMediaQuery";
 import { ThreadLabelMenu } from "./ThreadLabelMenu";
 import ContactContextPanel from "./ContactContextPanel";
 import BookACallButton from "@/components/app/integrations/BookACallButton";
@@ -173,26 +174,27 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
   const threadLabels = useThreadLabels(threadId);
   const [labelMenuOpen, setLabelMenuOpen] = React.useState(false);
 
-  // CRM context rail (right side). Open by default on lg+, where it renders
-  // as a static rail beside the thread; below lg it is an overlay drawer, so
-  // it starts closed and is opened from the header toggle.
-  const [crmOpen, setCrmOpen] = React.useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(min-width: 1024px)").matches,
+  // CRM context rail (right side). From lg up it is a static rail beside the
+  // thread and its open/closed state is a persisted preference: this view is
+  // keyed on the thread id, so component state would put the rail back over
+  // every conversation the reader opens. It still starts open, which is the
+  // default #402/568bdb48 settled on; closing it now sticks (#473).
+  //
+  // Below lg the same panel is an overlay drawer on top of the thread, which
+  // is not something to restore on arrival, so there it is plain local state
+  // that starts closed and never writes the preference.
+  const isWide = useMediaQuery(LG_QUERY);
+  const railPref = useAppStore((s) => s.uniboxContactRailOpen);
+  const setRailPref = useAppStore((s) => s.setUniboxContactRailOpen);
+  const [overlayOpen, setOverlayOpen] = React.useState(false);
+  const crmOpen = isWide ? railPref : overlayOpen;
+  const setCrmOpen = React.useCallback(
+    (open: boolean) => {
+      if (isWide) setRailPref(open);
+      else setOverlayOpen(open);
+    },
+    [isWide, setRailPref],
   );
-
-  // The initial state is read once, so narrowing past lg with the rail open
-  // turned it into an overlay sitting on top of the thread (a rotated tablet,
-  // a window dragged to half a screen). Close it on the way down.
-  React.useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1024px)");
-    const onChange = (e: MediaQueryListEvent) => {
-      if (!e.matches) setCrmOpen(false);
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
 
   // `c` opens the label menu while a thread is open — ignored while
   // typing into the composer / any input so it never eats keystrokes.
@@ -475,7 +477,7 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setCrmOpen((o) => !o)}
+            onClick={() => setCrmOpen(!crmOpen)}
             aria-label={crmOpen ? "Hide contact panel" : "Show contact panel"}
             className={
               "inline-flex size-7 rounded-md items-center justify-center transition-colors " +

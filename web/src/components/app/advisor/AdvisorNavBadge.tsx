@@ -10,7 +10,15 @@ import { motion } from "framer-motion";
 import type { AdvisorSurface } from "@/lib/api/models/app/advisor/Advisor";
 import { useAdvisorSummary } from "@/lib/api/hooks/app/advisor/useAdvisor";
 
-export default function AdvisorNavBadge({ surface }: { surface: AdvisorSurface }) {
+export default function AdvisorNavBadge({
+    surface,
+    dot = false,
+}: {
+    surface: AdvisorSurface;
+    // The collapsed sidebar rail has no room for a count, so the same finding
+    // shows as a severity dot on the icon instead of disappearing with the label.
+    dot?: boolean;
+}) {
     const { data } = useAdvisorSummary();
 
     const counts = useMemo(() => {
@@ -26,6 +34,18 @@ export default function AdvisorNavBadge({ surface }: { surface: AdvisorSurface }
         counts.critical > 0
             ? `${counts.urgent} ${counts.urgent === 1 ? "issue" : "issues"} needing attention, ${counts.critical} critical`
             : `${counts.urgent} ${counts.urgent === 1 ? "issue" : "issues"} needing attention`;
+
+    if (dot) {
+        return (
+            <span
+                title={label}
+                aria-label={label}
+                className={`absolute right-1 top-1 size-1.5 rounded-full ring-2 ring-[#f5f6f8] ${
+                    counts.critical > 0 ? "bg-rose-500" : "bg-orange-500"
+                }`}
+            />
+        );
+    }
 
     return (
         <motion.span

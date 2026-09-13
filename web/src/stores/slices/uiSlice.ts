@@ -2,6 +2,18 @@ import type { StateCreator } from 'zustand'
 
 export type Theme = 'light' | 'dark' | 'system'
 
+// Unibox list-column bounds. The max keeps a readable thread pane on a laptop;
+// the element also carries a `max-w: calc(100% - 360px)` so a width stored on a
+// wide monitor cannot crush the thread on a narrow one.
+export const UNIBOX_LIST_MIN_WIDTH = 280
+export const UNIBOX_LIST_MAX_WIDTH = 620
+export const UNIBOX_LIST_DEFAULT_WIDTH = 360
+
+const clampListWidth = (w: number): number => {
+  if (!Number.isFinite(w)) return UNIBOX_LIST_DEFAULT_WIDTH
+  return Math.round(Math.min(UNIBOX_LIST_MAX_WIDTH, Math.max(UNIBOX_LIST_MIN_WIDTH, w)))
+}
+
 export interface UISlice {
   // Sidebar
   sidebarCollapsed: boolean
@@ -21,6 +33,12 @@ export interface UISlice {
   // AI assistant panel (right-side, persistent across routes)
   aiAssistantOpen: boolean
 
+  // Unibox layout preferences (persisted). The list column is drag-resizable
+  // against the thread pane; the CRM rail remembers the last explicit toggle
+  // so closing it survives opening the next thread.
+  uniboxListWidth: number
+  uniboxContactRailOpen: boolean
+
   // Actions - Sidebar
   toggleSidebar: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
@@ -38,6 +56,10 @@ export interface UISlice {
   setCommandPaletteOpen: (open: boolean) => void
   setAIAssistantOpen: (open: boolean) => void
   toggleAIAssistant: () => void
+
+  // Actions - Unibox layout
+  setUniboxListWidth: (width: number) => void
+  setUniboxContactRailOpen: (open: boolean) => void
 }
 
 const getInitialTheme = (): Theme => {
@@ -69,6 +91,10 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   shortcutsModalOpen: false,
   commandPaletteOpen: false,
   aiAssistantOpen: false,
+
+  // Unibox layout
+  uniboxListWidth: UNIBOX_LIST_DEFAULT_WIDTH,
+  uniboxContactRailOpen: true,
 
   // Actions - Sidebar
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -102,4 +128,14 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   setAIAssistantOpen: (aiAssistantOpen) =>
     set((state) => (state.aiAssistantOpen === aiAssistantOpen ? state : { aiAssistantOpen })),
   toggleAIAssistant: () => set((state) => ({ aiAssistantOpen: !state.aiAssistantOpen })),
+
+  // Actions - Unibox layout
+  setUniboxListWidth: (width) => {
+    const uniboxListWidth = clampListWidth(width)
+    set((state) => (state.uniboxListWidth === uniboxListWidth ? state : { uniboxListWidth }))
+  },
+  setUniboxContactRailOpen: (uniboxContactRailOpen) =>
+    set((state) =>
+      state.uniboxContactRailOpen === uniboxContactRailOpen ? state : { uniboxContactRailOpen },
+    ),
 })

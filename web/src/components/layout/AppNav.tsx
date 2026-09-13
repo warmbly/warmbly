@@ -27,10 +27,12 @@ import {
     ShieldCheckIcon,
     UsersIcon,
     LockIcon,
+    PanelLeftCloseIcon,
+    PanelLeftOpenIcon,
     XIcon,
     ZapIcon,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactElement, type ReactNode, useMemo, useState } from "react";
 import { useAppStore } from "@/stores";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import { usePermission, type PermissionKey } from "@/hooks/usePermission";
@@ -58,6 +60,9 @@ import AdvisorNavBadge from "@/components/app/advisor/AdvisorNavBadge";
 import type { AdvisorSurface } from "@/lib/api/models/app/advisor/Advisor";
 import { UserNav } from "./UserNav";
 import { Logo } from "@/components/svg";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Kbd } from "@/components/ui/shortcut-tooltip";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
 // Stable (module-level) empty contacts search so the sidebar's contact-count
@@ -169,7 +174,32 @@ const sections: NavSection[] = [
     },
 ];
 
-function NavRow({ item }: { item: NavItem }) {
+// NavTip wraps a collapsed rail row in the themed tooltip, so an icon-only
+// row still says what it is. Expanded rows carry their label and need none.
+function NavTip({
+    collapsed,
+    label,
+    children,
+}: {
+    collapsed: boolean;
+    label: string;
+    children: ReactElement;
+}) {
+    if (!collapsed) return children;
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+                {label}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
+// The collapsed rail is 56px wide, so a row is a centred 32px icon target.
+const ICON_ROW = "group relative mx-auto flex size-8 items-center justify-center rounded-md transition-colors duration-100";
+
+function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolean }) {
     const { pathname } = useLocation();
     const unseen = useAppStore((s) => s.unseenCount);
     const access = useFeatureAccess();
@@ -192,15 +222,25 @@ function NavRow({ item }: { item: NavItem }) {
     if (accessDenied) {
         return (
             <>
+                <NavTip collapsed={collapsed} label={`${item.title} · no access`}>
                 <button
                     type="button"
                     onClick={() => setDeniedOpen(true)}
-                    title={`${item.title} · no access`}
-                    className="group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-400 hover:text-slate-600 hover:bg-slate-200/40 transition-colors duration-100"
+                    // Collapsed the row is an icon and lucide marks its svg
+                    // aria-hidden, so without this the control has no name.
+                    aria-label={collapsed ? `${item.title} · no access` : undefined}
+                    title={collapsed ? undefined : `${item.title} · no access`}
+                    className={cn(
+                        "text-slate-400 hover:text-slate-600 hover:bg-slate-200/40",
+                        collapsed
+                            ? ICON_ROW
+                            : "group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] transition-colors duration-100",
+                    )}
                 >
                     <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
-                    <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
+                    {!collapsed && <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>}
                 </button>
+                </NavTip>
                 <AccessLockedDialog
                     open={deniedOpen}
                     onClose={() => setDeniedOpen(false)}
@@ -228,23 +268,84 @@ function NavRow({ item }: { item: NavItem }) {
     // checkout), instead of routing to a teasing empty page.
     if (locked && minPlan && planBadge) {
         return (
+            <NavTip collapsed={collapsed} label={`${item.title} · ${planBadge.label} plan`}>
             <button
                 type="button"
                 onClick={() => upgradeDialog.open({ feature: item.title, minPlan })}
-                title={`${item.title} · ${planBadge.label} plan`}
-                className="group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-400 hover:text-slate-700 hover:bg-slate-200/40 transition-colors duration-100"
+                aria-label={collapsed ? `${item.title} · ${planBadge.label} plan` : undefined}
+                title={collapsed ? undefined : `${item.title} · ${planBadge.label} plan`}
+                className={cn(
+                    "text-slate-400 hover:text-slate-700 hover:bg-slate-200/40",
+                    collapsed
+                        ? ICON_ROW
+                        : "group w-[calc(100%-1rem)] mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] transition-colors duration-100",
+                )}
             >
                 <LockIcon className="w-[13px] h-[13px] shrink-0 text-slate-300 group-hover:text-slate-500" strokeWidth={1.8} />
-                <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
-                <span
+                {!collapsed && (
+                    <>
+                        <span className="truncate flex-1 min-w-0 text-left">{item.title}</span>
+                        <span
+                            className={cn(
+                                "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
+                                planBadge.classes,
+                            )}
+                        >
+                            {planBadge.label}
+                        </span>
+                    </>
+                )}
+            </button>
+            </NavTip>
+        );
+    }
+
+    const icon = (
+        <item.icon
+            className={cn(
+                "w-[14px] h-[14px] shrink-0 transition-colors",
+                active
+                    ? "text-slate-700"
+                    : locked
+                        ? "text-slate-300 group-hover:text-slate-500"
+                        : "text-slate-400 group-hover:text-slate-600",
+            )}
+            strokeWidth={active ? 2 : 1.6}
+        />
+    );
+
+    // Collapsed rail: the label and the ambient count clusters have nowhere to
+    // go, so the row keeps only its icon plus the two signals that are worth
+    // interrupting for — unread inbox and an open Advisor finding — as dots.
+    if (collapsed) {
+        return (
+            <NavTip collapsed label={item.title}>
+                <Link
+                    to={item.url}
+                    aria-label={item.title}
                     className={cn(
-                        "h-4 px-1.5 rounded text-[9.5px] font-semibold uppercase tracking-[0.06em] border inline-flex items-center",
-                        planBadge.classes,
+                        ICON_ROW,
+                        active
+                            ? "bg-slate-200/70 text-slate-900"
+                            : locked
+                                ? "text-slate-400 hover:text-slate-700 hover:bg-slate-200/40"
+                                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40",
                     )}
                 >
-                    {planBadge.label}
-                </span>
-            </button>
+                    {icon}
+                    {item.advisorSurface && !locked && (
+                        <AdvisorNavBadge surface={item.advisorSurface} dot />
+                    )}
+                    {badge != null && badge > 0 && (
+                        <span
+                            aria-label={`${badge} unread`}
+                            className="absolute -right-0.5 -top-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-medium leading-none flex items-center justify-center tabular-nums ring-2 ring-[#f5f6f8]"
+                        >
+                            {badge > 9 ? "9+" : badge}
+                        </span>
+                    )}
+                </Link>
+            </NavTip>
         );
     }
 
@@ -261,17 +362,7 @@ function NavRow({ item }: { item: NavItem }) {
                         : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40",
             )}
         >
-            <item.icon
-                className={cn(
-                    "w-[14px] h-[14px] shrink-0 transition-colors",
-                    active
-                        ? "text-slate-700"
-                        : locked
-                            ? "text-slate-300 group-hover:text-slate-500"
-                            : "text-slate-400 group-hover:text-slate-600",
-                )}
-                strokeWidth={active ? 2 : 1.6}
-            />
+            {icon}
             {/* min-w-0 lets the label shrink/truncate so the count cluster (and its
                 separator) is never pushed off the row — longer labels like
                 "Campaigns"/"Accounts" used to clip it at narrower widths. */}
@@ -579,17 +670,29 @@ function IntegrationsActivity() {
     );
 }
 
-function Section({ section, first = false }: { section: NavSection; first?: boolean }) {
+function Section({
+    section,
+    first = false,
+    collapsed = false,
+}: {
+    section: NavSection;
+    first?: boolean;
+    collapsed?: boolean;
+}) {
     return (
         <div className={first ? "" : "mt-4 pt-4 border-t border-slate-200/50"}>
-            <div className="px-4 mb-1.5">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                    {section.label}
-                </span>
-            </div>
+            {/* Collapsed, the hairline above the group carries the grouping on
+                its own — a tracked-uppercase label does not fit in 56px. */}
+            {!collapsed && (
+                <div className="px-4 mb-1.5">
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
+                        {section.label}
+                    </span>
+                </div>
+            )}
             <div className="space-y-px">
                 {section.items.map((it) => (
-                    <NavRow key={it.url} item={it} />
+                    <NavRow key={it.url} item={it} collapsed={collapsed} />
                 ))}
             </div>
         </div>
@@ -623,7 +726,7 @@ function Section({ section, first = false }: { section: NavSection; first?: bool
  * The capacity denominator sums each mailbox's configured campaign_limit
  * (default 50/day, from internal/config/constants.go).
  */
-function LivePanel() {
+function LivePanel({ collapsed = false }: { collapsed?: boolean }) {
     const emails = useAppStore((s) => s.emails);
     const unseenCount = useAppStore((s) => s.unseenCount);
     const dash = useDashboard("30d");
@@ -663,6 +766,42 @@ function LivePanel() {
 
     const scrub = hovered != null ? trend[hovered] : undefined;
     const pct = capacity > 0 ? Math.min(100, (sentToday / capacity) * 100) : 0;
+
+    // Collapsed rail: the panel keeps the two things it is actually for —
+    // today's volume and how much of the day's capacity it used — and drops
+    // the sparkline and the chips, which need the label column to be readable.
+    if (collapsed) {
+        return (
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Link
+                        to="/app/analytics"
+                        aria-label={
+                            capacity > 0
+                                ? `Analytics · ${sentToday} of ${capacity} sent today`
+                                : `Analytics · ${sentToday} sent today`
+                        }
+                        className="group mx-auto mt-2 mb-3 flex w-8 flex-col items-center gap-1 rounded-md border border-slate-200/70 bg-white/80 px-1 py-1.5 transition-colors hover:border-slate-300 hover:bg-white"
+                    >
+                        <span className="text-[10px] font-semibold leading-none tabular-nums text-slate-900">
+                            {compactN(sentToday)}
+                        </span>
+                        <span className="h-1 w-full overflow-hidden rounded-full bg-sky-100">
+                            <span
+                                className="block h-full rounded-full bg-sky-500 transition-[width] duration-700 ease-out"
+                                style={{ width: `${pct}%` }}
+                            />
+                        </span>
+                    </Link>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={8}>
+                    {capacity > 0
+                        ? `${sentToday.toLocaleString()} of ${capacity.toLocaleString()} sent today`
+                        : `${sentToday.toLocaleString()} sent today`}
+                </TooltipContent>
+            </Tooltip>
+        );
+    }
 
     return (
         <Link
@@ -916,6 +1055,15 @@ function Sparkline({
 }
 
 export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
+    // Persisted across sessions (warmbly-storage) and toggled either from the
+    // rail's own button or the `b` shortcut. Below md the sidebar is an
+    // off-canvas drawer with the whole viewport to itself, so collapsing it
+    // there would only take away the labels for nothing.
+    const isMobile = useIsMobile();
+    const collapsed = useAppStore((s) => s.sidebarCollapsed);
+    const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+    const iconOnly = collapsed && !isMobile;
+
     return (
         <>
             {/* Mobile-only scrim. Tapping it closes the drawer. */}
@@ -934,7 +1082,11 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
                     "fixed inset-y-0 left-0 z-50 w-64 flex flex-col text-slate-900 bg-white shadow-2xl transition-transform duration-300 ease-out",
                     open ? "translate-x-0" : "-translate-x-full",
                     // >=md: static sidebar column over the chrome, no transform/shadow.
-                    "md:static md:z-auto md:translate-x-0 md:bg-transparent md:shadow-none md:transition-none shrink-0",
+                    "md:static md:z-auto md:translate-x-0 md:bg-transparent md:shadow-none shrink-0",
+                    // Width is the only thing that animates on >=md; the drawer's
+                    // transform transition would otherwise slide the static column.
+                    "md:transition-[width] md:duration-200 md:ease-out",
+                    iconOnly ? "md:w-14" : "md:w-64",
                 )}
             >
                 {/* Mobile drawer header: brand + close. (The desktop sidebar
@@ -959,29 +1111,85 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
                     </button>
                 </div>
 
-            <LivePanel />
+            <LivePanel collapsed={iconOnly} />
 
-            <nav className="flex-1 overflow-y-auto pb-3">
+            {/* overflow-x-hidden: mid-animation the rail is narrower than the
+                expanded rows still laid out inside it, and without this the
+                column grows a horizontal scrollbar for those 200ms. */}
+            <nav className="flex-1 overflow-y-auto overflow-x-hidden pb-3">
                 <div className="space-y-px">
                     {topItems.map((it) => (
-                        <NavRow key={it.url + it.title} item={it} />
+                        <NavRow key={it.url + it.title} item={it} collapsed={iconOnly} />
                     ))}
                 </div>
                 {sections.map((s, i) => (
-                    <Section key={s.label} section={s} first={i === 0 && topItems.length === 0} />
+                    <Section
+                        key={s.label}
+                        section={s}
+                        first={i === 0 && topItems.length === 0}
+                        collapsed={iconOnly}
+                    />
                 ))}
             </nav>
 
             <div className="border-t border-slate-200/60 py-1 shrink-0">
                 <NavRow
                     item={{ title: "Settings", url: "/app/settings", icon: SettingsIcon }}
+                    collapsed={iconOnly}
                 />
+                <CollapseToggle collapsed={iconOnly} onToggle={toggleSidebar} />
             </div>
 
             <div className="border-t border-slate-200/60 shrink-0">
-                <UserNav />
+                <UserNav collapsed={iconOnly} />
             </div>
             </aside>
         </>
+    );
+}
+
+// The rail's own collapse control. `b` does the same thing from anywhere, and
+// the tooltip says so — a shortcut nobody can discover is a shortcut nobody
+// uses. Hidden below md, where the sidebar is a full-width drawer and there is
+// nothing to reclaim.
+function CollapseToggle({
+    collapsed,
+    onToggle,
+}: {
+    collapsed: boolean;
+    onToggle: () => void;
+}) {
+    const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <button
+                    type="button"
+                    onClick={onToggle}
+                    aria-label={label}
+                    aria-pressed={collapsed}
+                    className={cn(
+                        collapsed
+                            ? ICON_ROW
+                            : "group mx-2 w-[calc(100%-1rem)] items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] transition-colors duration-100",
+                        // After the branch, so tailwind-merge drops ICON_ROW's
+                        // `flex` for `hidden` at the base breakpoint: collapsing
+                        // is meaningless in the mobile drawer.
+                        "hidden md:flex text-slate-500 hover:text-slate-900 hover:bg-slate-200/40",
+                    )}
+                >
+                    {collapsed ? (
+                        <PanelLeftOpenIcon className="w-[14px] h-[14px] shrink-0 text-slate-400 group-hover:text-slate-600" strokeWidth={1.6} />
+                    ) : (
+                        <PanelLeftCloseIcon className="w-[14px] h-[14px] shrink-0 text-slate-400 group-hover:text-slate-600" strokeWidth={1.6} />
+                    )}
+                    {!collapsed && <span className="truncate flex-1 min-w-0 text-left">Collapse</span>}
+                </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8} className="flex items-center gap-1.5">
+                {label}
+                <Kbd combo="b" />
+            </TooltipContent>
+        </Tooltip>
     );
 }

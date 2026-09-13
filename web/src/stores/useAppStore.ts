@@ -47,6 +47,9 @@ export const useAppStore = create<AppStore>()(
           agentWidth: state.agentWidth,
           agentFloating: state.agentFloating,
           agentFloatRect: state.agentFloatRect,
+          // Unibox layout (list column width + CRM rail default)
+          uniboxListWidth: state.uniboxListWidth,
+          uniboxContactRailOpen: state.uniboxContactRailOpen,
           // Persist current organization selection
           currentOrganization: state.currentOrganization,
         }),

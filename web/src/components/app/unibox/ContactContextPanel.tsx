@@ -131,7 +131,7 @@ export default function ContactContextPanel({
                     <button
                         type="button"
                         onClick={onClose}
-                        aria-label="Hide contact panel"
+                        aria-label="Close contact panel"
                         className="ml-auto size-7 rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
                     >
                         <XIcon className="w-3.5 h-3.5" />

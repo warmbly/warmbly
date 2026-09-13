@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useAppStore } from './useAppStore'
+import {
+  UNIBOX_LIST_DEFAULT_WIDTH,
+  UNIBOX_LIST_MAX_WIDTH,
+  UNIBOX_LIST_MIN_WIDTH,
+} from './slices/uiSlice'
 
 describe('useAppStore', () => {
   beforeEach(() => {
@@ -18,6 +23,8 @@ describe('useAppStore', () => {
       addEmailModalOpen: false,
       shortcutsModalOpen: false,
       commandPaletteOpen: false,
+      uniboxListWidth: UNIBOX_LIST_DEFAULT_WIDTH,
+      uniboxContactRailOpen: true,
       campaigns: [],
       emails: [],
       tags: [],
@@ -59,6 +66,40 @@ describe('useAppStore', () => {
 
       setCommandPaletteOpen(true)
       expect(useAppStore.getState().commandPaletteOpen).toBe(true)
+    })
+
+    it('clamps the unibox list width to its bounds', () => {
+      const { setUniboxListWidth } = useAppStore.getState()
+
+      setUniboxListWidth(440)
+      expect(useAppStore.getState().uniboxListWidth).toBe(440)
+
+      // A drag past either end parks at the bound instead of collapsing the
+      // list or crushing the thread pane.
+      setUniboxListWidth(10)
+      expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_MIN_WIDTH)
+
+      setUniboxListWidth(5000)
+      expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_MAX_WIDTH)
+
+      // Sub-pixel pointer coordinates must not reach the DOM as fractions.
+      setUniboxListWidth(400.6)
+      expect(useAppStore.getState().uniboxListWidth).toBe(401)
+
+      // A rehydrated garbage value falls back rather than rendering NaN.
+      setUniboxListWidth(Number.NaN)
+      expect(useAppStore.getState().uniboxListWidth).toBe(UNIBOX_LIST_DEFAULT_WIDTH)
+    })
+
+    it('remembers the unibox contact rail toggle', () => {
+      const { setUniboxContactRailOpen } = useAppStore.getState()
+      expect(useAppStore.getState().uniboxContactRailOpen).toBe(true)
+
+      setUniboxContactRailOpen(false)
+      expect(useAppStore.getState().uniboxContactRailOpen).toBe(false)
+
+      setUniboxContactRailOpen(true)
+      expect(useAppStore.getState().uniboxContactRailOpen).toBe(true)
     })
   })
 

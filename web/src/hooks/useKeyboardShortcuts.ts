@@ -87,7 +87,7 @@ export function useKeyboardShortcuts() {
         return
       }
 
-      // Handle b for sidebar toggle
+      // Handle b for sidebar collapse (AppNav renders from sidebarCollapsed)
       if (key === 'b' && !event.ctrlKey && !event.metaKey) {
         event.preventDefault()
         toggleSidebar()
@@ -196,7 +196,7 @@ export const shortcutDefinitions = {
     { keys: ['/'], description: 'Focus search' },
     { keys: ['n'], description: 'Compose a new email' },
     { keys: ['e'], description: 'Edit selected item' },
-    { keys: ['b'], description: 'Toggle sidebar' },
+    { keys: ['b'], description: 'Collapse / expand the sidebar' },
     { keys: ['?'], description: 'Show shortcuts' },
     { keys: ['Ctrl', 'k'], description: 'Command palette' },
   ],
