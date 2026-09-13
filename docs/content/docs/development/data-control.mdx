@@ -90,6 +90,10 @@ There is no grace period and no copy. Take a backup first if you are not sure.
 
 The **minimal retention** preset in the admin panel and in the installer sets all three to 30 days.
 
+### Standing of removed mailboxes
+
+When a mailbox that warmup had penalised is removed, its address and standing (score, state, and any block) are kept for 90 days after removal or after the block ends, whichever is later, so adding it back does not start it clean. A mailbox in good standing leaves nothing behind. This window is fixed rather than a setting, and the rows are purged by the same sweep.
+
 ### Set them at install time
 
 The installer writes the answers into `.env` as one document, applied on the first boot of a fresh database:

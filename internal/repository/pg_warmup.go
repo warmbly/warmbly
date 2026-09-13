@@ -96,8 +96,13 @@ type WarmupRepository interface {
 	GetPoolByType(ctx context.Context, poolType string) (*WarmupPool, error)
 	GetPoolParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
 	GetPoolRecipientParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
-	// MoveToPool joins this pool, or moves an existing membership over.
+	// MoveToPool joins this pool, or moves an existing membership over. A new
+	// member inherits the standing its address left behind (see
+	// warmup_reputation_ledger), so re-adding a mailbox is not a reset.
 	MoveToPool(ctx context.Context, poolID, accountID uuid.UUID, role string) error
+	// PurgeExpiredReputationLedger forgets the standing of removed mailboxes
+	// whose window has lapsed, and reports how many.
+	PurgeExpiredReputationLedger(ctx context.Context) (int64, error)
 	// MoveExistingToPool moves an existing member, keeping its role; a mailbox in no pool stays out.
 	MoveExistingToPool(ctx context.Context, poolID, accountID uuid.UUID) (bool, error)
 	// LeaveAllPools removes the mailbox from warmup. Removal is never pool-scoped: the caller
@@ -339,9 +344,35 @@ func (r *warmupRepository) GetPoolRecipientParticipants(ctx context.Context, poo
 // mailbox in the other pool moves and keeps every reputation column: changing pool cannot
 // launder a penalty, and no mailbox can hold two memberships.
 func (r *warmupRepository) MoveToPool(ctx context.Context, poolID, accountID uuid.UUID, role string) error {
+	// A fresh row starts from whatever standing this address left behind when
+	// its previous mailbox was removed, and consumes it in the same statement
+	// so it cannot be inherited twice. health_signals_from is deliberately not
+	// carried: the history behind the old standing cascaded away, so new
+	// signals count from now, while the verdict they produced is kept. An
+	// existing member moving pools keeps everything it has, as before.
 	query := `
-		INSERT INTO warmup_pool_participants (pool_id, email_account_id, joined_at, spam_score, participant_role)
-		VALUES ($1::uuid, $2::uuid, NOW(), 0, $3::text)
+		WITH acct AS (
+			SELECT organization_id, lower(btrim(email)) AS email
+			FROM email_accounts
+			WHERE id = $2::uuid
+		),
+		carried AS (
+			DELETE FROM warmup_reputation_ledger l
+			USING acct
+			WHERE l.organization_id = acct.organization_id
+			  AND l.email = acct.email
+			  AND l.expires_at > now()
+			RETURNING l.spam_score, l.health_state, l.blocked_at, l.blocked_until, l.blocked_reason,
+			          l.last_health_score, l.last_health_reason
+		)
+		INSERT INTO warmup_pool_participants
+		    (pool_id, email_account_id, joined_at, spam_score, participant_role,
+		     health_state, blocked_at, blocked_until, blocked_reason, last_health_score, last_health_reason)
+		SELECT $1::uuid, $2::uuid, NOW(), COALESCE(c.spam_score, 0), $3::text,
+		       COALESCE(c.health_state, 'healthy'), c.blocked_at, c.blocked_until, c.blocked_reason,
+		       COALESCE(c.last_health_score, 0), c.last_health_reason
+		FROM (SELECT 1) AS one
+		LEFT JOIN carried c ON true
 		ON CONFLICT (email_account_id) DO UPDATE
 		SET pool_id = EXCLUDED.pool_id,
 		    participant_role = EXCLUDED.participant_role
@@ -349,6 +380,14 @@ func (r *warmupRepository) MoveToPool(ctx context.Context, poolID, accountID uui
 
 	_, err := r.db.Exec(ctx, query, poolID, accountID, role)
 	return err
+}
+
+func (r *warmupRepository) PurgeExpiredReputationLedger(ctx context.Context) (int64, error) {
+	tag, err := r.db.Exec(ctx, `DELETE FROM warmup_reputation_ledger WHERE expires_at <= now()`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // MoveExistingToPool corrects a member's pool and leaves its role alone, so the reconciler

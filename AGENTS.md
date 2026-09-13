@@ -773,6 +773,11 @@ If a recovery pool does not exist yet:
 
 Do not automatically restore a blocked mailbox just because time elapsed.
 
+Two mechanisms make the sentence real, and both are easy to undo by accident:
+
+- a timed block holds until `blocked_until` whatever fresh metrics say (`holdActiveBlock` in `internal/app/warmup/service.go`). The bands read windows shorter than the blocks they hand out (seven days of placement or complaints against a 30-day block), so a decision from metrics alone would clear every block within a week, and a re-added mailbox with no history on the next sweep
+- the standing follows the address within the workspace: `emailRepository.Delete` snapshots a penalised mailbox into `warmup_reputation_ledger` in its own transaction and `MoveToPool` consumes it when the same address rejoins, so removing and re-adding a mailbox is not a reset (#476). Held for `config.WarmupReputationLedgerDays`; a mailbox in good standing leaves no row
+
 Require the mailbox to pass re-entry checks such as:
 
 - authentication still healthy: SPF, DKIM, DMARC, PTR where relevant

@@ -75,6 +75,20 @@ const (
 	WarmupHealthBlocked     WarmupHealthState = "blocked"
 )
 
+// warmupHealthRank orders the states by severity, so a band can be compared
+// rather than only matched.
+var warmupHealthRank = map[WarmupHealthState]int{
+	WarmupHealthHealthy:     0,
+	WarmupHealthWatch:       1,
+	WarmupHealthThrottled:   2,
+	WarmupHealthQuarantined: 3,
+	WarmupHealthBlocked:     4,
+}
+
+// Rank is the state's severity: a sweep must never lower a mailbox below a
+// state whose block is still in force, and "lower" needs an order to mean.
+func (s WarmupHealthState) Rank() int { return warmupHealthRank[s] }
+
 type WarmupParticipantHealth struct {
 	PoolID                uuid.UUID         `json:"pool_id"`
 	PoolType              string            `json:"pool_type"`

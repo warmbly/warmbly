@@ -591,7 +591,8 @@ func (s *service) evaluateAndPersist(ctx context.Context, accountID uuid.UUID, p
 		return nil, fail("load_metrics", err)
 	}
 
-	decision := evaluateMetrics(metrics, s.now().UTC())
+	now := s.now().UTC()
+	decision := holdActiveBlock(participant, evaluateMetrics(metrics, now), now)
 	if err := s.repo.UpdateParticipantHealth(ctx, accountID, decision.State, decision.BlockedUntil, decision.Reason, decision.Score); err != nil {
 		return nil, fail("persist", err)
 	}
@@ -701,6 +702,34 @@ type evaluationDecision struct {
 	BlockedUntil *time.Time
 	Reason       string
 	Score        float64
+}
+
+// holdActiveBlock keeps a sentence from being overturned by a fresh reading.
+// The bands read windows far shorter than the blocks they hand out (the
+// placement and complaint bands read seven days against a 30-day block), and a mailbox
+// re-added under its old standing arrives with no history at all, so metrics
+// evaluated on their own would clear every block within a day or two. While
+// blocked_until is in the future the current state is a floor: a decision at
+// least as severe replaces it, anything milder is discarded and the current
+// state is re-asserted with the fresh score. Once the term ends the reading
+// stands, which is how a served sentence is released.
+func holdActiveBlock(current *models.WarmupParticipantHealth, decision evaluationDecision, now time.Time) evaluationDecision {
+	if current == nil || current.BlockedUntil == nil || !current.BlockedUntil.After(now) {
+		return decision
+	}
+	if decision.State.Rank() >= current.HealthState.Rank() {
+		return decision
+	}
+	reason := ""
+	if current.BlockedReason != nil {
+		reason = *current.BlockedReason
+	}
+	return evaluationDecision{
+		State:        current.HealthState,
+		BlockedUntil: current.BlockedUntil,
+		Reason:       reason,
+		Score:        decision.Score,
+	}
 }
 
 func evaluateMetrics(metrics *models.WarmupHealthMetrics, now time.Time) evaluationDecision {
@@ -869,6 +898,14 @@ func maxFloat(a, b float64) float64 {
 // EvaluateAllParticipants runs a health evaluation sweep across all warmup pool participants.
 // Returns the number evaluated and the number of state changes.
 func (s *service) EvaluateAllParticipants(ctx context.Context) (int, int, *errx.Error) {
+	// The standing of a removed mailbox is held against its address for a
+	// fixed window; this is where the window is enforced.
+	if purged, err := s.repo.PurgeExpiredReputationLedger(ctx); err != nil {
+		log.Warn().Err(err).Msg("warmup: could not purge the expired reputation ledger")
+	} else if purged > 0 {
+		log.Info().Int64("purged", purged).Msg("warmup: reputation ledger rows lapsed")
+	}
+
 	accountIDs, err := s.repo.GetAllParticipantAccountIDs(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("warmup: health sweep could not list participants")

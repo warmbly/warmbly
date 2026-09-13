@@ -128,6 +128,13 @@ const (
 	// must still end the pass rather than walk a million-row list.
 	CampaignPlacementCandidates = 25
 
+	// WarmupReputationLedgerDays is how long the standing of a removed mailbox
+	// is held against its address, counted from the later of its removal and
+	// the end of its block. Long enough that removing and re-adding a mailbox
+	// is never a shortcut past a block, short enough that the address of a
+	// mailbox nobody re-added is not kept indefinitely. Fixed, not a setting.
+	WarmupReputationLedgerDays = 90
+
 	// CampaignMaxDeferMinutes bounds how far ahead a DEFERRED campaign tick may
 	// park its successor. A deferral means "nothing is sendable right now", and
 	// the reasons it says that (no lead is due, the new-lead cap is spent, no

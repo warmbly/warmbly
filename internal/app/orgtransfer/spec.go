@@ -557,6 +557,11 @@ var Tables = []Table{
 		Note:       "Pool rows are instance-global, so membership is re-earned on the destination rather than asserted by an archive.",
 	},
 	{
+		Name: "warmup_reputation_ledger", Group: models.OrgDataGroupWarmup,
+		Scope: `organization_id = $1`,
+		Note:  "The standing of a removed mailbox, keyed by address so adding it back is not a reset. It travels: a block is about the mailbox's conduct rather than this instance, and an export would otherwise be a way past it.",
+	},
+	{
 		Name: "warmup_admin_actions", Group: models.OrgDataGroupWarmup,
 		Scope:      `email_account_id IN ` + orgMailboxes,
 		ImportSkip: true,

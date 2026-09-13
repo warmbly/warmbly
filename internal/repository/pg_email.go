@@ -1322,6 +1322,41 @@ func (r *emailRepository) Delete(ctx context.Context, userID, emailAccountID str
 	}
 	defer tx.Rollback(ctx)
 
+	// A penalty follows the address, not the row. Everything warmup knows about
+	// this mailbox cascades with it, so without this a workspace could clear a
+	// block by removing the mailbox and adding it back. The standing is held
+	// until the same address rejoins (MoveToPool consumes it) or the window
+	// lapses; a mailbox in good standing leaves nothing behind. Same predicate
+	// as the delete below, so nothing is recorded for a row that is not removed.
+	ledger := `
+		INSERT INTO warmup_reputation_ledger
+		    (organization_id, email, spam_score, health_state, blocked_at, blocked_until,
+		     blocked_reason, last_health_score, last_health_reason, removed_at, expires_at)
+		SELECT a.organization_id, lower(btrim(a.email)), p.spam_score, p.health_state, p.blocked_at,
+		       p.blocked_until, p.blocked_reason, p.last_health_score, p.last_health_reason, now(),
+		       GREATEST(COALESCE(p.blocked_until, now()), now()) + ($3::int * interval '1 day')
+		FROM email_accounts a
+		JOIN warmup_pool_participants p ON p.email_account_id = a.id
+		WHERE a.user_id = $1 AND a.id = $2 AND a.organization_id IS NOT NULL
+		  AND (p.spam_score > 0 OR p.health_state <> 'healthy')
+		ON CONFLICT (organization_id, email) DO UPDATE SET
+		    spam_score         = GREATEST(warmup_reputation_ledger.spam_score, EXCLUDED.spam_score),
+		    health_state       = EXCLUDED.health_state,
+		    blocked_at         = EXCLUDED.blocked_at,
+		    blocked_until      = EXCLUDED.blocked_until,
+		    blocked_reason     = EXCLUDED.blocked_reason,
+		    last_health_score  = EXCLUDED.last_health_score,
+		    last_health_reason = EXCLUDED.last_health_reason,
+		    removed_at         = EXCLUDED.removed_at,
+		    expires_at         = EXCLUDED.expires_at
+		WHERE EXCLUDED.expires_at >= warmup_reputation_ledger.expires_at
+	`
+	ledgerParams := []any{userID, emailAccountID, config.WarmupReputationLedgerDays}
+	if _, err := tx.Exec(ctx, ledger, ledgerParams...); err != nil {
+		db.CaptureError(err, ledger, ledgerParams, "exec")
+		return errx.InternalError()
+	}
+
 	query := `
 		DELETE FROM email_accounts
 		WHERE user_id = $1 AND id = $2
