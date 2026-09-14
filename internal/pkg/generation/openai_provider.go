@@ -40,7 +40,16 @@ type openAIProvider struct {
 	// stream_options is OpenAI's usage-in-stream opt-in; some compatible
 	// backends reject the field entirely.
 	omitStreamOptions atomic.Bool
+	// Some newer OpenAI models refuse function tools on /chat/completions
+	// unless reasoning is explicitly switched off, and name the parameter to
+	// set in the 400. Without it the whole agent loop is unusable on them.
+	reasoningEffortNone atomic.Bool
 }
+
+// maxParamAdaptations bounds the compatibility retries in one call. It is the
+// number of flags above, because a model can reject one parameter per 400 and
+// a model that rejects every one of them must still reach a working shape.
+const maxParamAdaptations = 4
 
 // defaultOpenAIBaseURL is the public OpenAI API. Overridable for
 // OpenAI-compatible self-hosted endpoints (Ollama, vLLM, LocalAI, OpenRouter).
@@ -138,6 +147,7 @@ type oaiRequest struct {
 	Temperature         *float64          `json:"temperature,omitempty"`
 	Stream              bool              `json:"stream,omitempty"`
 	StreamOptions       *oaiStreamOptions `json:"stream_options,omitempty"`
+	ReasoningEffort     string            `json:"reasoning_effort,omitempty"`
 }
 
 type oaiStreamOptions struct {
@@ -250,6 +260,9 @@ func (p *openAIProvider) complete(ctx context.Context, model string, maxTokens i
 		if !p.omitTemperature.Load() {
 			reqBody.Temperature = temperature
 		}
+		if p.reasoningEffortNone.Load() {
+			reqBody.ReasoningEffort = "none"
+		}
 		if len(tools) > 0 {
 			reqBody.Tools = tools
 			reqBody.ToolChoice = "auto"
@@ -279,7 +292,7 @@ func (p *openAIProvider) complete(ctx context.Context, model string, maxTokens i
 			return nil, fmt.Errorf("openai: decode response: %w", err)
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			if resp.StatusCode == http.StatusBadRequest && attempt < 2 && p.adaptParams(parsed.Error) {
+			if resp.StatusCode == http.StatusBadRequest && attempt < maxParamAdaptations && p.adaptParams(parsed.Error) {
 				continue
 			}
 			if parsed.Error != nil {
@@ -313,6 +326,9 @@ func (p *openAIProvider) completeStream(ctx context.Context, model string, maxTo
 		if !p.omitTemperature.Load() {
 			reqBody.Temperature = temperature
 		}
+		if p.reasoningEffortNone.Load() {
+			reqBody.ReasoningEffort = "none"
+		}
 		if len(tools) > 0 {
 			reqBody.Tools = tools
 			reqBody.ToolChoice = "auto"
@@ -343,7 +359,7 @@ func (p *openAIProvider) completeStream(ctx context.Context, model string, maxTo
 			}
 			var parsed oaiResponse
 			_ = json.Unmarshal(raw, &parsed)
-			if resp.StatusCode == http.StatusBadRequest && attempt < 3 && p.adaptParams(parsed.Error) {
+			if resp.StatusCode == http.StatusBadRequest && attempt < maxParamAdaptations && p.adaptParams(parsed.Error) {
 				continue
 			}
 			if parsed.Error != nil {
@@ -469,6 +485,12 @@ func (p *openAIProvider) adaptParams(e *oaiError) bool {
 			return false
 		}
 		p.omitTemperature.Store(true)
+		return true
+	case e.Param == "reasoning_effort":
+		if p.reasoningEffortNone.Load() {
+			return false
+		}
+		p.reasoningEffortNone.Store(true)
 		return true
 	case e.Param == "stream_options" || strings.Contains(e.Message, "stream_options"):
 		if p.omitStreamOptions.Load() {

@@ -416,6 +416,8 @@ Plain SMTP and IMAP mailboxes need none of this. If a worker is missing these va
 An empty `AI_PROVIDER` with a set `AI_API_KEY` falls back to `api.openai.com`, so the key goes to OpenAI. Set both or neither.
 </Callout>
 
+Model compatibility needs no configuration. Backends disagree about the request shape: newer OpenAI models want `max_completion_tokens` rather than `max_tokens`, refuse any temperature but the default, and some refuse function tools unless reasoning is switched off, while most OpenAI compatible backends only know the older shape. The provider learns this from the first rejection of each parameter and remembers it, so a model is walked to a working shape on its first call and every later call starts there.
+
 Set these on the backend and the consumer.
 
 ## Tasks and billing
