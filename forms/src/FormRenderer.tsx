@@ -8,6 +8,7 @@ import { useForm } from "@tanstack/react-form";
 
 import type { FormField, PublicForm } from "./api";
 import { personalToken, submitForm, StalePageError, SubmitRejectedError } from "./api";
+import { track } from "./observability";
 import type { ResolvedDesign } from "./design";
 import { focusSteps, pageIndexOf, splitPages } from "./design";
 import { postSubmitted, redirect } from "./embed";
@@ -167,6 +168,7 @@ export function FormRenderer({
                     visitor_key: visitorKey(),
                 });
                 postSubmitted(def.public_id);
+                track("form_submitted", def.public_id);
                 if (res.redirect_url) {
                     redirect(res.redirect_url);
                     return;

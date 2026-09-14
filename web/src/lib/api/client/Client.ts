@@ -1,6 +1,5 @@
 import axios from "axios";
 import { API_BASE_URL } from "@/lib/information";
-import { maskIds } from "@/lib/maskIds";
 import { noteStep } from "@/lib/observability";
 import { normalizeError } from "./normalizeError";
 
@@ -24,13 +23,13 @@ Client.interceptors.response.use(
 // "GET /campaigns/:id 500 req-abc123". The request id is the API's own, so the
 // same incident is findable in the backend's logs.
 //
-// Ids in the path are masked and nothing else about the call travels: no query
-// string, no body, no header.
+// The path and nothing else about the call travels: no query string, no body,
+// no header.
 function noteFailure(error: unknown, normalized: { status?: number; code?: string; request_id?: string }): void {
     if (!axios.isAxiosError(error)) return;
 
     const method = error.config?.method?.toUpperCase() ?? "REQUEST";
-    const path = maskIds(error.config?.url?.split("?")[0] ?? "");
+    const path = error.config?.url?.split("?")[0] ?? "";
     const status = normalized.status ?? 0;
 
     const properties: Record<string, string | number | boolean> = { method, path, status };

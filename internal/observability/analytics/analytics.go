@@ -9,10 +9,14 @@
 //
 //   - It is off unless POSTHOG_KEY is set, which is the self-host default. A
 //     nil *Client is a working no-op, so callers never guard.
-//   - It is cookieless. No user id, no organization id and no email is ever a
-//     property; the event carries only the originating request's IP, user
-//     agent and host, which PostHog hashes with a daily-rotated salt and then
-//     deletes. Nothing here identifies a person, and nothing calls identify.
+//   - An event names the person it happened to when the caller knows one. The
+//     distinct id is the user's account id, the same id the dashboard
+//     identifies the browser with, so a server-side signup and the session
+//     that led to it are one person in PostHog. Person properties ride on
+//     `$set`, the workspace is a group, and the originating request's IP and
+//     user agent go along so the event is geolocated and attributed to the
+//     right device. A caller with no person to name (a Stripe webhook for a
+//     workspace with no user) falls back to the cookieless hash.
 package analytics
 
 import (
@@ -21,7 +25,9 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -37,8 +43,14 @@ const capturePath = "/i/v0/e/"
 
 // cookielessDistinctID is PostHog's sentinel telling ingestion to derive the
 // visitor from the daily hash instead of from an id we supply
-// (COOKIELESS_SENTINEL_VALUE in the PostHog source).
+// (COOKIELESS_SENTINEL_VALUE in the PostHog source). Used only when the caller
+// has no person to name.
 const cookielessDistinctID = "$posthog_cookieless"
+
+// OrganizationGroup is the PostHog group type a workspace is reported under.
+// The dashboard uses the same name in its `group` call, so the two sides land
+// on one group.
+const OrganizationGroup = "organization"
 
 // sendTimeout bounds one capture. Analytics must never be why a signup is slow.
 const sendTimeout = 5 * time.Second
@@ -64,6 +76,13 @@ func New(key, host string) *Client {
 	if host == "" {
 		host = DefaultHost
 	}
+	// Events name a person, so a plaintext host off this machine hands their
+	// email and address to the network. Not refused: a self-hosted PostHog on
+	// a private network over http is a supported shape, and refusing would
+	// silently turn analytics off. Said once, loudly.
+	if u, err := url.Parse(host); err == nil && u.Scheme == "http" && !isLoopback(u.Hostname()) {
+		log.Printf("product analytics: POSTHOG_HOST %s is plaintext http; identified events (email, name, IP) will cross the network unencrypted", host)
+	}
 	return &Client{
 		key:  key,
 		host: host,
@@ -71,20 +90,44 @@ func New(key, host string) *Client {
 	}
 }
 
-// Request is the originating browser request, forwarded so PostHog's cookieless
-// hash lands on the same visitor as that browser's own events. Without it a
-// server-side event is a second, unrelated visitor and the funnel breaks.
+// isLoopback reports whether the host is this machine, where plaintext is fine.
+func isLoopback(hostname string) bool {
+	if hostname == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(hostname)
+	return ip != nil && ip.IsLoopback()
+}
+
+// Request is who the event happened to and the browser request it came from.
 type Request struct {
+	// UserID is the account the event belongs to, and becomes the distinct id.
+	// Empty means nobody is named and the event lands on the cookieless hash.
+	UserID string
+	// Email and Name are set on the person when UserID is given.
+	Email string
+	Name  string
+	// OrganizationID puts the event in the workspace's group; OrganizationName
+	// and Plan are set on that group.
+	OrganizationID   string
+	OrganizationName string
+	Plan             string
+	// SetOnce are person properties written the first time only, which is
+	// what acquisition is: where somebody came from does not change later.
+	SetOnce map[string]any
+
+	// IP and UserAgent are the originating browser request, forwarded so the
+	// event is geolocated and, without a UserID, so the cookieless hash lands
+	// on the same visitor as that browser's own events.
 	IP        string
 	UserAgent string
-	// Host is the site the visitor was on. PostHog reduces it to the
-	// registrable root domain, so app.warmbly.com and warmbly.com hash alike.
+	// Host is the site the visitor was on, one of the cookieless hash inputs.
+	// PostHog reduces it to the registrable root domain, so app.warmbly.com
+	// and warmbly.com hash alike.
 	Host string
 }
 
-// Capture sends one event. Properties must never carry a user id, an
-// organization id, an email or anything else naming a person: the whole point
-// of cookieless mode is that no such value exists to join on.
+// Capture sends one event.
 //
 // It sends in the background and reports its own failures rather than
 // returning them: no caller should abandon a signup because an analytics host
@@ -94,15 +137,10 @@ func (c *Client) Capture(name string, req Request, properties map[string]any) {
 		return
 	}
 
-	props := map[string]any{
-		// The flag ingestion keys on (COOKIELESS_MODE_FLAG_PROPERTY).
-		"$cookieless_mode": true,
-	}
+	props := map[string]any{}
 	for k, v := range properties {
 		props[k] = v
 	}
-	// The three hash inputs. PostHog deletes $ip and $raw_user_agent from the
-	// event once it has hashed them, so neither is retained.
 	if req.IP != "" {
 		props["$ip"] = req.IP
 	}
@@ -113,10 +151,35 @@ func (c *Client) Capture(name string, req Request, properties map[string]any) {
 		props["$host"] = req.Host
 	}
 
+	distinctID := cookielessDistinctID
+	if req.UserID != "" {
+		distinctID = req.UserID
+		set := map[string]any{}
+		if req.Email != "" {
+			set["email"] = req.Email
+		}
+		if req.Name != "" {
+			set["name"] = req.Name
+		}
+		if len(set) > 0 {
+			props["$set"] = set
+		}
+		if len(req.SetOnce) > 0 {
+			props["$set_once"] = req.SetOnce
+		}
+		if req.OrganizationID != "" {
+			props["$groups"] = map[string]any{OrganizationGroup: req.OrganizationID}
+		}
+	} else {
+		// The flag ingestion keys on (COOKIELESS_MODE_FLAG_PROPERTY). PostHog
+		// deletes $ip and $raw_user_agent from the event once hashed.
+		props["$cookieless_mode"] = true
+	}
+
 	body, err := json.Marshal(map[string]any{
 		"api_key":     c.key,
 		"event":       name,
-		"distinct_id": cookielessDistinctID,
+		"distinct_id": distinctID,
 		"properties":  props,
 		"timestamp":   time.Now().UTC().Format(time.RFC3339),
 	})
@@ -125,6 +188,41 @@ func (c *Client) Capture(name string, req Request, properties map[string]any) {
 		return
 	}
 
+	go c.post(body)
+
+	if req.UserID != "" && req.OrganizationID != "" {
+		c.identifyGroup(req)
+	}
+}
+
+// identifyGroup sets the workspace's group properties. PostHog takes them on
+// a `$groupidentify` event rather than on the event itself.
+func (c *Client) identifyGroup(req Request) {
+	set := map[string]any{}
+	if req.OrganizationName != "" {
+		set["name"] = req.OrganizationName
+	}
+	if req.Plan != "" {
+		set["plan"] = req.Plan
+	}
+	if len(set) == 0 {
+		return
+	}
+	body, err := json.Marshal(map[string]any{
+		"api_key":     c.key,
+		"event":       "$groupidentify",
+		"distinct_id": req.UserID,
+		"properties": map[string]any{
+			"$group_type": OrganizationGroup,
+			"$group_key":  req.OrganizationID,
+			"$group_set":  set,
+		},
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		errs.CaptureException(err)
+		return
+	}
 	go c.post(body)
 }
 

@@ -15,7 +15,20 @@ RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 COPY forms/package.json forms/pnpm-lock.yaml forms/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY forms/ .
-RUN pnpm build
+# Source-map upload to PostHog is optional and off unless CI passes the CLI
+# credentials, exactly as the dashboard image does it: the CLI injects a chunk
+# id into the built files, uploads the maps and deletes them. A fork or a
+# self-host build sets none of this and ships no source maps.
+ARG POSTHOG_CLI_PROJECT_ID=""
+ARG POSTHOG_CLI_HOST=""
+RUN --mount=type=secret,id=posthog_cli_api_key,required=false \
+    export POSTHOG_CLI_PROJECT_ID="$POSTHOG_CLI_PROJECT_ID" && \
+    export POSTHOG_CLI_HOST="$POSTHOG_CLI_HOST" && \
+    export POSTHOG_CLI_API_KEY="$(cat /run/secrets/posthog_cli_api_key 2>/dev/null || true)" && \
+    pnpm build && \
+    if [ -n "$POSTHOG_CLI_PROJECT_ID" ] && [ -n "$POSTHOG_CLI_API_KEY" ]; then \
+        pnpm sourcemaps:posthog; \
+    fi
 
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
