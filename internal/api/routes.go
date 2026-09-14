@@ -1618,8 +1618,7 @@ func Run(
 		adminRoutes.DELETE("/organizations/:id/api-keys/:keyId", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRevokeOrgAPIKey)
 		adminRoutes.GET("/organizations/:id/webhooks", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListOrgWebhooks)
 
-		// Warmup abuse signals and the block/unblock history.
-		adminRoutes.GET("/warmup/abuse", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminWarmupAbuse)
+		// Warmup block/unblock history.
 		adminRoutes.GET("/warmup/actions", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminWarmupActions)
 
 		// Admin Management

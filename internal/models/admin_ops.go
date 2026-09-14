@@ -9,7 +9,7 @@ import (
 
 // Operator-facing read models for the admin panel's operations pages: mailbox
 // sync, in-flight sends, dead letters, scheduled jobs, fleet placement,
-// workspace transfers and abuse signals. Every row here is instance-wide and
+// workspace transfers and insight. Every row here is instance-wide and
 // carries the organization it belongs to, because the operator reads across
 // workspaces.
 
@@ -277,20 +277,7 @@ type AdminTransferJob struct {
 	CreatedAt        time.Time         `json:"created_at"`
 }
 
-// ---- abuse and insight ----
-
-// AdminWarmupAbuseRow ranks a mailbox by invalid warmup-token attempts.
-type AdminWarmupAbuseRow struct {
-	EmailAccountID   uuid.UUID  `json:"email_account_id"`
-	Email            string     `json:"email"`
-	OrganizationID   *uuid.UUID `json:"organization_id,omitempty"`
-	OrganizationName string     `json:"organization_name"`
-	Attempts         int        `json:"attempts"`
-	LastAttemptAt    time.Time  `json:"last_attempt_at"`
-	Blocked          bool       `json:"blocked"`
-	SpamScore        int        `json:"spam_score"`
-	HealthState      string     `json:"health_state"`
-}
+// ---- insight ----
 
 // AdminWarmupAction is one warmup_admin_actions row with both parties named.
 type AdminWarmupAction struct {

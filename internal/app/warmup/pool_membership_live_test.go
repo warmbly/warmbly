@@ -36,25 +36,13 @@ type poolMailbox struct {
 
 func newPoolMailbox(t *testing.T, handle *db.DB, poolType string) *poolMailbox {
 	t.Helper()
-	ctx := context.Background()
 	pool := handle.Pool
 
-	var pools int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM warmup_pools`).Scan(&pools); err != nil {
-		t.Fatalf("count pools: %v", err)
-	}
-	if pools == 0 {
-		t.Skip("no warmup pools on this database")
-	}
+	pools := ensureWarmupPools(t, pool)
 
 	f := &poolMailbox{user: uuid.New(), org: uuid.New(), account: uuid.New(), handle: handle}
 
-	exec := func(sql string, args ...any) {
-		t.Helper()
-		if _, err := pool.Exec(ctx, sql, args...); err != nil {
-			t.Fatalf("fixture %q: %v", sql[:min(60, len(sql))], err)
-		}
-	}
+	exec := func(sql string, args ...any) { t.Helper(); execSQL(t, pool, sql, args...) }
 
 	exec(`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Pool', 'Live')`,
 		f.user, "wp-"+f.user.String()[:8]+"@test.local")
@@ -66,8 +54,7 @@ func newPoolMailbox(t *testing.T, handle *db.DB, poolType string) *poolMailbox {
 		f.account, f.user, f.org, "wp-"+f.account.String()[:8]+"@test.local", poolType)
 
 	if poolType != "" {
-		exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id)
-		      SELECT id, $1 FROM warmup_pools WHERE pool_type = $2::warmup_pool_type`, f.account, poolType)
+		exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id) VALUES ($1, $2)`, pools[poolType], f.account)
 	}
 
 	t.Cleanup(func() {
@@ -118,12 +105,7 @@ func (f *poolMailbox) memberships(t *testing.T) []string {
 
 func poolID(t *testing.T, handle *db.DB, poolType string) uuid.UUID {
 	t.Helper()
-	var id uuid.UUID
-	if err := handle.Pool.QueryRow(context.Background(),
-		`SELECT id FROM warmup_pools WHERE pool_type = $1::warmup_pool_type`, poolType).Scan(&id); err != nil {
-		t.Fatalf("pool %s: %v", poolType, err)
-	}
-	return id
+	return ensureWarmupPools(t, handle.Pool)[poolType]
 }
 
 // The bug itself: a mailbox that changes tier moves pools, it does not collect

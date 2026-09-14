@@ -3,7 +3,6 @@ package handler
 import (
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -43,33 +42,6 @@ func (h *Handler) AdminGetAcquisition(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, out)
-}
-
-// AdminWarmupAbuse is GET /admin/warmup/abuse?window=24h|7d|30d&limit=50.
-func (h *Handler) AdminWarmupAbuse(c *gin.Context) {
-	if h.AdminInsightRepo == nil {
-		errx.JSON(c, errx.New(errx.NotImplemented, adminInsightUnavailable))
-		return
-	}
-	var window time.Duration
-	switch c.DefaultQuery("window", "7d") {
-	case "24h":
-		window = 24 * time.Hour
-	case "7d":
-		window = 7 * 24 * time.Hour
-	case "30d":
-		window = 30 * 24 * time.Hour
-	default:
-		errx.JSON(c, errx.New(errx.BadRequest, "window must be 24h, 7d or 30d"))
-		return
-	}
-	limit := queryInt(c, "limit", 50, 1, 200)
-	rows, err := h.AdminInsightRepo.WarmupAbuse(c.Request.Context(), time.Now().Add(-window), limit)
-	if err != nil {
-		errx.JSON(c, errx.New(errx.Internal, "failed to load warmup abuse signals"))
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"data": rows})
 }
 
 // AdminWarmupActions is GET /admin/warmup/actions?limit=100.

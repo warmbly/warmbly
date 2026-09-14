@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
@@ -11,12 +10,9 @@ import (
 )
 
 // AdminInsightRepository holds the smaller cross-workspace reads the panel
-// shows on existing pages: warmup abuse signals, warmup admin actions, a
+// shows on existing pages: warmup admin actions, a
 // workspace's API keys, workspace transfers and signup acquisition.
 type AdminInsightRepository interface {
-	// WarmupAbuse ranks mailboxes by invalid warmup-token attempts since the
-	// given time, most attempts first.
-	WarmupAbuse(ctx context.Context, since time.Time, limit int) ([]models.AdminWarmupAbuseRow, error)
 	// WarmupActions lists warmup_admin_actions newest first.
 	WarmupActions(ctx context.Context, limit int) ([]models.AdminWarmupAction, error)
 	// OrgAPIKeys lists a workspace's API keys, active first, never the hash.
@@ -35,46 +31,6 @@ type adminInsightRepository struct {
 
 func NewAdminInsightRepository(d *db.DB) AdminInsightRepository {
 	return &adminInsightRepository{db: d}
-}
-
-func (r *adminInsightRepository) WarmupAbuse(ctx context.Context, since time.Time, limit int) ([]models.AdminWarmupAbuseRow, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	// warmup_pool_participants is unique per mailbox (000097), so the left
-	// join adds at most one row.
-	const q = `
-		SELECT a.email_account_id, ea.email, ea.organization_id, COALESCE(o.name, ''),
-		       COUNT(*)::int, MAX(a.created_at),
-		       COALESCE(p.blocked_at IS NOT NULL AND (p.blocked_until IS NULL OR p.blocked_until > now()), false),
-		       COALESCE(p.spam_score, 0), COALESCE(p.health_state::text, '')
-		FROM warmup_invalid_token_attempts a
-		JOIN email_accounts ea ON ea.id = a.email_account_id
-		LEFT JOIN organizations o ON o.id = ea.organization_id
-		LEFT JOIN warmup_pool_participants p ON p.email_account_id = a.email_account_id
-		WHERE a.created_at >= $1
-		GROUP BY a.email_account_id, ea.email, ea.organization_id, o.name,
-		         p.blocked_at, p.blocked_until, p.spam_score, p.health_state
-		ORDER BY COUNT(*) DESC, MAX(a.created_at) DESC
-		LIMIT $2
-	`
-	rows, err := r.db.Query(ctx, q, since, limit)
-	if err != nil {
-		return nil, fmt.Errorf("admin insight: warmup abuse: %w", err)
-	}
-	defer rows.Close()
-	out := []models.AdminWarmupAbuseRow{}
-	for rows.Next() {
-		var row models.AdminWarmupAbuseRow
-		if err := rows.Scan(
-			&row.EmailAccountID, &row.Email, &row.OrganizationID, &row.OrganizationName,
-			&row.Attempts, &row.LastAttemptAt, &row.Blocked, &row.SpamScore, &row.HealthState,
-		); err != nil {
-			return nil, fmt.Errorf("admin insight: warmup abuse scan: %w", err)
-		}
-		out = append(out, row)
-	}
-	return out, rows.Err()
 }
 
 func (r *adminInsightRepository) WarmupActions(ctx context.Context, limit int) ([]models.AdminWarmupAction, error) {

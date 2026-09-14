@@ -7,24 +7,6 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-func TestEvaluateMetricsInvalidAttemptsBlock(t *testing.T) {
-	now := time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)
-
-	decision := evaluateMetrics(&models.WarmupHealthMetrics{
-		SentLast7d:            5,
-		SpamReportsLast7d:     0,
-		SpamPlacementRate:     0,
-		InvalidAttemptsLast24: 3,
-	}, now)
-
-	if decision.State != models.WarmupHealthBlocked {
-		t.Fatalf("expected blocked state, got %s", decision.State)
-	}
-	if decision.BlockedUntil == nil || !decision.BlockedUntil.Equal(now.Add(warmupBlockDuration)) {
-		t.Fatalf("expected 30d block, got %#v", decision.BlockedUntil)
-	}
-}
-
 func TestEvaluateMetricsSpamThresholds(t *testing.T) {
 	now := time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)
 
@@ -44,7 +26,6 @@ func TestEvaluateMetricsSpamThresholds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			decision := evaluateMetrics(&models.WarmupHealthMetrics{
 				SentLast7d:        20,
-				SpamReportsLast7d: 4,
 				SpamPlacementRate: tc.rate,
 			}, now)
 
@@ -178,7 +159,6 @@ func TestEvaluateMetricsIgnoresSmallSamples(t *testing.T) {
 
 	decision := evaluateMetrics(&models.WarmupHealthMetrics{
 		SentLast7d:        19,
-		SpamReportsLast7d: 19,
 		SpamPlacementRate: 100,
 	}, now)
 

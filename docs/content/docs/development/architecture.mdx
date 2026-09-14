@@ -190,7 +190,7 @@ There is no single ML fraud engine. Layered controls instead:
 - CAPTCHA (Cloudflare Turnstile) on auth-sensitive flows
 - Per-user, per-category API rate limiting (Redis-backed)
 - Per-WebSocket join/message/event rate limiting (realtime service)
-- Warmup-token verification with invalid-attempt counting and auto-blocking
+- Warmup-token verification: single-use, recipient-bound tokens, so warmup mail cannot be replayed or redirected
 - Tracking event deduplication (in-memory + persistent)
 - Idempotent deliverability event processing
 - Worker-side mailbox-sync fair use: the sync governor (`internal/app/worker/wmail/governor.go`) with priority, live and backfill lanes, deferral instead of dropping, and flood or chronic-overage escalation

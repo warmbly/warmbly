@@ -204,10 +204,6 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 // re-stamps the Message-ID), so mail sent from an Outlook or Microsoft 365
 // mailbox reaches every recipient carrying no marker at all; matched only on
 // the header it would count for nobody and be filed as ordinary inbox mail.
-//
-// Unlike the header path a miss here is not suspicious — almost every message
-// that reaches this point is simply ordinary mail — so nothing is recorded as
-// an invalid attempt.
 func (s *JobsService) handleUnmarkedWarmupEmail(ctx context.Context, e *models.JobEventNewEmail) bool {
 	if s.WarmupRepo == nil || e.Message == nil {
 		return false

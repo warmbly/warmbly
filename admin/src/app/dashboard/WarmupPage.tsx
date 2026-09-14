@@ -8,27 +8,16 @@
 //   4. Pending appeals with one-click approve/reject
 //
 // Nothing here polls: the realtime spine's warmup group invalidates
-// ["admin","warmup"] on ACCOUNT and WARMUP events. The abuse and action
-// history tabs (?tab=) come from /admin/warmup/abuse and /admin/warmup/actions.
+// ["admin","warmup"] on ACCOUNT and WARMUP events. The action
+// history tab (?tab=) comes from /admin/warmup/actions.
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import {
-    Activity,
-    AlertTriangle,
-    CheckCircle2,
-    Flame,
-    History,
-    LayoutDashboard,
-    ShieldAlert,
-    ShieldOff,
-    XCircle,
-} from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Flame, History, LayoutDashboard, ShieldOff, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PageTabs } from "@/components/layout/PageTabs";
-import { SegmentedFilter } from "@/components/data/Explorer";
 import { StateLegend } from "@/components/StateLegend";
 import { MAILBOX_HEALTH_LEGEND } from "@/lib/legends";
 import { Badge } from "@/components/ui/badge";
@@ -49,13 +38,11 @@ import {
     approveAppeal,
     getWarmupHealthSummary,
     listBlockedWarmupAccounts,
-    listWarmupAbuse,
     listWarmupActions,
     listWarmupAppeals,
     listWarmupPools,
     rejectAppeal,
     unblockWarmupAccount,
-    type WarmupAbuseWindow,
 } from "@/lib/api/client/admin/warmup";
 import type {
     AdminBlockedAccount,
@@ -64,7 +51,6 @@ import type {
 
 const TABS = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
-    { id: "abuse", label: "Abuse signals", icon: ShieldAlert },
     { id: "actions", label: "Admin actions", icon: History },
 ] as const;
 
@@ -100,7 +86,6 @@ export default function WarmupPage() {
 
             <PageTabs tabs={[...TABS]} value={tab} onChange={setTab} />
 
-            {tab === "abuse" && <AbuseTab />}
             {tab === "actions" && <ActionsTab />}
             {tab === "overview" && <Overview />}
         </div>
@@ -609,130 +594,6 @@ function ReviewAppealDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-    );
-}
-
-// ---- abuse signals ----
-
-const HEALTH_TONE: Record<string, string> = Object.fromEntries(
-    MAILBOX_HEALTH_LEGEND.map((e) => [e.term, e.tone ?? ""]),
-);
-
-function AbuseTab() {
-    const [win, setWin] = useState<WarmupAbuseWindow>("7d");
-    const { data, isLoading, error, refetch } = useQuery({
-        queryKey: ["admin", "warmup", "abuse", win],
-        queryFn: () => listWarmupAbuse(win, 200),
-    });
-    const rows = data?.data ?? [];
-
-    return (
-        <div>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <p className="max-w-2xl text-[12.5px] text-muted-foreground">
-                    Historical invalid warmup-token attempts. Nothing records a new one: the only path that did charged
-                    the mailbox that received a token, which it never controlled, so the signal was retired. Blocks now
-                    come from a spam score above 50 and from tampering with received warmup mail.
-                </p>
-                <div className="w-48">
-                    <SegmentedFilter<WarmupAbuseWindow>
-                        value={win}
-                        onChange={setWin}
-                        options={[
-                            { value: "24h", label: "24h" },
-                            { value: "7d", label: "7d" },
-                            { value: "30d", label: "30d" },
-                        ]}
-                    />
-                </div>
-            </div>
-
-            {isLoading ? (
-                <Skeleton className="h-40 w-full" />
-            ) : error ? (
-                <ErrorState error={error} title="Failed to load abuse signals" onRetry={() => refetch()} />
-            ) : rows.length === 0 ? (
-                <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
-                    No invalid warmup-token attempts in the last {win}. Rows appear when a pool mailbox receives
-                    warmup mail whose token does not verify.
-                </div>
-            ) : (
-                <div className="overflow-hidden rounded-lg border border-border bg-card">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-muted/40 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                <tr>
-                                    <th className="px-3 py-2 text-left">Mailbox</th>
-                                    <th className="px-3 py-2 text-left">Workspace</th>
-                                    <th className="px-3 py-2 text-right">Invalid attempts</th>
-                                    <th className="px-3 py-2 text-left">Last attempt</th>
-                                    <th className="px-3 py-2 text-left">Blocked</th>
-                                    <th className="px-3 py-2 text-right">Spam score</th>
-                                    <th className="px-3 py-2 text-left">Health</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {rows.map((r) => (
-                                    <tr key={r.email_account_id} className="border-t border-border">
-                                        <td className="px-3 py-2 font-mono text-xs">{r.email}</td>
-                                        <td className="px-3 py-2 text-xs">
-                                            {r.organization_id ? (
-                                                <Link
-                                                    to={`/organizations/${r.organization_id}`}
-                                                    className="font-medium text-[var(--admin-accent-strong)] hover:underline"
-                                                >
-                                                    {r.organization_name || r.organization_id.slice(0, 8)}
-                                                </Link>
-                                            ) : (
-                                                <span className="text-muted-foreground">—</span>
-                                            )}
-                                        </td>
-                                        <td
-                                            className={`px-3 py-2 text-right tabular-nums ${
-                                                r.attempts >= 3 ? "font-medium text-red-600" : ""
-                                            }`}
-                                        >
-                                            {r.attempts}
-                                        </td>
-                                        <td className="px-3 py-2 text-xs text-muted-foreground">
-                                            {new Date(r.last_attempt_at).toLocaleString()}
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            {r.blocked ? (
-                                                <Badge variant="outline" className="border-red-300 bg-red-50 text-[10px] text-red-700">
-                                                    blocked
-                                                </Badge>
-                                            ) : (
-                                                <span className="text-xs text-muted-foreground">no</span>
-                                            )}
-                                        </td>
-                                        <td
-                                            className={`px-3 py-2 text-right tabular-nums text-xs ${
-                                                r.spam_score > 50 ? "font-medium text-red-600" : r.spam_score > 25 ? "text-amber-700" : ""
-                                            }`}
-                                        >
-                                            {r.spam_score}
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            {r.health_state ? (
-                                                <Badge
-                                                    variant="outline"
-                                                    className={`text-[10px] ${HEALTH_TONE[r.health_state] ?? "border-zinc-300 text-zinc-600"}`}
-                                                >
-                                                    {r.health_state}
-                                                </Badge>
-                                            ) : (
-                                                <span className="text-xs text-muted-foreground">—</span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
-        </div>
     );
 }
 
