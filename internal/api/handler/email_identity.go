@@ -52,8 +52,10 @@ func (h *Handler) RefreshEmailSendIdentity(c *gin.Context) {
 	}
 
 	// An absent body means "just the addresses", which is the common press.
+	// Only a declared-empty body skips binding: a chunked request carries -1,
+	// and treating that as empty dropped import_signature on the floor.
 	var req refreshSendIdentityRequest
-	if c.Request.ContentLength > 0 {
+	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			errx.Handle(c, errx.ErrInvalid)
 			return

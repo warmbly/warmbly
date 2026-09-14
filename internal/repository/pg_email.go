@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -835,7 +836,10 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		argPos++
 	}
 	if udata.SignaturePlain != nil {
-		l := len(*udata.SignaturePlain)
+		// Characters, not bytes: the documented limit is in characters, and
+		// len() turned a perfectly ordinary Cyrillic or CJK signature into one
+		// that is "too long" at a third of it.
+		l := utf8.RuneCountInString(*udata.SignaturePlain)
 		if l > config.SignaturePlainMax {
 			return nil, errx.ErrEmailSignaturePlain
 		}
@@ -844,7 +848,7 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		argPos++
 	}
 	if udata.SignatureHTML != nil {
-		l := len(*udata.SignatureHTML)
+		l := utf8.RuneCountInString(*udata.SignatureHTML)
 		if l > config.SignatureHTMLMax {
 			return nil, errx.ErrEmailSignatureHTML
 		}
@@ -876,11 +880,23 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		args = append(args, *udata.SignatureCode)
 		argPos++
 	}
-	// The alias is checked against what the provider reported before it gets
-	// here (emailService.Update); an address the provider has not verified is
-	// refused by the provider at send time, not by this column.
+	// The alias is checked against the provider's list before it gets here
+	// (emailService.Update), which is what produces a real error message. That
+	// read and this write are two statements, so the predicate is repeated in
+	// SQL against the row's own list: a refresh landing in between would
+	// otherwise have its clearing of a revoked alias written straight back,
+	// and every later send would go out as an address Gmail refuses. Failing
+	// the predicate keeps the stored value rather than erroring, because by
+	// then the caller's request was valid when it was made.
 	if udata.SendAsEmail != nil {
-		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "send_as_email", argPos))
+		setClauses = append(setClauses, fmt.Sprintf(`send_as_email = CASE
+			WHEN $%[1]d = '' OR lower($%[1]d) = lower(email) THEN $%[1]d
+			WHEN EXISTS (
+				SELECT 1 FROM jsonb_array_elements(send_as) AS sa
+				WHERE (sa->>'verified')::boolean AND lower(sa->>'email') = lower($%[1]d)
+			) THEN $%[1]d
+			ELSE send_as_email
+		END`, argPos))
 		args = append(args, strings.TrimSpace(*udata.SendAsEmail))
 		argPos++
 	}

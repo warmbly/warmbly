@@ -133,6 +133,30 @@ func TestLiveSendIdentityRoundTrip(t *testing.T) {
 		t.Errorf("the imported signature was not recorded: source=%q at=%v", got.SignatureSource, got.SignatureImportedAt)
 	}
 
+	// The race the SQL predicate exists for: a write of an alias the row's own
+	// list no longer verifies (the service checked an older list) must keep
+	// what is stored rather than putting a revoked address back.
+	revoked := "hello@test.local"
+	if _, xerr := f.repo.Update(ctx, f.org.String(), f.mailbox.String(), &models.UpdateEmail{SendAsEmail: &revoked}); xerr != nil {
+		t.Fatalf("update with a revoked alias: %v", xerr)
+	}
+	if got, _ = f.repo.GetSendIdentity(ctx, f.org.String(), f.mailbox.String()); got.SendAsEmail != "" {
+		t.Errorf("a revoked alias was written back: %q", got.SendAsEmail)
+	}
+
+	// The mailbox's own address is always legal, list or no list.
+	own := "IDENT-" + f.mailbox.String()[:8] + "@test.local"
+	if _, xerr := f.repo.Update(ctx, f.org.String(), f.mailbox.String(), &models.UpdateEmail{SendAsEmail: &own}); xerr != nil {
+		t.Fatalf("update with the mailbox address: %v", xerr)
+	}
+	if got, _ = f.repo.GetSendIdentity(ctx, f.org.String(), f.mailbox.String()); got.SendAsEmail != own {
+		t.Errorf("the mailbox's own address was refused: %q", got.SendAsEmail)
+	}
+	blank := ""
+	if _, xerr := f.repo.Update(ctx, f.org.String(), f.mailbox.String(), &models.UpdateEmail{SendAsEmail: &blank}); xerr != nil {
+		t.Fatalf("clear alias: %v", xerr)
+	}
+
 	acc, xerr := f.repo.GetByID(ctx, f.mailbox)
 	if xerr != nil {
 		t.Fatalf("get mailbox: %v", xerr)

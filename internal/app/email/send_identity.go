@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -141,18 +142,13 @@ func pickSignature(rows []gmailSendAs, sendAs string) (*models.ImportedSignature
 		// surprising way to lose it.
 		return nil, nil
 	}
-	if len(html) > config.SignatureHTMLMax {
+	// Characters, not bytes, matching what the column accepts on the way in.
+	if utf8.RuneCountInString(html) > config.SignatureHTMLMax {
 		return nil, errx.ErrEmailSignatureTooLarge
 	}
 	plain := strings.TrimSpace(mailhtml.ToText(html))
-	if len(plain) > config.SignaturePlainMax {
-		// Cut on a rune boundary: the flattened text is the customer's own
-		// prose and can be anything.
-		r := []rune(plain)
-		for len(string(r)) > config.SignaturePlainMax {
-			r = r[:len(r)-1]
-		}
-		plain = string(r)
+	if r := []rune(plain); len(r) > config.SignaturePlainMax {
+		plain = string(r[:config.SignaturePlainMax])
 	}
 	return &models.ImportedSignature{HTML: html, Plain: plain}, nil
 }
