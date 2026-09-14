@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"google.golang.org/api/gmail/v1"
 )
 
 // parentReference resolves what a reply should be threaded onto, from whichever
@@ -106,8 +107,14 @@ type SendResult struct {
 	Success       bool
 	MessageID     string
 	ProviderMsgID string
-	SentAt        time.Time
-	Error         *errx.MailError
+	// ThreadID is the provider-side conversation this message landed in.
+	// Gmail is the only provider that has one and the only one that needs it
+	// back: appending a later message to the same thread requires handing the
+	// id to the API, so the control plane records it against the task and
+	// gives it to the next step (issue #472). Empty everywhere else.
+	ThreadID string
+	SentAt   time.Time
+	Error    *errx.MailError
 }
 
 const maxSendRetries = 3
@@ -216,20 +223,34 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 	attachments := toGoogAttachments(req.Attachments)
 
 	// Send via Gmail API
-	gmailMsg, err := w.GoogleData.Client.SendMessage(
-		ctx,
-		req.FromName,
-		req.To,
-		req.Cc,
-		req.Bcc,
-		req.MessageID,
-		req.Subject,
-		req.BodyPlain,
-		bodyHTML,
-		parent,
-		attachments,
-		customHeaders,
-	)
+	send := func(p *models.EmailMessageData) (*gmail.Message, error) {
+		return w.GoogleData.Client.SendMessage(
+			ctx,
+			req.FromName,
+			req.To,
+			req.Cc,
+			req.Bcc,
+			req.MessageID,
+			req.Subject,
+			req.BodyPlain,
+			bodyHTML,
+			p,
+			attachments,
+			customHeaders,
+		)
+	}
+	gmailMsg, err := send(parent)
+	if err != nil && parent != nil && parent.ThreadID != "" && goog.IsThreadRefusal(err) {
+		// Gmail would not file the message in that thread. It never left, so
+		// send it again as its own conversation rather than failing the step:
+		// a follow-up outside the thread still reaches the recipient, and the
+		// reference headers still thread it in THEIR client.
+		log.Warn().Str("task_id", req.TaskID.String()).Err(err).
+			Msg("Gmail refused the thread; sending as a new conversation")
+		retry := *parent
+		retry.ThreadID = ""
+		gmailMsg, err = send(&retry)
+	}
 	if err != nil {
 		// Convert to MailError using goog.HandleError
 		if mailErr := goog.HandleError(err); mailErr != nil {
@@ -249,6 +270,7 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 	result.Success = true
 	result.MessageID = req.MessageID
 	result.ProviderMsgID = gmailMsg.Id
+	result.ThreadID = gmailMsg.ThreadId
 	return result
 }
 

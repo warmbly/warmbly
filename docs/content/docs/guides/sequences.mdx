@@ -162,7 +162,18 @@ A path that runs instantly fires the moment the event happens, so the target's w
 
 ## Follow-ups and threading
 
-A follow-up is just the next email step, threaded onto the previous step's email so it lands as a reply in the same conversation. The rule: **a follow-up threads on the previous step's subject**, and changing a follow-up's subject starts a new thread instead. Leave the subject alone to stay in-thread, change it to deliberately start fresh.
+A follow-up is the next email step, sent as a **reply on the conversation the contact is already in** rather than as a second email out of nowhere. It carries `In-Reply-To` and `References` pointing at the last message they received from the campaign, and on Gmail it is posted into that same thread, so it sits under the first email in their inbox and in your Sent folder.
+
+Each email step has a **Reply in thread** switch, on by default. Turn it off for a step that should deliberately start a fresh conversation.
+
+- A step that replies in the thread has no subject of its own: a reply carries the conversation's subject, which is the one the step that opened the thread used. The composer shows that subject instead of a subject box.
+- A step with **Reply in thread** off writes its own subject and opens a new conversation. Every threading step after it then replies on *that* conversation.
+- The switch does nothing on a contact's first email. There is nothing to reply to, so it opens the thread.
+- A/B variants on a threading step vary the body only, for the same reason.
+
+<Callout type="info" title="The reply headers need the first email to have been confirmed sent">
+They point at the message id the sending provider put on the wire, which Warmbly learns when the worker reports the send. If that confirmation never arrives the follow-up still sends, carrying the conversation's subject, but as its own conversation.
+</Callout>
 
 ## A/B variants
 
@@ -171,7 +182,7 @@ Open a step's editor and click **A/B test this step**.
 - The step's own subject and body are the **Original** control arm; adding a variant makes it one weighted arm among several.
 - Up to 5 variants (B through F) on top of the Original.
 - The **traffic-split bar** shows one segment per arm. Drag a divider or type an exact percent; shares always total 100%, and **Even split** balances every active arm.
-- Select an arm to edit its name, subject, and body. Leave a variant's subject or body blank to reuse the step's own.
+- Select an arm to edit its name, subject, and body. Leave a variant's subject or body blank to reuse the step's own. On a step that replies in the thread, a variant's subject is ignored: the conversation owns it.
 - A first variant starts at 50/50. Marking one **inactive** drops it from the split without deleting it; deleting the last one returns the step to a single send.
 
 Once variants have sent, each card shows Sent, Open rate, Reply rate, and Bounce rate. When Warmbly finds a **winner**, a banner names it with the rule and confidence used, and the winning card gets a trophy.

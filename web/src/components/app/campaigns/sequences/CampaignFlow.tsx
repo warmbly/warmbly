@@ -98,6 +98,7 @@ import buildError from "@/lib/helper/buildError";
 import EntryDelayPicker from "@/components/app/campaigns/schedule/EntryDelay";
 import { entryDelayLabel } from "@/components/app/campaigns/schedule/entryDelay";
 import StepEmailArms from "./StepEmailArms";
+import { conversationSubjectFor } from "./threading";
 import CategoryPicker from "@/components/app/contacts/CategoryPicker";
 import { SegmentMultiPicker } from "@/components/app/segments/SegmentPickers";
 import type { ActionKV, AITagRef, SequenceAction, SequenceActionType } from "@/lib/api/models/app/campaigns/sequences/Action";
@@ -286,6 +287,9 @@ function stackComponents(nodes: Node[], edges: Edge[]): Node[] {
 type StepNodeData = {
     label: string;
     subtitle: string;
+    // The step is sent as a reply on the contact's existing conversation, so
+    // the subtitle is that conversation's subject rather than the step's own.
+    inThread: boolean;
     isStart: boolean;
     endsHere: boolean;
     orphan: boolean;
@@ -327,7 +331,9 @@ function StepNode({ data, selected }: NodeProps) {
                 </button>
             </div>
             <div className="px-2.5 py-2">
-                <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email</div>
+                <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">
+                    {d.inThread ? "Reply in thread" : "Email"}
+                </div>
                 <div className="mt-0.5 truncate text-[11.5px] text-slate-500">{d.subtitle || "No subject yet"}</div>
             </div>
             {d.orphan ? (
@@ -1506,13 +1512,19 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                 };
             }
             emailNum += 1;
+            // A step that replies in the thread carries the conversation's
+            // subject, so showing its own (blank, by design) would read as an
+            // unfinished step.
+            const conv = conversationSubjectFor(sequences, i);
+            const threads = conv !== null && s.thread_reply;
             return {
                 id: s.id,
                 type: "step",
                 position: { x: 0, y: 0 },
                 data: {
                     label: s.name?.trim() || `Email ${emailNum}`,
-                    subtitle: s.subject,
+                    subtitle: threads ? conv || s.subject : s.subject,
+                    inThread: threads,
                     isStart: i === 0,
                     endsHere: branches.length === 0,
                     orphan: !reachable.has(s.id),
@@ -2205,7 +2217,12 @@ export default function CampaignFlow({ campaignId }: { campaignId: string }) {
                         {editStep.kind !== "email" ? (
                             <ActionEditor campaignId={campaignId} sequence={editStep} onSaved={invalidate} />
                         ) : (
-                            <StepEmailArms campaignId={campaignId} sequence={editStep} index={editIndex} />
+                            <StepEmailArms
+                                campaignId={campaignId}
+                                sequence={editStep}
+                                index={editIndex}
+                                conversationSubject={conversationSubjectFor(sequences, editIndex)}
+                            />
                         )}
                     </div>
                 </div>

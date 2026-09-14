@@ -64,6 +64,12 @@ jobs:
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
             BUILT_AT=${{ github.event.head_commit.timestamp }}
+            POSTHOG_CLI_PROJECT_ID=${{ vars.POSTHOG_CLI_PROJECT_ID }}
+            POSTHOG_CLI_HOST=${{ vars.POSTHOG_CLI_HOST }}
+          # Only the forms image mounts this: it builds the form page app and
+          # uploads its source maps the way the dashboard image does.
+          secrets: |
+            posthog_cli_api_key=${{ secrets.POSTHOG_CLI_API_KEY }}
           tags: |
             ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.ref_name }}
             ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:v${{ needs.validate-tag.outputs.minor }}

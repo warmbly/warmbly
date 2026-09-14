@@ -66,6 +66,10 @@ export interface CreateCampaignInput {
         body_sync?: boolean;
         body_code?: boolean;
         wait_after?: number;
+        // Reply in the contact's existing conversation instead of starting a
+        // new one. Defaults to true, which is what makes a follow-up a
+        // follow-up.
+        thread_reply?: boolean;
     }>;
 
     // A/B variants for the first step

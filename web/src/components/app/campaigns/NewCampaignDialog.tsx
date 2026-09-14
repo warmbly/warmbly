@@ -368,6 +368,12 @@ export function NewCampaignDialog({ open, onClose }: Props) {
                 subject: s.subject.trim(),
                 body_plain: s.body_plain,
                 wait_after: i === 0 ? 0 : Math.max(0, s.wait_after),
+                // thread_reply is deliberately not sent: the server derives it
+                // from the subjects (blank or the conversation's own replies in
+                // the thread, a subject of its own opens a new one), which is
+                // exactly what the subject box here promises and what the API
+                // does for every other caller. Deciding it twice is how the two
+                // drift apart.
             }));
     }
 

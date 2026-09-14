@@ -145,6 +145,7 @@ type TaskRepository interface {
 	DirectPendingWarmupTask(ctx context.Context, accountID, targetAccountID uuid.UUID, at time.Time) (bool, error)
 	UpdateTaskStatusWithLock(ctx context.Context, taskID uuid.UUID, status string) error
 	UpdateTaskMessageID(ctx context.Context, taskID uuid.UUID, messageID string) error
+	UpdateTaskThreadID(ctx context.Context, taskID uuid.UUID, threadID string) error
 	// UpdateTaskEmailAccount repoints a task at the mailbox it is actually
 	// sending from. A campaign task is created before its mailbox is known, so
 	// the send path stamps the rotation's real pick before dispatching.
@@ -919,6 +920,18 @@ func (r *taskRepository) UpdateTaskMessageID(ctx context.Context, taskID uuid.UU
 	_, err := r.db.Exec(ctx,
 		`UPDATE tasks SET message_id = $1, updated_at = NOW() WHERE id = $2`,
 		messageID, taskID)
+	return err
+}
+
+// UpdateTaskThreadID persists the provider-side conversation handle the worker
+// reported for a send. Only Gmail has one, and it is the only thing that makes
+// a follow-up land in the same thread in the SENDER's mailbox: a matching
+// Subject and In-Reply-To are not enough (issue #472). Guarded on a change so
+// the common "already recorded" case writes nothing.
+func (r *taskRepository) UpdateTaskThreadID(ctx context.Context, taskID uuid.UUID, threadID string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE tasks SET thread_id = $1, updated_at = NOW() WHERE id = $2 AND thread_id <> $1`,
+		threadID, taskID)
 	return err
 }
 

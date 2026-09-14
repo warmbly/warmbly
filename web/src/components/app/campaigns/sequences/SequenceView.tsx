@@ -5,12 +5,13 @@
 // content score).
 
 import React from "react";
-import { GitBranchIcon, Loader2Icon } from "lucide-react";
+import { Loader2Icon, ReplyIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import type Sequence from "@/lib/api/models/app/campaigns/sequences/Sequence";
 import EmailContentEditor from "./EmailContentEditor";
 import StepAttachments from "./StepAttachments";
 import { Label, TextInput } from "@/components/ui/field";
+import { SettingRow, Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 import useUpdateSequence from "@/lib/api/hooks/app/campaigns/sequences/useUpdateSequence";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
@@ -19,7 +20,7 @@ import buildError from "@/lib/helper/buildError";
 // as raw HTML, so reopening it shows the markup instead of handing it to the
 // editor schema, which keeps only what it can represent. body_sync stays a
 // legacy editor-only flag: the composer keeps HTML + plain in lockstep itself.
-type Draft = Pick<Sequence, "name" | "subject" | "body_plain" | "body_html" | "body_code">;
+type Draft = Pick<Sequence, "name" | "subject" | "body_plain" | "body_html" | "body_code" | "thread_reply">;
 
 function toDraft(s: Sequence): Draft {
     return {
@@ -28,6 +29,7 @@ function toDraft(s: Sequence): Draft {
         body_plain: s.body_plain,
         body_html: s.body_html,
         body_code: s.body_code,
+        thread_reply: s.thread_reply,
     };
 }
 
@@ -35,12 +37,18 @@ export default function SequenceView({
     campaignId,
     sequence,
     index,
+    conversationSubject = null,
     embedded = false,
     headerExtra,
 }: {
     campaignId: string;
     sequence: Sequence;
     index: number;
+    // The subject of the conversation this step would reply on, taken from the
+    // step that opened it. Shown in place of the subject field while the step
+    // replies in the thread, because that is what the recipient reads. `null`
+    // means there is no earlier email to reply to, so the switch is hidden.
+    conversationSubject?: string | null;
     // When embedded inside the tabbed arms editor, drop the outer card chrome
     // and the "Step N" eyebrow (the tab already provides that context).
     embedded?: boolean;
@@ -58,6 +66,13 @@ export default function SequenceView({
     }, [sequence.id]);
 
     const baseline = toDraft(sequence);
+    // A step with nothing before it opens the conversation, so it always
+    // writes its own subject however the switch is set.
+    const canThread = conversationSubject !== null;
+    const threads = canThread && draft.thread_reply;
+    // A conversation whose opener has no subject yet has nothing to lend, so
+    // the step keeps writing its own. Mirrors models.StepSubject on the server.
+    const inheritsSubject = threads && !!conversationSubject;
     const savable = React.useMemo(() => JSON.stringify(baseline) !== JSON.stringify(draft), [baseline, draft]);
     const patch = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
 
@@ -71,6 +86,7 @@ export default function SequenceView({
                 ...(draft.body_plain !== baseline.body_plain && { body_plain: draft.body_plain }),
                 ...(draft.body_html !== baseline.body_html && { body_html: draft.body_html }),
                 ...(draft.body_code !== baseline.body_code && { body_code: draft.body_code }),
+                ...(draft.thread_reply !== baseline.thread_reply && { thread_reply: draft.thread_reply }),
             };
             await toast.promise(updateSequence.mutateAsync(data), {
                 loading: "Saving step…",
@@ -126,10 +142,42 @@ export default function SequenceView({
                     <p className="mt-1.5 text-[10.5px] text-slate-400">Internal label only — recipients never see it.</p>
                 </div>
 
+                {canThread && (
+                    <div className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+                        <SettingRow
+                            title="Reply in thread"
+                            description={
+                                <span className="inline-flex items-start gap-1.5">
+                                    <ReplyIcon className="mt-0.5 w-3 h-3 shrink-0 text-slate-400" />
+                                    <span>
+                                        Send this step as a reply on the conversation the contact is already in, so it
+                                        lands under the email they have instead of arriving as a second cold email.
+                                        Turn it off to start a fresh conversation with its own subject.
+                                    </span>
+                                </span>
+                            }
+                            control={
+                                <Toggle
+                                    value={draft.thread_reply}
+                                    onChange={(v) => patch({ thread_reply: v })}
+                                />
+                            }
+                        />
+                    </div>
+                )}
+
                 <EmailContentEditor
                     key={sequence.id}
                     subject={draft.subject}
                     onSubjectChange={(v) => patch({ subject: v })}
+                    subjectLocked={
+                        inheritsSubject
+                            ? {
+                                  subject: conversationSubject ?? "",
+                                  note: "A reply carries the conversation's subject. Turn off Reply in thread to write your own.",
+                              }
+                            : undefined
+                    }
                     bodyHtml={draft.body_html}
                     onBodyChange={(html, plain) => patch({ body_html: html, body_plain: plain })}
                     bodyCode={draft.body_code}
@@ -139,16 +187,6 @@ export default function SequenceView({
                     canSendTest
                     dirty={savable}
                 />
-
-                {index > 0 && (
-                    <div className="flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5">
-                        <GitBranchIcon className="mt-0.5 w-3.5 h-3.5 shrink-0 text-slate-400" />
-                        <p className="text-[11px] leading-relaxed text-slate-500">
-                            Follow-ups thread on the previous step&apos;s subject. Change this subject and the follow-up
-                            starts a new thread instead of replying in the existing one.
-                        </p>
-                    </div>
-                )}
 
                 {sequence.kind === "email" && (
                     <StepAttachments campaignId={campaignId} sequenceId={sequence.id} />

@@ -14,7 +14,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "build:pages": "vite build && WARMBLY_CONFIG_OUT=dist/config.js sh ./docker-entrypoint.sh",
-    "sourcemaps:posthog": "pnpm dlx --package @posthog/cli posthog-cli sourcemap inject --directory dist && pnpm dlx --package @posthog/cli posthog-cli sourcemap upload --directory dist --delete-after"
+    "sourcemaps:posthog": "pnpm dlx --package @posthog/cli@0.18.2 posthog-cli sourcemap inject --directory dist && pnpm dlx --package @posthog/cli@0.18.2 posthog-cli sourcemap upload --directory dist --delete-after"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",

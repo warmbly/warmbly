@@ -21770,6 +21770,10 @@
             "type": "integer",
             "description": "Days to wait before this step, counted from the contact's previous step."
           },
+          "thread_reply": {
+            "type": "boolean",
+            "description": "Send this step as a reply on the conversation the contact is already in. Default true; a threading step carries the conversation's subject."
+          },
           "position": {
             "type": "integer"
           },
@@ -21820,6 +21824,10 @@
           "wait_after": {
             "type": "integer"
           },
+          "thread_reply": {
+            "type": "boolean",
+            "description": "Reply in the contact's existing conversation rather than starting a new one. Defaults to true for a step with no subject or the conversation's own, false for a step carrying a subject of its own."
+          },
           "kind": {
             "type": "string",
             "enum": [
@@ -21855,6 +21863,10 @@
           "wait_after": {
             "type": "integer",
             "description": "Days to wait before this step, counted from the contact's previous step (0 to 60). Spacing belongs to the target step; there is no standalone wait node for email steps."
+          },
+          "thread_reply": {
+            "type": "boolean",
+            "description": "Send this step as a reply on the conversation the contact is already in, rather than as a new email. Default true. A threading step carries the conversation's subject, so its own subject is only used once this is turned off."
           },
           "conditions": {
             "type": "object",

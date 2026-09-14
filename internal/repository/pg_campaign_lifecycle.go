@@ -272,13 +272,13 @@ func copyCampaignStepsTx(ctx context.Context, tx pgx.Tx, src, dst uuid.UUID) (ma
 		INSERT INTO sequences (
 			id, campaign_id, organization_id, name, subject,
 			body_plain, body_html, body_sync, body_code,
-			wait_after, position, conditions, kind, action, x, y,
+			wait_after, position, thread_reply, conditions, kind, action, x, y,
 			created_at, updated_at
 		)
 		SELECT
 			$2, $3, organization_id, name, subject,
 			body_plain, body_html, body_sync, body_code,
-			wait_after, position, $4::jsonb, kind, action, x, y,
+			wait_after, position, thread_reply, $4::jsonb, kind, action, x, y,
 			NOW(), NOW()
 		FROM sequences
 		WHERE id = $1

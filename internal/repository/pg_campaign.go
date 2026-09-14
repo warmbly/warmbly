@@ -607,6 +607,7 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 	// a follow-up that is listed but not connected would never send.
 	if len(data.Sequences) > 0 {
 		stepIDs := make([]uuid.UUID, 0, len(data.Sequences))
+		threadDefaults := models.ThreadReplyDefaults(data.Sequences)
 		for i, seq := range data.Sequences {
 			waitAfter := 0
 			if i > 0 {
@@ -638,18 +639,22 @@ func (r *campaignRepository) Create(ctx context.Context, userID string, orgID *u
 			if bodyHTML == "" {
 				bodyHTML = emptyBodyHTML
 			}
+			threadReply := threadDefaults[i]
+			if seq.ThreadReply != nil {
+				threadReply = *seq.ThreadReply
+			}
 			seqInsert := `
 				INSERT INTO sequences (
 					campaign_id, organization_id, name, subject,
 					body_plain, body_html, body_sync, body_code,
-					wait_after, position
-				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+					wait_after, position, thread_reply
+				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 				RETURNING id
 			`
 			seqParams := []any{
 				campaign.ID, orgID, seq.Name, seq.Subject,
 				seq.BodyPlain, bodyHTML, bodySync, bodyCode,
-				waitAfter, i + 1,
+				waitAfter, i + 1, threadReply,
 			}
 			var stepID uuid.UUID
 			if err := tx.QueryRow(ctx, seqInsert, seqParams...).Scan(&stepID); err != nil {
@@ -1445,7 +1450,7 @@ func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) 
 // GetSequenceByID retrieves a sequence by ID
 func (r *campaignRepository) GetSequenceByID(ctx context.Context, sequenceID uuid.UUID) (*models.Sequence, error) {
 	query := `
-		SELECT id, name, subject, body_plain, body_html, body_sync, body_code, wait_after, kind, action, updated_at, created_at
+		SELECT id, name, subject, body_plain, body_html, body_sync, body_code, wait_after, thread_reply, kind, action, updated_at, created_at
 		FROM sequences
 		WHERE id = $1
 	`
@@ -1453,7 +1458,7 @@ func (r *campaignRepository) GetSequenceByID(ctx context.Context, sequenceID uui
 	var seq models.Sequence
 	err := r.DB.QueryRow(ctx, query, sequenceID).Scan(
 		&seq.ID, &seq.Name, &seq.Subject, &seq.BodyPlain, &seq.BodyHTML,
-		&seq.BodySync, &seq.BodyCode, &seq.WaitAfter, &seq.Kind, &seq.Action, &seq.UpdatedAt, &seq.CreatedAt,
+		&seq.BodySync, &seq.BodyCode, &seq.WaitAfter, &seq.ThreadReply, &seq.Kind, &seq.Action, &seq.UpdatedAt, &seq.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1469,7 +1474,7 @@ func (r *campaignRepository) GetSequenceByID(ctx context.Context, sequenceID uui
 // GetSequencesByCampaignID retrieves all sequences for a campaign ordered by position
 func (r *campaignRepository) GetSequencesByCampaignID(ctx context.Context, campaignID uuid.UUID) ([]models.Sequence, error) {
 	query := `
-		SELECT id, name, subject, body_plain, body_html, body_sync, body_code, wait_after, position, kind, updated_at, created_at
+		SELECT id, name, subject, body_plain, body_html, body_sync, body_code, wait_after, position, thread_reply, kind, updated_at, created_at
 		FROM sequences
 		WHERE campaign_id = $1
 		ORDER BY position ASC, created_at ASC
@@ -1487,7 +1492,7 @@ func (r *campaignRepository) GetSequencesByCampaignID(ctx context.Context, campa
 		var seq models.Sequence
 		err := rows.Scan(
 			&seq.ID, &seq.Name, &seq.Subject, &seq.BodyPlain, &seq.BodyHTML,
-			&seq.BodySync, &seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.Kind, &seq.UpdatedAt, &seq.CreatedAt,
+			&seq.BodySync, &seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.ThreadReply, &seq.Kind, &seq.UpdatedAt, &seq.CreatedAt,
 		)
 		if err != nil {
 			db.CaptureError(err, "", nil, "scan")

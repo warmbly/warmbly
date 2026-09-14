@@ -231,9 +231,9 @@ Leave them unset, which is the default the installer writes, and nothing leaves 
 
 What a reported error carries is the exception, its stack trace, the service, the environment and the build, plus enough context to answer it:
 
-- **Which workspace and user.** A browser exception carries the organization id and user id of whoever hit it, and a server-side one carries them for the request that panicked, along with its route and request id. That is what makes "this customer says campaigns are broken" a search rather than a guess. It is a property on the exception, not an identity: no `identify` call is ever made, no person profile is created, and nothing is stored in the visitor's browser.
-- **What led to it.** The last routes visited and the last API calls that failed, with their method, route, status and request id. Ids in a path are masked to `:id` first, so a report names the screen and never the record.
-- **Nothing else about the request.** No headers, no bodies, no query strings, and no session recording: the dashboard renders mailboxes and contacts, so it is never recorded.
+- **Which workspace and user.** A browser exception carries the organization id and user id of whoever hit it, and a server-side one carries them for the request that panicked, along with its route and request id. That is what makes "this customer says campaigns are broken" a search rather than a guess. On the server side that is a property and nothing more: no person is identified. In the dashboard and the admin panel, with a browser key set, the signed-in user is identified to PostHog (a person profile with their email and name, and an identifier in local storage and a cookie), so the exception belongs to that person; see usage analytics below.
+- **What led to it.** The last routes visited and the last API calls that failed, with their method, path, status and request id.
+- **Nothing else about the request.** No headers, no bodies, no query strings. Session replay exists only in the dashboard and the admin panel, only with a browser key set, and `WARMBLY_POSTHOG_SESSION_REPLAY=false` turns it off; the marketing site and public form pages are never recorded.
 
 Server-side reports that belong to no request, a scheduled job or a worker, are attributed to the process that raised them and to nobody.
 
@@ -243,9 +243,9 @@ The `warmbly` CLI runs on your own machine and reports nowhere, ever. It has not
 
 There are none. A self-hosted instance loads no analytics script and sends no usage data, not aggregated, not anonymised, not "to help us improve the product".
 
-The hosted service at warmbly.com does measure its own marketing site and dashboard, and the code for that ships in the same images you run. It is inert without a key: the installer never asks for one, the `.env` template does not mention it, and a build without one contains no analytics script for you to block. If you want to check, `grep posthog` the served assets of your own dashboard.
+The hosted service at warmbly.com does measure its own marketing site, dashboard and admin panel, including session replay in the two apps, and the code for that ships in the same images you run. It is inert without a key: the installer never asks for one, the `.env` template does not mention it, and a build without one contains no analytics script for you to block. If you want to check, `grep posthog` the served assets of your own dashboard.
 
-If you do want product analytics on your own instance, the variables are on [configuration](/development/configuration/#product-analytics) and they accept a self-hosted PostHog. It is the same key as the error tracking above, so setting one for errors also enables the handful of product events; `POSTHOG_ERROR_TRACKING` and the analytics variables are separate switches if you want only one of the two. That is your decision to make, and nothing about it points at us.
+If you do want product analytics on your own instance, the variables are on [configuration](/development/configuration/#product-analytics-and-session-replay) and they accept a self-hosted PostHog. The server-side `POSTHOG_KEY` carries the backend's error tracking and its product events; the browser-side `WARMBLY_POSTHOG_KEY` is what turns on the dashboard's and the admin panel's analytics, session replay and browser errors, and `WARMBLY_POSTHOG_ERROR_TRACKING` and `WARMBLY_POSTHOG_SESSION_REPLAY` switch those last two off separately. That is your decision to make, and nothing about it points at us.
 
 ## See also
 

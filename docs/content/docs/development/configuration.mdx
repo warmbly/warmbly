@@ -457,10 +457,11 @@ Set both and every error goes to both. Each variable is read by one process, so 
 | `SENTRY_DSN` | forms service | The forms service's own errors | unset |
 | `SENTRY_DSN` | tracking service | Rust errors and panics. An invalid DSN disables reporting with a log line rather than stopping the service | unset |
 | `SENTRY_DSN` | realtime service | An empty string is treated as unset on purpose, because the library rejects `""` hard enough to take the node down | unset |
-| `WARMBLY_POSTHOG_KEY` | web, admin containers | Browser error tracking, read at container start like the other `WARMBLY_*` values. On the dashboard the same key also carries the product analytics below; the admin panel reports only exceptions | unset |
-| `WARMBLY_POSTHOG_KEY` | forms service | Stamped into the public form page for the form app's browser errors. Separate from the forms service's own `POSTHOG_KEY`: one is a Go process, the other is a page a stranger loads | unset |
+| `WARMBLY_POSTHOG_KEY` | web, admin containers | Browser error tracking, read at container start like the other `WARMBLY_*` values. The same key carries the product analytics and session replay below | unset |
+| `WARMBLY_POSTHOG_KEY` | forms service | Stamped into the public form page for the form app's pageviews, web vitals and browser errors. Separate from the forms service's own `POSTHOG_KEY`: one is a Go process, the other is a page a stranger loads | unset |
 | `WARMBLY_POSTHOG_HOST` | web, admin containers, forms service | Capture host for the browser | `https://us.i.posthog.com` |
-| `WARMBLY_POSTHOG_ERROR_TRACKING` | web, admin containers, forms service | `false` reports no browser exceptions to PostHog anywhere, including the form pages the forms service stamps. The dashboard keeps sending product analytics | `true` |
+| `WARMBLY_POSTHOG_ERROR_TRACKING` | web, admin containers, forms service | `false` reports no browser exceptions to PostHog anywhere, including the form pages the forms service stamps. Everything else the key turns on keeps running | `true` |
+| `WARMBLY_POSTHOG_SESSION_REPLAY` | web, admin containers | `false` records no sessions and keeps everything else. Form pages never record, whatever this says | `true` |
 | `WARMBLY_SENTRY_DSN` | web, admin containers | The Sentry half of the same thing. Unset means the SDK is never fetched and no host is contacted | unset |
 | `WARMBLY_SENTRY_DSN` | forms service | Stamped into the public form page, along with the service's `APP_ENV` as the environment | unset |
 | `WARMBLY_SENTRY_ENVIRONMENT` | web, admin containers | The environment label browser events carry, whichever backend receives them. Defaults to the build mode. Form pages do not read it: the forms service stamps its own `APP_ENV` into the page instead | unset |
@@ -471,18 +472,18 @@ Configuring neither backend means nothing leaves the process and no host is cont
 
 A PostHog key can name PostHog Cloud (US or EU) or your own PostHog through `POSTHOG_HOST`. A Sentry DSN can point at Sentry Cloud, a self-hosted Sentry, or any Sentry-compatible server such as GlitchTip; nothing in Warmbly assumes sentry.io.
 
-The distinct id on a PostHog exception names the process that raised it (`warmbly-backend`, `warmbly-worker`), person profiles are switched off per event, and IP geolocation is disabled. Nothing here calls `identify` and nothing is stored in a visitor's browser.
+The distinct id on a server-side PostHog exception names the process that raised it (`warmbly-backend`, `warmbly-worker`), person profiles are switched off per event, and IP geolocation is disabled, since the address would be the server's. A browser exception belongs to the signed-in person the app identified, so it sits next to that person's session replay.
 
 Exceptions still carry the context that makes them answerable, as searchable properties:
 
 | Property | On | What it is for |
 |---|---|---|
-| `organization_id`, `user_id` | browser and request-scoped server exceptions | "Show me every error this workspace hit." Set on exception events only; product analytics stays anonymous |
+| `organization_id`, `user_id` | browser and request-scoped server exceptions | "Show me every error this workspace hit." Flat properties, so one filter finds them on the server side too, where no person is identified |
 | `request_id` | server panics, and browser exceptions whose trail includes a failed call | The id the API already returns in its error envelope, so one incident is findable in PostHog and in the backend's logs |
 | `http_route`, `http_method` | server panics | The route pattern, never the raw path: one issue per route instead of one per record, and a probe for `/wp-admin` cannot mint issues |
 | `service`, `environment`, `release` | everything | Which process, which deployment, which build |
 
-Browser exceptions also carry a trail of steps: the routes visited and the API calls that failed just before, each with its method, route, status and request id. Record ids in a path are masked to `:id` before anything is sent. There is no session recording anywhere; the dashboard renders mailboxes and contacts.
+Browser exceptions also carry a trail of steps: the routes visited and the API calls that failed just before, each with its method, path, status and request id. In the dashboard and the admin panel the exception also sits next to the session replay it happened in, when `WARMBLY_POSTHOG_SESSION_REPLAY` is on; see the analytics section below for what those two surfaces record.
 
 The `admin` panel and the dashboard also tag events with the build they were served from. That value is baked at image build time, because it has to match the release the source maps were uploaded under, so it cannot be changed by a container variable afterwards.
 
@@ -492,26 +493,38 @@ A browser stack trace is minified without them. Uploading them is optional and o
 
 | Build variable | Backend | What it does |
 |---|---|---|
-| `POSTHOG_CLI_API_KEY`, `POSTHOG_CLI_PROJECT_ID` | PostHog | Both set makes the image build run `pnpm sourcemaps:posthog` after `vite build`, which injects a chunk id, uploads, and deletes the `.map` files it sent |
+| `POSTHOG_CLI_API_KEY`, `POSTHOG_CLI_PROJECT_ID` | PostHog | Both set makes the image build run `pnpm sourcemaps:posthog` after `vite build`, which injects a chunk id, uploads, and deletes the `.map` files it sent. The `web`, `admin` and `forms` images all do this, so a form page's stack trace is readable too |
 | `POSTHOG_CLI_HOST` | PostHog | The instance to upload to, for PostHog EU or a self-hosted one |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | Sentry | All three set puts the Sentry Vite plugin in the build |
 
-In this repository's release workflow the two project ids are repository variables and the two keys are repository secrets, passed to the image build as build secrets.
+In this repository's release workflow the two project ids are repository variables and the two keys are repository secrets, passed to the image build as build secrets. Nothing in the app has to match a release name: PostHog pairs a stack frame with its map through the chunk id the CLI injected into the served file, so an event from any build resolves as long as that build's maps were uploaded.
 
-### Product analytics
+### Product analytics and session replay
 
-These are the same two keys as the error tracking above, and they exist for the hosted service. A self-hosted instance that sets no key loads no analytics and sends no usage data: the installer never asks about them, and a build with none of them set contains no analytics script to block. An instance that does set a key for error tracking also gets the handful of product events listed here, which are counts of things happening and never carry an identifier.
+These are the same two keys as the error tracking above, and they exist for the hosted service. A self-hosted instance that sets no key loads no analytics and sends no usage data: the installer never asks about them, and a build with none of them set contains no analytics script to block. An instance that does set a key gets everything below.
 
 | Variable | Read by | What it does | Default |
 |---|---|---|---|
-| `POSTHOG_KEY` | backend | Server-side product events (a completed signup, a started subscription). Unset means no client is built and nothing is sent | unset |
+| `POSTHOG_KEY` | backend | Server-side product events (a completed signup, a started trial, a started subscription), under the account id of the person they happened to, with the workspace as a group | unset |
 | `POSTHOG_HOST` | backend | Capture host. Point it at a self-hosted PostHog if you run one | `https://us.i.posthog.com` |
-| `WARMBLY_POSTHOG_KEY` | web container | Browser analytics for the dashboard, read at container start. Unset means the SDK chunk is never fetched | unset |
-| `WARMBLY_POSTHOG_HOST` | web container | Capture host for the browser | `https://us.i.posthog.com` |
+| `WARMBLY_POSTHOG_KEY` | web, admin containers | Browser analytics and session replay, read at container start. Unset means the SDK chunk is never fetched | unset |
+| `WARMBLY_POSTHOG_HOST` | web, admin containers | Capture host for the browser | `https://us.i.posthog.com` |
+| `WARMBLY_POSTHOG_SESSION_REPLAY` | web, admin containers | `false` keeps the analytics and records no sessions | `true` |
 | `PUBLIC_POSTHOG_KEY` | `site/` build | Marketing site analytics. Build-time: unset produces a site with no analytics code in it at all | unset |
 | `PUBLIC_POSTHOG_HOST` | `site/` build | Capture host for the site | `https://us.i.posthog.com` |
 
-Everything runs in PostHog's cookieless mode: nothing is stored in the visitor's browser, no `identify` is ever called, and no event property carries a user id, an organization id or an email. The admin panel gets none of it and never will; it is the operator surface and it ships to self-hosters, so it reports exceptions and measures nothing.
+What each surface sends, with a key set:
+
+| Surface | Identity | Captured |
+|---|---|---|
+| Dashboard | The signed-in account (`identify` with email and name) and its workspace as an `organization` group | Pageviews and pageleaves, autocapture of every click, heatmaps, rage and dead clicks, web vitals and network timing, session replay with console logs, surveys, exceptions, and the named events `mailbox_connected` and `campaign_launched` |
+| Admin panel | The signed-in operator | The same set, so a slow screen or a broken action in the operator surface is findable the same way |
+| Marketing site | Nobody. Cookieless: nothing is stored in the browser and no person is ever created | Pageviews and pageleaves with scroll depth, autocapture, heatmaps, rage and dead clicks, web vitals, exceptions. No session replay: the SDK has no session in cookieless mode, and one would need a consent banner |
+| Public form pages | Nobody. Cookieless, for the stranger filling in a customer's form | Pageviews, autocapture, heatmaps, web vitals, exceptions and the funnel events `form_viewed`, `form_started` and `form_submitted`, each carrying the form's public id. Never recorded |
+
+The person in the dashboard and the person on a server-side event are the same account id, so a signup counted by the backend, the session that led to it and the subscription the Stripe webhook later reports are one funnel. The acquisition parameters the marketing site carries into the signup link land on that person write-once at signup. Countries come from PostHog's own GeoIP on the address the event arrived from; the `/ingest` proxy above forwards the visitor's address for exactly this, and the server-side events send the signup request's address along.
+
+Session replay masks what is typed into a password field in the browser, before anything is sent. Every other input and every screen is recorded, which is what makes a replay answer "what exactly happened", and it is also why the hosted service's privacy page describes it in those words.
 
 ### Push
 
