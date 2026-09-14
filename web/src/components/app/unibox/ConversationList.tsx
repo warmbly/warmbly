@@ -88,7 +88,12 @@ export function ConversationList({
 
   const searchRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
-  const sentinelRef = React.useRef<HTMLDivElement>(null);
+  // State, not a ref: the rows sit in a keyed fragment that remounts when a
+  // new result set replaces the previous one, and the sentinel remounts with
+  // it. A ref would leave the observer below watching the detached node and
+  // auto-pagination would quietly stop, since none of its other dependencies
+  // change when both result sets have a next page.
+  const [sentinel, setSentinel] = React.useState<HTMLDivElement | null>(null);
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
   const setSelectedThreadId = useAppStore((s) => s.setSelectedThreadId);
   const setSelectedAccountId = useAppStore((s) => s.setSelectedAccountId);
@@ -138,7 +143,6 @@ export function ConversationList({
   // a sentinel still on screen keeps pulling instead of stalling one page in.
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = q;
   React.useEffect(() => {
-    const sentinel = sentinelRef.current;
     const root = listRef.current;
     // A page that failed stays failed until the user asks again; re-arming on
     // an on-screen sentinel would retry it on a loop.
@@ -152,7 +156,13 @@ export function ConversationList({
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+  }, [
+    sentinel,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+  ]);
 
   // Group rows by time bucket. The server already orders newest to oldest so a
   // single pass preserves both global order and group adjacency.
@@ -401,7 +411,7 @@ export function ConversationList({
               </section>
             ))}
             {hasNextPage && (
-              <div ref={sentinelRef}>
+              <div ref={setSentinel}>
                 {isFetchingNextPage ? (
                   // The next page looks like rows before it is rows.
                   <SkeletonRows count={3} />

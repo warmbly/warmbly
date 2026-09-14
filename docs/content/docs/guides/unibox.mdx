@@ -36,16 +36,18 @@ The shortcuts modal only lists what the screen you are on can actually do, so th
 
 ## Folders
 
-The rail is two short groups and then your mailboxes. The first group is where you work: **All mail**, **Inbox**, **Unread**, **Awaiting reply**, **Agent drafts**, **Snoozed**. The second is the standard mail folders, so direction is visually clear instead of one combined list:
+The rail is two short groups and then your mailboxes. The first group is where you work: **All mail**, **Inbox**, **Unread**, **Awaiting reply**, **Agent drafts**, **Snoozed**. The second holds the rest of the mail folders, plus **Scheduled** alongside them, so direction is visually clear instead of one combined list:
 
-| Folder | Shows |
-| --- | --- |
-| Inbox | Inbound mail, plus anything filed in a custom folder at the provider |
-| Drafts | Messages sitting in a mailbox's drafts folder |
-| Sent | Outbound mail, campaign and manual |
-| Archive | Archived (Gmail's All Mail, the Archive folder elsewhere) |
-| Spam | Junked at the provider |
-| Trash | Deleted |
+| Folder | Group | Shows |
+| --- | --- | --- |
+| Inbox | First | Inbound mail, plus anything filed in a custom folder at the provider |
+| Drafts | Second | Messages sitting in a mailbox's drafts folder |
+| Sent | Second | Outbound mail, campaign and manual |
+| Archive | Second | Archived (Gmail's All Mail, the Archive folder elsewhere) |
+| Spam | Second | Junked at the provider |
+| Trash | Second | Deleted |
+
+**Scheduled** sits between Sent and Archive. It is a view rather than a folder, listing replies queued to send later, and it reads naturally next to Sent.
 
 Each message starts in the folder the provider has it in: IMAP special-use folder attributes, Gmail labels, and Outlook well-known folders all map to the same six. Moves at the provider (junking a message, clearing it out of spam) follow on the next sync. You can also file a conversation yourself, which moves it here without moving it at the provider; see [filing a conversation](#filing-a-conversation). The active row is highlighted grey, unread counts sit on the right in blue, and hovering a folder reveals a three-dot menu with **Mark all as read**.
 
