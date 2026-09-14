@@ -1394,12 +1394,25 @@ func (r *contactRepository) Search(
 				-- Total email steps in the sequence, to tell "still sending" (active)
 				-- apart from "every step sent" (completed/done).
 				'total_steps', (SELECT COUNT(*) FROM sequences st WHERE st.campaign_id = %[1]s AND st.kind = 'email'),
-				-- The mailbox this lead's whole sequence sends from, fixed when
-				-- its first email went out. Null until then.
-				'sender', (
-					SELECT ea.email FROM campaign_leads cls
-					JOIN email_accounts ea ON ea.id = cls.email_account_id
-					WHERE cls.campaign_id = %[1]s AND cls.contact_id = c.id
+				-- The lead row: the mailbox its whole sequence sends from
+				-- (fixed when the first email went out, null until then), and
+				-- the live hold — an out-of-office auto-reply parking the
+				-- contact until they are back, or a member pausing them by
+				-- hand. Read live, so a dated hold stops counting the moment it
+				-- expires without anything having to write.
+				--
+				-- One subquery for both: they resolve the same primary-key row,
+				-- and this runs once per row of the Leads list.
+				'lead', (
+					SELECT json_build_object(
+						'sender', (SELECT ea.email FROM email_accounts ea WHERE ea.id = hl.email_account_id),
+						'hold', CASE WHEN %[4]s THEN json_build_object(
+							'since', hl.paused_at, 'until', hl.paused_until,
+							'reason', COALESCE(hl.pause_reason, ''), 'source', COALESCE(hl.pause_source, '')
+						) END
+					)
+					FROM campaign_leads hl
+					WHERE hl.campaign_id = %[1]s AND hl.contact_id = c.id
 				),
 				-- The step the contact is on now = the latest step actually sent.
 				-- Labelled the same way the canvas does: custom name, else
@@ -1432,7 +1445,7 @@ func (r *contactRepository) Search(
 			)
 			FROM campaign_contact_progress p
 			WHERE p.campaign_id = %[1]s AND p.contact_id = c.id
-		)`, singleCampaignPlaceholder, config.CampaignSendMaxAttempts, undeliverableClause(singleCampaignPlaceholder))
+		)`, singleCampaignPlaceholder, config.CampaignSendMaxAttempts, undeliverableClause(singleCampaignPlaceholder), liveHold("hl"))
 	}
 
 	// campaign_count is only ever read by the min/max filters and the
@@ -1563,13 +1576,27 @@ func (r *contactRepository) Search(
 				TotalSteps int        `json:"total_steps"`
 				LastAt     *time.Time `json:"last_at"`
 				Step       *string    `json:"step"`
-				Sender     *string    `json:"sender"`
+				// The lead row's own fields, read together because they come
+				// from one campaign_leads row.
+				Lead *struct {
+					Sender *string          `json:"sender"`
+					Hold   *models.LeadHold `json:"hold"`
+				} `json:"lead"`
 
 				Undeliverable bool `json:"undeliverable"`
 			}
 			if err := json.Unmarshal(leadProgressJSON, &lp); err != nil {
 				errs.CaptureException(err)
 				return nil, errx.InternalError()
+			}
+			// Absent only when the contact is not a lead of the campaign,
+			// which the outer query already excludes.
+			lead := lp.Lead
+			if lead == nil {
+				lead = &struct {
+					Sender *string          `json:"sender"`
+					Hold   *models.LeadHold `json:"hold"`
+				}{}
 			}
 			status := models.LeadStatusPending
 			switch {
@@ -1585,6 +1612,10 @@ func (r *contactRepository) Search(
 				// Every email step has been sent and the contact hasn't replied
 				// or bounced: the sequence is exhausted, so the lead is done.
 				status = models.LeadStatusCompleted
+			case lead.Hold != nil:
+				// Parked mid-sequence: an out-of-office auto-reply or a
+				// member's own pause. The lead keeps its place and resumes.
+				status = models.LeadStatusPaused
 			case lp.Sent > 0:
 				status = models.LeadStatusActive
 			case lp.Undeliverable:
@@ -1601,11 +1632,12 @@ func (r *contactRepository) Search(
 				failureReason = *lp.FailReason
 			}
 			sender := ""
-			if lp.Sender != nil {
-				sender = *lp.Sender
+			if lead.Sender != nil {
+				sender = *lead.Sender
 			}
 			c.CampaignLead = &models.ContactCampaignProgress{
 				Status:         status,
+				Hold:           lead.Hold,
 				Sender:         sender,
 				Sent:           lp.Sent,
 				Opened:         lp.Opened,
@@ -1865,6 +1897,7 @@ func leadStatusClause(status, cp string) string {
 		cp,
 	)
 	undeliverable := undeliverableClause(cp)
+	held := leadHeldClause(cp)
 	switch status {
 	case models.LeadStatusUnsubscribed:
 		return "NOT c.subscribed"
@@ -1876,23 +1909,41 @@ func leadStatusClause(status, cp string) string {
 		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND %s)", bounced, replied, failed)
 	case models.LeadStatusCompleted:
 		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s AND %s AND %s)", bounced, replied, failed, sent, allSent)
+	case models.LeadStatusPaused:
+		// Below completed and above everything still in flight: a lead with
+		// every step sent is done whether or not someone parked it, while one
+		// mid-sequence reads as held rather than as processing or queued.
+		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s AND NOT (%s AND %s) AND %s)", bounced, replied, failed, sent, allSent, held)
 	case models.LeadStatusActive:
-		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s AND %s AND NOT %s)", bounced, replied, failed, sent, allSent)
+		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s AND %s AND NOT %s AND NOT %s)", bounced, replied, failed, sent, allSent, held)
 	case models.LeadStatusUndeliverable:
-		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s AND NOT %s AND %s)", bounced, replied, failed, sent, undeliverable)
+		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s AND NOT %s AND NOT %s AND %s)", bounced, replied, failed, sent, held, undeliverable)
 	case models.LeadStatusPending:
-		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s AND NOT %s AND NOT %s)", bounced, replied, failed, sent, undeliverable)
+		return fmt.Sprintf("(c.subscribed AND NOT %s AND NOT %s AND NOT %s AND NOT %s AND NOT %s AND NOT %s)", bounced, replied, failed, sent, held, undeliverable)
 	default:
 		return ""
 	}
+}
+
+// leadHeldClause is the "this lead's flow is parked right now" predicate for a
+// contact-scoped query, built on the one definition of live in liveHold. The
+// Leads-view status filter, the scope-chip counts and the row-level status all
+// have to agree to the second, and a dated hold stops counting the moment it
+// expires without anything having to write. `cp` is the bound campaign-id
+// placeholder.
+func leadHeldClause(cp string) string {
+	return fmt.Sprintf(
+		"EXISTS (SELECT 1 FROM campaign_leads hl WHERE hl.campaign_id = %s AND hl.contact_id = c.id AND %s)",
+		cp, liveHold("hl"),
+	)
 }
 
 // CampaignLeadCounts returns per-status lead totals for one campaign (the
 // campaign Leads view scope chips). A single aggregate over the campaign's
 // leads joined to their contact and a rolled-up view of their progress, so the
 // buckets follow the same unsubscribed > bounced > replied > failed >
-// completed > processing > undeliverable > queued priority as the row-level
-// derived status.
+// completed > paused > processing > undeliverable > queued priority as the
+// row-level derived status.
 // Scoped to the org through the contacts join.
 // leadEngagementClause builds the WHERE predicate for one engagement filter
 // value inside ONE campaign (`cp` is that campaign's bound placeholder). An
@@ -1937,6 +1988,8 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 	// hasn't replied or bounced; "processing" when some but not all steps sent.
 	const done = "ts.total_steps > 0 AND COALESCE(pr.sent_steps, 0) >= ts.total_steps"
 	const live = "c.subscribed AND NOT COALESCE(pr.has_bounced, false) AND NOT COALESCE(pr.has_replied, false) AND NOT COALESCE(pr.has_failed, false)"
+	// The same definition of live the row status and the status filter read.
+	held := "(" + liveHold("cl") + ")"
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(*) AS total,
@@ -1945,9 +1998,10 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 			COUNT(*) FILTER (WHERE c.subscribed AND NOT COALESCE(pr.has_bounced, false) AND COALESCE(pr.has_replied, false)) AS replied,
 			COUNT(*) FILTER (WHERE c.subscribed AND NOT COALESCE(pr.has_bounced, false) AND NOT COALESCE(pr.has_replied, false) AND COALESCE(pr.has_failed, false)) AS failed,
 			COUNT(*) FILTER (WHERE %[2]s AND COALESCE(pr.has_sent, false) AND (%[1]s)) AS completed,
-			COUNT(*) FILTER (WHERE %[2]s AND COALESCE(pr.has_sent, false) AND NOT (%[1]s)) AS processing,
-			COUNT(*) FILTER (WHERE %[2]s AND NOT COALESCE(pr.has_sent, false) AND %[3]s) AS undeliverable,
-			COUNT(*) FILTER (WHERE %[2]s AND NOT COALESCE(pr.has_sent, false) AND NOT %[3]s) AS queued,
+			COUNT(*) FILTER (WHERE %[2]s AND NOT (COALESCE(pr.has_sent, false) AND (%[1]s)) AND %[4]s) AS paused,
+			COUNT(*) FILTER (WHERE %[2]s AND COALESCE(pr.has_sent, false) AND NOT (%[1]s) AND NOT %[4]s) AS processing,
+			COUNT(*) FILTER (WHERE %[2]s AND NOT COALESCE(pr.has_sent, false) AND NOT %[4]s AND %[3]s) AS undeliverable,
+			COUNT(*) FILTER (WHERE %[2]s AND NOT COALESCE(pr.has_sent, false) AND NOT %[4]s AND NOT %[3]s) AS queued,
 			COUNT(*) FILTER (WHERE COALESCE(pr.has_sent, false)) AS contacted,
 			COUNT(*) FILTER (WHERE COALESCE(pr.has_opened, false)) AS opened,
 			COUNT(*) FILTER (WHERE COALESCE(pr.has_clicked, false)) AS clicked,
@@ -1968,10 +2022,10 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 			WHERE p.campaign_id = cl.campaign_id AND p.contact_id = cl.contact_id
 		) pr ON true
 		WHERE cl.campaign_id = $1
-	`, done, live, undeliverableClause("$1"))
+	`, done, live, undeliverableClause("$1"), held)
 	out := &models.CampaignLeadCounts{}
 	if err := r.DB.QueryRow(ctx, query, campaignID, orgID, config.CampaignSendMaxAttempts).Scan(
-		&out.Total, &out.Unsubscribed, &out.Bounced, &out.Replied, &out.Failed, &out.Completed, &out.Processing, &out.Undeliverable, &out.Queued,
+		&out.Total, &out.Unsubscribed, &out.Bounced, &out.Replied, &out.Failed, &out.Completed, &out.Paused, &out.Processing, &out.Undeliverable, &out.Queued,
 		&out.Contacted, &out.Opened, &out.Clicked, &out.RepliedAny,
 	); err != nil {
 		if err == pgx.ErrNoRows {

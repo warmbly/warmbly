@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,6 +30,9 @@ func (s *contactService) CampaignStates(ctx context.Context, orgID, contactID uu
 }
 
 func (s *contactService) fillNextAction(ctx context.Context, st *models.ContactCampaignState, contactID uuid.UUID) {
+	// Only the statuses that END the lead return early. "paused" is
+	// deliberately absent: a held lead keeps its place in the sequence, so the
+	// next step is still shown, with the hold as the reason it is waiting.
 	switch st.LeadStatus {
 	case models.LeadStatusUnsubscribed:
 		st.EndedReason = "Unsubscribed, sending stopped"
@@ -98,7 +102,30 @@ func (s *contactService) fillNextAction(ctx context.Context, st *models.ContactC
 		}
 	}
 	next.Constraint = constraintCopy(pv.Constraint, st, route.DueAt, current)
+	if pv.Constraint == scheduler.ConstraintLeadHold {
+		next.Constraint = holdCopy(st.Hold)
+	}
 	st.Next = next
+}
+
+// holdCopy words a per-lead hold for the drawer: why the flow is parked and,
+// when the hold has an end, when it lifts. A reason the auto-reply gave (its
+// subject line) is the most useful thing on screen, so it leads.
+func holdCopy(hold *models.LeadHold) string {
+	if hold == nil {
+		return "Paused for this contact"
+	}
+	what := "Paused for this contact"
+	if hold.Source == models.LeadHoldSourceOutOfOffice {
+		what = "Out of office"
+	}
+	if r := strings.TrimSpace(hold.Reason); r != "" {
+		what += ": " + r
+	}
+	if hold.Until == nil {
+		return what + ", until someone resumes it"
+	}
+	return what + ", resuming in " + humanizeUntil(*hold.Until)
 }
 
 // humanizeUntil renders how long is left until t as the drawer's short phrase

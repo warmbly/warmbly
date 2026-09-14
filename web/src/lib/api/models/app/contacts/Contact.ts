@@ -5,6 +5,8 @@ import type MiniCategory from "./MiniCategory";
 // processing state inside a single campaign. "completed" = every step sent, no
 // reply (done); "active" = some but not all steps sent (still processing);
 // "failed" = the mailbox could not send a step after every retry;
+// "paused" = the lead's flow is held (an out-of-office auto-reply, or a member
+// pausing it) and resumes where it stopped;
 // "undeliverable" = address verification refused it, so the campaign skips it.
 export type LeadStatus =
     | "pending"
@@ -14,7 +16,34 @@ export type LeadStatus =
     | "bounced"
     | "failed"
     | "unsubscribed"
+    | "paused"
     | "undeliverable";
+
+// One contact's flow parked inside one campaign. source is "out_of_office"
+// when an auto-reply parked it and "manual" when a member did; `until` absent
+// means the hold has no end and only a resume lifts it.
+export interface LeadHold {
+    since: string;
+    until?: string | null;
+    reason?: string;
+    source: "manual" | "out_of_office" | string;
+}
+
+// holdSummary is the one sentence a held lead gets, wherever it is shown: why
+// the flow is parked and when it lifts. One function so the Leads row and the
+// contact drawer cannot word the same hold two different ways.
+export function holdSummary(hold: LeadHold): string {
+    const what = hold.source === "out_of_office" ? "Out of office" : "Paused";
+    const why = hold.reason ? ` · ${hold.reason}` : "";
+    if (!hold.until) return `${what}${why} · until someone resumes it`;
+    const until = new Date(hold.until).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+    return `${what}${why} · until ${until}`;
+}
 
 // LeadEngagement mirrors models.SearchContacts.Engagement. "opened" is a human
 // open (machine opens never count); the not_* forms match leads that were sent
@@ -50,6 +79,9 @@ export interface ContactCampaignProgress {
     // The worker's reason for the last failed send; set only when status is
     // "failed".
     failure_reason?: string;
+    // The live hold, when the lead's flow is parked. Present on any status: a
+    // held lead that also replied still reads "replied".
+    hold?: LeadHold | null;
 }
 
 // VerificationStatus mirrors emailverify.Status: the pre-send verdict on the

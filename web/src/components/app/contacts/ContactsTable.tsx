@@ -28,7 +28,9 @@ import {
     MailOpenIcon,
     MoreHorizontalIcon,
     MousePointerClickIcon,
+    PauseIcon,
     PhoneIcon,
+    PlayIcon,
     PlusIcon,
     RefreshCcwIcon,
     Settings2Icon,
@@ -67,9 +69,12 @@ import { hasNarrowingFilters, isCompleteCustomFilter, scopeSearch } from "./filt
 import ContactEdit from "./ContactEdit";
 import type { ContactSlideTab } from "./contact-edit/tabs";
 import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
+import { holdSummary } from "@/lib/api/models/app/contacts/Contact";
 import type { ContactCampaignProgress, LeadEngagement, LeadStatus, VerificationSource, VerificationStatus } from "@/lib/api/models/app/contacts/Contact";
 import type { CampaignLeadCounts } from "@/lib/api/models/app/contacts/SearchContactsResult";
 import ContactsEditBulk from "./ContactsEditBulk";
+import PauseLeadDialog from "./PauseLeadDialog";
+import { useResumeLead } from "@/lib/api/hooks/app/campaigns/useLeadHold";
 import { selectionOf } from "@/lib/api/models/app/contacts/ContactSelection";
 import type ContactSelection from "@/lib/api/models/app/contacts/ContactSelection";
 import * as rowSelection from "./selection";
@@ -435,6 +440,30 @@ export default function ContactsTable({
     }
 
     const embedded = !!current_campaign;
+
+    // Per-lead hold. Pausing opens a dialog (a date, or no end at all);
+    // resuming is one call, so the row acts straight away.
+    const [pauseTarget, setPauseTarget] = React.useState<{ id: string; name: string } | null>(null);
+    const resumeLead = useResumeLead();
+    const resumeOne = React.useCallback(
+        async (contactId: string) => {
+            if (!current_campaign) return;
+            try {
+                await toast.promise(
+                    resumeLead.mutateAsync({ campaignId: current_campaign.id, contactId }),
+                    {
+                        loading: "Resuming lead…",
+                        success: "Lead resumed",
+                        error: (err: AppError) => buildError(err),
+                    },
+                );
+            } catch {
+                /* toast.promise already surfaced it */
+            }
+        },
+        [current_campaign, resumeLead],
+    );
+
     // Leads-view scope chips write straight into the search request, so the
     // rows, the total and pagination all come from the server for that scope.
     // Anything that narrows the list beyond its scope (the campaign or the
@@ -498,6 +527,8 @@ export default function ContactsTable({
                           )
                     : undefined
             }
+            onPauseLead={embedded && campaignWrite.allowed ? (id, name) => setPauseTarget({ id, name }) : undefined}
+            onResumeLead={embedded && campaignWrite.allowed ? resumeOne : undefined}
             emptyTitle={
                 subFilter !== "all"
                     ? `No ${subFilter} contacts`
@@ -741,6 +772,14 @@ export default function ContactsTable({
                     onDone={clearSelection}
                     scope={current_campaign ? { kind: "campaign", name: current_campaign.name } : undefined}
                 />
+                {current_campaign && (
+                    <PauseLeadDialog
+                        open={!!pauseTarget}
+                        onClose={() => setPauseTarget(null)}
+                        campaign={current_campaign}
+                        lead={pauseTarget}
+                    />
+                )}
                 <NewContactDialog open={newOpen} onClose={() => setNewOpen(false)} campaign={current_campaign} />
                 <SyncSourcesPanel
                     open={syncOpen}
@@ -1024,6 +1063,8 @@ function ContactsTableBody({
     onRowClick,
     onDelete,
     onRemoveFromCampaign,
+    onPauseLead,
+    onResumeLead,
     emptyTitle,
     emptyBody,
     emptyCta,
@@ -1070,6 +1111,11 @@ function ContactsTableBody({
     // In a campaign, the row's destructive action detaches the lead instead
     // of deleting the contact from the whole workspace.
     onRemoveFromCampaign?: (id: string) => void;
+    // The per-lead hold, in the campaign Leads view only. Undefined for a
+    // member without campaign write access, which takes the control off the
+    // row rather than offering one that fails.
+    onPauseLead?: (id: string, name: string) => void;
+    onResumeLead?: (id: string) => void;
     emptyTitle: string;
     emptyBody: string;
     emptyCta: React.ReactNode;
@@ -1296,6 +1342,15 @@ function ContactsTableBody({
                             (lead.status === "replied" ||
                                 lead.status === "bounced" ||
                                 lead.status === "unsubscribed");
+                        // A lead routing will never offer again cannot be
+                        // held: pausing it would report success and change
+                        // nothing on the row.
+                        const terminal =
+                            processed ||
+                            (!!lead &&
+                                (lead.status === "failed" ||
+                                    lead.status === "completed" ||
+                                    lead.status === "undeliverable"));
                         const isActiveLead = embedded && lead?.status === "active";
                         return (
                             <tr
@@ -1471,6 +1526,27 @@ function ContactsTableBody({
                                 <td className="px-3" onClick={(e) => e.stopPropagation()}>
                                     {/* Touch-safe: always visible on mobile, hover-reveal on desktop. */}
                                     <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                        {lead?.hold && onResumeLead ? (
+                                            <button
+                                                type="button"
+                                                aria-label="Resume lead"
+                                                title={`${holdSummary(lead.hold)}. Resume now`}
+                                                onClick={() => onResumeLead(c.id)}
+                                                className="size-6 rounded text-violet-500 hover:text-violet-700 hover:bg-violet-50 flex items-center justify-center transition-colors"
+                                            >
+                                                <PlayIcon className="w-3 h-3" />
+                                            </button>
+                                        ) : onPauseLead && !terminal ? (
+                                            <button
+                                                type="button"
+                                                aria-label="Pause lead"
+                                                title="Pause this lead until a date, without unsubscribing them"
+                                                onClick={() => onPauseLead(c.id, name)}
+                                                className="size-6 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 flex items-center justify-center transition-colors"
+                                            >
+                                                <PauseIcon className="w-3 h-3" />
+                                            </button>
+                                        ) : null}
                                         {onRemoveFromCampaign ? (
                                             <button
                                                 type="button"
@@ -1599,6 +1675,7 @@ const LEAD_META: Record<
     bounced: { label: "Bounced", dot: "bg-rose-500", text: "text-rose-600", Icon: AlertTriangleIcon },
     failed: { label: "Failed", dot: "bg-rose-500", text: "text-rose-600", Icon: AlertTriangleIcon },
     unsubscribed: { label: "Unsubscribed", dot: "bg-slate-300", text: "text-slate-400", Icon: BanIcon },
+    paused: { label: "Paused", dot: "bg-violet-400", text: "text-violet-600", Icon: PauseIcon },
     undeliverable: { label: "Undeliverable", dot: "bg-amber-500", text: "text-amber-600", Icon: AlertTriangleIcon },
 };
 
@@ -1613,7 +1690,9 @@ function LeadStatusPill({ lead }: { lead?: ContactCampaignProgress | null }) {
             ? `Could not send: ${lead.failure_reason}`
             : status === "undeliverable"
                 ? "Address verification refused this recipient, so the campaign skips it"
-                : undefined;
+                : lead?.hold
+                    ? holdSummary(lead.hold)
+                    : undefined;
     return (
         <span
             className={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${meta.text}`}
@@ -1672,6 +1751,7 @@ function LeadProgressStrip({
                 bounced: serverCounts.bounced,
                 failed: serverCounts.failed,
                 unsubscribed: serverCounts.unsubscribed,
+                paused: serverCounts.paused ?? 0,
                 undeliverable: serverCounts.undeliverable ?? 0,
             } satisfies Record<LeadStatus, number>;
         }
@@ -1683,6 +1763,7 @@ function LeadProgressStrip({
             bounced: 0,
             failed: 0,
             unsubscribed: 0,
+            paused: 0,
             undeliverable: 0,
         };
         for (const ct of contacts) c[ct.campaign_lead?.status ?? "pending"]++;
@@ -1723,6 +1804,7 @@ function LeadProgressStrip({
         { key: "pending", color: "bg-slate-300" },
         { key: "bounced", color: "bg-rose-400" },
         { key: "failed", color: "bg-rose-500" },
+        { key: "paused", color: "bg-violet-400" },
         { key: "unsubscribed", color: "bg-slate-200" },
         { key: "undeliverable", color: "bg-amber-500" },
     ];
@@ -1750,6 +1832,9 @@ function LeadProgressStrip({
                 <StripChip dot="bg-rose-400" label="Bounced" n={counts.bounced} {...status("bounced")} />
                 {(counts.failed > 0 || leadStatus === "failed") && (
                     <StripChip dot="bg-rose-500" label="Failed" n={counts.failed} {...status("failed")} />
+                )}
+                {(counts.paused > 0 || leadStatus === "paused") && (
+                    <StripChip dot="bg-violet-400" label="Paused" n={counts.paused} {...status("paused")} />
                 )}
                 {(counts.undeliverable > 0 || leadStatus === "undeliverable") && (
                     <StripChip dot="bg-amber-500" label="Undeliverable" n={counts.undeliverable} {...status("undeliverable")} />

@@ -269,6 +269,46 @@ report what would stop it. Nothing is sent.`,
 				Success: "Campaign stopped.",
 			},
 			{
+				Name: "pause-lead", Short: "Hold one lead's flow in this campaign",
+				Long: `Park ONE contact's flow inside ONE campaign, until a date or until you
+resume them. The contact stays subscribed and stays a lead; the sequence picks
+up where it stopped. This is not an unsubscribe and not a suppression.
+
+Warmbly writes the same hold by itself when a recipient answers with an
+out-of-office auto-reply.`,
+				Example: "warmbly campaign pause-lead CAMPAIGN_ID CONTACT_ID --until 2026-09-21T17:00:00Z --reason \"On holiday\"",
+				Method:  http.MethodPost, Path: "/campaigns/{id}/leads/{contact}/pause", Body: bodyOptional,
+				Args: []argSpec{
+					{Name: "id", Help: "The campaign's id"},
+					{Name: "contact", Help: "The contact's id"},
+				},
+				Flag: []flagSpec{
+					{Name: "until", Help: "When the hold lifts (RFC 3339). Omit for a hold only a resume lifts"},
+					{Name: "reason", Help: "Note shown next to the hold in the dashboard"},
+				},
+				Success: "Lead paused.",
+			},
+			{
+				Name: "resume-lead", Short: "Lift a lead's hold now",
+				Long: `Lift the hold and let the sequence continue. The held time is dropped rather
+than carried, so the next step returns to the schedule it would have had without
+the hold. Resuming a lead that is not held succeeds and changes nothing.`,
+				Method: http.MethodPost, Path: "/campaigns/{id}/leads/{contact}/resume", Body: bodyOptional,
+				Args: []argSpec{
+					{Name: "id", Help: "The campaign's id"},
+					{Name: "contact", Help: "The contact's id"},
+				},
+				Success: "Lead resumed.",
+			},
+			{
+				Name: "lead-hold", Short: "Whether one lead's flow is held",
+				Method: http.MethodGet, Path: "/campaigns/{id}/leads/{contact}/hold",
+				Args: []argSpec{
+					{Name: "id", Help: "The campaign's id"},
+					{Name: "contact", Help: "The contact's id"},
+				},
+			},
+			{
 				Name: "logs", Short: "The campaign's send log",
 				Method: http.MethodGet, Path: "/campaigns/{id}/logs", Paginate: true,
 				Args: []argSpec{{Name: "id", Help: "The campaign's id"}},

@@ -1,4 +1,4 @@
-import type { LeadStatus } from "./Contact";
+import type { LeadHold, LeadStatus } from "./Contact";
 
 // One campaign a contact belongs to, as the Activity tab's campaign panel
 // shows it: the flow with this contact's progress, the derived lead status,
@@ -22,7 +22,7 @@ export interface ContactCampaignStep {
 
 // due: the step is due; scheduled_at is when the campaign next works its queue.
 // waiting: a hard constraint holds it back; not_before is the earliest.
-// paused: the campaign is not active.
+// paused: the lead's own flow is held, or the campaign is not active.
 // blocked: the campaign cannot send at all right now.
 export type ContactNextActionState = "due" | "waiting" | "paused" | "blocked";
 
@@ -63,6 +63,10 @@ export default interface ContactCampaignState {
     current_step?: ContactCampaignStep | null;
     last_action?: string;
     last_action_at?: string | null;
+
+    // The live per-lead hold: an out-of-office auto-reply parked the contact,
+    // or a member paused them. Absent when the lead is not held.
+    hold?: LeadHold | null;
 
     next?: ContactNextAction | null;
     ended_reason?: string;

@@ -39,6 +39,7 @@ import {
     MousePointerClickIcon,
     OctagonXIcon,
     PauseIcon,
+    PlayIcon,
     ReplyIcon,
     SearchIcon,
     StickyNoteIcon,
@@ -59,7 +60,13 @@ import type {
     ContactCampaignStep,
     ContactNextAction,
 } from "@/lib/api/models/app/contacts/ContactCampaignState";
-import type { LeadStatus } from "@/lib/api/models/app/contacts/Contact";
+import { holdSummary } from "@/lib/api/models/app/contacts/Contact";
+import type { LeadHold, LeadStatus } from "@/lib/api/models/app/contacts/Contact";
+import { usePauseLead, useResumeLead } from "@/lib/api/hooks/app/campaigns/useLeadHold";
+import toast from "react-hot-toast";
+import type { AppError } from "@/lib/api/client/normalizeError";
+import buildError from "@/lib/helper/buildError";
+import { useWriteGuard } from "@/hooks/usePermission";
 import useClickOutside from "@/hooks/useClickOutside";
 import { useFlipAlignment } from "@/hooks/useFlipPlacement";
 import { fmtAbsolute, fmtRelative } from "./format";
@@ -277,14 +284,14 @@ function CampaignPanel({ contactId }: { contactId: string }) {
             </h2>
             <div className="space-y-2">
                 {states.map((s) => (
-                    <CampaignCard key={s.campaign_id} state={s} />
+                    <CampaignCard key={s.campaign_id} state={s} contactId={contactId} />
                 ))}
             </div>
         </section>
     );
 }
 
-function CampaignCard({ state }: { state: ContactCampaignState }) {
+function CampaignCard({ state, contactId }: { state: ContactCampaignState; contactId: string }) {
     const [open, setOpen] = React.useState(false);
     const current = state.current_step;
 
@@ -354,10 +361,16 @@ function CampaignCard({ state }: { state: ContactCampaignState }) {
                             next={state.next}
                             endedReason={state.ended_reason}
                             failureReason={state.failure_reason}
+                            // The hold bar below already says why, in one
+                            // wording; repeating it here in another would be
+                            // two sentences about one fact, side by side.
+                            hideConstraint={!!state.hold}
                         />
                     </div>
                 </div>
             </button>
+
+            {state.hold && <HoldBar campaignId={state.campaign_id} contactId={contactId} hold={state.hold} />}
 
             <AnimatePresence initial={false}>
                 {open && (
@@ -381,6 +394,81 @@ function CampaignCard({ state }: { state: ContactCampaignState }) {
                     </motion.div>
                 )}
             </AnimatePresence>
+        </div>
+    );
+}
+
+// HoldBar is the held lead's strip under the campaign header: why the flow is
+// parked, and the two things you want next to it. It sits outside the card's
+// header button because a <button> cannot contain buttons.
+function HoldBar({
+    campaignId,
+    contactId,
+    hold,
+}: {
+    campaignId: string;
+    contactId: string;
+    hold: LeadHold;
+}) {
+    const write = useWriteGuard("MANAGE_CAMPAIGNS");
+    const resume = useResumeLead();
+    const pause = usePauseLead();
+    const busy = resume.isPending || pause.isPending;
+
+
+    async function run(p: Promise<unknown>, loading: string, success: string) {
+        try {
+            await toast.promise(p, { loading, success, error: (err: AppError) => buildError(err) });
+        } catch {
+            /* toast.promise already surfaced it */
+        }
+    }
+
+    return (
+        <div className="px-3 py-2 border-t border-violet-100 bg-violet-50/60 flex items-center gap-2 flex-wrap">
+            <PauseIcon className="w-3 h-3 text-violet-500 shrink-0" />
+            <span className="text-[11.5px] text-violet-800 min-w-0 truncate" title={holdSummary(hold)}>
+                {holdSummary(hold)}
+            </span>
+            <div className="ml-auto flex items-center gap-1 shrink-0">
+                <button
+                    type="button"
+                    disabled={busy}
+                    onClick={write.guard(() =>
+                        run(
+                            resume.mutateAsync({ campaignId, contactId }),
+                            "Resuming lead…",
+                            "Lead resumed",
+                        ),
+                    )}
+                    className="h-6 px-2 rounded-md bg-white border border-violet-200 text-[11px] font-medium text-violet-700 hover:bg-violet-100 inline-flex items-center gap-1 transition-colors disabled:opacity-60"
+                >
+                    <PlayIcon className="w-2.5 h-2.5" />
+                    Resume now
+                </button>
+                {hold.until && (
+                    <button
+                        type="button"
+                        disabled={busy}
+                        title="Keep this lead paused with no end date. They stay subscribed and stay in the campaign."
+                        onClick={write.guard(() =>
+                            run(
+                                pause.mutateAsync({
+                                    campaignId,
+                                    contactId,
+                                    until: null,
+                                    reason: hold.reason ?? "",
+                                }),
+                                "Stopping this lead…",
+                                "Paused until you resume it",
+                            ),
+                        )}
+                        className="h-6 px-2 rounded-md border border-violet-200 text-[11px] text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-60"
+                    >
+                        Stop
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
@@ -409,10 +497,12 @@ function NextActionFact({
     next,
     endedReason,
     failureReason,
+    hideConstraint = false,
 }: {
     next?: ContactNextAction | null;
     endedReason?: string;
     failureReason?: string;
+    hideConstraint?: boolean;
 }) {
     if (!next) {
         return (
@@ -479,7 +569,7 @@ function NextActionFact({
                     </span>
                 )}
             </div>
-            {next.constraint && (
+            {next.constraint && !hideConstraint && (
                 <div className="text-[11px] text-slate-500 mt-0.5">{next.constraint}</div>
             )}
         </div>
@@ -581,6 +671,7 @@ function LeadStatusPill({ status }: { status: LeadStatus }) {
         bounced: { label: "Bounced", cls: "bg-red-50 text-red-700" },
         failed: { label: "Failed", cls: "bg-red-50 text-red-700" },
         unsubscribed: { label: "Unsubscribed", cls: "bg-slate-100 text-slate-600" },
+        paused: { label: "Paused", cls: "bg-violet-50 text-violet-700" },
         undeliverable: { label: "Undeliverable", cls: "bg-amber-50 text-amber-700" },
     };
     const m = map[status] ?? { label: status, cls: "bg-slate-100 text-slate-600" };

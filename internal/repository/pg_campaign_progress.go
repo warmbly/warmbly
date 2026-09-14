@@ -117,7 +117,9 @@ type ThreadParent struct {
 type CampaignProgressRepository interface {
 	// ReserveSend claims (campaign, contact, step) for one send BEFORE the
 	// command goes on the bus, which is what lets a later tick tell "dispatched,
-	// outcome unknown" apart from "never attempted". It stamps dispatched_at and
+	// outcome unknown" apart from "never attempted". It also refuses a lead
+	// whose flow is held, under a row lock, so a pause cannot be raced by a send
+	// already on its way. It stamps dispatched_at and
 	// counts the send against the day's counters in one transaction, and reports
 	// false when the step is already in flight or already sent — in which case
 	// the caller must NOT dispatch. Resolve every reservation exactly once:
@@ -267,7 +269,33 @@ type CampaignProgressRepository interface {
 	// because address verification refused them. Reported when a campaign
 	// finishes, so "completed" never silently means "skipped everybody".
 	CountUndeliverableLeads(ctx context.Context, campaignID uuid.UUID) (int, error)
+
+	// HoldLead parks ONE contact's flow inside ONE campaign until `until` (nil
+	// for a hold only a person lifts), without unsubscribing them and without
+	// removing them from the campaign. source is "manual" or "out_of_office".
+	//
+	// An automatic hold never overrules a person: a live manual hold is left
+	// alone, and a live automatic one is only ever extended, never cut short.
+	// A manual hold always wins. Reports whether it wrote one.
+	// Returns the hold it wrote, or nil when it wrote none.
+	HoldLead(ctx context.Context, campaignID, contactID uuid.UUID, until *time.Time, reason, source string) (*models.LeadHold, error)
+	// ResumeLead lifts the hold now and reports whether there was one to lift.
+	// The held time is dropped rather than carried, because "resume now" means
+	// now: the step's remaining wait is only preserved when a hold ends on its
+	// own. Returns ErrLeadNotInCampaign when the contact is not a lead.
+	ResumeLead(ctx context.Context, campaignID, contactID uuid.UUID) (bool, error)
+	// CountHeldLeads counts the leads whose flow is parked right now, so a
+	// campaign whose remaining leads are all held is not closed as finished.
+	CountHeldLeads(ctx context.Context, campaignID uuid.UUID) (int, error)
+	// GetLeadHold reads the live hold on one lead (nil when it is not held,
+	// including a dated hold that has since expired). Returns
+	// ErrLeadNotInCampaign when the contact is not a lead of the campaign.
+	GetLeadHold(ctx context.Context, campaignID, contactID uuid.UUID) (*models.LeadHold, error)
 }
+
+// ErrLeadNotInCampaign is returned when a hold is asked for on a contact that
+// is not a lead of the campaign. Callers turn it into a 404.
+var ErrLeadNotInCampaign = errors.New("contact is not a lead of this campaign")
 
 type campaignProgressRepository struct {
 	db *pgxpool.Pool
@@ -310,6 +338,33 @@ func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID
 			return false, nil
 		}
 		return false, err
+	}
+
+	// Refuse a lead somebody has parked. Routing already excludes held leads and
+	// the send path re-reads the hold, but both are reads taken before this
+	// transaction; only a check inside it can rule out a pause that lands in
+	// between. The row is locked, so a concurrent HoldLead either commits first
+	// (and is seen here) or waits until this send is committed, and the claim
+	// above is undone by the rollback when the answer is "held".
+	//
+	// It sits AFTER the claim on purpose. ReleaseSend and RecordSendFailure both
+	// touch campaign_contact_progress before campaign_leads, and two ticks can
+	// hold the same pair, so taking campaign_leads first here would invert the
+	// lock order between them and deadlock.
+	var held bool
+	err = tx.QueryRow(ctx, `
+		SELECT `+liveHold("campaign_leads")+`
+		FROM campaign_leads WHERE campaign_id = $1 AND contact_id = $2
+		FOR UPDATE
+	`, campaignID, contactID).Scan(&held)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// Not a lead of this campaign any more; there is nothing to send.
+		return false, nil
+	case err != nil:
+		return false, err
+	case held:
+		return false, nil
 	}
 
 	// Bind the lead to the mailbox this send leaves from. Written with the
@@ -1185,7 +1240,8 @@ func (r *campaignProgressRepository) FindRoutedPairs(ctx context.Context, campai
 		       EXISTS (
 		         SELECT 1 FROM campaign_contact_progress rp
 		         WHERE rp.campaign_id = $1 AND rp.contact_id = cl.contact_id AND rp.replied_at IS NOT NULL
-		       ) AS has_replied
+		       ) AS has_replied,
+		       ` + leadHoldColumns + `
 		FROM campaign_leads cl
 		JOIN contacts c ON c.id = cl.contact_id
 		LEFT JOIN LATERAL (
@@ -1251,13 +1307,21 @@ func (r *campaignProgressRepository) FindRoutedPairs(ctx context.Context, campai
 	for rows.Next() {
 		var in routeInput
 		var contactID uuid.UUID
-		if serr := rows.Scan(&contactID, &in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.sentIDs, &in.hasReplied); serr != nil {
+		if serr := rows.Scan(&contactID, &in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.sentIDs, &in.hasReplied,
+			&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource); serr != nil {
 			return nil, nil, false, serr
 		}
 		if in.lastSeq == nil && excludeNewLeads {
 			continue
 		}
 		res := router.route(campaignID, contactID, in)
+		// Held with no end: there is nothing to wake up for, so it must not be
+		// reported as a next-due time either — that would park the campaign's
+		// chain on a moment that never arrives. Checked before the condition
+		// window, which a held lead can also be sitting in.
+		if res.Hold != nil && res.Hold.Until == nil {
+			continue
+		}
 		if res.WaitUntil != nil {
 			// Not decidable yet — remember the soonest window so the scheduler
 			// can re-check exactly then instead of guessing or completing.
@@ -1322,6 +1386,11 @@ type ContactRoute struct {
 	// AssignedSender is the mailbox this lead's sequence is bound to, nil
 	// until its first email was reserved.
 	AssignedSender *uuid.UUID
+	// Hold is the per-lead pause, set only while it is live. While it is, the
+	// step is not offered: a dated hold reports DueAt no earlier than its end,
+	// and one with no end reports no DueAt at all, because nothing but a
+	// person lifts it.
+	Hold *models.LeadHold
 }
 
 // RouteContact runs the campaign's routing for ONE contact and reports where
@@ -1337,6 +1406,7 @@ func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignI
 		SELECT cl.added_at, cl.email_account_id,
 		       lp.sequence_id, lp.sent_at, lp.opened_at, lp.clicked_at, lp.replied_at, COALESCE(lp.reply_class, ''), COALESCE(lp.ai_label, ''),
 		       COALESCE(ss.ids, '{}') AS sent_ids,
+		       ` + leadHoldColumns + `,
 		       EXISTS (
 		         SELECT 1 FROM campaign_contact_progress rp
 		         WHERE rp.campaign_id = $1 AND rp.contact_id = cl.contact_id AND rp.replied_at IS NOT NULL
@@ -1375,8 +1445,9 @@ func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignI
 	var in routeInput
 	var bounced, failed, suppressed, undeliverable bool
 	err = r.db.QueryRow(ctx, query, campaignID, config.CampaignSendMaxAttempts, contactID).Scan(
-		&in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.sentIDs, &in.hasReplied,
-		&bounced, &failed, &suppressed, &undeliverable,
+		&in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.sentIDs,
+		&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource,
+		&in.hasReplied, &bounced, &failed, &suppressed, &undeliverable,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &ContactRoute{Excluded: "not_a_lead"}, nil
@@ -1400,6 +1471,7 @@ func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignI
 	}
 	res := router.route(campaignID, contactID, in)
 	out.Target, out.IsNewLead, out.DueAt, out.WaitUntil = res.Target, res.IsNewLead, res.DueAt, res.WaitUntil
+	out.Hold = res.Hold
 	return out, nil
 }
 
@@ -1416,6 +1488,49 @@ type routeInput struct {
 	replyClass, aiLabel string
 	sentIDs             []uuid.UUID
 	hasReplied          bool
+	// The per-lead hold. pausedAt non-nil is the hold itself; pausedUntil nil
+	// means it has no end and only a person lifts it.
+	pausedAt, pausedUntil    *time.Time
+	pauseReason, pauseSource string
+}
+
+// leadHoldColumns is the hold projection the routing queries select, in the
+// order their scans read it. One list, so the batch finder and the
+// single-contact route cannot drift apart on what a held lead looks like.
+// CountUndeliverableLeads deliberately does not select it: a lead verification
+// refuses is refused whether or not somebody also parked it.
+const leadHoldColumns = `cl.paused_at, cl.paused_until, COALESCE(cl.pause_reason, ''), COALESCE(cl.pause_source, '')`
+
+// heldShift is how much of the hold fell inside the wait the next step is
+// serving: from the later of the hold's start and the last step's send, to the
+// earlier of the hold's end and now. Routing adds it to the step's due time, so
+// the wait resumes on the far side of the hold rather than having elapsed while
+// the contact was away.
+//
+// It is DERIVED from the two timestamps, never stored, which is what makes it
+// self-correcting: once a step has gone out after the hold ended, the two
+// intervals stop overlapping and the spent hold contributes nothing. An
+// accumulator would instead have to be cleared by every path that advances a
+// lead, and the action and wait nodes advance one without ever reserving a send.
+//
+// A lead with nothing sent yet has no wait in progress and so takes no shift:
+// its first email simply goes out when the hold lifts.
+func (in routeInput) heldShift(now time.Time) time.Duration {
+	if in.pausedAt == nil || in.sentAt == nil {
+		return 0
+	}
+	start := *in.pausedAt
+	if in.sentAt.After(start) {
+		start = *in.sentAt
+	}
+	end := now
+	if in.pausedUntil != nil && in.pausedUntil.Before(end) {
+		end = *in.pausedUntil
+	}
+	if !end.After(start) {
+		return 0
+	}
+	return end.Sub(start)
 }
 
 // PacedSenders maps a mailbox that cannot take a send right now, but will be
@@ -1694,7 +1809,15 @@ func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) 
 	}
 
 	if res.wait != nil {
-		out.WaitUntil = res.wait
+		// A condition window is still open. The hold still applies: the window
+		// must not keep elapsing while the contact is away, and the drawer has
+		// to name the hold rather than the window.
+		out.Hold = in.liveHold(cr.now)
+		wait := res.wait.Add(in.heldShift(cr.now))
+		if out.Hold != nil && out.Hold.Until != nil && wait.Before(*out.Hold.Until) {
+			wait = *out.Hold.Until
+		}
+		out.WaitUntil = &wait
 		return out
 	}
 	if res.stop || res.target == nil {
@@ -1707,7 +1830,8 @@ func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) 
 		}
 	}
 	out.Target = res.target
-	if out.IsNewLead {
+	switch {
+	case out.IsNewLead:
 		// The entry delay: a contact's first email waits this long after they
 		// entered the campaign. Anchored on when they entered, not on when the
 		// campaign started, so a contact who joins a linked segment weeks later
@@ -1716,16 +1840,63 @@ func (cr *campaignRouter) route(campaignID, contactID uuid.UUID, in routeInput) 
 			due := cr.enteredAt(in.addedAt).Add(cr.entryDelay)
 			out.DueAt = &due
 		}
-		return out
-	}
-	if in.sentAt != nil {
+	case in.sentAt != nil:
 		due := in.sentAt.Add(24 * time.Hour * time.Duration(cr.steps[cr.idxByID[*res.target]].waitAfter))
 		if last, ok := cr.idxByID[*in.lastSeq]; ok && cr.steps[last].waitMinutes > 0 {
 			due = due.Add(time.Duration(cr.steps[last].waitMinutes) * time.Minute)
 		}
 		out.DueAt = &due
 	}
+	cr.applyHold(&out, in)
 	return out
+}
+
+// applyHold folds a per-lead hold into the route. Two things happen, and they
+// are separate: the held time is added to the step's due moment, so the wait
+// the step was in the middle of resumes rather than having elapsed while the
+// contact was away; and while the hold is live nothing is due before it ends.
+//
+// The shift is added to a FIXED anchor (the step's own wait), never to "now",
+// or a live hold would push the step away from itself as fast as it approached.
+// A new lead has no wait in progress, so it has no anchor and takes no shift —
+// its first email simply goes out when the hold lifts.
+func (cr *campaignRouter) applyHold(out *ContactRoute, in routeInput) {
+	if in.pausedAt == nil {
+		return
+	}
+	if shift := in.heldShift(cr.now); shift > 0 && out.DueAt != nil {
+		due := out.DueAt.Add(shift)
+		out.DueAt = &due
+	}
+	out.Hold = in.liveHold(cr.now)
+	if out.Hold == nil {
+		return
+	}
+	if out.Hold.Until == nil {
+		// No end: there is no moment to wake up for, so report no due time at
+		// all rather than a guess the scheduler would park a wakeup on.
+		out.DueAt = nil
+		return
+	}
+	if out.DueAt == nil || out.DueAt.Before(*out.Hold.Until) {
+		until := *out.Hold.Until
+		out.DueAt = &until
+	}
+}
+
+// liveHold is the lead's hold if it is in force at now, else nil.
+func (in routeInput) liveHold(now time.Time) *models.LeadHold {
+	if in.pausedAt == nil {
+		return nil
+	}
+	h := &models.LeadHold{
+		Since: *in.pausedAt, Until: in.pausedUntil,
+		Reason: in.pauseReason, Source: in.pauseSource,
+	}
+	if !h.Live(now) {
+		return nil
+	}
+	return h
 }
 
 // isEmailStep reports whether a step sends mail. Only those need a mailbox, so
@@ -1837,4 +2008,126 @@ func (r *campaignProgressRepository) CountUndeliverableLeads(ctx context.Context
 		}
 	}
 	return n, rows.Err()
+}
+
+// liveHold is the "this lead's flow is parked right now" predicate, on a given
+// table alias. One definition, because the router, the Leads list, the
+// scope-chip counts and the send gate all have to agree on it to the second.
+func liveHold(alias string) string {
+	return alias + ".paused_at IS NOT NULL AND (" + alias + ".paused_until IS NULL OR " + alias + ".paused_until > NOW())"
+}
+
+// holdColumns is what HoldLead and GetLeadHold return, in scanHold's order.
+const holdColumns = `paused_at, paused_until, COALESCE(pause_reason, ''), COALESCE(pause_source, '')`
+
+// scanHold reads holdColumns into a LeadHold, or nil when the row carries no
+// hold. now decides liveness so a caller reports the state it just wrote
+// rather than re-deriving it against a second clock.
+func scanHold(row pgx.Row, now time.Time) (*models.LeadHold, error) {
+	var pausedAt, until *time.Time
+	var reason, source string
+	if err := row.Scan(&pausedAt, &until, &reason, &source); err != nil {
+		return nil, err
+	}
+	if pausedAt == nil || (until != nil && !until.After(now)) {
+		return nil, nil
+	}
+	return &models.LeadHold{Since: *pausedAt, Until: until, Reason: reason, Source: source}, nil
+}
+
+// HoldLead parks one lead's flow and returns the hold it wrote.
+//
+// Replacing a hold that is still LIVE keeps the original paused_at, because the
+// lead has been held continuously since then and that instant is what the
+// step's remaining wait is measured against. It is also what makes the write
+// idempotent: replaying the same pause lands on exactly the same row.
+//
+// The guard is what keeps an out-of-office auto-reply from ever shortening or
+// overruling a person's decision.
+func (r *campaignProgressRepository) HoldLead(ctx context.Context, campaignID, contactID uuid.UUID, until *time.Time, reason, source string) (*models.LeadHold, error) {
+	guard := ""
+	if source == models.LeadHoldSourceOutOfOffice {
+		// $3 is cast explicitly: inside the guard it is only ever compared, so
+		// Postgres has nothing to infer its type from and refuses the statement.
+		guard = `
+		  AND (
+		    NOT (` + liveHold("campaign_leads") + `)
+		    OR (pause_source = 'out_of_office' AND paused_until IS NOT NULL
+		        AND $3::timestamptz IS NOT NULL AND paused_until < $3::timestamptz)
+		  )`
+	}
+	now := time.Now()
+	hold, err := scanHold(r.db.QueryRow(ctx, `
+		UPDATE campaign_leads
+		SET paused_at = CASE WHEN `+liveHold("campaign_leads")+` THEN paused_at ELSE NOW() END,
+		    paused_until = $3,
+		    pause_reason = NULLIF($4, ''),
+		    pause_source = $5
+		WHERE campaign_id = $1 AND contact_id = $2`+guard+`
+		RETURNING `+holdColumns,
+		campaignID, contactID, until, reason, source), now)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Either the contact is not a lead, or the guard refused. The caller
+		// tells them apart with GetLeadHold when it needs to.
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return hold, nil
+}
+
+// ResumeLead lifts the hold now. The held time goes with it: "resume now"
+// means now, and the step's remaining wait is only preserved when a hold ends
+// on its own. Reports whether a hold was actually lifted, and
+// ErrLeadNotInCampaign when the contact is not a lead of the campaign, so a
+// resume that changed nothing is not mistaken for one that did.
+func (r *campaignProgressRepository) ResumeLead(ctx context.Context, campaignID, contactID uuid.UUID) (bool, error) {
+	// RETURNING sees the row AFTER the update, so whether there was a hold to
+	// lift is read from the pre-update snapshot the CTE holds.
+	var held bool
+	err := r.db.QueryRow(ctx, `
+		WITH prev AS (
+			SELECT paused_at FROM campaign_leads WHERE campaign_id = $1 AND contact_id = $2
+		), lifted AS (
+			UPDATE campaign_leads
+			SET paused_at = NULL, paused_until = NULL, pause_reason = NULL, pause_source = NULL
+			WHERE campaign_id = $1 AND contact_id = $2
+			RETURNING 1
+		)
+		SELECT (SELECT paused_at IS NOT NULL FROM prev) FROM lifted
+	`, campaignID, contactID).Scan(&held)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrLeadNotInCampaign
+	}
+	if err != nil {
+		return false, err
+	}
+	return held, nil
+}
+
+// GetLeadHold reads the live hold, telling "not held" apart from "not a lead"
+// so the caller can answer 404 rather than 200 for a contact that was never in
+// the campaign.
+func (r *campaignProgressRepository) GetLeadHold(ctx context.Context, campaignID, contactID uuid.UUID) (*models.LeadHold, error) {
+	hold, err := scanHold(r.db.QueryRow(ctx,
+		`SELECT `+holdColumns+` FROM campaign_leads WHERE campaign_id = $1 AND contact_id = $2`,
+		campaignID, contactID), time.Now())
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrLeadNotInCampaign
+	}
+	return hold, err
+}
+
+// CountHeldLeads counts the leads whose flow is parked right now. A campaign
+// whose remaining leads are ALL held has not finished: routing reports no next
+// due time for a hold with no end, and without this the scheduler would read
+// that as "everything sent" and close the campaign (issue #470).
+func (r *campaignProgressRepository) CountHeldLeads(ctx context.Context, campaignID uuid.UUID) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM campaign_leads cl
+		WHERE cl.campaign_id = $1 AND `+liveHold("cl"),
+		campaignID).Scan(&n)
+	return n, err
 }

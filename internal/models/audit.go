@@ -50,7 +50,11 @@ const (
 type AuditEntityType string
 
 const (
-	AuditEntityCampaign     AuditEntityType = "campaign"
+	AuditEntityCampaign AuditEntityType = "campaign"
+	// AuditEntityCampaignLead is ONE contact inside ONE campaign: the entity id
+	// is the contact and metadata carries the campaign. Written when a member
+	// pauses or resumes that lead's flow.
+	AuditEntityCampaignLead AuditEntityType = "campaign_lead"
 	AuditEntityContact      AuditEntityType = "contact"
 	AuditEntityEmailAccount AuditEntityType = "email_account"
 	AuditEntityAPIKey       AuditEntityType = "api_key"

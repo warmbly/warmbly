@@ -41,7 +41,24 @@ type ReplyIntentSettings struct {
 	AutoCreateCRMTask       bool     `json:"auto_create_crm_task"`
 	AutoPauseOnNegative     bool     `json:"auto_pause_on_negative"`
 	AutoSuppressOnUnsubWord bool     `json:"auto_suppress_on_unsubscribe_keyword"`
+	// HoldOnOutOfOffice parks the contact's next step when an auto-reply says
+	// they are away, and resumes it when they are back. Without it the
+	// follow-up goes out on schedule to an empty desk and the sequence is over
+	// before the person reads any of it (issue #470).
+	HoldOnOutOfOffice bool `json:"hold_on_out_of_office"`
+	// OutOfOfficeHoldDays is the hold applied when the auto-reply carries no
+	// return date we can read. Clamped to OOOHoldDaysMin..OOOHoldDaysMax.
+	OutOfOfficeHoldDays int `json:"out_of_office_hold_days"`
 }
+
+// Bounds on the fallback out-of-office hold. A hold of zero days would send
+// into the away message it was triggered by; one of months would silently
+// abandon a lead nobody thinks to check on.
+const (
+	OOOHoldDaysMin     = 1
+	OOOHoldDaysMax     = 90
+	OOOHoldDaysDefault = 7
+)
 
 type SendTimeOptimizationSettings struct {
 	Enabled                 bool    `json:"enabled"`
@@ -78,6 +95,17 @@ func (s *AdvancedOutreachSettings) Normalize() {
 	if s.Preflight.MinContentScore < 1 {
 		s.Preflight.MinContentScore = 1
 	}
+	// A workspace that has never seen this setting stores a zero here; read it
+	// as "the default", not as "resume the instant the auto-reply lands".
+	if s.ReplyIntent.OutOfOfficeHoldDays == 0 {
+		s.ReplyIntent.OutOfOfficeHoldDays = OOOHoldDaysDefault
+	}
+	if s.ReplyIntent.OutOfOfficeHoldDays < OOOHoldDaysMin {
+		s.ReplyIntent.OutOfOfficeHoldDays = OOOHoldDaysMin
+	}
+	if s.ReplyIntent.OutOfOfficeHoldDays > OOOHoldDaysMax {
+		s.ReplyIntent.OutOfOfficeHoldDays = OOOHoldDaysMax
+	}
 	if !ValidUnsubscribeMode(string(s.Unsubscribe.Mode)) || s.Unsubscribe.Mode == UnsubscribeModeInherit {
 		s.Unsubscribe.Mode = UnsubscribeModeText
 	}
@@ -88,10 +116,14 @@ func (s *AdvancedOutreachSettings) Normalize() {
 
 // clampLine trims a one-line copy field and caps it; the email footer is not
 // the place for a paragraph or for line breaks.
-func clampLine(v string) string {
+func clampLine(v string) string { return ClampLine(v, UnsubscribeCopyMaxLen) }
+
+// ClampLine collapses a one-line user string to single spaces and caps it at
+// max runes. Shared by every field that is a single line of copy.
+func ClampLine(v string, max int) string {
 	v = strings.Join(strings.Fields(v), " ")
-	if r := []rune(v); len(r) > UnsubscribeCopyMaxLen {
-		v = string(r[:UnsubscribeCopyMaxLen])
+	if r := []rune(v); len(r) > max {
+		v = strings.TrimSpace(string(r[:max]))
 	}
 	return v
 }
@@ -586,14 +618,28 @@ func DefaultAdvancedOutreachSettings() AdvancedOutreachSettings {
 			MinSampleSize:      30,
 		},
 		ReplyIntent: ReplyIntentSettings{
-			Enabled:                 true,
-			PositiveKeywords:        []string{"interested", "sounds good", "let's talk", "book", "demo", "pricing"},
-			NegativeKeywords:        []string{"not interested", "unsubscribe", "remove me", "stop", "no thanks"},
-			OutOfOfficeKeywords:     []string{"out of office", "ooo", "vacation", "automatic reply"},
+			Enabled:          true,
+			PositiveKeywords: []string{"interested", "sounds good", "let's talk", "book", "demo", "pricing"},
+			NegativeKeywords: []string{"not interested", "unsubscribe", "remove me", "stop", "no thanks"},
+			// Not English-only: a German or French auto-reply is the common
+			// case on a European list, and matching only English left it to be
+			// caught by headers alone (issue #470). The layered classifier in
+			// internal/app/replyclassify carries the same vocabulary, so
+			// detection does not depend on a workspace having refreshed this
+			// list.
+			OutOfOfficeKeywords: []string{
+				"out of office", "ooo", "vacation", "automatic reply", "annual leave",
+				"abwesenheitsnotiz", "abwesend", "außer haus", "nicht im büro",
+				"im urlaub", "zurück am", "automatische antwort",
+				"réponse automatique", "absence du bureau",
+				"respuesta automática", "risposta automatica", "automatisch antwoord",
+			},
 			QuestionKeywords:        []string{"?", "how", "what", "when", "price"},
 			AutoCreateCRMTask:       true,
 			AutoPauseOnNegative:     false,
 			AutoSuppressOnUnsubWord: true,
+			HoldOnOutOfOffice:       true,
+			OutOfOfficeHoldDays:     OOOHoldDaysDefault,
 		},
 		SendTimeOptimization: SendTimeOptimizationSettings{
 			// Off by default: turning it on delays sends to reach the

@@ -2748,6 +2748,194 @@
         }
       }
     },
+    "/emails/{id}/identity": {
+      "get": {
+        "operationId": "mailboxes_send_identity",
+        "summary": "Get the sending identity",
+        "description": "Which addresses the mailbox's provider will let it send as, which one it uses, and where its stored signature came from. Stored state only: the provider is not contacted.",
+        "tags": [
+          "mailboxes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The mailbox id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mailbox's sending identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailboxSendIdentity"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope, permission, or mailbox not allowed for this key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mailbox not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/emails/{id}/identity/refresh": {
+      "post": {
+        "operationId": "mailboxes_refresh_send_identity",
+        "summary": "Refresh the sending identity",
+        "description": "Re-reads the send-as addresses from the provider and stores them, optionally importing the provider's signature. A send-as choice the provider no longer verifies is cleared by the same call. Gmail only. Retry-safe without an Idempotency-Key: it stores exactly what the provider currently reports.",
+        "tags": [
+          "mailboxes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The mailbox id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailboxSendIdentityRefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The refreshed sending identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailboxSendIdentity"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id, a provider with no send-as list (mailbox_send_as_unsupported), or a signature larger than Warmbly stores (mailbox_signature_too_large).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope, permission, or mailbox not allowed for this key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Mailbox not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/emails/verify": {
       "post": {
         "operationId": "mailboxes_verify_address",
@@ -4783,6 +4971,287 @@
           },
           "404": {
             "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/leads/{contactId}/hold": {
+      "get": {
+        "operationId": "campaigns_get_lead_hold",
+        "summary": "Get a lead's hold",
+        "description": "Read whether one contact's flow inside this campaign is currently held. Scope READ_CAMPAIGNS, org permission view_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignLeadHoldResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's, or the contact is not a lead of it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/leads/{contactId}/pause": {
+      "post": {
+        "operationId": "campaigns_pause_lead",
+        "summary": "Pause a lead",
+        "description": "Hold one contact's flow inside one campaign until a date, or with no end. The contact stays subscribed and stays a lead. The body states an absolute hold rather than a delta, so a retry lands on the same state. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CampaignLeadPauseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignLeadHoldResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "until is in the past, or more than a year away.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's, or the contact is not a lead of it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/leads/{contactId}/resume": {
+      "post": {
+        "operationId": "campaigns_resume_lead",
+        "summary": "Resume a lead",
+        "description": "Lift the hold now. The held time is dropped rather than carried, and the campaign's wakeup is pulled forward. Resuming a lead that is not held succeeds and changes nothing. Scope WRITE_CAMPAIGNS, org permission manage_campaigns.",
+        "tags": [
+          "campaigns"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignLeadHoldResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not the caller's organization's, or the contact is not a lead of it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -20477,6 +20946,10 @@
           "signature_code": {
             "type": "boolean"
           },
+          "send_as_email": {
+            "type": "string",
+            "description": "A verified provider alias this mailbox sends from. Empty, the default, means the mailbox's own address. Gmail only."
+          },
           "provider": {
             "type": "string",
             "enum": [
@@ -20648,6 +21121,10 @@
           "signature_code": {
             "type": "boolean",
             "description": "Treat the HTML signature as raw code."
+          },
+          "send_as_email": {
+            "type": "string",
+            "description": "A verified provider alias this mailbox sends from. Must be an address the provider reported as verified (see the sending identity endpoints) or the mailbox's own; anything else is refused with mailbox_send_as_unknown. Send an empty string to go back to the mailbox address. Gmail only."
           },
           "status": {
             "type": "string",
@@ -22804,9 +23281,11 @@
               "replied",
               "bounced",
               "failed",
-              "unsubscribed"
+              "unsubscribed",
+              "paused",
+              "undeliverable"
             ],
-            "description": "Derived, highest priority first: unsubscribed, bounced, replied, failed (a step could not be sent after every retry), completed (every email step sent), active (some steps sent), pending (nothing sent yet)."
+            "description": "The lead's derived state in this campaign, highest priority first: unsubscribed, bounced, replied, failed, completed, paused (the flow is held by an out-of-office auto-reply or by hand; see the hold object), active, undeliverable (address verification refused the address, so the campaign never sends to it), pending."
           },
           "sent": {
             "type": "integer"
@@ -22837,6 +23316,15 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "hold": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CampaignLeadHold"
+              }
+            ],
+            "nullable": true,
+            "description": "The live per-lead hold: an out-of-office auto-reply parked the contact, or a member paused them. Absent when the lead is not held."
           }
         }
       },
@@ -30842,6 +31330,161 @@
           },
           "position": {
             "type": "integer"
+          }
+        }
+      },
+      "CampaignLeadHold": {
+        "type": "object",
+        "description": "One contact's flow parked inside one campaign.",
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the hold was written."
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When it lifts. Absent for a hold with no end, which only a resume lifts."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Free-text note shown next to the hold."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "out_of_office"
+            ],
+            "description": "What wrote it."
+          }
+        },
+        "required": [
+          "since",
+          "source"
+        ]
+      },
+      "CampaignLeadHoldResult": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contact_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "hold": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CampaignLeadHold"
+              }
+            ],
+            "nullable": true,
+            "description": "Absent when the lead is not held, including a dated hold that has expired."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "contact_id"
+        ]
+      },
+      "CampaignLeadPauseRequest": {
+        "type": "object",
+        "properties": {
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the hold lifts. Must be in the future and within a year. Omit or null for a hold with no end."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Optional note shown next to the hold."
+          }
+        }
+      },
+      "MailboxSendAsIdentity": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "description": "The mailbox's own address."
+          },
+          "is_default": {
+            "type": "boolean",
+            "description": "The identity the provider composes from by default. Reported, not followed: which alias Warmbly sends from is the workspace's own choice."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "The provider finished verifying the address. An unverified one is listed but cannot be selected."
+          }
+        }
+      },
+      "MailboxSendIdentity": {
+        "type": "object",
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "False for Outlook and SMTP/IMAP mailboxes, which publish no send-as list."
+          },
+          "provider": {
+            "type": "string"
+          },
+          "mailbox_email": {
+            "type": "string",
+            "format": "email",
+            "description": "The address the mailbox authenticates as, which is always a legal sender."
+          },
+          "send_as_email": {
+            "type": "string",
+            "description": "The alias in use. Empty means the mailbox address."
+          },
+          "identities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MailboxSendAsIdentity"
+            }
+          },
+          "synced_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the list was last read from the provider."
+          },
+          "signature_source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "provider"
+            ],
+            "description": "Where the mailbox's stored signature came from."
+          },
+          "signature_imported_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "MailboxSendIdentityRefreshRequest": {
+        "type": "object",
+        "properties": {
+          "import_signature": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also replace the mailbox's stored signature with the one configured at the provider, for whichever identity the mailbox sends as. An empty signature at the provider changes nothing."
           }
         }
       }

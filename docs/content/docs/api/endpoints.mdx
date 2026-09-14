@@ -68,6 +68,9 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | POST | `/campaigns/:id/test-email` | `SEND_CAMPAIGNS` |
 | POST | `/campaigns/:id/start` | `SEND_CAMPAIGNS` |
 | POST | `/campaigns/:id/stop` | `SEND_CAMPAIGNS` |
+| GET | `/campaigns/:id/leads/:contactId/hold` | `READ_CAMPAIGNS` |
+| POST | `/campaigns/:id/leads/:contactId/pause` | `WRITE_CAMPAIGNS` |
+| POST | `/campaigns/:id/leads/:contactId/resume` | `WRITE_CAMPAIGNS` |
 | GET | `/campaigns/:id/logs` | `READ_CAMPAIGNS` |
 | GET | `/campaigns/:id/forms` | `READ_CAMPAIGNS` |
 | GET/POST/PATCH/DELETE | `/campaigns/:id/steps[/:sid]` | `READ_CAMPAIGNS` for GET, `WRITE_CAMPAIGNS` otherwise |
@@ -78,6 +81,8 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | GET | `/email-images` | `READ_CAMPAIGNS` |
 | POST | `/email-images` | `WRITE_CAMPAIGNS` |
 | DELETE | `/email-images/:id` | `WRITE_CAMPAIGNS` |
+
+The three `/campaigns/:id/leads/:contactId/…` calls hold one contact's flow inside one campaign: an out-of-office auto-reply writes one automatically, and a member can write one by hand. The contact stays subscribed and stays a lead, so this is not an unsubscribe and not a suppression. Both writes state an absolute hold rather than applying a delta, and replacing a live hold keeps its original start, so a retry lands on the same row and neither needs an `Idempotency-Key`. See [pause a lead](/api/reference/campaigns/#pause-a-lead).
 
 `GET /campaigns/:id/forms` reports the forms this campaign links to and what its recipients did with them: personalized links handed out, who opened one, who started filling it in and who submitted. See the [forms guide](/guides/forms/).
 

@@ -112,9 +112,24 @@ A lead can also be taken out again: the remove button on a lead's row, or **Remo
 | Replied | Contact replied; sending stops |
 | Bounced | A send hard-bounced |
 | Failed | A step could not be sent after every retry; hover the status for the reason |
+| Paused | The lead's flow is held, by an out-of-office auto-reply or by hand; hover the status for why and until when |
 | Unsubscribed | Unsubscribed or suppressed |
 
 A lead is **Processing** only while steps remain, so a finished campaign reads as done rather than stuck mid-flight.
+
+### Out of office and pausing one lead
+
+When a recipient's mailbox answers a step with an away message, that is not a reply: Warmbly never counts an auto-reply as a human one, so stop on reply does not fire and, left alone, the next step would go out on schedule to an empty desk. Warmbly holds the lead instead.
+
+The hold reads the return date out of the away message when it can. English, German, French, Spanish, Portuguese, Italian and Dutch phrasings are recognised (`back on 8 September`, `zurück am 09.09.2026`, `ab dem 10.9.`, `jusqu'au 12 septembre`), in ISO and day-dot-month form as well as written months. Two kinds of date are deliberately not read, because a wrong one parks a live lead for weeks: slash dates, since `9/8/2026` means two different days on two sides of the Atlantic, and a month with no day (`until October`), since there is no way to tell which day in it was meant. The lead resumes one working day after the date it found, so the follow-up does not land in the backlog of their first morning back. When no date can be read, the hold is the workspace's fallback, `7` days by default, set under **Settings > Sending > Out of office**. The same section turns the whole behaviour off.
+
+A hold does not spend the step's wait. A follow-up three days behind its step, held for a week, goes out three days after the contact is back rather than the moment they return, so the sequence keeps its pacing instead of arriving all at once. Only the part of the hold that overlapped that wait counts, so a hold the lead has already served is never charged to a later step. A campaign whose remaining leads are all paused does not finish: it stays active and waits for them, and its activity log says so once rather than every pass. Resuming any of them puts the campaign straight back to work.
+
+The same hold is available by hand, and it is the missing middle between leaving a lead alone and the two permanent levers. The **Subscribed** toggle takes the contact out of every campaign for good and the suppression list blocks the address workspace-wide; neither is the right answer to "they are on holiday for a week". The pause button on a lead's row holds that one contact in that one campaign, until a date or until you resume them. They stay subscribed, they stay a lead, and the flow picks up where it stopped.
+
+An away message is recognised by the subject line the recipient's mail provider writes (`Automatic reply:`, `Automatische Antwort:`, `Abwesenheitsnotiz`, `Réponse automatique`, and the same conventions in Spanish, Portuguese, Italian, Dutch, the Nordic languages and Polish) or by the RFC 3834 and vendor headers it carries. It is matched at the START of the subject only, never inside it: a reply from a person carries your own subject back, so a campaign about annual leave or working out of the office still has every human reply read as a reply.
+
+A held lead reads **Paused** in the list and carries its reason on hover. Open the contact's **Activity** tab and the campaign panel shows the hold with **Resume now** next to it, and **Stop**, which converts a dated hold into one with no end. Resume drops the held time rather than carrying it, so the step goes back to the schedule it would have had if the hold had never happened: on the campaign's next pass when that moment has already passed, otherwise when the step's own wait elapses. It lifts the hold, it does not skip the sequence's pacing. Pausing and resuming are audited, and every teammate's list updates live.
 
 ### Who opened, clicked and replied
 
@@ -122,7 +137,7 @@ Next to each lead's status, the Leads list shows three engagement columns: **Ope
 
 Opens depend on the recipient's mail client loading images. Outlook, many corporate setups and some privacy-minded clients block them, so a person can read an email and still show no open; the info icon on the column says as much. A click is stronger evidence, so a click by the person always counts as an open too. Open the contact's Activity tab to see each open and click with the mail client and location it came from.
 
-The chips above the list are filters. Click a status chip (**Processing**, **Done**, **Replied**, **Queued**, **Bounced**, **Unsub**) or an engagement chip (**Opened**, **Not opened**, **Clicked**, **Not clicked**, **Replied**, **Not replied**) to show only those leads; click it again to clear. One status and one engagement chip can be active at once and both must match. The numbers on the chips are campaign-wide totals, and filtering happens on the server, so a scope shows every matching lead however long the list is. **Not opened**, **Not clicked** and **Not replied** only cover leads that have been sent at least one email: a queued lead has not had the chance. The same filters live in the **Filters** sheet under **Lead status** and **Engagement**.
+The chips above the list are filters. Click a status chip (**Processing**, **Done**, **Replied**, **Queued**, **Bounced**, **Paused**, **Unsub**) or an engagement chip (**Opened**, **Not opened**, **Clicked**, **Not clicked**, **Replied**, **Not replied**) to show only those leads; click it again to clear. One status and one engagement chip can be active at once and both must match. The numbers on the chips are campaign-wide totals, and filtering happens on the server, so a scope shows every matching lead however long the list is. **Not opened**, **Not clicked** and **Not replied** only cover leads that have been sent at least one email: a queued lead has not had the chance. The same filters live in the **Filters** sheet under **Lead status** and **Engagement**.
 
 Engagement updates live as opens, clicks and replies arrive; no refresh is needed. **Export** from the Leads tab offers four extra columns (**Lead status**, **Opened**, **Clicked**, **Replied**), whether you export the current scope or selected rows.
 
@@ -136,7 +151,7 @@ The next action is worked out on the spot by the scheduler, through the same rul
 |-------|---------|
 | Due | The step is due now. The time shown is when the campaign next works through its queue, not a slot held for this contact; leads queued ahead of this one can still push it to a later pass |
 | Waiting | A hard constraint holds the step back. The panel names it (`Waiting 2 days before the first email`, `Waiting 3 days after Email 1`, `Outside the campaign's sending window`, `Today's new-lead limit is reached`) and shows the earliest the step can go, not a promised time |
-| Paused | The campaign is not running, so nothing is scheduled |
+| Paused | This lead is held (out of office, or paused by hand), or the campaign is not running. The panel says which, and a held lead carries **Resume now** |
 | Blocked | The campaign cannot send at all right now: no mailbox attached, every sending domain failing authentication, or past its end date |
 
 When a step's branches are still undecided (`if they open within 3 days`), the panel says the next step depends on their response and when that window closes. A lead that has finished, replied, bounced, failed or unsubscribed shows why the flow ended instead.

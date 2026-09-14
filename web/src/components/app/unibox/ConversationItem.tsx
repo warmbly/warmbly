@@ -1,9 +1,11 @@
 // One row in the conversation list.
 //
-// Dense by design: sender + relative time on top, subject in the
-// middle, snippet at the bottom, mailbox chip + tag color dots as the
-// last meta row. Unread shows both as a left bar AND a font-weight
-// change so it's scannable from across the room.
+// Three lines and nothing else: sender and time, subject, preview. No avatar,
+// so the eye reads down one column of names the way it does in Superhuman or
+// Hey. Unread is a dot in the gutter plus weight, which reads from across
+// the room without a coloured bar. Labels sit at the end of the subject line
+// as small tinted chips; the owning mailbox shows only when the workspace
+// has more than one, quietly at the end of the preview.
 
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
 import { useAppStore } from "@/stores";
@@ -28,20 +30,6 @@ function fromName(s: string): string {
   return nameFromAddr(s);
 }
 
-function initials(s: string): string {
-  const name = fromName(s);
-  const parts = name.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return (parts[0]?.slice(0, 2) ?? "??").toUpperCase();
-}
-
-// Stable colour per sender so the eye learns to spot them.
-function hueFor(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h % 360;
-}
-
 interface ConversationItemProps {
   email: UniboxEmail;
 }
@@ -63,11 +51,9 @@ export function ConversationItem({ email }: ConversationItemProps) {
     .join("");
 
   const mailbox = accounts.find((a) => a.id === email.account_id);
+  const showMailbox = !!mailbox && accounts.length > 1;
   const sender = fromName(email.from);
-  const hue = hueFor(sender);
 
-  // Thread-stacking: count of messages in the conversation behind this
-  // row, and the conversation's assigned labels (categories).
   const messageCount = email.message_count ?? 1;
   const labels = email.labels ?? [];
 
@@ -82,47 +68,31 @@ export function ConversationItem({ email }: ConversationItemProps) {
         setSelectedThreadId(threadId);
         setSelectedAccountId(email.account_id ?? null);
       }}
+      aria-current={isSelected ? "true" : undefined}
       className={cn(
-        "group w-full text-left px-3 py-2 transition-colors flex items-start gap-2.5 relative",
-        isSelected ? "bg-sky-50/80" : "hover:bg-slate-50/80",
+        "group w-full text-left pl-3 pr-4 py-2.5 flex items-start gap-2 transition-colors",
+        isSelected ? "bg-sky-50" : "hover:bg-slate-50",
       )}
     >
-      {unread && (
-        <span
-          aria-hidden
-          className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-sky-500"
-        />
-      )}
-      <div
-        className={cn(
-          "size-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-semibold",
+      {/* Gutter: the unread dot, or the same space when read so text aligns. */}
+      <span className="w-2 shrink-0 flex items-center justify-center h-[18px]">
+        {unread && (
+          <span aria-hidden className="block size-2 rounded-full bg-sky-500" />
         )}
-        style={
-          isSelected
-            ? { backgroundColor: "rgb(224 242 254)", color: "rgb(2 132 199)" }
-            : {
-                backgroundColor: `hsl(${hue} 70% 94%)`,
-                color: `hsl(${hue} 55% 35%)`,
-              }
-        }
-      >
-        {initials(email.from)}
-      </div>
+      </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 h-[18px]">
           <span
             className={cn(
               "text-[12.5px] truncate min-w-0",
-              unread
-                ? "text-slate-900 font-semibold"
-                : "text-slate-800 font-medium",
+              unread ? "text-slate-900 font-semibold" : "text-slate-700",
             )}
           >
             {sender}
           </span>
           {messageCount > 1 && (
             <span
-              className="shrink-0 font-mono tabular-nums text-[10px] text-slate-500 bg-slate-100 rounded-full px-1.5 h-4 inline-flex items-center"
+              className="shrink-0 tabular-nums text-[11px] text-slate-400"
               title={`${messageCount} messages in this conversation`}
             >
               {messageCount}
@@ -151,68 +121,76 @@ export function ConversationItem({ email }: ConversationItemProps) {
               />
             </span>
           )}
-          <span className="font-mono text-[10px] text-slate-400 tabular-nums shrink-0 ml-auto">
+          <span
+            className={cn(
+              "text-[11px] tabular-nums shrink-0 ml-auto",
+              unread ? "text-sky-700 font-medium" : "text-slate-400",
+            )}
+          >
             {relative(date)}
           </span>
         </div>
-        <div
-          className={cn(
-            "text-[12px] truncate mt-0.5",
-            unread ? "text-slate-800 font-medium" : "text-slate-600",
+        <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+          <span
+            className={cn(
+              "text-[12.5px] truncate min-w-0",
+              unread ? "text-slate-900 font-medium" : "text-slate-600",
+            )}
+          >
+            {email.subject || "(no subject)"}
+          </span>
+          {labels.length > 0 && (
+            <span className="ml-auto shrink-0 inline-flex items-center gap-1">
+              {labels.slice(0, 2).map((l) => (
+                <LabelChip key={l.id} title={l.title} color={l.color} />
+              ))}
+              {labels.length > 2 && (
+                <span
+                  className="text-[10px] text-slate-400 tabular-nums"
+                  title={labels
+                    .slice(2)
+                    .map((l) => l.title)
+                    .join(", ")}
+                >
+                  +{labels.length - 2}
+                </span>
+              )}
+            </span>
           )}
-        >
-          {email.subject || "(no subject)"}
         </div>
-        <div className="text-[11px] text-slate-400 truncate mt-0.5">
-          {preview || "(no preview)"}
+        <div className="flex items-center gap-2 min-w-0 mt-0.5">
+          <span className="text-[11.5px] text-slate-400 truncate min-w-0">
+            {preview || "(no preview)"}
+          </span>
+          {showMailbox && (
+            <span
+              className="ml-auto shrink-0 max-w-[40%] truncate text-[10.5px] text-slate-300 group-hover:text-slate-400 transition-colors"
+              title={mailbox.email}
+            >
+              {mailbox.email}
+            </span>
+          )}
         </div>
-        {(mailbox || labels.length > 0) && (
-          <div className="mt-1 flex items-center gap-1 min-w-0 flex-wrap">
-            {/* Conversation labels: colored dot + name chips, the
-                            per-thread categories the user assigned. */}
-            {labels.slice(0, 3).map((l) => (
-              <TagChip key={l.id} title={l.title} color={l.color} />
-            ))}
-            {labels.length > 3 && (
-              <span
-                className="text-[9.5px] text-slate-400 font-mono"
-                title={labels
-                  .slice(3)
-                  .map((l) => l.title)
-                  .join(", ")}
-              >
-                +{labels.length - 3}
-              </span>
-            )}
-            {mailbox && (
-              <span className="inline-flex items-center h-4 px-1.5 rounded-sm bg-slate-100 text-slate-500 text-[9.5px] font-mono truncate max-w-[160px]">
-                {mailbox.email}
-              </span>
-            )}
-          </div>
-        )}
       </div>
     </button>
   );
 }
 
-function TagChip({ title, color }: { title: string; color: string }) {
-  // Tint a slim chip background from the tag's own color so two
-  // chips read as visually distinct without needing to read the
-  // text. We don't render solid coloured chips (too loud); the dot
-  // carries the colour, the chip carries the name.
+function LabelChip({ title, color }: { title: string; color: string }) {
+  // The dot carries the colour, the chip carries the name; a solid coloured
+  // chip is too loud for a list this dense.
   return (
     <span
-      className="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 overflow-hidden max-w-[120px]"
+      className="inline-flex items-center gap-1 h-4 px-1.5 rounded-sm text-[10px] font-medium overflow-hidden max-w-[110px]"
       style={{
-        borderColor: color ? `${color}60` : "rgb(226 232 240)",
-        backgroundColor: color ? `${color}12` : "white",
+        color: color || "#475569",
+        backgroundColor: color ? `${color}14` : "rgb(241 245 249)",
       }}
       title={title}
     >
       <span
         aria-hidden
-        className="block size-2 rounded-full shrink-0"
+        className="block size-1.5 rounded-full shrink-0"
         style={{ backgroundColor: color || "#94a3b8" }}
       />
       <span className="truncate">{title}</span>

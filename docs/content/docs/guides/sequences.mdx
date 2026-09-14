@@ -213,6 +213,7 @@ The **On reply** button on a step card creates an action step connected by a rep
 - A reply triggers the path of the **specific email it answers**, matched by threading headers. That is the email they actually replied to, not necessarily your latest step, and never both.
 - Unmatched replies fall back to the latest step.
 - Auto-replies and out-of-office messages are not human replies: they trigger no human-reply path and do not stop the sequence. Use the `auto-reply / out of office` condition to react to them.
+- An out-of-office message does, on its own, hold the contact's next step until they are back, so the follow-up is not sent to an empty desk. See [out of office and pausing one lead](/guides/campaigns/#out-of-office-and-pausing-one-lead).
 
 ## Stop on reply
 

@@ -42,6 +42,9 @@ export interface CampaignLeadCounts {
     bounced: number;
     failed: number;
     unsubscribed: number;
+    // Leads whose flow is held (an out-of-office auto-reply, or a member
+    // pausing them) and resumes where it stopped.
+    paused: number;
     // Leads the campaign will never send to: address verification refused them.
     undeliverable: number;
     // Engagement totals matching the `engagement` filter: leads sent at least

@@ -354,7 +354,9 @@ A `CampaignAdvancedSettings` object: the campaign id, the `overrides` block, and
       "question_keywords": ["?", "how", "price"],
       "auto_create_crm_task": true,
       "auto_pause_on_negative": false,
-      "auto_suppress_on_unsubscribe_keyword": true
+      "auto_suppress_on_unsubscribe_keyword": true,
+      "hold_on_out_of_office": true,
+      "out_of_office_hold_days": 7
     },
     "send_time_optimization": {
       "enabled": false,
@@ -401,7 +403,7 @@ Replace the campaign's advanced overrides. **Scope** `WRITE_CAMPAIGNS` · **Org 
     "bounce_pipeline": { "enabled": true, "auto_suppress_on_bounce": true, "auto_suppress_on_complaint": true, "auto_suppress_on_unsubscribe": true, "auto_pause_campaign_on_spike": true, "pause_bounce_rate_threshold": 8, "pause_complaint_rate_threshold": 1.5 },
     "task_reliability": { "enabled": true, "dlq_enabled": true, "max_attempts": 5, "execution_window_seconds": 300 },
     "ab_testing": { "enabled": true, "default_winning_rule": "reply_rate", "auto_promote_winner": false, "min_sample_size": 30 },
-    "reply_intent": { "enabled": true, "positive_keywords": [], "negative_keywords": [], "out_of_office_keywords": [], "question_keywords": [], "auto_create_crm_task": true, "auto_pause_on_negative": false, "auto_suppress_on_unsubscribe_keyword": true },
+    "reply_intent": { "enabled": true, "positive_keywords": [], "negative_keywords": [], "out_of_office_keywords": [], "question_keywords": [], "auto_create_crm_task": true, "auto_pause_on_negative": false, "auto_suppress_on_unsubscribe_keyword": true, "hold_on_out_of_office": true, "out_of_office_hold_days": 7 },
     "send_time_optimization": { "enabled": true, "use_contact_timezone": true, "default_contact_timezone": "UTC", "preferred_hours": [9, 14], "weekend_weight_multiplier": 0.5 },
     "preflight": { "enabled": true, "check_tracking_domain": true, "check_unsubscribe_header": true, "check_ab_variant_configured": false, "check_daily_limit": true, "check_schedule_window": true, "check_content_score": true, "min_content_score": 60 },
     "dashboard": { "enabled": true, "show_suppression_log": true, "show_intent_summary": true, "show_dlq_stats": true }
@@ -757,6 +759,102 @@ Stop (pause) an active campaign. **Scope** `SEND_CAMPAIGNS` · **Org permission*
 ```json
 { "status": "stopped" }
 ```
+
+## Get a lead's hold
+
+`GET /campaigns/:id/leads/:contact_id/hold`
+
+Read whether one contact's flow inside this campaign is currently held. A hold parks the lead's next step without unsubscribing the contact and without removing them from the campaign; the two things that write one are an out-of-office auto-reply and a member pausing the lead by hand. **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `contact_id` | path | uuid | Contact id. Must already be a lead of the campaign. |
+
+### Response
+
+```json
+{
+  "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+  "contact_id": "3a5e9c71-4f2b-4d88-9a0c-1b7e5d2f6c34",
+  "hold": {
+    "since": "2026-09-07T09:14:00Z",
+    "until": "2026-09-09T00:00:00Z",
+    "reason": "back 8 Sep 2026",
+    "source": "out_of_office"
+  }
+}
+```
+
+`hold` is absent when the lead is not held, including for a dated hold that has since expired. `until` is absent when the hold has no end, in which case only a resume lifts it. `source` is `out_of_office` or `manual`.
+
+### Errors
+
+| Status | Code | When |
+| --- | --- | --- |
+| `404` | `not_found` | The campaign is not the caller's organization's, or the contact is not a lead of it. |
+
+## Pause a lead
+
+`POST /campaigns/:id/leads/:contact_id/pause`
+
+Hold one contact's flow inside one campaign. The contact stays subscribed and stays a lead; the sequence picks up where it stopped when the hold lifts. This is the per-contact lever between leaving a lead alone and the two permanent ones, unsubscribing the contact and adding the address to the suppression list. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+The request states an absolute hold rather than applying a delta, and replacing a hold that is still live keeps its original start, so a retry lands on exactly the same row and no `Idempotency-Key` is needed.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `contact_id` | path | uuid | Contact id. Must already be a lead of the campaign. |
+| `until` | body | string | RFC 3339 timestamp the hold lifts at. Must be in the future and within a year. Omit or send `null` for a hold with no end, which only a resume lifts. |
+| `reason` | body | string | Optional note shown next to the hold in the dashboard. Trimmed and capped at 200 characters. |
+
+A manual pause always wins: it replaces a hold an out-of-office auto-reply wrote, and a later auto-reply never shortens it or takes it over.
+
+### Request body
+
+```json
+{ "until": "2026-09-21T17:00:00Z", "reason": "On holiday, asked to follow up later" }
+```
+
+### Response
+
+Same shape as [get a lead's hold](#get-a-leads-hold).
+
+### Errors
+
+| Status | Code | When |
+| --- | --- | --- |
+| `400` | `bad_request` | `until` is in the past, or more than a year away. |
+| `404` | `not_found` | The campaign is not the caller's organization's, or the contact is not a lead of it. |
+
+## Resume a lead
+
+`POST /campaigns/:id/leads/:contact_id/resume`
+
+Lift the hold now. The held time is dropped rather than carried, so the step returns to the schedule it would have had without the hold: the campaign's next pass when that moment has already passed, otherwise when the step's own wait elapses. The campaign's own wakeup is pulled forward with it, and a campaign that had finished while the lead was held is restarted through the usual launch checks. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+
+Resuming a lead that is not held succeeds and changes nothing, so a retry is safe.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `id` | path | uuid | Campaign id. |
+| `contact_id` | path | uuid | Contact id. |
+
+### Response
+
+```json
+{
+  "campaign_id": "8f1d6b2e-2b7a-4c9e-9a1f-0e6d4c3b2a10",
+  "contact_id": "3a5e9c71-4f2b-4d88-9a0c-1b7e5d2f6c34"
+}
+```
+
+### Errors
+
+| Status | Code | When |
+| --- | --- | --- |
+| `404` | `not_found` | The campaign is not the caller's organization's, or the contact is not a lead of it. |
 
 ## Get campaign logs
 

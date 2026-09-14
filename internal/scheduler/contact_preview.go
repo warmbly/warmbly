@@ -30,6 +30,9 @@ const (
 	// ConstraintSenderBusy is the whole pool being fine and one mailbox not:
 	// the lead's sequence belongs to a mailbox that has nothing left today.
 	ConstraintSenderBusy ContactSendConstraint = "sender_busy"
+	// ConstraintLeadHold is this one lead parked: an out-of-office auto-reply
+	// holding the contact until they are back, or a member pausing them.
+	ConstraintLeadHold ContactSendConstraint = "lead_hold"
 )
 
 // ContactSendPreview is a read-only "what happens next" for one contact in
@@ -67,13 +70,28 @@ func (s *schedulerService) PreviewContactSend(ctx context.Context, campaignID, c
 	}
 	pv := &ContactSendPreview{Route: route}
 
+	// The lead's own hold answers before anything else: "on holiday until
+	// Tuesday" is the specific fact, and the drawer offers "resume now" next to
+	// it. It outranks the condition window a held lead may also be sitting in.
+	if route.Hold != nil {
+		pv.State = models.NextActionPaused
+		pv.NotBefore = route.Hold.Until
+		pv.Constraint = ConstraintLeadHold
+		return pv, nil
+	}
 	if route.WaitUntil != nil {
 		pv.State = models.NextActionWaiting
 		pv.NotBefore = route.WaitUntil
 		pv.Constraint = ConstraintConditionWindow
 		return pv, nil
 	}
-	if route.Target == nil || route.Excluded != "" {
+	if route.Target == nil {
+		return pv, nil
+	}
+	// A pre-send gate refuses this lead outright. Say so rather than leaving
+	// the state empty, which renders as a next action with no words on it.
+	if route.Excluded != "" {
+		pv.State = models.NextActionBlocked
 		return pv, nil
 	}
 	if campaign.Status != "active" {

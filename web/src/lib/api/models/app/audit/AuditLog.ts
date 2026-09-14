@@ -33,6 +33,10 @@ export type AuditAction =
 
 export type AuditEntityType =
     | "campaign"
+    // One contact inside one campaign: the entity id is the contact and the
+    // metadata carries the campaign. Written when a lead's flow is held or
+    // resumed.
+    | "campaign_lead"
     | "contact"
     | "email_account"
     | "api_key"

@@ -1,25 +1,26 @@
 // Left-rail navigator for the unibox.
 //
-// Reads /unibox/overview so every count is server-truth. Three
-// sections:
+// Reads /unibox/overview so every count is server-truth. One visual
+// language for every row: a quiet icon, the label, a bare tabular count.
 //
-//   1. Inbox — All / Unread / Today / Week / Awaiting reply / Snoozed
-//   2. Mailboxes — every connected account with its unread count.
-//      Collapses to 6 once the user has more than 8 (with a
-//      "Show all (N)" toggle) and adds an in-section search so the
-//      rail never becomes a wall of scrolling.
-//   3. Tags — same collapse/search treatment.
+//   Compose
+//   All mail / Inbox / Unread / Awaiting reply / Agent drafts / Snoozed
+//   Drafts / Sent / Scheduled / Archive / Spam / Trash
+//   Mailboxes / Labels / Tags   (collapsible, searchable past 8 items)
+//
+// Today and This week are not rows: the filter sheet's date range covers
+// them, and the rail is for the places mail lives, not for every slice of it.
 
 import React from "react";
 import {
   ArchiveIcon,
-  CalendarRangeIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  ClockIcon,
   FileTextIcon,
   InboxIcon,
-  MailboxIcon,
+  LayersIcon,
+  MailIcon,
+  MailOpenIcon,
   MoonIcon,
   MoreHorizontalIcon,
   OctagonAlertIcon,
@@ -27,13 +28,14 @@ import {
   ReplyIcon,
   SearchIcon,
   SendIcon,
-  SparkleIcon,
   SparklesIcon,
   Trash2Icon,
+  ClockIcon,
 } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import useMarkSeen from "@/lib/api/hooks/app/unibox/useMarkSeen";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
+import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import ComposeDraftsItem from "@/components/app/unibox/compose/ComposeDraftsItem";
 import { useComposeStore } from "@/hooks/useComposeStore";
 import { cn } from "@/lib/utils";
@@ -75,37 +77,18 @@ export function scopeKey(s: UniboxScope): string {
   }
 }
 
-const FOLDER_META: {
+const ICON = "w-[15px] h-[15px]";
+
+const MAIL_FOLDERS: {
   folder: UniboxFolder;
   label: string;
   icon: React.ReactNode;
 }[] = [
-  {
-    folder: "inbox",
-    label: "Inbox",
-    icon: <InboxIcon className="w-3.5 h-3.5" />,
-  },
-  {
-    folder: "drafts",
-    label: "Drafts",
-    icon: <FileTextIcon className="w-3.5 h-3.5" />,
-  },
-  { folder: "sent", label: "Sent", icon: <SendIcon className="w-3.5 h-3.5" /> },
-  {
-    folder: "archive",
-    label: "Archive",
-    icon: <ArchiveIcon className="w-3.5 h-3.5" />,
-  },
-  {
-    folder: "spam",
-    label: "Spam",
-    icon: <OctagonAlertIcon className="w-3.5 h-3.5" />,
-  },
-  {
-    folder: "trash",
-    label: "Trash",
-    icon: <Trash2Icon className="w-3.5 h-3.5" />,
-  },
+  { folder: "drafts", label: "Drafts", icon: <FileTextIcon className={ICON} /> },
+  { folder: "sent", label: "Sent", icon: <SendIcon className={ICON} /> },
+  { folder: "archive", label: "Archive", icon: <ArchiveIcon className={ICON} /> },
+  { folder: "spam", label: "Spam", icon: <OctagonAlertIcon className={ICON} /> },
+  { folder: "trash", label: "Trash", icon: <Trash2Icon className={ICON} /> },
 ];
 
 const COLLAPSE_THRESHOLD = 8;
@@ -130,14 +113,36 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
     return m;
   }, [data?.folders]);
 
+  const folderRow = (
+    folder: UniboxFolder,
+    label: string,
+    icon: React.ReactNode,
+  ) => {
+    const counts = folderCounts.get(folder);
+    // Drafts reads better as a total; everywhere else the number is unread.
+    const count = folder === "drafts" ? counts?.total : counts?.unread;
+    return (
+      <FolderItem
+        key={folder}
+        icon={icon}
+        label={label}
+        count={count || undefined}
+        accent={folder !== "drafts" && !!count}
+        active={active === `folder:${folder}`}
+        onOpen={() => onChange({ kind: "folder", folder })}
+        onMarkAllRead={() => markSeen.mutate({ folder, seen: true })}
+      />
+    );
+  };
+
   return (
-    <nav className="h-full bg-slate-50/60 border-r border-slate-200 overflow-y-auto py-2">
-      <div className="px-2 pb-2">
+    <nav className="h-full w-full bg-white border-r border-slate-200 overflow-y-auto py-3">
+      <div className="px-3 pb-3">
         <ShortcutTooltip label="New email" combo="n" side="bottom">
           <button
             type="button"
             onClick={() => useComposeStore.getState().openCompose()}
-            className="w-full h-8 rounded-lg bg-sky-600 text-white text-[12px] font-medium inline-flex items-center justify-center gap-1.5 hover:bg-sky-700 active:bg-sky-800 shadow-sm shadow-sky-600/20 transition-colors"
+            className="w-full h-8 rounded-md bg-sky-600 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5 hover:bg-sky-700 active:bg-sky-800 transition-colors"
           >
             <PenLineIcon className="w-3.5 h-3.5" />
             Compose
@@ -145,118 +150,87 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
         </ShortcutTooltip>
         <ComposeDraftsItem />
       </div>
-      <Section label="Folders">
-        {FOLDER_META.map((f) => {
-          const counts = folderCounts.get(f.folder);
-          // Drafts reads better as a total; everywhere else the badge is
-          // the classic unread number.
-          const count =
-            f.folder === "drafts" ? counts?.total : counts?.unread;
-          return (
-            <FolderItem
-              key={f.folder}
-              icon={f.icon}
-              label={f.label}
-              count={count || undefined}
-              countTone={count ? "accent" : "muted"}
-              active={active === `folder:${f.folder}`}
-              onOpen={() => onChange({ kind: "folder", folder: f.folder })}
-              onMarkAllRead={() =>
-                markSeen.mutate({ folder: f.folder, seen: true })
-              }
-            />
-          );
-        })}
-      </Section>
-      <Section label="Views">
+
+      <Group>
         <Item
-          icon={<InboxIcon className="w-3.5 h-3.5" />}
-          label="All"
+          icon={<LayersIcon className={ICON} />}
+          label="All mail"
           count={data?.total}
           active={active === "all"}
           onClick={() => onChange({ kind: "all" })}
         />
+        {folderRow("inbox", "Inbox", <InboxIcon className={ICON} />)}
         <Item
-          icon={<SparkleIcon className="w-3.5 h-3.5" />}
+          icon={<MailIcon className={ICON} />}
           label="Unread"
           count={data?.unread}
-          countTone={data?.unread ? "accent" : "muted"}
+          accent={!!data?.unread}
           active={active === "unread"}
           onClick={() => onChange({ kind: "unread" })}
         />
         <Item
-          icon={<ClockIcon className="w-3.5 h-3.5" />}
-          label="Today"
-          count={data?.today}
-          active={active === "today"}
-          onClick={() => onChange({ kind: "today" })}
-        />
-        <Item
-          icon={<CalendarRangeIcon className="w-3.5 h-3.5" />}
-          label="This week"
-          count={data?.week}
-          active={active === "week"}
-          onClick={() => onChange({ kind: "week" })}
-        />
-        <Item
-          icon={<ReplyIcon className="w-3.5 h-3.5" />}
+          icon={<ReplyIcon className={ICON} />}
           label="Awaiting reply"
           count={data?.awaiting_reply}
-          countTone={data?.awaiting_reply ? "accent" : "muted"}
+          accent={!!data?.awaiting_reply}
           active={active === "awaiting"}
           onClick={() => onChange({ kind: "awaiting" })}
         />
         <Item
-          icon={<SparklesIcon className="w-3.5 h-3.5" />}
+          icon={<SparklesIcon className={ICON} />}
           label="Agent drafts"
           count={data?.awaiting_agent_draft}
-          countTone={data?.awaiting_agent_draft ? "accent" : "muted"}
+          accent={!!data?.awaiting_agent_draft}
           active={active === "agent_drafts"}
           onClick={() => onChange({ kind: "agent_drafts" })}
         />
         <Item
-          icon={<MoonIcon className="w-3.5 h-3.5" />}
+          icon={<MoonIcon className={ICON} />}
           label="Snoozed"
           count={data?.snoozed}
           active={active === "snoozed"}
           onClick={() => onChange({ kind: "snoozed" })}
         />
+      </Group>
+
+      <Group>
+        {MAIL_FOLDERS.slice(0, 2).map((f) => folderRow(f.folder, f.label, f.icon))}
         <Item
-          icon={<SendIcon className="w-3.5 h-3.5" />}
+          icon={<ClockIcon className={ICON} />}
           label="Scheduled"
           count={data?.scheduled_pending}
-          countTone={data?.scheduled_pending ? "accent" : "muted"}
+          accent={!!data?.scheduled_pending}
           active={active === "scheduled"}
           onClick={() => onChange({ kind: "scheduled" })}
         />
-        {/* Cap meter — only when the user is materially through the
-                    allowance, so the rail stays calm for the 99% case. */}
+        {MAIL_FOLDERS.slice(2).map((f) => folderRow(f.folder, f.label, f.icon))}
+        {/* Cap meter, only once the user is materially through the allowance,
+            so the rail stays calm for the 99% case. */}
         {data &&
           data.scheduled_pending_max > 0 &&
           data.scheduled_pending / data.scheduled_pending_max >= 0.7 && (
-            <div className="px-2 pt-1 pb-1.5">
+            <div className="px-2 pt-1.5 pb-1">
               <ScheduledMeter
                 used={data.scheduled_pending}
                 cap={data.scheduled_pending_max}
               />
             </div>
           )}
-      </Section>
+      </Group>
 
       <CollapsibleSection
         label="Mailboxes"
         items={data?.mailboxes ?? []}
         emptyText={overview.isPending ? "Loading…" : "No mailboxes connected."}
-        searchPlaceholder="Filter mailboxes…"
+        searchPlaceholder="Filter mailboxes"
         getSearchKey={(m) => `${m.email} ${m.name}`}
         renderItem={(m) => (
           <Item
             key={m.id}
-            icon={<MailboxIcon className="w-3.5 h-3.5" />}
+            icon={<MailOpenIcon className={ICON} />}
             label={m.email}
-            mono
             count={m.unread || undefined}
-            countTone={m.unread > 0 ? "accent" : "muted"}
+            accent={m.unread > 0}
             active={active === `mailbox:${m.id}`}
             onClick={() => onChange({ kind: "mailbox", mailboxId: m.id })}
           />
@@ -265,24 +239,18 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
 
       {data && data.categories && data.categories.length > 0 && (
         <CollapsibleSection
-          label="Categories"
+          label="Labels"
           items={data.categories}
-          emptyText="No categories yet."
-          searchPlaceholder="Filter categories…"
+          emptyText="No labels yet."
+          searchPlaceholder="Filter labels"
           getSearchKey={(c) => c.title}
           renderItem={(c) => (
             <Item
               key={c.id}
-              icon={
-                <span
-                  aria-hidden
-                  className="block size-3 rounded-full ring-1 ring-black/10 shadow-sm"
-                  style={{ backgroundColor: c.color || "#94a3b8" }}
-                />
-              }
+              icon={<Dot color={c.color} />}
               label={c.title}
               count={c.unread || c.total || undefined}
-              countTone={c.unread > 0 ? "accent" : "muted"}
+              accent={c.unread > 0}
               active={active === `category:${c.id}`}
               onClick={() => onChange({ kind: "category", categoryId: c.id })}
             />
@@ -295,21 +263,15 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
           label="Tags"
           items={data.tags}
           emptyText="No tags yet."
-          searchPlaceholder="Filter tags…"
+          searchPlaceholder="Filter tags"
           getSearchKey={(t) => t.title}
           renderItem={(t) => (
             <Item
               key={t.id}
-              icon={
-                <span
-                  aria-hidden
-                  className="block size-3 rounded-full ring-1 ring-black/10 shadow-sm"
-                  style={{ backgroundColor: t.color || "#94a3b8" }}
-                />
-              }
+              icon={<Dot color={t.color} />}
               label={t.title}
               count={t.unread || t.total || undefined}
-              countTone={t.unread > 0 ? "accent" : "muted"}
+              accent={t.unread > 0}
               active={active === `tag:${t.id}`}
               onClick={() => onChange({ kind: "tag", tagId: t.id })}
             />
@@ -318,6 +280,22 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
       )}
     </nav>
   );
+}
+
+function Dot({ color }: { color?: string }) {
+  return (
+    <span className="inline-flex w-[15px] h-[15px] items-center justify-center">
+      <span
+        aria-hidden
+        className="block size-2 rounded-full"
+        style={{ backgroundColor: color || "#94a3b8" }}
+      />
+    </span>
+  );
+}
+
+function Group({ children }: { children: React.ReactNode }) {
+  return <div className="px-2 pb-3 space-y-px">{children}</div>;
 }
 
 function CollapsibleSection<T extends { id: string }>({
@@ -352,29 +330,30 @@ function CollapsibleSection<T extends { id: string }>({
   const hidden = filtered.length - visible.length;
 
   return (
-    <div className="mb-1">
+    <div className="pb-2">
       <button
         type="button"
         onClick={() => setSectionOpen((v) => !v)}
-        className="w-full px-3 pt-3 pb-1 flex items-center gap-1.5 text-left"
+        className="group/section w-full h-7 px-4 flex items-center gap-1.5 text-left"
+        aria-expanded={sectionOpen}
       >
-        {sectionOpen ? (
-          <ChevronDownIcon className="w-3 h-3 text-slate-400" />
-        ) : (
-          <ChevronRightIcon className="w-3 h-3 text-slate-400" />
-        )}
-        <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">
+        <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium group-hover/section:text-slate-600 transition-colors">
           {label}
         </span>
-        <span className="ml-auto font-mono text-[10px] text-slate-400 tabular-nums">
+        {sectionOpen ? (
+          <ChevronDownIcon className="w-3 h-3 text-slate-300 group-hover/section:text-slate-500 transition-colors" />
+        ) : (
+          <ChevronRightIcon className="w-3 h-3 text-slate-300 group-hover/section:text-slate-500 transition-colors" />
+        )}
+        <span className="ml-auto text-[10.5px] text-slate-300 tabular-nums">
           {items.length}
         </span>
       </button>
 
       {sectionOpen && (
-        <div className="px-1.5">
+        <div className="px-2">
           {showSearch && (
-            <div className="flex items-center gap-1.5 px-2 py-1 mb-1 rounded-md border border-slate-200 bg-white">
+            <div className="flex items-center gap-1.5 px-2 h-7 mb-1 rounded-md border border-slate-200 bg-white focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100 transition-colors">
               <SearchIcon className="w-3 h-3 text-slate-400 shrink-0" />
               <input
                 value={search}
@@ -396,11 +375,11 @@ function CollapsibleSection<T extends { id: string }>({
           )}
 
           {items.length === 0 ? (
-            <div className="px-2 py-2 text-[11px] text-slate-400">
+            <div className="px-2 py-1.5 text-[11.5px] text-slate-400">
               {emptyText}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="px-2 py-2 text-[11px] text-slate-400">
+            <div className="px-2 py-1.5 text-[11.5px] text-slate-400">
               No matches.
             </div>
           ) : (
@@ -411,7 +390,7 @@ function CollapsibleSection<T extends { id: string }>({
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="w-full h-7 px-2 mt-1 rounded-md text-[11.5px] text-slate-500 hover:text-slate-900 hover:bg-white/70 transition-colors text-left"
+              className="w-full h-7 px-2 rounded-md text-[11.5px] text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors text-left"
             >
               Show all ({hidden} more)
             </button>
@@ -420,7 +399,7 @@ function CollapsibleSection<T extends { id: string }>({
             <button
               type="button"
               onClick={() => setExpanded(false)}
-              className="w-full h-7 px-2 mt-1 rounded-md text-[11.5px] text-slate-400 hover:text-slate-700 hover:bg-white/70 transition-colors text-left"
+              className="w-full h-7 px-2 rounded-md text-[11.5px] text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors text-left"
             >
               Show less
             </button>
@@ -431,10 +410,8 @@ function CollapsibleSection<T extends { id: string }>({
   );
 }
 
-// ScheduledMeter — slim usage bar that surfaces the pending-cap. Stays
-// hidden until the user is at ≥70% so the rail isn't cluttered for the
-// common case where the cap is irrelevant. Shifts to amber/red as the
-// cap gets close so the user gets unmissable warning before sends fail.
+// ScheduledMeter: slim usage bar for the pending-send cap. Hidden until 70%
+// so it never clutters the rail; amber and rose as the cap gets close.
 function ScheduledMeter({ used, cap }: { used: number; cap: number }) {
   const ratio = Math.min(1, used / cap);
   const tone = ratio >= 0.95 ? "rose" : ratio >= 0.85 ? "amber" : "sky";
@@ -454,50 +431,52 @@ function ScheduledMeter({ used, cap }: { used: number; cap: number }) {
           textClasses,
         )}
       >
-        <span className="uppercase tracking-[0.14em] font-medium">Queue</span>
-        <span className="font-mono tabular-nums">
+        <span className="uppercase tracking-[0.12em] font-medium">Queue</span>
+        <span className="tabular-nums">
           {used}/{cap}
         </span>
       </div>
       <DitherMeter frac={ratio} tone={tone} height={4} />
       {ratio >= 0.95 && (
         <p className="mt-1 text-[10px] text-rose-600 leading-snug">
-          Near the limit — cancel a few sends to free up space.
+          Near the limit. Cancel a few sends to free up space.
         </p>
       )}
     </div>
   );
 }
 
-function Section({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+const ROW =
+  "w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2.5 transition-colors text-left";
+const ROW_ACTIVE = "bg-slate-100 text-slate-900";
+const ROW_IDLE = "text-slate-600 hover:bg-slate-50 hover:text-slate-900";
+
+function Count({ value, accent, active }: { value: number; accent?: boolean; active?: boolean }) {
   return (
-    <div className="mb-1">
-      <div className="px-3 pt-3 pb-1 flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">
-          {label}
-        </span>
-      </div>
-      <div className="px-1.5 space-y-px">{children}</div>
-    </div>
+    <span
+      className={cn(
+        "shrink-0 tabular-nums text-[11px]",
+        accent && !active
+          ? "text-sky-700 font-semibold"
+          : active
+            ? "text-slate-600"
+            : "text-slate-400",
+      )}
+    >
+      <AnimatedNumber value={value} duration={0.4} />
+    </span>
   );
 }
 
-// FolderItem — one standard mail-folder row (issue #283): grey row + bold
-// label when active, unread badge, and a three-dot menu on the right. The
-// row is a div, not a button, because the menu trigger nests inside it and
-// nested buttons are invalid HTML; the trigger stops propagation so opening
-// the menu never also switches folders.
+// FolderItem: a mail folder row with a three-dot menu on the right. The row
+// is a div, not a button, because the menu trigger nests inside it and nested
+// buttons are invalid HTML; the trigger stops propagation so opening the menu
+// never also switches folders.
 function FolderItem({
   icon,
   label,
   count,
-  countTone = "muted",
+  accent,
   active,
   onOpen,
   onMarkAllRead,
@@ -505,7 +484,7 @@ function FolderItem({
   icon: React.ReactNode;
   label: string;
   count?: number;
-  countTone?: "muted" | "accent";
+  accent?: boolean;
   active?: boolean;
   onOpen: () => void;
   onMarkAllRead: () => void;
@@ -517,47 +496,25 @@ function FolderItem({
       onClick={onOpen}
       onKeyDown={(e) => {
         // Only the row itself activates: keydown from the nested menu trigger
-        // bubbles here, and without this guard Enter on the three-dot button
-        // would navigate the folder instead of opening its menu.
+        // bubbles here, and Enter on the three-dot button must open its menu.
         if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onOpen();
         }
       }}
-      className={cn(
-        "group/folder w-full h-7 pl-2 pr-1 rounded-md flex items-center gap-2 transition-colors text-left cursor-pointer",
-        active
-          ? "bg-slate-200/80 text-slate-900"
-          : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900",
-      )}
+      className={cn("group/folder relative cursor-pointer pr-7 md:pr-2", ROW, active ? ROW_ACTIVE : ROW_IDLE)}
       title={label}
     >
-      <span
-        className={cn("shrink-0", active ? "text-slate-700" : "text-slate-500")}
-      >
+      <span className={cn("shrink-0", active ? "text-slate-800" : "text-slate-400 group-hover/folder:text-slate-600")}>
         {icon}
       </span>
-      <span
-        className={cn(
-          "truncate min-w-0 flex-1 text-[12px]",
-          active && "font-semibold",
-        )}
-      >
+      <span className={cn("truncate min-w-0 flex-1 text-[12.5px]", active && "font-medium")}>
         {label}
       </span>
       {count !== undefined && count !== null && (
-        <span
-          className={cn(
-            "shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center",
-            active
-              ? "bg-white/80 text-slate-700"
-              : countTone === "accent"
-                ? "bg-sky-100 text-sky-700"
-                : "text-slate-400",
-          )}
-        >
-          {count}
+        <span className="md:group-hover/folder:invisible md:group-focus-within/folder:invisible">
+          <Count value={count} accent={accent} active={active} />
         </span>
       )}
       <PopoverMenu align="end">
@@ -567,19 +524,14 @@ function FolderItem({
           <button
             type="button"
             aria-label={`${label} folder actions`}
-            className={cn(
-              "shrink-0 size-5 rounded inline-flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-white/80 transition-colors",
-              active
-                ? "opacity-100"
-                : "opacity-100 md:opacity-0 md:group-hover/folder:opacity-100",
-            )}
+            className="absolute right-1 top-1 size-5 rounded inline-flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-200/70 transition-colors opacity-100 md:opacity-0 md:group-hover/folder:opacity-100 md:group-focus-within/folder:opacity-100"
           >
             <MoreHorizontalIcon className="w-3.5 h-3.5" />
           </button>
         </PopoverMenuTrigger>
         <PopoverMenuContent>
           <PopoverMenuItem
-            icon={<SparkleIcon className="w-3 h-3" />}
+            icon={<MailOpenIcon className="w-3 h-3" />}
             onSelect={onMarkAllRead}
           >
             Mark all as read
@@ -594,60 +546,32 @@ function Item({
   icon,
   label,
   count,
-  countTone = "muted",
+  accent,
   active,
-  mono,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   count?: number;
-  countTone?: "muted" | "accent";
+  accent?: boolean;
   active?: boolean;
-  mono?: boolean;
   onClick: () => void;
 }) {
-  // Active = sky-100 (clearly distinct from the slate-50 rail bg).
-  // Hover = slate-200/70 so it reads as "pressable" on the muted rail
-  // — the previous white-on-slate combo was invisible.
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        "w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2 transition-colors text-left",
-        active
-          ? "bg-sky-100 text-sky-900 font-medium"
-          : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900",
-      )}
+      className={cn("group/item", ROW, active ? ROW_ACTIVE : ROW_IDLE)}
       title={label}
     >
-      <span
-        className={cn("shrink-0", active ? "text-sky-700" : "text-slate-500")}
-      >
+      <span className={cn("shrink-0", active ? "text-slate-800" : "text-slate-400 group-hover/item:text-slate-600")}>
         {icon}
       </span>
-      <span
-        className={cn(
-          "truncate min-w-0 flex-1 text-[12px]",
-          mono && "font-mono text-[11.5px]",
-        )}
-      >
+      <span className={cn("truncate min-w-0 flex-1 text-[12.5px]", active && "font-medium")}>
         {label}
       </span>
       {count !== undefined && count !== null && (
-        <span
-          className={cn(
-            "shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center",
-            active
-              ? "bg-white/80 text-sky-700"
-              : countTone === "accent"
-                ? "bg-sky-100 text-sky-700"
-                : "text-slate-400",
-          )}
-        >
-          {count}
-        </span>
+        <Count value={count} accent={accent} active={active} />
       )}
     </button>
   );

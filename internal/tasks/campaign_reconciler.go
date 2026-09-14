@@ -86,8 +86,26 @@ func (s *tasksService) ReconcileCampaignSchedules(ctx context.Context, limit int
 			// Nothing left to send (or past its end date): close it out, unless
 			// what is left was refused by verification, which parks it instead.
 			if errors.Is(cerr, scheduler.ErrCampaignCompleted) {
-				if n, uerr := s.campaignProgressRepo.CountUndeliverableLeads(ctx, id); uerr == nil && n > 0 {
-					s.pauseUndeliverable(ctx, id, uuid.Nil, n)
+				// Both counts have to be known before a campaign can be closed,
+				// and a count that failed is not zero: an unreadable one leaves
+				// the campaign for the next pass rather than closing it on a
+				// database hiccup.
+				undeliverable, uerr := s.campaignProgressRepo.CountUndeliverableLeads(ctx, id)
+				held, herr := s.campaignProgressRepo.CountHeldLeads(ctx, id)
+				if uerr != nil || herr != nil {
+					log.Warn().AnErr("undeliverable", uerr).AnErr("held", herr).
+						Str("campaign_id", id.String()).
+						Msg("could not tell a finished campaign from a parked one; leaving it for the next pass")
+					continue
+				}
+				if undeliverable > 0 {
+					s.pauseUndeliverable(ctx, id, uuid.Nil, undeliverable)
+					continue
+				}
+				// A campaign whose remaining leads are all paused has not
+				// finished; it waits for them, the same as the task path.
+				if held > 0 {
+					s.parkHeldLeads(ctx, campaign, uuid.Nil, held)
 					continue
 				}
 				// A continuous campaign sits here idle by design; every pass

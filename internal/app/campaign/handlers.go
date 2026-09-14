@@ -1161,3 +1161,87 @@ func (s *campaignService) Estimate(ctx context.Context, orgID uuid.UUID, in *mod
 	}
 	return out, nil
 }
+
+// PauseLead parks one lead's flow. The campaign must be the organization's and
+// the contact must already be a lead of it, so a pause can never be used to
+// probe another workspace's ids.
+func (s *campaignService) PauseLead(ctx context.Context, orgID, campaignID, contactID uuid.UUID, until *time.Time, reason string) (*models.LeadHold, *errx.Error) {
+	if s.campaignProgressRepo == nil {
+		return nil, errx.InternalError()
+	}
+	if xerr := s.ownedCampaign(ctx, orgID, campaignID); xerr != nil {
+		return nil, xerr
+	}
+	if until != nil {
+		now := time.Now()
+		if !until.After(now) {
+			return nil, errx.New(errx.BadRequest, "until must be in the future")
+		}
+		if until.After(now.AddDate(0, 0, leadHoldMaxDays)) {
+			return nil, errx.New(errx.BadRequest, "until must be within a year; remove the lead from the campaign instead")
+		}
+	}
+	hold, err := s.campaignProgressRepo.HoldLead(ctx, campaignID, contactID,
+		until, models.ClampLine(reason, leadHoldReasonMaxLen), models.LeadHoldSourceManual)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	if hold == nil {
+		// A manual pause is never refused by the guard, so no row means the
+		// contact is not a lead of this campaign.
+		return nil, errx.New(errx.NotFound, "contact is not a lead of this campaign")
+	}
+	return hold, nil
+}
+
+// ResumeLead lifts the hold and, only when there was one to lift, pulls the
+// campaign's wakeup forward so the lead does not sit until the chain's next
+// parked slot. Waking unconditionally would restart a campaign that had
+// legitimately finished, for a call that changed nothing.
+func (s *campaignService) ResumeLead(ctx context.Context, orgID, campaignID, contactID uuid.UUID) *errx.Error {
+	if s.campaignProgressRepo == nil {
+		return errx.InternalError()
+	}
+	if xerr := s.ownedCampaign(ctx, orgID, campaignID); xerr != nil {
+		return xerr
+	}
+	lifted, err := s.campaignProgressRepo.ResumeLead(ctx, campaignID, contactID)
+	if errors.Is(err, repository.ErrLeadNotInCampaign) {
+		return errx.New(errx.NotFound, "contact is not a lead of this campaign")
+	}
+	if err != nil {
+		return errx.InternalError()
+	}
+	// Resuming a lead that was not held is a success that changed nothing: the
+	// caller asked for "not held" and that is the state either way.
+	if lifted {
+		s.WakeCampaigns(ctx, orgID, []string{campaignID.String()})
+	}
+	return nil
+}
+
+// GetLeadHold reads the live hold on one lead.
+func (s *campaignService) GetLeadHold(ctx context.Context, orgID, campaignID, contactID uuid.UUID) (*models.LeadHold, *errx.Error) {
+	if s.campaignProgressRepo == nil {
+		return nil, errx.InternalError()
+	}
+	if xerr := s.ownedCampaign(ctx, orgID, campaignID); xerr != nil {
+		return nil, xerr
+	}
+	hold, err := s.campaignProgressRepo.GetLeadHold(ctx, campaignID, contactID)
+	if errors.Is(err, repository.ErrLeadNotInCampaign) {
+		return nil, errx.New(errx.NotFound, "contact is not a lead of this campaign")
+	}
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	return hold, nil
+}
+
+// ownedCampaign refuses a campaign that is not this organization's, through the
+// same load-and-check every other campaign endpoint uses, so a repository
+// failure reads as a failure rather than as "the campaign does not exist".
+func (s *campaignService) ownedCampaign(ctx context.Context, orgID, campaignID uuid.UUID) *errx.Error {
+	_, _, xerr := s.campaignForOrg(ctx, orgID, campaignID.String())
+	return xerr
+}

@@ -348,6 +348,9 @@ export function useRealtimeEvents() {
           segment: [['segments'], ['contacts', 'list']],
           form: [['forms']],
           campaign: [['campaigns'], ['analytics']],
+          // One lead paused or resumed inside one campaign: the Leads list and
+          // its scope-chip counts move, and so does the contact drawer.
+          campaign_lead: [['contacts'], ['campaigns']],
           step: [['campaigns']],
           // ['emails'] rather than ['emails', 'list']: it prefix-matches the
           // per-mailbox detail reads too (['emails', id, 'behavior'] and its

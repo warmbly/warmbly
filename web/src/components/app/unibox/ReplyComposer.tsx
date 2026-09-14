@@ -389,7 +389,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
             {/* Target strip: one quiet line naming what this composer is
                 doing (same visual language as the compose window's header),
                 plus the close handle. */}
-            <div className="h-8 pl-3.5 pr-1.5 flex items-center gap-2 bg-slate-100/80 border-b border-slate-200 select-none">
+            <div className="h-8 pl-4 pr-1.5 flex items-center gap-2 bg-slate-50 border-b border-slate-200 select-none">
                 <CornerUpLeftIcon
                     className={cn(
                         "w-3.5 h-3.5 shrink-0",

@@ -251,6 +251,50 @@ function SendingSettings() {
             </Section>
 
             <Section
+                eyebrow="Out of office"
+                description="When a recipient's mailbox answers with an away message, hold their next step until they are back instead of sending it to an empty desk. The return date in the auto-reply is used when it can be read (English, German, French, Spanish, Portuguese, Italian and Dutch), plus a working day so the follow-up does not land in their first-morning backlog. The lead keeps its place in the sequence and the time it spent held does not count against the step's wait. You can resume or stop a held lead at any time from the campaign's Leads tab."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <>
+                        <Row
+                            label="Hold a contact who is away"
+                            description="An auto-reply is never treated as a human reply, so without this the follow-up goes out on schedule and the sequence is over before they are back."
+                        >
+                            <Toggle
+                                on={draft.reply_intent?.hold_on_out_of_office !== false}
+                                onChange={(on) => patchReplyIntent({ hold_on_out_of_office: on })}
+                            />
+                        </Row>
+                        {draft.reply_intent?.hold_on_out_of_office !== false && (
+                            <Row
+                                label="Hold for"
+                                description="Used when the away message names no return date we can read. Between 1 and 90 days."
+                            >
+                                <div className="flex items-center gap-1.5">
+                                    <NumberInput
+                                        min={1}
+                                        max={90}
+                                        value={(draft.reply_intent?.out_of_office_hold_days as number) ?? 7}
+                                        onChange={(n) =>
+                                            patchReplyIntent({
+                                                out_of_office_hold_days: Number.isFinite(n)
+                                                    ? Math.min(90, Math.max(1, n))
+                                                    : 7,
+                                            })
+                                        }
+                                        className="w-20"
+                                    />
+                                    <span className="text-[11.5px] text-slate-500">days</span>
+                                </div>
+                            </Row>
+                        )}
+                    </>
+                )}
+            </Section>
+
+            <Section
                 eyebrow="Content checks"
                 description="Score each step's copy for the signals spam filters weight: trigger wording, stacked punctuation, link and image counts, attachments. Checked when you launch, and again per send against the copy the recipient actually receives once merge fields and spintax have resolved."
             >

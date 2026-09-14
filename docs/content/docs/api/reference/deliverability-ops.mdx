@@ -46,11 +46,13 @@ Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelo
     "enabled": true,
     "positive_keywords": ["interested", "demo", "pricing"],
     "negative_keywords": ["not interested", "unsubscribe", "stop"],
-    "out_of_office_keywords": ["out of office", "ooo", "vacation"],
+    "out_of_office_keywords": ["out of office", "ooo", "vacation", "abwesenheitsnotiz"],
     "question_keywords": ["?", "how", "price"],
     "auto_create_crm_task": true,
     "auto_pause_on_negative": false,
-    "auto_suppress_on_unsubscribe_keyword": true
+    "auto_suppress_on_unsubscribe_keyword": true,
+    "hold_on_out_of_office": true,
+    "out_of_office_hold_days": 7
   },
   "send_time_optimization": {
     "enabled": false,
@@ -89,6 +91,10 @@ The `unsubscribe` block is the workspace default for the opt-out appended after 
 
 <Callout type="info" title="Content score floor is clamped">
 `preflight.min_content_score` is stored clamped to `1`-`100`. A value outside that range is corrected on write rather than rejected, so a floor above `100` cannot flag every campaign permanently. Set `preflight.check_content_score` to `false` to turn the check off; the score never blocks or delays a send either way. See [Content checks](/guides/campaigns/).
+</Callout>
+
+<Callout type="info" title="Out-of-office holds are on by default">
+`reply_intent.hold_on_out_of_office` defaults to `true`. When a recipient's mailbox answers a campaign step with an away message, the contact's next step in that campaign is held until they are back: the return date in the auto-reply when one can be read, plus a working day, and `out_of_office_hold_days` (1 to 90, default `7`) when none can. An auto-reply is never counted as a human reply, so without this the follow-up goes out on schedule while the person is away. `out_of_office_keywords` feeds the reply-intent record and is workspace-editable; detection itself carries its own multilingual vocabulary and does not depend on it. See [out of office and pausing one lead](/guides/campaigns/#out-of-office-and-pausing-one-lead) and [pause a lead](/api/reference/campaigns/#pause-a-lead).
 </Callout>
 
 <Callout type="info" title="Send-time optimization is off by default">

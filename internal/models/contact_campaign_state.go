@@ -32,6 +32,11 @@ type ContactCampaignState struct {
 	LastAction   string               `json:"last_action,omitempty"`
 	LastActionAt *time.Time           `json:"last_action_at,omitempty"`
 
+	// Hold is the per-lead pause, present only while it is live: an
+	// out-of-office auto-reply parked the contact, or a member paused them by
+	// hand. The drawer renders it with "resume now" and "stop" next to it.
+	Hold *LeadHold `json:"hold,omitempty"`
+
 	// Next is nil once the flow has ended for the contact; EndedReason says why.
 	Next        *ContactNextAction `json:"next,omitempty"`
 	EndedReason string             `json:"ended_reason,omitempty"`

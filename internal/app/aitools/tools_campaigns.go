@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
@@ -38,10 +40,10 @@ func (d Deps) registerCampaignTools(r *Registry) {
 
 	r.Register(Tool{
 		Name:        "list_campaign_leads",
-		Description: "List one campaign's leads with their derived status and per-status totals. Statuses: pending (queued, nothing sent), active (mid-sequence), completed (every step sent, no reply — these are the leads that went cold and need a follow-up), replied, bounced, unsubscribed. Use THIS to find cold leads or follow-up candidates; the inbox only shows received mail.",
+		Description: "List one campaign's leads with their derived status and per-status totals. Statuses: pending (queued, nothing sent), active (mid-sequence), completed (every step sent, no reply — these are the leads that went cold and need a follow-up), replied, bounced, paused (flow held, by an out-of-office auto-reply or by hand), undeliverable (address verification refused it, so the campaign never sends to it), unsubscribed. Use THIS to find cold leads or follow-up candidates; the inbox only shows received mail.",
 		InputSchema: objectSchema(map[string]any{
 			"campaign_id": strProp("The campaign's UUID (from list_campaigns)."),
-			"status":      enumProp("Optional lead-status filter.", "pending", "active", "completed", "replied", "bounced", "unsubscribed"),
+			"status":      enumProp("Optional lead-status filter.", "pending", "active", "completed", "replied", "bounced", "paused", "undeliverable", "unsubscribed"),
 			"limit":       intProp("Max leads (1-50, default 20)."),
 		}, "campaign_id"),
 		Risk:            generation.RiskRead,
@@ -61,6 +63,22 @@ func (d Deps) registerCampaignTools(r *Registry) {
 		RequiredOrgPerm: models.PermSendCampaigns,
 		RequiredAPIPerm: models.APIPermSendCampaigns,
 		Handler:         d.setCampaignStatus,
+	})
+
+	r.Register(Tool{
+		Name:        "set_lead_hold",
+		Description: "Hold or resume ONE contact's flow inside ONE campaign. Use this, not an unsubscribe and not the suppression list, when someone should simply not be emailed for a while: a hold leaves the contact subscribed and a lead of the campaign, and the sequence picks up where it stopped. Warmbly already holds a lead by itself when the recipient answers with an out-of-office auto-reply, so a lead whose status is 'paused' for that reason needs nothing. Requires user approval.",
+		InputSchema: objectSchema(map[string]any{
+			"campaign_id": strProp("The campaign's UUID."),
+			"contact_id":  strProp("The contact's UUID. Must already be a lead of the campaign."),
+			"action":      enumProp("pause to hold the lead, resume to lift the hold now.", "pause", "resume"),
+			"until":       strProp("For pause: RFC 3339 timestamp the hold lifts at, in the future and within a year. Omit for a hold only a resume lifts."),
+			"reason":      strProp("For pause: a short note shown next to the hold."),
+		}, "campaign_id", "contact_id", "action"),
+		Risk:            generation.RiskWrite,
+		RequiredOrgPerm: models.PermManageCampaigns,
+		RequiredAPIPerm: models.APIPermWriteCampaigns,
+		Handler:         d.setLeadHold,
 	})
 
 	r.Register(Tool{
@@ -557,6 +575,13 @@ func (d Deps) listCampaignLeads(ctx context.Context, inv Invocation, args json.R
 			if lp.LastActivityAt != nil {
 				row["last_activity_at"] = lp.LastActivityAt
 			}
+			if lp.Hold != nil {
+				// Why this lead is not being emailed, so the model does not
+				// "fix" a hold by unsubscribing or re-adding the contact.
+				row["hold"] = map[string]any{
+					"source": lp.Hold.Source, "until": lp.Hold.Until, "reason": lp.Hold.Reason,
+				}
+			}
 		}
 		leads = append(leads, row)
 	}
@@ -568,6 +593,7 @@ func (d Deps) listCampaignLeads(ctx context.Context, inv Invocation, args json.R
 			"completed":    counts.Completed,
 			"replied":      counts.Replied,
 			"bounced":      counts.Bounced,
+			"paused":       counts.Paused,
 			"unsubscribed": counts.Unsubscribed,
 		},
 		"leads": leads,
@@ -600,6 +626,57 @@ func (d Deps) setCampaignStatus(ctx context.Context, inv Invocation, args json.R
 		}
 		d.logAudit(ctx, inv, models.AuditActionStop, models.AuditEntityCampaign, &cid, nil)
 		return jsonResult(map[string]any{"ok": true, "campaign_id": in.CampaignID, "status": "paused"})
+	default:
+		return "", ErrInvalidArgs
+	}
+}
+
+func (d Deps) setLeadHold(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
+	in, err := decodeArgs[struct {
+		CampaignID string `json:"campaign_id"`
+		ContactID  string `json:"contact_id"`
+		Action     string `json:"action"`
+		Until      string `json:"until"`
+		Reason     string `json:"reason"`
+	}](args)
+	if err != nil {
+		return "", err
+	}
+	cid, err := parseUUIDArg(in.CampaignID)
+	if err != nil {
+		return "", err
+	}
+	ctID, err := parseUUIDArg(in.ContactID)
+	if err != nil {
+		return "", err
+	}
+	meta := map[string]string{"campaign_id": in.CampaignID}
+	switch in.Action {
+	case "pause":
+		var until *time.Time
+		if raw := strings.TrimSpace(in.Until); raw != "" {
+			at, perr := time.Parse(time.RFC3339, raw)
+			if perr != nil {
+				return "", ErrInvalidArgs
+			}
+			until = &at
+		}
+		hold, xerr := d.Campaigns.PauseLead(ctx, inv.OrgID, cid, ctID, until, in.Reason)
+		if xerr != nil {
+			return "", fromErrx(xerr)
+		}
+		d.logAudit(ctx, inv, models.AuditActionPause, models.AuditEntityCampaignLead, &ctID, meta)
+		return jsonResult(map[string]any{
+			"ok": true, "campaign_id": in.CampaignID, "contact_id": in.ContactID, "hold": hold,
+		})
+	case "resume":
+		if xerr := d.Campaigns.ResumeLead(ctx, inv.OrgID, cid, ctID); xerr != nil {
+			return "", fromErrx(xerr)
+		}
+		d.logAudit(ctx, inv, models.AuditActionResume, models.AuditEntityCampaignLead, &ctID, meta)
+		return jsonResult(map[string]any{
+			"ok": true, "campaign_id": in.CampaignID, "contact_id": in.ContactID, "hold": nil,
+		})
 	default:
 		return "", ErrInvalidArgs
 	}

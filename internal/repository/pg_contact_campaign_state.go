@@ -20,7 +20,8 @@ import (
 func (r *contactRepository) ListCampaignStates(ctx context.Context, orgID, contactID uuid.UUID) ([]models.ContactCampaignState, *errx.Error) {
 	campQuery := `
 		SELECT cam.id, cam.name, cam.status, c.subscribed, ` + undeliverableClause("cam.id") + `,
-		       cl.email_account_id, COALESCE(sender.email, '')
+		       cl.email_account_id, COALESCE(sender.email, ''),
+		       cl.paused_at, cl.paused_until, COALESCE(cl.pause_reason, ''), COALESCE(cl.pause_source, '')
 		FROM campaign_leads cl
 		JOIN campaigns cam ON cam.id = cl.campaign_id AND cam.organization_id = $2
 		JOIN contacts c ON c.id = cl.contact_id AND c.organization_id = $2
@@ -37,15 +38,26 @@ func (r *contactRepository) ListCampaignStates(ctx context.Context, orgID, conta
 		state         models.ContactCampaignState
 		subscribed    bool
 		undeliverable bool
+		held          bool
 	}
 	var camps []campRow
+	now := time.Now()
 	for rows.Next() {
 		var cr campRow
+		var pausedAt, pausedUntil *time.Time
+		var pauseReason, pauseSource string
 		if err := rows.Scan(&cr.state.CampaignID, &cr.state.CampaignName, &cr.state.CampaignStatus, &cr.subscribed, &cr.undeliverable,
-			&cr.state.SenderID, &cr.state.SenderEmail); err != nil {
+			&cr.state.SenderID, &cr.state.SenderEmail, &pausedAt, &pausedUntil, &pauseReason, &pauseSource); err != nil {
 			rows.Close()
 			db.CaptureError(err, "", nil, "ListCampaignStates campaigns scan")
 			return nil, errx.InternalError()
+		}
+		// A dated hold stops counting the moment it passes, with nothing having
+		// to write. models.LeadHold.Live is the one Go definition of that, and
+		// the router reads the same one.
+		hold := &models.LeadHold{Since: pausedAtOrZero(pausedAt), Until: pausedUntil, Reason: pauseReason, Source: pauseSource}
+		if pausedAt != nil && hold.Live(now) {
+			cr.held, cr.state.Hold = true, hold
 		}
 		camps = append(camps, cr)
 	}
@@ -109,7 +121,7 @@ func (r *contactRepository) ListCampaignStates(ctx context.Context, orgID, conta
 			}
 		}
 		// Same priority as leadStatusClause: unsubscribed > bounced > replied >
-		// failed > completed > active > undeliverable > pending.
+		// failed > completed > paused > active > undeliverable > pending.
 		switch {
 		case !cr.subscribed:
 			st.LeadStatus = models.LeadStatusUnsubscribed
@@ -121,6 +133,8 @@ func (r *contactRepository) ListCampaignStates(ctx context.Context, orgID, conta
 			st.LeadStatus = models.LeadStatusFailed
 		case sent && emailSteps > 0 && emailSent >= emailSteps:
 			st.LeadStatus = models.LeadStatusCompleted
+		case cr.held:
+			st.LeadStatus = models.LeadStatusPaused
 		case sent:
 			st.LeadStatus = models.LeadStatusActive
 		case cr.undeliverable:
@@ -230,4 +244,13 @@ func stepLabel(name, kind string, action []byte, emailOrdinal int) string {
 		return "Action"
 	}
 	return "Step"
+}
+
+// pausedAtOrZero reads a nullable hold start; the zero value is only ever seen
+// by a LeadHold that is immediately discarded as not live.
+func pausedAtOrZero(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }

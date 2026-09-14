@@ -2,6 +2,7 @@ package campaign
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/dailythrottle"
@@ -70,7 +71,26 @@ type CampaignService interface {
 	// Campaign-scoped tracking domain (feature 5). Resolves the override's CNAME
 	// and flips verified on success; an unresolved record stays "pending".
 	VerifyCampaignTrackingDomain(ctx context.Context, orgID uuid.UUID, campaignID string) (*models.TrackingDomainStatus, *errx.Error)
+
+	// PauseLead parks ONE contact's flow inside ONE campaign until `until`,
+	// or with no end when it is nil. The contact stays subscribed and stays a
+	// lead: this is the lever for "they are away for a week", which
+	// unsubscribing and suppressing both answer far too permanently.
+	PauseLead(ctx context.Context, orgID, campaignID, contactID uuid.UUID, until *time.Time, reason string) (*models.LeadHold, *errx.Error)
+	// ResumeLead lifts the hold now and wakes the campaign so the step goes
+	// out on the next pass rather than when the chain happens to be parked.
+	ResumeLead(ctx context.Context, orgID, campaignID, contactID uuid.UUID) *errx.Error
+	// GetLeadHold reads the live hold on one lead (nil when it is not held).
+	GetLeadHold(ctx context.Context, orgID, campaignID, contactID uuid.UUID) (*models.LeadHold, *errx.Error)
 }
+
+// Bounds on a manual lead hold. A hold in the past would lift the moment it
+// was written; one years out is indistinguishable from removing the lead, and
+// the member who wants that has "remove from campaign".
+const (
+	leadHoldMaxDays      = 365
+	leadHoldReasonMaxLen = 200
+)
 
 type campaignService struct {
 	campaignRepository repository.CampaignRepository

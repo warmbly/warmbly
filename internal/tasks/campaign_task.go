@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -232,17 +233,43 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			if errors.Is(err, scheduler.ErrCampaignEnded) {
 				reason = "Campaign ended: reached its end date"
 			}
-			// Leads verification refused are never routed. A campaign that ran
-			// out of leads only because of them is not finished: park it for the
-			// owner to re-verify or override (issue #264), instead of letting
-			// "all emails sent" cover for a verifier that may have been wrong.
-			if n, cerr := s.campaignProgressRepo.CountUndeliverableLeads(ctx, campaign.ID); cerr == nil && n > 0 {
+			// Two counts stand between "nothing was routed" and "the campaign is
+			// finished", and BOTH have to be known before it can be closed:
+			// leads verification refused are never routed (issue #264), and a
+			// lead held with no end reports no next-due moment because there is
+			// none to wake up for (issue #470). Either would otherwise let
+			// "all emails sent" close a campaign that still has work.
+			//
+			// A count that FAILS is not zero. Closing on a database hiccup
+			// writes a claim nothing can walk back, so an unreadable count
+			// leaves the campaign active and the next pass asks again.
+			undeliverable, cerr := s.campaignProgressRepo.CountUndeliverableLeads(ctx, campaign.ID)
+			held, herr := s.campaignProgressRepo.CountHeldLeads(ctx, campaign.ID)
+			if cerr != nil || herr != nil {
+				log.Warn().AnErr("undeliverable", cerr).AnErr("held", herr).
+					Str("campaign_id", campaign.ID.String()).
+					Msg("could not tell a finished campaign from a parked one; leaving it active for the next pass")
+				if taskID != uuid.Nil {
+					s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+				}
+				executionStatus = "completed"
+				return nil
+			}
+			if undeliverable > 0 {
 				if errors.Is(err, scheduler.ErrCampaignCompleted) {
-					s.pauseUndeliverable(ctx, campaign.ID, taskID, n)
+					s.pauseUndeliverable(ctx, campaign.ID, taskID, undeliverable)
 					executionStatus = "completed"
 					return nil
 				}
-				reason = fmt.Sprintf("%s (%d lead(s) skipped: address verification refused them)", reason, n)
+				reason = fmt.Sprintf("%s (%d lead(s) skipped: address verification refused them)", reason, undeliverable)
+			}
+			if held > 0 {
+				if errors.Is(err, scheduler.ErrCampaignCompleted) {
+					s.parkHeldLeads(ctx, campaign, taskID, held)
+					executionStatus = "completed"
+					return nil
+				}
+				reason = fmt.Sprintf("%s (%d lead(s) paused)", reason, held)
 			}
 			// A continuous campaign out of leads is waiting, not finished
 			// (issue #336). Only its end date ends it.
@@ -337,6 +364,47 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			executionStatus = "completed"
 			return nil
 		}
+	}
+
+	// Per-lead hold gate, and a backstop rather than the main defence: routing
+	// already excludes held leads, but a pause (or an out-of-office reply) can
+	// land between that read and this dispatch, and a hold the send raced is
+	// the one thing this feature exists to stop. Re-read where it is committed,
+	// alongside suppression and verification.
+	hold, herr := s.campaignProgressRepo.GetLeadHold(ctx, campaign.ID, contact.ID)
+	if errors.Is(herr, repository.ErrLeadNotInCampaign) {
+		// Removed from the campaign between routing and here. Not an error and
+		// not a hold: there is simply nobody to send to, so skip it the way the
+		// other pre-send gates do and let the chain carry on.
+		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_suppressed")
+		_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+		executionStatus = "completed"
+		return nil
+	}
+	if herr != nil {
+		// Fail closed: an unreadable hold is not an absent one, and sending to
+		// somebody who asked not to be is the failure this gate exists for.
+		errs.CaptureException(herr)
+		s.taskRepo.RecordTaskFailure(ctx, taskID, "Could not read the lead's hold", herr.Error())
+		if uerr := s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending"); uerr != nil {
+			errs.CaptureException(uerr)
+		}
+		executionStatus = "failed"
+		return errx.InternalError()
+	}
+	if hold != nil {
+		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_paused")
+		if s.campaignLogRepo != nil {
+			_ = s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
+				CampaignID: campaign.ID,
+				EventType:  "paused_lead",
+				Message:    fmt.Sprintf("Paused lead skipped: %s", contact.Email),
+				Metadata:   map[string]interface{}{"reason": hold.Reason, "source": hold.Source},
+			})
+		}
+		_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
+		executionStatus = "completed"
+		return nil
 	}
 
 	// Pre-send verification gate: drop addresses already known to be invalid
@@ -731,13 +799,20 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		return errx.InternalError()
 	}
 	if !reserved {
-		// Another tick already has this (contact, step) in flight or delivered.
-		// End this one instead of sending a second copy, and keep the chain
-		// alive for whoever is next.
+		// The claim was refused: another tick already has this (contact, step)
+		// in flight or delivered, or the lead was paused in the moment between
+		// the gate above and this transaction. End this one instead of sending,
+		// and keep the chain alive for whoever is next. Which of the two it was
+		// is worth recording, so a pause that landed on a send does not read as
+		// a duplicate.
+		outcome, why := "skipped_duplicate", "campaign send skipped: the step is already in flight or sent"
+		if raced, rherr := s.campaignProgressRepo.GetLeadHold(ctx, campaign.ID, contact.ID); rherr == nil && raced != nil {
+			outcome, why = "skipped_paused", "campaign send skipped: the lead was paused as the send was reserved"
+		}
 		log.Warn().Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).
 			Str("contact_id", contact.ID.String()).Str("sequence_id", sequence.ID.String()).
-			Msg("campaign send skipped: the step is already in flight or sent")
-		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "skipped_duplicate")
+			Msg(why)
+		_ = s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, outcome)
 		_ = s.createCampaignTask(ctx, campaign.ID, accountID, nextTime)
 		executionStatus = "completed"
 		return nil
@@ -1123,6 +1198,58 @@ const (
 	CampaignIdleEventType = "idle"
 	CampaignIdleMessage   = "Waiting for new leads: every lead has finished the sequence. The campaign stays active and sends to leads as they arrive."
 )
+
+// HeldLeadsMessage is the activity-log line for a campaign whose only remaining
+// leads are paused.
+func HeldLeadsMessage(n int) string {
+	lead := "lead is"
+	if n != 1 {
+		lead = "leads are"
+	}
+	return fmt.Sprintf("Waiting: %d %s paused. The campaign stays active and continues when they resume.", n, lead)
+}
+
+// CampaignHeldEventType is the activity log entry for a campaign waiting on
+// paused leads.
+const CampaignHeldEventType = "waiting_on_paused_leads"
+
+// parkHeldLeads leaves a campaign active when the only thing left to send to is
+// a lead somebody parked. It is deliberately NOT idleCampaign: that one is for
+// a continuous campaign out of leads and its MarkIdle refuses a campaign that
+// is not continuous, which would leave this case silent. Nothing here changes
+// the status — the campaign IS active, it is waiting — and the log line is
+// written once per wait rather than once per pass.
+func (s *tasksService) parkHeldLeads(ctx context.Context, campaign *models.Campaign, taskID uuid.UUID, n int) {
+	if taskID != uuid.Nil {
+		s.taskRepo.UpdateTaskStatus(ctx, taskID, "completed")
+	}
+	if s.campaignLogRepo == nil {
+		return
+	}
+	wrote, err := s.campaignLogRepo.CreateLogOnce(ctx, &repository.CampaignLogEntry{
+		CampaignID: campaign.ID,
+		EventType:  CampaignHeldEventType,
+		Message:    HeldLeadsMessage(n),
+		Metadata:   map[string]interface{}{"paused_leads": n},
+	}, "paused_leads", strconv.Itoa(n), time.Now().Add(-campaignHeldLogWindow))
+	if err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaign.ID.String()).Msg("could not record the paused-lead wait")
+		return
+	}
+	if wrote && s.streamingPublisher != nil {
+		s.streamingPublisher.PublishCampaignEvent(ctx, &pubsub.CampaignEvent{
+			BaseEvent:  pubsub.BaseEvent{EventType: pubsub.EventCampaignIdle, UserID: campaign.UserID},
+			OrgID:      campaignOrgID(campaign),
+			CampaignID: campaign.ID.String(),
+			Name:       campaign.Name,
+			Status:     campaign.Status,
+		})
+	}
+}
+
+// campaignHeldLogWindow keeps the wait from filling the activity feed: the
+// reconciler re-checks every pass, and the fact does not change between them.
+const campaignHeldLogWindow = 6 * time.Hour
 
 // idleCampaign parks a continuous campaign that has nothing left to send. It
 // stays active with no chain: a lead add wakes it, and the reconciler re-checks

@@ -108,6 +108,7 @@ Every tool is gated by its API permission. `tools/list` returns only the tools y
 | `list_campaign_leads` | A campaign's leads with derived status + totals | `READ_CONTACTS` |
 | `create_campaign_draft` | Create a draft campaign | `WRITE_CAMPAIGNS` |
 | `set_campaign_status` | Start or stop a campaign | `SEND_CAMPAIGNS` |
+| `set_lead_hold` | Hold or resume one contact's flow in one campaign, without unsubscribing them | `WRITE_CAMPAIGNS` |
 | `get_dashboard_analytics` | Org-wide sending stats for a period | `READ_ANALYTICS` |
 | `list_mailboxes` | Sender mailboxes with health + warmup state | `READ_ANALYTICS` |
 | `add_contact` / `delete_contact` | Create or delete a contact | `WRITE_CONTACTS` |

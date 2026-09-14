@@ -238,7 +238,7 @@ Run `warmbly <command> --help` for the flags, and `warmbly <command> <subcommand
 | `auth` | login, logout, status, token, switch, refresh |
 | `status` | one screen: mailboxes needing attention, what is sending, what is unread |
 | `browse` | open the dashboard, or one record, in a browser |
-| `campaign` | list, view, create, edit, steps, senders, segments, preflight, test, start, stop, logs |
+| `campaign` | list, view, create, edit, steps, senders, segments, preflight, test, start, stop, logs, pause-lead / resume-lead / lead-hold |
 | `contact` | list, view, create, edit, delete, lookup, timeline, notes, import, export, verify |
 | `mailbox` | list, view, edit, health checks, sync state, send-as addresses, sending behaviour, warmup, hold, send |
 | `inbox` | list, view, threads, read, reply, compose, drafts, scheduled sends, snoozes |
@@ -283,6 +283,10 @@ warmbly mailbox edit MAILBOX_ID --daily-limit 40
 warmbly mailbox identity MAILBOX_ID
 warmbly mailbox refresh-identity MAILBOX_ID --signature
 warmbly mailbox edit MAILBOX_ID --send-as hello@acme.com
+
+# One contact is away: hold their sequence without unsubscribing them
+warmbly campaign pause-lead CAMPAIGN_ID CONTACT_ID --until 2026-09-21T17:00:00Z --reason "On holiday"
+warmbly campaign resume-lead CAMPAIGN_ID CONTACT_ID
 
 # The inbox
 warmbly inbox list --unseen --limit 20

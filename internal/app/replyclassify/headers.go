@@ -19,16 +19,12 @@ func classifyHeaders(in Input) (Result, bool) {
 	subject := strings.ToLower(strings.TrimSpace(in.Subject))
 
 	// --- Out-of-office signals (most specific machine reply) ---
-	// Subject conventions providers emit for vacation autoresponders.
-	if strings.HasPrefix(subject, "out of office") ||
-		strings.HasPrefix(subject, "out of the office") ||
-		strings.Contains(subject, "automatic reply") ||
-		strings.Contains(subject, "auto-reply") ||
-		strings.HasPrefix(subject, "autoreply") ||
-		strings.HasPrefix(subject, "auto:") ||
-		strings.Contains(subject, "on vacation") ||
-		strings.Contains(subject, "on holiday") ||
-		strings.Contains(subject, "away from") {
+	// Subject conventions providers emit for vacation autoresponders. Matched
+	// on the SUBJECT only, never the body: the subject line of an
+	// autoresponder is written by the mail provider, while "I'm on holiday
+	// next week" in a body is a human reply, and reading that as automated
+	// would stop stop_on_reply from firing for a person who actually answered.
+	if matchesOOOSubject(subject) {
 		return Result{Class: ClassOutOfOffice, Confidence: 0.98, Source: SourceHeader}, true
 	}
 
@@ -113,4 +109,62 @@ func (h headerLookup) first(name string) string {
 func (h headerLookup) has(name string) bool {
 	_, ok := h.byLower[strings.ToLower(name)]
 	return ok
+}
+
+// oooSubjectMarkers are the subject conventions a mail provider writes on a
+// vacation autoresponder, in the languages a European cold outreach list
+// actually answers in. English-only markers were the reason a German
+// "Automatische Antwort:" was only ever caught when it happened to carry
+// Auto-Submitted or a vendor header (issue #470).
+//
+// Two rules keep a human reply out of the automated class, and both matter
+// because an automated verdict stops replied_at being stamped, which is what
+// makes stop_on_reply fire:
+//
+//   - matched as a PREFIX of the raw subject, never anywhere inside it. A
+//     reply from a person is "Re: <our own campaign subject>", so a prefix
+//     rule cannot fire on it; a Contains rule would fire on every reply to a
+//     campaign whose subject happened to carry one of these words.
+//   - every entry is a string a provider writes, not one a person types. An
+//     autoresponder answering us sends either its own marker followed by our
+//     subject ("Automatic reply: <subject>") or its own text outright
+//     ("Abwesenheitsnotiz"), and both are prefixes.
+//
+// Reply markers are deliberately NOT stripped first. "AW: Abwesenheitsnotiz"
+// is a person forwarding or replying ABOUT an away message; the away message
+// itself does not carry one.
+var oooSubjectMarkers = []string{
+	// English
+	"out of office", "out of the office", "automatic reply", "automated reply",
+	"autoreply", "auto-reply", "auto reply", "auto:", "away:", "on vacation:", "vacation reply",
+	// German
+	"abwesenheit", "abwesend", "automatische antwort", "autom. antwort",
+	"ausser haus", "nicht im buero", "im urlaub:",
+	// French
+	"reponse automatique", "absence du bureau", "message d'absence",
+	// Spanish / Portuguese
+	"respuesta automatica", "ausencia de la oficina", "ausencia temporal",
+	"resposta automatica", "fora do escritorio",
+	// Italian
+	"risposta automatica", "fuori sede:", "assente dall'ufficio",
+	// Dutch
+	"automatisch antwoord", "afwezigheid", "afwezigheidsbericht",
+	// Nordic / Polish
+	"automatiskt svar", "automatisk svar", "autosvar", "fravaer", "fravaersmelding",
+	"automatyczna odpowiedz",
+}
+
+// matchesOOOSubject reports whether a subject was written by a vacation
+// autoresponder. Accents are folded so each marker is listed in one spelling.
+func matchesOOOSubject(subject string) bool {
+	subject = foldAccents(subject)
+	if subject == "" {
+		return false
+	}
+	for _, m := range oooSubjectMarkers {
+		if strings.HasPrefix(subject, m) {
+			return true
+		}
+	}
+	return false
 }

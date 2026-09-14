@@ -576,6 +576,15 @@ func Run(
 				// Campaign-scoped tracking-domain verification.
 				campaigns.POST("/:id/tracking-domain/verify", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.VerifyCampaignTrackingDomain)
 
+				// Per-lead hold: park ONE contact's flow in THIS campaign
+				// until a date (or until someone lifts it) without
+				// unsubscribing them or removing them from the campaign. Both
+				// writes state an absolute hold rather than a delta, so a
+				// retry lands on the same state and needs no Idempotency-Key.
+				campaigns.GET("/:id/leads/:contactId/hold", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetCampaignLeadHold)
+				campaigns.POST("/:id/leads/:contactId/pause", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.PauseCampaignLead)
+				campaigns.POST("/:id/leads/:contactId/resume", m.RequireOrganization(), m.RequireAccess(models.PermManageCampaigns, models.APIPermWriteCampaigns), h.ResumeCampaignLead)
+
 				sequences := campaigns.Group("/:id/steps")
 				{
 					sequences.GET("", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetSequences)

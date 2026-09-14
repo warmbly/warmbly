@@ -46,6 +46,7 @@ const LEAD_STATUS: { id: LeadStatus; label: string }[] = [
     { id: "replied", label: "Replied" },
     { id: "bounced", label: "Bounced" },
     { id: "failed", label: "Failed" },
+    { id: "paused", label: "Paused" },
     { id: "undeliverable", label: "Undeliverable" },
 ];
 
