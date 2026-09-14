@@ -95,7 +95,6 @@ type WarmupReceived struct {
 type WarmupRepository interface {
 	// Pool management
 	GetPoolParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
-	GetPoolRecipientParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
 	// MoveToPool joins this pool, or moves an existing membership over. A new
 	// member starts from the standing mirrored for its address (see migration
 	// 000152), so re-adding a mailbox is not a reset.
@@ -184,16 +183,13 @@ type WarmupRepository interface {
 	GetRecentPartnerCounts(ctx context.Context, accountID uuid.UUID, since time.Time) (map[uuid.UUID]int, error)
 	GetLatestReplyCandidate(ctx context.Context, senderAccountID, recipientAccountID uuid.UUID) (*WarmupReplyCandidate, error)
 
-	// Partner diversity support
-	GetPoolParticipantDomains(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
-	GetPoolParticipantEmails(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
 	// GetPoolParticipantProviders maps each participant to the provider that
 	// runs its mail, in the same vocabulary as SenderPlacementByProvider.
 	GetPoolParticipantProviders(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
-	CountEligibleRecipients(ctx context.Context, poolType string, excludeAccountID uuid.UUID) (int, error)
-	// GetPoolFallbackRecipients is the other tier's proven-healthy recipients,
-	// used only when the sender's own tier is below the fallback floor.
-	GetPoolFallbackRecipients(ctx context.Context, ownPoolType string, minAge time.Duration) ([]uuid.UUID, error)
+	// WarmupPartnerCandidates is everyone a sender may be paired with: its own
+	// tier, plus proven free mailboxes when a premium tier is thin. The
+	// scheduler caps volume on the same set the selector draws from.
+	WarmupPartnerCandidates(ctx context.Context, poolType string, senderID uuid.UUID) ([]models.WarmupPartnerCandidate, error)
 	GetRecentPartnerDomainCounts(ctx context.Context, accountID uuid.UUID, since time.Time) (map[string]int, error)
 
 	// Tampering protection: track delivered warmup mail so a later deletion or
@@ -226,55 +222,6 @@ func (r *warmupRepository) GetPoolParticipants(ctx context.Context, poolType str
 		JOIN email_accounts ea ON ea.id = wpp.email_account_id
 		WHERE wp.pool_type = $1
 		  AND wpp.participant_role = 'sender_receiver'
-		  AND ea.status = 'active'
-	`
-
-	if excludeBlocked {
-		query += `
-		 AND (
-		  wpp.health_state IN ('healthy', 'watch', 'throttled')
-		  OR (
-		   wpp.health_state IN ('quarantined', 'blocked')
-		   AND wpp.blocked_until IS NOT NULL
-		   AND wpp.blocked_until <= NOW()
-		  )
-		 )
-		 AND (
-		  wpp.blocked_at IS NULL
-		  OR (wpp.blocked_until IS NOT NULL AND wpp.blocked_until <= NOW())
-		 )
-		`
-	}
-
-	rows, err := r.db.Query(ctx, query, poolType)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var accountIDs []uuid.UUID
-	for rows.Next() {
-		var accountID uuid.UUID
-		if err := rows.Scan(&accountID); err != nil {
-			return nil, err
-		}
-		accountIDs = append(accountIDs, accountID)
-	}
-
-	return accountIDs, rows.Err()
-}
-
-// GetPoolRecipientParticipants retrieves participant account IDs that can
-// receive warmup mail. Recipient-only rows increase safe inbound capacity
-// without scheduling outbound warmup sends from those mailboxes.
-func (r *warmupRepository) GetPoolRecipientParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error) {
-	query := `
-		SELECT wpp.email_account_id
-		FROM warmup_pool_participants wpp
-		JOIN warmup_pools wp ON wpp.pool_id = wp.id
-		JOIN email_accounts ea ON ea.id = wpp.email_account_id
-		WHERE wp.pool_type = $1
-		  AND wpp.participant_role IN ('sender_receiver', 'recipient_only')
 		  AND ea.status = 'active'
 	`
 
@@ -1055,6 +1002,82 @@ func (r *warmupRepository) SenderPlacementByProvider(ctx context.Context, sender
 	return out, placementRows.Err()
 }
 
+// WarmupPartnerCandidates returns the sender's own tier minus itself and, when
+// a premium tier is below the floor, up to the floor of proven free mailboxes.
+// The direction, the floor and what "proven" means live only here.
+func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType string, senderID uuid.UUID) ([]models.WarmupPartnerCandidate, error) {
+	// An expired quarantine or block is offered again; the gate re-evaluates it.
+	own, err := r.queryPartnerCandidates(ctx, `
+		SELECT wpp.email_account_id, ea.email
+		FROM warmup_pool_participants wpp
+		JOIN warmup_pools wp ON wpp.pool_id = wp.id
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		WHERE wp.pool_type = $1
+		  AND wpp.email_account_id <> $2
+		  AND wpp.participant_role IN ('sender_receiver', 'recipient_only')
+		  AND ea.status = 'active'
+		  AND (
+		   wpp.health_state IN ('healthy', 'watch', 'throttled')
+		   OR (
+		    wpp.health_state IN ('quarantined', 'blocked')
+		    AND wpp.blocked_until IS NOT NULL
+		    AND wpp.blocked_until <= NOW()
+		   )
+		  )
+		  AND (
+		   wpp.blocked_at IS NULL
+		   OR (wpp.blocked_until IS NOT NULL AND wpp.blocked_until <= NOW())
+		  )
+	`, false, poolType, senderID)
+	if err != nil {
+		return nil, err
+	}
+	borrowFrom, ok := models.WarmupPoolBorrowsFrom(poolType)
+	if !ok || len(own) >= config.WarmupPoolTierFallbackFloor {
+		return own, nil
+	}
+	// Proven: healthy now, never blocked, a member for the minimum age, and in
+	// a workspace in good standing. A pool move keeps joined_at, so the risk
+	// check is what keeps a demoted mailbox out. A random sample bounds the cost.
+	borrowed, err := r.queryPartnerCandidates(ctx, `
+		SELECT wpp.email_account_id, ea.email
+		FROM warmup_pool_participants wpp
+		JOIN warmup_pools wp ON wpp.pool_id = wp.id
+		JOIN email_accounts ea ON ea.id = wpp.email_account_id
+		JOIN organizations o ON o.id = ea.organization_id
+		WHERE wp.pool_type = $1
+		  AND wpp.participant_role IN ('sender_receiver', 'recipient_only')
+		  AND ea.status = 'active'
+		  AND wpp.health_state = 'healthy'
+		  AND wpp.blocked_at IS NULL
+		  AND wpp.joined_at <= NOW() - make_interval(days => $2)
+		  AND o.risk_state NOT IN ('restricted', 'suspended')
+		ORDER BY random()
+		LIMIT $3
+	`, true, borrowFrom, config.WarmupPoolFallbackMinAgeDays, config.WarmupPoolTierFallbackFloor)
+	if err != nil {
+		return nil, err
+	}
+	return append(own, borrowed...), nil
+}
+
+func (r *warmupRepository) queryPartnerCandidates(ctx context.Context, query string, borrowed bool, args ...any) ([]models.WarmupPartnerCandidate, error) {
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.WarmupPartnerCandidate
+	for rows.Next() {
+		c := models.WarmupPartnerCandidate{Borrowed: borrowed}
+		if err := rows.Scan(&c.ID, &c.Email); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 func (r *warmupRepository) GetPoolParticipantProviders(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error) {
 	// Deliberately NOT health-filtered by default: this map only resolves a
 	// candidate's provider, it never decides eligibility. A candidate missing
@@ -1463,107 +1486,6 @@ func (r *warmupRepository) HasPendingWarmupAppeal(ctx context.Context, accountID
 	return exists, err
 }
 
-// GetPoolParticipantDomains returns a map from email_account_id to lowercased
-// domain (the part after '@') for every active participant in the given pool.
-// Used by the partner selector to weight selection toward under-represented
-// recipient domains so a single mailbox provider does not dominate warmup
-// traffic from a sender.
-func (r *warmupRepository) GetPoolParticipantDomains(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error) {
-	query := `
-		SELECT wpp.email_account_id, lower(split_part(ea.email, '@', 2))
-		FROM warmup_pool_participants wpp
-		JOIN warmup_pools wp ON wpp.pool_id = wp.id
-		JOIN email_accounts ea ON ea.id = wpp.email_account_id
-		WHERE wp.pool_type = $1
-		  AND ea.status = 'active'
-	`
-	if excludeBlocked {
-		query += " AND wpp.health_state IN ('healthy', 'watch', 'throttled')"
-	}
-	query += " AND wpp.participant_role IN ('sender_receiver', 'recipient_only')"
-
-	rows, err := r.db.Query(ctx, query, poolType)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make(map[uuid.UUID]string)
-	for rows.Next() {
-		var id uuid.UUID
-		var domain string
-		if err := rows.Scan(&id, &domain); err != nil {
-			return nil, err
-		}
-		out[id] = domain
-	}
-	return out, rows.Err()
-}
-
-// GetPoolParticipantEmails returns a map from email_account_id to full
-// email address for every active participant in the given pool. Used by
-// the routing-rule evaluator which needs the full address to classify
-// providers and apply customer-defined rules.
-func (r *warmupRepository) GetPoolParticipantEmails(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error) {
-	query := `
-		SELECT wpp.email_account_id, ea.email
-		FROM warmup_pool_participants wpp
-		JOIN warmup_pools wp ON wpp.pool_id = wp.id
-		JOIN email_accounts ea ON ea.id = wpp.email_account_id
-		WHERE wp.pool_type = $1
-		  AND ea.status = 'active'
-	`
-	if excludeBlocked {
-		query += " AND wpp.health_state IN ('healthy', 'watch', 'throttled')"
-	}
-	query += " AND wpp.participant_role IN ('sender_receiver', 'recipient_only')"
-
-	rows, err := r.db.Query(ctx, query, poolType)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make(map[uuid.UUID]string)
-	for rows.Next() {
-		var id uuid.UUID
-		var email string
-		if err := rows.Scan(&id, &email); err != nil {
-			return nil, err
-		}
-		out[id] = email
-	}
-	return out, rows.Err()
-}
-
-func (r *warmupRepository) CountEligibleRecipients(ctx context.Context, poolType string, excludeAccountID uuid.UUID) (int, error) {
-	query := `
-		SELECT COUNT(*)
-		FROM warmup_pool_participants wpp
-		JOIN warmup_pools wp ON wpp.pool_id = wp.id
-		JOIN email_accounts ea ON ea.id = wpp.email_account_id
-		WHERE wp.pool_type = $1
-		  AND wpp.email_account_id <> $2
-		  AND wpp.participant_role IN ('sender_receiver', 'recipient_only')
-		  AND ea.status = 'active'
-		  AND (
-		   wpp.health_state IN ('healthy', 'watch', 'throttled')
-		   OR (
-		    wpp.health_state IN ('quarantined', 'blocked')
-		    AND wpp.blocked_until IS NOT NULL
-		    AND wpp.blocked_until <= NOW()
-		   )
-		  )
-		  AND (
-		   wpp.blocked_at IS NULL
-		   OR (wpp.blocked_until IS NOT NULL AND wpp.blocked_until <= NOW())
-		  )
-	`
-	var count int
-	err := r.db.QueryRow(ctx, query, poolType, excludeAccountID).Scan(&count)
-	return count, err
-}
-
 // GetRecentPartnerDomainCounts returns a histogram of recipient domains the
 // sender has targeted since the given timestamp. The selector uses this to
 // downweight partners whose domain is over-represented in recent traffic.
@@ -1699,37 +1621,4 @@ func (r *warmupRepository) GetPoolHealthCounts(ctx context.Context) (map[string]
 		avgScore = totalScore / float64(totalCount)
 	}
 	return counts, avgScore, rows.Err()
-}
-
-// GetPoolFallbackRecipients returns the OTHER pool's recipients that may fill
-// in when a tier runs thin: strictly healthy, never blocked, and members for
-// at least minAge. Paying senders reach proven free mailboxes and free senders
-// reach proven paid ones, but nothing unproven crosses the line.
-func (r *warmupRepository) GetPoolFallbackRecipients(ctx context.Context, ownPoolType string, minAge time.Duration) ([]uuid.UUID, error) {
-	query := `
-		SELECT wpp.email_account_id
-		FROM warmup_pool_participants wpp
-		JOIN warmup_pools wp ON wpp.pool_id = wp.id
-		JOIN email_accounts ea ON ea.id = wpp.email_account_id
-		WHERE wp.pool_type <> $1
-		  AND wpp.participant_role IN ('sender_receiver', 'recipient_only')
-		  AND ea.status = 'active'
-		  AND wpp.health_state = 'healthy'
-		  AND wpp.blocked_at IS NULL
-		  AND wpp.joined_at <= NOW() - make_interval(secs => $2::double precision)
-	`
-	rows, err := r.db.Query(ctx, query, ownPoolType, minAge.Seconds())
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
 }

@@ -28,39 +28,77 @@ func (directedEmailRepo) GetByID(_ context.Context, id uuid.UUID) (*models.Email
 	return &models.Email{ID: id}, nil
 }
 
-// anyPoolGate passes the account-scoped gate and fails the test on the
-// pool-pinned one: a reply-back target borrowed from the other tier is not in
-// the sender's pool, and gating it there discarded every such reply (#495).
-type anyPoolGate struct {
+// pinnedGate answers the pool-pinned gate the way the real one does: a row is
+// only found in the pool it is in.
+type pinnedGate struct {
 	warmupapp.Service
 
-	t     *testing.T
-	gated []uuid.UUID
+	poolOf map[uuid.UUID]string
+	asked  []string
 }
 
-func (g *anyPoolGate) CanParticipateAnyPool(_ context.Context, id uuid.UUID) (bool, string, *errx.Error) {
-	g.gated = append(g.gated, id)
+func (g *pinnedGate) CanParticipate(_ context.Context, id uuid.UUID, poolType string) (bool, string, *errx.Error) {
+	g.asked = append(g.asked, poolType)
+	if g.poolOf[id] != poolType {
+		return false, "not_in_pool", nil
+	}
 	return true, "", nil
 }
 
-func (g *anyPoolGate) CanParticipate(_ context.Context, id uuid.UUID, poolType string) (bool, string, *errx.Error) {
-	g.t.Fatalf("directed target %s was gated against the sender's pool %q", id, poolType)
-	return false, "", nil
+type riskRepo struct {
+	repository.OrgRiskRepository
+
+	state models.OrgRiskState
 }
 
-func TestDirectedWarmupPartnerGatesTheTargetWhereItIs(t *testing.T) {
-	target := uuid.New()
-	gate := &anyPoolGate{t: t}
-	s := &tasksService{
-		taskRepo:     &directedTaskRepo{target: target},
-		emailRepo:    directedEmailRepo{},
-		warmupHealth: gate,
+func (r riskRepo) GetOrgRiskStates(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]models.OrgRiskState, error) {
+	out := map[uuid.UUID]models.OrgRiskState{}
+	for _, id := range ids {
+		out[id] = r.state
 	}
-	partner := s.directedWarmupPartner(context.Background(), uuid.New(), "premium")
-	if partner == nil || partner.ID != target {
-		t.Fatalf("directed partner = %v, want the target %s", partner, target)
+	return out, nil
+}
+
+// A reply-back target borrowed from the other tier is not in the sender's
+// pool; gating it only there discarded every such reply (#495).
+func TestDirectedWarmupPartnerReplyAcrossTiers(t *testing.T) {
+	org := uuid.New()
+	cases := []struct {
+		name       string
+		senderPool string
+		targetPool string
+		risk       models.OrgRiskState
+		want       bool
+		asked      []string
+	}{
+		{"a paid mailbox answers a borrowed free partner", "premium", "free", models.OrgRiskTrusted, true, []string{"premium", "free"}},
+		{"a free mailbox answers the paid one that borrowed it", "free", "premium", models.OrgRiskTrusted, true, []string{"free", "premium"}},
+		{"a restricted workspace may not answer into a paying inbox", "free", "premium", models.OrgRiskRestricted, false, []string{"free"}},
+		{"a same-tier target is gated once", "premium", "premium", models.OrgRiskTrusted, true, []string{"premium"}},
 	}
-	if len(gate.gated) != 1 || gate.gated[0] != target {
-		t.Fatalf("gated %v, want exactly the target once", gate.gated)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			target := uuid.New()
+			gate := &pinnedGate{poolOf: map[uuid.UUID]string{target: tc.targetPool}}
+			s := &tasksService{
+				taskRepo:     &directedTaskRepo{target: target},
+				emailRepo:    directedEmailRepo{},
+				warmupHealth: gate,
+				orgRiskRepo:  riskRepo{state: tc.risk},
+			}
+			sender := &Email{ID: uuid.New(), OrganizationID: &org, WarmupPoolType: tc.senderPool}
+			partner := s.directedWarmupPartner(context.Background(), uuid.New(), sender, tc.senderPool)
+			if (partner != nil) != tc.want {
+				t.Fatalf("partner = %v, want present=%v", partner, tc.want)
+			}
+			if len(gate.asked) != len(tc.asked) {
+				t.Fatalf("gated in pools %v, want %v", gate.asked, tc.asked)
+			}
+			for i := range tc.asked {
+				if gate.asked[i] != tc.asked[i] {
+					t.Fatalf("gated in pools %v, want %v", gate.asked, tc.asked)
+				}
+			}
+		})
 	}
 }

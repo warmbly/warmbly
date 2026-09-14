@@ -62,7 +62,7 @@ The warmup is strong at **protecting** reputation (quarantining bad mailboxes) b
 
 - **Problem:** `smallPoolWarnThreshold=8` (`internal/tasks/email_task.go:360`) only logs. Below ~8 participants, the preferred tier empties and falls back to today-unused partners (`:461`), collapsing diversity into near-uniform reciprocal reuse, the closed-loop graph signal warmup is meant to avoid. Separately, `targetVolume` is capped to eligible-recipient count (`internal/scheduler/warmup_scheduler.go:163-172`), so the ramp can never reach 40 on a small pool.
 - **Proposal:** Turn the warning into a volume/behavior policy: below the diversity threshold, cap warmup volume lower, widen spacing, and suppress cold graduation (1.4) until pool depth recovers. Reuse the existing dampening machinery.
-- **Implementation:** In `CalculateNextWarmupTime`, after `CountEligibleRecipients`, if `eligibleRecipients < smallPoolWarnThreshold` apply a pool-depth multiplier to `targetVolume` and a min-gap stretch (reuse the `healthAdjustment` shape at `:30-43`). Export `smallPoolWarnThreshold` from the tasks package or define a shared const. Control-plane scheduling only; no worker or schema change.
+- **Implementation:** In `CalculateNextWarmupTime`, after `WarmupPartnerCandidates`, if the candidate count is below `smallPoolWarnThreshold` apply a pool-depth multiplier to `targetVolume` and a min-gap stretch (reuse the `healthAdjustment` shape at `:30-43`). Export `smallPoolWarnThreshold` from the tasks package or define a shared const. Control-plane scheduling only; no worker or schema change.
 - **Effort:** S  **Impact:** medium
 - **Code anchors:** `internal/tasks/email_task.go:357-399,450-473`; `internal/scheduler/warmup_scheduler.go:163-198`
 

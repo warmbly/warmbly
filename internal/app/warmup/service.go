@@ -75,11 +75,9 @@ type Service interface {
 	// RemoveFromAllPools takes the mailbox out of warmup; a caller that knows it is not entitled
 	// does not know which pool it is in.
 	RemoveFromAllPools(ctx context.Context, accountID uuid.UUID) *errx.Error
+	// CanParticipate is pinned to the pool the caller drew the row from; a
+	// partner borrowed from the other tier is gated there, not in the sender's pool (#495).
 	CanParticipate(ctx context.Context, accountID uuid.UUID, poolType string) (bool, string, *errx.Error)
-	// CanParticipateAnyPool gates a mailbox against the pool it is in, which is
-	// the question for a recipient: a partner borrowed from the other tier is a
-	// member there, not in the sender's pool (#495).
-	CanParticipateAnyPool(ctx context.Context, accountID uuid.UUID) (bool, string, *errx.Error)
 	ApplySpamReport(ctx context.Context, reporterAccountID, reportedAccountID uuid.UUID, messageID, reportType string) (*models.WarmupParticipantHealth, *errx.Error)
 	// RecordSpamPlacement records that a warmup message landed in the
 	// recipient's Junk/Spam folder on arrival. Counted separately from
@@ -253,22 +251,7 @@ func (s *service) CanParticipate(ctx context.Context, accountID uuid.UUID, poolT
 	if health == nil {
 		return false, "not_in_pool", nil
 	}
-	return s.canParticipateWith(ctx, accountID, poolType, health)
-}
 
-func (s *service) CanParticipateAnyPool(ctx context.Context, accountID uuid.UUID) (bool, string, *errx.Error) {
-	health, err := s.repo.GetParticipantHealthForAccount(ctx, accountID)
-	if err != nil {
-		return false, "", errx.InternalError()
-	}
-	if health == nil {
-		return false, "not_in_pool", nil
-	}
-	return s.canParticipateWith(ctx, accountID, health.PoolType, health)
-}
-
-// canParticipateWith is the gate itself, once the membership row is in hand.
-func (s *service) canParticipateWith(ctx context.Context, accountID uuid.UUID, poolType string, health *models.WarmupParticipantHealth) (bool, string, *errx.Error) {
 	now := s.now().UTC()
 	if health.BlockedUntil != nil && !health.BlockedUntil.After(now) {
 		// Block period expired. Instead of snapping back to healthy, enter probation

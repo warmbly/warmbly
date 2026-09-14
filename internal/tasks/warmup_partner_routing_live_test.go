@@ -37,9 +37,8 @@ type partnerRoutingFixture struct {
 	atMS     uuid.UUID
 }
 
-// requireEmptyPool skips when the pool already has members. A pick is
-// weighted across the whole pool, so a stray participant would dilute the
-// measurement into a meaningless pass.
+// requireEmptyPool skips when the pool has members: a pick is weighted across
+// the whole pool, so a stray participant would dilute the measurement.
 func requireEmptyPool(t *testing.T, pool *pgxpool.Pool, poolID uuid.UUID) {
 	t.Helper()
 	var occupied int

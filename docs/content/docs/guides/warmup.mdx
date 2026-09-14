@@ -42,7 +42,7 @@ A pool is the set of mailboxes that warm each other. Your mailbox exchanges warm
 
 A mailbox belongs to exactly one pool at a time. When its plan changes the mailbox moves between pools rather than joining a second one, and it takes its warmup standing with it, so a quarantine or block is not cleared by changing tier.
 
-The separation is crossed in exactly one direction, and never silently: when the premium tier runs thin (fewer than 25 other eligible recipients), it borrows free-tier mailboxes that have been members for at least three days and are healthy now, prefers a fresh partner from its own tier before a borrowed one, and checks each borrowed mailbox against its own pool's standing before using it. The free tier never borrows premium mailboxes, so free or restricted traffic does not reach paying inboxes.
+The separation is crossed in exactly one direction, and never silently: when the premium tier runs thin (fewer than 25 other eligible recipients), it borrows up to 25 free-tier mailboxes that have been pool members for at least three days, are healthy now, and belong to a workspace in good standing. It prefers a fresh partner from its own tier before a borrowed one, and checks each borrowed mailbox against its own pool's standing before using it. The free tier never draws premium partners. The one piece of free-to-paid warmup mail that exists is a borrowed mailbox answering the thread the paid mailbox started, which is what makes the exchange read as a conversation; a restricted workspace may not send even that.
 
 Warmbly spreads sends across many partners and recipient domains rather than looping the same two mailboxes, since tight reciprocal pairs are easy for providers to spot. **Pool quality matters more than pool size.**
 

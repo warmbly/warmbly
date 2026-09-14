@@ -83,6 +83,24 @@ func WarmupPoolID(poolType string) (uuid.UUID, bool) {
 	return uuid.Nil, false
 }
 
+// WarmupPoolBorrowsFrom is the tier a thin pool may borrow proven recipients
+// from. Only premium borrows, and only free, so free traffic never reaches a
+// paying inbox on the draw.
+func WarmupPoolBorrowsFrom(poolType string) (string, bool) {
+	if poolType == "premium" {
+		return "free", true
+	}
+	return "", false
+}
+
+// WarmupPartnerCandidate is a recipient the partner selector may draw: a
+// member of the sender's tier, or one borrowed from the tier it may draw on.
+type WarmupPartnerCandidate struct {
+	ID       uuid.UUID
+	Email    string
+	Borrowed bool
+}
+
 type WarmupHealthState string
 
 const (
