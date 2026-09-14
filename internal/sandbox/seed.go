@@ -475,8 +475,7 @@ func seedMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO warmup_pool_participants
 				(pool_id, email_account_id, health_state, last_health_score, spam_score, last_health_evaluated_at)
-			SELECT id, $1, $2, $3, $4, NOW()
-			FROM warmup_pools WHERE pool_type = 'premium'::warmup_pool_type
+			VALUES ($5, $1, $2, $3, $4, NOW())
 			ON CONFLICT (pool_id, email_account_id) DO UPDATE SET
 				health_state = EXCLUDED.health_state,
 				last_health_score = EXCLUDED.last_health_score,
@@ -484,7 +483,7 @@ func seedMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 				last_health_evaluated_at = NOW(),
 				blocked_at = NULL,
 				blocked_until = NULL`,
-			m.id, p.healthState, p.healthScore, p.spamScore); err != nil {
+			m.id, p.healthState, p.healthScore, p.spamScore, models.WarmupPoolPremiumID); err != nil {
 			return fmt.Errorf("pool join %s: %w", m.email, err)
 		}
 		// Give the first few mailboxes a sending-behaviour profile so the
