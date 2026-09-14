@@ -22,6 +22,10 @@ func FuzzInlineCSS(f *testing.F) {
 	f.Add("<style>@weird-at-rule</style><p>hi</p>")
 	f.Add("\xa4\xa4\xa4\xa4</BodY>")
 	f.Add("<html><body><p>\u0130stanbul</p></body></html>")
+	// Table layout, which is what the append pass has to reason about.
+	f.Add(`<table width="600"><tr><td>a</td><td>b</td></tr></table>`)
+	f.Add(`<body><table><tr><td><table width="600"><tr><td>x`)
+	f.Add(`<div style="margin:0 auto;max-width:600px"><p>x</p></div>`)
 
 	f.Fuzz(func(t *testing.T, body string) {
 		out := InlineCSS(body)
@@ -32,5 +36,12 @@ func FuzzInlineCSS(f *testing.F) {
 		_ = ToPlainText(body)
 		_ = Lint(body, len(body))
 		_ = InsertBeforeBodyEnd(body, "[F]")
+		// The append pass may only ever hand back the caller's own bytes with
+		// something inserted at one offset: it runs on markup a sender pasted
+		// from somewhere else, and a body it rewrote is a message the author
+		// did not write.
+		if out := AppendToContent(body, "[F]"); !isSplice(body, out) {
+			t.Errorf("AppendToContent rewrote the body:\n in %q\nout %q", body, out)
+		}
 	})
 }

@@ -140,3 +140,41 @@ func TestFinishBodyLinkifiesHTMLAndKeepsThePlainURL(t *testing.T) {
 		t.Fatalf("nil settings should still linkify: %s", htmlOut)
 	}
 }
+
+// Issue #462: an email written in HTML is a card centred inside a full-width
+// page table, and both the mailbox signature and the opt-out footer were
+// appended after it. They rendered against the left edge of the window, in
+// the page background, styled by nothing. Both belong inside the card.
+func TestSignatureAndOptOutLandInsideTheEmailContainer(t *testing.T) {
+	body := `<html><body style="background:#f1f5f9">` +
+		`<table width="100%"><tr><td align="center">` +
+		`<table width="600" bgcolor="#ffffff"><tr><td style="padding:32px 24px">` +
+		`<h1>Built by Ayonix Design</h1><p>Explore the work.</p>` +
+		`</td></tr></table></td></tr></table></body></html>`
+
+	// In send order: the open-tracking pixel goes on first, at the end of the
+	// document. It is a child of <body> from then on, and reading it as
+	// layout would stop the descent there and put everything after it back
+	// outside the card.
+	body = AddOpenTrackingPixel(body, uuid.New(), "t.example.com")
+
+	withSig := AddSignature(body, "<p>Karan Barad</p>", true)
+	link := models.UnsubscribeSettings{Mode: models.UnsubscribeModeLink, LinkIntro: "Not the right person, or not interested?", LinkText: "Unsubscribe"}
+	out, _ := appendOptOut(withSig, "", link, "https://api.example.com/unsubscribe/tok")
+
+	// The card's own cell, from its padding to the </td> that closes it.
+	start, end := strings.Index(out, `padding:32px 24px`), strings.Index(out, "</td></tr></table></td>")
+	if start < 0 || end < start {
+		t.Fatalf("the card's cell is no longer recognisable:\n%s", out)
+	}
+	cell := out[start:end]
+	for _, want := range []string{"Karan Barad", "Unsubscribe"} {
+		if !strings.Contains(cell, want) {
+			t.Errorf("%q is outside the email container:\n%s", want, out)
+		}
+	}
+	// In that order: the opt-out is the last line a reader sees.
+	if strings.Index(cell, "Karan Barad") > strings.Index(cell, "Unsubscribe") {
+		t.Errorf("the footer should follow the signature:\n%s", cell)
+	}
+}

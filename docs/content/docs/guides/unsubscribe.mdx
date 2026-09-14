@@ -17,6 +17,14 @@ Warmbly appends an opt-out to every campaign email, after the signature. There a
 
 The wording of the sentence and of the link text is yours to change.
 
+### Where it appears
+
+The opt-out line goes last: after the body, after any hand-placed content, and after the mailbox signature.
+
+In an email laid out in HTML, last means inside the email, not under it. A designed message is a column of content centred on the page, and an opt-out appended after that column renders against the left edge of the window, on the page background, with none of the styling the rest of the message carries. Warmbly places the line inside the container the email was built in, so it picks up the same width, padding and alignment as the copy above it. A message built as a stack of full-width rows (what a drag-and-drop builder exports) has no single container to sit in, so the line is centred on the same width as the rows instead. The same applies to the mailbox signature.
+
+An email written in the visual composer has no layout of its own, and the line is simply appended to the end of it.
+
 **Reply to opt out** is the default because it reads as a personal email, which is what cold outreach is. A formal unsubscribe link and footer are the strongest signal a mailbox provider has that a message is bulk marketing, and several deliverability teams report worse placement for cold email that carries one. A reply that asks to stop is detected and honoured automatically (see below), so the plain sentence is a real mechanism, not a courtesy. CAN-SPAM, CASL and the Australian Spam Act all accept a reply as the opt-out method.
 
 **Unsubscribe link** is the right choice when your list skews toward consumers, when your legal team asks for a link, or when your volume is high enough that provider bulk-sender rules apply. The link is unique to the recipient and campaign, signed so it cannot be guessed or altered, and valid for a year after the send. Clicking it opens a plain confirmation page with one button. Nothing happens until the button is pressed, because link scanners and preview fetchers follow every link in an email. The page then offers a way back for anyone who unsubscribed by mistake.
