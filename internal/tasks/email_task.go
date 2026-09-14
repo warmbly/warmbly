@@ -601,9 +601,10 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 	// bucket falls through to the next, so a stale own-tier row cannot hide a
 	// healthy borrowed one. The gate re-evaluates a just-unblocked recipient
 	// (probation), matching the CLAUDE.md re-entry policy on the recipient surface.
+	// Every failure removes a candidate, so the loop ends by exhaustion.
 	var available []uuid.UUID
 	next := 0
-	for attempts := 0; attempts < 5; attempts++ {
+	for {
 		for len(available) == 0 && next < len(buckets) {
 			available = buckets[next]
 			next++
@@ -1121,12 +1122,22 @@ func (s *tasksService) directedWarmupPartner(ctx context.Context, taskID uuid.UU
 }
 
 // replyMayCrossTiers: a paid mailbox may always answer a borrowed partner; a
-// free one may answer a paid mailbox only from a workspace in good standing.
+// free one may answer a paid mailbox only from a workspace whose standing is
+// known to be good. Unlike the other risk reads this fails closed: the
+// downside is one unanswered warmup thread, not free mail in a paying inbox.
 func (s *tasksService) replyMayCrossTiers(ctx context.Context, account *Email, poolType string) bool {
 	if poolType == "premium" {
 		return true
 	}
-	return account != nil && account.OrganizationID != nil && !s.orgSuspendedOrRestricted(ctx, *account.OrganizationID)
+	if s.orgRiskRepo == nil || account == nil || account.OrganizationID == nil {
+		return false
+	}
+	states, err := s.orgRiskRepo.GetOrgRiskStates(ctx, []uuid.UUID{*account.OrganizationID})
+	if err != nil {
+		return false
+	}
+	state, known := states[*account.OrganizationID]
+	return known && !state.ForcesFreeWarmupPool()
 }
 
 // orgSuspendedOrRestricted reports whether the workspace's posture bars the
