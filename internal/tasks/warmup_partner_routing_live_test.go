@@ -22,10 +22,9 @@ import (
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable \
 //	  go test ./internal/tasks/ -run LiveWarmupPartner -v
 
-// freePoolID is the seeded free pool. It is used here rather than the premium
-// one because the selector reads EVERY participant of the pool, and the free
-// pool is the one no fixture or seed puts mailboxes in.
-const freePoolID = "77777777-aaaa-0000-0000-000000000001"
+// freePoolID is the free pool migration 000154 seeds on every instance; the
+// sandbox fills only the premium one, so this one starts empty.
+var freePoolID = models.WarmupPoolFreeID
 
 type partnerRoutingFixture struct {
 	pool     *pgxpool.Pool

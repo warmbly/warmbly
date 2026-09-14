@@ -6,12 +6,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/warmbly/warmbly/internal/models"
 )
 
-// The canonical pool ids migration 000154 seeds on every instance.
+// livePoolIDs are the pools migration 000154 seeds on every instance.
 var livePoolIDs = map[string]uuid.UUID{
-	"free":    uuid.MustParse("77777777-aaaa-0000-0000-000000000001"),
-	"premium": uuid.MustParse("77777777-aaaa-0000-0000-000000000002"),
+	"free":    models.WarmupPoolFreeID,
+	"premium": models.WarmupPoolPremiumID,
 }
 
 // seededWarmupPools returns the canonical pool ids, failing loudly on a
@@ -38,8 +40,14 @@ func execSQL(t *testing.T, pool *pgxpool.Pool, sql string, args ...any) {
 // A fresh instance warms within its own pools from the first tick, and there
 // is exactly one pool per type, which is what GetPoolByType's LIMIT 1 assumes.
 func TestLiveWarmupPoolsAreSeededAndUnique(t *testing.T) {
-	_, handle := liveWarmupRepo(t)
+	repo, handle := liveWarmupRepo(t)
 	seededWarmupPools(t, handle.Pool)
+	for kind, want := range livePoolIDs {
+		got, err := repo.GetPoolByType(context.Background(), kind)
+		if err != nil || got == nil || got.ID != want {
+			t.Fatalf("GetPoolByType(%s) = %v, %v; want the seeded pool %s", kind, got, err, want)
+		}
+	}
 	var perType int
 	if err := handle.Pool.QueryRow(context.Background(),
 		`SELECT max(c) FROM (SELECT count(*) AS c FROM warmup_pools GROUP BY pool_type) x`).Scan(&perType); err != nil {
@@ -50,6 +58,7 @@ func TestLiveWarmupPoolsAreSeededAndUnique(t *testing.T) {
 	}
 	if _, err := handle.Pool.Exec(context.Background(),
 		`INSERT INTO warmup_pools (pool_type, name) VALUES ('free', 'a second free pool')`); err == nil {
+		execSQL(t, handle.Pool, `DELETE FROM warmup_pools WHERE name = 'a second free pool'`)
 		t.Fatal("a second free pool was accepted; warmup_pools_pool_type_key is missing")
 	}
 }

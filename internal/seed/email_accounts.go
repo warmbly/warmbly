@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
@@ -136,40 +138,19 @@ func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error
 }
 
 func seedWarmupParticipants(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
-	// Resolve pool IDs; migration 000154 seeds one pool per type.
-	rows, err := pool.Query(ctx, `SELECT id, pool_type::text FROM warmup_pools`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	poolIDs := map[string]uuid.UUID{}
-	for rows.Next() {
-		var id uuid.UUID
-		var t string
-		if err := rows.Scan(&id, &t); err != nil {
-			return err
-		}
-		poolIDs[t] = id
-	}
-
-	join := func(poolType string, accountID uuid.UUID) error {
-		pid, ok := poolIDs[poolType]
-		if !ok {
-			return nil
-		}
+	// Migration 000154 seeds one pool per type under fixed ids; a missing pool
+	// is a broken database, not a case to skip.
+	join := func(poolID, accountID uuid.UUID) error {
 		_, err := pool.Exec(ctx, `
 			INSERT INTO warmup_pool_participants (pool_id, email_account_id, joined_at, spam_score)
 			VALUES ($1, $2, NOW(), 0)
 			ON CONFLICT (pool_id, email_account_id) DO NOTHING
-		`, pid, accountID)
+		`, poolID, accountID)
 		return err
 	}
 
-	if err := join("premium", EmailAcmeAliceID); err != nil {
+	if err := join(models.WarmupPoolPremiumID, EmailAcmeAliceID); err != nil {
 		return err
 	}
-	if err := join("premium", EmailAcmeBobID); err != nil {
-		return err
-	}
-	return nil
+	return join(models.WarmupPoolPremiumID, EmailAcmeBobID)
 }

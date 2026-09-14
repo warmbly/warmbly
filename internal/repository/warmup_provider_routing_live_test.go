@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // Issue #143: partner selection needs THIS sender's record per recipient
@@ -17,7 +19,7 @@ import (
 //	  go test ./internal/repository/ -run LiveProviderRouting -v
 
 // premiumPoolID is the premium pool migration 000154 seeds on every instance.
-const premiumPoolID = "77777777-aaaa-0000-0000-000000000002"
+var premiumPoolID = models.WarmupPoolPremiumID
 
 type providerRoutingFixture struct {
 	pool      *pgxpool.Pool

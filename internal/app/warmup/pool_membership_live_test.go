@@ -103,9 +103,9 @@ func (f *poolMailbox) memberships(t *testing.T) []string {
 	return out
 }
 
-func poolID(t *testing.T, handle *db.DB, poolType string) uuid.UUID {
+func poolID(t *testing.T, _ *db.DB, poolType string) uuid.UUID {
 	t.Helper()
-	return seededWarmupPools(t, handle.Pool)[poolType]
+	return livePoolIDs[poolType]
 }
 
 // The bug itself: a mailbox that changes tier moves pools, it does not collect

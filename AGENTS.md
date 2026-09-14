@@ -390,10 +390,12 @@ Warmup traffic is also separated by pool:
 
 This is modeled in:
 
-- `internal/infrastructure/db/migrations/000010_warmup_pools.up.sql`
-- `internal/infrastructure/db/migrations/000154_seed_warmup_pools.up.sql`: the two pools exist on every instance from install, under fixed ids (`77777777-aaaa-0000-0000-000000000001` free, `...0002` premium), with exactly one pool per type enforced by `warmup_pools_pool_type_key`. Nothing else creates a pool: not the sandbox, not the dev scripts, not a test fixture. Before this a fresh instance had none and warmup never started
+- `internal/infrastructure/db/migrations/000001_baseline.up.sql` (the `warmup_pools` and `warmup_pool_participants` tables)
+- `internal/infrastructure/db/migrations/000154_seed_warmup_pools.up.sql`
 - `internal/repository/pg_warmup.go`
 - `internal/tasks/email_task.go`
+
+Migration 000154 guarantees exactly one pool per type on every instance, under `models.WarmupPoolFreeID` and `models.WarmupPoolPremiumID` (`warmup_pools_pool_type_key` makes it structural, and the migration moves any pre-existing pool onto those ids). Nothing else creates a pool: not the sandbox, not the dev scripts, not a test fixture. Before it a fresh instance had none and warmup never started.
 
 Keep this separation intact. Free-tier accounts should not silently mix into premium warmup traffic, and dedicated-worker accounts should still follow the intended warmup pool policy explicitly rather than by accident.
 
@@ -564,7 +566,7 @@ Relevant code:
 - `internal/tasks/email_task.go`
 - `internal/scheduler/warmup_scheduler.go`
 - `internal/repository/pg_warmup.go`
-- `internal/infrastructure/db/migrations/000010_warmup_pools.up.sql`
+- `internal/infrastructure/db/migrations/000154_seed_warmup_pools.up.sql`
 
 ### Pool behavior
 
@@ -697,7 +699,7 @@ Relevant code:
 
 - `internal/app/consumer/event_new_email.go`
 - `internal/repository/pg_warmup.go`
-- `internal/infrastructure/db/migrations/000010_warmup_pools.up.sql`
+- `internal/infrastructure/db/migrations/000154_seed_warmup_pools.up.sql`
 
 ### Paid pool protection policy
 

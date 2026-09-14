@@ -65,6 +65,12 @@ type WarmupEmailAction struct {
 	DelaySeconds int `json:"delay_seconds,omitempty"`
 }
 
+// The two warmup pools migration 000154 seeds on every instance, one per type.
+var (
+	WarmupPoolFreeID    = uuid.MustParse("77777777-aaaa-0000-0000-000000000001")
+	WarmupPoolPremiumID = uuid.MustParse("77777777-aaaa-0000-0000-000000000002")
+)
+
 type WarmupHealthState string
 
 const (

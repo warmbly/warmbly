@@ -192,6 +192,11 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 
 	if s.warmupHealth != nil {
 		if err := s.warmupHealth.EnsurePoolMembershipWithRole(ctx, account.ID, poolType, "sender_receiver"); err != nil {
+			// Loud on purpose: a missing pool used to fail every tick with
+			// nothing naming the cause, and warmup silently never started.
+			errs.CaptureException(fmt.Errorf("warmup pool membership for %s: %s", account.ID, err.Message))
+			log.Error().Str("task_id", taskID.String()).Str("email_account_id", account.ID.String()).Str("pool_type", poolType).
+				Str("error", err.Message).Msg("warmup blocked: could not place the mailbox in its pool; migration 000154 seeds the pools and nothing else does")
 			return err
 		}
 

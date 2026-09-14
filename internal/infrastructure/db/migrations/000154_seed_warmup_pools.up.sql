@@ -1,24 +1,32 @@
--- Nothing created the warmup pools: a fresh instance had none, so its first
--- warmup tick failed on "warmup pool not found" and warmup never started. One
--- pool per type is what every reader assumes, so make it structural and seed
--- the two pools under the ids the sandbox and the live tests already use.
-UPDATE public.warmup_pool_participants p
-   SET pool_id = k.id
-  FROM public.warmup_pools w
-  JOIN (SELECT DISTINCT ON (pool_type) id, pool_type
-          FROM public.warmup_pools
-         ORDER BY pool_type, created_at, id) k ON k.pool_type = w.pool_type
- WHERE p.pool_id = w.id AND w.id <> k.id;
+-- One pool per type, under fixed ids, on every instance. The baseline squash
+-- (d92e7f1b) dropped the insert the original 000010 carried, so a fresh instance
+-- had no pools and failed its first warmup tick on "warmup pool not found".
 
-DELETE FROM public.warmup_pools w
- USING (SELECT DISTINCT ON (pool_type) id, pool_type
-          FROM public.warmup_pools
-         ORDER BY pool_type, created_at, id) k
- WHERE k.pool_type = w.pool_type AND w.id <> k.id;
-
-CREATE UNIQUE INDEX warmup_pools_pool_type_key ON public.warmup_pools (pool_type);
-
+-- 1. The canonical rows exist from here on.
 INSERT INTO public.warmup_pools (id, pool_type, name, description)
 VALUES ('77777777-aaaa-0000-0000-000000000001', 'free', 'Free warmup pool', 'Created at install'),
        ('77777777-aaaa-0000-0000-000000000002', 'premium', 'Premium warmup pool', 'Created at install')
-ON CONFLICT (pool_type) DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
+
+-- 2. Every membership moves onto the canonical pool of its type. The mirror
+--    trigger (000152) is off for it: the pool is not part of a standing, and
+--    re-mirroring would restart every penalised address's retention window.
+ALTER TABLE public.warmup_pool_participants DISABLE TRIGGER warmup_reputation_mirror;
+UPDATE public.warmup_pool_participants p
+   SET pool_id = CASE w.pool_type
+                     WHEN 'free' THEN '77777777-aaaa-0000-0000-000000000001'::uuid
+                     ELSE '77777777-aaaa-0000-0000-000000000002'::uuid
+                 END
+  FROM public.warmup_pools w
+ WHERE w.id = p.pool_id
+   AND w.pool_type IN ('free', 'premium')
+   AND w.id NOT IN ('77777777-aaaa-0000-0000-000000000001', '77777777-aaaa-0000-0000-000000000002');
+ALTER TABLE public.warmup_pool_participants ENABLE TRIGGER warmup_reputation_mirror;
+
+-- 3. Every other pool of those types goes; nothing references it any more.
+DELETE FROM public.warmup_pools
+ WHERE pool_type IN ('free', 'premium')
+   AND id NOT IN ('77777777-aaaa-0000-0000-000000000001', '77777777-aaaa-0000-0000-000000000002');
+
+-- 4. One pool per type, structurally.
+CREATE UNIQUE INDEX warmup_pools_pool_type_key ON public.warmup_pools (pool_type);

@@ -26,7 +26,6 @@ type ledgerFixture struct {
 	warmups WarmupRepository
 	user    uuid.UUID
 	org     uuid.UUID
-	poolID  uuid.UUID
 	address string
 }
 
@@ -35,7 +34,7 @@ func newLedgerFixture(t *testing.T) *ledgerFixture {
 	handle, pool := liveContactDB(t)
 	f := &ledgerFixture{
 		pool: pool, emails: NewEmailRepostory(handle, nil), warmups: NewWarmupRepository(pool),
-		user: uuid.New(), org: uuid.New(), poolID: uuid.MustParse(premiumPoolID),
+		user: uuid.New(), org: uuid.New(),
 	}
 	// Mixed case on purpose: the mirror keys on the normalized form.
 	f.address = "Ledger-" + f.org.String()[:8] + "@Test.Local"
@@ -83,7 +82,7 @@ func (f *ledgerFixture) addMailbox(t *testing.T, user uuid.UUID) uuid.UUID {
 
 func (f *ledgerFixture) join(t *testing.T, id uuid.UUID) {
 	t.Helper()
-	if err := f.warmups.MoveToPool(context.Background(), f.poolID, id, "sender_receiver"); err != nil {
+	if err := f.warmups.MoveToPool(context.Background(), premiumPoolID, id, "sender_receiver"); err != nil {
 		t.Fatalf("MoveToPool: %v", err)
 	}
 }

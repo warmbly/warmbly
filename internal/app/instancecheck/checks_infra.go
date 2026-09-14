@@ -27,6 +27,7 @@ func infraChecks() []check {
 		{id: "no_worker_heartbeat", run: checkNoWorkerHeartbeat},
 		{id: "codec_not_json", run: checkCodecNotJSON},
 		{id: "migrations_dirty", run: checkMigrationsDirty},
+		{id: "warmup_pools_missing", run: checkWarmupPoolsMissing},
 		{id: "blob_root_missing", run: checkBlobRootMissing},
 		{id: "redis_unreachable", run: checkRedisUnreachable},
 	}
@@ -95,6 +96,27 @@ func checkMigrationsDirty(ctx context.Context, d Deps, in Input) *Finding {
 	return result(CategoryData, SeverityError, "The database schema is dirty",
 		fmt.Sprintf("The database schema is dirty at version %d. The backend applies migrations at boot; "+
 			"a dirty row means one failed halfway and must be resolved before this instance is used.", version),
+		docsHealthDB)
+}
+
+// checkWarmupPoolsMissing reports the state a fresh instance was in before
+// migration 000154: without both pools every warmup tick ends on "warmup pool
+// not found" and nothing else says why.
+func checkWarmupPoolsMissing(ctx context.Context, d Deps, in Input) *Finding {
+	if d.DB == nil {
+		return nil
+	}
+	var pools int
+	if err := d.DB.QueryRow(ctx, `SELECT count(DISTINCT pool_type) FROM warmup_pools WHERE pool_type IN ('free', 'premium')`).Scan(&pools); err != nil {
+		return nil
+	}
+	if pools == 2 {
+		return nil
+	}
+	return result(CategoryData, SeverityError, "Warmup pools are missing",
+		fmt.Sprintf("Only %d of the two warmup pools exist, so warmup cannot place a mailbox and every warmup task fails. "+
+			"Migration 000154 creates both and nothing else does; a data-only restore or a manual delete removes them. "+
+			"Re-run the migration or restore the rows.", pools),
 		docsHealthDB)
 }
 

@@ -41,9 +41,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
 	"github.com/warmbly/warmbly/internal/seed"
 )
@@ -450,11 +452,17 @@ func joinWarmupPool(ctx context.Context, pool *pgxpool.Pool, accountID uuid.UUID
 	if poolType == "" {
 		return nil
 	}
+	// Migration 000154 seeds one pool per type under fixed ids; a missing pool
+	// fails here on the foreign key rather than inserting nothing.
+	poolID := models.WarmupPoolFreeID
+	if poolType == "premium" {
+		poolID = models.WarmupPoolPremiumID
+	}
 	_, err := pool.Exec(ctx, `
 		INSERT INTO warmup_pool_participants (pool_id, email_account_id)
-		SELECT id, $1 FROM warmup_pools WHERE pool_type = $2::warmup_pool_type
+		VALUES ($1, $2)
 		ON CONFLICT DO NOTHING`,
-		accountID, poolType)
+		poolID, accountID)
 	return err
 }
 
