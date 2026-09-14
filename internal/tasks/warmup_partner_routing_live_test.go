@@ -50,10 +50,6 @@ func newPartnerRoutingFixture(t *testing.T) *partnerRoutingFixture {
 	}
 	t.Cleanup(func() { handle.Pool.Close() })
 
-	var pools int
-	if err := handle.Pool.QueryRow(ctx, `SELECT count(*) FROM warmup_pools WHERE id = $1`, freePoolID).Scan(&pools); err != nil || pools == 0 {
-		t.Skip("free warmup pool not seeded in this database")
-	}
 	// A pick is weighted across the WHOLE pool, so a stray participant would
 	// dilute the measurement into a meaningless pass.
 	var occupied int

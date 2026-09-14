@@ -38,7 +38,7 @@ func newPoolMailbox(t *testing.T, handle *db.DB, poolType string) *poolMailbox {
 	t.Helper()
 	pool := handle.Pool
 
-	pools := ensureWarmupPools(t, pool)
+	pools := seededWarmupPools(t, pool)
 
 	f := &poolMailbox{user: uuid.New(), org: uuid.New(), account: uuid.New(), handle: handle}
 
@@ -105,7 +105,7 @@ func (f *poolMailbox) memberships(t *testing.T) []string {
 
 func poolID(t *testing.T, handle *db.DB, poolType string) uuid.UUID {
 	t.Helper()
-	return ensureWarmupPools(t, handle.Pool)[poolType]
+	return seededWarmupPools(t, handle.Pool)[poolType]
 }
 
 // The bug itself: a mailbox that changes tier moves pools, it does not collect

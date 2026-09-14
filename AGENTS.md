@@ -391,6 +391,7 @@ Warmup traffic is also separated by pool:
 This is modeled in:
 
 - `internal/infrastructure/db/migrations/000010_warmup_pools.up.sql`
+- `internal/infrastructure/db/migrations/000154_seed_warmup_pools.up.sql`: the two pools exist on every instance from install, under fixed ids (`77777777-aaaa-0000-0000-000000000001` free, `...0002` premium), with exactly one pool per type enforced by `warmup_pools_pool_type_key`. Nothing else creates a pool: not the sandbox, not the dev scripts, not a test fixture. Before this a fresh instance had none and warmup never started
 - `internal/repository/pg_warmup.go`
 - `internal/tasks/email_task.go`
 

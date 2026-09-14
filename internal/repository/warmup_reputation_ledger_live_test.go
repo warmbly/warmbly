@@ -35,7 +35,7 @@ func newLedgerFixture(t *testing.T) *ledgerFixture {
 	handle, pool := liveContactDB(t)
 	f := &ledgerFixture{
 		pool: pool, emails: NewEmailRepostory(handle, nil), warmups: NewWarmupRepository(pool),
-		user: uuid.New(), org: uuid.New(), poolID: uuid.New(),
+		user: uuid.New(), org: uuid.New(), poolID: uuid.MustParse(premiumPoolID),
 	}
 	// Mixed case on purpose: the mirror keys on the normalized form.
 	f.address = "Ledger-" + f.org.String()[:8] + "@Test.Local"
@@ -43,7 +43,6 @@ func newLedgerFixture(t *testing.T) *ledgerFixture {
 		f.user, "ledger-"+f.user.String()[:8]+"@test.local")
 	f.exec(t, `INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Ledger Test', $2, $3)`,
 		f.org, "ledger-"+f.org.String()[:8], f.user)
-	f.exec(t, `INSERT INTO warmup_pools (id, pool_type, name) VALUES ($1, 'premium', 'Ledger test pool')`, f.poolID)
 
 	t.Cleanup(func() {
 		c := context.Background()
@@ -54,7 +53,6 @@ func newLedgerFixture(t *testing.T) *ledgerFixture {
 			{`DELETE FROM warmup_pool_participants WHERE email_account_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)`, f.org},
 			{`DELETE FROM warmup_reputation_ledger WHERE organization_id = $1`, f.org},
 			{`DELETE FROM email_accounts WHERE organization_id = $1`, f.org},
-			{`DELETE FROM warmup_pools WHERE id = $1`, f.poolID},
 			{`DELETE FROM organizations WHERE id = $1`, f.org},
 			{`DELETE FROM users WHERE id = $1`, f.user},
 		} {

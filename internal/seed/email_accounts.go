@@ -136,8 +136,7 @@ func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error
 }
 
 func seedWarmupParticipants(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
-	// Resolve pool IDs (the rows are inserted by migration 000010 but with
-	// generated UUIDs, so look them up by pool_type).
+	// Resolve pool IDs; migration 000154 seeds one pool per type.
 	rows, err := pool.Query(ctx, `SELECT id, pool_type::text FROM warmup_pools`)
 	if err != nil {
 		return err

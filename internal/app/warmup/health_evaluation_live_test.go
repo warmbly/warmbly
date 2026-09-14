@@ -65,7 +65,7 @@ func newFreePoolAccount(t *testing.T, handle *db.DB) *freePoolAccount {
 	      VALUES ($1, $2, $3, $4, 'Health', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
 		f.account, f.user, f.org, "wh-"+f.account.String()[:8]+"@test.local")
 
-	pools := ensureWarmupPools(t, pool)
+	pools := seededWarmupPools(t, pool)
 	// Free pool only. No premium row, which is the whole point.
 	exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id) VALUES ($1, $2)`, pools["free"], f.account)
 

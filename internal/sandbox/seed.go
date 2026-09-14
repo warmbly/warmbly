@@ -420,27 +420,6 @@ func seedWorker(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 func seedMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
-	// The free/premium warmup pool rows: nothing else creates them (no
-	// migration seeds warmup_pools and the app only joins existing pools), so
-	// without this the participant insert below is a silent no-op and warmup
-	// partner selection has an empty pool.
-	for _, wp := range []struct {
-		id       string
-		poolType string
-		name     string
-	}{
-		{"77777777-aaaa-0000-0000-000000000001", "free", "Free warmup pool"},
-		{"77777777-aaaa-0000-0000-000000000002", "premium", "Premium warmup pool"},
-	} {
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO warmup_pools (id, pool_type, name, description, max_participants)
-			VALUES ($1, $2::warmup_pool_type, $3, 'Seeded by the sandbox', 1000)
-			ON CONFLICT (id) DO NOTHING`,
-			uuid.MustParse(wp.id), wp.poolType, wp.name); err != nil {
-			return fmt.Errorf("warmup pool %s: %w", wp.poolType, err)
-		}
-	}
-
 	for i, m := range sandboxMailboxes {
 		// Each mailbox sits at its cohort's lifecycle point (see profileFor).
 		// The send window starts at 00:01, NOT 00:00: the scheduler treats a

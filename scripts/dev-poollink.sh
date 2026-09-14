@@ -88,13 +88,6 @@ ensure_db() {
   fi
 }
 
-ensure_pools() {
-  # warmup_pools rows are seeded, not migrated; the pool needs both tiers.
-  psql_db "$1" -c "insert into warmup_pools (pool_type, name, description, max_participants)
-    select v.t::warmup_pool_type, v.n, '', 100000 from (values ('free','Free'),('premium','Premium')) v(t,n)
-    where not exists (select 1 from warmup_pools p where p.pool_type = v.t::warmup_pool_type)" >/dev/null
-}
-
 start_bg() { # name, logfile, command...
   local name=$1 log=$2; shift 2
   if [ -f "$RUN/$name.pid" ] && kill -0 "$(cat "$RUN/$name.pid")" 2>/dev/null; then
@@ -131,7 +124,6 @@ cmd_up() {
     echo "== seeding the cloud with the Sunrise Labs sandbox org (pool mailboxes)"
     ( cloud_env; go run ./cmd/sandbox -seed-only >/dev/null )
   fi
-  ensure_pools "$CLOUD_DB"; ensure_pools "$SELF_DB"
 
   echo "== building backend"
   build_backend
