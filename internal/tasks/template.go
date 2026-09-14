@@ -279,8 +279,10 @@ func AddSignature(body string, signature string, isHTML bool) string {
 	}
 
 	block := `<div style="margin-top:16px">` + signature + `</div>`
-	// Trailing content belongs inside the document, as for the pixel and footer.
-	return mailhtml.InsertBeforeBodyEnd(body, block)
+	// Inside the container the email was laid out in, as for the opt-out
+	// footer: after it, a signature lands against the left edge of the window
+	// instead of under the copy it signs off (issue #462).
+	return mailhtml.AppendToContent(body, block)
 }
 
 // AddOpenTrackingPixel adds an invisible tracking pixel to HTML email.

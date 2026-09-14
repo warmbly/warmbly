@@ -46,14 +46,15 @@ func optOutFooter(settings models.UnsubscribeSettings, linkURL string) (htmlPart
 }
 
 // appendOptOut adds the footer after everything else (signature included) so
-// it sits where a reader expects an opt-out: last.
+// it sits where a reader expects an opt-out: last, and inside the container
+// the email was laid out in rather than under it (issue #462).
 func appendOptOut(bodyHTML, bodyPlain string, settings models.UnsubscribeSettings, linkURL string) (string, string) {
 	htmlPart, plainPart := optOutFooter(settings, linkURL)
 	if htmlPart == "" {
 		return bodyHTML, bodyPlain
 	}
 	if bodyHTML != "" {
-		bodyHTML = mailhtml.InsertBeforeBodyEnd(bodyHTML, htmlPart)
+		bodyHTML = mailhtml.AppendToContent(bodyHTML, htmlPart)
 	}
 	if bodyPlain != "" {
 		bodyPlain += "\n\n" + plainPart
@@ -84,7 +85,7 @@ func linkifyUnsubscribeURL(bodyHTML, linkURL, linkText string) string {
 	depth := 0 // open <a> elements around the current text node
 	for i := 0; i < len(bodyHTML); {
 		if bodyHTML[i] == '<' {
-			end := tagEnd(bodyHTML[i:])
+			end := mailhtml.TagEnd(bodyHTML[i:])
 			if end < 0 {
 				b.WriteString(bodyHTML[i:]) // unterminated tag: copy the rest verbatim
 				break
@@ -114,28 +115,6 @@ func linkifyUnsubscribeURL(bodyHTML, linkURL, linkText string) string {
 		i = stop
 	}
 	return b.String()
-}
-
-// tagEnd returns the index of the '>' that closes the tag starting at s[0], or
-// -1 when there is none. A '>' inside a quoted attribute value does not close
-// anything: reading one as the end split `<a title="x > y" href="URL">` into a
-// tag and a run of text, and the href in that "text" was then rewritten into a
-// dead link.
-func tagEnd(s string) int {
-	var quote byte
-	for i := 1; i < len(s); i++ {
-		switch c := s[i]; {
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '\'':
-			quote = c
-		case c == '>':
-			return i
-		}
-	}
-	return -1
 }
 
 // isTagStart reports whether tag (a full "<...>" slice) is the named tag,

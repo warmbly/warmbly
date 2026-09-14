@@ -34,11 +34,17 @@ func TestDesignedEmailThroughTheSendPath(t *testing.T) {
 	}
 
 	withSig := AddSignature(body, `<p>Ana Perez</p>`, true)
-	if !strings.Contains(withSig, "Ana Perez</p></div></body></html>") {
-		t.Errorf("signature did not land just inside </body>:\n%s", withSig[len(withSig)-160:])
+	// Inside the laid-out container, not after it: appended at the end of the
+	// document it would render flush against the left edge of the window, in
+	// the page background, styled by nothing (issue #462).
+	if !strings.Contains(withSig, "Ana Perez</p></div></td></tr></table>") {
+		t.Errorf("signature did not land inside the email container:\n%s", withSig)
 	}
-	if strings.Contains(withSig[:strings.Index(withSig, "[if mso]")], "Ana Perez") {
-		t.Error("signature landed before the conditional comment")
+	// The conditional comment carries its own </body>. Reading that one as the
+	// document's put the signature inside a comment, where Outlook showed it
+	// and every other client did not (issue #393).
+	if !strings.Contains(withSig, "<!--[if mso]></body><![endif]-->") {
+		t.Errorf("signature landed inside the conditional comment:\n%s", withSig)
 	}
 
 	final := mailhtml.InlineCSS(withSig)
