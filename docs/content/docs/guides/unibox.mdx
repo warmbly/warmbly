@@ -36,7 +36,7 @@ The shortcuts modal only lists what the screen you are on can actually do, so th
 
 ## Folders
 
-The rail opens with the standard mail folders, so direction is visually clear instead of one combined list:
+The rail is two short groups and then your mailboxes. The first group is where you work: **All mail**, **Inbox**, **Unread**, **Awaiting reply**, **Agent drafts**, **Snoozed**. The second is the standard mail folders, so direction is visually clear instead of one combined list:
 
 | Folder | Shows |
 | --- | --- |
@@ -47,9 +47,9 @@ The rail opens with the standard mail folders, so direction is visually clear in
 | Spam | Junked at the provider |
 | Trash | Deleted |
 
-Each message starts in the folder the provider has it in: IMAP special-use folder attributes, Gmail labels, and Outlook well-known folders all map to the same six. Moves at the provider (junking a message, clearing it out of spam) follow on the next sync. You can also file a conversation yourself, which moves it here without moving it at the provider; see [filing a conversation](#filing-a-conversation). The active folder is highlighted with a grey row and bold label, unread counts sit on the right, and each folder's three-dot menu offers **Mark all as read**.
+Each message starts in the folder the provider has it in: IMAP special-use folder attributes, Gmail labels, and Outlook well-known folders all map to the same six. Moves at the provider (junking a message, clearing it out of spam) follow on the next sync. You can also file a conversation yourself, which moves it here without moving it at the provider; see [filing a conversation](#filing-a-conversation). The active row is highlighted grey, unread counts sit on the right in blue, and hovering a folder reveals a three-dot menu with **Mark all as read**.
 
-Spam and Trash stay out of every other view: the **All** scope, the metric strip, and the unread badge only count the folders you actually work.
+Spam and Trash stay out of every other view: the **All mail** view and the unread badge only count the folders you actually work.
 
 <Callout type="info" title="Spam and Trash start from when you connect">
 The initial import that runs when a mailbox is first connected covers Inbox, Sent, Archive, and Drafts. It deliberately skips the existing contents of Spam and Trash, whose history would consume the import budget that belongs to real conversations. Both folders fill normally from the moment the mailbox is connected, so they show what arrives from then on rather than what was already there.
@@ -59,29 +59,29 @@ The initial import that runs when a mailbox is first connected covers Inbox, Sen
 
 | View | Shows |
 | --- | --- |
-| All | Every conversation across every mailbox (except Spam and Trash) |
+| All mail | Every conversation across every mailbox (except Spam and Trash) |
 | Unread | At least one unread message |
-| Today / This week | Activity today, or in the last 7 days |
 | Awaiting reply | The other side is waiting on you |
+| Agent drafts | Conversations where the [inbox agent](/guides/inbox-agent/) has a reply waiting for review |
 | Snoozed | Snoozed for later |
 | Scheduled | Replies queued to send later |
 
-Below those, the rail lists each mailbox with its unread count, plus your **Categories** and **Tags**. Long lists collapse to the first few with a `Show all` toggle and an inline filter.
+Below those, the rail lists each mailbox with its unread count, plus your **Labels** and **Tags**. Long lists collapse to the first few with a `Show all` toggle and an inline filter. For a slice of time (today, the last week), use the date range in the filters rather than a view; the list's title shows which view you are in, with how many conversations are loaded.
 
 Counts come from the server in one request, so they always match the rows. The current view and open conversation live in the URL (`/app/unibox/unread`), so refreshing, bookmarking, and sharing all land in the same place.
 
-Search (press `/`) searches within your current scope, across subjects and the text of the messages themselves, so a phrase from the middle of an email finds the conversation. The filters icon narrows by sender, mailbox, tag, category, date range, and read state.
+Search (press `/`) searches within your current scope, across subjects and the text of the messages themselves, so a phrase from the middle of an email finds the conversation. The filter button next to the title opens a small panel that narrows the list on the spot: read state, a date range (today, the last 7 or 30 days, or two dates), sender, labels, mailboxes (or a whole tag of them), and sort order. Anything you add shows as a chip under the search box, and each chip removes itself with one click. A view that already fixes one of these, such as Unread or a single mailbox, does not offer that control again.
 
 ## Threading
 
-Each row is a conversation, not a message, with a badge showing how many messages are inside. Opening it shows every message in order with participants and the owning mailbox. Replies and new inbound mail land in the same thread. Rows group under `Today`, `Yesterday`, `This week`, and `Earlier` headers.
+Each row is a conversation, not a message, with a count next to the sender when more than one message is inside. Opening it shows every message in order, with the message count and the owning mailbox under the subject. Replies and new inbound mail land in the same thread. Rows group under `Today`, `Yesterday`, `This week`, and `Earlier` headers.
 
 The list loads more conversations as you reach the end of it, and it keeps its place: opening a conversation, or leaving the inbox and coming back, returns you to the row you were on rather than the top of the list.
 
 Threading applies on both sides. A reply you send carries the provider's thread id, which nests it in your own mailbox, and an `In-Reply-To` header naming the last message in the conversation, which is what nests it for the recipient. Their mail client only ever sees the header: a thread id means nothing outside the mailbox that issued it.
 
 <Callout type="info" title="Keyboard navigation">
-`j` / `k` move between rows, `Enter` opens, `Esc` closes, `/` focuses search, `c` labels. A cheat sheet sits at the bottom of the list.
+`j` / `k` move between rows, `Enter` opens, `Esc` closes, `/` focuses search, `c` labels. Press `?` for the full list.
 </Callout>
 
 ## Reading a message
@@ -94,7 +94,7 @@ HTML mail renders in an isolated frame, so a sender's styling cannot leak into t
 
 ## Categories and labels
 
-Categories are the workspace's conversation labels, shared with the rest of Warmbly, so `Interested` means the same thing on a contact as it does here. They are shared with the rest of the team too: a category anyone creates is available to everyone, and a conversation one member labels shows that label to the next. Label with the **Label** button or `c`: search existing categories, tick what applies, or type a name and **Create**. A conversation can carry several.
+Categories are the workspace's conversation labels, shared with the rest of Warmbly, so `Interested` means the same thing on a contact as it does here. They are shared with the rest of the team too: a category anyone creates is available to everyone, and a conversation one member labels shows that label to the next. Label with the tag button in the conversation header or `c`: search existing categories, tick what applies, or type a name and **Create**. A conversation can carry several.
 
 Labeled conversations show colored chips on the row and in the header, and each category appears in the rail with its own count for one-click filtering. **Labels are manual**; Warmbly never auto-tags.
 
@@ -104,7 +104,7 @@ Categories label conversations. Tags label the mailboxes themselves (grouping ac
 
 ## Read state
 
-A conversation is unread when any message inside is unseen, marked by a bright left edge bar and bolder text. Opening it marks its messages seen and updates the counts. Read state syncs both ways with the mailbox provider.
+A conversation is unread when any message inside is unseen, marked by a blue dot in the margin, bolder text, and a blue timestamp. Opening it marks its messages seen and updates the counts. Read state syncs both ways with the mailbox provider.
 
 ## Filing a conversation
 

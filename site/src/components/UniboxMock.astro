@@ -4,12 +4,11 @@ import DemoCursor from './DemoCursor.astro';
  * Pixel-faithful mock of the Warmbly /app/unibox screen (unified inbox).
  *
  * Maps 1:1 to the real components:
- *   - web/src/app/app/unibox/page.tsx          - three-pane layout
- *   - web/src/components/app/unibox/UniboxHeader.tsx     - top metric strip (h-10)
- *   - web/src/components/app/unibox/ScopeRail.tsx        - left scope rail (w-220)
- *   - web/src/components/app/unibox/ConversationList.tsx - middle list (w-360)
- *   - web/src/components/app/unibox/ConversationItem.tsx - list rows
- *   - web/src/components/app/unibox/ThreadView.tsx       - right thread pane
+ *   - web/src/app/app/unibox/page.tsx                    - three columns, nothing above them
+ *   - web/src/components/app/unibox/ScopeRail.tsx        - left scope rail (w-220, white)
+ *   - web/src/components/app/unibox/ConversationList.tsx - middle list (w-360): title row, search, grouped rows
+ *   - web/src/components/app/unibox/ConversationItem.tsx - list rows (no avatar, unread dot in the gutter)
+ *   - web/src/components/app/unibox/ThreadView.tsx       - right thread pane: subject over a meta line, icon actions
  *   - web/src/components/app/unibox/MessageBubble.tsx    - per-message article
  *
  * Renders only the in-app screen content. The marketing page wraps this
@@ -18,36 +17,57 @@ import DemoCursor from './DemoCursor.astro';
  * crops with overflow-hidden, so the load-bearing content sits top-left.
  */
 
-// ── Top metric strip ───────────────────────────────────────────────
-const stats = [
-  { value: '7',  label: 'unread',    tone: 'accent' as const },
-  { value: '3',  label: 'awaiting',  tone: 'default' as const },
-  { value: '24', label: 'today',     tone: 'default' as const },
-  { value: '89', label: 'week',      tone: 'default' as const },
-  { value: '2',  label: 'snoozed',   tone: 'muted' as const },
-  { value: '3',  label: 'mailboxes', tone: 'muted' as const },
-];
+// ── Lucide paths (24x24 viewBox, stroke 2) ─────────────────────────
+const icons = {
+  penLine:    '<path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/>',
+  layers:     '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+  inbox:      '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  mail:       '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  reply:      '<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>',
+  sparkles:   '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+  moon:       '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  fileText:   '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  send:       '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+  clock:      '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  archive:    '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  octagon:    '<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/>',
+  trash2:     '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  mailOpen:   '<path d="M21.2 8.4c.5.38.8.97.8 1.6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10a2 2 0 0 1 .8-1.6l8-6a2 2 0 0 1 2.4 0l8 6Z"/><path d="m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10"/>',
+  chevron:    '<polyline points="6 9 12 15 18 9"/>',
+  listFilter: '<path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/>',
+  search:     '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  tag:        '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+  mailCheck:  '<path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"/><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m16 19 2 2 4-4"/>',
+  trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  user:       '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  cornerUp:   '<polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>',
+  forward:    '<polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',
+  x:          '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  userPlus:   '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/>',
+  info:       '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+};
 
 // ── Scope rail (left) ──────────────────────────────────────────────
-const inboxScopes = [
-  { icon: 'inbox',    label: 'All',           count: '342', active: true,  tone: 'muted'  },
-  { icon: 'sparkle',  label: 'Unread',        count: '7',   active: false, tone: 'accent' },
-  { icon: 'clock',    label: 'Today',         count: '24',  active: false, tone: 'muted'  },
-  { icon: 'calendar', label: 'This week',     count: '89',  active: false, tone: 'muted'  },
-  { icon: 'reply',    label: 'Awaiting reply', count: '3',  active: false, tone: 'accent' },
-  { icon: 'sparkles', label: 'Agent drafts',  count: '2',   active: false, tone: 'accent' },
-  { icon: 'moon',     label: 'Snoozed',       count: '2',   active: false, tone: 'muted'  },
-  { icon: 'send',     label: 'Scheduled',     count: '1',   active: false, tone: 'accent' },
+// One visual language for every row: icon, label, bare tabular count.
+// `accent` is an unread count (sky, semibold); a plain total stays muted.
+type RailRow = { icon: keyof typeof icons; label: string; count?: string; accent?: boolean; active?: boolean };
+
+const viewRows: RailRow[] = [
+  { icon: 'layers',   label: 'All mail',       count: '342', active: true },
+  { icon: 'inbox',    label: 'Inbox',          count: '7',   accent: true },
+  { icon: 'mail',     label: 'Unread',         count: '7',   accent: true },
+  { icon: 'reply',    label: 'Awaiting reply', count: '3',   accent: true },
+  { icon: 'sparkles', label: 'Agent drafts',   count: '2',   accent: true },
+  { icon: 'moon',     label: 'Snoozed',        count: '2' },
 ];
 
-// Folders (ScopeRail FolderItem), the inbox selected.
-const folders = [
-  { label: 'Inbox', active: true, icon: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>' },
-  { label: 'Drafts', icon: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>' },
-  { label: 'Sent', icon: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>' },
-  { label: 'Archive', icon: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>' },
-  { label: 'Spam', icon: '<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/>' },
-  { label: 'Trash', icon: '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>' },
+const folderRows: RailRow[] = [
+  { icon: 'fileText', label: 'Drafts',    count: '4' },
+  { icon: 'send',     label: 'Sent' },
+  { icon: 'clock',    label: 'Scheduled', count: '1', accent: true },
+  { icon: 'archive',  label: 'Archive' },
+  { icon: 'octagon',  label: 'Spam' },
+  { icon: 'trash2',   label: 'Trash' },
 ];
 
 const mailboxScopes = [
@@ -56,44 +76,64 @@ const mailboxScopes = [
   { email: 'sales@company.com',   count: ''  },
 ];
 
+const labelScopes = [
+  { color: '#ef4444', label: 'Urgent',  count: '1' },
+  { color: '#f59e0b', label: 'Clients', count: '3' },
+];
+
 const tagScopes = [
-  { color: '#ef4444', label: 'Urgent', count: '1'  },
-  { color: '#3b82f6', label: 'Leads',  count: '12' },
+  { color: '#3b82f6', label: 'Leads', count: '12' },
 ];
 
 // ── Conversation list (middle) ─────────────────────────────────────
-const conversations = [
+type Conversation = {
+  sender: string; subject: string; preview: string; time: string;
+  unread: boolean; selected: boolean; count?: number; mailbox: string;
+  labels: { color: string; label: string }[];
+};
+
+const groups: { title: string; rows: Conversation[] }[] = [
   {
-    initials: 'SC', hue: 14, sender: 'Sarah Chen',
-    subject: 'Follow up on Q1 proposal',
-    preview: "Thanks for sending over the docs. I've reviewed them and have a few…",
-    time: '5m', unread: true, selected: true, count: 3,
-    mailbox: 'hello@company.com',
-    tags: [{ color: '#ef4444', label: 'Urgent' }, { color: '#f59e0b', label: 'Clients' }],
+    title: 'Today',
+    rows: [
+      {
+        sender: 'Sarah Chen',
+        subject: 'Follow up on Q1 proposal',
+        preview: "Thanks for sending over the docs. I've reviewed them and have a few questions.",
+        time: '5m', unread: true, selected: true, count: 3,
+        mailbox: 'hello@company.com',
+        labels: [{ color: '#ef4444', label: 'Urgent' }, { color: '#f59e0b', label: 'Clients' }],
+      },
+      {
+        sender: 'Jordan Smith',
+        subject: 'Re: Dashboard integration',
+        preview: 'The API endpoint looks good. When can we expect the staging build?',
+        time: '42m', unread: false, selected: false,
+        mailbox: 'support@company.com',
+        labels: [],
+      },
+      {
+        sender: 'Alex Morgan',
+        subject: 'New partnership opportunity',
+        preview: "Hi there, I'm reaching out about a potential partnership between our teams.",
+        time: '3h', unread: true, selected: false,
+        mailbox: 'sales@company.com',
+        labels: [{ color: '#3b82f6', label: 'Leads' }],
+      },
+    ],
   },
   {
-    initials: 'JS', hue: 210, sender: 'Jordan Smith',
-    subject: 'Re: Dashboard integration',
-    preview: 'The API endpoint looks good. When can we expect the staging build?',
-    time: '42m', unread: false, selected: false,
-    mailbox: 'support@company.com',
-    tags: [],
-  },
-  {
-    initials: 'AM', hue: 265, sender: 'Alex Morgan',
-    subject: 'New partnership opportunity',
-    preview: "Hi there, I'm reaching out about a potential partnership between…",
-    time: '3h', unread: false, selected: false,
-    mailbox: 'sales@company.com',
-    tags: [{ color: '#3b82f6', label: 'Leads' }],
-  },
-  {
-    initials: 'CR', hue: 150, sender: 'Casey Reynolds',
-    subject: '(no subject)',
-    preview: '(no preview)',
-    time: 'Jan 15', unread: false, selected: false,
-    mailbox: 'hello@company.com',
-    tags: [],
+    title: 'Earlier',
+    rows: [
+      {
+        sender: 'Casey Reynolds',
+        subject: '(no subject)',
+        preview: '(no preview)',
+        time: 'Jan 15', unread: false, selected: false,
+        mailbox: 'hello@company.com',
+        labels: [],
+      },
+    ],
   },
 ];
 
@@ -116,131 +156,114 @@ const messages = [
   },
 ];
 
-const railToneClass = (tone: string, active: boolean) => {
-  if (active) return 'bg-white/80 text-sky-700';
-  if (tone === 'accent') return 'bg-sky-100 text-sky-700';
-  return 'text-slate-400';
-};
+const threadLabels = [
+  { color: '#ef4444', rgb: '239,68,68',  label: 'Urgent' },
+  { color: '#f59e0b', rgb: '245,158,11', label: 'Clients' },
+];
+
+// ScopeRail: ROW / ROW_ACTIVE / ROW_IDLE and Count.
+const railRow = (active?: boolean) =>
+  `w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2.5 text-left ${active ? 'bg-slate-100 text-slate-900' : 'text-slate-600'}`;
+const railIcon = (active?: boolean) => `shrink-0 ${active ? 'text-slate-800' : 'text-slate-400'}`;
+const railCount = (accent?: boolean, active?: boolean) =>
+  `shrink-0 tabular-nums text-[11px] ${accent && !active ? 'text-sky-700 font-semibold' : active ? 'text-slate-600' : 'text-slate-400'}`;
 ---
 <div class="ub relative w-full flex flex-col bg-white text-slate-900" style="min-height:500px;" data-demo="ub">
   <!-- ─────────────────────────────────────────────────────────────
-       1) TOP STRIP - UniboxHeader (h-10)
-  ────────────────────────────────────────────────────────────── -->
-  <header class="h-10 px-3 @sm:px-4 border-b border-slate-200 bg-white flex items-center gap-2 @sm:gap-3 shrink-0 overflow-x-auto">
-    <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold shrink-0">Inbox</span>
-    <div class="h-4 w-px bg-slate-200 shrink-0"></div>
-    <div class="flex items-center gap-3.5 min-w-0">
-      {stats.map((s) => (
-        <div class="inline-flex items-baseline gap-1 shrink-0">
-          <span class={`font-mono tabular-nums text-[12.5px] font-semibold ${s.tone === 'accent' ? 'text-sky-600' : s.tone === 'muted' ? 'text-slate-400' : 'text-slate-900'}`}>{s.value}</span>
-          <span class="text-[10.5px] text-slate-500">{s.label}</span>
-        </div>
-      ))}
-    </div>
-    <div class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium shrink-0">
-      <span class="relative flex size-1.5">
-        <span class="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping"></span>
-        <span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span>
-      </span>
-      live
-    </div>
-  </header>
-
-  <!-- ─────────────────────────────────────────────────────────────
-       2) MAIN ROW - rail · list · thread
+       MAIN ROW - rail · list · divider · thread (page.tsx)
   ────────────────────────────────────────────────────────────── -->
   <div class="flex-1 flex min-h-0">
 
-    <!-- a) LEFT SCOPE RAIL (w-220, hidden on narrower viewports) -->
-    <nav class="flex flex-col w-[220px] shrink-0 border-r border-slate-200 bg-slate-50/60 overflow-y-auto py-2">
+    <!-- a) LEFT SCOPE RAIL (w-220, ScopeRail.tsx) -->
+    <nav class="w-[220px] shrink-0 h-full bg-white border-r border-slate-200 overflow-y-auto py-3">
       <!-- Compose -->
-      <div class="px-2 pb-2">
-        <span class="w-full h-8 rounded-lg bg-sky-600 text-white text-[12px] font-medium inline-flex items-center justify-center gap-1.5 shadow-sm shadow-sky-600/20 transition-colors">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+      <div class="px-3 pb-3">
+        <span class="w-full h-8 rounded-md bg-sky-600 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.penLine}></svg>
           Compose
         </span>
       </div>
-      <!-- Folders -->
-      <div class="mb-1">
-        <div class="px-3 pt-3 pb-1 flex items-center gap-2">
-          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">Folders</span>
-        </div>
-        <div class="px-1.5 space-y-px">
-          {folders.map((f) => (
-            <div class={`group/folder w-full h-7 pl-2 pr-1 rounded-md flex items-center gap-2 transition-colors text-left cursor-pointer ${f.active ? 'bg-slate-200/80 text-slate-900' : 'text-slate-600'}`}>
-              <span class="shrink-0 text-slate-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={f.icon}></svg></span>
-              <span class="truncate min-w-0 flex-1 text-[12px]">{f.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+
       <!-- Views -->
-      <div class="mb-1">
-        <div class="px-3 pt-3 pb-1 flex items-center gap-2">
-          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">Views</span>
-        </div>
-        <div class="px-1.5 space-y-px">
-          {inboxScopes.map((it) => (
-            <div class={`w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2 transition-colors text-left ${it.active ? 'bg-sky-100 text-sky-900 font-medium' : 'text-slate-600'}`}>
-              <span class={`shrink-0 ${it.active ? 'text-sky-700' : 'text-slate-500'}`}>
-                {it.icon === 'inbox'    && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>}
-                {it.icon === 'sparkles' && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>}
-                {it.icon === 'sparkle'  && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/></svg>}
-                {it.icon === 'clock'    && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
-                {it.icon === 'calendar' && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M17 14h-6"/><path d="M13 18H7"/><path d="M7 14h.01"/><path d="M17 18h.01"/></svg>}
-                {it.icon === 'reply'    && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>}
-                {it.icon === 'moon'     && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>}
-                {it.icon === 'send'     && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>}
-              </span>
-              <span class="truncate min-w-0 flex-1 text-[12px]">{it.label}</span>
-              {it.count && (
-                <span class={`shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center ${railToneClass(it.tone, it.active)}`}>{it.count}</span>
-              )}
-            </div>
-          ))}
-        </div>
+      <div class="px-2 pb-3 space-y-px">
+        {viewRows.map((r) => (
+          <div class={railRow(r.active)} title={r.label}>
+            <span class={railIcon(r.active)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons[r.icon]}></svg></span>
+            <span class={`truncate min-w-0 flex-1 text-[12.5px] ${r.active ? 'font-medium' : ''}`}>{r.label}</span>
+            {r.count && <span class={railCount(r.accent, r.active)}>{r.count}</span>}
+          </div>
+        ))}
       </div>
 
-      <!-- Mailboxes section -->
-      <div class="mb-1">
-        <div class="w-full px-3 pt-3 pb-1 flex items-center gap-1.5">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">Mailboxes</span>
-          <span class="ml-auto font-mono text-[10px] text-slate-400 tabular-nums">3</span>
+      <!-- Folders -->
+      <div class="px-2 pb-3 space-y-px">
+        {folderRows.map((r) => (
+          <div class={railRow(r.active)} title={r.label}>
+            <span class={railIcon(r.active)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons[r.icon]}></svg></span>
+            <span class={`truncate min-w-0 flex-1 text-[12.5px] ${r.active ? 'font-medium' : ''}`}>{r.label}</span>
+            {r.count && <span class={railCount(r.accent, r.active)}>{r.count}</span>}
+          </div>
+        ))}
+      </div>
+
+      <!-- Mailboxes (CollapsibleSection) -->
+      <div class="pb-2">
+        <div class="w-full h-7 px-4 flex items-center gap-1.5 text-left">
+          <span class="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">Mailboxes</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-300" stroke-linecap="round" stroke-linejoin="round" set:html={icons.chevron}></svg>
+          <span class="ml-auto text-[10.5px] text-slate-300 tabular-nums">{mailboxScopes.length}</span>
         </div>
-        <div class="px-1.5">
+        <div class="px-2">
           <div class="space-y-px">
             {mailboxScopes.map((m) => (
-              <div class="w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2 text-left text-slate-600">
-                <span class="shrink-0 text-slate-500">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5H18c2.2 0 4 1.8 4 4z"/><polyline points="15,9 18,9 18,11"/><path d="M6.5 5C9 5 11 7 11 9.5V17a2 2 0 0 1-2 2"/><line x1="6" x2="7" y1="10" y2="10"/></svg>
-                </span>
-                <span class="truncate min-w-0 flex-1 font-mono text-[11.5px]">{m.email}</span>
-                {m.count && (
-                  <span class={`shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center ${m.count !== '' ? 'bg-sky-100 text-sky-700' : 'text-slate-400'}`}>{m.count}</span>
-                )}
+              <div class={railRow(false)} title={m.email}>
+                <span class={railIcon(false)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.mailOpen}></svg></span>
+                <span class="truncate min-w-0 flex-1 text-[12.5px]">{m.email}</span>
+                {m.count && <span class={railCount(true, false)}>{m.count}</span>}
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      <!-- Tags section -->
-      <div class="mb-1">
-        <div class="w-full px-3 pt-3 pb-1 flex items-center gap-1.5">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-semibold">Tags</span>
-          <span class="ml-auto font-mono text-[10px] text-slate-400 tabular-nums">2</span>
+      <!-- Labels (CollapsibleSection) -->
+      <div class="pb-2">
+        <div class="w-full h-7 px-4 flex items-center gap-1.5 text-left">
+          <span class="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">Labels</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-300" stroke-linecap="round" stroke-linejoin="round" set:html={icons.chevron}></svg>
+          <span class="ml-auto text-[10.5px] text-slate-300 tabular-nums">{labelScopes.length}</span>
         </div>
-        <div class="px-1.5">
+        <div class="px-2">
+          <div class="space-y-px">
+            {labelScopes.map((l) => (
+              <div class={railRow(false)} title={l.label}>
+                <span class="shrink-0 inline-flex w-[15px] h-[15px] items-center justify-center">
+                  <span class="block size-2 rounded-full" style={`background-color:${l.color};`}></span>
+                </span>
+                <span class="truncate min-w-0 flex-1 text-[12.5px]">{l.label}</span>
+                <span class={railCount(true, false)}>{l.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- Tags (CollapsibleSection) -->
+      <div class="pb-2">
+        <div class="w-full h-7 px-4 flex items-center gap-1.5 text-left">
+          <span class="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">Tags</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-300" stroke-linecap="round" stroke-linejoin="round" set:html={icons.chevron}></svg>
+          <span class="ml-auto text-[10.5px] text-slate-300 tabular-nums">{tagScopes.length}</span>
+        </div>
+        <div class="px-2">
           <div class="space-y-px">
             {tagScopes.map((t) => (
-              <div class="w-full h-7 pl-2 pr-2 rounded-md flex items-center gap-2 text-left text-slate-600">
-                <span class="shrink-0">
-                  <span class="block size-3 rounded-full ring-1 ring-black/10 shadow-sm" style={`background-color:${t.color};`}></span>
+              <div class={railRow(false)} title={t.label}>
+                <span class="shrink-0 inline-flex w-[15px] h-[15px] items-center justify-center">
+                  <span class="block size-2 rounded-full" style={`background-color:${t.color};`}></span>
                 </span>
-                <span class="truncate min-w-0 flex-1 text-[12px]">{t.label}</span>
-                <span class="shrink-0 font-mono tabular-nums text-[10.5px] px-1.5 h-4 rounded inline-flex items-center bg-sky-100 text-sky-700">{t.count}</span>
+                <span class="truncate min-w-0 flex-1 text-[12.5px]">{t.label}</span>
+                <span class={railCount(true, false)}>{t.count}</span>
               </div>
             ))}
           </div>
@@ -248,150 +271,166 @@ const railToneClass = (tone: string, active: boolean) => {
       </div>
     </nav>
 
-    <!-- b) MIDDLE LIST (w-360) -->
-    <div class="w-[360px] shrink-0 border-r border-slate-200 overflow-hidden flex flex-col bg-white min-h-0">
-      <!-- search bar -->
-      <div class="h-9 px-2 shrink-0 border-b border-slate-200 flex items-center gap-1.5">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400 shrink-0" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <span class="flex-1 min-w-0 h-7 inline-flex items-center text-[12.5px] text-slate-400">Search all… (/)</span>
-        <span class="font-mono tabular-nums text-[10.5px] text-slate-400 shrink-0">4</span>
-        <span class="size-7 rounded text-slate-500 inline-flex items-center justify-center shrink-0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+    <!-- b) MIDDLE LIST (w-360, ConversationList.tsx) -->
+    <div class="w-[360px] shrink-0 overflow-hidden flex flex-col bg-white min-h-0">
+      <!-- title row -->
+      <div class="h-11 pl-3 pr-2 shrink-0 flex items-center gap-1.5">
+        <span class="text-[13.5px] font-semibold text-slate-900 truncate min-w-0">All mail</span>
+        <span class="tabular-nums text-[11.5px] text-slate-400 shrink-0">4</span>
+        <span class="flex-1"></span>
+        <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500 shrink-0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.listFilter}></svg>
         </span>
       </div>
 
-      <!-- scrollable list -->
-      <div class="flex-1 overflow-y-auto">
-        <!-- sticky time-bucket header -->
-        <div class="sticky top-0 z-10 px-3 py-1 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/60 flex items-center gap-2">
-          <span class="text-[10px] uppercase tracking-[0.14em] text-slate-500 font-semibold">Today</span>
-          <span class="font-mono text-[10px] text-slate-400 tabular-nums">4</span>
-        </div>
-
-        <div class="divide-y divide-slate-200/60">
-          {conversations.map((c) => (
-            <div class={`group w-full text-left px-3 py-2 transition-colors flex items-start gap-2.5 relative ${c.selected ? 'bg-sky-50/80' : ''}`}>
-              {c.unread && (
-                <span class="absolute left-0 top-2 bottom-2 w-[3px] rounded-r bg-sky-500"></span>
-              )}
-              <div
-                class="size-7 rounded-full flex items-center justify-center shrink-0 text-[10px] font-semibold"
-                style={c.selected
-                  ? 'background-color:rgb(224 242 254);color:rgb(2 132 199);'
-                  : `background-color:hsl(${c.hue} 70% 94%);color:hsl(${c.hue} 55% 35%);`}
-              >{c.initials}</div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class={`text-[12.5px] truncate min-w-0 ${c.unread ? 'text-slate-900 font-semibold' : 'text-slate-800 font-medium'}`}>{c.sender}</span>
-                  {'count' in c && <span class="shrink-0 font-mono tabular-nums text-[10px] text-slate-500 bg-slate-100 rounded-full px-1.5 h-4 inline-flex items-center">{c.count}</span>}
-                  <span class="font-mono text-[10px] text-slate-400 tabular-nums shrink-0 ml-auto">{c.time}</span>
-                </div>
-                <div class={`text-[12px] truncate mt-0.5 ${c.unread ? 'text-slate-800 font-medium' : 'text-slate-600'}`}>{c.subject}</div>
-                <div class="text-[11px] text-slate-400 truncate mt-0.5">{c.preview}</div>
-                <div class="mt-1 flex items-center gap-1 min-w-0 flex-wrap">
-                  {c.tags.map((t) => (
-                    <span
-                      class="inline-flex items-center gap-1 h-4 pl-1 pr-1.5 rounded-sm border bg-white text-[10px] font-medium text-slate-700 overflow-hidden max-w-[120px]"
-                      style={`border-color:${t.color}60;background-color:${t.color}12;`}
-                    >
-                      <span class="block size-2 rounded-full shrink-0" style={`background-color:${t.color};`}></span>
-                      <span class="truncate">{t.label}</span>
-                    </span>
-                  ))}
-                  <span class="inline-flex items-center h-4 px-1.5 rounded-sm bg-slate-100 text-slate-500 text-[9.5px] font-mono truncate max-w-[160px]">{c.mailbox}</span>
-                </div>
-              </div>
-            </div>
-          ))}
+      <!-- search -->
+      <div class="px-3 pb-2 shrink-0 border-b border-slate-200">
+        <div class="h-8 px-2.5 rounded-md bg-slate-100/80 flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400 shrink-0" stroke-linecap="round" stroke-linejoin="round" set:html={icons.search}></svg>
+          <span class="flex-1 min-w-0 h-full inline-flex items-center text-[12.5px] text-slate-400 truncate">Search all mail</span>
+          <kbd class="hidden @md:inline-flex h-4 px-1 items-center rounded border border-slate-200 bg-white text-[10px] text-slate-400 font-mono shrink-0">/</kbd>
         </div>
       </div>
-      <div class="h-6 px-2 shrink-0 border-t border-slate-200/80 bg-slate-50/60 hidden @md:flex items-center gap-2 text-[10px] text-slate-500 overflow-x-auto">
-        <kbd class="px-1 h-3.5 rounded-sm bg-white border border-slate-200 text-slate-600 font-mono text-[9px] inline-flex items-center shrink-0">j</kbd>/<kbd class="px-1 h-3.5 rounded-sm bg-white border border-slate-200 text-slate-600 font-mono text-[9px] inline-flex items-center shrink-0">k</kbd>
-        <span class="text-slate-400">move</span> <kbd class="px-1 h-3.5 rounded-sm bg-white border border-slate-200 text-slate-600 font-mono text-[9px] inline-flex items-center shrink-0">↵</kbd> <span class="text-slate-400">open</span>
-        <kbd class="px-1 h-3.5 rounded-sm bg-white border border-slate-200 text-slate-600 font-mono text-[9px] inline-flex items-center shrink-0">esc</kbd> <span class="text-slate-400">close</span> <kbd class="px-1 h-3.5 rounded-sm bg-white border border-slate-200 text-slate-600 font-mono text-[9px] inline-flex items-center shrink-0">/</kbd> <span class="text-slate-400">search</span>
+
+      <!-- grouped rows -->
+      <div class="flex-1 overflow-y-auto">
+        {groups.map((g) => (
+          <section>
+            <div class="sticky top-0 z-10 px-4 h-7 bg-white/95 backdrop-blur-sm flex items-center">
+              <span class="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">{g.title}</span>
+            </div>
+            <div class="divide-y divide-slate-100">
+              {g.rows.map((c) => (
+                <div class={`group w-full text-left pl-3 pr-4 py-2.5 flex items-start gap-2 ${c.selected ? 'bg-sky-50' : ''}`}>
+                  <!-- gutter: the unread dot, or the same space when read -->
+                  <span class="w-2 shrink-0 flex items-center justify-center h-[18px]">
+                    {c.unread && <span class="block size-2 rounded-full bg-sky-500"></span>}
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 min-w-0 h-[18px]">
+                      <span class={`text-[12.5px] truncate min-w-0 ${c.unread ? 'text-slate-900 font-semibold' : 'text-slate-700'}`}>{c.sender}</span>
+                      {c.count && <span class="shrink-0 tabular-nums text-[11px] text-slate-400">{c.count}</span>}
+                      <span class={`text-[11px] tabular-nums shrink-0 ml-auto ${c.unread ? 'text-sky-700 font-medium' : 'text-slate-400'}`}>{c.time}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 min-w-0 mt-0.5">
+                      <span class={`text-[12.5px] truncate min-w-0 ${c.unread ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>{c.subject}</span>
+                      {c.labels.length > 0 && (
+                        <span class="ml-auto shrink-0 inline-flex items-center gap-1">
+                          {c.labels.map((l) => (
+                            <span
+                              class="inline-flex items-center gap-1 h-4 px-1.5 rounded-sm text-[10px] font-medium overflow-hidden max-w-[110px]"
+                              style={`color:${l.color};background-color:${l.color}14;`}
+                            >
+                              <span class="block size-1.5 rounded-full shrink-0" style={`background-color:${l.color};`}></span>
+                              <span class="truncate">{l.label}</span>
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </div>
+                    <div class="flex items-center gap-2 min-w-0 mt-0.5">
+                      <span class="text-[11.5px] text-slate-400 truncate min-w-0">{c.preview}</span>
+                      <span class="ml-auto shrink-0 max-w-[40%] truncate text-[10.5px] text-slate-300">{c.mailbox}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
 
-    <!-- c) RIGHT THREAD PANE -->
+    <!-- divider: the drag handle, a 6px column with the hairline centred -->
+    <div class="w-1.5 shrink-0 flex items-stretch justify-center">
+      <span class="w-px bg-slate-200"></span>
+    </div>
+
+    <!-- c) RIGHT THREAD PANE (ThreadView.tsx) -->
     <div class="flex-1 min-w-0 flex flex-col bg-white min-h-0">
-      <!-- thread header (h-12) -->
-      <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
-        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Thread</span>
-        <div class="h-4 w-px bg-slate-200"></div>
-        <span class="text-[12.5px] text-slate-900 font-medium truncate min-w-0">Follow up on Q1 proposal</span>
-        <span class="ml-1 inline-flex items-center gap-1 h-5 px-1.5 rounded bg-slate-100 text-slate-600 text-[10.5px] font-medium font-mono shrink-0">hello@company.com</span>
-        <span class="hidden @md:inline-flex items-center gap-1 shrink-0">
-          <span class="inline-flex items-center gap-1 h-4 pl-1 pr-1 text-[10px] rounded font-medium" style="background-color:rgba(239,68,68,0.12);color:#ef4444;border:1px solid rgba(239,68,68,0.25);"><span class="size-1.5 rounded-full shrink-0" style="background-color:#ef4444;"></span><span class="truncate max-w-[72px] @md:max-w-none">Urgent</span></span>
-          <span class="inline-flex items-center gap-1 h-4 pl-1 pr-1 text-[10px] rounded font-medium" style="background-color:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);"><span class="size-1.5 rounded-full shrink-0" style="background-color:#f59e0b;"></span><span class="truncate max-w-[72px] @md:max-w-none">Clients</span></span>
-        </span>
-        <div class="ml-auto flex items-center gap-1">
-          <span class="inline-flex size-7 rounded-md items-center justify-center transition-colors text-slate-500">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </span>
-          <span class="h-7 px-2 rounded-md text-slate-500 inline-flex items-center gap-1 transition-colors text-[12px]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-            Snooze
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <!-- header: subject over a meta line, icon-only actions on the right -->
+      <div class="min-h-12 px-4 @sm:px-5 py-2 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
+        <div class="min-w-0 flex-1">
+          <div class="text-[13.5px] text-slate-900 font-semibold truncate leading-5">Follow up on Q1 proposal</div>
+          <div class="flex items-center gap-1.5 min-w-0 text-[11px] text-slate-400 leading-4">
+            <span class="shrink-0">3 messages</span>
+            <span class="text-slate-300">&middot;</span>
+            <span class="truncate min-w-0">hello@company.com</span>
+            <span class="hidden @md:inline-flex items-center gap-1 shrink-0 ml-1">
+              {threadLabels.map((l) => (
+                <span class="inline-flex items-center gap-1 min-w-0 h-4 pl-1 pr-1 text-[10px] rounded font-medium" style={`background-color:rgba(${l.rgb},0.12);color:${l.color};border:1px solid rgba(${l.rgb},0.25);`}>
+                  <span class="size-1.5 rounded-full shrink-0" style={`background-color:${l.color};`}></span>
+                  <span class="truncate min-w-0">{l.label}</span>
+                </span>
+              ))}
+            </span>
+          </div>
+        </div>
+        <div class="flex items-center gap-0.5 shrink-0">
+          <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.tag}></svg>
           </span>
           <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7"/><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m16 19 2 2 4-4"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.moon}></svg>
           </span>
+          <div class="hidden @sm:flex items-center gap-0.5">
+            <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.mailCheck}></svg>
+            </span>
+            <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.archive}></svg>
+            </span>
+            <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.trash}></svg>
+            </span>
+          </div>
+          <span class="hidden @sm:block h-4 w-px bg-slate-200 mx-1"></span>
           <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
-          </span>
-          <span class="size-7 rounded-md inline-flex items-center justify-center text-slate-500 hover:text-red-600 hover:bg-red-50">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.user}></svg>
           </span>
         </div>
       </div>
 
-      <!-- SectionBar -->
-      <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-2.5 shrink-0">
-        <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">3 messages</span>
-        <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">2</span>
-      </div>
-
-      <!-- messages -->
-      <div class="flex-1 overflow-y-auto divide-y divide-slate-200/60">
+      <!-- messages (MessageBubble.tsx) -->
+      <div class="flex-1 overflow-y-auto divide-y divide-slate-100">
         {messages.map((m) => (
-          <article class="group px-3 @sm:px-5 py-4">
-            <header class="flex items-start gap-3 mb-3 cursor-pointer">
-              <div class="size-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-semibold shrink-0">{m.initials}</div>
+          <article class={m.collapsed ? 'group px-4 @sm:px-5 py-2.5' : 'group px-4 @sm:px-5 py-4'}>
+            <header class={m.collapsed ? 'flex items-start gap-3 cursor-pointer' : 'flex items-start gap-3 mb-3 cursor-pointer'}>
+              <div class="size-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10.5px] font-semibold shrink-0">{m.initials}</div>
               <div class="min-w-0 flex-1">
-                <div class="flex items-baseline gap-2">
+                <div class="flex items-baseline gap-2 min-w-0">
                   <span class="text-[12.5px] font-semibold text-slate-900 truncate">{m.name}</span>
-                  <span class="font-mono text-[10.5px] text-slate-400 truncate">{m.addr}</span>
+                  {!m.collapsed && <span class="text-[11px] text-slate-400 truncate">{m.addr}</span>}
                 </div>
-                <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
-                  <span>to {m.to}</span>
-                </div>
+                {m.collapsed
+                  ? <div class="text-[12px] text-slate-500 truncate">{m.body}</div>
+                  : <div class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5"><span class="truncate min-w-0">to {m.to}</span></div>}
               </div>
               <div class="flex items-center gap-1 shrink-0">
                 <div class="flex items-center gap-0.5 opacity-100 @md:opacity-0 @md:group-hover:opacity-100 transition-opacity">
-                  <span class="size-6 rounded text-slate-500 inline-flex items-center justify-center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg></span>
-                  <span class="size-6 rounded text-slate-500 inline-flex items-center justify-center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg></span>
+                  <span class="size-6 rounded text-slate-500 inline-flex items-center justify-center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.cornerUp}></svg></span>
+                  <span class="size-6 rounded text-slate-500 inline-flex items-center justify-center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.forward}></svg></span>
                 </div>
-                <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">{m.time}</span>
+                <span class="text-[11px] text-slate-400 tabular-nums whitespace-nowrap">{m.time}</span>
               </div>
             </header>
-            {m.collapsed
-              ? <div class="w-full text-left text-[13px] text-slate-500 truncate">{m.body}</div>
-              : <div class="text-[13px] text-slate-800" style="line-height:1.6;">{m.body}</div>}
+            {!m.collapsed && (
+              <div class="@sm:pl-10 text-[13px] text-slate-800" style="line-height:1.6;">{m.body}</div>
+            )}
           </article>
         ))}
       </div>
 
       <!-- reply rail footer -->
-      <div class="border-t border-slate-200 bg-white px-3 py-2 flex items-center gap-1.5 shrink-0">
+      <div class="border-t border-slate-200 bg-white px-4 @sm:px-5 py-2.5 flex items-center gap-1.5 shrink-0">
         <span class="ub-reply-btn h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors [&.is-hover]:bg-sky-700 [&.is-pressed]:bg-sky-700">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.cornerUp}></svg>
           Reply
         </span>
         <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.forward}></svg>
           Forward
         </span>
-        <span class="ml-auto min-w-0 truncate text-[10.5px] text-slate-400">Hover any message to reply to it directly.</span>
       </div>
     </div>
   </div>
@@ -399,16 +438,17 @@ const railToneClass = (tone: string, active: boolean) => {
   <!-- ─────────────────────────────────────────────────────────────
        DEMO SCENE: the cursor presses Reply and the real ReplyComposer
        rises over the bottom of the thread pane (12px lift, 200ms), then
-       closes it from the composer's own X.
+       closes it from the composer's own X. Left edge = rail (220) +
+       list (360) + divider (6).
        Mirrors web/src/components/app/unibox/ReplyComposer.tsx
   ────────────────────────────────────────────────────────────── -->
-  <div class="ub-react absolute left-[580px] right-0 bottom-0 z-40 border-t border-slate-200 bg-white shrink-0 flex flex-col shadow-[0_-6px_24px_-12px_rgba(15,23,42,0.10)]" aria-hidden="true">
+  <div class="ub-react absolute left-[586px] right-0 bottom-0 z-40 border-t border-slate-200 bg-white shrink-0 flex flex-col shadow-[0_-6px_24px_-12px_rgba(15,23,42,0.10)]" aria-hidden="true">
     <!-- target strip: what this composer is doing, plus the close handle -->
     <div class="h-8 pl-3.5 pr-1.5 flex items-center gap-2 bg-slate-100/80 border-b border-slate-200 select-none">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-slate-500"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-      <span class="min-w-0 flex-1 text-[11.5px] text-slate-500 truncate"><span class="font-semibold text-slate-800">Reply</span> to Sarah Chen<span class="text-slate-400"> · Follow up on Q1 proposal</span></span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-slate-500" set:html={icons.cornerUp}></svg>
+      <span class="min-w-0 flex-1 text-[11.5px] text-slate-500 truncate"><span class="font-semibold text-slate-800">Reply</span> to Sarah Chen<span class="text-slate-400"> &middot; Follow up on Q1 proposal</span></span>
       <span class="size-6 inline-flex items-center justify-center rounded-md text-slate-400 shrink-0 transition-colors [&.is-hover]:text-slate-700 [&.is-hover]:bg-slate-200/60" data-ub="close">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.x}></svg>
       </span>
     </div>
 
@@ -420,11 +460,11 @@ const railToneClass = (tone: string, active: boolean) => {
           <span class="inline-flex items-center gap-1 h-5 pl-1.5 pr-0.5 rounded-md text-[11px] font-medium max-w-full min-w-0 border bg-sky-50 text-sky-800 border-sky-200">
             <span class="font-mono truncate">sarah@acme.io</span>
             <span class="size-4 shrink-0 inline-flex items-center justify-center rounded">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.x}></svg>
             </span>
           </span>
           <span class="flex-1 min-w-[14ch] h-5 bg-transparent text-[11.5px] text-slate-900 font-mono"></span>
-          <span class="shrink-0 size-5 inline-flex items-center justify-center rounded text-slate-400 transition-colors"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg></span>
+          <span class="shrink-0 size-5 inline-flex items-center justify-center rounded text-slate-400 transition-colors"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.userPlus}></svg></span>
           <div class="ml-auto flex items-center gap-0.5 shrink-0 self-start pt-px">
             <span class="h-5 px-1 rounded text-[11px] text-slate-400 inline-flex items-center">Cc</span>
             <span class="h-5 px-1 rounded text-[11px] text-slate-400 inline-flex items-center">Bcc</span>
@@ -451,10 +491,10 @@ const railToneClass = (tone: string, active: boolean) => {
     <!-- signature preview -->
     <div class="mx-4 mb-2 rounded-md border border-emerald-200/60 bg-emerald-50/40 overflow-hidden">
       <div class="px-3 py-1.5 flex items-center gap-1.5 border-b border-emerald-200/40 bg-emerald-50/60">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-emerald-700" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-emerald-700" stroke-linecap="round" stroke-linejoin="round" set:html={icons.penLine}></svg>
         <span class="text-[10px] uppercase tracking-[0.14em] text-emerald-800 font-semibold">Signature appended on send</span>
         <span class="ml-auto inline-flex items-center gap-1 text-[10px] text-emerald-700/80">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.info}></svg>
           from hello@company.com
         </span>
       </div>
@@ -465,22 +505,22 @@ The Company Team</pre>
     <!-- action bar -->
     <div class="px-3 py-2 border-t border-slate-200/60 flex flex-wrap items-center gap-1.5">
       <span class="h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.send}></svg>
         Send
       </span>
       <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.clock}></svg>
         Schedule
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round" set:html={icons.chevron}></svg>
       </span>
       <span class="h-7 px-2 rounded-md border border-slate-200 text-slate-700 text-[12px] inline-flex items-center gap-1 whitespace-nowrap shrink-0">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.fileText}></svg>
         Template
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-400" stroke-linecap="round" stroke-linejoin="round" set:html={icons.chevron}></svg>
       </span>
       <span class="h-7 px-2 rounded-md text-slate-500 text-[12px] inline-flex items-center whitespace-nowrap shrink-0">Discard</span>
       <span class="ml-auto inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 whitespace-nowrap">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={icons.penLine}></svg>
         Signature on
       </span>
       <span class="font-mono text-[10px] text-slate-400 tabular-nums">77/4000</span>

@@ -121,12 +121,9 @@ export default function ContactContextPanel({
                 onClick={onClose}
                 aria-hidden
             />
-            <aside className="fixed inset-y-0 right-0 z-[60] flex w-[min(20rem,90vw)] shrink-0 flex-col border-l border-slate-200 bg-white min-h-0 shadow-xl lg:static lg:z-auto lg:w-80 lg:bg-slate-50/40 lg:shadow-none">
-            <div className="h-12 px-3 border-b border-slate-200 flex items-center gap-2 shrink-0 bg-white">
-                <UserIcon className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                    Contact
-                </span>
+            <aside className="fixed inset-y-0 right-0 z-[60] flex w-[min(20rem,90vw)] shrink-0 flex-col border-l border-slate-200 bg-white min-h-0 shadow-xl lg:static lg:z-auto lg:w-80 lg:shadow-none">
+            <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2 shrink-0 bg-white">
+                <span className="text-[12.5px] font-semibold text-slate-900">Contact</span>
                 {onClose && (
                     <button
                         type="button"
@@ -150,7 +147,7 @@ export default function ContactContextPanel({
                 ) : (
                     <div className="divide-y divide-slate-200/70">
                         {/* Identity */}
-                        <div className="px-3 py-3">
+                        <div className="px-4 py-3">
                             <div className="flex items-start gap-2.5">
                                 <div className="size-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-[12px] font-semibold shrink-0">
                                     {initials(name)}
@@ -719,9 +716,9 @@ function Section({
     children?: React.ReactNode;
 }) {
     return (
-        <div className="px-3 py-3">
+        <div className="px-4 py-3">
             <div className="flex items-center gap-2 mb-2">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{label}</span>
+                <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">{label}</span>
                 {action && <span className="ml-auto">{action}</span>}
             </div>
             {hint ? <p className="text-[11px] text-slate-400">{hint}</p> : children}
@@ -818,10 +815,8 @@ function NotAContact({ email, name }: { email?: string; name?: string }) {
     }
 
     return (
-        <div className="px-3 py-8 text-center">
-            <div className="mx-auto size-9 rounded-md bg-white border border-slate-200 flex items-center justify-center mb-2.5">
-                <UserIcon className="w-4 h-4 text-slate-400" />
-            </div>
+        <div className="px-4 py-8 text-center">
+            <UserIcon className="w-5 h-5 text-slate-300 mx-auto mb-2.5" strokeWidth={1.5} />
             <p className="text-[12px] font-medium text-slate-700 mb-0.5">Not a known contact</p>
             {email && <p className="text-[11px] text-slate-400 break-all mb-3">{email}</p>}
             <div className="flex items-center justify-center gap-1.5">

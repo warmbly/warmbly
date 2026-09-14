@@ -15,6 +15,8 @@ import {
     ClockIcon,
     InboxIcon,
     Loader2Icon,
+    PanelLeftIcon,
+    RefreshCwIcon,
     SendIcon,
     XIcon,
 } from "lucide-react";
@@ -52,7 +54,7 @@ function formatWhen(iso: string): { absolute: string; relative: string } {
     return { absolute, relative };
 }
 
-export function ScheduledList() {
+export function ScheduledList({ onOpenScopeSheet }: { onOpenScopeSheet?: () => void }) {
     const q = useUniboxScheduled();
     const queryClient = useQueryClient();
     const [cancelingId, setCancelingId] = React.useState<string | null>(null);
@@ -69,17 +71,51 @@ export function ScheduledList() {
         onSettled: () => setCancelingId(null),
     });
 
+    const items = q.data?.data ?? [];
+
+    const header = (
+        <div className="h-11 pl-3 pr-2 shrink-0 border-b border-slate-200 flex items-center gap-1.5">
+            {onOpenScopeSheet && (
+                <button
+                    type="button"
+                    onClick={onOpenScopeSheet}
+                    aria-label="Switch view"
+                    className="lg:hidden size-7 -ml-1 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors shrink-0"
+                >
+                    <PanelLeftIcon className="w-4 h-4" />
+                </button>
+            )}
+            <h1 className="text-[13.5px] font-semibold text-slate-900">Scheduled</h1>
+            {items.length > 0 && (
+                <span className="tabular-nums text-[11.5px] text-slate-400">{items.length}</span>
+            )}
+            <button
+                type="button"
+                onClick={() => q.refetch()}
+                aria-label="Refresh"
+                className="ml-auto size-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center justify-center transition-colors"
+            >
+                <RefreshCwIcon className={cn("w-3.5 h-3.5", q.isFetching && "animate-spin")} />
+            </button>
+        </div>
+    );
+
     if (q.isPending) {
         return (
-            <div className="flex-1 flex items-center justify-center gap-2 text-[12px] text-slate-400">
-                <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
-                Loading scheduled sends…
+            <div className="flex-1 flex flex-col min-h-0">
+                {header}
+                <div className="flex-1 flex items-center justify-center gap-2 text-[12px] text-slate-400">
+                    <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
+                    Loading scheduled sends
+                </div>
             </div>
         );
     }
 
     if (q.isError) {
         return (
+            <div className="flex-1 flex flex-col min-h-0">
+            {header}
             <div className="flex-1 flex items-center justify-center px-6">
                 <div className="text-center max-w-sm">
                     <AlertCircleIcon className="w-5 h-5 text-rose-500 mx-auto mb-2" />
@@ -95,24 +131,24 @@ export function ScheduledList() {
                     </button>
                 </div>
             </div>
+            </div>
         );
     }
 
-    const items = q.data?.data ?? [];
-
     if (items.length === 0) {
         return (
-            <div className="flex-1 flex items-center justify-center">
-                <div className="text-center px-5">
-                    <div className="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-400">
-                        <SendIcon className="w-4 h-4" />
+            <div className="flex-1 flex flex-col min-h-0">
+                {header}
+                <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center px-5">
+                        <SendIcon className="w-5 h-5 text-slate-300 mx-auto mb-2.5" strokeWidth={1.5} />
+                        <p className="text-[12.5px] font-medium text-slate-600">
+                            No scheduled sends
+                        </p>
+                        <p className="text-[11.5px] text-slate-400 mt-1 max-w-[34ch] leading-relaxed">
+                            Replies you schedule show up here until they fire.
+                        </p>
                     </div>
-                    <p className="text-[12.5px] font-medium text-slate-700">
-                        No scheduled sends
-                    </p>
-                    <p className="text-[11.5px] text-slate-400 mt-1 max-w-[34ch] leading-relaxed">
-                        Replies you schedule with the picker show up here until they fire.
-                    </p>
                 </div>
             </div>
         );
@@ -120,21 +156,7 @@ export function ScheduledList() {
 
     return (
         <div className="flex-1 flex flex-col min-h-0">
-            <div className="h-10 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0">
-                <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                    Scheduled
-                </span>
-                <span className="text-[11.5px] text-slate-500">
-                    {items.length} pending
-                </span>
-                <button
-                    type="button"
-                    onClick={() => q.refetch()}
-                    className="ml-auto h-6 px-2 rounded text-[11px] text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-                >
-                    Refresh
-                </button>
-            </div>
+            {header}
 
             <div className="flex-1 overflow-y-auto">
                 <ul className="divide-y divide-slate-200/70">
@@ -149,11 +171,10 @@ export function ScheduledList() {
                     ))}
                 </ul>
 
-                <div className="px-5 py-4 text-[11px] text-slate-400 leading-relaxed border-t border-slate-100">
+                <div className="px-5 py-4 text-[11px] text-slate-400 leading-relaxed">
                     <InboxIcon className="inline w-3 h-3 mr-1 -mt-px" />
-                    Cancelling a send keeps the body and recipients on record — only the
-                    delivery is stopped. If a queued send fires after you cancel, the
-                    server skips it silently.
+                    Cancelling a send keeps the body and recipients on record; only the
+                    delivery is stopped.
                 </div>
             </div>
         </div>

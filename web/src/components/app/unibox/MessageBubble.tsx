@@ -1,8 +1,9 @@
 // Single message in a thread.
 //
 // Header row holds sender (avatar + name + email), recipient(s), and
-// timestamp. Body sits below in regular prose with light styling, no
-// containing card, just hairlines between messages.
+// timestamp. Body sits below, indented to the text column, with no
+// containing card: just hairlines between messages. Collapsed, the row is
+// one line of sender and preview, Gmail-style.
 //
 // Bodies are fetched per expanded message: the thread endpoint carries only a
 // preview line each, so rendering that as the message showed the first ~100
@@ -14,7 +15,8 @@
 // which specific message in the thread their reply targets.
 
 import React from "react";
-import { AlertCircleIcon, CornerUpLeftIcon, ForwardIcon, Loader2Icon } from "lucide-react";
+import { motion } from "framer-motion";
+import { AlertCircleIcon, CornerUpLeftIcon, ForwardIcon } from "lucide-react";
 import EmailBody from "./EmailBody";
 import useUniboxEmail from "@/lib/api/hooks/app/unibox/useUniboxEmail";
 import type UniboxEmail from "@/lib/api/models/app/unibox/UniboxEmail";
@@ -60,13 +62,13 @@ export function MessageBubble({
     const snippet = email.snippet ?? "";
 
     return (
-        <article className="group px-3 sm:px-5 py-4">
+        <article className={expanded ? "group px-4 sm:px-5 py-4" : "group px-4 sm:px-5 py-2.5"}>
             {/* Not a <button>: the reply/forward controls live inside it. */}
             <header
                 role="button"
                 tabIndex={0}
                 aria-expanded={expanded}
-                className="flex items-start gap-3 mb-3 cursor-pointer"
+                className={expanded ? "flex items-start gap-3 mb-3 cursor-pointer" : "flex items-start gap-3 cursor-pointer"}
                 onClick={() => setExpanded((v) => !v)}
                 onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -75,23 +77,29 @@ export function MessageBubble({
                     }
                 }}
             >
-                <div className="size-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-semibold shrink-0">
+                <div className="size-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10.5px] font-semibold shrink-0">
                     {initials(email.from)}
                 </div>
                 <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-baseline gap-2 min-w-0">
                         <span className="text-[12.5px] font-semibold text-slate-900 truncate">
                             {name}
                         </span>
-                        {addr && (
-                            <span className="font-mono text-[10.5px] text-slate-400 truncate">
+                        {addr && expanded && (
+                            <span className="text-[11px] text-slate-400 truncate">
                                 {addr}
                             </span>
                         )}
                     </div>
-                    <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
-                        <span className="truncate min-w-0">to {email.to}</span>
-                    </div>
+                    {expanded ? (
+                        <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                            <span className="truncate min-w-0">to {email.to}</span>
+                        </div>
+                    ) : (
+                        <div className="text-[12px] text-slate-500 truncate">
+                            {snippet || "Show this message"}
+                        </div>
+                    )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                     <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
@@ -124,28 +132,20 @@ export function MessageBubble({
                             </button>
                         )}
                     </div>
-                    <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
+                    <span className="text-[11px] text-slate-400 tabular-nums whitespace-nowrap">
                         {dateStr}
                     </span>
                 </div>
             </header>
 
-            {!expanded ? (
-                <button
-                    type="button"
-                    onClick={() => setExpanded(true)}
-                    className="w-full text-left text-[13px] text-slate-500 truncate hover:text-slate-700 transition-colors"
-                    title="Show this message"
-                >
-                    {snippet || "Show this message"}
-                </button>
-            ) : body.isPending ? (
-                <div className="flex items-center gap-2 text-[12px] text-slate-400">
-                    <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
-                    Loading message…
+            {!expanded ? null : body.isPending ? (
+                <div className="sm:pl-10 space-y-2.5 py-0.5" aria-busy aria-label="Loading message">
+                    <div className="h-2.5 w-[90%] rounded bg-slate-100 animate-pulse" />
+                    <div className="h-2.5 w-[78%] rounded bg-slate-100 animate-pulse" />
+                    <div className="h-2.5 w-[55%] rounded bg-slate-100/80 animate-pulse" />
                 </div>
             ) : body.isError ? (
-                <div className="text-[12.5px] text-slate-600">
+                <div className="text-[12.5px] text-slate-600 sm:pl-10">
                     {/* Falling back to the preview beats an empty message pane. */}
                     <p className="whitespace-pre-wrap break-words">{snippet}</p>
                     <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-amber-700">
@@ -161,7 +161,12 @@ export function MessageBubble({
                     </p>
                 </div>
             ) : (
-                <>
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.16 }}
+                    className="sm:pl-10"
+                >
                     <EmailBody html={body.data?.body_html} plain={body.data?.body_plain} />
                     {body.data?.body_truncated && (
                         <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-amber-700">
@@ -170,7 +175,7 @@ export function MessageBubble({
                             shown here. Open it in the mailbox to read it in full.
                         </p>
                     )}
-                </>
+                </motion.div>
             )}
         </article>
     );

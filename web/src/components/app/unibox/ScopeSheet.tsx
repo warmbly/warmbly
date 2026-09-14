@@ -45,12 +45,8 @@ export function ScopeSheet({ open, setOpen, scope, onChange }: ScopeSheetProps) 
                         onClick={(e) => e.stopPropagation()}
                         className="flex flex-col bg-white w-[280px] max-w-[88%] h-full border-r border-slate-200 shadow-[8px_0_24px_-12px_rgba(15,23,42,0.18)]"
                     >
-                        <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
-                            <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">
-                                Scope
-                            </span>
-                            <div className="h-4 w-px bg-slate-200" />
-                            <span className="text-[12.5px] text-slate-700">Switch view</span>
+                        <div className="h-11 px-4 border-b border-slate-200 flex items-center gap-3 shrink-0">
+                            <span className="text-[13.5px] font-semibold text-slate-900">Views</span>
                             <button
                                 type="button"
                                 onClick={() => setOpen(false)}
