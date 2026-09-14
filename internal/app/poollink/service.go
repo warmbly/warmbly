@@ -578,8 +578,8 @@ func (s *service) state(ctx context.Context, inst *models.PoolLinkInstance, m *m
 		if n, err := s.warmup.SumWarmupSentSince(ctx, acc.ID, since); err == nil {
 			st.Sent7d = n
 		}
-		if n, err := s.warmup.CountSpamPlacementsSince(ctx, acc.ID, since); err == nil {
-			st.SpamPlaced7d = n
+		if placed, _, err := s.warmup.CountWarmupSpamReportsSince(ctx, acc.ID, since); err == nil {
+			st.SpamPlaced7d = placed
 		}
 		if stats, err := s.warmup.GetWarmupStatistics(ctx, acc.ID, since, time.Now()); err == nil {
 			for _, d := range stats {

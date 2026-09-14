@@ -11,42 +11,34 @@ import (
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
-// ownPoolRepo answers every metric read with zero and records which pool the
-// decision was read back from. Embedding the interface makes any other call
-// panic loudly rather than silently pass.
-type ownPoolRepo struct {
+// zeroMetricsRepo answers the metric read with zeros and writes nothing.
+// Embedding the interface makes any other call panic loudly rather than pass.
+type zeroMetricsRepo struct {
 	repository.WarmupRepository
+}
 
-	health       *models.WarmupParticipantHealth
-	updated      bool
-	readBackPool string
+func (zeroMetricsRepo) HealthMetricCounts(context.Context, uuid.UUID, time.Time, time.Time) (models.WarmupHealthCounts, error) {
+	return models.WarmupHealthCounts{}, nil
+}
+
+// ownPoolRepo serves one row through the account-scoped read only; a
+// pool-pinned read panics, which is the point of the test below.
+type ownPoolRepo struct {
+	zeroMetricsRepo
+
+	health  *models.WarmupParticipantHealth
+	updated bool
 }
 
 func (r *ownPoolRepo) GetParticipantHealthForAccount(context.Context, uuid.UUID) (*models.WarmupParticipantHealth, error) {
 	return r.health, nil
 }
-func (r *ownPoolRepo) GetParticipantHealth(_ context.Context, _ uuid.UUID, poolType string) (*models.WarmupParticipantHealth, error) {
-	r.readBackPool = poolType
-	if poolType != "free" {
-		return nil, nil // absent, not broken
-	}
-	return r.health, nil
-}
-func (r *ownPoolRepo) UpdateParticipantHealth(context.Context, uuid.UUID, models.WarmupHealthState, *time.Time, string, float64) error {
+func (r *ownPoolRepo) UpdateParticipantHealth(_ context.Context, _ uuid.UUID, state models.WarmupHealthState, _ *time.Time, _ string, _ float64) (*models.WarmupParticipantHealth, error) {
 	r.updated = true
-	return nil
-}
-func (r *ownPoolRepo) SumWarmupSentSince(context.Context, uuid.UUID, time.Time) (int, error) {
-	return 0, nil
-}
-func (r *ownPoolRepo) CountWarmupSpamReportsSince(context.Context, uuid.UUID, time.Time) (int, int, error) {
-	return 0, 0, nil
-}
-func (r *ownPoolRepo) CountComplaintsAndBouncesByAccount(context.Context, uuid.UUID, time.Time) (int, int, error) {
-	return 0, 0, nil
-}
-func (r *ownPoolRepo) CountDeliveredByAccount(context.Context, uuid.UUID, time.Time) (int, error) {
-	return 0, nil
+	written := *r.health
+	written.PoolType = "" // the write does not know the pool; the caller does
+	written.HealthState = state
+	return &written, nil
 }
 
 // The evaluation runs on the mailbox's own pool row. Probing "premium" first
@@ -67,7 +59,7 @@ func TestEvaluateAnyPoolEvaluatesTheMailboxesOwnPool(t *testing.T) {
 	if !repo.updated {
 		t.Fatal("the evaluation never persisted a decision")
 	}
-	if repo.readBackPool != "free" {
-		t.Fatalf("read the decision back from pool %q, want the pool the mailbox is actually in", repo.readBackPool)
+	if health.PoolType != "free" {
+		t.Fatalf("read the decision back from pool %q, want the pool the mailbox is actually in", health.PoolType)
 	}
 }

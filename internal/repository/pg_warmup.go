@@ -119,12 +119,17 @@ type WarmupRepository interface {
 	GetParticipantHealth(ctx context.Context, accountID uuid.UUID, poolType string) (*models.WarmupParticipantHealth, error)
 	// GetParticipantHealthForAccount returns the participant row whatever pool it is in.
 	GetParticipantHealthForAccount(ctx context.Context, accountID uuid.UUID) (*models.WarmupParticipantHealth, error)
-	UpdateParticipantHealth(ctx context.Context, accountID uuid.UUID, state models.WarmupHealthState, blockedUntil *time.Time, reason string, score float64) error
-	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
-	// CountWarmupSpamReportsSince is one scan of warmup_spam_reports returning
-	// placements (the provider filed it) and complaints (the recipient did) apart.
+	// UpdateParticipantHealth returns the row as written, or nil when the
+	// review-required hold kept it (or the mailbox is in no pool). PoolType is
+	// not on the returned row; the caller has it.
+	UpdateParticipantHealth(ctx context.Context, accountID uuid.UUID, state models.WarmupHealthState, blockedUntil *time.Time, reason string, score float64) (*models.WarmupParticipantHealth, error)
+	// ListParticipantHealth is every participant row, stalest evaluation first,
+	// so a sweep cut off by its deadline resumes where it left off.
+	ListParticipantHealth(ctx context.Context) ([]models.WarmupParticipantHealth, error)
+	// HealthMetricCounts is every count behind a health decision in one round trip.
+	HealthMetricCounts(ctx context.Context, accountID uuid.UUID, since7d, since30d time.Time) (models.WarmupHealthCounts, error)
+	// CountWarmupSpamReportsSince: one scan; placements (the provider filed it) and complaints (the recipient did) apart.
 	CountWarmupSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (placements, complaints int, err error)
-	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	// ColdRampStateForAccounts returns a whole candidate pool's graduation
 	// inputs in one round trip. The scheduler reads this per pass, so it must
 	// not be per-account.
@@ -137,10 +142,6 @@ type WarmupRepository interface {
 	// placement, so it needs all of them, not just the newest.
 	SpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) ([]time.Time, error)
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
-	// CountComplaintsAndBouncesByAccount is one scan of deliverability_events
-	// through the mailbox's tasks, the sweep's most expensive read.
-	CountComplaintsAndBouncesByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (complaints, bounces int, err error)
-	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
 	// Health sweep
 	GetAllParticipantAccountIDs(ctx context.Context) ([]uuid.UUID, error)
@@ -148,7 +149,6 @@ type WarmupRepository interface {
 
 	// Spam tracking
 	RecordSpamReport(ctx context.Context, report *SpamReport) (bool, error)
-	GetSpamScore(ctx context.Context, accountID uuid.UUID) (int, error)
 	IncrementSpamScore(ctx context.Context, accountID uuid.UUID, amount int) (int, error)
 	ResetSpamScore(ctx context.Context, accountID uuid.UUID) error
 
@@ -494,22 +494,9 @@ func (r *warmupRepository) RecordSpamReport(ctx context.Context, report *SpamRep
 	return cmd.RowsAffected() > 0, nil
 }
 
-// GetSpamScore reads the account's spam score. MAX, not SUM: the score is the mailbox's and
-// every writer of it is account-scoped, so summing counted it once per membership (issue #211).
-func (r *warmupRepository) GetSpamScore(ctx context.Context, accountID uuid.UUID) (int, error) {
-	query := `
-		SELECT COALESCE(MAX(spam_score), 0)
-		FROM warmup_pool_participants
-		WHERE email_account_id = $1
-	`
-
-	var score int
-	err := r.db.QueryRow(ctx, query, accountID).Scan(&score)
-	return score, err
-}
-
-// participantHealthSelect: the two readers below differ only in whether the pool is pinned.
-const participantHealthSelect = `
+// participantHealthColumns is the row every reader below scans; the account
+// readers pin it with participantHealthWhere, the listing orders it instead.
+const participantHealthColumns = `
 		SELECT
 			wpp.pool_id,
 			wp.pool_type,
@@ -525,7 +512,9 @@ const participantHealthSelect = `
 			wpp.last_health_evaluated_at,
 			wpp.health_signals_from
 		FROM warmup_pool_participants wpp
-		JOIN warmup_pools wp ON wp.id = wpp.pool_id
+		JOIN warmup_pools wp ON wp.id = wpp.pool_id`
+
+const participantHealthSelect = participantHealthColumns + `
 		WHERE wpp.email_account_id = $1`
 
 // GetParticipantHealthForAccount returns the participant row from whichever pool the mailbox
@@ -570,7 +559,7 @@ func (r *warmupRepository) scanParticipantHealth(row pgx.Row) (*models.WarmupPar
 	return &out, nil
 }
 
-func (r *warmupRepository) UpdateParticipantHealth(ctx context.Context, accountID uuid.UUID, state models.WarmupHealthState, blockedUntil *time.Time, reason string, score float64) error {
+func (r *warmupRepository) UpdateParticipantHealth(ctx context.Context, accountID uuid.UUID, state models.WarmupHealthState, blockedUntil *time.Time, reason string, score float64) (*models.WarmupParticipantHealth, error) {
 	// Every parameter is cast explicitly. Left bare, Postgres deduced $1 as
 	// `character varying` from the health_state assignment and as `text` from the
 	// equality tests, and could not deduce $2 at all from IS NULL / IS DISTINCT
@@ -633,31 +622,62 @@ func (r *warmupRepository) UpdateParticipantHealth(ctx context.Context, accountI
 		FROM eff
 		WHERE p.email_account_id = eff.email_account_id
 		  AND NOT (p.blocked_at IS NOT NULL AND p.blocked_until IS NULL AND p.health_state = 'blocked')
+		RETURNING p.pool_id, '', p.email_account_id, p.joined_at, p.blocked_at, p.blocked_until, p.blocked_reason,
+		          p.spam_score, p.health_state, p.last_health_score, p.last_health_reason,
+		          p.last_health_evaluated_at, p.health_signals_from
 	`
-	_, err := r.db.Exec(ctx, query, state, blockedUntil, reason, score, accountID)
-	return err
+	// The RETURNING list is participantHealthSelect's shape with an empty pool
+	// type, so the standing the floor decided comes back in the write's trip.
+	return r.scanParticipantHealth(r.db.QueryRow(ctx, query, state, blockedUntil, reason, score, accountID))
 }
 
-// CountSpamReportsSince returns the total count of any warmup spam-related
-// event against the account. Retained for backward compatibility with code
-// that wants the combined signal; the health sweep reads the two signals
-// apart through CountWarmupSpamReportsSince so each has its own threshold.
-func (r *warmupRepository) CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
+// ListParticipantHealth: stalest first, so a deadline is pacing, not a blind spot.
+func (r *warmupRepository) ListParticipantHealth(ctx context.Context) ([]models.WarmupParticipantHealth, error) {
+	rows, err := r.db.Query(ctx, participantHealthColumns+`
+		ORDER BY wpp.last_health_evaluated_at ASC NULLS FIRST, wpp.email_account_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.WarmupParticipantHealth
+	for rows.Next() {
+		h, err := r.scanParticipantHealth(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *h)
+	}
+	return out, rows.Err()
+}
+
+// HealthMetricCounts runs the four aggregates as one statement; each keeps
+// its own predicate so the (type, created_at) indexes still serve it.
+func (r *warmupRepository) HealthMetricCounts(ctx context.Context, accountID uuid.UUID, since7d, since30d time.Time) (models.WarmupHealthCounts, error) {
 	query := `
-		SELECT COUNT(*)
-		FROM warmup_spam_reports
-		WHERE reported_account_id = $1
-		  AND created_at >= $2
-		  AND report_type IN ('spam', 'spam_folder', 'user_complaint', 'spam_placement')
+		SELECT
+			(SELECT COALESCE(SUM(emails_sent), 0) FROM warmup_statistics
+			  WHERE email_account_id = $1 AND date >= DATE($2)),
+			(SELECT COUNT(*) FROM warmup_spam_reports
+			  WHERE reported_account_id = $1 AND created_at >= $2 AND report_type = 'spam_placement'),
+			(SELECT COUNT(*) FROM warmup_spam_reports
+			  WHERE reported_account_id = $1 AND created_at >= $2 AND report_type IN ('user_complaint', 'spam', 'spam_folder')),
+			(SELECT COUNT(*) FILTER (WHERE de.event_type = 'complaint') FROM deliverability_events de
+			  JOIN tasks t ON t.id = de.task_id
+			  WHERE t.email_account_id = $1 AND de.created_at >= $3 AND de.event_type IN ('complaint', 'bounce')),
+			(SELECT COUNT(*) FILTER (WHERE de.event_type = 'bounce') FROM deliverability_events de
+			  JOIN tasks t ON t.id = de.task_id
+			  WHERE t.email_account_id = $1 AND de.created_at >= $3 AND de.event_type IN ('complaint', 'bounce')),
+			(SELECT COUNT(*) FROM tasks
+			  WHERE email_account_id = $1 AND status = 'completed' AND completed_at >= $3)
 	`
-	var count int
-	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
-	return count, err
+	var c models.WarmupHealthCounts
+	err := r.db.QueryRow(ctx, query, accountID, since7d, since30d).Scan(
+		&c.SentLast7d, &c.SpamPlacementsLast7d, &c.UserComplaintsLast7d,
+		&c.ComplaintsLast30d, &c.BouncesLast30d, &c.DeliveredLast30d)
+	return c, err
 }
 
-// CountWarmupSpamReportsSince splits one scan into placement (the provider's
-// classifier filed the mail as junk) and complaint (the recipient rejected
-// it); the two have different remediation paths and their own thresholds.
+// CountWarmupSpamReportsSince: the two signals have their own thresholds, so they come back apart.
 func (r *warmupRepository) CountWarmupSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (placements, complaints int, err error) {
 	query := `
 		SELECT
@@ -666,25 +686,10 @@ func (r *warmupRepository) CountWarmupSpamReportsSince(ctx context.Context, acco
 		FROM warmup_spam_reports
 		WHERE reported_account_id = $1
 		  AND created_at >= $2
+		  AND report_type IN ('spam_placement', 'user_complaint', 'spam', 'spam_folder')
 	`
 	err = r.db.QueryRow(ctx, query, accountID, since).Scan(&placements, &complaints)
 	return placements, complaints, err
-}
-
-// CountSpamPlacementsSince counts warmup events where the message landed
-// in the recipient's Junk/Spam folder on delivery. Distinct from a user
-// complaint — the user took no action; provider classifier put it there.
-func (r *warmupRepository) CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
-	query := `
-		SELECT COUNT(*)
-		FROM warmup_spam_reports
-		WHERE reported_account_id = $1
-		  AND created_at >= $2
-		  AND report_type = 'spam_placement'
-	`
-	var count int
-	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
-	return count, err
 }
 
 // ColdRampState is one mailbox's warmup-to-cold graduation inputs.
@@ -790,36 +795,6 @@ func (r *warmupRepository) SumWarmupSentSince(ctx context.Context, accountID uui
 	var total int
 	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&total)
 	return total, err
-}
-
-// CountComplaintsAndBouncesByAccount counts a mailbox's external complaints
-// and bounces in one pass over deliverability_events joined through its tasks.
-func (r *warmupRepository) CountComplaintsAndBouncesByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (complaints, bounces int, err error) {
-	query := `
-		SELECT
-			COUNT(*) FILTER (WHERE de.event_type = 'complaint'),
-			COUNT(*) FILTER (WHERE de.event_type = 'bounce')
-		FROM deliverability_events de
-		JOIN tasks t ON t.id = de.task_id
-		WHERE t.email_account_id = $1
-		  AND de.created_at >= $2
-	`
-	err = r.db.QueryRow(ctx, query, accountID, since).Scan(&complaints, &bounces)
-	return complaints, bounces, err
-}
-
-// CountDeliveredByAccount counts completed tasks (sent emails) for an account since a given time.
-func (r *warmupRepository) CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
-	query := `
-		SELECT COUNT(*)
-		FROM tasks
-		WHERE email_account_id = $1
-		  AND status = 'completed'
-		  AND completed_at >= $2
-	`
-	var count int
-	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
-	return count, err
 }
 
 // IncrementSpamScore raises the account's spam score, clamped to the column's CHECK ceiling

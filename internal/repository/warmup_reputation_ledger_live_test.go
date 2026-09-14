@@ -400,7 +400,7 @@ func TestLiveHealthFloorHoldsAQuarantineOrBlockForItsTerm(t *testing.T) {
 	before := f.standing(t, id)
 
 	// A clean reading does not release the block, and does not restart it.
-	if err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthHealthy, nil, "", 0.5); err != nil {
+	if _, err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthHealthy, nil, "", 0.5); err != nil {
 		t.Fatalf("UpdateParticipantHealth(healthy): %v", err)
 	}
 	got := f.standing(t, id)
@@ -409,7 +409,7 @@ func TestLiveHealthFloorHoldsAQuarantineOrBlockForItsTerm(t *testing.T) {
 	}
 
 	// An equally severe reading with an earlier end keeps the later end.
-	if err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthBlocked, &short, "placement", 50); err != nil {
+	if _, err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthBlocked, &short, "placement", 50); err != nil {
 		t.Fatalf("UpdateParticipantHealth(blocked, shorter): %v", err)
 	}
 	got = f.standing(t, id)
@@ -419,14 +419,14 @@ func TestLiveHealthFloorHoldsAQuarantineOrBlockForItsTerm(t *testing.T) {
 
 	// A quarantine is a floor too.
 	f.penalise(t, id, 20, "quarantined", ptr(time.Now().Add(7*24*time.Hour)))
-	if err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthWatch, nil, "", 1); err != nil {
+	if _, err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthWatch, nil, "", 1); err != nil {
 		t.Fatalf("UpdateParticipantHealth(watch): %v", err)
 	}
 	if got := f.standing(t, id); got.state != "quarantined" {
 		t.Fatalf("a milder reading lowered a quarantine in force: %+v", got)
 	}
 	// A more severe reading applies over it.
-	if err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthBlocked, &short, "complaints", 9); err != nil {
+	if _, err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthBlocked, &short, "complaints", 9); err != nil {
 		t.Fatalf("UpdateParticipantHealth(blocked): %v", err)
 	}
 	if got := f.standing(t, id); got.state != "blocked" || !sameInstant(got.until, &short) {
@@ -442,7 +442,7 @@ func TestLiveHealthFloorReleasesWhatItShould(t *testing.T) {
 
 	// Throttled lifts on recovery: it is not floored.
 	f.penalise(t, id, 5, "throttled", ptr(time.Now().Add(3*24*time.Hour)))
-	if err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthHealthy, nil, "", 0); err != nil {
+	if _, err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthHealthy, nil, "", 0); err != nil {
 		t.Fatalf("UpdateParticipantHealth: %v", err)
 	}
 	if got := f.standing(t, id); got.state != "healthy" {
@@ -451,7 +451,7 @@ func TestLiveHealthFloorReleasesWhatItShould(t *testing.T) {
 
 	// A served block is released by the reading.
 	f.penalise(t, id, 40, "blocked", ptr(time.Now().Add(-time.Hour)))
-	if err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthHealthy, nil, "", 0); err != nil {
+	if _, err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthHealthy, nil, "", 0); err != nil {
 		t.Fatalf("UpdateParticipantHealth: %v", err)
 	}
 	if got := f.standing(t, id); got.state != "healthy" || got.until != nil {
@@ -460,7 +460,7 @@ func TestLiveHealthFloorReleasesWhatItShould(t *testing.T) {
 
 	// A review block is still untouchable by the sweep.
 	f.penalise(t, id, 60, "blocked", nil)
-	if err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthHealthy, nil, "", 0); err != nil {
+	if _, err := f.warmups.UpdateParticipantHealth(ctx, id, models.WarmupHealthHealthy, nil, "", 0); err != nil {
 		t.Fatalf("UpdateParticipantHealth: %v", err)
 	}
 	if got := f.standing(t, id); got.state != "blocked" || got.until != nil {

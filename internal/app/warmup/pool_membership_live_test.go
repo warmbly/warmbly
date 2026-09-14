@@ -221,12 +221,12 @@ func TestLiveSpamScoreIsCountedOnce(t *testing.T) {
 		t.Fatalf("increment returned %d, want 5", after)
 	}
 
-	score, err := repo.GetSpamScore(ctx, f.account)
-	if err != nil {
-		t.Fatalf("read score: %v", err)
+	row, err := repo.GetParticipantHealthForAccount(ctx, f.account)
+	if err != nil || row == nil {
+		t.Fatalf("read row: %v", err)
 	}
-	if score != 5 {
-		t.Fatalf("score %d, want 5", score)
+	if row.SpamScore != 5 {
+		t.Fatalf("score %d, want 5", row.SpamScore)
 	}
 }
 

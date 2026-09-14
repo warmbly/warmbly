@@ -90,6 +90,16 @@ func newFreePoolAccount(t *testing.T, handle *db.DB) *freePoolAccount {
 	return f
 }
 
+// insertSpamReports files n reports of one kind against the mailbox, stamped
+// offset ago. Rows cascade away with the mailbox.
+func insertSpamReports(t *testing.T, handle *db.DB, account uuid.UUID, kind, offset string, n int) {
+	t.Helper()
+	execSQL(t, handle.Pool, `
+		INSERT INTO warmup_spam_reports (reporter_account_id, reported_account_id, message_id, report_type, created_at)
+		SELECT $1, $1, gen_random_uuid()::text, $2, NOW() - $3::interval
+		FROM generate_series(1, $4)`, account, kind, offset, n)
+}
+
 // The driver-boundary bug itself: "not in this pool" is not an error.
 func TestLiveGetParticipantHealthReportsAbsenceNotFailure(t *testing.T) {
 	repo, handle := liveWarmupRepo(t)
@@ -146,14 +156,10 @@ func TestLiveHealthSignalsBeforeTheFloorAreNotCounted(t *testing.T) {
 	f := newFreePoolAccount(t, handle)
 	svc := NewService(repo)
 	ctx := context.Background()
-	// placements is one placement per send, a full sample, stamped at the
-	// given offset from now. Sends are counted by day, so they stay in view;
-	// placements carry a timestamp, which is what the floor is applied to.
+	// One placement per send, a full sample. Sends are counted by day, so they
+	// stay in view; placements carry the timestamp the floor is applied to.
 	placements := func(offset string) {
-		execSQL(t, handle.Pool, `
-			INSERT INTO warmup_spam_reports (reporter_account_id, reported_account_id, message_id, report_type, created_at)
-			SELECT $1, $1, gen_random_uuid()::text, 'spam_placement', NOW() - $2::interval
-			FROM generate_series(1, $3)`, f.account, offset, minSpamPlacementSample)
+		insertSpamReports(t, handle, f.account, "spam_placement", offset, minSpamPlacementSample)
 	}
 	execSQL(t, handle.Pool, `INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
 	      VALUES ($1, CURRENT_DATE, $2, 0, $2)`, f.account, minSpamPlacementSample)

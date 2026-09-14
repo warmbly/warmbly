@@ -156,6 +156,16 @@ type WarmupPoolHealthSummary struct {
 	AtRiskCount             int            `json:"at_risk_count"`
 }
 
+// WarmupHealthCounts is the raw count behind each health rate, read in one trip.
+type WarmupHealthCounts struct {
+	SentLast7d           int
+	SpamPlacementsLast7d int
+	UserComplaintsLast7d int
+	ComplaintsLast30d    int
+	BouncesLast30d       int
+	DeliveredLast30d     int
+}
+
 type WarmupHealthMetrics struct {
 	SentLast7d int `json:"sent_last_7d"`
 

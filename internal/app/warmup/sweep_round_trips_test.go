@@ -8,16 +8,16 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/repository"
 )
 
-// countingRepo answers every sweep read with an empty result and counts the
-// round trips. Any read outside this set panics through the embedded interface.
+// countingRepo counts the sweep's round trips; a read it does not know panics.
 type countingRepo struct {
-	repository.WarmupRepository
+	zeroMetricsRepo
 
 	calls map[string]int
-	row   *models.WarmupParticipantHealth
+	rows  []models.WarmupParticipantHealth
+	// onMetrics runs inside the metric read, so a test can cancel mid-sweep.
+	onMetrics func()
 }
 
 func (r *countingRepo) hit(name string) { r.calls[name]++ }
@@ -26,83 +26,85 @@ func (r *countingRepo) PurgeExpiredReputationLedger(context.Context) (int64, err
 	r.hit("PurgeExpiredReputationLedger")
 	return 0, nil
 }
-func (r *countingRepo) GetAllParticipantAccountIDs(context.Context) ([]uuid.UUID, error) {
-	r.hit("GetAllParticipantAccountIDs")
-	return []uuid.UUID{r.row.EmailAccountID}, nil
+func (r *countingRepo) ListParticipantHealth(context.Context) ([]models.WarmupParticipantHealth, error) {
+	r.hit("ListParticipantHealth")
+	return r.rows, nil
 }
-func (r *countingRepo) GetParticipantHealthForAccount(context.Context, uuid.UUID) (*models.WarmupParticipantHealth, error) {
-	r.hit("GetParticipantHealthForAccount")
-	return r.row, nil
+func (r *countingRepo) HealthMetricCounts(ctx context.Context, id uuid.UUID, a, b time.Time) (models.WarmupHealthCounts, error) {
+	r.hit("HealthMetricCounts")
+	if r.onMetrics != nil {
+		r.onMetrics()
+	}
+	return r.zeroMetricsRepo.HealthMetricCounts(ctx, id, a, b)
 }
-func (r *countingRepo) GetParticipantHealth(_ context.Context, _ uuid.UUID, poolType string) (*models.WarmupParticipantHealth, error) {
-	r.hit("GetParticipantHealth:" + poolType)
-	return r.row, nil
-}
-func (r *countingRepo) UpdateParticipantHealth(context.Context, uuid.UUID, models.WarmupHealthState, *time.Time, string, float64) error {
+func (r *countingRepo) UpdateParticipantHealth(_ context.Context, id uuid.UUID, state models.WarmupHealthState, _ *time.Time, _ string, _ float64) (*models.WarmupParticipantHealth, error) {
 	r.hit("UpdateParticipantHealth")
-	return nil
-}
-func (r *countingRepo) SumWarmupSentSince(context.Context, uuid.UUID, time.Time) (int, error) {
-	r.hit("SumWarmupSentSince")
-	return 0, nil
-}
-func (r *countingRepo) CountWarmupSpamReportsSince(context.Context, uuid.UUID, time.Time) (int, int, error) {
-	r.hit("CountWarmupSpamReportsSince")
-	return 0, 0, nil
-}
-func (r *countingRepo) CountComplaintsAndBouncesByAccount(context.Context, uuid.UUID, time.Time) (int, int, error) {
-	r.hit("CountComplaintsAndBouncesByAccount")
-	return 0, 0, nil
-}
-func (r *countingRepo) CountDeliveredByAccount(context.Context, uuid.UUID, time.Time) (int, error) {
-	r.hit("CountDeliveredByAccount")
-	return 0, nil
+	return &models.WarmupParticipantHealth{EmailAccountID: id, HealthState: state}, nil
 }
 
-// The sweep runs inside a five-minute context, so round trips per mailbox are
-// the ceiling on how much of the pool a pass can judge (#492). One membership
-// read, four metric scans, one write, one read-back: seven per mailbox.
-func TestSweepSpendsSevenRoundTripsPerMailbox(t *testing.T) {
-	repo := &countingRepo{
-		calls: map[string]int{},
-		row:   &models.WarmupParticipantHealth{EmailAccountID: uuid.New(), PoolType: "free", HealthState: models.WarmupHealthHealthy, SpamScore: 40},
+func healthyRows(n int) []models.WarmupParticipantHealth {
+	rows := make([]models.WarmupParticipantHealth, n)
+	for i := range rows {
+		rows[i] = models.WarmupParticipantHealth{EmailAccountID: uuid.New(), PoolType: "free", HealthState: models.WarmupHealthHealthy}
 	}
+	return rows
+}
+
+// Round trips per mailbox are the ceiling on how much of the pool one
+// five-minute pass can judge (#492); a new read here must be budgeted on purpose.
+func TestSweepSpendsTwoRoundTripsPerMailbox(t *testing.T) {
+	repo := &countingRepo{calls: map[string]int{}, rows: healthyRows(5)}
 	evaluated, _, xerr := NewService(repo).EvaluateAllParticipants(context.Background())
 	if xerr != nil {
 		t.Fatalf("sweep: %v", xerr)
 	}
-	if evaluated != 1 {
-		t.Fatalf("evaluated %d, want 1", evaluated)
+	if evaluated != 5 {
+		t.Fatalf("evaluated %d, want 5", evaluated)
 	}
-
-	want := map[string]int{
-		"PurgeExpiredReputationLedger":       1,
-		"GetAllParticipantAccountIDs":        1,
-		"GetParticipantHealthForAccount":     1,
-		"SumWarmupSentSince":                 1,
-		"CountWarmupSpamReportsSince":        1,
-		"CountComplaintsAndBouncesByAccount": 1,
-		"CountDeliveredByAccount":            1,
-		"UpdateParticipantHealth":            1,
-		"GetParticipantHealth:free":          1,
-	}
-	for name, n := range want {
-		if repo.calls[name] != n {
-			t.Errorf("%s: %d calls, want %d", name, repo.calls[name], n)
-		}
-	}
+	perSweep := map[string]int{"PurgeExpiredReputationLedger": 1, "ListParticipantHealth": 1}
+	perMailbox := map[string]int{"HealthMetricCounts": 5, "UpdateParticipantHealth": 5}
 	for name, n := range repo.calls {
-		if _, ok := want[name]; !ok {
-			t.Errorf("unexpected read %s x%d", name, n)
+		if perSweep[name] != n && perMailbox[name] != n {
+			t.Errorf("%s: %d calls, want %d per sweep or %d per mailbox", name, n, perSweep[name], perMailbox[name])
 		}
+	}
+	total := 0
+	for name, n := range repo.calls {
+		if perSweep[name] == 0 {
+			total += n
+		}
+	}
+	if total != 2*5 {
+		t.Fatalf("%d round trips for 5 mailboxes, budget is 2 each (#492): %v", total, repo.calls)
 	}
 }
 
-// The score is on the participant row; re-reading it was a fourth trip to the
-// same table. The decision must still see it.
+// A sweep cut off by its deadline stops, reports how far it got, and returns
+// an error so the run is not recorded as a success.
+func TestSweepStopsAtItsDeadline(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	repo := &countingRepo{calls: map[string]int{}, rows: healthyRows(4)}
+	repo.onMetrics = func() {
+		if repo.calls["HealthMetricCounts"] == 2 {
+			cancel()
+		}
+	}
+	evaluated, _, xerr := NewService(repo).EvaluateAllParticipants(ctx)
+	if xerr == nil {
+		t.Fatal("a cut-off sweep reported success")
+	}
+	if evaluated != 2 {
+		t.Fatalf("evaluated %d before the deadline, want 2", evaluated)
+	}
+	if repo.calls["HealthMetricCounts"] != 2 {
+		t.Fatalf("kept reading after the deadline: %v", repo.calls)
+	}
+}
+
+// The score comes off the row in hand, and the decision must still see it.
 func TestEvaluateReadsTheSpamScoreFromTheRow(t *testing.T) {
 	row := &models.WarmupParticipantHealth{EmailAccountID: uuid.New(), PoolType: "free", HealthState: models.WarmupHealthHealthy, SpamScore: 73}
-	repo := &countingRepo{calls: map[string]int{}, row: row}
+	repo := &countingRepo{calls: map[string]int{}, rows: []models.WarmupParticipantHealth{*row}}
 	metrics, err := NewService(repo).(*service).loadMetrics(context.Background(), row.EmailAccountID, row)
 	if err != nil {
 		t.Fatal(err)
