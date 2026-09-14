@@ -116,6 +116,14 @@ func ClassifyGated(ctx context.Context, in Input, gate ModelGate) Result {
 	return Result{Class: ClassUnknown, Confidence: 0, Source: ""}
 }
 
+// ClassifyOffline runs only the deterministic, free layers (headers, then
+// lexicon). It never calls a model and never touches the network, so it is
+// safe on every inbound message rather than only the ones with a campaign
+// behind them. An inconclusive verdict comes back as ClassUnknown.
+func ClassifyOffline(in Input) Result {
+	return ClassifyGated(context.Background(), in, func() bool { return false })
+}
+
 // WorthModeling is a cheap content-sanity pre-check for the model layer: a reply
 // with too little human text to carry sentiment the lexicon already missed is not
 // worth a paid classification (trivial "ok"/"thanks" acks, empty/whitespace

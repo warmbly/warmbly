@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -900,6 +902,82 @@ func (h *Handler) UpdateCRMTask(c *gin.Context) {
 	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCRMTask, &taskID, nil, taskMeta)
 
 	c.JSON(http.StatusOK, task)
+}
+
+// BulkUpdateCRMTasks writes one status or priority onto a whole selection:
+// the ids the user ticked, or every task the current filter matches minus the
+// ones unticked afterwards. The response carries the count rather than the
+// rows, because a select-all can cover tens of thousands.
+func (h *Handler) BulkUpdateCRMTasks(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	var data models.BulkUpdateTasks
+	if err := c.ShouldBindJSON(&data); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+
+	// The completion activity carries the actor, and contact_activities.user_id
+	// is a nullable FK: an unresolvable actor travels as NULL rather than as a
+	// zero uuid the insert would be refused for, which would take the whole
+	// bulk write down with it.
+	var actor *uuid.UUID
+	if userID, err := middleware.GetUserUUID(c); err == nil {
+		actor = &userID
+	}
+	affected, xerr := h.CRMService.BulkUpdateCRMTasks(c.Request.Context(), *orgID, actor, &data)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCRMTask, nil, nil, map[string]string{
+		"bulk":  "true",
+		"count": fmt.Sprintf("%d", affected),
+	})
+
+	c.JSON(http.StatusOK, models.BulkTasksResponse{Affected: affected})
+}
+
+// BulkDeleteCRMTasks deletes a whole selection. Two bodies are accepted: a
+// bare id array, and the selection object ({"all":true,"filters":{...}}) the
+// Tasks page sends for "select all matching".
+func (h *Handler) BulkDeleteCRMTasks(c *gin.Context) {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
+
+	var raw json.RawMessage
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+	var sel models.TaskSelection
+	if err := json.Unmarshal(raw, &sel.Tasks); err != nil {
+		if err := json.Unmarshal(raw, &sel); err != nil {
+			errx.Handle(c, errx.ErrInvalid)
+			return
+		}
+	}
+
+	affected, xerr := h.CRMService.BulkDeleteCRMTasks(c.Request.Context(), *orgID, sel)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	h.auditOrg(c, models.AuditActionDelete, models.AuditEntityCRMTask, nil, nil, map[string]string{
+		"bulk":  "true",
+		"count": fmt.Sprintf("%d", affected),
+	})
+
+	c.JSON(http.StatusOK, models.BulkTasksResponse{Affected: affected})
 }
 
 func (h *Handler) DeleteCRMTask(c *gin.Context) {

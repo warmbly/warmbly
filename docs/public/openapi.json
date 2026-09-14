@@ -11228,6 +11228,171 @@
             }
           }
         }
+      },
+      "patch": {
+        "operationId": "crm_bulk_update_tasks",
+        "summary": "Bulk update tasks",
+        "description": "Write a status, a priority, or both onto every task in a selection: the ids given, or every task the supplied filter matches minus the ids in exclude.",
+        "tags": [
+          "crm"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkUpdateTasks"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of tasks updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkTasksResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, an unknown status or priority, a selection with no ids, more than 1000 ids or more than 50000 exclusions (too_many_tasks), a filter naming something that is not an id (invalid_filter), or a selection resolving to more than 50000 tasks (selection_too_large).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing required scope or permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "crm_bulk_delete_tasks",
+        "summary": "Bulk delete tasks",
+        "description": "Delete every task in a selection. The body is the selection object, or a bare array of task ids.",
+        "tags": [
+          "crm"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TaskSelection"
+                  },
+                  {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "description": "A bare list of task ids, equivalent to sending {\"tasks\": [...]}."
+                  }
+                ],
+                "description": "The selection object, or a bare array of task ids."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of tasks deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkTasksResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, a task id that is not an id, a selection with no ids, more than 1000 ids or more than 50000 exclusions (too_many_tasks), a filter naming something that is not an id (invalid_filter), or a selection resolving to more than 50000 tasks (selection_too_large).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing required scope or permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/crm/tasks/search": {
@@ -22822,7 +22987,26 @@
                 }
               },
               "auto_create_crm_task": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Open a CRM follow-up task when a classified reply lands."
+              },
+              "crm_task_intents": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "description": "Which intents are worth a follow-up task. Omit or send null for the default set (positive, question, neutral, negative: every human intent and no automated one). An empty array opens nothing, the same as turning the switch off.",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "positive",
+                    "negative",
+                    "question",
+                    "neutral",
+                    "out_of_office",
+                    "automated"
+                  ]
+                }
               },
               "auto_pause_on_negative": {
                 "type": "boolean"
@@ -27788,6 +27972,10 @@
           "intent_neutral": {
             "type": "integer"
           },
+          "intent_automated": {
+            "type": "integer",
+            "description": "Machine replies that are not vacation notices: autoresponders, ticket acknowledgements, bounces, delivery reports."
+          },
           "emails_sent": {
             "type": "integer"
           },
@@ -31487,6 +31675,126 @@
             "description": "Also replace the mailbox's stored signature with the one configured at the provider, for whichever identity the mailbox sends as. An empty signature at the provider changes nothing."
           }
         }
+      },
+      "TaskSelection": {
+        "type": "object",
+        "description": "Names the tasks a bulk action applies to: either an explicit id list, or every task matching a search (all + filters) minus the ids in exclude. The filter form lets one call cover far more tasks than a page, and is refused with selection_too_large past 50000 matches.",
+        "oneOf": [
+          {
+            "required": [
+              "tasks"
+            ],
+            "properties": {
+              "all": {
+                "enum": [
+                  false
+                ]
+              }
+            }
+          },
+          {
+            "required": [
+              "all",
+              "filters"
+            ],
+            "properties": {
+              "all": {
+                "enum": [
+                  true
+                ]
+              }
+            }
+          }
+        ],
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Task ids (1 to 1000). Required unless all is set."
+          },
+          "all": {
+            "type": "boolean",
+            "description": "Resolve the selection from filters instead of tasks."
+          },
+          "filters": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SearchTasks"
+              }
+            ],
+            "description": "The search whose matches the action applies to. Required when all is true."
+          },
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 50000,
+            "description": "Task ids to drop from the resolved set. Ignored unless all is set."
+          }
+        }
+      },
+      "BulkUpdateTasks": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TaskSelection"
+          }
+        ],
+        "description": "A task selection plus the fields to write on every task in it. At least one of status or priority is required.",
+        "anyOf": [
+          {
+            "required": [
+              "status"
+            ]
+          },
+          {
+            "required": [
+              "priority"
+            ]
+          }
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed",
+              "cancelled"
+            ],
+            "description": "Status to set. completed stamps completed_at and records the completion on each linked contact's timeline."
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ],
+            "description": "Priority to set."
+          }
+        }
+      },
+      "BulkTasksResponse": {
+        "type": "object",
+        "description": "How many tasks the bulk action touched. The count is returned rather than the rows: a select-all can cover tens of thousands.",
+        "properties": {
+          "affected": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tasks written or deleted."
+          }
+        },
+        "required": [
+          "affected"
+        ]
       }
     }
   }

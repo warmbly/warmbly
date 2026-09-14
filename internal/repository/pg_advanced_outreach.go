@@ -642,7 +642,8 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 			COUNT(*) FILTER (WHERE intent = 'negative') AS negative,
 			COUNT(*) FILTER (WHERE intent = 'out_of_office') AS ooo,
 			COUNT(*) FILTER (WHERE intent = 'question') AS question,
-			COUNT(*) FILTER (WHERE intent = 'neutral') AS neutral
+			COUNT(*) FILTER (WHERE intent = 'neutral') AS neutral,
+			COUNT(*) FILTER (WHERE intent = 'automated') AS automated
 		FROM reply_intents
 		WHERE organization_id = $1
 		  AND created_at >= $2
@@ -654,6 +655,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		&out.IntentOOO,
 		&out.IntentQuestion,
 		&out.IntentNeutral,
+		&out.IntentAutomated,
 	); err != nil {
 		return nil, err
 	}

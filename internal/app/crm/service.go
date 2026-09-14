@@ -3,6 +3,7 @@ package crm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -51,6 +52,8 @@ type CRMService interface {
 	TasksSummary(ctx context.Context, orgID uuid.UUID, filters models.SearchTasks) (*models.TasksSummary, *errx.Error)
 	UpdateCRMTask(ctx context.Context, orgID, taskID uuid.UUID, userID *uuid.UUID, data *models.UpdateCRMTask) (*models.CRMTask, *errx.Error)
 	DeleteCRMTask(ctx context.Context, orgID, taskID uuid.UUID) *errx.Error
+	BulkUpdateCRMTasks(ctx context.Context, orgID uuid.UUID, userID *uuid.UUID, data *models.BulkUpdateTasks) (int64, *errx.Error)
+	BulkDeleteCRMTasks(ctx context.Context, orgID uuid.UUID, sel models.TaskSelection) (int64, *errx.Error)
 
 	// CRM Task Types (user-managed)
 	ListTaskTypes(ctx context.Context, orgID uuid.UUID) ([]models.CRMTaskType, *errx.Error)
@@ -58,6 +61,10 @@ type CRMService interface {
 	UpdateTaskType(ctx context.Context, orgID, typeID uuid.UUID, data *models.UpdateCRMTaskType) (*models.CRMTaskType, *errx.Error)
 	DeleteTaskType(ctx context.Context, orgID, typeID uuid.UUID) *errx.Error
 }
+
+// maxTaskBulkBatch bounds an explicit id list in one bulk request body. A
+// select-all is bounded separately, by models.MaxTaskBulkSelection.
+const maxTaskBulkBatch = 1000
 
 type crmService struct {
 	repo repository.CRMRepository
@@ -405,6 +412,9 @@ func (s *crmService) ListCRMTasks(ctx context.Context, orgID uuid.UUID, contactI
 }
 
 func (s *crmService) SearchTasks(ctx context.Context, orgID uuid.UUID, filters models.SearchTasks, limit, offset int) (*models.TasksSearchResult, *errx.Error) {
+	if err := filters.Validate(); err != nil {
+		return nil, errx.NewWithIdentifier(errx.BadRequest, "invalid_filter", err.Error())
+	}
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -419,6 +429,9 @@ func (s *crmService) SearchTasks(ctx context.Context, orgID uuid.UUID, filters m
 }
 
 func (s *crmService) TasksSummary(ctx context.Context, orgID uuid.UUID, filters models.SearchTasks) (*models.TasksSummary, *errx.Error) {
+	if err := filters.Validate(); err != nil {
+		return nil, errx.NewWithIdentifier(errx.BadRequest, "invalid_filter", err.Error())
+	}
 	result, err := s.repo.TasksSummary(ctx, orgID, filters)
 	if err != nil {
 		return nil, toErrx(err)
@@ -441,6 +454,86 @@ func (s *crmService) UpdateCRMTask(ctx context.Context, orgID, taskID uuid.UUID,
 	}
 
 	return task, nil
+}
+
+// checkTaskSelection validates what the request body says before it reaches the
+// database. How many rows the selection actually resolves to is checked by the
+// mutation itself (see tooLarge), because a count taken here could be stale by
+// the time the write runs.
+func (s *crmService) checkTaskSelection(sel models.TaskSelection) *errx.Error {
+	if !sel.All {
+		if len(sel.Tasks) == 0 {
+			return errx.New(errx.BadRequest, "no tasks provided")
+		}
+		if len(sel.Tasks) > maxTaskBulkBatch {
+			return errx.NewWithIdentifier(errx.BadRequest, "too_many_tasks",
+				fmt.Sprintf("too many tasks, maximum is %d per batch", maxTaskBulkBatch))
+		}
+		return nil
+	}
+	if sel.Filters == nil {
+		return errx.New(errx.BadRequest, "a select-all request must carry the filters it applies to")
+	}
+	if err := sel.Filters.Validate(); err != nil {
+		return errx.NewWithIdentifier(errx.BadRequest, "invalid_filter", err.Error())
+	}
+	if len(sel.Exclude) > models.MaxTaskBulkSelection {
+		return errx.NewWithIdentifier(errx.BadRequest, "too_many_tasks",
+			fmt.Sprintf("too many exclusions, maximum is %d", models.MaxTaskBulkSelection))
+	}
+	return nil
+}
+
+// tooLarge turns the row count the mutation refused to act on into the error a
+// caller sees. The statement wrote nothing, so the action is refused whole
+// rather than half applied. The count stops at the cap plus one, which is all
+// the mutation needs to look at to know the selection is over it.
+func tooLarge(matched int64) *errx.Error {
+	if matched <= models.MaxTaskBulkSelection {
+		return nil
+	}
+	return errx.NewWithIdentifier(errx.BadRequest, "selection_too_large",
+		fmt.Sprintf("that selection matches more than %d tasks; narrow it with a filter and try again", models.MaxTaskBulkSelection))
+}
+
+func (s *crmService) BulkUpdateCRMTasks(ctx context.Context, orgID uuid.UUID, userID *uuid.UUID, data *models.BulkUpdateTasks) (int64, *errx.Error) {
+	if data == nil {
+		return 0, errx.New(errx.BadRequest, "a bulk update needs a body")
+	}
+	if data.Status == nil && data.Priority == nil {
+		return 0, errx.New(errx.BadRequest, "a bulk update needs a status or a priority")
+	}
+	if data.Status != nil && !models.ValidCRMTaskStatus(*data.Status) {
+		return 0, errx.New(errx.BadRequest, "invalid task status")
+	}
+	if data.Priority != nil && !models.ValidCRMTaskPriority(*data.Priority) {
+		return 0, errx.New(errx.BadRequest, "invalid task priority")
+	}
+	if xerr := s.checkTaskSelection(data.TaskSelection); xerr != nil {
+		return 0, xerr
+	}
+	matched, affected, err := s.repo.BulkUpdateCRMTasks(ctx, orgID, userID, data.TaskSelection, data, models.MaxTaskBulkSelection)
+	if err != nil {
+		return 0, toErrx(err)
+	}
+	if xerr := tooLarge(matched); xerr != nil {
+		return 0, xerr
+	}
+	return affected, nil
+}
+
+func (s *crmService) BulkDeleteCRMTasks(ctx context.Context, orgID uuid.UUID, sel models.TaskSelection) (int64, *errx.Error) {
+	if xerr := s.checkTaskSelection(sel); xerr != nil {
+		return 0, xerr
+	}
+	matched, affected, err := s.repo.BulkDeleteCRMTasks(ctx, orgID, sel, models.MaxTaskBulkSelection)
+	if err != nil {
+		return 0, toErrx(err)
+	}
+	if xerr := tooLarge(matched); xerr != nil {
+		return 0, xerr
+	}
+	return affected, nil
 }
 
 func (s *crmService) ListTaskTypes(ctx context.Context, orgID uuid.UUID) ([]models.CRMTaskType, *errx.Error) {

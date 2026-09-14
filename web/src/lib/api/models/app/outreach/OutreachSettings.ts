@@ -21,6 +21,59 @@ export interface PreflightSettings {
     min_content_score: number;
 }
 
+// The classifier buckets a reply can land in. "automated" is a machine reply
+// that is not a vacation notice: an autoresponder, a ticket acknowledgement,
+// a bounce or a delivery report.
+export type ReplyIntent =
+    | "positive"
+    | "question"
+    | "neutral"
+    | "negative"
+    | "out_of_office"
+    | "automated";
+
+export interface ReplyIntentSettings {
+    enabled: boolean;
+    positive_keywords: string[];
+    negative_keywords: string[];
+    out_of_office_keywords: string[];
+    question_keywords: string[];
+    auto_create_crm_task: boolean;
+    // Which intents get a follow-up task. null/absent means the default set.
+    crm_task_intents?: ReplyIntent[] | null;
+    auto_pause_on_negative: boolean;
+    auto_suppress_on_unsubscribe_keyword: boolean;
+    // Park a contact's next step while their mailbox says they are away.
+    hold_on_out_of_office: boolean;
+    // The fallback hold, used when the auto-reply names no return date.
+    out_of_office_hold_days: number;
+}
+
+// Matches models.DefaultCRMTaskIntents: every human intent, no automated one.
+export const DEFAULT_CRM_TASK_INTENTS: ReplyIntent[] = [
+    "positive",
+    "question",
+    "neutral",
+    "negative",
+];
+
+// The two machine classes are one choice in the UI: a vacation notice and a
+// helpdesk autoresponder are the same kind of noise on a task list.
+export const AUTOMATED_INTENTS: ReplyIntent[] = ["out_of_office", "automated"];
+
+export const REPLY_INTENT_CHOICES: { id: ReplyIntent; label: string; hint: string }[] = [
+    { id: "positive", label: "Positive", hint: "Interested, wants a call" },
+    { id: "question", label: "Question", hint: "Asked something" },
+    { id: "neutral", label: "Neutral", hint: "A human reply we could not bucket" },
+    { id: "negative", label: "Negative", hint: "Not interested" },
+    { id: "out_of_office", label: "Automated", hint: "Out of office, autoresponders, bounces" },
+];
+
+/** The effective set: an unset list means the default, not "none". */
+export function taskIntents(s?: ReplyIntentSettings): ReplyIntent[] {
+    return s?.crm_task_intents ?? DEFAULT_CRM_TASK_INTENTS;
+}
+
 // The in-body opt-out every campaign email carries unless a campaign
 // overrides it. "text" is a reply-to-opt-out sentence, "link" a sentence with
 // a real unsubscribe link, "off" nothing.
@@ -44,7 +97,7 @@ export interface OutreachSettings {
     bounce_pipeline: Record<string, unknown>;
     task_reliability: Record<string, unknown>;
     ab_testing: Record<string, unknown>;
-    reply_intent: Record<string, unknown>;
+    reply_intent: ReplyIntentSettings;
     send_time_optimization: SendTimeOptimizationSettings;
     preflight: PreflightSettings;
     dashboard: Record<string, unknown>;

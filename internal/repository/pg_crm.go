@@ -56,6 +56,8 @@ type CRMRepository interface {
 	TasksSummary(ctx context.Context, orgID uuid.UUID, filters models.SearchTasks) (*models.TasksSummary, error)
 	UpdateCRMTask(ctx context.Context, orgID, taskID uuid.UUID, data *models.UpdateCRMTask) (*models.CRMTask, error)
 	DeleteCRMTask(ctx context.Context, orgID, taskID uuid.UUID) error
+	BulkDeleteCRMTasks(ctx context.Context, orgID uuid.UUID, sel models.TaskSelection, cap int) (matched, affected int64, err error)
+	BulkUpdateCRMTasks(ctx context.Context, orgID uuid.UUID, userID *uuid.UUID, sel models.TaskSelection, data *models.BulkUpdateTasks, cap int) (matched, affected int64, err error)
 
 	// CRM Task Types (user-managed)
 	ListTaskTypes(ctx context.Context, orgID uuid.UUID) ([]models.CRMTaskType, error)
@@ -1243,12 +1245,14 @@ func taskSearchWhere(orgID uuid.UUID, f models.SearchTasks) ([]string, []any) {
 		pos++
 	}
 
-	if f.ContactID != nil {
+	// Empty means "not filtering", not "the task whose contact is the empty
+	// string": the column is a uuid and Postgres refuses the comparison.
+	if f.ContactID != nil && strings.TrimSpace(*f.ContactID) != "" {
 		clauses = append(clauses, fmt.Sprintf("t.contact_id = $%d", pos))
 		args = append(args, *f.ContactID)
 		pos++
 	}
-	if f.DealID != nil {
+	if f.DealID != nil && strings.TrimSpace(*f.DealID) != "" {
 		clauses = append(clauses, fmt.Sprintf("t.deal_id = $%d", pos))
 		args = append(args, *f.DealID)
 		pos++
@@ -1387,6 +1391,172 @@ func (r *crmRepository) TasksSummary(ctx context.Context, orgID uuid.UUID, filte
 	return &s, nil
 }
 
+// taskSelectionWhere builds the WHERE clause naming the tasks a bulk action
+// applies to, aliased `t` like taskSearchWhere. An id list becomes a plain
+// ANY(); a select-all reuses the search's own WHERE so the set acted on is
+// exactly the set the list was showing, minus the rows unticked afterwards.
+func taskSelectionWhere(orgID uuid.UUID, sel models.TaskSelection) (string, []any, error) {
+	if !sel.All {
+		ids, err := parseUUIDs(sel.Tasks)
+		if err != nil {
+			return "", nil, err
+		}
+		return "t.organization_id = $1 AND t.id = ANY($2)", []any{orgID, ids}, nil
+	}
+	if sel.Filters == nil {
+		return "", nil, errx.New(errx.BadRequest, "a select-all request must carry the filters it applies to")
+	}
+	clauses, args := taskSearchWhere(orgID, *sel.Filters)
+	if len(sel.Exclude) > 0 {
+		excluded, err := parseUUIDs(sel.Exclude)
+		if err != nil {
+			return "", nil, err
+		}
+		clauses = append(clauses, fmt.Sprintf("t.id <> ALL($%d)", len(args)+1))
+		args = append(args, excluded)
+	}
+	return strings.Join(clauses, " AND "), args, nil
+}
+
+func parseUUIDs(raw []string) ([]uuid.UUID, error) {
+	out := make([]uuid.UUID, 0, len(raw))
+	for _, v := range raw {
+		id, err := uuid.Parse(strings.TrimSpace(v))
+		if err != nil {
+			return nil, errx.ErrUuid
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// BulkDeleteCRMTasks deletes every task in the selection, returning how many
+// the selection matched and how many were deleted. The cap is enforced inside
+// the statement, so an over-cap selection deletes nothing.
+//
+// The candidate set stops at cap+1 rows: one more than the cap is all it takes
+// to know the selection is over it, and a broad filter would otherwise lock
+// every matching row in the workspace only to refuse the delete.
+func (r *crmRepository) BulkDeleteCRMTasks(ctx context.Context, orgID uuid.UUID, sel models.TaskSelection, cap int) (matched, affected int64, err error) {
+	where, args, err := taskSelectionWhere(orgID, sel)
+	if err != nil {
+		return 0, 0, err
+	}
+	capPos := len(args) + 1
+	args = append(args, cap, cap+1)
+	query := fmt.Sprintf(`
+		WITH candidate AS (
+			SELECT t.id FROM crm_tasks t WHERE %s FOR UPDATE LIMIT $%d
+		), bounded AS (
+			SELECT c.id, (SELECT COUNT(*) FROM candidate) AS matched FROM candidate c
+		), del AS (
+			DELETE FROM crm_tasks t
+			USING bounded b
+			WHERE t.id = b.id AND b.matched <= $%d
+			RETURNING t.id
+		)
+		SELECT (SELECT COUNT(*) FROM candidate), (SELECT COUNT(*) FROM del)
+	`, where, capPos+1, capPos)
+
+	if err := r.db.QueryRow(ctx, query, args...).Scan(&matched, &affected); err != nil {
+		return 0, 0, err
+	}
+	return matched, affected, nil
+}
+
+// BulkUpdateCRMTasks writes the given fields onto every task in the selection,
+// returning how many the selection matched and how many were written.
+//
+// One statement, not a read followed by a write: it locks the selected rows,
+// counts them, updates them, and records the completion activity for exactly
+// the rows this statement moved into "completed". Reading the candidates
+// separately let two concurrent bulk completes both see the same pending row
+// and both log it, left the stamp below keyed on a status that could change
+// underneath it, and let a selection grow past the cap between the count and
+// the write. Over the cap, matched comes back and nothing is written.
+func (r *crmRepository) BulkUpdateCRMTasks(ctx context.Context, orgID uuid.UUID, userID *uuid.UUID, sel models.TaskSelection, data *models.BulkUpdateTasks, cap int) (matched, affected int64, err error) {
+	where, args, err := taskSelectionWhere(orgID, sel)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	completing := data.Status != nil && *data.Status == string(models.CRMTaskStatusCompleted)
+	setClauses := []string{}
+	pos := len(args) + 1
+	if data.Status != nil {
+		setClauses = append(setClauses, fmt.Sprintf("status = $%d", pos))
+		args = append(args, *data.Status)
+		pos++
+		if completing {
+			// Only the transition stamps the time. A selection routinely covers
+			// rows that are already done, and repeating the action must not
+			// rewrite when they were finished.
+			setClauses = append(setClauses,
+				"completed_at = CASE WHEN b.old_status <> 'completed' THEN NOW() ELSE b.old_completed_at END")
+		} else {
+			// Off completed there is no completion time, same as the
+			// single-task update.
+			setClauses = append(setClauses, "completed_at = NULL")
+		}
+	}
+	if data.Priority != nil {
+		setClauses = append(setClauses, fmt.Sprintf("priority = $%d", pos))
+		args = append(args, *data.Priority)
+		pos++
+	}
+	if len(setClauses) == 0 {
+		return 0, 0, errx.ErrNotEnough
+	}
+	setClauses = append(setClauses, "updated_at = NOW()")
+
+	// A data-modifying CTE always runs to completion whether or not the outer
+	// query reads it, so the activity insert needs no second round trip.
+	activity := ""
+	if completing {
+		activity = fmt.Sprintf(`, act AS (
+			INSERT INTO contact_activities (contact_id, organization_id, user_id, activity_type, metadata)
+			SELECT u.contact_id, u.organization_id, $%d, $%d,
+			       jsonb_build_object('task_id', u.id::text, 'task_title', u.title)
+			FROM upd u
+			WHERE u.contact_id IS NOT NULL AND u.old_status <> 'completed'
+		)`, pos, pos+1)
+		args = append(args, userID, models.ActivityTaskCompleted)
+	}
+
+	// The cap is enforced HERE rather than by a COUNT beforehand: between a
+	// separate count and this write, a concurrent action can add matching rows
+	// and carry the selection past the limit. Joining on `matched <= cap` makes
+	// the refusal part of the same statement, so an over-cap selection writes
+	// nothing at all. FOR UPDATE cannot sit beside a window function, hence the
+	// second CTE for the count. Stopping the candidate set at cap+1 keeps the
+	// lock footprint bounded: over the cap is over the cap, and the rows past
+	// it are never written.
+	capPos := len(args) + 1
+	args = append(args, cap, cap+1)
+	query := fmt.Sprintf(`
+		WITH candidate AS (
+			SELECT t.id, t.status AS old_status, t.completed_at AS old_completed_at
+			FROM crm_tasks t
+			WHERE %s
+			FOR UPDATE
+			LIMIT $%d
+		), bounded AS (
+			SELECT c.*, (SELECT COUNT(*) FROM candidate) AS matched FROM candidate c
+		), upd AS (
+			UPDATE crm_tasks t SET %s
+			FROM bounded b
+			WHERE t.id = b.id AND b.matched <= $%d
+			RETURNING t.id, t.contact_id, t.organization_id, t.title, b.old_status
+		)%s
+		SELECT (SELECT COUNT(*) FROM candidate), (SELECT COUNT(*) FROM upd)
+	`, where, capPos+1, strings.Join(setClauses, ", "), capPos, activity)
+
+	if err := r.db.QueryRow(ctx, query, args...).Scan(&matched, &affected); err != nil {
+		return 0, 0, err
+	}
+	return matched, affected, nil
+}
+
 func (r *crmRepository) UpdateCRMTask(ctx context.Context, orgID, taskID uuid.UUID, data *models.UpdateCRMTask) (*models.CRMTask, error) {
 	setClauses := []string{}
 	args := []any{orgID, taskID}
@@ -1434,6 +1604,11 @@ func (r *crmRepository) UpdateCRMTask(ctx context.Context, orgID, taskID uuid.UU
 
 		if *data.Status == "completed" {
 			setClauses = append(setClauses, "completed_at = NOW()")
+		} else {
+			// completed_at is when the task was finished, so a task moved back
+			// off completed has no such time; leaving the old one behind shows
+			// a pending task as having been finished days ago.
+			setClauses = append(setClauses, "completed_at = NULL")
 		}
 	}
 

@@ -49,6 +49,7 @@ Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelo
     "out_of_office_keywords": ["out of office", "ooo", "vacation", "abwesenheitsnotiz"],
     "question_keywords": ["?", "how", "price"],
     "auto_create_crm_task": true,
+    "crm_task_intents": ["positive", "question", "neutral", "negative"],
     "auto_pause_on_negative": false,
     "auto_suppress_on_unsubscribe_keyword": true,
     "hold_on_out_of_office": true,
@@ -88,6 +89,10 @@ Returns the `AdvancedOutreachSettings` object directly (not wrapped in an envelo
 ```
 
 The `unsubscribe` block is the workspace default for the opt-out appended after the signature of every campaign email: `mode` is `text` (a reply-to-opt-out sentence, the default), `link` (a sentence with the recipient's signed unsubscribe link) or `off`; a campaign's own `unsubscribe_mode` (`inherit` by default) overrides it. Copy fields are single lines of at most 300 characters and fall back to the defaults when blank. See the [unsubscribe guide](/guides/unsubscribe/).
+
+<Callout type="info" title="Reply follow-up tasks are per intent">
+`reply_intent.auto_create_crm_task` opens a CRM task when a classified reply lands, and `reply_intent.crm_task_intents` names which intents are worth one. Omit the field (or send `null`) and the default applies: `positive`, `question`, `neutral`, `negative`, which is every human intent and no automated one. Send `["positive"]` to narrow it, `["positive", "question", "neutral", "negative", "out_of_office", "automated"]` to include auto-responders and bounces, or `[]` to open nothing (the same as turning the switch off). An intent outside that vocabulary is refused with `400`. See [Tasks](/guides/contacts-crm/#tasks).
+</Callout>
 
 <Callout type="info" title="Content score floor is clamped">
 `preflight.min_content_score` is stored clamped to `1`-`100`. A value outside that range is corrected on write rather than rejected, so a floor above `100` cannot flag every campaign permanently. Set `preflight.check_content_score` to `false` to turn the check off; the score never blocks or delays a send either way. See [Content checks](/guides/campaigns/).

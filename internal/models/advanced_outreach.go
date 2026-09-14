@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -33,14 +34,18 @@ type ABTestingSettings struct {
 }
 
 type ReplyIntentSettings struct {
-	Enabled                 bool     `json:"enabled"`
-	PositiveKeywords        []string `json:"positive_keywords"`
-	NegativeKeywords        []string `json:"negative_keywords"`
-	OutOfOfficeKeywords     []string `json:"out_of_office_keywords"`
-	QuestionKeywords        []string `json:"question_keywords"`
-	AutoCreateCRMTask       bool     `json:"auto_create_crm_task"`
-	AutoPauseOnNegative     bool     `json:"auto_pause_on_negative"`
-	AutoSuppressOnUnsubWord bool     `json:"auto_suppress_on_unsubscribe_keyword"`
+	Enabled             bool     `json:"enabled"`
+	PositiveKeywords    []string `json:"positive_keywords"`
+	NegativeKeywords    []string `json:"negative_keywords"`
+	OutOfOfficeKeywords []string `json:"out_of_office_keywords"`
+	QuestionKeywords    []string `json:"question_keywords"`
+	AutoCreateCRMTask   bool     `json:"auto_create_crm_task"`
+	// CRMTaskIntents narrows the switch above to the intents worth a
+	// follow-up. Absent means DefaultCRMTaskIntents (human replies only); an
+	// explicit empty list means none, same as turning the switch off.
+	CRMTaskIntents          []ReplyIntentType `json:"crm_task_intents"`
+	AutoPauseOnNegative     bool              `json:"auto_pause_on_negative"`
+	AutoSuppressOnUnsubWord bool              `json:"auto_suppress_on_unsubscribe_keyword"`
 	// HoldOnOutOfOffice parks the contact's next step when an auto-reply says
 	// they are away, and resumes it when they are back. Without it the
 	// follow-up goes out on schedule to an empty desk and the sequence is over
@@ -49,6 +54,42 @@ type ReplyIntentSettings struct {
 	// OutOfOfficeHoldDays is the hold applied when the auto-reply carries no
 	// return date we can read. Clamped to OOOHoldDaysMin..OOOHoldDaysMax.
 	OutOfOfficeHoldDays int `json:"out_of_office_hold_days"`
+}
+
+// DefaultCRMTaskIntents is the task-worthy set a workspace gets when it has
+// never chosen one: every human intent, and no automated one. A vacation
+// notice or a bounce is not follow-up work, and one week of sending makes
+// enough of them to bury the real replies.
+func DefaultCRMTaskIntents() []ReplyIntentType {
+	return []ReplyIntentType{
+		ReplyIntentPositive,
+		ReplyIntentQuestion,
+		ReplyIntentNeutral,
+		ReplyIntentNegative,
+	}
+}
+
+// TaskIntents resolves the configured set, falling back to the default when
+// the workspace has never set one.
+func (s ReplyIntentSettings) TaskIntents() []ReplyIntentType {
+	if s.CRMTaskIntents == nil {
+		return DefaultCRMTaskIntents()
+	}
+	return s.CRMTaskIntents
+}
+
+// CreatesTaskFor reports whether a reply classified as intent should open a
+// CRM follow-up task.
+func (s ReplyIntentSettings) CreatesTaskFor(intent ReplyIntentType) bool {
+	if !s.AutoCreateCRMTask {
+		return false
+	}
+	for _, want := range s.TaskIntents() {
+		if want == intent {
+			return true
+		}
+	}
+	return false
 }
 
 // Bounds on the fallback out-of-office hold. A hold of zero days would send
@@ -112,6 +153,45 @@ func (s *AdvancedOutreachSettings) Normalize() {
 	s.Unsubscribe.Text = clampLine(s.Unsubscribe.Text)
 	s.Unsubscribe.LinkIntro = clampLine(s.Unsubscribe.LinkIntro)
 	s.Unsubscribe.LinkText = clampLine(s.Unsubscribe.LinkText)
+	s.ReplyIntent.CRMTaskIntents = normalizeIntents(s.ReplyIntent.CRMTaskIntents)
+}
+
+// Validate reports the settings a caller may not store. Normalize handles what
+// can be clamped; this covers what can only be refused, so a bad value is a
+// 400 rather than a silently different setting.
+func (s *AdvancedOutreachSettings) Validate() error {
+	if s == nil {
+		return nil
+	}
+	for _, intent := range s.ReplyIntent.CRMTaskIntents {
+		if !ValidReplyIntent(intent) {
+			return fmt.Errorf("%q is not a reply intent", intent)
+		}
+	}
+	return nil
+}
+
+// normalizeIntents lower-cases, trims and de-duplicates an intent list while
+// keeping the caller's order. A nil list stays nil: absent means "the default
+// set", which an empty list would not.
+func normalizeIntents(in []ReplyIntentType) []ReplyIntentType {
+	if in == nil {
+		return nil
+	}
+	out := make([]ReplyIntentType, 0, len(in))
+	seen := make(map[ReplyIntentType]struct{}, len(in))
+	for _, v := range in {
+		v = ReplyIntentType(strings.ToLower(strings.TrimSpace(string(v))))
+		if v == "" {
+			continue
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 // clampLine trims a one-line copy field and caps it; the email footer is not
@@ -391,7 +471,28 @@ const (
 	ReplyIntentOutOfOffice ReplyIntentType = "out_of_office"
 	ReplyIntentQuestion    ReplyIntentType = "question"
 	ReplyIntentNeutral     ReplyIntentType = "neutral"
+	// ReplyIntentAutomated is a machine reply that is not a vacation notice:
+	// an autoresponder, a ticket acknowledgement, a bounce or a delivery
+	// report. Recorded from the header layer of the reply classifier, which
+	// sees markers the keyword lists never could.
+	ReplyIntentAutomated ReplyIntentType = "automated"
 )
+
+// ValidReplyIntent reports whether v is an intent the classifier can record
+// and a setting may name.
+func ValidReplyIntent(v ReplyIntentType) bool {
+	switch v {
+	case ReplyIntentPositive, ReplyIntentNegative, ReplyIntentOutOfOffice,
+		ReplyIntentQuestion, ReplyIntentNeutral, ReplyIntentAutomated:
+		return true
+	}
+	return false
+}
+
+// IsAutomatedIntent reports whether an intent describes a machine reply.
+func IsAutomatedIntent(v ReplyIntentType) bool {
+	return v == ReplyIntentOutOfOffice || v == ReplyIntentAutomated
+}
 
 type ReplyIntentRecord struct {
 	ID             uuid.UUID              `json:"id"`
@@ -442,6 +543,7 @@ type DeliverabilityDashboard struct {
 	IntentOOO            int       `json:"intent_out_of_office"`
 	IntentQuestion       int       `json:"intent_question"`
 	IntentNeutral        int       `json:"intent_neutral"`
+	IntentAutomated      int       `json:"intent_automated"`
 
 	// Computed rates (percent, 0-100; 0 when no sends in the window). EmailsSent
 	// is the count of completed campaign sends in the window (rate denominator).

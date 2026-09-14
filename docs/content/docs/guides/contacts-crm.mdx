@@ -148,6 +148,40 @@ A deal has a name, stage, value and currency (default `USD`), expected close dat
 
 Campaigns can create and advance deals automatically with **Create deal** and **Move deal stage** actions, so the CRM stays current without manual entry.
 
+## Tasks
+
+**CRM > Tasks** is the follow-up list for the whole workspace: everything anyone has to do about a contact or a deal, in one place. A task carries a title, a description, a type (`Call`, `Email`, `Meeting` by default, and any type you add), a due date, a priority of `low`, `medium`, `high` or `urgent`, a status of `pending`, `in progress`, `completed` or `cancelled`, and an assignee who can be a person, a team, or nobody.
+
+Two views share one list. **Table** is the flat list with a column per field; **By due date** groups it into Overdue, Today, Tomorrow, This week, Later and No due date. Both filter, sort and page on the server, so the Overdue, High priority, Pending, Active and Completed totals across the top count the whole matching set rather than the rows loaded so far. The status tabs, the search box, the assignee, team and type facets and the filter popover all narrow the same set.
+
+Clicking a row opens it for editing. Each row carries two controls before its title: the checkbox at the far left selects it for a bulk action, and the square next to the title marks it done on its own.
+
+### Selecting many tasks
+
+Tick a row to select it, the checkbox in the table header to select every row loaded so far, or a group's header in the by-due-date view to select that group. When more tasks match than are loaded, a bar appears offering **Select all N matching**, which hands the whole filtered set to the next action however many pages that is. Unticking a row afterwards takes just that task out and the count follows.
+
+The selection means the filter it was made under, so changing any filter clears it. A selection past `50,000` tasks is refused rather than half applied; add a filter and work through it in parts.
+
+With rows selected, a bar appears at the bottom: **Mark done**, **Status** (any of the four), **Priority** (any of the four), and **Delete**, which confirms first and names the count. This is how you clear a backlog of tasks nobody needs without opening each one. To clear the follow-ups a workspace collected before it narrowed the setting below, search for `out_of_office`, tick the header checkbox, take **Select all N matching** and delete them in one step.
+
+### Follow-up tasks from replies
+
+Warmbly can open a task by itself when a reply lands, so a prospect who answers ends up on this list rather than only in the inbox. The task is assigned to the owner of the mailbox that received the reply, due in 24 hours, and titled with the intent and the sender: **Follow up: positive reply from dana@acme.com**.
+
+Which replies get one is up to you, in **Settings > Sending > Reply follow-ups**. Every reply is classified first, and the classifier can tell a person from a machine: an out-of-office notice, a helpdesk autoresponder, a bounce and a delivery report are recognized from the message headers, not only from the words in the body, so an auto-responder that never mentions a vacation is still caught.
+
+| Intent | Opens a task by default |
+| --- | --- |
+| Positive: interested, wants a call | Yes |
+| Question: asked something | Yes |
+| Neutral: a human reply we could not bucket | Yes |
+| Negative: not interested | Yes |
+| Automated: out of office, autoresponders, bounces | No |
+
+Automated replies are off deliberately. A vacation notice is not follow-up work, and a week of sending makes enough of them to bury the real replies. Tick **Automated** if you do want one per machine reply, or untick the human ones you do not need. Unticking everything is the same as turning the switch off.
+
+The classification does more than decide the task: an automated reply never counts as a reply for **stop on reply** or for a **replied** branch in a sequence, and its notification goes to the **Out-of-office detected** preference rather than **New reply**, so muting one does not mute the other.
+
 ## Suppression
 
 A suppressed contact receives no further mail. Unsubscribed contacts are skipped by every campaign automatically; toggle subscription on the Details tab, and filter the list by Subscribed or Unsubscribed.

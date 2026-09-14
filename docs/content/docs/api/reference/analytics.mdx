@@ -103,6 +103,7 @@ Returns the organization's deliverability posture for a time window: bounce, com
   "intent_out_of_office": 11,
   "intent_question": 9,
   "intent_neutral": 13,
+  "intent_automated": 22,
   "emails_sent": 1240,
   "bounce_rate": 0.73,
   "complaint_rate": 0.08,
@@ -174,6 +175,8 @@ Returns the organization's deliverability posture for a time window: bounce, com
   ]
 }
 ```
+
+The `intent_*` counters and `reply_count` are two different things and do not add up to each other. `reply_count` counts `reply` deliverability events, which are the ones a provider or your own integration reports to [record an event](/api/reference/deliverability-ops/). The `intent_*` counters are the replies Warmbly classified as they arrived in a connected mailbox, one per reply, including the machine ones: a vacation notice lands in `intent_out_of_office` and an autoresponder, ticket acknowledgement or bounce notice in `intent_automated`. A workspace that reports no reply events sees `reply_count` at zero with intents counted normally.
 
 `spam_placement_rate` and `inbox_placement_rate` are omitted when there are no seed samples in the window. `by_provider` rolls the same seed samples up per recipient provider; `warmup_placement` is the continuous warmup signal per recipient domain, where `delivered` counts verified warmup arrivals and `spam` the subset the recipient's provider filed into junk. `score` starts at `100` and subtracts saturating penalties for bounce rate (up to `40` points, maxed at `10%`), complaint rate (up to `30` points, maxed at `0.30%`), and spam placement (up to `40` points, maxed at `40%`).
 

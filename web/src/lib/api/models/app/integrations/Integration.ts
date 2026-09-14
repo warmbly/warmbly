@@ -305,6 +305,7 @@ export const REPLY_INTENT_OPTIONS: { value: string; label: string }[] = [
     { value: "neutral", label: "Neutral" },
     { value: "negative", label: "Negative" },
     { value: "out_of_office", label: "Out of office" },
+    { value: "automated", label: "Automated" },
 ];
 
 // Human labels for the Warmbly event vocabulary (subset surfaced as triggers).

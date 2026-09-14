@@ -251,6 +251,9 @@ func (s *service) UpdateOrganizationSettings(ctx context.Context, organizationID
 		return errx.New(errx.BadRequest, "settings are required")
 	}
 	settings.Normalize()
+	if err := settings.Validate(); err != nil {
+		return errx.NewWithIdentifier(errx.BadRequest, "invalid_setting", err.Error())
+	}
 	if err := s.repo.UpsertOutreachSettings(ctx, organizationID, updatedBy, settings); err != nil {
 		return toErrx(err)
 	}
@@ -277,6 +280,9 @@ func (s *service) UpdateCampaignSettings(ctx context.Context, campaignID uuid.UU
 		return errx.New(errx.BadRequest, "settings are required")
 	}
 	settings.Normalize()
+	if err := settings.Validate(); err != nil {
+		return errx.NewWithIdentifier(errx.BadRequest, "invalid_setting", err.Error())
+	}
 	if err := s.repo.UpsertCampaignAdvancedSettings(ctx, campaignID, settings); err != nil {
 		return toErrx(err)
 	}
@@ -916,6 +922,31 @@ func buildReplyHeaders(msg *models.EmailMessageStoreData) map[string][]string {
 	return h
 }
 
+// replyTaskTitle words the follow-up the way it is read in a task list, rather
+// than as the classifier's own vocabulary.
+func replyTaskTitle(intent models.ReplyIntentType, sender string) string {
+	switch intent {
+	case models.ReplyIntentOutOfOffice:
+		return "Follow up: out-of-office reply from " + sender
+	case models.ReplyIntentAutomated:
+		return "Follow up: automatic reply from " + sender
+	case models.ReplyIntentNeutral:
+		return "Follow up: reply from " + sender
+	default:
+		return fmt.Sprintf("Follow up: %s reply from %s", intent, sender)
+	}
+}
+
+// automatedIntent maps a machine-reply verdict onto the recorded intent
+// vocabulary: a vacation notice keeps its own bucket, everything else machine
+// (autoresponders, ticket acknowledgements, bounces) is "automated".
+func automatedIntent(r replyclassify.Result) (models.ReplyIntentType, float64) {
+	if r.Class == replyclassify.ClassOutOfOffice {
+		return models.ReplyIntentOutOfOffice, r.Confidence
+	}
+	return models.ReplyIntentAutomated, r.Confidence
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -1028,12 +1059,12 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	text := strings.TrimSpace(msg.Snippet)
 	text = strings.TrimSpace(text + "\n" + msg.Subject)
 
-	// Layered reply classification (header -> lexicon -> optional model) is run
+	// The full layered classification (including the optional model layer) runs
 	// further down, once the campaign context is known to store it on. Classifying
 	// only inside that block means a reply with no campaign match never spends a
-	// model call. replyClass is what it decided, read after the block; held is
+	// model call. verdict is what it decided, read after the block; held is
 	// when an out-of-office hold lifts, for the notification to name.
-	var replyClass string
+	var verdict replyclassify.Result
 	var held *time.Time
 
 	var campaignID *uuid.UUID
@@ -1108,7 +1139,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		// it (including reply_automated for OOO / autoresponders). Layers 1-2 run
 		// for every reply, so OOO/unsubscribe stay correct even when the gate
 		// skipped the model.
-		replyClass = replyResult.Class
+		verdict = replyResult
 		_ = s.campaignProgressRepo.RecordReplyClassification(ctx, cID, ctID, sID, replyResult.Class, replyResult.Source, replyResult.Confidence)
 
 		// Out of office: park the contact's next step until they are back
@@ -1180,13 +1211,26 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		s.fireInstantActions(ctx, cID, ctID, sID, "reply")
 	}
 
+	// A reply with no campaign behind it was never classified above, and a
+	// machine announces itself in the headers (RFC 3834, Precedence, a null
+	// Return-Path, a delivery-status report) whether or not we ever mailed the
+	// address. The header and lexicon layers are free, so answer "is this a
+	// human" for every inbound message; only the model layer is worth gating.
+	if verdict.Class == "" {
+		verdict = replyclassify.ClassifyOffline(replyclassify.Input{
+			Headers:  buildReplyHeaders(msg),
+			Subject:  msg.Subject,
+			BodyText: firstNonEmpty(msg.BodyText, msg.Snippet),
+		})
+	}
+
 	intent, confidence := classifyReply(text, settings.ReplyIntent)
 	// The layered classifier reads auto-reply headers and a multilingual
 	// out-of-office vocabulary the workspace's own keyword list does not, so
 	// its verdict settles the case the keywords missed. Only the automated
 	// classes are folded in: sentiment stays the keyword list's call.
-	if replyClass == replyclassify.ClassOutOfOffice {
-		intent, confidence = models.ReplyIntentOutOfOffice, 0.95
+	if replyclassify.IsAutomated(verdict.Class) {
+		intent, confidence = automatedIntent(verdict)
 	}
 
 	actionTaken := ""
@@ -1227,10 +1271,13 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		}
 	}
 
-	if settings.ReplyIntent.AutoCreateCRMTask && s.crmRepo != nil && contactID != nil {
+	// Per-intent, so an out-of-office or a bounce does not become a
+	// high-priority follow-up nobody asked for. The default set is human
+	// replies only; a workspace can add the automated ones back.
+	if settings.ReplyIntent.CreatesTaskFor(intent) && s.crmRepo != nil && contactID != nil {
 		owner, parseErr := uuid.Parse(account.UserID)
 		if parseErr == nil {
-			title := fmt.Sprintf("Follow up reply intent: %s (%s)", intent, sender)
+			title := replyTaskTitle(intent, sender)
 			_, _ = s.crmRepo.CreateCRMTask(ctx, *account.OrganizationID, owner, &models.CreateCRMTask{
 				ContactID:  contactID,
 				Title:      title,
@@ -1256,6 +1303,10 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		ActionTaken:    actionTaken,
 		Metadata: map[string]interface{}{
 			"subject": msg.Subject,
+			// What decided it, so an intent nobody expected can be explained
+			// without re-running the message through the classifier.
+			"reply_class":   verdict.Class,
+			"classified_by": verdict.Source,
 		},
 	})
 
@@ -1299,9 +1350,15 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		cat := models.NotifInboundReply
 		title := "New reply from " + sender
 		body := msg.Subject
-		if intent == models.ReplyIntentOutOfOffice {
+		if models.IsAutomatedIntent(intent) {
+			// The "out-of-office detected" preference is what someone mutes to
+			// stop hearing about auto-responders, so every machine reply goes
+			// through it rather than only the vacation-worded ones.
 			cat = models.NotifInboundOOO
 			title = "Out-of-office from " + sender
+			if intent == models.ReplyIntentAutomated {
+				title = "Automatic reply from " + sender
+			}
 			// Say what happened to their sequence, not only that mail arrived.
 			if held != nil {
 				body = "Held until " + held.Format("2 Jan") + " · " + msg.Subject

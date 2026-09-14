@@ -1137,6 +1137,11 @@ func Run(
 				{
 					crmTasks.GET("", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.ListCRMTasks)
 					crmTasks.POST("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.CreateCRMTask)
+					// Bulk status/priority and bulk delete over a selection: the
+					// ids ticked, or the whole current filter. Same scope as
+					// the single-task routes they stand in for.
+					crmTasks.PATCH("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.BulkUpdateCRMTasks)
+					crmTasks.DELETE("", m.RequireAccess(models.PermManageContacts, models.APIPermWriteCRM), h.BulkDeleteCRMTasks)
 					crmTasks.POST("/search", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.SearchCRMTasks)
 					crmTasks.POST("/summary", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.TasksSummary)
 					crmTasks.GET("/:id", m.RequireAccess(models.PermViewContacts, models.APIPermReadCRM), h.GetCRMTask)

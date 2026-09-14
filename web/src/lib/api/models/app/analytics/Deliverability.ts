@@ -74,6 +74,9 @@ export default interface DeliverabilityDashboard {
     intent_out_of_office: number;
     intent_question: number;
     intent_neutral: number;
+    // Machine replies that are not vacation notices: autoresponders, ticket
+    // acknowledgements, bounces, delivery reports.
+    intent_automated: number;
 
     emails_sent: number;
     bounce_rate: number;

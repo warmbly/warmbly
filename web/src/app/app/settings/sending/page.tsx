@@ -20,11 +20,16 @@ import {
 } from "@/lib/api/hooks/app/outreach/useOutreachSettings";
 import VerificationSettings from "@/components/app/contacts/VerificationSettings";
 import {
+    AUTOMATED_INTENTS,
     DEFAULT_PREFERRED_HOURS,
     DEFAULT_UNSUBSCRIBE,
+    REPLY_INTENT_CHOICES,
     describeHours,
     formatHour,
+    taskIntents,
     type OutreachSettings,
+    type ReplyIntent,
+    type ReplyIntentSettings,
     type UnsubscribeMode,
     type UnsubscribeSettings,
 } from "@/lib/api/models/app/outreach/OutreachSettings";
@@ -83,7 +88,7 @@ function SendingSettings() {
     );
 
     const patchReplyIntent = React.useCallback(
-        (next: Record<string, unknown>) => {
+        (next: Partial<ReplyIntentSettings>) => {
             setDraft((prev) => (prev ? { ...prev, reply_intent: { ...prev.reply_intent, ...next } } : prev));
         },
         [],
@@ -276,7 +281,7 @@ function SendingSettings() {
                                     <NumberInput
                                         min={1}
                                         max={90}
-                                        value={(draft.reply_intent?.out_of_office_hold_days as number) ?? 7}
+                                        value={draft.reply_intent?.out_of_office_hold_days ?? 7}
                                         onChange={(n) =>
                                             patchReplyIntent({
                                                 out_of_office_hold_days: Number.isFinite(n)
@@ -288,6 +293,39 @@ function SendingSettings() {
                                     />
                                     <span className="text-[11.5px] text-slate-500">days</span>
                                 </div>
+                            </Row>
+                        )}
+                    </>
+                )}
+            </Section>
+
+            <Section
+                eyebrow="Reply follow-ups"
+                description="Open a CRM task when a reply lands, so a prospect who answers ends up on the Tasks page instead of only in the inbox. The task is assigned to the mailbox owner and due in 24 hours."
+            >
+                {isLoading || !draft ? (
+                    <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />
+                ) : (
+                    <>
+                        <Row
+                            label="Open a task on a reply"
+                            description="One task per classified reply, titled with the intent and the sender."
+                        >
+                            <Toggle
+                                on={draft.reply_intent?.auto_create_crm_task !== false}
+                                onChange={(on) => patchReplyIntent({ auto_create_crm_task: on })}
+                            />
+                        </Row>
+                        {draft.reply_intent?.auto_create_crm_task !== false && (
+                            <Row
+                                label="Which replies"
+                                description="Automated replies are off by default: a vacation notice is not follow-up work, and a week of sending makes enough of them to bury the real ones."
+                                align="start"
+                            >
+                                <IntentPicker
+                                    value={taskIntents(draft.reply_intent)}
+                                    onChange={(next) => patchReplyIntent({ crm_task_intents: next })}
+                                />
                             </Row>
                         )}
                     </>
@@ -333,6 +371,62 @@ function SendingSettings() {
                 )}
             </Section>
         </SectionShell>
+    );
+}
+
+// The intents that open a follow-up task. Chips rather than checkboxes, to
+// match the delivery-hours grid above; the two automated classes move together
+// because they are one thing to the person reading the list.
+function IntentPicker({
+    value,
+    onChange,
+}: {
+    value: ReplyIntent[];
+    onChange: (next: ReplyIntent[]) => void;
+}) {
+    const has = (id: ReplyIntent) =>
+        id === "out_of_office" ? AUTOMATED_INTENTS.some((i) => value.includes(i)) : value.includes(id);
+
+    function toggle(id: ReplyIntent) {
+        const group = id === "out_of_office" ? AUTOMATED_INTENTS : [id];
+        const on = has(id);
+        const next = on
+            ? value.filter((v) => !group.includes(v))
+            : [...value.filter((v) => !group.includes(v)), ...group];
+        onChange(next);
+    }
+
+    return (
+        <div className="w-full sm:w-[320px]">
+            <div className="flex flex-wrap gap-1">
+                {REPLY_INTENT_CHOICES.map((c) => {
+                    const on = has(c.id);
+                    return (
+                        <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => toggle(c.id)}
+                            aria-pressed={on}
+                            title={c.hint}
+                            className={`h-7 px-2.5 rounded-md border text-[11.5px] transition-colors ${
+                                on
+                                    ? "bg-sky-50 text-sky-700 border-sky-200"
+                                    : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                            }`}
+                        >
+                            {c.label}
+                        </button>
+                    );
+                })}
+            </div>
+            <p className="mt-2 text-[11.5px] text-slate-500 leading-relaxed">
+                {value.length === 0
+                    ? "Nothing opens a task. Same as turning the switch off."
+                    : `A reply classified ${REPLY_INTENT_CHOICES.filter((c) => has(c.id))
+                          .map((c) => c.label.toLowerCase())
+                          .join(", ")} opens a task.`}
+            </p>
+        </div>
     );
 }
 

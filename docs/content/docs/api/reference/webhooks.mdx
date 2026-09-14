@@ -520,7 +520,7 @@ The full catalog is available at `GET /webhooks/event-types`. Below is the compl
 | `crm.deal_updated` | A deal's fields or stage change. | |
 | `crm.deal_deleted` | A deal is deleted. | |
 | `crm.task_created` | A CRM task is created. | |
-| `crm.task_updated` | A CRM task changes. | |
+| `crm.task_updated` | A CRM task changes. A bulk write ([bulk update tasks](/api/reference/crm/#bulk-update-tasks)) raises it once for the whole call, with no `entity_id` and a `metadata` of `bulk` and `count`, so treat a missing id as "re-read the tasks you track" rather than as one task. `contact.updated` behaves the same way for a bulk contact edit. | |
 | `crm.note_created` | A note is added to a contact or deal. | |
 | `crm.pipeline_updated` | A pipeline or its stages change. | |
 

@@ -24,7 +24,9 @@ import {
     AlertTriangleIcon,
     ArrowUpDownIcon,
     CalendarClockIcon,
+    CheckIcon,
     CheckSquareIcon,
+    FlagIcon,
     LayoutListIcon,
     ListTreeIcon,
     Loader2Icon,
@@ -59,6 +61,7 @@ import {
     PopoverMenu,
     PopoverMenuContent,
     PopoverMenuItem,
+    PopoverMenuLabel,
     PopoverMenuTrigger,
 } from "@/components/ui/popover-menu";
 import useSearchTasks from "@/lib/api/hooks/app/crm/tasks/useSearchTasks";
@@ -66,6 +69,8 @@ import useTasksSummary from "@/lib/api/hooks/app/crm/tasks/useTasksSummary";
 import useCreateCRMTask from "@/lib/api/hooks/app/crm/tasks/useCreateCRMTask";
 import useUpdateCRMTask from "@/lib/api/hooks/app/crm/tasks/useUpdateCRMTask";
 import useDeleteCRMTask from "@/lib/api/hooks/app/crm/tasks/useDeleteCRMTask";
+import useBulkDeleteTasks from "@/lib/api/hooks/app/crm/tasks/useBulkDeleteTasks";
+import useBulkUpdateTasks from "@/lib/api/hooks/app/crm/tasks/useBulkUpdateTasks";
 import useTaskTypes from "@/lib/api/hooks/app/crm/taskTypes/useTaskTypes";
 import useMembers from "@/lib/api/hooks/app/organizations/useMembers";
 import { useQueryClient } from "@tanstack/react-query";
@@ -79,6 +84,9 @@ import type { CRMTaskPriority, CRMTaskStatus } from "@/lib/api/models/app/crm/CR
 import type SearchTasks from "@/lib/api/models/app/crm/SearchTasks";
 import type { TaskSortBy } from "@/lib/api/models/app/crm/SearchTasks";
 import { EMPTY_TASK_SEARCH } from "@/lib/api/models/app/crm/SearchTasks";
+import type TaskSelection from "@/lib/api/models/app/crm/TaskSelection";
+import * as rowSelection from "@/lib/helper/rowSelection";
+import type { RowSelection } from "@/lib/helper/rowSelection";
 import type OrganizationMember from "@/lib/api/models/app/organizations/OrganizationMember";
 import type Team from "@/lib/api/models/app/teams/Team";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -92,6 +100,15 @@ const PRIORITIES: { id: CRMTaskPriority; label: string; dot: string; text: strin
     { id: "medium", label: "Medium", dot: "bg-sky-500", text: "text-sky-700" },
     { id: "low", label: "Low", dot: "bg-slate-400", text: "text-slate-600" },
 ];
+
+// Status names as this page says them ("Active", not "in progress"), for the
+// bulk-action toasts.
+const STATUS_LABELS: Record<CRMTaskStatus, string> = {
+    pending: "Pending",
+    in_progress: "Active",
+    completed: "Done",
+    cancelled: "Cancelled",
+};
 
 const STATUS_TABS: { id: "all" | CRMTaskStatus; label: string }[] = [
     { id: "all", label: "All" },
@@ -165,7 +182,9 @@ export default function TasksPage() {
 
     const search = useSearchTasks({ filters, limit: 50 });
     const summary = useTasksSummary(filters);
-    const tasks = search.tasks ?? [];
+    // Memoised: the loaded-id list and the grouped buckets both derive from it,
+    // and a fresh [] on every render would rebuild them every render.
+    const tasks = React.useMemo(() => search.tasks ?? [], [search.tasks]);
     const total = search.total;
     const sum = summary.data;
 
@@ -191,6 +210,90 @@ export default function TasksPage() {
     }, [teams]);
 
     const { data: types = [] } = useTaskTypes();
+
+    // ── Multi-select ───────────────────────────────────────────────────────
+    // Either the rows ticked, or every task the current filter matches minus
+    // the ones unticked afterwards. Only the second reaches past the pages
+    // loaded so far, and only the server can resolve it, so it travels as the
+    // filter itself.
+    const [rowSel, setRowSel] = React.useState<RowSelection>(rowSelection.emptySelection);
+    const bulkDelete = useBulkDeleteTasks();
+    const bulkUpdate = useBulkUpdateTasks();
+    const confirm = useConfirm();
+
+    const loadedIDs = React.useMemo(() => tasks.map((t) => t.id), [tasks]);
+    const clearSelection = React.useCallback(() => setRowSel(rowSelection.emptySelection), []);
+    const isRowSelected = React.useCallback((id: string) => rowSelection.isRowSelected(rowSel, id), [rowSel]);
+    const selectionCount = rowSelection.selectionCount(rowSel, total);
+    const loadedAllSelected = rowSelection.allLoadedSelected(rowSel, loadedIDs);
+    const canSelectAllMatching = rowSelection.canSelectAllMatching(rowSel, loadedIDs, total);
+
+    // A teammate deleting a row the user had unticked would otherwise leave its
+    // id in `excluded` for good, counting a task that no longer exists against
+    // the selection and eventually emptying it on screen while rows stay
+    // selected. Only sound once every matching row is loaded.
+    React.useEffect(() => {
+        if (search.hasNextPage) return;
+        setRowSel((sel) => rowSelection.pruneExcluded(sel, loadedIDs));
+    }, [search.hasNextPage, loadedIDs]);
+
+    // A selection means what the filter meant when it was made, so changing
+    // the filter drops it rather than silently applying to a different set.
+    const filterKey = JSON.stringify(filters);
+    React.useEffect(() => {
+        clearSelection();
+    }, [filterKey, clearSelection]);
+
+    const selection = React.useMemo<TaskSelection>(
+        () => (rowSel.all ? { tasks: [], all: true, filters, exclude: rowSel.excluded } : { tasks: rowSel.ids }),
+        [rowSel, filters],
+    );
+
+    const busy = bulkDelete.isPending || bulkUpdate.isPending;
+
+    // The server reports what it wrote, which is not always what was selected:
+    // a teammate can have deleted or already completed a row in between. Say
+    // the real number rather than the one on the button.
+    function report(affected: number, verb: string) {
+        if (affected === 0) {
+            toast("Nothing changed: those tasks are gone, or already in that state.");
+            return;
+        }
+        toast.success(`${affected.toLocaleString()} ${affected === 1 ? "task" : "tasks"} ${verb}`);
+    }
+
+    // The rows stay tickable while the request is in flight, so clear only the
+    // selection that was actually sent. Clearing unconditionally threw away a
+    // selection the user had started building while waiting.
+    function clearIfUnchanged(submitted: RowSelection) {
+        setRowSel((current) => (current === submitted ? rowSelection.emptySelection : current));
+    }
+
+    async function applyBulk(patch: { status?: CRMTaskStatus; priority?: CRMTaskPriority }, verb: string) {
+        if (selectionCount === 0) return;
+        const submitted = rowSel;
+        try {
+            const res = await bulkUpdate.mutateAsync({ ...selection, ...patch });
+            clearIfUnchanged(submitted);
+            report(res.affected, verb);
+        } catch (err) {
+            toast.error(buildError(err as AppError));
+        }
+    }
+
+    function deleteSelected() {
+        if (selectionCount === 0) return;
+        const submitted = rowSel;
+        confirm?.show(deletePrompt(selectionCount), async () => {
+            try {
+                const res = await bulkDelete.mutateAsync(selection);
+                clearIfUnchanged(submitted);
+                report(res.affected, "deleted");
+            } catch (err) {
+                toast.error(buildError(err as AppError));
+            }
+        });
+    }
 
     const statusTab: "all" | CRMTaskStatus =
         filters.statuses.length === 1 ? filters.statuses[0] : "all";
@@ -297,22 +400,44 @@ export default function TasksPage() {
                         onCreate={() => setNewOpen(true)}
                         onClear={() => setFilters(EMPTY_TASK_SEARCH)}
                     />
-                ) : view === "grouped" ? (
-                    <GroupedView
-                        tasks={tasks}
-                        memberByUser={memberByUser}
-                        teamById={teamById}
-                        types={types}
-                        onOpen={setEditing}
-                    />
                 ) : (
-                    <FlatView
-                        tasks={tasks}
-                        memberByUser={memberByUser}
-                        teamById={teamById}
-                        types={types}
-                        onOpen={setEditing}
-                    />
+                    <>
+                        <SelectAllBanner
+                            selectAll={rowSel.all}
+                            count={selectionCount}
+                            loadedCount={tasks.length}
+                            total={total}
+                            canSelectAllMatching={canSelectAllMatching}
+                            onSelectAllMatching={() => setRowSel(rowSelection.selectAllMatching())}
+                            onClear={clearSelection}
+                            grouped={view === "grouped"}
+                        />
+                        {view === "grouped" ? (
+                            <GroupedView
+                                tasks={tasks}
+                                memberByUser={memberByUser}
+                                teamById={teamById}
+                                types={types}
+                                onOpen={setEditing}
+                                isRowSelected={isRowSelected}
+                                onToggle={(id, on) => setRowSel((sel) => rowSelection.toggleRow(sel, id, on))}
+                                onToggleMany={(ids) => setRowSel((sel) => rowSelection.toggleGroup(sel, ids))}
+                                allSelected={(ids) => rowSelection.allLoadedSelected(rowSel, ids)}
+                            />
+                        ) : (
+                            <FlatView
+                                tasks={tasks}
+                                memberByUser={memberByUser}
+                                teamById={teamById}
+                                types={types}
+                                onOpen={setEditing}
+                                isRowSelected={isRowSelected}
+                                onToggle={(id, on) => setRowSel((sel) => rowSelection.toggleRow(sel, id, on))}
+                                allLoadedSelected={loadedAllSelected}
+                                onToggleAll={() => setRowSel((sel) => rowSelection.toggleLoaded(sel, loadedIDs))}
+                            />
+                        )}
+                    </>
                 )}
 
                 {!search.isPending && tasks.length > 0 && (
@@ -325,6 +450,15 @@ export default function TasksPage() {
                     />
                 )}
             </PageBody>
+
+            <TaskSelectionBar
+                count={selectionCount}
+                busy={busy}
+                onStatus={(status) => applyBulk({ status }, status === "completed" ? "marked done" : `set to ${STATUS_LABELS[status]}`)}
+                onPriority={(priority) => applyBulk({ priority }, `set to ${priority} priority`)}
+                onDelete={deleteSelected}
+                onClear={clearSelection}
+            />
 
             <TaskDialog
                 open={newOpen}
@@ -343,6 +477,177 @@ export default function TasksPage() {
     );
 }
 
+// ── Selection ───────────────────────────────────────────────
+
+// deletePrompt words the confirm so a 4,000-row select-all does not read the
+// same as three ticked rows.
+function deletePrompt(count: number): string {
+    if (count === 1) return "Delete this task?";
+    return `Delete ${count.toLocaleString()} tasks? This cannot be undone.`;
+}
+
+// The bridge between "every row on screen" and "every row that matches". The
+// list only ever holds the pages it has loaded, so ticking the header can never
+// mean the whole filtered set on its own; this says what is selected and offers
+// the rest in one click.
+function SelectAllBanner({
+    selectAll,
+    count,
+    loadedCount,
+    total,
+    canSelectAllMatching,
+    onSelectAllMatching,
+    onClear,
+    grouped,
+}: {
+    selectAll: boolean;
+    count: number;
+    loadedCount: number;
+    total: number;
+    canSelectAllMatching: boolean;
+    onSelectAllMatching: () => void;
+    onClear: () => void;
+    grouped: boolean;
+}) {
+    if (!selectAll && !canSelectAllMatching) return null;
+    const plural = (n: number) => (n === 1 ? "task" : "tasks");
+    return (
+        <div
+            className={`px-5 py-2 bg-sky-50/70 border border-sky-100 text-[12px] text-sky-900 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-center ${
+                grouped ? "rounded-md mb-3" : "border-x-0 border-t-0"
+            }`}
+        >
+            {selectAll ? (
+                <>
+                    <span>
+                        All <span className="font-medium">{count.toLocaleString()}</span> {plural(count)} matching this
+                        view are selected.
+                    </span>
+                    <button
+                        type="button"
+                        onClick={onClear}
+                        className="font-medium underline underline-offset-2 hover:text-sky-700"
+                    >
+                        Clear selection
+                    </button>
+                </>
+            ) : (
+                <>
+                    <span>
+                        The <span className="font-medium">{loadedCount.toLocaleString()}</span> {plural(loadedCount)}{" "}
+                        loaded here are selected.
+                    </span>
+                    <button
+                        type="button"
+                        onClick={onSelectAllMatching}
+                        className="font-medium underline underline-offset-2 hover:text-sky-700"
+                    >
+                        Select all {total.toLocaleString()} matching
+                    </button>
+                </>
+            )}
+        </div>
+    );
+}
+
+// Floating bulk-action bar, same shape as the contacts one: it appears with the
+// first ticked row and names the count before any action reads it.
+function TaskSelectionBar({
+    count,
+    busy,
+    onStatus,
+    onPriority,
+    onDelete,
+    onClear,
+}: {
+    count: number;
+    busy: boolean;
+    onStatus: (status: CRMTaskStatus) => void;
+    onPriority: (priority: CRMTaskPriority) => void;
+    onDelete: () => void;
+    onClear: () => void;
+}) {
+    if (count === 0) return null;
+    return (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center max-w-[calc(100vw-16px)] flex-wrap justify-center md:max-w-none md:flex-nowrap gap-1.5 rounded-md border border-slate-200 bg-white shadow-[0_6px_20px_-4px_rgba(15,23,42,0.12),0_2px_4px_rgba(15,23,42,0.04)] px-2 py-1.5">
+            <div className="inline-flex items-center gap-1.5 px-2 h-7 rounded bg-sky-50 text-sky-700 text-[12px] font-medium">
+                <CheckIcon className="w-3 h-3" />
+                <span>{count.toLocaleString()} selected</span>
+            </div>
+            <button
+                type="button"
+                onClick={() => onStatus("completed")}
+                disabled={busy}
+                className="h-7 px-2.5 rounded text-[12px] text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+            >
+                {busy ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CheckSquareIcon className="w-3 h-3" />}
+                <span>Mark done</span>
+            </button>
+            <PopoverMenu side="top" align="center">
+                <PopoverMenuTrigger asChild>
+                    <button
+                        type="button"
+                        disabled={busy}
+                        className="h-7 px-2.5 rounded text-[12px] text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                    >
+                        <SquareIcon className="w-3 h-3" />
+                        <span className="hidden sm:inline">Status</span>
+                    </button>
+                </PopoverMenuTrigger>
+                <PopoverMenuContent minWidth={170}>
+                    <PopoverMenuLabel>Set {count.toLocaleString()} to</PopoverMenuLabel>
+                    {STATUS_TABS.filter((t) => t.id !== "all").map((t) => (
+                        <PopoverMenuItem key={t.id} onSelect={() => onStatus(t.id as CRMTaskStatus)}>
+                            {t.label}
+                        </PopoverMenuItem>
+                    ))}
+                </PopoverMenuContent>
+            </PopoverMenu>
+            <PopoverMenu side="top" align="center">
+                <PopoverMenuTrigger asChild>
+                    <button
+                        type="button"
+                        disabled={busy}
+                        className="h-7 px-2.5 rounded text-[12px] text-slate-700 hover:text-slate-900 hover:bg-slate-100 font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                    >
+                        <FlagIcon className="w-3 h-3" />
+                        <span className="hidden sm:inline">Priority</span>
+                    </button>
+                </PopoverMenuTrigger>
+                <PopoverMenuContent minWidth={170}>
+                    <PopoverMenuLabel>Set {count.toLocaleString()} to</PopoverMenuLabel>
+                    {PRIORITIES.map((p) => (
+                        <PopoverMenuItem
+                            key={p.id}
+                            onSelect={() => onPriority(p.id)}
+                            icon={<span className={`size-1.5 rounded-full ${p.dot}`} />}
+                        >
+                            {p.label}
+                        </PopoverMenuItem>
+                    ))}
+                </PopoverMenuContent>
+            </PopoverMenu>
+            <button
+                type="button"
+                onClick={onDelete}
+                disabled={busy}
+                className="h-7 px-2.5 rounded text-[12px] text-red-600 hover:text-white hover:bg-red-600 font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+            >
+                <TrashIcon className="w-3 h-3" />
+                <span className="hidden sm:inline">Delete</span>
+            </button>
+            <div className="h-4 w-px bg-slate-200" />
+            <button
+                type="button"
+                onClick={onClear}
+                className="h-7 px-2.5 rounded text-[12px] text-slate-500 hover:text-slate-900 transition-colors"
+            >
+                Clear
+            </button>
+        </div>
+    );
+}
+
 // ── Views ────────────────────────────────────────────────────────────────
 
 function FlatView({
@@ -351,17 +656,34 @@ function FlatView({
     teamById,
     types,
     onOpen,
+    isRowSelected,
+    onToggle,
+    allLoadedSelected,
+    onToggleAll,
 }: {
     tasks: CRMTask[];
     memberByUser: Map<string, OrganizationMember>;
     teamById: Map<string, Team>;
     types: { name: string; color: string }[];
     onOpen: (t: CRMTask) => void;
+    isRowSelected: (id: string) => boolean;
+    onToggle: (id: string, on: boolean) => void;
+    allLoadedSelected: boolean;
+    onToggleAll: () => void;
 }) {
     return (
         <table className="w-full border-collapse">
             <thead className="sticky top-0 bg-white z-[1]">
                 <tr className="border-b border-slate-200">
+                    <th className="pl-3 pr-2 py-2 w-9">
+                        <input
+                            type="checkbox"
+                            aria-label="Select every task loaded"
+                            className="w-3.5 h-3.5 rounded accent-sky-600"
+                            checked={allLoadedSelected}
+                            onChange={onToggleAll}
+                        />
+                    </th>
                     <Th className="text-left">Task</Th>
                     <Th className="text-left hidden md:table-cell">Type</Th>
                     <Th className="text-left hidden md:table-cell">Assignee</Th>
@@ -380,6 +702,8 @@ function FlatView({
                         team={t.assigned_team_id ? teamById.get(t.assigned_team_id) : undefined}
                         types={types}
                         onOpen={() => onOpen(t)}
+                        selected={isRowSelected(t.id)}
+                        onToggle={(on) => onToggle(t.id, on)}
                     />
                 ))}
             </tbody>
@@ -393,12 +717,16 @@ function FlatRow({
     team,
     types,
     onOpen,
+    selected,
+    onToggle,
 }: {
     task: CRMTask;
     member?: OrganizationMember;
     team?: Team;
     types: { name: string; color: string }[];
     onOpen: () => void;
+    selected: boolean;
+    onToggle: (on: boolean) => void;
 }) {
     const update = useUpdateCRMTask();
     const del = useDeleteCRMTask();
@@ -432,8 +760,19 @@ function FlatRow({
     return (
         <tr
             onClick={onOpen}
-            className="group h-11 border-b border-slate-200/60 hover:bg-slate-50/80 cursor-pointer transition-colors"
+            className={`group h-11 border-b border-slate-200/60 cursor-pointer transition-colors ${
+                selected ? "bg-sky-50/60" : "hover:bg-slate-50/80"
+            }`}
         >
+            <td className="pl-3 pr-2" onClick={(e) => e.stopPropagation()}>
+                <input
+                    type="checkbox"
+                    aria-label={`Select ${task.title}`}
+                    className="w-3.5 h-3.5 rounded accent-sky-600"
+                    checked={selected}
+                    onChange={() => onToggle(!selected)}
+                />
+            </td>
             <td className="px-3 max-w-0">
                 <div className="flex items-center gap-2.5 min-w-0">
                     <button
@@ -522,12 +861,20 @@ function GroupedView({
     teamById,
     types,
     onOpen,
+    isRowSelected,
+    onToggle,
+    onToggleMany,
+    allSelected,
 }: {
     tasks: CRMTask[];
     memberByUser: Map<string, OrganizationMember>;
     teamById: Map<string, Team>;
     types: { name: string; color: string }[];
     onOpen: (t: CRMTask) => void;
+    isRowSelected: (id: string) => boolean;
+    onToggle: (id: string, on: boolean) => void;
+    onToggleMany: (ids: string[]) => void;
+    allSelected: (ids: string[]) => boolean;
 }) {
     // Bucket only the rows already paged in. "Load more" pulls the next server
     // page, so this is never an in-memory slice of a larger set: it is exactly
@@ -571,6 +918,10 @@ function GroupedView({
                         teamById={teamById}
                         types={types}
                         onOpen={onOpen}
+                        isRowSelected={isRowSelected}
+                        onToggle={onToggle}
+                        onToggleMany={onToggleMany}
+                        allSelected={allSelected}
                     />
                 );
             })}
@@ -585,6 +936,10 @@ function BucketGroup({
     teamById,
     types,
     onOpen,
+    isRowSelected,
+    onToggle,
+    onToggleMany,
+    allSelected,
 }: {
     bucket: { id: Bucket; label: string; tone: keyof typeof TONE };
     tasks: CRMTask[];
@@ -592,10 +947,22 @@ function BucketGroup({
     teamById: Map<string, Team>;
     types: { name: string; color: string }[];
     onOpen: (t: CRMTask) => void;
+    isRowSelected: (id: string) => boolean;
+    onToggle: (id: string, on: boolean) => void;
+    onToggleMany: (ids: string[]) => void;
+    allSelected: (ids: string[]) => boolean;
 }) {
+    const ids = tasks.map((t) => t.id);
     return (
         <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
-            <div className="h-8 px-3 border-b border-slate-200 flex items-center gap-1.5">
+            <div className="h-8 px-3 border-b border-slate-200 flex items-center gap-2">
+                <input
+                    type="checkbox"
+                    aria-label={`Select the ${bucket.label} tasks`}
+                    className="w-3.5 h-3.5 rounded accent-sky-600"
+                    checked={allSelected(ids)}
+                    onChange={() => onToggleMany(ids)}
+                />
                 <span className={`size-1.5 rounded-full ${TONE[bucket.tone].dot}`} />
                 <span
                     className={`text-[11px] uppercase tracking-[0.1em] font-semibold ${TONE[bucket.tone].label}`}
@@ -615,6 +982,8 @@ function BucketGroup({
                         team={t.assigned_team_id ? teamById.get(t.assigned_team_id) : undefined}
                         types={types}
                         onOpen={onOpen}
+                        selected={isRowSelected(t.id)}
+                        onToggle={(on) => onToggle(t.id, on)}
                     />
                 ))}
             </div>
@@ -628,12 +997,16 @@ function GroupedRow({
     team,
     types,
     onOpen,
+    selected,
+    onToggle,
 }: {
     task: CRMTask;
     member?: OrganizationMember;
     team?: Team;
     types: { name: string; color: string }[];
     onOpen: (t: CRMTask) => void;
+    selected: boolean;
+    onToggle: (on: boolean) => void;
 }) {
     const update = useUpdateCRMTask();
     const isDone = task.status === "completed";
@@ -653,8 +1026,18 @@ function GroupedRow({
     return (
         <div
             onClick={() => onOpen(task)}
-            className="h-10 px-3 flex items-center gap-2.5 hover:bg-slate-50 cursor-pointer transition-colors"
+            className={`h-10 px-3 flex items-center gap-2.5 cursor-pointer transition-colors ${
+                selected ? "bg-sky-50/60" : "hover:bg-slate-50"
+            }`}
         >
+            <input
+                type="checkbox"
+                aria-label={`Select ${task.title}`}
+                className="w-3.5 h-3.5 rounded accent-sky-600 shrink-0"
+                checked={selected}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => onToggle(!selected)}
+            />
             <button
                 type="button"
                 onClick={toggle}

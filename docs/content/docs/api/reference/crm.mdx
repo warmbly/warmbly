@@ -924,7 +924,7 @@ Returns the task object (same shape as a list item).
 
 `PATCH /crm/tasks/:id`
 
-Update a CRM task. Setting `status` to `completed` stamps the completion timestamp.
+Update a CRM task. Setting `status` to `completed` stamps the completion timestamp, and any other status clears it.
 
 Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_contacts`
 
@@ -970,6 +970,88 @@ Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_contacts`
 ### Response
 
 `204 No Content`.
+
+## Selecting many tasks
+
+The two bulk endpoints below take the same **selection**, in one of two forms. Either an explicit list of ids:
+
+```json
+{ "tasks": ["3b4c5d6e-7f80-4912-a3b4-c5d6e7f80912"] }
+```
+
+Or every task a search matches, minus the ones taken back out:
+
+```json
+{
+  "all": true,
+  "filters": { "statuses": ["pending"], "query": "out_of_office" },
+  "exclude": ["3b4c5d6e-7f80-4912-a3b4-c5d6e7f80912"]
+}
+```
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `tasks` | string[] | with `all` unset | Task ids. At most `1000` per request. |
+| `all` | boolean | no | Switches the selection from `tasks` to `filters`. |
+| `filters` | object | with `all` | The same body [search tasks](#search-tasks) takes, so the set acted on is exactly the set the search returns. |
+| `exclude` | string[] | no | Ids to drop from the resolved set. Ignored unless `all` is set. |
+
+A selection resolving to more than `50,000` tasks is refused with `selection_too_large` rather than half applied; narrow the filter and run it in parts. A `filters` block naming something that is not an id in `assigned_to`, `contact_id` or `deal_id` is refused with `invalid_filter`.
+
+A bulk update raises one `crm.task_updated` [webhook](/api/reference/webhooks/) for the whole call rather than one per task, carrying `metadata.bulk` and `metadata.count` and no `entity_id`. A bulk delete raises none, because deleting a task raises none either way.
+
+Neither endpoint takes an `Idempotency-Key`: both write an end state rather than a delta, so repeating one converges on the same result. They differ in what the repeat reports. A repeated delete finds fewer rows and `affected` falls to `0`. A repeated update still touches every row in the selection, because it stamps `updated_at`, so `affected` does not fall; the status and priority simply do not change, and a repeated completion adds no second entry to the contact timeline and does not move `completed_at`.
+
+## Bulk update tasks
+
+`PATCH /crm/tasks`
+
+Write a status, a priority, or both onto every task in a selection. At least one of the two fields is required; setting `status` to `completed` stamps the completion timestamp and records the completion on each linked contact's timeline, exactly as the single-task update does. Any other status clears `completed_at`, so a task moved back to `pending` does not keep the time it was finished, again matching the single-task update.
+
+Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_contacts`
+
+### Request body
+
+The selection above, plus:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `status` | string | no | One of `pending`, `in_progress`, `completed`, `cancelled`. |
+| `priority` | string | no | One of `low`, `medium`, `high`, `urgent`. |
+
+```json
+{
+  "all": true,
+  "filters": { "statuses": ["pending"], "priorities": ["high"] },
+  "status": "completed"
+}
+```
+
+### Response
+
+The number of tasks written, rather than the rows: a select-all can cover tens of thousands.
+
+```json
+{ "affected": 128 }
+```
+
+## Bulk delete tasks
+
+`DELETE /crm/tasks`
+
+Delete every task in a selection. The body is the selection object, or a bare array of ids.
+
+Auth: **Scope** `WRITE_CRM` · **Org permission** `manage_contacts`
+
+```json
+{ "all": true, "filters": { "query": "out_of_office" } }
+```
+
+### Response
+
+```json
+{ "affected": 128 }
+```
 
 ## Errors
 
