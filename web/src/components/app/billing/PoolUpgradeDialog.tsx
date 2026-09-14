@@ -24,12 +24,19 @@ export default function PoolUpgradeDialog({ open, onClose }: { open: boolean; on
     const checkout = useStartPoolLinkCheckout();
     const [interval, setInterval] = React.useState<Interval>("year");
 
-    // Yearly is the better default, but only where it exists. Resolved once the
-    // offer lands so the selection can never name a period with no price.
+    // Yearly is the better default, but only where it exists. Applied once per
+    // opening: a background refetch must not move the choice under someone who
+    // has already picked the other period.
+    const defaulted = React.useRef(false);
     React.useEffect(() => {
-        if (!offer.data) return;
+        if (!open) {
+            defaulted.current = false;
+            return;
+        }
+        if (defaulted.current || !offer.data) return;
+        defaulted.current = true;
         setInterval(offer.data.yearly_available ? "year" : "month");
-    }, [offer.data]);
+    }, [open, offer.data]);
 
     const cardRef = React.useRef<HTMLDivElement>(null);
     React.useEffect(() => {
