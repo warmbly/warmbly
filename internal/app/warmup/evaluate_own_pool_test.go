@@ -39,15 +39,11 @@ func (r *ownPoolRepo) UpdateParticipantHealth(context.Context, uuid.UUID, models
 func (r *ownPoolRepo) SumWarmupSentSince(context.Context, uuid.UUID, time.Time) (int, error) {
 	return 0, nil
 }
-func (r *ownPoolRepo) CountSpamPlacementsSince(context.Context, uuid.UUID, time.Time) (int, error) {
-	return 0, nil
+func (r *ownPoolRepo) CountWarmupSpamReportsSince(context.Context, uuid.UUID, time.Time) (int, int, error) {
+	return 0, 0, nil
 }
-func (r *ownPoolRepo) CountUserComplaintsSince(context.Context, uuid.UUID, time.Time) (int, error) {
-	return 0, nil
-}
-func (r *ownPoolRepo) GetSpamScore(context.Context, uuid.UUID) (int, error) { return 0, nil }
-func (r *ownPoolRepo) CountDeliverabilityEventsByAccount(context.Context, uuid.UUID, string, time.Time) (int, error) {
-	return 0, nil
+func (r *ownPoolRepo) CountComplaintsAndBouncesByAccount(context.Context, uuid.UUID, time.Time) (int, int, error) {
+	return 0, 0, nil
 }
 func (r *ownPoolRepo) CountDeliveredByAccount(context.Context, uuid.UUID, time.Time) (int, error) {
 	return 0, nil

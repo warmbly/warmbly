@@ -2,6 +2,7 @@ package warmup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -546,18 +547,14 @@ func (s *service) evaluateAndPersist(ctx context.Context, accountID uuid.UUID, p
 		return errx.InternalError()
 	}
 
-	// Signals from before this mailbox was being evaluated are not held against
-	// it (see migration 000096).
-	signalsFrom := time.Time{}
-	priorState := models.WarmupHealthState("")
-	if participant != nil {
-		signalsFrom = participant.HealthSignalsFrom
-		// The prior state is what makes a webhook fire on a real transition
-		// rather than on every sweep.
-		priorState = participant.HealthState
+	if participant == nil {
+		return nil, fail("participant", errors.New("no participant row"))
 	}
+	// The prior state is what makes a webhook fire on a real transition
+	// rather than on every sweep.
+	priorState := participant.HealthState
 
-	metrics, err := s.loadMetrics(ctx, accountID, signalsFrom)
+	metrics, err := s.loadMetrics(ctx, accountID, participant)
 	if err != nil {
 		return nil, fail("load_metrics", err)
 	}
@@ -581,9 +578,11 @@ func (s *service) evaluateAndPersist(ctx context.Context, accountID uuid.UUID, p
 }
 
 // loadMetrics counts the signals behind a health decision. No window reaches
-// further back than signalsFrom, so a mailbox is never judged on a period it was
-// not being judged in.
-func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID, signalsFrom time.Time) (*models.WarmupHealthMetrics, error) {
+// further back than the row's health_signals_from (migration 000096), so a
+// mailbox is never judged on a period it was not being judged in. Five reads,
+// one per table scanned; the sweep's five-minute budget is spent in here (#492).
+func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID, participant *models.WarmupParticipantHealth) (*models.WarmupHealthMetrics, error) {
+	signalsFrom := participant.HealthSignalsFrom
 	now := s.now().UTC()
 	since := func(window time.Duration) time.Time {
 		start := now.Add(-window)
@@ -601,19 +600,13 @@ func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID, signalsF
 	// the mail in Junk) vs user complaint (recipient actively flagged it).
 	// These have very different remediation paths so they earn separate
 	// rates instead of one combined ratio.
-	spamPlacementsLast7d, err := s.repo.CountSpamPlacementsSince(ctx, accountID, since(7*24*time.Hour))
+	spamPlacementsLast7d, userComplaintsLast7d, err := s.repo.CountWarmupSpamReportsSince(ctx, accountID, since(7*24*time.Hour))
 	if err != nil {
-		return nil, fmt.Errorf("CountSpamPlacementsSince: %w", err)
-	}
-	userComplaintsLast7d, err := s.repo.CountUserComplaintsSince(ctx, accountID, since(7*24*time.Hour))
-	if err != nil {
-		return nil, fmt.Errorf("CountUserComplaintsSince: %w", err)
+		return nil, fmt.Errorf("CountWarmupSpamReportsSince: %w", err)
 	}
 
-	spamScore, err := s.repo.GetSpamScore(ctx, accountID)
-	if err != nil {
-		return nil, fmt.Errorf("GetSpamScore: %w", err)
-	}
+	// The score is on the row already in hand; a mailbox is in one pool (000097).
+	spamScore := participant.SpamScore
 
 	placementRate := 0.0
 	warmupComplaintRate := 0.0
@@ -625,13 +618,9 @@ func (s *service) loadMetrics(ctx context.Context, accountID uuid.UUID, signalsF
 	// Load complaint and bounce counts from deliverability events (last 30 days).
 	// These cover external (non-warmup) sends and remain on a separate axis.
 	since30d := since(30 * 24 * time.Hour)
-	complaintsLast30d, err := s.repo.CountDeliverabilityEventsByAccount(ctx, accountID, "complaint", since30d)
+	complaintsLast30d, bouncesLast30d, err := s.repo.CountComplaintsAndBouncesByAccount(ctx, accountID, since30d)
 	if err != nil {
-		return nil, fmt.Errorf("CountDeliverabilityEventsByAccount(complaint): %w", err)
-	}
-	bouncesLast30d, err := s.repo.CountDeliverabilityEventsByAccount(ctx, accountID, "bounce", since30d)
-	if err != nil {
-		return nil, fmt.Errorf("CountDeliverabilityEventsByAccount(bounce): %w", err)
+		return nil, fmt.Errorf("CountComplaintsAndBouncesByAccount: %w", err)
 	}
 	deliveredLast30d, err := s.repo.CountDeliveredByAccount(ctx, accountID, since30d)
 	if err != nil {
@@ -840,34 +829,28 @@ func (s *service) EvaluateAllParticipants(ctx context.Context) (int, int, *errx.
 	skipped := 0
 
 	for _, accountID := range accountIDs {
-		// Get current state before evaluation
-		healthBefore, err := s.repo.GetParticipantHealth(ctx, accountID, "")
-		if err != nil || healthBefore == nil {
-			// Try both pool types
-			for _, poolType := range []string{"premium", "free"} {
-				healthBefore, err = s.repo.GetParticipantHealth(ctx, accountID, poolType)
-				if err == nil && healthBefore != nil {
-					break
-				}
-			}
+		// One read is both the prior state and the evaluation's input; it used
+		// to be read four times per mailbox (#492). The cause of a failure is
+		// logged where it happens; the skip is counted here so the sweep can
+		// report how much of the pool it failed to evaluate.
+		before, xerr := s.getParticipantForAnyPool(ctx, accountID)
+		if xerr != nil {
+			skipped++
+			continue
 		}
-
-		var stateBefore models.WarmupHealthState
-		if healthBefore != nil {
-			stateBefore = healthBefore.HealthState
+		if before == nil {
+			// Left the pool since the listing; nothing to judge.
+			evaluated++
+			continue
 		}
-
-		// Evaluate. evaluateAndPersistAnyPool logs the underlying cause; count
-		// the skip here so the sweep can report how much of the pool it failed
-		// to evaluate instead of quietly reporting only what worked.
-		healthAfter, xerr := s.evaluateAndPersistAnyPool(ctx, accountID)
+		after, xerr := s.evaluateAndPersist(ctx, accountID, before.PoolType, before)
 		if xerr != nil {
 			skipped++
 			continue
 		}
 		evaluated++
 
-		if healthAfter != nil && healthAfter.HealthState != stateBefore {
+		if after != nil && after.HealthState != before.HealthState {
 			stateChanges++
 		}
 	}

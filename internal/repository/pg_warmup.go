@@ -121,7 +121,9 @@ type WarmupRepository interface {
 	GetParticipantHealthForAccount(ctx context.Context, accountID uuid.UUID) (*models.WarmupParticipantHealth, error)
 	UpdateParticipantHealth(ctx context.Context, accountID uuid.UUID, state models.WarmupHealthState, blockedUntil *time.Time, reason string, score float64) error
 	CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
-	CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
+	// CountWarmupSpamReportsSince is one scan of warmup_spam_reports returning
+	// placements (the provider filed it) and complaints (the recipient did) apart.
+	CountWarmupSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (placements, complaints int, err error)
 	CountSpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 	// ColdRampStateForAccounts returns a whole candidate pool's graduation
 	// inputs in one round trip. The scheduler reads this per pass, so it must
@@ -135,7 +137,9 @@ type WarmupRepository interface {
 	// placement, so it needs all of them, not just the newest.
 	SpamPlacementsSince(ctx context.Context, accountID uuid.UUID, since time.Time) ([]time.Time, error)
 	SumWarmupSentSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
-	CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error)
+	// CountComplaintsAndBouncesByAccount is one scan of deliverability_events
+	// through the mailbox's tasks, the sweep's most expensive read.
+	CountComplaintsAndBouncesByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (complaints, bounces int, err error)
 	CountDeliveredByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error)
 
 	// Health sweep
@@ -636,9 +640,8 @@ func (r *warmupRepository) UpdateParticipantHealth(ctx context.Context, accountI
 
 // CountSpamReportsSince returns the total count of any warmup spam-related
 // event against the account. Retained for backward compatibility with code
-// that wants the combined signal; new code should prefer the split
-// CountUserComplaintsSince / CountSpamPlacementsSince methods so the two
-// fundamentally different signals can be threshold-checked independently.
+// that wants the combined signal; the health sweep reads the two signals
+// apart through CountWarmupSpamReportsSince so each has its own threshold.
 func (r *warmupRepository) CountSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
 	query := `
 		SELECT COUNT(*)
@@ -652,20 +655,20 @@ func (r *warmupRepository) CountSpamReportsSince(ctx context.Context, accountID 
 	return count, err
 }
 
-// CountUserComplaintsSince counts warmup events where the recipient
-// explicitly marked the message as spam. Strong negative signal because
-// the user actively rejected the content.
-func (r *warmupRepository) CountUserComplaintsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (int, error) {
+// CountWarmupSpamReportsSince splits one scan into placement (the provider's
+// classifier filed the mail as junk) and complaint (the recipient rejected
+// it); the two have different remediation paths and their own thresholds.
+func (r *warmupRepository) CountWarmupSpamReportsSince(ctx context.Context, accountID uuid.UUID, since time.Time) (placements, complaints int, err error) {
 	query := `
-		SELECT COUNT(*)
+		SELECT
+			COUNT(*) FILTER (WHERE report_type = 'spam_placement'),
+			COUNT(*) FILTER (WHERE report_type IN ('user_complaint', 'spam', 'spam_folder'))
 		FROM warmup_spam_reports
 		WHERE reported_account_id = $1
 		  AND created_at >= $2
-		  AND report_type IN ('user_complaint', 'spam', 'spam_folder')
 	`
-	var count int
-	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
-	return count, err
+	err = r.db.QueryRow(ctx, query, accountID, since).Scan(&placements, &complaints)
+	return placements, complaints, err
 }
 
 // CountSpamPlacementsSince counts warmup events where the message landed
@@ -789,20 +792,20 @@ func (r *warmupRepository) SumWarmupSentSince(ctx context.Context, accountID uui
 	return total, err
 }
 
-// CountDeliverabilityEventsByAccount counts deliverability events (bounce, complaint, etc.)
-// for a specific email account by joining through the tasks table.
-func (r *warmupRepository) CountDeliverabilityEventsByAccount(ctx context.Context, accountID uuid.UUID, eventType string, since time.Time) (int, error) {
+// CountComplaintsAndBouncesByAccount counts a mailbox's external complaints
+// and bounces in one pass over deliverability_events joined through its tasks.
+func (r *warmupRepository) CountComplaintsAndBouncesByAccount(ctx context.Context, accountID uuid.UUID, since time.Time) (complaints, bounces int, err error) {
 	query := `
-		SELECT COUNT(*)
+		SELECT
+			COUNT(*) FILTER (WHERE de.event_type = 'complaint'),
+			COUNT(*) FILTER (WHERE de.event_type = 'bounce')
 		FROM deliverability_events de
 		JOIN tasks t ON t.id = de.task_id
 		WHERE t.email_account_id = $1
-		  AND de.event_type = $2
-		  AND de.created_at >= $3
+		  AND de.created_at >= $2
 	`
-	var count int
-	err := r.db.QueryRow(ctx, query, accountID, eventType, since).Scan(&count)
-	return count, err
+	err = r.db.QueryRow(ctx, query, accountID, since).Scan(&complaints, &bounces)
+	return complaints, bounces, err
 }
 
 // CountDeliveredByAccount counts completed tasks (sent emails) for an account since a given time.
