@@ -33,6 +33,17 @@ export interface PoolLinkPlan {
     warmup_entitled: boolean;
 }
 
+/** GET /pool-link/offer — the pool plan's price, and whether it can be bought
+ *  here at all. Unavailable means billing is off or no Stripe price is set. */
+export interface PoolLinkOffer {
+    available: boolean;
+    monthly_available: boolean;
+    yearly_available: boolean;
+    monthly_usd: number;
+    yearly_usd: number;
+    currency: string;
+}
+
 export interface PoolLinkInstanceInfo {
     instance: PoolLinkInstance;
     organization: PoolLinkOrgInfo;

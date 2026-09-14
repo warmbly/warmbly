@@ -33,17 +33,20 @@ func (s SubscriptionStatus) IsActive() bool {
 }
 
 type Plan struct {
-	ID              uuid.UUID `json:"id"`
-	Name            *string   `json:"name,omitempty"`
-	MaxContacts     uint      `json:"max_contacts"`
-	DailyEmails     uint      `json:"daily_emails"`
-	AIGeneration    bool      `json:"ai_generation"`
-	AccountLimit    uint      `json:"account_limit"`
-	Price           float32   `json:"price"`
-	DiscountedPrice float32   `json:"discounted_price"`
-	Duration        Duration  `json:"duration"`
-	Savings         uint8     `json:"savings"`
-	Public          bool      `json:"public"`
+	ID           uuid.UUID `json:"id"`
+	Name         *string   `json:"name,omitempty"`
+	MaxContacts  uint      `json:"max_contacts"`
+	DailyEmails  uint      `json:"daily_emails"`
+	AIGeneration bool      `json:"ai_generation"`
+	AccountLimit uint      `json:"account_limit"`
+	Price        float32   `json:"price"`
+	// PriceYearly is what StripePriceIDYearly charges. Nil means the plan is
+	// monthly only, so nothing may offer it yearly.
+	PriceYearly     *float32 `json:"price_yearly,omitempty"`
+	DiscountedPrice float32  `json:"discounted_price"`
+	Duration        Duration `json:"duration"`
+	Savings         uint8    `json:"savings"`
+	Public          bool     `json:"public"`
 
 	// Stripe integration
 	StripePriceID       *string `json:"stripe_price_id,omitempty"`

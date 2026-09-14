@@ -15,7 +15,9 @@ import {
     approvePoolLinkCode,
     denyPoolLinkCode,
     describePoolLinkCode,
+    getPoolLinkOffer,
     listPoolLinkInstances,
+    startPoolLinkCheckout,
     revokePoolLinkInstance,
 } from "@/lib/api/client/app/cloudlink/poolLink";
 
@@ -138,4 +140,12 @@ export function useRevokePoolLinkInstance() {
             void qc.invalidateQueries({ queryKey: ["emails"] });
         },
     });
+}
+
+export function usePoolLinkOffer(enabled = true) {
+    return useQuery({ queryKey: [...POOL_LINK_KEY, "offer"], queryFn: getPoolLinkOffer, enabled, staleTime: 60_000 });
+}
+
+export function useStartPoolLinkCheckout() {
+    return useMutation({ mutationFn: (interval: "month" | "year") => startPoolLinkCheckout(interval) });
 }
