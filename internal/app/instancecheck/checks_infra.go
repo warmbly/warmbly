@@ -103,7 +103,7 @@ func checkMigrationsDirty(ctx context.Context, d Deps, in Input) *Finding {
 
 // checkWarmupPoolsMissing: without both pools every warmup tick ends on
 // "warmup pool not found" and nothing else says why.
-// CountSeededWarmupPools reports how many of the two pools migration 000155
+// CountSeededWarmupPools reports how many of the two pools migration 000156
 // seeds are present; the backend asserts on it once at boot as well.
 func CountSeededWarmupPools(ctx context.Context, pool *pgxpool.Pool) (int, error) {
 	var n int
@@ -122,7 +122,7 @@ func checkWarmupPoolsMissing(ctx context.Context, d Deps, in Input) *Finding {
 	}
 	return result(CategoryData, SeverityError, "Warmup pools are missing",
 		fmt.Sprintf("Only %d of the 2 warmup pools exist, so warmup cannot place any mailbox. "+
-			"Migration 000155 created them and will not run again; restore the two rows under their fixed ids (the docs page has the statement).", pools),
+			"Migration 000156 created them and will not run again; restore the two rows under their fixed ids (the docs page has the statement).", pools),
 		docsHealthDB)
 }
 

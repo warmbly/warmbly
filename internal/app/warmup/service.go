@@ -210,7 +210,7 @@ func (s *service) EnsurePoolMembershipWithRole(ctx context.Context, accountID uu
 		return errx.New(errx.BadRequest, "invalid warmup participant role")
 	}
 
-	// The pools are fixed rows (000155); a missing one fails on the foreign
+	// The pools are fixed rows (000156); a missing one fails on the foreign
 	// key and the warmup_pools_missing health check names it.
 	poolID, ok := models.WarmupPoolID(poolType)
 	if !ok {

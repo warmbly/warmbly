@@ -339,7 +339,7 @@ func TestLiveReputationMirrorDoesNotInheritALapsedStanding(t *testing.T) {
 }
 
 // A pool move is not a change of standing. The mirror trigger is scoped to the
-// standing columns (000155), so moving tiers leaves the retention clock alone;
+// standing columns (000156), so moving tiers leaves the retention clock alone;
 // before that every tier change of a penalised mailbox restarted it.
 func TestLiveReputationMirrorIgnoresAPoolMove(t *testing.T) {
 	f := newLedgerFixture(t)

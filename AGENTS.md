@@ -391,11 +391,11 @@ Warmup traffic is also separated by pool:
 This is modeled in:
 
 - `internal/infrastructure/db/migrations/000001_baseline.up.sql` (the `warmup_pools` and `warmup_pool_participants` tables)
-- `internal/infrastructure/db/migrations/000155_seed_warmup_pools.up.sql`
+- `internal/infrastructure/db/migrations/000156_seed_warmup_pools.up.sql`
 - `internal/repository/pg_warmup.go`
 - `internal/tasks/email_task.go`
 
-Migration 000155 guarantees exactly one pool per type on every instance, under `models.WarmupPoolFreeID` and `models.WarmupPoolPremiumID` (`warmup_pools_pool_type_key` makes it structural, and the migration moves any pre-existing pool onto those ids). Nothing else may insert into `warmup_pools`: not the sandbox, not the dev scripts, not a test fixture.
+Migration 000156 guarantees exactly one pool per type on every instance, under `models.WarmupPoolFreeID` and `models.WarmupPoolPremiumID` (`warmup_pools_pool_type_key` makes it structural, and the migration moves any pre-existing pool onto those ids). Nothing else may insert into `warmup_pools`: not the sandbox, not the dev scripts, not a test fixture.
 
 Keep this separation intact. Free-tier accounts should not silently mix into premium warmup traffic, and dedicated-worker accounts should still follow the intended warmup pool policy explicitly rather than by accident.
 
@@ -566,7 +566,7 @@ Relevant code:
 - `internal/tasks/email_task.go`
 - `internal/scheduler/warmup_scheduler.go`
 - `internal/repository/pg_warmup.go`
-- `internal/infrastructure/db/migrations/000155_seed_warmup_pools.up.sql`
+- `internal/infrastructure/db/migrations/000156_seed_warmup_pools.up.sql`
 
 ### Pool behavior
 
@@ -699,7 +699,7 @@ Relevant code:
 
 - `internal/app/consumer/event_new_email.go`
 - `internal/repository/pg_warmup.go`
-- `internal/infrastructure/db/migrations/000155_seed_warmup_pools.up.sql`
+- `internal/infrastructure/db/migrations/000156_seed_warmup_pools.up.sql`
 
 ### Paid pool protection policy
 
@@ -777,7 +777,7 @@ Do not automatically restore a blocked mailbox just because time elapsed.
 Two mechanisms make the sentence real, and both are easy to undo by accident:
 
 - a quarantine or block holds until `blocked_until` whatever fresh metrics say. The floor is inside `UpdateParticipantHealth`'s SQL (`internal/repository/pg_warmup.go`), decided against the row at write time, so it is compare-and-swap and an admin unblock landing mid-sweep is not overwritten by the block the sweep read earlier. Equal severity keeps the later end (a 90-day catastrophic block is not cut to 30 by a milder reading); throttled is not floored because the docs promise it lifts on recovery. The bands read windows shorter than the terms they hand out (seven days of placement against a 30-day block), so without this every block cleared within a week, and a re-added mailbox with no history on the next sweep
-- the standing follows the address within the workspace: `warmup_reputation_ledger` is a mirror of the address's worst live standing, written only by the `warmup_reputation_mirror` trigger on `warmup_pool_participants` (migration 000152, scoped to the standing columns by 000155 so a pool move does not restart the retention window), so every path that writes a standing keeps it current and no caller can bypass it. The pool row dies on paths that never touch the mailbox (`LeaveAllPools` on an auth error, a lapsed plan, warmup toggled off) and on `HardDeleteUser`'s cascade, which is why a snapshot at mailbox deletion was not enough. `MoveToPool` seeds a new row from it and never consumes it; `Delete` and `LeaveAllPools` only restart its retention window (`config.WarmupReputationLedgerDays`, applied by the purge in `EvaluateAllParticipants`, never while a live row backs it). A review-required block (`blocked_until NULL`) never lapses. A mailbox in good standing has no row, and recovery clears it (#476)
+- the standing follows the address within the workspace: `warmup_reputation_ledger` is a mirror of the address's worst live standing, written only by the `warmup_reputation_mirror` trigger on `warmup_pool_participants` (migration 000152, scoped to the standing columns by 000156 so a pool move does not restart the retention window), so every path that writes a standing keeps it current and no caller can bypass it. The pool row dies on paths that never touch the mailbox (`LeaveAllPools` on an auth error, a lapsed plan, warmup toggled off) and on `HardDeleteUser`'s cascade, which is why a snapshot at mailbox deletion was not enough. `MoveToPool` seeds a new row from it and never consumes it; `Delete` and `LeaveAllPools` only restart its retention window (`config.WarmupReputationLedgerDays`, applied by the purge in `EvaluateAllParticipants`, never while a live row backs it). A review-required block (`blocked_until NULL`) never lapses. A mailbox in good standing has no row, and recovery clears it (#476)
 
 Require the mailbox to pass re-entry checks such as:
 

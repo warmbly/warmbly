@@ -23,13 +23,13 @@ func requireSchemaVersion(t *testing.T, pool *pgxpool.Pool, min int64) {
 }
 
 // requireSeededPools fails loudly on a database that predates migration
-// 000155 rather than on a membership row that was never inserted.
+// 000156 rather than on a membership row that was never inserted.
 func requireSeededPools(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	var n int
 	if err := pool.QueryRow(context.Background(),
 		`SELECT count(*) FROM warmup_pools WHERE id IN ($1, $2)`, models.WarmupPoolFreeID, models.WarmupPoolPremiumID).Scan(&n); err != nil || n != 2 {
-		t.Fatalf("the canonical warmup pools are not seeded (migrate to 000155 or later): found %d, err %v", n, err)
+		t.Fatalf("the canonical warmup pools are not seeded (migrate to 000156 or later): found %d, err %v", n, err)
 	}
 }
 

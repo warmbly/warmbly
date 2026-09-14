@@ -50,7 +50,7 @@ func liveContactDB(t *testing.T) (*db.DB, *pgxpool.Pool) {
 	if err := handle.Ping(context.Background()); err != nil {
 		t.Fatalf("ping: %v", err)
 	}
-	requireSchemaVersion(t, handle.Pool, 155)
+	requireSchemaVersion(t, handle.Pool, 156)
 	return handle, handle.Pool
 }
 

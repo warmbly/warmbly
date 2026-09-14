@@ -139,7 +139,7 @@ func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error
 }
 
 func seedWarmupParticipants(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
-	// Migration 000155 seeds one pool per type under fixed ids; MoveToPool
+	// Migration 000156 seeds one pool per type under fixed ids; MoveToPool
 	// moves a mailbox that sits in the other pool rather than skipping it.
 	warmups := repository.NewWarmupRepository(pool)
 	for _, id := range []uuid.UUID{EmailAcmeAliceID, EmailAcmeBobID} {

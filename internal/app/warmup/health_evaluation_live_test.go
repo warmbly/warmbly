@@ -38,7 +38,7 @@ func liveWarmupRepo(t *testing.T) (repository.WarmupRepository, *db.DB) {
 		t.Fatalf("connect: %v", err)
 	}
 	t.Cleanup(func() { handle.Pool.Close() })
-	requireSchemaVersion(t, handle.Pool, 155)
+	requireSchemaVersion(t, handle.Pool, 156)
 	return repository.NewWarmupRepository(handle.Pool), handle
 }
 

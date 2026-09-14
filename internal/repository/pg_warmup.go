@@ -324,7 +324,7 @@ func (r *warmupRepository) MoveToPool(ctx context.Context, poolID, accountID uui
 	defer tx.Rollback(ctx)
 
 	// An existing member keeps everything it has; only its pool and role move,
-	// which the mirror trigger ignores (000155), so its retention window holds.
+	// which the mirror trigger ignores (000156), so its retention window holds.
 	moved, err := tx.Exec(ctx, `
 		UPDATE warmup_pool_participants
 		   SET pool_id = $1::uuid, participant_role = $3::text
