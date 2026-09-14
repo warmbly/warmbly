@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -49,9 +50,13 @@ type riskRepo struct {
 	repository.OrgRiskRepository
 
 	state models.OrgRiskState
+	err   error
 }
 
 func (r riskRepo) GetOrgRiskStates(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]models.OrgRiskState, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
 	out := map[uuid.UUID]models.OrgRiskState{}
 	for _, id := range ids {
 		out[id] = r.state
@@ -67,14 +72,16 @@ func TestDirectedWarmupPartnerReplyAcrossTiers(t *testing.T) {
 		name       string
 		senderPool string
 		targetPool string
-		risk       models.OrgRiskState
+		risk       repository.OrgRiskRepository
 		want       bool
 		asked      []string
 	}{
-		{"a paid mailbox answers a borrowed free partner", "premium", "free", models.OrgRiskTrusted, true, []string{"premium", "free"}},
-		{"a free mailbox answers the paid one that borrowed it", "free", "premium", models.OrgRiskTrusted, true, []string{"free", "premium"}},
-		{"a restricted workspace may not answer into a paying inbox", "free", "premium", models.OrgRiskRestricted, false, []string{"free"}},
-		{"a same-tier target is gated once", "premium", "premium", models.OrgRiskTrusted, true, []string{"premium"}},
+		{"a paid mailbox answers a borrowed free partner", "premium", "free", riskRepo{state: models.OrgRiskTrusted}, true, []string{"premium", "free"}},
+		{"a free mailbox answers the paid one that borrowed it", "free", "premium", riskRepo{state: models.OrgRiskTrusted}, true, []string{"free", "premium"}},
+		{"a restricted workspace may not answer into a paying inbox", "free", "premium", riskRepo{state: models.OrgRiskRestricted}, false, []string{"free"}},
+		{"an unreadable standing fails closed", "free", "premium", riskRepo{err: errors.New("db down")}, false, []string{"free"}},
+		{"no risk repository at all fails closed", "free", "premium", nil, false, []string{"free"}},
+		{"a same-tier target is gated once", "premium", "premium", riskRepo{state: models.OrgRiskTrusted}, true, []string{"premium"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,7 +91,7 @@ func TestDirectedWarmupPartnerReplyAcrossTiers(t *testing.T) {
 				taskRepo:     &directedTaskRepo{target: target},
 				emailRepo:    directedEmailRepo{},
 				warmupHealth: gate,
-				orgRiskRepo:  riskRepo{state: tc.risk},
+				orgRiskRepo:  tc.risk,
 			}
 			sender := &Email{ID: uuid.New(), OrganizationID: &org, WarmupPoolType: tc.senderPool}
 			partner := s.directedWarmupPartner(context.Background(), uuid.New(), sender, tc.senderPool)

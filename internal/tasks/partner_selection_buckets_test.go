@@ -129,3 +129,27 @@ func TestSelectWarmupPartnerReportsAnEmptyCandidateSet(t *testing.T) {
 		t.Fatalf("err = %v, want errNoWarmupPartners", err)
 	}
 }
+
+// The draw ends by exhaustion, not by a fixed attempt count, so many stale
+// own-tier rows cannot starve a healthy borrowed partner.
+func TestSelectWarmupPartnerDrawEndsByExhaustion(t *testing.T) {
+	gate := &rejectingGate{poolOf: map[uuid.UUID]string{}, rejected: map[uuid.UUID]bool{}}
+	cands := []models.WarmupPartnerCandidate{}
+	for i := 0; i < 7; i++ {
+		stale := models.WarmupPartnerCandidate{ID: uuid.New(), Email: "stale@paid.test"}
+		gate.poolOf[stale.ID] = "premium"
+		gate.rejected[stale.ID] = true
+		cands = append(cands, stale)
+	}
+	free := models.WarmupPartnerCandidate{ID: uuid.New(), Email: "free@trial.test", Borrowed: true}
+	gate.poolOf[free.ID] = "free"
+	s, sender := premiumSelector(gate, append(cands, free)...)
+
+	partner, err := s.selectWarmupPartner(context.Background(), sender)
+	if err != nil {
+		t.Fatalf("seven stale own-tier rows starved a healthy borrowed partner: %v", err)
+	}
+	if partner.ID != free.ID {
+		t.Fatalf("drew %s, want the borrowed partner %s", partner.ID, free.ID)
+	}
+}
