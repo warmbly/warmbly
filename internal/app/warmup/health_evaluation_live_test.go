@@ -38,6 +38,7 @@ func liveWarmupRepo(t *testing.T) (repository.WarmupRepository, *db.DB) {
 		t.Fatalf("connect: %v", err)
 	}
 	t.Cleanup(func() { handle.Pool.Close() })
+	requireSchemaVersion(t, handle.Pool, 155)
 	return repository.NewWarmupRepository(handle.Pool), handle
 }
 
@@ -52,6 +53,7 @@ func newFreePoolAccount(t *testing.T, handle *db.DB) *freePoolAccount {
 	t.Helper()
 	pool := handle.Pool
 
+	requireSeededPools(t, pool)
 	f := &freePoolAccount{user: uuid.New(), org: uuid.New(), account: uuid.New()}
 
 	exec := func(sql string, args ...any) { t.Helper(); execSQL(t, pool, sql, args...) }
@@ -65,9 +67,8 @@ func newFreePoolAccount(t *testing.T, handle *db.DB) *freePoolAccount {
 	      VALUES ($1, $2, $3, $4, 'Health', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
 		f.account, f.user, f.org, "wh-"+f.account.String()[:8]+"@test.local")
 
-	pools := seededWarmupPools(t, pool)
 	// Free pool only. No premium row, which is the whole point.
-	exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id) VALUES ($1, $2)`, pools["free"], f.account)
+	exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id) VALUES ($1, $2)`, models.WarmupPoolFreeID, f.account)
 
 	t.Cleanup(func() {
 		c := context.Background()

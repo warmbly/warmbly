@@ -38,7 +38,7 @@ func newPoolMailbox(t *testing.T, handle *db.DB, poolType string) *poolMailbox {
 	t.Helper()
 	pool := handle.Pool
 
-	pools := seededWarmupPools(t, pool)
+	requireSeededPools(t, pool)
 
 	f := &poolMailbox{user: uuid.New(), org: uuid.New(), account: uuid.New(), handle: handle}
 
@@ -54,7 +54,7 @@ func newPoolMailbox(t *testing.T, handle *db.DB, poolType string) *poolMailbox {
 		f.account, f.user, f.org, "wp-"+f.account.String()[:8]+"@test.local", poolType)
 
 	if poolType != "" {
-		exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id) VALUES ($1, $2)`, pools[poolType], f.account)
+		exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id) VALUES ($1, $2)`, poolIDFor(t, poolType), f.account)
 	}
 
 	t.Cleanup(func() {
@@ -103,11 +103,6 @@ func (f *poolMailbox) memberships(t *testing.T) []string {
 	return out
 }
 
-func poolID(t *testing.T, _ *db.DB, poolType string) uuid.UUID {
-	t.Helper()
-	return livePoolIDs[poolType]
-}
-
 // The bug itself: a mailbox that changes tier moves pools, it does not collect
 // them.
 func TestLiveJoiningTheOtherPoolMovesTheMailboxRatherThanDuplicatingIt(t *testing.T) {
@@ -115,7 +110,7 @@ func TestLiveJoiningTheOtherPoolMovesTheMailboxRatherThanDuplicatingIt(t *testin
 	f := newPoolMailbox(t, handle, "premium")
 	ctx := context.Background()
 
-	if err := repo.MoveToPool(ctx, poolID(t, handle, "free"), f.account, "sender_receiver"); err != nil {
+	if err := repo.MoveToPool(ctx, models.WarmupPoolFreeID, f.account, "sender_receiver"); err != nil {
 		t.Fatalf("move to free: %v", err)
 	}
 
@@ -141,7 +136,7 @@ func TestLiveMovingPoolsCarriesTheMailboxReputation(t *testing.T) {
 		t.Fatalf("stain the mailbox: %v", err)
 	}
 
-	if err := repo.MoveToPool(ctx, poolID(t, handle, "free"), f.account, "recipient_only"); err != nil {
+	if err := repo.MoveToPool(ctx, models.WarmupPoolFreeID, f.account, "recipient_only"); err != nil {
 		t.Fatalf("move to free: %v", err)
 	}
 
@@ -181,7 +176,7 @@ func TestLiveMovingPoolsKeepsAnIndefiniteBlockIndefinite(t *testing.T) {
 		t.Fatalf("block the mailbox: %v", err)
 	}
 
-	if err := repo.MoveToPool(ctx, poolID(t, handle, "free"), f.account, "sender_receiver"); err != nil {
+	if err := repo.MoveToPool(ctx, models.WarmupPoolFreeID, f.account, "sender_receiver"); err != nil {
 		t.Fatalf("move to free: %v", err)
 	}
 
@@ -205,7 +200,7 @@ func TestLiveASecondPoolMembershipIsRejected(t *testing.T) {
 
 	_, err := handle.Pool.Exec(context.Background(),
 		`INSERT INTO warmup_pool_participants (pool_id, email_account_id) VALUES ($1, $2)`,
-		poolID(t, handle, "free"), f.account)
+		models.WarmupPoolFreeID, f.account)
 	if err == nil {
 		t.Fatal("the database accepted a mailbox into two warmup pools")
 	}
@@ -299,7 +294,7 @@ func TestLiveMoveExistingOnlyMovesActualMembers(t *testing.T) {
 		t.Fatalf("demote: %v", err)
 	}
 
-	moved, err := repo.MoveExistingToPool(ctx, poolID(t, handle, "free"), member.account)
+	moved, err := repo.MoveExistingToPool(ctx, models.WarmupPoolFreeID, member.account)
 	if err != nil {
 		t.Fatalf("move member: %v", err)
 	}
@@ -320,7 +315,7 @@ func TestLiveMoveExistingOnlyMovesActualMembers(t *testing.T) {
 		t.Fatalf("role %q after a move, want the demotion preserved", role)
 	}
 
-	again, err := repo.MoveExistingToPool(ctx, poolID(t, handle, "free"), member.account)
+	again, err := repo.MoveExistingToPool(ctx, models.WarmupPoolFreeID, member.account)
 	if err != nil {
 		t.Fatalf("move again: %v", err)
 	}
@@ -329,7 +324,7 @@ func TestLiveMoveExistingOnlyMovesActualMembers(t *testing.T) {
 	}
 
 	outsider := newPoolMailbox(t, handle, "")
-	moved, err = repo.MoveExistingToPool(ctx, poolID(t, handle, "free"), outsider.account)
+	moved, err = repo.MoveExistingToPool(ctx, models.WarmupPoolFreeID, outsider.account)
 	if err != nil {
 		t.Fatalf("move non-member: %v", err)
 	}

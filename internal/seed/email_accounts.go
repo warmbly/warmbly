@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error {
@@ -138,19 +139,13 @@ func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error
 }
 
 func seedWarmupParticipants(ctx context.Context, pool *pgxpool.Pool, _ *Result) error {
-	// Migration 000154 seeds one pool per type under fixed ids; a missing pool
-	// is a broken database, not a case to skip.
-	join := func(poolID, accountID uuid.UUID) error {
-		_, err := pool.Exec(ctx, `
-			INSERT INTO warmup_pool_participants (pool_id, email_account_id, joined_at, spam_score)
-			VALUES ($1, $2, NOW(), 0)
-			ON CONFLICT (pool_id, email_account_id) DO NOTHING
-		`, poolID, accountID)
-		return err
+	// Migration 000155 seeds one pool per type under fixed ids; MoveToPool
+	// moves a mailbox that sits in the other pool rather than skipping it.
+	warmups := repository.NewWarmupRepository(pool)
+	for _, id := range []uuid.UUID{EmailAcmeAliceID, EmailAcmeBobID} {
+		if err := warmups.MoveToPool(ctx, models.WarmupPoolPremiumID, id, "sender_receiver"); err != nil {
+			return err
+		}
 	}
-
-	if err := join(models.WarmupPoolPremiumID, EmailAcmeAliceID); err != nil {
-		return err
-	}
-	return join(models.WarmupPoolPremiumID, EmailAcmeBobID)
+	return nil
 }

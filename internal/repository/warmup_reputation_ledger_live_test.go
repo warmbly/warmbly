@@ -338,6 +338,28 @@ func TestLiveReputationMirrorDoesNotInheritALapsedStanding(t *testing.T) {
 	}
 }
 
+// A pool move is not a change of standing. The mirror trigger is scoped to the
+// standing columns (000155), so moving tiers leaves the retention clock alone;
+// before that every tier change of a penalised mailbox restarted it.
+func TestLiveReputationMirrorIgnoresAPoolMove(t *testing.T) {
+	f := newLedgerFixture(t)
+	id := f.addMailbox(t, f.user)
+	f.join(t, id)
+	f.penalise(t, id, 40, "blocked", ptr(time.Now().Add(20*24*time.Hour)))
+	before := f.mirrorRow(t)
+	if before == nil {
+		t.Fatal("penalty was not mirrored")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if err := f.warmups.MoveToPool(context.Background(), models.WarmupPoolFreeID, id, "sender_receiver"); err != nil {
+		t.Fatalf("MoveToPool: %v", err)
+	}
+	after := f.mirrorRow(t)
+	if after == nil || !after.recordedAt.Equal(before.recordedAt) {
+		t.Fatalf("a pool move touched the mirror: recorded_at %v -> %v", before.recordedAt, after)
+	}
+}
+
 // Two members of one workspace can each connect the same address. The mirror
 // is the worse of the two, and a recovery on the milder row cannot clear it.
 func TestLiveReputationMirrorKeepsTheWorseOfTwoLiveRows(t *testing.T) {

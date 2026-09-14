@@ -210,28 +210,24 @@ func (s *service) EnsurePoolMembershipWithRole(ctx context.Context, accountID uu
 		return errx.New(errx.BadRequest, "invalid warmup participant role")
 	}
 
-	pool, err := s.repo.GetPoolByType(ctx, poolType)
-	if err != nil {
-		return errx.InternalError()
+	// The pools are fixed rows (000155); a missing one fails on the foreign
+	// key and the warmup_pools_missing health check names it.
+	poolID, ok := models.WarmupPoolID(poolType)
+	if !ok {
+		return errx.New(errx.BadRequest, "invalid warmup pool type")
 	}
-	if pool == nil {
-		return errx.New(errx.BadRequest, "warmup pool not found")
-	}
-	if err := s.repo.MoveToPool(ctx, pool.ID, accountID, role); err != nil {
+	if err := s.repo.MoveToPool(ctx, poolID, accountID, role); err != nil {
 		return errx.InternalError()
 	}
 	return nil
 }
 
 func (s *service) MovePoolMembership(ctx context.Context, accountID uuid.UUID, poolType string) (bool, *errx.Error) {
-	pool, err := s.repo.GetPoolByType(ctx, poolType)
-	if err != nil {
-		return false, errx.InternalError()
+	poolID, ok := models.WarmupPoolID(poolType)
+	if !ok {
+		return false, errx.New(errx.BadRequest, "invalid warmup pool type")
 	}
-	if pool == nil {
-		return false, errx.New(errx.BadRequest, "warmup pool not found")
-	}
-	moved, err := s.repo.MoveExistingToPool(ctx, pool.ID, accountID)
+	moved, err := s.repo.MoveExistingToPool(ctx, poolID, accountID)
 	if err != nil {
 		return false, errx.InternalError()
 	}

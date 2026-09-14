@@ -43,6 +43,10 @@ func liveCampaignDB(t *testing.T) *db.DB {
 		t.Fatalf("connect: %v", err)
 	}
 	t.Cleanup(func() { handle.Pool.Close() })
+	var version int64
+	if err := handle.Pool.QueryRow(context.Background(), `SELECT version FROM schema_migrations LIMIT 1`).Scan(&version); err != nil || version < 155 {
+		t.Fatalf("WARMBLY_TEST_DB is at schema version %d (err %v); this branch needs 155 or later", version, err)
+	}
 	return handle
 }
 

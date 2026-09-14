@@ -18,7 +18,7 @@ import (
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable \
 //	  go test ./internal/repository/ -run LiveProviderRouting -v
 
-// premiumPoolID is the premium pool migration 000154 seeds on every instance.
+// premiumPoolID is the premium pool migration 000155 seeds on every instance.
 var premiumPoolID = models.WarmupPoolPremiumID
 
 type providerRoutingFixture struct {

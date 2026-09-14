@@ -241,7 +241,14 @@ The `schema_migrations` row is marked dirty. The backend applies migrations at b
 
 ### warmup_pools_missing
 
-Fewer than two warmup pools exist, so warmup cannot place a mailbox and every warmup task fails. Migration `000154` creates the free and premium pools on every instance and nothing else does; a data-only restore or a manual delete removes them. Re-run the migrations or restore the rows. Before that migration a fresh instance had no pools at all, and this was the silent reason warmup never started.
+Fewer than two warmup pools exist, so warmup cannot place a mailbox and every warmup task fails. Migration `000155` creates the free and premium pools on every instance and nothing else does; a data-only restore or a manual delete removes them, and the migration will not run a second time. Put them back under their fixed ids:
+
+```sql
+INSERT INTO warmup_pools (id, pool_type, name)
+VALUES ('77777777-aaaa-0000-0000-000000000001', 'free', 'Free warmup pool'),
+       ('77777777-aaaa-0000-0000-000000000002', 'premium', 'Premium warmup pool')
+ON CONFLICT (id) DO NOTHING;
+```
 
 ## Redis
 

@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
+	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/seed"
 )
 
@@ -472,19 +473,16 @@ func seedMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 		// Pool membership with the cohort's evaluated health record, so the
 		// health column shows a believable spread instead of zeros.
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO warmup_pool_participants
-				(pool_id, email_account_id, health_state, last_health_score, spam_score, last_health_evaluated_at)
-			VALUES ($5, $1, $2, $3, $4, NOW())
-			ON CONFLICT (pool_id, email_account_id) DO UPDATE SET
-				health_state = EXCLUDED.health_state,
-				last_health_score = EXCLUDED.last_health_score,
-				spam_score = EXCLUDED.spam_score,
-				last_health_evaluated_at = NOW(),
-				blocked_at = NULL,
-				blocked_until = NULL`,
-			m.id, p.healthState, p.healthScore, p.spamScore, models.WarmupPoolPremiumID); err != nil {
+		if err := repository.NewWarmupRepository(pool).MoveToPool(ctx, models.WarmupPoolPremiumID, m.id, "sender_receiver"); err != nil {
 			return fmt.Errorf("pool join %s: %w", m.email, err)
+		}
+		if _, err := pool.Exec(ctx, `
+			UPDATE warmup_pool_participants
+			   SET health_state = $2, last_health_score = $3, spam_score = $4,
+			       last_health_evaluated_at = NOW(), blocked_at = NULL, blocked_until = NULL
+			 WHERE email_account_id = $1`,
+			m.id, p.healthState, p.healthScore, p.spamScore); err != nil {
+			return fmt.Errorf("pool health %s: %w", m.email, err)
 		}
 		// Give the first few mailboxes a sending-behaviour profile so the
 		// Sending tab has a real rolled workday to show, and the rest keep the

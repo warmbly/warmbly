@@ -47,6 +47,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/argon2"
+	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/seed"
 )
 
@@ -452,18 +453,13 @@ func joinWarmupPool(ctx context.Context, pool *pgxpool.Pool, accountID uuid.UUID
 	if poolType == "" {
 		return nil
 	}
-	// Migration 000154 seeds one pool per type under fixed ids; a missing pool
-	// fails here on the foreign key rather than inserting nothing.
-	poolID := models.WarmupPoolFreeID
-	if poolType == "premium" {
-		poolID = models.WarmupPoolPremiumID
+	poolID, ok := models.WarmupPoolID(poolType)
+	if !ok {
+		return fmt.Errorf("unknown warmup pool type %q", poolType)
 	}
-	_, err := pool.Exec(ctx, `
-		INSERT INTO warmup_pool_participants (pool_id, email_account_id)
-		VALUES ($1, $2)
-		ON CONFLICT DO NOTHING`,
-		poolID, accountID)
-	return err
+	// MoveToPool moves a mailbox that sits in the other pool rather than
+	// skipping it, which the one-membership-per-mailbox index requires.
+	return repository.NewWarmupRepository(pool).MoveToPool(ctx, poolID, accountID, "sender_receiver")
 }
 
 func upsertDevTrialSubscription(ctx context.Context, pool *pgxpool.Pool) error {

@@ -65,11 +65,23 @@ type WarmupEmailAction struct {
 	DelaySeconds int `json:"delay_seconds,omitempty"`
 }
 
-// The two warmup pools migration 000154 seeds on every instance, one per type.
+// The two warmup pools migration 000155 seeds on every instance, one per type.
 var (
 	WarmupPoolFreeID    = uuid.MustParse("77777777-aaaa-0000-0000-000000000001")
 	WarmupPoolPremiumID = uuid.MustParse("77777777-aaaa-0000-0000-000000000002")
 )
+
+// WarmupPoolID resolves a pool type to its seeded pool; false for anything
+// that is not a pool type.
+func WarmupPoolID(poolType string) (uuid.UUID, bool) {
+	switch poolType {
+	case "free":
+		return WarmupPoolFreeID, true
+	case "premium":
+		return WarmupPoolPremiumID, true
+	}
+	return uuid.Nil, false
+}
 
 type WarmupHealthState string
 

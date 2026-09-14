@@ -94,7 +94,6 @@ type WarmupReceived struct {
 // WarmupRepository defines methods for warmup data access
 type WarmupRepository interface {
 	// Pool management
-	GetPoolByType(ctx context.Context, poolType string) (*WarmupPool, error)
 	GetPoolParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
 	GetPoolRecipientParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
 	// MoveToPool joins this pool, or moves an existing membership over. A new
@@ -218,32 +217,6 @@ func NewWarmupRepository(db *pgxpool.Pool) WarmupRepository {
 	return &warmupRepository{db: db}
 }
 
-// GetPoolByType retrieves a pool by type
-func (r *warmupRepository) GetPoolByType(ctx context.Context, poolType string) (*WarmupPool, error) {
-	query := `
-		SELECT id, pool_type, name, description, max_participants, created_at
-		FROM warmup_pools
-		WHERE pool_type = $1
-		LIMIT 1
-	`
-
-	pool := &WarmupPool{}
-	err := r.db.QueryRow(ctx, query, poolType).Scan(
-		&pool.ID,
-		&pool.PoolType,
-		&pool.Name,
-		&pool.Description,
-		&pool.MaxParticipants,
-		&pool.CreatedAt,
-	)
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-
-	return pool, err
-}
-
 // GetPoolParticipants retrieves all participant account IDs from a pool
 func (r *warmupRepository) GetPoolParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error) {
 	query := `
@@ -350,9 +323,8 @@ func (r *warmupRepository) MoveToPool(ctx context.Context, poolID, accountID uui
 	}
 	defer tx.Rollback(ctx)
 
-	// An existing member keeps everything it has; only its pool and role move.
-	// The mirror is not touched, so a standing cannot be consumed by a mailbox
-	// that never inherited it.
+	// An existing member keeps everything it has; only its pool and role move,
+	// which the mirror trigger ignores (000155), so its retention window holds.
 	moved, err := tx.Exec(ctx, `
 		UPDATE warmup_pool_participants
 		   SET pool_id = $1::uuid, participant_role = $3::text

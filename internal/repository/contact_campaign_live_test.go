@@ -26,6 +26,16 @@ import (
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable \
 //	  go test ./internal/repository/ -run LiveContactCampaign -v
 
+// requireSchemaVersion fails loudly on a database behind the branch, where a
+// live fixture would otherwise die three calls deep on a foreign key.
+func requireSchemaVersion(t *testing.T, pool *pgxpool.Pool, min int64) {
+	t.Helper()
+	var version int64
+	if err := pool.QueryRow(context.Background(), `SELECT version FROM schema_migrations LIMIT 1`).Scan(&version); err != nil || version < min {
+		t.Fatalf("WARMBLY_TEST_DB is at schema version %d (err %v); this branch needs %d or later", version, err, min)
+	}
+}
+
 func liveContactDB(t *testing.T) (*db.DB, *pgxpool.Pool) {
 	t.Helper()
 	dsn := os.Getenv("WARMBLY_TEST_DB")
@@ -40,6 +50,7 @@ func liveContactDB(t *testing.T) (*db.DB, *pgxpool.Pool) {
 	if err := handle.Ping(context.Background()); err != nil {
 		t.Fatalf("ping: %v", err)
 	}
+	requireSchemaVersion(t, handle.Pool, 155)
 	return handle, handle.Pool
 }
 

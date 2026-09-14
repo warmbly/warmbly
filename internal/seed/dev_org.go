@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // Identity anchors shared with cmd/seed's baseline (main.go references these).
@@ -182,11 +183,7 @@ func seedDevMailboxes(ctx context.Context, pool *pgxpool.Pool) error {
 		`, b.id, b.email); err != nil {
 			return fmt.Errorf("smtp creds %s: %w", b.email, err)
 		}
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO warmup_pool_participants (pool_id, email_account_id)
-			VALUES ($1, $2)
-			ON CONFLICT DO NOTHING
-		`, models.WarmupPoolPremiumID, b.id); err != nil {
+		if err := repository.NewWarmupRepository(pool).MoveToPool(ctx, models.WarmupPoolPremiumID, b.id, "sender_receiver"); err != nil {
 			return fmt.Errorf("pool join %s: %w", b.email, err)
 		}
 	}

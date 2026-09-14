@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -429,6 +430,12 @@ func main() {
 			log.Fatal("Failed to run migrations: ", err)
 		}
 		log.Println("Database migrations completed")
+		// Once, not per warmup tick: the pools are fixed rows, and their absence
+		// (a data-only restore, a manual delete) otherwise fails every tick quietly.
+		if n, perr := instancecheck.CountSeededWarmupPools(ctx, primaryDB.Pool); perr == nil && n != 2 {
+			errs.CaptureException(fmt.Errorf("warmup pools missing: %d of 2 present; see the warmup_pools_missing health check", n))
+			log.Printf("WARNING: only %d of the 2 warmup pools exist; warmup cannot place any mailbox until they are restored", n)
+		}
 
 		primaryRedis, err := cfg.LoadPrimaryRedisEndpoint(ctx)
 		if err != nil {

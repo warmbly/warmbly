@@ -3,11 +3,13 @@ package instancecheck
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 const (
@@ -99,24 +101,28 @@ func checkMigrationsDirty(ctx context.Context, d Deps, in Input) *Finding {
 		docsHealthDB)
 }
 
-// checkWarmupPoolsMissing reports the state a fresh instance was in before
-// migration 000154: without both pools every warmup tick ends on "warmup pool
-// not found" and nothing else says why.
+// checkWarmupPoolsMissing: without both pools every warmup tick ends on
+// "warmup pool not found" and nothing else says why.
+// CountSeededWarmupPools reports how many of the two pools migration 000155
+// seeds are present; the backend asserts on it once at boot as well.
+func CountSeededWarmupPools(ctx context.Context, pool *pgxpool.Pool) (int, error) {
+	var n int
+	err := pool.QueryRow(ctx, `SELECT count(*) FROM warmup_pools WHERE id IN ($1, $2)`,
+		models.WarmupPoolFreeID, models.WarmupPoolPremiumID).Scan(&n)
+	return n, err
+}
+
 func checkWarmupPoolsMissing(ctx context.Context, d Deps, in Input) *Finding {
 	if d.DB == nil {
 		return nil
 	}
-	var pools int
-	if err := d.DB.QueryRow(ctx, `SELECT count(DISTINCT pool_type) FROM warmup_pools WHERE pool_type IN ('free', 'premium')`).Scan(&pools); err != nil {
-		return nil
-	}
-	if pools == 2 {
+	pools, err := CountSeededWarmupPools(ctx, d.DB)
+	if err != nil || pools == 2 {
 		return nil
 	}
 	return result(CategoryData, SeverityError, "Warmup pools are missing",
-		fmt.Sprintf("Only %d of the two warmup pools exist, so warmup cannot place a mailbox and every warmup task fails. "+
-			"Migration 000154 creates both and nothing else does; a data-only restore or a manual delete removes them. "+
-			"Re-run the migration or restore the rows.", pools),
+		fmt.Sprintf("Only %d of the 2 warmup pools exist, so warmup cannot place any mailbox. "+
+			"Migration 000155 created them and will not run again; restore the two rows under their fixed ids (the docs page has the statement).", pools),
 		docsHealthDB)
 }
 

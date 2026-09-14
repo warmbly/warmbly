@@ -22,8 +22,9 @@ import (
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable \
 //	  go test ./internal/tasks/ -run LiveWarmupPartner -v
 
-// freePoolID is the free pool migration 000154 seeds on every instance; the
-// sandbox fills only the premium one, so this one starts empty.
+// freePoolID is the free pool migration 000155 seeds on every instance. The
+// test needs it empty, which a scratch database gives and a `make seed` one
+// does not (the dev fixtures join two mailboxes to it), so it skips there.
 var freePoolID = models.WarmupPoolFreeID
 
 type partnerRoutingFixture struct {
