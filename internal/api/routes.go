@@ -1297,6 +1297,11 @@ func Run(
 				poolLink.GET("/codes/:code", h.PoolLinkDescribeCode)
 				poolLink.POST("/codes/:code/approve", h.PoolLinkApproveCode)
 				poolLink.POST("/codes/:code/deny", h.PoolLinkDenyCode)
+				// The pool plan is not in the public plan list, so the
+				// dashboard has no other way to learn its price or reach a
+				// checkout for it.
+				poolLink.GET("/offer", h.PoolLinkOffer)
+				poolLink.POST("/checkout", m.RequireOrganization(), m.RequirePermission(models.PermManageBilling), h.PoolLinkCheckout)
 				poolLink.GET("/instances", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.PoolLinkListInstances)
 				poolLink.DELETE("/instances/:id", m.RequireOrganization(), m.RequirePermission(models.PermManageSettings), h.PoolLinkRevokeInstance)
 			}

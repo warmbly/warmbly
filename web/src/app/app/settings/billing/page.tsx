@@ -23,7 +23,7 @@ import {
     TicketIcon,
     XIcon,
 } from "lucide-react";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { TopbarAction } from "@/components/layout/Page";
@@ -42,6 +42,7 @@ import { TextInput } from "@/components/ui/field";
 import BillingIntervalToggle from "@/components/app/billing/BillingIntervalToggle";
 import PlanCard from "@/components/app/billing/PlanCard";
 import EnterpriseInquiryDialog from "@/components/app/billing/EnterpriseInquiryDialog";
+import PoolUpgradeDialog from "@/components/app/billing/PoolUpgradeDialog";
 import { Row, Section, SectionShell, TableSurface } from "../_components/SectionShell";
 import { PAID_PLANS, getPlan, planOrder, type PlanID } from "@/lib/plans";
 import { describeDiscount, fmtMoney, fromMinorUnits, type BillingInterval } from "@/lib/pricing";
@@ -88,6 +89,23 @@ export default function BillingSettingsPage() {
     const [billingInterval, setBillingInterval] =
         React.useState<BillingInterval>("annual");
     const [salesOpen, setSalesOpen] = React.useState(false);
+
+    // ?pool=1 is where a self-hosted instance's "Unlimited" button lands, and
+    // ?pool=done is where Stripe returns. Both are consumed once and stripped,
+    // so a refresh or a back navigation does not replay them.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const poolParam = searchParams.get("pool");
+    const [poolOpen, setPoolOpen] = React.useState(false);
+    React.useEffect(() => {
+        if (!poolParam) return;
+        if (poolParam === "1") setPoolOpen(true);
+        if (poolParam === "done") {
+            toast.success("Payment received. Unlimited pool mailboxes apply as soon as Stripe confirms.");
+        }
+        const next = new URLSearchParams(searchParams);
+        next.delete("pool");
+        setSearchParams(next, { replace: true });
+    }, [poolParam, searchParams, setSearchParams]);
 
     const resolvedTab = tabForSlug(tabSlug);
     const tab: BillingTab = resolvedTab ?? "overview";
@@ -440,6 +458,7 @@ export default function BillingSettingsPage() {
                 </AnimatePresence>
             </div>
             <EnterpriseInquiryDialog open={salesOpen} onClose={() => setSalesOpen(false)} />
+            <PoolUpgradeDialog open={poolOpen} onClose={() => setPoolOpen(false)} />
         </SectionShell>
     );
 }

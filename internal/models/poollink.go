@@ -271,3 +271,14 @@ type CloudLinkMailboxRow struct {
 	Managed    bool                  `json:"managed"`
 	Cloud      *PoolLinkMailboxState `json:"cloud,omitempty"`
 }
+
+// PoolLinkOffer is the self-hosted pool plan as an upgrade prompt sees it:
+// what it costs, and whether it can actually be bought here.
+type PoolLinkOffer struct {
+	Available        bool    `json:"available"`
+	MonthlyAvailable bool    `json:"monthly_available"`
+	YearlyAvailable  bool    `json:"yearly_available"`
+	MonthlyUSD       float32 `json:"monthly_usd"`
+	YearlyUSD        float32 `json:"yearly_usd"`
+	Currency         string  `json:"currency"`
+}

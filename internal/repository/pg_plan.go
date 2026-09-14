@@ -35,19 +35,19 @@ func (r *planRepository) Create(ctx context.Context, plan *models.Plan) error {
 	query := `
 		INSERT INTO plans (
 			id, name, max_contacts, daily_emails, ai_generation, account_limit,
-			price, discounted_price, duration_id, savings, public,
+			price, price_yearly, discounted_price, duration_id, savings, public,
 			stripe_price_id, stripe_price_id_yearly, stripe_product_id, monthly_credits, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8,
-			(SELECT id FROM durations WHERE title = $9),
-			$10, $11, $12, $13, $14, $15, $16, $17
+			$1, $2, $3, $4, $5, $6, $7, $8, $9,
+			(SELECT id FROM durations WHERE title = $10),
+			$11, $12, $13, $14, $15, $16, $17, $18
 		)
 	`
 
 	now := time.Now()
 	_, err := r.db.Exec(ctx, query,
 		plan.ID, plan.Name, plan.MaxContacts, plan.DailyEmails, plan.AIGeneration, plan.AccountLimit,
-		plan.Price, plan.DiscountedPrice, string(plan.Duration), plan.Savings, plan.Public,
+		plan.Price, plan.PriceYearly, plan.DiscountedPrice, string(plan.Duration), plan.Savings, plan.Public,
 		plan.StripePriceID, plan.StripePriceIDYearly, plan.StripeProductID, plan.MonthlyCredits, now, now,
 	)
 	return err
@@ -62,20 +62,21 @@ func (r *planRepository) Update(ctx context.Context, plan *models.Plan) error {
 			ai_generation = $5,
 			account_limit = $6,
 			price = $7,
-			discounted_price = $8,
-			savings = $9,
-			public = $10,
-			stripe_price_id = $11,
-			stripe_price_id_yearly = $12,
-			stripe_product_id = $13,
-			monthly_credits = $14,
-			updated_at = $15
+			price_yearly = $8,
+			discounted_price = $9,
+			savings = $10,
+			public = $11,
+			stripe_price_id = $12,
+			stripe_price_id_yearly = $13,
+			stripe_product_id = $14,
+			monthly_credits = $15,
+			updated_at = $16
 		WHERE id = $1
 	`
 
 	_, err := r.db.Exec(ctx, query,
 		plan.ID, plan.Name, plan.MaxContacts, plan.DailyEmails, plan.AIGeneration, plan.AccountLimit,
-		plan.Price, plan.DiscountedPrice, plan.Savings, plan.Public,
+		plan.Price, plan.PriceYearly, plan.DiscountedPrice, plan.Savings, plan.Public,
 		plan.StripePriceID, plan.StripePriceIDYearly, plan.StripeProductID, plan.MonthlyCredits, time.Now(),
 	)
 	return err
@@ -84,7 +85,7 @@ func (r *planRepository) Update(ctx context.Context, plan *models.Plan) error {
 func (r *planRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Plan, error) {
 	return r.scanPlan(ctx, `
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
-			   p.price, p.discounted_price, d.title, p.savings, p.public,
+			   p.price, p.price_yearly, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
 			   p.monthly_credits, p.referral_reward_percent, p.created_at, p.updated_at
 		FROM plans p
@@ -96,7 +97,7 @@ func (r *planRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Pla
 func (r *planRepository) GetByStripePriceID(ctx context.Context, priceID string) (*models.Plan, error) {
 	return r.scanPlan(ctx, `
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
-			   p.price, p.discounted_price, d.title, p.savings, p.public,
+			   p.price, p.price_yearly, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
 			   p.monthly_credits, p.referral_reward_percent, p.created_at, p.updated_at
 		FROM plans p
@@ -108,7 +109,7 @@ func (r *planRepository) GetByStripePriceID(ctx context.Context, priceID string)
 func (r *planRepository) GetByStripeProductID(ctx context.Context, productID string) (*models.Plan, error) {
 	return r.scanPlan(ctx, `
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
-			   p.price, p.discounted_price, d.title, p.savings, p.public,
+			   p.price, p.price_yearly, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
 			   p.monthly_credits, p.referral_reward_percent, p.created_at, p.updated_at
 		FROM plans p
@@ -124,7 +125,7 @@ func (r *planRepository) scanPlan(ctx context.Context, query string, args ...int
 	var duration *string
 	err := row.Scan(
 		&plan.ID, &plan.Name, &plan.MaxContacts, &plan.DailyEmails, &plan.AIGeneration, &plan.AccountLimit,
-		&plan.Price, &plan.DiscountedPrice, &duration, &plan.Savings, &plan.Public,
+		&plan.Price, &plan.PriceYearly, &plan.DiscountedPrice, &duration, &plan.Savings, &plan.Public,
 		&plan.StripePriceID, &plan.StripePriceIDYearly, &plan.StripeProductID, &plan.DedicatedWorkers, &plan.DailyCampaignLimit,
 		&plan.MonthlyCredits, &plan.ReferralRewardPercent, &plan.CreatedAt, &plan.UpdatedAt,
 	)
@@ -144,7 +145,7 @@ func (r *planRepository) scanPlan(ctx context.Context, query string, args ...int
 func (r *planRepository) List(ctx context.Context, publicOnly bool) ([]*models.Plan, error) {
 	query := `
 		SELECT p.id, p.name, p.max_contacts, p.daily_emails, p.ai_generation, p.account_limit,
-			   p.price, p.discounted_price, d.title, p.savings, p.public,
+			   p.price, p.price_yearly, p.discounted_price, d.title, p.savings, p.public,
 			   p.stripe_price_id, p.stripe_price_id_yearly, p.stripe_product_id, p.dedicated_workers, p.daily_campaign_limit,
 			   p.monthly_credits, p.referral_reward_percent, p.created_at, p.updated_at
 		FROM plans p
@@ -167,7 +168,7 @@ func (r *planRepository) List(ctx context.Context, publicOnly bool) ([]*models.P
 		var duration *string
 		err := rows.Scan(
 			&plan.ID, &plan.Name, &plan.MaxContacts, &plan.DailyEmails, &plan.AIGeneration, &plan.AccountLimit,
-			&plan.Price, &plan.DiscountedPrice, &duration, &plan.Savings, &plan.Public,
+			&plan.Price, &plan.PriceYearly, &plan.DiscountedPrice, &duration, &plan.Savings, &plan.Public,
 			&plan.StripePriceID, &plan.StripePriceIDYearly, &plan.StripeProductID, &plan.DedicatedWorkers, &plan.DailyCampaignLimit,
 			&plan.MonthlyCredits, &plan.ReferralRewardPercent, &plan.CreatedAt, &plan.UpdatedAt,
 		)

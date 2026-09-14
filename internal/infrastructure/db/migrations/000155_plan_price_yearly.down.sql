@@ -1,0 +1,1 @@
+ALTER TABLE plans DROP COLUMN IF EXISTS price_yearly;
