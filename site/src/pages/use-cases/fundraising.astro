@@ -42,7 +42,10 @@ const traps = [
 const email1Subject = '{{.Company}} <> Atlas';
 const email1Body =
   'Hi {{.FirstName}},\n\nSaw {{.Company}} leads a lot of seed dev-tools rounds. We launched Atlas 14 weeks ago, just crossed $40k MRR, growing about 30% month over month, and are opening a small seed.\n\nWorth a look? I’ll send the deck if it’s a fit for you.\n\nThanks,\nMara';
-const email2Subject = 're: {{.Company}} <> Atlas';
+// The follow-up is sent as a reply on the thread the first email opened, so it
+// carries that thread's subject rather than one of its own. Mirrors the step
+// card in /app/campaigns/:id/steps.
+const email2Subject = email1Subject;
 const email2Body =
   'Hi {{.FirstName}},\n\nLast nudge on this, then I’ll leave you alone. Two more design partners signed since I wrote, and the round is filling faster than I expected.\n\nIf it isn’t for {{.Company}}, no hard feelings at all. If it is, I can have the deck in your inbox today.\n\nMara';
 
@@ -271,8 +274,8 @@ const faq = [
             </div>
             <div class="px-3 py-2.5">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email 2</span>
-                <span class="text-[10px] font-mono text-slate-400">same subject → same thread</span>
+                <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Reply in thread</span>
+                <span class="text-[10px] font-mono text-slate-400">lands under the first email</span>
               </div>
               <div class="mt-1.5 text-[12px] text-slate-500"><span class="text-slate-400">Subject&nbsp;&nbsp;</span><span class="text-slate-700">{email2Subject}</span></div>
               <div class="mt-2.5 rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono text-[11.5px] leading-[1.65] text-slate-600 whitespace-pre-wrap">{email2Body}</div>

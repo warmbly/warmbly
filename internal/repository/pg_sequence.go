@@ -54,6 +54,7 @@ var SequenceSelections []string = []string{
 	"body_code",
 	"wait_after",
 	"position",
+	"thread_reply",
 	"x",
 	"y",
 	"conditions",
@@ -81,7 +82,7 @@ var (
 func GetSequence(row db.Scannable, seq *models.Sequence) error {
 	return row.Scan(
 		&seq.ID, &seq.Name, &seq.Subject, &seq.BodyPlain, &seq.BodyHTML, &seq.BodySync,
-		&seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.X, &seq.Y, &seq.Conditions, &seq.Kind, &seq.Action,
+		&seq.BodyCode, &seq.WaitAfter, &seq.Position, &seq.ThreadReply, &seq.X, &seq.Y, &seq.Conditions, &seq.Kind, &seq.Action,
 		&seq.UpdatedAt, &seq.CreatedAt,
 	)
 }
@@ -277,6 +278,11 @@ func (r *sequenceRepository) Update(ctx context.Context, userID, campaignID, seq
 		}
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "wait_after", argPos))
 		args = append(args, *data.WaitAfter)
+		argPos++
+	}
+	if data.ThreadReply != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "thread_reply", argPos))
+		args = append(args, *data.ThreadReply)
 		argPos++
 	}
 	if data.Conditions != nil {

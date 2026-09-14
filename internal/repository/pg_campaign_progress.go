@@ -94,6 +94,25 @@ type StuckDispatch struct {
 	DispatchedAt time.Time
 }
 
+// ThreadParent is the email a campaign step should be sent as a reply to: the
+// last one this contact actually received from this campaign. MessageID
+// becomes the follow-up's In-Reply-To/References, which is the only thing the
+// RECIPIENT's client threads on; ThreadID is the provider-side conversation
+// handle and is what makes the follow-up land in the same thread in the
+// SENDER's mailbox (Gmail, empty elsewhere).
+type ThreadParent struct {
+	MessageID string
+	ThreadID  string
+	// SenderID is the mailbox that sent the parent. A provider thread handle
+	// only means something inside the mailbox that owns it, so a follow-up
+	// leaving from a different address must not carry it.
+	SenderID uuid.UUID
+	// Subject is the conversation's subject, unrendered: the template of the
+	// step that opened the thread, not the parent's own. A reply carries it,
+	// and Gmail refuses to file a message in a thread it does not match.
+	Subject string
+}
+
 // CampaignProgressRepository defines methods for campaign progress tracking
 type CampaignProgressRepository interface {
 	// ReserveSend claims (campaign, contact, step) for one send BEFORE the
@@ -143,6 +162,11 @@ type CampaignProgressRepository interface {
 	// row, and the address it last heard from is still the one to keep. Nil
 	// when nothing was ever sent to it in this campaign.
 	LastSenderForLead(ctx context.Context, campaignID, contactID uuid.UUID) (*uuid.UUID, error)
+	// ThreadParentForLead is the last email this contact actually received
+	// from this campaign, for threading the next step onto it. Nil when the
+	// contact has had nothing from this campaign yet (their first email opens
+	// the conversation) or when the worker never reported a Message-ID for it.
+	ThreadParentForLead(ctx context.Context, campaignID, contactID uuid.UUID) (*ThreadParent, error)
 	// HasSentSteps reports whether the contact has any other step of the
 	// campaign stamped sent, which is what decides if a failed send was the
 	// lead's first step (a "new lead" for the daily new-lead counter).
@@ -515,6 +539,82 @@ func (r *campaignProgressRepository) LastSenderForLead(ctx context.Context, camp
 		return nil, err
 	}
 	return &id, nil
+}
+
+// threadParentScan bounds the walk back through a contact's sends. It only has
+// to reach the step that opened their current conversation, and a sequence
+// that long has bigger problems than a missing header.
+const threadParentScan = 50
+
+// ThreadParentForLead reads the email to thread the contact's next step onto:
+// the most recent completed campaign task for the pair that a Message-ID was
+// ever recorded for. The Message-ID is written by the worker's own EMAIL_SENT
+// result, so a step whose result never came back simply has no parent and its
+// follow-up opens a new conversation rather than referencing an id the
+// recipient never saw.
+//
+// Action and wait nodes never reach the tracking stamp that writes a
+// campaign_tasks row, and never carry a Message-ID, so they cannot be picked
+// as a parent.
+func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, campaignID, contactID uuid.UUID) (*ThreadParent, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT t.message_id, t.thread_id, t.email_account_id,
+		       s.id IS NOT NULL, COALESCE(s.subject, ''), COALESCE(s.thread_reply, true)
+		FROM campaign_tasks ct
+		JOIN tasks t ON t.id = ct.task_id
+		LEFT JOIN sequences s ON s.id = ct.sequence_id
+		WHERE ct.campaign_id = $1 AND ct.contact_id = $2
+		  AND t.task_type = 'campaign' AND t.status = 'completed'
+		  AND t.message_id <> ''
+		ORDER BY t.created_at DESC
+		LIMIT $3
+	`, campaignID, contactID, threadParentScan)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var parent *ThreadParent
+	var subject string
+	for rows.Next() {
+		var (
+			messageID, threadID, stepSubject string
+			senderID                         uuid.UUID
+			stepKnown, threadReply           bool
+		)
+		if err := rows.Scan(&messageID, &threadID, &senderID, &stepKnown, &stepSubject, &threadReply); err != nil {
+			return nil, err
+		}
+		if parent == nil {
+			parent = &ThreadParent{MessageID: messageID, ThreadID: threadID, SenderID: senderID}
+		}
+		// A step that has since been deleted (campaign_tasks.sequence_id is
+		// ON DELETE SET NULL) says nothing about whether it opened a thread or
+		// joined one, so the walk cannot pass it. Stopping with no subject is
+		// what makes the caller fall back and drop the provider handle, rather
+		// than filing this send in a conversation under a subject that may
+		// belong to a different one.
+		if !stepKnown {
+			break
+		}
+		// Walking back from the parent, the first step that did NOT reply in a
+		// thread is the one that opened this conversation, and its subject is
+		// the conversation's. Without the walk, a third step would inherit the
+		// blank subject of the second (which inherited it in turn) instead of
+		// the subject the recipient is actually looking at.
+		subject = stepSubject
+		if !threadReply {
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if parent == nil {
+		return nil, nil
+	}
+	parent.Subject = subject
+	return parent, nil
 }
 
 // HasSentSteps reports whether any step of the campaign is stamped sent for

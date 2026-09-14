@@ -2031,7 +2031,7 @@ func (s *service) ProcessRetryableDeadLetters(ctx context.Context) (int, *errx.E
 // step now that a file can be scoped to one.
 func worstStepContentScore(seqs []models.Sequence, attachmentsFor func(models.Sequence) int) (worst, worstStep int, issue string, scored int) {
 	worst = 101
-	for _, seq := range seqs {
+	for i, seq := range seqs {
 		if seq.Kind != "" && seq.Kind != "email" {
 			continue
 		}
@@ -2040,7 +2040,10 @@ func worstStepContentScore(seqs []models.Sequence, attachmentsFor func(models.Se
 		if attachmentsFor != nil {
 			attachments = attachmentsFor(seq)
 		}
-		r := warmlint.ScoreWithAttachments(seq.Subject, seq.BodyHTML, seq.BodyPlain, attachments)
+		// A step that replies in the thread carries the conversation's
+		// subject, so scoring its own (blank, by design) would report every
+		// follow-up as having no subject line.
+		r := warmlint.ScoreWithAttachments(models.StepSubject(seqs, i), seq.BodyHTML, seq.BodyPlain, attachments)
 		if r.Score >= worst {
 			continue
 		}

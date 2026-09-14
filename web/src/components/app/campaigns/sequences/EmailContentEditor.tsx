@@ -53,6 +53,7 @@ export default function EmailContentEditor({
     bodyCode = false,
     onBodyCodeChange,
     subjectPlaceholder = "Quick question, {{.FirstName}}",
+    subjectLocked,
     bodyPlaceholder = "Hi {{.FirstName}}, …",
     campaignId,
     stepId,
@@ -69,6 +70,10 @@ export default function EmailContentEditor({
     bodyCode?: boolean;
     onBodyCodeChange?: (code: boolean) => void;
     subjectPlaceholder?: string;
+    // A step that replies in the contact's thread has no subject of its own:
+    // a reply carries the conversation's. Pass the conversation's subject to
+    // show it read-only in place of the field.
+    subjectLocked?: { subject: string; note: string };
     bodyPlaceholder?: string;
     // When set, the preview renders for a chosen lead and mailbox and shows the
     // campaign's opt-out footer, signature and attachments.
@@ -123,6 +128,11 @@ export default function EmailContentEditor({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [campaignId, senders.inboxes.map((i) => i.id).join(",")]);
 
+    // A threading step's subject belongs to the conversation, not to the step,
+    // so that is the one the preview, the content score and the template check
+    // must read. The step's own stored subject is not what gets sent.
+    const shownSubject = subjectLocked ? subjectLocked.subject : subject;
+
     const previewMut = useTemplatePreview();
     const runPreview = previewMut.mutateAsync;
     React.useEffect(() => {
@@ -138,7 +148,7 @@ export default function EmailContentEditor({
         let active = true;
         const t = setTimeout(() => {
             runPreview({
-                subject,
+                subject: shownSubject,
                 body_html: bodyHtml,
                 // Matches what the step stores, so the preview shows the text
                 // part the recipient gets rather than a second derivation.
@@ -160,9 +170,9 @@ export default function EmailContentEditor({
             clearTimeout(t);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab, code, subject, bodyHtml, previewContact?.id, campaignId, previewMailbox?.id, stepId]);
+    }, [tab, code, shownSubject, bodyHtml, previewContact?.id, campaignId, previewMailbox?.id, stepId]);
 
-    const tplIssue = templateIssue(subject) || templateIssue(bodyHtml) || templateIssue(htmlToPlain(bodyHtml));
+    const tplIssue = templateIssue(shownSubject) || templateIssue(bodyHtml) || templateIssue(htmlToPlain(bodyHtml));
 
     // A plain-text campaign ships no HTML, so the send path cannot give the
     // unsubscribe variable an anchor: the recipient reads the whole signed
@@ -170,7 +180,7 @@ export default function EmailContentEditor({
     // still one keystroke to fix.
     const { data: previewCampaign } = useCampaign(campaignId ?? "");
     const plainTextUnsubLink =
-        !!previewCampaign?.text_only && (bodyHtml.includes(UNSUBSCRIBE_TOKEN) || subject.includes(UNSUBSCRIBE_TOKEN));
+        !!previewCampaign?.text_only && (bodyHtml.includes(UNSUBSCRIBE_TOKEN) || shownSubject.includes(UNSUBSCRIBE_TOKEN));
 
     // Toolbar: template library, save as template, write with AI.
     const { data: templates } = useTemplates("");
@@ -184,11 +194,13 @@ export default function EmailContentEditor({
             // promptToHtml escapes as it paragraph-wraps: a template body with
             // "&" or "<" in it must not reach the editor as raw markup.
             const html = t.body_html || promptToHtml(t.body_plain ?? "");
-            onSubjectChange(t.subject || subject);
+            // A threading step sends the conversation's subject, so a template
+            // must not quietly rewrite one nobody will see.
+            if (!subjectLocked) onSubjectChange(t.subject || subject);
             onBodyChange(html, t.body_plain || htmlToPlain(html));
             toast.success(`Applied "${t.name}"`);
         };
-        if (subject.trim() || htmlToPlain(bodyHtml).trim()) {
+        if (shownSubject.trim() || htmlToPlain(bodyHtml).trim()) {
             confirm.show(`Replace this content with the "${t.name}" template?`, apply);
         } else {
             apply();
@@ -199,7 +211,7 @@ export default function EmailContentEditor({
         const name = tplName.trim();
         if (!name) return;
         await toast.promise(
-            createTemplate.mutateAsync({ name, subject, body_html: bodyHtml, body_plain: htmlToPlain(bodyHtml) }),
+            createTemplate.mutateAsync({ name, subject: shownSubject, body_html: bodyHtml, body_plain: htmlToPlain(bodyHtml) }),
             { loading: "Saving template…", success: "Saved to template library.", error: (e: AppError) => buildError(e) },
         );
         setSaveTplOpen(false);
@@ -265,9 +277,20 @@ export default function EmailContentEditor({
             <div>
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                     <Label className="mb-0">Subject</Label>
-                    <VariableMenu variables={VARIABLES} onPick={(v) => onSubjectChange(subject + v)} />
+                    {!subjectLocked && (
+                        <VariableMenu variables={VARIABLES} onPick={(v) => onSubjectChange(subject + v)} />
+                    )}
                 </div>
-                <TextInput value={subject} onChange={onSubjectChange} placeholder={subjectPlaceholder} />
+                {subjectLocked ? (
+                    <>
+                        <div className="h-7 px-2.5 flex items-center rounded-md border border-slate-200 bg-slate-50 text-[12.5px] text-slate-500">
+                            <span className="truncate">{subjectLocked.subject || "No subject"}</span>
+                        </div>
+                        <p className="mt-1.5 text-[10.5px] text-slate-400">{subjectLocked.note}</p>
+                    </>
+                ) : (
+                    <TextInput value={subject} onChange={onSubjectChange} placeholder={subjectPlaceholder} />
+                )}
             </div>
 
             <div>
@@ -332,7 +355,7 @@ export default function EmailContentEditor({
                         )}
                         <div className="border-b border-slate-200/70 px-3 py-2 text-[12.5px]">
                             <span className="text-slate-400">Subject: </span>
-                            <span className="text-slate-800">{(serverPreview?.subject ?? renderPreview(subject)) || "—"}</span>
+                            <span className="text-slate-800">{(serverPreview?.subject ?? renderPreview(shownSubject)) || "—"}</span>
                         </div>
                         {/* The body renders in the same sandboxed frame the
                             inbox uses. The HTML source view lets an author put
@@ -406,10 +429,10 @@ export default function EmailContentEditor({
             </div>
 
             <ContentScore
-                subject={subject}
+                subject={shownSubject}
                 bodyHtml={bodyHtml}
                 bodyPlain={htmlToPlain(bodyHtml)}
-                onApplySubject={onSubjectChange}
+                onApplySubject={subjectLocked ? undefined : onSubjectChange}
             />
         </div>
     );

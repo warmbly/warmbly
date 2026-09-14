@@ -94,11 +94,12 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 			Str("task_id", sendEmail.TaskID.String()).
 			Str("message_id", result.MessageID).
 			Str("provider_msg_id", result.ProviderMsgID).
+			Str("thread_id", result.ThreadID).
 			Msg("Email sent successfully")
 
 		w.deleteTransportEmailBody(ctx, sendEmail.TaskID, sendEmail.BodyS3Key)
 
-		w.sendEmailSuccess(sendEmail.TaskID, result.MessageID, result.ProviderMsgID)
+		w.sendEmailSuccess(sendEmail.TaskID, result.MessageID, result.ProviderMsgID, result.ThreadID)
 	} else {
 		log.Error().
 			Str("task_id", sendEmail.TaskID.String()).
@@ -210,13 +211,16 @@ func (w *WorkerService) fetchAttachments(ctx context.Context, refs []emsg.Attach
 	return out, nil
 }
 
-// sendEmailSuccess sends a success result back to the jobs service
-func (w *WorkerService) sendEmailSuccess(taskID uuid.UUID, messageID, providerMsgID string) {
+// sendEmailSuccess sends a success result back to the jobs service. threadID is
+// the provider conversation handle (Gmail only, empty elsewhere) the control
+// plane needs to append the next step of a sequence to the same thread.
+func (w *WorkerService) sendEmailSuccess(taskID uuid.UUID, messageID, providerMsgID, threadID string) {
 	result := models.SendEmailResult{
 		TaskID:        taskID,
 		Success:       true,
 		MessageID:     messageID,
 		ProviderMsgID: providerMsgID,
+		ThreadID:      threadID,
 		SentAt:        time.Now(),
 	}
 

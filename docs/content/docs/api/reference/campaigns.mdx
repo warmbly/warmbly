@@ -190,7 +190,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `entry_delay_minutes` | integer | no | Hold a contact's first email this long after they entered the campaign. `0` (the default) sends it as soon as the schedule and mailbox limits allow; the maximum is `129600` (90 days). Follow-up spacing is unaffected: that is each step's `wait_after`. |
 | `continuous` | boolean | no | Keep running for new leads: out of leads, the campaign stays `active` and waits instead of finishing. Linking a segment, a form or an automation that enrols leads turns it on, and so does starting a campaign whose every lead has finished. Default `false`. |
 | `tracking_domain` | string | no | Campaign-scoped tracking domain (honored only once verified). |
-| `steps` | object[] | no | Initial sequence steps in order (see create sequence input below). They are connected in order: each step routes unconditionally to the next, waiting that step's `wait_after` days. The first step's `wait_after` defaults to `0`, follow-ups to `3`. |
+| `steps` | object[] | no | Initial sequence steps in order (see create sequence input below). They are connected in order: each step routes unconditionally to the next, waiting that step's `wait_after` days. The first step's `wait_after` defaults to `0`, follow-ups to `3`. A step given no `subject`, or the same one as the conversation so far, defaults to `thread_reply: true` and is sent as a reply carrying that conversation's subject; a step with a subject of its own defaults to `false` and opens a new conversation. Set `thread_reply` explicitly to override either. |
 | `variants` | object[] | no | A/B variants for the first step (same shape as create A/B variant). |
 | `advanced_overrides` | object | no | Advanced outreach overrides, see [advanced settings](#get-advanced-settings). |
 
@@ -979,6 +979,7 @@ A bare array of `Sequence` objects (no envelope).
     "body_code": false,
     "wait_after": 0,
     "position": 0,
+    "thread_reply": true,
     "kind": "email",
     "updated_at": "2026-06-02T10:00:00Z",
     "created_at": "2026-06-02T10:00:00Z"
@@ -1026,6 +1027,7 @@ All fields optional.
 | `body_sync` | boolean | no | Keep plain and HTML bodies in sync. |
 | `body_code` | boolean | no | The body is authored as raw HTML. The dashboard editor opens it as markup instead of parsing it into the visual editor, which keeps only what its schema can represent. It does not change what is sent. |
 | `wait_after` | integer | no | Days to wait before this step, counted from the contact's previous step (`0` to `60`). Spacing belongs to the target step, so there is no standalone wait node for email steps. |
+| `thread_reply` | boolean | no | Send this step as a reply on the conversation the contact is already in, rather than as a new email. Default `true`. A threading step carries the conversation's subject, so its own `subject` is only used once it is turned off. It has no effect on a contact's first email, which has nothing to reply to. |
 | `conditions` | object | no | The connections out of this step (`{branches: [...]}`), evaluated in order; a branch with no `conditions` is a plain "go there next" link. Routing follows connections only: a step with `{}` or no branches has no outgoing path and ends the flow for the contact. |
 | `kind` | string | no | `email` (default), `action`, or `wait`. |
 | `action` | object | no | Typed config for non-email nodes. `type` is the switch (`wait`, `add_tag`, `remove_tag`, `add_to_segment`, `remove_from_segment` (each with a `segment_id`), `unsubscribe`, `notify`, `create_task`, `create_deal`, `move_deal_stage`, `run_automation`, `end`), the remaining fields are type-scoped. |

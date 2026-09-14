@@ -14,6 +14,11 @@ export default interface Sequence {
 
     wait_after: number;
 
+    // Send this step as a reply on the conversation the contact is already in
+    // rather than as a new email. Default true. A threading step has no
+    // subject of its own: a reply carries the conversation's.
+    thread_reply: boolean;
+
     // Persisted canvas coordinates in the sequence builder. 0/0 means "not
     // placed yet" (the editor auto-arranges until a step is first dragged).
     // Written only through the layout endpoint, never a content PATCH.

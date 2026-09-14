@@ -475,10 +475,26 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		taskRecord.EmailAccountID = account.ID
 	}
 
+	// STEP 9.4: The conversation this step joins. A follow-up is a nudge on the
+	// email the contact already has, not a second cold email, so every step
+	// after their first is threaded onto the last one they received: the
+	// parent's Message-ID becomes In-Reply-To/References, which is what the
+	// RECIPIENT's client threads on, and the parent's provider thread handle
+	// files it in the same conversation in the SENDER's mailbox (issue #472).
+	// A contact's first email has no parent and opens the thread.
+	threadParent := s.threadParent(ctx, campaign.ID, contact.ID, sequence)
+
 	// STEP 9.5: Resolve {{form_link:...}} markers to per-recipient form URLs
 	// BEFORE templating, so the substituted literal survives the naive
 	// fallback and gets wrapped by click tracking in STEP 11 like any link.
 	rawSubject, rawBodyHTML, rawBodyPlain := sequence.Subject, sequence.BodyHTML, sequence.BodyPlain
+	// A reply carries the conversation's subject, so a threading step does not
+	// have one of its own: it inherits it here, before rendering, so the merge
+	// fields resolve for THIS contact. Empty means the step writes its own.
+	threadSubject := s.threadSubject(ctx, campaign.ID, sequence, threadParent)
+	if threadSubject != "" {
+		rawSubject = threadSubject
+	}
 	s.resolveFormLinks(ctx, orgID, campaign, contact, &rawSubject, &rawBodyHTML, &rawBodyPlain)
 
 	// STEP 9.75: The recipient's opt-out. The signed link (when the instance
@@ -516,7 +532,13 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			// A chosen variant is stored template text, so it goes through the
 			// same render as the step's own copy; the control arm comes back
 			// already rendered, for which this pass is a no-op.
-			subject = expandSpintax(RenderTemplateWith(selection.Subject, *contact, extra))
+			//
+			// A threading step is the exception: its subject belongs to the
+			// conversation, not to the arm, so variants on a follow-up vary
+			// the body only.
+			if threadSubject == "" {
+				subject = expandSpintax(RenderTemplateWith(selection.Subject, *contact, extra))
+			}
 			bodyHTML = expandSpintax(RenderTemplateWith(selection.BodyHTML, *contact, extra))
 			bodyPlain = expandSpintax(RenderTemplateWith(selection.BodyPlain, *contact, extra))
 			// A variant may carry HTML only; keep the plain-text alternative.
@@ -734,6 +756,19 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		Tracking:       tracking,
 		UnsubscribeURL: headerURL,
 		Attachments:    attachmentRefs,
+	}
+	if threadParent != nil {
+		emailMsg.InReplyTo = threadParent.MessageID
+		// The provider handle needs two things the headers do not. It is
+		// meaningless outside the mailbox that owns it, and Gmail will not
+		// file a message in a thread whose subject it does not match, so it
+		// only goes on a message actually carrying the conversation's
+		// subject. Offering one Gmail would refuse costs a failed send; going
+		// without it costs the thread in the sender's own mailbox, and the
+		// recipient still sees a reply.
+		if threadParent.SenderID == account.ID && threadParent.Subject != "" && threadSubject == threadParent.Subject {
+			emailMsg.ThreadID = threadParent.ThreadID
+		}
 	}
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
@@ -965,6 +1000,71 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 
 	executionStatus = "completed"
 	return nil
+}
+
+// threadParent resolves the email this step should be sent as a reply to, or
+// nil when it must open a new conversation: the step has reply-in-thread
+// turned off, the contact has had nothing from this campaign yet, or the
+// previous send left no Message-ID to reference.
+//
+// A lookup failure is never fatal. Losing the thread costs the recipient a
+// tidy conversation; refusing the send costs them the email, so a database
+// error here degrades to a new thread and is logged.
+func (s *tasksService) threadParent(ctx context.Context, campaignID, contactID uuid.UUID, sequence *Sequence) *repository.ThreadParent {
+	if sequence == nil || !sequence.ThreadReply {
+		return nil
+	}
+	parent, err := s.campaignProgressRepo.ThreadParentForLead(ctx, campaignID, contactID)
+	if err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaignID.String()).Str("contact_id", contactID.String()).
+			Msg("Could not resolve the thread to reply on; sending as a new conversation")
+		return nil
+	}
+	if parent == nil || parent.MessageID == "" {
+		return nil
+	}
+	return parent
+}
+
+// threadSubject is the subject a step inherits from the conversation it is
+// replying on, or "" when it writes its own (the switch is off, there is no
+// earlier email, or the conversation has no subject yet).
+//
+// The parent answers it whenever there is one, because that is read off what
+// the contact was actually sent. The campaign's own step order is the fallback
+// for when there is not, and it only has to run for a step with no subject of
+// its own: a previous send the worker never confirmed leaves no parent, and a
+// threading step authored in the composer has nothing to fall back on, so
+// without this it would ship a blank Subject header. A step that does have a
+// subject already has something to send, which keeps this off the first-touch
+// path, where there is never a parent and never anything to inherit.
+func (s *tasksService) threadSubject(ctx context.Context, campaignID uuid.UUID, sequence *Sequence, parent *repository.ThreadParent) string {
+	if sequence == nil || !sequence.ThreadReply {
+		return ""
+	}
+	if parent != nil && parent.Subject != "" {
+		return parent.Subject
+	}
+	if strings.TrimSpace(sequence.Subject) != "" {
+		return ""
+	}
+	seqs, err := s.campaignRepo.GetSequencesByCampaignID(ctx, campaignID)
+	if err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaignID.String()).
+			Msg("Could not read the campaign's steps for the conversation subject")
+		return ""
+	}
+	for i := range seqs {
+		if seqs[i].ID != sequence.ID {
+			continue
+		}
+		// StepSubject returns the step's own when there is nothing to inherit,
+		// which is not an inherited subject and must not read as one.
+		if sub := models.StepSubject(seqs, i); sub != sequence.Subject {
+			return sub
+		}
+	}
+	return ""
 }
 
 // autoPauseCampaign pauses a campaign when no active email accounts are available.

@@ -59,21 +59,25 @@ func (h *Handler) SendTestEmail(c *gin.Context) {
 	}
 
 	// Select the right sequence
-	var sequence *models.Sequence
+	idx := 0
 	if req.SequenceID != nil {
+		idx = -1
 		for i := range sequences {
 			if sequences[i].ID == *req.SequenceID {
-				sequence = &sequences[i]
+				idx = i
 				break
 			}
 		}
-		if sequence == nil {
+		if idx < 0 {
 			errx.JSON(c, errx.New(errx.NotFound, "sequence not found"))
 			return
 		}
-	} else {
-		sequence = &sequences[0]
 	}
+	// A step that replies in the contact's thread has no subject of its own,
+	// so the test would arrive blank without resolving the conversation's.
+	step := sequences[idx]
+	step.Subject = models.StepSubject(sequences, idx)
+	sequence := &step
 
 	if xerr := mailboxAllowed(c, req.AccountID); xerr != nil {
 		errx.JSON(c, xerr)

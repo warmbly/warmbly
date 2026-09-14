@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -441,6 +442,36 @@ type CreateSequenceInput struct {
 	BodySync  *bool  `json:"body_sync,omitempty"`
 	BodyCode  *bool  `json:"body_code,omitempty"`
 	WaitAfter *int   `json:"wait_after,omitempty"`
+	// ThreadReply defaults to true: a step written here is a follow-up and
+	// belongs in the conversation the first email started.
+	ThreadReply *bool `json:"thread_reply,omitempty"`
+}
+
+// ThreadReplyDefaults decides, for a sequence written in one shot, which steps
+// reply in the conversation the steps before them opened, for a caller that
+// did not say. Steps given in one request are a linear sequence, so a
+// follow-up is a reply; a step carrying a subject that is not the
+// conversation's was written to start a new one, which is what the wizard's
+// blank-subject follow-up has always meant and what migration 000154 applied
+// to the steps that already existed.
+//
+// Without it, an integration that has always posted a distinct subject per
+// step would suddenly have every follow-up sent under the first one's.
+//
+// The comparison is against the CONVERSATION's subject, not the previous
+// step's: a blank follow-up in between inherits rather than replaces it, so
+// the step after it is still continuing the same conversation.
+func ThreadReplyDefaults(steps []CreateSequenceInput) []bool {
+	out := make([]bool, len(steps))
+	conversation := ""
+	for i := range steps {
+		own := strings.TrimSpace(steps[i].Subject)
+		out[i] = own == "" || conversation == "" || own == conversation
+		if own != "" {
+			conversation = own
+		}
+	}
+	return out
 }
 
 // StartCampaignOptions qualifies a start request.

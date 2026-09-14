@@ -71,7 +71,7 @@ func (d Deps) registerCampaignTools(r *Registry) {
 			"description": strProp("Optional description."),
 			"kind":        strProp("Optional: 'sequence' (default, follow-ups allowed) or 'one_time' (a single message, at most one step)."),
 			"steps": arrProp("Optional email steps to seed the sequence.", objectSchema(map[string]any{
-				"subject":   strProp("Email subject (may contain {{merge}} vars)."),
+				"subject":   strProp("Email subject (may contain {{merge}} vars). Follow-ups reply in the first email's thread and carry its subject, so only the first step's subject is used."),
 				"body":      strProp("Email body text (may contain {{merge}} vars)."),
 				"wait_days": intProp("Days to wait before this step (0 for the first)."),
 			}, "subject", "body")),
