@@ -6,6 +6,10 @@ export default interface Inbox {
     signature_html: string;
     signature_sync: boolean;
     signature_code: boolean;
+    /** The verified provider alias this mailbox sends from. Empty, which is
+     *  the default, means the mailbox's own address. Gmail only; the list of
+     *  addresses it may be set to comes from /emails/:id/identity. */
+    send_as_email: string;
     tags: string[];
     provider: string;
     status: string;

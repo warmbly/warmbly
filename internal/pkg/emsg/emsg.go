@@ -17,6 +17,7 @@ const (
 	FlagHTMLBody    uint32 = 1 << 1
 	FlagAttachments uint32 = 1 << 2
 	FlagFromName    uint32 = 1 << 3
+	FlagFromEmail   uint32 = 1 << 4
 )
 
 // Attachment is a single attachment reference carried inside the S3 body blob.
@@ -39,19 +40,24 @@ type EmailBlob struct {
 	// cached ADD_EMAIL identity having to be refreshed. Empty means "use the
 	// worker's cached name".
 	FromName string
+	// FromEmail is the verified provider alias the mailbox was told to send
+	// as, resolved at publish time. Empty, which is almost every send, means
+	// the mailbox's own address.
+	FromEmail string
 }
 
 // EncodeBinary serializes the blob into binary format. Layout:
 //
-//	"EMSG" | version(1) | flags(4) | [plain] | [html] | [attachments] | [from]
+//	"EMSG" | version(1) | flags(4) | [plain] | [html] | [attachments] | [from] | [from-email]
 //
 // where each body section is uint32-length-prefixed and only present when its
 // flag bit is set. The attachments section, when present, is a uint32 count
 // followed by that many (s3key, filename, mimetype) triples of length-prefixed
 // strings. Attachment metadata travels here (inside the S3 body blob), not in
 // the Avro Kafka event, so the published worker event contract is unchanged.
-// The from-name section sits last so a worker that predates it decodes the
-// rest of the blob untouched and simply never reads the trailing bytes.
+// The identity sections sit last, in flag order, so a worker that predates
+// either one decodes the rest of the blob untouched and simply never reads the
+// trailing bytes.
 func (b *EmailBlob) EncodeBinary() ([]byte, error) {
 	var flags uint32
 	parts := make([][]byte, 0, 2)
@@ -69,6 +75,9 @@ func (b *EmailBlob) EncodeBinary() ([]byte, error) {
 	}
 	if b.FromName != "" {
 		flags |= FlagFromName
+	}
+	if b.FromEmail != "" {
+		flags |= FlagFromEmail
 	}
 
 	buf := new(bytes.Buffer)
@@ -101,6 +110,11 @@ func (b *EmailBlob) EncodeBinary() ([]byte, error) {
 	if flags&FlagFromName != 0 {
 		binary.Write(buf, binary.BigEndian, uint32(len(b.FromName)))
 		buf.WriteString(b.FromName)
+	}
+
+	if flags&FlagFromEmail != 0 {
+		binary.Write(buf, binary.BigEndian, uint32(len(b.FromEmail)))
+		buf.WriteString(b.FromEmail)
 	}
 
 	return buf.Bytes(), nil
@@ -184,6 +198,14 @@ func DecodeBinary(r io.Reader) (*EmailBlob, error) {
 			return nil, err
 		}
 		b.FromName = string(name)
+	}
+
+	if flags&FlagFromEmail != 0 {
+		addr, err := readSection()
+		if err != nil {
+			return nil, err
+		}
+		b.FromEmail = string(addr)
 	}
 
 	return b, nil

@@ -469,6 +469,12 @@ func Run(
 				// and warmup gate, so a read-only key must not reach it.
 				emails.POST("/:id/auth-check", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.RefreshEmailAuthCheck)
 				emails.GET("/:id/sync", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmailSync)
+				// Which addresses the provider will let this mailbox send as,
+				// and where its signature came from. The refresh is the only
+				// half that calls the provider, and storing its answer is what
+				// a send-as choice is validated against, so it is write-scoped.
+				emails.GET("/:id/identity", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmailSendIdentity)
+				emails.POST("/:id/identity/refresh", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.RefreshEmailSendIdentity)
 				// Human sending behaviour: the ranges the mailbox rolls its
 				// workday from, and the workday it rolled for today.
 				emails.GET("/:id/behavior", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.GetEmailBehavior)

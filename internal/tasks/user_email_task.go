@@ -158,8 +158,8 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	// it matches. A no-op for a body with no <style>.
 	bodyHTML = mailhtml.InlineCSS(bodyHTML)
 
-	// STEP 7: Generate Message-ID
-	messageID := generateMessageID(account.Email)
+	// STEP 7: Generate Message-ID, on the domain the message is From.
+	messageID := generateMessageID(account.SendFrom())
 
 	// STEP 8: Build InReplyTo string
 	var inReplyTo string

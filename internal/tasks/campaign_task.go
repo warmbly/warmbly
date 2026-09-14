@@ -681,8 +681,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		return errx.InternalError()
 	}
 
-	// STEP 14: Generate Message-ID
-	messageID := generateMessageID(account.Email)
+	// STEP 14: Generate Message-ID, on the domain the message is actually
+	// From, which is the send-as alias when the mailbox has one.
+	messageID := generateMessageID(account.SendFrom())
 
 	// STEP 15: Build tracking info (worker receives the already-resolved host).
 	// A plain-text send carries none: there is no HTML for a pixel or a

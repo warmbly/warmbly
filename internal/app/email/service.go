@@ -61,6 +61,15 @@ type EmailService interface {
 	RefreshDomainAuth(ctx context.Context, orgID, emailAccountID string) (*dnsauth.Result, *errx.Error)
 	Delete(ctx context.Context, userID, emailAccountID string) *errx.Error
 
+	// GetSendIdentity reports which addresses the mailbox's provider will let
+	// it send as, which one is in use, and where the stored signature came
+	// from. Read-only: it never calls the provider.
+	GetSendIdentity(ctx context.Context, orgID, emailAccountID string) (*models.SendIdentity, *errx.Error)
+	// RefreshSendIdentity re-reads that list from the provider and stores it,
+	// importing the provider's signature too when asked. Gmail only; every
+	// other provider is refused with mailbox_send_as_unsupported.
+	RefreshSendIdentity(ctx context.Context, orgID, emailAccountID string, importSignature bool) (*models.SendIdentity, *errx.Error)
+
 	// Onboarding flow. OAuthFinish's second return is true when the round
 	// trip renewed an existing mailbox (OAuthReauth) rather than connecting
 	// a new one, so the handler can audit and answer accordingly.

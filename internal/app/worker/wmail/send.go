@@ -76,6 +76,11 @@ type SendRequest struct {
 	// FromName is the display name the control plane holds for the mailbox at
 	// publish time. Empty falls back to the name cached from ADD_EMAIL.
 	FromName string
+	// FromEmail is the verified provider alias the mailbox was told to send
+	// as. Gmail only, and empty for almost every send, which means the
+	// mailbox's own address. It is never set on a warmup send: warmup pairs
+	// on the mailbox address, so an alias there would break verification.
+	FromEmail string
 }
 
 // buildSendHeaders assembles the outbound custom headers: the warmup
@@ -227,6 +232,7 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 		return w.GoogleData.Client.SendMessage(
 			ctx,
 			req.FromName,
+			req.FromEmail,
 			req.To,
 			req.Cc,
 			req.Bcc,

@@ -70,7 +70,7 @@ func (s *tasksService) SendTestEmail(ctx context.Context, orgID uuid.UUID, accou
 		Subject:        subject,
 		BodyHTML:       bodyHTML,
 		BodyPlain:      bodyPlain,
-		MessageID:      generateMessageID(account.Email),
+		MessageID:      generateMessageID(account.SendFrom()),
 		IsWarmup:       false,
 		UnsubscribeURL: headerURL,
 		Attachments:    s.campaignAttachmentRefs(ctx, campaign.ID, sequence.ID),

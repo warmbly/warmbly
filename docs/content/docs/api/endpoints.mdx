@@ -28,6 +28,8 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 | PATCH | `/emails/:id/track` | `WRITE_EMAILS` |
 | POST | `/emails/:id/track/verify` | `WRITE_EMAILS` |
 | GET | `/emails/:id/sync` | `READ_EMAILS` |
+| GET | `/emails/:id/identity` | `READ_EMAILS` |
+| POST | `/emails/:id/identity/refresh` | `WRITE_EMAILS` |
 | GET | `/emails/:id/auth-check` | `READ_EMAILS` |
 | POST | `/emails/:id/auth-check` | `WRITE_EMAILS` |
 | GET | `/emails/:id/behavior` | `READ_EMAILS` |
@@ -215,6 +217,8 @@ The `/unibox/drafts` endpoints hold autosaved compose drafts, scoped to the call
 `POST /emails/:id/hold` keeps a mailbox out of campaign sending until `POST /emails/:id/release` puts it back; warmup is unaffected and the automatic rest logic never releases a hold. `release` is also the manual exit for a mailbox that is `resting` automatically. Both are bodyless and idempotent, so they take no `Idempotency-Key`. See [holding a mailbox yourself](/guides/mailboxes/#holding-a-mailbox-yourself).
 
 `GET /emails/allowance` reports how many mailboxes the workspace holds (`used`), how many it may hold (`allowance`, `null` for unlimited), `remaining`, and the `basis` of the number: `fair_use` (the plan's daily sends divided by `sends_per_mailbox`), `plan`, `override` (an approved request), `free`, or `unlimited`. `pending_request` is the open limit-increase request for mailboxes, if any. Every connect path refuses with `mailbox_allowance_reached` once `remaining` is `0`. See [mailbox allowance](/guides/mailboxes/#mailbox-allowance).
+
+`GET /emails/:id/identity` reports which addresses the mailbox's provider will let it send as, which one it uses, and whether its signature was imported or written here; it contacts no provider. `POST /emails/:id/identity/refresh` re-reads that list from the provider and stores it, and with `import_signature` also replaces the stored signature with the one configured at the provider. Storing the list is what a `send_as_email` choice is validated against, so the refresh needs `WRITE_EMAILS` rather than `READ_EMAILS`; it takes no `Idempotency-Key` because it writes exactly what the provider currently says. Gmail only. See [sending identity](/guides/mailboxes/#sending-identity).
 
 `PATCH /emails/:id` accepts `save_to_sent` (boolean) on SMTP/IMAP mailboxes: when true, which is the default, the worker files a copy of each outbound message in the mailbox's Sent folder. It has no effect on Gmail and Outlook mailboxes, whose APIs file their own copy. See [keeping a copy of sent mail](/guides/mailboxes/#keeping-a-copy-of-sent-mail).
 

@@ -41,6 +41,12 @@ type Email struct {
 	SignatureSync  bool   `json:"signature_sync"`
 	SignatureCode  bool   `json:"signature_code"`
 
+	// SendAsEmail is the verified provider alias this mailbox sends from.
+	// Empty, which is every mailbox until someone picks one, means the
+	// mailbox's own address. The alias list itself is not carried here: it is
+	// read through the identity endpoint, like sync state and behaviour.
+	SendAsEmail string `json:"send_as_email"`
+
 	Provider string `json:"provider"`
 	Status   string `json:"status"`
 
@@ -121,6 +127,68 @@ func (e *Email) DomainAuthBlocked(now time.Time, grace time.Duration) bool {
 // mailbox keeps its ramp progress (the anchor is shifted forward on resume).
 func (e *Email) IsWarmupPaused() bool {
 	return e.Warmup != nil && e.WarmupPausedAt != nil
+}
+
+// SendFrom is the address this mailbox's mail is actually From. A verified
+// alias when one was chosen, the mailbox address otherwise.
+func (e *Email) SendFrom() string {
+	if s := strings.TrimSpace(e.SendAsEmail); s != "" {
+		return s
+	}
+	return e.Email
+}
+
+// SendAsIdentity is one address the provider has verified this mailbox to send
+// as, as the provider last reported it. Primary is the mailbox's own address;
+// Default is the one the provider composes from by default, which Warmbly
+// reports but does not follow: which alias Warmbly sends from is the
+// workspace's choice and lives in Email.SendAsEmail.
+type SendAsIdentity struct {
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	IsPrimary bool   `json:"is_primary"`
+	IsDefault bool   `json:"is_default"`
+	// Verified reports that the provider finished verifying the address.
+	// Sending as an unverified alias is refused by the provider, so these are
+	// offered but never selectable.
+	Verified bool `json:"verified"`
+}
+
+// Signature provenance, mirroring the email_accounts.signature_source CHECK.
+// Unrelated to SignatureSync, which decides whether the signature is appended
+// to outgoing mail.
+const (
+	// SignatureSourceManual: written in Warmbly.
+	SignatureSourceManual = "manual"
+	// SignatureSourceProvider: imported from the mailbox provider.
+	SignatureSourceProvider = "provider"
+)
+
+// SendIdentity is the mailbox's sending identity as the dashboard reads it:
+// which addresses the provider will let it send as, which one is in use, and
+// where the stored signature came from.
+type SendIdentity struct {
+	// Supported reports whether the provider can be asked at all. Only Gmail
+	// exposes send-as identities and a stored signature; an Outlook or
+	// SMTP/IMAP mailbox answers with Supported false and an empty list rather
+	// than an error, so the dashboard can say so instead of failing.
+	Supported bool   `json:"supported"`
+	Provider  string `json:"provider"`
+	// MailboxEmail is the address the mailbox authenticates as, which is
+	// always a legal sender and is what an empty SendAsEmail means.
+	MailboxEmail string           `json:"mailbox_email"`
+	SendAsEmail  string           `json:"send_as_email"`
+	Identities   []SendAsIdentity `json:"identities"`
+	SyncedAt     *time.Time       `json:"synced_at,omitempty"`
+
+	SignatureSource     string     `json:"signature_source"`
+	SignatureImportedAt *time.Time `json:"signature_imported_at,omitempty"`
+}
+
+// ImportedSignature is a signature read from the provider, ready to store.
+type ImportedSignature struct {
+	HTML  string
+	Plain string
 }
 
 // EmailAuthTarget is a mailbox due for a sending-domain authentication check,
@@ -378,6 +446,11 @@ type UpdateEmail struct {
 	SignatureHTML  *string `json:"signature_html"`
 	SignatureSync  *bool   `json:"signature_sync"`
 	SignatureCode  *bool   `json:"signature_code"`
+
+	// SendAsEmail picks which verified provider alias the mailbox sends from.
+	// An empty string clears it back to the mailbox's own address; anything
+	// else has to be an address the provider reported as verified.
+	SendAsEmail *string `json:"send_as_email"`
 
 	Status *string `json:"status"` // active, inactive, revoked
 

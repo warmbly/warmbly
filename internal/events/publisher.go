@@ -70,6 +70,17 @@ type SendEmailParams struct {
 	// emsg blob for the same reason attachments do, and lets a renamed mailbox
 	// send under its new name without a worker reload.
 	FromName string
+	// FromEmail is the verified provider alias the mailbox sends as, resolved
+	// at publish time from the same row. Empty means the mailbox's own
+	// address, which is every mailbox that has not picked an alias.
+	FromEmail string
+}
+
+// sender is the identity a message goes out under, carried together because
+// the two halves are one decision and are read as a pair.
+type sender struct {
+	Name  string
+	Email string
 }
 
 type publisher struct {
@@ -104,7 +115,8 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 		// would be published body-less and fail there.
 		return fmt.Errorf("object storage not configured; cannot hand send %s to a worker", params.TaskID)
 	}
-	s3Key, err := p.storeEmailBody(ctx, params.TaskID, params.OrgID, params.BodyPlain, params.BodyHTML, params.Attachments, params.FromName)
+	s3Key, err := p.storeEmailBody(ctx, params.TaskID, params.OrgID, params.BodyPlain, params.BodyHTML, params.Attachments,
+		sender{Name: params.FromName, Email: params.FromEmail})
 	if err != nil {
 		return fmt.Errorf("failed to store email body: %w", err)
 	}
@@ -167,7 +179,7 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 // StoreEmailBody stores email body in S3 and returns the S3 key. It is the
 // interface method; the attachment-aware path goes through storeEmailBody.
 func (p *publisher) StoreEmailBody(ctx context.Context, taskID, orgID uuid.UUID, plainText, htmlBody string) (string, error) {
-	return p.storeEmailBody(ctx, taskID, orgID, plainText, htmlBody, nil, "")
+	return p.storeEmailBody(ctx, taskID, orgID, plainText, htmlBody, nil, sender{})
 }
 
 // storeEmailBody encodes the email body plus attachment refs into the emsg blob
@@ -175,7 +187,7 @@ func (p *publisher) StoreEmailBody(ctx context.Context, taskID, orgID uuid.UUID,
 // with the organization DEK before encoding; attachment refs and the from name
 // are plaintext metadata (the bytes refs point to are stored separately and the
 // worker fetches them by key).
-func (p *publisher) storeEmailBody(ctx context.Context, taskID, orgID uuid.UUID, plainText, htmlBody string, attachments []models.AttachmentRef, fromName string) (string, error) {
+func (p *publisher) storeEmailBody(ctx context.Context, taskID, orgID uuid.UUID, plainText, htmlBody string, attachments []models.AttachmentRef, from sender) (string, error) {
 	if p.storageClient == nil {
 		return "", nil
 	}
@@ -206,7 +218,8 @@ func (p *publisher) storeEmailBody(ctx context.Context, taskID, orgID uuid.UUID,
 	blob := &emsg.EmailBlob{
 		PlainText: []byte(encPlainText),
 		HTMLBody:  []byte(encHTMLBody),
-		FromName:  fromName,
+		FromName:  from.Name,
+		FromEmail: from.Email,
 	}
 	for _, a := range attachments {
 		blob.Attachments = append(blob.Attachments, emsg.Attachment{

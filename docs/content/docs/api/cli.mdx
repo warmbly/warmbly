@@ -240,7 +240,7 @@ Run `warmbly <command> --help` for the flags, and `warmbly <command> <subcommand
 | `browse` | open the dashboard, or one record, in a browser |
 | `campaign` | list, view, create, edit, steps, senders, segments, preflight, test, start, stop, logs |
 | `contact` | list, view, create, edit, delete, lookup, timeline, notes, import, export, verify |
-| `mailbox` | list, view, edit, health checks, sync state, sending behaviour, warmup, hold, send |
+| `mailbox` | list, view, edit, health checks, sync state, send-as addresses, sending behaviour, warmup, hold, send |
 | `inbox` | list, view, threads, read, reply, compose, drafts, scheduled sends, snoozes |
 | `suppression` | the addresses and domains that get no campaign mail |
 | `segment` | live audiences and their conditions |
@@ -278,6 +278,11 @@ warmbly campaign start CAMPAIGN_ID
 warmbly mailbox list
 warmbly mailbox check MAILBOX_ID
 warmbly mailbox edit MAILBOX_ID --daily-limit 40
+
+# Send as a verified Gmail alias, and take the signature from Gmail
+warmbly mailbox identity MAILBOX_ID
+warmbly mailbox refresh-identity MAILBOX_ID --signature
+warmbly mailbox edit MAILBOX_ID --send-as hello@acme.com
 
 # The inbox
 warmbly inbox list --unseen --limit 20

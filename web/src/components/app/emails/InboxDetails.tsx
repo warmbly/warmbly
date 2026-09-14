@@ -54,6 +54,10 @@ import useWarmupBanStatus from "@/lib/api/hooks/app/emails/useWarmupBanStatus";
 import useAppealWarmupBan from "@/lib/api/hooks/app/emails/useAppealWarmupBan";
 import useAuthCheck from "@/lib/api/hooks/app/emails/useAuthCheck";
 import useRefreshAuthCheck from "@/lib/api/hooks/app/emails/useRefreshAuthCheck";
+import useSendIdentity from "@/lib/api/hooks/app/emails/useSendIdentity";
+import useRefreshSendIdentity from "@/lib/api/hooks/app/emails/useRefreshSendIdentity";
+import getEmail from "@/lib/api/client/app/emails/getEmail";
+import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import useUpdateEmailTrackingDomain from "@/lib/api/hooks/app/emails/useUpdateEmailTrackingDomain";
 import useEmailTrackingDomain from "@/lib/api/hooks/app/emails/useEmailTrackingDomain";
 import useVerifyEmailTrackingDomain from "@/lib/api/hooks/app/emails/useVerifyEmailTrackingDomain";
@@ -365,6 +369,7 @@ export default function InboxDetails({
 /* ── editable fields tracked for the save bar ─────────────────────── */
 const EDITABLE: (keyof Inbox)[] = [
     "name", "signature_html", "signature_plain", "signature_sync", "signature_code",
+    "send_as_email",
     "tags", "campaign_limit", "min_wait_time", "reply_to", "save_to_sent",
     "warmup_base", "warmup_max", "warmup_increase", "warmup_reply_rate",
     "warmup_tag", "warmup_start_time", "warmup_end_time", "warmup_days",
@@ -1479,6 +1484,138 @@ function TrackingDomainCard({ mailbox }: { mailbox: Inbox }) {
     );
 }
 
+
+/* ── sending identity ─────────────────────────────────────────────── */
+
+/**
+ * Which of the mailbox's verified addresses its mail goes out as, and the
+ * signature its owner already wrote at the provider.
+ *
+ * Both come from the same place (Gmail's settings API) and are refreshed by
+ * the same press, so they live in one card. Only Gmail exposes either, so the
+ * card is absent for Outlook and SMTP/IMAP rather than showing a control that
+ * cannot do anything.
+ *
+ * The alias is part of the drawer's shared form and saves with the save bar.
+ * The signature import is not: it writes immediately, then hands the imported
+ * text back so the editor above shows what was stored instead of quietly
+ * saving the old text over it.
+ */
+function SendIdentityCard({
+    mailbox,
+    value,
+    onChange,
+    onSignatureImported,
+}: {
+    mailbox: Inbox;
+    value: string;
+    onChange: (v: string) => void;
+    onSignatureImported: (html: string, plain: string) => void;
+}) {
+    const isGmail = mailbox.provider === "gmail";
+    const identity = useSendIdentity(mailbox.id, isGmail);
+    const refresh = useRefreshSendIdentity(mailbox.id);
+    const [importing, setImporting] = useState(false);
+
+    const data = identity.data;
+    const aliases = (data?.identities ?? []).filter((i) => i.email !== data?.mailbox_email);
+
+    const options: SelectOption[] = [
+        { value: "", label: `${mailbox.email} (mailbox address)` },
+        ...aliases.map((a) => ({
+            value: a.email,
+            label: a.verified ? (a.name ? `${a.name} · ${a.email}` : a.email) : `${a.email} (not verified)`,
+            disabled: !a.verified,
+        })),
+    ];
+
+    // A stored choice the provider has since stopped verifying is cleared on
+    // the next refresh, but until then it is still what mail goes out as, so
+    // it stays selectable rather than disappearing from its own dropdown.
+    if (value && !options.some((o) => o.value === value)) {
+        options.push({ value, label: `${value} (no longer listed)` });
+    }
+
+    const reload = async (importSignature: boolean) => {
+        try {
+            if (importSignature) setImporting(true);
+            const next = await refresh.mutateAsync(importSignature);
+            if (importSignature) {
+                // The import wrote the row; read it back so the editor holds
+                // what was stored and the save bar cannot undo it.
+                const fresh = await getEmail(mailbox.id);
+                onSignatureImported(fresh.signature_html, fresh.signature_plain);
+                toast.success(
+                    fresh.signature_html.trim()
+                        ? "Signature imported from Gmail"
+                        : "Your Gmail signature is empty, so nothing was changed",
+                );
+            } else {
+                toast.success(
+                    next.identities.length > 1
+                        ? `Found ${next.identities.length} addresses you can send as`
+                        : "No other send-as addresses on this mailbox",
+                );
+            }
+        } catch (e) {
+            toast.error(buildError(e as AppError));
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const busy = refresh.isPending || importing;
+
+    if (!isGmail) return null;
+
+    return (
+        <div className="px-5 py-5 space-y-3 border-b border-slate-100">
+            <Eyebrow>Sending identity</Eyebrow>
+
+            <FieldShell
+                label="Send mail as"
+                hint="Any address Google has verified this mailbox to send as. Add and verify one in Gmail's settings first, then refresh. Warmup always uses the mailbox address."
+            >
+                <SelectMenu
+                    value={value}
+                    onChange={onChange}
+                    options={options}
+                    fullWidth
+                    disabled={busy}
+                    aria-label="Send mail as"
+                />
+            </FieldShell>
+
+            <div className="flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    onClick={() => reload(false)}
+                    disabled={busy}
+                    className="h-8 px-3 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-600 hover:text-slate-900 inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                >
+                    {refresh.isPending && !importing ? <Loading className="!w-3.5 h-3.5" /> : <RefreshCwIcon className="w-3.5 h-3.5" />}
+                    Refresh addresses
+                </button>
+                <button
+                    type="button"
+                    onClick={() => reload(true)}
+                    disabled={busy}
+                    className="h-8 px-3 rounded-md border border-slate-200 hover:border-slate-300 text-[12px] text-slate-600 hover:text-slate-900 inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                >
+                    {importing ? <Loading className="!w-3.5 h-3.5" /> : <SendIcon className="w-3.5 h-3.5" />}
+                    Import signature from Gmail
+                </button>
+            </div>
+
+            <p className="text-[10.5px] text-slate-400 leading-relaxed">
+                {data?.signature_source === "provider" && data?.signature_imported_at
+                    ? `Signature imported from Gmail on ${new Date(data.signature_imported_at).toLocaleDateString()}. Editing it below makes it yours again.`
+                    : "Importing replaces the signature below with the one set in Gmail."}
+            </p>
+        </div>
+    );
+}
+
 /* ── Settings (editable) ─────────────────────── */
 
 /* ── disconnect ───────────────────────────────────────────────────── */
@@ -1602,6 +1739,13 @@ function SettingsTab({ form, update, mailbox, onDisconnected }: { form: Inbox; u
                     </div>
                 </div>
             )}
+
+            <SendIdentityCard
+                mailbox={mailbox}
+                value={form.send_as_email}
+                onChange={(v) => update({ send_as_email: v })}
+                onSignatureImported={(html, plain) => update({ signature_html: html, signature_plain: plain })}
+            />
 
             <div className="px-5 py-5 space-y-2">
                 <Eyebrow>Signature</Eyebrow>

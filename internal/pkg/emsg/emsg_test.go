@@ -129,6 +129,40 @@ func TestEmailBlob_FromName(t *testing.T) {
 	}
 }
 
+// The from-email section is trailing too, and sits after the from name, so
+// both orders of "one set, the other not" have to decode.
+func TestEmailBlob_FromEmail(t *testing.T) {
+	out := roundTrip(t, &EmailBlob{
+		PlainText:   []byte("Hi"),
+		Attachments: []Attachment{{S3Key: "k", Filename: "deck.pdf", MimeType: "application/pdf"}},
+		FromName:    "Renée Doe",
+		FromEmail:   "hello@acme.com",
+	})
+	if out.FromEmail != "hello@acme.com" || out.FromName != "Renée Doe" {
+		t.Errorf("identity did not round-trip: name=%q email=%q", out.FromName, out.FromEmail)
+	}
+	if len(out.Attachments) != 1 {
+		t.Errorf("attachments did not survive alongside the identity: %+v", out.Attachments)
+	}
+
+	// A send with an alias but no display name: the decoder must not read the
+	// address into the name section.
+	aliasOnly := roundTrip(t, &EmailBlob{PlainText: []byte("Hi"), FromEmail: "hello@acme.com"})
+	if aliasOnly.FromName != "" || aliasOnly.FromEmail != "hello@acme.com" {
+		t.Errorf("alias-only blob decoded wrong: name=%q email=%q", aliasOnly.FromName, aliasOnly.FromEmail)
+	}
+
+	nameOnly := roundTrip(t, &EmailBlob{PlainText: []byte("Hi"), FromName: "Jane"})
+	if nameOnly.FromEmail != "" {
+		t.Errorf("blob without an alias decoded one: %q", nameOnly.FromEmail)
+	}
+
+	data, _ := (&EmailBlob{PlainText: []byte("Hi")}).EncodeBinary()
+	if binaryFlags(data)&FlagFromEmail != 0 {
+		t.Error("empty from email set the flag")
+	}
+}
+
 func binaryFlags(data []byte) uint32 {
 	return uint32(data[5])<<24 | uint32(data[6])<<16 | uint32(data[7])<<8 | uint32(data[8])
 }

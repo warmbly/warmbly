@@ -27,7 +27,7 @@ type Attachment struct {
 
 func (c *Client) SendMessage(
 	ctx context.Context,
-	fromName string,
+	fromName, fromEmail string,
 	to, cc, bcc []string,
 	messageID,
 	subject, bodyPlain, bodyHTML string,
@@ -40,13 +40,13 @@ func (c *Client) SendMessage(
 	// returns when you READ a parsed message; submitting one to Send is
 	// rejected outright with "'raw' RFC822 payload message string or uploading
 	// message via /upload/* URL required". Every send goes through raw.
-	return c.sendRaw(fromName, to, cc, bcc, messageID, subject, bodyPlain, bodyHTML, parent, attachments, customHeaders...)
+	return c.sendRaw(fromName, fromEmail, to, cc, bcc, messageID, subject, bodyPlain, bodyHTML, parent, attachments, customHeaders...)
 }
 
 // sendRaw builds an RFC 5322 message and submits it as base64url-encoded Raw,
 // which is the only body Gmail's Send endpoint accepts.
 func (c *Client) sendRaw(
-	fromName string,
+	fromName, fromEmail string,
 	to, cc, bcc []string,
 	messageID,
 	subject, bodyPlain, bodyHTML string,
@@ -56,7 +56,7 @@ func (c *Client) sendRaw(
 ) (*gmail.Message, error) {
 	var hdrs []header
 	hdrs = append(hdrs,
-		header{"From", c.FromAddress(fromName)},
+		header{"From", c.FromIdentity(fromName, fromEmail)},
 		header{"To", mailhdr.AddressList(to)},
 		// We now own header encoding, so a non-ASCII subject (or recipient
 		// display name) has to be RFC 2047-encoded here. Encoding is a no-op

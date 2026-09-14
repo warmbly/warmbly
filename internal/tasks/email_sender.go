@@ -137,6 +137,14 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 		FromName: strings.TrimSpace(account.Name),
 	}
 
+	// A chosen send-as alias applies to campaign and unibox mail only. Warmup
+	// pairs mailboxes by their own addresses and verifies its token against
+	// them, so sending warmup as an alias would break the pairing it is
+	// meant to prove.
+	if !msg.IsWarmup {
+		params.FromEmail = strings.TrimSpace(account.SendAsEmail)
+	}
+
 	// Publish send email event to worker
 	if err := s.publisher.PublishSendEmail(ctx, *workerID, params); err != nil {
 		return fmt.Errorf("%w: %v", ErrSendDispatchUnknown, err)

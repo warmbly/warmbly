@@ -94,6 +94,8 @@ var apiSpecs = []apiSpec{
 	{name: "mailbox delete", summary: "Disconnect a mailbox", method: "DELETE", path: "/emails/{id}"},
 	{name: "mailbox auth-check", summary: "Check the mailbox's SPF, DKIM and DMARC", method: "GET", path: "/emails/{id}/auth-check"},
 	{name: "mailbox sync", summary: "The mailbox's sync state and backfill progress", method: "GET", path: "/emails/{id}/sync"},
+	{name: "mailbox identity", summary: "The addresses this mailbox may send as (Gmail only)", method: "GET", path: "/emails/{id}/identity"},
+	{name: "mailbox refresh-identity", summary: "Re-read the send-as addresses from the provider, optionally importing its signature", method: "POST", path: "/emails/{id}/identity/refresh", body: bodyOptional},
 	{name: "mailbox behavior", summary: "The mailbox's human-sending ranges", method: "GET", path: "/emails/{id}/behavior"},
 	{name: "mailbox set-behavior", summary: "Update the mailbox's sending behaviour", method: "PUT", path: "/emails/{id}/behavior", body: bodyRequired},
 	{name: "mailbox verify", summary: "Verify an email address without sending", method: "POST", path: "/emails/verify", body: bodyRequired},

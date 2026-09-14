@@ -15,7 +15,7 @@ Open **Accounts** and choose **Add account**.
 | Outlook / Microsoft 365 | OAuth (`outlook`) | Recommended. No password stored. Runs on Microsoft Graph |
 | Any other server | IMAP + SMTP (`smtp_imap`) | Custom domains, self-hosted, or providers without OAuth. Any IMAP server works, including Outlook.com, Microsoft 365 over IMAP, Yahoo, Fastmail, Zoho, cPanel and self-hosted Dovecot |
 
-**OAuth** sends you to your provider's consent screen and returns a token instead of a password. Both OAuth providers use the provider's native API, never IMAP or SMTP, so consent asks to send mail and to read and organize your mailbox. It needs no app passwords or server settings. Note that Google revokes Gmail tokens when the account's password changes, so a password change there means [re-authorizing the mailbox](#reconnecting-an-account) once.
+**OAuth** sends you to your provider's consent screen and returns a token instead of a password. Both OAuth providers use the provider's native API, never IMAP or SMTP, so consent asks to send mail and to read and organize your mailbox. Google additionally asks to read your mail settings, which is what lets Warmbly offer the addresses Google has verified you to send as and import the signature you already wrote there. It needs no app passwords or server settings. Note that Google revokes Gmail tokens when the account's password changes, so a password change there means [re-authorizing the mailbox](#reconnecting-an-account) once.
 
 **IMAP / SMTP** needs host, port, username, and password for each direction:
 
@@ -177,6 +177,23 @@ The HTML signature is placed in a block of its own one line below the body, so i
 The signature editor has four views. **HTML** is the visual surface with bold, italic, underline, links and images. The `</>` button next to it swaps that for the raw markup, which is sent exactly as written, so a table-based signature from another tool can be pasted in whole. **Preview** renders it the way a mail client will, in its own frame. **Plain** holds the plain-text version, generated from the HTML while **Sync** is on.
 
 A signature carrying a `<style>` block, a whole HTML document, or an event handler is always edited as markup and the visual toggle is greyed out. The visual surface works by putting the markup into the page, and a signature is workspace data your teammates also see, so that markup is never given a live element to run in. Preview is how you look at it. Any `<style>` block in a signature is inlined onto the elements it matches when the email sends, the same as a campaign body.
+
+### Sending identity
+
+A Gmail mailbox can send as more than one address. Anything you have added under "Send mail as" in Gmail and finished verifying, a role address like hello@ or an address on a second domain you own, is an address Warmbly can put on the From header.
+
+Pick it under **Sending identity** on the mailbox's Settings tab. The list is read from Google, so it holds exactly what Google will accept: an alias still waiting on its verification email is shown but cannot be chosen, because Google would refuse the send. Press **Refresh addresses** after adding one in Gmail. Leaving the selection on the mailbox address, which is where every mailbox starts, changes nothing.
+
+The choice applies to campaign mail and to replies you send from the unibox. It never applies to warmup, which always uses the mailbox's own address: warmup pairs mailboxes by that address and verifies its own token against it, so an alias there would break the pairing it exists to prove.
+
+Two things worth knowing before you use one:
+
+- the alias is a From header, not a mailbox. Replies come back to the alias, which Google delivers into the same inbox, and Warmbly syncs them as usual
+- authentication follows the alias's domain, not the mailbox's. An alias on a domain with no SPF or DMARC record sends from a domain Warmbly has not checked, so set those up first and watch the mailbox's [domain authentication](/guides/deliverability/#domain-authentication) after the change
+
+**Import signature from Gmail** on the same card replaces the mailbox's signature with the one configured in Gmail, for whichever address the mailbox sends as. It writes straight away rather than waiting for the save bar, and the editor below updates to show what was stored. An empty signature in Gmail changes nothing, and one larger than Warmbly stores is refused rather than cut in half. Editing the signature here afterwards makes it yours again: nothing re-imports on its own, so a signature you have since adjusted is never overwritten behind your back.
+
+Outlook and SMTP/IMAP mailboxes have no equivalent list to read, so the card is absent for them. Their signature is written in Warmbly.
 
 ### Custom tracking domain
 

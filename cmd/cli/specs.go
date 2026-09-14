@@ -540,6 +540,7 @@ dashboard warns, and it should.`,
 					{Name: "min-wait", Help: "Minimum seconds between sends", Kind: flagInt, Key: "min_wait_time"},
 					{Name: "reply-to", Help: "Reply-To address"},
 					{Name: "signature", Help: "Plain text signature", Key: "signature_plain"},
+					{Name: "send-as", Help: "A verified provider alias to send from, empty for the mailbox's own address", Key: "send_as_email"},
 					{Name: "timezone", Help: "The mailbox's timezone"},
 				},
 				Success: "Mailbox updated.",
@@ -574,6 +575,38 @@ To stop a mailbox sending without losing anything, set it inactive instead:
 				Name: "recheck", Short: "Re-run the authentication check now",
 				Method: http.MethodPost, Path: "/emails/{id}/auth-check", Body: bodyOptional,
 				Args: []argSpec{{Name: "id", Help: "The mailbox's id"}},
+			},
+			{
+				Name: "identity", Short: "The addresses this mailbox may send as",
+				Method: http.MethodGet, Path: "/emails/{id}/identity",
+				Args: []argSpec{{Name: "id", Help: "The mailbox's id"}},
+				Long: `Show the addresses the mailbox's provider will let it send as.
+
+Gmail only: no other provider publishes such a list. An address whose VERIFIED
+is false is one the provider has not finished verifying, so it is listed but
+cannot be selected.`,
+				Table: output.Table{Root: "identities", Columns: []output.Column{
+					colt("ADDRESS", "email", 34), colt("NAME", "name", 24),
+					col("PRIMARY", "is_primary"), col("VERIFIED", "verified"),
+				}, Empty: "No send-as addresses. Refresh with `warmbly mailbox refresh-identity`."},
+			},
+			{
+				Name: "refresh-identity", Short: "Re-read the send-as addresses from the provider",
+				Method: http.MethodPost, Path: "/emails/{id}/identity/refresh", Body: bodyOptional,
+				Args: []argSpec{{Name: "id", Help: "The mailbox's id"}},
+				Long: `Re-read the mailbox's send-as addresses from its provider and store them.
+
+With --signature it also replaces the mailbox's stored signature with the one
+configured at the provider, for whichever address the mailbox sends as. An
+empty signature at the provider changes nothing.
+
+A send-as choice the provider no longer verifies is cleared by the same call,
+so a removed alias stops being used instead of failing every send.`,
+				Example: "  $ warmbly mailbox refresh-identity MAILBOX_ID\n  $ warmbly mailbox refresh-identity MAILBOX_ID --signature",
+				Flag: []flagSpec{
+					{Name: "signature", Help: "Also import the provider's signature", Kind: flagBool, Key: "import_signature"},
+				},
+				Success: "Sending identity refreshed.",
 			},
 			{
 				Name: "sync", Short: "The mailbox's sync state and backfill progress",

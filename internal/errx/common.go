@@ -157,6 +157,17 @@ var (
 	ErrEmailWorkerUnreachable = NewWithIdentifier(ServiceUnavailable, "mailbox_worker_unreachable",
 		"This mailbox could not be disconnected right now because the machine syncing it could not be reached. Nothing was removed, so try again in a moment.")
 
+	// Sending identity: the provider's own send-as list is the only authority
+	// on which addresses a mailbox may use, so a choice outside it is refused
+	// here rather than at send time, where the provider's refusal names
+	// nothing the customer could act on.
+	ErrEmailSendAsUnsupported = NewWithIdentifier(BadRequest, "mailbox_send_as_unsupported",
+		"This mailbox's provider does not expose send-as addresses. Only Gmail and Google Workspace mailboxes do.")
+	ErrEmailSendAsUnknown = NewWithIdentifier(BadRequest, "mailbox_send_as_unknown",
+		"That address is not one your provider has verified this mailbox to send as. Refresh the list, or add and verify the address in your provider first.")
+	ErrEmailSignatureTooLarge = NewWithIdentifier(BadRequest, "mailbox_signature_too_large",
+		fmt.Sprintf("The signature on this mailbox is larger than Warmbly stores (%d characters). Shorten it in your provider and import it again.", config.SignatureHTMLMax))
+
 	// Campaign
 	ErrCampaignName        = New(BadRequest, "Campaign name length must be between 3 and 50 characters.")
 	ErrCampaignDescription = New(BadRequest, "Campaign description length must be below 300 characters.")

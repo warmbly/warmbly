@@ -40,6 +40,7 @@ A `data` array of mailbox objects plus a `pagination` envelope.
       "signature_html": "",
       "signature_sync": false,
       "signature_code": false,
+      "send_as_email": "",
       "provider": "gmail",
       "status": "active",
       "last_synced_at": "2026-06-11T09:14:00Z",
@@ -143,8 +144,9 @@ Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
 | `name` | string | no | Display name on outgoing mail. |
 | `signature_plain` | string | no | Plain-text signature. |
 | `signature_html` | string | no | HTML signature. |
-| `signature_sync` | boolean | no | Keep the signature synced from the provider. |
+| `signature_sync` | boolean | no | Append the signature to outgoing mail. Unrelated to where the signature came from. |
 | `signature_code` | boolean | no | Treat the HTML signature as raw code. |
+| `send_as_email` | string | no | A verified provider alias this mailbox sends from. Must be one the provider reported as verified (see [Get the sending identity](#get-the-sending-identity)) or the mailbox's own address; anything else returns `mailbox_send_as_unknown`. Send an empty string to go back to the mailbox address. Gmail only. |
 | `status` | string | no | `active`, `inactive`, or `revoked`. |
 | `campaign_limit` | integer | no | Daily cold-campaign cap for this mailbox, `0` to `5000`. Default `50`; `30` to `50`/day is the safe cold-outreach band. |
 | `min_wait_time` | integer | no | Minimum seconds between sends. |
@@ -176,6 +178,72 @@ Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
 ### Response
 
 The updated mailbox object (same shape as Get a mailbox).
+
+## Get the sending identity
+
+`GET /emails/:id/identity`
+
+Reports which addresses the mailbox's provider will let it send as, which one it currently uses, and where its stored signature came from. Stored state only: the provider is not contacted, so this is cheap to call.
+
+Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Response
+
+```json
+{
+  "supported": true,
+  "provider": "gmail",
+  "mailbox_email": "sales@acme.com",
+  "send_as_email": "hello@acme.com",
+  "identities": [
+    { "email": "sales@acme.com", "name": "Acme Sales", "is_primary": true, "is_default": true, "verified": true },
+    { "email": "hello@acme.com", "name": "Acme", "is_primary": false, "is_default": false, "verified": true }
+  ],
+  "synced_at": "2026-09-13T11:02:00Z",
+  "signature_source": "provider",
+  "signature_imported_at": "2026-09-13T11:02:00Z"
+}
+```
+
+`supported` is `false` for Outlook and SMTP/IMAP mailboxes, which publish no send-as list; `identities` is then empty and the refresh below returns `mailbox_send_as_unsupported`. `send_as_email` is empty when the mailbox sends as its own address, which is the default. `verified` is `false` for an alias the provider has not finished verifying: it is listed, but setting `send_as_email` to it is refused. `signature_source` is `provider` when the stored signature was imported and `manual` once it is edited in Warmbly.
+
+## Refresh the sending identity
+
+`POST /emails/:id/identity/refresh`
+
+Re-reads the send-as addresses from the provider and stores them, optionally importing the provider's signature at the same time. This is the only call that contacts the provider.
+
+A send-as choice the provider no longer verifies is cleared by the same call, so a removed alias stops being used instead of failing every send.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `id` | path | string (UUID) | The mailbox id. |
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `import_signature` | boolean | no | Also replace the mailbox's stored signature with the one configured at the provider, for whichever identity the mailbox sends as. Defaults to `false`. An empty signature at the provider changes nothing. |
+
+```json
+{ "import_signature": true }
+```
+
+The body may be omitted entirely, which refreshes the addresses only.
+
+Takes no `Idempotency-Key`: the call reads the provider's current state and stores exactly that, so repeating it converges on the same result.
+
+### Response
+
+The refreshed sending identity, same shape as Get the sending identity.
+
+Gmail only. Every other provider returns `400` with `mailbox_send_as_unsupported`, and a signature past the stored maximum returns `400` with `mailbox_signature_too_large` without storing anything.
 
 ## Get the tracking domain
 

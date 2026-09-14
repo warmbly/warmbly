@@ -389,6 +389,57 @@ A `503` whose `code` is `mailbox_worker_unreachable` comes from `DELETE /emails/
 **How to fix:**
 - Retry the delete. It is safe to repeat: a mailbox that is already gone returns `404`, and one that is still there is untouched
 
+#### `mailbox_send_as_unsupported`
+
+A `400` whose `code` is `mailbox_send_as_unsupported` comes from `POST /emails/{id}/identity/refresh` and from a `PATCH /emails/{id}` that sets `send_as_email`. Only Gmail and Google Workspace mailboxes publish the addresses they are allowed to send as; an Outlook or SMTP/IMAP mailbox has no such list, so there is nothing to refresh and nothing to choose from.
+
+```json
+{
+  "error": "Bad Request",
+  "message": "This mailbox's provider does not expose send-as addresses. Only Gmail and Google Workspace mailboxes do.",
+  "code": "mailbox_send_as_unsupported",
+  "request_id": "9f0a6f21-2c7e-4f2d-9d0e-1f7b9a2c4e55"
+}
+```
+
+**How to fix:**
+- Read `GET /emails/{id}/identity` first. Its `supported` field is `false` for these mailboxes, and `identities` is empty
+- Send from the mailbox's own address, which is what an empty `send_as_email` means
+
+#### `mailbox_send_as_unknown`
+
+A `400` whose `code` is `mailbox_send_as_unknown` comes from a `PATCH /emails/{id}` that sets `send_as_email` to an address the provider has not verified for that mailbox. The choice is refused here rather than at send time, where the provider's own refusal arrives days later against a campaign step and names nothing you could act on.
+
+```json
+{
+  "error": "Bad Request",
+  "message": "That address is not one your provider has verified this mailbox to send as. Refresh the list, or add and verify the address in your provider first.",
+  "code": "mailbox_send_as_unknown",
+  "request_id": "b71c3f88-0b3e-4a41-9a52-2f4f1fd0c0aa"
+}
+```
+
+**How to fix:**
+- Add the alias in Gmail (Settings, Accounts, "Send mail as") and finish its verification
+- Call `POST /emails/{id}/identity/refresh` so Warmbly re-reads the list, then set `send_as_email` to an address whose `verified` is `true`
+
+#### `mailbox_signature_too_large`
+
+A `400` whose `code` is `mailbox_signature_too_large` comes from `POST /emails/{id}/identity/refresh` with `import_signature` set. The provider's signature is larger than Warmbly stores (`20000` characters of HTML), and it is refused rather than truncated: half a signature is worse than none. The send-as list is not stored either, so the call changes nothing.
+
+```json
+{
+  "error": "Bad Request",
+  "message": "The signature on this mailbox is larger than Warmbly stores (20000 characters). Shorten it in your provider and import it again.",
+  "code": "mailbox_signature_too_large",
+  "request_id": "2d5e9a13-7c41-4f9b-bb17-a0f1d9c6e332"
+}
+```
+
+**How to fix:**
+- Shorten the signature in Gmail, usually by linking an image rather than embedding it, and import again
+- Or write the signature in Warmbly directly with `PATCH /emails/{id}`
+
 ## Error handling best practices
 
 ### Implement retry logic

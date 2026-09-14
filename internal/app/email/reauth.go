@@ -112,6 +112,12 @@ func (s *emailService) finishReauth(ctx context.Context, sess *models.EmailOnboa
 		return nil, errx.InternalError()
 	}
 
+	// The send-as list can have changed while the mailbox was disconnected,
+	// and a stale one is what would put a removed alias on the From header.
+	// The signature is deliberately not re-imported: a reconnect is a repair,
+	// not a moment to overwrite what someone has since edited here.
+	s.captureSendIdentityList(ctx, account, tok.AccessToken)
+
 	return s.reconnectAccount(ctx, account.ID)
 }
 

@@ -74,7 +74,7 @@ gives the arguments and flags. Ids are positional, not flags.
 | `status` | one call for "what is happening": mailboxes needing attention, what is sending, what is unread |
 | `campaign` | list, view, create, edit, delete, steps, senders, segments, preflight, test, start, stop, logs |
 | `contact` | list, view, create, edit, delete, lookup, timeline, emails, notes, import, export, verify |
-| `mailbox` | list, view, edit, check, sync, behavior, warmup, hold, release, send |
+| `mailbox` | list, view, edit, check, sync, identity, refresh-identity, behavior, warmup, hold, release, send |
 | `inbox` | list, view, thread, read, reply, compose, drafts, scheduled, snooze |
 | `suppression` | the list of addresses and domains that get no campaign mail |
 | `segment`, `template`, `automation`, `form` | audiences, reply templates, automations, lead capture |

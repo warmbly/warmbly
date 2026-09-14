@@ -52,7 +52,7 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 	}
 
 	// Fetch email body from S3 (attachment refs ride inside the emsg blob).
-	bodyPlain, bodyHTML, attachmentRefs, fromName, err := w.fetchEmailBody(ctx, sendEmail.OrgID, sendEmail.BodyS3Key)
+	body, err := w.fetchEmailBody(ctx, sendEmail.OrgID, sendEmail.BodyS3Key)
 	if err != nil {
 		log.Error().Err(err).Str("s3_key", sendEmail.BodyS3Key).Msg("Failed to fetch email body from S3")
 		return w.failSend(ctx, sendEmail, fmt.Sprintf("failed to fetch email body: %v", err), true)
@@ -60,7 +60,7 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 
 	// Fetch each attachment's bytes from object storage by key. A fetch failure
 	// fails the send rather than silently dropping a file the user expects.
-	attachments, err := w.fetchAttachments(ctx, attachmentRefs)
+	attachments, err := w.fetchAttachments(ctx, body.Attachments)
 	if err != nil {
 		log.Error().Err(err).Str("task_id", sendEmail.TaskID.String()).Msg("Failed to fetch attachment bytes from S3")
 		return w.failSend(ctx, sendEmail, fmt.Sprintf("failed to fetch attachment: %v", err), true)
@@ -76,15 +76,16 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 		Bcc:            sendEmail.Bcc,
 		MessageID:      sendEmail.MessageID,
 		Subject:        subject,
-		BodyPlain:      bodyPlain,
-		BodyHTML:       bodyHTML,
+		BodyPlain:      body.Plain,
+		BodyHTML:       body.HTML,
 		InReplyTo:      sendEmail.InReplyTo,
 		Parent:         sendEmail.Parent,
 		IsWarmup:       sendEmail.IsWarmup,
 		WarmupToken:    sendEmail.WarmupToken,
 		UnsubscribeURL: sendEmail.UnsubscribeURL,
 		Attachments:    attachments,
-		FromName:       fromName,
+		FromName:       body.FromName,
+		FromEmail:      body.FromEmail,
 	})
 	w.recordSendLatency(time.Since(sendStart))
 	w.recordSendOutcome(result)
@@ -127,31 +128,41 @@ func (w *WorkerService) deleteTransportEmailBody(ctx context.Context, taskID uui
 	}
 }
 
-// fetchEmailBody fetches and decodes the email body from S3, returning the
-// decrypted plain/HTML bodies, the attachment refs and the sender display name
-// carried inside the blob (empty when the publisher predates it).
-func (w *WorkerService) fetchEmailBody(ctx context.Context, orgID uuid.UUID, s3Key string) (string, string, []emsg.Attachment, string, error) {
+// sendBody is what one send needs out of the transport blob: the decrypted
+// bodies, the attachment refs, and the sender identity resolved at publish
+// time. The identity fields are empty when the publisher predates them, which
+// means "use the mailbox's own".
+type sendBody struct {
+	Plain       string
+	HTML        string
+	Attachments []emsg.Attachment
+	FromName    string
+	FromEmail   string
+}
+
+// fetchEmailBody fetches and decodes the email body from S3.
+func (w *WorkerService) fetchEmailBody(ctx context.Context, orgID uuid.UUID, s3Key string) (*sendBody, error) {
 	if w.Storage == nil {
-		return "", "", nil, "", fmt.Errorf("storage client not configured")
+		return nil, fmt.Errorf("storage client not configured")
 	}
 
 	// Get object from storage
 	body, err := w.Storage.Get(ctx, s3Key)
 	if err != nil {
-		return "", "", nil, "", fmt.Errorf("failed to get S3 object: %w", err)
+		return nil, fmt.Errorf("failed to get S3 object: %w", err)
 	}
 	defer body.Close()
 
 	// Read the body
 	data, err := io.ReadAll(body)
 	if err != nil {
-		return "", "", nil, "", fmt.Errorf("failed to read S3 object: %w", err)
+		return nil, fmt.Errorf("failed to read S3 object: %w", err)
 	}
 
 	// Decode using emsg
 	blob, err := emsg.DecodeBinary(bytes.NewReader(data))
 	if err != nil {
-		return "", "", nil, "", fmt.Errorf("failed to decode emsg blob: %w", err)
+		return nil, fmt.Errorf("failed to decode emsg blob: %w", err)
 	}
 
 	bodyPlain := string(blob.PlainText)
@@ -172,7 +183,13 @@ func (w *WorkerService) fetchEmailBody(ctx context.Context, orgID uuid.UUID, s3K
 		}
 	}
 
-	return bodyPlain, bodyHTML, blob.Attachments, blob.FromName, nil
+	return &sendBody{
+		Plain:       bodyPlain,
+		HTML:        bodyHTML,
+		Attachments: blob.Attachments,
+		FromName:    blob.FromName,
+		FromEmail:   blob.FromEmail,
+	}, nil
 }
 
 // fetchAttachments downloads each attachment's bytes from object storage by

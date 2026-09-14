@@ -65,6 +65,7 @@ func (s *emailService) OAuthConnectWithCode(ctx context.Context, userID string, 
 	if xerr != nil {
 		return nil, xerr
 	}
+	s.captureSendIdentity(ctx, acc, tok.AccessToken)
 	s.syncWarmupPoolMembership(ctx, acc)
 	s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 	s.dispatchAccountConnected(ctx, orgID, acc)
