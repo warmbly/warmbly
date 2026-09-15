@@ -1,10 +1,10 @@
 // Cloudflare Turnstile widget, rendered explicitly so React owns the mount
-// point. resetTurnstile() (turnstile.ts) clears the used token after a
+// point. resetTurnstile() (turnstileScript.ts) clears the used token after a
 // rejected submit.
 
 import { useEffect, useRef } from "react";
 
-import { loadTurnstileScript } from "./turnstile";
+import { loadTurnstileScript } from "./turnstileScript";
 
 export function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (token: string) => void }) {
     const el = useRef<HTMLDivElement>(null);

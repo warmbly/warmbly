@@ -17,7 +17,7 @@ import { visitorKey } from "./events";
 import type { AnswerValue } from "./fields";
 import { FieldControl } from "./fields";
 import { Turnstile } from "./Turnstile";
-import { resetTurnstile } from "./turnstile";
+import { resetTurnstile } from "./turnstileScript";
 
 type Answers = Record<string, AnswerValue>;
 
