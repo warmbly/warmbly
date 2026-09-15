@@ -419,6 +419,10 @@ func fetchInboxOwner(ctx context.Context, provider models.InboxProvider, accessT
 // Microsoft return a space-separated "scope" alongside the token; an empty or
 // absent one means the provider did not say, which is not the same as "nothing
 // was granted" and must not be read as a denial.
+//
+// Microsoft does not echo offline_access in the scope list (documented: it is
+// not an access-token scope), even when a refresh token was issued, so a live
+// refresh token confers it: without one there is nothing to refresh.
 func grantedScopes(tok *oauth2.Token) (map[string]bool, bool) {
 	raw, _ := tok.Extra("scope").(string)
 	if strings.TrimSpace(raw) == "" {
@@ -427,6 +431,9 @@ func grantedScopes(tok *oauth2.Token) (map[string]bool, bool) {
 	out := make(map[string]bool)
 	for _, sc := range strings.Fields(raw) {
 		out[sc] = true
+	}
+	if tok.RefreshToken != "" {
+		out["offline_access"] = true
 	}
 	return out, true
 }
