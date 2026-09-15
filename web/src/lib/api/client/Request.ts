@@ -2,7 +2,7 @@ import type { AxiosRequestConfig } from "axios"
 import Client from "./Client"
 import getToken from "@/lib/helper/getToken"
 import isExpired from "@/lib/helper/isExpired";
-import { NoToken, SessionExpired } from "@/lib/errors/auth";
+import { noToken, sessionExpired } from "@/lib/errors/auth";
 import refreshTokenFn from "./auth/refreshToken";
 import setToken from "@/lib/helper/setToken";
 import reviveDates from "@/lib/helper/reviveDates";
@@ -20,7 +20,7 @@ let refreshPromise: Promise<Token> | null = null;
 async function ensureValidToken(): Promise<Token> {
     const token = getToken();
     if (!token) {
-        throw NoToken;
+        throw noToken();
     }
 
     if (token.access_token && !isExpired(token.access_token_expires_at)) {
@@ -30,7 +30,7 @@ async function ensureValidToken(): Promise<Token> {
     // Access token expired — need to refresh
     if (!token.refresh_token || isExpired(token.refresh_token_expires_at)) {
         clearTokens();
-        throw SessionExpired;
+        throw sessionExpired();
     }
 
     // If a refresh is already in progress, wait for it
@@ -41,9 +41,9 @@ async function ensureValidToken(): Promise<Token> {
             if (updated && updated.access_token && !isExpired(updated.access_token_expires_at)) {
                 return updated;
             }
-            throw SessionExpired;
+            throw sessionExpired();
         } catch {
-            throw SessionExpired;
+            throw sessionExpired();
         }
     }
 
@@ -55,7 +55,7 @@ async function ensureValidToken(): Promise<Token> {
         return newToken;
     } catch {
         clearTokens();
-        throw SessionExpired;
+        throw sessionExpired();
     } finally {
         refreshPromise = null;
     }
@@ -90,7 +90,7 @@ export default async function Request<T>(config: AuthRequestConfig): Promise<T> 
                 return reviveDates(res.data)
             } catch {
                 clearTokens();
-                throw SessionExpired;
+                throw sessionExpired();
             }
         }
 

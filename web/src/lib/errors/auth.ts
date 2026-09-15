@@ -5,5 +5,8 @@ export class AuthError extends Error {
     }
 }
 
-export const SessionExpired = new AuthError("Session expired")
-export const NoToken = new AuthError("No authorization token")
+// Built per throw, not shared. A module-level instance captures its stack once,
+// at module evaluation, so every report pointed at "module code" instead of the
+// call that failed, and one mutable Error was shared across concurrent requests.
+export const sessionExpired = () => new AuthError("Session expired")
+export const noToken = () => new AuthError("No authorization token")

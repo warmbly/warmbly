@@ -166,7 +166,16 @@ const NOISE = [
     "ResizeObserver loop limit exceeded",
 ];
 
+// A session ending is a lifecycle event, not a crash: normalizeError turns an
+// AuthError into a redirect and UserProvider sends the user to sign in. It
+// reached error tracking only by also escaping to the global rejection handler.
+const NOISE_TYPES = ["AuthError"];
+
 function isNoise(properties: Properties): boolean {
+    const types = properties.$exception_types;
+    if (Array.isArray(types) && types.some((t) => typeof t === "string" && NOISE_TYPES.includes(t))) {
+        return true;
+    }
     const values = properties.$exception_values;
     if (!Array.isArray(values)) return false;
     return values.some((v) => typeof v === "string" && NOISE.includes(v.trim()));
