@@ -57,13 +57,22 @@ func buildEventSchemas() {
 // envelopeSchema is the record both envelopes share: the discriminator, and a
 // union of every body it can carry.
 func envelopeSchema(name string, bodies []any) (avro.Schema, error) {
+	// One cache per schema document. Avro names a record once and refers to it
+	// by name after that, so the same Go struct reached through two fields has
+	// to resolve to the same schema object: oauth2.Token is reachable three
+	// ways through a single worker command, and defining it three times is a
+	// document the registry rejects outright.
+	//
+	// Per document rather than global, because a name defined in one envelope's
+	// schema means nothing in the other's.
+	seen := map[reflect.Type]avro.Schema{}
 	branches := make([]avro.Schema, 0, len(bodies))
 	for _, body := range bodies {
 		t := reflect.TypeOf(body)
 		for t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
-		s, err := schemaOf(t, "")
+		s, err := schemaOf(t, "", seen)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t, err)
 		}
@@ -96,7 +105,7 @@ func envelopeSchema(name string, bodies []any) (avro.Schema, error) {
 var textMarshaler = reflect.TypeOf((*encoding.TextMarshaler)(nil)).Elem()
 
 // schemaOf describes one Go type. `name` disambiguates anonymous records.
-func schemaOf(t reflect.Type, name string) (avro.Schema, error) {
+func schemaOf(t reflect.Type, name string, seen map[reflect.Type]avro.Schema) (avro.Schema, error) {
 	// Pointers are unwrapped before anything else is asked about the type.
 	// *time.Time satisfies TextMarshaler exactly as time.Time does, so testing
 	// that first sent every optional timestamp as a string and the zero value
@@ -104,7 +113,7 @@ func schemaOf(t reflect.Type, name string) (avro.Schema, error) {
 	if t.Kind() == reflect.Pointer {
 		// Optional, so an absent value stays absent instead of decoding as a
 		// zero the receiver cannot tell from a real one.
-		inner, err := schemaOf(t.Elem(), name)
+		inner, err := schemaOf(t.Elem(), name, seen)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +146,7 @@ func schemaOf(t reflect.Type, name string) (avro.Schema, error) {
 		if t.Elem().Kind() == reflect.Uint8 {
 			return avro.NewPrimitiveSchema(avro.Bytes, nil), nil
 		}
-		inner, err := schemaOf(t.Elem(), name)
+		inner, err := schemaOf(t.Elem(), name, seen)
 		if err != nil {
 			return nil, err
 		}
@@ -146,19 +155,30 @@ func schemaOf(t reflect.Type, name string) (avro.Schema, error) {
 		if t.Key().Kind() != reflect.String {
 			return nil, fmt.Errorf("map key %s is not a string", t.Key())
 		}
-		inner, err := schemaOf(t.Elem(), name)
+		inner, err := schemaOf(t.Elem(), name, seen)
 		if err != nil {
 			return nil, err
 		}
 		return avro.NewMapSchema(inner), nil
 	case reflect.Struct:
-		return recordSchema(t, name)
+		return recordSchema(t, name, seen)
 	default:
 		return nil, fmt.Errorf("unsupported kind %s", t.Kind())
 	}
 }
 
-func recordSchema(t reflect.Type, name string) (avro.Schema, error) {
+func recordSchema(t reflect.Type, name string, seen map[reflect.Type]avro.Schema) (avro.Schema, error) {
+	// A second sighting becomes a reference to the first definition. Avro names
+	// a record once and refers to it by name after that, and a document that
+	// defines the same name twice is rejected outright. Reusing the same schema
+	// object is not enough: it is serialised in full wherever it appears.
+	if cached, ok := seen[t]; ok {
+		named, ok := cached.(avro.NamedSchema)
+		if !ok {
+			return cached, nil
+		}
+		return avro.NewRefSchema(named), nil
+	}
 	fields := make([]*avro.Field, 0, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
@@ -177,7 +197,7 @@ func recordSchema(t reflect.Type, name string) (avro.Schema, error) {
 		if fieldName == "" {
 			fieldName = f.Name
 		}
-		s, err := schemaOf(f.Type, t.Name()+"_"+f.Name)
+		s, err := schemaOf(f.Type, t.Name()+"_"+f.Name, seen)
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", t.Name(), f.Name, err)
 		}
@@ -191,7 +211,12 @@ func recordSchema(t reflect.Type, name string) (avro.Schema, error) {
 	if recordName == "" {
 		recordName = name
 	}
-	return avro.NewRecordSchema(recordName, "warmbly.events", fields)
+	record, err := avro.NewRecordSchema(recordName, "warmbly.events", fields)
+	if err != nil {
+		return nil, err
+	}
+	seen[t] = record
+	return record, nil
 }
 
 // distinctBodies reduces a body registry to the distinct types in it, in a
