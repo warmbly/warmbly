@@ -447,4 +447,3 @@ mod tests {
         assert!(AsnDb::from_bytes(b"not a database".to_vec(), "junk").is_none());
     }
 }
-
