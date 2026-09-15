@@ -4,6 +4,7 @@
 // workspace's decision, enforced on the server rather than in the snippet.
 
 import React from "react";
+import { useAppStore } from "@/stores";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { Row, Section, SectionShell, Toggle } from "../_components/SectionShell";
 import { NoAccess } from "@/components/layout/NoAccess";
@@ -80,27 +81,34 @@ function WebsiteTrackingSettingsView() {
     const confirm = useConfirm();
     const [draft, setDraft] = React.useState<Draft | null>(null);
 
+    // One workspace's tracking settings, so the draft belongs to the workspace
+    // it was hydrated from: switching re-hydrates it, and a save that would land
+    // on a different workspace is dropped rather than written to it.
+    const orgID = useAppStore((st) => st.currentOrganization?.id);
+    const hydratedFor = React.useRef<string | undefined>(undefined);
+
     const autosave = useAutosave({
         value: draft,
         enabled: !!draft,
         debounceMs: 600,
         save: async (v) => {
-            if (v) await update.mutateAsync(toPatch(v));
+            if (!v) return;
+            if (hydratedFor.current !== useAppStore.getState().currentOrganization?.id) return;
+            await update.mutateAsync(toPatch(v));
         },
     });
     useRegisterUnsaved(autosave, () => setDraft(autosave.savedValue));
 
-    // One-shot hydration, as on the other autosave settings pages: the server
-    // seeds the draft once and the save path owns the baseline after that.
-    const hydrated = React.useRef(false);
+    // Hydration is once per workspace, as on the other autosave settings pages:
+    // the server seeds the draft and the save path owns the baseline after that.
     React.useEffect(() => {
-        if (!data || hydrated.current) return;
-        hydrated.current = true;
+        if (!data || hydratedFor.current === orgID) return;
+        hydratedFor.current = orgID;
         const d = toDraft(data);
         setDraft(d);
         autosave.markSaved(d);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [data]);
+    }, [data, orgID]);
 
     const patch = React.useCallback((next: Partial<Draft>) => {
         setDraft((prev) => (prev ? { ...prev, ...next } : prev));

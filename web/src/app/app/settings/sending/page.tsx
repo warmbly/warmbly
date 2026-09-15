@@ -4,6 +4,7 @@
 // what the current selection means before anyone saves it.
 
 import React from "react";
+import { useAppStore } from "@/stores";
 import { ClockIcon } from "lucide-react";
 import { Row, Section, SectionShell, Toggle } from "../_components/SectionShell";
 import { NoAccess } from "@/components/layout/NoAccess";
@@ -56,25 +57,34 @@ function SendingSettings() {
     const timezones = useTimezones();
     const [draft, setDraft] = React.useState<OutreachSettings | null>(null);
 
+    // These are one workspace's settings, so the draft belongs to the workspace
+    // it was hydrated from. Switching workspaces re-hydrates it, and a save that
+    // would land on a different workspace than the draft came from is dropped:
+    // otherwise the next edit after a switch wrote the previous workspace's
+    // whole settings object onto the new one.
+    const orgID = useAppStore((st) => st.currentOrganization?.id);
+    const hydratedFor = React.useRef<string | undefined>(undefined);
+
     const autosave = useAutosave({
         value: draft,
         enabled: !!draft,
         save: async (v) => {
-            if (v) await update.mutateAsync(v);
+            if (!v) return;
+            if (hydratedFor.current !== useAppStore.getState().currentOrganization?.id) return;
+            await update.mutateAsync(v);
         },
     });
     useRegisterUnsaved(autosave, () => setDraft(autosave.savedValue));
 
-    // One-shot hydration: the server value seeds the draft once, then the save
-    // path owns the baseline so a refetch can't stomp an in-flight edit.
-    const hydrated = React.useRef(false);
+    // Hydration is once per workspace: the server value seeds the draft, then
+    // the save path owns the baseline so a refetch can't stomp an in-flight edit.
     React.useEffect(() => {
-        if (!data || hydrated.current) return;
-        hydrated.current = true;
+        if (!data || hydratedFor.current === orgID) return;
+        hydratedFor.current = orgID;
         setDraft(data);
         autosave.markSaved(data);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [data]);
+    }, [data, orgID]);
 
     const sto = draft?.send_time_optimization;
 
