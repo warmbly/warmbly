@@ -27,6 +27,10 @@ type EmailSyncStateRepository interface {
 	// provider thread id belongs to something this mailbox sent or already
 	// holds: a campaign task, a mapped message, or a stored unibox thread.
 	IsOwnConversation(ctx context.Context, userID, emailID uuid.UUID, messageIDs []string, threadID string) (bool, error)
+	// ListFolderMessages returns what the platform holds for one mailbox
+	// folder in the current UIDVALIDITY generation, keyed by UID. The IMAP
+	// drafts reconciliation uses it to find the rows the server expunged.
+	ListFolderMessages(ctx context.Context, userID, emailID uuid.UUID, folderPath string, uidValidity uint32) ([]StoredFolderMessage, error)
 }
 
 type pgEmailSyncStateRepository struct {
@@ -155,4 +159,30 @@ func (r *pgEmailSyncStateRepository) IsOwnConversation(ctx context.Context, user
 		return false, fmt.Errorf("email_sync_state: own conversation: %w", err)
 	}
 	return own, nil
+}
+
+func (r *pgEmailSyncStateRepository) ListFolderMessages(ctx context.Context, userID, emailID uuid.UUID, folderPath string, uidValidity uint32) ([]StoredFolderMessage, error) {
+	const q = `
+		SELECT uid, id, message_id
+		FROM unibox_emails
+		WHERE user_id = $1 AND email_id = $2 AND folder_path = $3 AND mailbox = $4
+	`
+	rows, err := r.db.Query(ctx, q, userID, emailID, folderPath, uidValidity)
+	if err != nil {
+		return nil, fmt.Errorf("email_sync_state: list folder messages: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]StoredFolderMessage, 0)
+	for rows.Next() {
+		var m StoredFolderMessage
+		if err := rows.Scan(&m.UID, &m.ID, &m.MessageID); err != nil {
+			return nil, fmt.Errorf("email_sync_state: scan folder message: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("email_sync_state: list folder messages: %w", err)
+	}
+	return out, nil
 }

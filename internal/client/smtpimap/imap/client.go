@@ -365,6 +365,13 @@ func (c *Client) SearchChangedSince(modSeq uint64) ([]imap.UID, *errx.MailError)
 	return c.uidSearch(&imap.SearchCriteria{ModSeq: &imap.SearchCriteriaModSeq{ModSeq: modSeq + 1}})
 }
 
+// SearchAll returns every UID in the selected mailbox, ascending. An expunge
+// leaves no UID behind to report, so the drafts reconciliation diffs this set
+// against the UIDs the platform holds for the folder.
+func (c *Client) SearchAll() ([]imap.UID, *errx.MailError) {
+	return c.uidSearch(&imap.SearchCriteria{})
+}
+
 // SearchNewSince returns the UIDs at or above uidNext: the mail that arrived
 // since the folder's UIDNEXT was last recorded. It is the incremental set on
 // a server without CONDSTORE. A "n:*" set with n past the end answers with

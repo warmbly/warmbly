@@ -179,6 +179,10 @@ func Run(
 		// something the mailbox sent?" (tasks, message map, unibox threads).
 		internal.GET("/sync/own-conversation", h.InternalSyncOwnConversation)
 
+		// Expunge reconciliation: what the platform still holds for one IMAP
+		// folder, so the worker can drop the rows the server no longer reports.
+		internal.GET("/sync/folder-messages", h.InternalSyncFolderMessages)
+
 		// Worker bootstrap config + heartbeat. Workers POST their identity
 		// on boot (worker_id + bind_ip + tag) and pull their runtime config
 		// instead of carrying it all in the install-time env file.
