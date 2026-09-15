@@ -129,7 +129,10 @@ export interface AdminAuditLogSearch {
 }
 
 export interface AdminAuditLogsResult {
-    data: AdminAuditLog[];
+    // Nullable on purpose, like AdminUserPreview's slices: a backend older than
+    // the make-not-declare fix in pg_admin.go answers null for an empty page,
+    // and typing it as an array is what let `data.data.length` crash the page.
+    data: AdminAuditLog[] | null;
     pagination: {
         cursor?: string;
         has_more?: boolean;

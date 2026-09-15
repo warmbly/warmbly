@@ -256,7 +256,10 @@ func (r *adminRepository) SearchUsers(ctx context.Context, search *models.AdminU
 	}
 	defer rows.Close()
 
-	var users []models.AdminUserDetail
+	// Every list this file builds is made rather than declared: a nil slice
+	// marshals to JSON null, and the panel reads .length off these without a
+	// guard, so an empty result took the page down instead of showing "none".
+	users := make([]models.AdminUserDetail, 0)
 	for rows.Next() {
 		var u models.AdminUserDetail
 		err := rows.Scan(
@@ -437,9 +440,7 @@ func (r *adminRepository) GetUserPreview(ctx context.Context, userID uuid.UUID) 
 	if len(bans) > 5 {
 		bans = bans[:5]
 	}
-	if bans != nil {
-		preview.RecentBans = bans
-	}
+	preview.RecentBans = bans
 
 	// Get rate limits
 	limits, err := r.GetUserRateLimits(ctx, userID)
@@ -566,7 +567,7 @@ func (r *adminRepository) GetUserBans(ctx context.Context, userID uuid.UUID) ([]
 	}
 	defer rows.Close()
 
-	var bans []models.UserBan
+	bans := make([]models.UserBan, 0)
 	for rows.Next() {
 		var ban models.UserBan
 		var bannedByUser models.AdminUserSummary
@@ -628,7 +629,7 @@ func (r *adminRepository) GetUserEmails(ctx context.Context, userID uuid.UUID, c
 	}
 	defer rows.Close()
 
-	var emails []models.AdminWorkerEmail
+	emails := make([]models.AdminWorkerEmail, 0)
 	for rows.Next() {
 		var e models.AdminWorkerEmail
 		err := rows.Scan(
@@ -683,7 +684,7 @@ func (r *adminRepository) ListAdmins(ctx context.Context, cursor *uuid.UUID, lim
 	}
 	defer rows.Close()
 
-	var admins []models.AdminInfo
+	admins := make([]models.AdminInfo, 0)
 	for rows.Next() {
 		var admin models.AdminInfo
 		var grantedByID *uuid.UUID
@@ -757,7 +758,7 @@ func (r *adminRepository) ListWorkers(ctx context.Context, cursor *uuid.UUID, li
 	}
 	defer rows.Close()
 
-	var workers []models.AdminWorkerDetail
+	workers := make([]models.AdminWorkerDetail, 0)
 	for rows.Next() {
 		var w models.AdminWorkerDetail
 		err := rows.Scan(
@@ -905,7 +906,7 @@ func (r *adminRepository) GetWorkerEmails(ctx context.Context, workerID uuid.UUI
 	}
 	defer rows.Close()
 
-	var emails []models.AdminWorkerEmail
+	emails := make([]models.AdminWorkerEmail, 0)
 	for rows.Next() {
 		var e models.AdminWorkerEmail
 		err := rows.Scan(
@@ -1004,7 +1005,7 @@ func (r *adminRepository) ListWarmupPools(ctx context.Context) ([]models.WarmupP
 	}
 	defer rows.Close()
 
-	var pools []models.WarmupPoolInfo
+	pools := make([]models.WarmupPoolInfo, 0)
 	for rows.Next() {
 		var p models.WarmupPoolInfo
 		if err := rows.Scan(&p.Type, &p.TotalParticipants, &p.ActiveParticipants, &p.BlockedCount); err != nil {
@@ -1050,7 +1051,7 @@ func (r *adminRepository) GetPoolParticipants(ctx context.Context, poolType stri
 	}
 	defer rows.Close()
 
-	var participants []models.WarmupPoolParticipant
+	participants := make([]models.WarmupPoolParticipant, 0)
 	for rows.Next() {
 		var p models.WarmupPoolParticipant
 		if err := rows.Scan(
@@ -1113,7 +1114,7 @@ func (r *adminRepository) ListBlockedAccounts(ctx context.Context, cursor *uuid.
 	}
 	defer rows.Close()
 
-	var accounts []models.AdminBlockedAccount
+	accounts := make([]models.AdminBlockedAccount, 0)
 	for rows.Next() {
 		var a models.AdminBlockedAccount
 		var user models.AdminUserSummary
@@ -1238,7 +1239,7 @@ func (r *adminRepository) ListAppeals(ctx context.Context, status string, cursor
 	}
 	defer rows.Close()
 
-	var appeals []models.WarmupAppeal
+	appeals := make([]models.WarmupAppeal, 0)
 	for rows.Next() {
 		var a models.WarmupAppeal
 		var user models.AdminUserSummary
@@ -1511,7 +1512,7 @@ func (r *adminRepository) SearchCampaigns(ctx context.Context, search *models.Ad
 	}
 	defer rows.Close()
 
-	var campaigns []models.AdminCampaignDetail
+	campaigns := make([]models.AdminCampaignDetail, 0)
 	for rows.Next() {
 		var c models.AdminCampaignDetail
 		var user models.AdminUserSummary
@@ -1697,7 +1698,7 @@ func (r *adminRepository) SearchAuditLogs(ctx context.Context, search *models.Ad
 	}
 	defer rows.Close()
 
-	var logs []models.AdminAuditLog
+	logs := make([]models.AdminAuditLog, 0)
 	for rows.Next() {
 		var log models.AdminAuditLog
 		var user models.AdminUserSummary
@@ -1806,7 +1807,7 @@ func (r *adminRepository) GetUserGrowthStats(ctx context.Context, startDate, end
 	}
 	defer rows.Close()
 
-	var stats []models.UserGrowthStats
+	stats := make([]models.UserGrowthStats, 0)
 	for rows.Next() {
 		var s models.UserGrowthStats
 		err := rows.Scan(&s.Date, &s.NewUsers)
