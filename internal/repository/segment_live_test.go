@@ -349,9 +349,10 @@ func TestLiveSegmentCampaignLinks(t *testing.T) {
 		t.Fatalf("using = %v, %v", names, xerr)
 	}
 
-	// Unlinking everything takes back the audience the link brought (issue
-	// #510), but all three leads survive here: the one-shot enrol above is a
-	// person choosing this list, so it claimed every member it covered.
+	// Unlinking everything takes back the audience the link brought and leaves
+	// the lead somebody chose by hand (issue #510). alice and carol arrived
+	// through the link; bob is here because the one-shot enrol above re-added
+	// him after a hand-made removal.
 	if xerr := repo.SetForCampaign(ctx, f.org, f.other, []uuid.UUID{}); xerr != nil {
 		t.Fatalf("unlink: %v", xerr)
 	}
@@ -359,8 +360,8 @@ func TestLiveSegmentCampaignLinks(t *testing.T) {
 		t.Fatalf("links after unlink = %+v", links)
 	}
 	inOther := models.SegmentCondition{Field: "campaign", Operator: "in", Values: []string{f.other.String()}}
-	if got := segCount(t, repo, f.org, models.SegmentMatchAll, inOther); got != 3 {
-		t.Errorf("leads after unlink = %d, want 3 (the one-shot enrol claimed them)", got)
+	if got := segCount(t, repo, f.org, models.SegmentMatchAll, inOther); got != 1 {
+		t.Errorf("leads after unlink = %d, want 1 (bob, re-added by hand)", got)
 	}
 }
 

@@ -312,24 +312,23 @@ func TestLiveCampaignAudienceAReimportClaimsASegmentLead(t *testing.T) {
 		t.Fatalf("lead source after the re-import = %q, want manual", got)
 	}
 
-	// The one-shot "add to campaign" is the same kind of act, so it claims the
-	// leads the link had enrolled even though every one of them is already in.
+	// The one-shot "add to campaign" adds nobody here and changes nobody's
+	// provenance: re-stamping a whole linked audience because somebody pressed
+	// "Add back" is what would put the old list back for good.
 	out, xerr := segments.AddToCampaign(ctx, f.org, f.owner.String(), segA, f.campaign)
 	if xerr != nil || out.Added != 0 {
 		t.Fatalf("one-shot enrol = %+v, %v", out, xerr)
 	}
-	for _, id := range []uuid.UUID{f.bothAB, f.sentA, f.manualA} {
-		if got := f.leadSource(t, id); got != "manual" {
-			t.Fatalf("lead source after the one-shot enrol = %q, want manual", got)
-		}
+	if got := f.leadSource(t, f.bothAB); got != "segment" {
+		t.Fatalf("lead source after a one-shot enrol that added nobody = %q, want segment", got)
 	}
 
 	_, change, _, xerr := segments.ReplaceForCampaign(ctx, f.org, f.campaign, []uuid.UUID{})
 	if xerr != nil {
 		t.Fatalf("detach: %v", xerr)
 	}
-	if change.Withdrawn != 0 {
-		t.Fatalf("detach withdrew %d, want 0: every lead is claimed by hand", change.Withdrawn)
+	if change.Withdrawn != 3 {
+		t.Fatalf("detach withdrew %d, want 3 (everyone but the re-imported lead)", change.Withdrawn)
 	}
-	eq(t, f.leadNames(t), []string{"bothab", "manuala", "onlya", "senta"}, "leads after detaching the only segment")
+	eq(t, f.leadNames(t), []string{"onlya"}, "leads after detaching the only segment")
 }

@@ -366,18 +366,16 @@ func insertSegmentLeads(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, actor *
 	if src == leadSourceSegment {
 		guard = fmt.Sprintf(` AND NOT EXISTS (SELECT 1 FROM campaign_lead_removals r WHERE r.campaign_id = $%d AND r.contact_id = c.id)`, cp)
 	} else {
-		// An explicit enrol is a person choosing these leads: it ends a
-		// hand-made removal, and it claims anyone a linked segment had already
-		// enrolled, so detaching that segment later leaves them alone.
+		// An explicit enrol is a person choosing these leads, so it ends a
+		// hand-made removal and re-adds. It deliberately does NOT re-stamp
+		// leads that are already there: the one path that reaches this with a
+		// full segment is the Leads tab's "Add back", and pinning a whole
+		// linked audience as hand-picked because somebody restored one held-out
+		// member is the accumulation this stopped being (issue #510). The rows
+		// it does insert carry leadSourceManual from the INSERT below.
 		clearQ := fmt.Sprintf(`DELETE FROM campaign_lead_removals r
 			WHERE r.campaign_id = $%d AND r.contact_id IN (%s)`, cp, members)
 		if _, err := tx.Exec(ctx, clearQ, args...); err != nil {
-			return nil, err
-		}
-		claimQ := fmt.Sprintf(`UPDATE campaign_leads SET source = '%s'
-			WHERE campaign_id = $%d AND source <> '%s' AND contact_id IN (%s)`,
-			leadSourceManual, cp, leadSourceManual, members)
-		if _, err := tx.Exec(ctx, claimQ, args...); err != nil {
 			return nil, err
 		}
 	}
