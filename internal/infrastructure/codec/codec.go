@@ -1,8 +1,8 @@
 // Package codec is the abstraction over event-payload serialization.
 //
 // Two implementations:
-//   - AvroCodec  (Confluent Schema Registry + Avro v2 — historical default,
-//     wraps internal/infrastructure/kafka.Avrov2)
+//   - AvroCodec  (Confluent Schema Registry wire format, encoded through
+//     hamba's default API so the envelopes' union bodies resolve)
 //   - JSONCodec  (encoding/json — self-hostable alternative with no external
 //     schema registry dependency)
 //
