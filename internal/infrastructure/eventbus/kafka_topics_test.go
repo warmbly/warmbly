@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // A topic already created by this process must not reach the broker again:
@@ -90,5 +92,36 @@ func TestUnknownTopicsDoesNotHoldLockForCaller(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the topic lock was still held after unknownTopics returned")
+	}
+}
+
+// A managed cluster refuses the create for a topic it already owns, and that
+// answer used to fail the publish and requeue the create for the next message:
+// one lost event and one reported issue per message, forever. The refusal must
+// read as "not ours to create" whichever of the two codes carries it, and
+// whatever description the broker substituted for them.
+func TestAuthorizationFailureIsNotACreateFailure(t *testing.T) {
+	refusals := []ckf.Error{
+		ckf.NewError(ckf.ErrTopicAuthorizationFailed, "Broker: Topic authorization failed", false),
+		ckf.NewError(ckf.ErrClusterAuthorizationFailed, "Broker: Cluster authorization failed", false),
+		// What Confluent Cloud actually sends, under a code of its choosing.
+		ckf.NewError(ckf.ErrUnknown, "Authorization failed.", false),
+	}
+	for _, r := range refusals {
+		if !isAuthorizationFailure(r) {
+			t.Errorf("a create refused for permissions read as a create failure: %v", r)
+		}
+	}
+
+	// The single-broker development case must still fail loudly: nothing is
+	// going to produce to a topic the cluster could not build.
+	notRefusals := []ckf.Error{
+		ckf.NewError(ckf.ErrInvalidReplicationFactor, "Broker: Invalid replication factor", false),
+		ckf.NewError(ckf.ErrTopicException, "Broker: Invalid topic", false),
+	}
+	for _, r := range notRefusals {
+		if isAuthorizationFailure(r) {
+			t.Errorf("a real create failure was waved through as a permissions refusal: %v", r)
+		}
 	}
 }

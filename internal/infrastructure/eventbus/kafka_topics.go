@@ -72,6 +72,19 @@ func (b *KafkaBus) ensureTopics(ctx context.Context, names ...string) error {
 		case ckf.ErrTopicAlreadyExists:
 			// The steady state on every process after the first.
 		default:
+			// An authorization failure is not a missing topic. A managed
+			// cluster hands out a key with Write and Read and creates topics
+			// from its own console, so it answers this for a topic that is
+			// already there. Failing on it dropped every event and filed one
+			// issue per message forever, because the topic never became known.
+			// Remember it instead and let the produce decide: a topic that
+			// really is absent fails there, saying exactly that.
+			if isAuthorizationFailure(r.Error) {
+				log.Warn().
+					Str("topic", r.Topic).
+					Msg("eventbus kafka: not allowed to create topics on this cluster; assuming it owns them")
+				break
+			}
 			// A replication factor the cluster cannot satisfy is the usual
 			// cause on a single-broker development cluster, and the bare
 			// error does not say so.
@@ -90,6 +103,19 @@ func (b *KafkaBus) ensureTopics(ctx context.Context, names ...string) error {
 	}
 	b.topics.mu.Unlock()
 	return nil
+}
+
+// isAuthorizationFailure reports whether the broker refused the create because
+// this key may not make topics, rather than because the create itself was bad.
+// Matched on the code, with the sentence as a fallback: Confluent Cloud replaces
+// the description with its own "Authorization failed." and an operator reading
+// it should not have to care which of the two codes carried it.
+func isAuthorizationFailure(err ckf.Error) bool {
+	switch err.Code() {
+	case ckf.ErrTopicAuthorizationFailed, ckf.ErrClusterAuthorizationFailed:
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.String()), "authorization failed")
 }
 
 // unknownTopics returns specs for the names this process has not created yet.
