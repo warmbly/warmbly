@@ -153,7 +153,7 @@ const TRACKING_FIELDS = [
         label: "Probable-scanner window (seconds)",
         min: MACHINE_WINDOW_MIN_SECONDS,
         max: PROBABLE_WINDOW_MAX_SECONDS,
-        help: "Used instead of the two above when the request came from a mail-security network that also renders clicked pages for people, which Proofpoint and Mimecast do through browser isolation. Inside this window the event is the delivery-time scan; past it, it is the recipient who got to the mail later. Raise it if those vendors' scans still count as engagement, lower it if recipients behind them are being missed. It is never applied shorter than the windows above.",
+        help: "Used instead of the two above when the request came from a mail-security network that also renders clicked pages for people, which Proofpoint and Mimecast do through browser isolation. Inside this window the event is classified as the delivery-time scan; past it, as the recipient who got to the mail later. A recipient behind one of those vendors who really does click inside it is recorded as automated, so raise it if their scans still count as engagement and lower it if fast recipients are being missed. It is never applied shorter than the windows above.",
     },
 ] as const;
 

@@ -109,6 +109,23 @@ impl From<&Entry> for Match {
     }
 }
 
+/// Where a request's ASN may come from. Either is enough on its own, and the
+/// header wins on any request that carries one.
+#[derive(Default)]
+pub struct AsnSources {
+    /// Header a trusted proxy sets with the source ASN (Cloudflare:
+    /// ip.src.asnum).
+    pub header: Option<String>,
+    /// Whether any peer is trusted at all. The header is read only from a
+    /// proxy the operator named, so with an empty TRACKING_TRUSTED_PROXIES a
+    /// configured header can never resolve anything and does not count as a
+    /// source. The database has no such dependency: it reads the address.
+    pub trusted_proxies: bool,
+    /// GeoLite2-ASN database, which resolves the ASN from the address itself
+    /// and so needs nothing of the edge.
+    pub db: Option<AsnDb>,
+}
+
 /// Matches a request's source against the known-scanner catalogue.
 #[derive(Default)]
 pub struct ScannerNetworks {
@@ -118,6 +135,8 @@ pub struct ScannerNetworks {
     /// peer the operator named. It takes precedence over the database, so an
     /// operator who already writes it keeps the behaviour they have.
     asn_header: Option<String>,
+    /// Whether that header can ever be believed, which needs a trusted proxy.
+    asn_header_trusted: bool,
     /// GeoLite2-ASN database, which resolves the ASN from the address itself
     /// and so needs nothing of the edge. None when none is configured.
     asn_db: Option<AsnDb>,
@@ -138,20 +157,15 @@ impl ScannerNetworks {
     /// Builds the matcher from the shipped catalogue plus the operator's own
     /// entries. Unparseable entries are skipped with a warning rather than
     /// failing the boot: one typo in an allowlist must not take tracking down.
-    pub fn new(
-        builtins: bool,
-        all_networks: &str,
-        click_networks: &str,
-        asn_header: Option<String>,
-        asn_db: Option<AsnDb>,
-    ) -> Self {
+    pub fn new(builtins: bool, all_networks: &str, click_networks: &str, asn: AsnSources) -> Self {
         let mut s = Self {
-            asn_header: asn_header.filter(|h| !h.trim().is_empty()).map(|h| {
+            asn_header: asn.header.filter(|h| !h.trim().is_empty()).map(|h| {
                 let mut h = h.trim().to_ascii_lowercase();
                 h.retain(|c| !c.is_whitespace());
                 h
             }),
-            asn_db,
+            asn_header_trusted: asn.trusted_proxies,
+            asn_db: asn.db,
             ..Default::default()
         };
         if builtins {
@@ -164,12 +178,18 @@ impl ScannerNetworks {
             s.nets.len(),
             s.asns.len(),
             s.skipped,
-            s.asn_header.as_deref().unwrap_or("none"),
+            match (s.asn_header.as_deref(), s.asn_header_trusted) {
+                (None, _) => "none",
+                (Some(name), true) => name,
+                // Named but unusable, which is worth saying plainly: the
+                // header is only ever read from a proxy the operator listed.
+                (Some(_), false) => "set, but no trusted proxy to believe it from",
+            },
             if s.asn_db.is_some() { "yes" } else { "no" }
         );
         if !s.asns.is_empty() && !s.can_resolve_asn() {
             tracing::warn!(
-                "Scanner catalogue has {} ASN entries and no source of a request's ASN, so they match nothing. Point TRACKING_SCANNER_ASN_DB at a GeoLite2-ASN database, or set TRACKING_SCANNER_ASN_HEADER if your edge writes one",
+                "Scanner catalogue has {} ASN entries and no usable source of a request's ASN, so they match nothing. Point TRACKING_SCANNER_ASN_DB at a GeoLite2-ASN database, or set TRACKING_SCANNER_ASN_HEADER together with the TRACKING_TRUSTED_PROXIES it is only ever read from",
                 s.asns.len()
             );
         }
@@ -300,8 +320,13 @@ impl ScannerNetworks {
             .map(|(_, entry)| entry.into())
     }
 
+    /// Whether an ASN can be established at all. A header with no trusted
+    /// proxy behind it is not a source: `header_asn` refuses every request,
+    /// so the catalogue's ASN entries are as inert as if none were named, and
+    /// suppressing the boot warning there hides exactly the misconfiguration
+    /// it exists to report.
     fn can_resolve_asn(&self) -> bool {
-        self.asn_header.is_some() || self.asn_db.is_some()
+        (self.asn_header.is_some() && self.asn_header_trusted) || self.asn_db.is_some()
     }
 
     /// The source's ASN: the trusted header where one is written, otherwise
@@ -396,7 +421,17 @@ mod tests {
     }
 
     fn builtins() -> ScannerNetworks {
-        ScannerNetworks::new(true, "", "", Some("cf-asn".into()), None)
+        ScannerNetworks::new(true, "", "", asn_sources(Some("cf-asn"), None))
+    }
+
+    /// An edge that writes the header AND names a trusted proxy to believe it
+    /// from, which is what makes a header a source at all.
+    fn asn_sources(header: Option<&str>, db: Option<AsnDb>) -> AsnSources {
+        AsnSources {
+            header: header.map(str::to_string),
+            trusted_proxies: header.is_some(),
+            db,
+        }
     }
 
     /// A GeoLite2-ASN database holding one network per ASN named here.
@@ -449,7 +484,12 @@ mod tests {
     // Microsoft's own proxy, so a genuine open arrives from there.
     #[test]
     fn an_opted_in_asn_is_clicks_only() {
-        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", Some("cf-asn".into()), None);
+        let s = ScannerNetworks::new(
+            false,
+            "",
+            "asn:8075 microsoft",
+            asn_sources(Some("cf-asn"), None),
+        );
         let h = hdr(&[("cf-asn", "8075")]);
         assert_eq!(
             s.classify("13.107.128.5", &h, true, Request::Click).label(),
@@ -545,8 +585,7 @@ mod tests {
             false,
             "203.0.113.0/24 probable pf",
             "198.51.100.0/24 mc",
-            None,
-            None,
+            asn_sources(None, None),
         );
         let both = s.classify("203.0.113.9", &hdr(&[]), false, Request::Open);
         assert_eq!(both.label(), Some("pf"));
@@ -585,7 +624,12 @@ mod tests {
     // not to be labelled at all.
     #[test]
     fn asn_header_is_ignored_from_an_untrusted_peer() {
-        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", Some("cf-asn".into()), None);
+        let s = ScannerNetworks::new(
+            false,
+            "",
+            "asn:8075 microsoft",
+            asn_sources(Some("cf-asn"), None),
+        );
         let h = hdr(&[("cf-asn", "8075")]);
         assert_eq!(
             s.classify("203.0.113.9", &h, false, Request::Click).label(),
@@ -601,13 +645,57 @@ mod tests {
     // all and the catalogue's ASN entries are inert.
     #[test]
     fn asn_entries_need_a_header_or_a_database() {
-        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", None, None);
+        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", asn_sources(None, None));
         let h = hdr(&[("cf-asn", "8075")]);
         assert_eq!(
             s.classify("203.0.113.9", &h, true, Request::Click).label(),
             None
         );
         assert!(!s.can_resolve_asn(), "the boot warning fires on this");
+    }
+
+    // The header is only ever read from a proxy the operator named, so a
+    // header with no TRACKING_TRUSTED_PROXIES behind it resolves nothing and
+    // is not a source. Counting it as one suppressed the boot warning in
+    // exactly the misconfiguration the warning exists to report.
+    #[test]
+    fn a_header_with_no_trusted_proxy_is_not_a_source() {
+        let s = ScannerNetworks::new(
+            false,
+            "asn:22843 proofpoint",
+            "",
+            AsnSources {
+                header: Some("cf-asn".into()),
+                trusted_proxies: false,
+                db: None,
+            },
+        );
+        assert!(!s.can_resolve_asn(), "the boot warning must fire");
+        // And it really cannot match, which is what makes that the truth.
+        let h = hdr(&[("cf-asn", "22843")]);
+        assert_eq!(
+            s.classify("198.51.100.4", &h, false, Request::Click)
+                .label(),
+            None
+        );
+
+        // A database needs no trusted proxy, so it is a source on its own.
+        let db = ScannerNetworks::new(
+            false,
+            "asn:22843 proofpoint",
+            "",
+            AsnSources {
+                header: Some("cf-asn".into()),
+                trusted_proxies: false,
+                db: asn_db(&[("67.231.144.0/20", 22843)]),
+            },
+        );
+        assert!(db.can_resolve_asn());
+        assert_eq!(
+            db.classify("67.231.152.7", &hdr(&[]), false, Request::Click)
+                .label(),
+            Some("proofpoint")
+        );
     }
 
     // The point of the database: the same entry matches with no edge
@@ -619,8 +707,7 @@ mod tests {
             false,
             "asn:22843 proofpoint",
             "",
-            None,
-            asn_db(&[("67.231.144.0/20", 22843)]),
+            asn_sources(None, asn_db(&[("67.231.144.0/20", 22843)])),
         );
         assert!(s.can_resolve_asn(), "the boot warning must not fire");
         for kind in [Request::Open, Request::Click] {
@@ -647,8 +734,7 @@ mod tests {
             false,
             "asn:22843 proofpoint, asn:30031 mimecast",
             "",
-            Some("cf-asn".into()),
-            asn_db(&[("67.231.144.0/20", 22843)]),
+            asn_sources(Some("cf-asn"), asn_db(&[("67.231.144.0/20", 22843)])),
         );
         let h = hdr(&[("cf-asn", "30031")]);
         assert_eq!(
@@ -685,8 +771,7 @@ mod tests {
             false,
             "",
             "asn:15169 google",
-            None,
-            asn_db(&[("142.250.0.0/15", 15169)]),
+            asn_sources(None, asn_db(&[("142.250.0.0/15", 15169)])),
         );
         assert_eq!(
             s.classify("142.250.1.1", &hdr(&[]), false, Request::Click)
@@ -710,8 +795,7 @@ mod tests {
             false,
             "203.0.113.0/24 pf",
             "",
-            Some("cf-asn".into()),
-            asn_db(&[("67.231.144.0/20", 22843)]),
+            asn_sources(Some("cf-asn"), asn_db(&[("67.231.144.0/20", 22843)])),
         );
         assert!(s.asns.is_empty());
         assert_eq!(
@@ -734,8 +818,7 @@ mod tests {
             false,
             "asn:22843 proofpoint",
             "",
-            None,
-            asn_db(&[("67.231.144.0/20", 22843)]),
+            asn_sources(None, asn_db(&[("67.231.144.0/20", 22843)])),
         );
         for _ in 0..ASN_SILENCE_THRESHOLD {
             assert_eq!(
@@ -760,8 +843,7 @@ mod tests {
             false,
             "asn:22843 proofpoint",
             "",
-            None,
-            asn_db(&[("67.231.144.0/20", 22843)]),
+            asn_sources(None, asn_db(&[("67.231.144.0/20", 22843)])),
         );
         for _ in 0..3 {
             assert_eq!(
@@ -784,8 +866,7 @@ mod tests {
             false,
             "asn:22843 proofpoint",
             "",
-            Some("cf-asn".into()),
-            None,
+            asn_sources(Some("cf-asn"), None),
         );
         assert_eq!(
             s.classify(
@@ -805,7 +886,12 @@ mod tests {
     // the network list rather than short-circuiting it.
     #[test]
     fn an_unresolvable_source_still_reaches_the_network_list() {
-        let s = ScannerNetworks::new(true, "", "", None, asn_db(&[("67.231.144.0/20", 22843)]));
+        let s = ScannerNetworks::new(
+            true,
+            "",
+            "",
+            asn_sources(None, asn_db(&[("67.231.144.0/20", 22843)])),
+        );
         assert_eq!(
             s.classify("40.107.1.2", &hdr(&[]), false, Request::Open)
                 .label(),
@@ -824,8 +910,7 @@ mod tests {
             false,
             "203.0.113.0/24 proofpoint, 198.51.100.7",
             "192.0.2.0/24 acme-gateway",
-            None,
-            None,
+            asn_sources(None, None),
         );
         assert_eq!(
             s.classify("203.0.113.9", &hdr(&[]), false, Request::Open)
@@ -858,8 +943,7 @@ mod tests {
             false,
             "not-a-cidr, 203.0.113.0/24 pf, asn:nope",
             "",
-            None,
-            None,
+            asn_sources(None, None),
         );
         assert_eq!(s.skipped, 2);
         assert_eq!(
@@ -871,7 +955,7 @@ mod tests {
 
     #[test]
     fn builtins_can_be_turned_off() {
-        let s = ScannerNetworks::new(false, "", "", Some("cf-asn".into()), None);
+        let s = ScannerNetworks::new(false, "", "", asn_sources(Some("cf-asn"), None));
         assert!(s.nets.is_empty() && s.asns.is_empty());
         assert_eq!(
             s.classify("40.107.1.2", &hdr(&[]), false, Request::Open)
@@ -902,13 +986,7 @@ mod tests {
     // of them prose. Both go through the same parser.
     #[test]
     fn a_comment_is_stripped_before_the_line_is_split_on_commas() {
-        let s = ScannerNetworks::new(
-            false,
-            "# a note, with a comma in it\n203.0.113.0/24 pf\n198.51.100.0/24 mc # trailing note, ignored",
-            "",
-            None,
-            None,
-        );
+        let s = ScannerNetworks::new(false, "# a note, with a comma in it\n203.0.113.0/24 pf\n198.51.100.0/24 mc # trailing note, ignored", "", asn_sources(None, None));
         assert_eq!(s.skipped, 0, "prose must not be read as entries");
         assert_eq!(
             s.classify("203.0.113.1", &hdr(&[]), false, Request::Open)

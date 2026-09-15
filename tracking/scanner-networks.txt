@@ -92,17 +92,24 @@
 #   rare edge case.
 #
 # A whole-ASN entry therefore cannot settle it alone; marked `certain` it would
-# trade inflated click counts for lost automations. `probable` is what
-# makes them safe to ship on: the network match widens the machine window
-# rather than deciding, so the delivery-time scan (which runs within minutes of
-# the send, queueing and transit included) is caught, and the isolated click an
-# hour later is still the person's. Measured against today, where these are
-# recognised as nothing at all, it can only move scans out of your numbers, and
-# never a click that was already counted as human.
+# trade inflated click counts for lost automations. `probable` is what makes
+# them safe to ship on: the network match widens the machine window rather than
+# deciding, so a request from one of these networks is CLASSIFIED as the
+# delivery-time scan only while it is inside that window, and the isolated
+# click an hour later is still the person's.
 #
-# The one cost is a recipient behind one of these vendors who genuinely clicks
-# inside the probable window. Shorten tracking.machine_window_probable_seconds
+# This is a trade, not a free win. It moves events in one direction only, from
+# counted-as-human to counted-as-automated, so it can never let a scan count as
+# engagement. What it costs is the recipient behind one of these vendors who
+# genuinely clicks inside the probable window: that click is now recorded as
+# automated and fires nothing. Shorten tracking.machine_window_probable_seconds
 # if your recipients are that fast, or drop the entry.
+#
+# A second cost, independent of the window: a click from ANY recognised network
+# is redirected without the identification ticket, because the edge does not
+# know when the send was dispatched and cannot tell the two apart there. So an
+# isolated click the consumer later counts as a person's still leaves no
+# website-visit attribution for that contact.
 asn:22843           all     probable  proofpoint
 asn:26211           all     probable  proofpoint
 asn:52129           all     probable  proofpoint

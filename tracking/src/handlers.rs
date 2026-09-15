@@ -18,7 +18,7 @@ use crate::events::TrackingEvent;
 use crate::hits::{ForwardedHit, HitForwarder, HitPayload, Outcome};
 use crate::links::{LinkResolver, Resolution};
 use crate::producer::Producer;
-use crate::scanners::{Request, ScannerNetworks};
+use crate::scanners::{AsnSources, Request, ScannerNetworks};
 use crate::unsubscribe::{body_content_type, invalid_token, valid_token, UnsubscribeProxy};
 
 // 1x1 transparent GIF (43 bytes)
@@ -110,8 +110,15 @@ impl AppState {
                 config.scanner_builtins,
                 &config.scanner_networks,
                 &config.scanner_click_networks,
-                Some(config.scanner_asn_header.clone()),
-                AsnDb::open(&config.scanner_asn_db),
+                AsnSources {
+                    header: Some(config.scanner_asn_header.clone()),
+                    // An unset TRACKING_TRUSTED_PROXIES means no peer is ever
+                    // trusted, so a named header is never read. The catalogue
+                    // has to know that or it reports itself as able to match
+                    // ASNs when it cannot.
+                    trusted_proxies: !config.trusted_proxies.is_empty(),
+                    db: AsnDb::open(&config.scanner_asn_db),
+                },
             )),
             trusted_proxies: Arc::new(config.trusted_proxies.clone()),
             client_ip_header: Arc::new(config.client_ip_header.clone()),
