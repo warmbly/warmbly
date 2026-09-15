@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,8 +24,10 @@ import (
 // is around 70 MB and a slow link still has to finish.
 const fetchTimeout = 3 * time.Minute
 
-// maxDatabaseBytes is what a misconfigured URL is allowed to cost. GeoLite2-City
-// is the largest edition anyone points this at, by a wide margin.
+// maxDatabaseBytes is what a misconfigured URL is allowed to cost, applied to
+// the decoded database rather than the transfer: gzip expands, so a cap on what
+// arrives is no cap at all on what lands. GeoLite2-City is the largest edition
+// anyone points this at, by a wide margin.
 const maxDatabaseBytes = 512 << 20
 
 // tarMagicOffset is where the POSIX ustar magic sits in a 512-byte tar header.
@@ -73,14 +77,21 @@ func Ensure(ctx context.Context, path, url string) (bool, error) {
 	}
 	defer os.Remove(tmp.Name())
 
-	src, err := decode(io.LimitReader(body, maxDatabaseBytes))
+	src, err := decode(body)
 	if err != nil {
 		tmp.Close()
 		return false, err
 	}
-	if _, err := io.Copy(tmp, src); err != nil {
+	// One byte past the cap, so an oversized stream is detected rather than
+	// silently truncated into a file that then fails to open.
+	written, err := io.Copy(tmp, io.LimitReader(src, maxDatabaseBytes+1))
+	if err != nil {
 		tmp.Close()
 		return false, fmt.Errorf("geo: write %s: %w", tmp.Name(), err)
+	}
+	if written > maxDatabaseBytes {
+		tmp.Close()
+		return false, fmt.Errorf("geo: %s expands past %d bytes, which no database does", redactURL(url), maxDatabaseBytes)
 	}
 	if err := tmp.Close(); err != nil {
 		return false, fmt.Errorf("geo: write %s: %w", tmp.Name(), err)
@@ -103,20 +114,71 @@ func Ensure(ctx context.Context, path, url string) (bool, error) {
 
 // get performs the download, treating any non-2xx as a failure rather than
 // writing an error page to disk as if it were a database.
-func get(ctx context.Context, url string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("geo: %s: %w", redactURL(url), err)
+func get(ctx context.Context, raw string) (io.ReadCloser, error) {
+	if err := checkURL(raw); err != nil {
+		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
-		return nil, fmt.Errorf("geo: %s: %w", redactURL(url), err)
+		return nil, fmt.Errorf("geo: %s is not a usable URL", redactURL(raw))
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("geo: %s: %w", redactURL(raw), cause(err))
 	}
 	if resp.StatusCode/100 != 2 {
 		resp.Body.Close()
-		return nil, fmt.Errorf("geo: %s returned %s", redactURL(url), resp.Status)
+		return nil, fmt.Errorf("geo: %s returned %s", redactURL(raw), resp.Status)
 	}
 	return resp.Body, nil
+}
+
+// client refuses to follow a redirect down from https to http, because the
+// query string it would carry there is the licence key in cleartext.
+var client = &http.Client{
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return errors.New("redirected from https to http")
+		}
+		return nil
+	},
+}
+
+// checkURL refuses a URL that would put a credential on the wire in the clear.
+// http is allowed for a plain mirror, because a self-hosted one on a private
+// network is a reasonable thing to have; it is refused the moment the URL
+// carries anything secret, which is what a licence key in the query is.
+func checkURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("geo: the configured URL cannot be parsed")
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if u.User != nil || u.RawQuery != "" {
+			return fmt.Errorf("geo: %s would send a credential in cleartext; use https", redactURL(raw))
+		}
+		return nil
+	default:
+		return fmt.Errorf("geo: %s is not an http or https URL", redactURL(raw))
+	}
+}
+
+// cause strips the URL that net/http puts in its own error text. *url.Error
+// prints the address it was given, licence key and all, so wrapping one with
+// %w defeats the redaction applied to the URL beside it. Its cause is the part
+// worth reading ("connection refused", "no such host") and names nothing.
+func cause(err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		return uerr.Err
+	}
+	return err
 }
 
 // decode unwraps whatever the URL served down to the database bytes. The shape
@@ -187,12 +249,19 @@ func peek(r io.Reader, n int) ([]byte, io.Reader, error) {
 	return buf, io.MultiReader(bytes.NewReader(buf[:read]), r), nil
 }
 
-// redactURL keeps a download URL out of logs and error strings with its query
-// intact only in shape. MaxMind's permalink carries the account's licence key
-// there, and an error message is the one place nobody expects to find one.
+// redactURL keeps a download URL out of logs and error strings with its shape
+// intact and nothing else. MaxMind's permalink carries the account's licence
+// key in the query, a mirror can carry basic-auth credentials in the userinfo,
+// and an error message is the one place nobody expects to find either.
 func redactURL(raw string) string {
-	if i := strings.IndexByte(raw, '?'); i >= 0 {
-		return raw[:i] + "?<redacted>"
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<unparseable url>"
 	}
-	return raw
+	u.User = nil
+	u.Fragment = ""
+	if u.RawQuery != "" {
+		u.RawQuery = "<redacted>"
+	}
+	return u.String()
 }

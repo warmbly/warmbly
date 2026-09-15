@@ -23,6 +23,11 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(120);
 /// What a misconfigured URL is allowed to cost in memory.
 const MAX_DATABASE_BYTES: u64 = 128 << 20;
 
+/// How much of that a length the response claims about itself may reserve up
+/// front. GeoLite2-ASN is around 12 MB, so a real database is sized exactly and
+/// nothing else gets to allocate the whole cap on its say-so.
+const MAX_PREALLOC_BYTES: u64 = 32 << 20;
+
 /// Where the POSIX ustar magic sits in a 512-byte tar header.
 const TAR_MAGIC_OFFSET: usize = 257;
 
@@ -123,8 +128,8 @@ async fn download(url: &str) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+        .map_err(net_err)?;
+    let mut resp = client.get(url).send().await.map_err(net_err)?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -132,15 +137,31 @@ async fn download(url: &str) -> Result<Vec<u8>, String> {
         .content_length()
         .is_some_and(|n| n > MAX_DATABASE_BYTES)
     {
-        return Err("response is larger than a database has any reason to be".into());
+        return Err(TOO_BIG.into());
     }
-    let body = resp.bytes().await.map_err(|e| e.to_string())?;
-    if body.len() as u64 > MAX_DATABASE_BYTES {
-        return Err("response is larger than a database has any reason to be".into());
+
+    // Collected chunk by chunk rather than through `bytes()`, which would
+    // allocate the whole response before its size could be judged: a chunked
+    // reply declares no length, so the cap above is not a cap at all.
+    let mut body: Vec<u8> = Vec::with_capacity(hint(resp.content_length()));
+    while let Some(chunk) = resp.chunk().await.map_err(net_err)? {
+        if body.len() as u64 + chunk.len() as u64 > MAX_DATABASE_BYTES {
+            return Err(TOO_BIG.into());
+        }
+        body.extend_from_slice(&chunk);
     }
     // Borrowed, not copied into a Vec: the compressed body is already the
     // largest thing held here and duplicating it doubles the peak for nothing.
     unwrap_archive(&body)
+}
+
+const TOO_BIG: &str = "response is larger than a database has any reason to be";
+
+/// Strips the URL reqwest puts in its own error text. It prints the address it
+/// was given, licence key and all, so logging one defeats the redaction applied
+/// to the URL beside it.
+fn net_err(e: reqwest::Error) -> String {
+    e.without_url().to_string()
 }
 
 /// Unwraps whatever the URL served down to the database bytes. The shape is
@@ -164,10 +185,16 @@ fn unwrap_archive(body: &[u8]) -> Result<Vec<u8>, String> {
     if read == head.len() && &head[TAR_MAGIC_OFFSET..] == b"ustar" {
         return first_database(rest);
     }
-    let mut out = Vec::with_capacity(gzip_size_hint(body));
-    rest.take(MAX_DATABASE_BYTES)
+    let mut out = Vec::with_capacity(hint(gzip_size(body)));
+    // One byte past the cap, so an oversized stream is refused rather than
+    // silently truncated into something the reader would then reject.
+    let read = rest
+        .take(MAX_DATABASE_BYTES + 1)
         .read_to_end(&mut out)
         .map_err(|e| format!("gzip: {e}"))?;
+    if read as u64 > MAX_DATABASE_BYTES {
+        return Err(TOO_BIG.into());
+    }
     Ok(out)
 }
 
@@ -185,18 +212,20 @@ fn fill(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
     Ok(at)
 }
 
-/// The uncompressed size gzip records in its last four bytes, so the buffer is
-/// sized once rather than grown by doubling, which for a 12 MB database means
-/// touching roughly twice that and copying it along the way.
-///
-/// Only ever a hint: it is modulo 2^32 and comes from the same response as the
-/// data, so it is bounded by the cap the download is already bounded by.
-fn gzip_size_hint(body: &[u8]) -> usize {
-    let Some(footer) = body.len().checked_sub(4).map(|at| &body[at..]) else {
-        return 0;
-    };
-    let size = u32::from_le_bytes([footer[0], footer[1], footer[2], footer[3]]) as u64;
-    size.min(MAX_DATABASE_BYTES) as usize
+/// The uncompressed size gzip records in its last four bytes, so the buffer can
+/// be sized once rather than grown by doubling, which for a 12 MB database
+/// means touching roughly twice that and copying it along the way.
+fn gzip_size(body: &[u8]) -> Option<u64> {
+    let footer = body.len().checked_sub(4).map(|at| &body[at..])?;
+    Some(u32::from_le_bytes([footer[0], footer[1], footer[2], footer[3]]) as u64)
+}
+
+/// A claimed length turned into a capacity to reserve. Every source of one here
+/// is the response talking about itself, so it is believed only up to a size a
+/// real database reaches; past that the buffer grows the ordinary way rather
+/// than letting four attacker-chosen bytes reserve the cap outright.
+fn hint(claimed: Option<u64>) -> usize {
+    claimed.unwrap_or(0).min(MAX_PREALLOC_BYTES) as usize
 }
 
 /// The archive's first .mmdb member. MaxMind ships one per archive alongside a
@@ -223,10 +252,10 @@ fn first_database(stream: impl Read) -> Result<Vec<u8>, String> {
             continue;
         }
         if size > MAX_DATABASE_BYTES {
-            return Err("archive member is larger than a database has any reason to be".into());
+            return Err(TOO_BIG.into());
         }
         // The header states the member's length, so this allocates exactly once.
-        let mut out = Vec::with_capacity(size as usize);
+        let mut out = Vec::with_capacity(hint(Some(size)));
         entry.read_to_end(&mut out).map_err(|e| e.to_string())?;
         return Ok(out);
     }
@@ -439,6 +468,33 @@ mod tests {
     fn an_archive_with_no_database_in_it_is_an_error() {
         let bad = tarball("COPYRIGHT2.txt", b"no database here");
         assert!(unwrap_archive(&bad).is_err());
+    }
+
+    // A gzip bomb is small on the wire and unbounded once expanded, so the cap
+    // has to apply to what comes out rather than to what arrives.
+    #[test]
+    fn an_oversized_database_is_refused_rather_than_held() {
+        use std::io::Write;
+        let mut w = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        let zeroes = vec![0u8; 1 << 20];
+        for _ in 0..=(MAX_DATABASE_BYTES >> 20) {
+            w.write_all(&zeroes).unwrap();
+        }
+        let bomb = w.finish().unwrap();
+        assert!(
+            (bomb.len() as u64) < MAX_DATABASE_BYTES,
+            "the fixture has to be small on the wire to test anything"
+        );
+        assert_eq!(unwrap_archive(&bomb).unwrap_err(), TOO_BIG);
+    }
+
+    // Four bytes of the response decide a capacity, so they are believed only
+    // up to a size a database actually reaches.
+    #[test]
+    fn a_claimed_length_cannot_reserve_the_whole_cap() {
+        assert_eq!(hint(Some(12 << 20)), 12 << 20, "a real database is exact");
+        assert_eq!(hint(Some(u64::MAX)), MAX_PREALLOC_BYTES as usize);
+        assert_eq!(hint(None), 0);
     }
 
     // The permalink carries the account's licence key in its query string.

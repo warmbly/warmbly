@@ -6,10 +6,12 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/binary"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -172,6 +174,97 @@ func TestEnsureLeavesNothingBehindWhenTheDownloadIsNotADatabase(t *testing.T) {
 	}
 }
 
+// The redaction is only worth anything if it holds on the paths that actually
+// log: net/http puts the URL it was given into its own error text, so wrapping
+// one of those with %w defeats the redacted URL printed beside it.
+func TestNoErrorPathCarriesTheCredential(t *testing.T) {
+	const key = "SUPERSECRETLICENCEKEY"
+	dir := t.TempDir()
+
+	// A server that answers, so the status path is exercised with a real query.
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "Invalid license key", http.StatusUnauthorized)
+	}))
+	defer refusing.Close()
+
+	for _, tc := range []struct{ name, url string }{
+		{"host does not resolve", "https://download.maxmind.invalid/geoip?license_key=" + key},
+		{"server refuses", refusing.URL + "/geoip?license_key=" + key},
+		{"credentials in the userinfo", "https://user:" + key + "@download.maxmind.invalid/db.mmdb"},
+		{"not a database", refusing.URL + "?license_key=" + key},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Ensure(context.Background(), filepath.Join(dir, tc.name+".mmdb"), tc.url)
+			if err == nil {
+				t.Fatal("expected a failure")
+			}
+			if strings.Contains(err.Error(), key) {
+				t.Fatalf("the credential reached the error text: %v", err)
+			}
+		})
+	}
+}
+
+// http is fine for a mirror on a private network and not fine for anything
+// carrying a key, because the query travels in the clear.
+func TestPlainHTTPIsRefusedOnlyWhenItWouldLeakSomething(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		name    string
+		url     string
+		refused bool
+	}{
+		{"http with a licence key", "http://mirror.invalid/geoip?license_key=SECRET", true},
+		{"http with basic auth", "http://user:pass@mirror.invalid/db.mmdb", true},
+		{"http with nothing secret", "http://mirror.invalid/GeoLite2-City.mmdb", false},
+		{"a scheme that is not http", "file:///etc/passwd", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Ensure(context.Background(), filepath.Join(dir, tc.name+".mmdb"), tc.url)
+			// Every case fails; what differs is whether it was refused before
+			// anything was sent, which is the only outcome worth asserting on.
+			refused := err != nil && (strings.Contains(err.Error(), "cleartext") || strings.Contains(err.Error(), "not an http"))
+			if refused != tc.refused {
+				t.Fatalf("refused = %v, want %v (err: %v)", refused, tc.refused, err)
+			}
+		})
+	}
+}
+
+// A gzip bomb is small on the wire and unbounded on disk, so the cap has to
+// apply to what is written rather than to what arrives.
+func TestAnOversizedDatabaseIsRefusedRatherThanWritten(t *testing.T) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	// Zeroes compress to almost nothing, which is the whole point of the
+	// attack: a few KiB on the wire, far more than the cap once expanded.
+	if _, err := io.Copy(zw, io.LimitReader(zeroes{}, maxDatabaseBytes+1024)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%d compressed bytes expand past the %d byte cap", buf.Len(), maxDatabaseBytes)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "GeoLite2-City.mmdb")
+	if _, err := Ensure(context.Background(), path, serve(t, http.StatusOK, buf.Bytes())); err == nil {
+		t.Fatal("wrote a database past the cap")
+	}
+	if left, _ := os.ReadDir(dir); len(left) != 0 {
+		t.Fatalf("left %d file(s) behind", len(left))
+	}
+}
+
+type zeroes struct{}
+
+func (zeroes) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
+}
+
 func TestRedactURLDropsTheLicenceKey(t *testing.T) {
 	const permalink = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=SECRET&suffix=tar.gz"
 	got := redactURL(permalink)
@@ -180,6 +273,10 @@ func TestRedactURLDropsTheLicenceKey(t *testing.T) {
 	}
 	if got != "https://download.maxmind.com/app/geoip_download?<redacted>" {
 		t.Fatalf("redactURL = %q", got)
+	}
+	// A mirror can carry its credential in the userinfo instead.
+	if got := redactURL("https://user:hunter2@mirror.example/GeoLite2-City.mmdb"); strings.Contains(got, "hunter2") {
+		t.Fatalf("redactURL kept the userinfo: %s", got)
 	}
 }
 
