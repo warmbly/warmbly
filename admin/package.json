@@ -12,8 +12,9 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "build:pages": "vite build && WARMBLY_CONFIG_OUT=dist/config.js sh ./docker-entrypoint.sh",
-    "sourcemaps:posthog": "pnpm dlx --package @posthog/cli@0.18.2 posthog-cli sourcemap inject --directory dist && pnpm dlx --package @posthog/cli@0.18.2 posthog-cli sourcemap upload --directory dist --delete-after"
+    "build:pages": "vite build && pnpm sourcemaps:maybe && WARMBLY_CONFIG_OUT=dist/config.js sh ./docker-entrypoint.sh",
+    "sourcemaps:posthog": "pnpm dlx --package @posthog/cli@0.18.2 posthog-cli sourcemap inject --directory dist && pnpm dlx --package @posthog/cli@0.18.2 posthog-cli sourcemap upload --directory dist --delete-after",
+    "sourcemaps:maybe": "sh -c 'if [ -n \"$POSTHOG_CLI_PROJECT_ID\" ] && [ -n \"$POSTHOG_CLI_API_KEY\" ]; then pnpm sourcemaps:posthog; else echo \"no PostHog CLI credentials; skipping the source map upload\"; fi'"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",

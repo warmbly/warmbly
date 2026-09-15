@@ -537,11 +537,13 @@ A browser stack trace is minified without them. Uploading them is optional and o
 
 | Build variable | Backend | What it does |
 |---|---|---|
-| `POSTHOG_CLI_API_KEY`, `POSTHOG_CLI_PROJECT_ID` | PostHog | Both set makes the image build run `pnpm sourcemaps:posthog` after `vite build`, which injects a chunk id, uploads, and deletes the `.map` files it sent. The `web`, `admin` and `forms` images all do this, so a form page's stack trace is readable too |
+| `POSTHOG_CLI_API_KEY`, `POSTHOG_CLI_PROJECT_ID` | PostHog | Both set makes the build run `pnpm sourcemaps:posthog` after `vite build`, which injects a chunk id, uploads, and deletes the `.map` files it sent. The `web`, `admin` and `forms` images all do this, so a form page's stack trace is readable too |
 | `POSTHOG_CLI_HOST` | PostHog | The instance to upload to, for PostHog EU or a self-hosted one |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | Sentry | All three set puts the Sentry Vite plugin in the build |
 
 In this repository's release workflow the two project ids are repository variables and the two keys are repository secrets, passed to the image build as build secrets. Nothing in the app has to match a release name: PostHog pairs a stack frame with its map through the chunk id the CLI injected into the served file, so an event from any build resolves as long as that build's maps were uploaded.
+
+A static host builds with `pnpm build:pages` instead of an image, and that runs the same upload when the same two variables are set in the host's build environment. Setting them there matters more than it looks: with no maps uploaded, PostHog falls back to fetching `<bundle>.js.map` from the site itself, a static host answers that with its SPA fallback, and every frame in every issue reads `Invalid source map: bad json` beside a minified function name.
 
 ### Product analytics and session replay
 
