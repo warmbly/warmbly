@@ -191,6 +191,27 @@ const websiteJsonLd = {
           capture_exceptions: true,
           disable_session_recording: true,
           respect_dnt: false,
+          // Browser noise the window error handler reports with no stack and
+          // no bug behind it: "Script error." is what a cross-origin script is
+          // flattened to, and the ResizeObserver notice is a benign scheduling
+          // message the spec requires browsers to fire. Between them they were
+          // the two largest issues in error tracking, all of it from this page,
+          // which is what buried the real ones. The dashboard and the admin
+          // panel already drop the same three.
+          before_send: function (event) {
+            if (!event || event.event !== '$exception') return event;
+            var values = event.properties && event.properties.$exception_values;
+            if (!Array.isArray(values)) return event;
+            var noise = [
+              'Script error.',
+              'ResizeObserver loop completed with undelivered notifications.',
+              'ResizeObserver loop limit exceeded',
+            ];
+            for (var i = 0; i < values.length; i++) {
+              if (typeof values[i] === 'string' && noise.indexOf(values[i].trim()) !== -1) return null;
+            }
+            return event;
+          },
         });
         window.posthog.register({ service: 'site' });
       </script>
