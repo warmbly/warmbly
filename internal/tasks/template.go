@@ -9,6 +9,7 @@ import (
 	"text/template"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
@@ -227,7 +228,9 @@ type TemplatePreview struct {
 }
 
 // PreviewUnsubscribeLink stands in for the per-recipient link in previews.
-const PreviewUnsubscribeLink = "https://example.com/unsubscribe/preview"
+// The same width as a real one, so a plain-text preview (where the address is
+// printed in full) reads as wide as the send will.
+const PreviewUnsubscribeLink = "https://example.com" + unsublink.Path + unsublink.ExampleTicket
 
 // unresolvedToken matches a {{…}} token still present after rendering (i.e. one
 // that failed to parse and fell through to literal substitution).

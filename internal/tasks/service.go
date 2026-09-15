@@ -82,9 +82,11 @@ type TasksService interface {
 	// stops warmup sends from a domain that has been failing SPF/DMARC past
 	// the operator's grace window. Nil leaves the state observe-only.
 	SetDomainAuthPolicy(p DomainAuthPolicy)
-	// SetUnsubscribeLinks wires the signer behind per-recipient unsubscribe
-	// links (the List-Unsubscribe header and the link-mode footer).
-	SetUnsubscribeLinks(signer *unsublink.Signer)
+	// SetUnsubscribeLinks wires the two halves of a per-recipient unsubscribe
+	// link (the List-Unsubscribe header and the link-mode footer): the signer
+	// that builds the address, and the store behind short tickets. A nil
+	// store leaves every link in its signed long form.
+	SetUnsubscribeLinks(signer *unsublink.Signer, tickets repository.UnsubscribeLinkRepository)
 	// SetCloudLink wires the self-hosted side of the warmup pool link: a
 	// mailbox the cloud warms gets no local warmup chain.
 	SetCloudLink(r CloudLinkReader)
@@ -172,15 +174,19 @@ type tasksService struct {
 	// cloudLink is nil on instances that are not linked to Warmbly Cloud.
 	cloudLink CloudLinkReader
 
-	// unsubLinks mints the signed per-recipient unsubscribe links. Nil or
+	// unsubLinks builds the per-recipient unsubscribe addresses. Nil or
 	// disabled means no link can be minted: the List-Unsubscribe header is
 	// left off and link-mode footers fall back to the text line.
 	unsubLinks *unsublink.Signer
+	// unsubTickets stores the short form of those links. Nil-safe: without it
+	// the address is the signed token, which is longer but works the same.
+	unsubTickets repository.UnsubscribeLinkRepository
 }
 
-// SetUnsubscribeLinks wires the unsubscribe link signer.
-func (s *tasksService) SetUnsubscribeLinks(signer *unsublink.Signer) {
+// SetUnsubscribeLinks wires the unsubscribe link signer and ticket store.
+func (s *tasksService) SetUnsubscribeLinks(signer *unsublink.Signer, tickets repository.UnsubscribeLinkRepository) {
 	s.unsubLinks = signer
+	s.unsubTickets = tickets
 }
 
 // DomainAuthPolicy resolves whether the sending-domain authentication gate is

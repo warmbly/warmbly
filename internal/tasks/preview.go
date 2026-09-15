@@ -3,10 +3,10 @@ package tasks
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 )
@@ -59,8 +59,11 @@ func (s *tasksService) PreviewEmail(ctx context.Context, orgID uuid.UUID, in Ema
 	var optOut *models.UnsubscribeSettings
 	textOnly := false
 	if in.Campaign != nil {
+		// An inert example on the real origin rather than a minted link: a
+		// preview is a read path, rendered on every keystroke, and has no
+		// business writing a ticket per render.
 		if s.unsubLinks != nil && s.unsubLinks.Enabled() {
-			unsubURL = s.unsubLinks.URL(orgID, in.Campaign.ID, uuid.Nil, time.Now())
+			unsubURL = s.unsubLinks.TicketURL("", unsublink.ExampleTicket)
 		}
 		settings := s.resolveOptOut(ctx, orgID, in.Campaign)
 		optOut = &settings

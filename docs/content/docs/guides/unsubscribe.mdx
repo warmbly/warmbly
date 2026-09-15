@@ -27,7 +27,11 @@ An email written in the visual composer has no layout of its own, and the line i
 
 **Reply to opt out** is the default because it reads as a personal email, which is what cold outreach is. A formal unsubscribe link and footer are the strongest signal a mailbox provider has that a message is bulk marketing, and several deliverability teams report worse placement for cold email that carries one. A reply that asks to stop is detected and honoured automatically (see below), so the plain sentence is a real mechanism, not a courtesy. CAN-SPAM, CASL and the Australian Spam Act all accept a reply as the opt-out method.
 
-**Unsubscribe link** is the right choice when your list skews toward consumers, when your legal team asks for a link, or when your volume is high enough that provider bulk-sender rules apply. The link is unique to the recipient and campaign, signed so it cannot be guessed or altered, and valid for a year after the send. Clicking it opens a plain confirmation page with one button. Nothing happens until the button is pressed, because link scanners and preview fetchers follow every link in an email. The page then offers a way back for anyone who unsubscribed by mistake.
+**Unsubscribe link** is the right choice when your list skews toward consumers, when your legal team asks for a link, or when your volume is high enough that provider bulk-sender rules apply. The link is unique to the recipient and campaign, opaque so it cannot be guessed or altered, and valid for a year after the send. Clicking it opens a plain confirmation page with one button. Nothing happens until the button is pressed, because link scanners and preview fetchers follow every link in an email. The page then offers a way back for anyone who unsubscribed by mistake.
+
+The address is short on purpose: `https://t.yourdomain.com/unsubscribe/Xk3mP9qR2tLwAb7dEfGhIj`. It matters because the plain-text half of an email has nowhere to hide a URL, so this is the one address a recipient can end up reading in full, and a long one there looks like a tracking parameter rather than a way out. Every step of a sequence reuses the same address for the same recipient, so an old email in someone's archive opens the same page as the latest one.
+
+The token carries 128 bits from a cryptographic random source, which is more than a random UUID holds and shorter than one, so it cannot be guessed or walked. It names nobody: there is no contact id, campaign id or address in it, and the page it opens says nothing about who the recipient is or who sent the mail. Opening the link changes nothing on its own, because link scanners and mail-security gateways fetch every URL in a message; only pressing the button does.
 
 ### Which address the link points at
 
@@ -35,15 +39,17 @@ A mailbox or campaign with a verified [custom tracking domain](/guides/mailboxes
 
 Without a custom domain the link stays on the instance's own API address. Either way it is the sender's infrastructure, not a third party's, and the recipient's opt-out reaches the same suppression list.
 
+Unsubscribe links travel with a [workspace export](/guides/workspace-export-import/), in the Campaigns group, so moving to another instance does not break a link someone is still holding. Keep serving the tracking domain they were minted on, or they arrive at a host that no longer answers.
+
 You can also place the link inside your own copy instead of the footer: insert the **Unsubscribe link** variable from the variable menu, or type `{{.UnsubscribeLink}}`.
 
-Dropped into your copy on its own, the variable becomes a real link in the HTML message, labelled with the same **Link text** the footer uses ("Unsubscribe" by default). The recipient reads a word, not the signed address. To choose the wording yourself, select the text first and then pick **Unsubscribe link** from the variable menu, or press the link button and use the **Unsubscribe** shortcut next to the address field: the selected text becomes the link and Warmbly fills in the address at send time.
+Dropped into your copy on its own, the variable becomes a real link in the HTML message, labelled with the same **Link text** the footer uses ("Unsubscribe" by default). The recipient reads a word, not the address. To choose the wording yourself, select the text first and then pick **Unsubscribe link** from the variable menu, or press the link button and use the **Unsubscribe** shortcut next to the address field: the selected text becomes the link and Warmbly fills in the address at send time.
 
 Two things follow from that. The plain-text alternative of the message has nowhere to hide a URL, so it carries the address in full when you place the variable on its own, and only your wording when you wrap your own link around it. And click tracking never rewrites the link either way, so an opt-out is never counted as a click.
 
 ### Plain-text campaigns
 
-A campaign with **Plain text only** switched on ships no HTML at all, so there is nothing for a link to hide inside: link mode and a hand-placed variable both print the full signed address in the copy, which is the one place a cold email least wants a long tracking-shaped URL. The composer warns while you are writing and the launch check warns again before you start.
+A campaign with **Plain text only** switched on ships no HTML at all, so there is nothing for a link to hide inside: link mode and a hand-placed variable both print the address in the copy. It is short enough to sit on one line and it names the sender's own domain, but it is still a URL in a message that is meant to read as one person writing to another. The composer says so while you are writing and the launch check says it again before you start.
 
 The answer there is the header. It is not visible copy, it works the same on a plain-text send, and it is what Gmail and Yahoo actually look for. Leave **Unsubscribe header** on, leave the opt-out line as the reply sentence, and the recipient gets a one-click control in their mail client plus a human sentence in the message.
 
@@ -91,7 +97,9 @@ The suppression list is available over the API as `GET /suppressions`, `POST /su
 
 ## Self-hosting
 
-Unsubscribe links are served by the API process on the origin in `API_PUBLIC_URL`, so that variable must be set to an address recipients can reach. Leaving it unset does not disable the link: the backend falls back to its own listen address, `API_HOST`, whose default wildcard bind resolves to `http://localhost:8080`. Every opt-out in every campaign email then points at an address only the backend's own machine can open. Links are signed under `AUTH_SECRET`; rotating it invalidates links in emails already sent.
+Unsubscribe links are served by the API process on the origin in `API_PUBLIC_URL`, so that variable must be set to an address recipients can reach. Leaving it unset does not disable the link: the backend falls back to its own listen address, `API_HOST`, whose default wildcard bind resolves to `http://localhost:8080`. Every opt-out in every campaign email then points at an address only the backend's own machine can open.
+
+A link minted today is a row in the database, so it survives a secret rotation and travels with a workspace export. Links minted before short tickets existed carry the whole claim inside the token, signed under `AUTH_SECRET`: those are still honoured, and rotating that secret invalidates the ones still in inboxes.
 
 Nothing in a campaign email points at warmbly.com. The opt-out address, the tracking pixel and every wrapped link are built from your own `API_PUBLIC_URL` and `TRACKING_DOMAIN`, and a workspace on your instance that verifies its own tracking domain gets the opt-out on that domain instead. A workspace's verified domain is a CNAME to your `TRACKING_DOMAIN`, so the tracking service serves the unsubscribe routes as well as the pixel and click tickets: an install running [core only](/development/install/) has no tracking service, keeps `TRACKING_DOMAIN` unset, and serves every opt-out from the API address.
 

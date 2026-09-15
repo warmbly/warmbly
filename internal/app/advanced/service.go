@@ -1914,7 +1914,7 @@ func (s *service) RunPreflight(ctx context.Context, organizationID, campaignID u
 	}
 
 	// A plain-text campaign has no HTML for an anchor to hide a URL in, so an
-	// in-body opt-out link prints its whole signed address in the copy. The
+	// in-body opt-out link prints its whole address in the copy. The
 	// List-Unsubscribe header does the same job and the reader never sees it.
 	if settings.Preflight.CheckUnsubscribeHeader && campaign.TextOnly {
 		checks = append(checks, s.plainTextOptOutCheck(ctx, campaign, settings.Unsubscribe, &recommendations))
@@ -2261,7 +2261,7 @@ func plainTextOptOutResult(where string) models.PreflightCheckResult {
 		return check
 	}
 	check.Passed = false
-	check.Message = fmt.Sprintf("This campaign sends plain text only and %s, so recipients read the whole signed unsubscribe address instead of a word.", where)
+	check.Message = fmt.Sprintf("This campaign sends plain text only and %s, so recipients read the whole unsubscribe address instead of a word.", where)
 	check.Remediation = "Keep the List-Unsubscribe header on and switch the opt-out line to Reply to opt out, or turn plain text off so the link can render as a word."
 	return check
 }

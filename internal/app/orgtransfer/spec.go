@@ -392,6 +392,18 @@ var Tables = []Table{
 		Scope: `campaign_id IN ` + orgCampaigns,
 	},
 	{
+		// The recipient's opt-out address. It travels because an unsubscribe
+		// link a recipient already holds is a commitment for as long as it
+		// says it is good for, and a moved instance answering it with
+		// "invalid" breaks the one mechanism the email promised. Keyed on an
+		// opaque token rather than on anything about this instance, so the
+		// same address resolves on the other side. Signed links minted before
+		// short tickets do not travel: they verify under the auth secret,
+		// which is per instance.
+		Name: "unsubscribe_links", Group: models.OrgDataGroupCampaigns,
+		Scope: `organization_id = $1`,
+	},
+	{
 		// Segments travel in the contacts group, which campaigns already
 		// require, so both ends of the link exist by the time this applies.
 		Name: "campaign_segments", Group: models.OrgDataGroupCampaigns,

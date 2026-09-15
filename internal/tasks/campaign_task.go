@@ -565,17 +565,17 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	}
 	s.resolveFormLinks(ctx, orgID, campaign, contact, &rawSubject, &rawBodyHTML, &rawBodyPlain)
 
-	// STEP 9.75: The recipient's opt-out. The signed link (when the instance
-	// can mint one) backs the List-Unsubscribe header, the link-mode footer
-	// and any {{.UnsubscribeLink}} the step places by hand; the footer mode
-	// comes from Settings > Sending unless the campaign overrides it.
+	// STEP 9.75: The recipient's opt-out. The link (when the instance can
+	// mint one) backs the List-Unsubscribe header, the link-mode footer and
+	// any {{.UnsubscribeLink}} the step places by hand; the footer mode comes
+	// from Settings > Sending unless the campaign overrides it.
 	optOut := s.resolveOptOut(ctx, orgID, campaign)
 	var unsubscribeURL string
 	if s.unsubLinks != nil && s.unsubLinks.Enabled() {
 		// On the workspace's own verified tracking domain when it has one, so
 		// the opt-out address sits on the sender's domain like every other link
 		// in the email rather than naming the platform.
-		unsubscribeURL = s.unsubLinks.URLOn(resolveOptOutOrigin(account, campaign), orgID, campaign.ID, contact.ID, time.Now())
+		unsubscribeURL = s.mintUnsubscribeLink(ctx, resolveOptOutOrigin(account, campaign), orgID, campaign.ID, contact.ID)
 	}
 	extra := map[string]string{UnsubscribeLinkVar: unsubscribeURL}
 

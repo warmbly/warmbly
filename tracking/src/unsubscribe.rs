@@ -22,12 +22,16 @@ use axum::{
 use std::time::Duration;
 use tracing::warn;
 
-/// Longest token accepted before the backend is asked. The signed token is 96
-/// base64url characters today; the ceiling only keeps a megabyte of junk in a
-/// path from becoming a backend request.
+/// Longest token accepted before the backend is asked. The self-contained
+/// signed token is 96 base64url characters; the ceiling only keeps a megabyte
+/// of junk in a path from becoming a backend request.
 const MAX_TOKEN_LEN: usize = 512;
-/// Shortest plausible token. Anything below this cannot carry a signature.
-const MIN_TOKEN_LEN: usize = 32;
+/// Shortest token accepted. A stored ticket is 22 characters (16 random bytes
+/// in base64url, 128 bits), which is what campaign mail carries now: the
+/// opt-out address is the one URL a recipient reads in full, so its length is
+/// the point. Guessing one is not what this bound defends against; entropy is.
+/// It keeps a path that cannot be either token shape away from the backend.
+const MIN_TOKEN_LEN: usize = 22;
 /// Cap on the form body of a confirm or one-click POST, which is a few bytes.
 pub const MAX_BODY_BYTES: usize = 16 * 1024;
 
@@ -197,6 +201,10 @@ mod tests {
     fn token_shape_is_checked_before_the_backend_is_asked() {
         assert!(valid_token(&"a".repeat(96)));
         assert!(valid_token("abcABC012-_abcABC012-_abcABC012-_"));
+        // A stored ticket: 22 base64url characters.
+        assert!(valid_token("Xk3mP9qR2tLwAb7dEfGhIj"));
+        // One character short of a ticket is not a token either shape mints.
+        assert!(!valid_token("Xk3mP9qR2tLwAb7dEfGhI"));
         assert!(!valid_token("short"));
         assert!(!valid_token(&"a".repeat(MAX_TOKEN_LEN + 1)));
         // Traversal and separators never reach the proxied path.

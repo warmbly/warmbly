@@ -175,9 +175,9 @@ export default function EmailContentEditor({
     const tplIssue = templateIssue(shownSubject) || templateIssue(bodyHtml) || templateIssue(htmlToPlain(bodyHtml));
 
     // A plain-text campaign ships no HTML, so the send path cannot give the
-    // unsubscribe variable an anchor: the recipient reads the whole signed
-    // address. Preflight says the same at launch; say it here, while it is
-    // still one keystroke to fix.
+    // unsubscribe variable an anchor: the recipient reads the whole address.
+    // Preflight says the same at launch; say it here, while it is still one
+    // keystroke to fix.
     const { data: previewCampaign } = useCampaign(campaignId ?? "");
     const plainTextUnsubLink =
         !!previewCampaign?.text_only && (bodyHtml.includes(UNSUBSCRIBE_TOKEN) || shownSubject.includes(UNSUBSCRIBE_TOKEN));

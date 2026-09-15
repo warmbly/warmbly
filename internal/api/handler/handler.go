@@ -174,6 +174,9 @@ type Handler struct {
 	// UnsubscribeLinks verifies the signed tokens on recipient unsubscribe
 	// links. Nil when the instance has no public API URL to mint them on.
 	UnsubscribeLinks *unsublink.Signer
+	// UnsubscribeTickets resolves the short form of those links. Nil means
+	// only the self-contained signed tokens are honoured.
+	UnsubscribeTickets repository.UnsubscribeLinkRepository
 
 	// Website tracking snippet: settings and the page-view ingest path.
 	WebsiteTrackingService websitetracking.Service

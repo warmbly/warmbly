@@ -3,7 +3,6 @@ package tasks
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -51,7 +50,7 @@ func (s *tasksService) SendTestEmail(ctx context.Context, orgID uuid.UUID, accou
 	optOut := s.resolveOptOut(ctx, orgID, campaign)
 	var unsubscribeURL string
 	if s.unsubLinks != nil && s.unsubLinks.Enabled() {
-		unsubscribeURL = s.unsubLinks.URLOn(resolveOptOutOrigin(account, campaign), orgID, campaign.ID, uuid.Nil, time.Now())
+		unsubscribeURL = s.mintUnsubscribeLink(ctx, resolveOptOutOrigin(account, campaign), orgID, campaign.ID, uuid.Nil)
 	}
 
 	rendered := previewTemplatesWith(sequence.Subject, sequence.BodyHTML, sequence.BodyPlain, renderFor, unsubscribeURL)

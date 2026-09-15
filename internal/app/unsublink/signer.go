@@ -90,14 +90,27 @@ func (s *Signer) URL(orgID, campaignID, contactID uuid.UUID, now time.Time) stri
 // deployment that serves opt-outs from the API only) falls back to the API
 // origin, which always serves the same routes.
 func (s *Signer) URLOn(origin string, orgID, campaignID, contactID uuid.UUID, now time.Time) string {
-	if !s.Enabled() {
+	return s.urlFor(origin, s.Token(orgID, campaignID, contactID, now))
+}
+
+// TicketURL is the address a stored short ticket is read at, on the same
+// origins and the same path as a signed one, so nothing downstream (the
+// tracking-domain proxy, the click-tracking skip) has to know which it got.
+func (s *Signer) TicketURL(origin, token string) string {
+	return s.urlFor(origin, token)
+}
+
+// urlFor puts a token on an origin, falling back to the API origin for a
+// workspace with no verified tracking domain of its own.
+func (s *Signer) urlFor(origin, token string) string {
+	if !s.Enabled() || token == "" {
 		return ""
 	}
 	base := strings.TrimRight(strings.TrimSpace(origin), "/")
 	if base == "" {
 		base = s.baseURL
 	}
-	return base + Path + s.Token(orgID, campaignID, contactID, now)
+	return base + Path + token
 }
 
 // Verify checks the token's signature and expiry and returns its claims.

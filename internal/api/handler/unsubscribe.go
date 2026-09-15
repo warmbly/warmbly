@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"html/template"
 	"net/http"
 	"strings"
@@ -11,11 +13,19 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/observability/errs"
 )
 
 // The recipient-facing unsubscribe endpoints. PUBLIC and unauthenticated by
-// design: the only credential is the signed token in the path, minted per
+// design: the only credential is the opaque token in the path, minted per
 // recipient when the email was sent.
+//
+// Two token generations share the route. A short stored ticket is what is
+// minted today, because the opt-out address is the one URL a recipient reads
+// in full (issue #498); a self-contained signed token is what links already
+// in inboxes carry, and what still ships when a ticket cannot be stored.
+// unsublink.IsTicket decides which, on shape, so neither costs the other a
+// lookup.
 //
 //   GET  /unsubscribe/:token              a click on the link: a confirm page
 //   POST /unsubscribe/:token              the confirm button, or the mail
@@ -53,15 +63,20 @@ func (h *Handler) UnsubscribeSubmit(c *gin.Context) {
 	oneClick := strings.EqualFold(strings.TrimSpace(c.PostForm("List-Unsubscribe")), "One-Click")
 	confirmed := c.PostForm("confirm") == "1"
 
-	claims, err := h.verifyUnsubscribeToken(c.Param("token"))
+	claims, err := h.verifyUnsubscribeToken(c.Request.Context(), c.Param("token"))
 	if err != nil {
 		if oneClick {
 			// RFC 8058: a bad or expired link is terminal, so 200 stops the
-			// provider retrying; only a genuine server failure gets a 5xx.
+			// provider retrying; only a genuine server failure gets a 5xx,
+			// which is what a lookup that could not run is.
+			if err == errUnsubUnavailable {
+				c.Status(http.StatusBadGateway)
+				return
+			}
 			c.Status(http.StatusOK)
 			return
 		}
-		renderUnsubPage(c, http.StatusBadRequest, unsubInvalid(err))
+		renderUnsubPage(c, unsubStatus(err), unsubInvalid(err))
 		return
 	}
 	if claims.ContactID == uuid.Nil {
@@ -126,7 +141,36 @@ func (h *Handler) UnsubscribeUndo(c *gin.Context) {
 	renderUnsubPage(c, http.StatusOK, unsubView{Title: "You're subscribed again", Body: "The sender can email you as before. You can unsubscribe from any later email."})
 }
 
-func (h *Handler) verifyUnsubscribeToken(token string) (unsublink.Claims, error) {
+// errUnsubUnavailable is a ticket lookup that failed rather than a link that
+// is not real. Told apart because the answers differ in both directions: the
+// recipient is asked to try again instead of told their link is invalid, and
+// a one-click POST gets a retryable status instead of a terminal one.
+var errUnsubUnavailable = errors.New("unsubscribe link store unavailable")
+
+func (h *Handler) verifyUnsubscribeToken(ctx context.Context, token string) (unsublink.Claims, error) {
+	if unsublink.IsTicket(token) {
+		if h.UnsubscribeTickets == nil {
+			return unsublink.Claims{}, unsublink.ErrInvalid
+		}
+		t, err := h.UnsubscribeTickets.Resolve(ctx, token)
+		if err != nil {
+			errs.CaptureException(err)
+			return unsublink.Claims{}, errUnsubUnavailable
+		}
+		if t == nil {
+			return unsublink.Claims{}, unsublink.ErrInvalid
+		}
+		claims := unsublink.Claims{
+			OrgID:      t.OrganizationID,
+			CampaignID: t.CampaignID,
+			ContactID:  t.ContactID,
+			ExpiresAt:  t.ExpiresAt,
+		}
+		if !time.Now().Before(t.ExpiresAt) {
+			return claims, unsublink.ErrExpired
+		}
+		return claims, nil
+	}
 	if h.UnsubscribeLinks == nil {
 		return unsublink.Claims{}, unsublink.ErrInvalid
 	}
@@ -134,16 +178,28 @@ func (h *Handler) verifyUnsubscribeToken(token string) (unsublink.Claims, error)
 }
 
 func (h *Handler) unsubscribeClaims(c *gin.Context) (unsublink.Claims, bool) {
-	claims, err := h.verifyUnsubscribeToken(c.Param("token"))
+	claims, err := h.verifyUnsubscribeToken(c.Request.Context(), c.Param("token"))
 	if err != nil {
-		renderUnsubPage(c, http.StatusBadRequest, unsubInvalid(err))
+		renderUnsubPage(c, unsubStatus(err), unsubInvalid(err))
 		return claims, false
 	}
 	return claims, true
 }
 
+// unsubStatus is 503 for a lookup that failed, so a recipient reloading gets
+// the page rather than a cached refusal, and 400 for a link that is not real.
+func unsubStatus(err error) int {
+	if err == errUnsubUnavailable {
+		return http.StatusServiceUnavailable
+	}
+	return http.StatusBadRequest
+}
+
 func unsubInvalid(err error) unsubView {
-	if err == unsublink.ErrExpired {
+	switch err {
+	case errUnsubUnavailable:
+		return unsubView{Title: "Try again shortly", Body: "We could not check this link just now. Open it again in a few minutes, or reply to the email and the sender will stop."}
+	case unsublink.ErrExpired:
 		return unsubView{Title: "This link has expired", Body: "Reply to the email instead and the sender will stop."}
 	}
 	return unsubView{Title: "This unsubscribe link is invalid", Body: "Reply to the email instead and the sender will stop."}

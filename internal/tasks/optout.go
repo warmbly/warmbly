@@ -1,16 +1,20 @@
 package tasks
 
 import (
+	"context"
 	"html"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 )
 
 // UnsubscribeLinkVar is the template variable a step can place by hand
-// ({{.UnsubscribeLink}}); it resolves to the recipient's own signed link.
+// ({{.UnsubscribeLink}}); it resolves to the recipient's own opt-out link.
 const UnsubscribeLinkVar = "UnsubscribeLink"
 
 // unsubscribePathMarker is the path segment every minted link carries, on the
@@ -18,6 +22,31 @@ const UnsubscribeLinkVar = "UnsubscribeLink"
 // leaves such links alone so an opt-out is never counted as a click or bounced
 // through a redirect.
 const unsubscribePathMarker = unsublink.Path
+
+// mintUnsubscribeLink returns the recipient's opt-out address for a campaign:
+// a short stored ticket when one can be written, and the long signed link
+// when it cannot. Length is the whole reason the ticket exists (the
+// text/plain alternative prints this address in full, issue #498), and a
+// signed link is still a working opt-out, so a store failure degrades the
+// address rather than the mechanism.
+//
+// The ticket is per recipient per campaign and reused, so every step of a
+// sequence carries the same address.
+func (s *tasksService) mintUnsubscribeLink(ctx context.Context, origin string, orgID, campaignID, contactID uuid.UUID) string {
+	now := time.Now()
+	if s.unsubTickets != nil {
+		if token, err := unsublink.NewTicket(); err == nil {
+			stored, err := s.unsubTickets.Mint(ctx, token, orgID, campaignID, contactID, now.Add(unsublink.Validity))
+			if err == nil {
+				return s.unsubLinks.TicketURL(origin, stored)
+			}
+			log.Warn().Err(err).
+				Str("campaign_id", campaignID.String()).
+				Msg("unsubscribe ticket mint failed; sending the signed link")
+		}
+	}
+	return s.unsubLinks.URLOn(origin, orgID, campaignID, contactID, now)
+}
 
 // optOutFooter renders the in-body opt-out for one recipient, as HTML and as
 // plain text, or empty strings when the effective mode is off. Link mode with

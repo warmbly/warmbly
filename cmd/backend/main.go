@@ -294,6 +294,7 @@ func main() {
 	var emailMessageMapForHandler repository.EmailMessageMapRepository
 	var emailSyncStateRepository repository.EmailSyncStateRepository
 	var trackedLinkRepository repository.TrackedLinkRepository
+	var unsubscribeLinkRepository repository.UnsubscribeLinkRepository
 	var customDomainRepository repository.CustomDomainRepository
 	// instanceSettings and the health registry are built after the handler
 	// dependencies, so the pool is hoisted out of the connection block.
@@ -626,6 +627,7 @@ func main() {
 		)
 		emailMessageMapForHandler = repository.NewEmailMessageMapRepository(primaryDB)
 		trackedLinkRepository = repository.NewTrackedLinkRepository(primaryDB.Pool)
+		unsubscribeLinkRepository = repository.NewUnsubscribeLinkRepository(primaryDB.Pool)
 		customDomainRepository = repository.NewCustomDomainRepository(primaryDB.Pool)
 		instanceChecksDB = primaryDB.Pool
 		instanceSettings = instancesettings.NewService(instancesettings.NewStore(primaryDB.Pool))
@@ -1547,7 +1549,7 @@ func main() {
 			trackedLinkRepository,
 			integrationServiceForHandler, // AutomationRunner for campaign run_automation steps
 		)
-		tasksService.SetUnsubscribeLinks(unsubSigner)
+		tasksService.SetUnsubscribeLinks(unsubSigner, unsubscribeLinkRepository)
 		// Sequence action nodes that pin a contact into or out of a segment,
 		// both on the scheduled path (tasks) and the instant reply path (advanced).
 		if aware, ok := tasksService.(tasks.SegmentAware); ok {
@@ -2023,6 +2025,7 @@ func main() {
 		EmailMessageMap:        emailMessageMapForHandler,
 		EmailSyncState:         emailSyncStateRepository,
 		TrackedLinks:           trackedLinkRepository,
+		UnsubscribeTickets:     unsubscribeLinkRepository,
 		CustomDomains:          customDomainRepository,
 		WebsiteTrackingService: websiteTrackingService,
 		UserRepo:               userRepoForHandler,
