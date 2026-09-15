@@ -701,7 +701,21 @@ export default function SocketProvider({
             };
         } catch (err) {
             const error = err as AppError;
-            console.error('[WS] Init failed:', error);
+            // AppError is a plain object, not an Error, so console.error rendered
+            // it as [object Object]: every report carried no message, no status
+            // and no request id, and they all grouped into one bucket.
+            const detail = [error.error, error.message, error.status, error.code, error.request_id]
+                .filter(Boolean)
+                .join(' | ');
+            // No status is offline or a timeout, and a 401 here means the session
+            // is already gone (Request refreshes and retries once before it
+            // throws). Both are expected and handled: the retry below, and the
+            // app-wide auth redirect. Only an unexpected answer is an error.
+            if (!error.status || error.status === 401) {
+                console.warn('[WS] Init failed, retrying -', detail);
+            } else {
+                console.error('[WS] Init failed -', detail);
+            }
             // Token fetch / handshake failed — retry on the same fast backoff
             // rather than a flat 15s wait.
             if (!intentionalCloseRef.current) {
