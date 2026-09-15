@@ -111,12 +111,15 @@ export default function CampaignSegmentsDialog({
             const res = await save.mutateAsync({ campaignId: campaign.id, segmentIds: [...picked] });
             const linked = `Linked ${picked.size} segment${picked.size === 1 ? "" : "s"}`;
             const { members, held } = linkTotals(res.data);
-            const moved = [
-                res.added > 0 ? `added ${leads(res.added)}` : "",
-                res.withdrawn > 0 ? `removed ${leads(res.withdrawn)}` : "",
-            ]
-                .filter(Boolean)
-                .join(" and ");
+            const parts = [
+                res.added > 0 ? `added ${res.added.toLocaleString()}` : "",
+                res.withdrawn > 0 ? `removed ${res.withdrawn.toLocaleString()}` : "",
+            ].filter(Boolean);
+            // "added 5 and removed 3 leads": the noun goes on the end so it is
+            // not repeated when the save did both.
+            const moved = parts.length
+                ? `${parts.join(" and ")} lead${res.added + res.withdrawn === 1 ? "" : "s"}`
+                : "";
             // Leads a detached segment left behind are the surprising part, so
             // they are named rather than left as a count that does not add up.
             const stayed =
@@ -150,7 +153,7 @@ export default function CampaignSegmentsDialog({
         const total = detaching.reduce((n, l) => n + l.lead_count, 0);
         const which = detaching.length === 1 ? detaching[0].name : `${detaching.length} segments`;
         confirm.show(
-            `Detaching ${which} removes up to ${total.toLocaleString()} lead${total === 1 ? "" : "s"} from this campaign. Leads it has already emailed, and any you added by hand, stay.`,
+            `Detaching ${which} removes up to ${total.toLocaleString()} lead${total === 1 ? "" : "s"} from this campaign. Leads the campaign has already emailed, and any you added by hand, stay.`,
             submit,
         );
     }

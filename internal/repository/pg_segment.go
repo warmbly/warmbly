@@ -733,6 +733,15 @@ func (r *segmentRepository) SyncCampaignSegments(ctx context.Context, orgID, cam
 }
 
 func syncCampaignSegmentsTx(ctx context.Context, tx pgx.Tx, orgID, campaignID uuid.UUID) (int, *errx.Error) {
+	// The same lock a link replacement takes, in the same order, so a sweep
+	// that started before one cannot read the old link set and re-enrol the
+	// audience the replacement just withdrew. Already held when this runs
+	// inside ReplaceForCampaign; the link read below is a fresh statement, so
+	// it sees the committed set either way.
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM campaigns WHERE id = $1 AND organization_id = $2 FOR UPDATE`, campaignID, orgID); err != nil {
+		db.CaptureError(err, "campaign lock", nil, "exec")
+		return 0, errx.InternalError()
+	}
 	rows, err := tx.Query(ctx, `
 		SELECT cs.segment_id FROM campaign_segments cs
 		JOIN campaigns cp ON cp.id = cs.campaign_id
