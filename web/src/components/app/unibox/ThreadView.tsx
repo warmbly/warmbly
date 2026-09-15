@@ -396,7 +396,6 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     );
   }
 
-
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-[12px] text-slate-400">
