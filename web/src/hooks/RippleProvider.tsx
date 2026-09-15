@@ -12,11 +12,13 @@ function useRipple() {
 
     type RippleElement = HTMLElement & { _ripple?: HTMLSpanElement | null };
 
+    // e.target is not always an Element: a document-level mouseleave reports
+    // the document itself, which has no classList. closest() walks for us.
+    const rippleHost = (t: EventTarget | null): RippleElement | null =>
+      t instanceof Element ? (t.closest('.ripple') as RippleElement | null) : null;
+
     const down = (e: MouseEvent) => {
-      let target = e.target as HTMLElement;
-      while (target && !target.classList.contains('ripple')) {
-        target = target.parentElement as HTMLElement;
-      }
+      const target = rippleHost(e.target);
       if (!target) return;
 
       const rect = target.getBoundingClientRect();
@@ -33,7 +35,7 @@ function useRipple() {
       ripple.className = 'ripple-effect-span';
 
       target.appendChild(ripple);
-      (target as RippleElement)._ripple = ripple;
+      target._ripple = ripple;
 
       requestAnimationFrame(() => {
         ripple.classList.add('in');
@@ -41,11 +43,8 @@ function useRipple() {
     };
 
     const up = (e: MouseEvent) => {
-      let target = e.target as HTMLElement;
-      while (target && !target.classList.contains('ripple')) {
-        target = target.parentElement as HTMLElement;
-      }
-      const rippleData = (target as RippleElement)?._ripple;
+      const target = rippleHost(e.target);
+      const rippleData = target?._ripple;
       if (target && rippleData) {
         rippleData.classList.add('out');
 
@@ -53,7 +52,7 @@ function useRipple() {
           rippleData.remove()
         }, 300);
 
-        (target as RippleElement)._ripple = null;
+        target._ripple = null;
       }
     };
 

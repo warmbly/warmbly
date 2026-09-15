@@ -3,8 +3,10 @@ package events
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,6 +93,11 @@ type publisher struct {
 	storageClient storage.Store
 	codec         codec.Codec
 	cipherService cipher.CipherService
+
+	// Last time a publish failure on each topic was reported. See
+	// reportPublishFailure.
+	failuresMu  sync.Mutex
+	lastFailure map[string]time.Time
 }
 
 // NewPublisher creates a new event publisher. bus is the transport (Kafka or
@@ -102,6 +109,7 @@ func NewPublisher(bus eventbus.EventBus, storageClient storage.Store, c codec.Co
 		storageClient: storageClient,
 		codec:         c,
 		cipherService: cipherService,
+		lastFailure:   map[string]time.Time{},
 	}
 }
 
@@ -349,6 +357,27 @@ func (p *publisher) PublishEmailValidation(ctx context.Context, workerID string,
 	return p.publish(kafka.GetWorkerTopic(workerID), body.OrgID.String(), workerEvent)
 }
 
+// publishFailureInterval is how often one topic's publish failure is reported.
+// A topic the broker persistently refuses (a missing ACL, a name it will not
+// auto-create) fails on every message, and reporting each one buried every
+// other issue under hundreds of copies of the same sentence.
+const publishFailureInterval = 5 * time.Minute
+
+// reportPublishFailure reports at most one failure per topic per interval. The
+// caller still gets the error, so nothing downstream changes.
+func (p *publisher) reportPublishFailure(topic string, err error) {
+	now := time.Now()
+	p.failuresMu.Lock()
+	last, seen := p.lastFailure[topic]
+	if seen && now.Sub(last) < publishFailureInterval {
+		p.failuresMu.Unlock()
+		return
+	}
+	p.lastFailure[topic] = now
+	p.failuresMu.Unlock()
+	errs.CaptureException(fmt.Errorf("failed to publish event: %w", err))
+}
+
 // publish serializes (via codec) and publishes (via bus) an event.
 func (p *publisher) publish(topic, key string, event interface{}) error {
 	if p.bus == nil {
@@ -360,10 +389,6 @@ func (p *publisher) publish(topic, key string, event interface{}) error {
 		errs.CaptureException(fmt.Errorf("codec not configured, topic: %s", topic))
 		return fmt.Errorf("codec not configured")
 	}
-	if p.bus == nil {
-		errs.CaptureException(fmt.Errorf("event bus not configured, topic: %s", topic))
-		return fmt.Errorf("event bus not configured")
-	}
 
 	ctx := context.Background()
 	data, err := p.codec.Serialize(ctx, topic, event)
@@ -372,7 +397,10 @@ func (p *publisher) publish(topic, key string, event interface{}) error {
 		return err
 	}
 	if err := p.bus.Publish(ctx, topic, key, data); err != nil {
-		errs.CaptureException(fmt.Errorf("failed to publish event: %w", err))
+		// A bus closed under us is shutdown, not a fault worth an issue.
+		if !errors.Is(err, eventbus.ErrBusClosed) {
+			p.reportPublishFailure(topic, err)
+		}
 		return err
 	}
 	return nil

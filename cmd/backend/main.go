@@ -2071,7 +2071,7 @@ func main() {
 		AppEnv:         os.Getenv("APP_ENV"),
 	}
 
-	errs.CaptureMessage("Starting the backend on " + addr)
+	log.Printf("Starting the backend on %s", addr)
 
 	router := api.Run(h, m, oidcH, addr, ginMode, allowedOrigins)
 

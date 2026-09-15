@@ -259,6 +259,11 @@ func (r *uniboxRepository) GetIncoming(ctx context.Context, userID uuid.UUID, li
 	return r.queryPreviewList(ctx, query, args, limit)
 }
 
+// ErrEmailNotFound is returned when a message id names no row the caller can
+// see. A consumer event for a message the unibox never stored is routine, not a
+// failure, so it has to be distinguishable from a real read error.
+var ErrEmailNotFound = errors.New("email not found")
+
 func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*models.EmailMessageStoreData, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
@@ -276,7 +281,7 @@ func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("email not found")
+			return nil, ErrEmailNotFound
 		}
 		return nil, err
 	}
@@ -318,7 +323,7 @@ func (r *uniboxRepository) GetByIDForOrg(ctx context.Context, orgID, id uuid.UUI
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, uuid.Nil, fmt.Errorf("email not found")
+			return nil, uuid.Nil, ErrEmailNotFound
 		}
 		return nil, uuid.Nil, err
 	}

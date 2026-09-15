@@ -14,8 +14,8 @@ import (
 )
 
 func (s *authService) ResetPasswordStart(ctx context.Context, data *ResetPasswordStart, ipaddr string) *errx.Error {
+	// The caller's 400, not an incident. See LoginStart.
 	if err := s.captcha.Verify(ctx, data.Turnstile, ipaddr); err != nil {
-		errs.CaptureException(err)
 		return err
 	}
 
@@ -66,8 +66,8 @@ func (s *authService) ResetPasswordStart(ctx context.Context, data *ResetPasswor
 		return errx.InternalError()
 	}
 
+	// Reported by the transport; see LoginStart.
 	if err := s.sendAuthEmail(ctx, u.Email, "Password Reset Confirmation", text); err != nil {
-		errs.CaptureException(err)
 		return errx.ErrMailUndeliverable
 	}
 
@@ -75,8 +75,8 @@ func (s *authService) ResetPasswordStart(ctx context.Context, data *ResetPasswor
 }
 
 func (s *authService) ResetPasswordConfirm(ctx context.Context, data *ResetPasswordConfirm, session, ipaddr string) *errx.Error {
+	// The caller's 400, not an incident. See LoginStart.
 	if err := s.captcha.Verify(ctx, data.Turnstile, ipaddr); err != nil {
-		errs.CaptureException(err)
 		return err
 	}
 

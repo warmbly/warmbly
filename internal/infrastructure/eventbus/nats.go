@@ -194,7 +194,7 @@ func (b *NATSBus) Publish(ctx context.Context, topic, key string, payload []byte
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
-		return errors.New("eventbus nats: bus closed")
+		return ErrBusClosed
 	}
 	b.mu.Unlock()
 
@@ -302,7 +302,7 @@ func (b *NATSBus) Subscribe(ctx context.Context, topics []string, group string, 
 	if b.closed {
 		b.mu.Unlock()
 		cc.Stop()
-		return errors.New("eventbus nats: bus closed")
+		return ErrBusClosed
 	}
 	b.subscribers = append(b.subscribers, cc)
 	b.mu.Unlock()

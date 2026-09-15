@@ -40,7 +40,9 @@ export function TurnstileModal({ visible, required, onToken, onError }: Props) {
     const pending = required === null && devBypassToken === "";
     // No widget, and the token the parent gets is whatever the backend will
     // accept: the dev bypass string, or "" when nothing is verified at all.
-    const skipWidget = required === false || devBypassToken !== "";
+    // An unset sitekey is the same answer: there is no widget to render, and
+    // mounting one anyway makes Cloudflare reject the empty parameter.
+    const skipWidget = required === false || devBypassToken !== "" || !TURNSTILE_KEY;
     const bypassToken = devBypassToken;
 
     const tokenRef = useRef("");

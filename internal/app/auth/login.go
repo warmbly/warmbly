@@ -21,8 +21,9 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr, us
 		return nil, errx.New(errx.Forbidden, "password sign-in is disabled on this deployment")
 	}
 
+	// A failed challenge is the caller's 400, not an incident: reporting it
+	// filed an issue for every bot and every reloaded sign-in page.
 	if xerr := s.captcha.Verify(ctx, data.Turnstile, ipaddr); xerr != nil {
-		errs.CaptureException(xerr)
 		return nil, xerr
 	}
 
@@ -78,8 +79,9 @@ func (s *authService) LoginStart(ctx context.Context, data *AuthData, ipaddr, us
 		return nil, errx.InternalError()
 	}
 
+	// The transport reports the send failure itself; capturing it again here
+	// filed the same rejection as a second issue under a second file.
 	if xerr := s.sendAuthEmail(ctx, data.Email, "Your Login Code", text); xerr != nil {
-		errs.CaptureException(xerr)
 		return nil, errx.ErrMailUndeliverable
 	}
 

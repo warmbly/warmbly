@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -12,6 +13,12 @@ import (
 func (s *JobsService) HandleUpdateEmail(ctx context.Context, e *models.JobEventEmailUpdate) error {
 	email, err := s.UniboxRepository.GetByID(ctx, e.UserID, e.ID)
 	if err != nil {
+		// A worker relays flag and folder changes for everything it sees, so a
+		// message the unibox never stored is routine. Returning the error
+		// retried the event forever and reported one every pass.
+		if errors.Is(err, repository.ErrEmailNotFound) {
+			return nil
+		}
 		CaptureError(e.UserID, e.EmailID, fmt.Errorf("Email (%s): %w", e.ID.String(), err))
 		return err
 	}
