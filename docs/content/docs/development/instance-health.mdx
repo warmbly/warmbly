@@ -229,9 +229,9 @@ Nodes are checking in from more than one machine, and `NATS_URL`, `REDIS` or `EN
 
 More than one machine is read as more than one distinct address among live nodes, so scaled replicas on a single host do not trigger it.
 
-### codec_not_json
+### codec_registry
 
-`CODEC_PROVIDER` is something other than `json` while workers are registered. Worker command and result envelopes carry untyped bodies that Avro cannot serialize, so every worker command fails to encode. Set `CODEC_PROVIDER=json`. See [event bus](/development/configuration/#event-bus).
+`CODEC_PROVIDER` is `avro` and `SCHEMA_REGISTRY_URL` is empty. Avro resolves every event against a registry, so there is nothing to encode against. Set it, or set `CODEC_PROVIDER=json`, which needs no registry. See [event bus](/development/configuration/#event-bus).
 
 ## Database
 

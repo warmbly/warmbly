@@ -3,11 +3,12 @@ package instancecheck
 import (
 	"context"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -27,7 +28,7 @@ const workerLivenessWindow = 5 * time.Minute
 func infraChecks() []check {
 	return []check{
 		{id: "no_worker_heartbeat", run: checkNoWorkerHeartbeat},
-		{id: "codec_not_json", run: checkCodecNotJSON},
+		{id: "codec_registry", run: checkCodecRegistry},
 		{id: "migrations_dirty", run: checkMigrationsDirty},
 		{id: "warmup_pools_missing", run: checkWarmupPoolsMissing},
 		{id: "blob_root_missing", run: checkBlobRootMissing},
@@ -68,18 +69,25 @@ func checkNoWorkerHeartbeat(ctx context.Context, d Deps, in Input) *Finding {
 		docsHealthWorker)
 }
 
-func checkCodecNotJSON(ctx context.Context, d Deps, in Input) *Finding {
-	codec := config.CodecProvider()
-	if codec == "json" || d.DB == nil {
+// Avro needs a schema registry to resolve against, and says so at boot by
+// refusing to start. What it cannot catch is a registry that is reachable but
+// holds nothing for this instance, which is what an operator sees after
+// pointing a fresh instance at the wrong one.
+//
+// This replaced a check that refused any codec but json, on the grounds that
+// the worker envelopes carried untyped bodies Avro could not serialize. They
+// carry a declared union now (models.WorkerEventBodies), so that is no longer
+// true and refusing on it would refuse a working configuration.
+func checkCodecRegistry(_ context.Context, _ Deps, _ Input) *Finding {
+	if config.CodecProvider() != "avro" {
 		return nil
 	}
-	var workers int
-	if err := d.DB.QueryRow(ctx, `SELECT count(*) FROM fleet_nodes WHERE role = 'worker'`).Scan(&workers); err != nil || workers == 0 {
+	if strings.TrimSpace(os.Getenv("SCHEMA_REGISTRY_URL")) != "" {
 		return nil
 	}
-	return result(CategoryWorkers, SeverityError, "Codec is not JSON",
-		fmt.Sprintf("CODEC_PROVIDER is %s. Worker command and result envelopes carry untyped bodies that Avro "+
-			"cannot serialize, so every worker command will fail to encode. Set CODEC_PROVIDER=json.", codec),
+	return result(CategoryWorkers, SeverityError, "Avro has no schema registry",
+		"CODEC_PROVIDER is avro, which resolves every event against a schema registry, and "+
+			"SCHEMA_REGISTRY_URL is empty. Set it, or set CODEC_PROVIDER=json, which needs no registry.",
 		docsEventBus)
 }
 

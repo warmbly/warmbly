@@ -641,7 +641,7 @@ var table = []Entry{
 	},
 	{
 		Key: "CODEC_PROVIDER", Group: GroupEventBus, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "json is required wherever workers run: worker command and result envelopes carry untyped bodies Avro cannot serialize.",
+		Effect:     "json needs nothing; avro resolves every event against SCHEMA_REGISTRY_URL and is only compiled into the -kafka images. Producers and consumers have to agree, so it is changed by draining the bus, not in place.",
 		DocsAnchor: docsEventBus,
 		Resolve:    func(*Runtime) string { return config.CodecProvider() },
 	},

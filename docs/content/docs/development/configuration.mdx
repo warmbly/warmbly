@@ -310,7 +310,7 @@ A worker's command topic is named after the node id issued when it joined, so th
 </Callout>
 
 
-`CODEC_PROVIDER=json` is required wherever workers run: the worker command and result envelopes carry untyped bodies Avro cannot serialize, so any other value makes every worker command fail to encode. `PUBSUB_ENABLED` must agree across backend, consumer and realtime.
+`json` needs nothing and is the default. `avro` resolves every event against `SCHEMA_REGISTRY_URL` and ships only in the `-kafka` images. Producers and consumers have to agree on one: there is no in-band marker, so a consumer on the other codec cannot read what is already on the bus. Change it by draining the bus, not in place. `PUBSUB_ENABLED` must agree across backend, consumer and realtime.
 
 <Callout type="warn" title="The tracking topic is read by two languages">
 `KAFKA_TRACKING_TOPIC` is read by the Rust publisher and the Go subscriber. Override it in one place only and opens and clicks stop being consumed, with no error anywhere.
