@@ -16,6 +16,7 @@
 // identified by their account, so an issue is answerable and a slow screen is
 // findable. The panel loads PostHog as a plain import rather than through a
 // shared client module because it has no product events of its own to name.
+import type { CaptureResult } from "posthog-js";
 import {
     POSTHOG_ERROR_TRACKING,
     POSTHOG_HOST,
@@ -142,6 +143,7 @@ function loadPostHog(): Promise<import("posthog-js").PostHog | null> {
                           capture_console_errors: true,
                       }
                     : false,
+                before_send: dropBrowserNoise,
             });
             // Registered rather than passed per call so an autocaptured
             // event carries them too. Named so panel events are separable
@@ -155,6 +157,24 @@ function loadPostHog(): Promise<import("posthog-js").PostHog | null> {
         })
         .catch(() => null);
     return postHogLoading;
+}
+
+// Browser noise: reported by the window error handler, carrying no stack we
+// can act on and no bug behind it. "Script error." is what a cross-origin
+// script is flattened to, and the ResizeObserver notice is a benign scheduling
+// message the spec requires browsers to fire. Both drown the real issues.
+const NOISE = [
+    "Script error.",
+    "ResizeObserver loop completed with undelivered notifications.",
+    "ResizeObserver loop limit exceeded",
+];
+
+function dropBrowserNoise(event: CaptureResult | null): CaptureResult | null {
+    if (event?.event !== "$exception") return event;
+    const values = event.properties?.$exception_values;
+    if (!Array.isArray(values)) return event;
+    const noise = values.some((v) => typeof v === "string" && NOISE.includes(v.trim()));
+    return noise ? null : event;
 }
 
 // identifyPostHog names the operator, or resets the device on sign-out so the

@@ -55,6 +55,10 @@ export default function UserDetailPage() {
 
     const preview = previewQuery.data;
     const u = preview.user;
+    // An instance that has not picked up the empty-slice fix still answers
+    // null for these, and null.length is what took the whole page down.
+    const organizations = preview.organizations ?? [];
+    const mailboxes = preview.email_accounts ?? [];
     const banned = !!u.banned_at;
     const isAdmin = u.admin_permissions > 0;
     const fullName = `${u.first_name} ${u.last_name}`.trim() || u.email;
@@ -151,10 +155,10 @@ export default function UserDetailPage() {
                 <h2 className="text-sm font-semibold mb-2">
                     Organizations
                     <span className="text-muted-foreground font-normal ml-1.5">
-                        ({preview.organizations.length})
+                        ({organizations.length})
                     </span>
                 </h2>
-                {preview.organizations.length === 0 ? (
+                {organizations.length === 0 ? (
                     <Empty label="Not a member of any workspace." />
                 ) : (
                     <div className="border border-border rounded-lg overflow-hidden bg-card">
@@ -167,7 +171,7 @@ export default function UserDetailPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {preview.organizations.map((o) => {
+                                {organizations.map((o) => {
                                     const isOwner = o.owner_user_id === u.id;
                                     return (
                                         <tr key={o.id} className="border-t border-border hover:bg-muted/30">
@@ -202,10 +206,10 @@ export default function UserDetailPage() {
                 <h2 className="text-sm font-semibold mb-2">
                     Mailboxes
                     <span className="text-muted-foreground font-normal ml-1.5">
-                        ({preview.email_accounts.length})
+                        ({mailboxes.length})
                     </span>
                 </h2>
-                {preview.email_accounts.length === 0 ? (
+                {mailboxes.length === 0 ? (
                     <Empty label="No mailboxes connected." />
                 ) : (
                     <div className="border border-border rounded-lg overflow-hidden bg-card">
@@ -220,7 +224,7 @@ export default function UserDetailPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {preview.email_accounts.map((a) => (
+                                {mailboxes.map((a) => (
                                     <tr key={a.id} className="border-t border-border">
                                         <td className="px-3 py-2 font-mono text-xs">{a.email}</td>
                                         <td className="px-3 py-2 text-xs">{a.provider}</td>

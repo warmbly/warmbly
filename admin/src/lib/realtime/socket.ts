@@ -7,7 +7,7 @@
 // format ({topic, event, payload, ref, join_ref}, vsn=1.0.0), 25s heartbeat
 // with an 8s zombie watchdog, and the same fast reconnect backoff schedule.
 //
-// The socket URL comes from POST /getaway and embeds a short-lived auth
+// The socket URL comes from POST /v1/getaway and embeds a short-lived auth
 // token (~10 min), so EVERY (re)connect fetches a fresh URL.
 
 import { Request } from "@/lib/api/client";
@@ -101,7 +101,9 @@ function nextRef(): string {
 async function fetchSocketUrl(): Promise<string> {
     const res = await Request<{ url: string; expires_in: number }>({
         method: "POST",
-        url: "/getaway",
+        // baseURL is API_URL, not API_URL/v1 as in the dashboard, so the
+        // version prefix is ours to add; without it this 404s on every load.
+        url: "/v1/getaway",
         authorization: true,
     });
     // vsn=1.0.0: we speak the V1 object format, not the V2 array format.
@@ -307,7 +309,7 @@ async function connect(): Promise<void> {
 
     let url: string;
     try {
-        // The /getaway URL expires in ~10 min, so every attempt fetches fresh.
+        // The socket URL expires in ~10 min, so every attempt fetches fresh.
         url = await fetchSocketUrl();
     } catch (err) {
         connecting = false;

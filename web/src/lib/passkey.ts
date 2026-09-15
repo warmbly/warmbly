@@ -146,6 +146,12 @@ async function startExplicitAuthentication(
     };
 }
 
+/** Whether the page still has the input conditional autofill binds to. */
+function autofillFieldPresent(): boolean {
+    if (typeof document === "undefined") return false;
+    return document.querySelector('input[autocomplete~="webauthn"]') !== null;
+}
+
 /**
  * Start a server-side login challenge. Safari can lose WebAuthn's required
  * user activation if this network request happens after the click, so explicit
@@ -168,6 +174,14 @@ export async function finishPasskeyLogin(
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
     try {
+        // beginPasskeyLogin is a round trip, so the user may have left the
+        // sign-in page by now. Autofill needs the field it attaches to, and
+        // without one SimpleWebAuthn throws a message the browser also logs;
+        // a navigation is a cancellation, not a failure worth reporting.
+        if (opts?.conditional && !autofillFieldPresent()) {
+            throw new PasskeyCancelled("aborted");
+        }
+
         const authentication = opts?.conditional
             ? startAuthentication({
                 optionsJSON: challenge.options.publicKey,

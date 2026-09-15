@@ -25,6 +25,7 @@ package eventbus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"runtime/debug"
@@ -33,6 +34,11 @@ import (
 
 	"github.com/rs/zerolog/log"
 )
+
+// ErrBusClosed is returned by a publish or subscribe on a bus that has been
+// closed, which is what every in-flight caller sees during shutdown. Callers
+// distinguish it from a broker fault so they do not report a clean stop.
+var ErrBusClosed = errors.New("eventbus: bus closed")
 
 // EventBus is the transport-level interface. Implementations must be safe for
 // concurrent use by multiple goroutines.
