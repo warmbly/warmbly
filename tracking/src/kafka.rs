@@ -30,7 +30,8 @@ pub const TRACKING_EVENT_SCHEMA: &str = r#"
         {"name": "user_agent", "type": ["null", "string"], "default": null},
         {"name": "ip_hash", "type": ["null", "string"], "default": null},
         {"name": "client_ip", "type": ["null", "string"], "default": null},
-        {"name": "scanner", "type": ["null", "string"], "default": null}
+        {"name": "scanner", "type": ["null", "string"], "default": null},
+        {"name": "scanner_probable", "type": "boolean", "default": false}
     ]
 }
 "#;
@@ -101,6 +102,7 @@ impl ToAvroValue for TrackingEvent {
                     None => Value::Union(0, Box::new(Value::Null)),
                 },
             ),
+            ("scanner_probable", Value::Boolean(self.scanner_probable)),
         ]
     }
 }

@@ -538,6 +538,11 @@ services:
       TRACKING_SCANNER_NETWORKS: ${TRACKING_SCANNER_NETWORKS:-}
       TRACKING_SCANNER_CLICK_NETWORKS: ${TRACKING_SCANNER_CLICK_NETWORKS:-}
       TRACKING_SCANNER_ASN_HEADER: ${TRACKING_SCANNER_ASN_HEADER:-}
+      # A GeoLite2-ASN database, which makes the catalogue's asn: entries match
+      # with no edge configuration. Left unset by default because the file has
+      # to be mounted in: point it at a path inside the container and bind the
+      # file there. Separate from GEODB_PATH, which is the City database.
+      TRACKING_SCANNER_ASN_DB: ${TRACKING_SCANNER_ASN_DB:-}
       TRACKING_IP_HASH_KEY: ${TRACKING_IP_HASH_KEY:-}
       POSTHOG_KEY: ${POSTHOG_KEY:-}
       POSTHOG_HOST: ${POSTHOG_HOST:-}

@@ -85,34 +85,55 @@ type Tracking struct {
 	// separately because a misjudged click costs an automation rather than a
 	// metric.
 	MachineWindowClickSeconds int `json:"machine_window_click_seconds"`
+	// MachineWindowProbableSeconds replaces both of the above when the
+	// tracking edge recognised the source as a scanner network that also
+	// carries people's own requests, which browser isolation makes true of
+	// Proofpoint, Mimecast and Cisco. Such a match moves the odds without
+	// settling them, so it widens the window instead of deciding: inside it
+	// the event is the delivery-time scan, outside it the person who got to
+	// the mail later. Never applied shorter than the window for the kind of
+	// event in hand, so it can only ever catch more.
+	MachineWindowProbableSeconds int `json:"machine_window_probable_seconds"`
 }
 
 // DefaultTracking is the compiled classification window for each event kind.
 func DefaultTracking() Tracking {
 	return Tracking{
-		MachineWindowOpenSeconds:  config.TrackingMachineWindowOpenSecondsDefault,
-		MachineWindowClickSeconds: config.TrackingMachineWindowClickSecondsDefault,
+		MachineWindowOpenSeconds:     config.TrackingMachineWindowOpenSecondsDefault,
+		MachineWindowClickSeconds:    config.TrackingMachineWindowClickSecondsDefault,
+		MachineWindowProbableSeconds: config.TrackingMachineWindowProbableSecondsDefault,
 	}
 }
 
-// Normalize clamps both windows into the accepted range. Zero and negative
+// Normalize clamps every window into its accepted range. Zero and negative
 // resolve to the compiled default rather than to "never automated", so a
 // document written before this section existed keeps the shipped behaviour.
 func (t *Tracking) Normalize() {
-	clamp := func(v, def int) int {
+	clamp := func(v, def, lo, hi int) int {
 		if v <= 0 {
 			return def
 		}
-		if v < config.TrackingMachineWindowSecondsMin {
-			return config.TrackingMachineWindowSecondsMin
+		if v < lo {
+			return lo
 		}
-		if v > config.TrackingMachineWindowSecondsMax {
-			return config.TrackingMachineWindowSecondsMax
+		if v > hi {
+			return hi
 		}
 		return v
 	}
-	t.MachineWindowOpenSeconds = clamp(t.MachineWindowOpenSeconds, config.TrackingMachineWindowOpenSecondsDefault)
-	t.MachineWindowClickSeconds = clamp(t.MachineWindowClickSeconds, config.TrackingMachineWindowClickSecondsDefault)
+	machine := func(v, def int) int {
+		return clamp(v, def, config.TrackingMachineWindowSecondsMin, config.TrackingMachineWindowSecondsMax)
+	}
+	t.MachineWindowOpenSeconds = machine(t.MachineWindowOpenSeconds, config.TrackingMachineWindowOpenSecondsDefault)
+	t.MachineWindowClickSeconds = machine(t.MachineWindowClickSeconds, config.TrackingMachineWindowClickSecondsDefault)
+	// The probable window has bounds of its own: it reaches a day, because how
+	// long a security vendor takes to detonate a link is the vendor's property.
+	t.MachineWindowProbableSeconds = clamp(
+		t.MachineWindowProbableSeconds,
+		config.TrackingMachineWindowProbableSecondsDefault,
+		config.TrackingMachineWindowProbableSecondsMin,
+		config.TrackingMachineWindowProbableSecondsMax,
+	)
 }
 
 // OpenWindow and ClickWindow are the normalized windows as durations.
@@ -122,6 +143,18 @@ func (t Tracking) OpenWindow() time.Duration {
 
 func (t Tracking) ClickWindow() time.Duration {
 	return time.Duration(t.MachineWindowClickSeconds) * time.Second
+}
+
+// ProbableWindow is the window a probable-scanner source is measured against,
+// never shorter than `kind`, the window that event would get on its own. The
+// floor is here rather than in Normalize so the two settings stay independent
+// on the way in and the rule stays one-way on the way out: naming a source can
+// only ever catch more, never fewer.
+func (t Tracking) ProbableWindow(kind time.Duration) time.Duration {
+	if probable := time.Duration(t.MachineWindowProbableSeconds) * time.Second; probable > kind {
+		return probable
+	}
+	return kind
 }
 
 // Bounds on the domain-authentication grace window. One hour is the shortest
@@ -313,8 +346,9 @@ type Patch struct {
 		AuditLogDays        *int `json:"audit_log_days"`
 	} `json:"retention"`
 	Tracking *struct {
-		MachineWindowOpenSeconds  *int `json:"machine_window_open_seconds"`
-		MachineWindowClickSeconds *int `json:"machine_window_click_seconds"`
+		MachineWindowOpenSeconds     *int `json:"machine_window_open_seconds"`
+		MachineWindowClickSeconds    *int `json:"machine_window_click_seconds"`
+		MachineWindowProbableSeconds *int `json:"machine_window_probable_seconds"`
 	} `json:"tracking"`
 	Deliverability *struct {
 		EnforceDomainAuth *bool `json:"enforce_domain_auth"`
@@ -377,6 +411,9 @@ func (p Patch) Apply(doc Document) Document {
 		}
 		if p.Tracking.MachineWindowClickSeconds != nil {
 			doc.Tracking.MachineWindowClickSeconds = *p.Tracking.MachineWindowClickSeconds
+		}
+		if p.Tracking.MachineWindowProbableSeconds != nil {
+			doc.Tracking.MachineWindowProbableSeconds = *p.Tracking.MachineWindowProbableSeconds
 		}
 	}
 	if p.Deliverability != nil {

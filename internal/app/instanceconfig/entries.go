@@ -795,9 +795,15 @@ var table = []Entry{
 	},
 	{
 		Key: "TRACKING_SCANNER_ASN_HEADER", Group: GroupTracking, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "Header a trusted proxy sets with the source ASN. Empty means asn: entries cannot match.",
+		Effect:     "Header a trusted proxy sets with the source ASN. Where it is set it wins over the database below.",
 		DocsAnchor: docsAddresses,
 		Resolve:    envValue("TRACKING_SCANNER_ASN_HEADER"),
+	},
+	{
+		Key: "TRACKING_SCANNER_ASN_DB", Group: GroupTracking, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Path to a GeoLite2-ASN database on the tracking service, which makes asn: entries match with no edge configuration. A separate file from GEODB_PATH; missing is tolerated and only costs ASN matching.",
+		DocsAnchor: docsGeoIP,
+		Resolve:    envValue("TRACKING_SCANNER_ASN_DB"),
 	},
 
 	// Observability.

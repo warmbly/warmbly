@@ -299,11 +299,20 @@ func (tc *TrackingConsumer) HandleTrackingEvent(ctx context.Context, event *even
 	var machine bool
 	var reason string
 	windows := tc.machineWindows(ctx)
+	seen := engagement{
+		userAgent: event.UserAgent,
+		scanner:   event.Scanner,
+		probable:  event.ScannerProbable,
+		sentAt:    sentAt,
+		at:        at,
+	}
 	switch event.EventType {
 	case events.EventTypeEmailOpened:
-		machine, reason = classifyOpen(event.UserAgent, event.Scanner, sentAt, at, windows.OpenWindow())
+		kind := windows.OpenWindow()
+		machine, reason = classifyOpen(seen, kind, windows.ProbableWindow(kind))
 	case events.EventTypeEmailClicked:
-		machine, reason = classifyClick(event.UserAgent, event.Scanner, sentAt, at, windows.ClickWindow())
+		kind := windows.ClickWindow()
+		machine, reason = classifyClick(seen, kind, windows.ProbableWindow(kind))
 	default:
 		// Unknown event type, skip
 		return nil

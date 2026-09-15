@@ -2,15 +2,26 @@
 # tracking service. Set TRACKING_SCANNER_BUILTINS=false to ignore this file,
 # TRACKING_SCANNER_NETWORKS / TRACKING_SCANNER_CLICK_NETWORKS to add your own.
 #
-# Format, one entry per line:   <source> <scope> <label>
-#   source  a CIDR (v4 or v6), or asn:<number>
-#   scope   all    the source never carries a person's own request
-#           clicks the source also carries a mail client's own image fetches,
-#                  so only its click tickets may be treated as automated
-#   label   what is recorded on the event
+# Format, one entry per line:   <source> <scope> <certainty> <label>
+#   source     a CIDR (v4 or v6), or asn:<number>
+#   scope      all    the source never carries a person's own request
+#              clicks the source also carries a mail client's own image
+#                     fetches, so only its click tickets may be judged
+#   certainty  certain  (the default) a match is the whole verdict: the source
+#                       only ever filters mail
+#              probable a match corroborates the timing rule instead of
+#                       replacing it, because the source can also carry a
+#                       person. The consumer then treats the event as
+#                       automated only inside its wider machine window
+#                       (tracking.machine_window_probable_seconds), so a
+#                       delivery-time scan is caught and a click hours later
+#                       is still a person's
+#   label      what is recorded on the event
 #
-# An ASN entry does nothing unless TRACKING_SCANNER_ASN_HEADER names a header
-# your edge sets with the source ASN (Cloudflare: ip.src.asnum).
+# An ASN entry needs the source ASN, from either TRACKING_SCANNER_ASN_DB (a
+# MaxMind GeoLite2-ASN database, which needs nothing of your edge) or
+# TRACKING_SCANNER_ASN_HEADER (a header your edge writes; Cloudflare:
+# ip.src.asnum). With neither, every asn: entry below is inert.
 #
 # A match never changes the response. The pixel is still served and the click
 # is still redirected; only the analytics event is labelled as automated.
@@ -33,22 +44,23 @@
 
 # The rest of Microsoft's and Google's networks, by ASN. Defender detonation is
 # not confined to the ranges above, so these catch a scan that runs from Azure
-# instead. They are NOT enabled by default and are here to be uncommented, or
-# set through TRACKING_SCANNER_CLICK_NETWORKS, as a deliberate trade-off:
+# instead. Clicks only, never opens: both companies proxy external images for
+# their web mail, so counting their pixel fetches as machines would zero the
+# open rate of every Outlook.com, Microsoft 365 and Gmail recipient.
 #
-#   - clicks only, never opens. Both companies proxy external images for their
-#     web mail, so counting their pixel fetches as machines would zero the open
-#     rate of every Outlook.com, Microsoft 365 and Gmail recipient.
-#   - even on clicks these are whole cloud allocations, not scanner ranges.
-#     A recipient whose browser egresses through Azure (Windows 365, Azure
-#     Virtual Desktop, a NAT gateway) or Google Cloud is inside them, and their
-#     real click would be recorded as automated and fire nothing. Turn these on
-#     when your recipients' scanner noise costs you more than that.
+# These stay OFF by default even as `probable`, because they are whole cloud
+# allocations rather than mail-security networks. A recipient whose browser
+# egresses through Azure (Windows 365, Azure Virtual Desktop, a NAT gateway) or
+# Google Cloud sits inside them all day, so a match here says almost nothing
+# about who is asking, and inside the probable window their real click would
+# still be recorded as automated. Uncomment them, or set them through
+# TRACKING_SCANNER_CLICK_NETWORKS, when your recipients' scanner noise costs
+# you more than the clicks it will take with it.
 #
-# asn:8075          clicks  microsoft
-# asn:8074          clicks  microsoft
-# asn:12076         clicks  microsoft
-# asn:15169         clicks  google
+# asn:8075          clicks  probable  microsoft
+# asn:8074          clicks  probable  microsoft
+# asn:12076         clicks  probable  microsoft
+# asn:15169         clicks  probable  google
 
 # Barracuda Email Gateway Defense. Published by Barracuda as the ranges its
 # filtering layer connects to a customer's mail server from, one narrow block
@@ -68,9 +80,8 @@
 
 # Proofpoint, Mimecast and Cisco Secure Email, by ASN. Each of these is a pure
 # mail security network with no consumer eyeball traffic, which is what makes
-# them worth naming at all, and they are still NOT enabled by default. The
-# reason is browser isolation, and it is worth understanding before turning
-# one on:
+# them worth naming at all. They ship enabled and marked `probable`, and the
+# reason for the mark is browser isolation:
 #
 #   Proofpoint Isolation and Mimecast Browser Isolation render a clicked page
 #   in the vendor's own cloud and stream it to the recipient. When a policy
@@ -80,18 +91,23 @@
 #   a new cold-outreach domain looks like, so for this product it is not a
 #   rare edge case.
 #
-# So a whole-ASN entry here cannot distinguish the delivery-time scan from the
-# isolated human click, and enabling one trades inflated click counts for lost
-# automations. Turn them on when your recipients' scanner noise costs you more
-# than that, and prefer leaving the machine-window rule to catch the
-# delivery-time half: a scan runs seconds after the send, an isolated click
-# runs whenever the person got to it.
+# A whole-ASN entry therefore cannot settle it alone; marked `certain` it would
+# trade inflated click counts for lost automations. `probable` is what
+# makes them safe to ship on: the network match widens the machine window
+# rather than deciding, so the delivery-time scan (which runs within minutes of
+# the send, queueing and transit included) is caught, and the isolated click an
+# hour later is still the person's. Measured against today, where these are
+# recognised as nothing at all, it can only move scans out of your numbers, and
+# never a click that was already counted as human.
 #
-# asn:22843         all     proofpoint
-# asn:26211         all     proofpoint
-# asn:52129         all     proofpoint
-# asn:30031         all     mimecast
-# asn:39588         all     mimecast
-# asn:42427         all     mimecast
-# asn:60492         all     mimecast
-# asn:16417         all     cisco-ironport
+# The one cost is a recipient behind one of these vendors who genuinely clicks
+# inside the probable window. Shorten tracking.machine_window_probable_seconds
+# if your recipients are that fast, or drop the entry.
+asn:22843           all     probable  proofpoint
+asn:26211           all     probable  proofpoint
+asn:52129           all     probable  proofpoint
+asn:30031           all     probable  mimecast
+asn:39588           all     probable  mimecast
+asn:42427           all     probable  mimecast
+asn:60492           all     probable  mimecast
+asn:16417           all     probable  cisco-ironport

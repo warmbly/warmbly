@@ -85,13 +85,18 @@ Produced by the Rust tracking service when a pixel loads or a tracked link is cl
   "link_id": "uuid",
   "timestamp": "2026-01-29T12:00:00Z",
   "user_agent": "Mozilla/5.0...",
-  "ip_hash": "sha256..."
+  "ip_hash": "sha256...",
+  "client_ip": "203.0.113.0",
+  "scanner": "proofpoint",
+  "scanner_probable": true
 }
 ```
 
-`event_type` is `EMAIL_OPENED` or `EMAIL_CLICKED`; `original_url` and `link_id` (the click ticket, which names the link's stored destination and anchor text) are set only for clicks; IPs are stored as hashes, never raw. The struct is `events.TrackingEvent` in `internal/events/schemas.go`, mirrored in `tracking/src/events.rs`.
+`event_type` is `EMAIL_OPENED` or `EMAIL_CLICKED`; `original_url` and `link_id` (the click ticket, which names the link's stored destination and anchor text) are set only for clicks; IPs are stored as hashes, never raw, and `client_ip` carries only the source network. `scanner` names the mail-filtering network the edge recognised, and `scanner_probable` says that network can also carry a person, which is what browser isolation makes true of the mail-security vendors. Both are absent from events written before those fields existed, and an absent `scanner_probable` reads as `false`, the conservative side. The struct is `events.TrackingEvent` in `internal/events/schemas.go`, mirrored in `tracking/src/events.rs`.
 
 The consumer classifies each event before it counts. An open is automated when the user agent is a mail privacy proxy or missing, or when it arrives within `tracking.machine_window_open_seconds` of the step's dispatch; it is recorded with `opened_machine` and upgraded by a later human open. A click is automated for a missing user agent, for arriving inside `tracking.machine_window_click_seconds` of the same dispatch (`30` by default, set independently of the open window and accepting the same 1 to 900 seconds; it ships shorter because a misjudged click costs an automation rather than a metric), or when the same source clicked another link of the same email within `TrackingClickBurstSeconds`; every click is logged per link in `email_link_clicks` with its reason, and only a human click stamps `clicked_at`, fires instant actions, or emits a webhook. A burst is only recognisable from its second click, so a human click's stamp and log row are written at once but its effects (evidence, instant actions, webhook, realtime event) run after the burst window plus a second, on the classification the click has by then; a burst recognised meanwhile relabels the earlier click and withdraws the stamp when no human click remains. A consumer restart inside the window loses only those deferred effects, and routing still follows the clicked branch at the next step boundary.
+
+`scanner` overrides all of that: a request from a recognised mail-filtering network is automated whatever its user agent claims and however late it arrives, because a security gateway walks a message with an ordinary browser. `scanner_probable` qualifies it. A probable source is measured against `tracking.machine_window_probable_seconds` instead of the window for its event kind (whichever is wider), and outside that window it is judged exactly as an unrecognised source would be. That is the whole of the difference, and it is what lets the vendor ASNs ship enabled: the delivery-time scan is caught, and the recipient who clicks through browser isolation an hour later still counts.
 
 Website page views do not ride this topic. The tracking service forwards each accepted view to the backend's internal API (`POST /api/v1/internal/page-hits`) instead, because the backend is where the user agent and IP are turned into device and location, and the IP must not sit in a durable stream on the way there.
 

@@ -126,10 +126,42 @@ func TestTrackingDefaults(t *testing.T) {
 	if tr.MachineWindowClickSeconds != config.TrackingMachineWindowClickSecondsDefault {
 		t.Errorf("MachineWindowClickSeconds = %d, want %d", tr.MachineWindowClickSeconds, config.TrackingMachineWindowClickSecondsDefault)
 	}
+	if tr.MachineWindowProbableSeconds != config.TrackingMachineWindowProbableSecondsDefault {
+		t.Errorf("MachineWindowProbableSeconds = %d, want %d", tr.MachineWindowProbableSeconds, config.TrackingMachineWindowProbableSecondsDefault)
+	}
 	// The click window is the tighter of the two on purpose: a misjudged
 	// click costs an automation, a misjudged open costs a metric.
 	if tr.ClickWindow() > tr.OpenWindow() {
 		t.Errorf("click window %v must not exceed the open window %v", tr.ClickWindow(), tr.OpenWindow())
+	}
+	// The probable window is the widest, because the label it goes with only
+	// moves the odds. Shipping it narrower than either would make naming a
+	// network pointless, and the floor below would silently hide that.
+	for _, kind := range []time.Duration{tr.OpenWindow(), tr.ClickWindow()} {
+		if tr.ProbableWindow(kind) < kind {
+			t.Errorf("probable window %v is under the %v it must never weaken", tr.ProbableWindow(kind), kind)
+		}
+		if tr.ProbableWindow(kind) <= kind {
+			t.Errorf("probable window %v buys nothing over %v", tr.ProbableWindow(kind), kind)
+		}
+	}
+}
+
+// The floor is the one-way guarantee the catalogue rests on: naming a network
+// probable may only ever catch more scans, so an operator who sets the window
+// below a per-kind one cannot hand a scan back.
+func TestProbableWindowNeverFallsBelowTheKindWindow(t *testing.T) {
+	tr := Tracking{MachineWindowOpenSeconds: 300, MachineWindowClickSeconds: 200, MachineWindowProbableSeconds: 1}
+	tr.Normalize()
+	for _, kind := range []time.Duration{tr.OpenWindow(), tr.ClickWindow()} {
+		if got := tr.ProbableWindow(kind); got != kind {
+			t.Errorf("ProbableWindow(%v) = %v, want the kind window itself", kind, got)
+		}
+	}
+	wide := Tracking{MachineWindowProbableSeconds: 7200}
+	wide.Normalize()
+	if got, want := wide.ProbableWindow(time.Minute), 2*time.Hour; got != want {
+		t.Errorf("ProbableWindow = %v, want the wider %v", got, want)
 	}
 }
 
@@ -178,15 +210,20 @@ func TestDocumentUnmarshalOverDefaultsKeepsTracking(t *testing.T) {
 		t.Errorf("MachineWindowClickSeconds = %d, want the default %d to survive an older document",
 			doc.Tracking.MachineWindowClickSeconds, config.TrackingMachineWindowClickSecondsDefault)
 	}
+	if doc.Tracking.MachineWindowProbableSeconds != config.TrackingMachineWindowProbableSecondsDefault {
+		t.Errorf("MachineWindowProbableSeconds = %d, want the default %d to survive an older document",
+			doc.Tracking.MachineWindowProbableSeconds, config.TrackingMachineWindowProbableSecondsDefault)
+	}
 }
 
 func TestPatchTracking(t *testing.T) {
 	doc := Defaults()
-	open, click := 120, 45
+	open, click, probable := 120, 45, 1800
 	patch := Patch{Tracking: &struct {
-		MachineWindowOpenSeconds  *int `json:"machine_window_open_seconds"`
-		MachineWindowClickSeconds *int `json:"machine_window_click_seconds"`
-	}{MachineWindowOpenSeconds: &open, MachineWindowClickSeconds: &click}}
+		MachineWindowOpenSeconds     *int `json:"machine_window_open_seconds"`
+		MachineWindowClickSeconds    *int `json:"machine_window_click_seconds"`
+		MachineWindowProbableSeconds *int `json:"machine_window_probable_seconds"`
+	}{MachineWindowOpenSeconds: &open, MachineWindowClickSeconds: &click, MachineWindowProbableSeconds: &probable}}
 
 	got := patch.Apply(doc)
 	got.Normalize()
@@ -195,6 +232,11 @@ func TestPatchTracking(t *testing.T) {
 	}
 	if got.Tracking.MachineWindowClickSeconds != click {
 		t.Errorf("MachineWindowClickSeconds = %d, want %d", got.Tracking.MachineWindowClickSeconds, click)
+	}
+	// Half an hour is past the 900s ceiling the other two windows have, so
+	// this only survives if the probable window is clamped on its own bounds.
+	if got.Tracking.MachineWindowProbableSeconds != probable {
+		t.Errorf("MachineWindowProbableSeconds = %d, want %d", got.Tracking.MachineWindowProbableSeconds, probable)
 	}
 
 	// An absent section keeps what is stored rather than clearing it.

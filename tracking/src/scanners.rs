@@ -18,16 +18,34 @@
 //! images for their web mail, so treating their pixel fetches as machines
 //! would zero the open rate for every recipient on them, while a person's
 //! click is always their own browser talking to us directly.
+//!
+//! Scope is not the whole of the doubt. A source can be a scanner AND still
+//! carry a person: Proofpoint Isolation and Mimecast Browser Isolation render
+//! a clicked page in the vendor's own cloud, so the GET on a click ticket from
+//! there may have a person on the other end of it. Those entries are marked
+//! `probable`, and the label travels with that flag so the consumer widens its
+//! machine window instead of condemning the event outright. A delivery-time
+//! scan runs within minutes of the send; a person clicking through isolation
+//! runs whenever they got to it.
 
+use crate::asndb::AsnDb;
 use axum::http::HeaderMap;
 use ipnet::IpNet;
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// The catalogue shipped with the service. Operators extend it with
 /// TRACKING_SCANNER_NETWORKS and TRACKING_SCANNER_CLICK_NETWORKS.
 const BUILTIN_CATALOGUE: &str = include_str!("../scanner-networks.txt");
+
+/// How many database lookups may resolve nothing at all before the service
+/// says so. A database that opened cleanly and covers none of the traffic
+/// reaching this instance is indistinguishable from a working one until
+/// somebody notices the ASN half of the catalogue never fires, which is the
+/// silence the database was added to end.
+const ASN_SILENCE_THRESHOLD: u64 = 500;
 
 /// What a source may be judged on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,9 +73,40 @@ pub enum Request {
     Click,
 }
 
+/// How much a match on this source settles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Certainty {
+    /// The source only ever filters mail, so a match is the whole verdict.
+    #[default]
+    Certain,
+    /// The source also carries people's own requests. A match corroborates
+    /// the timing rule rather than replacing it.
+    Probable,
+}
+
 struct Entry {
     scope: Scope,
+    certainty: Certainty,
     label: Arc<str>,
+}
+
+/// A recognised source: what to record, and how much it settles.
+#[derive(Clone, Debug)]
+pub struct Match {
+    pub label: Arc<str>,
+    /// True for a `probable` entry. Published with the event so the consumer
+    /// measures it against the wider window rather than calling it a machine
+    /// on the network alone.
+    pub probable: bool,
+}
+
+impl From<&Entry> for Match {
+    fn from(entry: &Entry) -> Self {
+        Self {
+            label: entry.label.clone(),
+            probable: entry.certainty == Certainty::Probable,
+        }
+    }
 }
 
 /// Matches a request's source against the known-scanner catalogue.
@@ -65,13 +114,24 @@ struct Entry {
 pub struct ScannerNetworks {
     nets: Vec<(IpNet, Entry)>,
     asns: HashMap<u32, Entry>,
-    /// Header a trusted proxy sets with the source ASN. None disables ASN
-    /// matching entirely, which is the default: an ASN is not something the
-    /// service can work out on its own.
+    /// Header a trusted proxy sets with the source ASN, read only from a
+    /// peer the operator named. It takes precedence over the database, so an
+    /// operator who already writes it keeps the behaviour they have.
     asn_header: Option<String>,
+    /// GeoLite2-ASN database, which resolves the ASN from the address itself
+    /// and so needs nothing of the edge. None when none is configured.
+    asn_db: Option<AsnDb>,
     /// Entries that could not be read. Reported at startup so a typo in an
     /// operator's list is visible rather than silently doing nothing.
     skipped: usize,
+    /// Database lookups attempted, and how many named an ASN. Counted so the
+    /// service can report a database that resolves nothing, which is what a
+    /// wrong or stale file looks like from the outside.
+    asn_lookups: AtomicU64,
+    asn_resolved: AtomicU64,
+    /// Whether the database has already been reported on, either way. One
+    /// line per process: a per-request log on the pixel path is a flood.
+    asn_reported: AtomicBool,
 }
 
 impl ScannerNetworks {
@@ -83,6 +143,7 @@ impl ScannerNetworks {
         all_networks: &str,
         click_networks: &str,
         asn_header: Option<String>,
+        asn_db: Option<AsnDb>,
     ) -> Self {
         let mut s = Self {
             asn_header: asn_header.filter(|h| !h.trim().is_empty()).map(|h| {
@@ -90,6 +151,7 @@ impl ScannerNetworks {
                 h.retain(|c| !c.is_whitespace());
                 h
             }),
+            asn_db,
             ..Default::default()
         };
         if builtins {
@@ -98,14 +160,18 @@ impl ScannerNetworks {
         s.load_catalogue(all_networks, Some(Scope::All));
         s.load_catalogue(click_networks, Some(Scope::Clicks));
         tracing::info!(
-            "Scanner catalogue: {} networks, {} ASNs, {} unreadable (asn header: {})",
+            "Scanner catalogue: {} networks, {} ASNs, {} unreadable (asn header: {}, asn database: {})",
             s.nets.len(),
             s.asns.len(),
             s.skipped,
-            s.asn_header.as_deref().unwrap_or("none")
+            s.asn_header.as_deref().unwrap_or("none"),
+            if s.asn_db.is_some() { "yes" } else { "no" }
         );
-        if !s.asns.is_empty() && s.asn_header.is_none() {
-            tracing::warn!("Scanner catalogue has ASN entries but TRACKING_SCANNER_ASN_HEADER is unset, so none of them can match");
+        if !s.asns.is_empty() && !s.can_resolve_asn() {
+            tracing::warn!(
+                "Scanner catalogue has {} ASN entries and no source of a request's ASN, so they match nothing. Point TRACKING_SCANNER_ASN_DB at a GeoLite2-ASN database, or set TRACKING_SCANNER_ASN_HEADER if your edge writes one",
+                s.asns.len()
+            );
         }
         s
     }
@@ -133,6 +199,10 @@ impl ScannerNetworks {
         };
         // An entry that names no scope gets the cautious one.
         let mut scope = force.unwrap_or(Scope::Clicks);
+        // Certainty is orthogonal to scope: it says whether the source can
+        // also carry a person, not which requests may be judged. It is the
+        // operator's to set in either variable.
+        let mut certainty = Certainty::Certain;
         let mut label = None;
         for field in fields {
             match field {
@@ -141,21 +211,35 @@ impl ScannerNetworks {
                 "all" | "clicks" if force.is_some() => {}
                 "all" => scope = Scope::All,
                 "clicks" => scope = Scope::Clicks,
+                "certain" => certainty = Certainty::Certain,
+                "probable" => certainty = Certainty::Probable,
                 other if label.is_none() => label = Some(other),
                 _ => {}
             }
         }
-        self.insert(source, scope, Arc::from(label.unwrap_or("scanner")));
+        self.insert(
+            source,
+            scope,
+            certainty,
+            Arc::from(label.unwrap_or("scanner")),
+        );
     }
 
-    fn insert(&mut self, source: &str, scope: Scope, label: Arc<str>) {
+    fn insert(&mut self, source: &str, scope: Scope, certainty: Certainty, label: Arc<str>) {
         if let Some(num) = source
             .strip_prefix("asn:")
             .or_else(|| source.strip_prefix("AS"))
         {
             match num.trim().parse::<u32>() {
                 Ok(asn) => {
-                    self.asns.insert(asn, Entry { scope, label });
+                    self.asns.insert(
+                        asn,
+                        Entry {
+                            scope,
+                            certainty,
+                            label,
+                        },
+                    );
                 }
                 Err(_) => {
                     self.skipped += 1;
@@ -169,7 +253,14 @@ impl ScannerNetworks {
             .parse::<IpNet>()
             .or_else(|_| source.parse::<IpAddr>().map(IpNet::from));
         match parsed {
-            Ok(net) => self.nets.push((net.trunc(), Entry { scope, label })),
+            Ok(net) => self.nets.push((
+                net.trunc(),
+                Entry {
+                    scope,
+                    certainty,
+                    label,
+                },
+            )),
             Err(_) => {
                 self.skipped += 1;
                 tracing::warn!("scanner catalogue: ignoring unparseable network {source:?}");
@@ -183,29 +274,83 @@ impl ScannerNetworks {
     /// `trusted_peer` is whether the socket peer is one of the configured
     /// proxies. The ASN header is read only then, for the same reason the
     /// client address is: a header anyone can set is a header that lets a
-    /// caller pick its own classification.
+    /// caller pick its own classification. The database is read from the
+    /// address instead, so it needs no such trust and no edge configuration.
     pub fn classify(
         &self,
         ip: &str,
         headers: &HeaderMap,
         trusted_peer: bool,
         kind: Request,
-    ) -> Option<Arc<str>> {
-        if let Some(asn) = self.source_asn(headers, trusted_peer) {
+    ) -> Option<Match> {
+        let addr = ip.parse::<IpAddr>().ok();
+        if let Some(asn) = self.source_asn(addr, headers, trusted_peer) {
             if let Some(entry) = self.asns.get(&asn) {
                 if entry.scope.covers(kind) {
-                    return Some(entry.label.clone());
+                    return Some(entry.into());
                 }
             }
         }
-        let addr = ip.parse::<IpAddr>().ok()?;
+        let addr = addr?;
         self.nets
             .iter()
             .find(|(net, entry)| entry.scope.covers(kind) && net.contains(&addr))
-            .map(|(_, entry)| entry.label.clone())
+            .map(|(_, entry)| entry.into())
     }
 
-    fn source_asn(&self, headers: &HeaderMap, trusted_peer: bool) -> Option<u32> {
+    fn can_resolve_asn(&self) -> bool {
+        self.asn_header.is_some() || self.asn_db.is_some()
+    }
+
+    /// The source's ASN: the trusted header where one is written, otherwise
+    /// the database. A header that is absent, unbelievable or unparseable
+    /// falls through rather than ending the attempt, so an edge that sets it
+    /// on some requests and not others still gets the database for the rest.
+    fn source_asn(
+        &self,
+        addr: Option<IpAddr>,
+        headers: &HeaderMap,
+        trusted_peer: bool,
+    ) -> Option<u32> {
+        // Nothing in the catalogue is keyed by ASN, so nothing can match and
+        // the pixel path skips the lookup entirely. This is the shipped
+        // default: every vendor ASN is commented out.
+        if self.asns.is_empty() {
+            return None;
+        }
+        if let Some(asn) = self.header_asn(headers, trusted_peer) {
+            return Some(asn);
+        }
+        let db = self.asn_db.as_ref()?;
+        let resolved = db.lookup(addr?);
+        self.record_lookup(resolved);
+        resolved
+    }
+
+    /// Keeps the database's hit rate, and says something once: the first ASN
+    /// it ever resolves, or the point at which it is clear it will not.
+    fn record_lookup(&self, resolved: Option<u32>) {
+        let attempts = self.asn_lookups.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Some(asn) = resolved {
+            if self.asn_resolved.fetch_add(1, Ordering::Relaxed) == 0
+                && !self.asn_reported.swap(true, Ordering::Relaxed)
+            {
+                tracing::info!("Scanner ASN database resolved its first source (AS{asn})");
+            }
+            return;
+        }
+        if attempts >= ASN_SILENCE_THRESHOLD
+            && self.asn_resolved.load(Ordering::Relaxed) == 0
+            && !self.asn_reported.swap(true, Ordering::Relaxed)
+        {
+            tracing::warn!("Scanner ASN database resolved no ASN in {attempts} lookups, so asn: entries are matching nothing. Check TRACKING_SCANNER_ASN_DB points at a current GeoLite2-ASN file, and that TRACKING_TRUSTED_PROXIES is set if this service is behind a proxy");
+        }
+    }
+
+    fn header_asn(&self, headers: &HeaderMap, trusted_peer: bool) -> Option<u32> {
+        // A header anyone can set is a header that lets a caller pick its own
+        // classification, so it counts only from a proxy the operator named.
+        // The database path must never become a way around that check.
         if !trusted_peer {
             return None;
         }
@@ -224,6 +369,22 @@ impl ScannerNetworks {
 mod tests {
     use super::*;
 
+    /// The two things the assertions ask of a match: which entry fired, and
+    /// whether it settles the verdict on its own.
+    trait Matched {
+        fn label(&self) -> Option<&str>;
+        fn probable(&self) -> bool;
+    }
+
+    impl Matched for Option<Match> {
+        fn label(&self) -> Option<&str> {
+            self.as_ref().map(|m| m.label.as_ref())
+        }
+        fn probable(&self) -> bool {
+            self.as_ref().is_some_and(|m| m.probable)
+        }
+    }
+
     fn hdr(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
         let mut h = HeaderMap::new();
         for (k, v) in pairs {
@@ -233,7 +394,15 @@ mod tests {
     }
 
     fn builtins() -> ScannerNetworks {
-        ScannerNetworks::new(true, "", "", Some("cf-asn".into()))
+        ScannerNetworks::new(true, "", "", Some("cf-asn".into()), None)
+    }
+
+    /// A GeoLite2-ASN database holding one network per ASN named here.
+    fn asn_db(entries: &[(&str, u32)]) -> Option<AsnDb> {
+        AsnDb::from_bytes(
+            crate::asndb::fixture::asn_db("GeoLite2-ASN", entries),
+            "fixture",
+        )
     }
 
     // Exchange Online Protection filters mail and reads none, so both the
@@ -243,14 +412,14 @@ mod tests {
         let s = builtins();
         for kind in [Request::Open, Request::Click] {
             assert_eq!(
-                s.classify("40.107.1.2", &hdr(&[]), false, kind).as_deref(),
+                s.classify("40.107.1.2", &hdr(&[]), false, kind).label(),
                 Some("microsoft-365-protection"),
                 "{kind:?} from EOP should be labelled"
             );
         }
         assert_eq!(
             s.classify("2a01:111:f400::1", &hdr(&[]), false, Request::Open)
-                .as_deref(),
+                .label(),
             Some("microsoft-365-protection")
         );
     }
@@ -263,8 +432,14 @@ mod tests {
     fn whole_cloud_asns_are_not_on_by_default() {
         let s = builtins();
         let h = hdr(&[("cf-asn", "8075")]);
-        assert_eq!(s.classify("13.107.128.5", &h, true, Request::Click), None);
-        assert_eq!(s.classify("13.107.128.5", &h, true, Request::Open), None);
+        assert_eq!(
+            s.classify("13.107.128.5", &h, true, Request::Click).label(),
+            None
+        );
+        assert_eq!(
+            s.classify("13.107.128.5", &h, true, Request::Open).label(),
+            None
+        );
     }
 
     // Opted into, an ASN is a scanner for click tickets and must never be one
@@ -272,14 +447,16 @@ mod tests {
     // Microsoft's own proxy, so a genuine open arrives from there.
     #[test]
     fn an_opted_in_asn_is_clicks_only() {
-        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", Some("cf-asn".into()));
+        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", Some("cf-asn".into()), None);
         let h = hdr(&[("cf-asn", "8075")]);
         assert_eq!(
-            s.classify("13.107.128.5", &h, true, Request::Click)
-                .as_deref(),
+            s.classify("13.107.128.5", &h, true, Request::Click).label(),
             Some("microsoft")
         );
-        assert_eq!(s.classify("13.107.128.5", &h, true, Request::Open), None);
+        assert_eq!(
+            s.classify("13.107.128.5", &h, true, Request::Open).label(),
+            None
+        );
     }
 
     // Every CIDR in the shipped catalogue must already be its own network
@@ -316,34 +493,72 @@ mod tests {
         let s = builtins();
         for kind in [Request::Open, Request::Click] {
             assert_eq!(
-                s.classify("209.222.82.10", &hdr(&[]), false, kind)
-                    .as_deref(),
+                s.classify("209.222.82.10", &hdr(&[]), false, kind).label(),
                 Some("barracuda-egd"),
                 "{kind:?} from Barracuda EGD should be labelled"
             );
         }
     }
 
-    // Proofpoint, Mimecast and Cisco are catalogued by ASN and ship commented
-    // out. Proofpoint Isolation and Mimecast Browser Isolation render a
-    // clicked page in the vendor's own cloud, so a whole-ASN entry cannot tell
-    // the delivery-time scan from a person clicking through isolation, and
-    // enabling one is an operator's trade rather than a default.
+    // Proofpoint, Mimecast and Cisco are pure mail-security networks, so they
+    // ship enabled. They also run browser isolation, which renders a clicked
+    // page in the vendor's own cloud with a person on the other end of it, so
+    // every one of them must be marked probable: the consumer then measures
+    // the event against its wider window rather than condemning it outright.
+    // Marked certain, these entries would take an isolated recipient's click
+    // and the automation behind it.
     #[test]
-    fn vendor_asns_are_not_on_by_default() {
+    fn vendor_asns_ship_on_and_probable() {
         let s = builtins();
         for asn in [
             "22843", "30031", "39588", "42427", "52129", "26211", "60492", "16417",
         ] {
             let h = hdr(&[("cf-asn", asn)]);
             for kind in [Request::Open, Request::Click] {
-                assert_eq!(
-                    s.classify("203.0.113.9", &h, true, kind),
-                    None,
-                    "AS{asn} must ship commented out for {kind:?}"
-                );
+                let m = s.classify("203.0.113.9", &h, true, kind);
+                assert!(m.label().is_some(), "AS{asn} should be live for {kind:?}");
+                assert!(m.probable(), "AS{asn} must be probable for {kind:?}");
             }
         }
+    }
+
+    // The networks that ship enabled and CERTAIN are the mail-filtering tiers
+    // themselves, where no recipient ever reads their mail. A probable mark
+    // there would cost every scan that arrives past the window.
+    #[test]
+    fn the_filtering_tiers_ship_certain() {
+        let s = builtins();
+        for ip in ["40.107.1.2", "209.222.82.10", "2a01:111:f400::1"] {
+            let m = s.classify(ip, &hdr(&[]), false, Request::Open);
+            assert!(m.label().is_some(), "{ip} should be live");
+            assert!(!m.probable(), "{ip} must settle the verdict on its own");
+        }
+    }
+
+    // Certainty is the operator's to set in either variable, and says nothing
+    // about which requests may be judged: the two columns are independent.
+    #[test]
+    fn certainty_and_scope_are_independent() {
+        let s = ScannerNetworks::new(
+            false,
+            "203.0.113.0/24 probable pf",
+            "198.51.100.0/24 mc",
+            None,
+            None,
+        );
+        let both = s.classify("203.0.113.9", &hdr(&[]), false, Request::Open);
+        assert_eq!(both.label(), Some("pf"));
+        assert!(both.probable());
+        let clicks = s.classify("198.51.100.9", &hdr(&[]), false, Request::Click);
+        assert_eq!(clicks.label(), Some("mc"));
+        assert!(!clicks.probable(), "certain is the default");
+        assert_eq!(
+            s.classify("198.51.100.9", &hdr(&[]), false, Request::Open)
+                .label(),
+            None
+        );
+        // The keyword is consumed, so it never lands in the label.
+        assert_eq!(s.skipped, 0);
     }
 
     // Outlook on the web is served from the Exchange Online ranges, which are
@@ -352,11 +567,13 @@ mod tests {
     fn exchange_online_itself_is_not_a_scanner() {
         let s = builtins();
         assert_eq!(
-            s.classify("40.100.0.1", &hdr(&[]), false, Request::Open),
+            s.classify("40.100.0.1", &hdr(&[]), false, Request::Open)
+                .label(),
             None
         );
         assert_eq!(
-            s.classify("52.96.0.1", &hdr(&[]), false, Request::Click),
+            s.classify("52.96.0.1", &hdr(&[]), false, Request::Click)
+                .label(),
             None
         );
     }
@@ -366,23 +583,237 @@ mod tests {
     // not to be labelled at all.
     #[test]
     fn asn_header_is_ignored_from_an_untrusted_peer() {
-        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", Some("cf-asn".into()));
+        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", Some("cf-asn".into()), None);
         let h = hdr(&[("cf-asn", "8075")]);
-        assert_eq!(s.classify("203.0.113.9", &h, false, Request::Click), None);
         assert_eq!(
-            s.classify("203.0.113.9", &h, true, Request::Click)
-                .as_deref(),
+            s.classify("203.0.113.9", &h, false, Request::Click).label(),
+            None
+        );
+        assert_eq!(
+            s.classify("203.0.113.9", &h, true, Request::Click).label(),
             Some("microsoft")
         );
     }
 
-    // With no header named, an ASN cannot be established at all and the
-    // catalogue's ASN entries are inert.
+    // With neither a header nor a database, an ASN cannot be established at
+    // all and the catalogue's ASN entries are inert.
     #[test]
-    fn asn_entries_need_a_configured_header() {
-        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", None);
+    fn asn_entries_need_a_header_or_a_database() {
+        let s = ScannerNetworks::new(false, "", "asn:8075 microsoft", None, None);
         let h = hdr(&[("cf-asn", "8075")]);
-        assert_eq!(s.classify("203.0.113.9", &h, true, Request::Click), None);
+        assert_eq!(
+            s.classify("203.0.113.9", &h, true, Request::Click).label(),
+            None
+        );
+        assert!(!s.can_resolve_asn(), "the boot warning fires on this");
+    }
+
+    // The point of the database: the same entry matches with no edge
+    // configuration at all, from a peer nothing trusts and with no header in
+    // sight. This is every instance that is not behind Cloudflare.
+    #[test]
+    fn a_database_makes_asn_entries_match_with_no_header() {
+        let s = ScannerNetworks::new(
+            false,
+            "asn:22843 proofpoint",
+            "",
+            None,
+            asn_db(&[("67.231.144.0/20", 22843)]),
+        );
+        assert!(s.can_resolve_asn(), "the boot warning must not fire");
+        for kind in [Request::Open, Request::Click] {
+            assert_eq!(
+                s.classify("67.231.152.7", &hdr(&[]), false, kind).label(),
+                Some("proofpoint"),
+                "{kind:?} should resolve through the database"
+            );
+        }
+        // An address outside every catalogued ASN is still nobody.
+        assert_eq!(
+            s.classify("198.51.100.4", &hdr(&[]), false, Request::Click)
+                .label(),
+            None
+        );
+    }
+
+    // An operator who already writes the header keeps exactly the behaviour
+    // they have, so adding a database can never re-label a source their edge
+    // has already spoken for.
+    #[test]
+    fn a_trusted_header_wins_over_the_database() {
+        let s = ScannerNetworks::new(
+            false,
+            "asn:22843 proofpoint, asn:30031 mimecast",
+            "",
+            Some("cf-asn".into()),
+            asn_db(&[("67.231.144.0/20", 22843)]),
+        );
+        let h = hdr(&[("cf-asn", "30031")]);
+        assert_eq!(
+            s.classify("67.231.152.7", &h, true, Request::Click).label(),
+            Some("mimecast"),
+            "the edge's answer decides where it gives one"
+        );
+        // From an untrusted peer the header is not an answer at all, so the
+        // database still speaks. The database is a lookup on the address, so
+        // it is not a way around the trust check: a caller cannot move itself
+        // into another ASN by asking.
+        assert_eq!(
+            s.classify("67.231.152.7", &h, false, Request::Click)
+                .label(),
+            Some("proofpoint")
+        );
+        // And a trusted peer that writes nothing, or writes nonsense, falls
+        // through rather than ending the attempt.
+        for headers in [hdr(&[]), hdr(&[("cf-asn", "unknown")])] {
+            assert_eq!(
+                s.classify("67.231.152.7", &headers, true, Request::Click)
+                    .label(),
+                Some("proofpoint")
+            );
+        }
+    }
+
+    // A CIDR entry and an ASN entry can both cover a source. The ASN is the
+    // more specific statement about who is asking, so it is read first, and a
+    // scope that does not cover this request does not fall through to it.
+    #[test]
+    fn an_asn_entry_is_read_before_the_network_list() {
+        let s = ScannerNetworks::new(
+            false,
+            "",
+            "asn:15169 google",
+            None,
+            asn_db(&[("142.250.0.0/15", 15169)]),
+        );
+        assert_eq!(
+            s.classify("142.250.1.1", &hdr(&[]), false, Request::Click)
+                .label(),
+            Some("google")
+        );
+        assert_eq!(
+            s.classify("142.250.1.1", &hdr(&[]), false, Request::Open)
+                .label(),
+            None,
+            "a clicks-only ASN must not label a pixel fetch"
+        );
+    }
+
+    // A catalogue with nothing keyed by ASN cannot match on one, so the
+    // database is never consulted and an instance that turns the builtins off
+    // pays nothing per pixel.
+    #[test]
+    fn a_catalogue_with_no_asn_entries_never_looks_anything_up() {
+        let s = ScannerNetworks::new(
+            false,
+            "203.0.113.0/24 pf",
+            "",
+            Some("cf-asn".into()),
+            asn_db(&[("67.231.144.0/20", 22843)]),
+        );
+        assert!(s.asns.is_empty());
+        assert_eq!(
+            s.source_asn(
+                Some("67.231.152.7".parse().unwrap()),
+                &hdr(&[("cf-asn", "22843")]),
+                true
+            ),
+            None
+        );
+        assert_eq!(s.asn_lookups.load(Ordering::Relaxed), 0);
+    }
+
+    // A database that opens cleanly and covers none of the traffic reaching
+    // this instance looks exactly like a working one, so the lookups are
+    // counted and the service says so once. Nothing about a request changes.
+    #[test]
+    fn a_database_that_resolves_nothing_is_counted_and_reported_once() {
+        let s = ScannerNetworks::new(
+            false,
+            "asn:22843 proofpoint",
+            "",
+            None,
+            asn_db(&[("67.231.144.0/20", 22843)]),
+        );
+        for _ in 0..ASN_SILENCE_THRESHOLD {
+            assert_eq!(
+                s.classify("198.51.100.4", &hdr(&[]), false, Request::Click)
+                    .label(),
+                None
+            );
+        }
+        assert_eq!(s.asn_lookups.load(Ordering::Relaxed), ASN_SILENCE_THRESHOLD);
+        assert_eq!(s.asn_resolved.load(Ordering::Relaxed), 0);
+        assert!(
+            s.asn_reported.load(Ordering::Relaxed),
+            "a silent database must be reported"
+        );
+    }
+
+    // The positive half: the first source the database names is reported too,
+    // which is the only confirmation an operator gets that the file is live.
+    #[test]
+    fn the_first_resolved_source_is_reported_and_then_it_stays_quiet() {
+        let s = ScannerNetworks::new(
+            false,
+            "asn:22843 proofpoint",
+            "",
+            None,
+            asn_db(&[("67.231.144.0/20", 22843)]),
+        );
+        for _ in 0..3 {
+            assert_eq!(
+                s.classify("67.231.152.7", &hdr(&[]), false, Request::Click)
+                    .label(),
+                Some("proofpoint")
+            );
+        }
+        assert_eq!(s.asn_lookups.load(Ordering::Relaxed), 3);
+        assert_eq!(s.asn_resolved.load(Ordering::Relaxed), 3);
+        assert!(s.asn_reported.load(Ordering::Relaxed));
+    }
+
+    // Counting is the database's alone. A header-resolved ASN never touches
+    // the lookup counters, so a Cloudflare instance with no database is not
+    // accused of running a silent one.
+    #[test]
+    fn a_header_resolved_asn_is_not_counted_as_a_database_lookup() {
+        let s = ScannerNetworks::new(
+            false,
+            "asn:22843 proofpoint",
+            "",
+            Some("cf-asn".into()),
+            None,
+        );
+        assert_eq!(
+            s.classify(
+                "198.51.100.4",
+                &hdr(&[("cf-asn", "22843")]),
+                true,
+                Request::Click
+            )
+            .label(),
+            Some("proofpoint")
+        );
+        assert_eq!(s.asn_lookups.load(Ordering::Relaxed), 0);
+        assert!(!s.asn_reported.load(Ordering::Relaxed));
+    }
+
+    // A source with no resolvable ASN, or no address at all, falls through to
+    // the network list rather than short-circuiting it.
+    #[test]
+    fn an_unresolvable_source_still_reaches_the_network_list() {
+        let s = ScannerNetworks::new(true, "", "", None, asn_db(&[("67.231.144.0/20", 22843)]));
+        assert_eq!(
+            s.classify("40.107.1.2", &hdr(&[]), false, Request::Open)
+                .label(),
+            Some("microsoft-365-protection")
+        );
+        assert_eq!(
+            s.classify("not-an-address", &hdr(&[]), false, Request::Open)
+                .label(),
+            None
+        );
     }
 
     #[test]
@@ -392,25 +823,27 @@ mod tests {
             "203.0.113.0/24 proofpoint, 198.51.100.7",
             "192.0.2.0/24 acme-gateway",
             None,
+            None,
         );
         assert_eq!(
             s.classify("203.0.113.9", &hdr(&[]), false, Request::Open)
-                .as_deref(),
+                .label(),
             Some("proofpoint")
         );
         // A bare address is its own /32, and needs no label.
         assert_eq!(
             s.classify("198.51.100.7", &hdr(&[]), false, Request::Open)
-                .as_deref(),
+                .label(),
             Some("scanner")
         );
         assert_eq!(
             s.classify("192.0.2.5", &hdr(&[]), false, Request::Click)
-                .as_deref(),
+                .label(),
             Some("acme-gateway")
         );
         assert_eq!(
-            s.classify("192.0.2.5", &hdr(&[]), false, Request::Open),
+            s.classify("192.0.2.5", &hdr(&[]), false, Request::Open)
+                .label(),
             None
         );
     }
@@ -419,21 +852,28 @@ mod tests {
     // not stop the service booting.
     #[test]
     fn unparseable_entries_are_skipped() {
-        let s = ScannerNetworks::new(false, "not-a-cidr, 203.0.113.0/24 pf, asn:nope", "", None);
+        let s = ScannerNetworks::new(
+            false,
+            "not-a-cidr, 203.0.113.0/24 pf, asn:nope",
+            "",
+            None,
+            None,
+        );
         assert_eq!(s.skipped, 2);
         assert_eq!(
             s.classify("203.0.113.9", &hdr(&[]), false, Request::Open)
-                .as_deref(),
+                .label(),
             Some("pf")
         );
     }
 
     #[test]
     fn builtins_can_be_turned_off() {
-        let s = ScannerNetworks::new(false, "", "", Some("cf-asn".into()));
+        let s = ScannerNetworks::new(false, "", "", Some("cf-asn".into()), None);
         assert!(s.nets.is_empty() && s.asns.is_empty());
         assert_eq!(
-            s.classify("40.107.1.2", &hdr(&[]), false, Request::Open),
+            s.classify("40.107.1.2", &hdr(&[]), false, Request::Open)
+                .label(),
             None
         );
     }
@@ -465,16 +905,17 @@ mod tests {
             "# a note, with a comma in it\n203.0.113.0/24 pf\n198.51.100.0/24 mc # trailing note, ignored",
             "",
             None,
+            None,
         );
         assert_eq!(s.skipped, 0, "prose must not be read as entries");
         assert_eq!(
             s.classify("203.0.113.1", &hdr(&[]), false, Request::Open)
-                .as_deref(),
+                .label(),
             Some("pf")
         );
         assert_eq!(
             s.classify("198.51.100.1", &hdr(&[]), false, Request::Open)
-                .as_deref(),
+                .label(),
             Some("mc")
         );
     }

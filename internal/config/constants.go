@@ -205,6 +205,29 @@ const (
 	TrackingMachineWindowSecondsMin = 1
 	TrackingMachineWindowSecondsMax = 900
 
+	// TrackingMachineWindowProbableSecondsDefault is the window used instead
+	// of the two above when the tracking edge recognised the source as a
+	// scanner network that ALSO carries people's own requests: Proofpoint
+	// Isolation and Mimecast Browser Isolation render a clicked page in the
+	// vendor's own cloud, so the request may have a person behind it.
+	//
+	// Such a match cannot settle the verdict, but it moves the odds a long
+	// way, which is what buys the wider window: inside it the event is the
+	// delivery-time scan, outside it the person who got to the mail later. Ten
+	// minutes covers a gateway scanning on arrival behind a slow provider
+	// queue while leaving all but the fastest recipients on the human side.
+	//
+	// Never shorter than the per-kind window in effect: the classifier takes
+	// the wider of the two, so this setting can only ever catch more.
+	TrackingMachineWindowProbableSecondsDefault = 600
+
+	// Bounds on that window. It reaches a day because how long a vendor takes
+	// to detonate a link is the vendor's property, not the instance's, and an
+	// operator whose recipients sit almost entirely behind one may want the
+	// whole of it.
+	TrackingMachineWindowProbableSecondsMin = 1
+	TrackingMachineWindowProbableSecondsMax = 86400
+
 	// TrackingClickBurstSeconds is the window inside which clicks on two
 	// different links of the same email from the same source are treated as
 	// a scanner walking the message. A person follows one link at a time.

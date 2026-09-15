@@ -51,6 +51,11 @@ moka = { version = "0.12", features = ["future"] }
 # Trusted-proxy CIDR matching for the client IP
 ipnet = "2"
 
+# Source-ASN resolution from a GeoLite2-ASN database, so `asn:` entries in the
+# scanner catalogue match without an edge that writes an ASN header. Pure Rust,
+# no native deps; the `mmap` feature is deliberately off (see asndb.rs).
+maxminddb = { version = "0.32", default-features = false }
+
 # Error reporting. Optional at runtime: with no SENTRY_DSN the guard is never
 # created, no transport thread starts and no host is contacted. rustls for the
 # same reason reqwest uses it, so the image needs no OpenSSL system libraries.

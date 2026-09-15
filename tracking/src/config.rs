@@ -84,9 +84,13 @@ pub struct Config {
     /// also proxy a mail client's own image fetches.
     pub scanner_click_networks: String,
     /// Header a trusted proxy sets with the source ASN (Cloudflare:
-    /// ip.src.asnum). Empty, the default, disables ASN matching: an ASN is not
-    /// something this service can work out on its own.
+    /// ip.src.asnum). Empty, the default, leaves the database below as the
+    /// only source; where both are set the header wins.
     pub scanner_asn_header: String,
+    /// Path to a MaxMind GeoLite2-ASN database, which resolves the source ASN
+    /// with no edge configuration at all. Empty or unreadable, the default,
+    /// disables native ASN matching, exactly as GEODB_PATH does elsewhere.
+    pub scanner_asn_db: String,
     /// Where errors and panics are reported. Empty, the default, means nowhere:
     /// no backend is initialised and no host is contacted.
     pub posthog_key: String,
@@ -251,6 +255,10 @@ impl Config {
             .unwrap_or_default()
             .trim()
             .to_ascii_lowercase();
+        let scanner_asn_db = env::var("TRACKING_SCANNER_ASN_DB")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
 
         // Error reporting. Read from the environment only: a key or a DSN in
         // SSM would make a self-host that never sets one still pay an AWS
@@ -309,6 +317,7 @@ impl Config {
             scanner_networks,
             scanner_click_networks,
             scanner_asn_header,
+            scanner_asn_db,
             posthog_key,
             posthog_host,
             sentry_dsn,
@@ -409,6 +418,10 @@ impl Config {
                 .unwrap_or_default()
                 .trim()
                 .to_ascii_lowercase(),
+            scanner_asn_db: env::var("TRACKING_SCANNER_ASN_DB")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
             posthog_key: if parse_bool(
                 &env::var("POSTHOG_ERROR_TRACKING").unwrap_or_default(),
                 true,

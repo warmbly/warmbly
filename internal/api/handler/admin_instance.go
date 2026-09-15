@@ -129,6 +129,7 @@ func instanceSettingsAuditDetails(doc instancesettings.Document) map[string]any 
 		"retention_audit_log_days":           doc.Retention.AuditLogDays,
 		"tracking_machine_window_open":       doc.Tracking.MachineWindowOpenSeconds,
 		"tracking_machine_window_click":      doc.Tracking.MachineWindowClickSeconds,
+		"tracking_machine_window_probable":   doc.Tracking.MachineWindowProbableSeconds,
 		"deliverability_enforce_domain_auth": doc.Deliverability.EnforceDomainAuth,
 		"deliverability_auth_grace_hours":    doc.Deliverability.AuthGraceHours,
 		"notification_channels":              len(doc.Notifications.Channels),
