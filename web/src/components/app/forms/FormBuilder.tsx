@@ -21,16 +21,22 @@ import toast from "react-hot-toast";
 import {
     DndContext,
     DragOverlay,
+    KeyboardSensor,
     PointerSensor,
     closestCenter,
+    pointerWithin,
     useDraggable,
     useDroppable,
     useSensor,
     useSensors,
+    type CollisionDetection,
     type DragEndEvent,
+    type DragOverEvent,
     type DragStartEvent,
+    type UniqueIdentifier,
 } from "@dnd-kit/core";
-import { arrayMove } from "@dnd-kit/sortable";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import type { LucideIcon } from "lucide-react";
 
 import { TextInput } from "@/components/ui/field";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
@@ -50,7 +56,15 @@ import FormPreview from "./FormPreview";
 import SettingsPanel from "./SettingsPanel";
 import ShareTab from "./ShareTab";
 import SubmissionsTab from "./SubmissionsTab";
-import { PALETTE, newField, type PaletteItem } from "./fieldCatalog";
+import {
+    CANVAS_DROPPABLE_ID,
+    PALETTE_PREFIX,
+    insertionIndex,
+    isNoopMove,
+    isPaletteDrag,
+    moveField,
+} from "./dropSlot";
+import { PALETTE, newField, paletteFor, type PaletteItem } from "./fieldCatalog";
 
 type TabKey = "build" | "design" | "settings" | "share" | "analytics" | "submissions";
 
@@ -97,9 +111,29 @@ const STATUS_PILL: Record<Form["status"], string> = {
     archived: "bg-amber-50 text-amber-700",
 };
 
+/** The chip the cursor carries; a field drag borrows its type's palette icon. */
+interface DragChip {
+    label: string;
+    Icon: LucideIcon;
+}
+
+// Fields and the end-of-form slot are the drop targets; the canvas droppable
+// is only a fence. closestCenter always names a target however far away the
+// pointer is, so without the fence a palette item released back over the
+// palette would still be added, and without excluding the canvas from the
+// ranking its pane-sized rect out-competed the field the pointer was over.
+const collisionDetection: CollisionDetection = (args) => {
+    const canvas = args.droppableContainers.find((c) => c.id === CANVAS_DROPPABLE_ID)?.rect.current;
+    const p = args.pointerCoordinates;
+    if (p && canvas && (p.x < canvas.left || p.x > canvas.right || p.y < canvas.top || p.y > canvas.bottom)) return [];
+    const droppableContainers = args.droppableContainers.filter((c) => c.id !== CANVAS_DROPPABLE_ID);
+    const over = pointerWithin({ ...args, droppableContainers });
+    return over.length > 0 ? over : closestCenter({ ...args, droppableContainers });
+};
+
 function PaletteButton({ item, onAdd, disabled }: { item: PaletteItem; onAdd: () => void; disabled: boolean }) {
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-        id: `palette:${item.type}`,
+        id: `${PALETTE_PREFIX}${item.type}`,
         data: { type: item.type },
         disabled,
     });
@@ -156,7 +190,14 @@ export default function FormBuilder({ form }: { form: Form }) {
     const baselineRef = React.useRef(sig(draftFrom(form)));
     const dirty = sig(draft) !== baselineRef.current;
     const [selectedId, setSelectedId] = React.useState<string | null>(null);
-    const [dragging, setDragging] = React.useState<PaletteItem | null>(null);
+    const [dragging, setDragging] = React.useState<DragChip | null>(null);
+    // The slot the drag would land in, as an index into draft.fields before
+    // the move. Nothing reflows during a drag, so this caret is the only thing
+    // telling the user where the field goes.
+    const [dropIndex, setDropIndex] = React.useState<number | null>(null);
+    // Escape cancels a keyboard drag; the listener below must not also read it
+    // as "clear the selection" and take the settings panel with it.
+    const draggingRef = React.useRef(false);
 
     usePresenceResource(`form:${form.id}`, canEdit ? "editing" : "viewing");
 
@@ -164,6 +205,7 @@ export default function FormBuilder({ form }: { form: Form }) {
     React.useEffect(() => {
         function onKey(e: KeyboardEvent) {
             if (e.key !== "Escape") return;
+            if (draggingRef.current) return;
             if (document.querySelector("[data-floating],[role='alertdialog']")) return;
             setSelectedId(null);
         }
@@ -204,32 +246,84 @@ export default function FormBuilder({ form }: { form: Form }) {
         });
     }
 
-    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-    const { setNodeRef: setCanvasRef } = useDroppable({ id: "canvas" });
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+        // The grip announces itself as sortable, so it has to be sortable
+        // without a pointer: space picks a field up, the arrows move it.
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    );
+    const { setNodeRef: setCanvasRef } = useDroppable({ id: CANVAS_DROPPABLE_ID });
+
+    const slotOf = (activeId: string, overId: string | null) => insertionIndex(draft.fields, activeId, overId);
+    const isNoop = (activeId: string, at: number | null) => isNoopMove(draft.fields, activeId, at);
+
+    function blockName(id: string): string {
+        if (isPaletteDrag(id)) {
+            return PALETTE.find((p) => `${PALETTE_PREFIX}${p.type}` === id)?.label ?? "Block";
+        }
+        const f = draft.fields.find((x) => x.id === id);
+        return f ? f.label.trim() || paletteFor(f.type)?.label || "Block" : "Block";
+    }
+
+    // dnd-kit announces raw field ids by default, which is no help on the
+    // keyboard path this sensor opens up: name the block and the slot instead.
+    const announcements = {
+        onDragStart: ({ active }: { active: { id: UniqueIdentifier } }) => `Picked up ${blockName(String(active.id))}.`,
+        onDragOver: ({ active, over }: DragOverEvent) => slotMessage(String(active.id), over ? String(over.id) : null, "will be"),
+        onDragEnd: ({ active, over }: DragEndEvent) => slotMessage(String(active.id), over ? String(over.id) : null, "was"),
+        onDragCancel: ({ active }: { active: { id: UniqueIdentifier } }) => `${blockName(String(active.id))} was left where it was.`,
+    };
+
+    function slotMessage(activeId: string, overId: string | null, tense: "will be" | "was"): string {
+        const name = blockName(activeId);
+        const at = slotOf(activeId, overId);
+        if (at === null || isNoop(activeId, at)) return `${name} ${tense} left where it was.`;
+        if (at >= draft.fields.length) return `${name} ${tense} placed last.`;
+        return `${name} ${tense} placed before ${blockName(draft.fields[at].id)}.`;
+    }
 
     function onDragStart(e: DragStartEvent) {
         const id = String(e.active.id);
-        if (id.startsWith("palette:")) {
-            setDragging(PALETTE.find((p) => `palette:${p.type}` === id) ?? null);
+        draggingRef.current = true;
+        setDropIndex(null);
+        if (isPaletteDrag(id)) {
+            const item = PALETTE.find((p) => `${PALETTE_PREFIX}${p.type}` === id);
+            setDragging(item ? { label: item.label, Icon: item.icon } : null);
+            return;
         }
+        const field = draft.fields.find((f) => f.id === id);
+        const item = field ? paletteFor(field.type) : undefined;
+        setDragging(item ? { label: field?.label.trim() || item.label, Icon: item.icon } : null);
+    }
+
+    function onDragOver(e: DragOverEvent) {
+        const activeId = String(e.active.id);
+        const at = slotOf(activeId, e.over ? String(e.over.id) : null);
+        setDropIndex(isNoop(activeId, at) ? null : at);
+    }
+
+    function onDragCancel() {
+        draggingRef.current = false;
+        setDragging(null);
+        setDropIndex(null);
     }
 
     function onDragEnd(e: DragEndEvent) {
+        draggingRef.current = false;
         setDragging(null);
+        setDropIndex(null);
         const activeId = String(e.active.id);
-        const overId = e.over ? String(e.over.id) : null;
-        if (activeId.startsWith("palette:")) {
-            const item = PALETTE.find((p) => `palette:${p.type}` === activeId);
-            if (!item || !overId) return;
-            const overIndex = draft.fields.findIndex((f) => f.id === overId);
-            addField(item, overIndex >= 0 ? overIndex : undefined);
+        const at = slotOf(activeId, e.over ? String(e.over.id) : null);
+        if (at === null) return;
+        if (isPaletteDrag(activeId)) {
+            const item = PALETTE.find((p) => `${PALETTE_PREFIX}${p.type}` === activeId);
+            if (item) addField(item, at);
             return;
         }
-        if (!overId || overId === "canvas" || activeId === overId) return;
-        const from = draft.fields.findIndex((f) => f.id === activeId);
-        const to = draft.fields.findIndex((f) => f.id === overId);
-        if (from < 0 || to < 0) return;
-        setDraft((d) => ({ ...d, fields: arrayMove(d.fields, from, to) }));
+        setDraft((d) => {
+            const fields = moveField(d.fields, activeId, at);
+            return fields === d.fields ? d : { ...d, fields };
+        });
     }
 
     function writeFrom(d: Draft, s?: Form["status"]): FormWrite {
@@ -303,6 +397,7 @@ export default function FormBuilder({ form }: { form: Form }) {
                 editable={canEdit && tab === "build"}
                 showCaptchaBadge={draft.captcha_enabled && captchaAvailable}
                 previewPaging={tab === "design"}
+                dropIndex={dropIndex}
                 onSelect={(id) => setSelectedId(id || null)}
                 onDelete={(id) => deleteField(id)}
                 onDuplicate={(id) => duplicateField(id)}
@@ -397,7 +492,15 @@ export default function FormBuilder({ form }: { form: Form }) {
             {/* Body */}
             <div className="flex-1 min-h-0 flex">
                 {tab === "build" && (
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={collisionDetection}
+                        onDragStart={onDragStart}
+                        onDragOver={onDragOver}
+                        onDragEnd={onDragEnd}
+                        onDragCancel={onDragCancel}
+                        accessibility={{ announcements }}
+                    >
                         <aside className="hidden md:flex w-52 shrink-0 flex-col gap-3 border-r border-slate-200 bg-white overflow-y-auto p-3">
                             {(["Fields", "Layout"] as const).map((group) => (
                                 <div key={group}>
@@ -434,11 +537,13 @@ export default function FormBuilder({ form }: { form: Form }) {
                                 <div className="p-6 text-[12px] text-slate-400">Select a field on the canvas to edit it.</div>
                             )}
                         </aside>
-                        <DragOverlay>
+                        {/* A dragged field rides the cursor as a chip and its
+                            row stays put, so the canvas keeps its shape. */}
+                        <DragOverlay dropAnimation={null}>
                             {dragging && (
-                                <div className="h-8 px-2 inline-flex items-center gap-2 rounded-md border border-sky-200 bg-white shadow-md text-[12px] text-slate-700">
-                                    <dragging.icon className="w-3.5 h-3.5 text-sky-600" />
-                                    {dragging.label}
+                                <div className="h-8 px-2 inline-flex items-center gap-2 rounded-md border border-sky-200 bg-white shadow-md text-[12px] text-slate-700 max-w-[220px]">
+                                    <dragging.Icon className="w-3.5 h-3.5 shrink-0 text-sky-600" />
+                                    <span className="truncate">{dragging.label}</span>
                                 </div>
                             )}
                         </DragOverlay>
