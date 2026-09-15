@@ -56,6 +56,23 @@ func isInstant(sentAt *time.Time, at time.Time, window time.Duration) bool {
 	return since >= 0 && since < window
 }
 
+// engagement is one open or click as the per-event rules see it: what the
+// request said about itself, what the edge made of where it came from, and the
+// two clocks the timing rule compares.
+type engagement struct {
+	userAgent *string
+	// scanner is the label the tracking edge put on the source network, empty
+	// when it recognised none.
+	scanner *string
+	// probable says that network ALSO carries people's own requests, so the
+	// match corroborates the timing rule instead of replacing it. Browser
+	// isolation is the case: Proofpoint and Mimecast render a clicked page in
+	// their own cloud, with a person on the other end of it.
+	probable bool
+	sentAt   *time.Time
+	at       time.Time
+}
+
 // isScannerSource reports whether the tracking edge recognised the request's
 // source as a mail-filtering network. That verdict outranks the user agent:
 // the whole point of the network rules is that a security gateway walks a
@@ -64,17 +81,38 @@ func isScannerSource(scanner *string) bool {
 	return scanner != nil && strings.TrimSpace(*scanner) != ""
 }
 
+// certainScanner is a source that only ever filters mail, so the match is the
+// whole verdict.
+func (e engagement) certainScanner() bool {
+	return isScannerSource(e.scanner) && !e.probable
+}
+
+// probableScanner is a source that is a scanner most of the time but can carry
+// a person, so the match is worth a wider window and nothing more.
+func (e engagement) probableScanner() bool {
+	return isScannerSource(e.scanner) && e.probable
+}
+
 // classifyClick applies the per-event click rules (the burst rule needs the
 // click log and lives in the consumer). It returns whether the click is
 // automated and the reason recorded with it; an empty reason is a person.
-func classifyClick(userAgent, scanner *string, sentAt *time.Time, at time.Time, window time.Duration) (bool, string) {
-	if isScannerSource(scanner) {
+//
+// `window` is the machine window for a click; `probable` is the wider one a
+// recognised-but-not-certain source is measured against. A probable source
+// outside its window is left to the remaining rules, exactly as an
+// unrecognised one would be, so naming a network can only ever catch more
+// scans and never take a click that already counted as human.
+func classifyClick(e engagement, window, probable time.Duration) (bool, string) {
+	if e.certainScanner() {
 		return true, repository.LinkClickReasonScanner
 	}
-	if userAgent == nil || strings.TrimSpace(*userAgent) == "" {
+	if e.userAgent == nil || strings.TrimSpace(*e.userAgent) == "" {
 		return true, repository.LinkClickReasonPrefetch
 	}
-	if isInstant(sentAt, at, window) {
+	if e.probableScanner() && isInstant(e.sentAt, e.at, probable) {
+		return true, repository.LinkClickReasonScanner
+	}
+	if isInstant(e.sentAt, e.at, window) {
 		return true, repository.LinkClickReasonInstant
 	}
 	return false, ""
@@ -97,14 +135,21 @@ func eventTime(stamp string) time.Time {
 // caught it: scanner for a fetch from a known mail-filtering network,
 // prefetch for a mail proxy or a fetch with no browser, instant for a fetch
 // inside the machine window after dispatch. An empty reason is a person.
-func classifyOpen(userAgent, scanner *string, sentAt *time.Time, at time.Time, window time.Duration) (bool, string) {
-	if isScannerSource(scanner) {
+//
+// The two windows work as they do for clicks: a source the edge recognised but
+// could not settle is measured against the wider one and otherwise left to the
+// remaining rules.
+func classifyOpen(e engagement, window, probable time.Duration) (bool, string) {
+	if e.certainScanner() {
 		return true, repository.EmailOpenReasonScanner
 	}
-	if isMachineOpen(userAgent) {
+	if isMachineOpen(e.userAgent) {
 		return true, repository.EmailOpenReasonPrefetch
 	}
-	if isInstant(sentAt, at, window) {
+	if e.probableScanner() && isInstant(e.sentAt, e.at, probable) {
+		return true, repository.EmailOpenReasonScanner
+	}
+	if isInstant(e.sentAt, e.at, window) {
 		return true, repository.EmailOpenReasonInstant
 	}
 	return false, ""

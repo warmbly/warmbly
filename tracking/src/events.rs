@@ -23,6 +23,12 @@ pub struct TrackingEvent {
     /// for every ordinary request, and absent from events written before the
     /// field existed.
     pub scanner: Option<String>,
+    /// Whether that source ALSO carries people's own requests, which browser
+    /// isolation and whole-cloud allocations do. The consumer then measures
+    /// the event against its wider machine window instead of condemning it on
+    /// the network alone. False for an ordinary request and for every source
+    /// that only ever filters mail, which is what an older event decodes to.
+    pub scanner_probable: bool,
 }
 
 #[cfg(test)]
@@ -47,6 +53,7 @@ mod tests {
             ip_hash: Some("deadbeef".to_string()),
             client_ip: Some("203.0.113.0".to_string()),
             scanner: None,
+            scanner_probable: false,
         };
 
         let value: serde_json::Value = serde_json::from_slice(
@@ -69,6 +76,7 @@ mod tests {
             "link_id",
             "original_url",
             "scanner",
+            "scanner_probable",
             "task_id",
             "timestamp",
             "user_agent",

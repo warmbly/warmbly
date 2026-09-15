@@ -65,7 +65,15 @@ type TrackingEvent struct {
 	ClientIP *string `json:"client_ip" avro:"client_ip"`
 	// Scanner names the known-scanner source the request came from, when the
 	// tracking edge recognised one: a mail-filtering network rather than a
-	// person's own device. Set means machine, whatever the user agent claims.
-	// Nullable and absent from events written before the field existed.
+	// person's own device. Set means machine, whatever the user agent claims,
+	// unless ScannerProbable is also set. Nullable and absent from events
+	// written before the field existed.
 	Scanner *string `json:"scanner" avro:"scanner"`
+	// ScannerProbable says that source ALSO carries people's own requests, so
+	// the match corroborates the timing rule instead of replacing it: the
+	// event is automated only inside the wider probable window. Browser
+	// isolation is the case it exists for. False for an ordinary request, for
+	// a source that only ever filters mail, and for every event written before
+	// the field existed, which is the conservative reading either way.
+	ScannerProbable bool `json:"scanner_probable" avro:"scanner_probable"`
 }

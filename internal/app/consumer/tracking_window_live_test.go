@@ -106,8 +106,9 @@ func TestLiveTrackingWindowReachesTheClassifier(t *testing.T) {
 
 	widened := 300
 	patch := instancesettings.Patch{Tracking: &struct {
-		MachineWindowOpenSeconds  *int `json:"machine_window_open_seconds"`
-		MachineWindowClickSeconds *int `json:"machine_window_click_seconds"`
+		MachineWindowOpenSeconds     *int `json:"machine_window_open_seconds"`
+		MachineWindowClickSeconds    *int `json:"machine_window_click_seconds"`
+		MachineWindowProbableSeconds *int `json:"machine_window_probable_seconds"`
 	}{MachineWindowOpenSeconds: &widened}}
 
 	if _, err := instancesettings.NewService(store).Put(ctx, patch, nil); err != nil {
@@ -131,16 +132,23 @@ func TestLiveTrackingWindowReachesTheClassifier(t *testing.T) {
 		t.Fatalf("click window = %v, want it untouched at %v", got, want)
 	}
 
+	// The probable window was not part of the patch either, and it has its own
+	// bounds, so a partial write must leave it at the snapshot's value.
+	if got, want := windows.MachineWindowProbableSeconds, before.Tracking.MachineWindowProbableSeconds; got != want {
+		t.Fatalf("probable window = %d, want it untouched at %d", got, want)
+	}
+
 	sent := time.Now()
-	chrome := strp("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
 	at := sent.Add(4 * time.Minute)
+	ow, op := opens(windows)
 
 	// Four minutes is well past the shipped 60s and inside the saved 300s, so
 	// this only passes if the stored value is what the classifier used.
-	if m, r := classifyOpen(chrome, nil, &sent, at, windows.OpenWindow()); !m || r != repository.EmailOpenReasonInstant {
+	if m, r := classifyOpen(seen(sent, at), ow, op); !m || r != repository.EmailOpenReasonInstant {
 		t.Fatalf("an open inside the saved window is automated, got %v %q", m, r)
 	}
-	if m, _ := classifyOpen(chrome, nil, &sent, at, instancesettings.DefaultTracking().OpenWindow()); m {
+	dw, dp := opens(instancesettings.DefaultTracking())
+	if m, _ := classifyOpen(seen(sent, at), dw, dp); m {
 		t.Fatal("the same open is a person's under the shipped window; the test proves nothing otherwise")
 	}
 }

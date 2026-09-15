@@ -125,19 +125,35 @@ const RETENTION_PRESETS = [
 // cover provider queueing and transit before the recipient's gateway sees it.
 const MACHINE_WINDOW_MIN_SECONDS = 1;
 const MACHINE_WINDOW_MAX_SECONDS = 900;
+// The probable window has bounds of its own and reaches a day, because how
+// long a security vendor takes to detonate a link is the vendor's property,
+// not this instance's.
+const PROBABLE_WINDOW_MAX_SECONDS = 86400;
 
 const TRACKING_FIELDS = [
     {
         key: "machineWindowOpen",
         setting: "machine_window_open_seconds",
         label: "Automated open window (seconds)",
+        min: MACHINE_WINDOW_MIN_SECONDS,
+        max: MACHINE_WINDOW_MAX_SECONDS,
         help: "An open arriving this soon after a send was dispatched is recorded as automated. Raise it when delivery-time scanners are being counted as opens, lower it when recipients who read immediately are being missed.",
     },
     {
         key: "machineWindowClick",
         setting: "machine_window_click_seconds",
         label: "Automated click window (seconds)",
+        min: MACHINE_WINDOW_MIN_SECONDS,
+        max: MACHINE_WINDOW_MAX_SECONDS,
         help: "The same window for clicks, kept separate because the two mistakes cost different things: a misjudged open loses a metric, a misjudged click loses the automation behind an interested lead.",
+    },
+    {
+        key: "machineWindowProbable",
+        setting: "machine_window_probable_seconds",
+        label: "Probable-scanner window (seconds)",
+        min: MACHINE_WINDOW_MIN_SECONDS,
+        max: PROBABLE_WINDOW_MAX_SECONDS,
+        help: "Used instead of the two above when the request came from a mail-security network that also renders clicked pages for people, which Proofpoint and Mimecast do through browser isolation. Inside this window the event is classified as the delivery-time scan; past it, as the recipient who got to the mail later. A recipient behind one of those vendors who really does click inside it is recorded as automated, so raise it if their scans still count as engagement and lower it if fast recipients are being missed. It is never applied shorter than the windows above.",
     },
 ] as const;
 
@@ -173,6 +189,7 @@ function toForm(s: InstanceSettings): FormState {
         tracking: {
             machineWindowOpen: String(s.tracking.machine_window_open_seconds),
             machineWindowClick: String(s.tracking.machine_window_click_seconds),
+            machineWindowProbable: String(s.tracking.machine_window_probable_seconds),
         },
         enforceDomainAuth: s.deliverability.enforce_domain_auth,
         authGraceHours: String(s.deliverability.auth_grace_hours),
@@ -258,13 +275,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
 
     const trackingValid =
         form !== null &&
-        TRACKING_FIELDS.every((f) =>
-            syncFieldValid(
-                form.tracking[f.key],
-                MACHINE_WINDOW_MIN_SECONDS,
-                MACHINE_WINDOW_MAX_SECONDS,
-            ),
-        );
+        TRACKING_FIELDS.every((f) => syncFieldValid(form.tracking[f.key], f.min, f.max));
 
     const authGrace = form ? Number(form.authGraceHours) : NaN;
     const authGraceValid =
@@ -302,7 +313,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
         }
         if (!trackingValid) {
             toast.error(
-                `Every automated-engagement window must be a whole number of seconds between ${MACHINE_WINDOW_MIN_SECONDS} and ${MACHINE_WINDOW_MAX_SECONDS}`,
+                "Every automated-engagement window must be a whole number of seconds inside the range shown under it",
             );
             return;
         }
@@ -329,6 +340,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
             tracking: {
                 machine_window_open_seconds: Number(form.tracking.machineWindowOpen),
                 machine_window_click_seconds: Number(form.tracking.machineWindowClick),
+                machine_window_probable_seconds: Number(form.tracking.machineWindowProbable),
             },
             deliverability: {
                 enforce_domain_auth: form.enforceDomainAuth,
@@ -607,18 +619,19 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                                 or automation, or send a webhook. Nothing is discarded either way.
                                 The clock starts when the send is handed to a worker, so the
                                 window also covers the provider&apos;s queue and the transit to
-                                the recipient. Known scanner networks are matched separately and
-                                are not bounded by time. A change applies within a minute and
-                                only to events recorded after it: opens and clicks already
-                                stored keep the label they were given when they arrived.
+                                the recipient. A network that only ever filters mail is matched
+                                by name and is not bounded by time; one that can also carry a
+                                person gets the probable window below. A change applies within a
+                                minute and only to events recorded after it: opens and clicks
+                                already stored keep the label they were given when they arrived.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="grid grid-cols-1 gap-3 pt-0 md:grid-cols-2">
                             {TRACKING_FIELDS.map((f) => {
                                 const valid = syncFieldValid(
                                     form.tracking[f.key],
-                                    MACHINE_WINDOW_MIN_SECONDS,
-                                    MACHINE_WINDOW_MAX_SECONDS,
+                                    f.min,
+                                    f.max,
                                 );
                                 return (
                                     <div key={f.key}>
@@ -642,14 +655,13 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
                                             className="mt-1"
                                         />
                                         <p className="mt-1 text-xs text-muted-foreground">
-                                            {f.help} Between {MACHINE_WINDOW_MIN_SECONDS} and{" "}
-                                            {MACHINE_WINDOW_MAX_SECONDS.toLocaleString()} seconds.
+                                            {f.help} Between {f.min} and{" "}
+                                            {f.max.toLocaleString()} seconds.
                                         </p>
                                         {!valid && (
                                             <p className="mt-1 text-xs text-red-600">
-                                                Enter a whole number between{" "}
-                                                {MACHINE_WINDOW_MIN_SECONDS} and{" "}
-                                                {MACHINE_WINDOW_MAX_SECONDS.toLocaleString()}.
+                                                Enter a whole number between {f.min} and{" "}
+                                                {f.max.toLocaleString()}.
                                             </p>
                                         )}
                                     </div>
