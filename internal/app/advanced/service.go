@@ -1148,7 +1148,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 		// schedule and the sequence is over before they read any of it
 		// (issue #470).
 		if replyResult.Class == replyclassify.ClassOutOfOffice && settings.ReplyIntent.HoldOnOutOfOffice {
-			held = s.holdForOutOfOffice(ctx, cID, ctID, settings.ReplyIntent, msg)
+			held = s.holdForOutOfOffice(ctx, ctID, settings.ReplyIntent, msg)
 		}
 
 		// OOO trap fix: only a HUMAN reply stamps replied_at. An auto_reply /
@@ -1374,7 +1374,12 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 // return date the auto-reply names plus a business day, else the workspace's
 // fallback. Best-effort; a hold that cannot be written must never fail the
 // reply ingest behind it. Returns when the hold lifts, or nil if none was set.
-func (s *service) holdForOutOfOffice(ctx context.Context, campaignID, contactID uuid.UUID, cfg models.ReplyIntentSettings, msg *models.EmailMessageStoreData) *time.Time {
+//
+// The hold covers every campaign the contact is still a lead of, not only the
+// one this reply was attributed to. An empty desk is an empty desk: holding
+// one sequence while a second kept mailing them was issue #470 again, narrowed
+// to the second campaign (issue #518).
+func (s *service) holdForOutOfOffice(ctx context.Context, contactID uuid.UUID, cfg models.ReplyIntentSettings, msg *models.EmailMessageStoreData) *time.Time {
 	if s.campaignProgressRepo == nil {
 		return nil
 	}
@@ -1396,23 +1401,23 @@ func (s *service) holdForOutOfOffice(ctx context.Context, campaignID, contactID 
 	if !until.After(now) {
 		until, reason = fallback()
 	}
-	hold, err := s.campaignProgressRepo.HoldLead(ctx, campaignID, contactID, &until, reason, models.LeadHoldSourceOutOfOffice)
+	held, err := s.campaignProgressRepo.HoldLeadEverywhere(ctx, contactID, &until, reason, models.LeadHoldSourceOutOfOffice)
 	if err != nil {
 		log.Warn().Err(err).
-			Str("campaign_id", campaignID.String()).Str("contact_id", contactID.String()).
+			Str("contact_id", contactID.String()).
 			Msg("out-of-office hold could not be written; the follow-up keeps its schedule")
 		return nil
 	}
-	if hold == nil {
+	if len(held) == 0 {
 		// Left alone on purpose: a member's own pause, or a longer hold this
 		// auto-reply would have cut short.
 		return nil
 	}
 	log.Info().
-		Str("campaign_id", campaignID.String()).Str("contact_id", contactID.String()).
+		Str("contact_id", contactID.String()).Int("campaigns", len(held)).
 		Time("until", until).Str("reason", reason).
 		Msg("out-of-office auto-reply: lead held until the contact is back")
-	return hold.Until
+	return &until
 }
 
 func ptrTime(t time.Time) *time.Time {

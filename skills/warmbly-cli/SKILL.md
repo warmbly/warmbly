@@ -121,8 +121,9 @@ These put real mail on the wire and prompt before doing so:
   CAMPAIGN_ID CONTACT_ID --until 2026-09-21T17:00:00Z`, not an unsubscribe and
   not the suppression list: both of those are workspace-wide and permanent.
   `resume-lead` lifts it. Warmbly already writes the same hold by itself when a
-  recipient answers with an out-of-office auto-reply, so do not also pause a
-  lead that reads `paused` for that reason.
+  recipient answers with an out-of-office auto-reply, in every campaign that
+  contact is a lead of, so do not also pause a lead that reads `paused` for
+  that reason.
 - If deliverability shows rising bounces or complaints, stop the campaign and
   report. Do not push volume into a degrading mailbox.
 

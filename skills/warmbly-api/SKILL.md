@@ -91,8 +91,8 @@ These commands put real mail on the wire: `campaign start`,
   '{"until":"2026-09-21T17:00:00Z"}'`. Do not unsubscribe them and do not add
   them to the suppression list for this: both are workspace-wide and permanent.
   `campaign resume-lead` lifts it. An out-of-office auto-reply already writes
-  the same hold by itself, so a lead reading `paused` for that reason needs
-  nothing from you.
+  the same hold by itself, across every campaign that contact is a lead of, so
+  a lead reading `paused` for that reason needs nothing from you.
 - If deliverability analytics show rising bounces or complaints, stop the
   campaign first and report; do not push volume into a degrading mailbox.
 

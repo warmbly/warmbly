@@ -14,6 +14,10 @@ import (
 // holdRecorder captures the one call holdForOutOfOffice makes. Embedding the
 // interface beats stubbing forty methods; anything else the code reached for
 // would panic rather than pass quietly.
+//
+// It records HoldLeadEverywhere, not HoldLead: an away message holds the
+// person across every campaign they are a lead of, so reaching for the
+// single-campaign write here would be the bug back (issue #518).
 type holdRecorder struct {
 	repository.CampaignProgressRepository
 	until  *time.Time
@@ -23,13 +27,13 @@ type holdRecorder struct {
 	refuse bool
 }
 
-func (h *holdRecorder) HoldLead(_ context.Context, _, _ uuid.UUID, until *time.Time, reason, source string) (*models.LeadHold, error) {
+func (h *holdRecorder) HoldLeadEverywhere(_ context.Context, _ uuid.UUID, until *time.Time, reason, source string) ([]uuid.UUID, error) {
 	h.calls++
 	h.until, h.reason, h.source = until, reason, source
 	if h.refuse {
 		return nil, nil
 	}
-	return &models.LeadHold{Since: time.Now(), Until: until, Reason: reason, Source: source}, nil
+	return []uuid.UUID{uuid.New()}, nil
 }
 
 // An out-of-office reply parks the contact until they are back: the date the
@@ -74,11 +78,11 @@ func TestHoldForOutOfOffice(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := &holdRecorder{}
 			s := &service{campaignProgressRepo: rec}
-			got := s.holdForOutOfOffice(context.Background(), uuid.New(), uuid.New(),
+			got := s.holdForOutOfOffice(context.Background(), uuid.New(),
 				cfg, &models.EmailMessageStoreData{Subject: tc.subject, BodyText: tc.body})
 
 			if rec.calls != 1 {
-				t.Fatalf("HoldLead called %d times, want once", rec.calls)
+				t.Fatalf("HoldLeadEverywhere called %d times, want once", rec.calls)
 			}
 			if rec.source != models.LeadHoldSourceOutOfOffice {
 				t.Fatalf("hold source = %q, want %q", rec.source, models.LeadHoldSourceOutOfOffice)
@@ -108,7 +112,7 @@ func TestHoldForOutOfOffice(t *testing.T) {
 func TestHoldForOutOfOfficeReportsARefusal(t *testing.T) {
 	rec := &holdRecorder{refuse: true}
 	s := &service{campaignProgressRepo: rec}
-	if got := s.holdForOutOfOffice(context.Background(), uuid.New(), uuid.New(),
+	if got := s.holdForOutOfOffice(context.Background(), uuid.New(),
 		models.ReplyIntentSettings{HoldOnOutOfOffice: true, OutOfOfficeHoldDays: 7},
 		&models.EmailMessageStoreData{Subject: "Out of office", BodyText: "away"}); got != nil {
 		t.Fatalf("holdForOutOfOffice = %v after a refused hold, want nil", got)
@@ -121,7 +125,7 @@ func TestHoldForOutOfOfficeReportsARefusal(t *testing.T) {
 func TestHoldForOutOfOfficeFloorsAZeroFallback(t *testing.T) {
 	rec := &holdRecorder{}
 	s := &service{campaignProgressRepo: rec}
-	s.holdForOutOfOffice(context.Background(), uuid.New(), uuid.New(),
+	s.holdForOutOfOffice(context.Background(), uuid.New(),
 		models.ReplyIntentSettings{HoldOnOutOfOffice: true},
 		&models.EmailMessageStoreData{Subject: "Out of office", BodyText: "away"})
 	if rec.until == nil || !rec.until.After(time.Now().Add(23*time.Hour)) {

@@ -279,6 +279,14 @@ type CampaignProgressRepository interface {
 	// A manual hold always wins. Reports whether it wrote one.
 	// Returns the hold it wrote, or nil when it wrote none.
 	HoldLead(ctx context.Context, campaignID, contactID uuid.UUID, until *time.Time, reason, source string) (*models.LeadHold, error)
+	// HoldLeadEverywhere parks ONE contact's flow in EVERY campaign they are
+	// still a lead of, under the same guard as HoldLead. Returns the campaigns
+	// it actually held, so a caller can tell a refusal from a hold.
+	//
+	// Being away is a property of the person, not of one sequence: a contact
+	// in two live campaigns used to have one of them held while the other kept
+	// writing to the empty desk (issue #518).
+	HoldLeadEverywhere(ctx context.Context, contactID uuid.UUID, until *time.Time, reason, source string) ([]uuid.UUID, error)
 	// ResumeLead lifts the hold now and reports whether there was one to lift.
 	// The held time is dropped rather than carried, because "resume now" means
 	// now: the step's remaining wait is only preserved when a hold ends on its
@@ -2035,6 +2043,22 @@ func scanHold(row pgx.Row, now time.Time) (*models.LeadHold, error) {
 	return &models.LeadHold{Since: *pausedAt, Until: until, Reason: reason, Source: source}, nil
 }
 
+// automaticHoldGuard is what keeps an out-of-office auto-reply from ever
+// shortening or overruling a person's decision: the write is refused unless
+// the lead is unheld, or held by an earlier automatic hold this one extends.
+// alias names the campaign_leads row; untilParam is cast explicitly because
+// inside the guard it is only ever compared, so Postgres has nothing to infer
+// its type from and refuses the statement.
+func automaticHoldGuard(alias, untilParam string) string {
+	return `
+		  AND (
+		    NOT (` + liveHold(alias) + `)
+		    OR (` + alias + `.pause_source = 'out_of_office' AND ` + alias + `.paused_until IS NOT NULL
+		        AND ` + untilParam + `::timestamptz IS NOT NULL
+		        AND ` + alias + `.paused_until < ` + untilParam + `::timestamptz)
+		  )`
+}
+
 // HoldLead parks one lead's flow and returns the hold it wrote.
 //
 // Replacing a hold that is still LIVE keeps the original paused_at, because the
@@ -2047,14 +2071,7 @@ func scanHold(row pgx.Row, now time.Time) (*models.LeadHold, error) {
 func (r *campaignProgressRepository) HoldLead(ctx context.Context, campaignID, contactID uuid.UUID, until *time.Time, reason, source string) (*models.LeadHold, error) {
 	guard := ""
 	if source == models.LeadHoldSourceOutOfOffice {
-		// $3 is cast explicitly: inside the guard it is only ever compared, so
-		// Postgres has nothing to infer its type from and refuses the statement.
-		guard = `
-		  AND (
-		    NOT (` + liveHold("campaign_leads") + `)
-		    OR (pause_source = 'out_of_office' AND paused_until IS NOT NULL
-		        AND $3::timestamptz IS NOT NULL AND paused_until < $3::timestamptz)
-		  )`
+		guard = automaticHoldGuard("campaign_leads", "$3")
 	}
 	now := time.Now()
 	hold, err := scanHold(r.db.QueryRow(ctx, `
@@ -2075,6 +2092,52 @@ func (r *campaignProgressRepository) HoldLead(ctx context.Context, campaignID, c
 		return nil, err
 	}
 	return hold, nil
+}
+
+// HoldLeadEverywhere parks one contact's flow in every campaign they are still
+// a lead of, and returns the campaigns it held.
+//
+// One statement rather than a read-then-write loop, so two away messages
+// arriving at once cannot each decide against a snapshot the other has already
+// moved: the guard is evaluated against the row it updates, exactly as in
+// HoldLead.
+//
+// Completed campaigns are left out because nothing in them will send again;
+// draft and paused ones are held, since the contact is still their lead and an
+// away message that lands the day before a campaign starts is about the same
+// desk. Every automatic hold carries an end, so one written into a campaign
+// that never launches expires on its own.
+func (r *campaignProgressRepository) HoldLeadEverywhere(ctx context.Context, contactID uuid.UUID, until *time.Time, reason, source string) ([]uuid.UUID, error) {
+	guard := ""
+	if source == models.LeadHoldSourceOutOfOffice {
+		guard = automaticHoldGuard("cl", "$2")
+	}
+	rows, err := r.db.Query(ctx, `
+		UPDATE campaign_leads cl
+		SET paused_at = CASE WHEN `+liveHold("cl")+` THEN cl.paused_at ELSE NOW() END,
+		    paused_until = $2,
+		    pause_reason = NULLIF($3, ''),
+		    pause_source = $4
+		FROM campaigns c
+		WHERE cl.contact_id = $1
+		  AND c.id = cl.campaign_id
+		  AND c.status <> 'completed'`+guard+`
+		RETURNING cl.campaign_id`,
+		contactID, until, reason, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var held []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		held = append(held, id)
+	}
+	return held, rows.Err()
 }
 
 // ResumeLead lifts the hold now. The held time goes with it: "resume now"
