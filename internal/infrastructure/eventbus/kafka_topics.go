@@ -4,7 +4,6 @@ package eventbus
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -99,7 +98,7 @@ func (b *KafkaBus) unknownTopics(names []string) ([]ckf.TopicSpecification, erro
 	b.topics.mu.Lock()
 	defer b.topics.mu.Unlock()
 	if b.topics.closed {
-		return nil, errors.New("eventbus kafka: bus closed")
+		return nil, ErrBusClosed
 	}
 	var missing []ckf.TopicSpecification
 	for _, n := range names {
@@ -126,7 +125,7 @@ func (b *KafkaBus) adminClient() (*ckf.AdminClient, error) {
 	// Close marks this before it clears the client, so a Publish that raced
 	// past the closed check cannot open a replacement nothing will shut.
 	if b.topics.closed {
-		return nil, errors.New("eventbus kafka: bus closed")
+		return nil, ErrBusClosed
 	}
 	if b.topics.admin != nil {
 		return b.topics.admin, nil

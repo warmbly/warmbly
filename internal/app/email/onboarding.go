@@ -189,7 +189,7 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 		ExpiresAt:      tok.Expiry,
 	})
 	if xerr == nil && acc != nil {
-		s.captureSendIdentity(ctx, acc, tok.AccessToken)
+		s.captureSendIdentity(ctx, acc, tok)
 		s.syncWarmupPoolMembership(ctx, acc)
 		s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 		s.dispatchAccountConnected(ctx, sess.OrganizationID, acc)

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -33,6 +34,11 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 
 	email, err := s.UniboxRepository.GetByID(ctx, e.UserID, e.ID)
 	if err != nil {
+		// Warmup mail and anything else the unibox never stored still produces
+		// flag events. Retrying those reported one error per pass, forever.
+		if errors.Is(err, repository.ErrEmailNotFound) {
+			return nil
+		}
 		CaptureError(e.UserID, e.EmailID, fmt.Errorf("Email (%s): %w", e.ID.String(), err))
 		return err
 	}
@@ -119,6 +125,11 @@ func warmupTokenFromFlags(flags []string) string {
 func (s *JobsService) HandleFlagsRemove(ctx context.Context, e *models.JobEventFlags) error {
 	email, err := s.UniboxRepository.GetByID(ctx, e.UserID, e.ID)
 	if err != nil {
+		// Warmup mail and anything else the unibox never stored still produces
+		// flag events. Retrying those reported one error per pass, forever.
+		if errors.Is(err, repository.ErrEmailNotFound) {
+			return nil
+		}
 		CaptureError(e.UserID, e.EmailID, fmt.Errorf("Email (%s): %w", e.ID.String(), err))
 		return err
 	}

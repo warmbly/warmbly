@@ -165,6 +165,12 @@ var (
 		"This mailbox's provider does not expose send-as addresses. Only Gmail and Google Workspace mailboxes do.")
 	ErrEmailSendAsUnknown = NewWithIdentifier(BadRequest, "mailbox_send_as_unknown",
 		"That address is not one your provider has verified this mailbox to send as. Refresh the list, or add and verify the address in your provider first.")
+	// Reading a mailbox's sending identity is an account operation and runs on
+	// the worker holding the mailbox, so it is unavailable exactly when that
+	// machine is: mid-migration, just after a restart, or while the mailbox is
+	// unplaced. Nothing was changed, and the next attempt is the fix.
+	ErrEmailIdentityUnavailable = NewWithIdentifier(ServiceUnavailable, "mailbox_identity_unavailable",
+		"Warmbly could not reach the machine running this mailbox, so its sending addresses were not refreshed. Nothing was changed; try again in a moment.")
 	ErrEmailSignatureTooLarge = NewWithIdentifier(BadRequest, "mailbox_signature_too_large",
 		fmt.Sprintf("The signature on this mailbox is larger than Warmbly stores (%d characters). Shorten it in your provider and import it again.", config.SignatureHTMLMax))
 

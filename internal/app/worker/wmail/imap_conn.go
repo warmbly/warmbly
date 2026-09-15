@@ -38,6 +38,9 @@ type ImapConn interface {
 
 	// Warmup actions.
 	MarkAsRead(ctx context.Context, mailboxName string, uid uint32) error
+	// SetSeen is the unibox's read/unread relay: many UIDs in one folder, in
+	// one STORE, in either direction.
+	SetSeen(ctx context.Context, mailboxName string, uids []uint32, seen bool) error
 	MarkImportant(ctx context.Context, mailboxName string, uid uint32) error
 	MoveToFolder(ctx context.Context, sourceMailbox, dstFolder string, uid uint32) error
 	RemoveFromSpam(ctx context.Context, sourceMailbox, inboxName string, uid uint32) error

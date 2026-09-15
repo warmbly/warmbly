@@ -58,7 +58,9 @@ export function TurnstileModal({ visible, onToken }: Props) {
         }
     }, [visible, bypassToken, deliver]);
 
-    if (bypassToken) return null;
+    // No sitekey means no captcha on this deployment; mounting the widget
+    // with an empty one only makes Cloudflare reject the parameter.
+    if (bypassToken || !TURNSTILE_KEY) return null;
 
     const turnstileProps = {
         sitekey: TURNSTILE_KEY,

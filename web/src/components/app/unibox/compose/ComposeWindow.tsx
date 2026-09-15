@@ -26,6 +26,8 @@ import {
     HistoryIcon,
     Loader2Icon,
     MailPlusIcon,
+    Maximize2Icon,
+    Minimize2Icon,
     MinusIcon,
     OctagonAlertIcon,
     PenLineIcon,
@@ -159,6 +161,10 @@ function ComposeWindowInner({
     const closeCompose = useComposeStore((s) => s.closeCompose);
     const minimized = useComposeStore((s) => s.minimized);
     const setMinimized = useComposeStore((s) => s.setMinimized);
+    // Gmail-style expand: the same composer, centered and large, over a
+    // backdrop. Per-open state; the minimized bar always docks bottom-right.
+    const [expanded, setExpanded] = React.useState(false);
+    const full = expanded && !minimized;
     const accounts = useAppStore((s) => s.emails);
     const { user } = useUserProfile();
     const addOutbox = useOutboxStore((s) => s.add);
@@ -414,23 +420,47 @@ function ComposeWindowInner({
     const showHistory = historyOpen && !!primary && !minimized;
 
     return (
+        <>
+        <AnimatePresence>
+            {full && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="fixed inset-0 z-[69] bg-slate-900/40"
+                    onClick={() => setExpanded(false)}
+                    aria-hidden
+                />
+            )}
+        </AnimatePresence>
         <motion.div
             initial={{ opacity: 0, y: 24, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ type: "spring", stiffness: 480, damping: 38 }}
-            className="fixed z-[70] inset-x-2 bottom-2 sm:inset-x-auto sm:right-4 sm:bottom-4 flex items-stretch rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[min(660px,calc(100dvh-1rem))]"
+            className={cn(
+                "fixed z-[70] flex items-stretch rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden",
+                full
+                    ? "inset-2 sm:inset-y-6 sm:inset-x-[max(1.5rem,calc(50%_-_30rem))]"
+                    : "inset-x-2 bottom-2 sm:inset-x-auto sm:right-4 sm:bottom-4 max-h-[min(660px,calc(100dvh-1rem))]",
+            )}
             onKeyDown={(e) => {
                 if (e.key === "Escape") {
                     // Floating AI layers portal to <body> and stop their own
                     // Escape; reaching here means nothing else claimed it.
                     e.stopPropagation();
+                    // Innermost layer first: collapse the expand, keep the draft.
+                    if (full) {
+                        setExpanded(false);
+                        return;
+                    }
                     requestClose();
                 }
             }}
         >
             {/* ── Main column ─────────────────────────────────────────── */}
-            <div className={cn("flex flex-col w-full min-h-0", minimized ? "sm:w-[280px]" : "sm:w-[540px]")}>
+            <div className={cn("flex flex-col w-full min-h-0", minimized ? "sm:w-[280px]" : full ? "sm:w-full" : "sm:w-[540px]")}>
                 <div
                     className={cn(
                         "shrink-0 h-8 pl-3 pr-1.5 flex items-center gap-2 bg-slate-100/80 select-none",
@@ -475,6 +505,24 @@ function ComposeWindowInner({
                                 )}
                             >
                                 <HistoryIcon className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                        {!minimized && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpanded(!expanded);
+                                }}
+                                aria-label={expanded ? "Exit full screen" : "Full screen"}
+                                title={expanded ? "Exit full screen" : "Full screen"}
+                                className="size-6 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+                            >
+                                {expanded ? (
+                                    <Minimize2Icon className="w-3.5 h-3.5" />
+                                ) : (
+                                    <Maximize2Icon className="w-3.5 h-3.5" />
+                                )}
                             </button>
                         )}
                         <button
@@ -848,6 +896,7 @@ function ComposeWindowInner({
                 )}
             </AnimatePresence>
         </motion.div>
+        </>
     );
 }
 

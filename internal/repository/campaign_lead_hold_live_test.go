@@ -608,3 +608,164 @@ func TestLiveReserveSendRefusesAContactThatIsNotALead(t *testing.T) {
 		t.Fatalf("ReserveSend for a non-lead = %v, %v; want it refused", ok, err)
 	}
 }
+
+// secondCampaign adds another active campaign in the same organization, with
+// its own entry step, carrying the given contacts as leads. status is the
+// campaign's own, so a completed one can be asserted on too.
+func secondCampaign(t *testing.T, f *routedPairsFixture, status string, leads ...uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	campaign, step := uuid.New(), uuid.New()
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := f.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("second campaign %q: %v", sql[:min(70, len(sql))], err)
+		}
+	}
+	exec(`INSERT INTO campaigns (id, user_id, organization_id, name, description, status,
+	          daily_limit, timezone, days, start_time, end_time, rotation_mode, updated_at, created_at)
+	      VALUES ($1, $2, $3, 'Second', '', $4::campaign_status, 50, 'UTC', 127, '00:00', '23:59',
+	              'least_recently_used', NOW(), NOW())`, campaign, f.owner, f.org, status)
+	exec(`INSERT INTO sequences (id, campaign_id, organization_id, name, subject,
+	          body_plain, body_html, wait_after, position, kind)
+	      VALUES ($1, $2, $3, 'Step 1', 'Hi', 'Hello', '<p>Hello</p>', 0, 0, 'email')`,
+		step, campaign, f.org)
+	for i, lead := range leads {
+		exec(`INSERT INTO campaign_leads (campaign_id, contact_id, position) VALUES ($1, $2, $3)`,
+			campaign, lead, i)
+	}
+	t.Cleanup(func() {
+		c := context.Background()
+		for _, sql := range []string{
+			`DELETE FROM campaign_contact_progress WHERE campaign_id = $1`,
+			`DELETE FROM campaign_leads WHERE campaign_id = $1`,
+			`DELETE FROM sequences WHERE campaign_id = $1`,
+			`DELETE FROM campaigns WHERE id = $1`,
+		} {
+			if _, err := f.pool.Exec(c, sql, campaign); err != nil {
+				t.Errorf("cleanup %q: %v", sql, err)
+			}
+		}
+	})
+	return campaign
+}
+
+// Being away is a property of the person, not of one sequence. A contact in
+// two live campaigns used to have the campaign the reply was attributed to
+// held while the other kept writing to the same empty desk (issue #518).
+func TestLiveLeadHoldEverywhereCoversEveryCampaignTheContactIsIn(t *testing.T) {
+	_, pool := liveContactDB(t)
+	f := newRoutedPairsFixture(t, pool, 2)
+	repo := holdRepo(t, f)
+	ctx := context.Background()
+	other := secondCampaign(t, f, "active", f.leads[0])
+
+	until := time.Now().Add(72 * time.Hour).Truncate(time.Second)
+	held, err := repo.HoldLeadEverywhere(ctx, f.leads[0], &until, "back 17 Sep 2026", "out_of_office")
+	if err != nil {
+		t.Fatalf("HoldLeadEverywhere: %v", err)
+	}
+	if len(held) != 2 {
+		t.Fatalf("held %d campaigns (%v), want both the contact is a lead of", len(held), held)
+	}
+	for _, campaign := range []uuid.UUID{f.campaign, other} {
+		hold, err := repo.GetLeadHold(ctx, campaign, f.leads[0])
+		if err != nil || hold == nil {
+			t.Fatalf("campaign %s: GetLeadHold = %v, %v; want the hold", campaign, hold, err)
+		}
+		if hold.Source != "out_of_office" || hold.Until == nil {
+			t.Fatalf("campaign %s: hold = %+v, want a dated automatic hold", campaign, hold)
+		}
+	}
+
+	// The contact's own lead is gone from the batch; the lead who is not away
+	// is untouched, so the hold is per person and not per organization.
+	pairs, _, _ := f.find(t, nil, 25)
+	if len(pairs) != 1 || pairs[0].ContactID != f.leads[1] {
+		t.Fatalf("got %+v, want only the lead that is not held", pairs)
+	}
+}
+
+// An automatic hold never overrules a person, and that has to hold campaign by
+// campaign: a member's own pause in one of them must survive an away message
+// that legitimately holds the others.
+func TestLiveLeadHoldEverywhereLeavesAPersonsOwnPauseAlone(t *testing.T) {
+	_, pool := liveContactDB(t)
+	f := newRoutedPairsFixture(t, pool, 1)
+	repo := holdRepo(t, f)
+	ctx := context.Background()
+	other := secondCampaign(t, f, "active", f.leads[0])
+
+	if _, err := repo.HoldLead(ctx, other, f.leads[0], nil, "paused by hand", "manual"); err != nil {
+		t.Fatalf("manual hold: %v", err)
+	}
+
+	until := time.Now().Add(48 * time.Hour).Truncate(time.Second)
+	held, err := repo.HoldLeadEverywhere(ctx, f.leads[0], &until, "back 16 Sep 2026", "out_of_office")
+	if err != nil {
+		t.Fatalf("HoldLeadEverywhere: %v", err)
+	}
+	if len(held) != 1 || held[0] != f.campaign {
+		t.Fatalf("held %v, want only the campaign with no manual pause", held)
+	}
+	hold, err := repo.GetLeadHold(ctx, other, f.leads[0])
+	if err != nil || hold == nil {
+		t.Fatalf("GetLeadHold = %v, %v; want the manual hold still there", hold, err)
+	}
+	if hold.Source != "manual" || hold.Until != nil {
+		t.Fatalf("manual hold became %+v: an auto-reply overruled a person", hold)
+	}
+}
+
+// A completed campaign will never send again, so holding its leads writes rows
+// that decide nothing. Keeping it out is also what stops a contact's whole
+// campaign history being rewritten by one away message.
+func TestLiveLeadHoldEverywhereSkipsACompletedCampaign(t *testing.T) {
+	_, pool := liveContactDB(t)
+	f := newRoutedPairsFixture(t, pool, 1)
+	repo := holdRepo(t, f)
+	ctx := context.Background()
+	done := secondCampaign(t, f, "completed", f.leads[0])
+
+	until := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	held, err := repo.HoldLeadEverywhere(ctx, f.leads[0], &until, "back tomorrow", "out_of_office")
+	if err != nil {
+		t.Fatalf("HoldLeadEverywhere: %v", err)
+	}
+	if len(held) != 1 || held[0] != f.campaign {
+		t.Fatalf("held %v, want only the campaign that can still send", held)
+	}
+	if hold, err := repo.GetLeadHold(ctx, done, f.leads[0]); err != nil || hold != nil {
+		t.Fatalf("GetLeadHold on the completed campaign = %v, %v; want no hold", hold, err)
+	}
+}
+
+// A second away message, naming a nearer return date, must not cut short the
+// hold already running. The guard decides that per row, so it has to survive
+// the move to the multi-campaign write.
+func TestLiveLeadHoldEverywhereNeverShortensALiveAutomaticHold(t *testing.T) {
+	_, pool := liveContactDB(t)
+	f := newRoutedPairsFixture(t, pool, 1)
+	repo := holdRepo(t, f)
+	ctx := context.Background()
+
+	far := time.Now().Add(14 * 24 * time.Hour).Truncate(time.Second)
+	if _, err := repo.HoldLeadEverywhere(ctx, f.leads[0], &far, "back in a fortnight", "out_of_office"); err != nil {
+		t.Fatalf("first hold: %v", err)
+	}
+	near := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	held, err := repo.HoldLeadEverywhere(ctx, f.leads[0], &near, "back tomorrow", "out_of_office")
+	if err != nil {
+		t.Fatalf("second hold: %v", err)
+	}
+	if len(held) != 0 {
+		t.Fatalf("held %v; a nearer return date cut the running hold short", held)
+	}
+	hold, err := repo.GetLeadHold(ctx, f.campaign, f.leads[0])
+	if err != nil || hold == nil || hold.Until == nil {
+		t.Fatalf("GetLeadHold = %v, %v; want the first hold intact", hold, err)
+	}
+	if d := hold.Until.Sub(far); d < -2*time.Second || d > 2*time.Second {
+		t.Fatalf("hold lifts at %v, want the further date %s", hold.Until, far)
+	}
+}

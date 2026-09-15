@@ -257,7 +257,7 @@ function SendingSettings() {
 
             <Section
                 eyebrow="Out of office"
-                description="When a recipient's mailbox answers with an away message, hold their next step until they are back instead of sending it to an empty desk. The return date in the auto-reply is used when it can be read (English, German, French, Spanish, Portuguese, Italian and Dutch), plus a working day so the follow-up does not land in their first-morning backlog. The lead keeps its place in the sequence and the time it spent held does not count against the step's wait. You can resume or stop a held lead at any time from the campaign's Leads tab."
+                description="When a recipient's mailbox answers with an away message, hold their next step until they are back instead of sending it to an empty desk. The hold covers every campaign that contact is in, not only the one they answered. The return date in the auto-reply is used when it can be read (English, German, French, Spanish, Portuguese, Italian and Dutch), plus a working day so the follow-up does not land in their first-morning backlog. The lead keeps its place in the sequence and the time it spent held does not count against the step's wait. You can resume or stop a held lead at any time from the campaign's Leads tab."
             >
                 {isLoading || !draft ? (
                     <div className="h-7 w-40 rounded bg-slate-100 animate-pulse" />

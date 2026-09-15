@@ -90,7 +90,7 @@ func (b *KafkaBus) Publish(ctx context.Context, topic, key string, payload []byt
 	closed := b.closed
 	b.mu.Unlock()
 	if closed {
-		return errors.New("eventbus kafka: bus closed")
+		return ErrBusClosed
 	}
 	// A worker's command topic is named after its node id, so the first
 	// publish to it is the first time anything knows the name.
@@ -141,7 +141,7 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 	if b.closed {
 		b.mu.Unlock()
 		cons.Close()
-		return errors.New("eventbus kafka: bus closed")
+		return ErrBusClosed
 	}
 	b.consumers = append(b.consumers, cons)
 	b.mu.Unlock()

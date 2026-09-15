@@ -180,6 +180,28 @@ func TestHandleErrorClassification(t *testing.T) {
 			},
 			errx.MailErrorCodeServerUnreachable,
 		},
+		// A quota is a 403 too, and reading the status alone told the owner of
+		// a mailbox that had gone too fast for a minute to re-authorize.
+		{
+			"gmail 403 quota, structured reason",
+			&googleapi.Error{
+				Code:    403,
+				Message: "Quota exceeded for quota metric 'Total Query Cost'",
+				Errors:  []googleapi.ErrorItem{{Reason: "rateLimitExceeded"}},
+			},
+			errx.MailErrorCodeSendingTooFast,
+		},
+		{
+			"gmail 403 quota, message only",
+			&googleapi.Error{Code: 403, Message: "Quota exceeded for quota metric 'Total Query Cost' and limit 'Units per minute per user'"},
+			errx.MailErrorCodeSendingTooFast,
+		},
+		{"gmail 429", &googleapi.Error{Code: 429, Message: "too many requests"}, errx.MailErrorCodeSendingTooFast},
+		{
+			"wrapped gmail 403 quota",
+			fmt.Errorf("gmail: %w", &googleapi.Error{Code: 403, Message: "Quota exceeded for quota metric"}),
+			errx.MailErrorCodeSendingTooFast,
+		},
 	}
 
 	for _, tt := range tests {

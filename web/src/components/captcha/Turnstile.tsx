@@ -16,7 +16,9 @@ export default function Turnstile({setToken}: Props) {
         if (bypassToken) setToken(bypassToken);
     }, [bypassToken, setToken]);
 
-    if (bypassToken) return null;
+    // A deployment that configured no sitekey has no captcha. Rendering the
+    // widget anyway makes Cloudflare reject the empty parameter.
+    if (bypassToken || !TURNSTILE_KEY) return null;
 
     return <>
         <TurnstileObj.default
