@@ -173,6 +173,22 @@ func TestOutlookPartialConsentIsRefused(t *testing.T) {
 	}
 }
 
+// Microsoft does not echo offline_access in the scope list for personal
+// accounts even when a refresh token was issued, so the live token confers
+// the grant the list omits.
+func TestOutlookRefreshTokenSatisfiesOfflineAccess(t *testing.T) {
+	want := []string{
+		"https://graph.microsoft.com/Mail.Send",
+		"https://graph.microsoft.com/Mail.ReadWrite",
+		"offline_access",
+	}
+	xerr := checkGrantedScopes(context.Background(), models.InboxProviderOutlook, want,
+		tokenWithScope("https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Mail.ReadWrite"))
+	if xerr != nil {
+		t.Fatalf("a live refresh token must satisfy offline_access, got %v", xerr)
+	}
+}
+
 // ── what may be recorded ─────────────────────────────────────────────────────
 
 // A decode failure and a missing address both carry status 200, and that body

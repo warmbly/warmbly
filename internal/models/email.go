@@ -185,6 +185,40 @@ type SendIdentity struct {
 	SignatureImportedAt *time.Time `json:"signature_imported_at,omitempty"`
 }
 
+// EventWorkerMailboxIdentity asks a worker to read one mailbox's sending
+// identity from its provider and answer on the process channel.
+//
+// The worker is the only side that talks to a customer's mailbox: it holds the
+// credential, and the address the provider sees for a mailbox has to stay the
+// one it always sees, or the provider answers with a sign-in challenge.
+type EventWorkerMailboxIdentity struct {
+	EmailID uuid.UUID `json:"email_id" avro:"email_id"`
+	// ProcessID names the reply channel, like a credential validation.
+	ProcessID uuid.UUID `json:"process_id" avro:"process_id"`
+	// WantSignature asks for the signature too. Off for a plain address
+	// refresh, which is the common press.
+	WantSignature bool `json:"want_signature" avro:"want_signature"`
+	// SignatureFor is the address whose signature is wanted: the alias the
+	// mailbox sends as, so it signs off as that alias. Empty takes the
+	// provider's default identity.
+	SignatureFor string `json:"signature_for,omitempty" avro:"signature_for"`
+}
+
+// MailboxIdentityResult is the worker's answer, published to the process
+// channel. Everything the control plane stores comes from here; nothing about
+// the provider call itself crosses back.
+type MailboxIdentityResult struct {
+	OK bool `json:"ok"`
+	// Error is a short reason when OK is false, for the log and for the
+	// message the customer sees.
+	Error      string           `json:"error,omitempty"`
+	Identities []SendAsIdentity `json:"identities,omitempty"`
+	// SignatureHTML is empty both when none was asked for and when the
+	// provider holds none, which are the same thing to the caller: nothing to
+	// import, so nothing is overwritten.
+	SignatureHTML string `json:"signature_html,omitempty"`
+}
+
 // ImportedSignature is a signature read from the provider, ready to store.
 type ImportedSignature struct {
 	HTML  string

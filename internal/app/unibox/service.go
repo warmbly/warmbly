@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/infrastructure/storage"
 	"github.com/warmbly/warmbly/internal/models"
@@ -79,6 +80,10 @@ type UniboxService interface {
 	// before bodies were indexed. Runs until the archive is caught up, then
 	// returns; blocking, so callers run it in a goroutine.
 	StartBodyTextBackfill(ctx context.Context)
+
+	// WireProviderRelay attaches the worker bus, after which a read/unread
+	// change made here is carried out to the mailbox provider too.
+	WireProviderRelay(p events.Publisher)
 }
 
 type uniboxService struct {
@@ -87,6 +92,18 @@ type uniboxService struct {
 	tasksClient      tasksched.Scheduler
 	cache            *cache.Cache
 	blob             storage.Store
+	// publisher relays read/unread changes out to the mailbox providers.
+	// Optional: without it the unibox still works and only Warmbly's own copy
+	// of the read state changes.
+	publisher events.Publisher
+}
+
+// WireProviderRelay attaches the bus the unibox relays read state through.
+// Wired after construction, like the webhook dispatcher on the mailbox
+// service, because a deployment without a worker bus is still a working
+// unibox.
+func (s *uniboxService) WireProviderRelay(p events.Publisher) {
+	s.publisher = p
 }
 
 func NewService(

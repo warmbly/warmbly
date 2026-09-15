@@ -3,143 +3,110 @@ package email
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
+	"errors"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/client/goog"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
+	"golang.org/x/oauth2"
 )
 
-// The Gmail settings endpoint behind gmail.settings.basic. It answers with
-// every identity the account may send as, each carrying the display name and
-// signature the customer configured in Gmail.
-const gmailSendAsURL = "https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs"
+// identityReplyWait is how long the backend waits for the worker's answer.
+// A little longer than the worker's own deadline, so a slow provider produces
+// the worker's message rather than this timeout.
+const identityReplyWait = 10 * time.Second
 
-// gmailSendAs is the provider's shape, narrowed to what is used. Gmail omits
-// verificationStatus on the primary address (it cannot be unverified), so an
-// absent value is not a failed verification.
-type gmailSendAs struct {
-	SendAsEmail        string `json:"sendAsEmail"`
-	DisplayName        string `json:"displayName"`
-	Signature          string `json:"signature"`
-	IsPrimary          bool   `json:"isPrimary"`
-	IsDefault          bool   `json:"isDefault"`
-	VerificationStatus string `json:"verificationStatus"`
-}
+// readSendIdentity asks the worker holding the mailbox to read its send-as
+// identities from the provider, and waits for the answer.
+//
+// The control plane deliberately does not make this call itself. The worker is
+// what holds the mailbox and what the provider has learned to see it from:
+// reading a customer's settings from here would show Google a second client
+// address for the same mailbox, which is what earns a sign-in challenge, and
+// it would mean decrypting a mailbox credential in the control plane for
+// something the execution plane already has in hand.
+func (s *emailService) readSendIdentity(ctx context.Context, acc *models.Email, wantSignature bool) (*models.MailboxIdentityResult, *errx.Error) {
+	if s.publisher == nil || s.r == nil {
+		return nil, errx.ErrEmailIdentityUnavailable
+	}
+	if acc.WorkerID == nil {
+		// Not placed yet, or just unassigned. There is no machine to ask.
+		return nil, errx.ErrEmailIdentityUnavailable
+	}
 
-func (g gmailSendAs) verified() bool {
-	return g.IsPrimary || g.VerificationStatus == "accepted"
-}
+	processID := uuid.New()
+	sub := s.r.Subscribe(ctx, "mailbox_identity:"+processID.String())
+	defer sub.Close()
 
-// fetchGmailSendAs reads the mailbox's send-as identities. The raw provider
-// rows are returned alongside the normalized list because the signature and
-// display name are picked from them by the caller, which knows which identity
-// the mailbox actually sends from.
-func fetchGmailSendAs(ctx context.Context, token string) ([]gmailSendAs, *errx.Error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, gmailSendAsURL, nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	if err := s.publisher.PublishMailboxIdentity(ctx, *acc.WorkerID, models.EventWorkerMailboxIdentity{
+		EmailID:       acc.ID,
+		ProcessID:     processID,
+		WantSignature: wantSignature,
+		SignatureFor:  acc.SendAsEmail,
+	}); err != nil {
+		errs.CaptureException(err)
+		return nil, errx.ErrEmailIdentityUnavailable
+	}
 
-	resp, err := httpClient.Do(req)
+	waitCtx, cancel := context.WithTimeout(ctx, identityReplyWait)
+	defer cancel()
+
+	msg, err := sub.ReceiveMessage(waitCtx)
 	if err != nil {
-		return nil, sendAsLookupFailed(ctx, "transport", 0, nil, err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			log.Warn().Str("email_account_id", acc.ID.String()).Msg("no answer from the worker holding the mailbox")
+			return nil, errx.ErrEmailIdentityUnavailable
+		}
+		errs.CaptureException(err)
+		return nil, errx.InternalError()
 	}
-	defer resp.Body.Close()
-	// A signature is prose with markup and several identities can carry one,
-	// so this payload is a different size class from the profile endpoint's.
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxSendAsBody))
-	if resp.StatusCode != http.StatusOK {
-		return nil, sendAsLookupFailed(ctx, "status", resp.StatusCode, body, nil)
+
+	var res models.MailboxIdentityResult
+	if err := json.Unmarshal([]byte(msg.Payload), &res); err != nil {
+		errs.CaptureException(err)
+		return nil, errx.InternalError()
 	}
-	var out struct {
-		SendAs []gmailSendAs `json:"sendAs"`
+	if !res.OK {
+		log.Warn().Str("email_account_id", acc.ID.String()).Str("reason", res.Error).Msg("worker could not read the mailbox's sending identity")
+		return nil, errx.ErrEmailIdentityUnavailable
 	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, sendAsLookupFailed(ctx, "decode", resp.StatusCode, body, err)
-	}
-	return out.SendAs, nil
+	return &res, nil
 }
 
-// maxSendAsBody bounds the send-as payload. Gmail caps one signature at 10,000
-// characters and an account at 99 send-as addresses; this covers both with
-// room, and is still a bound rather than an open read.
-const maxSendAsBody = 2 << 20
-
-func sendAsLookupFailed(ctx context.Context, stage string, status int, body []byte, cause error) *errx.Error {
-	detail := diagnosticBody(status, body)
-	opts := []errs.Option{
-		errs.Tag("provider", "gmail"),
-		errs.Tag("stage", stage),
-		errs.Extra("status", status),
+// handshakeGmailClient builds a Gmail client on the token the consent
+// handshake just produced, for the one call the control plane still makes.
+// Nothing is persisted through it: no refresh hook is attached, so it cannot
+// write a token back, and it lives only as long as the connect.
+func (s *emailService) handshakeGmailClient(ctx context.Context, tok *oauth2.Token) *goog.Client {
+	if tok == nil {
+		return nil
 	}
-	if detail != "" {
-		opts = append(opts, errs.Extra("response", detail))
+	cfg, xerr := s.oauthConfigFor(models.InboxProviderGoogle)
+	if xerr != nil {
+		return nil
 	}
-	if cause != nil {
-		errs.CaptureExceptionContext(ctx, cause, opts...)
-	} else {
-		errs.CaptureMessageContext(ctx, "gmail send-as lookup failed at "+stage, opts...)
+	client := &goog.Client{}
+	if merr := client.Init(ctx, tok, *cfg); merr != nil {
+		log.Warn().Str("error", merr.Message).Msg("could not build a Gmail client for the connect-time identity read")
+		return nil
 	}
-	log.Warn().Str("stage", stage).Int("status", status).Msg("mailbox identity: Gmail would not list send-as addresses")
-	return errx.New(errx.BadRequest,
-		"Warmbly could not read this mailbox's sending addresses from Google. Reconnect the mailbox and leave all the permissions ticked, then try again.")
+	return client
 }
 
-// normalizeSendAs turns the provider's rows into what is stored. Addresses are
-// lowercased because that is what every comparison against them does.
-func normalizeSendAs(rows []gmailSendAs) []models.SendAsIdentity {
-	out := make([]models.SendAsIdentity, 0, len(rows))
-	for _, r := range rows {
-		addr := strings.ToLower(strings.TrimSpace(r.SendAsEmail))
-		if addr == "" {
-			continue
-		}
-		out = append(out, models.SendAsIdentity{
-			Email:     addr,
-			Name:      strings.TrimSpace(r.DisplayName),
-			IsPrimary: r.IsPrimary,
-			IsDefault: r.IsDefault,
-			Verified:  r.verified(),
-		})
-	}
-	return out
-}
-
-// pickSignature chooses whose signature to import: the identity the mailbox
-// sends from, then the provider's default, then the primary. A mailbox
-// sending as an alias signs off as that alias, which is the whole point of
-// having picked one.
-func pickSignature(rows []gmailSendAs, sendAs string) (*models.ImportedSignature, *errx.Error) {
-	want := strings.ToLower(strings.TrimSpace(sendAs))
-	var chosen *gmailSendAs
-	for i := range rows {
-		r := &rows[i]
-		addr := strings.ToLower(strings.TrimSpace(r.SendAsEmail))
-		if want != "" && addr == want {
-			chosen = r
-			break
-		}
-		if chosen != nil {
-			continue
-		}
-		if r.IsDefault || r.IsPrimary {
-			chosen = r
-		}
-	}
-	if chosen == nil {
-		return nil, nil
-	}
-	html := strings.TrimSpace(chosen.Signature)
+// importedSignature turns the provider's signature into what is stored, or
+// nothing at all. An empty signature at the provider is a real answer and must
+// not overwrite one written here.
+func importedSignature(html string) (*models.ImportedSignature, *errx.Error) {
+	html = strings.TrimSpace(html)
 	if html == "" {
-		// An empty signature in Gmail is a real answer, not a failure, and
-		// overwriting a signature written here with nothing would be a
-		// surprising way to lose it.
 		return nil, nil
 	}
 	// Characters, not bytes, matching what the column accepts on the way in.
@@ -160,9 +127,8 @@ func (s *emailService) GetSendIdentity(ctx context.Context, orgID, emailAccountI
 }
 
 // RefreshSendIdentity re-reads the send-as list from the provider and stores
-// it, importing the signature too when asked. This is the only path that talks
-// to Google, and it is a write: the stored list is what the alias choice is
-// validated against.
+// it, importing the signature too when asked. The read itself happens on the
+// worker; this decides what to keep.
 func (s *emailService) RefreshSendIdentity(ctx context.Context, orgID, emailAccountID string, importSignature bool) (*models.SendIdentity, *errx.Error) {
 	current, xerr := s.emailRepository.GetSendIdentity(ctx, orgID, emailAccountID)
 	if xerr != nil {
@@ -176,63 +142,67 @@ func (s *emailService) RefreshSendIdentity(ctx context.Context, orgID, emailAcco
 	if perr != nil {
 		return nil, errx.ErrUuid
 	}
-	tok, xerr := s.OAuthAccessToken(ctx, accountID)
+	acc, xerr := s.emailRepository.GetByID(ctx, accountID)
 	if xerr != nil {
 		return nil, xerr
 	}
 
-	rows, xerr := fetchGmailSendAs(ctx, tok.AccessToken)
+	res, xerr := s.readSendIdentity(ctx, acc, importSignature)
 	if xerr != nil {
 		return nil, xerr
 	}
 
 	var sig *models.ImportedSignature
 	if importSignature {
-		sig, xerr = pickSignature(rows, current.SendAsEmail)
+		sig, xerr = importedSignature(res.SignatureHTML)
 		if xerr != nil {
 			return nil, xerr
 		}
 	}
 
-	if xerr := s.emailRepository.SetSendIdentity(ctx, accountID, normalizeSendAs(rows), sig); xerr != nil {
+	if xerr := s.emailRepository.SetSendIdentity(ctx, accountID, res.Identities, sig); xerr != nil {
 		return nil, xerr
 	}
 	return s.emailRepository.GetSendIdentity(ctx, orgID, emailAccountID)
 }
 
 // captureSendIdentity records the send-as list (and the signature) on a fresh
-// connect, so a mailbox arrives knowing what it may send as and signing off
-// the way its owner already signs off in Gmail.
+// connect, while the OAuth handshake's own token is still in hand.
 //
-// Best-effort on purpose: the mailbox is connected and working by this point,
-// and a settings read that fails must not undo that. The customer can press
-// refresh, and nothing here is load-bearing for sending.
-func (s *emailService) captureSendIdentity(ctx context.Context, acc *models.Email, accessToken string) {
-	s.storeSendIdentity(ctx, acc, accessToken, true)
+// This is the one moment the control plane may make the call: the mailbox has
+// no worker yet, the token came from the consent the customer just completed
+// rather than from storage, and the provider already saw this address when the
+// code was exchanged. Everything afterwards goes through the worker.
+func (s *emailService) captureSendIdentity(ctx context.Context, acc *models.Email, tok *oauth2.Token) {
+	s.storeSendIdentity(ctx, acc, tok, true)
 }
 
 // captureSendIdentityList refreshes the send-as list without touching the
 // stored signature, for a reconnect.
-func (s *emailService) captureSendIdentityList(ctx context.Context, acc *models.Email, accessToken string) {
-	s.storeSendIdentity(ctx, acc, accessToken, false)
+func (s *emailService) captureSendIdentityList(ctx context.Context, acc *models.Email, tok *oauth2.Token) {
+	s.storeSendIdentity(ctx, acc, tok, false)
 }
 
-func (s *emailService) storeSendIdentity(ctx context.Context, acc *models.Email, accessToken string, importSignature bool) {
+func (s *emailService) storeSendIdentity(ctx context.Context, acc *models.Email, tok *oauth2.Token, importSignature bool) {
 	if acc == nil || models.InboxProvider(acc.Provider) != models.InboxProviderGoogle {
 		return
 	}
-	rows, xerr := fetchGmailSendAs(ctx, accessToken)
-	if xerr != nil {
-		log.Warn().Str("email_account_id", acc.ID.String()).Msg("could not read Gmail send-as addresses")
+	client := s.handshakeGmailClient(ctx, tok)
+	if client == nil {
+		return
+	}
+	rows, err := client.ListSendAs(ctx)
+	if err != nil {
+		log.Warn().Err(err).Str("email_account_id", acc.ID.String()).Msg("could not read Gmail send-as addresses on connect")
 		return
 	}
 	var sig *models.ImportedSignature
 	if importSignature {
 		// A signature too large to store keeps the generated default rather
 		// than failing a connect over it.
-		sig, _ = pickSignature(rows, "")
+		sig, _ = importedSignature(goog.SignatureFor(rows, acc.SendAsEmail))
 	}
-	if xerr := s.emailRepository.SetSendIdentity(ctx, acc.ID, normalizeSendAs(rows), sig); xerr != nil {
+	if xerr := s.emailRepository.SetSendIdentity(ctx, acc.ID, goog.SendAsIdentities(rows), sig); xerr != nil {
 		log.Warn().Str("email_account_id", acc.ID.String()).Msg("could not store Gmail send-as addresses")
 	}
 }

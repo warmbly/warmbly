@@ -23,8 +23,8 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ori
 		return nil, err
 	}
 
+	// The caller's 400, not an incident. See LoginStart.
 	if xerr := s.captcha.Verify(ctx, data.Turnstile, ipaddr); xerr != nil {
-		errs.CaptureException(xerr)
 		return nil, xerr
 	}
 
@@ -78,8 +78,8 @@ func (s *authService) RegistrationStart(ctx context.Context, data *AuthData, ori
 		return nil, errx.InternalError()
 	}
 
+	// Reported by the transport; see LoginStart.
 	if xerr := s.sendAuthEmail(ctx, data.Email, "Your Verification Code", text); xerr != nil {
-		errs.CaptureException(xerr)
 		return nil, errx.ErrMailUndeliverable
 	}
 

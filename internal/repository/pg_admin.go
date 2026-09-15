@@ -335,8 +335,14 @@ func (r *adminRepository) GetUserPreview(ctx context.Context, userID uuid.UUID) 
 		return nil, nil
 	}
 
+	// Empty slices, not nil: a nil slice marshals to JSON null, and the panel
+	// reads .length off each of these without a guard.
 	preview := &models.AdminUserPreview{
-		User: *user,
+		User:          *user,
+		Organizations: []models.Organization{},
+		Subscriptions: []models.Subscription{},
+		EmailAccounts: []models.AdminWorkerEmail{},
+		RecentBans:    []models.UserBan{},
 	}
 
 	// Get organizations
@@ -431,7 +437,9 @@ func (r *adminRepository) GetUserPreview(ctx context.Context, userID uuid.UUID) 
 	if len(bans) > 5 {
 		bans = bans[:5]
 	}
-	preview.RecentBans = bans
+	if bans != nil {
+		preview.RecentBans = bans
+	}
 
 	// Get rate limits
 	limits, err := r.GetUserRateLimits(ctx, userID)

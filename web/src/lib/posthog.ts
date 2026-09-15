@@ -156,11 +156,29 @@ export function notePostHogStep(message: string, properties?: Properties): void 
     client?.addExceptionStep(message, properties);
 }
 
+// Browser noise: reported by the window error handler, carrying no stack we
+// can act on and no bug behind it. "Script error." is what a cross-origin
+// script is flattened to, and the ResizeObserver notice is a benign scheduling
+// message the spec requires browsers to fire. Both drown the real issues.
+const NOISE = [
+    "Script error.",
+    "ResizeObserver loop completed with undelivered notifications.",
+    "ResizeObserver loop limit exceeded",
+];
+
+function isNoise(properties: Properties): boolean {
+    const values = properties.$exception_values;
+    if (!Array.isArray(values)) return false;
+    return values.some((v) => typeof v === "string" && NOISE.includes(v.trim()));
+}
+
 // decorate is the last thing to touch an event before it is sent. Exceptions
 // get the account and workspace ids as flat properties on top of the person,
 // so "every error this workspace hit" is a property filter.
 function decorate(event: CaptureResult | null): CaptureResult | null {
-    if (!event?.properties || event.event !== "$exception" || !identity) return event;
+    if (!event?.properties || event.event !== "$exception") return event;
+    if (isNoise(event.properties)) return null;
+    if (!identity) return event;
     event.properties.user_id = identity.userId;
     if (identity.organizationId) event.properties.organization_id = identity.organizationId;
     return event;

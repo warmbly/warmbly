@@ -215,7 +215,7 @@ Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
 
 `POST /emails/:id/identity/refresh`
 
-Re-reads the send-as addresses from the provider and stores them, optionally importing the provider's signature at the same time. This is the only call that contacts the provider.
+Re-reads the send-as addresses from the provider and stores them, optionally importing the provider's signature at the same time. This is the only call that contacts the provider, and it does so through the worker running the mailbox rather than from the API itself, so the provider keeps seeing this mailbox from the one address it always has.
 
 A send-as choice the provider no longer verifies is cleared by the same call, so a removed alias stops being used instead of failing every send.
 
@@ -244,6 +244,8 @@ Takes no `Idempotency-Key`: the call reads the provider's current state and stor
 The refreshed sending identity, same shape as Get the sending identity.
 
 Gmail only. Every other provider returns `400` with `mailbox_send_as_unsupported`, and a signature past the stored maximum returns `400` with `mailbox_signature_too_large` without storing anything.
+
+A mailbox that is not currently running on a worker returns `503` with `mailbox_identity_unavailable`: there is no machine to make the call, nothing was changed, and the next attempt is the fix. Mailboxes are placed within moments of connecting, so this is a mid-migration or just-restarted condition rather than a lasting one.
 
 ## Get the tracking domain
 

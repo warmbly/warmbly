@@ -2841,7 +2841,7 @@
       "post": {
         "operationId": "mailboxes_refresh_send_identity",
         "summary": "Refresh the sending identity",
-        "description": "Re-reads the send-as addresses from the provider and stores them, optionally importing the provider's signature. A send-as choice the provider no longer verifies is cleared by the same call. Gmail only. Retry-safe without an Idempotency-Key: it stores exactly what the provider currently reports.",
+        "description": "Re-reads the send-as addresses from the provider and stores them, optionally importing the provider's signature. The read runs on the worker holding the mailbox, never from the API itself, so the provider keeps seeing the mailbox from one address. A send-as choice the provider no longer verifies is cleared by the same call. Gmail only. Retry-safe without an Idempotency-Key: it stores exactly what the provider currently reports.",
         "tags": [
           "mailboxes"
         ],
@@ -2925,6 +2925,16 @@
           },
           "429": {
             "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The mailbox is not running on a worker right now (mailbox_identity_unavailable); nothing was changed.",
             "content": {
               "application/json": {
                 "schema": {

@@ -5,7 +5,8 @@
 
 import React from "react";
 import { ChevronLeftIcon, ChevronRightIcon, CopyIcon, GripVerticalIcon, Trash2Icon } from "lucide-react";
-import { SortableContext, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
+import { SortableContext, useSortable, type SortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 import { cn } from "@/lib/utils";
@@ -13,7 +14,42 @@ import type { FormDesign, FormField } from "@/lib/api/models/app/forms/Form";
 
 import "./form-theme.css";
 import { designVars, ensureFont, focusSteps, resolveDesign, splitPages } from "./designCore";
+import { CANVAS_END_DROPPABLE_ID, isHalfWidth, rowStarts } from "./dropSlot";
 import useBrand from "@/hooks/useBrand";
+
+// Fields wrap into rows and a half-width one is half a row wide, so no
+// built-in strategy can say where a neighbour lands: rectSortingStrategy
+// scaled every sibling by the ratio of two mismatched rects and tore fields
+// out of the card (#497). Nothing moves during a drag; the caret says where
+// the field lands instead.
+const noReflow: SortingStrategy = () => null;
+
+/** Which edge of a field the insertion caret sits against, if any. */
+type CaretSide = "top" | "left" | null;
+
+// The caret sits in the gutter between two rows, or between two half-width
+// fields on one row, so it has to be offset by half the form's own gap.
+function DropCaret({ side }: { side: NonNullable<CaretSide> }) {
+    const base = "absolute z-20 rounded-full bg-sky-500 pointer-events-none";
+    return side === "left" ? (
+        <span className={`${base} top-0 bottom-0 w-[3px]`} style={{ left: "calc(var(--wf-gap, 16px) / -2 - 1.5px)" }} aria-hidden />
+    ) : (
+        <span className={`${base} left-0 right-0 h-[3px]`} style={{ top: "calc(var(--wf-gap, 16px) / -2 - 1.5px)" }} aria-hidden />
+    );
+}
+
+// The end-of-form drop target. Without it the only way to reach the last slot
+// would be to out-guess closestCenter, which is why dragging the first field
+// to the bottom did nothing.
+function DropEndZone({ caret, children }: { caret: boolean; children: React.ReactNode }) {
+    const { setNodeRef } = useDroppable({ id: CANVAS_END_DROPPABLE_ID });
+    return (
+        <div ref={setNodeRef} className="btnrow" style={{ position: "relative" }}>
+            {caret && <DropCaret side="top" />}
+            {children}
+        </div>
+    );
+}
 
 // FieldBody renders one block with the shared .wf classes. Inputs are real
 // but inert (readOnly/disabled, tabIndex -1) so form-theme.css styles them
@@ -129,11 +165,12 @@ function PageBreakRow({ pageNum, label }: { pageNum: number; label: string }) {
     );
 }
 
-function CaptchaBadge() {
+function CaptchaBadge({ caret }: { caret?: boolean }) {
     return (
         <div
             className="fld"
             style={{
+                position: "relative",
                 border: "1px dashed var(--wf-input-border)",
                 borderRadius: "var(--wf-input-radius)",
                 padding: "10px 12px",
@@ -141,6 +178,7 @@ function CaptchaBadge() {
                 color: "var(--wf-placeholder)",
             }}
         >
+            {caret && <DropCaret side="top" />}
             Spam protection challenge appears here
         </div>
     );
@@ -151,6 +189,7 @@ function SortableField({
     pageNum,
     selected,
     editable,
+    caret,
     onSelect,
     onDelete,
     onDuplicate,
@@ -160,34 +199,41 @@ function SortableField({
     pageNum: number;
     selected: boolean;
     editable: boolean;
+    /** Edge to draw the insertion caret against while a drag is in flight. */
+    caret: CaretSide;
     onSelect: (id: string) => void;
     onDelete: (id: string) => void;
     onDuplicate: (id: string) => void;
 }) {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-        id: field.id,
-        disabled: !editable,
-    });
-    const half = field.type !== "page_break" && field.width === "half";
+    const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging, isSorting } =
+        useSortable({ id: field.id, disabled: !editable });
     return (
         <div
             ref={setNodeRef}
             style={{
-                transform: CSS.Transform.toString(transform),
+                // Translate only. CSS.Transform also emits the scale dnd-kit
+                // derives from two mismatched rects, which is what stretched
+                // fields across the canvas (#497).
+                transform: CSS.Translate.toString(transform),
                 transition,
-                flex: half ? "1 1 calc(50% - var(--wf-gap, 16px))" : "1 1 100%",
-                minWidth: 0,
-                opacity: isDragging ? 0.5 : 1,
+                opacity: isDragging ? 0.4 : 1,
             }}
             onClick={(e) => {
                 e.stopPropagation();
                 onSelect(field.id);
             }}
-            className={`relative rounded-md cursor-pointer group/field ${
-                selected ? "ring-2 ring-sky-400 ring-offset-2" : "hover:ring-1 hover:ring-sky-200 hover:ring-offset-2"
-            }`}
+            // .fld carries the width, so a half field stacks below 480px in
+            // the canvas exactly as it does on the hosted page.
+            className={cn(
+                "fld",
+                isHalfWidth(field) && "half",
+                "relative rounded-md cursor-pointer group/field",
+                selected && "ring-2 ring-sky-400 ring-offset-2",
+                !selected && !isSorting && "hover:ring-1 hover:ring-sky-200 hover:ring-offset-2",
+            )}
             data-field-id={field.id}
         >
+            {caret && <DropCaret side={caret} />}
             <div style={{ pointerEvents: "none" }}>
                 {field.type === "page_break" ? (
                     <PageBreakRow pageNum={pageNum} label={field.label} />
@@ -197,15 +243,25 @@ function SortableField({
             </div>
             {editable && (
                 <div
-                    className={`absolute -top-2.5 right-1 z-10 flex items-center gap-0.5 rounded-md border border-slate-200 bg-white shadow-sm px-0.5 ${
-                        selected ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover/field:opacity-100"
-                    } transition-opacity`}
+                    className={cn(
+                        "absolute -top-2.5 right-1 z-10 flex items-center gap-0.5 rounded-md border border-slate-200 bg-white shadow-sm px-0.5 transition-opacity",
+                        // A toolbar popping up under the cursor mid-drag reads
+                        // as a second drop target, so every one goes away.
+                        isSorting
+                            ? "opacity-0 pointer-events-none"
+                            : selected
+                              ? "opacity-100"
+                              : "opacity-100 md:opacity-0 md:group-hover/field:opacity-100",
+                    )}
                     onClick={(e) => e.stopPropagation()}
                 >
                     <button
+                        ref={setActivatorNodeRef}
                         type="button"
                         aria-label="Drag to reorder"
-                        className="size-5 inline-flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-grab active:cursor-grabbing"
+                        // touch-action must be none or a touch drag scrolls the
+                        // canvas instead of picking the field up.
+                        className="size-5 inline-flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-grab active:cursor-grabbing touch-none"
                         {...attributes}
                         {...listeners}
                     >
@@ -301,6 +357,7 @@ export default function FormPreview({
     editable,
     showCaptchaBadge,
     previewPaging,
+    dropIndex,
     onSelect,
     onDelete,
     onDuplicate,
@@ -317,6 +374,8 @@ export default function FormPreview({
     showCaptchaBadge?: boolean;
     /** true renders the paged/focus preview instead of the flat build list. */
     previewPaging?: boolean;
+    /** Index a dragged field or palette item would land at; null when idle. */
+    dropIndex?: number | null;
     onSelect: (id: string) => void;
     onDelete: (id: string) => void;
     onDuplicate: (id: string) => void;
@@ -377,11 +436,22 @@ export default function FormPreview({
         </button>
     );
 
+    // A caret for a slot inside a row is vertical; everywhere else it is a
+    // rule above the row.
+    const opensRow = rowStarts(fields);
+    const caretFor = (i: number): CaretSide => (dropIndex === i ? (opensRow[i] ? "top" : "left") : null);
+    const endCaret = fields.length > 0 && dropIndex === fields.length;
+
     const buildList = (
-        <SortableContext items={fields.map((f) => f.id)} strategy={rectSortingStrategy}>
+        <SortableContext items={fields.map((f) => f.id)} strategy={noReflow}>
             <div className="grid">
                 {fields.length === 0 && (
-                    <div className="w-full rounded-md border-2 border-dashed border-slate-200 p-8 text-center text-[12.5px] text-slate-400">
+                    <div
+                        className={cn(
+                            "w-full rounded-md border-2 border-dashed p-8 text-center text-[12.5px] transition-colors",
+                            dropIndex != null ? "border-sky-400 bg-sky-50/60 text-sky-700" : "border-slate-200 text-slate-400",
+                        )}
+                    >
                         Add fields from the left panel
                     </div>
                 )}
@@ -392,13 +462,16 @@ export default function FormPreview({
                         pageNum={breakPage[i]}
                         selected={selectedId === f.id}
                         editable={editable}
+                        caret={caretFor(i)}
                         onSelect={onSelect}
                         onDelete={onDelete}
                         onDuplicate={onDuplicate}
                     />
                 ))}
-                {showCaptchaBadge && <CaptchaBadge />}
-                <div className="btnrow">{submitBtn}</div>
+                {showCaptchaBadge && <CaptchaBadge caret={endCaret} />}
+                {/* The last slot is above the captcha badge when there is one,
+                    so the caret hangs off whichever comes first. */}
+                <DropEndZone caret={endCaret && !showCaptchaBadge}>{submitBtn}</DropEndZone>
             </div>
         </SortableContext>
     );

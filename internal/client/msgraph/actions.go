@@ -182,3 +182,10 @@ func (c *Client) cacheFolder(name, id string) {
 	c.folderIDs[name] = id
 	c.mu.Unlock()
 }
+
+// SetSeen flips the read state of one message. Graph has no batch equivalent
+// of Gmail's batchModify that is worth the complexity here, so the caller
+// loops.
+func (c *Client) SetSeen(ctx context.Context, messageID string, seen bool) error {
+	return c.doJSON(ctx, "PATCH", c.messageURL(messageID), map[string]any{"isRead": seen}, nil)
+}

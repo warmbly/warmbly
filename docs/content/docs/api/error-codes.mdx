@@ -444,6 +444,23 @@ A `400` whose `code` is `mailbox_signature_too_large` comes from `POST /emails/{
 - Shorten the signature in Gmail, usually by linking an image rather than embedding it, and import again
 - Or write the signature in Warmbly directly with `PATCH /emails/{id}`
 
+#### `mailbox_identity_unavailable`
+
+A `503` whose `code` is `mailbox_identity_unavailable` comes from `POST /emails/{id}/identity/refresh`. Reading a mailbox's sending addresses is an account operation, so it runs on the worker holding that mailbox, never from the API itself. It is unavailable exactly when that machine is: while the mailbox is being moved between workers, just after a worker restart, or before a newly connected mailbox has been placed. Nothing was changed.
+
+```json
+{
+  "error": "Service Unavailable",
+  "message": "Warmbly could not reach the machine running this mailbox, so its sending addresses were not refreshed. Nothing was changed; try again in a moment.",
+  "code": "mailbox_identity_unavailable",
+  "request_id": "6e2f1a90-5d13-4a77-9c0b-73f0b5a2e118"
+}
+```
+
+**How to fix:**
+- Retry. Placement happens within moments, so a second attempt usually succeeds
+- `GET /emails/{id}` reports the mailbox's `status`; an `inactive` mailbox is not placed on a worker at all and will keep refusing until it is reactivated
+
 ## Error handling best practices
 
 ### Implement retry logic

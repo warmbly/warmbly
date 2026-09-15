@@ -32,6 +32,17 @@ func (s *uniboxService) GetByID(
 		}
 		ownerID = owner
 		accountID = msg.EmailID
+
+		// Opening a conversation is what marks it read, org-scoped so any
+		// member clears the shared unread state. Relayed like any other read
+		// state change, so the mailbox agrees: this is the path a developer
+		// hitting the API reaches, where nothing calls PATCH /unibox/seen.
+		if !msg.Seen {
+			if changed, err := s.uniboxRepository.MarkSeenBulk(ctx, orgID, []uuid.UUID{id}, true); err == nil {
+				msg.Seen = true
+				s.relaySeen(ctx, orgID, changed)
+			}
+		}
 		resp.ID = msg.ID
 		resp.GmailID = msg.GmailID
 		resp.UID = msg.UID

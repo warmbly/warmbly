@@ -767,7 +767,7 @@ export default function LoginPage() {
                 )}
             </AnimatePresence>
 
-            {(!authConfigReady || captchaRequired) && !turnstileBypassToken && (
+            {TURNSTILE_KEY && (!authConfigReady || captchaRequired) && !turnstileBypassToken && (
                 <Turnstile
                     sitekey={TURNSTILE_KEY}
                     execution="execute"

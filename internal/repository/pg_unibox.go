@@ -43,13 +43,19 @@ type UniboxRepository interface {
 	Search(ctx context.Context, orgID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error)
 	GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error)
 	MarkSeen(ctx context.Context, userID, id uuid.UUID, seen bool) error
-	MarkSeenBulk(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, seen bool) error
+	// MarkSeenBulk flips the read state of the given messages and returns the
+	// ids that actually changed, which is what gets relayed to the provider.
+	MarkSeenBulk(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, seen bool) ([]uuid.UUID, error)
 	// MarkSeenByFolder flips the read state of every message in one canonical
 	// folder for the whole workspace (the sidebar's "mark all as read").
-	MarkSeenByFolder(ctx context.Context, orgID uuid.UUID, folder string, seen bool) error
+	MarkSeenByFolder(ctx context.Context, orgID uuid.UUID, folder string, seen bool) ([]uuid.UUID, error)
 	// MoveToFolderBulk re-files the given messages into one canonical folder,
 	// org-scoped like MarkSeenBulk.
 	MoveToFolderBulk(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, folder string) error
+	// SeenRelayTargets names the given messages the way their provider does,
+	// with the worker holding each mailbox. Rows whose mailbox has no worker
+	// are left out: there is nothing to relay through.
+	SeenRelayTargets(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) ([]models.SeenRelayTarget, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
 
 	// Snooze: per (user, thread). UpsertSnooze adopts the new
@@ -253,6 +259,11 @@ func (r *uniboxRepository) GetIncoming(ctx context.Context, userID uuid.UUID, li
 	return r.queryPreviewList(ctx, query, args, limit)
 }
 
+// ErrEmailNotFound is returned when a message id names no row the caller can
+// see. A consumer event for a message the unibox never stored is routine, not a
+// failure, so it has to be distinguishable from a real read error.
+var ErrEmailNotFound = errors.New("email not found")
+
 func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*models.EmailMessageStoreData, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
@@ -270,7 +281,7 @@ func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("email not found")
+			return nil, ErrEmailNotFound
 		}
 		return nil, err
 	}
@@ -290,6 +301,9 @@ func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*
 // user_id: the body's object-storage key is built from the owner (and the
 // row's email_id), so the caller must fetch the body under the owner, not
 // under itself.
+//
+// It does not mark the message read: that is a write with a provider relay
+// behind it, and it belongs to the service.
 func (r *uniboxRepository) GetByIDForOrg(ctx context.Context, orgID, id uuid.UUID) (*models.EmailMessageStoreData, uuid.UUID, error) {
 	query := fmt.Sprintf(`
 		SELECT user_id, %s
@@ -309,17 +323,14 @@ func (r *uniboxRepository) GetByIDForOrg(ctx context.Context, orgID, id uuid.UUI
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, uuid.Nil, fmt.Errorf("email not found")
+			return nil, uuid.Nil, ErrEmailNotFound
 		}
 		return nil, uuid.Nil, err
 	}
 
-	// Auto-mark as seen, org-scoped so any member clears the shared unread state.
-	if !e.Seen {
-		_ = r.MarkSeenBulk(ctx, orgID, []uuid.UUID{id}, true)
-		e.Seen = true
-	}
-
+	// Reading it is what marks it read, and that now has to reach the mailbox
+	// too, so the service owns the transition (it holds the relay). The row
+	// is returned exactly as stored.
 	return &e, ownerID, nil
 }
 
@@ -651,32 +662,99 @@ func (r *uniboxRepository) MarkSeen(ctx context.Context, userID, id uuid.UUID, s
 	return err
 }
 
-func (r *uniboxRepository) MarkSeenBulk(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, seen bool) error {
+func (r *uniboxRepository) MarkSeenBulk(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, seen bool) ([]uuid.UUID, error) {
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
 	// Org-scoped so any member with unibox access can clear the shared inbox's
 	// unread state, not only the mailbox owner. The unread count is org-wide, so
 	// a user_id filter would leave the badge stuck for non-owner members. ANY($3)
 	// also covers the single-id case.
-	_, err := r.db.Exec(ctx,
+	//
+	// `seen <> $1` and the RETURNING are what keep the provider relay honest:
+	// re-reading a thread that is already read should cost nothing at Gmail.
+	rows, err := r.db.Query(ctx,
 		`UPDATE unibox_emails SET seen = $1, updated_at = NOW()
-		 WHERE id = ANY($3) AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $2)`,
+		 WHERE id = ANY($3) AND seen <> $1
+		   AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $2)
+		 RETURNING id`,
 		seen, orgID, ids,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	changed := make([]uuid.UUID, 0, len(ids))
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		changed = append(changed, id)
+	}
+	return changed, rows.Err()
 }
 
 // MarkSeenByFolder flips the read state of every message in one folder,
 // org-scoped like MarkSeenBulk (the sidebar's "mark all as read").
-func (r *uniboxRepository) MarkSeenByFolder(ctx context.Context, orgID uuid.UUID, folder string, seen bool) error {
-	_, err := r.db.Exec(ctx,
+func (r *uniboxRepository) MarkSeenByFolder(ctx context.Context, orgID uuid.UUID, folder string, seen bool) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx,
 		`UPDATE unibox_emails SET seen = $1, updated_at = NOW()
 		 WHERE folder = $3 AND seen <> $1
-		   AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $2)`,
+		   AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $2)
+		 RETURNING id`,
 		seen, orgID, folder,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var changed []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		changed = append(changed, id)
+	}
+	return changed, rows.Err()
+}
+
+// SeenRelayTargets resolves messages to what their provider calls them, plus
+// the worker holding the mailbox.
+//
+// The three providers need different halves of this row (Gmail and Graph a
+// message id, IMAP a folder and a UID), so all of it travels and the worker
+// takes what its client uses. The read state comes from the row rather than
+// from the request, so what is relayed is what Warmbly currently holds.
+func (r *uniboxRepository) SeenRelayTargets(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) ([]models.SeenRelayTarget, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT ue.email_id, ea.worker_id, ue.seen, ue.gmail_id, ue.uid, ue.folder_path, ue.message_id
+		 FROM unibox_emails ue
+		 JOIN email_accounts ea ON ea.id = ue.email_id
+		 WHERE ue.id = ANY($2) AND ea.organization_id = $1 AND ea.worker_id IS NOT NULL
+		 ORDER BY ue.email_id`,
+		orgID, ids,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.SeenRelayTarget
+	for rows.Next() {
+		var t models.SeenRelayTarget
+		if err := rows.Scan(&t.EmailID, &t.WorkerID, &t.Seen, &t.Ref.ProviderID, &t.Ref.UID, &t.Ref.Folder, &t.Ref.RFCMessageID); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 func (r *uniboxRepository) MoveToFolderBulk(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID, folder string) error {

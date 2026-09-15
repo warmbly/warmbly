@@ -8,6 +8,13 @@ const (
 	WorkerEventTypeRemoveEmail     WorkerEventType = "REMOVE_EMAIL"
 	WorkerEventTypeEmailValidation WorkerEventType = "EMAIL_VALIDATION"
 	WorkerEventTypeWarmupAction    WorkerEventType = "WARMUP_ACTION"
+	// WorkerEventTypeMessageSeen relays a read/unread change a person made in
+	// the unibox out to the mailbox provider, so the two agree.
+	WorkerEventTypeMessageSeen WorkerEventType = "MESSAGE_SEEN"
+	// WorkerEventTypeMailboxIdentity asks the worker holding a mailbox to read
+	// its send-as identities (and one signature) from the provider. The
+	// control plane never calls a customer's provider itself.
+	WorkerEventTypeMailboxIdentity WorkerEventType = "MAILBOX_IDENTITY"
 )
 
 type WorkerEvent struct {

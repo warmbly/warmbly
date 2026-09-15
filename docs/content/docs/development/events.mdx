@@ -48,7 +48,11 @@ The backend drives workers with a `{type, body}` envelope (`internal/models/even
 }
 ```
 
-Types: `SEND_EMAIL`, `ADD_EMAIL`, `REMOVE_EMAIL`, `EMAIL_VALIDATION`, `WARMUP_ACTION`. Each has a typed body struct in `internal/models/` (for example `models.SendEmail` for `SEND_EMAIL`).
+Types: `SEND_EMAIL`, `ADD_EMAIL`, `REMOVE_EMAIL`, `EMAIL_VALIDATION`, `WARMUP_ACTION`, `MESSAGE_SEEN`, `MAILBOX_IDENTITY`. Each has a typed body struct in `internal/models/` (for example `models.SendEmail` for `SEND_EMAIL`).
+
+`MESSAGE_SEEN` carries a read or unread change made in the unified inbox out to the mailbox provider, one event per mailbox and at most `models.SeenRelayChunk` messages each. It answers with nothing: the store was written before the event was published, so the provider's copy is the only thing it changes, and a failure is logged rather than retried because the next sync reports whatever the provider actually holds. Each message carries all three providers' handles and the worker takes the ones its client uses: a provider message id for Gmail and Graph, an IMAP folder plus UID, and the immutable RFC Message-ID, which Graph re-resolves the live id from because a Graph id changes whenever a message moves. The state relayed is the one the row holds when the relay reads it back, not the one the request asked for, so a conflicting toggle leaves the provider agreeing with the store rather than with whoever published last.
+
+`MAILBOX_IDENTITY` asks the worker holding a mailbox to read its send-as addresses, and one signature, from the provider. It answers on a Redis channel named by the request's `process_id` rather than on the worker-events topic, the same round trip `EMAIL_VALIDATION` uses, because the caller is an HTTP request waiting for it. The control plane makes this call itself in exactly one place, the OAuth handshake, where the token came from the consent the customer just completed and the mailbox has no worker yet.
 
 ## Worker results
 
