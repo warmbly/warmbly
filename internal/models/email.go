@@ -66,6 +66,11 @@ type Email struct {
 	// when a DNS lookup failed transiently), distinct from a real "failing".
 	// A sustained "failing" gates cold sending and warmup; see
 	// DomainAuthBlocked for when that becomes enforceable.
+	//
+	// AuthDKIM is a positive-only signal: true means a key was found at a
+	// probed selector, false means none answered. Selectors are not
+	// discoverable from DNS, so false is "unverified" and must never be
+	// presented as a missing record.
 	AuthState       string     `json:"auth_state"`
 	AuthSPF         bool       `json:"auth_spf"`
 	AuthDKIM        bool       `json:"auth_dkim"`

@@ -606,9 +606,13 @@ To stop a mailbox sending without losing anything, set it inactive instead:
 				Name: "check", Aliases: []string{"auth-check"}, Short: "Show the mailbox's SPF, DKIM and DMARC",
 				Method: http.MethodGet, Path: "/emails/{id}/auth-check",
 				Args: []argSpec{{Name: "id", Help: "The mailbox's id"}},
+				// The response is the live lookup (a dnsauth result), not the
+				// mailbox row, so the paths are its fields. DKIM reads the
+				// tri-state: a probe that found nothing is "undetermined",
+				// because a selector is not something DNS can be asked for.
 				Table: output.Table{Columns: []output.Column{
-					col("STATE", "auth_state"), col("SPF", "auth_spf"), col("DKIM", "auth_dkim"),
-					col("DMARC", "auth_dmarc"), col("POLICY", "auth_dmarc_policy"), colf("CHECKED", "auth_checked_at", "time"),
+					col("DOMAIN", "domain"), col("SPF", "spf_found"), col("DKIM", "dkim_status"),
+					col("DMARC", "dmarc_found"), col("POLICY", "dmarc_policy"), col("SUMMARY", "summary"),
 				}},
 			},
 			{

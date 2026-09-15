@@ -3,7 +3,7 @@ title: "Advisor"
 description: "Warmbly watches your sending and tells you what to fix, on the page where the fix lives."
 ---
 
-The Advisor checks your workspace for the things that quietly ruin cold outreach: complaints climbing, a domain missing DKIM, a new mailbox at full volume, a list that is mostly shared inboxes. It says what is wrong, why it matters, and what to do, and where the fix is a setting, it offers to make the change.
+The Advisor checks your workspace for the things that quietly ruin cold outreach: complaints climbing, a domain missing DMARC, a new mailbox at full volume, a list that is mostly shared inboxes. It says what is wrong, why it matters, and what to do, and where the fix is a setting, it offers to make the change.
 
 Advice appears on the page where the problem is, not in a separate inbox you have to check.
 
@@ -49,7 +49,7 @@ Only the first two badge a nav tab.
 
 ## What it checks
 
-**Deliverability**: complaint rate per mailbox (warns `0.03%`, critical `0.10%`, matching Google's bulk-sender ceiling); bounce rate (warns `3%`, critical `5%`, where SES opens a review); spam placement on warmup mail (warns `10%`, escalates `20%`, critical `40%`); SPF, DKIM, and DMARC per sending domain (critical while sending cold, since Google requires all three; an unchecked domain is never called failing); and whether a mailbox has its own verified tracking domain.
+**Deliverability**: complaint rate per mailbox (warns `0.03%`, critical `0.10%`, matching Google's bulk-sender ceiling); bounce rate (warns `3%`, critical `5%`, where SES opens a review); spam placement on warmup mail (warns `10%`, escalates `20%`, critical `40%`); SPF and DMARC per sending domain (critical while sending cold, since Google requires them; an unchecked domain is never called failing, and DKIM is never reported missing because its selector is not discoverable from DNS); and whether a mailbox has its own verified tracking domain.
 
 **Mailbox configuration**: daily cap above the `50`/day safe band (gently with clean numbers, firmly without); a mailbox under `30` days old sending above `20`/day; a send gap under `5` minutes; unresolved errors on a mailbox campaigns still use; too few mailboxes carrying total volume; an inactive mailbox attached to a running campaign.
 
@@ -67,7 +67,7 @@ Opening a recommendation walks three screens: **Why** (with the measured numbers
 
 Nothing is applied until you have seen the second screen. The change runs as you, with your permissions, and is written to the audit log. If you can see a finding but lack permission for its fix, applying it is refused rather than silently escalated.
 
-Findings needing a judgement call have no settings preview. Their second screen is the ordered set of manual steps plus a link to the right screen. A missing DKIM record tells you to generate a key in your provider's console, publish the record, then turn signing on, which is a separate switch. Where the remedy is genuinely one sentence, it stays one sentence.
+Findings needing a judgement call have no settings preview. Their second screen is the ordered set of manual steps plus a link to the right screen. A missing DMARC record tells you where the `_dmarc` host goes and why the first record should start at `p=none`. Where the remedy is genuinely one sentence, it stays one sentence.
 
 ### Fix with agent
 
@@ -85,7 +85,7 @@ Where the fix is a DNS record, it is on screen with one copy button per field, l
 
 - **SPF** arrives with your provider's include filled in. An unrecognized provider leaves an obvious placeholder rather than a guess, because a wrong include looks finished and fails silently.
 - **DMARC** is scoped to your domain and starts at `p=none`, monitoring without affecting delivery. Tighten to `p=quarantine` once reports show legitimate mail passing.
-- **DKIM** gives the host and names the console screen that generates the value, which is per-domain and cannot be templated honestly.
+- **DKIM** is never called missing, since Warmbly cannot see a selector DNS does not list. When a domain is already flagged for SPF or DMARC and DKIM went unverified too, the card adds the host to publish at and names the console screen that generates the value, which is per-domain and cannot be templated honestly.
 - **Tracking domain** gives the full CNAME pointing at this install's tracking host, so self-hosted deployments get their own value.
 
 ### Autopilot
