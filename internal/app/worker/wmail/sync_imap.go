@@ -294,12 +294,21 @@ func (w *WMail) imapReconcileDrafts(ctx context.Context, box *models.Mailbox, to
 	if len(stored) == 0 {
 		return nil
 	}
-	if _, err := w.SmtpImapData.ImapClient.SelectForSync(box.Name); err != nil {
-		return err
-	}
-	present, serr := w.SmtpImapData.ImapClient.SearchAll()
+	_, gen, serr := w.SmtpImapData.ImapClient.SelectForSyncGen(box.Name)
 	if serr != nil {
 		return serr
+	}
+	// A UID only means anything inside one generation. If the folder was
+	// recreated between the listing that produced box and this SELECT, the
+	// live UIDs and the stored rows describe different folders, so diffing
+	// them would remove rows never actually compared. The next pass reads the
+	// new generation from the listing and reconciles it properly.
+	if gen != box.UIDValidity {
+		return nil
+	}
+	present, aerr := w.SmtpImapData.ImapClient.SearchAll()
+	if aerr != nil {
+		return aerr
 	}
 	live := make(map[uint32]struct{}, len(present))
 	for _, uid := range present {

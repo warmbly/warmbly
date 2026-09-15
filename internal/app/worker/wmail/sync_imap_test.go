@@ -33,6 +33,9 @@ type fakeImapConn struct {
 	// all is the folder's complete UID set, which the drafts reconciliation
 	// diffs against the UIDs the platform holds.
 	all []goimap.UID
+	// selectGen, when non-zero, is the UIDVALIDITY SELECT reports, which the
+	// reconciliation compares against the one the listing gave it.
+	selectGen uint32
 }
 
 func (c *fakeImapConn) Folders() ([]models.Mailbox, *errx.MailError) { return c.folders, nil }
@@ -70,6 +73,19 @@ func (c *fakeImapConn) ReleaseMailbox() { c.released++ }
 
 func (c *fakeImapConn) SelectForSync(string) (uint32, *errx.MailError) {
 	return uint32(len(c.changed)), nil
+}
+
+func (c *fakeImapConn) SelectForSyncGen(name string) (uint32, uint32, *errx.MailError) {
+	gen := c.selectGen
+	if gen == 0 {
+		for _, f := range c.folders {
+			if f.Name == name {
+				gen = f.UIDValidity
+			}
+		}
+	}
+	n, err := c.SelectForSync(name)
+	return n, gen, err
 }
 
 func (c *fakeImapConn) SearchChangedSince(uint64) ([]goimap.UID, *errx.MailError) {
@@ -300,6 +316,11 @@ func (c *backfillImapConn) ReleaseMailbox()                              {}
 func (c *backfillImapConn) SelectForSync(name string) (uint32, *errx.MailError) {
 	c.selected = name
 	return uint32(len(c.uids[name])), nil
+}
+
+func (c *backfillImapConn) SelectForSyncGen(name string) (uint32, uint32, *errx.MailError) {
+	n, err := c.SelectForSync(name)
+	return n, 0, err
 }
 
 func (c *backfillImapConn) SearchChangedSince(uint64) ([]goimap.UID, *errx.MailError) {
@@ -654,6 +675,34 @@ func TestImapSyncRemovesExpungedDraftRows(t *testing.T) {
 	// whose UIDs a generation change voided are never read as expunged.
 	if ctx.uidValidity != 9 {
 		t.Errorf("looked up folder rows for UIDVALIDITY %d, want 9", ctx.uidValidity)
+	}
+}
+
+// A UID only means anything inside one UIDVALIDITY generation. If the folder
+// is recreated between the listing and the SELECT, the live UIDs describe a
+// different folder from the stored rows, and diffing them would remove rows
+// that were never compared. The pass must decline instead.
+func TestImapSyncSkipsReconcileWhenUIDValidityMovedUnderIt(t *testing.T) {
+	conn := &fakeImapConn{
+		folders: []models.Mailbox{draftsFolder(500)},
+		all:     []goimap.UID{5},
+		// The listing said 9; SELECT reports a recreated folder.
+		selectGen: 10,
+	}
+	w, events := newIMAPTestMail(conn, &fixedBudget{allow: 10}, draftsBox(500))
+	w.SyncContext = &fakeSyncContext{stored: map[string][]repository.StoredFolderMessage{
+		"[Gmail]/Drafts": {
+			{UID: 4, MessageID: "<4@fake.test>", ID: uuid.New()},
+			{UID: 7, MessageID: "<7@fake.test>", ID: uuid.New()},
+		},
+	}}
+
+	if err := w.Sync(t.Context()); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	if removed := removeIDs(*events); len(removed) != 0 {
+		t.Fatalf("removed %v across a UIDVALIDITY change, want nothing", removed)
 	}
 }
 

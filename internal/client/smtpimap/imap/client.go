@@ -318,6 +318,22 @@ func (c *Client) SelectForSync(mailbox string) (uint32, *errx.MailError) {
 	return data.NumMessages, nil
 }
 
+// SelectForSyncGen opens the mailbox exactly as SelectForSync does and also
+// reports the selected UIDVALIDITY. A caller that diffs stored UIDs against
+// the folder's live set needs the generation it actually selected: UIDs only
+// mean anything within one, so acting across a change deletes rows it never
+// compared.
+func (c *Client) SelectForSyncGen(mailbox string) (uint32, uint32, *errx.MailError) {
+	c.lifecycle.RLock()
+	defer c.lifecycle.RUnlock()
+	defer c.begin()()
+	data, err := c.selectMailbox(mailbox, &imap.SelectOptions{ReadOnly: true, CondStore: c.condStore.Load()})
+	if err != nil {
+		return 0, 0, c.handleError(err)
+	}
+	return data.NumMessages, data.UIDValidity, nil
+}
+
 // ReleaseMailbox drops the selected mailbox. Dovecot answers LIST-STATUS for
 // the selected mailbox with the values it held at SELECT, so a loop that keeps
 // INBOX selected never sees another change land. Servers without UNSELECT keep
