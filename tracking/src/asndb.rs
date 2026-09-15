@@ -262,13 +262,27 @@ fn first_database(stream: impl Read) -> Result<Vec<u8>, String> {
     Err("archive holds no .mmdb file".into())
 }
 
-/// Keeps a download URL out of logs. MaxMind's permalink carries the account's
-/// licence key in its query string, and a warning is the one place nobody
-/// expects to find one.
-fn redact(url: &str) -> String {
-    match url.split_once('?') {
-        Some((base, _)) => format!("{base}?<redacted>"),
-        None => url.to_string(),
+/// Keeps a download URL out of logs with its shape intact and nothing else.
+/// MaxMind's permalink carries the account's licence key in the query, a mirror
+/// can carry basic-auth credentials in the userinfo, and a warning is the one
+/// place nobody expects to find either.
+///
+/// Parsed rather than cut at the first `?`, so where the credential sits is the
+/// URL library's problem and not a guess made here.
+fn redact(raw: &str) -> String {
+    let Ok(mut url) = reqwest::Url::parse(raw) else {
+        return "<unparseable url>".to_string();
+    };
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_fragment(None);
+    // Appended rather than set through the parser, which would percent-encode
+    // the marker into something nobody reading a log would recognise.
+    let had_query = url.query().is_some();
+    url.set_query(None);
+    match had_query {
+        true => format!("{url}?<redacted>"),
+        false => url.to_string(),
     }
 }
 
@@ -507,6 +521,10 @@ mod tests {
             got,
             "https://download.maxmind.com/app/geoip_download?<redacted>"
         );
+        // A mirror can carry its credential in the userinfo instead.
+        let got = redact("https://user:hunter2@mirror.example/GeoLite2-ASN.mmdb");
+        assert!(!got.contains("hunter2"), "{got}");
+        assert_eq!(got, "https://mirror.example/GeoLite2-ASN.mmdb");
     }
 
     #[test]
