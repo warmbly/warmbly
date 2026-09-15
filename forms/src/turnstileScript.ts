@@ -24,7 +24,15 @@ export function loadTurnstileScript(): Promise<void> {
         s.src = SCRIPT_SRC;
         s.async = true;
         s.onload = () => resolve();
-        s.onerror = () => reject(new Error("turnstile script failed to load"));
+        s.onerror = () => {
+            // Drop the cached promise and the dead tag, or every later mount
+            // gets this same rejection back: one blocked or flaky load left the
+            // captcha permanently missing, and a form that requires one cannot
+            // be submitted at all until the visitor reloads the page.
+            scriptLoading = null;
+            s.remove();
+            reject(new Error("turnstile script failed to load"));
+        };
         document.head.appendChild(s);
     });
     return scriptLoading;

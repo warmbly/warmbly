@@ -114,10 +114,15 @@ func TestAuthorizationFailureIsNotACreateFailure(t *testing.T) {
 	}
 
 	// The single-broker development case must still fail loudly: nothing is
-	// going to produce to a topic the cluster could not build.
+	// going to produce to a topic the cluster could not build. Neither must an
+	// error that only mentions authorization, because waving one through
+	// remembers a topic that was never created and every later publish to it
+	// then fails with nothing reporting why.
 	notRefusals := []ckf.Error{
 		ckf.NewError(ckf.ErrInvalidReplicationFactor, "Broker: Invalid replication factor", false),
 		ckf.NewError(ckf.ErrTopicException, "Broker: Invalid topic", false),
+		ckf.NewError(ckf.ErrUnknown, "Create failed after transactional id authorization failed for this client", false),
+		ckf.NewError(ckf.ErrUnknown, "Broker: SASL authentication failed", false),
 	}
 	for _, r := range notRefusals {
 		if isAuthorizationFailure(r) {

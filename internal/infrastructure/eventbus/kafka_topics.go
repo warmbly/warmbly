@@ -107,15 +107,21 @@ func (b *KafkaBus) ensureTopics(ctx context.Context, names ...string) error {
 
 // isAuthorizationFailure reports whether the broker refused the create because
 // this key may not make topics, rather than because the create itself was bad.
-// Matched on the code, with the sentence as a fallback: Confluent Cloud replaces
-// the description with its own "Authorization failed." and an operator reading
-// it should not have to care which of the two codes carried it.
+//
+// The two codes are the answer; the description is a fallback because Confluent
+// Cloud substitutes its own "Authorization failed." for them and the code that
+// arrives with it is not documented. The fallback is the whole description and
+// not a substring on purpose: this waves a topic through as created, so an error
+// that merely mentions authorization must not be mistaken for a refusal to
+// create one, or the topic is remembered as present and every later publish to
+// it fails for a reason nothing reported.
 func isAuthorizationFailure(err ckf.Error) bool {
 	switch err.Code() {
 	case ckf.ErrTopicAuthorizationFailed, ckf.ErrClusterAuthorizationFailed:
 		return true
 	}
-	return strings.Contains(strings.ToLower(err.String()), "authorization failed")
+	desc := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(err.String())), ".")
+	return desc == "authorization failed"
 }
 
 // unknownTopics returns specs for the names this process has not created yet.
