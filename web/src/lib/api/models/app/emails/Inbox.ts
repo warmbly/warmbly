@@ -28,7 +28,9 @@ export default interface Inbox {
      * "unknown" means not checked yet or DNS could not answer, and never gates.
      * A "failing" domain stops cold sending and warmup once it has been failing
      * since auth_failing_since for longer than the instance grace window.
-     * auth_dkim is advisory: DKIM selectors are not discoverable from DNS.
+     * auth_dkim is positive-only: true means a key was found at a probed
+     * selector, false means none answered. Selectors are not discoverable from
+     * DNS, so false is unverified, never missing.
      */
     auth_state: "unknown" | "passing" | "failing";
     auth_spf: boolean;

@@ -1,6 +1,9 @@
 package dnsauth
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResultState(t *testing.T) {
 	tests := []struct {
@@ -11,7 +14,7 @@ func TestResultState(t *testing.T) {
 		{"empty domain is unknown", Result{Domain: ""}, "unknown"},
 		{"transient lookup error is unknown even with records", Result{Domain: "acme.com", SPFFound: true, DMARCFound: true, LookupError: true}, "unknown"},
 		{"spf and dmarc present is passing", Result{Domain: "acme.com", SPFFound: true, DMARCFound: true}, "passing"},
-		{"dkim absent does not fail an otherwise-passing domain", Result{Domain: "acme.com", SPFFound: true, DMARCFound: true, DKIMFound: false}, "passing"},
+		{"dkim unverified does not fail an otherwise-passing domain", Result{Domain: "acme.com", SPFFound: true, DMARCFound: true, DKIMFound: false}, "passing"},
 		{"inherited dmarc is passing", Result{Domain: "mail.acme.com", SPFFound: true, DMARCFound: true, DMARCInherited: true}, "passing"},
 		{"p=none is compliant, not failing", Result{Domain: "acme.com", SPFFound: true, DMARCFound: true, DMARCPolicy: "none"}, "passing"},
 		{"missing spf is failing", Result{Domain: "acme.com", SPFFound: false, DMARCFound: true}, "failing"},
@@ -72,20 +75,28 @@ func TestOrganizationalDomain(t *testing.T) {
 	}
 }
 
-// stubResolver serves TXT records from a map; any name absent from the map is
-// an authoritative "not found". Names listed in transient always fail
-// uncertainly, standing in for a timeout or SERVFAIL.
-func stubResolver(records map[string][]string, transient ...string) lookupFunc {
+// stubResolver serves TXT records from a map and answers no MX; any name absent
+// from the map is an authoritative "not found". Names listed in transient always
+// fail uncertainly, standing in for a timeout or SERVFAIL.
+func stubResolver(records map[string][]string, transient ...string) lookups {
 	bad := map[string]bool{}
 	for _, n := range transient {
 		bad[n] = true
 	}
-	return func(name string) ([]string, bool) {
+	return lookups{txt: func(name string) ([]string, bool) {
 		if bad[name] {
 			return nil, true
 		}
 		return records[name], false
-	}
+	}}
+}
+
+// stubResolverMX is stubResolver with MX records, for the selector hints the
+// check derives from whoever handles the domain's mail.
+func stubResolverMX(records map[string][]string, mx []string) lookups {
+	l := stubResolver(records)
+	l.mx = func(string) ([]string, bool) { return mx, false }
+	return l
 }
 
 func TestCheckDMARCOrganizationalFallback(t *testing.T) {
@@ -296,11 +307,151 @@ func TestSummaryNamesInheritedSource(t *testing.T) {
 	res := checkWith("mail.acme.com", []string{"s1"}, stubResolver(map[string][]string{
 		"mail.acme.com":               {"v=spf1 -all"},
 		"_dmarc.acme.com":             {"v=DMARC1; p=reject"},
-		"s1._domainkey.mail.acme.com": {"v=DKIM1; k=rsa"},
+		"s1._domainkey.mail.acme.com": {"v=DKIM1; k=rsa; p=MIGf"},
 	}))
 
 	want := "SPF, DKIM and DMARC all present (DMARC policy: reject), inherited from acme.com"
 	if res.Summary != want {
 		t.Errorf("Summary = %q, want %q", res.Summary, want)
+	}
+}
+
+func TestDKIMKeyRecord(t *testing.T) {
+	tests := []struct {
+		name   string
+		record string
+		want   bool
+	}{
+		{"full record", "v=DKIM1; k=rsa; p=MIGfMA0GCSq", true},
+		{"no version, k and p present", "k=rsa; p=MIGfMA0GCSq", true},
+		{"ed25519 key", "v=DKIM1; k=ed25519; p=11qYAYKxCrf", true},
+		{"base64 padding survives the tag split", "v=DKIM1; p=MIGfMA0GCSq==", true},
+		// An empty p= is a revoked key: the selector exists and signs nothing.
+		{"revoked key", "v=DKIM1; k=rsa; p=", false},
+		{"policy record, no key", "v=DKIM1; t=y", false},
+		{"someone else's TXT record", "v=spf1 include:_spf.google.com ~all", false},
+		{"wrong version", "v=DKIM2; p=MIGf", false},
+		{"empty", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dkimKey(tt.record); got != tt.want {
+				t.Errorf("dkimKey(%q) = %v, want %v", tt.record, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckDKIMUndeterminedIsNotMissing(t *testing.T) {
+	// The whole point: a domain whose DKIM sits at a selector we did not guess
+	// must read as unverified, never as missing, and must not drag the summary
+	// or the verdict down with it.
+	res := checkWith("acme.com", nil, stubResolver(map[string][]string{
+		"acme.com":                     {"v=spf1 include:_spf.example-esp.net -all"},
+		"_dmarc.acme.com":              {"v=DMARC1; p=reject"},
+		"aq6y2b4c._domainkey.acme.com": {"v=DKIM1; k=rsa; p=MIGf"},
+	}))
+
+	if res.DKIMFound {
+		t.Error("DKIMFound = true, want false")
+	}
+	if res.DKIMStatus != DKIMStatusUndetermined {
+		t.Errorf("DKIMStatus = %q, want %q", res.DKIMStatus, DKIMStatusUndetermined)
+	}
+	if got := res.State(); got != "passing" {
+		t.Errorf("State() = %q, want %q", got, "passing")
+	}
+	if strings.Contains(res.Summary, "missing") {
+		t.Errorf("Summary = %q, must not call an unverified DKIM missing", res.Summary)
+	}
+	if !strings.Contains(res.Summary, "DKIM not verified") {
+		t.Errorf("Summary = %q, want it to say DKIM was not verified", res.Summary)
+	}
+}
+
+func TestCheckRevokedDKIMKeyIsNotFound(t *testing.T) {
+	res := checkWith("acme.com", nil, stubResolver(map[string][]string{
+		"acme.com":                    {"v=spf1 -all"},
+		"_dmarc.acme.com":             {"v=DMARC1; p=none"},
+		"default._domainkey.acme.com": {"v=DKIM1; k=rsa; p="},
+	}))
+
+	if res.DKIMFound {
+		t.Error("DKIMFound = true, want false: a p= with no key is revoked and signs nothing")
+	}
+}
+
+func TestCheckSelectorHintsFromSPF(t *testing.T) {
+	// Google Workspace publishes at "google", which is in the default set
+	// anyway; Zoho's "zmail" is not, and the SPF record is what names it.
+	res := checkWith("acme.com", nil, stubResolver(map[string][]string{
+		"acme.com":                  {"v=spf1 include:zoho.eu ~all"},
+		"_dmarc.acme.com":           {"v=DMARC1; p=none"},
+		"zmail._domainkey.acme.com": {"v=DKIM1; k=rsa; p=MIGf"},
+	}))
+
+	if !res.DKIMFound {
+		t.Fatal("DKIMFound = false, want true (zmail derived from the SPF include)")
+	}
+	if res.DKIMStatus != DKIMStatusFound {
+		t.Errorf("DKIMStatus = %q, want %q", res.DKIMStatus, DKIMStatusFound)
+	}
+}
+
+func TestCheckSelectorHintsFromMX(t *testing.T) {
+	// An SMTP/IMAP mailbox on a provider whose selector nobody would guess.
+	// The MX record names the provider, and the provider fixes the selector.
+	res := checkWith("acme.com", nil, stubResolverMX(map[string][]string{
+		"acme.com":                           {"v=spf1 -all"},
+		"_dmarc.acme.com":                    {"v=DMARC1; p=none"},
+		"hostingermail1._domainkey.acme.com": {"v=DKIM1; k=rsa; p=MIGf"},
+	}, []string{"mx1.hostinger.com", "mx2.hostinger.com"}))
+
+	if !res.DKIMFound {
+		t.Fatal("DKIMFound = false, want true (selector derived from the MX host)")
+	}
+	if len(res.DKIMSelectors) != 1 || res.DKIMSelectors[0] != "hostingermail1" {
+		t.Errorf("DKIMSelectors = %v, want [hostingermail1]", res.DKIMSelectors)
+	}
+}
+
+func TestSelectorHints(t *testing.T) {
+	got := selectorHints("v=spf1 include:_spf.google.com include:spf.protection.outlook.com -all", []string{"mx.zoho.com"})
+	want := map[string]bool{"google": true, "selector1": true, "selector2": true, "zoho": true, "zmail": true}
+	if len(got) != len(want) {
+		t.Fatalf("selectorHints() = %v, want %d entries", got, len(want))
+	}
+	for _, s := range got {
+		if !want[s] {
+			t.Errorf("selectorHints() returned unexpected selector %q", s)
+		}
+	}
+}
+
+func TestDedupeKeepsFirstOccurrence(t *testing.T) {
+	got := dedupe([]string{"Google", " google ", "", "selector1", "google"})
+	if len(got) != 2 || got[0] != "google" || got[1] != "selector1" {
+		t.Errorf("dedupe() = %v, want [google selector1]", got)
+	}
+}
+
+func TestSummaryDoesNotAccuseOnATransientLookup(t *testing.T) {
+	// The verdict is already "unknown" here. The summary is persisted as
+	// auth_reason and shown next to it, so it has to agree: a resolver that
+	// never answered has not found anything missing.
+	res := checkWith("acme.com", nil, stubResolver(nil, "acme.com", "_dmarc.acme.com"))
+
+	if got := res.State(); got != "unknown" {
+		t.Fatalf("State() = %q, want %q", got, "unknown")
+	}
+	if strings.Contains(res.Summary, "missing") {
+		t.Errorf("Summary = %q, must not report records missing when DNS did not answer", res.Summary)
+	}
+}
+
+func TestSummaryMissingNamesOnlyDiscoverableRecords(t *testing.T) {
+	res := checkWith("acme.com", nil, stubResolver(nil))
+	if res.Summary != "missing: SPF and DMARC" {
+		t.Errorf("Summary = %q, want %q", res.Summary, "missing: SPF and DMARC")
 	}
 }

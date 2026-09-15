@@ -70,7 +70,9 @@ Gmail, Yahoo, and Outlook all require SPF, DKIM, and DMARC, and failed alignment
 - **Failing**: SPF or DMARC missing.
 - **Unknown**: not checked yet, or the lookup could not complete. A DNS hiccup never looks like a misconfiguration.
 
-DKIM is advisory: selectors are not discoverable from DNS, so "not found" means unconfirmed, not absent. A domain can pass on SPF and DMARC with DKIM unconfirmed.
+DKIM is reported separately as **Found** or **Not verified**, never as missing. A DKIM key lives at a selector its owner chose, and DNS has no way to list the selectors under a domain, so nothing answering proves nothing. The check does better than guessing blindly: it reads the domain's own SPF and MX records, which name the provider handling its mail, and probes the selectors that provider publishes, on top of a default set covering the common ones. Providers that mint a random per-account selector, Amazon SES among them, stay unverifiable by design.
+
+So a domain can be Passing with DKIM unverified, and that is the normal result on plenty of correctly signed domains. It never affects whether a mailbox may send. If yours shows Not verified, confirm DKIM signing is on in your provider's console; a message you send to yourself shows `dkim=pass` in its `Authentication-Results` header when it is working.
 
 A DMARC record on the parent domain covers its subdomains, so a dedicated sending subdomain like `mail.yourdomain.com` passes on the record published at `yourdomain.com`. Where the parent sets `sp=`, that is the policy shown, because `sp=` is what the parent publishes for its subdomains. SPF works the other way: it never inherits, so every sending subdomain needs its own SPF record.
 
