@@ -313,7 +313,7 @@ export function SettingsTab({ onDirtyChange, onSwitchTab }: SettingsTabProps) {
         }
         if (!trackingValid) {
             toast.error(
-                `Every automated-engagement window must be a whole number of seconds inside the range shown under it`,
+                "Every automated-engagement window must be a whole number of seconds inside the range shown under it",
             );
             return;
         }

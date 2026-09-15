@@ -202,7 +202,7 @@ impl ScannerNetworks {
         // Certainty is orthogonal to scope: it says whether the source can
         // also carry a person, not which requests may be judged. It is the
         // operator's to set in either variable.
-        let mut certainty = Certainty::Certain;
+        let mut certainty = Certainty::default();
         let mut label = None;
         for field in fields {
             match field {

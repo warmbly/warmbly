@@ -837,7 +837,6 @@ tracking:
 	KAFKA_TRACKING_TOPIC=tracking-events \
 	BACKEND_INTERNAL_URL=http://localhost:8080 \
 	INTERNAL_API_TOKEN=local-dev-internal-token \
-	TRACKING_SCANNER_ASN_DB=../data/GeoLite2-ASN.mmdb \
 	cargo run
 
 # Websocket fanout service (Elixir/Phoenix) on :4000. MIX_ENV=dev skips
