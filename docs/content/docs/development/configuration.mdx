@@ -358,21 +358,32 @@ These are two different databases and two different files. GeoLite2-City answers
 A file you can mount is the simplest answer and needs none of the variables below. Where there is nothing to mount from, which is most container hosts, set the matching `_URL` variable and the service fetches its own copy at startup.
 
 ```bash
-# The permalinks MaxMind offers on its download page. They always serve the
-# current build, so a restart is how an instance picks up a newer one.
-GEODB_URL=https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=YOUR_KEY&suffix=tar.gz
-TRACKING_SCANNER_ASN_DB_URL=https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=YOUR_KEY&suffix=tar.gz
+# MaxMind's download endpoint, which always serves the current build of an
+# edition, so a restart is how an instance picks up a newer one. Both halves of
+# the credential come from the same page of your MaxMind account: the account
+# id is the username and the licence key is the password.
+GEODB_URL=https://ACCOUNT_ID:LICENCE_KEY@download.maxmind.com/geoip/databases/GeoLite2-City/download?suffix=tar.gz
+TRACKING_SCANNER_ASN_DB_URL=https://ACCOUNT_ID:LICENCE_KEY@download.maxmind.com/geoip/databases/GeoLite2-ASN/download?suffix=tar.gz
 ```
 
-Any URL serving a MaxMind-format database works, and the shape is read from the content rather than the file name, so a `.tar.gz`, a `.mmdb.gz` and a bare `.mmdb` are all accepted. DB-IP's free [Lite databases](https://db-ip.com/db/lite.php) need no account at all and are published in the same format under `dbip-city-lite` and `dbip-asn-lite`; their country data is comparable and their city data is weaker.
+<Callout type="warn" title="The older permalink no longer works">
+MaxMind's `app/geoip_download?license_key=` URL is the form most guides still
+show, and a licence key issued today is refused by it with `Invalid license
+key`. Current keys end in `_mmk` and authenticate against the endpoint above,
+with the account id, so a URL that carries only the key fails whatever the key
+is.
+</Callout>
+
+Any URL serving a MaxMind-format database works, and the shape is read from the content rather than the file name, so a `.tar.gz`, a `.mmdb.gz` and a bare `.mmdb` are all accepted. A credential in the userinfo, as above, is sent as HTTP basic authentication. DB-IP's free [Lite databases](https://db-ip.com/db/lite.php) need no account at all and are published in the same format under `dbip-city-lite` and `dbip-asn-lite`; their country data is comparable and their city data is weaker.
 
 Two things to know:
 
 - **A file that is already there is never replaced.** The download only happens when `GEODB_PATH` holds nothing, so a mounted database, a volume that survived a restart, and a copy you dropped in by hand all win. On a host with no persistent disk that means one download per start; on a host with one, the first start only.
 - **A download that is not a database is thrown away, not installed.** An expired licence key returns an error page, and storing that would disable location lookups permanently, because the next start would find a file and not retry. The bytes are opened before they are put in place, and a failure leaves the path empty and one line in the log.
+- **Plain `http` is refused for a URL carrying a credential**, in the query or the userinfo, because it would put the licence key on the wire in the clear. An `http` mirror with nothing secret in its URL is allowed, and a redirect from `https` down to `http` is refused either way.
 
 <Callout type="warn" title="Both URLs are secrets">
-A MaxMind permalink carries the account's licence key in its query string. The backend treats both variables as secrets: their values are never returned by any API, the admin panel shows them as set rather than showing them, and the query string is stripped from every log line and error message.
+These URLs carry the account's credential, in the userinfo above and in the query on an older-style link. The backend treats both variables as secrets: their values are never returned by any API, and the admin panel reports them as set rather than showing them. Nothing logs either one intact: the userinfo and the query are both stripped, including from the errors `net/http` and `reqwest` build, which embed the URL they were given.
 </Callout>
 
 The tracking service is the exception to the path: it holds its ASN database in memory and never writes it out, so `TRACKING_SCANNER_ASN_DB_URL` works on its own and `TRACKING_SCANNER_ASN_DB` can stay unset.
