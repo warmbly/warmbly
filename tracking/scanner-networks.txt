@@ -19,9 +19,14 @@
 #   label      what is recorded on the event
 #
 # An ASN entry needs the source ASN, from either TRACKING_SCANNER_ASN_DB (a
-# MaxMind GeoLite2-ASN database, which needs nothing of your edge) or
-# TRACKING_SCANNER_ASN_HEADER (a header your edge writes; Cloudflare:
+# MaxMind GeoLite2-ASN database, which needs no ASN header and no transform
+# rule) or TRACKING_SCANNER_ASN_HEADER (a header your edge writes; Cloudflare:
 # ip.src.asnum). With neither, every asn: entry below is inert.
+#
+# Neither removes the need for TRACKING_TRUSTED_PROXIES behind a reverse proxy.
+# The header is read only from a peer listed there; the database reads the
+# client address, which without that variable is the proxy's, so it would
+# resolve the proxy's network instead of the requester's.
 #
 # A match never changes the response. The pixel is still served and the click
 # is still redirected; only the analytics event is labelled as automated.

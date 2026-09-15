@@ -88,8 +88,10 @@ pub struct Config {
     /// only source; where both are set the header wins.
     pub scanner_asn_header: String,
     /// Path to a MaxMind GeoLite2-ASN database, which resolves the source ASN
-    /// with no edge configuration at all. Empty or unreadable, the default,
-    /// disables native ASN matching, exactly as GEODB_PATH does elsewhere.
+    /// with no ASN header and no edge transform rule. It reads the client
+    /// address, so behind a proxy it still needs trusted_proxies to be set.
+    /// Empty or unreadable, the default, disables native ASN matching,
+    /// exactly as GEODB_PATH does elsewhere.
     pub scanner_asn_db: String,
     /// Where errors and panics are reported. Empty, the default, means nowhere:
     /// no backend is initialised and no host is contacted.

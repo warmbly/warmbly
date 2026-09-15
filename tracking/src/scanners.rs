@@ -121,8 +121,10 @@ pub struct AsnSources {
     /// configured header can never resolve anything and does not count as a
     /// source. The database has no such dependency: it reads the address.
     pub trusted_proxies: bool,
-    /// GeoLite2-ASN database, which resolves the ASN from the address itself
-    /// and so needs nothing of the edge.
+    /// GeoLite2-ASN database, which resolves the ASN from the address itself,
+    /// so it needs no ASN header and no transform rule. It still depends on
+    /// that address being the requester's, which behind a reverse proxy means
+    /// TRACKING_TRUSTED_PROXIES.
     pub db: Option<AsnDb>,
 }
 
@@ -137,8 +139,8 @@ pub struct ScannerNetworks {
     asn_header: Option<String>,
     /// Whether that header can ever be believed, which needs a trusted proxy.
     asn_header_trusted: bool,
-    /// GeoLite2-ASN database, which resolves the ASN from the address itself
-    /// and so needs nothing of the edge. None when none is configured.
+    /// GeoLite2-ASN database, which resolves the ASN from the address itself.
+    /// None when none is configured.
     asn_db: Option<AsnDb>,
     /// Entries that could not be read. Reported at startup so a typo in an
     /// operator's list is visible rather than silently doing nothing.
@@ -296,8 +298,10 @@ impl ScannerNetworks {
     /// `trusted_peer` is whether the socket peer is one of the configured
     /// proxies. The ASN header is read only then, for the same reason the
     /// client address is: a header anyone can set is a header that lets a
-    /// caller pick its own classification. The database is read from the
-    /// address instead, so it needs no such trust and no edge configuration.
+    /// caller pick its own classification. The database reads the address
+    /// instead, so it needs no header and no transform rule; it does still
+    /// need that address to be the requester's, which is what `client_ip`
+    /// and TRACKING_TRUSTED_PROXIES decide upstream of here.
     pub fn classify(
         &self,
         ip: &str,

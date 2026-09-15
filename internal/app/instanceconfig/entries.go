@@ -801,7 +801,7 @@ var table = []Entry{
 	},
 	{
 		Key: "TRACKING_SCANNER_ASN_DB", Group: GroupTracking, RuntimeChangeable: ChangeBootOnly,
-		Effect:     "Path to a GeoLite2-ASN database on the tracking service, which makes asn: entries match with no edge configuration. A separate file from GEODB_PATH; missing is tolerated and only costs ASN matching.",
+		Effect:     "Path to a GeoLite2-ASN database on the tracking service, which makes asn: entries match with no ASN header and no edge transform rule. It reads the client address, so behind a reverse proxy it still needs TRACKING_TRUSTED_PROXIES. A separate file from GEODB_PATH; missing is tolerated and only costs ASN matching.",
 		DocsAnchor: docsGeoIP,
 		Resolve:    envValue("TRACKING_SCANNER_ASN_DB"),
 	},

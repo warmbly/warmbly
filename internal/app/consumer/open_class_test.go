@@ -249,3 +249,56 @@ func TestEventTimeFallsBackToNow(t *testing.T) {
 		t.Fatalf("unreadable stamp should fall back to now, got %v ago", d)
 	}
 }
+
+// The one-way property the catalogue's `probable` entries rest on, and the one
+// this documentation got wrong once: adding a probable label to a source may
+// move an event from counted-as-human to counted-as-automated, and never the
+// reverse. If it could go the other way, enabling a vendor ASN would let a
+// delivery-time scan count as engagement, which is the failure the whole
+// feature exists to prevent.
+//
+// Asserted over the grid rather than argued, because the argument is what was
+// wrong: for every window pair, every arrival time and every user agent, an
+// event the rules already call automated must stay automated once labelled.
+func TestAProbableLabelNeverTurnsAnAutomatedEventHuman(t *testing.T) {
+	sent := time.Now()
+	agents := map[string]*string{
+		"browser":   strp(chromeUA),
+		"apple mpp": strp("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"),
+		"empty":     strp(""),
+		"absent":    nil,
+	}
+	windows := []instancesettings.Tracking{
+		instancesettings.DefaultTracking(),
+		{MachineWindowOpenSeconds: 5, MachineWindowClickSeconds: 5, MachineWindowProbableSeconds: 1},
+		{MachineWindowOpenSeconds: 900, MachineWindowClickSeconds: 900, MachineWindowProbableSeconds: 86400},
+	}
+	elapsed := []time.Duration{
+		-time.Hour, 0, time.Second, 29 * time.Second, time.Minute,
+		9 * time.Minute, 11 * time.Minute, time.Hour, 48 * time.Hour,
+	}
+
+	for _, w := range windows {
+		w.Normalize()
+		for name, ua := range agents {
+			for _, d := range elapsed {
+				base := engagement{userAgent: ua, sentAt: &sent, at: sent.Add(d)}
+				labelled := base
+				labelled.scanner, labelled.probable = strp("proofpoint"), true
+
+				ow, op := opens(w)
+				if bare, _ := classifyOpen(base, ow, op); bare {
+					if got, _ := classifyOpen(labelled, ow, op); !got {
+						t.Fatalf("open %s at %v under %+v: labelling turned automated into human", name, d, w)
+					}
+				}
+				cw, cp := clicks(w)
+				if bare, _ := classifyClick(base, cw, cp); bare {
+					if got, _ := classifyClick(labelled, cw, cp); !got {
+						t.Fatalf("click %s at %v under %+v: labelling turned automated into human", name, d, w)
+					}
+				}
+			}
+		}
+	}
+}
