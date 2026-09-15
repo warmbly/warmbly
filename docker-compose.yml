@@ -356,6 +356,7 @@ services:
       # every notification and digest email in this stack.
       TRACKING_DOMAIN: ${TRACKING_DOMAIN:-${PUBLIC_HOST:-localhost}:3000}
       GEODB_PATH: ${GEODB_PATH:-/app/data/GeoLite2-City.mmdb}
+      GEODB_URL: ${GEODB_URL:-}
       # Gmail mailbox OAuth (leave unset to connect only SMTP/IMAP + Outlook
       # mailboxes). See the self-hosting docs for the Google Cloud setup.
       BOX_GOOGLE_CLIENT_ID: ${BOX_GOOGLE_CLIENT_ID:-}
@@ -467,6 +468,7 @@ services:
       # Optional, as on the backend: turns an open or click's network into a
       # country and city on the contact's timeline.
       GEODB_PATH: ${GEODB_PATH:-/app/data/GeoLite2-City.mmdb}
+      GEODB_URL: ${GEODB_URL:-}
     volumes:
       - ${WARMBLY_BLOBS:-blobs}:/data/blobs
     depends_on:
@@ -543,6 +545,9 @@ services:
       # to be mounted in: point it at a path inside the container and bind the
       # file there. Separate from GEODB_PATH, which is the City database.
       TRACKING_SCANNER_ASN_DB: ${TRACKING_SCANNER_ASN_DB:-}
+      # Or let the service fetch that database itself, which is what a host with
+      # nothing to bind a file from needs. Held in memory, so no writable path.
+      TRACKING_SCANNER_ASN_DB_URL: ${TRACKING_SCANNER_ASN_DB_URL:-}
       TRACKING_IP_HASH_KEY: ${TRACKING_IP_HASH_KEY:-}
       POSTHOG_KEY: ${POSTHOG_KEY:-}
       POSTHOG_HOST: ${POSTHOG_HOST:-}

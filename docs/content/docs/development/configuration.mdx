@@ -343,13 +343,39 @@ Redis holds rate limit counters, the organization key cache, the realtime bridge
 | Variable | What it does | Default | Restart needed |
 |---|---|---|---|
 | `GEODB_PATH` | Path to a GeoLite2 City database | none, and the backend refuses to start without the variable | yes |
+| `GEODB_URL` | Where to download that database from when nothing is at `GEODB_PATH` yet | unset, and only a file already there is used | yes |
 | `TRACKING_SCANNER_ASN_DB` | Path to a GeoLite2 ASN database, on the tracking service | unset, and ASN matching is off | yes |
+| `TRACKING_SCANNER_ASN_DB_URL` | Where the tracking service downloads that database from | unset | yes |
 
 `GEODB_PATH` must be set on the backend in every environment. The file itself is optional: a missing file at that path means sessions and audit rows are recorded without a city, and nothing else changes. The consumer reads the same variable, optionally, to put a country and city on each email open and click; without it those records carry client and device only.
 
 These are two different databases and two different files. GeoLite2-City answers where an address is; GeoLite2-ASN answers which network announces it, which is what makes the tracking service's `asn:` scanner entries match. Neither file contains the other's data, so a reader pointed at the wrong one resolves nothing. Both are free on one MaxMind account, as the `GeoLite2-City` and `GeoLite2-ASN` editions, and `geoipupdate` fetches either.
 
 `GEODB_PATH` belongs on the backend and the consumer, `TRACKING_SCANNER_ASN_DB` on the tracking service, and each is ignored when its file is absent: a missing city database costs location labels, a missing ASN database costs `asn:` matching. Pointing `TRACKING_SCANNER_ASN_DB` at a City database is refused at boot with a line naming what it found, rather than matching nothing and saying nothing.
+
+### Getting the databases in
+
+A file you can mount is the simplest answer and needs none of the variables below. Where there is nothing to mount from, which is most container hosts, set the matching `_URL` variable and the service fetches its own copy at startup.
+
+```bash
+# The permalinks MaxMind offers on its download page. They always serve the
+# current build, so a restart is how an instance picks up a newer one.
+GEODB_URL=https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=YOUR_KEY&suffix=tar.gz
+TRACKING_SCANNER_ASN_DB_URL=https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=YOUR_KEY&suffix=tar.gz
+```
+
+Any URL serving a MaxMind-format database works, and the shape is read from the content rather than the file name, so a `.tar.gz`, a `.mmdb.gz` and a bare `.mmdb` are all accepted. DB-IP's free [Lite databases](https://db-ip.com/db/lite.php) need no account at all and are published in the same format under `dbip-city-lite` and `dbip-asn-lite`; their country data is comparable and their city data is weaker.
+
+Two things to know:
+
+- **A file that is already there is never replaced.** The download only happens when `GEODB_PATH` holds nothing, so a mounted database, a volume that survived a restart, and a copy you dropped in by hand all win. On a host with no persistent disk that means one download per start; on a host with one, the first start only.
+- **A download that is not a database is thrown away, not installed.** An expired licence key returns an error page, and storing that would disable location lookups permanently, because the next start would find a file and not retry. The bytes are opened before they are put in place, and a failure leaves the path empty and one line in the log.
+
+<Callout type="warn" title="Both URLs are secrets">
+A MaxMind permalink carries the account's licence key in its query string. The backend treats both variables as secrets: their values are never returned by any API, the admin panel shows them as set rather than showing them, and the query string is stripped from every log line and error message.
+</Callout>
+
+The tracking service is the exception to the path: it holds its ASN database in memory and never writes it out, so `TRACKING_SCANNER_ASN_DB_URL` works on its own and `TRACKING_SCANNER_ASN_DB` can stay unset.
 
 ## Workers
 
@@ -590,6 +616,7 @@ Run a single copy of it. Its event deduplication, its per-source rate limits and
 | `TRACKING_SCANNER_NETWORKS` | Extra scanner sources, comma separated, each a CIDR or `asn:<number>` with an optional label. For sources that never carry a person's own request, so their pixel fetches and their clicks are both treated as automated | empty |
 | `TRACKING_SCANNER_CLICK_NETWORKS` | The same, for sources that also proxy a mail client's own image fetches. Only their click tickets are treated as automated, because their pixel fetches are genuine opens | empty |
 | `TRACKING_SCANNER_ASN_DB` | Path to a MaxMind GeoLite2-ASN database, which is what makes `asn:` entries match on an instance whose edge writes no ASN header. A separate file from `GEODB_PATH`; unset or unreadable logs one line at boot and leaves ASN matching off. It removes the need for an edge header, not for `TRACKING_TRUSTED_PROXIES`: the lookup reads the client address, and behind a reverse proxy without that variable the client address is the proxy | unset |
+| `TRACKING_SCANNER_ASN_DB_URL` | Where to download that database from when no file is mounted at the path above. The result is held in memory and never written out, so this needs no writable path and no volume. Carries a licence key on a MaxMind permalink, so it is treated as a secret and never logged. See [GeoIP](/development/configuration/#geoip) | unset |
 | `TRACKING_SCANNER_ASN_HEADER` | Header a trusted proxy sets with the source ASN, an alternative to the database above and preferred over it where both are set. Read only from a proxy in `TRACKING_TRUSTED_PROXIES`. On Cloudflare, a transform rule writing `ip.src.asnum` | empty |
 | `EVENTBUS_PROVIDER` | `nats` or `kafka`. Kafka needs the `tracking:*-kafka` image, or a build with `CARGO_FEATURES=kafka` | `nats` |
 | `NATS_URL`, `NATS_SUBJECT_PREFIX` | JetStream address and subject prefix. The publish subject is `<prefix>.<topic>` | `nats://localhost:4222`, `warmbly` |

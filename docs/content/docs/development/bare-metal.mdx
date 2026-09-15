@@ -360,7 +360,7 @@ A few lines differ from the compose defaults on purpose:
 - `API_HOST`, `TRACKING_HOST` and the realtime `PORT` sit on `127.0.0.1`, so only nginx reaches them. The realtime service binds all interfaces regardless, so keep `4000` closed at the firewall
 - `TRUSTED_PROXIES` and `TRACKING_TRUSTED_PROXIES` name the proxy, so rate limits and audit records see the visitor's address instead of `127.0.0.1`
 - `CHECK_ORIGIN=true` makes the websocket refuse browsers that are not on `PHX_HOST`'s origin list
-- `GEODB_PATH` points at a file that need not exist. The backend refuses to start without the variable, but a missing database only means sessions, audit rows and email opens and clicks carry no city; drop a MaxMind `GeoLite2-City.mmdb` at that path if you have one
+- `GEODB_PATH` points at a file that need not exist. The backend refuses to start without the variable, but a missing database only means sessions, audit rows and email opens and clicks carry no city; drop a MaxMind `GeoLite2-City.mmdb` at that path if you have one, or set `GEODB_URL` and let the service fetch its own copy (see [GeoIP](/development/configuration/#geoip))
 
 Every other variable, with its default, is in the [configuration reference](/development/configuration/), and [`deploy/config/env.example`](https://github.com/warmbly/warmbly/blob/main/deploy/config/env.example) is the annotated template this file was cut down from. Mail relay, OAuth clients, single sign-on and the AI provider are configured exactly as in the [self-hosting guide](/development/deployment-guide/#platform-email); only the way values reach the process differs.
 

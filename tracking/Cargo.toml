@@ -56,6 +56,13 @@ ipnet = "2"
 # no native deps; the `mmap` feature is deliberately off (see asndb.rs).
 maxminddb = { version = "0.32", default-features = false }
 
+# Unwrapping that database when it is downloaded rather than mounted. MaxMind's
+# permalink serves a .tar.gz with the file nested under a dated directory.
+# flate2's default backend is miniz_oxide, which keeps the musl builder free of
+# a C toolchain the same way the rest of this file does.
+flate2 = "1"
+tar = "0.4"
+
 # Error reporting. Optional at runtime: with no SENTRY_DSN the guard is never
 # created, no transport thread starts and no host is contacted. rustls for the
 # same reason reqwest uses it, so the image needs no OpenSSL system libraries.

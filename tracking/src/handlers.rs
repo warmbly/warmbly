@@ -81,7 +81,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(producer: Producer, config: &Config) -> Self {
+    /// `asn_db` is resolved in main rather than here, because reading it may
+    /// mean a download and this is not an async function.
+    pub fn new(producer: Producer, config: &Config, asn_db: Option<AsnDb>) -> Self {
         // Create cache with:
         // - Max 100k entries
         // - TTL of 1 hour per entry
@@ -117,7 +119,7 @@ impl AppState {
                     // has to know that or it reports itself as able to match
                     // ASNs when it cannot.
                     trusted_proxies: !config.trusted_proxies.is_empty(),
-                    db: AsnDb::open(&config.scanner_asn_db),
+                    db: asn_db,
                 },
             )),
             trusted_proxies: Arc::new(config.trusted_proxies.clone()),

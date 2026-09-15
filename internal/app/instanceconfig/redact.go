@@ -10,13 +10,16 @@ import (
 // variable is protected by its name, not by someone remembering to list it.
 var sensitiveMarkers = []string{"SECRET", "PASSWORD", "KEY", "TOKEN", "DSN", "_PASS"}
 
-// sensitiveKeys are connection strings: every one of them routinely carries
-// user:password inline, and none of them matches a marker.
+// sensitiveKeys are URLs that carry a credential inline and match no marker:
+// the connection strings routinely hold user:password, and MaxMind's database
+// permalink holds the account's licence key in its query string.
 var sensitiveKeys = map[string]bool{
-	"PRIMARY_DB":          true,
-	"REDIS":               true,
-	"NATS_URL":            true,
-	"SCHEMA_REGISTRY_URL": true,
+	"PRIMARY_DB":                  true,
+	"REDIS":                       true,
+	"NATS_URL":                    true,
+	"SCHEMA_REGISTRY_URL":         true,
+	"GEODB_URL":                   true,
+	"TRACKING_SCANNER_ASN_DB_URL": true,
 }
 
 // Sensitive reports whether a variable's value must never be returned.

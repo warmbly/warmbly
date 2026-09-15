@@ -198,6 +198,12 @@ var table = []Entry{
 		Resolve:    envValue("GEODB_PATH"),
 	},
 	{
+		Key: "GEODB_URL", Group: GroupDatabase, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Where to download the database at GEODB_PATH from when that path holds no file. A file already there is never replaced.",
+		DocsAnchor: docsGeoIP,
+		Resolve:    envValue("GEODB_URL"),
+	},
+	{
 		Key: "REDIS", Group: GroupCache, RuntimeChangeable: ChangeBootOnly,
 		Effect:     "The Redis connection string. Rate limits, the organization key cache, the setup token and the realtime bridge all live there.",
 		DocsAnchor: docsDatabase,
@@ -804,6 +810,12 @@ var table = []Entry{
 		Effect:     "Path to a GeoLite2-ASN database on the tracking service, which makes asn: entries match with no ASN header and no edge transform rule. It reads the client address, so behind a reverse proxy it still needs TRACKING_TRUSTED_PROXIES. A separate file from GEODB_PATH; missing is tolerated and only costs ASN matching.",
 		DocsAnchor: docsGeoIP,
 		Resolve:    envValue("TRACKING_SCANNER_ASN_DB"),
+	},
+	{
+		Key: "TRACKING_SCANNER_ASN_DB_URL", Group: GroupTracking, RuntimeChangeable: ChangeBootOnly,
+		Effect:     "Where the tracking service downloads its GeoLite2-ASN database from. It holds the result in memory, so it needs no writable path and TRACKING_SCANNER_ASN_DB can stay unset.",
+		DocsAnchor: docsGeoIP,
+		Resolve:    envValue("TRACKING_SCANNER_ASN_DB_URL"),
 	},
 
 	// Observability.

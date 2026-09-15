@@ -508,6 +508,11 @@ func main() {
 	// GeoIP is optional here as on the backend: it only turns an open or
 	// click's source network into a country and city on the logs.
 	geoPath, _ := cfg.LoadGeoDBPath(ctx)
+	if fetched, ferr := geo.Ensure(ctx, geoPath, cfg.LoadGeoDBURL(ctx)); ferr != nil {
+		log.Printf("GeoIP download failed: %v", ferr)
+	} else if fetched {
+		log.Printf("GeoIP database downloaded to %s.", geoPath)
+	}
 	geoloc, gerr := geo.New(geoPath)
 	if gerr != nil {
 		log.Printf("GeoIP database not found at %s; engagement locations are disabled.", geoPath)

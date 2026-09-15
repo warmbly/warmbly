@@ -117,7 +117,12 @@ async fn main() {
     // and the `kafka` feature is compiled in).
     let producer = connect_producer(&config).await;
 
-    let state = AppState::new(producer, &config);
+    // The scanner ASN database: a mounted file, or a download held in memory.
+    // Resolved here because it may go to the network, and never fatal: without
+    // it the catalogue's asn: entries match nothing and everything else works.
+    let asn_db = asndb::AsnDb::resolve(&config.scanner_asn_db, &config.scanner_asn_db_url).await;
+
+    let state = AppState::new(producer, &config, asn_db);
 
     // Build router
     let app = Router::new()

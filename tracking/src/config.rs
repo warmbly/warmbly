@@ -93,6 +93,11 @@ pub struct Config {
     /// Empty or unreadable, the default, disables native ASN matching,
     /// exactly as GEODB_PATH does elsewhere.
     pub scanner_asn_db: String,
+    /// Where that database is downloaded from when no file is mounted at
+    /// `scanner_asn_db`. The result is held in memory, so this service needs
+    /// no writable path for it. MaxMind's permalink carries the account's
+    /// licence key, which is why nothing logs this value.
+    pub scanner_asn_db_url: String,
     /// Where errors and panics are reported. Empty, the default, means nowhere:
     /// no backend is initialised and no host is contacted.
     pub posthog_key: String,
@@ -261,6 +266,10 @@ impl Config {
             .unwrap_or_default()
             .trim()
             .to_string();
+        let scanner_asn_db_url = env::var("TRACKING_SCANNER_ASN_DB_URL")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
 
         // Error reporting. Read from the environment only: a key or a DSN in
         // SSM would make a self-host that never sets one still pay an AWS
@@ -320,6 +329,7 @@ impl Config {
             scanner_click_networks,
             scanner_asn_header,
             scanner_asn_db,
+            scanner_asn_db_url,
             posthog_key,
             posthog_host,
             sentry_dsn,
@@ -421,6 +431,10 @@ impl Config {
                 .trim()
                 .to_ascii_lowercase(),
             scanner_asn_db: env::var("TRACKING_SCANNER_ASN_DB")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            scanner_asn_db_url: env::var("TRACKING_SCANNER_ASN_DB_URL")
                 .unwrap_or_default()
                 .trim()
                 .to_string(),

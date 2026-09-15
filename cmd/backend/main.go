@@ -392,6 +392,15 @@ func main() {
 			log.Fatal(err)
 		}
 
+		// A database the operator pointed us at is fetched once, when nothing is
+		// at the path yet. Failing to get one costs city labels and nothing else,
+		// so it is reported and stepped over.
+		if fetched, ferr := geo.Ensure(ctx, geoPath, cfg.LoadGeoDBURL(ctx)); ferr != nil {
+			log.Printf("GeoIP download failed: %v", ferr)
+		} else if fetched {
+			log.Printf("GeoIP database downloaded to %s.", geoPath)
+		}
+
 		// GeoIP is optional everywhere. It only labels session and audit records
 		// with a city, so a missing database is a cosmetic loss, not a reason to
 		// refuse to start: requiring a MaxMind licence to run APP_ENV=prod made
