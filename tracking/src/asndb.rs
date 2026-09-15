@@ -138,7 +138,9 @@ async fn download(url: &str) -> Result<Vec<u8>, String> {
     if body.len() as u64 > MAX_DATABASE_BYTES {
         return Err("response is larger than a database has any reason to be".into());
     }
-    unwrap_archive(body.to_vec())
+    // Borrowed, not copied into a Vec: the compressed body is already the
+    // largest thing held here and duplicating it doubles the peak for nothing.
+    unwrap_archive(&body)
 }
 
 /// Unwraps whatever the URL served down to the database bytes. The shape is
@@ -146,20 +148,55 @@ async fn download(url: &str) -> Result<Vec<u8>, String> {
 /// under every naming convention there is: MaxMind's permalink hands back a
 /// .tar.gz with the database nested under a dated directory, DB-IP serves a
 /// bare .mmdb.gz, and a mirror often serves the .mmdb itself.
-fn unwrap_archive(body: Vec<u8>) -> Result<Vec<u8>, String> {
+fn unwrap_archive(body: &[u8]) -> Result<Vec<u8>, String> {
     if !body.starts_with(&[0x1f, 0x8b]) {
-        return Ok(body);
+        return Ok(body.to_vec());
     }
-    let mut plain = Vec::new();
-    flate2::read::GzDecoder::new(&body[..])
-        .read_to_end(&mut plain)
+    let mut gz = flate2::read::GzDecoder::new(body);
+
+    // Only the tar header is decompressed to decide the shape. Holding the
+    // whole decompressed archive to read one member out of it would cost its
+    // full size a second time, on top of the member itself.
+    let mut head = [0u8; TAR_MAGIC_OFFSET + 5];
+    let read = fill(&mut gz, &mut head).map_err(|e| format!("gzip: {e}"))?;
+    let rest = std::io::Cursor::new(&head[..read]).chain(gz);
+
+    if read == head.len() && &head[TAR_MAGIC_OFFSET..] == b"ustar" {
+        return first_database(rest);
+    }
+    let mut out = Vec::with_capacity(gzip_size_hint(body));
+    rest.take(MAX_DATABASE_BYTES)
+        .read_to_end(&mut out)
         .map_err(|e| format!("gzip: {e}"))?;
-    if plain.len() <= TAR_MAGIC_OFFSET + 5
-        || &plain[TAR_MAGIC_OFFSET..TAR_MAGIC_OFFSET + 5] != b"ustar"
-    {
-        return Ok(plain);
+    Ok(out)
+}
+
+/// Reads until the buffer is full or the stream ends, reporting how much it
+/// got. `read_to_end` would decompress everything and `read_exact` would fail
+/// on a database smaller than the tar header this is looking for.
+fn fill(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut at = 0;
+    while at < buf.len() {
+        match r.read(&mut buf[at..])? {
+            0 => break,
+            n => at += n,
+        }
     }
-    first_database(&plain)
+    Ok(at)
+}
+
+/// The uncompressed size gzip records in its last four bytes, so the buffer is
+/// sized once rather than grown by doubling, which for a 12 MB database means
+/// touching roughly twice that and copying it along the way.
+///
+/// Only ever a hint: it is modulo 2^32 and comes from the same response as the
+/// data, so it is bounded by the cap the download is already bounded by.
+fn gzip_size_hint(body: &[u8]) -> usize {
+    let Some(footer) = body.len().checked_sub(4).map(|at| &body[at..]) else {
+        return 0;
+    };
+    let size = u32::from_le_bytes([footer[0], footer[1], footer[2], footer[3]]) as u64;
+    size.min(MAX_DATABASE_BYTES) as usize
 }
 
 /// The archive's first .mmdb member. MaxMind ships one per archive alongside a
@@ -170,20 +207,26 @@ fn unwrap_archive(body: Vec<u8>) -> Result<Vec<u8>, String> {
 /// it is a regular file, it sorts ahead of the file it belongs to, and
 /// ._db.mmdb ends in .mmdb like any other: taking the first match yields a few
 /// hundred bytes of xattrs and the reader then rejects them.
-fn first_database(plain: &[u8]) -> Result<Vec<u8>, String> {
-    let mut archive = tar::Archive::new(plain);
+fn first_database(stream: impl Read) -> Result<Vec<u8>, String> {
+    let mut archive = tar::Archive::new(stream);
     for entry in archive.entries().map_err(|e| e.to_string())? {
         let mut entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path().map_err(|e| e.to_string())?.into_owned();
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default()
-            .to_string();
+        let size = entry.size();
+        let name = {
+            let path = entry.path().map_err(|e| e.to_string())?;
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default()
+                .to_string()
+        };
         if !name.ends_with(".mmdb") || name.starts_with("._") {
             continue;
         }
-        let mut out = Vec::new();
+        if size > MAX_DATABASE_BYTES {
+            return Err("archive member is larger than a database has any reason to be".into());
+        }
+        // The header states the member's length, so this allocates exactly once.
+        let mut out = Vec::with_capacity(size as usize);
         entry.read_to_end(&mut out).map_err(|e| e.to_string())?;
         return Ok(out);
     }
@@ -384,7 +427,7 @@ mod tests {
             ("gzipped mmdb", gzipped(&raw)),
             ("maxmind tar.gz", tarball("GeoLite2-ASN.mmdb", &raw)),
         ] {
-            let got = unwrap_archive(body).unwrap_or_else(|e| panic!("{shape}: {e}"));
+            let got = unwrap_archive(&body).unwrap_or_else(|e| panic!("{shape}: {e}"));
             assert_eq!(got, raw, "{shape} did not unwrap to the database");
             let db = AsnDb::from_bytes(got, shape)
                 .unwrap_or_else(|| panic!("{shape} did not produce a readable database"));
@@ -395,7 +438,7 @@ mod tests {
     #[test]
     fn an_archive_with_no_database_in_it_is_an_error() {
         let bad = tarball("COPYRIGHT2.txt", b"no database here");
-        assert!(unwrap_archive(bad).is_err());
+        assert!(unwrap_archive(&bad).is_err());
     }
 
     // The permalink carries the account's licence key in its query string.
