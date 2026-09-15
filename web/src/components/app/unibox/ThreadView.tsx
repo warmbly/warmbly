@@ -362,6 +362,13 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     onError: () => toast.error("Couldn't un-snooze"),
   });
 
+  // Built once per fetch, not once per render. Every consumer holds these
+  // objects by identity, so rebuilding them on each render hands each one a
+  // value that looks new while the conversation has not changed. That is what
+  // let a thread re-render reset the reply composer; keep it memoised, and
+  // above the early returns below so the hook order stays fixed.
+  const messages = React.useMemo(() => (q.data?.data ?? []).map(toUniboxEmail), [q.data]);
+
   if (q.isPending) {
     return <ThreadSkeleton />;
   }
@@ -389,7 +396,6 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
     );
   }
 
-  const messages = (q.data?.data ?? []).map(toUniboxEmail);
 
   if (messages.length === 0) {
     return (

@@ -197,19 +197,27 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
         maxLen: MAX_BODY_LEN,
     });
 
-    // Reset whenever the user picks a different target message or
-    // switches between reply and forward. Without this the body, chips,
-    // and subject would persist across separate compose sessions. A
-    // restore seed (cancelled undo send) wins over the derived defaults.
+    // A different target message or mode is a different compose session, and
+    // the thread keys this component on both, so one arrives as a fresh mount
+    // with fresh initial state. The only thing that changes in place is `seed`:
+    // a cancelled undo-send puts the draft back while the composer stays open.
+    //
+    // Nothing derived from `replyTo` belongs in these dependencies. The thread
+    // rebuilds its message objects on every render, so `initial` is a new value
+    // each time, and the thread re-renders constantly while it is open (a
+    // teammate's presence diff, an arriving mail, a mark-seen, any realtime
+    // invalidation). Depending on it cleared the body between keystrokes, which
+    // made a reply impossible to type.
     React.useEffect(() => {
-        setSubject(seed?.subject ?? initial.subject);
-        setTo(seed?.to ?? initial.to);
-        setCc(seed?.cc ?? []);
-        setBcc(seed?.bcc ?? []);
-        setShowCc((seed?.cc.length ?? 0) > 0);
-        setShowBcc((seed?.bcc.length ?? 0) > 0);
-        setBody(seed?.body ?? "");
-    }, [initial.subject, initial.to, replyTo.id, mode, seed]);
+        if (!seed) return;
+        setSubject(seed.subject);
+        setTo(seed.to);
+        setCc(seed.cc);
+        setBcc(seed.bcc);
+        setShowCc(seed.cc.length > 0);
+        setShowBcc(seed.bcc.length > 0);
+        setBody(seed.body);
+    }, [seed]);
 
     // Resolve the sending mailbox from the target message's
     // account_id. We look it up in the global emails store so we have
