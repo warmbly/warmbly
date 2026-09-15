@@ -19,6 +19,7 @@ package errs
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync/atomic"
 	"time"
@@ -136,7 +137,7 @@ type event struct {
 // CaptureException reports err. A nil error is dropped: a caller that reports
 // unconditionally should not mint an issue with nothing in it.
 func CaptureException(err error, opts ...Option) {
-	if err == nil {
+	if err == nil || abandoned(err) {
 		return
 	}
 	report(event{err: err, scope: build(opts)})
@@ -145,10 +146,25 @@ func CaptureException(err error, opts ...Option) {
 // CaptureExceptionContext reports err on the reporting state carried by ctx
 // when there is one, so a request's scope travels with the event.
 func CaptureExceptionContext(ctx context.Context, err error, opts ...Option) {
-	if err == nil {
+	if err == nil || abandoned(err) {
 		return
 	}
 	report(event{ctx: ctx, err: err, scope: build(opts)})
+}
+
+// abandoned reports whether err says the caller stopped waiting, rather than
+// that anything went wrong. A cancelled context is a browser navigating away, a
+// client hanging up or a container draining on deploy: the work was dropped on
+// purpose, and every layer it unwound through reported the same non-event, so a
+// rolling restart filed a handful of issues naming whichever queries happened to
+// be in flight.
+//
+// Dropped here rather than at each call site because the caller cannot tell:
+// a repository reporting a failed query has no idea whether the request behind
+// it still exists. context.DeadlineExceeded is deliberately not included; a
+// deadline this process set and then blew through is its own problem.
+func abandoned(err error) bool {
+	return errors.Is(err, context.Canceled)
 }
 
 // CaptureMessage reports a message with no error attached.

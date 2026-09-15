@@ -2,7 +2,9 @@ package errs
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -97,5 +99,37 @@ func TestPostHogPostsAnException(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("captured body is missing %s: %s", want, body)
 		}
+	}
+}
+
+// A rolling restart cancels every request in flight, and each one unwound
+// through a repository that reported the failed query. Nine issues naming
+// whichever statements happened to be running is not a deploy anybody needs
+// told about, so a cancelled context must not reach a backend at all. A
+// deadline this process set still must.
+func TestCancelledWorkIsNotReported(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	if err := Init(Config{Service: "backend", Environment: "dev"}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	CaptureException(context.Canceled)
+	// Wrapped the way a repository reports it, through the query text.
+	CaptureException(fmt.Errorf("queryrow failed: %w", context.Canceled))
+	CaptureExceptionContext(ctx, fmt.Errorf("get organization: %w", context.Canceled))
+
+	if strings.Contains(buf.String(), "[issue-local]") {
+		t.Errorf("a cancelled request was reported: %s", buf.String())
+	}
+
+	CaptureException(fmt.Errorf("queryrow failed: %w", context.DeadlineExceeded))
+	if !strings.Contains(buf.String(), "[issue-local]") {
+		t.Error("a deadline this process set and blew through was dropped as if the caller had gone away")
 	}
 }
