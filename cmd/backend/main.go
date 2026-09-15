@@ -1356,6 +1356,9 @@ func main() {
 		// tasksClient isn't initialised until the Cloud Tasks config
 		// block runs.
 		uniboxService = unibox.NewService(cache, s3, uniboxRepository, taskRepository, tasksClient)
+		// Read and unread in the unibox are carried out to the mailbox itself,
+		// so a thread read here is read in Gmail too.
+		uniboxService.WireProviderRelay(eventsPublisher)
 
 		// Org AI skills (playbooks): CRUD for settings + prompt injection + the
 		// load_skill tool source.

@@ -217,3 +217,47 @@ func IsInboxMailbox(name string, attrs []string) bool {
 	}
 	return false
 }
+
+// SetSeen adds or removes \Seen across many UIDs in one STORE.
+//
+// One command for the whole set, because the alternative is a SELECT and a
+// STORE per message and the unibox files them in bulk. UIDs the server no
+// longer has are silently ignored by STORE, which is what should happen: the
+// message moved or was deleted at the provider and the next sync will say so.
+func (c *Client) SetSeen(ctx context.Context, mailboxName string, uids []uint32, seen bool) error {
+	if len(uids) == 0 {
+		return nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if merr := c.ensureConnected(); merr != nil {
+		return merr
+	}
+	c.lifecycle.RLock()
+	defer c.lifecycle.RUnlock()
+	defer c.begin()()
+	if _, err := c.selectMailbox(mailboxName, nil); err != nil {
+		return fmt.Errorf("select %q: %w", mailboxName, err)
+	}
+
+	set := imap.UIDSet{}
+	for _, uid := range uids {
+		set.AddNum(imap.UID(uid))
+	}
+	op := imap.StoreFlagsDel
+	if seen {
+		op = imap.StoreFlagsAdd
+	}
+
+	cmd := c.client.Store(set, &imap.StoreFlags{
+		Op:     op,
+		Silent: true,
+		Flags:  []imap.Flag{imap.FlagSeen},
+	}, nil)
+	if err := cmd.Close(); err != nil {
+		return fmt.Errorf("store \\Seen (%d uids): %w", len(uids), err)
+	}
+	return nil
+}

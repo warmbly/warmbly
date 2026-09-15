@@ -48,7 +48,9 @@ The backend drives workers with a `{type, body}` envelope (`internal/models/even
 }
 ```
 
-Types: `SEND_EMAIL`, `ADD_EMAIL`, `REMOVE_EMAIL`, `EMAIL_VALIDATION`, `WARMUP_ACTION`. Each has a typed body struct in `internal/models/` (for example `models.SendEmail` for `SEND_EMAIL`).
+Types: `SEND_EMAIL`, `ADD_EMAIL`, `REMOVE_EMAIL`, `EMAIL_VALIDATION`, `WARMUP_ACTION`, `MESSAGE_SEEN`. Each has a typed body struct in `internal/models/` (for example `models.SendEmail` for `SEND_EMAIL`).
+
+`MESSAGE_SEEN` carries a read or unread change made in the unified inbox out to the mailbox provider, one event per mailbox and at most `models.SeenRelayChunk` messages each. It answers with nothing: the store was written before the event was published, so the provider's copy is the only thing it changes, and a failure is logged rather than retried because the next sync reports whatever the provider actually holds. Each message carries all three providers' handles (a provider message id, and an IMAP folder plus UID) and the worker takes the ones its client uses.
 
 ## Worker results
 

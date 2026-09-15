@@ -122,3 +122,29 @@ func (c *Client) getOrCreateLabel(ctx context.Context, labelName string) (string
 
 	return newLabel.Id, nil
 }
+
+// SetSeen flips the read state of many messages in one call.
+//
+// batchModify rather than a modify per message: the unibox's "mark all as
+// read" is one press over a folder, and a per-message call there is hundreds
+// of round trips against a per-user rate limit. Gmail accepts up to 1000 ids
+// per request; the caller chunks.
+func (c *Client) SetSeen(ctx context.Context, messageIDs []string, seen bool) error {
+	if c.srv == nil {
+		return fmt.Errorf("gmail service not initialized")
+	}
+	if len(messageIDs) == 0 {
+		return nil
+	}
+
+	req := &gmail.BatchModifyMessagesRequest{Ids: messageIDs}
+	if seen {
+		req.RemoveLabelIds = []string{Unread}
+	} else {
+		req.AddLabelIds = []string{Unread}
+	}
+	if err := c.srv.Users.Messages.BatchModify("me", req).Context(ctx).Do(); err != nil {
+		return fmt.Errorf("failed to set read state on %d messages: %w", len(messageIDs), err)
+	}
+	return nil
+}

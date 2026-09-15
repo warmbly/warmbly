@@ -33,6 +33,9 @@ type Publisher interface {
 
 	// Warmup action events
 	PublishWarmupAction(ctx context.Context, workerID uuid.UUID, action *models.WarmupEmailAction) error
+	// PublishMessageSeen relays a read/unread change made in the unibox out to
+	// the mailbox provider.
+	PublishMessageSeen(ctx context.Context, workerID uuid.UUID, action *models.MessageSeenAction) error
 
 	// Worker change notifications
 	PublishAddEmail(ctx context.Context, workerID uuid.UUID, email *models.AddWorkerEmail) error
@@ -295,6 +298,19 @@ func (p *publisher) PublishWarmupEmailSent(
 func (p *publisher) PublishWarmupAction(ctx context.Context, workerID uuid.UUID, action *models.WarmupEmailAction) error {
 	workerEvent := models.WorkerEvent{
 		Type: models.WorkerEventTypeWarmupAction,
+		Body: action,
+	}
+
+	workerTopic := kafka.GetWorkerTopic(workerID.String())
+	return p.publish(workerTopic, action.EmailID.String(), workerEvent)
+}
+
+// PublishMessageSeen relays a unibox read/unread change to the worker holding
+// the mailbox. Keyed by mailbox like every other per-mailbox event, so one
+// mailbox's relays stay in order relative to each other.
+func (p *publisher) PublishMessageSeen(ctx context.Context, workerID uuid.UUID, action *models.MessageSeenAction) error {
+	workerEvent := models.WorkerEvent{
+		Type: models.WorkerEventTypeMessageSeen,
 		Body: action,
 	}
 

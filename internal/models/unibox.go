@@ -448,3 +448,47 @@ type UniboxScheduledItem struct {
 	// Thread the reply will land in (when the user queued from unibox).
 	ThreadID *string `json:"thread_id,omitempty"`
 }
+
+// MessageSeenAction relays a read/unread change from the unibox to the
+// mailbox's provider, for one mailbox and up to SeenRelayChunk messages.
+//
+// The unibox used to be the only place that knew: a thread read here stayed
+// bold in Gmail and one archived here stayed in the inbox, which reads as a
+// broken client rather than a design decision. Only the explicit change
+// travels; nothing reconciles the two stores in the background, because the
+// provider's own state is what the next sync brings back anyway.
+type MessageSeenAction struct {
+	// EmailID is the mailbox, which is how the worker finds the live client.
+	EmailID uuid.UUID `json:"email_id"`
+	// Seen is the state to apply to every message in the batch.
+	Seen     bool             `json:"seen"`
+	Messages []MessageSeenRef `json:"messages"`
+}
+
+// MessageSeenRef names one message in whichever way its provider needs.
+// Every field is optional because the three providers use different halves:
+// Gmail and Graph a message id, IMAP a folder and a UID.
+type MessageSeenRef struct {
+	// ProviderID is the Gmail message id or the Graph message id. The column
+	// behind it is provider-agnostic despite its name.
+	ProviderID string `json:"provider_id,omitempty"`
+	UID        uint32 `json:"uid,omitempty"`
+	// Folder is the IMAP folder holding UID. UIDs are only unique within one.
+	Folder string `json:"folder,omitempty"`
+	// RFCMessageID is the immutable Message-ID. Graph ids change when a
+	// message moves, so the worker re-resolves from this when it is present.
+	RFCMessageID string `json:"rfc_message_id,omitempty"`
+}
+
+// SeenRelayChunk bounds one MESSAGE_SEEN event. Gmail accepts 1000 ids per
+// batchModify; this leaves room under it and keeps one "mark all as read" on
+// a large folder from becoming a single enormous event on the bus.
+const SeenRelayChunk = 500
+
+// SeenRelayTarget is one message resolved for the relay: which mailbox it
+// belongs to, which worker holds that mailbox, and how its provider names it.
+type SeenRelayTarget struct {
+	EmailID  uuid.UUID
+	WorkerID uuid.UUID
+	Ref      MessageSeenRef
+}

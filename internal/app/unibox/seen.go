@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
@@ -32,19 +33,80 @@ func (s *uniboxService) MarkSeenBulk(ctx context.Context, orgID uuid.UUID, data 
 		if !models.ValidFolder(data.Folder) {
 			return nil, errx.ErrUniboxFolder
 		}
-		if err := s.uniboxRepository.MarkSeenByFolder(ctx, orgID, data.Folder, data.Seen); err != nil {
+		changed, err := s.uniboxRepository.MarkSeenByFolder(ctx, orgID, data.Folder, data.Seen)
+		if err != nil {
 			errs.CaptureException(err)
 			return nil, errx.InternalError()
 		}
+		s.relaySeen(ctx, orgID, changed, data.Seen)
 		return data, nil
 	}
 
-	if err := s.uniboxRepository.MarkSeenBulk(ctx, orgID, data.EmailIDs, data.Seen); err != nil {
+	changed, err := s.uniboxRepository.MarkSeenBulk(ctx, orgID, data.EmailIDs, data.Seen)
+	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
 	}
+	s.relaySeen(ctx, orgID, changed, data.Seen)
 
 	return data, nil
+}
+
+// relaySeen carries a read/unread change out to the mailboxes themselves, so
+// a thread read in Warmbly is read in Gmail too.
+//
+// Best-effort and after the fact: the store is the customer's view and has
+// already been written, so a worker that cannot be reached must not fail the
+// request. Nothing here retries either, because the provider's own state is
+// what the next sync brings back regardless.
+func (s *uniboxService) relaySeen(ctx context.Context, orgID uuid.UUID, changed []uuid.UUID, seen bool) {
+	if s.publisher == nil || len(changed) == 0 {
+		return
+	}
+
+	targets, err := s.uniboxRepository.SeenRelayTargets(ctx, orgID, changed)
+	if err != nil {
+		errs.CaptureException(err)
+		return
+	}
+
+	// One event per mailbox, chunked: "mark all as read" on a busy folder is
+	// one press over thousands of messages, and a mailbox is the unit a
+	// worker holds.
+	byMailbox := make(map[uuid.UUID]*models.MessageSeenAction)
+	order := make([]uuid.UUID, 0, len(targets))
+	workers := make(map[uuid.UUID]uuid.UUID, len(targets))
+	for _, t := range targets {
+		act, ok := byMailbox[t.EmailID]
+		if !ok {
+			act = &models.MessageSeenAction{EmailID: t.EmailID, Seen: seen}
+			byMailbox[t.EmailID] = act
+			workers[t.EmailID] = t.WorkerID
+			order = append(order, t.EmailID)
+		}
+		act.Messages = append(act.Messages, t.Ref)
+	}
+
+	for _, emailID := range order {
+		act := byMailbox[emailID]
+		for start := 0; start < len(act.Messages); start += models.SeenRelayChunk {
+			end := start + models.SeenRelayChunk
+			if end > len(act.Messages) {
+				end = len(act.Messages)
+			}
+			batch := &models.MessageSeenAction{
+				EmailID:  emailID,
+				Seen:     seen,
+				Messages: act.Messages[start:end],
+			}
+			if err := s.publisher.PublishMessageSeen(ctx, workers[emailID], batch); err != nil {
+				log.Warn().Err(err).
+					Str("email_account_id", emailID.String()).
+					Int("messages", len(batch.Messages)).
+					Msg("could not relay the unibox read state to the mailbox provider")
+			}
+		}
+	}
 }
 
 // MoveFolderBulk backs Archive, Delete and Move to inbox in the thread header.

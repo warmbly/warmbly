@@ -106,7 +106,11 @@ Categories label conversations. Tags label the mailboxes themselves (grouping ac
 
 ## Read state
 
-A conversation is unread when any message inside is unseen, marked by a blue dot in the margin, bolder text, and a blue timestamp. Opening it marks its messages seen and updates the counts. Read state syncs both ways with the mailbox provider.
+A conversation is unread when any message inside is unseen, marked by a blue dot in the margin, bolder text, and a blue timestamp. Opening it marks its messages seen and updates the counts.
+
+Read state travels both ways. A message arriving already read is stored that way, and reading a conversation here marks it read in the mailbox itself, so Gmail and Outlook stop showing it bold too. **Mark as unread** does the same in reverse, and **Mark all as read** on a folder carries the whole sweep across. Only a real change travels: opening a conversation you have already read costs nothing at the provider.
+
+The relay runs on the worker that holds the mailbox, just after Warmbly's own copy is updated, so the dashboard never waits on it. If the mailbox is between workers at that moment, or the provider refuses, Warmbly keeps your read state and the mailbox keeps its own; nothing retries, because the next sync reports whatever the provider actually thinks.
 
 ## Filing a conversation
 
@@ -121,7 +125,7 @@ The thread header carries three filing actions, on the row above the message on 
 Archive and Delete both offer **Undo** on the confirmation toast. Open the Trash or Archive folder and the same header offers **Move to inbox**, so nothing filed by accident is stuck.
 
 <Callout type="info" title="Filing here does not move the message at the provider">
-Archive and Delete are Warmbly's own filing. The message keeps its place in Gmail, Outlook, or whatever mail client the mailbox belongs to, and deleting a conversation here never deletes mail there. The next sync will not undo your filing either: Warmbly records where the provider has each message separately from where you filed it, and follows the provider only when the provider itself moves the message. So junking a message in Gmail still reaches Warmbly, and an ordinary sync pass does not.
+Unlike read state, Archive and Delete are Warmbly's own filing. The message keeps its place in Gmail, Outlook, or whatever mail client the mailbox belongs to, and deleting a conversation here never deletes mail there. The next sync will not undo your filing either: Warmbly records where the provider has each message separately from where you filed it, and follows the provider only when the provider itself moves the message. So junking a message in Gmail still reaches Warmbly, and an ordinary sync pass does not.
 </Callout>
 
 ## Replying
