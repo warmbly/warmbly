@@ -149,3 +149,34 @@ func TestTicketsDoNotRepeat(t *testing.T) {
 		seen[tok] = true
 	}
 }
+
+// Enabled is nil-safe on purpose, and every minting call answers a signer that
+// cannot mint with the empty string rather than a panic. Asserted because the
+// guard is easy to lose: Token signs through s.key, and Go evaluates it as an
+// argument before the function it is passed to can check anything.
+func TestAnUnusableSignerMintsNothingAndNeverPanics(t *testing.T) {
+	org, camp, contact := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+
+	for name, s := range map[string]*Signer{
+		"nil":        nil,
+		"no origin":  New("secret", ""),
+		"zero value": {},
+	} {
+		if s.Enabled() {
+			t.Errorf("%s: Enabled() should be false", name)
+		}
+		if got := s.URLOn("https://t.customer.com", org, camp, contact, now); got != "" {
+			t.Errorf("%s: URLOn = %q, want empty", name, got)
+		}
+		if got := s.URL(org, camp, contact, now); got != "" {
+			t.Errorf("%s: URL = %q, want empty", name, got)
+		}
+		if got := s.TicketURL("https://t.customer.com", ExampleTicket); got != "" {
+			t.Errorf("%s: TicketURL = %q, want empty", name, got)
+		}
+		if _, err := s.Verify("whatever", now); err == nil {
+			t.Errorf("%s: Verify accepted a token", name)
+		}
+	}
+}

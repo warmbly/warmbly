@@ -90,6 +90,13 @@ func (s *Signer) URL(orgID, campaignID, contactID uuid.UUID, now time.Time) stri
 // deployment that serves opt-outs from the API only) falls back to the API
 // origin, which always serves the same routes.
 func (s *Signer) URLOn(origin string, orgID, campaignID, contactID uuid.UUID, now time.Time) string {
+	// Guarded here and not left to urlFor: Go evaluates the argument first,
+	// and Token signs through s.key, so a nil or unconfigured signer would
+	// panic on the way in rather than return the empty URL every caller
+	// treats as "no link can be minted".
+	if !s.Enabled() {
+		return ""
+	}
 	return s.urlFor(origin, s.Token(orgID, campaignID, contactID, now))
 }
 
