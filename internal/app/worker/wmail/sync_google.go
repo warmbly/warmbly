@@ -232,6 +232,6 @@ func (w *WMail) NewHistoryID(historyID uint64) error {
 	return w.onEvent(models.JobEventTypeHistoryIDUpdate, &models.JobEventHistoryIDUpdate{
 		UserID:    w.UserID,
 		EmailID:   w.ID,
-		HistoryID: int64(historyID),
+		HistoryID: historyID,
 	})
 }

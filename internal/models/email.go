@@ -371,14 +371,14 @@ func ResolveIMAPSecurity(security string, port int) string {
 }
 
 type Service struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
+	Username string `json:"username" avro:"username"`
+	Password string `json:"password" avro:"password"`
+	Host     string `json:"host" avro:"host"`
+	Port     int    `json:"port" avro:"port"`
 	// Security is the connection mode (see MailSecurity*). Empty means "infer
 	// from the port", which is how rows and events written before the field
 	// existed behave.
-	Security string `json:"security,omitempty"`
+	Security string `json:"security,omitempty" avro:"security"`
 }
 
 type Oauth2Service struct {
@@ -388,8 +388,8 @@ type Oauth2Service struct {
 }
 
 type SmtpImap struct {
-	SMTP *Service `json:"smtp"`
-	IMAP *Service `json:"imap"`
+	SMTP *Service `json:"smtp" avro:"smtp"`
+	IMAP *Service `json:"imap" avro:"imap"`
 }
 
 type Oauth2SmtpImap struct {

@@ -92,50 +92,50 @@ type EmailMessageData struct { // used when for kafka when an email arrives
 }
 
 type EmailMessageStoreData struct {
-	ID      uuid.UUID `json:"id"`
-	EmailID uuid.UUID `json:"email_id"`
+	ID      uuid.UUID `json:"id" avro:"id"`
+	EmailID uuid.UUID `json:"email_id" avro:"email_id"`
 	// Mailbox is the source folder's UIDVALIDITY at sync time, which is the
 	// generation UID belongs to. It is not the folder's identity: see
 	// FolderPath.
-	Mailbox uint32 `json:"mailbox"`
+	Mailbox uint32 `json:"mailbox" avro:"mailbox"`
 	// FolderPath is the source folder's name, the identity IMAP actually
 	// guarantees. Empty on events from workers predating the field and on
 	// providers with no folders (Gmail).
-	FolderPath string `json:"folder_path,omitempty"`
+	FolderPath string `json:"folder_path,omitempty" avro:"folder_path"`
 	// Folder is the canonical folder (see the Folder* constants) the message
 	// was in at sync time. Empty on events from workers predating the field;
 	// the consumer normalizes before storing.
-	Folder string `json:"folder,omitempty"`
+	Folder string `json:"folder,omitempty" avro:"folder"`
 	// ProviderFolder is where the PROVIDER last reported the message, which
 	// Folder stops tracking once the user files the message in Warmbly. The
 	// two are compared to tell a real provider move from a flag scan that
 	// keeps naming the folder the provider still has it in.
-	ProviderFolder string    `json:"provider_folder,omitempty"`
-	ThreadID       string    `json:"thread_id"`
-	MessageID      string    `json:"message_id"`
-	GmailID        string    `json:"gmail_id"`
-	ParentID       string    `json:"parent_id"`
-	UID            uint32    `json:"uid"`
-	ModSeq         uint64    `json:"mod_seq"`
-	Flags          []string  `json:"flags"`
-	BCC            []string  `json:"bcc"`
-	CC             []string  `json:"cc"`
-	FromAddr       []string  `json:"from_addr"`
-	InReplyTo      []string  `json:"in_reply_to"`
-	ReplyTo        []string  `json:"reply_to"`
-	ToAddr         []string  `json:"to_addr"`
-	Subject        string    `json:"subject"`
-	Size           int64     `json:"size"`
-	InternalDate   time.Time `json:"internal_date"`
-	SentDate       time.Time `json:"sent_date"`
-	Snippet        string    `json:"snippet"`
-	Seen           bool      `json:"seen"`
+	ProviderFolder string    `json:"provider_folder,omitempty" avro:"provider_folder"`
+	ThreadID       string    `json:"thread_id" avro:"thread_id"`
+	MessageID      string    `json:"message_id" avro:"message_id"`
+	GmailID        string    `json:"gmail_id" avro:"gmail_id"`
+	ParentID       string    `json:"parent_id" avro:"parent_id"`
+	UID            uint32    `json:"uid" avro:"uid"`
+	ModSeq         uint64    `json:"mod_seq" avro:"mod_seq"`
+	Flags          []string  `json:"flags" avro:"flags"`
+	BCC            []string  `json:"bcc" avro:"bcc"`
+	CC             []string  `json:"cc" avro:"cc"`
+	FromAddr       []string  `json:"from_addr" avro:"from_addr"`
+	InReplyTo      []string  `json:"in_reply_to" avro:"in_reply_to"`
+	ReplyTo        []string  `json:"reply_to" avro:"reply_to"`
+	ToAddr         []string  `json:"to_addr" avro:"to_addr"`
+	Subject        string    `json:"subject" avro:"subject"`
+	Size           int64     `json:"size" avro:"size"`
+	InternalDate   time.Time `json:"internal_date" avro:"internal_date"`
+	SentDate       time.Time `json:"sent_date" avro:"sent_date"`
+	Snippet        string    `json:"snippet" avro:"snippet"`
+	Seen           bool      `json:"seen" avro:"seen"`
 	// BodyText is a bounded plain-text rendering of the message, carried on the
 	// new-email event so the consumer can make the message findable by what it
 	// says. The full body goes to object storage, never here.
-	BodyText  string    `json:"body_text,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
-	CreatedAt time.Time `json:"created_at"`
+	BodyText  string    `json:"body_text,omitempty" avro:"body_text"`
+	UpdatedAt time.Time `json:"updated_at" avro:"updated_at"`
+	CreatedAt time.Time `json:"created_at" avro:"created_at"`
 }
 
 type EmailMessageStoreDataPreview struct {
@@ -459,10 +459,10 @@ type UniboxScheduledItem struct {
 // provider's own state is what the next sync brings back anyway.
 type MessageSeenAction struct {
 	// EmailID is the mailbox, which is how the worker finds the live client.
-	EmailID uuid.UUID `json:"email_id"`
+	EmailID uuid.UUID `json:"email_id" avro:"email_id"`
 	// Seen is the state to apply to every message in the batch.
-	Seen     bool             `json:"seen"`
-	Messages []MessageSeenRef `json:"messages"`
+	Seen     bool             `json:"seen" avro:"seen"`
+	Messages []MessageSeenRef `json:"messages" avro:"messages"`
 }
 
 // MessageSeenRef names one message in whichever way its provider needs.
@@ -471,13 +471,13 @@ type MessageSeenAction struct {
 type MessageSeenRef struct {
 	// ProviderID is the Gmail message id or the Graph message id. The column
 	// behind it is provider-agnostic despite its name.
-	ProviderID string `json:"provider_id,omitempty"`
-	UID        uint32 `json:"uid,omitempty"`
+	ProviderID string `json:"provider_id,omitempty" avro:"provider_id"`
+	UID        uint32 `json:"uid,omitempty" avro:"uid"`
 	// Folder is the IMAP folder holding UID. UIDs are only unique within one.
-	Folder string `json:"folder,omitempty"`
+	Folder string `json:"folder,omitempty" avro:"folder"`
 	// RFCMessageID is the immutable Message-ID. Graph ids change when a
 	// message moves, so the worker re-resolves from this when it is present.
-	RFCMessageID string `json:"rfc_message_id,omitempty"`
+	RFCMessageID string `json:"rfc_message_id,omitempty" avro:"rfc_message_id"`
 }
 
 // SeenRelayChunk bounds one MESSAGE_SEEN event. Gmail accepts 1000 ids per

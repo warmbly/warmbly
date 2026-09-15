@@ -3,7 +3,7 @@ package models
 import "github.com/google/uuid"
 
 type EventWorkerEmailValidation struct {
-	OrgID       uuid.UUID `json:"org_id"`
-	ProcessID   uuid.UUID `json:"process_id"`
-	Credentials *SmtpImap `json:"credentials"`
+	OrgID       uuid.UUID `json:"org_id" avro:"org_id"`
+	ProcessID   uuid.UUID `json:"process_id" avro:"process_id"`
+	Credentials *SmtpImap `json:"credentials" avro:"credentials"`
 }

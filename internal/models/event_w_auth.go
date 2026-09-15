@@ -14,9 +14,9 @@ const (
 )
 
 type JobEventTokenUpdate struct {
-	UserID       uuid.UUID `json:"user_id"`
-	EmailID      uuid.UUID `json:"email_id"`
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	UserID       uuid.UUID `json:"user_id" avro:"user_id"`
+	EmailID      uuid.UUID `json:"email_id" avro:"email_id"`
+	AccessToken  string    `json:"access_token" avro:"access_token"`
+	RefreshToken string    `json:"refresh_token" avro:"refresh_token"`
+	ExpiresAt    time.Time `json:"expires_at" avro:"expires_at"`
 }

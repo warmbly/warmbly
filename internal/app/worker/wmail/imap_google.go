@@ -14,7 +14,7 @@ func (w *WMail) ImapGoogleSync(ctx context.Context, lastHistoryID uint64) *errx.
 		if err := w.onEvent(models.JobEventTypeHistoryIDUpdate, &models.JobEventHistoryIDUpdate{
 			UserID:    w.UserID,
 			EmailID:   w.ID,
-			HistoryID: int64(newHistoryID),
+			HistoryID: newHistoryID,
 		}); err != nil {
 			return nil
 		}

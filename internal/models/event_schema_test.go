@@ -3,6 +3,7 @@ package models
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/hamba/avro/v2"
 )
@@ -67,13 +68,73 @@ func assertBodyType(t *testing.T, got, want any) {
 }
 
 // A registry entry is a typed nil so it can name a type without holding a
-// value. Sending one would encode nothing, so the test needs a real one.
+// value. Sending one would encode nothing, so the test needs a real one, and
+// every field in it has to be non-zero.
+//
+// Zero values are why this suite once passed over a uint64 mapped to Avro long:
+// the encoder only refuses the conversion when there is something to convert.
+// Populating every field is what makes the schema answer for the whole type
+// rather than for the parts a zero value happens to exercise.
 func sample(body any) any {
 	t := reflect.TypeOf(body)
 	if t.Kind() == reflect.Pointer {
-		return reflect.New(t.Elem()).Interface()
+		v := reflect.New(t.Elem())
+		fill(v.Elem())
+		return v.Interface()
 	}
-	return reflect.New(t).Elem().Interface()
+	v := reflect.New(t)
+	fill(v.Elem())
+	return v.Elem().Interface()
+}
+
+// fill writes a distinctive non-zero value into every exported field, walking
+// nested structs, slices and maps. Unexported and avro:"-" fields are left
+// alone: the schema does not describe them, so neither should this.
+func fill(v reflect.Value) {
+	if !v.CanSet() {
+		return
+	}
+	switch v.Kind() {
+	case reflect.Bool:
+		v.SetBool(true)
+	case reflect.String:
+		v.SetString("x")
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(7)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		// The largest value the type holds, so a narrowing conversion shows up
+		// as a wrong number rather than passing on a small one.
+		v.SetUint((1 << (v.Type().Bits() - 1)) | 1)
+	case reflect.Float32, reflect.Float64:
+		v.SetFloat(1.5)
+	case reflect.Pointer:
+		v.Set(reflect.New(v.Type().Elem()))
+		fill(v.Elem())
+	case reflect.Slice:
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			v.SetBytes([]byte{1, 2, 3})
+			return
+		}
+		v.Set(reflect.MakeSlice(v.Type(), 1, 1))
+		fill(v.Index(0))
+	case reflect.Map:
+		v.Set(reflect.MakeMap(v.Type()))
+		key := reflect.New(v.Type().Key()).Elem()
+		fill(key)
+		val := reflect.New(v.Type().Elem()).Elem()
+		fill(val)
+		v.SetMapIndex(key, val)
+	case reflect.Struct:
+		if v.Type() == reflect.TypeOf(time.Time{}) {
+			v.Set(reflect.ValueOf(time.Unix(1750000000, 0).UTC()))
+			return
+		}
+		for i := 0; i < v.NumField(); i++ {
+			if f := v.Type().Field(i); f.IsExported() && f.Tag.Get("avro") != "-" {
+				fill(v.Field(i))
+			}
+		}
+	}
 }
 
 // Two bodies sharing a Go type name would collide in hamba's global type

@@ -136,8 +136,17 @@ func schemaOf(t reflect.Type, name string, seen map[reflect.Type]avro.Schema) (a
 		return avro.NewPrimitiveSchema(avro.String, nil), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
 		return avro.NewPrimitiveSchema(avro.Int, nil), nil
-	case reflect.Int64, reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case reflect.Int64, reflect.Uint, reflect.Uint16, reflect.Uint32:
 		return avro.NewPrimitiveSchema(avro.Long, nil), nil
+	case reflect.Uint64:
+		// Avro's long is signed, and half a uint64 does not fit in one. Eight
+		// fixed bytes carry the whole range, which is what a sync cursor needs:
+		// an IMAP MODSEQ and a Gmail history id are both opaque counters, and
+		// one that wrapped negative would be persisted and reloaded as a
+		// different position in the mailbox.
+		return named(t, seen, func() (avro.NamedSchema, error) {
+			return avro.NewFixedSchema("uint64", "warmbly.events", 8, nil)
+		})
 	case reflect.Float32:
 		return avro.NewPrimitiveSchema(avro.Float, nil), nil
 	case reflect.Float64:
@@ -168,16 +177,8 @@ func schemaOf(t reflect.Type, name string, seen map[reflect.Type]avro.Schema) (a
 }
 
 func recordSchema(t reflect.Type, name string, seen map[reflect.Type]avro.Schema) (avro.Schema, error) {
-	// A second sighting becomes a reference to the first definition. Avro names
-	// a record once and refers to it by name after that, and a document that
-	// defines the same name twice is rejected outright. Reusing the same schema
-	// object is not enough: it is serialised in full wherever it appears.
 	if cached, ok := seen[t]; ok {
-		named, ok := cached.(avro.NamedSchema)
-		if !ok {
-			return cached, nil
-		}
-		return avro.NewRefSchema(named), nil
+		return reference(cached), nil
 	}
 	fields := make([]*avro.Field, 0, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
@@ -217,6 +218,29 @@ func recordSchema(t reflect.Type, name string, seen map[reflect.Type]avro.Schema
 	}
 	seen[t] = record
 	return record, nil
+}
+
+// named defines a schema the first time its Go type is seen and refers to it
+// every time after. Avro names a type once, and a document that defines the
+// same name twice is rejected outright; reusing the same schema object is not
+// enough, because it is serialised in full wherever it appears.
+func named(t reflect.Type, seen map[reflect.Type]avro.Schema, build func() (avro.NamedSchema, error)) (avro.Schema, error) {
+	if cached, ok := seen[t]; ok {
+		return reference(cached), nil
+	}
+	s, err := build()
+	if err != nil {
+		return nil, err
+	}
+	seen[t] = s
+	return s, nil
+}
+
+func reference(s avro.Schema) avro.Schema {
+	if n, ok := s.(avro.NamedSchema); ok {
+		return avro.NewRefSchema(n)
+	}
+	return s
 }
 
 // distinctBodies reduces a body registry to the distinct types in it, in a

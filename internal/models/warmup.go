@@ -40,20 +40,20 @@ type WarmupToken struct {
 // UID belongs to, so an action is skipped rather than aimed at whatever
 // message inherited the number after a UIDVALIDITY change.
 type WarmupEmailAction struct {
-	UserID             uuid.UUID `json:"user_id"`
-	EmailID            uuid.UUID `json:"email_id"`
-	GmailID            string    `json:"gmail_id"`
-	UID                uint32    `json:"uid"`
-	MailboxUIDValidity uint32    `json:"mailbox_uid_validity"`
+	UserID             uuid.UUID `json:"user_id" avro:"user_id"`
+	EmailID            uuid.UUID `json:"email_id" avro:"email_id"`
+	GmailID            string    `json:"gmail_id" avro:"gmail_id"`
+	UID                uint32    `json:"uid" avro:"uid"`
+	MailboxUIDValidity uint32    `json:"mailbox_uid_validity" avro:"mailbox_uid_validity"`
 	// MailboxFolder is the source folder's name. Empty on events from
 	// consumers predating it, where the worker falls back to matching on
 	// MailboxUIDValidity alone.
-	MailboxFolder string `json:"mailbox_folder,omitempty"`
+	MailboxFolder string `json:"mailbox_folder,omitempty" avro:"mailbox_folder"`
 	// RFCMessageID is the immutable RFC 5322 Message-ID. Graph provider ids
 	// change when a message is moved (copy+delete), so the worker re-resolves
 	// the live Graph id from this stable key at action time.
-	RFCMessageID string   `json:"rfc_message_id,omitempty"`
-	Actions      []string `json:"actions"` // "move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"
+	RFCMessageID string   `json:"rfc_message_id,omitempty" avro:"rfc_message_id"`
+	Actions      []string `json:"actions" avro:"actions"` // "move_to_warmbly", "mark_read", "remove_from_spam", "mark_important"
 
 	// DelaySeconds is retained for wire compatibility but is now always 0: the
 	// recipient-side "dwell" is owned by the consumer's durable schedule
@@ -62,7 +62,7 @@ type WarmupEmailAction struct {
 	// important / star) when due. The worker runs whatever it receives
 	// immediately. This survives a worker restart, which the old in-process
 	// timer did not.
-	DelaySeconds int `json:"delay_seconds,omitempty"`
+	DelaySeconds int `json:"delay_seconds,omitempty" avro:"delay_seconds"`
 }
 
 // The two warmup pools migration 000156 seeds on every instance, one per type.
