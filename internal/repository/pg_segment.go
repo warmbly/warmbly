@@ -664,42 +664,74 @@ func withdrawDetachedLeads(ctx context.Context, tx pgx.Tx, orgID, campaignID uui
 	args := append(b.args, campaignID)
 	cp := fmt.Sprintf("$%d", len(args))
 	// The leads this detachment covers: enrolled by a link, still a member of
-	// something that just went, and a member of nothing that stayed.
-	scope := `cl.campaign_id = ` + cp + `
+	// something that just went, and a member of nothing that stayed. Locked,
+	// not just read: a send is reserved by stamping campaign_contact_progress
+	// and only then locking the lead row, so without taking that lock first a
+	// reservation committing mid-pass is invisible to this statement's
+	// snapshot and the lead is withdrawn out from under a mail that has
+	// already gone. A send that arrives after this waits, then finds no lead
+	// and rolls its own reservation back.
+	candidateQ := `SELECT cl.contact_id
+		FROM campaign_leads cl
+		JOIN contacts c ON c.id = cl.contact_id
+		WHERE cl.campaign_id = ` + cp + `
 		  AND c.organization_id = $1
 		  AND cl.source = '` + string(leadSourceSegment) + `'
 		  AND ((` + strings.Join(detachedClauses, ") OR (") + `))
-		  AND NOT (` + keptExpr + `)`
+		  AND NOT (` + keptExpr + `)
+		FOR UPDATE OF cl`
+	crows, err := tx.Query(ctx, candidateQ, args...)
+	if err != nil {
+		db.CaptureError(err, candidateQ, args, "query")
+		return change, errx.InternalError()
+	}
+	var candidates []uuid.UUID
+	for crows.Next() {
+		var id uuid.UUID
+		if err := crows.Scan(&id); err != nil {
+			crows.Close()
+			db.CaptureError(err, "", nil, "scan")
+			return change, errx.InternalError()
+		}
+		candidates = append(candidates, id)
+	}
+	crows.Close()
+	if err := crows.Err(); err != nil {
+		db.CaptureError(err, candidateQ, args, "rows")
+		return change, errx.InternalError()
+	}
+	if len(candidates) == 0 {
+		return change, nil
+	}
+
 	// Written to means dispatched OR stamped sent: a send is reserved and
 	// dispatched before it is stamped, so reading only sent_at would withdraw
-	// a lead whose first email is on the bus.
+	// a lead whose first email is on the bus. Both statements below take a
+	// fresh snapshot, which is what makes the lock above worth taking.
 	written := `EXISTS (
 			SELECT 1 FROM campaign_contact_progress p
 			WHERE p.campaign_id = cl.campaign_id AND p.contact_id = cl.contact_id
 			  AND (p.dispatched_at IS NOT NULL OR p.sent_at IS NOT NULL))`
+	picked := []any{campaignID, candidates}
 
-	countQ := `SELECT COUNT(*)
-		FROM campaign_leads cl
-		JOIN contacts c ON c.id = cl.contact_id
-		WHERE ` + scope + ` AND ` + written
-	if err := tx.QueryRow(ctx, countQ, args...).Scan(&change.Contacted); err != nil {
-		db.CaptureError(err, countQ, args, "queryrow")
+	countQ := `SELECT COUNT(*) FROM campaign_leads cl
+		WHERE cl.campaign_id = $1 AND cl.contact_id = ANY($2::uuid[]) AND ` + written
+	if err := tx.QueryRow(ctx, countQ, picked...).Scan(&change.Contacted); err != nil {
+		db.CaptureError(err, countQ, picked, "queryrow")
 		return change, errx.InternalError()
 	}
 
 	delQ := `DELETE FROM campaign_leads cl
-		USING contacts c
-		WHERE c.id = cl.contact_id
-		  AND ` + scope + ` AND NOT ` + written + `
+		WHERE cl.campaign_id = $1 AND cl.contact_id = ANY($2::uuid[]) AND NOT ` + written + `
 		RETURNING cl.contact_id, cl.campaign_id`
-	rows, err := tx.Query(ctx, delQ, args...)
+	rows, err := tx.Query(ctx, delQ, picked...)
 	if err != nil {
-		db.CaptureError(err, delQ, args, "exec")
+		db.CaptureError(err, delQ, picked, "exec")
 		return change, errx.InternalError()
 	}
 	gone, err := collectLinkPairs(rows)
 	if err != nil {
-		db.CaptureError(err, delQ, args, "returning")
+		db.CaptureError(err, delQ, picked, "returning")
 		return change, errx.InternalError()
 	}
 	// Zero actor: the platform acted on an audience edit, not a person picking

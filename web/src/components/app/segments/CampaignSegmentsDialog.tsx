@@ -126,10 +126,16 @@ export default function CampaignSegmentsDialog({
                 res.contacted > 0
                     ? ` ${leads(res.contacted)} stayed: the campaign has already emailed them.`
                     : "";
+            // stayed is appended to every branch: a detach where the whole
+            // audience had already been emailed changes no count at all, and
+            // saying nothing after confirming "removes up to N leads" reads as
+            // a save that did not happen.
             if (picked.size === 0) {
                 toast.success((res.withdrawn > 0 ? `Segments detached and ${leads(res.withdrawn)} removed` : "Segments detached") + stayed);
             } else if (moved) {
                 toast.success(`${linked} and ${moved}.${stayed}`);
+            } else if (stayed) {
+                toast.success(`${linked}.${stayed}`);
             } else if (members === 0 || held > 0) {
                 // Say why the list is still empty; "already a lead" here would be a lie.
                 toast(`${linked}. ${linksEmptyReason(res.data)}`);
