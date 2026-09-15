@@ -258,7 +258,7 @@ Returns the resulting label set in a `data` array.
 
 Marks messages as read or unread, org-wide: either an explicit batch of up to 500 ids, or a whole canonical folder at once. Send one of `email_ids` or `folder`; sending both returns `400`. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
 
-The change is also carried out to the mailbox itself, so a message marked read here stops showing as unread in Gmail or Outlook. Only messages whose state actually changed are relayed, and the relay is best-effort: it happens after the response, on the worker holding the mailbox, and a mailbox that is unplaced at that moment keeps its own read state until something changes it again. Unlike [filing a conversation](/guides/unibox/#filing-a-conversation), which stays inside Warmbly.
+The change is also carried out to the mailbox itself, so a message marked read here stops showing as unread in Gmail, Outlook or an IMAP mailbox. Opening a message with `GET /unibox/:id` marks it read the same way, relay included. Only messages whose state actually changed are relayed, and the relay is best-effort: it happens after the response, on the worker holding the mailbox, and a mailbox that is unplaced at that moment keeps its own read state until something changes it again. Unlike [filing a conversation](/guides/unibox/#filing-a-conversation), which stays inside Warmbly.
 
 ### Request body
 

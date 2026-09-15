@@ -39,14 +39,14 @@ func TestRelaySeenGroupsByMailbox(t *testing.T) {
 	boxA, boxB := uuid.New(), uuid.New()
 	workerA, workerB := uuid.New(), uuid.New()
 	repo := &fakeSeenRepo{targets: []models.SeenRelayTarget{
-		{EmailID: boxA, WorkerID: workerA, Ref: models.MessageSeenRef{ProviderID: "a1"}},
-		{EmailID: boxA, WorkerID: workerA, Ref: models.MessageSeenRef{ProviderID: "a2"}},
-		{EmailID: boxB, WorkerID: workerB, Ref: models.MessageSeenRef{UID: 7, Folder: "INBOX"}},
+		{EmailID: boxA, WorkerID: workerA, Seen: true, Ref: models.MessageSeenRef{ProviderID: "a1"}},
+		{EmailID: boxA, WorkerID: workerA, Seen: true, Ref: models.MessageSeenRef{ProviderID: "a2"}},
+		{EmailID: boxB, WorkerID: workerB, Seen: true, Ref: models.MessageSeenRef{UID: 7, Folder: "INBOX"}},
 	}}
 	pub := &fakeSeenPublisher{}
 	s := &uniboxService{uniboxRepository: repo, publisher: pub}
 
-	s.relaySeen(context.Background(), uuid.New(), []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}, true)
+	s.publishSeenRelay(context.Background(), uuid.New(), []uuid.UUID{uuid.New(), uuid.New(), uuid.New()})
 
 	if len(pub.sent) != 2 {
 		t.Fatalf("expected one event per mailbox, got %d", len(pub.sent))
@@ -82,7 +82,7 @@ func TestRelaySeenChunks(t *testing.T) {
 	pub := &fakeSeenPublisher{}
 	s := &uniboxService{uniboxRepository: &fakeSeenRepo{targets: targets}, publisher: pub}
 
-	s.relaySeen(context.Background(), uuid.New(), []uuid.UUID{uuid.New()}, false)
+	s.publishSeenRelay(context.Background(), uuid.New(), []uuid.UUID{uuid.New()})
 
 	if len(pub.sent) != 2 {
 		t.Fatalf("expected 2 chunks, got %d", len(pub.sent))
@@ -102,7 +102,7 @@ func TestRelaySeenSkipsWhenNothingChanged(t *testing.T) {
 	pub := &fakeSeenPublisher{}
 	s := &uniboxService{uniboxRepository: repo, publisher: pub}
 
-	s.relaySeen(context.Background(), uuid.New(), nil, true)
+	s.relaySeen(context.Background(), uuid.New(), nil)
 
 	if len(pub.sent) != 0 || len(repo.asked) != 0 {
 		t.Errorf("relayed %d events after %d lookups for no change", len(pub.sent), len(repo.asked))
@@ -112,5 +112,36 @@ func TestRelaySeenSkipsWhenNothingChanged(t *testing.T) {
 // An install with no worker bus wired still has a working unibox.
 func TestRelaySeenWithoutAPublisher(t *testing.T) {
 	s := &uniboxService{uniboxRepository: &fakeSeenRepo{}}
-	s.relaySeen(context.Background(), uuid.New(), []uuid.UUID{uuid.New()}, true)
+	s.relaySeen(context.Background(), uuid.New(), []uuid.UUID{uuid.New()})
+}
+
+// A relay batch carries one state, so rows that disagree (a concurrent toggle
+// landed between the write and the lookup) have to split rather than be sent
+// under whichever state was asked for.
+func TestRelaySeenSplitsOnStoredState(t *testing.T) {
+	box, worker := uuid.New(), uuid.New()
+	repo := &fakeSeenRepo{targets: []models.SeenRelayTarget{
+		{EmailID: box, WorkerID: worker, Seen: true, Ref: models.MessageSeenRef{ProviderID: "read"}},
+		{EmailID: box, WorkerID: worker, Seen: false, Ref: models.MessageSeenRef{ProviderID: "unread"}},
+	}}
+	pub := &fakeSeenPublisher{}
+	s := &uniboxService{uniboxRepository: repo, publisher: pub}
+
+	s.publishSeenRelay(context.Background(), uuid.New(), []uuid.UUID{uuid.New(), uuid.New()})
+
+	if len(pub.sent) != 2 {
+		t.Fatalf("expected one event per state, got %d", len(pub.sent))
+	}
+	for _, act := range pub.sent {
+		if len(act.Messages) != 1 {
+			t.Fatalf("states were merged into one batch: %+v", act)
+		}
+		want := "unread"
+		if act.Seen {
+			want = "read"
+		}
+		if act.Messages[0].ProviderID != want {
+			t.Errorf("message %q relayed with seen=%v", act.Messages[0].ProviderID, act.Seen)
+		}
+	}
 }

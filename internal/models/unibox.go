@@ -490,5 +490,10 @@ const SeenRelayChunk = 500
 type SeenRelayTarget struct {
 	EmailID  uuid.UUID
 	WorkerID uuid.UUID
-	Ref      MessageSeenRef
+	// Seen is the state the row holds now, read back rather than taken from
+	// the request that caused the relay. Two people toggling the same
+	// conversation in opposite directions at once would otherwise be able to
+	// leave the provider holding the earlier answer.
+	Seen bool
+	Ref  MessageSeenRef
 }

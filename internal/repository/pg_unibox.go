@@ -296,6 +296,9 @@ func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*
 // user_id: the body's object-storage key is built from the owner (and the
 // row's email_id), so the caller must fetch the body under the owner, not
 // under itself.
+//
+// It does not mark the message read: that is a write with a provider relay
+// behind it, and it belongs to the service.
 func (r *uniboxRepository) GetByIDForOrg(ctx context.Context, orgID, id uuid.UUID) (*models.EmailMessageStoreData, uuid.UUID, error) {
 	query := fmt.Sprintf(`
 		SELECT user_id, %s
@@ -320,12 +323,9 @@ func (r *uniboxRepository) GetByIDForOrg(ctx context.Context, orgID, id uuid.UUI
 		return nil, uuid.Nil, err
 	}
 
-	// Auto-mark as seen, org-scoped so any member clears the shared unread state.
-	if !e.Seen {
-		_, _ = r.MarkSeenBulk(ctx, orgID, []uuid.UUID{id}, true)
-		e.Seen = true
-	}
-
+	// Reading it is what marks it read, and that now has to reach the mailbox
+	// too, so the service owns the transition (it holds the relay). The row
+	// is returned exactly as stored.
 	return &e, ownerID, nil
 }
 
@@ -722,13 +722,14 @@ func (r *uniboxRepository) MarkSeenByFolder(ctx context.Context, orgID uuid.UUID
 //
 // The three providers need different halves of this row (Gmail and Graph a
 // message id, IMAP a folder and a UID), so all of it travels and the worker
-// takes what its client uses.
+// takes what its client uses. The read state comes from the row rather than
+// from the request, so what is relayed is what Warmbly currently holds.
 func (r *uniboxRepository) SeenRelayTargets(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) ([]models.SeenRelayTarget, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 	rows, err := r.db.Query(ctx,
-		`SELECT ue.email_id, ea.worker_id, ue.gmail_id, ue.uid, ue.folder_path, ue.message_id
+		`SELECT ue.email_id, ea.worker_id, ue.seen, ue.gmail_id, ue.uid, ue.folder_path, ue.message_id
 		 FROM unibox_emails ue
 		 JOIN email_accounts ea ON ea.id = ue.email_id
 		 WHERE ue.id = ANY($2) AND ea.organization_id = $1 AND ea.worker_id IS NOT NULL
@@ -743,7 +744,7 @@ func (r *uniboxRepository) SeenRelayTargets(ctx context.Context, orgID uuid.UUID
 	var out []models.SeenRelayTarget
 	for rows.Next() {
 		var t models.SeenRelayTarget
-		if err := rows.Scan(&t.EmailID, &t.WorkerID, &t.Ref.ProviderID, &t.Ref.UID, &t.Ref.Folder, &t.Ref.RFCMessageID); err != nil {
+		if err := rows.Scan(&t.EmailID, &t.WorkerID, &t.Seen, &t.Ref.ProviderID, &t.Ref.UID, &t.Ref.Folder, &t.Ref.RFCMessageID); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

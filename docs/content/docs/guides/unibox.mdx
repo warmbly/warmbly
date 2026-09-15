@@ -108,7 +108,7 @@ Categories label conversations. Tags label the mailboxes themselves (grouping ac
 
 A conversation is unread when any message inside is unseen, marked by a blue dot in the margin, bolder text, and a blue timestamp. Opening it marks its messages seen and updates the counts.
 
-Read state travels both ways. A message arriving already read is stored that way, and reading a conversation here marks it read in the mailbox itself, so Gmail and Outlook stop showing it bold too. **Mark as unread** does the same in reverse, and **Mark all as read** on a folder carries the whole sweep across. Only a real change travels: opening a conversation you have already read costs nothing at the provider.
+Read state travels both ways. A message arriving already read is stored that way, and reading a conversation here marks it read in the mailbox itself, so Gmail, Outlook and any IMAP mailbox stop showing it bold too. **Mark as unread** does the same in reverse, and **Mark all as read** on a folder carries the whole sweep across. Only a real change travels: opening a conversation you have already read costs nothing at the provider.
 
 The relay runs on the worker that holds the mailbox, just after Warmbly's own copy is updated, so the dashboard never waits on it. If the mailbox is between workers at that moment, or the provider refuses, Warmbly keeps your read state and the mailbox keeps its own; nothing retries, because the next sync reports whatever the provider actually thinks.
 

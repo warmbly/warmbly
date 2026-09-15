@@ -142,6 +142,13 @@ func TestLiveSeenRelayTargets(t *testing.T) {
 		if target.Ref.ProviderID == "" || target.Ref.UID == 0 || target.Ref.Folder != "INBOX" || target.Ref.RFCMessageID == "" {
 			t.Errorf("incomplete ref: %+v", target.Ref)
 		}
+		// The state comes from the row, so the two fixtures disagree.
+		if target.Ref.ProviderID == "gmail-read" && !target.Seen {
+			t.Error("a read message reported unread")
+		}
+		if target.Ref.ProviderID == "gmail-unread" && target.Seen {
+			t.Error("an unread message reported read")
+		}
 	}
 
 	// A mailbox with no worker has nothing to relay through and must not
