@@ -363,7 +363,7 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 			EmailID:    w.ID,
 			ID:         internalID,
 			UID:        f.Email.UID,
-			ModSeq:     f.Email.ModSeq,
+			ModSeq:     int64(f.Email.ModSeq),
 			Mailbox:    w.SmtpImapData.mailbox,
 			FolderPath: w.SmtpImapData.folderPath,
 			Folder:     w.SmtpImapData.folder,

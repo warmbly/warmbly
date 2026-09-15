@@ -34,8 +34,12 @@ func (s *JobsService) HandleUpdateEmail(ctx context.Context, e *models.JobEventE
 	if email.Mailbox != e.Mailbox {
 		updateData.Mailbox = &e.Mailbox
 	}
-	if email.ModSeq != e.ModSeq {
-		updateData.ModSeq = &e.ModSeq
+	// The event carries the cursor as int64 because Avro has no unsigned 64-bit
+	// type; storage keeps it unsigned. RFC 7162 bounds a MODSEQ well inside
+	// both, so neither conversion can lose one.
+	modSeq := uint64(e.ModSeq)
+	if email.ModSeq != modSeq {
+		updateData.ModSeq = &modSeq
 	}
 	// The source folder's name, which is its identity. Empty on events from
 	// workers predating the field, which keeps the stored value.
@@ -59,7 +63,7 @@ func (s *JobsService) HandleUpdateEmail(ctx context.Context, e *models.JobEventE
 	email.Flags = e.Flags
 	email.UID = e.UID
 	email.Mailbox = e.Mailbox
-	email.ModSeq = e.ModSeq
+	email.ModSeq = uint64(e.ModSeq)
 	if providerMoved {
 		email.Folder = folder
 		email.ProviderFolder = provider
