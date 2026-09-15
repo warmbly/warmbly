@@ -82,11 +82,21 @@ export async function listCampaignSegments(campaignId: string): Promise<Campaign
     return res.data ?? [];
 }
 
+// `withdrawn` is how many leads a detached segment took back with it, and
+// `contacted` how many it left behind because the campaign had already emailed
+// them.
+export type SetCampaignSegmentsResult = {
+    data: CampaignSegmentLink[];
+    added: number;
+    withdrawn: number;
+    contacted: number;
+};
+
 export async function setCampaignSegments(
     campaignId: string,
     segmentIds: string[],
-): Promise<{ data: CampaignSegmentLink[]; added: number }> {
-    return await Request<{ data: CampaignSegmentLink[]; added: number }>({
+): Promise<SetCampaignSegmentsResult> {
+    return await Request<SetCampaignSegmentsResult>({
         method: "PUT",
         url: `/campaigns/${campaignId}/segments`,
         data: { segment_ids: segmentIds },

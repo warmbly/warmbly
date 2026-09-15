@@ -271,9 +271,12 @@ func TestLiveSegmentCampaignLinks(t *testing.T) {
 
 	// Replacing the set enrols current members in the same transaction; a
 	// second pass adds nothing.
-	added, status, xerr := repo.ReplaceForCampaign(ctx, f.org, f.other, []uuid.UUID{acme.ID})
+	added, change, status, xerr := repo.ReplaceForCampaign(ctx, f.org, f.other, []uuid.UUID{acme.ID})
 	if xerr != nil || added != 2 || status == "" {
 		t.Fatalf("replace = %d, %q, %v", added, status, xerr)
+	}
+	if change.Withdrawn != 0 || change.Contacted != 0 {
+		t.Fatalf("replace that detached nothing withdrew %+v", change)
 	}
 	if links, _ = repo.ListForCampaign(ctx, f.org, f.other); len(links) != 1 || links[0].LeadCount != 2 || links[0].HeldOutCount != 0 {
 		t.Fatalf("links after replace = %+v", links)
@@ -346,7 +349,9 @@ func TestLiveSegmentCampaignLinks(t *testing.T) {
 		t.Fatalf("using = %v, %v", names, xerr)
 	}
 
-	// Unlinking everything keeps the enrolled leads (alice, carol, bob).
+	// Unlinking everything takes back the audience the link brought (issue
+	// #510), but all three leads survive here: the one-shot enrol above is a
+	// person choosing this list, so it claimed every member it covered.
 	if xerr := repo.SetForCampaign(ctx, f.org, f.other, []uuid.UUID{}); xerr != nil {
 		t.Fatalf("unlink: %v", xerr)
 	}
@@ -355,7 +360,7 @@ func TestLiveSegmentCampaignLinks(t *testing.T) {
 	}
 	inOther := models.SegmentCondition{Field: "campaign", Operator: "in", Values: []string{f.other.String()}}
 	if got := segCount(t, repo, f.org, models.SegmentMatchAll, inOther); got != 3 {
-		t.Errorf("leads after unlink = %d, want 3", got)
+		t.Errorf("leads after unlink = %d, want 3 (the one-shot enrol claimed them)", got)
 	}
 }
 

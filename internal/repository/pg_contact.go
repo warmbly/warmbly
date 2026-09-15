@@ -425,6 +425,12 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 			db.CaptureError(err, "", nil, "campaign_lead_removals clear")
 			return nil, errx.InternalError()
 		}
+		// It also claims a lead a linked segment had enrolled, so detaching
+		// that segment later does not withdraw somebody's hand-picked lead.
+		if _, err := tx.Exec(ctx, claimLeadsManualSQL, cids, []uuid.UUID{ncontacts[i].ID}); err != nil {
+			db.CaptureError(err, "", nil, "campaign_leads claim")
+			return nil, errx.InternalError()
+		}
 		// A contact created from a campaign's Leads tab is attributed to that
 		// campaign by name, resolved here rather than trusted from the client.
 		if created[i] && normalized[i].Source == models.ContactSourceCampaign && normalized[i].SourceDetail == "" && len(added) > 0 {
@@ -2277,6 +2283,9 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 				return nil, errx.InternalError()
 			}
 			campaignsAdded = append(campaignsAdded, added...)
+			// No claim to make here: toInsert is the difference against the
+			// contact's current membership, so it never names a campaign they
+			// are already a lead of.
 		}
 	}
 
@@ -2563,6 +2572,12 @@ func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID
 		         RETURNING contact_id, campaign_id`,
 			models.ActivityCampaignAdded, logCampaignLinks, orgID, data.Contacts, data.AddCampaigns); xerr != nil {
 			return nil, xerr
+		}
+		// Claims leads a linked segment had enrolled, so detaching that
+		// segment later leaves hand-picked leads alone.
+		if _, err := tx.Exec(ctx, claimLeadsManualSQL, data.AddCampaigns, data.Contacts); err != nil {
+			db.CaptureError(err, "", nil, "campaign_leads claim")
+			return nil, errx.InternalError()
 		}
 	}
 

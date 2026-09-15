@@ -245,7 +245,9 @@ func (h *Handler) ListCampaignSegments(c *gin.Context) {
 }
 
 // SetCampaignSegments replaces a campaign's linked segments. Members of the
-// linked segments are enrolled as leads immediately and kept current.
+// linked segments are enrolled as leads immediately and kept current; a
+// detached segment's leads are withdrawn again unless the campaign has already
+// written to them or somebody added them by hand.
 func (h *Handler) SetCampaignSegments(c *gin.Context) {
 	orgID, campaignID, ok := campaignSegmentScope(c)
 	if !ok {
@@ -262,13 +264,15 @@ func (h *Handler) SetCampaignSegments(c *gin.Context) {
 		errx.Handle(c, errx.New(errx.BadRequest, "segment_ids is required; send [] to detach all segments"))
 		return
 	}
-	links, added, xerr := h.SegmentService.SetCampaignSegments(c.Request.Context(), orgID, campaignID, &in)
+	links, added, change, xerr := h.SegmentService.SetCampaignSegments(c.Request.Context(), orgID, campaignID, &in)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
 	}
-	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCampaign, &campaignID, nil, map[string]string{"segments": itoa(len(links)), "added": itoa(added)})
-	c.JSON(http.StatusOK, gin.H{"data": links, "added": added})
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCampaign, &campaignID, nil, map[string]string{
+		"segments": itoa(len(links)), "added": itoa(added), "withdrawn": itoa(change.Withdrawn),
+	})
+	c.JSON(http.StatusOK, gin.H{"data": links, "added": added, "withdrawn": change.Withdrawn, "contacted": change.Contacted})
 }
 
 // ListSegmentOverrides lists the contacts pinned into or out of a segment.

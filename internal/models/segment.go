@@ -245,6 +245,15 @@ type CampaignSegmentsWrite struct {
 	SegmentIDs []string `json:"segment_ids"`
 }
 
+// CampaignAudienceChange is what replacing a campaign's linked segments did to
+// the leads that were already there. Detaching a link withdraws the audience
+// it brought; Contacted is the part of that audience the campaign had already
+// written to, which stays.
+type CampaignAudienceChange struct {
+	Withdrawn int `json:"withdrawn"`
+	Contacted int `json:"contacted"`
+}
+
 // CampaignSegmentLink is one segment linked to a campaign, for the Leads tab;
 // the counts are live: members now, members that are leads, members held out.
 type CampaignSegmentLink struct {

@@ -1146,6 +1146,6 @@ Sequence action steps `add_to_segment` and `remove_from_segment` take a `segment
 { "campaign_id": "…" }
 ```
 
-Enrols every current member as a lead. Contacts already in the campaign are skipped, each new lead gets a `campaign_added` activity, and a running campaign is woken so the leads are scheduled. Returns `{ "campaign_id", "added", "members" }`. This is a snapshot: later members are not added until the call is repeated. Safe to retry. For a live link that keeps enrolling members as they join the segment, see [linked segments](/api/reference/campaigns/#list-linked-segments).
+Enrols every current member as a lead. Contacts already in the campaign are skipped, each new lead gets a `campaign_added` activity, and a running campaign is woken so the leads are scheduled. Returns `{ "campaign_id", "added", "members" }`. This is a snapshot: later members are not added until the call is repeated. Safe to retry. It counts as choosing those leads, so it clears any hand-made removal and claims every member it covers, including ones a linked segment enrolled: [detaching that segment](/api/reference/campaigns/#replace-linked-segments) afterwards leaves them in the campaign. For a live link that keeps enrolling members as they join the segment, see [linked segments](/api/reference/campaigns/#list-linked-segments).
 
 Auth: **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`

@@ -67,7 +67,15 @@ Linking enrols every current member as a lead immediately and turns on the campa
 
 The Leads tab shows every linked segment in a **Linked segments** strip: the segment's name, how many of its members are leads (`120/120`), a **no contacts** mark when it currently matches nobody, and a **held out** count when members were removed from the campaign by hand. Clicking a chip filters the list to that segment's leads; **Add back** re-enrols held-out members.
 
-Enrolment is additive. A contact who later falls out of the segment keeps their lead row and their progress; the link only ever adds. Detaching a segment stops future enrolment but leaves the leads it already added in place. Removing a lead from the campaign by hand is respected too: automatic enrolment will not re-add that contact, even while they still match a linked segment, until you add them back yourself.
+Enrolment is additive while the link is there. A contact who later falls out of the segment keeps their lead row and their progress; the link itself only ever adds. Removing a lead from the campaign by hand is respected too: automatic enrolment will not re-add that contact, even while they still match a linked segment, until you add them back yourself.
+
+Detaching a segment is the exception, because the set of links is the audience: it takes the segment's leads back out of the campaign, so swapping one segment for another leaves the campaign with the new list rather than both. Three kinds of lead stay behind:
+
+- anyone the campaign has already emailed, because the conversation has started; ending it mid-sequence is the explicit **Remove from campaign** on the Leads tab, not a side effect of editing the audience
+- anyone who is still a member of a segment that stayed linked, so switching between overlapping segments never drops the overlap
+- anyone added by hand: a contact you put in the campaign yourself, an **Add to campaign** from a segment, an import that named the campaign, or an automation
+
+The dialog asks before a save that costs leads, and says afterwards how many were added, how many were removed, and how many stayed because they had already been emailed. Nothing is recorded as a hand-made removal, so re-linking the segment brings its members straight back.
 
 The campaign reacts to growth by status:
 

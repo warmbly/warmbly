@@ -33,12 +33,14 @@ type SegmentRepository interface {
 	AddToCampaign(ctx context.Context, orgID uuid.UUID, actor string, segmentID, campaignID uuid.UUID) (*models.SegmentAddToCampaignResult, *errx.Error)
 	// ListForCampaign lists the segments linked to a campaign.
 	ListForCampaign(ctx context.Context, orgID, campaignID uuid.UUID) ([]models.CampaignSegmentLink, *errx.Error)
-	// SetForCampaign replaces the campaign's linked segments.
+	// SetForCampaign replaces the campaign's linked segments, withdrawing the
+	// audience a detached link brought without enrolling the new one.
 	SetForCampaign(ctx context.Context, orgID, campaignID uuid.UUID, segmentIDs []uuid.UUID) *errx.Error
-	// ReplaceForCampaign replaces the links and enrols the members in one
-	// transaction, so a failed enrolment leaves no half-applied link set.
-	// Returns how many leads were new and the campaign's status.
-	ReplaceForCampaign(ctx context.Context, orgID, campaignID uuid.UUID, segmentIDs []uuid.UUID) (int, string, *errx.Error)
+	// ReplaceForCampaign replaces the links, withdraws the audience a detached
+	// link brought and enrols the members in one transaction, so a failed
+	// enrolment leaves no half-applied link set. Returns how many leads were
+	// new, what the detachment took back, and the campaign's status.
+	ReplaceForCampaign(ctx context.Context, orgID, campaignID uuid.UUID, segmentIDs []uuid.UUID) (int, models.CampaignAudienceChange, string, *errx.Error)
 	// SyncCampaignSegments enrols every current member of the campaign's
 	// linked segments that is not yet a lead; returns how many were added.
 	SyncCampaignSegments(ctx context.Context, orgID, campaignID uuid.UUID) (int, *errx.Error)
@@ -317,7 +319,7 @@ func (r *segmentRepository) AddToCampaign(ctx context.Context, orgID uuid.UUID, 
 		return nil, errx.InternalError()
 	}
 
-	links, err := insertSegmentLeads(ctx, tx, orgID, actorID(actor), clause, args, campaignID, false)
+	links, err := insertSegmentLeads(ctx, tx, orgID, actorID(actor), clause, args, campaignID, leadSourceManual)
 	if err != nil {
 		db.CaptureError(err, "segment enrol", nil, "query")
 		return nil, errx.InternalError()
@@ -329,29 +331,61 @@ func (r *segmentRepository) AddToCampaign(ctx context.Context, orgID uuid.UUID, 
 	return &models.SegmentAddToCampaignResult{CampaignID: campaignID, Added: len(links), Members: members, Status: status}, nil
 }
 
+// leadSource is how a lead got into a campaign. One value decides two things
+// that must never disagree: whether a hand-made removal is respected, and
+// whether detaching the segment later withdraws the lead again.
+type leadSource string
+
+const (
+	// leadSourceSegment is a linked segment's automatic enrolment. It skips a
+	// pair somebody removed by hand, and detaching the link takes it back out.
+	leadSourceSegment leadSource = "segment"
+	// leadSourceManual is somebody choosing these leads: the one-shot "add to
+	// campaign", a contact edit, a bulk add. It clears a previous removal, and
+	// nothing withdraws it automatically.
+	leadSourceManual leadSource = "manual"
+)
+
+// claimLeadsManualSQL promotes leads a person chose to 'manual'. The insert
+// paths cannot do this in their own ON CONFLICT clause: DO UPDATE would put
+// rows that were already leads into RETURNING, and RETURNING is what writes
+// the "added to campaign" activity. $1 is the campaign ids, $2 the contacts.
+const claimLeadsManualSQL = `UPDATE campaign_leads SET source = 'manual'
+	WHERE campaign_id = ANY($1::uuid[]) AND contact_id = ANY($2::uuid[]) AND source <> 'manual'`
+
 // insertSegmentLeads enrols every contact matching the precompiled segment
 // clause as a lead, logging a campaign_added activity for each row that was
 // actually new. The campaign is bound after the clause's own parameters.
-//
-// respectRemovals decides what a manual "remove from campaign" means here:
-// the automatic sync honours the removal record and skips the pair, while an
-// explicit enrol (the one-shot add-to-campaign) clears it and re-adds.
-func insertSegmentLeads(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, actor *uuid.UUID, clause string, args []any, campaignID uuid.UUID, respectRemovals bool) ([]contactLink, error) {
+func insertSegmentLeads(ctx context.Context, tx pgx.Tx, orgID uuid.UUID, actor *uuid.UUID, clause string, args []any, campaignID uuid.UUID, src leadSource) ([]contactLink, error) {
 	args = append(args, campaignID)
+	cp := len(args)
+	// members is the clause as a contact-id subquery, reused by the three
+	// statements below so they cannot drift apart.
+	members := fmt.Sprintf(`SELECT c.id FROM contacts c WHERE c.organization_id = $1 AND (%s)`, clause)
 	guard := ""
-	if respectRemovals {
-		guard = fmt.Sprintf(` AND NOT EXISTS (SELECT 1 FROM campaign_lead_removals r WHERE r.campaign_id = $%d AND r.contact_id = c.id)`, len(args))
+	if src == leadSourceSegment {
+		guard = fmt.Sprintf(` AND NOT EXISTS (SELECT 1 FROM campaign_lead_removals r WHERE r.campaign_id = $%d AND r.contact_id = c.id)`, cp)
 	} else {
+		// An explicit enrol is a person choosing these leads: it ends a
+		// hand-made removal, and it claims anyone a linked segment had already
+		// enrolled, so detaching that segment later leaves them alone.
 		clearQ := fmt.Sprintf(`DELETE FROM campaign_lead_removals r
-			WHERE r.campaign_id = $%d AND r.contact_id IN (SELECT c.id FROM contacts c WHERE c.organization_id = $1 AND (%s))`, len(args), clause)
+			WHERE r.campaign_id = $%d AND r.contact_id IN (%s)`, cp, members)
 		if _, err := tx.Exec(ctx, clearQ, args...); err != nil {
 			return nil, err
 		}
+		claimQ := fmt.Sprintf(`UPDATE campaign_leads SET source = '%s'
+			WHERE campaign_id = $%d AND source <> '%s' AND contact_id IN (%s)`,
+			leadSourceManual, cp, leadSourceManual, members)
+		if _, err := tx.Exec(ctx, claimQ, args...); err != nil {
+			return nil, err
+		}
 	}
-	insertQ := fmt.Sprintf(`INSERT INTO campaign_leads (contact_id, campaign_id)
-		SELECT c.id, $%d::uuid FROM contacts c WHERE c.organization_id = $1 AND (%s)%s
+	args = append(args, string(src))
+	insertQ := fmt.Sprintf(`INSERT INTO campaign_leads (contact_id, campaign_id, source)
+		SELECT c.id, $%d::uuid, $%d FROM contacts c WHERE c.organization_id = $1 AND (%s)%s
 		ON CONFLICT DO NOTHING
-		RETURNING contact_id, campaign_id`, len(args), clause, guard)
+		RETURNING contact_id, campaign_id`, cp, len(args), clause, guard)
 	rows, err := tx.Query(ctx, insertQ, args...)
 	if err != nil {
 		return nil, err
@@ -465,7 +499,7 @@ func (r *segmentRepository) SetForCampaign(ctx context.Context, orgID, campaignI
 		return errx.InternalError()
 	}
 	defer tx.Rollback(ctx)
-	if _, xerr := setForCampaignTx(ctx, tx, orgID, campaignID, segmentIDs); xerr != nil {
+	if _, _, xerr := setForCampaignTx(ctx, tx, orgID, campaignID, segmentIDs); xerr != nil {
 		return xerr
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -475,32 +509,34 @@ func (r *segmentRepository) SetForCampaign(ctx context.Context, orgID, campaignI
 	return nil
 }
 
-func (r *segmentRepository) ReplaceForCampaign(ctx context.Context, orgID, campaignID uuid.UUID, segmentIDs []uuid.UUID) (int, string, *errx.Error) {
+func (r *segmentRepository) ReplaceForCampaign(ctx context.Context, orgID, campaignID uuid.UUID, segmentIDs []uuid.UUID) (int, models.CampaignAudienceChange, string, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
-		return 0, "", errx.InternalError()
+		return 0, models.CampaignAudienceChange{}, "", errx.InternalError()
 	}
 	defer tx.Rollback(ctx)
-	status, xerr := setForCampaignTx(ctx, tx, orgID, campaignID, segmentIDs)
+	status, change, xerr := setForCampaignTx(ctx, tx, orgID, campaignID, segmentIDs)
 	if xerr != nil {
-		return 0, "", xerr
+		return 0, models.CampaignAudienceChange{}, "", xerr
 	}
 	added, xerr := syncCampaignSegmentsTx(ctx, tx, orgID, campaignID)
 	if xerr != nil {
-		return 0, "", xerr
+		return 0, models.CampaignAudienceChange{}, "", xerr
 	}
 	if err := tx.Commit(ctx); err != nil {
 		db.CaptureError(err, "", nil, "commit")
-		return 0, "", errx.InternalError()
+		return 0, models.CampaignAudienceChange{}, "", errx.InternalError()
 	}
-	return added, status, nil
+	return added, change, status, nil
 }
 
 // setForCampaignTx replaces the links under a lock on the campaign row, so two
 // concurrent replacements cannot commit the union of their sets; the status
-// read under that lock is what the caller reacts to.
-func setForCampaignTx(ctx context.Context, tx pgx.Tx, orgID, campaignID uuid.UUID, segmentIDs []uuid.UUID) (string, *errx.Error) {
+// read under that lock is what the caller reacts to. Detaching a link also
+// withdraws the audience it brought (withdrawDetachedLeads).
+func setForCampaignTx(ctx context.Context, tx pgx.Tx, orgID, campaignID uuid.UUID, segmentIDs []uuid.UUID) (string, models.CampaignAudienceChange, *errx.Error) {
+	var change models.CampaignAudienceChange
 	// A nil slice would reach Postgres as ANY(NULL) and skip the delete.
 	if segmentIDs == nil {
 		segmentIDs = []uuid.UUID{}
@@ -508,38 +544,174 @@ func setForCampaignTx(ctx context.Context, tx pgx.Tx, orgID, campaignID uuid.UUI
 	var status string
 	if err := tx.QueryRow(ctx, `SELECT status FROM campaigns WHERE id = $1 AND organization_id = $2 FOR UPDATE`, campaignID, orgID).Scan(&status); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", errx.New(errx.NotFound, "campaign not found")
+			return "", change, errx.New(errx.NotFound, "campaign not found")
 		}
 		db.CaptureError(err, "campaign lock", nil, "queryrow")
-		return "", errx.InternalError()
+		return "", change, errx.InternalError()
 	}
 	if len(segmentIDs) > 0 {
 		var n int
 		if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM segments WHERE organization_id = $1 AND id = ANY($2::uuid[])`, orgID, segmentIDs).Scan(&n); err != nil {
 			db.CaptureError(err, "segments verify", nil, "queryrow")
-			return "", errx.InternalError()
+			return "", change, errx.InternalError()
 		}
 		if n != len(segmentIDs) {
-			return "", errx.New(errx.BadRequest, "a linked segment does not exist")
+			return "", change, errx.New(errx.BadRequest, "a linked segment does not exist")
 		}
+	}
+	// Which links are going, read before the delete removes the evidence.
+	detached, xerr := detachedSegmentIDs(ctx, tx, campaignID, segmentIDs)
+	if xerr != nil {
+		return "", change, xerr
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM campaign_segments WHERE campaign_id = $1 AND NOT (segment_id = ANY($2::uuid[]))`, campaignID, segmentIDs); err != nil {
 		db.CaptureError(err, "campaign segments delete", nil, "exec")
-		return "", errx.InternalError()
+		return "", change, errx.InternalError()
+	}
+	change, xerr = withdrawDetachedLeads(ctx, tx, orgID, campaignID, detached, segmentIDs)
+	if xerr != nil {
+		return "", change, xerr
 	}
 	if len(segmentIDs) > 0 {
 		if _, err := tx.Exec(ctx, `INSERT INTO campaign_segments (campaign_id, segment_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`, campaignID, segmentIDs); err != nil {
 			db.CaptureError(err, "campaign segments insert", nil, "exec")
-			return "", errx.InternalError()
+			return "", change, errx.InternalError()
 		}
 		// A live audience is the reason to keep running: linking turns the
 		// setting on, and the owner can turn it off again in preferences.
 		if _, err := tx.Exec(ctx, `UPDATE campaigns SET continuous = true, updated_at = NOW() WHERE id = $1 AND NOT continuous`, campaignID); err != nil {
 			db.CaptureError(err, "campaign continuous", nil, "exec")
-			return "", errx.InternalError()
+			return "", change, errx.InternalError()
 		}
 	}
-	return status, nil
+	return status, change, nil
+}
+
+// detachedSegmentIDs returns the campaign's linked segments that are NOT in
+// keep, which is the set the caller is detaching.
+func detachedSegmentIDs(ctx context.Context, tx pgx.Tx, campaignID uuid.UUID, keep []uuid.UUID) ([]uuid.UUID, *errx.Error) {
+	rows, err := tx.Query(ctx,
+		`SELECT segment_id FROM campaign_segments WHERE campaign_id = $1 AND NOT (segment_id = ANY($2::uuid[]))`,
+		campaignID, keep)
+	if err != nil {
+		db.CaptureError(err, "detached segments", nil, "query")
+		return nil, errx.InternalError()
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			db.CaptureError(err, "", nil, "scan")
+			return nil, errx.InternalError()
+		}
+		out = append(out, id)
+	}
+	// A short read here would leave a detached segment's leads behind and
+	// still report success, which is the bug this whole path exists to fix.
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, "detached segments", nil, "rows")
+		return nil, errx.InternalError()
+	}
+	return out, nil
+}
+
+// withdrawDetachedLeads takes back the leads a detached link brought. Three
+// kinds of lead are deliberately left alone:
+//
+//   - one a person added by hand (source), because nothing about editing the
+//     audience says they changed their mind about a name they typed in;
+//   - one still matching a link that stayed, so switching between overlapping
+//     segments never drops the overlap;
+//   - one the campaign has already written to, because the conversation has
+//     started and ending it mid-sequence is the explicit "remove from
+//     campaign", not a side effect of editing the audience.
+//
+// A contact who merely LEFT a still-linked segment is not touched either: the
+// scope is the detached segments' current members, so enrolment stays additive
+// in every case except the one the user just asked for (issue #510).
+func withdrawDetachedLeads(ctx context.Context, tx pgx.Tx, orgID, campaignID uuid.UUID, detached, kept []uuid.UUID) (models.CampaignAudienceChange, *errx.Error) {
+	var change models.CampaignAudienceChange
+	if len(detached) == 0 {
+		return change, nil
+	}
+	graph, err := loadSegmentGraph(ctx, tx, orgID, append(append([]uuid.UUID{}, detached...), kept...))
+	if err != nil {
+		db.CaptureError(err, "segment compile", nil, "query")
+		return change, errx.InternalError()
+	}
+	b := &segmentBuilder{orgID: orgID, args: []any{orgID}, graph: graph}
+	// A segment deleted between the two reads compiles to nothing at all: it
+	// has no members now, so it withdraws nobody, and its link row cascaded
+	// away with it.
+	clauses := func(ids []uuid.UUID) []string {
+		var out []string
+		for _, id := range ids {
+			if def, ok := graph[id]; ok {
+				out = append(out, b.segmentClause(def, true, map[uuid.UUID]bool{}))
+			}
+		}
+		return out
+	}
+	detachedClauses := clauses(detached)
+	if len(detachedClauses) == 0 {
+		return change, nil
+	}
+	keptClauses := clauses(kept)
+	keptExpr := "FALSE"
+	if len(keptClauses) > 0 {
+		keptExpr = "(" + strings.Join(keptClauses, ") OR (") + ")"
+	}
+
+	args := append(b.args, campaignID)
+	cp := fmt.Sprintf("$%d", len(args))
+	// The leads this detachment covers: enrolled by a link, still a member of
+	// something that just went, and a member of nothing that stayed.
+	scope := `cl.campaign_id = ` + cp + `
+		  AND c.organization_id = $1
+		  AND cl.source = '` + string(leadSourceSegment) + `'
+		  AND ((` + strings.Join(detachedClauses, ") OR (") + `))
+		  AND NOT (` + keptExpr + `)`
+	// Written to means dispatched OR stamped sent: a send is reserved and
+	// dispatched before it is stamped, so reading only sent_at would withdraw
+	// a lead whose first email is on the bus.
+	written := `EXISTS (
+			SELECT 1 FROM campaign_contact_progress p
+			WHERE p.campaign_id = cl.campaign_id AND p.contact_id = cl.contact_id
+			  AND (p.dispatched_at IS NOT NULL OR p.sent_at IS NOT NULL))`
+
+	countQ := `SELECT COUNT(*)
+		FROM campaign_leads cl
+		JOIN contacts c ON c.id = cl.contact_id
+		WHERE ` + scope + ` AND ` + written
+	if err := tx.QueryRow(ctx, countQ, args...).Scan(&change.Contacted); err != nil {
+		db.CaptureError(err, countQ, args, "queryrow")
+		return change, errx.InternalError()
+	}
+
+	delQ := `DELETE FROM campaign_leads cl
+		USING contacts c
+		WHERE c.id = cl.contact_id
+		  AND ` + scope + ` AND NOT ` + written + `
+		RETURNING cl.contact_id, cl.campaign_id`
+	rows, err := tx.Query(ctx, delQ, args...)
+	if err != nil {
+		db.CaptureError(err, delQ, args, "exec")
+		return change, errx.InternalError()
+	}
+	gone, err := collectLinkPairs(rows)
+	if err != nil {
+		db.CaptureError(err, delQ, args, "returning")
+		return change, errx.InternalError()
+	}
+	// Zero actor: the platform acted on an audience edit, not a person picking
+	// these contacts out one by one.
+	if err := logCampaignLinks(ctx, tx, orgID, nil, models.ActivityCampaignRemoved, gone); err != nil {
+		db.CaptureError(err, "", nil, "campaign_removed activity")
+		return change, errx.InternalError()
+	}
+	change.Withdrawn = len(gone)
+	return change, nil
 }
 
 func (r *segmentRepository) SyncCampaignSegments(ctx context.Context, orgID, campaignID uuid.UUID) (int, *errx.Error) {
@@ -599,7 +771,7 @@ func syncCampaignSegmentsTx(ctx context.Context, tx pgx.Tx, orgID, campaignID uu
 		if clause == "FALSE" {
 			continue
 		}
-		links, lerr := insertSegmentLeads(ctx, tx, orgID, nil, clause, args, campaignID, true)
+		links, lerr := insertSegmentLeads(ctx, tx, orgID, nil, clause, args, campaignID, leadSourceSegment)
 		if lerr != nil {
 			db.CaptureError(lerr, "segment enrol", nil, "query")
 			return 0, errx.InternalError()

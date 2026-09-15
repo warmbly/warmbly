@@ -41,10 +41,11 @@ type Service interface {
 	Overrides(ctx context.Context, orgID, id uuid.UUID) ([]models.SegmentOverride, *errx.Error)
 	// ListCampaignSegments lists the segments linked to a campaign.
 	ListCampaignSegments(ctx context.Context, orgID, campaignID uuid.UUID) ([]models.CampaignSegmentLink, *errx.Error)
-	// SetCampaignSegments replaces a campaign's linked segments and enrols
-	// their current members immediately. Returns the links and how many
-	// leads were new.
-	SetCampaignSegments(ctx context.Context, orgID, campaignID uuid.UUID, in *models.CampaignSegmentsWrite) ([]models.CampaignSegmentLink, int, *errx.Error)
+	// SetCampaignSegments replaces a campaign's linked segments, enrols their
+	// current members immediately and withdraws the audience a detached link
+	// brought. Returns the links, how many leads were new, and what the
+	// detachment took back.
+	SetCampaignSegments(ctx context.Context, orgID, campaignID uuid.UUID, in *models.CampaignSegmentsWrite) ([]models.CampaignSegmentLink, int, models.CampaignAudienceChange, *errx.Error)
 	// SyncOrgLinkedCampaigns re-enrols every linked campaign of the org after
 	// contacts changed. Best effort: the sweep is the backstop.
 	SyncOrgLinkedCampaigns(ctx context.Context, orgID uuid.UUID)
@@ -331,13 +332,14 @@ func (s *service) ListCampaignSegments(ctx context.Context, orgID, campaignID uu
 	return s.repo.ListForCampaign(ctx, orgID, campaignID)
 }
 
-func (s *service) SetCampaignSegments(ctx context.Context, orgID, campaignID uuid.UUID, in *models.CampaignSegmentsWrite) ([]models.CampaignSegmentLink, int, *errx.Error) {
+func (s *service) SetCampaignSegments(ctx context.Context, orgID, campaignID uuid.UUID, in *models.CampaignSegmentsWrite) ([]models.CampaignSegmentLink, int, models.CampaignAudienceChange, *errx.Error) {
+	var none models.CampaignAudienceChange
 	seen := map[uuid.UUID]bool{}
 	ids := make([]uuid.UUID, 0, len(in.SegmentIDs))
 	for _, raw := range in.SegmentIDs {
 		id, err := uuid.Parse(raw)
 		if err != nil {
-			return nil, 0, errx.New(errx.BadRequest, "invalid segment id")
+			return nil, 0, none, errx.New(errx.BadRequest, "invalid segment id")
 		}
 		if seen[id] {
 			continue
@@ -346,20 +348,20 @@ func (s *service) SetCampaignSegments(ctx context.Context, orgID, campaignID uui
 		ids = append(ids, id)
 	}
 	if len(ids) > models.CampaignSegmentsMax {
-		return nil, 0, errx.New(errx.BadRequest, fmt.Sprintf("a campaign can link at most %d segments", models.CampaignSegmentsMax))
+		return nil, 0, none, errx.New(errx.BadRequest, fmt.Sprintf("a campaign can link at most %d segments", models.CampaignSegmentsMax))
 	}
-	// Links and enrolment commit together: the user is waiting on this one,
-	// and a failed enrolment must not answer 200 with "added 0".
-	added, status, xerr := s.repo.ReplaceForCampaign(ctx, orgID, campaignID, ids)
+	// Links, withdrawal and enrolment commit together: the user is waiting on
+	// this one, and a failed enrolment must not answer 200 with "added 0".
+	added, change, status, xerr := s.repo.ReplaceForCampaign(ctx, orgID, campaignID, ids)
 	if xerr != nil {
-		return nil, 0, xerr
+		return nil, 0, none, xerr
 	}
 	s.reactToEnrolment(ctx, models.LinkedCampaign{CampaignID: campaignID, OrganizationID: orgID, Status: status}, added)
 	out, xerr := s.repo.ListForCampaign(ctx, orgID, campaignID)
 	if xerr != nil {
-		return nil, 0, xerr
+		return nil, 0, none, xerr
 	}
-	return out, added, nil
+	return out, added, change, nil
 }
 
 // syncLinkedCampaign enrols missing leads for one linked campaign, waking an

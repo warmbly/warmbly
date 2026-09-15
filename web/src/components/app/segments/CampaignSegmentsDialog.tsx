@@ -1,6 +1,10 @@
 // From a campaign's Leads tab: link segments as a live audience source.
 // Members of linked segments are enrolled as leads automatically, now and as
 // the segments grow. Replaces the one-shot "From segment" copy.
+//
+// The set is the audience: detaching a segment takes its leads back out again,
+// apart from anyone the campaign has already emailed or a person added by hand
+// (issue #510). Saving a detachment that costs leads asks first.
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -15,6 +19,9 @@ import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { cn } from "@/lib/utils";
+
+// leads renders a count with its noun, so every sentence below reads the same.
+const leads = (n: number) => `${n.toLocaleString()} lead${n === 1 ? "" : "s"}`;
 
 export default function CampaignSegmentsDialog({
     open,
@@ -61,6 +68,13 @@ export default function CampaignSegmentsDialog({
         return false;
     }, [seeded, linked.data, picked]);
 
+    // The links the save would drop, so a detachment that costs leads can say
+    // so before it happens.
+    const detaching = React.useMemo(() => {
+        if (!seeded || !linked.data) return [];
+        return linked.data.filter((l) => !picked.has(l.segment_id) && l.lead_count > 0);
+    }, [seeded, linked.data, picked]);
+
     const busy = save.isPending;
     const requestClose = React.useCallback(() => {
         if (busy) return;
@@ -97,10 +111,22 @@ export default function CampaignSegmentsDialog({
             const res = await save.mutateAsync({ campaignId: campaign.id, segmentIds: [...picked] });
             const linked = `Linked ${picked.size} segment${picked.size === 1 ? "" : "s"}`;
             const { members, held } = linkTotals(res.data);
+            const moved = [
+                res.added > 0 ? `added ${leads(res.added)}` : "",
+                res.withdrawn > 0 ? `removed ${leads(res.withdrawn)}` : "",
+            ]
+                .filter(Boolean)
+                .join(" and ");
+            // Leads a detached segment left behind are the surprising part, so
+            // they are named rather than left as a count that does not add up.
+            const stayed =
+                res.contacted > 0
+                    ? ` ${leads(res.contacted)} stayed: the campaign has already emailed them.`
+                    : "";
             if (picked.size === 0) {
-                toast.success("Segments detached");
-            } else if (res.added > 0) {
-                toast.success(`${linked} and added ${res.added.toLocaleString()} lead${res.added === 1 ? "" : "s"}`);
+                toast.success((res.withdrawn > 0 ? `Segments detached and ${leads(res.withdrawn)} removed` : "Segments detached") + stayed);
+            } else if (moved) {
+                toast.success(`${linked} and ${moved}.${stayed}`);
             } else if (members === 0 || held > 0) {
                 // Say why the list is still empty; "already a lead" here would be a lie.
                 toast(`${linked}. ${linksEmptyReason(res.data)}`);
@@ -111,6 +137,22 @@ export default function CampaignSegmentsDialog({
         } catch (err) {
             toast.error(buildError(err as AppError));
         }
+    }
+
+    // Saving a detachment that costs leads confirms first: nothing else in the
+    // dialog removes anybody, so the Save button alone would not read as one.
+    function requestSubmit() {
+        if (busy || !seeded || !dirty) return;
+        if (detaching.length === 0) {
+            void submit();
+            return;
+        }
+        const total = detaching.reduce((n, l) => n + l.lead_count, 0);
+        const which = detaching.length === 1 ? detaching[0].name : `${detaching.length} segments`;
+        confirm.show(
+            `Detaching ${which} removes up to ${total.toLocaleString()} lead${total === 1 ? "" : "s"} from this campaign. Leads it has already emailed, and any you added by hand, stay.`,
+            submit,
+        );
     }
 
     const loading = segments.isPending || (linked.isPending && !seeded);
@@ -167,7 +209,8 @@ export default function CampaignSegmentsDialog({
                         <div className="px-4 py-2.5 border-b border-slate-100 shrink-0 bg-slate-50/40">
                             <p className="text-[11.5px] text-slate-500 leading-snug">
                                 Contacts in a linked segment become leads automatically, now and whenever the segment grows.
-                                Removing a link stops new enrolment; existing leads stay.
+                                Detaching one takes its leads back out, apart from those the campaign has already emailed
+                                and any you added by hand.
                             </p>
                         </div>
                         <div className="px-4 py-3 border-b border-slate-100 shrink-0">
@@ -246,7 +289,7 @@ export default function CampaignSegmentsDialog({
                             </button>
                             <button
                                 type="button"
-                                onClick={submit}
+                                onClick={requestSubmit}
                                 disabled={busy || !seeded || !dirty}
                                 className="shrink-0 whitespace-nowrap h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
                             >

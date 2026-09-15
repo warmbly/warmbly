@@ -983,7 +983,9 @@ A `data` array of link objects (no pagination wrapper). The counts are evaluated
 
 `PUT /campaigns/:id/segments`
 
-Atomically replace the campaign's linked segments with the supplied set (up to 20). Every current member of a newly linked segment is enrolled as a lead immediately, and contacts who enter a linked segment later are enrolled automatically, within about 2 minutes. Enrolment is additive: a contact who leaves a segment keeps their lead row, and removing a segment from the set stops future enrolment without touching existing leads. A lead removed from the campaign by hand is never re-added automatically; a manual add (or the one-shot enrol below) clears that removal record. Omitting `segment_ids` returns `400`; send an explicit empty array to detach every segment. An active campaign is woken to send to the new leads; a completed campaign is restarted through the full launch checks when a linked segment grows. A linked segment cannot be deleted (`DELETE /segments/:id` returns `409`) until it is removed here. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
+Atomically replace the campaign's linked segments with the supplied set (up to 20). Every current member of a newly linked segment is enrolled as a lead immediately, and contacts who enter a linked segment later are enrolled automatically, within about 2 minutes.
+
+Removing a segment from the set withdraws the leads it enrolled, so replacing one segment with another leaves the campaign holding the new audience rather than both. A lead is only withdrawn when all three hold: a linked segment enrolled it (a lead added through any other path counts as chosen by hand and is never withdrawn), it is still a current member of a segment being removed and of none that stayed, and the campaign has not written to it yet (no step dispatched or sent). Nothing is recorded as a hand-made removal, so re-linking the segment enrols those members again. A contact who merely leaves a still-linked segment keeps their lead row; within a link, enrolment stays additive. A lead removed from the campaign by hand is never re-added automatically; a manual add (or the one-shot enrol below) clears that removal record. Omitting `segment_ids` returns `400`; send an explicit empty array to detach every segment. An active campaign is woken to send to the new leads; a completed campaign is restarted through the full launch checks when a linked segment grows. A linked segment cannot be deleted (`DELETE /segments/:id` returns `409`) until it is removed here. **Scope** `WRITE_CAMPAIGNS` · **Org permission** `manage_campaigns`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -1003,7 +1005,7 @@ Atomically replace the campaign's linked segments with the supplied set (up to 2
 
 ### Response
 
-The resulting links plus how many leads the call enrolled. `added` is `0` when every member was already a lead, when the segments match no contacts yet, or when the only members are held out; the per-link counts tell these apart. The links and the enrolment are written in one transaction, so a failed enrolment returns an error and changes nothing rather than `200` with `added: 0`.
+The resulting links plus what the call did to the campaign's leads. `added` is how many leads it enrolled, and is `0` when every member was already a lead, when the segments match no contacts yet, or when the only members are held out; the per-link counts tell these apart. `withdrawn` is how many leads a removed segment took back out, and `contacted` how many of that audience stayed because the campaign had already emailed them. The links, the withdrawal and the enrolment are written in one transaction, so a failure returns an error and changes nothing rather than `200` with `added: 0`.
 
 ```json
 {
@@ -1019,7 +1021,9 @@ The resulting links plus how many leads the call enrolled. `added` is `0` when e
       "linked_at": "2026-06-10T12:00:00Z"
     }
   ],
-  "added": 397
+  "added": 397,
+  "withdrawn": 58,
+  "contacted": 4
 }
 ```
 
