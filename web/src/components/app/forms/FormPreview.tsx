@@ -165,11 +165,12 @@ function PageBreakRow({ pageNum, label }: { pageNum: number; label: string }) {
     );
 }
 
-function CaptchaBadge() {
+function CaptchaBadge({ caret }: { caret?: boolean }) {
     return (
         <div
             className="fld"
             style={{
+                position: "relative",
                 border: "1px dashed var(--wf-input-border)",
                 borderRadius: "var(--wf-input-radius)",
                 padding: "10px 12px",
@@ -177,6 +178,7 @@ function CaptchaBadge() {
                 color: "var(--wf-placeholder)",
             }}
         >
+            {caret && <DropCaret side="top" />}
             Spam protection challenge appears here
         </div>
     );
@@ -438,6 +440,7 @@ export default function FormPreview({
     // rule above the row.
     const opensRow = rowStarts(fields);
     const caretFor = (i: number): CaretSide => (dropIndex === i ? (opensRow[i] ? "top" : "left") : null);
+    const endCaret = fields.length > 0 && dropIndex === fields.length;
 
     const buildList = (
         <SortableContext items={fields.map((f) => f.id)} strategy={noReflow}>
@@ -465,8 +468,10 @@ export default function FormPreview({
                         onDuplicate={onDuplicate}
                     />
                 ))}
-                {showCaptchaBadge && <CaptchaBadge />}
-                <DropEndZone caret={fields.length > 0 && dropIndex === fields.length}>{submitBtn}</DropEndZone>
+                {showCaptchaBadge && <CaptchaBadge caret={endCaret} />}
+                {/* The last slot is above the captcha badge when there is one,
+                    so the caret hangs off whichever comes first. */}
+                <DropEndZone caret={endCaret && !showCaptchaBadge}>{submitBtn}</DropEndZone>
             </div>
         </SortableContext>
     );
