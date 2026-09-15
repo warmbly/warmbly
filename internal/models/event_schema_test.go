@@ -119,7 +119,11 @@ func firstDifference(got, want reflect.Value, path string) string {
 			return fmt.Sprintf("%s: %d keys != %d", path, got.Len(), want.Len())
 		}
 		for _, k := range want.MapKeys() {
-			if d := firstDifference(got.MapIndex(k), want.MapIndex(k), fmt.Sprintf("%s[%v]", path, k)); d != "" {
+			at := got.MapIndex(k)
+			if !at.IsValid() {
+				return fmt.Sprintf("%s[%v]: missing", path, k)
+			}
+			if d := firstDifference(at, want.MapIndex(k), fmt.Sprintf("%s[%v]", path, k)); d != "" {
 				return d
 			}
 		}

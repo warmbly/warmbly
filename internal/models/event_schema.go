@@ -35,6 +35,16 @@ var (
 	jobEventSchema    avro.Schema
 )
 
+// Building the schemas registers every union body's Go type, and that
+// registration is what lets a decoder turn a branch back into the type a
+// handler asserts on. Doing it here rather than on first use is the difference
+// between a working consumer and a silently broken one: a process that only
+// ever reads, which is what a worker is until it first publishes, would
+// otherwise decode every body into a map[string]any keyed by the branch name,
+// hand it to the JSON fallback, and produce a struct with every field zero. No
+// error anywhere. That shipped once and took out all 39 mailboxes.
+func init() { buildEventSchemas() }
+
 // Schema lets the Avro serializer encode a worker command without reflecting
 // over its interface-typed body.
 func (WorkerEvent) Schema() avro.Schema { buildEventSchemas(); return workerEventSchema }

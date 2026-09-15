@@ -21,7 +21,10 @@ import (
 // mailboxes, and never logged a decode error. Silence, not a failure.
 //
 // So the decoder here is a child process that has never encoded anything.
-const decodeHelperEnv = "WARMBLY_DECODE_HELPER"
+const (
+	decodeHelperEnv = "WARMBLY_DECODE_HELPER"
+	decodeSchemaEnv = "WARMBLY_DECODE_SCHEMA"
+)
 
 func TestDecodeInAProcessThatHasNeverEncoded(t *testing.T) {
 	if payload := os.Getenv(decodeHelperEnv); payload != "" {
@@ -37,7 +40,13 @@ func TestDecodeInAProcessThatHasNeverEncoded(t *testing.T) {
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run", "TestDecodeInAProcessThatHasNeverEncoded", "-test.v")
-	cmd.Env = append(os.Environ(), decodeHelperEnv+"="+base64.StdEncoding.EncodeToString(raw))
+	cmd.Env = append(os.Environ(),
+		decodeHelperEnv+"="+base64.StdEncoding.EncodeToString(raw),
+		// The schema travels as JSON, the way a registry hands one back. The
+		// child must not build its own, because building one registers the
+		// union's Go types and that is the side effect under test.
+		decodeSchemaEnv+"="+schema.String(),
+	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("decoder process failed: %v\n%s", err, out)
@@ -47,17 +56,19 @@ func TestDecodeInAProcessThatHasNeverEncoded(t *testing.T) {
 	}
 }
 
-// runDecodeHelper is the child. It must not build a schema before decoding,
-// because that is the side effect being tested for.
+// runDecodeHelper is the child, and the whole point of it is what it does not
+// do: it never calls Schema(). The codec's decode path does not either, because
+// it parses the writer's schema out of the registry, so a process that has only
+// ever consumed has nothing that would have run avro.Register.
 func runDecodeHelper(t *testing.T, encoded string) {
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		t.Fatalf("helper: payload: %v", err)
 	}
-	// The schema arrives from the registry in production; here it is rebuilt,
-	// which is the one thing the child is allowed to do first because a
-	// decoder must always obtain the writer's schema somehow.
-	schema := WorkerEvent{}.Schema()
+	schema, err := avro.Parse(os.Getenv(decodeSchemaEnv))
+	if err != nil {
+		t.Fatalf("helper: schema: %v", err)
+	}
 
 	var out WorkerEvent
 	if err := avro.Unmarshal(schema, raw, &out); err != nil {
