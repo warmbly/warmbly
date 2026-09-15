@@ -268,8 +268,10 @@ impl ScannerNetworks {
         }
     }
 
-    /// The label of the scanner source this request came from, if the source
-    /// is known and its scope covers this kind of request.
+    /// The scanner source this request came from, if the source is known and
+    /// its scope covers this kind of request: what to label the event, and
+    /// whether that label settles the verdict or only widens the window the
+    /// consumer measures it against.
     ///
     /// `trusted_peer` is whether the socket peer is one of the configured
     /// proxies. The ASN header is read only then, for the same reason the
