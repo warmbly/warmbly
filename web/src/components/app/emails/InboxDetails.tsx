@@ -35,6 +35,7 @@ import {
     BanIcon,
     HourglassIcon,
     XCircleIcon,
+    HelpCircleIcon,
     RefreshCwIcon,
     TrashIcon,
     type LucideIcon,
@@ -920,19 +921,28 @@ function WarmupBanBanner({ emailId }: { emailId: string }) {
 
 /* ── Domain authentication (SPF / DKIM / DMARC live check) ─────────────────────── */
 
-// One row per auth record. Green check when present/aligned, red cross when
-// missing. Optional detail (selectors, the SPF record, the DMARC policy) is
-// shown muted underneath.
-function AuthRecordRow({ label, ok, detail }: { label: string; ok: boolean; detail?: React.ReactNode }) {
+// One row per auth record, in one of three states. "unverified" is not a
+// softer "missing": DKIM keys sit at a selector DNS cannot enumerate, so a
+// probe that finds nothing says nothing about whether the domain signs, and
+// showing that as a red Missing tells an owner whose DKIM is fine to go fix it.
+type AuthRecordState = "found" | "missing" | "unverified";
+
+function AuthRecordRow({ label, state, detail }: { label: string; state: AuthRecordState; detail?: React.ReactNode }) {
+    const badge = {
+        found: { className: "text-emerald-600", icon: <CheckCircle2Icon className="w-3.5 h-3.5" />, text: "Found" },
+        missing: { className: "text-rose-600", icon: <XCircleIcon className="w-3.5 h-3.5" />, text: "Missing" },
+        unverified: { className: "text-slate-400", icon: <HelpCircleIcon className="w-3.5 h-3.5" />, text: "Not verified" },
+    }[state];
+
     return (
         <div className="flex items-start justify-between gap-3 py-2 border-b border-slate-200/60 last:border-b-0">
             <div className="min-w-0">
                 <div className="text-[12.5px] font-medium text-slate-900">{label}</div>
-                {detail && <div className="mt-0.5 text-[10.5px] text-slate-500 font-mono break-all leading-relaxed">{detail}</div>}
+                {detail && <div className="mt-0.5 text-[10.5px] text-slate-500 leading-relaxed">{detail}</div>}
             </div>
-            <span className={cn("inline-flex items-center gap-1 shrink-0 text-[11px] font-medium", ok ? "text-emerald-600" : "text-rose-600")}>
-                {ok ? <CheckCircle2Icon className="w-3.5 h-3.5" /> : <XCircleIcon className="w-3.5 h-3.5" />}
-                {ok ? "Found" : "Missing"}
+            <span className={cn("inline-flex items-center gap-1 shrink-0 text-[11px] font-medium", badge.className)}>
+                {badge.icon}
+                {badge.text}
             </span>
         </div>
     );
@@ -967,6 +977,18 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
     const refresh = useRefreshAuthCheck(emailId);
     const data = refresh.data ?? check.data;
     const busy = check.isFetching || refresh.isPending;
+
+    // The verdict follows what the check can actually prove. SPF and DMARC are
+    // discoverable, so a miss there is a real miss; DKIM is not, so a domain
+    // with both of those in place is aligned as far as anyone can tell, and
+    // saying "needs attention" over an unverifiable DKIM is a false alarm.
+    const verdict = !data
+        ? null
+        : data.all_aligned
+          ? { ok: true, tone: "text-emerald-700", title: "Authentication aligned" }
+          : data.spf_found && data.dmarc_found
+            ? { ok: true, tone: "text-emerald-700", title: "SPF and DMARC aligned, DKIM unverified" }
+            : { ok: false, tone: "text-amber-700", title: "Authentication needs attention" };
 
     return (
         <div className="px-5 py-4">
@@ -1004,31 +1026,41 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
                         <div className="rounded-md border border-slate-200 bg-slate-50/70 px-3 py-3 flex items-center gap-2 text-[12px] text-slate-500">
                             <Loading className="!w-3.5 h-3.5" /> Looking up DNS records…
                         </div>
-                    ) : data ? (
+                    ) : data && verdict ? (
                         <div className="rounded-md border border-slate-200 bg-white">
-                            <div className={cn("flex items-start gap-2 px-3 py-2.5 border-b border-slate-200/60", data.all_aligned ? "text-emerald-700" : "text-amber-700")}>
-                                {data.all_aligned ? <ShieldCheckIcon className="w-4 h-4 shrink-0 mt-0.5" /> : <ShieldAlertIcon className="w-4 h-4 shrink-0 mt-0.5" />}
+                            <div className={cn("flex items-start gap-2 px-3 py-2.5 border-b border-slate-200/60", verdict.tone)}>
+                                {verdict.ok ? <ShieldCheckIcon className="w-4 h-4 shrink-0 mt-0.5" /> : <ShieldAlertIcon className="w-4 h-4 shrink-0 mt-0.5" />}
                                 <div className="min-w-0">
-                                    <div className="text-[12px] font-medium">{data.all_aligned ? "Authentication aligned" : "Authentication needs attention"}</div>
+                                    <div className="text-[12px] font-medium">{verdict.title}</div>
                                     {data.summary && <div className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">{data.summary}</div>}
                                 </div>
                             </div>
                             <div className="px-3">
-                                <AuthRecordRow label="SPF" ok={data.spf_found} detail={data.spf_record} />
+                                <AuthRecordRow
+                                    label="SPF"
+                                    state={data.spf_found ? "found" : "missing"}
+                                    detail={data.spf_record ? <span className="font-mono break-all">{data.spf_record}</span> : undefined}
+                                />
                                 <AuthRecordRow
                                     label="DKIM"
-                                    ok={data.dkim_found}
-                                    detail={data.dkim_selectors && data.dkim_selectors.length > 0 ? `selectors: ${data.dkim_selectors.join(", ")}` : undefined}
+                                    state={data.dkim_found ? "found" : "unverified"}
+                                    detail={
+                                        data.dkim_found ? (
+                                            <span className="font-mono break-all">selectors: {(data.dkim_selectors ?? []).join(", ")}</span>
+                                        ) : (
+                                            "A DKIM key sits at a selector only your provider knows, and DNS cannot be asked to list them, so this is unconfirmed rather than absent. Confirm signing is on in your provider's console. It never affects whether this mailbox may send."
+                                        )
+                                    }
                                 />
                                 <AuthRecordRow
                                     label="DMARC"
-                                    ok={data.dmarc_found}
+                                    state={data.dmarc_found ? "found" : "missing"}
                                     detail={
-                                        data.dmarc_found && data.dmarc_policy
-                                            ? data.dmarc_inherited
-                                                ? `policy: ${data.dmarc_policy} (inherited from ${data.dmarc_domain})`
-                                                : `policy: ${data.dmarc_policy}`
-                                            : undefined
+                                        data.dmarc_found && data.dmarc_policy ? (
+                                            <span className="font-mono break-all">
+                                                {data.dmarc_inherited ? `policy: ${data.dmarc_policy} (inherited from ${data.dmarc_domain})` : `policy: ${data.dmarc_policy}`}
+                                            </span>
+                                        ) : undefined
                                     }
                                 />
                             </div>

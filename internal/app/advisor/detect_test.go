@@ -154,6 +154,50 @@ func TestUnknownAuthStateIsNotReportedAsFailing(t *testing.T) {
 	}
 }
 
+func TestUnverifiedDKIMAloneIsNotAFinding(t *testing.T) {
+	// A DKIM selector is not discoverable from DNS, so auth_dkim=false means
+	// "no key answered at the selectors we probed", not "this domain has none".
+	// A domain with SPF and DMARC in place is passing, and telling its owner
+	// they are missing DKIM is a false alarm they cannot act on.
+	m := healthyMailbox()
+	m.AuthState = "passing"
+	m.AuthSPF, m.AuthDMARC = true, true
+	m.AuthDKIM = false
+
+	if f, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["mailbox_domain_auth"]; fired {
+		t.Fatalf("auth detector fired on unverified DKIM alone: %q", f.Title)
+	}
+}
+
+func TestUnverifiedDKIMIsNotNamedAsMissing(t *testing.T) {
+	// It still gets a step and the host to publish at, because the owner is
+	// already in their DNS panel for the record that IS missing. It just must
+	// not be counted among the missing records.
+	m := healthyMailbox()
+	m.AuthState = "failing"
+	m.AuthSPF, m.AuthDMARC, m.AuthDKIM = true, false, false
+
+	f, fired := findingsByKey(Detect(snapshotOf(m), defaults()))["mailbox_domain_auth"]
+	if !fired {
+		t.Fatal("auth detector did not fire on a domain with no DMARC record")
+	}
+	if strings.Contains(f.Title, "DKIM") {
+		t.Errorf("Title = %q, must not name DKIM as missing", f.Title)
+	}
+	if !strings.Contains(f.Detail, "DMARC") || strings.Contains(f.Detail, "DKIM record") {
+		t.Errorf("Detail = %q", f.Detail)
+	}
+	var hasDKIMHost bool
+	for _, s := range f.Snippets {
+		if s.Label == "DKIM host" {
+			hasDKIMHost = true
+		}
+	}
+	if !hasDKIMHost {
+		t.Error("an unverified DKIM should still offer the host to publish at")
+	}
+}
+
 func TestNewMailboxAtFullVolumeIsFlagged(t *testing.T) {
 	m := healthyMailbox()
 	m.AgeDays = 3

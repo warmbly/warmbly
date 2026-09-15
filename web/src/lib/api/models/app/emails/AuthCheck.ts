@@ -7,7 +7,19 @@
 export default interface AuthCheck {
     domain: string;
     spf_found: boolean;
+    /**
+     * Positive-only: true when a key was found at one of the probed selectors.
+     * False means none answered, which is not evidence the domain has no DKIM,
+     * so read dkim_status rather than negating this.
+     */
     dkim_found: boolean;
+    /**
+     * "found" or "undetermined". A DKIM key sits at a selector its owner chose
+     * and DNS cannot list the selectors under a domain, so the check derives
+     * candidates from the domain's SPF and MX records plus a default set. A
+     * miss is unverified, never missing.
+     */
+    dkim_status: "found" | "undetermined";
     dmarc_found: boolean;
     dmarc_policy: string;
     /**

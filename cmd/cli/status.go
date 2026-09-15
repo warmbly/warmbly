@@ -135,7 +135,7 @@ func printMailboxes(io *iostreams.IOStreams, raw json.RawMessage) {
 		case m.Status != "" && m.Status != "active":
 			trouble = append(trouble, fmt.Sprintf("%s %s", m.Email, io.Red(m.Status)))
 		case m.AuthState == models.AuthStateFailing:
-			trouble = append(trouble, fmt.Sprintf("%s %s", m.Email, io.Yellow("SPF, DKIM or DMARC failing")))
+			trouble = append(trouble, fmt.Sprintf("%s %s", m.Email, io.Yellow("SPF or DMARC failing")))
 		case m.AuthState == models.AuthStateUnknown:
 			unchecked++
 		}
