@@ -344,8 +344,9 @@ impl ScannerNetworks {
         trusted_peer: bool,
     ) -> Option<u32> {
         // Nothing in the catalogue is keyed by ASN, so nothing can match and
-        // the pixel path skips the lookup entirely. This is the shipped
-        // default: every vendor ASN is commented out.
+        // the pixel path skips the lookup entirely. Not the shipped case any
+        // more, now that the vendor ASNs are on; it is what an instance with
+        // TRACKING_SCANNER_BUILTINS=false and no asn: entries of its own pays.
         if self.asns.is_empty() {
             return None;
         }
