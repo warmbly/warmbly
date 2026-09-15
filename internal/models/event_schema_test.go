@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -16,7 +17,8 @@ func TestEveryWorkerCommandRoundTrips(t *testing.T) {
 	schema := WorkerEvent{}.Schema()
 	for eventType, body := range WorkerEventBodies {
 		t.Run(string(eventType), func(t *testing.T) {
-			in := WorkerEvent{Type: eventType, Body: sample(body)}
+			want := sample(body)
+			in := WorkerEvent{Type: eventType, Body: want}
 			payload := encode(t, schema, in)
 			var out WorkerEvent
 			if err := avro.Unmarshal(schema, payload, &out); err != nil {
@@ -25,7 +27,7 @@ func TestEveryWorkerCommandRoundTrips(t *testing.T) {
 			if out.Type != eventType {
 				t.Fatalf("type = %q, want %q", out.Type, eventType)
 			}
-			assertBodyType(t, out.Body, body)
+			assertBody(t, out.Body, want)
 		})
 	}
 }
@@ -34,7 +36,8 @@ func TestEveryWorkerResultRoundTrips(t *testing.T) {
 	schema := JobEvent{}.Schema()
 	for eventType, body := range JobEventBodies {
 		t.Run(string(eventType), func(t *testing.T) {
-			in := JobEvent{Type: eventType, Body: sample(body)}
+			want := sample(body)
+			in := JobEvent{Type: eventType, Body: want}
 			payload := encode(t, schema, in)
 			var out JobEvent
 			if err := avro.Unmarshal(schema, payload, &out); err != nil {
@@ -43,7 +46,7 @@ func TestEveryWorkerResultRoundTrips(t *testing.T) {
 			if out.Type != eventType {
 				t.Fatalf("type = %q, want %q", out.Type, eventType)
 			}
-			assertBodyType(t, out.Body, body)
+			assertBody(t, out.Body, want)
 		})
 	}
 }
@@ -57,13 +60,79 @@ func encode(t *testing.T, schema avro.Schema, in any) []byte {
 	return payload
 }
 
-// The decoded body has to arrive as the type the handler asserts on. When it
-// does not the consumer still works, by re-marshalling through JSON, so nothing
-// else would notice the codec had quietly stopped paying for itself.
-func assertBodyType(t *testing.T, got, want any) {
+// The decoded body has to arrive as the type the handler asserts on, carrying
+// what was sent. Both halves matter and only the first was checked here for a
+// while: a body whose type is right and whose fields are empty is what a codec
+// looks like when it is quietly losing data, and nothing downstream notices.
+func assertBody(t *testing.T, got, want any) {
 	t.Helper()
-	if reflect.TypeOf(got) != reflect.TypeOf(sample(want)) {
-		t.Fatalf("body decoded as %v, want %v", reflect.TypeOf(got), reflect.TypeOf(sample(want)))
+	if reflect.TypeOf(got) != reflect.TypeOf(want) {
+		t.Fatalf("body decoded as %v, want %v", reflect.TypeOf(got), reflect.TypeOf(want))
+	}
+	if diff := firstDifference(reflect.ValueOf(got), reflect.ValueOf(want), ""); diff != "" {
+		t.Fatalf("body did not survive the round trip: %s", diff)
+	}
+}
+
+// firstDifference reports the first field whose value changed, named by its
+// path, because "not deeply equal" over a struct this size says nothing useful.
+func firstDifference(got, want reflect.Value, path string) string {
+	for got.Kind() == reflect.Pointer {
+		if got.IsNil() != want.IsNil() {
+			return path + ": one side is nil"
+		}
+		if got.IsNil() {
+			return ""
+		}
+		got, want = got.Elem(), want.Elem()
+	}
+	switch got.Kind() {
+	case reflect.Struct:
+		if got.Type() == reflect.TypeOf(time.Time{}) {
+			if !got.Interface().(time.Time).Equal(want.Interface().(time.Time)) {
+				return fmt.Sprintf("%s: %v != %v", path, got.Interface(), want.Interface())
+			}
+			return ""
+		}
+		for i := 0; i < got.NumField(); i++ {
+			f := got.Type().Field(i)
+			if !f.IsExported() || f.Tag.Get("avro") == "-" {
+				continue
+			}
+			if d := firstDifference(got.Field(i), want.Field(i), path+"."+f.Name); d != "" {
+				return d
+			}
+		}
+		return ""
+	case reflect.Slice, reflect.Array:
+		if got.Len() != want.Len() {
+			return fmt.Sprintf("%s: length %d != %d", path, got.Len(), want.Len())
+		}
+		for i := 0; i < got.Len(); i++ {
+			if d := firstDifference(got.Index(i), want.Index(i), fmt.Sprintf("%s[%d]", path, i)); d != "" {
+				return d
+			}
+		}
+		return ""
+	case reflect.Map:
+		if got.Len() != want.Len() {
+			return fmt.Sprintf("%s: %d keys != %d", path, got.Len(), want.Len())
+		}
+		for _, k := range want.MapKeys() {
+			at := got.MapIndex(k)
+			if !at.IsValid() {
+				return fmt.Sprintf("%s[%v]: missing", path, k)
+			}
+			if d := firstDifference(at, want.MapIndex(k), fmt.Sprintf("%s[%v]", path, k)); d != "" {
+				return d
+			}
+		}
+		return ""
+	default:
+		if !reflect.DeepEqual(got.Interface(), want.Interface()) {
+			return fmt.Sprintf("%s: %v != %v", path, got.Interface(), want.Interface())
+		}
+		return ""
 	}
 }
 
@@ -117,6 +186,13 @@ func fill(v reflect.Value) {
 		}
 		v.Set(reflect.MakeSlice(v.Type(), 1, 1))
 		fill(v.Index(0))
+	case reflect.Array:
+		// uuid.UUID is [16]byte, so without this every identifier in every
+		// event was zero on the way in and a codec that dropped them entirely
+		// would have round-tripped clean.
+		for i := 0; i < v.Len(); i++ {
+			fill(v.Index(i))
+		}
 	case reflect.Map:
 		v.Set(reflect.MakeMap(v.Type()))
 		key := reflect.New(v.Type().Key()).Elem()
