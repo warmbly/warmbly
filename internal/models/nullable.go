@@ -52,3 +52,26 @@ func (n NullableUUID) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(n.Value)
 }
+
+// NullableInt distinguishes an absent JSON field from an explicit null in
+// PATCH payloads. Absent leaves the column untouched; null clears it.
+type NullableInt struct {
+	Set   bool `json:"-"`
+	Value *int `json:"-"`
+}
+
+func (n *NullableInt) UnmarshalJSON(b []byte) error {
+	n.Set = true
+	if string(b) == "null" {
+		n.Value = nil
+		return nil
+	}
+	return json.Unmarshal(b, &n.Value)
+}
+
+func (n NullableInt) MarshalJSON() ([]byte, error) {
+	if n.Value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.Value)
+}

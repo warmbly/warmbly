@@ -1479,6 +1479,18 @@ func Run(
 		adminRoutes.PUT("/organizations/:id/managed-plan", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminGrantOrgManagedPlan)
 		adminRoutes.DELETE("/organizations/:id/managed-plan", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminRevokeOrgManagedPlan)
 
+		// Promo codes. The customer-facing half (validate + redeem at
+		// checkout) has always existed; this is the operator half that
+		// creates one, so a launch offer no longer means an INSERT against
+		// production. Codes decide what a workspace is charged, which is the
+		// same entitlement story as a managed plan, so they reuse its bits.
+		adminRoutes.GET("/discounts", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListDiscounts)
+		adminRoutes.POST("/discounts", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminCreateDiscount)
+		adminRoutes.GET("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminGetDiscount)
+		adminRoutes.PATCH("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminUpdateDiscount)
+		adminRoutes.DELETE("/discounts/:id", middleware.RequireAdminPermission(models.AdminPermManageOrganizations), h.AdminDeleteDiscount)
+		adminRoutes.GET("/discounts/:id/redemptions", middleware.RequireAdminPermission(models.AdminPermViewOrganizations), h.AdminListDiscountRedemptions)
+
 		// Workspace abuse posture. The customer route withholds the evidence;
 		// this is where an operator reads it, pins a decision over it, and
 		// lifts one.

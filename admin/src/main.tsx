@@ -43,6 +43,7 @@ import WarmupContentJobsPage from "@/app/dashboard/warmup-content/JobsPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import SendsPage from "@/app/dashboard/SendsPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
+import DiscountsPage from "@/app/dashboard/DiscountsPage";
 import OutreachPage from "@/app/dashboard/OutreachPage";
 import MailboxesPage from "@/app/dashboard/MailboxesPage";
 import SyncPage from "@/app/dashboard/SyncPage";
@@ -158,6 +159,7 @@ const router = createBrowserRouter([
                             { path: "organizations", element: gated(AdminPerm.ViewOrganizations, <OrganizationsPage />) },
                             { path: "organizations/:id", element: gated(AdminPerm.ViewOrganizations, <OrganizationDetailPage />) },
                             { path: "limit-requests", element: gated(AdminPerm.ViewOrganizations, <LimitRequestsPage />) },
+                            { path: "discounts", element: gated(AdminPerm.ViewOrganizations, <DiscountsPage />) },
                             { path: "outreach", element: gated(AdminPerm.ViewOrganizations, <OutreachPage />) },
                             { path: "admins", element: gated(AdminPerm.GrantAdminAccess, <AdminsPage />) },
                             { path: "testers", element: gated(AdminPerm.ViewUsers, <TestersPage />) },

@@ -40,8 +40,26 @@ The landing page. Instance-wide counters and their trends, acquisition by channe
 | **Users** | Every account, with ban and unban, ban history and rate-limit overrides |
 | **Organizations** | Every workspace, with its members, plan, abuse posture, API keys, webhooks and transfer tabs |
 | **Limit requests** | Customer requests for a higher allowance, to approve or decline |
+| **Promo codes** | Every discount code on the instance, who has redeemed each one, and the builder that creates them |
 | **Outreach** | Mail an operator sends from the instance to a user, a workspace or an address, and the delivery state of each message sent so far |
 | **Admins** | Who holds platform admin bits, and grant and revoke by preset or per bit. This replaces the CLI-only path; `warmblyctl user grant-admin` still works |
+
+### Promo codes
+
+A promo code is created here, never in the Stripe dashboard. Warmbly stores the code itself, validates it when a customer types it on the billing page or at checkout, and mints a matching single-use Stripe coupon for that one redemption. A coupon or promotion code created in Stripe directly is not reachable: the checkout session carries the discount Warmbly resolved, so Stripe never shows its own promo field.
+
+The builder asks six things:
+
+- **Code**, the literal string a customer types. It is uppercased on save and cannot be changed afterwards, because redemptions point at it.
+- **Discount**, one of a percentage off, a fixed amount in one currency, or extra free trial days. The kind is fixed once the code exists; its value can still change.
+- **How long it lasts**, for the two money kinds: the first invoice only, a number of months, or forever. A months-long discount runs on a clock, not a count of invoices, so a monthly plan gets that many discounted invoices while an annual plan bills once inside the window and has its whole first year discounted. The builder says this back to you as you set it.
+- **Eligible plans**, all of them or a chosen set.
+- **Redemption limits**, which are two separate numbers. The total cap counts across every workspace on the instance and is off by default; the per-workspace limit is how many times one customer may use it and is 1 by default. Setting the total cap to 1 means one customer in total, which is almost never what a launch offer wants.
+- **Schedule**, an optional start and expiry. A start in the future leaves the code scheduled, an expiry is the end of that day in your own timezone, and the Active switch refuses a code at checkout without deleting it.
+
+Deleting a code stops new redemptions and removes it from the list. Workspaces that already redeemed it keep their discount, because the Stripe coupon behind each redemption was minted separately. Disable the code instead when you want the history to stay readable under its name.
+
+Reading the list needs `view_organizations`; creating, editing and deleting need `manage_organizations`.
 
 ## Insight
 
@@ -69,7 +87,7 @@ The landing page. Instance-wide counters and their trends, acquisition by channe
 | Warmup, Warmup Content | `view_warmup_pool` |
 | Warmup Appeals | `review_appeals` |
 | Campaigns, Sends | `view_campaigns` |
-| Organizations, Limit requests, Outreach, Transfers | `view_organizations` |
+| Organizations, Limit requests, Promo codes, Outreach, Transfers | `view_organizations` |
 | Admins | `grant_admin_access` |
 | Audit Log | `view_audit_logs` |
 | Jobs, Setup and health | `view_analytics` |

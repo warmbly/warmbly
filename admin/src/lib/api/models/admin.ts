@@ -970,3 +970,159 @@ export interface CreatedTester {
     organization_id: string;
     password: string;
 }
+
+// --- Promo codes -----------------------------------------------------------
+//
+// Mirrors internal/models/discount.go. A code is the operator-owned half of
+// the discount system: the customer types it at checkout, the backend
+// validates it here and mints a matching one-off Stripe coupon per redemption.
+
+export type DiscountType = "percent" | "fixed" | "trial_extension";
+export type DiscountDuration = "once" | "repeating" | "forever";
+export type DiscountCodeStatus = "active" | "disabled" | "expired";
+export type DiscountRedemptionStatus = "pending" | "applied" | "canceled";
+
+export interface DiscountCode {
+    id: string;
+    code: string;
+    description: string;
+    type: DiscountType;
+
+    percent_off?: number | null;
+    amount_off?: number | null;
+    currency?: string | null;
+    trial_extension_days?: number | null;
+
+    duration: DiscountDuration;
+    duration_in_months?: number | null;
+
+    /** null = uncapped across all workspaces. */
+    max_redemptions?: number | null;
+    times_redeemed: number;
+    /** How many times ONE workspace may redeem it. Always at least 1. */
+    per_account_limit: number;
+
+    applies_to_all_plans: boolean;
+    plan_ids: string[];
+
+    status: DiscountCodeStatus;
+    starts_at?: string | null;
+    expires_at?: string | null;
+
+    created_by?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+/** One workspace's use of a code. The value fields are a snapshot taken at
+ *  redemption, so editing the code later never rewrites history. */
+export interface DiscountRedemption {
+    id: string;
+    discount_code_id: string;
+    organization_id: string;
+    redeemed_by?: string | null;
+    subscription_id?: string | null;
+    plan_id?: string | null;
+    stripe_coupon_id?: string | null;
+    stripe_checkout_session_id?: string | null;
+
+    type: DiscountType;
+    percent_off?: number | null;
+    amount_off?: number | null;
+    currency?: string | null;
+    trial_extension_days?: number | null;
+
+    status: DiscountRedemptionStatus;
+    redeemed_at: string;
+    applied_at?: string | null;
+    code?: string;
+}
+
+export interface AdminDiscountsResult {
+    data: DiscountCode[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
+export interface AdminDiscountRedemptionsResult {
+    data: DiscountRedemption[];
+    pagination: {
+        total?: number | null;
+        next_cursor?: string | null;
+        has_more: boolean;
+    };
+}
+
+export interface AdminDiscountSearch {
+    /** The backend binds free text as `search`, not `q`. */
+    search?: string;
+    status?: DiscountCodeStatus | "all" | "";
+    type?: DiscountType | "";
+    duration?: DiscountDuration | "";
+
+    plan_scope?: "all" | "specific" | "";
+    plan_id?: string;
+
+    has_redemptions?: boolean;
+    has_max_redemptions?: boolean;
+    exhausted?: boolean;
+    has_expiry?: boolean;
+
+    times_redeemed_min?: number;
+    times_redeemed_max?: number;
+    percent_off_min?: number;
+    percent_off_max?: number;
+
+    created_within?: number;
+    created_after?: string;
+    created_before?: string;
+    starts_after?: string;
+    starts_before?: string;
+    expires_after?: string;
+    expires_before?: string;
+
+    cursor?: string;
+    limit?: number;
+    sort_by?:
+        | "created_at"
+        | "code"
+        | "status"
+        | "times_redeemed"
+        | "expires_at"
+        | "starts_at"
+        | "updated_at";
+    sort_desc?: boolean;
+}
+
+export interface CreateDiscountCodeRequest {
+    code: string;
+    description?: string;
+    type: DiscountType;
+    percent_off?: number;
+    amount_off?: number;
+    currency?: string;
+    trial_extension_days?: number;
+    duration?: DiscountDuration;
+    duration_in_months?: number;
+    max_redemptions?: number;
+    per_account_limit?: number;
+    applies_to_all_plans: boolean;
+    plan_ids?: string[];
+    status?: DiscountCodeStatus;
+    starts_at?: string;
+    expires_at?: string;
+}
+
+/** Partial update. `type` is immutable; recreate the code to change kinds.
+ *  The three caps take an explicit null to clear them: an omitted key leaves
+ *  the column alone, which is not the same as lifting an expiry. */
+export type UpdateDiscountCodeRequest = Partial<
+    Omit<CreateDiscountCodeRequest, "code" | "type" | "max_redemptions" | "starts_at" | "expires_at">
+> & {
+    max_redemptions?: number | null;
+    starts_at?: string | null;
+    expires_at?: string | null;
+};
