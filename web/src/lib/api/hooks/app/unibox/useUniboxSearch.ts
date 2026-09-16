@@ -1,6 +1,6 @@
 // Infinite scroll over the inbox search endpoint.
 
-import { keepPreviousData, useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import searchIncoming from "@/lib/api/client/app/unibox/searchIncoming";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 
@@ -24,10 +24,9 @@ export default function useUniboxSearch(params: UniboxSearchParams, enabled = tr
         // page the user had loaded, which is what the remembered scroll offset
         // needs to land on (issue #396).
         gcTime: 30 * 60 * 1000,
-        // Scope/filter switches change the query key; keep showing the
-        // previous list while the new one loads instead of flashing the
-        // whole pane to skeletons on every switch.
-        placeholderData: keepPreviousData,
+        // Keep filter results during loading only within the same folder.
+        placeholderData: (previousData, previousQuery) =>
+            previousQuery?.queryKey[2].folder === params.folder ? previousData : undefined,
         enabled,
     });
 

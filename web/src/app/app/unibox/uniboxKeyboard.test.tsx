@@ -9,7 +9,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
-import { screen, act, fireEvent } from "@testing-library/react";
+import { screen, act, fireEvent, waitFor } from "@testing-library/react";
 import { useAppStore } from "@/stores";
 import { visibleShortcuts } from "@/hooks/useKeyboardShortcuts";
 import {
@@ -22,6 +22,8 @@ import {
     SUITE,
 } from "./uniboxHarness";
 
+const searchRequests = vi.hoisted((): string[] => []);
+
 beforeAll(() => {
     installLayoutShims();
     setViewportWidth(1512);
@@ -29,6 +31,9 @@ beforeAll(() => {
 
 vi.mock("@/lib/api/client/Request", () => ({
     default: async (cfg: { url?: string }) => {
+        if (cfg.url === "/unibox" || cfg.url?.startsWith("/unibox?")) {
+            searchRequests.push(cfg.url);
+        }
         const { route } = await import("./uniboxHarness");
         return route(String(cfg?.url ?? ""));
     },
@@ -71,9 +76,26 @@ const selected = () => useAppStore.getState().selectedThreadId;
 
 describe("unibox list shortcuts (#484)", SUITE, () => {
     beforeEach(() => {
+        searchRequests.length = 0;
         resetScrollTops();
         useAppStore.setState({ selectedThreadId: null, navCollapsed: false });
         useAppStore.getState().clearSequence();
+    });
+
+    it("opens Inbox from the main navigation and keeps Sent and All mail explicit", async () => {
+        const router = await mount("/app/unibox");
+        await waitFor(() => expect(searchRequests.length).toBeGreaterThan(0));
+        expect(searchRequests.every((url) => new URL(url, "https://test.local").searchParams.get("folder") === "inbox")).toBe(true);
+
+        searchRequests.length = 0;
+        await act(async () => { await router.navigate("/app/unibox/sent"); });
+        await waitFor(() => expect(searchRequests.length).toBeGreaterThan(0));
+        expect(searchRequests.every((url) => new URL(url, "https://test.local").searchParams.get("folder") === "sent")).toBe(true);
+
+        searchRequests.length = 0;
+        await act(async () => { await router.navigate("/app/unibox/all"); });
+        await waitFor(() => expect(searchRequests.length).toBeGreaterThan(0));
+        expect(searchRequests.every((url) => !new URL(url, "https://test.local").searchParams.has("folder"))).toBe(true);
     });
 
     it("moves, jumps to the ends, opens and deselects", async () => {
