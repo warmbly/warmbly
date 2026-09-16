@@ -400,7 +400,7 @@ const router = createBrowserRouter([
           },
           {
             // Path-based, readable inbox URLs: /app/unibox/<scope>[/<threadId>].
-            // Both segments optional, so /app/unibox is the default "all" view.
+            // Both segments optional, so /app/unibox opens the Inbox folder.
             // Both are state inside one page, not different pages, so the shell
             // keeps the page mounted across them and the conversation list holds
             // its scroll offset when a thread opens (issue #396).

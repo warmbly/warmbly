@@ -51,6 +51,8 @@ The rail is two short groups and then your mailboxes. The first group is where y
 
 **Scheduled** sits between Sent and Archive. It is a view rather than a folder, listing replies queued to send later, and it reads naturally next to Sent.
 
+Opening **Inbox** from the main navigation starts in the Inbox folder. Sent messages live in **Sent**; choose **All mail** when you want inbound and outbound messages together. An Inbox conversation still shows its complete history, including your replies, when you open it.
+
 Each message starts in the folder the provider has it in: IMAP special-use folder attributes, Gmail labels, and Outlook well-known folders all map to the same six. Moves at the provider (junking a message, clearing it out of spam) follow on the next sync. Drafts are also reconciled: a draft the mailbox no longer holds is removed here too, so the fresh copy Gmail saves on every autosave does not leave the previous ones behind. You can also file a conversation yourself, which moves it here without moving it at the provider; see [filing a conversation](#filing-a-conversation). The active row is highlighted grey, unread counts sit on the right in blue, and hovering a folder reveals a three-dot menu with **Mark all as read**.
 
 Spam and Trash stay out of every other view: the **All mail** view and the unread badge only count the folders you actually work.
@@ -95,6 +97,8 @@ The newest message in a conversation opens expanded, along with anything still u
 What you see is the message as it was sent: paragraphs, line breaks, lists, tables, and inline images are all preserved, and special characters and emoji render as themselves rather than as entity codes. The conversation list still shows a one-line preview, which is a summary of the message and not the message itself.
 
 HTML mail renders in an isolated frame, so a sender's styling cannot leak into the dashboard and nothing in the message can run code. Links open in a new tab and carry no referrer. If the stored copy of a message cannot be read, Warmbly shows the preview it has and says so instead of failing to open the conversation.
+
+Warmbly removes its open-tracking pixels from the displayed copy, including quoted messages. Reading mail here, whether in Inbox, Sent or another view, does not record a campaign open. The delivered email keeps its tracking pixel for recipient opens, and ordinary images still display.
 
 ## Categories and labels
 
