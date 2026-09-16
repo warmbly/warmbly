@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,8 +17,8 @@ type AnalyticsService interface {
 	GetWarmupAnalytics(ctx context.Context, userID uuid.UUID, emailAccountID *uuid.UUID, from, to time.Time) (*models.WarmupAnalytics, *errx.Error)
 
 	// Campaign analytics
-	GetCampaignAnalytics(ctx context.Context, userID, campaignID uuid.UUID) (*models.CampaignAnalytics, *errx.Error)
-	GetCampaignDailyStats(ctx context.Context, userID, campaignID uuid.UUID, from, to time.Time) ([]models.CampaignDailyStats, *errx.Error)
+	GetCampaignAnalytics(ctx context.Context, orgID, campaignID uuid.UUID) (*models.CampaignAnalytics, *errx.Error)
+	GetCampaignDailyStats(ctx context.Context, orgID, campaignID uuid.UUID, from, to time.Time) ([]models.CampaignDailyStats, *errx.Error)
 
 	// Email account status
 	GetAccountStatus(ctx context.Context, orgID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error)
@@ -28,8 +29,8 @@ type AnalyticsService interface {
 
 	// Dashboard analytics
 	GetDashboardAnalytics(ctx context.Context, userID uuid.UUID, period string) (*models.DashboardAnalytics, *errx.Error)
-	GetCampaignHourlyStats(ctx context.Context, userID, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error)
-	CompareCampaigns(ctx context.Context, userID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error)
+	GetCampaignHourlyStats(ctx context.Context, orgID, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error)
+	CompareCampaigns(ctx context.Context, orgID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error)
 }
 
 type analyticsService struct {
@@ -108,20 +109,15 @@ func (s *analyticsService) GetWarmupAnalytics(ctx context.Context, userID uuid.U
 	return analytics, nil
 }
 
-func (s *analyticsService) GetCampaignAnalytics(ctx context.Context, userID, campaignID uuid.UUID) (*models.CampaignAnalytics, *errx.Error) {
+func (s *analyticsService) GetCampaignAnalytics(ctx context.Context, orgID, campaignID uuid.UUID) (*models.CampaignAnalytics, *errx.Error) {
 	// Get campaign details
-	campaign, err := s.campaignRepo.GetByID(ctx, campaignID)
+	campaign, err := s.campaignForOrg(ctx, orgID, campaignID)
 	if err != nil {
-		return nil, errx.ErrNotFound
-	}
-
-	// Verify ownership
-	if campaign.UserID != userID.String() {
-		return nil, errx.ErrForbidden
+		return nil, err
 	}
 
 	// Get summary
-	summary, xerr := s.analyticsRepo.GetCampaignSummary(ctx, userID, campaignID)
+	summary, xerr := s.analyticsRepo.GetCampaignSummary(ctx, orgID, campaignID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -148,14 +144,11 @@ func (s *analyticsService) GetCampaignAnalytics(ctx context.Context, userID, cam
 	}, nil
 }
 
-func (s *analyticsService) GetCampaignDailyStats(ctx context.Context, userID, campaignID uuid.UUID, from, to time.Time) ([]models.CampaignDailyStats, *errx.Error) {
-	// Verify campaign ownership
-	campaign, err := s.campaignRepo.GetByID(ctx, campaignID)
+func (s *analyticsService) GetCampaignDailyStats(ctx context.Context, orgID, campaignID uuid.UUID, from, to time.Time) ([]models.CampaignDailyStats, *errx.Error) {
+	// Verify campaign workspace
+	_, err := s.campaignForOrg(ctx, orgID, campaignID)
 	if err != nil {
-		return nil, errx.ErrNotFound
-	}
-	if campaign.UserID != userID.String() {
-		return nil, errx.ErrForbidden
+		return nil, err
 	}
 
 	return s.analyticsRepo.GetCampaignDailyStats(ctx, campaignID, from, to)
@@ -514,32 +507,26 @@ func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid
 	}, nil
 }
 
-func (s *analyticsService) GetCampaignHourlyStats(ctx context.Context, userID, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error) {
-	// Verify campaign ownership
-	campaign, err := s.campaignRepo.GetByID(ctx, campaignID)
+func (s *analyticsService) GetCampaignHourlyStats(ctx context.Context, orgID, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error) {
+	// Verify campaign workspace
+	_, err := s.campaignForOrg(ctx, orgID, campaignID)
 	if err != nil {
-		return nil, errx.ErrNotFound
-	}
-	if campaign.UserID != userID.String() {
-		return nil, errx.ErrForbidden
+		return nil, err
 	}
 
 	return s.analyticsRepo.GetCampaignHourlyStats(ctx, campaignID, date)
 }
 
-func (s *analyticsService) CompareCampaigns(ctx context.Context, userID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error) {
-	// Validate that all campaigns belong to user
+func (s *analyticsService) CompareCampaigns(ctx context.Context, orgID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error) {
+	// Validate that all campaigns belong to the selected workspace
 	for _, campaignID := range campaignIDs {
-		campaign, err := s.campaignRepo.GetByID(ctx, campaignID)
+		_, err := s.campaignForOrg(ctx, orgID, campaignID)
 		if err != nil {
-			return nil, errx.ErrNotFound
-		}
-		if campaign.UserID != userID.String() {
-			return nil, errx.ErrForbidden
+			return nil, err
 		}
 	}
 
-	return s.analyticsRepo.CompareCampaigns(ctx, userID, campaignIDs, from, to)
+	return s.analyticsRepo.CompareCampaigns(ctx, orgID, campaignIDs, from, to)
 }
 
 // coldRampInfo explains a graduation ceiling holding this mailbox below its own
@@ -611,4 +598,16 @@ func (s *analyticsService) WireLifecycle(r repository.SendLifecycleRepository) {
 // LifecycleAware is the optional capability the caller uses to attach it.
 type LifecycleAware interface {
 	WireLifecycle(r repository.SendLifecycleRepository)
+}
+
+// campaignForOrg applies the same workspace boundary as the campaign detail endpoint.
+func (s *analyticsService) campaignForOrg(ctx context.Context, orgID, campaignID uuid.UUID) (*models.Campaign, *errx.Error) {
+	campaign, err := s.campaignRepo.Get(ctx, orgID.String(), campaignID.String())
+	if errors.Is(err, errx.ErrResourceNotFound) {
+		return nil, errx.ErrNotFound
+	}
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	return campaign, nil
 }

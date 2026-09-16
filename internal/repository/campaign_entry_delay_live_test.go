@@ -72,7 +72,7 @@ func TestLiveCampaignEntryDelaySurvivesEveryWritePath(t *testing.T) {
 
 	// Update to a new value.
 	fourHours := 240
-	updated, xerr := repo.Update(ctx, owner.String(), created.ID.String(),
+	updated, xerr := repo.Update(ctx, org.String(), created.ID.String(),
 		&models.UpdateCampaign{EntryDelayMinutes: &fourHours})
 	if xerr != nil {
 		t.Fatalf("update: %v", xerr)
@@ -83,12 +83,12 @@ func TestLiveCampaignEntryDelaySurvivesEveryWritePath(t *testing.T) {
 
 	// Out of range is refused rather than left to the column's CHECK.
 	tooLong := 91 * 24 * 60
-	if _, xerr = repo.Update(ctx, owner.String(), created.ID.String(),
+	if _, xerr = repo.Update(ctx, org.String(), created.ID.String(),
 		&models.UpdateCampaign{EntryDelayMinutes: &tooLong}); xerr == nil {
 		t.Fatal("a delay past the 90-day ceiling must be refused")
 	}
 	negative := -1
-	if _, xerr = repo.Update(ctx, owner.String(), created.ID.String(),
+	if _, xerr = repo.Update(ctx, org.String(), created.ID.String(),
 		&models.UpdateCampaign{EntryDelayMinutes: &negative}); xerr == nil {
 		t.Fatal("a negative delay must be refused")
 	}

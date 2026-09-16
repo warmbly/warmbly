@@ -15,7 +15,7 @@ type AnalyticsRepository interface {
 	GetWarmupStats(ctx context.Context, userID uuid.UUID, emailAccountID *uuid.UUID, from, to time.Time) ([]models.WarmupDailyStats, *errx.Error)
 
 	// Campaign analytics
-	GetCampaignSummary(ctx context.Context, userID, campaignID uuid.UUID) (*models.CampaignSummary, *errx.Error)
+	GetCampaignSummary(ctx context.Context, orgID, campaignID uuid.UUID) (*models.CampaignSummary, *errx.Error)
 	GetCampaignDailyStats(ctx context.Context, campaignID uuid.UUID, from, to time.Time) ([]models.CampaignDailyStats, *errx.Error)
 	GetSequenceStats(ctx context.Context, campaignID uuid.UUID) ([]models.SequenceStats, *errx.Error)
 	// GetCampaignEngagementBreakdown groups the campaign's human opens and
@@ -44,7 +44,7 @@ type AnalyticsRepository interface {
 	GetCampaignHourlyStats(ctx context.Context, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error)
 
 	// Campaign comparison
-	CompareCampaigns(ctx context.Context, userID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error)
+	CompareCampaigns(ctx context.Context, orgID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error)
 }
 
 type analyticsRepository struct {
@@ -110,7 +110,7 @@ const (
 	machineClicksCount = `COUNT(CASE WHEN ccp.clicked_at IS NULL AND mc.machine_only THEN 1 END) as machine_clicks`
 )
 
-func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, userID, campaignID uuid.UUID) (*models.CampaignSummary, *errx.Error) {
+func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, campaignID uuid.UUID) (*models.CampaignSummary, *errx.Error) {
 	query := `
 		SELECT
 			COUNT(DISTINCT ccp.contact_id) as total_contacts,
@@ -124,10 +124,10 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, userID, ca
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL THEN 1 END) as bounces
 		FROM campaign_contact_progress ccp
 		JOIN campaigns c ON c.id = ccp.campaign_id` + machineClicksJoin + `
-		WHERE ccp.campaign_id = $1 AND c.user_id = $2
+		WHERE ccp.campaign_id = $1 AND c.organization_id = $2
 	`
 
-	params := []any{campaignID, userID}
+	params := []any{campaignID, orgID}
 
 	var summary models.CampaignSummary
 	err := r.DB.QueryRow(ctx, query, params...).Scan(
@@ -732,7 +732,7 @@ func (r *analyticsRepository) GetCampaignHourlyStats(ctx context.Context, campai
 	return stats, nil
 }
 
-func (r *analyticsRepository) CompareCampaigns(ctx context.Context, userID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error) {
+func (r *analyticsRepository) CompareCampaigns(ctx context.Context, orgID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error) {
 	query := `
 		SELECT
 			c.id as campaign_id,
@@ -754,12 +754,12 @@ func (r *analyticsRepository) CompareCampaigns(ctx context.Context, userID uuid.
 		FROM campaigns c
 		LEFT JOIN campaign_contact_progress ccp ON ccp.campaign_id = c.id
 			AND ccp.sent_at >= $2 AND ccp.sent_at <= $3
-		WHERE c.user_id = $1 AND c.id = ANY($4)
+		WHERE c.organization_id = $1 AND c.id = ANY($4)
 		GROUP BY c.id, c.name, c.status
 		ORDER BY c.name
 	`
 
-	params := []any{userID, from, to, campaignIDs}
+	params := []any{orgID, from, to, campaignIDs}
 
 	rows, err := r.DB.Query(ctx, query, params...)
 	if err != nil {

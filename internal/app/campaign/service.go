@@ -28,7 +28,7 @@ type CampaignService interface {
 	// many sending days a mailbox pool needs under the per-mailbox caps.
 	// Read-only; the wizard shows it before a one-time email is created.
 	Estimate(ctx context.Context, orgID uuid.UUID, in *models.CampaignEstimate) (*models.CampaignEstimateResult, *errx.Error)
-	Update(ctx context.Context, userID, id string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
+	Update(ctx context.Context, orgID, id string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
 	// Delete removes an organization's campaign outright. A running campaign
 	// is stopped as part of it: its pending tasks are cancelled in the same
 	// transaction, so nothing keeps sending for a campaign that is gone.
@@ -47,7 +47,7 @@ type CampaignService interface {
 	StopCampaign(ctx context.Context, orgID uuid.UUID, campaignID string) *errx.Error
 
 	// Logs
-	GetLogs(ctx context.Context, userID, campaignID string, limit int, cursor *string) (*models.CampaignLogsResult, *errx.Error)
+	GetLogs(ctx context.Context, orgID, campaignID string, limit int, cursor *string) (*models.CampaignLogsResult, *errx.Error)
 
 	// WakeCampaigns pulls the parked wakeup of each listed active campaign
 	// forward when its next slot is sooner than where it is parked. Called after

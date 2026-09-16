@@ -9,6 +9,12 @@ A campaign sends a sequence of emails to a list of contacts, spread across your 
 You need at least one active mailbox and a contact list. Warm new mailboxes before running cold campaigns from them. See [Deliverability](/guides/deliverability/).
 </Callout>
 
+## Shared workspace access
+
+Campaigns belong to the workspace. Members with **View campaigns** can read campaigns, steps, leads and activity logs regardless of who created them. **Manage campaigns** allows members to edit settings, create or edit steps, arrange the step canvas and delete steps. Campaign overview metrics require **View analytics**. See [Team and roles](/guides/team-roles/) for permission details.
+
+Select the workspace that owns the campaign before opening it. Creating a campaign does not grant access to it from a different workspace.
+
 ## Create a campaign
 
 **Campaigns** > **New campaign** opens a wizard that first asks what you are sending: a **sequence** or a [one-time email](#one-time-emails). For a sequence the steps are **Basics** (name, description), **Schedule** (timezone, sending days, hours, an optional delay before the first email), **Sending** (mailbox tags, daily limit per mailbox, stop on reply, open and click tracking, UTM parameters, unsubscribe header), and **First email** (subject, body, optional follow-ups). Follow-ups added here are connected in order, each waiting the number of days you set after the previous step; open the Steps tab to rearrange, branch, or change the waits. Only a name is required; the first email can be skipped and written in the full editor on the Steps tab, and everything else except the campaign type can be changed later from settings. The choice between a sequence and a one-time email is fixed at creation: switching means creating a new campaign. Closing a wizard with unsaved edits asks before discarding them.
