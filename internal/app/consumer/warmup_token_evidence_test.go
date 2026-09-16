@@ -19,22 +19,12 @@ type stubWarmupTokenRepo struct {
 	reads int
 }
 
-func (s *stubWarmupTokenRepo) GetWarmupToken(context.Context, uuid.UUID) (*models.WarmupToken, error) {
+func (s *stubWarmupTokenRepo) FindWarmupToken(context.Context, uuid.UUID) (*models.WarmupToken, error) {
 	s.reads++
 	return s.live, s.err
 }
 
-// FindWarmupToken must never be reached: telling a foreign token from a
-// vanished one only mattered when the difference decided a charge.
-func (s *stubWarmupTokenRepo) FindWarmupToken(context.Context, uuid.UUID) (*models.WarmupToken, error) {
-	panic("FindWarmupToken: the inbound path has no reason to read a token twice")
-}
-
-// No inbound token is evidence against the mailbox that received it (#468,
-// #481, #482): whatever is not a live token for this mailbox is filed as
-// ordinary mail, and the path reads the token exactly once. Acceptance of a
-// live token is exercised against the real store in
-// warmup_verification_live_test.go.
+// Foreign or missing tokens remain ordinary mail and never trigger a tampering charge.
 func TestHandleWarmupEmailFilesOtherTokensAsOrdinaryMail(t *testing.T) {
 	mailbox := uuid.New()
 	partner := uuid.New()
@@ -42,7 +32,6 @@ func TestHandleWarmupEmailFilesOtherTokensAsOrdinaryMail(t *testing.T) {
 	e := &models.JobEventNewEmail{Message: &models.EmailMessageStoreData{EmailID: mailbox, Folder: models.FolderInbox}}
 
 	foreign := &models.WarmupToken{Token: token, RecipientAccountID: partner, SenderAccountID: uuid.New()}
-	sent := &models.WarmupToken{Token: token, RecipientAccountID: partner, SenderAccountID: mailbox}
 
 	tests := []struct {
 		name    string
@@ -52,8 +41,7 @@ func TestHandleWarmupEmailFilesOtherTokensAsOrdinaryMail(t *testing.T) {
 		reads   int
 	}{
 		{"a live token naming another pair: an attacker's to place, not evidence", token.String(), &stubWarmupTokenRepo{live: foreign}, false, 1},
-		{"the Sent copy carrying the token this mailbox sent", token.String(), &stubWarmupTokenRepo{live: sent}, false, 1},
-		{"a token that is consumed, expired or gone", token.String(), &stubWarmupTokenRepo{}, false, 1},
+		{"a token that is gone", token.String(), &stubWarmupTokenRepo{}, false, 1},
 		{"a marker that does not parse", "not-a-uuid", &stubWarmupTokenRepo{}, false, 0},
 		{"a failed lookup is surfaced, not charged", token.String(), &stubWarmupTokenRepo{err: errors.New("connection reset by peer")}, true, 1},
 	}
@@ -69,7 +57,7 @@ func TestHandleWarmupEmailFilesOtherTokensAsOrdinaryMail(t *testing.T) {
 				t.Fatal("filed a token that was not this mailbox's as warmup")
 			}
 			if tc.repo.reads != tc.reads {
-				t.Fatalf("GetWarmupToken called %d times, want %d", tc.repo.reads, tc.reads)
+				t.Fatalf("FindWarmupToken called %d times, want %d", tc.repo.reads, tc.reads)
 			}
 		})
 	}

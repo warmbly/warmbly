@@ -96,6 +96,8 @@ Warmup keeps the standing of every penalised mailbox (score, state, and any bloc
 
 ### Disconnecting a mailbox
 
+Mail whose warmup verification is temporarily unavailable waits in the `unibox_pending_emails` Postgres table. It holds the sync event, including message metadata and bounded searchable body text, until verification succeeds or the mailbox is deleted. The consumer retries it automatically after restarts. Full bodies remain in blob storage. This pending queue is included in instance backups but excluded from workspace exports, whose destination re-syncs provider mail.
+
 Disconnecting a mailbox, or deleting the workspace holding it, removes its rows from Postgres straight away through the database's own cascades. Two things cannot be done in that instant and are queued instead, then worked off within about a minute:
 
 | Owed | What happens |

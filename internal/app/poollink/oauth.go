@@ -302,7 +302,7 @@ func (s *service) VerifyWarmupToken(ctx context.Context, inst *models.PoolLinkIn
 	if err != nil {
 		return false, errx.InternalError()
 	}
-	return t != nil && t.RecipientAccountID == m.EmailAccountID, nil
+	return t != nil && (t.RecipientAccountID == m.EmailAccountID || t.SenderAccountID == m.EmailAccountID), nil
 }
 
 // VerifyWarmupDelivery answers for warmup mail whose verify header did not

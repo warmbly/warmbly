@@ -800,6 +800,7 @@ var Tables = []Table{
 // with the reason. Kept as data so the docs page and the coverage test both
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
+	"unibox_pending_emails":        "Unverified mailbox-sync events awaiting this instance's warmup checks. The destination resyncs provider mail with its own warmup and cloud-link state.",
 	"organization_encrypted_keys":  "The organization's data key, wrapped by the source instance's KMS. The destination cannot unwrap it, and shipping it would put every org secret behind one exported blob.",
 	"api_idempotency_keys":         "A short-lived replay cache for in-flight API requests.",
 	"realtime_events":              "The websocket outbox. Every row is already delivered or expired.",

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -17,7 +18,20 @@ func (s *JobsService) HandleUpdateEmail(ctx context.Context, e *models.JobEventE
 		// message the unibox never stored is routine. Returning the error
 		// retried the event forever and reported one every pass.
 		if errors.Is(err, repository.ErrEmailNotFound) {
-			return nil
+			return s.UniboxRepository.UpdatePendingEmail(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+				token := warmupTokenFromMessage(message)
+				message.Flags = append([]string{}, e.Flags...)
+				if token != "" {
+					message.Flags = append(message.Flags, config.WarmupVerifyHeader+":"+token)
+				}
+				message.UID, message.Mailbox, message.ModSeq = e.UID, e.Mailbox, e.ModSeq
+				if e.FolderPath != "" {
+					message.FolderPath = e.FolderPath
+				}
+				if e.Folder != "" {
+					message.Folder = models.NormalizeFolder(e.Folder, e.Flags)
+				}
+			})
 		}
 		CaptureError(e.UserID, e.EmailID, fmt.Errorf("Email (%s): %w", e.ID.String(), err))
 		return err

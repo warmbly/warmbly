@@ -18,7 +18,11 @@ Your instance keeps a single link to a Warmbly Cloud workspace. When you enroll 
 - Warmbly Cloud sends the mailbox's warmup mail, replies to partners, and rescues, opens and stars the warmup mail it receives, on Warmbly's own workers
 - the cloud reads only verified warmup mail from the mailbox. Everything else that arrives is dropped unread; no history is imported and nothing is stored
 - your instance stops its own warmup for that mailbox and takes it out of the local warmup pool, so no mailbox on your server writes to it any more, and keeps sending campaigns from it as usual
-- your instance recognises the cloud's warmup mail arriving in the mailbox and leaves it out of your unibox, asking the cloud to vouch for anything it cannot identify on its own
+- your instance recognises both received warmup and the mailbox's own Sent copies and leaves them out of your unibox, asking the cloud to vouch for anything it cannot identify on its own
+
+Verification accepts a cloud token only for the mailbox that sent or received that warmup message. It also recognises recorded message identifiers when a provider strips the header, including older messages and mail the cloud has already processed. If the cloud cannot answer, inbox ingestion retries verification before publishing the message. This can delay ordinary inbox arrivals for enrolled mailboxes during a cloud outage. Existing Unibox entries are checked automatically in background batches, and confirmed warmup is removed locally without deleting provider mail.
+
+Arrivals awaiting verification are stored in your instance's database and retried automatically, including after a consumer restart. Once verification succeeds, ordinary messages enter Unibox and warmup messages are discarded from the pending queue. Pending verification belongs to the instance and is [not included in a workspace export](/guides/workspace-export-import/).
 - health, daily volume and 7 day totals show up in your instance's settings as the cloud reports them
 
 Unenrolling an SMTP/IMAP mailbox, or disconnecting the instance, deletes its credential on the cloud immediately. A mailbox that was signed in through Warmbly Cloud stays in the cloud workspace when you remove it from the instance; disconnecting the instance removes its mirrors of such mailboxes, since they cannot send without the link.

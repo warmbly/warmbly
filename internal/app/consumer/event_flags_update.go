@@ -37,7 +37,16 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 		// Warmup mail and anything else the unibox never stored still produces
 		// flag events. Retrying those reported one error per pass, forever.
 		if errors.Is(err, repository.ErrEmailNotFound) {
-			return nil
+			return s.UniboxRepository.UpdatePendingEmail(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+				for _, flag := range e.Flags {
+					if !slices.Contains(message.Flags, flag) {
+						message.Flags = append(message.Flags, flag)
+					}
+				}
+				if containsSpamFlag(e.Flags) && message.Folder != models.FolderTrash {
+					message.Folder = models.FolderSpam
+				}
+			})
 		}
 		CaptureError(e.UserID, e.EmailID, fmt.Errorf("Email (%s): %w", e.ID.String(), err))
 		return err
@@ -128,7 +137,12 @@ func (s *JobsService) HandleFlagsRemove(ctx context.Context, e *models.JobEventF
 		// Warmup mail and anything else the unibox never stored still produces
 		// flag events. Retrying those reported one error per pass, forever.
 		if errors.Is(err, repository.ErrEmailNotFound) {
-			return nil
+			return s.UniboxRepository.UpdatePendingEmail(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+				message.Flags = slices.DeleteFunc(message.Flags, func(flag string) bool { return slices.Contains(e.Flags, flag) })
+				if message.Folder == models.FolderSpam && !containsSpamFlag(message.Flags) {
+					message.Folder = models.FolderInbox
+				}
+			})
 		}
 		CaptureError(e.UserID, e.EmailID, fmt.Errorf("Email (%s): %w", e.ID.String(), err))
 		return err
