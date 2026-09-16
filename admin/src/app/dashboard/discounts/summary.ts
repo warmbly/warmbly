@@ -71,7 +71,10 @@ export function describeIntervalEffect(d: DiscountShape): string {
     const n = d.duration_in_months;
     const monthly = `${n} discounted ${n === 1 ? "invoice" : "invoices"}`;
     if (n >= 12) {
-        return `A monthly plan gets ${monthly}. An annual plan gets the first ${Math.floor(n / 12) === 1 ? "year" : `${Math.floor(n / 12)} years`} discounted.`;
+        // The window is a clock, so an annual plan bills at month 0, 12, 24 and
+        // so on: ceil, not floor. 18 months covers two annual invoices, not one.
+        const years = Math.ceil(n / 12);
+        return `A monthly plan gets ${monthly}. An annual plan gets the first ${years === 1 ? "year" : `${years} years`} discounted.`;
     }
     return `A monthly plan gets ${monthly}. An annual plan bills once inside that window, so it gets the whole first year discounted.`;
 }

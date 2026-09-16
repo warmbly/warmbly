@@ -29,6 +29,7 @@ import { listAdminPlans } from "@/lib/api/client/admin/organizations";
 import type {
     CreateDiscountCodeRequest,
     DiscountCode,
+    DiscountCodeStatus,
     DiscountDuration,
     DiscountType,
     UpdateDiscountCodeRequest,
@@ -225,7 +226,7 @@ export function DiscountBuilderDialog({
     const [perAccount, setPerAccount] = useState("1");
     const [startsOn, setStartsOn] = useState("");
     const [expiresOn, setExpiresOn] = useState("");
-    const [active, setActive] = useState(true);
+    const [status, setStatus] = useState<DiscountCodeStatus>("active");
 
     // Reset to the edited row (or to defaults) every time the dialog opens, so
     // a cancelled edit never leaks into the next one.
@@ -252,7 +253,7 @@ export function DiscountBuilderDialog({
             setPerAccount(String(existing.per_account_limit ?? 1));
             setStartsOn(toDateInput(existing.starts_at));
             setExpiresOn(toDateInput(existing.expires_at));
-            setActive(existing.status !== "disabled");
+            setStatus(existing.status);
         } else {
             setCode("");
             setDescription("");
@@ -270,7 +271,7 @@ export function DiscountBuilderDialog({
             setPerAccount("1");
             setStartsOn("");
             setExpiresOn("");
-            setActive(true);
+            setStatus("active");
         }
     }, [open, existing]);
 
@@ -347,7 +348,7 @@ export function DiscountBuilderDialog({
                 per_account_limit: parseNum(perAccount),
                 applies_to_all_plans: allPlans,
                 plan_ids: allPlans ? undefined : planIds,
-                status: active ? ("active" as const) : ("disabled" as const),
+                status,
             };
 
             if (editing && existing) {
@@ -382,6 +383,16 @@ export function DiscountBuilderDialog({
 
     const planRows = plans.data?.plans ?? [];
     const intervalNote = describeIntervalEffect(shape);
+
+    // `expired` is a real stored status, so a code already in it has to show it
+    // rather than being silently rewritten to active by an unrelated edit.
+    const statusOptions: { value: DiscountCodeStatus; label: string }[] = [
+        { value: "active", label: "Active" },
+        { value: "disabled", label: "Disabled" },
+        ...(existing?.status === "expired"
+            ? [{ value: "expired" as DiscountCodeStatus, label: "Expired" }]
+            : []),
+    ];
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -668,15 +679,20 @@ export function DiscountBuilderDialog({
                             </FieldRow>
                         </div>
 
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <div className="text-[12.5px]">Active</div>
-                                <p className="text-[11px] text-muted-foreground">
-                                    A disabled code is refused at checkout without being deleted.
-                                </p>
-                            </div>
-                            <Switch checked={active} onCheckedChange={setActive} />
-                        </div>
+                        <FieldRow
+                            label="Status"
+                            hint={
+                                status === "expired"
+                                    ? "This code is recorded as expired and is refused at checkout. Bringing it back takes both a future expiry above and setting it Active here."
+                                    : "A disabled code is refused at checkout without being deleted."
+                            }
+                        >
+                            <Segmented
+                                value={status}
+                                onChange={setStatus}
+                                options={statusOptions}
+                            />
+                        </FieldRow>
                     </Section>
                 </div>
 

@@ -203,7 +203,7 @@ func (s *service) Update(ctx context.Context, adminID, id uuid.UUID, req *models
 	if req.DurationInMonths != nil {
 		dc.DurationInMonths = req.DurationInMonths
 	}
-	if req.MaxRedemptions != nil && req.MaxRedemptions.Set {
+	if req.MaxRedemptions.Set {
 		dc.MaxRedemptions = req.MaxRedemptions.Value
 	}
 	if req.PerAccountLimit != nil {
@@ -218,10 +218,10 @@ func (s *service) Update(ctx context.Context, adminID, id uuid.UUID, req *models
 	if req.Status != nil {
 		dc.Status = *req.Status
 	}
-	if req.StartsAt != nil && req.StartsAt.Set {
+	if req.StartsAt.Set {
 		dc.StartsAt = req.StartsAt.Value
 	}
-	if req.ExpiresAt != nil && req.ExpiresAt.Set {
+	if req.ExpiresAt.Set {
 		dc.ExpiresAt = req.ExpiresAt.Value
 	}
 

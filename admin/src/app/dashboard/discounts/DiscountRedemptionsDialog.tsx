@@ -45,7 +45,7 @@ export function DiscountRedemptionsDialog({
 }) {
     const pager = useCursorPager();
 
-    const { data, isLoading, isError } = useQuery({
+    const { data, isLoading, isError, isFetching, isPlaceholderData } = useQuery({
         queryKey: ["admin", "discounts", discount.id, "redemptions", pager.cursor],
         queryFn: () => listDiscountRedemptions(discount.id, { cursor: pager.cursor, limit: 50 }),
         enabled: open,
@@ -142,7 +142,11 @@ export function DiscountRedemptionsDialog({
                             size="sm"
                             variant="outline"
                             className="h-7"
-                            disabled={!data?.pagination?.has_more}
+                            // keepPreviousData keeps the old page's cursor on
+                            // screen while the next one loads, and the pager
+                            // appends without deduplicating, so a second click
+                            // would push the same cursor twice.
+                            disabled={!data?.pagination?.has_more || isFetching || isPlaceholderData}
                             onClick={() => pager.next(data?.pagination?.next_cursor)}
                         >
                             Next
