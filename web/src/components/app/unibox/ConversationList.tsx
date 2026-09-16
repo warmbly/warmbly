@@ -108,12 +108,12 @@ export function ConversationList({
     return next;
   }, [params, debouncedSearch]);
 
-  const q = useUniboxSearch(merged);
+  const q = useUniboxSearch(merged, scopeKey);
   const emails = q.emails;
   const totalShown = emails.length;
   const activeFilters = countUserFilters(params, baseParams);
 
-  // A scope, search or filter change keeps the previous rows on screen while
+  // A search or filter change keeps the previous rows on screen while
   // the new ones load (placeholderData). That is the moment to show progress:
   // a bar along the top and the stale rows dimmed. Background refetches from
   // realtime events do not qualify, so nothing flickers while reading. The
