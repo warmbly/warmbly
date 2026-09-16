@@ -21,7 +21,7 @@ import (
 
 // CloudLinkVerifier is the self-hosted pool link as the consumer sees it.
 type CloudLinkVerifier interface {
-	IsEnrolled(ctx context.Context, accountID uuid.UUID) bool
+	CheckEnrollment(ctx context.Context, accountID uuid.UUID) (bool, error)
 	VerifyWarmupToken(ctx context.Context, accountID uuid.UUID, token string) (bool, error)
 	IsCloudWarmupDelivery(ctx context.Context, accountID uuid.UUID, sender, messageID, subject string) (bool, error)
 }

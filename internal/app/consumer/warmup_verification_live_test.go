@@ -2,7 +2,11 @@ package jobs
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -83,6 +87,7 @@ func newWarmupFixture(t *testing.T, handle *db.DB) *warmupFixture {
 			arg any
 		}{
 			{`DELETE FROM unibox_emails WHERE email_id = $1`, f.partner},
+			{`DELETE FROM unibox_emails WHERE email_id = $1`, f.sender},
 			{`DELETE FROM warmup_received WHERE sender_account_id = $1`, f.sender},
 			{`DELETE FROM warmup_tokens WHERE sender_account_id = $1`, f.sender},
 			{`DELETE FROM tasks WHERE email_account_id = $1`, f.sender},
@@ -191,7 +196,7 @@ func TestLiveWarmupVerifiesByDeliveredMessageIDWhenTheHeaderIsStripped(t *testin
 	}
 
 	// Arrival at the partner: no verify flag anywhere.
-	if !s.handleUnmarkedWarmupEmail(ctx, f.arrival(f.sentMsgID, nil)) {
+	if handled, err := s.handleUnmarkedWarmupEmail(ctx, f.arrival(f.sentMsgID, nil)); err != nil || !handled {
 		t.Fatal("warmup arriving without its verify header must still be verified")
 	}
 	if stored, _ = s.WarmupRepo.FindWarmupToken(ctx, token); stored == nil || stored.ConsumedAt == nil {
@@ -209,7 +214,7 @@ func TestLiveWarmupVerifiesByPairAndSubjectBeforeTheSendResultLands(t *testing.T
 	token := f.mintToken(t, s.WarmupRepo)
 
 	// No HandleEmailSent yet: sent_message_id is still empty.
-	if !s.handleUnmarkedWarmupEmail(ctx, f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)) {
+	if handled, err := s.handleUnmarkedWarmupEmail(ctx, f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)); err != nil || !handled {
 		t.Fatal("a pending token for this pair and subject must resolve")
 	}
 	stored, err := s.WarmupRepo.FindWarmupToken(ctx, token)
@@ -228,7 +233,7 @@ func TestLiveWarmupPairFallbackIgnoresADifferentSubject(t *testing.T) {
 
 	e := f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)
 	e.Message.Subject = "your invoice is overdue"
-	if s.handleUnmarkedWarmupEmail(ctx, e) {
+	if handled, err := s.handleUnmarkedWarmupEmail(ctx, e); err != nil || handled {
 		t.Error("mail with a different subject must not claim a pending warmup token")
 	}
 }
@@ -242,14 +247,12 @@ func TestLiveWarmupPairFallbackIgnoresADifferentSender(t *testing.T) {
 
 	e := f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)
 	e.Message.FromAddr = []string{"Someone Else <stranger@example.com>"}
-	if s.handleUnmarkedWarmupEmail(ctx, e) {
+	if handled, err := s.handleUnmarkedWarmupEmail(ctx, e); err != nil || handled {
 		t.Error("mail from a different sender must not claim a pending warmup token")
 	}
 }
 
-// A token that was already consumed cannot be claimed twice, so a duplicate
-// delivery of the same warmup message falls through to normal processing
-// rather than firing the engagement plan again.
+// Consumed tokens cannot be claimed again; visibility is checked separately.
 func TestLiveWarmupConsumedTokenIsNotReclaimed(t *testing.T) {
 	s, handle := liveWarmupService(t)
 	ctx := context.Background()
@@ -258,7 +261,7 @@ func TestLiveWarmupConsumedTokenIsNotReclaimed(t *testing.T) {
 	if err := s.WarmupRepo.ConsumeWarmupToken(ctx, token); err != nil {
 		t.Fatalf("consume: %v", err)
 	}
-	if s.handleUnmarkedWarmupEmail(ctx, f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)) {
+	if handled, err := s.handleUnmarkedWarmupEmail(ctx, f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)); err != nil || handled {
 		t.Error("an already-consumed token must not be claimed again")
 	}
 }
@@ -379,7 +382,7 @@ func TestLiveWarmupExpiredTokenIsNotClaimed(t *testing.T) {
 		`UPDATE warmup_tokens SET expires_at = NOW() - INTERVAL '1 hour' WHERE token = $1`, token); err != nil {
 		t.Fatalf("expire token: %v", err)
 	}
-	if s.handleUnmarkedWarmupEmail(ctx, f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)) {
+	if handled, err := s.handleUnmarkedWarmupEmail(ctx, f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)); err != nil || handled {
 		t.Error("an expired token must not be claimed")
 	}
 }
@@ -395,7 +398,7 @@ func TestLiveWarmupPairFallbackIsTimeBoxed(t *testing.T) {
 		`UPDATE warmup_tokens SET created_at = NOW() - INTERVAL '5 days' WHERE token = $1`, token); err != nil {
 		t.Fatalf("backdate token: %v", err)
 	}
-	if s.handleUnmarkedWarmupEmail(ctx, f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)) {
+	if handled, err := s.handleUnmarkedWarmupEmail(ctx, f.arrival("<"+uuid.NewString()+"@outlook.com>", nil)); err != nil || handled {
 		t.Error("the pair fallback must not reach back past its window")
 	}
 
@@ -405,7 +408,301 @@ func TestLiveWarmupPairFallbackIsTimeBoxed(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("HandleEmailSent: %v", err)
 	}
-	if !s.handleUnmarkedWarmupEmail(ctx, f.arrival(f.sentMsgID, nil)) {
+	if handled, err := s.handleUnmarkedWarmupEmail(ctx, f.arrival(f.sentMsgID, nil)); err != nil || !handled {
 		t.Error("an exact delivered Message-ID must still resolve an older token")
+	}
+}
+
+func TestLiveWarmupInboxCleanupRemovesVerifiedCopiesAndPreservesRealMail(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := context.Background()
+	f := newWarmupFixture(t, handle)
+	token := f.mintToken(t, s.WarmupRepo)
+	if err := s.WarmupRepo.RecordWarmupTokenDelivery(ctx, f.task, f.sentMsgID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WarmupRepo.ConsumeWarmupToken(ctx, token); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Exec(ctx, `UPDATE warmup_tokens SET created_at = NOW() - INTERVAL '30 days', expires_at = NOW() - INTERVAL '20 days' WHERE token = $1`, token); err != nil {
+		t.Fatal(err)
+	}
+
+	f.mintToken(t, s.WarmupRepo) // A new send may reuse the historical conversation's subject.
+	sent := f.arrival(f.sentMsgID, nil)
+	sent.UserID, sent.Message.EmailID, sent.Message.Folder = f.senderUser, f.sender, models.FolderSent
+	inbound := f.arrival(f.sentMsgID, nil)
+	marked := f.arrival("<restamped@test.local>", []string{config.WarmupVerifyHeader + ":" + token.String()})
+	real := f.arrival("<real-mail@test.local>", nil)
+	foreign := f.arrival("<foreign@test.local>", []string{config.WarmupVerifyHeader + ":" + uuid.NewString()})
+	for _, e := range []*models.JobEventNewEmail{sent, inbound, marked, real, foreign} {
+		if err := s.UniboxRepository.CreateEntry(ctx, e.UserID, e.Message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, done, err := s.cleanWarmupInboxBatch(ctx, uuid.Nil)
+	if err != nil || !done {
+		t.Fatalf("cleanup done=%v err=%v", done, err)
+	}
+	for _, tc := range []struct {
+		e    *models.JobEventNewEmail
+		want int
+	}{
+		{sent, 0}, {inbound, 0}, {marked, 0}, {real, 1}, {foreign, 1},
+	} {
+		var count int
+		if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id = $1`, tc.e.Message.ID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != tc.want {
+			t.Errorf("message %s: rows=%d, want %d", tc.e.Message.MessageID, count, tc.want)
+		}
+	}
+	stored, err := s.WarmupRepo.FindWarmupToken(ctx, token)
+	if err != nil || stored == nil || stored.ConsumedAt == nil {
+		t.Fatalf("token after cleanup: %v %v", stored, err)
+	}
+	if _, _, err := s.cleanWarmupInboxBatch(ctx, uuid.Nil); err != nil {
+		t.Fatalf("repeat cleanup: %v", err)
+	}
+}
+
+func TestLiveWarmupUnmarkedSentCopyAndRecipientReplayStayOutOfInbox(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := context.Background()
+	f := newWarmupFixture(t, handle)
+	f.mintToken(t, s.WarmupRepo)
+	if err := s.WarmupRepo.RecordWarmupTokenDelivery(ctx, f.task, f.sentMsgID); err != nil {
+		t.Fatal(err)
+	}
+	for _, sent := range []bool{true, false, false, true} {
+		e := f.arrival(f.sentMsgID, nil)
+		if sent {
+			e.UserID, e.Message.EmailID = f.senderUser, f.sender
+		}
+		if err := s.HandleNewEmail(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id = $1`, e.Message.ID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("warmup exposed in Unibox, sender copy=%v", sent)
+		}
+	}
+}
+
+func TestLiveWarmupVerificationOutageSurvivesRestartAndKeepsRealMail(t *testing.T) {
+	for _, warmup := range []bool{false, true} {
+		t.Run(fmt.Sprintf("warmup=%v", warmup), func(t *testing.T) {
+			s, handle := liveWarmupService(t)
+			ctx := context.Background()
+			f := newWarmupFixture(t, handle)
+			e := f.arrival("<cloud-"+uuid.NewString()+"@test.local>", nil)
+			s.CloudLink = &warmupInboxCloud{deliveryErr: errors.New("cloud unavailable")}
+			if err := s.HandleNewEmail(ctx, e); err != nil {
+				t.Fatalf("persist arrival: %v", err)
+			}
+			if err := s.HandleNewEmail(ctx, e); err != nil {
+				t.Fatalf("duplicate arrival: %v", err)
+			}
+			var count int
+			if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_pending_emails WHERE id=$1`, e.Message.ID).Scan(&count); err != nil || count != 1 {
+				t.Fatalf("pending count=%d err=%v", count, err)
+			}
+			if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("uncertain mail was visible: count=%d err=%v", count, err)
+			}
+			if _, err := handle.Exec(ctx, `UPDATE unibox_pending_emails SET retry_at=NOW() WHERE id=$1`, e.Message.ID); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.retryPendingWarmupVerification(ctx); err == nil {
+				t.Fatal("outage should keep the message pending")
+			}
+			if _, err := handle.Exec(ctx, `UPDATE unibox_pending_emails SET retry_at=NOW() WHERE id=$1`, e.Message.ID); err != nil {
+				t.Fatal(err)
+			}
+			restarted := &JobsService{UniboxRepository: repository.NewUniboxRepository(handle), EmailRepository: s.EmailRepository, CloudLink: &warmupInboxCloud{deliveryOK: warmup}}
+			if err := restarted.retryPendingWarmupVerification(ctx); err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if warmup {
+				want = 0
+			}
+			if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&count); err != nil || count != want {
+				t.Fatalf("resolved inbox count=%d want=%d err=%v", count, want, err)
+			}
+			if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_pending_emails WHERE id=$1`, e.Message.ID).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("resolved pending count=%d err=%v", count, err)
+			}
+		})
+	}
+}
+
+func TestLiveWarmupPendingMailTracksProviderChangesAndRemoval(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := context.Background()
+	f := newWarmupFixture(t, handle)
+	token := uuid.NewString()
+	e := f.arrival("<pending@test.local>", []string{config.WarmupVerifyHeader + ":" + token})
+	if err := s.UniboxRepository.DeferWarmupVerification(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.HandleUpdateEmail(ctx, &models.JobEventEmailUpdate{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID, Folder: models.FolderArchive, FolderPath: "Archive", UID: 17, Mailbox: 19, Flags: []string{"\\Seen"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.HandleFlagsAdd(ctx, &models.JobEventFlags{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID, Flags: []string{"\\Flagged"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.HandleFlagsRemove(ctx, &models.JobEventFlags{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID, Flags: []string{"\\Seen"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Exec(ctx, `UPDATE unibox_pending_emails SET retry_at=NOW() WHERE id=$1`, e.Message.ID); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.UniboxRepository.ClaimPendingWarmupVerification(ctx, 25)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim=%v err=%v", claimed, err)
+	}
+	m := claimed[0].Message
+	if m.Folder != models.FolderArchive || m.UID != 17 || !slices.Contains(m.Flags, "\\Flagged") || slices.Contains(m.Flags, "\\Seen") || warmupTokenFromMessage(m) != token {
+		t.Fatalf("provider changes lost: %+v", m)
+	}
+	claimedAgain, err := s.UniboxRepository.ClaimPendingWarmupVerification(ctx, 25)
+	if err != nil || len(claimedAgain) != 0 {
+		t.Fatalf("message leased twice: %v %v", claimedAgain, err)
+	}
+	if err := s.HandleRemoveEmail(ctx, &models.JobEventRemoveEmail{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UniboxRepository.ProcessPendingWarmupVerification(ctx, e.Message.ID, func(*models.JobEventNewEmail) error {
+		t.Fatal("deleted provider mail must not be resurrected by a claimed retry")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLiveWarmupPendingProviderChangeRacingVerification(t *testing.T) {
+	for _, remove := range []bool{false, true} {
+		t.Run(fmt.Sprintf("remove=%v", remove), func(t *testing.T) {
+			s, handle := liveWarmupService(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			f := newWarmupFixture(t, handle)
+			e := f.arrival("<racing@test.local>", nil)
+			e.Message.Folder = models.FolderInbox
+			if err := s.UniboxRepository.DeferWarmupVerification(ctx, e); err != nil {
+				t.Fatal(err)
+			}
+			started, release := make(chan struct{}), make(chan struct{})
+			var releaseOnce sync.Once
+			defer releaseOnce.Do(func() { close(release) })
+			processed := make(chan error, 1)
+			go func() {
+				processed <- s.UniboxRepository.ProcessPendingWarmupVerification(ctx, e.Message.ID, func(current *models.JobEventNewEmail) error {
+					close(started)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+					return s.UniboxRepository.CreateEntry(ctx, current.UserID, current.Message)
+				})
+			}()
+			<-started
+			changed := make(chan error, 1)
+			go func() {
+				if remove {
+					changed <- s.HandleRemoveEmail(ctx, &models.JobEventRemoveEmail{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID})
+				} else {
+					changed <- s.HandleUpdateEmail(ctx, &models.JobEventEmailUpdate{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID, Folder: models.FolderArchive})
+				}
+			}()
+			for {
+				var waiting bool
+				err := handle.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%unibox_pending_emails%')`).Scan(&waiting)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if waiting {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			releaseOnce.Do(func() { close(release) })
+			if err := <-processed; err != nil {
+				t.Fatal(err)
+			}
+			if err := <-changed; err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			if remove {
+				if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&count); err != nil || count != 0 {
+					t.Fatalf("deleted provider mail reappeared: rows=%d error=%v", count, err)
+				}
+			} else {
+				var folder string
+				if err := handle.QueryRow(ctx, `SELECT folder FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&folder); err != nil || folder != models.FolderArchive {
+					t.Fatalf("provider move lost: folder=%q error=%v", folder, err)
+				}
+			}
+		})
+	}
+}
+
+func TestLiveWarmupSentCopyWaitsForProviderConfirmation(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := context.Background()
+	f := newWarmupFixture(t, handle)
+	f.mintToken(t, s.WarmupRepo)
+	warmup := f.arrival(f.sentMsgID, nil)
+	warmup.UserID, warmup.Message.EmailID, warmup.Message.Folder = f.senderUser, f.sender, models.FolderSent
+	real := f.arrival("<human-same-subject@test.local>", nil)
+	real.UserID, real.Message.EmailID, real.Message.Folder = f.senderUser, f.sender, models.FolderSent
+	for _, e := range []*models.JobEventNewEmail{warmup, real} {
+		if err := s.HandleNewEmail(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("unconfirmed send leaked: rows=%d err=%v", count, err)
+		}
+	}
+	if err := s.HandleEmailSent(ctx, models.SendEmailResult{TaskID: f.task, Success: true, MessageID: f.sentMsgID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Exec(ctx, `UPDATE unibox_pending_emails SET retry_at=NOW() WHERE email_account_id=$1`, f.sender); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.retryPendingWarmupVerification(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id   uuid.UUID
+		want int
+	}{{warmup.Message.ID, 0}, {real.Message.ID, 1}} {
+		var count int
+		if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id=$1`, tc.id).Scan(&count); err != nil || count != tc.want {
+			t.Fatalf("confirmed visibility: rows=%d want=%d err=%v", count, tc.want, err)
+		}
+	}
+}
+
+func TestLiveWarmupEnrollmentLookupFailureDefersArrival(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := context.Background()
+	f := newWarmupFixture(t, handle)
+	e := f.arrival("<enrollment-lookup@test.local>", nil)
+	s.CloudLink = &warmupInboxCloud{enrollmentErr: errors.New("lookup unavailable")}
+	if err := s.HandleNewEmail(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	var pending, visible int
+	if err := handle.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM unibox_pending_emails WHERE id=$1), (SELECT COUNT(*) FROM unibox_emails WHERE id=$1)`, e.Message.ID).Scan(&pending, &visible); err != nil || pending != 1 || visible != 0 {
+		t.Fatalf("lookup failure bypassed verification: pending=%d visible=%d err=%v", pending, visible, err)
 	}
 }

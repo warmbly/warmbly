@@ -94,6 +94,10 @@ The **minimal retention** preset in the admin panel and in the installer sets al
 
 Warmup keeps the standing of every penalised mailbox (score, state, and any block) against its address as well as its row, so removing the mailbox or dropping out of the pool and coming back does not start it clean. The copy is cleared as soon as the mailbox recovers, and once the mailbox is gone it is kept for 90 days after the block ends or after the removal, whichever is later; a block that requires review is kept until an operator lifts it. A mailbox in good standing has no such copy. The window is fixed rather than a setting, and the rows are purged by the same sweep.
 
+### Pending inbox verification
+
+Mail whose warmup verification is temporarily unavailable waits in the `unibox_pending_emails` Postgres table. It holds the sync event, including message metadata and bounded searchable body text, until verification succeeds or the mailbox is deleted. The consumer retries it automatically after restarts. Full bodies remain in blob storage. This pending queue is included in instance backups but excluded from workspace exports, whose destination re-syncs provider mail.
+
 ### Disconnecting a mailbox
 
 Disconnecting a mailbox, or deleting the workspace holding it, removes its rows from Postgres straight away through the database's own cascades. Two things cannot be done in that instant and are queued instead, then worked off within about a minute:

@@ -170,6 +170,34 @@ func TestLivePoolLinkWarmupDeliveryMatchesAndRefuses(t *testing.T) {
 	}
 }
 
+func TestLivePoolLinkWarmupDeliveryRecognizesSentAndOldCopies(t *testing.T) {
+	f := newPoolLinkFixture(t)
+	ctx := context.Background()
+	const messageID = "<warmup-sent@test.local>"
+	token := f.token(t, messageID, "Quick review", true)
+	if _, err := f.pool.Exec(ctx, `UPDATE warmup_tokens SET created_at = NOW() - INTERVAL '30 days' WHERE token = $1`, token); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name              string
+		account           uuid.UUID
+		sender, messageID string
+		want              bool
+	}{
+		{"Sent copy", f.sender, f.senderTo, messageID, true},
+		{"older inbound copy", f.recipient, f.senderTo, messageID, true},
+		{"unrelated mailbox", uuid.New(), f.senderTo, messageID, false},
+		{"different message", f.sender, f.senderTo, "<human@test.local>", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := f.warmup.IsWarmupDelivery(ctx, tc.account, tc.sender, tc.messageID, "Quick review")
+			if err != nil || got != tc.want {
+				t.Fatalf("warmup = %v, error = %v; want %v", got, err, tc.want)
+			}
+		})
+	}
+}
+
 // An approved code the instance never came back for must not keep a usable
 // bearer token in plaintext once it expires.
 func TestLivePoolLinkExpiredCodeLosesItsToken(t *testing.T) {

@@ -106,6 +106,10 @@ Timing imitates people throughout: sends come in bursts and lulls rather than a 
 
 Warmbly recognizes inbound warmup by its token and files it automatically, including for recipient-only mailboxes. The message moves to a dedicated `Warmbly` folder and is usually marked read; anything that landed in spam is rescued first so the provider records a positive placement signal. This works across Gmail, Outlook via Microsoft Graph, and generic IMAP, and warmup mail never appears in your unified inbox.
 
+The sender's Sent copy is also excluded from Unibox. A consumed or expired token still identifies warmup for inbox filtering, but cannot trigger engagement again. When the header is missing, a recorded message identifier can identify older warmup during history sync; the sender-and-subject fallback stays limited to recent inbound sends so an ordinary conversation is not hidden just because it shares a subject. Existing verified warmup entries are removed from Unibox automatically in background batches, without deleting mail at the provider or changing warmup standing.
+
+If a provider syncs a headerless Sent copy before reporting its final message identifier, Warmbly holds a possible match for verification. The send confirmation then identifies which message was warmup, and ordinary mail sharing its subject can enter Unibox. A matching subject alone never permanently hides a sent message.
+
 ## Pool safety
 
 Shared pools only work if participants behave, so every mailbox is judged on rates rather than raw counts: complaints, spam-folder placement, bounces, and tampering with warmup mail it received, such as deleting it or flagging it as spam. Each band needs a minimum sample before it acts, so a slow week cannot convict a mailbox and a busy one is not punished for its volume.

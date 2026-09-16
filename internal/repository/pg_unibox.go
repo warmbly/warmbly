@@ -57,6 +57,11 @@ type UniboxRepository interface {
 	// are left out: there is nothing to relay through.
 	SeenRelayTargets(ctx context.Context, orgID uuid.UUID, ids []uuid.UUID) ([]models.SeenRelayTarget, error)
 	Delete(ctx context.Context, userID, id uuid.UUID) error
+	ListWarmupReviewCandidates(ctx context.Context, afterID uuid.UUID, limit int) ([]models.JobEventNewEmail, error)
+	DeferWarmupVerification(ctx context.Context, e *models.JobEventNewEmail) error
+	ClaimPendingWarmupVerification(ctx context.Context, limit int) ([]models.JobEventNewEmail, error)
+	ProcessPendingWarmupVerification(ctx context.Context, id uuid.UUID, process func(*models.JobEventNewEmail) error) error
+	UpdatePendingEmail(ctx context.Context, userID, id uuid.UUID, update func(*models.EmailMessageStoreData)) (bool, error)
 
 	// Snooze: per (user, thread). UpsertSnooze adopts the new
 	// snoozed_until even if one already exists; DeleteSnooze removes
@@ -770,11 +775,19 @@ func (r *uniboxRepository) MoveToFolderBulk(ctx context.Context, orgID uuid.UUID
 }
 
 func (r *uniboxRepository) Delete(ctx context.Context, userID, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx,
-		`DELETE FROM unibox_emails WHERE user_id = $1 AND id = $2`,
-		userID, id,
-	)
-	return err
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `DELETE FROM unibox_pending_emails WHERE user_id=$1 AND id=$2`, userID, id); err != nil {
+		return err
+	}
+	// Take a fresh snapshot after waiting for any pending-to-visible transition.
+	if _, err := tx.Exec(ctx, `DELETE FROM unibox_emails WHERE user_id=$1 AND id=$2`, userID, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // queryPreviewList executes a query returning preview rows with limit+1 pagination.

@@ -469,6 +469,8 @@ func main() {
 	// recipient-side dwell survives worker restarts. Short interval keeps the
 	// effective dwell close to the requested value.
 	go jobsService.StartWarmupEngagementPoller(ctx, 30*time.Second)
+	go jobsService.StartWarmupInboxCleanup(ctx)
+	go jobsService.StartPendingWarmupVerification(ctx)
 
 	// Start dead worker detection (every 5 minutes)
 	go jobsService.StartDeadWorkerDetection(ctx, 5*time.Minute)

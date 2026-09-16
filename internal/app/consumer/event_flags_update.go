@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -32,15 +31,22 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 		}
 	}
 
-	email, err := s.UniboxRepository.GetByID(ctx, e.UserID, e.ID)
-	if err != nil {
-		// Warmup mail and anything else the unibox never stored still produces
-		// flag events. Retrying those reported one error per pass, forever.
-		if errors.Is(err, repository.ErrEmailNotFound) {
-			return nil
+	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+		for _, flag := range e.Flags {
+			if !slices.Contains(message.Flags, flag) {
+				message.Flags = append(message.Flags, flag)
+			}
 		}
+		if containsSpamFlag(e.Flags) && message.Folder != models.FolderTrash {
+			message.Folder = models.FolderSpam
+		}
+	})
+	if err != nil {
 		CaptureError(e.UserID, e.EmailID, fmt.Errorf("Email (%s): %w", e.ID.String(), err))
 		return err
+	}
+	if email == nil {
+		return nil
 	}
 
 	// Check if a warmup email is being flagged as spam
@@ -123,15 +129,18 @@ func warmupTokenFromFlags(flags []string) string {
 }
 
 func (s *JobsService) HandleFlagsRemove(ctx context.Context, e *models.JobEventFlags) error {
-	email, err := s.UniboxRepository.GetByID(ctx, e.UserID, e.ID)
-	if err != nil {
-		// Warmup mail and anything else the unibox never stored still produces
-		// flag events. Retrying those reported one error per pass, forever.
-		if errors.Is(err, repository.ErrEmailNotFound) {
-			return nil
+	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+		message.Flags = slices.DeleteFunc(message.Flags, func(flag string) bool { return slices.Contains(e.Flags, flag) })
+		if message.Folder == models.FolderSpam && !containsSpamFlag(message.Flags) {
+			message.Folder = models.FolderInbox
 		}
+	})
+	if err != nil {
 		CaptureError(e.UserID, e.EmailID, fmt.Errorf("Email (%s): %w", e.ID.String(), err))
 		return err
+	}
+	if email == nil {
+		return nil
 	}
 
 	if len(email.Flags) == 0 {
