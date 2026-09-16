@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -581,5 +582,127 @@ func TestLiveWarmupPendingMailTracksProviderChangesAndRemoval(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLiveWarmupPendingProviderChangeRacingVerification(t *testing.T) {
+	for _, remove := range []bool{false, true} {
+		t.Run(fmt.Sprintf("remove=%v", remove), func(t *testing.T) {
+			s, handle := liveWarmupService(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			f := newWarmupFixture(t, handle)
+			e := f.arrival("<racing@test.local>", nil)
+			e.Message.Folder = models.FolderInbox
+			if err := s.UniboxRepository.DeferWarmupVerification(ctx, e); err != nil {
+				t.Fatal(err)
+			}
+			started, release := make(chan struct{}), make(chan struct{})
+			var releaseOnce sync.Once
+			defer releaseOnce.Do(func() { close(release) })
+			processed := make(chan error, 1)
+			go func() {
+				processed <- s.UniboxRepository.ProcessPendingWarmupVerification(ctx, e.Message.ID, func(current *models.JobEventNewEmail) error {
+					close(started)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+					return s.UniboxRepository.CreateEntry(ctx, current.UserID, current.Message)
+				})
+			}()
+			<-started
+			changed := make(chan error, 1)
+			go func() {
+				if remove {
+					changed <- s.HandleRemoveEmail(ctx, &models.JobEventRemoveEmail{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID})
+				} else {
+					changed <- s.HandleUpdateEmail(ctx, &models.JobEventEmailUpdate{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID, Folder: models.FolderArchive})
+				}
+			}()
+			for {
+				var waiting bool
+				err := handle.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%unibox_pending_emails%')`).Scan(&waiting)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if waiting {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			releaseOnce.Do(func() { close(release) })
+			if err := <-processed; err != nil {
+				t.Fatal(err)
+			}
+			if err := <-changed; err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			if remove {
+				if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&count); err != nil || count != 0 {
+					t.Fatalf("deleted provider mail reappeared: rows=%d error=%v", count, err)
+				}
+			} else {
+				var folder string
+				if err := handle.QueryRow(ctx, `SELECT folder FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&folder); err != nil || folder != models.FolderArchive {
+					t.Fatalf("provider move lost: folder=%q error=%v", folder, err)
+				}
+			}
+		})
+	}
+}
+
+func TestLiveWarmupSentCopyWaitsForProviderConfirmation(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := context.Background()
+	f := newWarmupFixture(t, handle)
+	f.mintToken(t, s.WarmupRepo)
+	warmup := f.arrival(f.sentMsgID, nil)
+	warmup.UserID, warmup.Message.EmailID, warmup.Message.Folder = f.senderUser, f.sender, models.FolderSent
+	real := f.arrival("<human-same-subject@test.local>", nil)
+	real.UserID, real.Message.EmailID, real.Message.Folder = f.senderUser, f.sender, models.FolderSent
+	for _, e := range []*models.JobEventNewEmail{warmup, real} {
+		if err := s.HandleNewEmail(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("unconfirmed send leaked: rows=%d err=%v", count, err)
+		}
+	}
+	if err := s.HandleEmailSent(ctx, models.SendEmailResult{TaskID: f.task, Success: true, MessageID: f.sentMsgID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.Exec(ctx, `UPDATE unibox_pending_emails SET retry_at=NOW() WHERE email_account_id=$1`, f.sender); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.retryPendingWarmupVerification(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id   uuid.UUID
+		want int
+	}{{warmup.Message.ID, 0}, {real.Message.ID, 1}} {
+		var count int
+		if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_emails WHERE id=$1`, tc.id).Scan(&count); err != nil || count != tc.want {
+			t.Fatalf("confirmed visibility: rows=%d want=%d err=%v", count, tc.want, err)
+		}
+	}
+}
+
+func TestLiveWarmupEnrollmentLookupFailureDefersArrival(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := context.Background()
+	f := newWarmupFixture(t, handle)
+	e := f.arrival("<enrollment-lookup@test.local>", nil)
+	s.CloudLink = &warmupInboxCloud{enrollmentErr: errors.New("lookup unavailable")}
+	if err := s.HandleNewEmail(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	var pending, visible int
+	if err := handle.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM unibox_pending_emails WHERE id=$1), (SELECT COUNT(*) FROM unibox_emails WHERE id=$1)`, e.Message.ID).Scan(&pending, &visible); err != nil || pending != 1 || visible != 0 {
+		t.Fatalf("lookup failure bypassed verification: pending=%d visible=%d err=%v", pending, visible, err)
 	}
 }

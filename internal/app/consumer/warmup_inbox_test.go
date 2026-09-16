@@ -58,10 +58,13 @@ func TestHandleNewEmailKeepsLocalWarmupSentCopyOutOfInbox(t *testing.T) {
 type warmupInboxCloud struct {
 	tokenOK, deliveryOK       bool
 	tokenErr, deliveryErr     error
+	enrollmentErr             error
 	tokenCalls, deliveryCalls int
 }
 
-func (*warmupInboxCloud) IsEnrolled(context.Context, uuid.UUID) bool { return true }
+func (c *warmupInboxCloud) CheckEnrollment(context.Context, uuid.UUID) (bool, error) {
+	return true, c.enrollmentErr
+}
 
 func (c *warmupInboxCloud) VerifyWarmupToken(ctx context.Context, _ uuid.UUID, _ string) (bool, error) {
 	if _, ok := ctx.Deadline(); !ok {
@@ -97,6 +100,7 @@ func TestHandleNewEmailCloudWarmupVisibility(t *testing.T) {
 		{name: "malformed marker", marker: config.WarmupVerifyHeader + ":not-a-token", wantEntries: 1},
 		{name: "token outage retries without exposure", marker: config.WarmupVerifyHeader + ":" + token, cloud: warmupInboxCloud{tokenErr: errors.New("cloud unavailable")}, wantTokenCalls: 1, wantErr: true},
 		{name: "delivery outage retries without exposure", cloud: warmupInboxCloud{deliveryErr: errors.New("cloud unavailable")}, wantErr: true},
+		{name: "enrollment lookup failure retries without exposure", cloud: warmupInboxCloud{enrollmentErr: errors.New("database unavailable")}, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inbox := &warmupInboxRepo{}
@@ -110,6 +114,7 @@ func TestHandleNewEmailCloudWarmupVisibility(t *testing.T) {
 				t.Fatalf("error = %v, inbox entries = %d, token calls = %d", err, inbox.entries, tc.cloud.tokenCalls)
 			}
 			if tc.wantErr {
+				tc.cloud.enrollmentErr = nil
 				tc.cloud.tokenErr, tc.cloud.deliveryErr = nil, nil
 				tc.cloud.tokenOK, tc.cloud.deliveryOK = true, true
 				if err := s.ingestNewEmail(context.Background(), e); err != nil || inbox.entries != 0 {

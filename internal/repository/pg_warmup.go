@@ -1252,6 +1252,8 @@ func (r *warmupRepository) FindDeliveredWarmupToken(ctx context.Context, recipie
 	return scanWarmupToken(r.db.QueryRow(ctx, query, recipientAccountID, messageID, senderAddress, subject))
 }
 
+var ErrWarmupDeliveryPending = errors.New("warmup send is awaiting its provider message identifier")
+
 // IsWarmupDelivery recognizes either mailbox's copy without consuming a token or repeating engagement.
 func (r *warmupRepository) IsWarmupDelivery(ctx context.Context, accountID uuid.UUID, senderAddress, messageID, subject string) (bool, error) {
 	messageID = strings.Trim(strings.TrimSpace(messageID), "<>")
@@ -1283,12 +1285,24 @@ func (r *warmupRepository) IsWarmupDelivery(ctx context.Context, accountID uuid.
 		      AND wt.created_at > NOW() - INTERVAL '2 days'
 		      AND wt.subject <> '' AND lower(btrim(wt.subject)) = lower($4)
 		      AND lower(ea.email) = lower($3)
+		  ), EXISTS (
+		    SELECT 1 FROM warmup_tokens wt
+		    JOIN email_accounts ea ON ea.id = wt.sender_account_id
+		    JOIN tasks t ON t.id = wt.task_id
+		    WHERE wt.sender_account_id = $1 AND $3 <> '' AND $4 <> ''
+		      AND lower(ea.email) = lower($3) AND lower(btrim(wt.subject)) = lower($4)
+		      AND wt.sent_message_id = '' AND wt.expires_at > NOW()
+		      AND t.status IN ('active', 'completed', 'dead_lettered')
 		  )`
-	var ok bool
-	if err := r.db.QueryRow(ctx, query, accountID, messageID, senderAddress, subject).Scan(&ok); err != nil {
+	// One snapshot ensures a send confirmation cannot fall between known and pending checks.
+	var known, pending bool
+	if err := r.db.QueryRow(ctx, query, accountID, messageID, senderAddress, subject).Scan(&known, &pending); err != nil {
 		return false, err
 	}
-	return ok, nil
+	if !known && pending {
+		return false, ErrWarmupDeliveryPending
+	}
+	return known, nil
 }
 
 // GetRecentlyUsedPartners returns partner account IDs the sender has targeted since the provided timestamp.

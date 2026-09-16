@@ -47,8 +47,8 @@ func (r *uniboxRepository) DeferWarmupVerification(ctx context.Context, e *model
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(ctx, `INSERT INTO unibox_pending_emails (id, email_account_id, payload, retry_at)
-		VALUES ($1, $2, $3, NOW() + INTERVAL '1 minute') ON CONFLICT (id) DO NOTHING`, e.Message.ID, e.Message.EmailID, payload)
+	_, err = r.db.Exec(ctx, `INSERT INTO unibox_pending_emails (id, email_account_id, payload, user_id, retry_at)
+		VALUES ($1, $2, $3, $4, NOW() + INTERVAL '1 minute') ON CONFLICT (id) DO NOTHING`, e.Message.ID, e.Message.EmailID, payload, e.UserID)
 	return err
 }
 
@@ -105,32 +105,32 @@ func (r *uniboxRepository) ProcessPendingWarmupVerification(ctx context.Context,
 }
 
 // UpdatePendingEmail preserves provider changes while an arrival awaits verification.
-func (r *uniboxRepository) UpdatePendingEmail(ctx context.Context, userID, id uuid.UUID, update func(*models.EmailMessageStoreData)) error {
+func (r *uniboxRepository) UpdatePendingEmail(ctx context.Context, userID, id uuid.UUID, update func(*models.EmailMessageStoreData)) (bool, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var payload []byte
 	err = tx.QueryRow(ctx, `SELECT payload FROM unibox_pending_emails
-		WHERE id=$1 AND payload->>'user_id'=$2 FOR UPDATE`, id, userID.String()).Scan(&payload)
+		WHERE id=$1 AND user_id=$2 FOR UPDATE`, id, userID).Scan(&payload)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	var e models.JobEventNewEmail
 	if err := json.Unmarshal(payload, &e); err != nil {
-		return err
+		return false, err
 	}
 	update(e.Message)
 	payload, err = json.Marshal(e)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE unibox_pending_emails SET payload=$2 WHERE id=$1`, id, payload); err != nil {
-		return err
+		return false, err
 	}
-	return tx.Commit(ctx)
+	return true, tx.Commit(ctx)
 }

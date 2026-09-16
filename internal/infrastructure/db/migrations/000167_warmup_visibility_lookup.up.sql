@@ -5,6 +5,7 @@ CREATE INDEX idx_warmup_received_message_lookup
 
 CREATE TABLE unibox_pending_emails (
     id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     email_account_id uuid NOT NULL REFERENCES email_accounts(id) ON DELETE CASCADE,
     payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
     retry_at timestamptz NOT NULL DEFAULT now(),
@@ -12,3 +13,4 @@ CREATE TABLE unibox_pending_emails (
 );
 CREATE INDEX idx_unibox_pending_emails_retry ON unibox_pending_emails (retry_at);
 CREATE INDEX idx_unibox_pending_emails_account ON unibox_pending_emails (email_account_id);
+CREATE INDEX idx_unibox_pending_emails_user ON unibox_pending_emails (user_id);

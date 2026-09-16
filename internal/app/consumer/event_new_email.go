@@ -249,7 +249,14 @@ func (s *JobsService) isKnownWarmupEmail(ctx context.Context, e *models.JobEvent
 			return known, err
 		}
 	}
-	if s.CloudLink == nil || !s.CloudLink.IsEnrolled(ctx, e.Message.EmailID) {
+	if s.CloudLink == nil {
+		return false, nil
+	}
+	enrolled, err := s.CloudLink.CheckEnrollment(ctx, e.Message.EmailID)
+	if err != nil {
+		return false, fmt.Errorf("cloud warmup enrollment lookup: %w", err)
+	}
+	if !enrolled {
 		return false, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, cloudWarmupCheckTimeout)

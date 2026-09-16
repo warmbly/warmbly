@@ -110,6 +110,7 @@ type Service interface {
 
 	// IsEnrolled is the local warmup scheduler's stand-down check; fails closed to false.
 	IsEnrolled(ctx context.Context, accountID uuid.UUID) bool
+	CheckEnrollment(ctx context.Context, accountID uuid.UUID) (bool, error)
 	// VerifyWarmupToken is the consumer's check that warmup mail in an enrolled mailbox is the cloud's.
 	VerifyWarmupToken(ctx context.Context, accountID uuid.UUID, token string) (bool, error)
 	// IsCloudWarmupDelivery is the same check for warmup mail whose verify header did not survive.
@@ -324,6 +325,10 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 func (s *service) IsEnrolled(ctx context.Context, accountID uuid.UUID) bool {
 	ok, err := s.repo.IsEnrolled(ctx, accountID)
 	return err == nil && ok
+}
+
+func (s *service) CheckEnrollment(ctx context.Context, accountID uuid.UUID) (bool, error) {
+	return s.repo.IsEnrolled(ctx, accountID)
 }
 
 func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.CloudLinkMailboxRow, *errx.Error) {

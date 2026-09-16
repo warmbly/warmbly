@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/crypt"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // Cloud-managed mailboxes: the consent runs on this deployment's OAuth app,
@@ -319,6 +320,9 @@ func (s *service) VerifyWarmupDelivery(ctx context.Context, inst *models.PoolLin
 		return false, nil
 	}
 	ok, err := s.warmup.IsWarmupDelivery(ctx, m.EmailAccountID, q.Sender, q.MessageID, q.Subject)
+	if errors.Is(err, repository.ErrWarmupDeliveryPending) {
+		return false, errx.ErrServiceDown
+	}
 	if err != nil {
 		return false, errx.InternalError()
 	}
