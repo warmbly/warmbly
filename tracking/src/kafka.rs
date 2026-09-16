@@ -4,7 +4,9 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use schema_registry_converter::async_impl::avro::AvroEncoder;
 use schema_registry_converter::async_impl::schema_registry::SrSettings;
-use schema_registry_converter::schema_registry_common::SubjectNameStrategy;
+use schema_registry_converter::schema_registry_common::{
+    SchemaType, SubjectNameStrategy, SuppliedSchema,
+};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -15,7 +17,6 @@ use crate::events::TrackingEvent;
 use crate::observability;
 
 /// Avro schema for tracking events - matches Go events.TrackingEvent
-#[allow(dead_code)]
 pub const TRACKING_EVENT_SCHEMA: &str = r#"
 {
     "type": "record",
@@ -35,6 +36,20 @@ pub const TRACKING_EVENT_SCHEMA: &str = r#"
     ]
 }
 "#;
+
+/// The schema as the registry needs it: the document, its type, and the full
+/// record name so a subject registered from here matches one registered by any
+/// other client.
+fn tracking_event_schema() -> SuppliedSchema {
+    SuppliedSchema {
+        name: Some("com.warmbly.tracking.TrackingEvent".to_string()),
+        schema_type: SchemaType::Avro,
+        schema: TRACKING_EVENT_SCHEMA.to_string(),
+        references: vec![],
+        properties: None,
+        tags: None,
+    }
+}
 
 #[derive(Clone)]
 pub struct KafkaProducer {
@@ -220,14 +235,82 @@ impl KafkaProducer {
         };
         let encoder = encoder.read().await;
 
-        // Use schema registry encoder to serialize with proper schema ID prefix
+        // The schema travels with the strategy so the encoder registers it on
+        // first use. TopicNameStrategy alone only LOOKS one up, and a subject
+        // that does not exist yet has nothing to find, which a fresh registry
+        // reports as "Could not get id from response" on every single event.
+        // Nothing then reaches the bus and every open and click is dropped.
         let payload = encoder
             .encode(
                 event.to_avro_value(),
-                SubjectNameStrategy::TopicNameStrategy(self.topic.clone(), false),
+                SubjectNameStrategy::TopicNameStrategyWithSchema(
+                    self.topic.clone(),
+                    false,
+                    tracking_event_schema(),
+                ),
             )
             .await?;
 
         Ok(payload)
+    }
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+    use crate::events::TrackingEvent;
+
+    /// Against a real Schema Registry, which is the only thing that shows
+    /// whether the encoder can register a subject rather than merely look one
+    /// up. Skipped without one:
+    ///
+    ///   SR_URL=... SR_KEY=... SR_SECRET=... cargo test --features kafka registry
+    ///
+    /// This is the gap that took tracking down during a codec cutover: every
+    /// event failed with "Could not get id from response" because the strategy
+    /// carried no schema, and nothing in CI had ever encoded against a registry.
+    #[tokio::test]
+    async fn encodes_against_a_real_registry() {
+        let Ok(url) = std::env::var("SR_URL") else {
+            return;
+        };
+        let settings = SrSettings::new_builder(url)
+            .set_basic_authorization(
+                &std::env::var("SR_KEY").unwrap_or_default(),
+                Some(&std::env::var("SR_SECRET").unwrap_or_default()),
+            )
+            .build()
+            .expect("settings");
+        let encoder = AvroEncoder::new(settings);
+
+        let event = TrackingEvent {
+            event_type: "EMAIL_OPENED".to_string(),
+            task_id: uuid::Uuid::new_v4().to_string(),
+            original_url: None,
+            link_id: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            user_agent: Some("probe".to_string()),
+            ip_hash: None,
+            client_ip: None,
+            scanner: None,
+            scanner_probable: false,
+        };
+
+        let payload = encoder
+            .encode(
+                event.to_avro_value(),
+                SubjectNameStrategy::TopicNameStrategyWithSchema(
+                    "warmbly-tracking-schema-check".to_string(),
+                    false,
+                    tracking_event_schema(),
+                ),
+            )
+            .await
+            .expect("the encoder must register the subject, not only look it up");
+
+        // Confluent framing: a zero byte then the schema id.
+        assert_eq!(payload[0], 0, "payload is not schema-registry framed");
+        assert!(payload.len() > 5, "payload carries no body");
+        println!("encoded {} bytes against the live registry", payload.len());
     }
 }
