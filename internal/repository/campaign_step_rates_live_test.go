@@ -110,7 +110,7 @@ func TestLiveCampaignStepRatesAreOfTheStepsOwnSends(t *testing.T) {
 
 	// The steps add up to the summary, which shares the automated-click
 	// definition with them: one campaign, read two ways, one answer.
-	sum, xerr := repo.GetCampaignSummary(ctx, f.owner, f.campaign)
+	sum, xerr := repo.GetCampaignSummary(ctx, f.org, f.campaign)
 	if xerr != nil {
 		t.Fatalf("GetCampaignSummary: %v", xerr)
 	}

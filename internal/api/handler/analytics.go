@@ -61,10 +61,9 @@ func (h *Handler) GetWarmupAnalytics(c *gin.Context) {
 // GetCampaignAnalytics gets analytics for a specific campaign
 // GET /analytics/campaigns/:id
 func (h *Handler) GetCampaignAnalytics(c *gin.Context) {
-	userIDStr := middleware.GetUserID(c)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		errx.Handle(c, errx.ErrAuth)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
@@ -75,7 +74,7 @@ func (h *Handler) GetCampaignAnalytics(c *gin.Context) {
 		return
 	}
 
-	analytics, xerr := h.AnalyticsService.GetCampaignAnalytics(c.Request.Context(), userID, campaignID)
+	analytics, xerr := h.AnalyticsService.GetCampaignAnalytics(c.Request.Context(), *orgID, campaignID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -87,10 +86,9 @@ func (h *Handler) GetCampaignAnalytics(c *gin.Context) {
 // GetCampaignDailyStats gets daily statistics for a campaign
 // GET /analytics/campaigns/:id/daily
 func (h *Handler) GetCampaignDailyStats(c *gin.Context) {
-	userIDStr := middleware.GetUserID(c)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		errx.Handle(c, errx.ErrAuth)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
@@ -122,7 +120,7 @@ func (h *Handler) GetCampaignDailyStats(c *gin.Context) {
 		return
 	}
 
-	stats, xerr := h.AnalyticsService.GetCampaignDailyStats(c.Request.Context(), userID, campaignID, from, to)
+	stats, xerr := h.AnalyticsService.GetCampaignDailyStats(c.Request.Context(), *orgID, campaignID, from, to)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -255,10 +253,9 @@ func (h *Handler) GetDashboardAnalytics(c *gin.Context) {
 // GetCampaignHourlyStats returns hourly statistics for a campaign on a specific date
 // GET /analytics/campaigns/:id/hourly?date=2024-01-15
 func (h *Handler) GetCampaignHourlyStats(c *gin.Context) {
-	userIDStr := middleware.GetUserID(c)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		errx.Handle(c, errx.ErrAuth)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
@@ -281,7 +278,7 @@ func (h *Handler) GetCampaignHourlyStats(c *gin.Context) {
 		return
 	}
 
-	stats, xerr := h.AnalyticsService.GetCampaignHourlyStats(c.Request.Context(), userID, campaignID, date)
+	stats, xerr := h.AnalyticsService.GetCampaignHourlyStats(c.Request.Context(), *orgID, campaignID, date)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -293,10 +290,9 @@ func (h *Handler) GetCampaignHourlyStats(c *gin.Context) {
 // CompareCampaigns returns comparison statistics for multiple campaigns
 // GET /analytics/campaigns/compare?ids=uuid1,uuid2&from=2024-01-01&to=2024-01-31
 func (h *Handler) CompareCampaigns(c *gin.Context) {
-	userIDStr := middleware.GetUserID(c)
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		errx.Handle(c, errx.ErrAuth)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
@@ -347,7 +343,7 @@ func (h *Handler) CompareCampaigns(c *gin.Context) {
 		return
 	}
 
-	comparison, xerr := h.AnalyticsService.CompareCampaigns(c.Request.Context(), userID, campaignIDs, from, to)
+	comparison, xerr := h.AnalyticsService.CompareCampaigns(c.Request.Context(), *orgID, campaignIDs, from, to)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return

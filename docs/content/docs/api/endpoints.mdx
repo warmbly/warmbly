@@ -42,6 +42,8 @@ All paths below are relative to the versioned base URL `https://api.warmbly.com/
 
 ### Campaigns and sequences
 
+Campaigns, steps and activity logs are scoped to the selected organization for session callers and the key's organization for API-key callers. Access depends on the permissions below, regardless of who created the campaign. Step updates and deletes also require the step to belong to the campaign in the URL. Campaign analytics, including daily, hourly and comparison endpoints, use this same organization boundary and require `READ_ANALYTICS` (or **View analytics** for session callers).
+
 | Method | Path | API Permission |
 |--------|------|----------------|
 | GET | `/campaigns` | `READ_CAMPAIGNS` |

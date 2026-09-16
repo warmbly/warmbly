@@ -10,11 +10,11 @@ import (
 )
 
 type SequenceService interface {
-	Create(ctx context.Context, userID, campaignID string) (*models.Sequence, *errx.Error)
-	Get(ctx context.Context, userID, campaignID string) ([]models.Sequence, *errx.Error)
-	Update(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error)
-	UpdateLayout(ctx context.Context, userID, campaignID string, positions []models.SequencePosition) *errx.Error
-	Delete(ctx context.Context, userID, campaignID, sequenceID string) *errx.Error
+	Create(ctx context.Context, orgID, campaignID string) (*models.Sequence, *errx.Error)
+	Get(ctx context.Context, orgID, campaignID string) ([]models.Sequence, *errx.Error)
+	Update(ctx context.Context, orgID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error)
+	UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error
+	Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error
 }
 
 type sequenceService struct {

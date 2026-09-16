@@ -11,11 +11,15 @@ import (
 )
 
 func (h *Handler) CreateSequence(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 
 	id := c.Param("id")
 
-	resp, err := h.SequenceService.Create(c.Request.Context(), userID, id)
+	resp, err := h.SequenceService.Create(c.Request.Context(), orgID.String(), id)
 	if err != nil {
 		errx.Handle(c, err)
 		return
@@ -27,11 +31,15 @@ func (h *Handler) CreateSequence(c *gin.Context) {
 }
 
 func (h *Handler) GetSequences(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 
 	id := c.Param("id")
 
-	resp, err := h.SequenceService.Get(c.Request.Context(), userID, id)
+	resp, err := h.SequenceService.Get(c.Request.Context(), orgID.String(), id)
 	if err != nil {
 		errx.Handle(c, err)
 		return
@@ -41,7 +49,11 @@ func (h *Handler) GetSequences(c *gin.Context) {
 }
 
 func (h *Handler) UpdateSequence(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 
 	id := c.Param("id")
 	sequenceID := c.Param("sid")
@@ -53,7 +65,7 @@ func (h *Handler) UpdateSequence(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.SequenceService.Update(c.Request.Context(), userID, id, sequenceID, &data)
+	resp, err := h.SequenceService.Update(c.Request.Context(), orgID.String(), id, sequenceID, &data)
 	if err != nil {
 		errx.Handle(c, err)
 		return
@@ -72,7 +84,11 @@ func (h *Handler) UpdateSequence(c *gin.Context) {
 // audit log or read as a content change. Retries are naturally safe (positions
 // are last-write-wins), so no Idempotency-Key is required.
 func (h *Handler) PatchSequenceLayout(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 	id := c.Param("id")
 
 	var data models.SequenceLayout
@@ -84,7 +100,7 @@ func (h *Handler) PatchSequenceLayout(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "too many positions"))
 		return
 	}
-	if err := h.SequenceService.UpdateLayout(c.Request.Context(), userID, id, data.Positions); err != nil {
+	if err := h.SequenceService.UpdateLayout(c.Request.Context(), orgID.String(), id, data.Positions); err != nil {
 		errx.Handle(c, err)
 		return
 	}
@@ -92,12 +108,16 @@ func (h *Handler) PatchSequenceLayout(c *gin.Context) {
 }
 
 func (h *Handler) DeleteSequence(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
+		return
+	}
 
 	id := c.Param("id")
 	sequenceID := c.Param("sid")
 
-	if err := h.SequenceService.Delete(c.Request.Context(), userID, id, sequenceID); err != nil {
+	if err := h.SequenceService.Delete(c.Request.Context(), orgID.String(), id, sequenceID); err != nil {
 		errx.Handle(c, err)
 		return
 	}

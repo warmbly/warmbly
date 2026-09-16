@@ -127,8 +127,8 @@ func (s *campaignService) Overview(ctx context.Context, orgID string) (*models.C
 	return resp, nil
 }
 
-func (s *campaignService) Update(ctx context.Context, userID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error) {
-	resp, err := s.campaignRepository.Update(ctx, userID, query, data)
+func (s *campaignService) Update(ctx context.Context, orgID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error) {
+	resp, err := s.campaignRepository.Update(ctx, orgID, query, data)
 	if err != nil {
 		return nil, err
 	}
@@ -930,14 +930,14 @@ func (s *campaignService) StopCampaign(ctx context.Context, orgID uuid.UUID, cam
 	return nil
 }
 
-func (s *campaignService) GetLogs(ctx context.Context, userID, campaignID string, limit int, cursor *string) (*models.CampaignLogsResult, *errx.Error) {
+func (s *campaignService) GetLogs(ctx context.Context, orgID, campaignID string, limit int, cursor *string) (*models.CampaignLogsResult, *errx.Error) {
 	cID, parseErr := uuid.Parse(campaignID)
 	if parseErr != nil {
 		return nil, errx.ErrUuid
 	}
 
-	// Verify user owns this campaign
-	_, err := s.campaignRepository.Get(ctx, userID, campaignID)
+	// Verify the campaign belongs to the selected workspace
+	_, err := s.campaignRepository.Get(ctx, orgID, campaignID)
 	if err != nil {
 		if errors.Is(err, errx.ErrResourceNotFound) {
 			return nil, errx.ErrNotFound
