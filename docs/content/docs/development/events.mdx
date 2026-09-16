@@ -15,7 +15,7 @@ The bus is an abstraction (`internal/infrastructure/eventbus/`) with two provide
 Message encoding is orthogonal to transport, selected by `CODEC_PROVIDER`:
 
 - `json`: plain JSON, no external dependencies, and the default for the self-host stack.
-- `avro`: Avro with Confluent Schema Registry (`SCHEMA_REGISTRY_URL` plus optional key/secret), also behind the `kafka` build tag. The topic name is used as the Schema Registry subject.
+- `avro`: Avro with Confluent Schema Registry (`SCHEMA_REGISTRY_URL` plus optional key/secret), also behind the `kafka` build tag. The subject is the topic name plus `-value`, Confluent's default naming strategy, so `warmup-events` registers under `warmup-events-value`.
 
 The Rust tracking service follows both switches. It speaks Kafka only when compiled with its `kafka` cargo feature, which is what the `tracking:*-kafka` image is, and it encodes with `CODEC_PROVIDER` on either transport. So a Kafka deployment on `CODEC_PROVIDER=json` needs no Schema Registry at all, and `avro` there is refused at boot without `SCHEMA_REGISTRY_URL` rather than failing at the first published event.
 

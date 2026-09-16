@@ -283,3 +283,16 @@ func elemName(body any) string {
 	}
 	return t.Name()
 }
+
+// SchemaFor derives a record schema for a plain event struct. The analytics
+// streams carry no union, so they have nothing a reflecting serializer could
+// fail to disambiguate; they need this only because the same walk has to
+// describe them, or their records drift from the envelopes' on tags, time and
+// uuid handling.
+func SchemaFor(v any) (avro.Schema, error) {
+	t := reflect.TypeOf(v)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return schemaOf(t, "", map[reflect.Type]avro.Schema{})
+}
