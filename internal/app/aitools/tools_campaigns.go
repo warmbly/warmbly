@@ -33,8 +33,8 @@ func (d Deps) registerCampaignTools(r *Registry) {
 			"campaign_id": strProp("The campaign's UUID."),
 		}, "campaign_id"),
 		Risk:            generation.RiskRead,
-		RequiredOrgPerm: models.PermViewCampaigns,
-		RequiredAPIPerm: models.APIPermReadCampaigns,
+		RequiredOrgPerm: models.PermViewAnalytics,
+		RequiredAPIPerm: models.APIPermReadAnalytics,
 		Handler:         d.getCampaignStats,
 	})
 
