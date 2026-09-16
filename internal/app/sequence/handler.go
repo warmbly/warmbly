@@ -13,21 +13,21 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 )
 
-func (s *sequenceService) Create(ctx context.Context, userID, campaignID string) (*models.Sequence, *errx.Error) {
-	return s.sequenceRepository.Create(ctx, userID, campaignID)
+func (s *sequenceService) Create(ctx context.Context, orgID, campaignID string) (*models.Sequence, *errx.Error) {
+	return s.sequenceRepository.Create(ctx, orgID, campaignID)
 }
 
-func (s *sequenceService) Get(ctx context.Context, userID, campaignID string) ([]models.Sequence, *errx.Error) {
-	return s.sequenceRepository.Get(ctx, userID, campaignID)
+func (s *sequenceService) Get(ctx context.Context, orgID, campaignID string) ([]models.Sequence, *errx.Error) {
+	return s.sequenceRepository.Get(ctx, orgID, campaignID)
 }
 
-func (s *sequenceService) Update(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error) {
-	s.deriveBodyHTML(ctx, userID, campaignID, sequenceID, data)
+func (s *sequenceService) Update(ctx context.Context, orgID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error) {
+	s.deriveBodyHTML(ctx, orgID, campaignID, sequenceID, data)
 	// Branch routing is resolved (and made safe against deleted/dangling targets
 	// and loops) at schedule time in the repository's finder; the repository also
 	// validates branch shape before persisting. No cross-step write validation is
 	// needed here — the canvas only ever points a branch at a real step or stop.
-	return s.sequenceRepository.Update(ctx, userID, campaignID, sequenceID, data)
+	return s.sequenceRepository.Update(ctx, orgID, campaignID, sequenceID, data)
 }
 
 // deriveBodyHTML fills in the HTML part for a plain-only write.
@@ -40,14 +40,14 @@ func (s *sequenceService) Update(ctx context.Context, userID, campaignID, sequen
 // Only when the stored HTML has nothing in it: an author who wrote both parts
 // keeps the HTML they designed, and a caller that sends body_html explicitly
 // is never second-guessed.
-func (s *sequenceService) deriveBodyHTML(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) {
+func (s *sequenceService) deriveBodyHTML(ctx context.Context, orgID, campaignID, sequenceID string, data *models.UpdateSequence) {
 	if data == nil || data.BodyPlain == nil || data.BodyHTML != nil {
 		return
 	}
 	if strings.TrimSpace(*data.BodyPlain) == "" {
 		return
 	}
-	steps, xerr := s.sequenceRepository.Get(ctx, userID, campaignID)
+	steps, xerr := s.sequenceRepository.Get(ctx, orgID, campaignID)
 	if xerr != nil {
 		return
 	}
@@ -66,18 +66,18 @@ func (s *sequenceService) deriveBodyHTML(ctx context.Context, userID, campaignID
 
 // UpdateLayout persists only step canvas coordinates (drag-to-stick). Cosmetic
 // and high-churn, so it stays out of the audited content-update path.
-func (s *sequenceService) UpdateLayout(ctx context.Context, userID, campaignID string, positions []models.SequencePosition) *errx.Error {
-	return s.sequenceRepository.UpdateLayout(ctx, userID, campaignID, positions)
+func (s *sequenceService) UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error {
+	return s.sequenceRepository.UpdateLayout(ctx, orgID, campaignID, positions)
 }
 
 // Delete removes a step. Its attachment rows go with it through the cascade,
 // so the objects behind them are listed first and dropped once the delete has
 // committed — otherwise the bytes stay in storage against the org's quota with
 // no row left to reach them.
-func (s *sequenceService) Delete(ctx context.Context, userID, campaignID, sequenceID string) *errx.Error {
+func (s *sequenceService) Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error {
 	keys := s.stepObjectKeys(ctx, campaignID, sequenceID)
 
-	if xerr := s.sequenceRepository.Delete(ctx, userID, campaignID, sequenceID); xerr != nil {
+	if xerr := s.sequenceRepository.Delete(ctx, orgID, campaignID, sequenceID); xerr != nil {
 		return xerr
 	}
 

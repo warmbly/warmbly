@@ -33,8 +33,8 @@ func (d Deps) registerCampaignTools(r *Registry) {
 			"campaign_id": strProp("The campaign's UUID."),
 		}, "campaign_id"),
 		Risk:            generation.RiskRead,
-		RequiredOrgPerm: models.PermViewCampaigns,
-		RequiredAPIPerm: models.APIPermReadCampaigns,
+		RequiredOrgPerm: models.PermViewAnalytics,
+		RequiredAPIPerm: models.APIPermReadAnalytics,
 		Handler:         d.getCampaignStats,
 	})
 
@@ -277,7 +277,7 @@ func (d Deps) updateCampaign(ctx context.Context, inv Invocation, args json.RawM
 		RampCeiling:       in.RampCeiling,
 		EntryDelayMinutes: in.EntryDelayMinutes,
 	}
-	camp, xerr := d.Campaigns.Update(ctx, inv.UserID.String(), in.CampaignID, upd)
+	camp, xerr := d.Campaigns.Update(ctx, inv.OrgID.String(), in.CampaignID, upd)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
@@ -386,7 +386,7 @@ func (d Deps) getCampaignLogs(ctx context.Context, inv Invocation, args json.Raw
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	res, xerr := d.Campaigns.GetLogs(ctx, inv.UserID.String(), in.CampaignID, limit, nil)
+	res, xerr := d.Campaigns.GetLogs(ctx, inv.OrgID.String(), in.CampaignID, limit, nil)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
@@ -428,7 +428,7 @@ func (d Deps) getCampaignStats(ctx context.Context, inv Invocation, args json.Ra
 	if err != nil {
 		return "", err
 	}
-	a, xerr := d.Analytics.GetCampaignAnalytics(ctx, inv.UserID, cid)
+	a, xerr := d.Analytics.GetCampaignAnalytics(ctx, inv.OrgID, cid)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
