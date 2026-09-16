@@ -23,14 +23,14 @@ import (
 const emptyBodyHTML = "<div></div>"
 
 type SequenceRepository interface {
-	Create(ctx context.Context, userID, campaignID string) (*models.Sequence, *errx.Error)
-	Get(ctx context.Context, userID, campaignID string) ([]models.Sequence, *errx.Error)
-	Update(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error)
+	Create(ctx context.Context, orgID, campaignID string) (*models.Sequence, *errx.Error)
+	Get(ctx context.Context, orgID, campaignID string) ([]models.Sequence, *errx.Error)
+	Update(ctx context.Context, orgID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error)
 	// UpdateLayout merges only x/y for the given steps under a campaign, in one
 	// statement, without bumping updated_at — so a drag never reads as a content
 	// change. Cosmetic and unaudited.
-	UpdateLayout(ctx context.Context, userID, campaignID string, positions []models.SequencePosition) *errx.Error
-	Delete(ctx context.Context, userID, campaignID, sequenceID string) *errx.Error
+	UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error
+	Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error
 }
 
 type sequenceRepository struct {
@@ -87,20 +87,20 @@ func GetSequence(row db.Scannable, seq *models.Sequence) error {
 	)
 }
 
-func (r *sequenceRepository) Get(ctx context.Context, userID string, campaignID string) ([]models.Sequence, *errx.Error) {
+func (r *sequenceRepository) Get(ctx context.Context, orgID string, campaignID string) ([]models.Sequence, *errx.Error) {
 	query := fmt.Sprintf(
 		`SELECT %s
 		 FROM sequences s
 		 JOIN campaigns c ON s.campaign_id = c.id
 		 WHERE s.campaign_id = $1
-		  AND c.user_id = $2
+		  AND c.organization_id = $2
 		 ORDER BY s.position ASC, s.created_at ASC`,
 		SequenceSelectJoin,
 	)
 
 	params := []any{
 		campaignID,
-		userID,
+		orgID,
 	}
 
 	rows, err := r.DB.Query(
@@ -112,6 +112,8 @@ func (r *sequenceRepository) Get(ctx context.Context, userID string, campaignID 
 		db.CaptureError(err, query, params, "query")
 		return nil, errx.InternalError()
 	}
+
+	defer rows.Close()
 
 	var sequences []models.Sequence = make([]models.Sequence, 0)
 
@@ -125,10 +127,14 @@ func (r *sequenceRepository) Get(ctx context.Context, userID string, campaignID 
 		sequences = append(sequences, seq)
 	}
 
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, query, params, "rows")
+		return nil, errx.InternalError()
+	}
 	return sequences, nil
 }
 
-func (r *sequenceRepository) Create(ctx context.Context, userID string, campaignID string) (*models.Sequence, *errx.Error) {
+func (r *sequenceRepository) Create(ctx context.Context, orgID string, campaignID string) (*models.Sequence, *errx.Error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -139,33 +145,27 @@ func (r *sequenceRepository) Create(ctx context.Context, userID string, campaign
 	// FOR UPDATE serialises step creation per campaign, so two concurrent
 	// inserts on a one-time campaign cannot both see zero email steps.
 	query := `
-		SELECT user_id, organization_id, kind
-		FROM campaigns WHERE id = $1
+		SELECT kind
+		FROM campaigns WHERE id = $1 AND organization_id = $2
 		FOR UPDATE
 	`
 
 	params := []any{
 		campaignID,
+		orgID,
 	}
-
-	var ownerID string
-	var orgID uuid.UUID
 	var kind string
 	err = tx.QueryRow(
 		ctx,
 		query,
 		params...,
-	).Scan(&ownerID, &orgID, &kind)
+	).Scan(&kind)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errx.ErrNotFound
 		}
 		db.CaptureError(err, query, params, "queryrow")
 		return nil, errx.InternalError()
-	}
-
-	if ownerID != userID {
-		return nil, errx.ErrForbidden
 	}
 
 	// A one-time email is a single message: a second email step would turn
@@ -225,9 +225,9 @@ func (r *sequenceRepository) Create(ctx context.Context, userID string, campaign
 	return &seq, nil
 }
 
-func (r *sequenceRepository) Update(ctx context.Context, userID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error) {
+func (r *sequenceRepository) Update(ctx context.Context, orgID, campaignID, sequenceID string, data *models.UpdateSequence) (*models.Sequence, *errx.Error) {
 	setClauses := []string{}
-	args := []any{userID, campaignID, sequenceID}
+	args := []any{orgID, campaignID, sequenceID}
 	argPos := 4
 
 	if data.Name != nil {
@@ -332,8 +332,9 @@ func (r *sequenceRepository) Update(ctx context.Context, userID, campaignID, seq
 		`UPDATE sequences s
 		 SET %s
 		 FROM campaigns c
-		 WHERE c.user_id = $1
+		 WHERE c.organization_id = $1
 		  AND c.id = $2
+		  AND s.campaign_id = c.id
 		  AND s.id = $3
 		 RETURNING %s`,
 		strings.Join(setClauses, ", "),
@@ -357,11 +358,8 @@ func (r *sequenceRepository) Update(ctx context.Context, userID, campaignID, seq
 	return &seq, nil
 }
 
-// UpdateLayout writes only canvas coordinates for a batch of steps under one
-// campaign, in a single statement scoped to the campaign owner. It leaves every
-// content column (and updated_at) untouched, so a position move never reads as a
-// content change to teammates. Unknown ids are silently ignored.
-func (r *sequenceRepository) UpdateLayout(ctx context.Context, userID, campaignID string, positions []models.SequencePosition) *errx.Error {
+// UpdateLayout changes only workspace-scoped step coordinates; unknown ids are ignored.
+func (r *sequenceRepository) UpdateLayout(ctx context.Context, orgID, campaignID string, positions []models.SequencePosition) *errx.Error {
 	ids := make([]uuid.UUID, 0, len(positions))
 	xs := make([]float64, 0, len(positions))
 	ys := make([]float64, 0, len(positions))
@@ -384,8 +382,8 @@ func (r *sequenceRepository) UpdateLayout(ctx context.Context, userID, campaignI
 		FROM unnest($3::uuid[], $4::float8[], $5::float8[]) AS v(id, x, y)
 		WHERE s.id = v.id
 		  AND s.campaign_id = $2
-		  AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = $2 AND c.user_id = $1)`
-	args := []any{userID, campaignID, ids, xs, ys}
+		  AND EXISTS (SELECT 1 FROM campaigns c WHERE c.id = $2 AND c.organization_id = $1)`
+	args := []any{orgID, campaignID, ids, xs, ys}
 	if _, err := r.DB.Exec(ctx, query, args...); err != nil {
 		db.CaptureError(err, query, args, "exec")
 		return errx.InternalError()
@@ -393,17 +391,18 @@ func (r *sequenceRepository) UpdateLayout(ctx context.Context, userID, campaignI
 	return nil
 }
 
-func (r *sequenceRepository) Delete(ctx context.Context, userID, campaignID, sequenceID string) *errx.Error {
+func (r *sequenceRepository) Delete(ctx context.Context, orgID, campaignID, sequenceID string) *errx.Error {
 	query := `
 		DELETE FROM sequences s
 		USING campaigns c
-		WHERE c.user_id = $1
+		WHERE c.organization_id = $1
 		 AND c.id = $2
+		 AND s.campaign_id = c.id
 		 AND s.id = $3
 	`
 
 	params := []any{
-		userID,
+		orgID,
 		campaignID,
 		sequenceID,
 	}

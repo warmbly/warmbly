@@ -41,7 +41,7 @@ type CampaignRepository interface {
 	// Overview returns status-bucket counts plus per-folder totals for the
 	// campaigns browser sidebar.
 	Overview(ctx context.Context, orgID string) (*models.CampaignsOverview, error)
-	Update(ctx context.Context, userID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
+	Update(ctx context.Context, orgID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
 	UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error
 	UpdateStatusWithLock(ctx context.Context, campaignID uuid.UUID, status string) error
 	// Delete removes the campaign, its cascading data and every pending task
@@ -928,9 +928,9 @@ func (r *campaignRepository) Overview(ctx context.Context, orgID string) (*model
 	return &overview, nil
 }
 
-func (r *campaignRepository) Update(ctx context.Context, userID, campaignID string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error) {
+func (r *campaignRepository) Update(ctx context.Context, orgID, campaignID string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error) {
 	setClauses := []string{}
-	args := []any{userID, campaignID}
+	args := []any{orgID, campaignID}
 	argPos := 3
 
 	if data.Name != nil {
@@ -1166,8 +1166,8 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 		start, ceiling := 0, 0
 		if data.RampStart == nil || data.RampCeiling == nil {
 			err := r.DB.QueryRow(ctx,
-				"SELECT ramp_start, ramp_ceiling FROM campaigns WHERE user_id = $1 AND id = $2",
-				userID, campaignID).Scan(&start, &ceiling)
+				"SELECT ramp_start, ramp_ceiling FROM campaigns WHERE organization_id = $1 AND id = $2",
+				orgID, campaignID).Scan(&start, &ceiling)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					return nil, errx.ErrNotFound
@@ -1329,14 +1329,14 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 		query = fmt.Sprintf(`
 			UPDATE campaigns
 			SET %s
-			WHERE user_id = $1 AND id = $2
+			WHERE organization_id = $1 AND id = $2
 			RETURNING %s
 		`, strings.Join(setClauses, ", "), CAMPAIGN_SELECT)
 	} else {
 		query = fmt.Sprintf(`
 			SELECT %s 
 			FROM campaigns
-			WHERE user_id = $1 AND id = $2
+			WHERE organization_id = $1 AND id = $2
 		`, CAMPAIGN_SELECT)
 	}
 
@@ -1395,7 +1395,7 @@ func (r *campaignRepository) Update(ctx context.Context, userID, campaignID stri
 	return &campaign, nil
 }
 
-// GetByID retrieves a campaign by ID without requiring userID (for internal service use)
+// GetByID retrieves a campaign by ID without requiring orgID (for internal service use)
 func (r *campaignRepository) GetByID(ctx context.Context, campaignID uuid.UUID) (*models.Campaign, error) {
 	var campaign models.Campaign
 

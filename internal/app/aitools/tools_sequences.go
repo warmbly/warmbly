@@ -8,10 +8,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
-// Campaign sequence-step tools. A step is one node in a campaign's sequence
-// (an email, wait, or action). These mirror the /campaigns/:id/steps routes and
-// run as the invoking user, so the SequenceService resolves the campaign within
-// the user's organization.
+// Campaign step tools use the invoking workspace, matching the HTTP routes.
 func (d Deps) registerSequenceTools(r *Registry) {
 	if d.Sequences == nil {
 		return
@@ -84,7 +81,7 @@ func (d Deps) listCampaignSteps(ctx context.Context, inv Invocation, args json.R
 	if _, err := parseUUIDArg(in.CampaignID); err != nil {
 		return "", err
 	}
-	steps, xerr := d.Sequences.Get(ctx, inv.UserID.String(), in.CampaignID)
+	steps, xerr := d.Sequences.Get(ctx, inv.OrgID.String(), in.CampaignID)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
@@ -101,7 +98,7 @@ func (d Deps) addCampaignStep(ctx context.Context, inv Invocation, args json.Raw
 	if _, err := parseUUIDArg(in.CampaignID); err != nil {
 		return "", err
 	}
-	step, xerr := d.Sequences.Create(ctx, inv.UserID.String(), in.CampaignID)
+	step, xerr := d.Sequences.Create(ctx, inv.OrgID.String(), in.CampaignID)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
@@ -138,7 +135,7 @@ func (d Deps) updateCampaignStep(ctx context.Context, inv Invocation, args json.
 		WaitAfter:   in.WaitDays,
 		ThreadReply: in.ThreadReply,
 	}
-	step, xerr := d.Sequences.Update(ctx, inv.UserID.String(), in.CampaignID, in.StepID, upd)
+	step, xerr := d.Sequences.Update(ctx, inv.OrgID.String(), in.CampaignID, in.StepID, upd)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
@@ -161,7 +158,7 @@ func (d Deps) deleteCampaignStep(ctx context.Context, inv Invocation, args json.
 	if err != nil {
 		return "", err
 	}
-	if xerr := d.Sequences.Delete(ctx, inv.UserID.String(), in.CampaignID, in.StepID); xerr != nil {
+	if xerr := d.Sequences.Delete(ctx, inv.OrgID.String(), in.CampaignID, in.StepID); xerr != nil {
 		return "", fromErrx(xerr)
 	}
 	d.logAudit(ctx, inv, models.AuditActionDelete, models.AuditEntitySequence, &sid, nil)
