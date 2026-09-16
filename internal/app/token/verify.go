@@ -24,9 +24,11 @@ func (s *tokenService) GetSession(ctx context.Context, sessionID uuid.UUID) (*mo
 		return nil, err
 	}
 
-	if err := s.saveSession(ctx, sess, SessionTTL); err != nil {
-		return nil, err
-	}
+	// Best effort: the session is already resolved, and failing to cache it
+	// only costs the next request a database read. Returning the error here
+	// meant a Redis write that was refused, on quota or anything else, failed
+	// every authenticated request with a 500.
+	_ = s.saveSession(ctx, sess, SessionTTL)
 	return sess, nil
 }
 

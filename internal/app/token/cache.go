@@ -34,17 +34,24 @@ func (s *tokenService) saveSession(ctx context.Context, session *models.Session,
 func (s *tokenService) getSession(ctx context.Context, sessionID uuid.UUID) (*models.Session, *errx.Error) {
 	data, err := s.cache.Get(ctx, getSessionKey(sessionID)).Bytes()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return nil, nil
+		if !errors.Is(err, redis.Nil) {
+			// A cache that cannot answer is a miss, not a failed request. The
+			// session lives in Postgres and the caller reads it from there;
+			// treating an unreachable Redis as an auth failure turned a cache
+			// outage into nobody being able to sign in at all.
+			//
+			// Safe on the revocation path too: falling through reads the
+			// authoritative row rather than a cached copy of it.
+			errs.CaptureException(err)
 		}
-		errs.CaptureException(err)
-		return nil, errx.InternalError()
+		return nil, nil
 	}
 
 	var session models.Session
 	if err := json.Unmarshal(data, &session); err != nil {
+		// Unreadable cached bytes are a miss for the same reason.
 		errs.CaptureException(err)
-		return nil, errx.InternalError()
+		return nil, nil
 	}
 
 	return &session, nil
