@@ -78,7 +78,7 @@ export default function UniboxPage() {
   // opaque mailbox/tag/label id for those scopes) is the only query param left.
   // Accounts are no longer in the URL: the thread fetch scans every mailbox the
   // user owns, which is the right default for a unified inbox.
-  const urlScope = routeParams.scope ?? "all";
+  const urlScope = routeParams.scope ?? "inbox";
   const urlThread = routeParams.threadId ?? null;
   const urlScopeRef = searchParams.get("ref");
 

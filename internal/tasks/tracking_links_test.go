@@ -6,7 +6,27 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 )
+
+func TestOpenTrackingIsRemovedOnlyFromDisplayCopy(t *testing.T) {
+	const original = `<html><body><p>Hello</p><img src="https://example.com/logo.png"></body></html>`
+	for _, host := range []string{"t.warmbly.com", "custom.example.com", "localhost:3000"} {
+		t.Run(host, func(t *testing.T) {
+			delivered := AddOpenTrackingPixel(original, uuid.New(), host)
+			displayed := mailhtml.Sanitize(delivered)
+			if strings.Contains(displayed, "/t/o/") {
+				t.Fatalf("reading the sent copy would track an open: %s", displayed)
+			}
+			if !strings.Contains(delivered, "/t/o/") {
+				t.Fatalf("recipient copy lost tracking: %s", delivered)
+			}
+			if !strings.Contains(displayed, "https://example.com/logo.png") {
+				t.Fatalf("ordinary image lost: %s", displayed)
+			}
+		})
+	}
+}
 
 func TestAddOpenTrackingPixelUsesTheConfiguredHost(t *testing.T) {
 	html := "<html><body>hi</body></html>"

@@ -62,6 +62,7 @@ export default function ComposeHistoryPanel({
             // History is reference material: include snoozed threads too.
             snoozed: "any",
         },
+        `history:${address}:${tab}`,
         !!address,
     );
 

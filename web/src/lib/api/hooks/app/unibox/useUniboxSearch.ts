@@ -1,20 +1,20 @@
 // Infinite scroll over the inbox search endpoint.
 
-import { keepPreviousData, useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
+import { useInfiniteQuery, type InfiniteData } from "@tanstack/react-query";
 import searchIncoming from "@/lib/api/client/app/unibox/searchIncoming";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 
 type Page = Awaited<ReturnType<typeof searchIncoming>>;
 
-export default function useUniboxSearch(params: UniboxSearchParams, enabled = true) {
+export default function useUniboxSearch(params: UniboxSearchParams, scopeKey: string, enabled = true) {
     const q = useInfiniteQuery<
         Page,
         Error,
         InfiniteData<Page, string | null>,
-        ["unibox", "search", UniboxSearchParams],
+        ["unibox", "search", UniboxSearchParams, string],
         string | null
     >({
-        queryKey: ["unibox", "search", params],
+        queryKey: ["unibox", "search", params, scopeKey],
         queryFn: ({ pageParam }) =>
             searchIncoming({ ...params, cursor: pageParam ?? undefined, limit: 50 }),
         initialPageParam: null,
@@ -24,10 +24,9 @@ export default function useUniboxSearch(params: UniboxSearchParams, enabled = tr
         // page the user had loaded, which is what the remembered scroll offset
         // needs to land on (issue #396).
         gcTime: 30 * 60 * 1000,
-        // Scope/filter switches change the query key; keep showing the
-        // previous list while the new one loads instead of flashing the
-        // whole pane to skeletons on every switch.
-        placeholderData: keepPreviousData,
+        // Keep filter results during loading only within the same view.
+        placeholderData: (previousData, previousQuery) =>
+            previousQuery?.queryKey[3] === scopeKey ? previousData : undefined,
         enabled,
     });
 

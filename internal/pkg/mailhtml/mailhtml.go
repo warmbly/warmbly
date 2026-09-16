@@ -93,7 +93,7 @@ func Sanitize(raw string) string {
 	if strings.TrimSpace(raw) == "" {
 		return ""
 	}
-	return displayPolicy.Sanitize(raw)
+	return stripOpenTrackingPixels(displayPolicy.Sanitize(raw))
 }
 
 // tagPattern matches an HTML tag opener. A plain-text body that merely
