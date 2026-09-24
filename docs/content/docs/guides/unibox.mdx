@@ -51,7 +51,7 @@ The rail is two short groups and then your mailboxes. The first group is where y
 | Spam | Second | Junked at the provider |
 | Trash | Second | Deleted |
 
-**Scheduled** sits between Sent and Archive. It is a view rather than a folder, listing replies queued to send later, and it reads naturally next to Sent.
+**Scheduled** sits between Sent and Archive. It is a view rather than a folder, listing every send queued from the workspace's mailboxes, whichever teammate queued it, and it reads naturally next to Sent.
 
 Opening **Inbox** from the main navigation starts in the Inbox folder. Sent messages live in **Sent**; choose **All mail** when you want inbound and outbound messages together. An Inbox conversation still shows its complete history, including your replies, when you open it.
 
@@ -72,7 +72,7 @@ The initial import that runs when a mailbox is first connected covers Inbox, Sen
 | Awaiting reply | You wrote last and they have not answered |
 | Agent drafts | Conversations where the [inbox agent](/guides/inbox-agent/) has a reply waiting for review |
 | Snoozed | Snoozed for later |
-| Scheduled | Replies queued to send later |
+| Scheduled | Sends queued from the workspace's mailboxes |
 
 Below those sit the premade **Views**, which answer the questions a pipeline turns on. They are built on the labels [automatic inbox tagging](/guides/inbox-tagging/) writes, exist from the moment the workspace is created, and need nothing set up:
 
@@ -102,7 +102,7 @@ Each row is a conversation, not a message, with a count next to the sender when 
 
 The list loads more conversations as you reach the end of it, and it keeps its place: opening a conversation, or leaving the inbox and coming back, returns you to the row you were on rather than the top of the list.
 
-Threading applies on both sides. A reply you send carries the provider's thread id, which nests it in your own mailbox, and an `In-Reply-To` header naming the last message in the conversation, which is what nests it for the recipient. Their mail client only ever sees the header: a thread id means nothing outside the mailbox that issued it.
+Threading applies on both sides. A reply carries an `In-Reply-To` header naming the last message in the conversation, which is what nests it for the recipient. From a Gmail mailbox that holds the conversation it also carries Gmail's thread id, which nests it in your own mailbox. The recipient's mail client only ever sees the header: a thread id means nothing outside the mailbox that issued it, so a reply sent [from another mailbox](#choosing-the-sending-mailbox) goes without one.
 
 <Callout type="info" title="Keyboard navigation">
 `j` / `k` move between rows, `Enter` opens, `Esc` closes, `/` focuses search, `c` labels. Press `?` for the full list.
@@ -172,9 +172,17 @@ Unlike read state, Archive and Delete are Warmbly's own filing. The message keep
 
 ## Replying
 
-Reply, forward, or hover any single message to reply to it specifically. The composer appears when you ask for it or return to a conversation with a saved reply or forward. Replies go from the mailbox that owns the thread, so conversations stay on one account. You can apply a saved **template** or **Insert booking link**.
+Reply, forward, or hover any single message to reply to it specifically. The composer appears when you ask for it or return to a conversation with a saved reply or forward. You can apply a saved **template** or **Insert booking link**.
 
-Replies and forwards save after a short typing pause, and save the latest edits when you close the composer, leave the conversation, or reload. Returning to the thread reopens a saved draft, including one addressed to an older message. **Discard** removes it; successfully queuing a send removes it too. Undoing a send restores the message for editing.
+### Choosing the sending mailbox
+
+**From** starts on the mailbox that holds the message, so a reply you do not touch goes out exactly as before. Click it to send from any other active mailbox in the workspace: the same searchable picker as [Compose](#composing), with each mailbox's budget for today, auth health and history with the recipient. There is no Auto here; a reply always names its mailbox. The signature preview follows the mailbox you pick. When the mailbox holding the message is no longer active, the composer says so and **Send** stays off until you pick one that is.
+
+A reply from a different mailbox keeps the conversation's subject and its In-Reply-To and References headers, so the recipient sees it in the same conversation. A provider thread belongs to the mailbox that holds it, so unless the mailbox you pick already has a message in this conversation, the first such reply starts a conversation of its own there (later replies from it continue that one), and the recipient's answer arrives in that mailbox. A note under **From** says so, with **Switch back** to return to the original mailbox. A forward has no thread to keep, so it simply leaves from the mailbox you pick.
+
+### Reply drafts
+
+Replies and forwards save after a short typing pause, and save the latest edits when you close the composer, leave the conversation, or reload. Returning to the thread reopens a saved draft, including one addressed to an older message, with the mailbox you picked. **Discard** removes it; successfully queuing a send removes it too. Undoing a send restores the message for editing, from the same mailbox.
 
 These reply drafts are personal to your signed-in user and workspace in this browser. They do not sync to other devices, appear in the mailbox's **Drafts** folder, or travel in a [workspace export](/guides/workspace-export-import/). Clearing browser data removes them. **Draft saved** confirms browser storage succeeded; **Draft not saved** means you should copy your text before leaving.
 
@@ -219,7 +227,7 @@ With a recipient set, **History** slides out every conversation you have had wit
 | Control | Behavior |
 |---------|----------|
 | **Undo send** | Instant sends wait 30s by default (adjustable 5 to 120s under Settings, Profile). A header countdown offers **Cancel**, which returns the email to the composer intact. Applies to API sends with `send_mode: instant` too. |
-| **Schedule** | Queue a send for later. It appears inline in the thread as a dashed card and in the **Scheduled** view, cancellable any time. A usage meter warns as you approach the queued-send cap. |
+| **Schedule** | Queue a send for later. It appears inline in the thread as a dashed card and in the **Scheduled** view, where anyone in the workspace with Unibox access can cancel it. A usage meter warns as the workspace approaches its queued-send cap. |
 | **Snooze** | Clears a conversation until a time you pick, up to 90 days out, with presets or a custom time. **Un-snooze now** brings it back immediately. |
 
 Scheduled and smart-queued sends skip the undo window, since they already wait. Cancel them from the **Scheduled** view, or via `DELETE /unibox/scheduled/:task_id`.

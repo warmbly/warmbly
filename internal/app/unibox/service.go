@@ -65,12 +65,14 @@ type UniboxService interface {
 	// flip status to 'cancelled' and let the queued Cloud Task fire as
 	// a no-op (handler short-circuits on non-pending status). Avoids
 	// per-cancel API calls against Cloud Tasks.
-	ListScheduled(ctx context.Context, userID uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error)
-	// ListScheduledByThread returns the user's pending queued sends
-	// for a single thread. ThreadView calls this so queued replies
-	// render inline alongside already-sent messages.
-	ListScheduledByThread(ctx context.Context, userID uuid.UUID, threadID string) ([]models.UniboxScheduledItem, *errx.Error)
-	CancelScheduled(ctx context.Context, userID, taskID uuid.UUID) *errx.Error
+	// All three are scoped to the organization, whose mailboxes send them, and
+	// a non-empty accountIDs (an API key's allowlist) narrows them further.
+	ListScheduled(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error)
+	// ListScheduledByThread returns the pending queued sends for a single
+	// thread. ThreadView calls this so queued replies render inline
+	// alongside already-sent messages.
+	ListScheduledByThread(ctx context.Context, orgID uuid.UUID, threadID string, accountIDs []uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error)
+	CancelScheduled(ctx context.Context, orgID, taskID uuid.UUID, accountIDs []uuid.UUID) *errx.Error
 
 	// ThreadGrounding and AddressGrounding return message text for AI prompts:
 	// the stored body when it exists, the preview snippet as the fallback.

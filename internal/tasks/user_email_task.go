@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
@@ -172,6 +173,19 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	var threadID string
 	if emailTask.ThreadID != nil {
 		threadID = *emailTask.ThreadID
+	}
+	// The row names the conversation; only Gmail has a provider handle, and a
+	// mailbox may only use its own. Without one the reply threads on In-Reply-To.
+	if threadID != "" && account.Provider != string(models.InboxProviderGoogle) {
+		threadID = ""
+	} else if threadID != "" {
+		handle, herr := s.taskRepo.ProviderThreadForMailbox(ctx, account.ID, threadID)
+		if herr != nil {
+			// Gmail refusing a handle it does not know is retried without one.
+			log.Warn().Err(herr).Str("task_id", taskID.String()).Msg("user_email: could not resolve the mailbox's own thread; keeping the conversation's")
+		} else {
+			threadID = handle
+		}
 	}
 
 	// STEP 9: Build EmailMessage and send via worker

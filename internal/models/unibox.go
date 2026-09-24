@@ -437,7 +437,7 @@ type UniboxOverview struct {
 	AwaitingAgentDraft int64 `json:"awaiting_agent_draft"`
 	ScheduledPending   int64 `json:"scheduled_pending"`
 	// ScheduledPendingMax is the hard cap on pending scheduled email
-	// tasks per user. The dashboard shows current/max so the user
+	// tasks per workspace. The dashboard shows current/max so the user
 	// sees how close they are to the limit before hitting it.
 	ScheduledPendingMax int64                    `json:"scheduled_pending_max"`
 	Folders             []UniboxFolderOverview   `json:"folders"`
