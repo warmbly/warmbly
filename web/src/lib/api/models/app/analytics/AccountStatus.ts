@@ -2,6 +2,8 @@
 // models.EmailAccountStatus). Rich shape: health band, today's usage,
 // warmup status, and any active errors.
 
+import type { PlacementRate } from "./WarmupPlacement";
+
 export interface AccountHealth {
     status: "healthy" | "warning" | "error";
     score: number; // 0-100
@@ -84,6 +86,8 @@ export default interface AccountStatus {
     /** Present only when the mailbox is NOT in cold rotation. */
     send_lifecycle?: SendLifecycleState;
     warmup_health?: WarmupHealthInfo;
+    /** Where warmup mail landed over the trailing week; also caps health.score. Absent with no deliveries. */
+    warmup_placement?: PlacementRate;
     // True when the mailbox backs a live campaign — a low-volume health-check
     // warmup keeps running even if the user has warmup paused/off.
     in_campaign: boolean;

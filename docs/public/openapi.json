@@ -14003,6 +14003,115 @@
         }
       }
     },
+    "/analytics/warmup/placement": {
+      "get": {
+        "operationId": "analytics_warmup_placement",
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Get warmup placement",
+        "description": "Where warmup mail landed in partners' mailboxes (inbox, Gmail category tab, spam) per UTC day, per recipient provider and, for the workspace, per mailbox, plus the trailing 7-day inbox rate. Requires an organization context.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Range start (YYYY-MM-DD). Defaults to 29 days before to.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Range end (YYYY-MM-DD). Defaults to today (UTC).",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "email_id",
+            "in": "query",
+            "required": false,
+            "description": "Limit to one email account in the workspace. Omit for the workspace report.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Warmup placement report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmupPlacementReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid range, date or email_id, or a range longer than 366 days.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The email account is not in the workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/analytics/campaigns/compare": {
       "get": {
         "operationId": "analytics_campaigns_compare",
@@ -33129,6 +33238,14 @@
           },
           "in_campaign": {
             "type": "boolean"
+          },
+          "warmup_placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WarmupPlacementRate"
+              }
+            ],
+            "description": "Trailing 7-day warmup inbox rate; absent with no deliveries. health.score is capped at inbox_rate once it is present."
           }
         }
       },
@@ -37493,6 +37610,265 @@
                 }
               }
             }
+          }
+        }
+      },
+      "WarmupPlacementCounts": {
+        "type": "object",
+        "description": "Where a set of verified warmup deliveries landed.",
+        "properties": {
+          "sent": {
+            "type": "integer",
+            "description": "Warmup mail the mailbox sent. Always 0 on provider and host rows, since sends are not split by recipient."
+          },
+          "delivered": {
+            "type": "integer",
+            "description": "Deliveries recipients verified: inbox + tabs + spam."
+          },
+          "inbox": {
+            "type": "integer"
+          },
+          "tabs": {
+            "type": "integer",
+            "description": "Arrived in a Gmail category tab (Promotions, Updates, Social, Forums)."
+          },
+          "spam": {
+            "type": "integer"
+          },
+          "rescued": {
+            "type": "integer",
+            "description": "Spam placements the recipient moved back to the inbox."
+          },
+          "unconfirmed": {
+            "type": "integer",
+            "description": "Completed sends over 24 hours old that no recipient has reported seeing."
+          },
+          "inbox_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "(inbox + tabs) / delivered, as a percentage; null with nothing delivered."
+          },
+          "spam_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "spam / delivered, as a percentage; null with nothing delivered."
+          }
+        }
+      },
+      "WarmupPlacementRate": {
+        "type": "object",
+        "description": "Trailing warmup inbox rate; inbox_rate stays null until min_sample deliveries are in.",
+        "properties": {
+          "window_days": {
+            "type": "integer"
+          },
+          "min_sample": {
+            "type": "integer"
+          },
+          "delivered": {
+            "type": "integer"
+          },
+          "inbox": {
+            "type": "integer"
+          },
+          "tabs": {
+            "type": "integer"
+          },
+          "spam": {
+            "type": "integer"
+          },
+          "inbox_rate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "band": {
+            "type": "string",
+            "enum": [
+              "good",
+              "fair",
+              "poor",
+              "collecting",
+              "none"
+            ]
+          }
+        }
+      },
+      "WarmupPlacementDay": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WarmupPlacementCounts"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "rolling_inbox_rate": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Trailing-window inbox rate ending on this day; null below the sample floor."
+              },
+              "groups": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "group": {
+                      "type": "string",
+                      "enum": [
+                        "google",
+                        "microsoft",
+                        "yahoo",
+                        "other"
+                      ]
+                    },
+                    "inbox": {
+                      "type": "integer"
+                    },
+                    "tabs": {
+                      "type": "integer"
+                    },
+                    "spam": {
+                      "type": "integer"
+                    },
+                    "rescued": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "WarmupPlacementProvider": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WarmupPlacementCounts"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "group": {
+                "type": "string",
+                "enum": [
+                  "google",
+                  "microsoft",
+                  "yahoo",
+                  "other"
+                ]
+              },
+              "hosts": {
+                "type": "array",
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WarmupPlacementCounts"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "host": {
+                          "type": "string",
+                          "description": "Recipient mail host (google_workspace, gmail, microsoft365, ...); empty when not detected."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "WarmupPlacementMailbox": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WarmupPlacementCounts"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "email_account_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "email": {
+                "type": "string"
+              },
+              "rate": {
+                "$ref": "#/components/schemas/WarmupPlacementRate"
+              },
+              "daily_inbox_rate": {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "description": "One entry per day of the range; null on a day with no deliveries."
+              }
+            }
+          }
+        ]
+      },
+      "WarmupPlacementReport": {
+        "type": "object",
+        "description": "Where warmup mail landed over a date range, for one mailbox or the workspace.",
+        "properties": {
+          "email_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Present when scoped to one mailbox."
+          },
+          "date_range": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "to": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/WarmupPlacementCounts"
+          },
+          "rate": {
+            "$ref": "#/components/schemas/WarmupPlacementRate"
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarmupPlacementDay"
+            }
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarmupPlacementProvider"
+            }
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WarmupPlacementMailbox"
+            },
+            "description": "Workspace report only, worst inbox rate first."
           }
         }
       }

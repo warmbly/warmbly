@@ -270,7 +270,7 @@ The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the a
 
 | Method | Path | API Permission |
 |--------|------|----------------|
-| GET | `/analytics/*` (dashboard, direct, inbox-tagging, deliverability, warmup, campaigns, accounts, usage) | `READ_ANALYTICS` |
+| GET | `/analytics/*` (dashboard, direct, inbox-tagging, deliverability, warmup, warmup/placement, campaigns, accounts, usage) | `READ_ANALYTICS` |
 | GET | `/audit-logs` | `READ_AUDIT_LOGS` |
 
 Analytics reads use the selected workspace for JWT callers and the key's workspace for API-key callers. This includes warmup and usage totals, so teammates see the same workspace history regardless of which member connected a mailbox or created a campaign.

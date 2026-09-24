@@ -37,6 +37,7 @@ import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import { Label, TextInput } from "@/components/ui/field";
 import { hasNarrowingFilters } from "./filters/helpers";
 import { errorMessage } from "@/lib/errors/message";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Props {
     open: boolean;
@@ -344,9 +345,7 @@ export default function ExportDialog({
                                                 key={f.id}
                                                 className="flex items-center gap-2 h-7 px-2 rounded hover:bg-slate-50 cursor-pointer"
                                             >
-                                                <input
-                                                    type="checkbox"
-                                                    className="w-3.5 h-3.5 rounded accent-slate-900"
+                                                <Checkbox tone="slate"
                                                     checked={checked}
                                                     onChange={() => toggleField(f.id)}
                                                 />

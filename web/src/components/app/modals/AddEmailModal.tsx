@@ -86,6 +86,7 @@ import { useMailboxSourceBusy } from "@/lib/api/hooks/app/emails/mailboxSourceBu
 import { useVendorCatalog } from "@/lib/api/hooks/app/emails/useMailboxVendors";
 import { DitherMeter, type DitherTone } from "@/components/ui/dither";
 import { SkeletonCards } from "@/components/app/emails/import/Discovering";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type View =
     | "pick"
@@ -1164,11 +1165,9 @@ function SmtpImapPanel({ onDone, onError }: { onDone: () => void; onError: (e: u
                     />
                 </Field>
                 <label className="flex items-center gap-2 pl-[76px] pt-0.5 cursor-pointer">
-                    <input
-                        type="checkbox"
+                    <Checkbox tone="slate"
                         checked={sameCreds}
                         onChange={(e) => setSameCreds(e.target.checked)}
-                        className="size-3.5 rounded border-slate-300 accent-slate-900"
                     />
                     <span className="text-[11.5px] text-slate-600">
                         Use the same login as IMAP

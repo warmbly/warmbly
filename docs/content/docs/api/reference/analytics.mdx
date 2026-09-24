@@ -234,6 +234,69 @@ Results are scoped to the selected workspace, so every member with access sees t
 
 `email_account_id` is the zero UUID when no `email_id` filter is supplied.
 
+## Get warmup placement
+
+`GET /analytics/warmup/placement`
+
+Returns where warmup mail landed in partners' mailboxes over a date range: the primary inbox, a Gmail category tab (Promotions, Updates, Social or Forums), or spam. Counts are per UTC day, per recipient provider, and, on the workspace report, per mailbox. Requires an organization context. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+
+Every figure is measured, not estimated: a delivery is counted when the recipient's own sync finds the warmup email and records the folder it arrived in. `rescued` counts spam placements the recipient then moved back to the inbox. `unconfirmed` counts completed sends more than 24 hours old that no recipient has reported seeing, bucketed on the day they were sent; a provider filter cannot split it, so it is only reported unfiltered.
+
+`rate` is the headline deliverability figure the dashboard shows next to each mailbox: `inbox_rate` is inbox plus tabs over everything delivered in the trailing 7 UTC days, and stays `null` until `min_sample` (`20`) deliveries are in. `band` is `good` at `90` or above, `fair` from `80`, `poor` below `80`, `collecting` below the sample floor and `none` with no deliveries. Each day's `rolling_inbox_rate` is the same trailing figure ending on that day. Rates are percentages with two decimals.
+
+Recipient providers are grouped as `google` (Gmail and Google Workspace), `microsoft` (Outlook.com and Microsoft 365), `yahoo` (Yahoo and AOL) and `other`; each group lists its `hosts`, where an empty `host` means the recipient's host was not detected yet.
+
+| Parameter | In | Type | Description |
+| --- | --- | --- | --- |
+| `from` | query | string | Optional. Range start (`YYYY-MM-DD`). Defaults to 29 days before `to`. |
+| `to` | query | string | Optional. Range end (`YYYY-MM-DD`). Defaults to today (UTC). |
+| `email_id` | query | string (uuid) | Optional. Limit to one email account in the workspace. Omit for the workspace report, which adds `mailboxes`. |
+
+A range longer than 366 days, `from` after `to`, a malformed date or an invalid `email_id` returns `400`; an `email_id` outside the workspace returns `404`.
+
+### Response
+
+```json
+{
+  "email_account_id": "a0a1a2a3-0000-0000-0000-000000000003",
+  "date_range": { "from": "2026-06-01T00:00:00Z", "to": "2026-06-30T00:00:00Z" },
+  "summary": {
+    "sent": 820, "delivered": 791, "inbox": 702, "tabs": 41, "spam": 48,
+    "rescued": 44, "unconfirmed": 12, "inbox_rate": 93.93, "spam_rate": 6.07
+  },
+  "rate": {
+    "window_days": 7, "min_sample": 20, "delivered": 196, "inbox": 180, "tabs": 9, "spam": 7,
+    "inbox_rate": 96.43, "band": "good"
+  },
+  "daily": [
+    {
+      "date": "2026-06-30",
+      "sent": 30, "delivered": 29, "inbox": 27, "tabs": 1, "spam": 1, "rescued": 1, "unconfirmed": 0,
+      "inbox_rate": 96.55, "spam_rate": 3.45, "rolling_inbox_rate": 96.43,
+      "groups": [
+        { "group": "google", "inbox": 15, "tabs": 1, "spam": 0, "rescued": 0 },
+        { "group": "microsoft", "inbox": 12, "tabs": 0, "spam": 1, "rescued": 1 }
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "group": "google",
+      "sent": 0, "delivered": 402, "inbox": 351, "tabs": 41, "spam": 10, "rescued": 9, "unconfirmed": 0,
+      "inbox_rate": 97.51, "spam_rate": 2.49,
+      "hosts": [
+        { "host": "google_workspace", "sent": 0, "delivered": 310, "inbox": 271, "tabs": 33, "spam": 6, "rescued": 6, "unconfirmed": 0, "inbox_rate": 98.06, "spam_rate": 1.94 },
+        { "host": "gmail", "sent": 0, "delivered": 92, "inbox": 80, "tabs": 8, "spam": 4, "rescued": 3, "unconfirmed": 0, "inbox_rate": 95.65, "spam_rate": 4.35 }
+      ]
+    }
+  ]
+}
+```
+
+The workspace report (no `email_id`) omits `email_account_id` and adds `mailboxes`, one row per mailbox with activity in the range, ordered worst `rate.inbox_rate` first, then mailboxes still collecting. Each row carries the window counts, its own `rate`, and `daily_inbox_rate`, one entry per day of the range (`null` on a day with no deliveries).
+
+Placement history is kept for the life of the mailbox, like warmup volume history, and moves with a workspace export. Deliveries before this report existed are counted from the receipts still on file, with category tabs and rescues reported as `0` for that period.
+
 ## Get campaign analytics
 
 `GET /analytics/campaigns/:id`
@@ -436,7 +499,7 @@ The list is returned under a `data` envelope (no cursor; all of the caller's acc
 
 `GET /analytics/accounts/:id`
 
-Returns the detailed status for one email account: a combined health score (folding in warmup-pool reputation), active errors, today's UTC usage, warmup status, and warmup-pool health. The account must belong to the selected workspace. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+Returns the detailed status for one email account: a combined health score (folding in warmup-pool reputation and measured warmup placement), active errors, today's UTC usage, warmup status, warmup-pool health, and the trailing warmup inbox rate. The account must belong to the selected workspace. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -494,11 +557,23 @@ Returns the detailed status for one email account: a combined health score (fold
     "senders_7d": 8,
     "evaluated_at": "2026-06-12T06:00:00Z"
   },
+  "warmup_placement": {
+    "window_days": 7,
+    "min_sample": 20,
+    "delivered": 142,
+    "inbox": 126,
+    "tabs": 5,
+    "spam": 11,
+    "inbox_rate": 92.25,
+    "band": "good"
+  },
   "in_campaign": true
 }
 ```
 
 `warmup_status` is present only when warmup has ever been enabled; `warmup_health` is present only when the mailbox is in a warmup pool. `in_campaign` reports whether the mailbox currently backs a live campaign.
+
+`warmup_placement` is the mailbox's measured warmup inbox rate over the trailing 7 UTC days, the same figure [Get warmup placement](#get-warmup-placement) reports as `rate`, and is absent when nothing was delivered in that window. Once `inbox_rate` is present, `health.score` is capped at it (rounded down), so a mailbox landing any mail in spam no longer reads `100`, and a rate below `90` also sets `health.status` to at least `warning` with an issue naming the rate.
 
 `daily_usage.warmup_sent` and `campaign_sent` both count sends the mailbox completed on that date, which is what the caps are enforced against, so neither can read above the target in force.
 

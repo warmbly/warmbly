@@ -15,6 +15,8 @@ import (
 type AnalyticsService interface {
 	// Warmup analytics
 	GetWarmupAnalytics(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID, from, to time.Time) (*models.WarmupAnalytics, *errx.Error)
+	// GetWarmupPlacement is where warmup mail landed, for one mailbox or the workspace.
+	GetWarmupPlacement(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID, from, to time.Time) (*models.WarmupPlacementReport, *errx.Error)
 
 	// Campaign analytics
 	GetCampaignAnalytics(ctx context.Context, orgID, campaignID uuid.UUID) (*models.CampaignAnalytics, *errx.Error)
@@ -43,6 +45,8 @@ type analyticsService struct {
 	// lifecycleRepo reads whether the mailbox is in cold rotation.
 	// Optional/nil-safe.
 	lifecycleRepo repository.SendLifecycleRepository
+	// placementRepo reads warmup placement history. Optional/nil-safe.
+	placementRepo repository.WarmupPlacementRepository
 }
 
 func NewService(
@@ -164,6 +168,12 @@ func (s *analyticsService) GetCampaignDailyStats(ctx context.Context, orgID, cam
 }
 
 func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error) {
+	return s.accountStatus(ctx, orgID, accountID, s.placementRates(ctx, orgID, &accountID))
+}
+
+// accountStatus builds one mailbox's status; rates is the org's rolling
+// placement, read once by the caller.
+func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID uuid.UUID, rates map[uuid.UUID]models.WarmupPlacementRate) (*models.EmailAccountStatus, *errx.Error) {
 	// Get email account (org-scoped lookup)
 	email, xerr := s.emailRepo.Get(ctx, orgID.String(), accountID.String())
 	if xerr != nil {
@@ -204,6 +214,11 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 	health := calculateAccountHealth(email, errors)
 	warmupHealth := s.buildWarmupHealth(ctx, accountID)
 	applyWarmupHealth(&health, warmupHealth)
+	var placement *models.WarmupPlacementRate
+	if r, ok := rates[accountID]; ok {
+		placement = &r
+	}
+	applyWarmupPlacement(&health, placement)
 
 	inCampaign := false
 	if s.campaignRepo != nil {
@@ -244,6 +259,7 @@ func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountI
 		DailyUsage:    *usage,
 		WarmupStatus:  warmupStatus,
 		WarmupHealth:  warmupHealth,
+		Placement:     placement,
 		InCampaign:    inCampaign,
 		ColdRamp:      coldRamp,
 		SendLifecycle: lifecycle,
@@ -347,9 +363,10 @@ func (s *analyticsService) GetAllAccountStatuses(ctx context.Context, orgID uuid
 		return nil, xerr
 	}
 
+	rates := s.placementRates(ctx, orgID, nil)
 	statuses := make([]models.EmailAccountStatus, 0, len(emailsResult.Data))
 	for _, email := range emailsResult.Data {
-		status, xerr := s.GetAccountStatus(ctx, orgID, email.ID)
+		status, xerr := s.accountStatus(ctx, orgID, email.ID, rates)
 		if xerr != nil {
 			return nil, xerr
 		}

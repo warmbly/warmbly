@@ -78,6 +78,7 @@ import {
     suggestCustomKey,
     targetIdentity,
 } from "./importShared";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Props {
     open: boolean;
@@ -604,9 +605,7 @@ export function MapStep({
                     </button>
                 )}
                 <label className="inline-flex items-center gap-1.5 text-[11.5px] text-slate-700 cursor-pointer">
-                    <input
-                        type="checkbox"
-                        className="w-3.5 h-3.5 rounded accent-slate-900"
+                    <Checkbox tone="slate"
                         checked={hasHeader}
                         onChange={(e) => setHasHeader(e.target.checked)}
                     />

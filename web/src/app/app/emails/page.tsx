@@ -24,7 +24,8 @@ import useCloudPool from "@/hooks/useCloudPool";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
 import { useEnrollCloudLinkMailbox, useUnenrollCloudLinkMailbox, useCloudLinkMailboxLifecycle } from "@/lib/api/hooks/app/cloudlink/useCloudLink";
 import { providerSupported } from "@/app/app/settings/warmbly-cloud/providers";
-import { CloudIcon } from "lucide-react";
+import { CloudIcon, MailCheckIcon } from "lucide-react";
+import { PlacementRateBadge } from "@/components/app/placement/PlacementCharts";
 import type { CloudLinkMailboxRow } from "@/lib/api/models/app/cloudlink/CloudLink";
 import buildError from "@/lib/helper/buildError";
 import type { AppError } from "@/lib/api/client/normalizeError";
@@ -100,6 +101,7 @@ import AdvisorRowFlag from "@/components/app/advisor/AdvisorRowFlag";
 import AdvisorSummaryBar from "@/components/app/advisor/AdvisorSummaryBar";
 import { useAdvisorEntityIndex } from "@/lib/api/hooks/app/advisor/useAdvisor";
 import type { AdvisorFinding } from "@/lib/api/models/app/advisor/Advisor";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function AddressesPage() {
     const p = useUserProfile();
@@ -411,9 +413,7 @@ export default function AddressesPage() {
                         <thead className="sticky top-0 bg-white z-[1]">
                             <tr className="border-b border-slate-200">
                                 <th className="pl-5 pr-2 py-2 w-9">
-                                    <input
-                                        type="checkbox"
-                                        className="w-3.5 h-3.5 rounded accent-sky-600"
+                                    <Checkbox
                                         checked={isSelectedAll()}
                                         onChange={() => {
                                             if (isSelectedAll()) {
@@ -433,6 +433,12 @@ export default function AddressesPage() {
                                 </th>
                                 <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Account</th>
                                 <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-24 text-right">Warmup</th>
+                                <th
+                                    className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-16 md:w-20 text-right"
+                                    title="Share of warmup mail that reached the inbox over the last 7 days, measured in partners' mailboxes"
+                                >
+                                    Inbox
+                                </th>
                                 <th className="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-10 md:w-32"><span className="hidden md:inline">Health</span></th>
                                 <th className="px-3 py-2 w-16"></th>
                             </tr>
@@ -710,9 +716,7 @@ function MailboxRow({
             className="border-b border-slate-200/60 hover:bg-slate-50/80 transition-colors group h-11 cursor-pointer"
         >
             <td className="pl-5 pr-2">
-                <input
-                    type="checkbox"
-                    className="w-3.5 h-3.5 rounded accent-sky-600"
+                <Checkbox
                     checked={checked}
                     onChange={onToggleSelect}
                     onClick={(e) => e.stopPropagation()}
@@ -780,6 +784,15 @@ function MailboxRow({
                 ) : (
                     warmupLabel
                 )}
+            </td>
+            <td className="px-3 text-right">
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onOpen(box.id, "deliverability"); }}
+                    aria-label="View warmup deliverability"
+                >
+                    <PlacementRateBadge rate={status?.warmup_placement} />
+                </button>
             </td>
             <td className="px-3">
                 <button
@@ -870,6 +883,9 @@ function MailboxRow({
                             <PopoverMenuSeparator />
                             <PopoverMenuItem onSelect={() => onOpen(box.id, "warmup")} icon={<RiFireLine className="w-3 h-3" />}>
                                 Warmup settings
+                            </PopoverMenuItem>
+                            <PopoverMenuItem onSelect={() => onOpen(box.id, "deliverability")} icon={<MailCheckIcon className="w-3 h-3" />}>
+                                Warmup deliverability
                             </PopoverMenuItem>
                             <PopoverMenuItem onSelect={() => onOpen(box.id, "overview")} icon={<GaugeIcon className="w-3 h-3" />}>
                                 Mailbox health

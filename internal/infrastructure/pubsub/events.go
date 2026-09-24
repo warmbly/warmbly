@@ -45,6 +45,8 @@ const (
 	EventAccountError         EventType = "ACCOUNT_ERROR"
 	EventAccountSynced        EventType = "ACCOUNT_SYNCED"
 	EventAccountHealthChanged EventType = "ACCOUNT_HEALTH_CHANGED"
+	// EventWarmupPlacement: a partner saw one of the org's warmup emails land.
+	EventWarmupPlacement EventType = "WARMUP_PLACEMENT"
 	// EventAccountSyncState: a mailbox's import finished or fair use started
 	// or stopped holding it. Status carries the backfill status, Reason the
 	// throttle reason (empty when released).
@@ -492,6 +494,21 @@ func (p *StreamingPublisher) PublishAccountHealth(ctx context.Context, orgID, us
 		HealthState:    newState,
 		PreviousState:  prevState,
 		Reason:         reason,
+	})
+}
+
+// PublishWarmupPlacement tells the sending mailbox's organization that one of
+// its warmup emails was seen landing, so placement views refresh live.
+func (p *StreamingPublisher) PublishWarmupPlacement(ctx context.Context, orgID, userID, accountID, email, landed string) {
+	if p == nil || p.client == nil || orgID == "" {
+		return
+	}
+	p.PublishAccountEvent(ctx, &AccountEvent{
+		BaseEvent:      BaseEvent{EventType: EventWarmupPlacement, UserID: userID},
+		OrgID:          orgID,
+		EmailAccountID: accountID,
+		Email:          email,
+		Status:         landed,
 	})
 }
 

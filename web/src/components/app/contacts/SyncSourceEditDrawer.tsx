@@ -28,6 +28,7 @@ import type {
     LeadSyncSource,
     UpdateLeadSyncSource,
 } from "@/lib/api/models/app/leadsync/LeadSync";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function SyncSourceEditDrawer({
     source,
@@ -140,9 +141,7 @@ export default function SyncSourceEditDrawer({
 
                         <section>
                             <label className="inline-flex items-center gap-1.5 text-[11.5px] text-slate-700 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="w-3.5 h-3.5 rounded accent-slate-900"
+                                <Checkbox tone="slate"
                                     checked={hasHeader}
                                     onChange={(e) => setHasHeader(e.target.checked)}
                                 />

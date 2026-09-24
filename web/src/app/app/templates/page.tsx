@@ -55,6 +55,7 @@ import type Template from "@/lib/api/models/app/templates/Template";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { TEMPLATE_PRESETS, type TemplatePreset } from "./presets";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // Standard merge fields come from the shared catalog (@/lib/templateVars) so
 // this surface never drifts from the campaign editor or the send-time renderer.
@@ -650,11 +651,9 @@ function TemplateEditor({
                             <div>
                                 <div className="flex items-center gap-2 mb-1">
                                     <label className="text-[11px] text-slate-600 inline-flex items-center gap-1.5 cursor-pointer select-none">
-                                        <input
-                                            type="checkbox"
+                                        <Checkbox tone="slate" size="xs"
                                             checked={showHTML}
                                             onChange={(e) => setShowHTML(e.target.checked)}
-                                            className="size-3 accent-slate-900"
                                         />
                                         Also send an HTML body
                                     </label>

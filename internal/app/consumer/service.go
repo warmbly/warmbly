@@ -49,9 +49,11 @@ type JobsService struct {
 	CloudLink            CloudLinkVerifier
 	WarmupContentRepo    repository.WarmupContentRepository
 	WarmupEngagementRepo repository.WarmupEngagementRepository
-	WarmupService        warmupapp.Service
-	WorkerRepo           repository.WorkerRepository
-	FleetNodeRepo        repository.FleetNodeRepository
+	// WarmupPlacementRepo keeps each sender's daily placement history. Optional.
+	WarmupPlacementRepo repository.WarmupPlacementRepository
+	WarmupService       warmupapp.Service
+	WorkerRepo          repository.WorkerRepository
+	FleetNodeRepo       repository.FleetNodeRepository
 	// LifecycleRepo moves mailboxes in and out of cold rotation. Nil disables
 	// the lifecycle rebalancer entirely.
 	LifecycleRepo repository.SendLifecycleRepository

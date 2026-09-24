@@ -28,6 +28,7 @@ import type Form from "@/lib/api/models/app/forms/Form";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import timeAgo from "@/lib/helper/timeAgo";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const STATUS_PILL: Record<Form["status"], string> = {
     draft: "bg-slate-100 text-slate-600",
@@ -326,9 +327,7 @@ function FormsList() {
                         <thead className="sticky top-0 bg-white z-[1]">
                             <tr className="border-b border-slate-200">
                                 <th className="pl-5 pr-2 py-2 w-9">
-                                    <input
-                                        type="checkbox"
-                                        className="w-3.5 h-3.5 rounded accent-sky-600"
+                                    <Checkbox
                                         checked={allSelected}
                                         onChange={toggleAll}
                                     />
@@ -357,9 +356,7 @@ function FormsList() {
                                         }`}
                                     >
                                         <td className="pl-5 pr-2" onClick={(e) => e.stopPropagation()}>
-                                            <input
-                                                type="checkbox"
-                                                className="w-3.5 h-3.5 rounded accent-sky-600"
+                                            <Checkbox
                                                 checked={isSel}
                                                 onChange={(e) => toggleOne(f.id, e.target.checked)}
                                             />

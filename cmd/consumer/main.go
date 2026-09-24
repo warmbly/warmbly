@@ -464,6 +464,7 @@ func main() {
 		CloudLink:                   cloudlink.NewService(repository.NewCloudLinkRepository(primaryDB.Pool, credEncrypter), emailRepo, nil),
 		WarmupContentRepo:           repository.NewWarmupContentRepository(primaryDB.Pool),
 		WarmupEngagementRepo:        repository.NewWarmupEngagementRepository(primaryDB.Pool),
+		WarmupPlacementRepo:         repository.NewWarmupPlacementRepository(primaryDB),
 		WarmupService:               warmupService,
 		WorkerRepo:                  workerRepo,
 		FleetNodeRepo:               repository.NewFleetNodeRepository(primaryDB),
