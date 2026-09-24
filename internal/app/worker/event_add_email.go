@@ -38,17 +38,33 @@ func (w *WorkerService) HandleAddEmail(ctx context.Context, e *models.AddWorkerE
 	}
 
 	load := &mailboxLoad{done: make(chan struct{})}
-	if _, busy := w.loads.LoadOrStore(e.ID, load); busy {
-		return nil
+	var prev *mailboxLoad
+	for {
+		v, busy := w.loads.LoadOrStore(e.ID, load)
+		if !busy {
+			break
+		}
+		old := v.(*mailboxLoad)
+		if !old.removed.Load() {
+			return nil
+		}
+		// A removal is pending on the load in flight: this add runs after it rather than being dropped.
+		if w.loads.CompareAndSwap(e.ID, old, load) {
+			prev = old
+			break
+		}
 	}
 	go func() {
 		defer close(load.done)
-		defer w.loads.Delete(e.ID)
+		defer w.loads.CompareAndDelete(e.ID, load)
 		defer func() {
 			if r := recover(); r != nil {
 				errs.Recover(r)
 			}
 		}()
+		if prev != nil {
+			<-prev.done
+		}
 		w.loadMailbox(context.WithoutCancel(ctx), e, load)
 	}()
 	return nil

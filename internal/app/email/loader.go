@@ -95,8 +95,11 @@ func (s *emailService) reconcileWorkerAccounts(ctx context.Context, seen map[uui
 			log.Warn().Err(err).Str("email_id", r.ID.String()).Msg("worker reconciler: load account failed")
 			continue
 		}
+		// The load may have placed or moved it; remember where it went, or the next tick ships it again.
 		var worker uuid.UUID
-		if r.WorkerID != nil {
+		if w, xerr := s.emailRepository.GetWorkerID(ctx, r.ID); xerr == nil && w != nil {
+			worker = *w
+		} else if r.WorkerID != nil {
 			worker = *r.WorkerID
 		}
 		seen[r.ID] = reconcileEntry{worker: worker, next: spreadTurn(now)}

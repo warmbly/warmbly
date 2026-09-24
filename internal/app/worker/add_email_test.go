@@ -129,3 +129,51 @@ func TestAddEmailLoadsAndCommandsFindIt(t *testing.T) {
 		t.Fatal("a command right behind the ADD_EMAIL did not find the mailbox")
 	}
 }
+
+// ADD, REMOVE, ADD while the first load is still dialing ends loaded, as it did when commands ran in order.
+func TestAddEmailAfterARemoveDuringTheLoadIsKept(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	conns := make(chan net.Conn, 4)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conns <- c
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	w := newLoadingWorker(&capturedEvents{})
+	id := uuid.New()
+	slow := &models.AddWorkerEmail{
+		ID: id, UserID: uuid.New(), Type: models.InboxProviderSMTPIMAP, ImapSync: true, Email: "a@example.test",
+		SmtpImap: &models.AddWorkerEmailSmtpImapData{Credentials: &models.SmtpImap{
+			IMAP: &models.Service{Host: "127.0.0.1", Port: port, Username: "a", Password: "b", Security: models.MailSecurityTLS},
+			SMTP: &models.Service{Host: "127.0.0.1", Port: port, Username: "a", Password: "b", Security: models.MailSecurityTLS},
+		}},
+	}
+	readd := *slow
+	readd.ImapSync = false
+
+	_ = w.HandleAddEmail(context.Background(), slow)
+	c := <-conns
+	_ = w.HandleRemoveEmail(context.Background(), &models.RemoveWorkerEmail{EmailID: id.String()})
+	_ = w.HandleAddEmail(context.Background(), &readd)
+	_ = c.Close() // the first load gives up; the re-add runs after it
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for ctx.Err() == nil {
+		if _, ok := w.loadedMailbox(ctx, id); ok {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("the add that followed a removal was dropped")
+}

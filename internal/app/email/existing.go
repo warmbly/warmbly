@@ -92,6 +92,8 @@ func (s *emailService) ConnectDelegated(ctx context.Context, userID string, orgI
 	if xerr != nil {
 		return nil, xerr
 	}
+	ctx, cancelAfter := afterSave(ctx)
+	defer cancelAfter()
 	if s.workerAssignment != nil {
 		if _, err := s.workerAssignment.AssignWorkerToEmail(ctx, acc.ID, *orgID); err != nil {
 			log.Warn().Err(err).Str("email_account_id", acc.ID.String()).Msg("delegated connect: placement failed; the reconciler retries")

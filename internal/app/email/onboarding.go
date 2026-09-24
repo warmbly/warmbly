@@ -266,6 +266,8 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 	if xerr != nil {
 		return nil, xerr
 	}
+	ctx, cancelAfter := afterSave(ctx)
+	defer cancelAfter()
 
 	// Place the mailbox for real. Failure here is non-fatal: the scheduler
 	// picks the account up on its next pass.

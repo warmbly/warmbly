@@ -233,7 +233,9 @@ export default function RunStep({
             : data.source === "paste"
               ? "Paste the list again"
               : "Import the file again";
-    const title = running
+    // Rows parked on the vendor keep the import running; only they left means it is waiting, not importing.
+    const onlyAuthorizing = authorizing > 0 && c.queued + c.running === 0;
+    const title = running && !onlyAuthorizing
         ? `Importing ${plural(total, "mailbox", "mailboxes")}`
         : data.status === "cancelled"
           ? "Import stopped"
@@ -252,7 +254,7 @@ export default function RunStep({
         <div className="flex flex-col">
             <div className="p-4 space-y-3">
                 <div className="flex items-center gap-3">
-                    {running ? (
+                    {running && !onlyAuthorizing ? (
                         <Loader2Icon className="w-6 h-6 text-sky-600 animate-spin shrink-0" />
                     ) : data.status === "cancelled" ? (
                         <XCircleIcon className="w-6 h-6 text-slate-400 shrink-0" />
