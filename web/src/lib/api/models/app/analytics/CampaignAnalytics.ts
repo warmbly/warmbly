@@ -33,6 +33,7 @@ export interface CampaignSummary {
 export interface SequenceStats {
     step_id: string
     name: string
+    // 1-based among the campaign's email steps in canvas order, the N of "Email N".
     position: number
     emails_sent: number
     opens: number

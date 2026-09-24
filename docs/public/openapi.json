@@ -32892,7 +32892,8 @@
             "type": "string"
           },
           "position": {
-            "type": "integer"
+            "type": "integer",
+            "description": "1-based number among the campaign's email steps in sequence order, the N of the canvas's Email N. Action steps are not counted and deleted steps leave no gap, so it is not the step's own position field."
           },
           "emails_sent": {
             "type": "integer"
