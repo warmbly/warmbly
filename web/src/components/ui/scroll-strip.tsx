@@ -41,6 +41,10 @@ export default function ScrollStrip({
         // A vertical wheel over an overflowing strip scrolls it sideways.
         const onWheel = (e: WheelEvent) => {
             if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+            // At the end it cannot move toward, the wheel scrolls the page instead.
+            const atStart = el.scrollLeft <= 0 && e.deltaY < 0;
+            const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1 && e.deltaY > 0;
+            if (atStart || atEnd) return;
             e.preventDefault();
             el.scrollLeft += e.deltaY;
         };

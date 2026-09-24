@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"math/rand/v2"
 	"testing"
 	"time"
 
@@ -121,9 +122,10 @@ func TestLiveWarmupPlacementRollup(t *testing.T) {
 		t.Fatalf("rate = %+v, want 4 delivered, below the floor", r)
 	}
 
-	// The sweep leaves receipts the live path counted alone, and a fresh one to it.
-	if n, err := repo.SweepUnplaced(ctx, time.Now().Add(time.Hour), 100); err != nil || n != 0 {
-		t.Fatalf("sweep over counted receipts = %d, %v; want 0", n, err)
+	// Every receipt the live path counted is marked, so the sweep never counts it again.
+	var unplaced int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM warmup_received WHERE sender_account_id = $1 AND NOT placed`, sender).Scan(&unplaced); err != nil || unplaced != 0 {
+		t.Fatalf("receipts left unplaced after the live count = %d, %v; want 0", unplaced, err)
 	}
 
 	// The partner's organization sees none of it.
@@ -198,7 +200,9 @@ func TestLiveWarmupPlacementSweep(t *testing.T) {
 			t.Errorf("cleanup: %v", err)
 		}
 	})
-	day := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
+	// The sweep claims the oldest receipts below its cutoff across the whole
+	// database, so the fixture sits decades back where nothing else lives.
+	day := time.Date(1975, time.January, 1, 12, 0, 0, 0, time.UTC).AddDate(0, 0, rand.IntN(3650))
 	for i, msg := range []string{"<a@x>", "<b@x>", "<c@x>", ""} {
 		exec(`INSERT INTO warmup_received (email_account_id, internal_id, message_id, sender_account_id, created_at)
 		      VALUES ($1, gen_random_uuid(), $2, $3, $4)`, recipient, msg, sender, day.Add(time.Duration(i)*time.Minute))
