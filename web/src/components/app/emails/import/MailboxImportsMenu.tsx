@@ -50,7 +50,7 @@ function jobState(job: MailboxImport): JobState {
     if (authorizing > 0) {
         return {
             text: `Authorizing ${plural(authorizing, "mailbox", "mailboxes")}`,
-            hint: `${vendorLabel(job.vendor) || "The inbox vendor"} is approving Warmbly, usually within a few minutes. They connect on their own.`,
+            hint: `${vendorLabel(job.vendor) || "The inbox vendor"} is approving Warmbly. This can take up to an hour and they connect on their own; open it to connect them sooner.`,
             tone: "waiting",
         };
     }

@@ -40,6 +40,7 @@ func (s *Service) Start(ctx context.Context) {
 	go jobrun.Loop(ctx, "mailbox_import_upkeep", time.Minute, true, func(ctx context.Context) error {
 		s.reconcileSignins(ctx)
 		s.resumeVendorAuthorizations(ctx)
+		s.resumeGrantedSignins(ctx)
 		s.classifyHosts(ctx)
 		if err := s.repo.SettleOrphans(ctx); err != nil {
 			return err
@@ -219,6 +220,13 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 		p = resolved
 	}
 
+	// A row waiting on sign-in connects through a grant that now covers its domain.
+	if p.Signin && existing == nil && p.GrantID == nil {
+		if id := s.grantForHost(rowCtx, orgID, p.MailHost, w.Email); id != nil {
+			p.GrantID, p.Signin, p.AuthMethod = id, false, models.MailAuthDelegated
+		}
+	}
+
 	if p.GrantID != nil {
 		// Connect relinks an existing grant mailbox and moves a per-mailbox
 		// sign-in onto the grant; anything else keeps its credentials.
@@ -394,6 +402,62 @@ func (s *Service) authorizeVendorDomain(ctx context.Context, w repository.Import
 	return az.AuthorizeDomain(ctx, w.OrgID, *w.CreatedBy, connectionID, w.Email, provider)
 }
 
+// grantForHost is the workspace's grant covering an address on a Google or Microsoft host, nil when none.
+func (s *Service) grantForHost(ctx context.Context, orgID uuid.UUID, mailHost, email string) *uuid.UUID {
+	if s.delegator == nil {
+		return nil
+	}
+	provider := ""
+	switch h := mailhost.Host(mailHost); {
+	case h.Google():
+		provider = models.GrantProviderGoogle
+	case h.Microsoft():
+		provider = models.GrantProviderMicrosoft
+	default:
+		return nil
+	}
+	g, err := s.delegator.GrantFor(ctx, orgID, provider, domainOf(email))
+	if err != nil || g == nil {
+		return nil
+	}
+	return &g.ID
+}
+
+// resumeGrantedSignins queues again the rows waiting on sign-in whose domain an
+// administrator's grant now covers, so one admin approval finishes all of them.
+func (s *Service) resumeGrantedSignins(ctx context.Context) {
+	if s.delegator == nil {
+		return
+	}
+	rows, err := s.repo.SigninRows(ctx, 1000)
+	if err != nil || len(rows) == 0 {
+		return
+	}
+	type key struct {
+		org          uuid.UUID
+		host, domain string
+	}
+	covered := map[key]bool{}
+	resumed := false
+	for _, w := range rows {
+		k := key{w.OrgID, w.MailHost, domainOf(w.Email)}
+		ok, seen := covered[k]
+		if !seen {
+			ok = s.grantForHost(ctx, w.OrgID, w.MailHost, w.Email) != nil
+			covered[k] = ok
+		}
+		if !ok {
+			continue
+		}
+		if err := s.repo.ResumeParked(ctx, w.ImportID, w.Line, w.Code); err == nil {
+			resumed = true
+		}
+	}
+	if resumed {
+		s.Kick()
+	}
+}
+
 // authorizingMessage tells the person watching a parked row who is doing what, and how long it can take.
 func authorizingMessage(auth VendorAuthorization, signinCause, domain string) string {
 	vendor := auth.Vendor
@@ -404,15 +468,15 @@ func authorizingMessage(auth VendorAuthorization, signinCause, domain string) st
 	if auth.Stage != "" {
 		msg += " (" + vendor + " status: " + auth.Stage + ")"
 	}
-	switch {
-	case auth.Note != "":
-		msg += ". " + auth.Note
-	case signinCause == causeGoogleSignin:
-		msg += ". Google can take up to an hour to apply it."
-	default:
-		msg += ". Microsoft usually takes a few minutes."
+	msg += ". It can take up to an hour."
+	if auth.Note != "" {
+		msg += " " + auth.Note
 	}
-	return msg + " The mailbox connects on its own, and switches to Sign in if this is not done within 2 hours."
+	msg += " The mailbox connects on its own. To connect it sooner, use Sign in on this row"
+	if signinCause != causeGoogleSignin {
+		msg += ", or approve Warmbly once as a Microsoft 365 administrator"
+	}
+	return msg + ". If it is not done within 2 hours, the row switches to Sign in."
 }
 
 // resumeVendorAuthorizations requeues rows parked on a vendor authorization once

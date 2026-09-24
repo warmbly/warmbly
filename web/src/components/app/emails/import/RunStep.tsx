@@ -225,14 +225,14 @@ export default function RunStep({
     const authorizing = data.causes.find((x) => x.cause === VENDOR_AUTHORIZING)?.count ?? 0;
     const signinWaiting = Math.max(0, c.needs_signin - authorizing);
     const failureCauses = data.causes.filter((x) => x.cause !== VENDOR_AUTHORIZING);
+    // Microsoft rows the vendor is authorizing can be finished sooner by one admin approval.
+    const msAuthorizing =
+        authorizing > 0 &&
+        (rows.data?.data ?? []).some(
+            (r) => r.cause === VENDOR_AUTHORIZING && (r.code === "microsoft_signin" || mailHostOAuthProvider(r.mail_host) === "outlook"),
+        );
     const allowanceHit = data.causes.some((x) => x.cause === "allowance_reached");
     const msSignin = msGrants && c.needs_signin > 0 && data.causes.some((x) => x.cause === "microsoft_signin");
-    const reimportHint =
-        data.source === "vendor"
-            ? `Import them from ${vendorLabel(data.vendor) || "the vendor"} again`
-            : data.source === "paste"
-              ? "Paste the list again"
-              : "Import the file again";
     // Rows parked on the vendor keep the import running; only they left means it is waiting, not importing.
     const onlyAuthorizing = authorizing > 0 && c.queued + c.running === 0;
     const title = running && !onlyAuthorizing
@@ -362,11 +362,33 @@ export default function RunStep({
                                 {plural(authorizing, "mailbox", "mailboxes")}
                             </p>
                             <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
-                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. Microsoft
-                                usually takes a few minutes and Google can take up to an hour; each row shows where its request is. The rows
-                                connect on their own, and switch to Sign in if it is not done within 2 hours. You can close this window, or
-                                use Sign in on a row now instead of waiting.
+                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. This can
+                                take up to an hour; each row shows where its request is. The rows connect on their own, and switch to Sign in
+                                if it is not done within 2 hours. You can close this window.
                             </p>
+                            <div className="mt-2 pt-2 border-t border-sky-200/70">
+                                <p className="text-[11.5px] font-medium text-sky-900">Want it faster?</p>
+                                {msAuthorizing && msGrants && !granted && (
+                                    <div className="mt-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => void consent.start()}
+                                            disabled={consent.busy}
+                                            className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                                        >
+                                            {consent.busy ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <Building2Icon className="w-3 h-3" />}
+                                            {consent.busy ? "Waiting for the administrator…" : "Approve as a Microsoft 365 admin"}
+                                        </button>
+                                        <p className="text-[11px] text-sky-800/90 leading-relaxed mt-1">
+                                            Sign in once with the domain&apos;s Global Administrator account ({vendorLabel(data.vendor) || "your inbox vendor"}{" "}
+                                            gives you its login). Every mailbox on the domain then connects within a minute.
+                                        </p>
+                                    </div>
+                                )}
+                                <p className="text-[11px] text-sky-800/90 leading-relaxed mt-1">
+                                    {msAuthorizing && msGrants && !granted ? "Or use" : "Use"} Sign in on a row to connect that mailbox now.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -412,8 +434,7 @@ export default function RunStep({
                                 Microsoft 365 organization connected{granted.domains.length > 0 ? `: ${granted.domains.join(", ")}` : ""}
                             </p>
                             <p className="text-[11.5px] text-emerald-800/90 leading-relaxed mt-0.5">
-                                The rows here stay waiting for sign-in and cannot be retried. {reimportHint}, and every row on a
-                                domain the grant covers connects through it, with no sign-in.
+                                Every row here on a domain it covers connects through it within a minute, with no sign-in.
                             </p>
                         </div>
                     </div>

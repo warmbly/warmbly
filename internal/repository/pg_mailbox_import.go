@@ -111,6 +111,9 @@ type MailboxImportRepository interface {
 	Dismiss(ctx context.Context, orgID, id uuid.UUID) error
 	// TouchParked moves rows still waiting to the back of ParkedRows, so no import holds the others back.
 	TouchParked(ctx context.Context, cause string, rows []ImportWorkRow) error
+	// SigninRows lists rows waiting on a Google or Microsoft sign-in that still hold their settings, in imports not cancelled.
+	// Code carries the row's cause.
+	SigninRows(ctx context.Context, limit int) ([]ImportWorkRow, error)
 	// ResumeParked queues a parked row again and reopens its import when it had completed.
 	ResumeParked(ctx context.Context, id uuid.UUID, line int, cause string) error
 	GetMapping(ctx context.Context, orgID uuid.UUID, signature string) (models.MailboxImportMapping, bool, error)
@@ -716,6 +719,33 @@ func (r *mailboxImportRepository) TouchParked(ctx context.Context, cause string,
 		return err
 	}
 	return nil
+}
+
+func (r *mailboxImportRepository) SigninRows(ctx context.Context, limit int) ([]ImportWorkRow, error) {
+	query := `
+		SELECT r.import_id, i.organization_id, r.line, r.email, r.mail_host, r.cause
+		FROM mailbox_import_rows r
+		JOIN mailbox_imports i ON i.id = r.import_id
+		WHERE r.status = 'needs_signin' AND r.cause IN ('microsoft_signin', 'google_signin')
+		  AND r.payload <> '' AND i.status <> 'cancelled'
+		ORDER BY r.updated_at
+		LIMIT $1`
+	rows, err := r.DB.Query(ctx, query, limit)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ImportWorkRow
+	for rows.Next() {
+		var w ImportWorkRow
+		if err := rows.Scan(&w.ImportID, &w.OrgID, &w.Line, &w.Email, &w.MailHost, &w.Code); err != nil {
+			db.CaptureError(err, query, nil, "scan")
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
 }
 
 func (r *mailboxImportRepository) ResumeParked(ctx context.Context, id uuid.UUID, line int, cause string) error {

@@ -6,7 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 )
 
 func TestRetryUnansweredRetriesOnlyASilentFleet(t *testing.T) {
@@ -50,13 +54,41 @@ func TestRetryUnansweredRetriesOnlyASilentFleet(t *testing.T) {
 
 func TestAuthorizingMessageSaysWhoWhatAndHowLong(t *testing.T) {
 	ms := authorizingMessage(VendorAuthorization{Pending: true, Vendor: "InboxKit", Stage: "processing"}, causeMicrosoftSignin, "acme.io")
-	for _, want := range []string{"InboxKit is authorizing Warmbly on acme.io", "InboxKit status: processing", "Microsoft usually takes a few minutes", "within 2 hours"} {
+	for _, want := range []string{"InboxKit is authorizing Warmbly on acme.io", "InboxKit status: processing", "up to an hour",
+		"use Sign in on this row", "Microsoft 365 administrator", "within 2 hours"} {
 		if !strings.Contains(ms, want) {
 			t.Fatalf("microsoft message %q lacks %q", ms, want)
 		}
 	}
-	g := authorizingMessage(VendorAuthorization{Pending: true}, causeGoogleSignin, "acme.io")
-	if !strings.HasPrefix(g, "Your inbox vendor is authorizing") || !strings.Contains(g, "Google can take up to an hour") || strings.Contains(g, "status:") {
+	g := authorizingMessage(VendorAuthorization{Pending: true, Note: "Add the client ID."}, causeGoogleSignin, "acme.io")
+	if !strings.HasPrefix(g, "Your inbox vendor is authorizing") || !strings.Contains(g, "Add the client ID.") ||
+		strings.Contains(g, "Microsoft") || strings.Contains(g, "status:") {
 		t.Fatalf("google message %q", g)
+	}
+}
+
+type grantsByDomain map[string]uuid.UUID
+
+func (g grantsByDomain) GrantFor(_ context.Context, _ uuid.UUID, provider, domain string) (*models.DomainGrant, error) {
+	if id, ok := g[provider+"/"+domain]; ok {
+		return &models.DomainGrant{ID: id}, nil
+	}
+	return nil, nil
+}
+func (g grantsByDomain) Connect(context.Context, uuid.UUID, string, uuid.UUID, string, string) (*models.Email, *errx.Error) {
+	return nil, nil
+}
+
+func TestGrantForHostMatchesTheRowsProviderAndDomain(t *testing.T) {
+	ms := uuid.New()
+	s := &Service{delegator: grantsByDomain{models.GrantProviderMicrosoft + "/getwarmbly.com": ms}}
+	if id := s.grantForHost(context.Background(), uuid.New(), string(mailhost.Microsoft365), "matt@getwarmbly.com"); id == nil || *id != ms {
+		t.Fatalf("a Microsoft row on a granted domain got %v", id)
+	}
+	if id := s.grantForHost(context.Background(), uuid.New(), string(mailhost.GoogleWorkspace), "matt@getwarmbly.com"); id != nil {
+		t.Fatal("a Google row used the Microsoft grant")
+	}
+	if id := s.grantForHost(context.Background(), uuid.New(), string(mailhost.Microsoft365), "matt@other.com"); id != nil {
+		t.Fatal("a row on another domain used the grant")
 	}
 }
