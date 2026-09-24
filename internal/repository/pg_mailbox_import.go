@@ -42,7 +42,16 @@ type ImportWorkRow struct {
 	MailHost   string
 	Payload    string
 	Attempts   int
+	// Code is the row's recorded code; set only by ParkedRows.
+	Code string
+	// AccountID is the mailbox an earlier claim of the row created; set by Claim.
+	AccountID *uuid.UUID
+	// ImportCreatedAt is when the import started; set by Claim.
+	ImportCreatedAt time.Time
 }
+
+// ParkedVendorCause is the cause of a row waiting on its vendor to authorize Warmbly; its import is not finished.
+const ParkedVendorCause = "vendor_authorizing"
 
 // FinishedImport is an import the last row of which just settled.
 type FinishedImport struct {
@@ -78,6 +87,8 @@ type MailboxImportRepository interface {
 	// FinishRow records a row's outcome. With attempt > 0 it only applies to that claim of the row, so a
 	// replica whose lease lapsed cannot overwrite the outcome another replica recorded.
 	FinishRow(ctx context.Context, id uuid.UUID, line, attempt int, status, code, cause, message string, accountID *uuid.UUID, keepPayload bool) error
+	// SetRowAccount records the mailbox a claimed row just created, before its settings are applied.
+	SetRowAccount(ctx context.Context, id uuid.UUID, line, attempt int, accountID uuid.UUID) error
 	// Touch renews a claimed row's lease when work on it starts; false when another replica has it now.
 	Touch(ctx context.Context, id uuid.UUID, line, attempt int, lease time.Duration) (bool, error)
 	// SettleOrphans closes rows left running in imports that are no longer running.
@@ -90,6 +101,12 @@ type MailboxImportRepository interface {
 	// and returns them with the payload they held, so their settings can apply.
 	ResolveSignin(ctx context.Context, orgID uuid.UUID, email string, accountID uuid.UUID) ([]ImportWorkRow, error)
 	PendingSignins(ctx context.Context, limit int) ([]PendingSignin, error)
+	// ParkedRows lists rows waiting on sign-in under one cause that still hold credentials.
+	ParkedRows(ctx context.Context, cause string, limit int) ([]ImportWorkRow, error)
+	// TouchParked moves rows still waiting to the back of ParkedRows, so no import holds the others back.
+	TouchParked(ctx context.Context, cause string, rows []ImportWorkRow) error
+	// ResumeParked queues a parked row again and reopens its import when it had completed.
+	ResumeParked(ctx context.Context, id uuid.UUID, line int, cause string) error
 	GetMapping(ctx context.Context, orgID uuid.UUID, signature string) (models.MailboxImportMapping, bool, error)
 	SaveMapping(ctx context.Context, orgID uuid.UUID, signature string, mapping models.MailboxImportMapping) error
 }
@@ -410,6 +427,13 @@ func (r *mailboxImportRepository) Cancel(ctx context.Context, orgID, id uuid.UUI
 		db.CaptureError(err, query, nil, "exec")
 		return err
 	}
+	// Rows parked on a vendor authorization fall back to sign-in, since nothing resumes a cancelled import.
+	query = `UPDATE mailbox_import_rows SET cause = code, message = 'Waiting for someone to sign in as this mailbox.', updated_at = now()
+		WHERE import_id = $1 AND status = 'needs_signin' AND cause = '` + ParkedVendorCause + `'`
+	if _, err := tx.Exec(ctx, query, id); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
 	return tx.Commit(ctx)
 }
 
@@ -432,7 +456,7 @@ func (r *mailboxImportRepository) Claim(ctx context.Context, limit int, lease ti
 		SET status = 'running', lease_until = now() + $2::interval, attempts = r.attempts + 1, updated_at = now()
 		FROM due, mailbox_imports i
 		WHERE r.import_id = due.import_id AND r.line = due.line AND i.id = r.import_id
-		RETURNING r.import_id, i.organization_id, i.created_by, i.on_existing, i.settings, r.line, r.email, r.mail_host, r.payload, r.attempts`
+		RETURNING r.import_id, i.organization_id, i.created_by, i.on_existing, i.settings, r.line, r.email, r.mail_host, r.payload, r.attempts, r.email_account_id, i.created_at`
 	rows, err := r.DB.Query(ctx, query, limit, lease.String())
 	if err != nil {
 		db.CaptureError(err, query, nil, "query")
@@ -442,7 +466,7 @@ func (r *mailboxImportRepository) Claim(ctx context.Context, limit int, lease ti
 	var out []ImportWorkRow
 	for rows.Next() {
 		var w ImportWorkRow
-		if err := rows.Scan(&w.ImportID, &w.OrgID, &w.CreatedBy, &w.OnExisting, &w.Settings, &w.Line, &w.Email, &w.MailHost, &w.Payload, &w.Attempts); err != nil {
+		if err := rows.Scan(&w.ImportID, &w.OrgID, &w.CreatedBy, &w.OnExisting, &w.Settings, &w.Line, &w.Email, &w.MailHost, &w.Payload, &w.Attempts, &w.AccountID, &w.ImportCreatedAt); err != nil {
 			db.CaptureError(err, query, nil, "scan")
 			return nil, err
 		}
@@ -466,6 +490,16 @@ func (r *mailboxImportRepository) FinishRow(ctx context.Context, id uuid.UUID, l
 	}
 	if _, err := r.DB.Exec(ctx, `UPDATE mailbox_imports SET updated_at = now() WHERE id = $1`, id); err != nil {
 		db.CaptureError(err, "", nil, "exec")
+	}
+	return nil
+}
+
+func (r *mailboxImportRepository) SetRowAccount(ctx context.Context, id uuid.UUID, line, attempt int, accountID uuid.UUID) error {
+	query := `UPDATE mailbox_import_rows SET email_account_id = $4
+		WHERE import_id = $1 AND line = $2 AND status = 'running' AND attempts = $3`
+	if _, err := r.DB.Exec(ctx, query, id, line, attempt, accountID); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
 	}
 	return nil
 }
@@ -503,7 +537,8 @@ func (r *mailboxImportRepository) CompleteFinished(ctx context.Context, credenti
 		WHERE i.status = 'running'
 		  AND NOT EXISTS (
 			SELECT 1 FROM mailbox_import_rows r
-			WHERE r.import_id = i.id AND r.status IN ('queued', 'running')
+			WHERE r.import_id = i.id
+			  AND (r.status IN ('queued', 'running') OR (r.status = 'needs_signin' AND r.cause = '` + ParkedVendorCause + `'))
 		  )
 		RETURNING i.id, i.organization_id, i.created_by`
 	rows, err := r.DB.Query(ctx, query, credentialDays)
@@ -600,6 +635,79 @@ func (r *mailboxImportRepository) PendingSignins(ctx context.Context, limit int)
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+func (r *mailboxImportRepository) ParkedRows(ctx context.Context, cause string, limit int) ([]ImportWorkRow, error) {
+	query := `
+		SELECT r.import_id, i.organization_id, i.created_by, r.line, r.email, r.code, r.payload
+		FROM mailbox_import_rows r
+		JOIN mailbox_imports i ON i.id = r.import_id
+		WHERE r.status = 'needs_signin' AND r.cause = $1 AND r.payload <> '' AND i.status = 'running'
+		ORDER BY r.updated_at
+		LIMIT $2`
+	rows, err := r.DB.Query(ctx, query, cause, limit)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ImportWorkRow
+	for rows.Next() {
+		var w ImportWorkRow
+		if err := rows.Scan(&w.ImportID, &w.OrgID, &w.CreatedBy, &w.Line, &w.Email, &w.Code, &w.Payload); err != nil {
+			db.CaptureError(err, query, nil, "scan")
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+func (r *mailboxImportRepository) TouchParked(ctx context.Context, cause string, rows []ImportWorkRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids, lines := make([]uuid.UUID, len(rows)), make([]int32, len(rows))
+	for i, w := range rows {
+		ids[i], lines[i] = w.ImportID, int32(w.Line)
+	}
+	query := `
+		UPDATE mailbox_import_rows r SET updated_at = now()
+		FROM unnest($2::uuid[], $3::int[]) AS k(import_id, line)
+		WHERE r.import_id = k.import_id AND r.line = k.line AND r.status = 'needs_signin' AND r.cause = $1`
+	if _, err := r.DB.Exec(ctx, query, cause, ids, lines); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
+	return nil
+}
+
+func (r *mailboxImportRepository) ResumeParked(ctx context.Context, id uuid.UUID, line int, cause string) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		db.CaptureError(err, "", nil, "begin")
+		return err
+	}
+	defer tx.Rollback(ctx)
+	query := `
+		UPDATE mailbox_import_rows
+		SET status = 'queued', lease_until = NULL, attempts = 0, code = '', cause = '', message = '', updated_at = now()
+		WHERE import_id = $1 AND line = $2 AND status = 'needs_signin' AND cause = $3`
+	tag, err := tx.Exec(ctx, query, id, line, cause)
+	if err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	query = `UPDATE mailbox_imports SET status = 'running', finished_at = NULL, credentials_expire_at = NULL, updated_at = now()
+		WHERE id = $1 AND status = 'completed'`
+	if _, err := tx.Exec(ctx, query, id); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *mailboxImportRepository) GetMapping(ctx context.Context, orgID uuid.UUID, signature string) (models.MailboxImportMapping, bool, error) {

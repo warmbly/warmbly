@@ -12,6 +12,17 @@ type EventWorkerEmailValidation struct {
 	Credentials *SmtpImap `json:"credentials" avro:"credentials"`
 }
 
+// EmailValidationRequestChannel is the Redis channel a worker takes credential
+// checks on, so a check never waits behind the commands queued on its topic.
+func EmailValidationRequestChannel(workerID uuid.UUID) string {
+	return "email_validation_request:" + workerID.String()
+}
+
+// EmailValidationReplyChannel is where the worker answers one check.
+func EmailValidationReplyChannel(processID uuid.UUID) string {
+	return "email_validation:" + processID.String()
+}
+
 // Mail probe reasons: why one leg of a credential check did not pass. They
 // travel from the worker to the backend inside EmailValidationVerdict and are
 // what lets the connect form say what the server said instead of "invalid

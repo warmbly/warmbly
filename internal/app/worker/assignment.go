@@ -62,10 +62,9 @@ type WorkerAssignmentService interface {
 	// MigrateEmailsFromWorker drains every mailbox off a worker.
 	MigrateEmailsFromWorker(ctx context.Context, workerID uuid.UUID) error
 
-	// SelectValidationWorker returns any live worker to run a one-shot
-	// credential handshake on. Nothing is placed, so no scoring applies: the
-	// worker only dials the mailbox once and reports back.
-	SelectValidationWorker(ctx context.Context) (*models.Worker, error)
+	// ValidationWorkers orders the healthy live workers for a credential check:
+	// prefer, then where placement would put orgID's new mailbox, then by load.
+	ValidationWorkers(ctx context.Context, orgID uuid.UUID, prefer *uuid.UUID) ([]models.Worker, error)
 }
 
 // SetOrganizationWarmupPool idempotently applies a subscription tier to existing mailboxes.
@@ -506,15 +505,39 @@ func (s *workerAssignmentService) MigrateEmailsFromWorker(ctx context.Context, w
 	return nil
 }
 
-// SelectValidationWorker returns the least loaded live worker. Used by the
-// connect and reconnect flows to test credentials before anything is stored.
-func (s *workerAssignmentService) SelectValidationWorker(ctx context.Context) (*models.Worker, error) {
-	workers, err := s.workerRepo.ListPlaceableWorkers(ctx)
+// ValidationWorkers puts the address the mailbox will sign in from first, so the provider sees one IP.
+func (s *workerAssignmentService) ValidationWorkers(ctx context.Context, orgID uuid.UUID, prefer *uuid.UUID) ([]models.Worker, error) {
+	live, err := s.workerRepo.ListPlaceableWorkers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(workers) == 0 {
+	healthy := make([]models.Worker, 0, len(live))
+	for _, w := range live {
+		switch w.HealthState {
+		case models.WorkerHealthHealthy, models.WorkerHealthWatch:
+			healthy = append(healthy, w)
+		}
+	}
+	if len(healthy) == 0 {
 		return nil, ErrNoAvailableWorkers
 	}
-	return &workers[0], nil
+	first := func(id uuid.UUID) {
+		for i := range healthy {
+			if healthy[i].ID == id {
+				w := healthy[i]
+				healthy = append(healthy[:i], healthy[i+1:]...)
+				healthy = append([]models.Worker{w}, healthy...)
+				return
+			}
+		}
+	}
+	if orgID != uuid.Nil {
+		if res, err := s.SelectWorkerFor(ctx, PlacementLookup{OrgID: orgID}); err == nil && res != nil && res.Worker != nil {
+			first(res.Worker.ID)
+		}
+	}
+	if prefer != nil {
+		first(*prefer)
+	}
+	return healthy, nil
 }

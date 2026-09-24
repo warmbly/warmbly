@@ -75,6 +75,7 @@ type inboxKitList struct {
 		Username   string `json:"username"`
 		Platform   string `json:"platform"`
 		Status     string `json:"status"`
+		IsAdmin    bool   `json:"is_admin"`
 	} `json:"mailboxes"`
 	Pages       int `json:"pages"`
 	CurrentPage int `json:"current_page"`
@@ -128,6 +129,7 @@ func (c *inboxKit) List(ctx context.Context) ([]Mailbox, error) {
 					Provider:  normalizeProvider(m.Platform),
 					Status:    m.Status,
 					Workspace: ws.Name,
+					Admin:     m.IsAdmin,
 				})
 				if len(out) >= MaxMailboxes {
 					return errStop
@@ -180,6 +182,72 @@ func (c *inboxKit) show(ctx context.Context, ws, uid, email string) (Credentials
 		return Credentials{}, vendorErr(VendorInboxKit, http.StatusOK, "not found", ErrNotFound)
 	}
 	return Credentials{Password: res.Password, AppPassword: res.AppPassword}, nil
+}
+
+// AuthorizeApp calls POST /v1/api/mailboxes/client-id-request/initiate: a trusted
+// app under domain-wide delegation on Google, tenant-wide admin consent on Microsoft.
+func (c *inboxKit) AuthorizeApp(ctx context.Context, a AppAuthorization) (string, error) {
+	ws, _ := unscoped(a.Mailbox.ID)
+	if ws == "" || a.Domain == "" || a.ClientID == "" {
+		return "", invalid(VendorInboxKit, "domain, workspace and client id are required")
+	}
+	body := map[string]any{"domain": a.Domain, "client_id": a.ClientID}
+	switch a.Provider {
+	case ProviderGoogle:
+		body["delegated"], body["scopes"] = true, a.Scopes
+	case ProviderMicrosoft:
+		body["scopes"], body["app_roles"] = a.Scopes, a.AppRoles
+	default:
+		return "", unsupported(VendorInboxKit, "only Google and Microsoft domains can authorize an app")
+	}
+	var res struct {
+		inboxKitEnvelope
+		Data struct {
+			UID string `json:"uid"`
+		} `json:"data"`
+	}
+	if err := c.t.do(ctx, call{method: http.MethodPost, path: "/v1/api/mailboxes/client-id-request/initiate", body: body, header: inboxKitHeader(ws)}, &res); err != nil {
+		return "", err
+	}
+	if err := res.err(); err != nil {
+		return "", err
+	}
+	if res.Data.UID == "" {
+		return "", vendorErr(VendorInboxKit, http.StatusOK, "no request id", nil)
+	}
+	return scoped(ws, res.Data.UID), nil
+}
+
+// AuthorizationStatus reads GET /v1/api/mailboxes/client-id-request/status/{id}.
+func (c *inboxKit) AuthorizationStatus(ctx context.Context, requestID string) (AuthorizationStatus, error) {
+	ws, uid := unscoped(requestID)
+	if ws == "" || uid == "" {
+		return AuthorizationStatus{}, invalid(VendorInboxKit, "request id is required")
+	}
+	var res struct {
+		inboxKitEnvelope
+		Data struct {
+			Status       string  `json:"status"`
+			ErrorMessage *string `json:"error_message"`
+		} `json:"data"`
+	}
+	if err := c.t.do(ctx, call{method: http.MethodGet, path: "/v1/api/mailboxes/client-id-request/status/" + url.PathEscape(uid), header: inboxKitHeader(ws)}, &res); err != nil {
+		return AuthorizationStatus{}, err
+	}
+	if err := res.err(); err != nil {
+		return AuthorizationStatus{}, err
+	}
+	switch strings.ToLower(res.Data.Status) {
+	case "completed":
+		return AuthorizationStatus{State: AuthorizationCompleted}, nil
+	case "failed", "errored", "cancelled":
+		reason := ""
+		if res.Data.ErrorMessage != nil {
+			reason = *res.Data.ErrorMessage
+		}
+		return AuthorizationStatus{State: AuthorizationFailed, Reason: reason}, nil
+	}
+	return AuthorizationStatus{State: AuthorizationPending}, nil
 }
 
 const inboxKitDomainPageSize = 100

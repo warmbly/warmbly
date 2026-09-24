@@ -107,6 +107,8 @@ func (s *emailService) guardInboxLimit(ctx context.Context, orgID *uuid.UUID) (*
 // inbox owner, and persists a new email account — or, when the state carries an
 // account id (OAuthReauth), renews that mailbox's tokens in place instead.
 func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state string) (*models.Email, bool, *errx.Error) {
+	ctx, cancel := detach(ctx, connectBudget)
+	defer cancel()
 	if code = strings.TrimSpace(code); code == "" {
 		return nil, false, errx.ErrEmailOnboardCode
 	}
@@ -231,6 +233,8 @@ func (s *emailService) OAuthFinish(ctx context.Context, userID, code, state stri
 // OnboardSMTPIMAP validates the supplied SMTP/IMAP credentials against a live worker, then
 // persists the email account on success. Returns ErrEmailCredentials if the worker reports failure.
 func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID *uuid.UUID, data *models.NewSMTPIMAPAccount) (*models.Email, *errx.Error) {
+	ctx, cancel := detach(ctx, connectBudget)
+	defer cancel()
 	if xerr := validateSMTPIMAPInput(data); xerr != nil {
 		return nil, xerr
 	}
@@ -250,15 +254,8 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 		return nil, errx.ErrEmailOnboardNoWorker
 	}
 
-	// Any live worker can run the one-shot validation handshake: nothing is
-	// placed yet, the worker just dials the credentials once and reports back.
-	w, werr := s.workerAssignment.SelectValidationWorker(ctx)
-	if werr != nil || w == nil {
-		return nil, errx.ErrEmailOnboardNoWorker
-	}
-
 	creds := &models.SmtpImap{SMTP: data.SMTP, IMAP: data.IMAP}
-	if xerr := s.ValidateCredentials(ctx, *orgID, w.ID.String(), creds); xerr != nil {
+	if xerr := s.checkCredentials(ctx, *orgID, nil, creds); xerr != nil {
 		return nil, xerr
 	}
 
@@ -269,6 +266,8 @@ func (s *emailService) OnboardSMTPIMAP(ctx context.Context, userID string, orgID
 	if xerr != nil {
 		return nil, xerr
 	}
+	ctx, cancelAfter := afterSave(ctx)
+	defer cancelAfter()
 
 	// Place the mailbox for real. Failure here is non-fatal: the scheduler
 	// picks the account up on its next pass.

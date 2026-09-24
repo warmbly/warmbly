@@ -39,6 +39,7 @@ func (s *Service) Kick() {
 func (s *Service) Start(ctx context.Context) {
 	go jobrun.Loop(ctx, "mailbox_import_upkeep", time.Minute, true, func(ctx context.Context) error {
 		s.reconcileSignins(ctx)
+		s.resumeVendorAuthorizations(ctx)
 		s.classifyHosts(ctx)
 		if err := s.repo.SettleOrphans(ctx); err != nil {
 			return err
@@ -162,6 +163,17 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 		return
 	}
 
+	// A restart between creating this mailbox and recording the row leaves it for a
+	// later claim: finish the row's work rather than treat the mailbox as pre-existing.
+	if existing != nil && w.Attempts > 1 {
+		acc, xerr := s.mailboxes.Get(rowCtx, orgID.String(), existing.ID.String())
+		ours := w.AccountID != nil && existing.ID == *w.AccountID
+		if xerr == nil && acc != nil && (ours || acc.CreatedAt.After(w.ImportCreatedAt)) {
+			s.connected(ctx, w, p, acc, settings, userID)
+			return
+		}
+	}
+
 	if existing != nil && w.OnExisting == "skip" {
 		s.finish(ctx, w, models.ImportRowSkipped, "already_connected", "", "Already in this workspace.", &existing.ID, false)
 		return
@@ -178,6 +190,21 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 	// A vendor row learns its credentials only now, and is judged like a file row.
 	if p.VendorConnectionID != nil && p.SMTP == nil && !p.Signin && p.GrantID == nil {
 		resolved, cause, problem := s.resolveVendorRow(rowCtx, w, p)
+		if cause == causeMicrosoftSignin || cause == causeGoogleSignin {
+			auth := s.authorizeVendorDomain(rowCtx, w, *p.VendorConnectionID, cause)
+			switch {
+			case auth.GrantID != nil:
+				resolved.GrantID, resolved.AuthMethod, resolved.Signin = auth.GrantID, models.MailAuthDelegated, false
+				resolved.SMTP, resolved.IMAP = nil, nil
+				cause = ""
+			case auth.Pending:
+				s.finish(ctx, w, models.ImportRowNeedsSignin, cause, causeVendorAuthorizing,
+					"Your inbox vendor is authorizing Warmbly on "+domainOf(w.Email)+". This mailbox connects on its own when it finishes.", nil, true)
+				return
+			case auth.Message != "":
+				problem = auth.Message
+			}
+		}
 		if cause != "" {
 			status := models.ImportRowFailed
 			if cause == causeMicrosoftSignin || cause == causeGoogleSignin {
@@ -236,7 +263,10 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 			return
 		}
 		creds := &models.SmtpImap{SMTP: p.SMTP, IMAP: p.IMAP}
-		if _, xerr := s.emails.UpdateSMTPIMAPCredentials(rowCtx, &orgID, existing.ID, creds); xerr != nil {
+		if xerr := retryUnanswered(rowCtx, func() *errx.Error {
+			_, xerr := s.emails.UpdateSMTPIMAPCredentials(rowCtx, &orgID, existing.ID, creds)
+			return xerr
+		}); xerr != nil {
 			s.fail(ctx, w, xerr)
 			return
 		}
@@ -246,8 +276,13 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 		return
 	}
 
-	acc, xerr := s.emails.OnboardSMTPIMAP(rowCtx, userID, &orgID, &models.NewSMTPIMAPAccount{
-		Email: w.Email, Name: p.Name, SMTP: p.SMTP, IMAP: p.IMAP, MailHost: p.MailHost, AuthMethod: p.AuthMethod,
+	var acc *models.Email
+	xerr = retryUnanswered(rowCtx, func() *errx.Error {
+		var xerr *errx.Error
+		acc, xerr = s.emails.OnboardSMTPIMAP(rowCtx, userID, &orgID, &models.NewSMTPIMAPAccount{
+			Email: w.Email, Name: p.Name, SMTP: p.SMTP, IMAP: p.IMAP, MailHost: p.MailHost, AuthMethod: p.AuthMethod,
+		})
+		return xerr
 	})
 	if xerr != nil {
 		if errors.Is(xerr, errx.ErrEmailOnboardAlreadyExists) {
@@ -261,8 +296,43 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 	s.connected(ctx, w, p, acc, settings, userID)
 }
 
+// unansweredBackoff is the first wait before a connect no worker answered is tried again; it triples.
+var unansweredBackoff = 5 * time.Second
+
+// unansweredReserve is what one more connect needs of the row's lease: two silent workers, then saving the mailbox.
+var unansweredReserve = 48 * time.Second
+
+// retryUnanswered repeats a connect whose check no worker answered, while the row's lease leaves room.
+func retryUnanswered(ctx context.Context, connect func() *errx.Error) *errx.Error {
+	for wait := unansweredBackoff; ; wait *= 3 {
+		xerr := connect()
+		if xerr == nil || !unanswered(xerr) {
+			return xerr
+		}
+		if d, ok := ctx.Deadline(); ok && time.Until(d) < wait+unansweredReserve {
+			return xerr
+		}
+		t := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return xerr
+		case <-t.C:
+		}
+	}
+}
+
+// unanswered is a connect that never reached the mail server because no worker took or answered the check.
+func unanswered(xerr *errx.Error) bool {
+	return errors.Is(xerr, errx.ErrEmailOnboardNoWorker) || (xerr.Cause == "" && xerr.Identifier == errx.ErrEmailValidation.Identifier)
+}
+
 // connected records a new mailbox: audit, vendor link, settings, row outcome.
 func (s *Service) connected(ctx context.Context, w repository.ImportWorkRow, p payload, acc *models.Email, settings models.MailboxImportSettings, userID string) {
+	// Recorded first, so a restart before the row is finished resumes here instead of skipping the mailbox.
+	if w.AccountID == nil || *w.AccountID != acc.ID {
+		_ = s.repo.SetRowAccount(ctx, w.ImportID, w.Line, w.Attempts, acc.ID)
+	}
 	if s.auditor != nil {
 		s.auditor.LogAction(ctx, w.OrgID, *w.CreatedBy, models.AuditActionConnect, models.AuditEntityEmailAccount, &acc.ID, "", "", nil,
 			map[string]string{"provider": acc.Provider, "email": acc.Email, "import_id": w.ImportID.String()})
@@ -305,6 +375,65 @@ func (s *Service) domainExtras(ctx context.Context, w repository.ImportWorkRow, 
 func (s *Service) link(ctx context.Context, p payload, accountID uuid.UUID) {
 	if s.vendors != nil && p.VendorConnectionID != nil {
 		s.vendors.Link(ctx, accountID, *p.VendorConnectionID, p.VendorMailboxID)
+	}
+}
+
+// authorizeVendorDomain asks the row's vendor to authorize Warmbly on its domain; signinCause names the provider.
+func (s *Service) authorizeVendorDomain(ctx context.Context, w repository.ImportWorkRow, connectionID uuid.UUID, signinCause string) VendorAuthorization {
+	az, ok := s.vendors.(VendorAuthorizer)
+	if !ok || w.CreatedBy == nil {
+		return VendorAuthorization{}
+	}
+	provider := models.GrantProviderMicrosoft
+	if signinCause == causeGoogleSignin {
+		provider = models.GrantProviderGoogle
+	}
+	return az.AuthorizeDomain(ctx, w.OrgID, *w.CreatedBy, connectionID, w.Email, provider)
+}
+
+// resumeVendorAuthorizations requeues rows parked on a vendor authorization once
+// it has an answer, asking the vendor once per domain.
+func (s *Service) resumeVendorAuthorizations(ctx context.Context) {
+	if s.vendors == nil {
+		return
+	}
+	rows, err := s.repo.ParkedRows(ctx, causeVendorAuthorizing, 500)
+	if err != nil || len(rows) == 0 {
+		return
+	}
+	type domainKey struct {
+		org, conn      uuid.UUID
+		signin, domain string
+	}
+	settled := map[domainKey]bool{}
+	resumed := false
+	var waiting []repository.ImportWorkRow
+	for _, w := range rows {
+		ciph, err := s.cipher.Cipher(ctx, w.OrgID)
+		if err != nil {
+			continue
+		}
+		p, xerr := unseal(ctx, ciph, w.Payload)
+		if xerr != nil || p.VendorConnectionID == nil {
+			continue
+		}
+		k := domainKey{w.OrgID, *p.VendorConnectionID, w.Code, domainOf(w.Email)}
+		done, seen := settled[k]
+		if !seen {
+			done = !s.authorizeVendorDomain(ctx, w, *p.VendorConnectionID, w.Code).Pending
+			settled[k] = done
+		}
+		if !done {
+			waiting = append(waiting, w)
+			continue
+		}
+		if err := s.repo.ResumeParked(ctx, w.ImportID, w.Line, causeVendorAuthorizing); err == nil {
+			resumed = true
+		}
+	}
+	_ = s.repo.TouchParked(ctx, causeVendorAuthorizing, waiting)
+	if resumed {
+		s.Kick()
 	}
 }
 

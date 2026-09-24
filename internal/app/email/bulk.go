@@ -20,6 +20,8 @@ import (
 // connect path, so a row is never connected twice and every side effect of a
 // single connect (worker load, warmup pool, webhook) happens per mailbox.
 func (s *emailService) OnboardSMTPIMAPBulk(ctx context.Context, userID string, orgID *uuid.UUID, rows []models.NewSMTPIMAPAccount) *models.MailboxBulkResult {
+	// Rows are bounded one by one (OnboardSMTPIMAP), so the batch only drops the caller's cancellation.
+	ctx = context.WithoutCancel(ctx)
 	res := &models.MailboxBulkResult{Data: make([]models.MailboxBulkRow, len(rows))}
 	res.Summary.Total = len(rows)
 	if len(rows) == 0 {

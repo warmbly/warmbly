@@ -87,6 +87,8 @@ type Mailbox struct {
 	Status    string
 	// Workspace is the name of the vendor workspace holding the mailbox, empty where the vendor has none.
 	Workspace string
+	// Admin marks the domain's administrator mailbox, where the vendor says.
+	Admin bool
 }
 
 // Endpoint is one server a mailbox connects to.
@@ -116,6 +118,38 @@ type Client interface {
 	List(ctx context.Context) ([]Mailbox, error)
 	// Credentials reads one mailbox's credentials, from List's cache where the vendor's list carries them.
 	Credentials(ctx context.Context, m Mailbox) (Credentials, error)
+}
+
+// AppAuthorization asks a vendor to authorize an OAuth app on one of its domains,
+// through the administrator mailbox it holds there.
+type AppAuthorization struct {
+	Domain string
+	// Mailbox is any listed mailbox on the domain; its id names the vendor workspace.
+	Mailbox  Mailbox
+	Provider string
+	ClientID string
+	// Scopes are delegated scopes (Google: full scope URLs); AppRoles are Microsoft application permissions.
+	Scopes   []string
+	AppRoles []string
+}
+
+// Authorization states.
+const (
+	AuthorizationPending   = "pending"
+	AuthorizationCompleted = "completed"
+	AuthorizationFailed    = "failed"
+)
+
+// AuthorizationStatus is where an app authorization stands; Reason is the vendor's words on a failure.
+type AuthorizationStatus struct {
+	State  string
+	Reason string
+}
+
+// AppAuthorizer is a vendor that can authorize an app on a domain it administers.
+type AppAuthorizer interface {
+	AuthorizeApp(ctx context.Context, a AppAuthorization) (requestID string, err error)
+	AuthorizationStatus(ctx context.Context, requestID string) (AuthorizationStatus, error)
 }
 
 // Option configures New.

@@ -24,6 +24,8 @@ func (s *emailService) OAuthAuthorizeURL(provider models.InboxProvider, state st
 }
 
 func (s *emailService) OAuthConnectWithCode(ctx context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider, code string) (*models.Email, *errx.Error) {
+	ctx, cancel := detach(ctx, connectBudget)
+	defer cancel()
 	if code = strings.TrimSpace(code); code == "" {
 		return nil, errx.ErrEmailOnboardCode
 	}

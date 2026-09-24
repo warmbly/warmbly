@@ -1692,6 +1692,7 @@ func main() {
 			Cipher:    cipherService,
 			Mailboxes: emailRepostory,
 			Reconnect: emailService,
+			Grants:    delegationService,
 			Cache:     cache,
 			NewClient: sandboxVendors,
 		})

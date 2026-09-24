@@ -39,6 +39,8 @@ type WorkerService struct {
 	TokenBroker repository.BrokeredTokenClient
 
 	mailManager *mailmanager.MailManager
+	// loads holds the mailboxes being loaded, so a republished ADD_EMAIL never dials twice.
+	loads sync.Map // uuid.UUID -> *mailboxLoad
 
 	// HealthCounters tracks the per-window send-side telemetry the worker
 	// reports via JobEventTypeWorkerHealth. Lazily initialised by

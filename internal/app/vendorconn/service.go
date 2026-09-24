@@ -49,6 +49,14 @@ type Reconnector interface {
 	UpdateSMTPIMAPCredentials(ctx context.Context, orgID *uuid.UUID, accountID uuid.UUID, creds *models.SmtpImap) (*models.Email, *errx.Error)
 }
 
+// Grants is the delegation side: the instance's app identity, and recording a
+// grant once a vendor has authorized that app on a domain.
+type Grants interface {
+	AppIdentity(provider string) (clientID string, scopes, appRoles []string, ok bool)
+	GrantFor(ctx context.Context, orgID uuid.UUID, provider, domain string) (*models.DomainGrant, error)
+	GrantFromVendor(ctx context.Context, orgID, userID uuid.UUID, provider, domain, admin string, owned []string) (*models.DomainGrant, *errx.Error)
+}
+
 // Importer starts a background import of picked mailboxes.
 type Importer interface {
 	CreateFromList(ctx context.Context, in mailboximport.ListInput) (*models.MailboxImport, *errx.Error)
@@ -60,6 +68,7 @@ type Service struct {
 	mailboxes Mailboxes
 	reconnect Reconnector
 	importer  Importer
+	grants    Grants
 	cache     *cache.Cache
 	newClient func(vendor string, fields map[string]string) (mailvendor.Client, error)
 
@@ -68,6 +77,8 @@ type Service struct {
 	clients sync.Map // connection id + credential hash -> *cachedClient
 	// domainCache keeps each connection's domain list a few minutes.
 	domainCache domainCache
+	// lists keeps each connection's mailbox list a minute, for app authorization.
+	lists sync.Map // connection id -> cachedList
 }
 
 type cachedClient struct {
@@ -83,13 +94,14 @@ type Deps struct {
 	Mailboxes Mailboxes
 	Reconnect Reconnector
 	Importer  Importer
+	Grants    Grants
 	Cache     *cache.Cache
 	// NewClient overrides the vendor client (tests).
 	NewClient func(vendor string, fields map[string]string) (mailvendor.Client, error)
 }
 
 func NewService(d Deps) *Service {
-	s := &Service{repo: d.Repo, cipher: d.Cipher, mailboxes: d.Mailboxes, reconnect: d.Reconnect, importer: d.Importer, cache: d.Cache, newClient: d.NewClient}
+	s := &Service{repo: d.Repo, cipher: d.Cipher, mailboxes: d.Mailboxes, reconnect: d.Reconnect, importer: d.Importer, grants: d.Grants, cache: d.Cache, newClient: d.NewClient}
 	if s.newClient == nil {
 		s.newClient = func(vendor string, fields map[string]string) (mailvendor.Client, error) {
 			return mailvendor.New(vendor, fields)
@@ -338,6 +350,7 @@ func (s *Service) client(ctx context.Context, c *models.VendorConnection) (mailv
 // forget drops a connection's cached clients and domain list, so a changed or removed key is never used again.
 func (s *Service) forget(id uuid.UUID) {
 	s.forgetDomains(id)
+	s.lists.Delete(id)
 	prefix := id.String() + ":"
 	s.clients.Range(func(k, _ any) bool {
 		if strings.HasPrefix(k.(string), prefix) {

@@ -653,6 +653,14 @@ func (s *Service) Users(ctx context.Context, orgID, id uuid.UUID) ([]models.Dire
 			out = append(out, models.DirectoryUser{ID: u.ID, Email: u.Mail, Name: u.DisplayName, Enabled: u.AccountEnabled})
 		}
 	}
+	// The directory can hold domains the grant does not cover; they are not this workspace's.
+	covered := out[:0]
+	for _, u := range out {
+		if covers(g, u.Email) {
+			covered = append(covered, u)
+		}
+	}
+	out = covered
 	emails := make([]string, len(out))
 	for i := range out {
 		emails[i] = out[i].Email

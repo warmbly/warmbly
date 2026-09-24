@@ -38,9 +38,7 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.Wa
 		return nil
 	}
 
-	w.mailManager.RLock()
-	mail, exists := w.mailManager.Emails[action.EmailID]
-	w.mailManager.RUnlock()
+	mail, exists := w.loadedMailbox(ctx, action.EmailID)
 	var err error
 	switch {
 	case !exists:

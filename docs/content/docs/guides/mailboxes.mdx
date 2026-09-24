@@ -20,6 +20,8 @@ Open **Accounts** and choose **Add account**. Google and Microsoft each have one
 
 On a self-hosted instance the two whole-domain methods are shown switched off until the operator sets them up; see [whole-domain mailbox connects](/development/whole-domain-connect/).
 
+Once you press **Connect**, the connect finishes on the server even if you refresh or close the page: the credentials are checked, and the mailbox is either saved, placed on a worker and added to your list, or not saved at all. It appears in the list on its own when it is done. Pressing **Connect** again meanwhile cannot add the address twice.
+
 <Callout title="Per-mailbox Google sign-in is being retired">
   A mailbox you already connected with **Sign in with Google** is not affected yet: it keeps sending and syncing, and if Google invalidates its token the **Re-authorize** button in its drawer still works. There is no cutoff date. The dashboard marks these mailboxes and offers to move each one, without losing anything, onto its domain's grant (Google Workspace) or an app password (personal Gmail). See [moving off per-mailbox Google sign-in](#moving-off-per-mailbox-google-sign-in).
 </Callout>

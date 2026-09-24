@@ -591,7 +591,7 @@ A `400` whose `code` is `mailbox_validation_timeout` comes from the SMTP and IMA
 }
 ```
 
-The same code with a message that begins `Warmbly's worker did not report back` means no worker answered the check at all, so the mail server was never tested. On the hosted product, retry and contact support if it persists. On a self-hosted instance, check that a worker is running, heartbeating, and reaching the same Redis as the backend.
+The same code with a message that begins `Warmbly's worker did not report back` means no worker answered the check at all, so the mail server was never tested. The check is offered to each healthy worker in turn and waits on at most two that take it without answering, so this means the fleet as a whole is not answering. On the hosted product, retry and contact support if it persists. On a self-hosted instance, check that a worker is running, heartbeating, and reaching the same Redis as the backend: the check reaches the worker over Redis and its answer comes back the same way.
 
 **How to fix:**
 - Read which leg stayed silent. One leg passing and the other hanging is the network between the worker and that port, not the password: a port that nothing listens on, or that a firewall drops, takes the full timeout rather than refusing straight away

@@ -211,10 +211,10 @@ type EmailRepository interface {
 	// Used by the warmup reconciler to (re)seed chains.
 	ListWarmupScheduleCandidates(ctx context.Context, limit int) ([]uuid.UUID, error)
 
-	// ListActiveWorkerAccounts returns the ids of every active mailbox. The
-	// worker reconciler uses it to (re)load accounts onto their assigned workers
-	// after onboarding, worker restarts, or reassignment.
-	ListActiveWorkerAccounts(ctx context.Context) ([]uuid.UUID, error)
+	// ListActiveWorkerAccounts returns every active mailbox with the worker it
+	// is assigned to. The worker reconciler uses it to (re)load accounts onto
+	// their assigned workers after onboarding, worker restarts, or reassignment.
+	ListActiveWorkerAccounts(ctx context.Context) ([]MailboxAssignment, error)
 	// ListActiveAccountsByWorker returns the ids of the active mailboxes
 	// assigned to one worker, for reloading them after that worker restarts.
 	ListActiveAccountsByWorker(ctx context.Context, workerID uuid.UUID) ([]uuid.UUID, error)
@@ -696,23 +696,29 @@ func (r *emailRepository) ListWarmupScheduleCandidates(ctx context.Context, limi
 	return ids, rows.Err()
 }
 
-func (r *emailRepository) ListActiveWorkerAccounts(ctx context.Context) ([]uuid.UUID, error) {
-	const query = `SELECT id FROM email_accounts WHERE status = 'active'`
+// MailboxAssignment is an active mailbox and the worker it is assigned to, nil when none.
+type MailboxAssignment struct {
+	ID       uuid.UUID
+	WorkerID *uuid.UUID
+}
+
+func (r *emailRepository) ListActiveWorkerAccounts(ctx context.Context) ([]MailboxAssignment, error) {
+	const query = `SELECT id, worker_id FROM email_accounts WHERE status = 'active'`
 	rows, err := r.DB.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var ids []uuid.UUID
+	var out []MailboxAssignment
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var a MailboxAssignment
+		if err := rows.Scan(&a.ID, &a.WorkerID); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		out = append(out, a)
 	}
-	return ids, rows.Err()
+	return out, rows.Err()
 }
 
 func (r *emailRepository) ListActiveAccountsByWorker(ctx context.Context, workerID uuid.UUID) ([]uuid.UUID, error) {
