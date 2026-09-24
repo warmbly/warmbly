@@ -93,19 +93,20 @@ func TestGrantForHostMatchesTheRowsProviderAndDomain(t *testing.T) {
 	}
 }
 
-func TestDrainWaitsForRowsInFlight(t *testing.T) {
-	s := &Service{}
-	s.inflight.Add(1)
+func TestDrainWaitsForTheRunnerToStop(t *testing.T) {
+	s := &Service{stopped: make(chan struct{})}
+	short, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if s.Drain(short) {
+		t.Fatal("drain reported a runner still working as stopped")
+	}
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		s.inflight.Done()
+		close(s.stopped)
 	}()
-	if !s.Drain(2 * time.Second) {
-		t.Fatal("drain gave up on a row that finished")
-	}
-	s.inflight.Add(1)
-	defer s.inflight.Done()
-	if s.Drain(50 * time.Millisecond) {
-		t.Fatal("drain reported a row still connecting as finished")
+	ctx, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel2()
+	if !s.Drain(ctx) {
+		t.Fatal("drain gave up on a runner that stopped")
 	}
 }

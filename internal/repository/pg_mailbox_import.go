@@ -113,9 +113,9 @@ type MailboxImportRepository interface {
 	Dismiss(ctx context.Context, orgID, id uuid.UUID) error
 	// TouchParked moves rows still waiting to the back of ParkedRows, so no import holds the others back.
 	TouchParked(ctx context.Context, cause string, rows []ImportWorkRow) error
-	// SigninRows lists rows waiting on a Google or Microsoft sign-in that still hold their settings, in imports not cancelled.
-	// Code carries the row's cause.
-	SigninRows(ctx context.Context, limit int) ([]ImportWorkRow, error)
+	// CoveredSigninRows lists rows waiting on a Google or Microsoft sign-in, in imports not cancelled,
+	// that an active grant of their workspace now covers. Code carries the row's cause.
+	CoveredSigninRows(ctx context.Context, limit int) ([]ImportWorkRow, error)
 	// ResumeParked queues a parked row again and reopens its import when it had completed.
 	ResumeParked(ctx context.Context, id uuid.UUID, line int, cause string) error
 	GetMapping(ctx context.Context, orgID uuid.UUID, signature string) (models.MailboxImportMapping, bool, error)
@@ -231,6 +231,32 @@ func (r *mailboxImportRepository) fillCounts(ctx context.Context, imp *models.Ma
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	query = `
+		SELECT CASE code WHEN 'google_signin' THEN 'google' ELSE 'microsoft' END, count(*)
+		FROM mailbox_import_rows
+		WHERE import_id = $1 AND status = 'needs_signin' AND cause = '` + ParkedVendorCause + `'
+		GROUP BY 1`
+	arows, err := r.DB.Query(ctx, query, imp.ID)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return err
+	}
+	imp.Authorizing = map[string]int{}
+	for arows.Next() {
+		var provider string
+		var n int
+		if err := arows.Scan(&provider, &n); err != nil {
+			arows.Close()
+			db.CaptureError(err, query, nil, "scan")
+			return err
+		}
+		imp.Authorizing[provider] = n
+	}
+	arows.Close()
+	if err := arows.Err(); err != nil {
 		return err
 	}
 
@@ -733,13 +759,20 @@ func (r *mailboxImportRepository) TouchParked(ctx context.Context, cause string,
 	return nil
 }
 
-func (r *mailboxImportRepository) SigninRows(ctx context.Context, limit int) ([]ImportWorkRow, error) {
+func (r *mailboxImportRepository) CoveredSigninRows(ctx context.Context, limit int) ([]ImportWorkRow, error) {
+	// Coverage is decided here, so rows no grant covers can never crowd out the ones it does.
 	query := `
 		SELECT r.import_id, i.organization_id, r.line, r.email, r.mail_host, r.cause
 		FROM mailbox_import_rows r
 		JOIN mailbox_imports i ON i.id = r.import_id
 		WHERE r.status = 'needs_signin' AND r.cause IN ('microsoft_signin', 'google_signin')
 		  AND r.payload <> '' AND i.status <> 'cancelled'
+		  AND EXISTS (
+			SELECT 1 FROM mailbox_domain_grants g
+			WHERE g.organization_id = i.organization_id AND g.status = 'active'
+			  AND g.provider = CASE r.cause WHEN 'microsoft_signin' THEN 'microsoft' ELSE 'google' END
+			  AND lower(split_part(r.email, '@', 2)) = ANY(g.domains)
+		  )
 		ORDER BY r.updated_at
 		LIMIT $1`
 	rows, err := r.DB.Query(ctx, query, limit)

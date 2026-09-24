@@ -146,10 +146,10 @@ type Service struct {
 	redirected sync.Map
 
 	kick     chan struct{}
-	inflight sync.WaitGroup // rows being connected, so a shutdown can let them finish
-	progress sync.Map       // import id -> time.Time of the last progress event
-	trailing sync.Map       // import id -> a progress event deferred to the end of its window
-	causes   sync.Map       // scrubbed server reply -> refined cause key
+	stopped  chan struct{} // closed when Start returns, after the pass in progress has finished its rows
+	progress sync.Map      // import id -> time.Time of the last progress event
+	trailing sync.Map      // import id -> a progress event deferred to the end of its window
+	causes   sync.Map      // scrubbed server reply -> refined cause key
 }
 
 func NewService(d Deps) *Service {
@@ -164,7 +164,7 @@ func NewService(d Deps) *Service {
 		detector: d.Detector, allowance: d.Allowance, asker: d.Asker, warmup: d.Warmup,
 		auditor: d.Auditor, publisher: d.Publisher, google: d.GoogleSignin,
 		delegator: d.Delegator, vendors: d.Vendors, domains: d.Domains,
-		kick: make(chan struct{}, 1),
+		kick: make(chan struct{}, 1), stopped: make(chan struct{}),
 	}
 }
 

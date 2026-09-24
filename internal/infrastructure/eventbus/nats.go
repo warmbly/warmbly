@@ -303,6 +303,7 @@ func (b *NATSBus) Subscribe(ctx context.Context, topics []string, group string, 
 	if b.closed {
 		b.mu.Unlock()
 		cc.Stop()
+		<-cc.Closed()
 		return ErrBusClosed
 	}
 	b.subscribers = append(b.subscribers, cc)
@@ -311,6 +312,8 @@ func (b *NATSBus) Subscribe(ctx context.Context, topics []string, group string, 
 	// Block until ctx is cancelled, mirroring KafkaBus.Subscribe semantics.
 	<-ctx.Done()
 	cc.Stop()
+	// Closed fires once the callback in progress has returned, so shutdown waits for it.
+	<-cc.Closed()
 	return ctx.Err()
 }
 
@@ -327,6 +330,7 @@ func (b *NATSBus) Close() error {
 
 	for _, s := range subs {
 		s.Stop()
+		<-s.Closed()
 	}
 	if b.nc != nil {
 		// Drain rather than hard-close to flush in-flight publishes.

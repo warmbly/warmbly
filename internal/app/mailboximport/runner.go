@@ -36,8 +36,10 @@ func (s *Service) Kick() {
 	}
 }
 
-// Start runs the import loop until ctx ends, plus the slower upkeep loops.
+// Start runs the import loop until ctx ends, plus the slower upkeep loops. It
+// returns only once the pass in progress has finished or handed back its rows.
 func (s *Service) Start(ctx context.Context) {
+	defer close(s.stopped)
 	go jobrun.Loop(ctx, "mailbox_import_upkeep", time.Minute, true, func(ctx context.Context) error {
 		s.reconcileSignins(ctx)
 		s.resumeVendorAuthorizations(ctx)
@@ -92,9 +94,7 @@ func (s *Service) pass(ctx context.Context) {
 		sem := make(chan struct{}, config.MailboxImportConcurrency)
 		for _, w := range rows {
 			wg.Add(1)
-			s.inflight.Add(1)
 			go func(w repository.ImportWorkRow) {
-				defer s.inflight.Done()
 				defer wg.Done()
 				defer func() {
 					if rec := recover(); rec != nil {
@@ -124,17 +124,14 @@ func (s *Service) pass(ctx context.Context) {
 	s.completeFinished(work)
 }
 
-// Drain waits for the rows being connected to finish, up to timeout; false when some did not.
-func (s *Service) Drain(timeout time.Duration) bool {
-	done := make(chan struct{})
-	go func() {
-		s.inflight.Wait()
-		close(done)
-	}()
+// Drain waits until the runner has stopped (ctx for Start ended and the pass in
+// progress finished its rows, or handed back the ones it never started), or
+// until ctx ends; false when ctx ended first.
+func (s *Service) Drain(ctx context.Context) bool {
 	select {
-	case <-done:
+	case <-s.stopped:
 		return true
-	case <-time.After(timeout):
+	case <-ctx.Done():
 		return false
 	}
 }
@@ -452,29 +449,12 @@ func (s *Service) grantForHost(ctx context.Context, orgID uuid.UUID, mailHost, e
 // resumeGrantedSignins queues again the rows waiting on sign-in whose domain an
 // administrator's grant now covers, so one admin approval finishes all of them.
 func (s *Service) resumeGrantedSignins(ctx context.Context) {
-	if s.delegator == nil {
-		return
-	}
-	rows, err := s.repo.SigninRows(ctx, 1000)
+	rows, err := s.repo.CoveredSigninRows(ctx, 1000)
 	if err != nil || len(rows) == 0 {
 		return
 	}
-	type key struct {
-		org          uuid.UUID
-		host, domain string
-	}
-	covered := map[key]bool{}
 	resumed := false
 	for _, w := range rows {
-		k := key{w.OrgID, w.MailHost, domainOf(w.Email)}
-		ok, seen := covered[k]
-		if !seen {
-			ok = s.grantForHost(ctx, w.OrgID, w.MailHost, w.Email) != nil
-			covered[k] = ok
-		}
-		if !ok {
-			continue
-		}
 		if err := s.repo.ResumeParked(ctx, w.ImportID, w.Line, w.Code); err == nil {
 			resumed = true
 		}

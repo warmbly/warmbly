@@ -228,6 +228,8 @@ type MailboxImport struct {
 	Total               int                  `json:"total"`
 	Counts              MailboxImportCounts  `json:"counts"`
 	Causes              []MailboxImportCause `json:"causes"`
+	// Authorizing counts the rows an inbox vendor is still authorizing, by provider ("google", "microsoft").
+	Authorizing map[string]int `json:"authorizing"`
 }
 
 type MailboxImportRow struct {

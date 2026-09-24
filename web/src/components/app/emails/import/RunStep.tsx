@@ -226,11 +226,7 @@ export default function RunStep({
     const signinWaiting = Math.max(0, c.needs_signin - authorizing);
     const failureCauses = data.causes.filter((x) => x.cause !== VENDOR_AUTHORIZING);
     // Microsoft rows the vendor is authorizing can be finished sooner by one admin approval.
-    const msAuthorizing =
-        authorizing > 0 &&
-        (rows.data?.data ?? []).some(
-            (r) => r.cause === VENDOR_AUTHORIZING && (r.code === "microsoft_signin" || mailHostOAuthProvider(r.mail_host) === "outlook"),
-        );
+    const msAuthorizing = data.authorizing?.microsoft ?? 0;
     const allowanceHit = data.causes.some((x) => x.cause === "allowance_reached");
     const msSignin = msGrants && c.needs_signin > 0 && data.causes.some((x) => x.cause === "microsoft_signin");
     // Rows parked on the vendor keep the import running; only they left means it is waiting, not importing.
@@ -368,7 +364,7 @@ export default function RunStep({
                             </p>
                             <div className="mt-2 pt-2 border-t border-sky-200/70">
                                 <p className="text-[11.5px] font-medium text-sky-900">Want it faster?</p>
-                                {msAuthorizing && msGrants && !granted && (
+                                {msAuthorizing > 0 && msGrants && !granted && (
                                     <div className="mt-1.5">
                                         <button
                                             type="button"
@@ -379,7 +375,7 @@ export default function RunStep({
                                             {consent.busy ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <Building2Icon className="w-3 h-3" />}
                                             {consent.busy
                                                 ? "Waiting for the administrator…"
-                                                : `Connect all ${authorizing.toLocaleString()} at once (admin sign-in)`}
+                                                : `Connect all ${msAuthorizing.toLocaleString()} Microsoft mailbox${msAuthorizing === 1 ? "" : "es"} at once (admin sign-in)`}
                                         </button>
                                         <p className="text-[11px] text-sky-800/90 leading-relaxed mt-1">
                                             One sign-in with the domain&apos;s Global Administrator account ({vendorLabel(data.vendor) || "your inbox vendor"}{" "}
@@ -389,7 +385,7 @@ export default function RunStep({
                                     </div>
                                 )}
                                 <p className="text-[11px] text-sky-800/90 leading-relaxed mt-1">
-                                    {msAuthorizing && msGrants && !granted ? "Or connect them one by one:" : "Connect them one by one:"} Sign in on
+                                    {msAuthorizing > 0 && msGrants && !granted ? "Or connect them one by one:" : "Connect them one by one:"} Sign in on
                                     a row signs in as that mailbox and connects only it.
                                 </p>
                             </div>

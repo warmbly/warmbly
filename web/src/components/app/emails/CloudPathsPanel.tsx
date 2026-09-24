@@ -17,16 +17,7 @@ import WarmupPlanDialog from "@/components/app/billing/WarmupPlanDialog";
 
 const FREE_MAILBOXES = 10;
 
-export default function CloudPathsPanel({
-    mailboxCount,
-    warmingCount,
-    onAdd,
-}: {
-    mailboxCount: number;
-    /** Mailboxes with warmup on and not paused, from the page's list; used until the server's count loads. */
-    warmingCount: number;
-    onAdd: () => void;
-}) {
+export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount: number; onAdd: () => void }) {
     const authConfig = useAuthConfig();
     const access = useFeatureAccess();
     const hosted = authConfig.data?.self_hosted === false;
@@ -42,9 +33,10 @@ export default function CloudPathsPanel({
     // stands in while it is in flight.
     const limit = plan ? plan.mailbox_limit : access.paid ? null : FREE_MAILBOXES;
     const used = plan?.enrolled ?? mailboxCount;
-    // The server counts the whole workspace; the page's list is filtered and paged, so it is only a stand-in.
+    // The server counts the whole workspace; the page's list is filtered and paged, so it only stands in for the total.
     const total = plan?.enrolled ?? mailboxCount;
-    const warming = plan?.warming ?? warmingCount;
+    // Only the server knows how many warm across the workspace; without it the banner says nothing about warming.
+    const warming = plan?.warming;
     const free = limit !== null;
     const allowance = limit ?? FREE_MAILBOXES;
     const canBuy = free && access.billing && access.isOwner;
@@ -53,7 +45,7 @@ export default function CloudPathsPanel({
 
     const dialog = <WarmupPlanDialog open={planOpen} onClose={() => setPlanOpen(false)} />;
 
-    if (mailboxCount === 0 && linked === 0) {
+    if (total === 0 && linked === 0) {
         return (
             <div className="py-3">
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-200 overflow-hidden">
@@ -102,9 +94,13 @@ export default function CloudPathsPanel({
                 <span className="min-w-0 flex-1 leading-snug">
                     <span className="font-medium">
                         {free ? `${used} of ${allowance} free mailboxes used. ` : ""}
-                        {warming === 0
-                            ? "No mailbox is warming yet."
-                            : `${warming} of ${total} mailbox${total === 1 ? "" : "es"} warming in the ${onWarmupPlan ? "premium " : ""}pool.`}
+                        {warming === undefined
+                            ? free
+                                ? ""
+                                : `${total} mailbox${total === 1 ? "" : "es"} connected.`
+                            : warming === 0
+                              ? "No mailbox is warming yet."
+                              : `${warming} of ${total} mailbox${total === 1 ? "" : "es"} warming in the ${onWarmupPlan ? "premium " : ""}pool.`}
                     </span>
                     {warming === 0 && total > 0 && (
                         <span className="text-slate-500"> Turn on warmup from a mailbox&apos;s Warmup tab, or select several and start it for all.</span>

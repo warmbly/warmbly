@@ -2292,7 +2292,7 @@ func main() {
 		drained.Add(1)
 		go func() {
 			defer drained.Done()
-			if !mailboxImportService.Drain(shutdownGrace) {
+			if !mailboxImportService.Drain(shutdownCtx) {
 				log.Println("Import rows still connecting at shutdown; they resume on the next instance")
 			}
 		}()

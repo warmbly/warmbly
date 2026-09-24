@@ -40,23 +40,26 @@ function jobState(job: MailboxImport): JobState {
     const settled = job.total - inFlight;
 
     if (job.status === "cancelled") return { text: "Stopped", tone: "muted" };
-    if (job.status === "running" && inFlight > 0) {
-        return {
-            text: `Connecting ${settled.toLocaleString()} of ${job.total.toLocaleString()}`,
-            hint: "Each mailbox is checked against its mail server, a few seconds each.",
-            tone: "working",
-        };
-    }
-    // What needs the person comes first; an authorization still running is mentioned alongside.
-    const alsoAuthorizing = authorizing > 0 ? ` ${plural(authorizing, "more is", "more are")} still being authorized.` : "";
+    // What needs the person comes first; work still going on is mentioned alongside.
+    const connecting = job.status === "running" && inFlight > 0;
+    const alongside =
+        (connecting ? ` Still connecting ${settled.toLocaleString()} of ${job.total.toLocaleString()}.` : "") +
+        (authorizing > 0 ? ` ${plural(authorizing, "more is", "more are")} still being authorized.` : "");
     if (c.failed > 0) {
-        return { text: `${c.failed.toLocaleString()} failed`, hint: `Open to see why and retry.${alsoAuthorizing}`, tone: "error" };
+        return { text: `${c.failed.toLocaleString()} failed`, hint: `Open to see why and retry.${alongside}`, tone: "error" };
     }
     if (signin > 0) {
         return {
             text: `${plural(signin, "mailbox needs", "mailboxes need")} sign-in`,
-            hint: `Open to sign in to each one.${alsoAuthorizing}`,
+            hint: `Open to sign in to each one.${alongside}`,
             tone: "action",
+        };
+    }
+    if (connecting) {
+        return {
+            text: `Connecting ${settled.toLocaleString()} of ${job.total.toLocaleString()}`,
+            hint: "Each mailbox is checked against its mail server, a few seconds each.",
+            tone: "working",
         };
     }
     if (authorizing > 0) {
