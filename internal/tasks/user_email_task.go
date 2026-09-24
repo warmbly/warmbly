@@ -173,6 +173,17 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 	if emailTask.ThreadID != nil {
 		threadID = *emailTask.ThreadID
 	}
+	// The row keeps the conversation either way; a reply leaving from another
+	// mailbox threads on In-Reply-To alone, never on a handle it does not hold.
+	if threadID != "" {
+		held, herr := s.taskRepo.ThreadHeldByMailbox(ctx, account.ID, threadID)
+		if herr != nil {
+			log.Warn().Err(herr).Str("task_id", taskID.String()).Msg("user_email: could not confirm the mailbox holds the thread; sending without its handle")
+		}
+		if !held {
+			threadID = ""
+		}
+	}
 
 	// STEP 9: Build EmailMessage and send via worker
 	emailMsg := EmailMessage{

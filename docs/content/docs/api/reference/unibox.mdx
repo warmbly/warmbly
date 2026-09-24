@@ -83,7 +83,7 @@ Returns the number of unread conversations in the Inbox folder, optionally scope
 
 `GET /unibox/overview`
 
-Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages, except `scheduled_pending`, which counts the sends queued from the organization's mailboxes against the workspace cap in `scheduled_pending_max`. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Response
 
@@ -96,7 +96,7 @@ Rolls up the scope rail and top metric strip in one call: unread, today, week, s
   "snoozed": 3,
   "awaiting_reply": 9,
   "scheduled_pending": 2,
-  "scheduled_pending_max": 50,
+  "scheduled_pending_max": 10000,
   "folders": [
     { "folder": "inbox", "unread": 31, "total": 812 },
     { "folder": "sent", "unread": 0, "total": 402 },
@@ -296,21 +296,21 @@ Echoes the request back.
 
 `POST /unibox/reply`
 
-Sends or schedules a reply from one of your mailboxes. The send is routed through the per-mailbox scheduler according to `send_mode`. Requires an active organization. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+Sends or schedules a reply from any mailbox in the organization. The send is routed through the per-mailbox scheduler according to `send_mode`. Requires an active organization. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Request body
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `email_account_id` | string | Yes | UUID of the sending mailbox. |
+| `email_account_id` | string | Yes | UUID of the sending mailbox. Any active mailbox in the organization, not only the one holding the thread. |
 | `to` | string[] | Yes | Recipient addresses (at least one). |
 | `cc` | string[] | No | CC addresses. |
 | `bcc` | string[] | No | BCC addresses. |
 | `subject` | string | Yes | Subject line. |
 | `body_html` | string | No | HTML body. |
 | `body_plain` | string | No | Plain-text body. |
-| `in_reply_to` | string[] | No | Message-ID(s) this reply threads under. |
-| `thread_id` | string | No | Thread to thread the reply into. |
+| `in_reply_to` | string[] | No | Message-ID(s) this reply threads under. When omitted, the newest Message-ID in `thread_id` is used. |
+| `thread_id` | string | No | The conversation being answered. |
 | `send_mode` | string | No | `instant` (default), `smart` (next mailbox gap), or `scheduled` (use `scheduled_at`). |
 | `scheduled_at` | string | No | RFC 3339 timestamp. Required when `send_mode` is `scheduled`; must be in the future. |
 
@@ -337,6 +337,8 @@ Sends or schedules a reply from one of your mailboxes. The send is routed throug
 ```
 
 Instant sends are held for the sender's undo window (5 to 120 seconds, default 30) before they actually leave, so `scheduled_at` is that far in the future. Within the window the send can still be cancelled with `DELETE /unibox/scheduled/:task_id`.
+
+A provider's thread handle belongs to the mailbox that holds the thread, so the reply only files into that provider thread when `email_account_id` holds a message in `thread_id`. From any other mailbox it goes out with the same In-Reply-To and References headers and the conversation's subject, which keeps it in the same conversation for the recipient; in the sending mailbox it starts a conversation of its own. The queued send still belongs to `thread_id`, so it is listed with that conversation's scheduled sends.
 
 ## List active snoozes
 
@@ -414,7 +416,7 @@ Un-snoozes a thread immediately. Idempotent: deleting a snooze that does not exi
 
 `GET /unibox/scheduled`
 
-Returns the outbound emails you have queued but not yet sent. Pass `thread_id` to scope to a single conversation (used to render queued replies inline); the response shape is identical either way. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Returns the outbound emails queued from the organization's mailboxes but not yet sent, whichever member queued them. Pass `thread_id` to scope to a single conversation (used to render queued replies inline); the response shape is identical either way. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -447,7 +449,7 @@ The response wraps the items in a `data` array. Each item is a preview of the qu
 
 `DELETE /unibox/scheduled/:task_id`
 
-Cancels a pending scheduled send before it fires. The queued task is marked cancelled and short-circuits to a no-op when its run time arrives. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+Cancels a pending scheduled send from any of the organization's mailboxes before it fires. The queued task is marked cancelled and short-circuits to a no-op when its run time arrives. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |

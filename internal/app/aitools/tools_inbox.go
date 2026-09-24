@@ -206,7 +206,7 @@ func (d Deps) listScheduledSends(ctx context.Context, inv Invocation, _ json.Raw
 	if err := d.requireUnibox(ctx, inv); err != nil {
 		return "", err
 	}
-	items, xerr := d.Unibox.ListScheduled(ctx, inv.UserID)
+	items, xerr := d.Unibox.ListScheduled(ctx, inv.OrgID)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
@@ -227,7 +227,7 @@ func (d Deps) cancelScheduledSend(ctx context.Context, inv Invocation, args json
 	if err != nil {
 		return "", err
 	}
-	if xerr := d.Unibox.CancelScheduled(ctx, inv.UserID, tid); xerr != nil {
+	if xerr := d.Unibox.CancelScheduled(ctx, inv.OrgID, tid); xerr != nil {
 		return "", fromErrx(xerr)
 	}
 	d.logAudit(ctx, inv, models.AuditActionUpdate, models.AuditEntityUnibox, &tid, nil)

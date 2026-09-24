@@ -29,11 +29,11 @@ const ScheduledThreadListMax = 50
 // to ship across the wire and short enough to render as one line.
 const snippetMaxLen = 240
 
-// ListScheduled returns the user's pending email tasks: every queued
+// ListScheduled returns the organization's pending email tasks: every queued
 // outbound message that hasn't fired yet, ordered by next-to-fire.
 // The view is read-only — cancel is a separate explicit action.
-func (s *uniboxService) ListScheduled(ctx context.Context, userID uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error) {
-	rows, err := s.taskRepo.ListScheduledForUser(ctx, userID, ScheduledListMax)
+func (s *uniboxService) ListScheduled(ctx context.Context, orgID uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error) {
+	rows, err := s.taskRepo.ListScheduledInOrg(ctx, orgID, ScheduledListMax)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
@@ -61,12 +61,12 @@ func (s *uniboxService) ListScheduled(ctx context.Context, userID uuid.UUID) ([]
 
 // ListScheduledByThread returns pending queued sends for the given
 // thread. Empty threadID is rejected up front so a malformed query
-// can't silently fall back to the full per-user list.
-func (s *uniboxService) ListScheduledByThread(ctx context.Context, userID uuid.UUID, threadID string) ([]models.UniboxScheduledItem, *errx.Error) {
+// can't silently fall back to the full list.
+func (s *uniboxService) ListScheduledByThread(ctx context.Context, orgID uuid.UUID, threadID string) ([]models.UniboxScheduledItem, *errx.Error) {
 	if threadID == "" {
 		return nil, errx.New(errx.BadRequest, "thread_id is required")
 	}
-	rows, err := s.taskRepo.ListScheduledForUserByThread(ctx, userID, threadID, ScheduledThreadListMax)
+	rows, err := s.taskRepo.ListScheduledInOrgByThread(ctx, orgID, threadID, ScheduledThreadListMax)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
@@ -110,14 +110,14 @@ func (s *uniboxService) ListScheduledByThread(ctx context.Context, userID uuid.U
 // DeleteTask fails for any reason — GCP outage, network blip,
 // already-fired — the handler's status check still short-circuits
 // the dispatch into a harmless no-op, so the user is always safe.
-func (s *uniboxService) CancelScheduled(ctx context.Context, userID, taskID uuid.UUID) *errx.Error {
-	cloudTaskName, cancelled, err := s.taskRepo.CancelScheduledByUser(ctx, taskID, userID)
+func (s *uniboxService) CancelScheduled(ctx context.Context, orgID, taskID uuid.UUID) *errx.Error {
+	cloudTaskName, cancelled, err := s.taskRepo.CancelScheduledInOrg(ctx, taskID, orgID)
 	if err != nil {
 		errs.CaptureException(err)
 		return errx.InternalError()
 	}
 	if !cancelled {
-		// Either: task doesn't exist, isn't this user's, or already
+		// Either: task doesn't exist, isn't this workspace's, or already
 		// left the pending state (fired / failed / cancelled). All
 		// three look the same from the caller's perspective.
 		return errx.New(errx.NotFound, "no pending scheduled send for this id")

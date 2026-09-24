@@ -31,7 +31,7 @@ func (s *uniboxService) Overview(ctx context.Context, orgID, userID uuid.UUID) (
 	// overview is more important than the badge — so we log via
 	// the error reporter and continue with a zero count.
 	if s.taskRepo != nil {
-		if n, err := s.taskRepo.CountScheduledForUser(ctx, userID); err == nil {
+		if n, err := s.taskRepo.CountScheduledInOrg(ctx, orgID); err == nil {
 			o.ScheduledPending = n
 		} else {
 			errs.CaptureException(err)
@@ -41,6 +41,6 @@ func (s *uniboxService) Overview(ctx context.Context, orgID, userID uuid.UUID) (
 	// dashboard render "N / max" so the user sees where they are
 	// before they hit the wall. When this moves to per-plan, this is
 	// the only line that needs a feature-gate lookup.
-	o.ScheduledPendingMax = int64(config.MaxPendingScheduledSendsPerUser)
+	o.ScheduledPendingMax = int64(config.MaxPendingScheduledSendsPerOrg)
 	return o, nil
 }

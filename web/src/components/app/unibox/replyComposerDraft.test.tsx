@@ -14,6 +14,11 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 
+// Exit animations never finish in jsdom; closed layers unmount at once instead.
+vi.mock("framer-motion", async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 vi.mock("react-hot-toast", () => ({
     default: { success: () => {}, error: () => {} },
 }));
@@ -32,8 +37,31 @@ vi.mock("@/hooks/context/user", () => ({
     useUserProfile: () => ({ user: { id: "u1", email: "me@example.com", name: "Me" } }),
 }));
 vi.mock("@/stores", () => ({
-    useAppStore: (sel: (s: { emails: unknown[]; currentOrganization: { id: string } }) => unknown) =>
-        sel({ currentOrganization: { id: "org1" }, emails: [{ id: "acc1", email: "me@example.com", signature_html: "", signature_plain: "" }] }),
+    useAppStore: (sel: (s: { emails: unknown[]; tags: unknown[]; currentOrganization: { id: string } }) => unknown) =>
+        sel({
+            currentOrganization: { id: "org1" },
+            tags: [],
+            emails: [
+                { id: "acc1", email: "me@example.com", status: "active", tags: [], signature_html: "", signature_plain: "" },
+                { id: "acc2", email: "other@example.com", status: "active", tags: [], signature_html: "", signature_plain: "Other signature", signature_sync: true },
+                { id: "acc3", email: "gone@example.com", status: "inactive", tags: [], signature_html: "", signature_plain: "" },
+            ],
+        }),
+}));
+vi.mock("@/lib/api/hooks/app/unibox/useComposeCandidates", () => ({
+    default: () => ({
+        isPending: false,
+        data: {
+            accounts: ["me@example.com", "other@example.com"].map((email, i) => ({
+                id: `acc${i + 1}`, email, name: "", provider: "gmail", auth_state: "passing", warmup_active: false,
+                daily_limit: 50, sent_today: 0, remaining_today: 50, history_messages: 0, score: 1, reasons: [], recommended: i === 0,
+            })),
+            recommended_account_id: "acc1",
+            recommended_reason: "",
+            contact: null,
+            suppression: null,
+        },
+    }),
 }));
 vi.mock("@/hooks/useOutboxStore", () => ({
     useOutboxStore: (sel: (s: { add: () => void }) => unknown) => sel({ add: () => {} }),
@@ -58,10 +86,10 @@ const draftKey = () => replyDraftKey("u1", "org1", "t1", "msg-1", "reply");
 
 // The thread maps its payload through `toUniboxEmail` on every render, so each
 // render hands the composer a new object for the same message. This builds one.
-function message() {
+function message(accountId = "acc1") {
     return {
         id: "msg-1",
-        account_id: "acc1",
+        account_id: accountId,
         from: "Them <them@example.com>",
         subject: "Quarterly numbers",
         to: [],
@@ -71,6 +99,15 @@ function message() {
 
 function body() {
     return screen.getByPlaceholderText(/write/i) as HTMLTextAreaElement;
+}
+
+function fromTrigger(email: string) {
+    return screen.getAllByText(email)[0].closest("button") as HTMLButtonElement;
+}
+
+function pickSender(current: string, next: string) {
+    fireEvent.click(fromTrigger(current));
+    fireEvent.click(screen.getByText(next));
 }
 
 describe("reply composer drafts", () => {
@@ -222,6 +259,56 @@ describe("reply composer drafts", () => {
         view.unmount();
         render(<ReplyComposer threadId="t1" replyTo={message()} mode="forward" onClose={() => {}} />);
         expect(screen.getByPlaceholderText("Subject")).toHaveValue("Custom subject");
+    });
+
+    it("sends from the mailbox picked in From and keeps the conversation", async () => {
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        expect(screen.queryByText(/Replying from another mailbox/)).toBeNull();
+        pickSender("me@example.com", "other@example.com");
+        expect(screen.getByText(/Replying from another mailbox/)).toBeInTheDocument();
+        expect(screen.getByText("Other signature")).toBeInTheDocument();
+        fireEvent.change(body(), { target: { value: "From the other address" } });
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(sendReply).toHaveBeenCalledWith(expect.objectContaining({ email_account_id: "acc2", thread_id: "t1" }));
+    });
+
+    it("keeps the picked mailbox in the draft and in a restored undo-send", () => {
+        const view = render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        pickSender("me@example.com", "other@example.com");
+        view.unmount();
+        expect(JSON.parse(localStorage.getItem(draftKey()) ?? "{}")).toMatchObject({ email_account_id: "acc2" });
+        const reopened = render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        expect(fromTrigger("other@example.com")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Switch back" }));
+        expect(fromTrigger("me@example.com")).toBeInTheDocument();
+        const seed = { to: ["them@example.com"], cc: [], bcc: [], subject: "Re: x", body: "restored", email_account_id: "acc2" };
+        reopened.rerender(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" seed={seed} onClose={() => {}} />);
+        expect(fromTrigger("other@example.com")).toBeInTheDocument();
+    });
+
+    it("will not send from an inactive mailbox and says how to fix it", async () => {
+        render(<ReplyComposer threadId="t1" replyTo={message("acc3")} mode="reply" onClose={() => {}} />);
+        fireEvent.change(body(), { target: { value: "Still here?" } });
+        expect(screen.getByRole("status")).toHaveTextContent("gone@example.com is not active");
+        expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(sendReply).not.toHaveBeenCalled();
+        pickSender("gone@example.com", "other@example.com");
+        expect(screen.queryByRole("status")).toBeNull();
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(sendReply).toHaveBeenCalledWith(expect.objectContaining({ email_account_id: "acc2" }));
+    });
+
+    it("closes only the mailbox menu on Escape", () => {
+        const onClose = vi.fn();
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="forward" onClose={onClose} />);
+        fireEvent.click(fromTrigger("me@example.com"));
+        const search = screen.getByPlaceholderText("Search mailboxes…");
+        expect(screen.queryByText("Auto")).toBeNull();
+        fireEvent.keyDown(search, { key: "Escape" });
+        expect(screen.queryByPlaceholderText("Search mailboxes…")).toBeNull();
+        expect(fromTrigger("me@example.com")).toHaveFocus();
+        expect(onClose).not.toHaveBeenCalled();
     });
 
     it("does not claim a failed save succeeded or close away the unsaved text", () => {
