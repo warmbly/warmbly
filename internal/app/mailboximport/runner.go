@@ -449,12 +449,36 @@ func (s *Service) grantForHost(ctx context.Context, orgID uuid.UUID, mailHost, e
 // resumeGrantedSignins queues again the rows waiting on sign-in whose domain an
 // administrator's grant now covers, so one admin approval finishes all of them.
 func (s *Service) resumeGrantedSignins(ctx context.Context) {
+	if s.delegator == nil {
+		return
+	}
 	rows, err := s.repo.CoveredSigninRows(ctx, 1000)
 	if err != nil || len(rows) == 0 {
 		return
 	}
+	type key struct {
+		org              uuid.UUID
+		provider, domain string
+	}
+	usable := map[key]bool{}
 	resumed := false
 	for _, w := range rows {
+		provider := models.GrantProviderGoogle
+		if w.Code == causeMicrosoftSignin {
+			provider = models.GrantProviderMicrosoft
+		}
+		k := key{w.OrgID, provider, domainOf(w.Email)}
+		ok, seen := usable[k]
+		if !seen {
+			// GrantFor also answers nil when this instance no longer has the provider configured,
+			// which a stored grant alone cannot tell; resuming then would only park the row again.
+			g, err := s.delegator.GrantFor(ctx, w.OrgID, provider, k.domain)
+			ok = err == nil && g != nil
+			usable[k] = ok
+		}
+		if !ok {
+			continue
+		}
 		if err := s.repo.ResumeParked(ctx, w.ImportID, w.Line, w.Code); err == nil {
 			resumed = true
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhost"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 func TestRetryUnansweredRetriesOnlyASilentFleet(t *testing.T) {
@@ -108,5 +109,34 @@ func TestDrainWaitsForTheRunnerToStop(t *testing.T) {
 	defer cancel2()
 	if !s.Drain(ctx) {
 		t.Fatal("drain gave up on a runner that stopped")
+	}
+}
+
+type coveredRepo struct {
+	repository.MailboxImportRepository
+	rows    []repository.ImportWorkRow
+	resumed []int
+}
+
+func (r *coveredRepo) CoveredSigninRows(context.Context, int) ([]repository.ImportWorkRow, error) {
+	return r.rows, nil
+}
+func (r *coveredRepo) ResumeParked(_ context.Context, _ uuid.UUID, line int, _ string) error {
+	r.resumed = append(r.resumed, line)
+	return nil
+}
+
+func TestResumeGrantedSigninsNeedsAUsableGrant(t *testing.T) {
+	org := uuid.New()
+	repo := &coveredRepo{rows: []repository.ImportWorkRow{
+		{OrgID: org, Line: 1, Email: "a@ms.io", Code: causeMicrosoftSignin},
+		{OrgID: org, Line: 2, Email: "b@ms.io", Code: causeMicrosoftSignin},
+		{OrgID: org, Line: 3, Email: "c@gw.io", Code: causeGoogleSignin},
+	}}
+	// The Google grant is stored but GrantFor does not return it, as when the provider is no longer configured.
+	s := &Service{repo: repo, delegator: grantsByDomain{models.GrantProviderMicrosoft + "/ms.io": uuid.New()}, kick: make(chan struct{}, 1)}
+	s.resumeGrantedSignins(context.Background())
+	if len(repo.resumed) != 2 || repo.resumed[0] != 1 || repo.resumed[1] != 2 {
+		t.Fatalf("resumed lines %v, want 1 and 2 only", repo.resumed)
 	}
 }
