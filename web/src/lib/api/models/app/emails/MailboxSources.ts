@@ -45,6 +45,8 @@ export interface VendorMailbox {
     provider: VendorMailboxProvider;
     /** The vendor's own status for the mailbox, as it reports it. */
     status: string;
+    /** The vendor workspace or organization holding it, where the vendor has them. */
+    workspace?: string;
     connected: boolean;
     email_account_id?: string;
 }

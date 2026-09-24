@@ -24,10 +24,8 @@ const (
 
 // Field keys a descriptor may ask for.
 const (
-	FieldAPIKey          = "api_key"
-	FieldWorkspaceID     = "workspace_id"
-	FieldOrganizationID  = "organization_id"
-	FieldServiceProvider = "service_provider"
+	FieldAPIKey         = "api_key"
+	FieldOrganizationID = "organization_id"
 )
 
 // Provider values on Mailbox.
@@ -53,6 +51,7 @@ var (
 	ErrNotFound      = errors.New("mailvendor: mailbox not found")
 	ErrUnknownVendor = errors.New("mailvendor: unknown vendor")
 	ErrInvalidConfig = errors.New("mailvendor: invalid configuration")
+	ErrNoWorkspace   = errors.New("mailvendor: key reaches no workspace")
 )
 
 // Field is a credential the customer must enter, keyed by Key.
@@ -62,6 +61,8 @@ type Field struct {
 	Secret   bool
 	Required bool
 	Help     string
+	// Legacy fields are read from connections saved before the value was discovered, and never asked for.
+	Legacy bool
 }
 
 // Descriptor describes a vendor and what connecting it asks for.
@@ -84,6 +85,8 @@ type Mailbox struct {
 	Domain    string
 	Provider  string
 	Status    string
+	// Workspace is the name of the vendor workspace holding the mailbox, empty where the vendor has none.
+	Workspace string
 }
 
 // Endpoint is one server a mailbox connects to.
@@ -145,23 +148,16 @@ var descriptors = []Descriptor{
 		Label:      "InboxKit",
 		Website:    "https://inboxkit.com",
 		KeyHelpURL: "https://app.inboxkit.com/settings/api",
-		Fields: []Field{
-			apiKeyField("Settings > API & Integrations in the InboxKit dashboard."),
-			{Key: FieldWorkspaceID, Label: "Workspace ID", Required: true, Help: "The workspace whose mailboxes to import (a UUID)."},
-		},
-		Verified: true,
+		Fields:     []Field{apiKeyField("Settings > API & Integrations in the InboxKit dashboard. Mailboxes from every workspace the key reaches are listed.")},
+		Verified:   true,
 	},
 	{
 		ID:         VendorZapmail,
 		Label:      "Zapmail",
 		Website:    "https://zapmail.ai",
 		KeyHelpURL: "https://docs.zapmail.ai/zapmail-docs-825990m0",
-		Fields: []Field{
-			apiKeyField("Settings > Integrations > API in the Zapmail dashboard."),
-			{Key: FieldWorkspaceID, Label: "Workspace ID", Help: "Leave blank for your primary workspace."},
-			{Key: FieldServiceProvider, Label: "Mailbox type", Help: "GOOGLE or MICROSOFT. Leave blank to import both."},
-		},
-		Verified: true,
+		Fields:     []Field{apiKeyField("Settings > Integrations > API in the Zapmail dashboard. Mailboxes from every workspace the key reaches are listed.")},
+		Verified:   true,
 	},
 	{
 		ID:         VendorMailforge,
@@ -176,11 +172,8 @@ var descriptors = []Descriptor{
 		Label:      "Infraforge",
 		Website:    "https://infraforge.ai",
 		KeyHelpURL: "https://api.infraforge.ai/public/swagger/index.html",
-		Fields: []Field{
-			apiKeyField("Settings > API keys in the Infraforge dashboard."),
-			{Key: FieldWorkspaceID, Label: "Workspace ID", Help: "Leave blank to import every workspace."},
-		},
-		Verified: true,
+		Fields:     []Field{apiKeyField("Settings > API keys in the Infraforge dashboard. Mailboxes from every workspace are listed.")},
+		Verified:   true,
 	},
 	{
 		ID:         VendorMaildoso,
@@ -204,8 +197,8 @@ var descriptors = []Descriptor{
 		Website:    "https://scaledmail.com",
 		KeyHelpURL: "https://app.scaledmail.com/settings",
 		Fields: []Field{
-			apiKeyField("Settings in the ScaledMail dashboard."),
-			{Key: FieldOrganizationID, Label: "Organization ID", Required: true, Help: "The organization whose mailboxes to import."},
+			apiKeyField("Settings in the ScaledMail dashboard. Mailboxes from every organization the key reaches are listed."),
+			{Key: FieldOrganizationID, Label: "Organization ID", Legacy: true},
 		},
 		Verified: true,
 	},
@@ -244,7 +237,7 @@ func New(vendor string, fields map[string]string, opts ...Option) (Client, error
 	vals := make(map[string]string, len(d.Fields))
 	for _, f := range d.Fields {
 		v := strings.TrimSpace(fields[f.Key])
-		if v == "" && f.Required {
+		if v == "" && f.Required && !f.Legacy {
 			return nil, fmt.Errorf("%w: %s: %s is required", ErrInvalidConfig, vendor, f.Label)
 		}
 		if strings.ContainsFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
@@ -263,11 +256,11 @@ func New(vendor string, fields map[string]string, opts ...Option) (Client, error
 	case VendorInboxKit:
 		return newInboxKit(vals, o), nil
 	case VendorZapmail:
-		return newZapmail(vals, o)
+		return newZapmail(vals, o), nil
 	case VendorMailforge:
-		return newForge(VendorMailforge, "https://api.mailforge.ai/public", "", vals, o), nil
+		return newForge(VendorMailforge, "https://api.mailforge.ai/public", vals, o), nil
 	case VendorInfraforge:
-		return newForge(VendorInfraforge, "https://api.infraforge.ai/public", vals[FieldWorkspaceID], vals, o), nil
+		return newForge(VendorInfraforge, "https://api.infraforge.ai/public", vals, o), nil
 	case VendorMaildoso:
 		return newMaildoso(vals, o), nil
 	case VendorCheapInboxes:

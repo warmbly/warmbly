@@ -43,23 +43,34 @@ func inboxKitMailbox(uid, user, domain, platform string) string {
 }
 
 func TestInboxKit(t *testing.T) {
-	const ws = "6f1c2d3e-0000-4000-8000-000000000001"
+	const ws1, ws2 = "6f1c2d3e-0000-4000-8000-000000000001", "6f1c2d3e-0000-4000-8000-000000000002"
 	srv := newRecorder(t, func(w http.ResponseWriter, r *http.Request) {
+		ws := r.Header.Get("X-Workspace-Id")
 		switch r.URL.Path {
+		case "/v1/api/workspaces/list":
+			writeJSON(w, 200, `{"error":false,"message":"Workspaces retrieved successfully","workspaces":[
+				{"uid":"`+ws1+`","name":"Outbound","team":"t1","webhook_url":null,"domains":2},
+				{"uid":"`+ws2+`","name":"Trials","team":"t1","webhook_url":null,"domains":1}]}`)
 		case "/v1/api/mailboxes/list":
 			var body struct{ Page, Limit int }
 			_ = json.NewDecoder(r.Body).Decode(&body)
-			if body.Page == 1 {
+			switch {
+			case ws == ws2:
+				writeJSON(w, 200, `{"error":false,"mailboxes":[`+
+					inboxKitMailbox("9c9c9c9c-2222-4333-8444-555566667777", "sam", "trials.io", "GOOGLE")+
+					`],"total":1,"pages":1,"current_page":1,"limit":100}`)
+			case body.Page == 1:
 				writeJSON(w, 200, `{"error":false,"message":"Mailboxes retrieved successfully","mailboxes":[`+
 					inboxKitMailbox("e88ae415-fe99-4831-b3fe-cdf2e7e25925", "marvinkassulke", "myzyng.net", "GOOGLE")+
 					`],"total":2,"pages":2,"current_page":1,"limit":1}`)
-				return
+			default:
+				writeJSON(w, 200, `{"error":false,"message":"Mailboxes retrieved successfully","mailboxes":[`+
+					inboxKitMailbox("0b7c7a8a-1111-4222-8333-444455556666", "jane", "acme.io", "MICROSOFT")+
+					`],"total":2,"pages":2,"current_page":2,"limit":1}`)
 			}
-			writeJSON(w, 200, `{"error":false,"message":"Mailboxes retrieved successfully","mailboxes":[`+
-				inboxKitMailbox("0b7c7a8a-1111-4222-8333-444455556666", "jane", "acme.io", "MICROSOFT")+
-				`],"total":2,"pages":2,"current_page":2,"limit":1}`)
 		case "/v1/api/mailboxes/show-credentials":
-			if r.URL.Query().Get("uid") == "gone" {
+			// Only ws2 holds the mailbox a stored, unscoped id names.
+			if uid := r.URL.Query().Get("uid"); uid == "gone" || (uid == "legacy-uid" && ws != ws2) {
 				writeJSON(w, 404, `{"error":true,"message":"Mailbox not found"}`)
 				return
 			}
@@ -68,19 +79,26 @@ func TestInboxKit(t *testing.T) {
 			writeJSON(w, 404, `{}`)
 		}
 	})
-	c := newTestClient(t, VendorInboxKit, map[string]string{FieldAPIKey: testKey, FieldWorkspaceID: ws}, srv.URL, nil)
+	c := newTestClient(t, VendorInboxKit, map[string]string{FieldAPIKey: testKey}, srv.URL, nil)
+	if err := c.Verify(context.Background()); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
 
 	got := mustList(t, c)
 	want := []Mailbox{
-		{ID: "e88ae415-fe99-4831-b3fe-cdf2e7e25925", Email: "marvinkassulke@myzyng.net", FirstName: "marvin", LastName: "kassulke", Domain: "myzyng.net", Provider: ProviderGoogle, Status: "active"},
-		{ID: "0b7c7a8a-1111-4222-8333-444455556666", Email: "jane@acme.io", FirstName: "marvin", LastName: "kassulke", Domain: "acme.io", Provider: ProviderMicrosoft, Status: "active"},
+		{ID: ws1 + ":e88ae415-fe99-4831-b3fe-cdf2e7e25925", Email: "marvinkassulke@myzyng.net", FirstName: "marvin", LastName: "kassulke", Domain: "myzyng.net", Provider: ProviderGoogle, Status: "active", Workspace: "Outbound"},
+		{ID: ws1 + ":0b7c7a8a-1111-4222-8333-444455556666", Email: "jane@acme.io", FirstName: "marvin", LastName: "kassulke", Domain: "acme.io", Provider: ProviderMicrosoft, Status: "active", Workspace: "Outbound"},
+		{ID: ws2 + ":9c9c9c9c-2222-4333-8444-555566667777", Email: "sam@trials.io", FirstName: "marvin", LastName: "kassulke", Domain: "trials.io", Provider: ProviderGoogle, Status: "active", Workspace: "Trials"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("List = %+v\nwant %+v", got, want)
 	}
-	cr := mustCreds(t, c, got[0])
+	cr := mustCreds(t, c, got[2])
 	if cr != (Credentials{Password: "pw-12345", AppPassword: "abcd efgh ijkl mnop"}) {
 		t.Fatalf("Credentials = %+v", cr)
+	}
+	if cr := mustCreds(t, c, Mailbox{ID: "legacy-uid", Email: "old@trials.io"}); cr.Password != "pw-12345" {
+		t.Fatalf("legacy id Credentials = %+v", cr)
 	}
 	if _, err := c.Credentials(context.Background(), Mailbox{ID: "gone"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("gone: %v", err)
@@ -89,13 +107,44 @@ func TestInboxKit(t *testing.T) {
 	reqs := srv.requests()
 	for _, r := range reqs {
 		assertHeader(t, r, "Authorization", "Bearer "+testKey)
-		assertHeader(t, r, "X-Workspace-Id", ws)
+		if r.Path == "/v1/api/workspaces/list" {
+			if r.Header.Get("X-Workspace-Id") != "" {
+				t.Errorf("workspace list sent X-Workspace-Id")
+			}
+			continue
+		}
+		if ws := r.Header.Get("X-Workspace-Id"); ws != ws1 && ws != ws2 {
+			t.Errorf("%s: X-Workspace-Id = %q", r.Path, ws)
+		}
 	}
-	if reqs[0].Method != http.MethodPost || !strings.Contains(reqs[0].Body, `"page":1`) || !strings.Contains(reqs[1].Body, `"page":2`) {
-		t.Fatalf("list requests = %+v", reqs[:2])
+	var shows []string
+	for _, r := range reqs {
+		if r.Path == "/v1/api/mailboxes/show-credentials" {
+			shows = append(shows, r.Header.Get("X-Workspace-Id")+"/"+r.q("uid"))
+		}
 	}
-	if reqs[2].Query["uid"][0] != want[0].ID {
-		t.Fatalf("show-credentials query = %v", reqs[2].Query)
+	wantShows := []string{ws2 + "/9c9c9c9c-2222-4333-8444-555566667777", ws1 + "/legacy-uid", ws2 + "/legacy-uid", ws1 + "/gone", ws2 + "/gone"}
+	if !reflect.DeepEqual(shows, wantShows) {
+		t.Fatalf("show-credentials calls = %v\nwant %v", shows, wantShows)
+	}
+}
+
+// A workspace the key may not read is skipped while another answers.
+func TestInboxKitSkipsRefusedWorkspace(t *testing.T) {
+	srv := newRecorder(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/api/workspaces/list":
+			writeJSON(w, 200, `{"error":false,"workspaces":[{"uid":"ws-a","name":"A"},{"uid":"ws-b","name":"B"}]}`)
+		case r.Header.Get("X-Workspace-Id") == "ws-a":
+			writeJSON(w, 403, `{"error":true,"message":"Forbidden"}`)
+		default:
+			writeJSON(w, 200, `{"error":false,"mailboxes":[`+inboxKitMailbox("u1", "amy", "b.io", "GOOGLE")+`],"pages":1}`)
+		}
+	})
+	c := newTestClient(t, VendorInboxKit, fieldsFor(VendorInboxKit), srv.URL, nil)
+	got := mustList(t, c)
+	if len(got) != 1 || got[0].ID != "ws-b:u1" || got[0].Workspace != "B" {
+		t.Fatalf("List = %+v", got)
 	}
 }
 
@@ -120,8 +169,8 @@ func TestZapmail(t *testing.T) {
 		{"id":"d3","domain":"contoso.co","status":"ACTIVE","mailboxes":[{"id":"ms-1","username":"amy","email":"amy@contoso.co","firstName":"Amy","lastName":"Lee","password":"pw-ms","appPassword":null,"secret":null,"status":"ACTIVE","domain":"contoso.co"}]}]}}`
 	srv := newRecorder(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v2/users":
-			writeJSON(w, 200, `{"status":200,"message":"ok","data":{}}`)
+		case "/v2/workspaces":
+			writeJSON(w, 200, `{"status":200,"message":"Workspaces fetched successfully","data":[{"id":"ws-123","name":"Main","domainCount":"15","mailboxCount":"8"}]}`)
 		case "/v2/mailboxes/list":
 			switch {
 			case r.Header.Get("x-service-provider") == "MICROSOFT":
@@ -141,16 +190,15 @@ func TestZapmail(t *testing.T) {
 			writeJSON(w, 404, `{}`)
 		}
 	})
-	fields := map[string]string{FieldAPIKey: testKey, FieldWorkspaceID: "ws-123"}
-	c := newTestClient(t, VendorZapmail, fields, srv.URL, nil)
+	c := newTestClient(t, VendorZapmail, map[string]string{FieldAPIKey: testKey}, srv.URL, nil)
 	if err := c.Verify(context.Background()); err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
 	got := mustList(t, c)
 	want := []Mailbox{
-		{ID: "abcd1234-5678-90ef-ghij-klmn12345678", Email: "john.doe@example1.com", FirstName: "John", LastName: "Doe", Domain: "example1.com", Provider: ProviderGoogle, Status: "ACTIVE"},
-		{ID: "xyz1234-5678-90ab-cdef-ghijk9876543", Email: "jane.smith@example2.net", FirstName: "Jane", LastName: "Smith", Domain: "example2.net", Provider: ProviderGoogle, Status: "IN_PROGRESS"},
-		{ID: "ms-1", Email: "amy@contoso.co", FirstName: "Amy", LastName: "Lee", Domain: "contoso.co", Provider: ProviderMicrosoft, Status: "ACTIVE"},
+		{ID: "ws-123:abcd1234-5678-90ef-ghij-klmn12345678", Email: "john.doe@example1.com", FirstName: "John", LastName: "Doe", Domain: "example1.com", Provider: ProviderGoogle, Status: "ACTIVE", Workspace: "Main"},
+		{ID: "ws-123:xyz1234-5678-90ab-cdef-ghijk9876543", Email: "jane.smith@example2.net", FirstName: "Jane", LastName: "Smith", Domain: "example2.net", Provider: ProviderGoogle, Status: "IN_PROGRESS", Workspace: "Main"},
+		{ID: "ws-123:ms-1", Email: "amy@contoso.co", FirstName: "Amy", LastName: "Lee", Domain: "contoso.co", Provider: ProviderMicrosoft, Status: "ACTIVE", Workspace: "Main"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("List = %+v\nwant %+v", got, want)
@@ -172,14 +220,18 @@ func TestZapmail(t *testing.T) {
 	reqs := srv.requests()
 	for _, r := range reqs {
 		assertHeader(t, r, "x-auth-zapmail", testKey)
-		assertHeader(t, r, "x-workspace-key", "ws-123")
+		if r.Path != "/v2/workspaces" {
+			assertHeader(t, r, "x-workspace-key", "ws-123")
+		}
 		if r.Header.Get("Authorization") != "" {
 			t.Errorf("%s sent an Authorization header", r.Path)
 		}
 	}
 	var providers []string
-	for _, r := range reqs[1:listCalls] {
-		providers = append(providers, r.Header.Get("x-service-provider")+"/"+r.q("page"))
+	for _, r := range reqs[:listCalls] {
+		if r.Path == "/v2/mailboxes/list" {
+			providers = append(providers, r.Header.Get("x-service-provider")+"/"+r.q("page"))
+		}
 	}
 	if !reflect.DeepEqual(providers, []string{"GOOGLE/1", "GOOGLE/2", "MICROSOFT/1"}) {
 		t.Fatalf("list passes = %v", providers)
@@ -199,17 +251,30 @@ func TestZapmailForbiddenEnvelope(t *testing.T) {
 	}
 }
 
-func TestZapmailSingleProviderNoWorkspace(t *testing.T) {
-	srv := newRecorder(t, func(w http.ResponseWriter, _ *http.Request) {
+// With no workspace listed, calls go to the key's primary workspace, for both providers.
+func TestZapmailNoWorkspacesUsesPrimary(t *testing.T) {
+	srv := newRecorder(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/workspaces" {
+			writeJSON(w, 200, `{"status":200,"data":[]}`)
+			return
+		}
 		writeJSON(w, 200, `{"status":200,"data":{"currentPage":1,"totalPages":1,"domains":[]}}`)
 	})
-	c := newTestClient(t, VendorZapmail, map[string]string{FieldAPIKey: testKey, FieldServiceProvider: "microsoft"}, srv.URL, nil)
+	c := newTestClient(t, VendorZapmail, fieldsFor(VendorZapmail), srv.URL, nil)
 	if got := mustList(t, c); len(got) != 0 {
 		t.Fatalf("List = %+v", got)
 	}
-	reqs := srv.requests()
-	if len(reqs) != 1 || reqs[0].Header.Get("x-service-provider") != "MICROSOFT" || reqs[0].Header.Get("x-workspace-key") != "" {
-		t.Fatalf("requests = %+v", reqs)
+	var seen []string
+	for _, r := range srv.requests() {
+		if r.Path == "/v2/mailboxes/list" {
+			if r.Header.Get("x-workspace-key") != "" {
+				t.Errorf("sent x-workspace-key %q", r.Header.Get("x-workspace-key"))
+			}
+			seen = append(seen, r.Header.Get("x-service-provider"))
+		}
+	}
+	if !reflect.DeepEqual(seen, []string{"GOOGLE", "MICROSOFT"}) {
+		t.Fatalf("providers = %v", seen)
 	}
 }
 
@@ -236,17 +301,13 @@ func TestForgeVendors(t *testing.T) {
 					writeJSON(w, 404, `{"code":404,"message":"Mailbox not found"}`)
 				}
 			})
-			fields := map[string]string{FieldAPIKey: testKey}
-			if vendor == VendorInfraforge {
-				fields[FieldWorkspaceID] = "wks_70my6ggvn5csfw3o27ojq"
-			}
-			c := newTestClient(t, vendor, fields, srv.URL, nil)
+			c := newTestClient(t, vendor, map[string]string{FieldAPIKey: testKey}, srv.URL, nil)
 			if err := c.Verify(context.Background()); err != nil {
 				t.Fatalf("Verify: %v", err)
 			}
 			got := mustList(t, c)
 			want := []Mailbox{
-				{ID: "mbx_1duj5a6534j37kzook2l9", Email: "jondoe@example.com", FirstName: "Jon", LastName: "Doe", Domain: "example.com", Provider: ProviderSMTP, Status: "active"},
+				{ID: "mbx_1duj5a6534j37kzook2l9", Email: "jondoe@example.com", FirstName: "Jon", LastName: "Doe", Domain: "example.com", Provider: ProviderSMTP, Status: "active", Workspace: "Main"},
 				{ID: "mbx_2", Email: "amy@example.org", FirstName: "Amy", LastName: "Lee", Domain: "example.org", Provider: ProviderSMTP, Status: "pending"},
 			}
 			if !reflect.DeepEqual(got, want) {
@@ -281,8 +342,8 @@ func TestForgeVendors(t *testing.T) {
 			if list.Query["with_credentials"][0] != "true" {
 				t.Fatalf("list query = %v", list.Query)
 			}
-			if ws := list.q("workspace_id"); (vendor == VendorInfraforge) != (ws == "wks_70my6ggvn5csfw3o27ojq") {
-				t.Fatalf("%s workspace_id = %q", vendor, ws)
+			if ws := list.q("workspace_id"); ws != "" {
+				t.Fatalf("%s workspace_id = %q, want every workspace", vendor, ws)
 			}
 		})
 	}
@@ -414,7 +475,7 @@ func TestScaledMail(t *testing.T) {
 	srv := newRecorder(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/organizations":
-			writeJSON(w, 200, `{"organizations":[{"id":"recORG000000001"}]}`)
+			writeJSON(w, 200, `{"organizations":[{"id":"recORG000000001","name":"Acme"}]}`)
 		case "/domains":
 			writeJSON(w, 200, `{"total":2,"domains":[
 				{"id":"recDOM1","domain":"outreach-one.com","tag":"campaign-q3","redirect":"https://example.com","order_type":"google","order_id":"recORD1","payment_id":"recPAY1","domain_provider":"Scaledmail","user_id":"recUSR1","total_mailboxes":2,"mailbox":[{"first_name":"Jane","last_name":"Doe","alias":"jane"}],"status":"Active"},
@@ -430,15 +491,15 @@ func TestScaledMail(t *testing.T) {
 		}
 	})
 	s := &sleeps{}
-	c := newTestClient(t, VendorScaledMail, map[string]string{FieldAPIKey: testKey, FieldOrganizationID: org}, srv.URL, s)
+	c := newTestClient(t, VendorScaledMail, map[string]string{FieldAPIKey: testKey}, srv.URL, s)
 	if err := c.Verify(context.Background()); err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
 	got := mustList(t, c)
 	want := []Mailbox{
-		{ID: "jane@outreach-one.com", Email: "jane@outreach-one.com", FirstName: "Jane", LastName: "Doe", Domain: "outreach-one.com", Provider: ProviderGoogle, Status: "Active"},
-		{ID: "joe@outreach-one.com", Email: "joe@outreach-one.com", FirstName: "Joe", LastName: "Roe", Domain: "outreach-one.com", Provider: ProviderGoogle, Status: "Active"},
-		{ID: "kim@outreach-two.com", Email: "kim@outreach-two.com", FirstName: "Kim", LastName: "Park", Domain: "outreach-two.com", Provider: ProviderMicrosoft, Status: "Active"},
+		{ID: org + ":jane@outreach-one.com", Email: "jane@outreach-one.com", FirstName: "Jane", LastName: "Doe", Domain: "outreach-one.com", Provider: ProviderGoogle, Status: "Active", Workspace: "Acme"},
+		{ID: org + ":joe@outreach-one.com", Email: "joe@outreach-one.com", FirstName: "Joe", LastName: "Roe", Domain: "outreach-one.com", Provider: ProviderGoogle, Status: "Active", Workspace: "Acme"},
+		{ID: org + ":kim@outreach-two.com", Email: "kim@outreach-two.com", FirstName: "Kim", LastName: "Park", Domain: "outreach-two.com", Provider: ProviderMicrosoft, Status: "Active", Workspace: "Acme"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("List = %+v\nwant %+v", got, want)
@@ -447,10 +508,13 @@ func TestScaledMail(t *testing.T) {
 		t.Fatalf("Credentials = %+v", cr)
 	}
 
-	// A fresh client has no cache, so it re-reads the mailbox's domain.
-	fresh := newTestClient(t, VendorScaledMail, map[string]string{FieldAPIKey: testKey, FieldOrganizationID: org}, srv.URL, nil)
-	if cr := mustCreds(t, fresh, Mailbox{ID: "kim@outreach-two.com", Email: "kim@outreach-two.com", Domain: "outreach-two.com"}); cr.Password != "Outl00k!" {
+	// A fresh client has no cache, so it re-reads the mailbox's domain, with or without the organization in the id.
+	fresh := newTestClient(t, VendorScaledMail, map[string]string{FieldAPIKey: testKey}, srv.URL, nil)
+	if cr := mustCreds(t, fresh, Mailbox{ID: org + ":kim@outreach-two.com", Email: "kim@outreach-two.com", Domain: "outreach-two.com"}); cr.Password != "Outl00k!" {
 		t.Fatalf("fetched Credentials = %+v", cr)
+	}
+	if cr := mustCreds(t, fresh, Mailbox{ID: "kim@outreach-two.com", Email: "kim@outreach-two.com"}); cr.Password != "Outl00k!" {
+		t.Fatalf("legacy id Credentials = %+v", cr)
 	}
 	if _, err := fresh.Credentials(context.Background(), Mailbox{Email: "nobody@outreach-two.com"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown mailbox: %v", err)
@@ -477,6 +541,35 @@ func TestScaledMail(t *testing.T) {
 		if w > time.Second {
 			t.Fatalf("throttle wait %v is longer than a second", w)
 		}
+	}
+}
+
+func TestScaledMailOrganizationShapes(t *testing.T) {
+	for body, want := range map[string][]workspace{
+		`[{"id":"recA","name":"A"},{"id":"recB"}]`:                     {{ID: "recA", Name: "A"}, {ID: "recB"}},
+		`{"data":[{"organization_id":"recC","name":"C"}]}`:             {{ID: "recC", Name: "C"}},
+		`{"organization":{"_id":"recD"},"message":"ok"}`:               {{ID: "recD"}},
+		`{"organizations":[{"id":"recE"},{"id":"recE"},{"name":"x"}]}`: {{ID: "recE"}},
+		`{"message":"ok"}`: nil,
+	} {
+		if got := scaledMailOrgs([]byte(body)); !reflect.DeepEqual(got, want) {
+			t.Errorf("scaledMailOrgs(%s) = %+v, want %+v", body, got, want)
+		}
+	}
+}
+
+func TestScaledMailNoOrganization(t *testing.T) {
+	srv := newRecorder(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, `{"organizations":[]}`)
+	})
+	c := newTestClient(t, VendorScaledMail, map[string]string{FieldAPIKey: testKey}, srv.URL, nil)
+	if err := c.Verify(context.Background()); !errors.Is(err, ErrNoWorkspace) {
+		t.Fatalf("Verify = %v, want ErrNoWorkspace", err)
+	}
+	// A connection saved with an organization id keeps using it.
+	legacy := newTestClient(t, VendorScaledMail, map[string]string{FieldAPIKey: testKey, FieldOrganizationID: "recOLD"}, srv.URL, nil)
+	if err := legacy.Verify(context.Background()); err != nil {
+		t.Fatalf("legacy Verify = %v", err)
 	}
 }
 

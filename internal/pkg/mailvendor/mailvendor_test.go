@@ -99,10 +99,8 @@ func writeJSON(w http.ResponseWriter, status int, body string) {
 // fieldsFor returns a complete, valid field set for a vendor.
 func fieldsFor(vendor string) map[string]string {
 	f := map[string]string{FieldAPIKey: testKey}
-	switch vendor {
-	case VendorInboxKit:
-		f[FieldWorkspaceID] = "6f1c2d3e-0000-4000-8000-000000000001"
-	case VendorScaledMail:
+	if vendor == VendorScaledMail {
+		// A legacy organization id keeps ScaledMail usable against a server that lists none.
 		f[FieldOrganizationID] = "recORG000000001"
 	}
 	return f
@@ -118,6 +116,12 @@ func TestDescriptorsStableAndComplete(t *testing.T) {
 		}
 		if len(d.Fields) == 0 || d.Fields[0].Key != FieldAPIKey || !d.Fields[0].Secret || !d.Fields[0].Required {
 			t.Errorf("%s: first field must be the required, secret api_key", d.ID)
+		}
+		// Anything a vendor's API can discover is never asked for.
+		for _, f := range d.Fields[1:] {
+			if !f.Legacy {
+				t.Errorf("%s: asks for %s beyond the API key", d.ID, f.Key)
+			}
 		}
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -140,8 +144,8 @@ func TestNewValidatesFields(t *testing.T) {
 	if _, err := New("nope", nil); !errors.Is(err, ErrUnknownVendor) {
 		t.Fatalf("unknown vendor: %v", err)
 	}
-	if _, err := New(VendorInboxKit, map[string]string{FieldAPIKey: testKey}); !errors.Is(err, ErrInvalidConfig) {
-		t.Fatalf("missing workspace: %v", err)
+	if _, err := New(VendorInboxKit, map[string]string{}); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("missing key: %v", err)
 	}
 	if _, err := New(VendorScaledMail, map[string]string{FieldAPIKey: "  "}); !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("blank key: %v", err)
@@ -149,9 +153,6 @@ func TestNewValidatesFields(t *testing.T) {
 	_, err := New(VendorMaildoso, map[string]string{FieldAPIKey: testKey + "\r\nX-Evil: 1"})
 	if !errors.Is(err, ErrInvalidConfig) || strings.Contains(err.Error(), testKey) {
 		t.Fatalf("control characters: %v", err)
-	}
-	if _, err := New(VendorZapmail, map[string]string{FieldAPIKey: testKey, FieldServiceProvider: "yahoo"}); !errors.Is(err, ErrInvalidConfig) {
-		t.Fatalf("zapmail provider: %v", err)
 	}
 	for _, d := range Descriptors() {
 		c, err := New(d.ID, fieldsFor(d.ID))
