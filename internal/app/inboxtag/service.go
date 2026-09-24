@@ -13,6 +13,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -93,6 +94,8 @@ type Message struct {
 	BodyText       string
 	FromAddr       string
 	Headers        map[string][]string
+	// InReplyTo names the message this one answers.
+	InReplyTo []string
 	// PreviousMessage is our last outbound in this thread, so a bare "yes" has
 	// something to be an answer to.
 	PreviousMessage string
@@ -194,11 +197,18 @@ func (s *Service) isOwn(ctx context.Context, m Message) bool {
 // Only the classes headers decide definitively are mapped; everything else
 // falls through to the model.
 func deterministicKind(m Message) string {
-	res := replyclassify.ClassifyOffline(replyclassify.Input{
+	in := replyclassify.Input{
 		Headers:  m.Headers,
 		Subject:  m.Subject,
 		BodyText: m.BodyText,
-	})
+	}
+	if replyclassify.IsDeliveryFailure(in) {
+		if dsn.IsTransientNotice(m.Subject, m.BodyText) {
+			return KindBounceSoft
+		}
+		return KindBounceHard
+	}
+	res := replyclassify.ClassifyOffline(in)
 	switch res.Class {
 	case replyclassify.ClassOutOfOffice:
 		return KindAutoReplyOOO
@@ -289,7 +299,8 @@ func MessageFrom(orgID, userID uuid.UUID, msg *models.EmailMessageStoreData, hea
 		from = strings.TrimSpace(msg.FromAddr[0])
 	}
 	if headers == nil {
-		headers = map[string][]string{}
+		// The sync carries the classification headers as pseudo-flags.
+		headers = replyclassify.FlagHeaders(msg.Flags)
 	}
 	if from != "" && len(headers["From"]) == 0 {
 		headers["From"] = []string{from}
@@ -304,6 +315,7 @@ func MessageFrom(orgID, userID uuid.UUID, msg *models.EmailMessageStoreData, hea
 		BodyText:        msg.BodyText,
 		FromAddr:        from,
 		Headers:         headers,
+		InReplyTo:       msg.InReplyTo,
 		PreviousMessage: previous,
 		Campaign:        campaign,
 		Outbound:        !msg.MayBeInbound(),

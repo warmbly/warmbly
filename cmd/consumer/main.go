@@ -17,6 +17,7 @@ import (
 	awsconf "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/advanced"
+	"github.com/warmbly/warmbly/internal/app/audit"
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	jobs "github.com/warmbly/warmbly/internal/app/consumer"
 	"github.com/warmbly/warmbly/internal/app/contact"
@@ -392,6 +393,8 @@ func main() {
 	advancedService.WireNotifier(notificationService)
 	// Reply pulses fire in THIS process too (inbox ingest classifies replies).
 	advancedService.WireRealtime(streamingPublisher)
+	// A lifted reply opt-out is recorded like a member lifting one by hand.
+	advancedService.WireAudit(audit.NewService(repository.NewAuditRepository(primaryDB.Pool), streamingPublisher))
 	// Inbox agent (M10): inbound human replies are ingested + classified in THIS
 	// process, so the agent that drafts a suggested reply must be wired here. It
 	// is paid + opt-in (checked inside) and self-detaches, so a slow model never
@@ -522,6 +525,7 @@ func main() {
 	// Re-offers inbound mail that reply processing never claimed, so a
 	// reply refused by a since-fixed check is still attributed to its lead.
 	go jobsService.StartIncomingReplyRepair(ctx)
+	go jobsService.StartReplyOptOutRecheck(ctx)
 
 	// Start dead worker detection (every 5 minutes)
 	go jobsService.StartDeadWorkerDetection(ctx, 5*time.Minute)

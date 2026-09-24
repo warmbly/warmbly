@@ -186,6 +186,12 @@ type Service interface {
 
 	// DLQ auto-retry
 	ProcessRetryableDeadLetters(ctx context.Context) (int, *errx.Error)
+
+	// RecheckReplyOptOuts re-reads one page of reply opt-outs under the
+	// current rules, lifting the ones no message from the sender supports.
+	RecheckReplyOptOuts(ctx context.Context, afterID uuid.UUID, limit int) (uuid.UUID, bool, error)
+	// WireAudit attaches the audit trail a lifted reply opt-out is recorded in.
+	WireAudit(a AuditLogger)
 }
 
 type service struct {
@@ -218,6 +224,8 @@ type service struct {
 	inboxTags repository.InboxTagRepository
 	// bounceJudge classifies ambiguous bounce reasons. Optional; nil-safe.
 	bounceJudge typesafe.Asker
+	// audit records what the reply opt-out recheck lifts. Optional; nil-safe.
+	audit AuditLogger
 }
 
 // WireBounceJudge attaches the bounce classifier after construction. Pass a
@@ -957,7 +965,9 @@ func buildReplyHeaders(msg *models.EmailMessageStoreData) map[string][]string {
 	if msg == nil {
 		return nil
 	}
-	h := map[string][]string{}
+	// Custom headers the worker stored as "Header-Name:value" flags (auto-reply
+	// markers, Precedence, etc.).
+	h := replyclassify.FlagHeaders(msg.Flags)
 	if len(msg.FromAddr) > 0 {
 		h["From"] = msg.FromAddr
 	}
@@ -967,19 +977,22 @@ func buildReplyHeaders(msg *models.EmailMessageStoreData) map[string][]string {
 	if msg.Subject != "" {
 		h["Subject"] = []string{msg.Subject}
 	}
-	// Custom headers the worker stored as "Header-Name:value" flags (auto-reply
-	// markers, Precedence, etc.). Split on the FIRST colon so header values that
-	// contain ':' survive intact.
-	for _, flag := range msg.Flags {
-		if i := strings.Index(flag, ":"); i > 0 {
-			name := strings.TrimSpace(flag[:i])
-			val := strings.TrimSpace(flag[i+1:])
-			if name != "" && !strings.HasPrefix(name, "\\") {
-				h[name] = append(h[name], val)
-			}
-		}
-	}
 	return h
+}
+
+// replyOptOutEligible decides whether an inbound message may be read as a
+// person asking us to stop. Only a person answering our outreach can: a bounce
+// or an auto-reply asks nothing, and a newsletter's footer "unsubscribe" is its
+// own sender's, so mail that is neither in one of our threads nor from a
+// contact, or that was sent to a list, is never an opt-out.
+func replyOptOutEligible(verdict replyclassify.Result, inOurThread, fromContact bool, headers map[string][]string) bool {
+	if replyclassify.IsAutomated(verdict.Class) {
+		return false
+	}
+	if inOurThread {
+		return true
+	}
+	return fromContact && !replyclassify.IsBulkMail(headers)
 }
 
 // replyTaskTitle words the follow-up the way it is read in a task list, rather
@@ -1406,6 +1419,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	// line a real mechanism. The check ignores the quoted history (which
 	// carries our own opt-out wording) and matches whole phrases only.
 	if settings.ReplyIntent.AutoSuppressOnUnsubWord &&
+		replyOptOutEligible(verdict, referencesCampaignThread, contactID != nil, buildReplyHeaders(msg)) &&
 		replyclassify.IsOptOut(msg.Subject, firstNonEmpty(msg.BodyText, msg.Snippet)) {
 		_ = s.repo.UpsertSuppressedRecipient(ctx, &models.SuppressedRecipient{
 			OrganizationID: *account.OrganizationID,

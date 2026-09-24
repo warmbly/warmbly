@@ -137,6 +137,9 @@ func ToText(raw string) string {
 // searching for a phrase someone quoted back at you should still find the
 // conversation, and it flattens HTML so the indexed words are the words the
 // reader sees. maxRunes of 0 or less means no limit.
+//
+// Line breaks are kept: reply parsing finds quoted history by its lines ("On
+// ... wrote:", "> "), and a body collapsed onto one line hides all of it.
 func SearchText(bodyPlain, bodyHTML string, maxRunes int) string {
 	text := bodyPlain
 	if strings.TrimSpace(text) == "" && bodyHTML != "" {
@@ -145,10 +148,31 @@ func SearchText(bodyPlain, bodyHTML string, maxRunes int) string {
 	if LooksLikeHTML(text) {
 		text = ToText(text)
 	}
-	text = strings.Join(strings.Fields(text), " ")
+	text = compactLines(text)
 
 	if maxRunes > 0 && utf8.RuneCountInString(text) > maxRunes {
 		text = string([]rune(text)[:maxRunes])
 	}
 	return text
+}
+
+// compactLines collapses whitespace inside each line and runs of blank lines
+// to one, keeping the line structure.
+func compactLines(text string) string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	blank := false
+	for _, ln := range lines {
+		ln = strings.Join(strings.Fields(ln), " ")
+		if ln == "" {
+			if !blank && len(out) > 0 {
+				out = append(out, "")
+			}
+			blank = true
+			continue
+		}
+		blank = false
+		out = append(out, ln)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }

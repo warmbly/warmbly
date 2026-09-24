@@ -70,3 +70,49 @@ func TestDetect(t *testing.T) {
 		t.Error("ordinary reply misdetected as bounce")
 	}
 }
+
+// A Google Group that refuses the post answers with prose and an
+// X-Failed-Recipients header, no status part, and is still a failed delivery.
+const groupRejection = `We're writing to let you know that the group you tried to contact (info) may not exist, or you may not have permission to post messages to the group.
+
+----- Original message -----
+
+From: "Sender" <sender@example.com>
+To: info@example.org
+Subject: Inquiry
+Message-ID: <a8fcccd2@example.com>
+`
+
+func TestWithFailedRecipientsReadsAStatuslessNotice(t *testing.T) {
+	r := Parse(groupRejection).WithFailedRecipients("info@example.org", "Delivery Status Notification (Failure)", groupRejection)
+	if !r.IsBounce || !r.Permanent {
+		t.Fatalf("expected a permanent bounce, got %+v", r)
+	}
+	if r.FailedRecipient != "info@example.org" {
+		t.Errorf("failed recipient = %q", r.FailedRecipient)
+	}
+	if r.OriginalMessageID != "a8fcccd2@example.com" {
+		t.Errorf("original message id = %q", r.OriginalMessageID)
+	}
+}
+
+func TestWithFailedRecipientsLeavesRetriesAndOrdinaryMail(t *testing.T) {
+	if r := Parse(groupRejection).WithFailedRecipients("", "Delivery Status Notification (Failure)", groupRejection); r.Permanent {
+		t.Error("no failed-recipients header, yet read as permanent")
+	}
+	if r := Parse("x").WithFailedRecipients("a@example.org", "Delivery Status Notification (Delay)", "x"); r.Permanent {
+		t.Error("a delay notice read as permanent")
+	}
+	body := "Delivery to a@example.org has been delayed; the server will retry."
+	if r := Parse(body).WithFailedRecipients("a@example.org", "Mail delivery", body); r.Permanent {
+		t.Error("a retrying notice read as permanent")
+	}
+	// The sender's own words in the returned copy say nothing about delivery.
+	quoted := "The group may not exist.\n\n----- Original message -----\nSubject: A temporary offer\n"
+	if r := Parse(quoted).WithFailedRecipients("a@example.org", "Delivery Status Notification (Failure)", quoted); !r.Permanent {
+		t.Error("a word in the returned message blocked a permanent failure")
+	}
+	if r := Parse(transientDSN).WithFailedRecipients("busy@example.com", "Delivery Status Notification", transientDSN); r.Permanent {
+		t.Error("a 4.x.x status read as permanent")
+	}
+}

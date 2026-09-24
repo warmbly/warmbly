@@ -78,6 +78,12 @@ type UniboxRepository interface {
 	// processing never claimed and that look like campaign replies: they
 	// answer a campaign send, or come from one of the workspace's contacts.
 	ListUnprocessedCampaignReplies(ctx context.Context, since time.Time, afterID uuid.UUID, limit int) ([]models.JobEventNewEmail, error)
+	// ListInboundFrom returns a workspace's inbound mail from one address,
+	// newest first: the evidence behind an opt-out that address triggered.
+	ListInboundFrom(ctx context.Context, orgID uuid.UUID, address string, limit int) ([]InboundMessage, error)
+	// HasWrittenTo reports whether any of the workspace's mailboxes holds a
+	// sent message addressed to the address.
+	HasWrittenTo(ctx context.Context, orgID uuid.UUID, address string) (bool, error)
 	DeferWarmupVerification(ctx context.Context, e *models.JobEventNewEmail) error
 	ClaimPendingWarmupVerification(ctx context.Context, limit int) ([]models.JobEventNewEmail, error)
 	ProcessPendingWarmupVerification(ctx context.Context, id uuid.UUID, process func(*models.JobEventNewEmail) error) error

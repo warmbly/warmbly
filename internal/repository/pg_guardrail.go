@@ -76,6 +76,7 @@ func (r *guardrailRepository) ListGuardrailCampaigns(ctx context.Context, limit 
 			FROM campaign_contact_progress ccp
 			WHERE ccp.campaign_id = c.id
 			  AND ccp.sent_at IS NOT NULL
+			  AND ` + progressIsEmailStep("ccp") + `
 			  AND (c.guardrail_window_days = 0
 			       OR ccp.sent_at > NOW() - make_interval(days => c.guardrail_window_days))
 		) f ON true

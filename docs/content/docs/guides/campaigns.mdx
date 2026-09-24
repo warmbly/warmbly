@@ -194,6 +194,8 @@ One lead that cannot be sent right now never holds up the campaign. Each pass wa
 
 A step counts as sent only once the sending worker has handed it to the mailbox provider. If the worker cannot send (the mailbox was still loading, the provider refused the message, a storage hiccup), the step goes back to the queue, the failure appears in **Needs attention** with the reason, and the next pass retries it. After five failed attempts the lead is marked **Failed** and dropped from the campaign, so a mailbox that can never send does not loop forever. A recipient the mail server refuses outright is not retried: it is recorded as a **Bounced** lead straight away and goes through the same bounce handling (suppression, guardrails, webhooks) as a bounce notice. A campaign that finished while a send was still in flight reopens to retry it.
 
+Every sent count counts emails only: the contact's **Sent** total, a lead's sent steps, the campaign's progress and the rates its guardrails judge. Wait, condition and action steps move a lead through the flow but send nothing, so a lead is **Done** once every email step has gone out, however many other steps sit between them.
+
 No contact is emailed the same step twice. Each step is recorded as attempted before the send is handed to a worker, so a crash, a restart, or a database hiccup in the moment between the two cannot make the step look unsent and send it again. The trade-off is a step whose outcome is genuinely unknown, when the worker stops responding mid-send: after 30 minutes with no answer the step is treated as a failed attempt, appears in **Needs attention**, and is retried like any other failure.
 
 ## Link tracking and UTM parameters

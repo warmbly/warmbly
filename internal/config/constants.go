@@ -509,4 +509,9 @@ var InboundClassificationHeaders = []string{
 	"X-Autoreply",
 	"X-Autorespond",
 	"X-Auto-Response-Suppress",
+	// A failure notice with no RFC 3464 status part names its recipient here.
+	"X-Failed-Recipients",
+	// List mail (newsletters, notifications): never a person answering us.
+	"List-Unsubscribe",
+	"List-Id",
 }

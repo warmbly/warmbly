@@ -194,3 +194,59 @@ func (r *uniboxRepository) ListUnprocessedCampaignReplies(ctx context.Context, s
 	}
 	return events, rows.Err()
 }
+
+// InboundMessage is a stored inbound message and when reply processing
+// handled it (its arrival, for mail processing never claimed).
+type InboundMessage struct {
+	models.EmailMessageStoreData
+	ProcessedAt time.Time
+}
+
+func (r *uniboxRepository) ListInboundFrom(ctx context.Context, orgID uuid.UUID, address string, limit int) ([]InboundMessage, error) {
+	const bareFrom = `lower(COALESCE(
+		(regexp_match(COALESCE(u.from_addr[1], ''), '<([^<>]+)>\s*$'))[1],
+		(regexp_match(COALESCE(u.from_addr[1], ''), '\(([^()]+)\)\s*$'))[1],
+		u.from_addr[1]))`
+	rows, err := r.db.Query(ctx, `
+		SELECT u.id, u.email_id, u.message_id, u.thread_id, u.flags, u.from_addr, u.to_addr, u.cc, u.bcc,
+		       u.reply_to, u.in_reply_to, u.subject, u.snippet, u.body_text, u.folder, u.provider_folder,
+		       u.internal_date, u.created_at, COALESCE(u.campaign_reply_processed_at, u.created_at)
+		FROM unibox_emails u
+		JOIN email_accounts ea ON ea.id = u.email_id
+		WHERE ea.organization_id = $1
+		  AND u.folder NOT IN ('sent', 'drafts')
+		  AND u.provider_folder NOT IN ('sent', 'drafts')
+		  AND strpos(lower(COALESCE(u.from_addr[1], '')), lower(btrim($2))) > 0
+		  AND btrim(`+bareFrom+`) = lower(btrim($2))
+		ORDER BY u.created_at DESC
+		LIMIT $3`, orgID, address, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []InboundMessage
+	for rows.Next() {
+		var m InboundMessage
+		if err := rows.Scan(&m.ID, &m.EmailID, &m.MessageID, &m.ThreadID, &m.Flags, &m.FromAddr, &m.ToAddr, &m.CC, &m.BCC,
+			&m.ReplyTo, &m.InReplyTo, &m.Subject, &m.Snippet, &m.BodyText, &m.Folder, &m.ProviderFolder,
+			&m.InternalDate, &m.CreatedAt, &m.ProcessedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (r *uniboxRepository) HasWrittenTo(ctx context.Context, orgID uuid.UUID, address string) (bool, error) {
+	var written bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM unibox_emails u
+			JOIN email_accounts ea ON ea.id = u.email_id
+			WHERE ea.organization_id = $1
+			  AND (u.folder = 'sent' OR u.provider_folder = 'sent')
+			  AND strpos(lower(array_to_string(u.to_addr || u.cc || u.bcc, ' ')), lower(btrim($2))) > 0
+		)`, orgID, address).Scan(&written)
+	return written, err
+}

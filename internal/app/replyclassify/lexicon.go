@@ -97,6 +97,13 @@ func matchesOptOut(lowerText string) bool {
 	return false
 }
 
+// MentionsOptOut reports opt-out wording anywhere in a message, quoted history
+// included. It is not a decision: it finds the message an earlier reading of
+// the whole body acted on.
+func MentionsOptOut(subject, body string) bool {
+	return matchesOptOut(strings.ToLower(subject + "\n" + body))
+}
+
 // IsOptOut reports whether a reply, read without its quoted history, asks to
 // stop being emailed. It is the single check behind automatic suppression:
 // the quoted original carries the sender's own opt-out line, so matching the
@@ -110,13 +117,30 @@ func IsOptOut(subject, body string) bool {
 }
 
 // quoteMarkers begin the quoted history a mail client appends to a reply.
+//
+// The attributions are matched anywhere, not only as whole lines: a client
+// wraps a long "On ... wrote:" across two lines, and bodies stored before line
+// breaks were kept sit on a single line, where an anchored marker never fires
+// and the quoted footer ("unsubscribe") reads as the reply. An attribution
+// carries a date, a time or an address between its words, which keeps prose
+// such as "not on the team, our CTO wrote:" from cutting the reply short.
 var quoteMarkers = []*regexp.Regexp{
-	regexp.MustCompile(`(?im)^\s*on .{0,200}wrote:\s*$`),
-	regexp.MustCompile(`(?im)^\s*-{2,}\s*original message\s*-{2,}\s*$`),
-	regexp.MustCompile(`(?im)^\s*-{2,}\s*forwarded message\s*-{2,}\s*$`),
+	attribution(`on`, `wrote:`),
+	regexp.MustCompile(`(?i)-{2,}\s*(original|forwarded) message\s*-{2,}`),
+	regexp.MustCompile(`(?i)_{10,}`),
 	regexp.MustCompile(`(?im)^\s*from:\s.+$`),
-	regexp.MustCompile(`(?im)^\s*le .{0,200}a écrit\s*:\s*$`),
-	regexp.MustCompile(`(?im)^\s*am .{0,200}schrieb .{0,200}:\s*$`),
+	regexp.MustCompile(`(?is)(^|\s)from:\s.{1,300}?\s(sent|date):\s`),
+	attribution(`le`, `a écrit\s*:`),
+	attribution(`am`, `schrieb\b`),
+	attribution(`el`, `escribió\s*:`),
+	attribution(`op`, `schreef\b`),
+	attribution(`il`, `ha scritto\s*:`),
+}
+
+// attribution matches "<lead> ... <tail>" with a year, a time or an address
+// in between, on one line or wrapped across two.
+func attribution(lead, tail string) *regexp.Regexp {
+	return regexp.MustCompile(`(?is)(^|\s)` + lead + `\s[^\n]{0,250}?(\d{4}|\d{1,2}[:.]\d{2}|@)[^\n]{0,250}?\n?[^\n]{0,250}?\s` + tail)
 }
 
 // StripQuoted drops the quoted history from a reply body: everything from the

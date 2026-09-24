@@ -67,3 +67,30 @@ func (s *JobsService) repairIncomingReplyBatch(ctx context.Context, afterID uuid
 	}
 	return afterID, len(events) < batchSize, nil
 }
+
+// StartReplyOptOutRecheck re-reads, once, every suppression a reply opt-out
+// wrote before the opt-out was limited to people answering our outreach, and
+// lifts the ones a bounce, a newsletter or a quoted footer produced. Each
+// entry records its outcome, so a later pass only reads new ones.
+func (s *JobsService) StartReplyOptOutRecheck(ctx context.Context) {
+	if s.AdvancedService == nil {
+		return
+	}
+	var afterID uuid.UUID
+	var nextPass time.Time
+	jobrun.Loop(ctx, "reply_optout_recheck", time.Minute, true, func(ctx context.Context) error {
+		if time.Now().Before(nextPass) {
+			return nil
+		}
+		batchCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		// Small pages: each entry reads its sender's mail across the workspace.
+		next, done, err := s.AdvancedService.RecheckReplyOptOuts(batchCtx, afterID, 25)
+		afterID = next
+		if err == nil && done {
+			afterID = uuid.Nil
+			nextPass = time.Now().Add(24 * time.Hour)
+		}
+		return err
+	})
+}
