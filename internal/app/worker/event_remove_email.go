@@ -19,17 +19,17 @@ func (w *WorkerService) HandleRemoveEmail(ctx context.Context, e *models.RemoveW
 		return nil
 	}
 
+	// A load still dialing drops the mailbox when it finishes.
+	if v, ok := w.loads.Load(id); ok {
+		v.(*mailboxLoad).removed.Store(true)
+	}
+
 	mail := w.mailManager.Get(id)
 	if mail == nil {
 		// Already gone - idempotent
 		return nil
 	}
-
-	// Cancel any in-flight syncs and remove from manager
-	if mail.Cancel != nil {
-		mail.Cancel()
-	}
-	w.mailManager.Terminate(id)
+	w.dropMailbox(id, mail)
 
 	log.Info().Str("email_id", e.EmailID).Msg("email account removed from worker")
 	return nil

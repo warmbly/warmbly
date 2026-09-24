@@ -202,6 +202,9 @@ func newProviders(t *testing.T) *fakeProviders {
 		writeJSON(w, map[string]any{"access_token": "x", "token_type": "Bearer", "expires_in": 3600,
 			"id_token": fakeIDToken(map[string]any{"tid": f.consentTenant, "wids": f.roles()})})
 	})
+	mux.HandleFunc("/ms/contoso.com/v2.0/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"issuer": "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0"})
+	})
 	mux.HandleFunc("/ms/", func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "11111111-1111-1111-1111-111111111111") {
 			w.WriteHeader(http.StatusBadRequest)

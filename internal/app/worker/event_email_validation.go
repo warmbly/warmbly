@@ -48,6 +48,33 @@ func (w *WorkerService) HandleEmailValidation(parent context.Context, data model
 	return nil
 }
 
+// ListenValidations takes credential checks from this worker's Redis request
+// channel until ctx ends. go-redis resubscribes by itself after a dropped link.
+func (w *WorkerService) ListenValidations(ctx context.Context) {
+	id, err := uuid.Parse(w.ID)
+	if err != nil || w.Cache == nil {
+		return
+	}
+	sub := w.Cache.Subscribe(ctx, models.EmailValidationRequestChannel(id))
+	defer sub.Close()
+	msgs := sub.Channel()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-msgs:
+			if !ok {
+				return
+			}
+			var data models.EventWorkerEmailValidation
+			if err := json.Unmarshal([]byte(msg.Payload), &data); err != nil || data.ProcessID == uuid.Nil {
+				continue
+			}
+			_ = w.HandleEmailValidation(ctx, data)
+		}
+	}
+}
+
 // runEmailValidation unseals the credentials, probes both legs and always
 // answers: a check the worker could not run is reported as such, because a
 // silent worker reads at the backend as a mail server that never replied.
@@ -123,7 +150,7 @@ func (w *WorkerService) runEmailValidation(parent context.Context, data models.E
 func (w *WorkerService) publishValidationVerdict(parent context.Context, processID uuid.UUID, verdict models.EmailValidationVerdict) {
 	replyCtx, replyCancel := context.WithTimeout(context.WithoutCancel(parent), replyBudget)
 	defer replyCancel()
-	channel := "email_validation:" + processID.String()
+	channel := models.EmailValidationReplyChannel(processID)
 	// The verdict goes first and the legacy digit after it: a backend that
 	// reads verdicts returns on the first message, and one that predates them
 	// skips what it cannot parse and takes the digit, so a fleet mid-update

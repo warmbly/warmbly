@@ -91,7 +91,10 @@ func (cons *Consumer) Consume(ctx context.Context, handler func(msg *ckf.Message
 				log.Error().Err(err).Msg("kafka message handler error")
 			}
 
-			cons.c.CommitMessage(msg)
+			// Needs enable.auto.offset.store=false; the background commit sends it.
+			if _, err := cons.c.StoreMessage(msg); err != nil {
+				log.Warn().Err(err).Msg("kafka: storing a handled offset failed")
+			}
 		}
 	}
 }

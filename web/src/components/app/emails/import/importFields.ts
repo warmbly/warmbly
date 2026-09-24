@@ -142,6 +142,10 @@ export const ROW_STATUS: Record<ImportRowStatus, { label: string; cls: string }>
     cancelled: { label: "Cancelled", cls: "text-slate-500 bg-slate-100" },
 };
 
+// A needs_signin row parked while the inbox vendor authorizes Warmbly on its domain; it resumes on its own.
+export const VENDOR_AUTHORIZING = "vendor_authorizing";
+export const AUTHORIZING_STATUS = { label: "Authorizing", cls: "text-sky-700 bg-sky-50" };
+
 // Cause keys from the backend's mailcause catalogue whose fix is a new password.
 const PASSWORD_CAUSE = /(_app_password_required|_bad_credentials)$|^(auth_refused|missing_password)$/;
 // Cause keys whose fix is a provider sign-in rather than any password; retrying them changes nothing.

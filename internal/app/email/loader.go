@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -29,22 +30,26 @@ func (s *emailService) WireEmailHistoryID(repo repository.EmailHistoryIDReposito
 	s.historyID = repo
 }
 
-// reconcileRepublishInterval bounds how often the reconciler re-publishes a
-// given account. The immediate onboarding load and any reassignment still fire
-// right away (they call LoadAccountOntoWorker directly); this only throttles the
-// steady-state safety-net loop so the fleet isn't re-shipping every account's
-// decrypted credentials over Kafka every tick. A restarted worker is re-seeded
-// within this window rather than within one tick.
-const reconcileRepublishInterval = 5 * time.Minute
+// reconcileRepublishInterval is how often the safety net re-ships a mailbox
+// that nothing else changed. A new placement, a move and a dead worker are
+// acted on within one tick; onboarding and a worker's boot reload ship at once.
+// Each mailbox's turn is spread across the interval, because re-shipping the
+// whole fleet in one tick queued hundreds of commands on every worker at once.
+const reconcileRepublishInterval = 30 * time.Minute
+
+// reconcileEntry is what the reconciler remembers about one mailbox.
+type reconcileEntry struct {
+	worker uuid.UUID
+	next   time.Time
+}
 
 // StartWorkerReconciler periodically ensures every active mailbox is assigned to
 // a worker and loaded onto it. Workers hold accounts in memory only, so this is
-// what makes onboarding, worker restarts, and reassignment converge. Each
-// account is republished at most once per reconcileRepublishInterval;
+// what makes onboarding, worker restarts, and reassignment converge.
 // PublishAddEmail is idempotent worker-side, so a republish is always safe.
 func (s *emailService) StartWorkerReconciler(ctx context.Context, interval time.Duration) {
-	lastPublished := map[uuid.UUID]time.Time{}
-	s.reconcileWorkerAccounts(ctx, lastPublished)
+	seen := map[uuid.UUID]reconcileEntry{}
+	s.reconcileWorkerAccounts(ctx, seen)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -53,39 +58,79 @@ func (s *emailService) StartWorkerReconciler(ctx context.Context, interval time.
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.reconcileWorkerAccounts(ctx, lastPublished)
+			s.reconcileWorkerAccounts(ctx, seen)
 		}
 	}
 }
 
-func (s *emailService) reconcileWorkerAccounts(ctx context.Context, lastPublished map[uuid.UUID]time.Time) {
-	ids, err := s.emailRepository.ListActiveWorkerAccounts(ctx)
+// spreadTurn is a random point in the second half of the interval, so turns never bunch up again.
+func spreadTurn(now time.Time) time.Time {
+	half := int64(reconcileRepublishInterval / 2)
+	return now.Add(time.Duration(half + rand.Int63n(half)))
+}
+
+func (s *emailService) reconcileWorkerAccounts(ctx context.Context, seen map[uuid.UUID]reconcileEntry) {
+	rows, err := s.emailRepository.ListActiveWorkerAccounts(ctx)
 	if err != nil {
 		log.Warn().Err(err).Msg("worker reconciler: list active accounts failed")
 		return
 	}
-
-	active := make(map[uuid.UUID]struct{}, len(ids))
+	live := map[uuid.UUID]bool{}
+	isLive := func(id uuid.UUID) bool {
+		v, ok := live[id]
+		if !ok {
+			v = true
+			if s.workerAssignment != nil {
+				if ok, err := s.workerAssignment.IsWorkerLive(ctx, id); err == nil {
+					v = ok
+				}
+			}
+			live[id] = v
+		}
+		return v
+	}
 	now := time.Now()
-	for _, id := range ids {
-		active[id] = struct{}{}
-		if last, ok := lastPublished[id]; ok && now.Sub(last) < reconcileRepublishInterval {
+	for _, r := range reconcileDue(rows, seen, now, isLive) {
+		if err := s.LoadAccountOntoWorker(ctx, r.ID); err != nil {
+			log.Warn().Err(err).Str("email_id", r.ID.String()).Msg("worker reconciler: load account failed")
 			continue
 		}
-		if err := s.LoadAccountOntoWorker(ctx, id); err != nil {
-			log.Warn().Err(err).Str("email_id", id.String()).Msg("worker reconciler: load account failed")
-			continue
+		var worker uuid.UUID
+		if r.WorkerID != nil {
+			worker = *r.WorkerID
 		}
-		lastPublished[id] = now
+		seen[r.ID] = reconcileEntry{worker: worker, next: spreadTurn(now)}
 	}
+}
 
-	// Drop throttle entries for accounts no longer active so the map can't grow
-	// without bound as mailboxes are disconnected.
-	for id := range lastPublished {
+// reconcileDue picks the mailboxes to ship this tick: at once when unplaced,
+// on a dead worker or moved, otherwise when their spread-out turn comes. It
+// also schedules first sightings and forgets mailboxes that are gone.
+func reconcileDue(rows []repository.MailboxAssignment, seen map[uuid.UUID]reconcileEntry, now time.Time, isLive func(uuid.UUID) bool) []repository.MailboxAssignment {
+	var due []repository.MailboxAssignment
+	active := make(map[uuid.UUID]struct{}, len(rows))
+	for _, r := range rows {
+		active[r.ID] = struct{}{}
+		entry, known := seen[r.ID]
+		urgent := r.WorkerID == nil || !isLive(*r.WorkerID) || (known && entry.worker != *r.WorkerID)
+		switch {
+		case urgent:
+		case !known:
+			// First sight since boot: onboarding or the worker's boot reload
+			// already shipped it, so its safety-net turn is spread out.
+			seen[r.ID] = reconcileEntry{worker: *r.WorkerID, next: now.Add(time.Duration(rand.Int63n(int64(reconcileRepublishInterval))))}
+			continue
+		case now.Before(entry.next):
+			continue
+		}
+		due = append(due, r)
+	}
+	for id := range seen {
 		if _, ok := active[id]; !ok {
-			delete(lastPublished, id)
+			delete(seen, id)
 		}
 	}
+	return due
 }
 
 // ReloadWorkerAccounts publishes every active mailbox assigned to workerID

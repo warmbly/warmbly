@@ -25,9 +25,7 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 		Msg("Processing send email event")
 
 	// Get the email account from MailManager
-	w.mailManager.RLock()
-	mail, exists := w.mailManager.Emails[sendEmail.EmailID]
-	w.mailManager.RUnlock()
+	mail, exists := w.loadedMailbox(ctx, sendEmail.EmailID)
 
 	if !exists {
 		// The mailbox is not loaded here: it is still being added (its

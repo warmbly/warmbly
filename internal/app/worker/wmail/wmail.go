@@ -321,3 +321,16 @@ func (w *WMail) ApplySyncPolicy(data *models.AddWorkerEmailSyncData) {
 	}
 	w.gov.SetPolicy(data.Policy)
 }
+
+// Discard releases a WMail that was built but never put to work.
+func (w *WMail) Discard() {
+	if w.Cancel != nil {
+		w.Cancel()
+	}
+	if w.SmtpImapData == nil || w.SmtpImapData.ImapClient == nil {
+		return
+	}
+	if c, ok := w.SmtpImapData.ImapClient.(interface{ Close() error }); ok {
+		_ = c.Close()
+	}
+}

@@ -68,6 +68,8 @@ func oauthMailHost(provider models.InboxProvider, email string) string {
 // and puts it to work like any other connect. The caller has already proved a
 // token can be minted for it.
 func (s *emailService) ConnectDelegated(ctx context.Context, userID string, orgID *uuid.UUID, data models.NewDelegatedAccount) (*models.Email, *errx.Error) {
+	ctx, cancel := detach(ctx, connectBudget)
+	defer cancel()
 	if orgID == nil {
 		return nil, errx.ErrNoOrganization
 	}
@@ -171,6 +173,8 @@ func (s *emailService) stoppedBySignin(ctx context.Context, accountID uuid.UUID)
 // SwitchToAppPassword moves a mailbox off per-mailbox Google sign-in onto
 // Gmail's IMAP and SMTP with an app password, keeping the mailbox and its history.
 func (s *emailService) SwitchToAppPassword(ctx context.Context, orgID *uuid.UUID, accountID uuid.UUID, appPassword string) (*models.Email, *errx.Error) {
+	ctx, cancel := detach(ctx, connectBudget)
+	defer cancel()
 	if orgID == nil {
 		return nil, errx.ErrNoOrganization
 	}
@@ -199,11 +203,7 @@ func (s *emailService) SwitchToAppPassword(ctx context.Context, orgID *uuid.UUID
 	if s.workerAssignment == nil {
 		return nil, errx.ErrEmailOnboardNoWorker
 	}
-	w, werr := s.workerAssignment.SelectValidationWorker(ctx)
-	if werr != nil || w == nil {
-		return nil, errx.ErrEmailOnboardNoWorker
-	}
-	if xerr := s.ValidateCredentials(ctx, *orgID, w.ID.String(), creds); xerr != nil {
+	if xerr := s.checkCredentials(ctx, *orgID, acc.WorkerID, creds); xerr != nil {
 		return nil, xerr
 	}
 	ok, xerr := s.emailRepository.ConvertGoogleToAppPassword(ctx, *orgID, acc.ID, creds, oauthMailHost(models.InboxProviderGoogle, acc.Email))

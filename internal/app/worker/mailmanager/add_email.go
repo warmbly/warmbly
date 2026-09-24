@@ -15,9 +15,6 @@ func (m *MailManager) AddWMail(
 	ctx context.Context,
 	data *models.AddWorkerEmail,
 ) error {
-	m.Lock()
-	defer m.Unlock()
-
 	// Cfg is avro-excluded from the payload, so rebuild it from the worker's
 	// local oauth config for token refresh (no-op for smtp_imap).
 	data.Cfg = m.cfgFor(data.Type)
@@ -47,6 +44,14 @@ func (m *MailManager) AddWMail(
 		return err
 	}
 
+	// Built before the lock: NewWMail dials the server, and holding the lock
+	// through that stalled every send and lookup on this worker.
+	m.Lock()
+	defer m.Unlock()
+	if _, loaded := m.Emails[data.ID]; loaded {
+		newMail.Discard()
+		return nil
+	}
 	m.Emails[data.ID] = newMail
 
 	return nil

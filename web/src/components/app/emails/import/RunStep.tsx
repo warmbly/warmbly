@@ -49,7 +49,15 @@ import buildError from "@/lib/helper/buildError";
 import timeAgo from "@/lib/helper/timeAgo";
 import { mailHostLabel, mailHostOAuthProvider } from "@/lib/mailHost";
 import { cn } from "@/lib/utils";
-import { ROW_STATUS, importSourceName, isPasswordCause, isSigninCause, plural } from "./importFields";
+import {
+    AUTHORIZING_STATUS,
+    ROW_STATUS,
+    VENDOR_AUTHORIZING,
+    importSourceName,
+    isPasswordCause,
+    isSigninCause,
+    plural,
+} from "./importFields";
 import { Banner, HostMark, Linkified, Pill, SectionLabel, StatCard } from "./parts";
 import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import RowFixEditor from "./RowFixEditor";
@@ -214,6 +222,9 @@ export default function RunStep({
         }
     }
 
+    const authorizing = data.causes.find((x) => x.cause === VENDOR_AUTHORIZING)?.count ?? 0;
+    const signinWaiting = Math.max(0, c.needs_signin - authorizing);
+    const failureCauses = data.causes.filter((x) => x.cause !== VENDOR_AUTHORIZING);
     const allowanceHit = data.causes.some((x) => x.cause === "allowance_reached");
     const msSignin = msGrants && c.needs_signin > 0 && data.causes.some((x) => x.cause === "microsoft_signin");
     const reimportHint =
@@ -228,9 +239,11 @@ export default function RunStep({
           ? "Import stopped"
           : c.failed > 0
             ? "Finished with some failures"
-            : c.needs_signin > 0
-              ? `Almost done: ${plural(c.needs_signin, "mailbox needs", "mailboxes need")} sign-in`
-              : "All mailboxes imported";
+            : signinWaiting > 0
+              ? `Almost done: ${plural(signinWaiting, "mailbox needs", "mailboxes need")} sign-in`
+              : authorizing > 0
+                ? `Almost done: ${plural(authorizing, "mailbox is", "mailboxes are")} being authorized`
+                : "All mailboxes imported";
 
     const page = rows.data;
     const pageIndex = cursors.length - 1;
@@ -243,6 +256,8 @@ export default function RunStep({
                         <Loader2Icon className="w-6 h-6 text-sky-600 animate-spin shrink-0" />
                     ) : data.status === "cancelled" ? (
                         <XCircleIcon className="w-6 h-6 text-slate-400 shrink-0" />
+                    ) : authorizing > 0 && c.failed === 0 && signinWaiting === 0 ? (
+                        <Loader2Icon className="w-6 h-6 text-sky-600 animate-spin shrink-0" />
                     ) : c.failed > 0 || c.needs_signin > 0 ? (
                         <AlertTriangleIcon className="w-6 h-6 text-amber-600 shrink-0" />
                     ) : (
@@ -336,12 +351,28 @@ export default function RunStep({
                     </Banner>
                 )}
 
-                {c.needs_signin > 0 && (
+                {authorizing > 0 && (
+                    <div className="rounded-md border border-sky-200 bg-sky-50/60 px-3 py-2.5 flex items-start gap-2.5">
+                        <Loader2Icon className="w-3.5 h-3.5 text-sky-600 mt-0.5 shrink-0 animate-spin" />
+                        <div className="min-w-0 flex-1">
+                            <p className="text-[12.5px] font-medium text-sky-900">
+                                {vendorLabel(data.vendor) || "Your inbox vendor"} is authorizing Warmbly for{" "}
+                                {plural(authorizing, "mailbox", "mailboxes")}
+                            </p>
+                            <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
+                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. This
+                                usually takes a few minutes, and the rows connect on their own. You can close this window.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                {signinWaiting > 0 && (
                     <div className="rounded-md border border-sky-200 bg-sky-50/60 px-3 py-2.5 flex items-start gap-2.5">
                         <LogInIcon className="w-3.5 h-3.5 text-sky-600 mt-0.5 shrink-0" />
                         <div className="min-w-0 flex-1">
                             <p className="text-[12.5px] font-medium text-sky-900">
-                                {plural(c.needs_signin, "mailbox connects", "mailboxes connect")} with Microsoft or Google sign-in
+                                {plural(signinWaiting, "mailbox connects", "mailboxes connect")} with Microsoft or Google sign-in
                             </p>
                             <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
                                 Their host does not take a password over IMAP. Use Sign in on each row: the window opens for that
@@ -384,10 +415,10 @@ export default function RunStep({
                     </div>
                 )}
 
-                {data.causes.length > 0 && (
+                {failureCauses.length > 0 && (
                     <div className="space-y-1.5">
                         <SectionLabel>Why rows failed</SectionLabel>
-                        {data.causes.map((cause) => (
+                        {failureCauses.map((cause) => (
                             <CauseCard
                                 key={cause.cause}
                                 cause={cause}
@@ -462,7 +493,10 @@ export default function RunStep({
                             <div className="px-3 py-6 text-center text-[11.5px] text-slate-400">No rows here.</div>
                         ) : (
                             page.data.map((row) => {
-                                const st = ROW_STATUS[row.status] ?? ROW_STATUS.failed;
+                                const st =
+                                    row.status === "needs_signin" && row.cause === VENDOR_AUTHORIZING
+                                        ? AUTHORIZING_STATUS
+                                        : (ROW_STATUS[row.status] ?? ROW_STATUS.failed);
                                 const provider = signInProvider(row);
                                 const wantsSignIn = row.status === "needs_signin" || (row.status === "failed" && isSigninCause(row.cause));
                                 const canSignIn = wantsSignIn && !!provider;

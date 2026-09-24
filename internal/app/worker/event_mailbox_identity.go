@@ -46,9 +46,7 @@ func (w *WorkerService) HandleMailboxIdentity(ctx context.Context, data models.E
 		return nil
 	}
 
-	w.mailManager.RLock()
-	mail, exists := w.mailManager.Emails[data.EmailID]
-	w.mailManager.RUnlock()
+	mail, exists := w.loadedMailbox(ctx, data.EmailID)
 	if !exists {
 		// Nothing to answer with: this worker is not running the mailbox. The
 		// backend turns the silence-shaped answer into a message that tells

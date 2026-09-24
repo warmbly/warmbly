@@ -123,7 +123,8 @@ A key that reaches several workspaces (or, at ScaledMail, organizations) lists t
 
 One vendor account lists up to 10,000 mailboxes.
 
-- **Credentials are read when each row is worked.** Picking mailboxes stores only which ones you picked. The password, app password and servers of each are fetched from the vendor at the moment its row connects, and the row is then judged exactly like a file row: Google mailboxes need the app password the vendor holds (or [an admin grant](#connect-a-whole-google-workspace-domain) over the domain), and Microsoft mailboxes wait for sign-in unless [a grant](#connect-a-whole-microsoft-365-organization) covers them.
+- **Credentials are read when each row is worked.** Picking mailboxes stores only which ones you picked. The password, app password and servers of each are fetched from the vendor at the moment its row connects, and the row is then judged exactly like a file row: Google mailboxes need the app password the vendor holds (or [an admin grant](#connect-a-whole-google-workspace-domain) over the domain), and Microsoft mailboxes connect through [a grant](#connect-a-whole-microsoft-365-organization) over their domain.
+- **The vendor can authorize Warmbly for you.** When a row would otherwise wait for a sign-in and the vendor can approve apps through the admin mailbox it holds on the domain (InboxKit can), Warmbly asks it to: tenant-wide consent for Warmbly's Microsoft app, or domain-wide delegation for Warmbly's Google client. The rows show as **Authorizing** in the meantime, which usually takes a few minutes, and the import stays open until they connect on their own, with nobody signing in. One request covers every mailbox on the domain. The resulting grant covers only domains this vendor account holds, even when the vendor's Microsoft organization has others. A Google domain needs an admin mailbox listed at the vendor. When the vendor cannot authorize the domain, or has not finished within two hours, its rows fall back to **Sign in** with the reason on the row. Cancelling the import does the same for rows still waiting.
 - **The key is sealed and never shown again.** The API key is sealed with the workspace's own encryption key. The list of connections shows each one's vendor, label, status and mailbox count, never the key. **Update** replaces the key after checking the new one with the vendor.
 - **Passwords the vendor rotates are picked up.** An SMTP and IMAP mailbox that came from a vendor and has stopped with an unresolved connection error is looked at every 15 minutes. When the vendor now holds a different password for it, Warmbly verifies that password against the server and reconnects the mailbox with it. Each mailbox is tried at most once every 6 hours, so a password that still fails is not retried on every pass.
 - **A refused key marks the connection.** A key the vendor accepts but that reaches no workspace is refused with `mailbox_vendor_no_workspace`, since there is nothing to list. When the vendor stops accepting the key, the connection shows as invalid with the vendor's reason, and rows that needed it fail as `vendor_unauthorized` until the key is updated.
@@ -245,9 +246,9 @@ A setting that cannot be applied does not fail the row: the mailbox connects and
 
 ## While it runs
 
-The import runs on the server. Closing the tab does not stop it, and everyone in the workspace who can manage mailboxes sees its progress live, with the mailbox list filling in behind it. **Recent imports** in the dialog reopens one later.
+The import runs on the server. Closing the tab does not stop it, and everyone in the workspace who can manage mailboxes sees its progress live, with the mailbox list filling in behind it. A server restart does not lose rows either: a row being connected at the time is picked up again, and a mailbox it had already created is finished with the import's settings rather than skipped as one that was already there. **Recent imports** in the dialog reopens one later.
 
-Rows connect 8 at a time, and at most 3 at once against any one mail host, since providers throttle bursts of sign-ins from one address. Each credential is verified against the live server before it is saved, exactly like a single connect, so wrong credentials fail here rather than at the first send.
+Rows connect 8 at a time, and at most 3 at once against any one mail host, since providers throttle bursts of sign-ins from one address. Each credential is verified against the live server before it is saved, exactly like a single connect, so wrong credentials fail here rather than at the first send. The check runs on the worker the mailbox is going to be placed on, so the provider sees the sign-in come from the address the mailbox will keep using. When a worker does not answer, the check moves to another one, and a row whose check no worker answered is tried again a few times before it is reported as **No worker available**.
 
 Rows past the workspace's [mailbox allowance](/guides/mailboxes/#mailbox-allowance) fail as **Mailbox limit reached**; the preview says how many will fit. Raise the allowance and retry them.
 
@@ -273,6 +274,7 @@ Failures are grouped by cause, each with the fix. The same keys appear as `cause
 | `creator_removed` | Import owner left the workspace |
 | `vendor_unauthorized` | Vendor refused the API key |
 | `vendor_unreachable` | Vendor did not return the credentials |
+| `vendor_authorizing` | Vendor is authorizing Warmbly (not a failure: the row connects on its own) |
 | `mailbox_grant_not_configured` | Admin connections are not set up here |
 | `google_delegation_unauthorized` | Google refused the domain-wide delegation |
 | `microsoft_consent_missing` | Microsoft 365 admin consent is missing |

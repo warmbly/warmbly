@@ -198,6 +198,7 @@ func main() {
 	// the rolling 1m counters into a WorkerHealth event, publishes via the
 	// event bus so the consumer can write a row into worker_health_samples.
 	go workerService.Heartbeat(ctx)
+	go workerService.ListenValidations(ctx)
 	go workerService.RunHealth(ctx, 30*time.Second)
 
 	// heartbeatDone closes once the farewell beat has been sent. Main waits on

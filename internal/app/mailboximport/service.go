@@ -85,6 +85,21 @@ type VendorSource interface {
 	Link(ctx context.Context, accountID, connectionID uuid.UUID, mailboxID string)
 }
 
+// VendorAuthorization is where getting a vendor domain onto a grant stands.
+// All zero means the vendor cannot do it and the mailbox needs a sign-in.
+type VendorAuthorization struct {
+	GrantID *uuid.UUID
+	Pending bool
+	// Message says why the vendor could not authorize the domain.
+	Message string
+}
+
+// VendorAuthorizer is a VendorSource that can have the vendor authorize this
+// instance's app on a domain, so its mailboxes connect with no sign-in.
+type VendorAuthorizer interface {
+	AuthorizeDomain(ctx context.Context, orgID, userID, connectionID uuid.UUID, email, provider string) VendorAuthorization
+}
+
 // Deps is everything the service talks to. Asker, Warmup, Auditor,
 // Publisher, Delegator and Vendors are optional.
 type Deps struct {

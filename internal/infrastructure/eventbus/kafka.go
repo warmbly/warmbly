@@ -102,8 +102,8 @@ func (b *KafkaBus) Publish(ctx context.Context, topic, key string, payload []byt
 
 // Subscribe creates a fresh consumer in the given group, subscribes to all
 // topics, and blocks reading messages until ctx is cancelled or a fatal error
-// occurs. Handler errors are logged but do not abort the loop; the message is
-// still committed to match the existing kafka.Consumer.Consume behaviour.
+// occurs. Handler errors are logged but do not abort the loop; the message's
+// offset is still stored, to match the existing kafka.Consumer.Consume behaviour.
 func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string, handler Handler) error {
 	if len(topics) == 0 {
 		return errors.New("eventbus kafka: at least one topic required")
@@ -127,6 +127,10 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 	}
 	cc.Set("group.id", group)
 	cc.Set("auto.offset.reset", "earliest")
+	// Offsets are stored once a message is handled and committed in the
+	// background: a synchronous commit per message cost a broker round trip each.
+	cc.Set("enable.auto.commit", true)
+	cc.Set("enable.auto.offset.store", false)
 
 	cons, err := cc.Connect()
 	if err != nil {

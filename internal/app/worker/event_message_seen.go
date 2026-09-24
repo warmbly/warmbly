@@ -20,9 +20,7 @@ func (w *WorkerService) HandleMessageSeen(ctx context.Context, action models.Mes
 		return nil
 	}
 
-	w.mailManager.RLock()
-	mail, exists := w.mailManager.Emails[action.EmailID]
-	w.mailManager.RUnlock()
+	mail, exists := w.loadedMailbox(ctx, action.EmailID)
 	if !exists {
 		// The mailbox is not loaded here (a restart, or it moved worker mid
 		// flight). The read state is already correct in Warmbly; only the
