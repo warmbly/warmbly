@@ -96,6 +96,8 @@ type PoolLinkPlan struct {
 	// MailboxLimit is nil when unlimited.
 	MailboxLimit *int `json:"mailbox_limit"`
 	Enrolled     int  `json:"enrolled"`
+	// Warming is how many of them have warmup on and not paused; connected is not warming.
+	Warming int `json:"warming"`
 	// PriceUSD is the monthly price of the paid tier, for the upgrade card.
 	PriceUSD int `json:"price_usd"`
 	// UpgradeURL is empty when billing is off or the plan has no price.

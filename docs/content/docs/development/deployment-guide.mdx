@@ -833,6 +833,16 @@ make upgrade                 # git pull --ff-only, then make up; migrations appl
 
 Upgrading is safe with data in place: migrations are forward-only and apply on backend boot.
 
+### Updates without lost work
+
+A service being replaced finishes what it started, as long as the platform gives it the time to:
+
+- **Backend.** On a stop signal it takes no new import rows, hands back a row that had not started yet so the next instance starts it at once, and waits up to 45 seconds for the mailbox connects and import rows already under way. A connect someone started keeps going when they refresh or close the page. Anything cut off anyway resumes on the next instance: an import row after its 2-minute lease, a mailbox that was saved but not placed through the worker reconciler.
+- **Workers and consumers.** The command being handled when the stop arrives is finished before the process exits; only reading the next one stops. A credential check on a worker that went away is sent to another worker, and a restarted worker has its mailboxes shipped back on its first heartbeat.
+- **Vendor authorizations and sign-ins** in progress live in the database and Redis, not in a process, so a restart does not affect them.
+
+Give each service at least 60 seconds between the stop signal and a forced kill. The `docker-compose.yml` in the repository and the stack the installer writes set `stop_grace_period: 60s`; nodes that joined with `warmbly join` stop with a 45-second `docker stop` (nodes joined before this release keep a 10-second stop until they join again). On Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=60` on the backend, consumer and any worker service; on Kubernetes, `terminationGracePeriodSeconds: 60`.
+
 ### Backing up
 
 One command writes all three of the things that only restore together:

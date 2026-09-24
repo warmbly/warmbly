@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -262,5 +263,23 @@ func TestClientIsReusedAcrossRows(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("built %d clients for one connection", calls)
+	}
+}
+
+func TestPendingNoteNamesTheStepOrWhoToAsk(t *testing.T) {
+	now := time.Date(2026, 9, 24, 16, 20, 0, 0, time.UTC)
+	stalled := pendingNote("InboxKit", models.GrantProviderMicrosoft, "app", nil, "ws:39235702",
+		mailvendor.AuthorizationStatus{State: mailvendor.AuthorizationPending, Stage: "processing", UpdatedAt: now.Add(-49 * time.Minute)}, now)
+	if !strings.Contains(stalled, "since 15:31 UTC") || !strings.Contains(stalled, "request 39235702") || strings.Contains(stalled, "ws:") {
+		t.Fatalf("stalled note = %q", stalled)
+	}
+	if n := pendingNote("InboxKit", models.GrantProviderMicrosoft, "app", nil, "ws:1",
+		mailvendor.AuthorizationStatus{Stage: "processing", UpdatedAt: now.Add(-2 * time.Minute)}, now); n != "" {
+		t.Fatalf("a request that just moved got a note: %q", n)
+	}
+	google := pendingNote("InboxKit", models.GrantProviderGoogle, "1234567890", []string{"https://www.googleapis.com/auth/gmail.modify"}, "ws:1",
+		mailvendor.AuthorizationStatus{Stage: "pending", UpdatedAt: now}, now)
+	if !strings.Contains(google, "client ID 1234567890") || !strings.Contains(google, "Domain-wide delegation") || !strings.Contains(google, "gmail.modify") {
+		t.Fatalf("google note = %q", google)
 	}
 }

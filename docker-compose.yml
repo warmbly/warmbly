@@ -329,6 +329,8 @@ services:
 
   backend:
     restart: unless-stopped
+    # Time for a connect or send in flight to finish before a stop kills it.
+    stop_grace_period: 60s
     image: ${WARMBLY_IMAGE_PREFIX:-ghcr.io/warmbly/warmbly}/backend:${WARMBLY_TAG:-prod}
     build:
       context: .
@@ -464,6 +466,8 @@ services:
 
   consumer:
     restart: unless-stopped
+    # Time for a connect or send in flight to finish before a stop kills it.
+    stop_grace_period: 60s
     image: ${WARMBLY_IMAGE_PREFIX:-ghcr.io/warmbly/warmbly}/consumer:${WARMBLY_TAG:-prod}
     build:
       context: .
@@ -495,6 +499,8 @@ services:
   # belong to the mail provider, so more workers = more parallelism, not more IPs.
   worker:
     restart: unless-stopped
+    # Time for a connect or send in flight to finish before a stop kills it.
+    stop_grace_period: 60s
     image: ${WARMBLY_IMAGE_PREFIX:-ghcr.io/warmbly/warmbly}/worker:${WARMBLY_TAG:-prod}
     build:
       context: .

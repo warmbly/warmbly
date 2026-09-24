@@ -8,6 +8,7 @@ import (
 	"html"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,11 +36,14 @@ func (s *Service) Kick() {
 	}
 }
 
-// Start runs the import loop until ctx ends, plus the slower upkeep loops.
+// Start runs the import loop until ctx ends, plus the slower upkeep loops. It
+// returns only once the pass in progress has finished or handed back its rows.
 func (s *Service) Start(ctx context.Context) {
+	defer close(s.stopped)
 	go jobrun.Loop(ctx, "mailbox_import_upkeep", time.Minute, true, func(ctx context.Context) error {
 		s.reconcileSignins(ctx)
 		s.resumeVendorAuthorizations(ctx)
+		s.resumeGrantedSignins(ctx)
 		s.classifyHosts(ctx)
 		if err := s.repo.SettleOrphans(ctx); err != nil {
 			return err
@@ -61,7 +65,11 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // pass works claimed rows until none are left, then closes finished imports.
+// Once ctx ends (a deploy or restart) nothing new is claimed, a row still
+// waiting for a slot is handed back at once, and rows already connecting finish
+// on a context the shutdown does not cancel, so a deploy loses no work.
 func (s *Service) pass(ctx context.Context) {
+	work := context.WithoutCancel(ctx)
 	lease := time.Duration(config.MailboxImportLeaseSeconds) * time.Second
 	hostSlots := map[string]chan struct{}{}
 	var hostMu sync.Mutex
@@ -91,7 +99,7 @@ func (s *Service) pass(ctx context.Context) {
 				defer func() {
 					if rec := recover(); rec != nil {
 						errs.CaptureException(fmt.Errorf("mailbox import row panic: %v", rec))
-						s.finish(ctx, w, models.ImportRowFailed, causeInternal, causeInternal, causeInfo(causeInternal).Title, nil, true)
+						s.finish(work, w, models.ImportRowFailed, causeInternal, causeInternal, causeInfo(causeInternal).Title, nil, true)
 					}
 				}()
 				sem <- struct{}{}
@@ -99,17 +107,33 @@ func (s *Service) pass(ctx context.Context) {
 				hs := slot(w.MailHost)
 				hs <- struct{}{}
 				defer func() { <-hs }()
-				// The lease starts now that the row has a slot; another replica may have taken it meanwhile.
-				if ok, err := s.repo.Touch(ctx, w.ImportID, w.Line, w.Attempts, lease); err != nil || !ok {
+				if ctx.Err() != nil {
+					_ = s.repo.Release(work, w.ImportID, w.Line, w.Attempts)
 					return
 				}
-				s.process(ctx, w)
+				// The lease starts now that the row has a slot; another replica may have taken it meanwhile.
+				if ok, err := s.repo.Touch(work, w.ImportID, w.Line, w.Attempts, lease); err != nil || !ok {
+					return
+				}
+				s.process(work, w)
 			}(w)
 		}
 		wg.Wait()
-		s.completeFinished(ctx)
+		s.completeFinished(work)
 	}
-	s.completeFinished(ctx)
+	s.completeFinished(work)
+}
+
+// Drain waits until the runner has stopped (ctx for Start ended and the pass in
+// progress finished its rows, or handed back the ones it never started), or
+// until ctx ends; false when ctx ended first.
+func (s *Service) Drain(ctx context.Context) bool {
+	select {
+	case <-s.stopped:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (s *Service) completeFinished(ctx context.Context) {
@@ -190,6 +214,10 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 	// A vendor row learns its credentials only now, and is judged like a file row.
 	if p.VendorConnectionID != nil && p.SMTP == nil && !p.Signin && p.GrantID == nil {
 		resolved, cause, problem := s.resolveVendorRow(rowCtx, w, p)
+		// The row learns its host only now; recorded so it shows the provider and offers Sign in.
+		if resolved.MailHost != "" && resolved.MailHost != w.MailHost {
+			_ = s.repo.SetRowMailHost(ctx, w.ImportID, w.Line, resolved.MailHost)
+		}
 		if cause == causeMicrosoftSignin || cause == causeGoogleSignin {
 			auth := s.authorizeVendorDomain(rowCtx, w, *p.VendorConnectionID, cause)
 			switch {
@@ -198,8 +226,7 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 				resolved.SMTP, resolved.IMAP = nil, nil
 				cause = ""
 			case auth.Pending:
-				s.finish(ctx, w, models.ImportRowNeedsSignin, cause, causeVendorAuthorizing,
-					"Your inbox vendor is authorizing Warmbly on "+domainOf(w.Email)+". This mailbox connects on its own when it finishes.", nil, true)
+				s.finish(ctx, w, models.ImportRowNeedsSignin, cause, causeVendorAuthorizing, authorizingMessage(auth, cause, domainOf(w.Email)), nil, true)
 				return
 			case auth.Message != "":
 				problem = auth.Message
@@ -214,6 +241,13 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 			return
 		}
 		p = resolved
+	}
+
+	// A row waiting on sign-in connects through a grant that now covers its domain.
+	if p.Signin && existing == nil && p.GrantID == nil {
+		if id := s.grantForHost(rowCtx, orgID, p.MailHost, w.Email); id != nil {
+			p.GrantID, p.Signin, p.AuthMethod = id, false, models.MailAuthDelegated
+		}
 	}
 
 	if p.GrantID != nil {
@@ -391,6 +425,90 @@ func (s *Service) authorizeVendorDomain(ctx context.Context, w repository.Import
 	return az.AuthorizeDomain(ctx, w.OrgID, *w.CreatedBy, connectionID, w.Email, provider)
 }
 
+// grantForHost is the workspace's grant covering an address on a Google or Microsoft host, nil when none.
+func (s *Service) grantForHost(ctx context.Context, orgID uuid.UUID, mailHost, email string) *uuid.UUID {
+	if s.delegator == nil {
+		return nil
+	}
+	provider := ""
+	switch h := mailhost.Host(mailHost); {
+	case h.Google():
+		provider = models.GrantProviderGoogle
+	case h.Microsoft():
+		provider = models.GrantProviderMicrosoft
+	default:
+		return nil
+	}
+	g, err := s.delegator.GrantFor(ctx, orgID, provider, domainOf(email))
+	if err != nil || g == nil {
+		return nil
+	}
+	return &g.ID
+}
+
+// resumeGrantedSignins queues again the rows waiting on sign-in whose domain an
+// administrator's grant now covers, so one admin approval finishes all of them.
+func (s *Service) resumeGrantedSignins(ctx context.Context) {
+	if s.delegator == nil {
+		return
+	}
+	rows, err := s.repo.CoveredSigninRows(ctx, 1000)
+	if err != nil || len(rows) == 0 {
+		return
+	}
+	type key struct {
+		org              uuid.UUID
+		provider, domain string
+	}
+	usable := map[key]bool{}
+	resumed := false
+	for _, w := range rows {
+		provider := models.GrantProviderGoogle
+		if w.Code == causeMicrosoftSignin {
+			provider = models.GrantProviderMicrosoft
+		}
+		k := key{w.OrgID, provider, domainOf(w.Email)}
+		ok, seen := usable[k]
+		if !seen {
+			// GrantFor also answers nil when this instance no longer has the provider configured,
+			// which a stored grant alone cannot tell; resuming then would only park the row again.
+			g, err := s.delegator.GrantFor(ctx, w.OrgID, provider, k.domain)
+			ok = err == nil && g != nil
+			usable[k] = ok
+		}
+		if !ok {
+			continue
+		}
+		if err := s.repo.ResumeParked(ctx, w.ImportID, w.Line, w.Code); err == nil {
+			resumed = true
+		}
+	}
+	if resumed {
+		s.Kick()
+	}
+}
+
+// authorizingMessage tells the person watching a parked row who is doing what, and how long it can take.
+func authorizingMessage(auth VendorAuthorization, signinCause, domain string) string {
+	vendor := auth.Vendor
+	if vendor == "" {
+		vendor = "Your inbox vendor"
+	}
+	msg := vendor + " is authorizing Warmbly on " + domain
+	if auth.Stage != "" {
+		msg += " (" + vendor + " status: " + auth.Stage + ")"
+	}
+	msg += ". It can take up to an hour."
+	if auth.Note != "" {
+		msg += " " + auth.Note
+	}
+	msg += " The mailbox connects on its own. To connect it sooner, use Sign in on this row"
+	if signinCause != causeGoogleSignin {
+		msg += ", or connect every mailbox on the domain at once with an admin sign-in"
+	}
+	return msg + ". If it is not done within 2 hours, the row switches to Sign in."
+}
+
 // resumeVendorAuthorizations requeues rows parked on a vendor authorization once
 // it has an answer, asking the vendor once per domain.
 func (s *Service) resumeVendorAuthorizations(ctx context.Context) {
@@ -405,7 +523,7 @@ func (s *Service) resumeVendorAuthorizations(ctx context.Context) {
 		org, conn      uuid.UUID
 		signin, domain string
 	}
-	settled := map[domainKey]bool{}
+	settled := map[domainKey]VendorAuthorization{}
 	resumed := false
 	var waiting []repository.ImportWorkRow
 	for _, w := range rows {
@@ -418,13 +536,16 @@ func (s *Service) resumeVendorAuthorizations(ctx context.Context) {
 			continue
 		}
 		k := domainKey{w.OrgID, *p.VendorConnectionID, w.Code, domainOf(w.Email)}
-		done, seen := settled[k]
+		auth, seen := settled[k]
 		if !seen {
-			done = !s.authorizeVendorDomain(ctx, w, *p.VendorConnectionID, w.Code).Pending
-			settled[k] = done
+			auth = s.authorizeVendorDomain(ctx, w, *p.VendorConnectionID, w.Code)
+			settled[k] = auth
 		}
-		if !done {
+		if auth.Pending {
 			waiting = append(waiting, w)
+			if changed, err := s.repo.SetParkedMessage(ctx, w.ImportID, w.Line, causeVendorAuthorizing, authorizingMessage(auth, w.Code, domainOf(w.Email))); err == nil && changed {
+				s.publish(ctx, w.OrgID, w.ImportID, models.ImportRunning, false)
+			}
 			continue
 		}
 		if err := s.repo.ResumeParked(ctx, w.ImportID, w.Line, causeVendorAuthorizing); err == nil {
@@ -722,19 +843,43 @@ func (s *Service) classifyHosts(ctx context.Context) {
 	}
 }
 
-// publish tells the workspace an import moved, at most once a second per import unless final.
+// publish tells the workspace an import moved, at most once a second per import unless final;
+// an update inside the second is sent at its end with the latest status, and a final one cancels it.
 func (s *Service) publish(ctx context.Context, orgID, importID uuid.UUID, status string, force bool) {
 	if s.publisher == nil {
 		return
 	}
 	now := time.Now()
-	if !force {
-		if last, ok := s.progress.Load(importID); ok && now.Sub(last.(time.Time)) < time.Second {
+	if force {
+		if v, ok := s.trailing.LoadAndDelete(importID); ok {
+			v.(*deferredPublish).timer.Stop()
+		}
+	} else if last, ok := s.progress.Load(importID); ok {
+		if wait := time.Second - now.Sub(last.(time.Time)); wait > 0 {
+			d := &deferredPublish{}
+			d.status.Store(status)
+			// The timer exists before d is shared, so a final publish can always stop it; an
+			// unregistered d fires into a CompareAndDelete that fails and does nothing.
+			d.timer = time.AfterFunc(wait, func() {
+				if s.trailing.CompareAndDelete(importID, d) {
+					s.publish(context.WithoutCancel(ctx), orgID, importID, d.status.Load().(string), true)
+				}
+			})
+			if v, pending := s.trailing.LoadOrStore(importID, d); pending {
+				d.timer.Stop()
+				v.(*deferredPublish).status.Store(status)
+			}
 			return
 		}
 	}
 	s.progress.Store(importID, now)
 	s.publisher.PublishMailboxImportProgress(ctx, orgID, importID, status)
+}
+
+// deferredPublish is a progress event waiting for the end of its one-second window.
+type deferredPublish struct {
+	status atomic.Value
+	timer  *time.Timer
 }
 
 // fillVendorPasswords reads a vendor row's passwords from the vendor into the

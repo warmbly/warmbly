@@ -239,6 +239,8 @@ export interface MailboxImport {
     total: number;
     counts: MailboxImportCounts;
     causes: ImportCause[];
+    /** Rows an inbox vendor is still authorizing, by provider; older servers do not send it. */
+    authorizing?: Partial<Record<"google" | "microsoft", number>>;
 }
 
 export interface ImportRow {

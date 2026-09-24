@@ -204,6 +204,8 @@ type EmailRepository interface {
 	// CountForOrganization returns the number of email accounts attached to the
 	// given organization. Used by the free-trial inbox cap.
 	CountForOrganization(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
+	// CountWarmingForOrganization counts the workspace's active mailboxes with warmup on and not paused.
+	CountWarmingForOrganization(ctx context.Context, orgID uuid.UUID) (int, *errx.Error)
 
 	// ListWarmupScheduleCandidates returns active mailboxes that should have a
 	// running warmup chain but currently have no pending warmup task: either
@@ -738,6 +740,17 @@ func (r *emailRepository) ListActiveAccountsByWorker(ctx context.Context, worker
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+func (r *emailRepository) CountWarmingForOrganization(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {
+	var count int
+	query := `SELECT COUNT(*) FROM email_accounts
+		WHERE organization_id = $1 AND status = 'active' AND warmup IS NOT NULL AND warmup_paused_at IS NULL`
+	if err := r.DB.QueryRow(ctx, query, orgID).Scan(&count); err != nil {
+		db.CaptureError(err, query, []any{orgID}, "queryrow")
+		return 0, errx.InternalError()
+	}
+	return count, nil
 }
 
 func (r *emailRepository) CountForOrganization(ctx context.Context, orgID uuid.UUID) (int, *errx.Error) {

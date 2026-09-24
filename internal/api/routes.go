@@ -562,6 +562,7 @@ func Run(
 				mailboxImports.PATCH("/:id/rows/:line", h.FixMailboxImportRow)
 				mailboxImports.POST("/:id/retry", h.RetryMailboxImport)
 				mailboxImports.POST("/:id/cancel", h.CancelMailboxImport)
+				mailboxImports.POST("/:id/dismiss", h.DismissMailboxImport)
 				mailboxImports.GET("/:id/failed.csv", h.DownloadMailboxImportFailures)
 			}
 

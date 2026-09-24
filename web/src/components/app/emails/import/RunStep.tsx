@@ -225,14 +225,10 @@ export default function RunStep({
     const authorizing = data.causes.find((x) => x.cause === VENDOR_AUTHORIZING)?.count ?? 0;
     const signinWaiting = Math.max(0, c.needs_signin - authorizing);
     const failureCauses = data.causes.filter((x) => x.cause !== VENDOR_AUTHORIZING);
+    // Microsoft rows the vendor is authorizing can be finished sooner by one admin approval.
+    const msAuthorizing = data.authorizing?.microsoft ?? 0;
     const allowanceHit = data.causes.some((x) => x.cause === "allowance_reached");
     const msSignin = msGrants && c.needs_signin > 0 && data.causes.some((x) => x.cause === "microsoft_signin");
-    const reimportHint =
-        data.source === "vendor"
-            ? `Import them from ${vendorLabel(data.vendor) || "the vendor"} again`
-            : data.source === "paste"
-              ? "Paste the list again"
-              : "Import the file again";
     // Rows parked on the vendor keep the import running; only they left means it is waiting, not importing.
     const onlyAuthorizing = authorizing > 0 && c.queued + c.running === 0;
     const title = running && !onlyAuthorizing
@@ -301,7 +297,7 @@ export default function RunStep({
                         onClick={() => applyFilter({ status: filter.status === "connected" ? "" : "connected", cause: "" })}
                     />
                     <StatCard
-                        label="Needs sign-in"
+                        label={signinWaiting === 0 && authorizing > 0 ? "Authorizing" : "Needs sign-in"}
                         value={c.needs_signin}
                         accent={c.needs_signin > 0 ? "sky" : "slate"}
                         active={filter.status === "needs_signin"}
@@ -362,9 +358,37 @@ export default function RunStep({
                                 {plural(authorizing, "mailbox", "mailboxes")}
                             </p>
                             <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
-                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. This
-                                usually takes a few minutes, and the rows connect on their own. You can close this window.
+                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. This can
+                                take up to an hour; each row shows where its request is. The rows connect on their own, and switch to Sign in
+                                if it is not done within 2 hours. You can close this window.
                             </p>
+                            <div className="mt-2 pt-2 border-t border-sky-200/70">
+                                <p className="text-[11.5px] font-medium text-sky-900">Want it faster?</p>
+                                {msAuthorizing > 0 && msGrants && !granted && (
+                                    <div className="mt-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => void consent.start()}
+                                            disabled={consent.busy}
+                                            className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
+                                        >
+                                            {consent.busy ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <Building2Icon className="w-3 h-3" />}
+                                            {consent.busy
+                                                ? "Waiting for the administrator…"
+                                                : `Connect all ${msAuthorizing.toLocaleString()} Microsoft mailbox${msAuthorizing === 1 ? "" : "es"} at once (admin sign-in)`}
+                                        </button>
+                                        <p className="text-[11px] text-sky-800/90 leading-relaxed mt-1">
+                                            One sign-in with the domain&apos;s Global Administrator account ({vendorLabel(data.vendor) || "your inbox vendor"}{" "}
+                                            gives you its login) does what the vendor is doing: every mailbox on the domain connects within a minute,
+                                            and mailboxes you import there later connect with no sign-in.
+                                        </p>
+                                    </div>
+                                )}
+                                <p className="text-[11px] text-sky-800/90 leading-relaxed mt-1">
+                                    {msAuthorizing > 0 && msGrants && !granted ? "Or connect them one by one:" : "Connect them one by one:"} Sign in on
+                                    a row signs in as that mailbox and connects only it.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -410,8 +434,7 @@ export default function RunStep({
                                 Microsoft 365 organization connected{granted.domains.length > 0 ? `: ${granted.domains.join(", ")}` : ""}
                             </p>
                             <p className="text-[11.5px] text-emerald-800/90 leading-relaxed mt-0.5">
-                                The rows here stay waiting for sign-in and cannot be retried. {reimportHint}, and every row on a
-                                domain the grant covers connects through it, with no sign-in.
+                                Every row here on a domain it covers connects through it within a minute, with no sign-in.
                             </p>
                         </div>
                     </div>
@@ -495,14 +518,13 @@ export default function RunStep({
                             <div className="px-3 py-6 text-center text-[11.5px] text-slate-400">No rows here.</div>
                         ) : (
                             page.data.map((row) => {
-                                const st =
-                                    row.status === "needs_signin" && row.cause === VENDOR_AUTHORIZING
-                                        ? AUTHORIZING_STATUS
-                                        : (ROW_STATUS[row.status] ?? ROW_STATUS.failed);
+                                // A row the vendor is authorizing connects on its own; nothing on it to fix yet.
+                                const vendorAuthorizing = row.status === "needs_signin" && row.cause === VENDOR_AUTHORIZING;
+                                const st = vendorAuthorizing ? AUTHORIZING_STATUS : (ROW_STATUS[row.status] ?? ROW_STATUS.failed);
                                 const provider = signInProvider(row);
                                 const wantsSignIn = row.status === "needs_signin" || (row.status === "failed" && isSigninCause(row.cause));
                                 const canSignIn = wantsSignIn && !!provider;
-                                const canFix = row.status === "failed" || (row.status === "needs_signin" && !provider);
+                                const canFix = row.status === "failed" || (row.status === "needs_signin" && !provider && !vendorAuthorizing);
                                 return (
                                     <div key={row.line} className="border-b border-slate-100 last:border-b-0">
                                         <div className="grid grid-cols-[40px_minmax(0,1fr)_auto] sm:grid-cols-[48px_minmax(0,1fr)_120px_minmax(0,1.2fr)_92px] gap-2 px-3 py-2 items-start">

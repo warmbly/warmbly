@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -2279,12 +2280,27 @@ func main() {
 	log.Println("Shutting down backend...")
 	cancel()
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Long enough for a mailbox connect in flight (two silent workers, then the
+	// save) and for import rows already connecting; the platform must allow it
+	// (RAILWAY_DEPLOYMENT_DRAINING_SECONDS, docker's stop_grace_period).
+	const shutdownGrace = 45 * time.Second
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer shutdownCancel()
 
+	var drained sync.WaitGroup
+	if mailboxImportService != nil {
+		drained.Add(1)
+		go func() {
+			defer drained.Done()
+			if !mailboxImportService.Drain(shutdownCtx) {
+				log.Println("Import rows still connecting at shutdown; they resume on the next instance")
+			}
+		}()
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
 	}
+	drained.Wait()
 
 	log.Println("Backend stopped")
 }

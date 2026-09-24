@@ -155,7 +155,8 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 		if msg.TopicPartition.Topic != nil {
 			topic = *msg.TopicPartition.Topic
 		}
-		hctx, cancel := context.WithTimeout(ctx, handlerTimeout())
+		// A message already being handled finishes after a shutdown signal; only reading the next one stops.
+		hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), handlerTimeout())
 		defer cancel()
 		if err := invokeHandler(hctx, handler, Message{
 			Topic:   topic,

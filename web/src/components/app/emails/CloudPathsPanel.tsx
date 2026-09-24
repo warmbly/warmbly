@@ -33,6 +33,10 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
     // stands in while it is in flight.
     const limit = plan ? plan.mailbox_limit : access.paid ? null : FREE_MAILBOXES;
     const used = plan?.enrolled ?? mailboxCount;
+    // The server counts the whole workspace; the page's list is filtered and paged, so it only stands in for the total.
+    const total = plan?.enrolled ?? mailboxCount;
+    // Only the server knows how many warm across the workspace; without it the banner says nothing about warming.
+    const warming = plan?.warming;
     const free = limit !== null;
     const allowance = limit ?? FREE_MAILBOXES;
     const canBuy = free && access.billing && access.isOwner;
@@ -41,7 +45,7 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
 
     const dialog = <WarmupPlanDialog open={planOpen} onClose={() => setPlanOpen(false)} />;
 
-    if (mailboxCount === 0 && linked === 0) {
+    if (total === 0 && linked === 0) {
         return (
             <div className="py-3">
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-200 overflow-hidden">
@@ -89,12 +93,18 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
                 <CloudIcon className="w-4 h-4 shrink-0 text-sky-600" />
                 <span className="min-w-0 flex-1 leading-snug">
                     <span className="font-medium">
-                        {free
-                            ? `${used} of ${allowance} free mailboxes used.`
-                            : onWarmupPlan
-                              ? `${used} mailboxes warming in the premium pool.`
-                              : `${used} mailboxes warming in the pool.`}
+                        {free ? `${used} of ${allowance} free mailboxes used. ` : ""}
+                        {warming === undefined
+                            ? free
+                                ? ""
+                                : `${total} mailbox${total === 1 ? "" : "es"} connected.`
+                            : warming === 0
+                              ? "No mailbox is warming yet."
+                              : `${warming} of ${total} mailbox${total === 1 ? "" : "es"} warming in the ${onWarmupPlan ? "premium " : ""}pool.`}
                     </span>
+                    {warming === 0 && total > 0 && (
+                        <span className="text-slate-500"> Turn on warmup from a mailbox&apos;s Warmup tab, or select several and start it for all.</span>
+                    )}
                     {(linkedLabel || (free && canBuy)) && (
                         <span className="text-slate-500">
                             {linkedLabel}
