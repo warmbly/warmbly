@@ -280,6 +280,26 @@ func (h *Handler) CancelMailboxImport(c *gin.Context) {
 	c.JSON(http.StatusOK, imp)
 }
 
+// DismissMailboxImport is POST /emails/imports/:id/dismiss: hides the import
+// from the recent list, stopping it first when it is still running. A repeat
+// changes nothing, so it needs no Idempotency-Key.
+func (h *Handler) DismissMailboxImport(c *gin.Context) {
+	orgID, id, ok := importID(c)
+	if !ok {
+		return
+	}
+	userID, err := middleware.GetUserUUID(c)
+	if err != nil {
+		errx.Handle(c, errx.ErrUser)
+		return
+	}
+	if xerr := h.MailboxImportService.Dismiss(c.Request.Context(), orgID, userID, id); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // DownloadMailboxImportFailures is GET /emails/imports/:id/failed.csv.
 func (h *Handler) DownloadMailboxImportFailures(c *gin.Context) {
 	orgID, id, ok := importID(c)

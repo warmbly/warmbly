@@ -23,6 +23,7 @@ type authState struct {
 	RequestID string    `json:"request_id,omitempty"`
 	Failed    string    `json:"failed,omitempty"`
 	Started   time.Time `json:"started,omitempty"`
+	Stage     string    `json:"stage,omitempty"`
 	Completed time.Time `json:"completed,omitempty"`
 }
 
@@ -83,12 +84,12 @@ func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connection
 		case st.Failed != "":
 			return DomainAuthorization{Message: st.Failed}
 		case st.RequestID == "":
-			return DomainAuthorization{Pending: true}
+			return DomainAuthorization{Pending: true, Vendor: label}
 		}
 		status, err := az.AuthorizationStatus(ctx, st.RequestID)
 		switch {
 		case err != nil && transient(err):
-			status = mailvendor.AuthorizationStatus{State: mailvendor.AuthorizationPending}
+			status = mailvendor.AuthorizationStatus{State: mailvendor.AuthorizationPending, Stage: st.Stage}
 		case errors.Is(err, mailvendor.ErrUnauthorized):
 			return DomainAuthorization{Message: s.failed(ctx, c, err).Message}
 		case err != nil:
@@ -99,7 +100,11 @@ func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connection
 		}
 		switch status.State {
 		case mailvendor.AuthorizationPending:
-			return DomainAuthorization{Pending: true}
+			if status.Stage != st.Stage {
+				st.Stage = status.Stage
+				_ = s.cache.SetJSON(ctx, key, st, time.Until(st.Started.Add(authPendingTTL)))
+			}
+			return DomainAuthorization{Pending: true, Vendor: label, Stage: status.Stage}
 		case mailvendor.AuthorizationFailed:
 			msg := label + " could not authorize Warmbly on " + domain + reasonSuffix(status.Reason) + ". Sign in on each mailbox instead, or retry these rows once it is fixed."
 			_ = s.cache.SetJSON(ctx, key, authState{Failed: msg}, authFailedTTL)
@@ -117,14 +122,14 @@ func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connection
 		return DomainAuthorization{}
 	}
 	if !started {
-		return DomainAuthorization{Pending: true}
+		return DomainAuthorization{Pending: true, Vendor: label}
 	}
 	list, err := s.listed(ctx, c, client)
 	if err != nil {
 		_ = s.cache.Del(ctx, key)
 		switch {
 		case transient(err):
-			return DomainAuthorization{Pending: true}
+			return DomainAuthorization{Pending: true, Vendor: label}
 		case errors.Is(err, mailvendor.ErrUnauthorized):
 			return DomainAuthorization{Message: s.failed(ctx, c, err).Message}
 		}
@@ -152,7 +157,7 @@ func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connection
 	if err != nil {
 		if transient(err) {
 			_ = s.cache.Del(ctx, key)
-			return DomainAuthorization{Pending: true}
+			return DomainAuthorization{Pending: true, Vendor: label}
 		}
 		if errors.Is(err, mailvendor.ErrUnauthorized) {
 			_ = s.failed(ctx, c, err)
@@ -163,7 +168,7 @@ func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connection
 		return DomainAuthorization{Message: msg}
 	}
 	_ = s.cache.SetJSON(ctx, key, authState{RequestID: reqID, Started: time.Now()}, authPendingTTL)
-	return DomainAuthorization{Pending: true}
+	return DomainAuthorization{Pending: true, Vendor: label, Stage: "queued"}
 }
 
 // recordGrant turns a completed vendor authorization into the workspace's grant,
@@ -172,7 +177,7 @@ func (s *Service) AuthorizeDomain(ctx context.Context, orgID, userID, connection
 func (s *Service) recordGrant(ctx context.Context, c *models.VendorConnection, client mailvendor.Client, key string, orgID, userID uuid.UUID, provider, domain string, settling bool) DomainAuthorization {
 	list, err := s.listed(ctx, c, client)
 	if err != nil {
-		return DomainAuthorization{Pending: true}
+		return DomainAuthorization{Pending: true, Vendor: labelOf(c.Vendor)}
 	}
 	owned := map[string]bool{}
 	admin := ""
@@ -195,7 +200,7 @@ func (s *Service) recordGrant(ctx context.Context, c *models.VendorConnection, c
 	g, xerr := s.grants.GrantFromVendor(ctx, orgID, userID, provider, domain, admin, domains)
 	if xerr != nil {
 		if settling || xerr.Code == errx.Internal || xerr.ResponseCode() == "mailbox_grant_unavailable" {
-			return DomainAuthorization{Pending: true}
+			return DomainAuthorization{Pending: true, Vendor: labelOf(c.Vendor)}
 		}
 		msg := labelOf(c.Vendor) + " authorized Warmbly on " + domain + ", but the grant did not verify: " + xerr.Message
 		_ = s.cache.SetJSON(ctx, key, authState{Failed: msg}, authFailedTTL)

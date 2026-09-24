@@ -2,6 +2,7 @@ package mailboximport
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,5 +45,18 @@ func TestRetryUnansweredRetriesOnlyASilentFleet(t *testing.T) {
 	unansweredReserve = time.Hour
 	if xerr := retryUnanswered(short, func() *errx.Error { calls++; return errx.ErrEmailOnboardNoWorker }); xerr != errx.ErrEmailOnboardNoWorker || calls != 1 {
 		t.Fatalf("retried past the lease: %d calls", calls)
+	}
+}
+
+func TestAuthorizingMessageSaysWhoWhatAndHowLong(t *testing.T) {
+	ms := authorizingMessage(VendorAuthorization{Pending: true, Vendor: "InboxKit", Stage: "processing"}, causeMicrosoftSignin, "acme.io")
+	for _, want := range []string{"InboxKit is authorizing Warmbly on acme.io", "InboxKit status: processing", "Microsoft usually takes a few minutes", "within 2 hours"} {
+		if !strings.Contains(ms, want) {
+			t.Fatalf("microsoft message %q lacks %q", ms, want)
+		}
+	}
+	g := authorizingMessage(VendorAuthorization{Pending: true}, causeGoogleSignin, "acme.io")
+	if !strings.HasPrefix(g, "Your inbox vendor is authorizing") || !strings.Contains(g, "Google can take up to an hour") || strings.Contains(g, "status:") {
+		t.Fatalf("google message %q", g)
 	}
 }

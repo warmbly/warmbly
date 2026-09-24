@@ -91,7 +91,7 @@ export function useRealtimeEvents() {
       if (event === 'MAILBOX_IMPORT_PROGRESS') {
         const importId = getString('import_id')
         // A finished row can move a mailbox off Google sign-in.
-        invalidate([['emails', 'imports'], ['emails', 'list'], ['sending-domains'], ['mailbox-grants', 'migration']])
+        invalidate([['emails', 'imports'], ['emails', 'list'], ['sending-domains'], ['mailbox-grants', 'migration'], ['pool-link']])
         if (importId) invalidate([['emails', 'imports', importId]])
         return
       }
@@ -418,7 +418,7 @@ export function useRealtimeEvents() {
           // rolled plan), so a teammate retuning a mailbox's sending behaviour
           // refreshes everyone's open drawer instead of only the list row.
           // A mailbox write can move it off Google sign-in, so the migration list follows.
-          email_account: [['emails'], ['analytics', 'accounts'], ['sending-domains'], ['mailbox-grants', 'migration']],
+          email_account: [['emails'], ['analytics', 'accounts'], ['sending-domains'], ['mailbox-grants', 'migration'], ['pool-link']],
           // A mailbox import created, retried or cancelled by a teammate; it may move mailboxes onto a grant.
           mailbox_import: [['emails', 'imports'], ['mailbox-grants', 'migration']],
           // An admin grant added, re-checked or removed, and an inbox vendor

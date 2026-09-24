@@ -92,6 +92,9 @@ type VendorAuthorization struct {
 	Pending bool
 	// Message says why the vendor could not authorize the domain.
 	Message string
+	// Vendor is the vendor's name and Stage its own word for where a pending request is.
+	Vendor string
+	Stage  string
 }
 
 // VendorAuthorizer is a VendorSource that can have the vendor authorize this
@@ -142,6 +145,7 @@ type Service struct {
 
 	kick     chan struct{}
 	progress sync.Map // import id -> time.Time of the last progress event
+	trailing sync.Map // import id -> a progress event deferred to the end of its window
 	causes   sync.Map // scrubbed server reply -> refined cause key
 }
 
@@ -847,6 +851,26 @@ func (s *Service) Cancel(ctx context.Context, orgID, userID, id uuid.UUID) (*mod
 	s.audit(ctx, orgID, userID, models.AuditActionUpdate, id, map[string]string{"status": models.ImportCancelled})
 	s.publish(ctx, orgID, id, models.ImportCancelled, true)
 	return s.Get(ctx, orgID, id)
+}
+
+// Dismiss hides an import from the recent list for the whole workspace; a running one is stopped first.
+func (s *Service) Dismiss(ctx context.Context, orgID, userID, id uuid.UUID) *errx.Error {
+	imp, xerr := s.Get(ctx, orgID, id)
+	if xerr != nil {
+		return xerr
+	}
+	if imp.Status == models.ImportRunning {
+		if err := s.repo.Cancel(ctx, orgID, id); err != nil {
+			return errx.InternalError()
+		}
+		s.audit(ctx, orgID, userID, models.AuditActionUpdate, id, map[string]string{"status": models.ImportCancelled})
+	}
+	if err := s.repo.Dismiss(ctx, orgID, id); err != nil {
+		return errx.InternalError()
+	}
+	s.audit(ctx, orgID, userID, models.AuditActionUpdate, id, map[string]string{"dismissed": "true"})
+	s.publish(ctx, orgID, id, models.ImportCancelled, true)
+	return nil
 }
 
 // FailedCSV is every row that did not connect, as uploaded minus secrets, with the reason and the fix.

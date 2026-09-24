@@ -103,6 +103,12 @@ type MailboxImportRepository interface {
 	PendingSignins(ctx context.Context, limit int) ([]PendingSignin, error)
 	// ParkedRows lists rows waiting on sign-in under one cause that still hold credentials.
 	ParkedRows(ctx context.Context, cause string, limit int) ([]ImportWorkRow, error)
+	// SetRowMailHost records the host a vendor row resolved to.
+	SetRowMailHost(ctx context.Context, id uuid.UUID, line int, mailHost string) error
+	// SetParkedMessage rewrites a parked row's message; false when it already said that.
+	SetParkedMessage(ctx context.Context, id uuid.UUID, line int, cause, message string) (bool, error)
+	// Dismiss hides an import from List.
+	Dismiss(ctx context.Context, orgID, id uuid.UUID) error
 	// TouchParked moves rows still waiting to the back of ParkedRows, so no import holds the others back.
 	TouchParked(ctx context.Context, cause string, rows []ImportWorkRow) error
 	// ResumeParked queues a parked row again and reopens its import when it had completed.
@@ -249,7 +255,7 @@ func (r *mailboxImportRepository) fillCounts(ctx context.Context, imp *models.Ma
 
 func (r *mailboxImportRepository) List(ctx context.Context, orgID uuid.UUID, before *time.Time, beforeID *uuid.UUID, limit int) ([]models.MailboxImport, error) {
 	query := `SELECT ` + importColumns + ` FROM mailbox_imports
-		WHERE organization_id = $1 AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3))
+		WHERE organization_id = $1 AND dismissed_at IS NULL AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3))
 		ORDER BY created_at DESC, id DESC
 		LIMIT $4`
 	rows, err := r.DB.Query(ctx, query, orgID, before, beforeID, limit)
@@ -661,6 +667,36 @@ func (r *mailboxImportRepository) ParkedRows(ctx context.Context, cause string, 
 		out = append(out, w)
 	}
 	return out, rows.Err()
+}
+
+func (r *mailboxImportRepository) SetRowMailHost(ctx context.Context, id uuid.UUID, line int, mailHost string) error {
+	query := `UPDATE mailbox_import_rows SET mail_host = $3 WHERE import_id = $1 AND line = $2`
+	if _, err := r.DB.Exec(ctx, query, id, line, mailHost); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
+	return nil
+}
+
+func (r *mailboxImportRepository) SetParkedMessage(ctx context.Context, id uuid.UUID, line int, cause, message string) (bool, error) {
+	query := `UPDATE mailbox_import_rows SET message = $4, updated_at = now()
+		WHERE import_id = $1 AND line = $2 AND status = 'needs_signin' AND cause = $3 AND message <> $4`
+	tag, err := r.DB.Exec(ctx, query, id, line, cause, message)
+	if err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (r *mailboxImportRepository) Dismiss(ctx context.Context, orgID, id uuid.UUID) error {
+	query := `UPDATE mailbox_imports SET dismissed_at = now(), updated_at = now()
+		WHERE organization_id = $1 AND id = $2 AND dismissed_at IS NULL`
+	if _, err := r.DB.Exec(ctx, query, orgID, id); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
+	return nil
 }
 
 func (r *mailboxImportRepository) TouchParked(ctx context.Context, cause string, rows []ImportWorkRow) error {

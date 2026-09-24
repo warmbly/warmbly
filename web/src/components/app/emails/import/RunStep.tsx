@@ -301,7 +301,7 @@ export default function RunStep({
                         onClick={() => applyFilter({ status: filter.status === "connected" ? "" : "connected", cause: "" })}
                     />
                     <StatCard
-                        label="Needs sign-in"
+                        label={signinWaiting === 0 && authorizing > 0 ? "Authorizing" : "Needs sign-in"}
                         value={c.needs_signin}
                         accent={c.needs_signin > 0 ? "sky" : "slate"}
                         active={filter.status === "needs_signin"}
@@ -362,8 +362,10 @@ export default function RunStep({
                                 {plural(authorizing, "mailbox", "mailboxes")}
                             </p>
                             <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
-                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. This
-                                usually takes a few minutes, and the rows connect on their own. You can close this window.
+                                It approves Warmbly through the admin mailbox it holds on each domain, so nobody has to sign in. Microsoft
+                                usually takes a few minutes and Google can take up to an hour; each row shows where its request is. The rows
+                                connect on their own, and switch to Sign in if it is not done within 2 hours. You can close this window, or
+                                use Sign in on a row now instead of waiting.
                             </p>
                         </div>
                     </div>
@@ -495,14 +497,13 @@ export default function RunStep({
                             <div className="px-3 py-6 text-center text-[11.5px] text-slate-400">No rows here.</div>
                         ) : (
                             page.data.map((row) => {
-                                const st =
-                                    row.status === "needs_signin" && row.cause === VENDOR_AUTHORIZING
-                                        ? AUTHORIZING_STATUS
-                                        : (ROW_STATUS[row.status] ?? ROW_STATUS.failed);
+                                // A row the vendor is authorizing connects on its own; nothing on it to fix yet.
+                                const vendorAuthorizing = row.status === "needs_signin" && row.cause === VENDOR_AUTHORIZING;
+                                const st = vendorAuthorizing ? AUTHORIZING_STATUS : (ROW_STATUS[row.status] ?? ROW_STATUS.failed);
                                 const provider = signInProvider(row);
                                 const wantsSignIn = row.status === "needs_signin" || (row.status === "failed" && isSigninCause(row.cause));
                                 const canSignIn = wantsSignIn && !!provider;
-                                const canFix = row.status === "failed" || (row.status === "needs_signin" && !provider);
+                                const canFix = row.status === "failed" || (row.status === "needs_signin" && !provider && !vendorAuthorizing);
                                 return (
                                     <div key={row.line} className="border-b border-slate-100 last:border-b-0">
                                         <div className="grid grid-cols-[40px_minmax(0,1fr)_auto] sm:grid-cols-[48px_minmax(0,1fr)_120px_minmax(0,1.2fr)_92px] gap-2 px-3 py-2 items-start">

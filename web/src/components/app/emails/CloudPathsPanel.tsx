@@ -17,7 +17,16 @@ import WarmupPlanDialog from "@/components/app/billing/WarmupPlanDialog";
 
 const FREE_MAILBOXES = 10;
 
-export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount: number; onAdd: () => void }) {
+export default function CloudPathsPanel({
+    mailboxCount,
+    warmingCount,
+    onAdd,
+}: {
+    mailboxCount: number;
+    /** Mailboxes with warmup on and not paused; connected is not the same as warming. */
+    warmingCount: number;
+    onAdd: () => void;
+}) {
     const authConfig = useAuthConfig();
     const access = useFeatureAccess();
     const hosted = authConfig.data?.self_hosted === false;
@@ -89,12 +98,14 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
                 <CloudIcon className="w-4 h-4 shrink-0 text-sky-600" />
                 <span className="min-w-0 flex-1 leading-snug">
                     <span className="font-medium">
-                        {free
-                            ? `${used} of ${allowance} free mailboxes used.`
-                            : onWarmupPlan
-                              ? `${used} mailboxes warming in the premium pool.`
-                              : `${used} mailboxes warming in the pool.`}
+                        {free ? `${used} of ${allowance} free mailboxes used. ` : ""}
+                        {warmingCount === 0
+                            ? "No mailbox is warming yet."
+                            : `${warmingCount} of ${mailboxCount} mailbox${mailboxCount === 1 ? "" : "es"} warming in the ${onWarmupPlan ? "premium " : ""}pool.`}
                     </span>
+                    {warmingCount === 0 && mailboxCount > 0 && (
+                        <span className="text-slate-500"> Turn on warmup from a mailbox&apos;s Warmup tab, or select several and start it for all.</span>
+                    )}
                     {(linkedLabel || (free && canBuy)) && (
                         <span className="text-slate-500">
                             {linkedLabel}

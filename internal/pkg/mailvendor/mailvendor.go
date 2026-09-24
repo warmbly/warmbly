@@ -144,6 +144,8 @@ const (
 type AuthorizationStatus struct {
 	State  string
 	Reason string
+	// Stage is the vendor's own word for where the request is, for showing to a person.
+	Stage string
 }
 
 // AppAuthorizer is a vendor that can authorize an app on a domain it administers.

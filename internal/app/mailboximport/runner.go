@@ -190,6 +190,10 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 	// A vendor row learns its credentials only now, and is judged like a file row.
 	if p.VendorConnectionID != nil && p.SMTP == nil && !p.Signin && p.GrantID == nil {
 		resolved, cause, problem := s.resolveVendorRow(rowCtx, w, p)
+		// The row learns its host only now; recorded so it shows the provider and offers Sign in.
+		if resolved.MailHost != "" && resolved.MailHost != w.MailHost {
+			_ = s.repo.SetRowMailHost(ctx, w.ImportID, w.Line, resolved.MailHost)
+		}
 		if cause == causeMicrosoftSignin || cause == causeGoogleSignin {
 			auth := s.authorizeVendorDomain(rowCtx, w, *p.VendorConnectionID, cause)
 			switch {
@@ -198,8 +202,7 @@ func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
 				resolved.SMTP, resolved.IMAP = nil, nil
 				cause = ""
 			case auth.Pending:
-				s.finish(ctx, w, models.ImportRowNeedsSignin, cause, causeVendorAuthorizing,
-					"Your inbox vendor is authorizing Warmbly on "+domainOf(w.Email)+". This mailbox connects on its own when it finishes.", nil, true)
+				s.finish(ctx, w, models.ImportRowNeedsSignin, cause, causeVendorAuthorizing, authorizingMessage(auth, cause, domainOf(w.Email)), nil, true)
 				return
 			case auth.Message != "":
 				problem = auth.Message
@@ -391,6 +394,24 @@ func (s *Service) authorizeVendorDomain(ctx context.Context, w repository.Import
 	return az.AuthorizeDomain(ctx, w.OrgID, *w.CreatedBy, connectionID, w.Email, provider)
 }
 
+// authorizingMessage tells the person watching a parked row who is doing what, and how long it can take.
+func authorizingMessage(auth VendorAuthorization, signinCause, domain string) string {
+	vendor := auth.Vendor
+	if vendor == "" {
+		vendor = "Your inbox vendor"
+	}
+	msg := vendor + " is authorizing Warmbly on " + domain
+	if auth.Stage != "" {
+		msg += " (" + vendor + " status: " + auth.Stage + ")"
+	}
+	if signinCause == causeGoogleSignin {
+		msg += ". Google can take up to an hour to apply it."
+	} else {
+		msg += ". Microsoft usually takes a few minutes."
+	}
+	return msg + " The mailbox connects on its own, and switches to Sign in if this is not done within 2 hours."
+}
+
 // resumeVendorAuthorizations requeues rows parked on a vendor authorization once
 // it has an answer, asking the vendor once per domain.
 func (s *Service) resumeVendorAuthorizations(ctx context.Context) {
@@ -405,7 +426,7 @@ func (s *Service) resumeVendorAuthorizations(ctx context.Context) {
 		org, conn      uuid.UUID
 		signin, domain string
 	}
-	settled := map[domainKey]bool{}
+	settled := map[domainKey]VendorAuthorization{}
 	resumed := false
 	var waiting []repository.ImportWorkRow
 	for _, w := range rows {
@@ -418,13 +439,16 @@ func (s *Service) resumeVendorAuthorizations(ctx context.Context) {
 			continue
 		}
 		k := domainKey{w.OrgID, *p.VendorConnectionID, w.Code, domainOf(w.Email)}
-		done, seen := settled[k]
+		auth, seen := settled[k]
 		if !seen {
-			done = !s.authorizeVendorDomain(ctx, w, *p.VendorConnectionID, w.Code).Pending
-			settled[k] = done
+			auth = s.authorizeVendorDomain(ctx, w, *p.VendorConnectionID, w.Code)
+			settled[k] = auth
 		}
-		if !done {
+		if auth.Pending {
 			waiting = append(waiting, w)
+			if changed, err := s.repo.SetParkedMessage(ctx, w.ImportID, w.Line, causeVendorAuthorizing, authorizingMessage(auth, w.Code, domainOf(w.Email))); err == nil && changed {
+				s.publish(ctx, w.OrgID, w.ImportID, models.ImportRunning, false)
+			}
 			continue
 		}
 		if err := s.repo.ResumeParked(ctx, w.ImportID, w.Line, causeVendorAuthorizing); err == nil {
@@ -722,15 +746,25 @@ func (s *Service) classifyHosts(ctx context.Context) {
 	}
 }
 
-// publish tells the workspace an import moved, at most once a second per import unless final.
+// publish tells the workspace an import moved, at most once a second per import unless final;
+// an update inside the second is sent at its end.
 func (s *Service) publish(ctx context.Context, orgID, importID uuid.UUID, status string, force bool) {
 	if s.publisher == nil {
 		return
 	}
 	now := time.Now()
 	if !force {
-		if last, ok := s.progress.Load(importID); ok && now.Sub(last.(time.Time)) < time.Second {
-			return
+		if last, ok := s.progress.Load(importID); ok {
+			if wait := time.Second - now.Sub(last.(time.Time)); wait > 0 {
+				// Deferred, not dropped: the last update of a burst is the one a watcher needs.
+				if _, pending := s.trailing.LoadOrStore(importID, true); !pending {
+					time.AfterFunc(wait, func() {
+						s.trailing.Delete(importID)
+						s.publish(context.WithoutCancel(ctx), orgID, importID, status, true)
+					})
+				}
+				return
+			}
 		}
 	}
 	s.progress.Store(importID, now)

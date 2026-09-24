@@ -368,7 +368,7 @@ export default function AddressesPage() {
                     <AdvisorSummaryBar surface="emails" noun="mailbox" nounPlural="mailboxes" />
                     <SigninMigrationBanner total={migration.data?.total ?? 0} onOpen={() => openMigration()} />
                     <CloudPoolBanner onConnect={() => setCloudDialog(true)} mailboxCount={stats.total} />
-                    {!emailsData.isLoading && <CloudPathsPanel mailboxCount={stats.total} onAdd={() => p?.setAddEmail(true)} />}
+                    {!emailsData.isLoading && <CloudPathsPanel mailboxCount={stats.total} warmingCount={warmupActive} onAdd={() => p?.setAddEmail(true)} />}
                     {/* Hosted, the pool is thousands of mailboxes: the pool-size advice is self-host only. */}
                     {cloud.selfHosted && (
                         <WarmupCoverageNotice

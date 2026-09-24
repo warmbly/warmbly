@@ -247,7 +247,7 @@ func (c *inboxKit) AuthorizationStatus(ctx context.Context, requestID string) (A
 		}
 		return AuthorizationStatus{State: AuthorizationFailed, Reason: reason}, nil
 	}
-	return AuthorizationStatus{State: AuthorizationPending}, nil
+	return AuthorizationStatus{State: AuthorizationPending, Stage: strings.ToLower(strings.TrimSpace(res.Data.Status))}, nil
 }
 
 const inboxKitDomainPageSize = 100

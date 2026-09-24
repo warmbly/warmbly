@@ -4,6 +4,7 @@ import createMailboxImport from "@/lib/api/client/app/emails/imports/createMailb
 import fixMailboxImportRow from "@/lib/api/client/app/emails/imports/fixMailboxImportRow";
 import retryMailboxImport from "@/lib/api/client/app/emails/imports/retryMailboxImport";
 import cancelMailboxImport from "@/lib/api/client/app/emails/imports/cancelMailboxImport";
+import dismissMailboxImport from "@/lib/api/client/app/emails/imports/dismissMailboxImport";
 import type {
     MailboxImport,
     MailboxImportInput,
@@ -48,6 +49,14 @@ export function useRetryMailboxImport(id: string | null) {
 
 export function useCancelMailboxImport(id: string | null) {
     return useJobMutation<void>(id, (i) => cancelMailboxImport(i));
+}
+
+export function useDismissMailboxImport() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) => dismissMailboxImport(id),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ["emails", "imports"] }),
+    });
 }
 
 export function useFixMailboxImportRow(id: string | null) {
