@@ -8,6 +8,7 @@ import (
 	"html"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -839,28 +840,42 @@ func (s *Service) classifyHosts(ctx context.Context) {
 }
 
 // publish tells the workspace an import moved, at most once a second per import unless final;
-// an update inside the second is sent at its end.
+// an update inside the second is sent at its end with the latest status, and a final one cancels it.
 func (s *Service) publish(ctx context.Context, orgID, importID uuid.UUID, status string, force bool) {
 	if s.publisher == nil {
 		return
 	}
 	now := time.Now()
-	if !force {
-		if last, ok := s.progress.Load(importID); ok {
-			if wait := time.Second - now.Sub(last.(time.Time)); wait > 0 {
-				// Deferred, not dropped: the last update of a burst is the one a watcher needs.
-				if _, pending := s.trailing.LoadOrStore(importID, true); !pending {
-					time.AfterFunc(wait, func() {
-						s.trailing.Delete(importID)
-						s.publish(context.WithoutCancel(ctx), orgID, importID, status, true)
-					})
+	if force {
+		if v, ok := s.trailing.LoadAndDelete(importID); ok {
+			v.(*deferredPublish).timer.Stop()
+		}
+	} else if last, ok := s.progress.Load(importID); ok {
+		if wait := time.Second - now.Sub(last.(time.Time)); wait > 0 {
+			d := &deferredPublish{}
+			d.status.Store(status)
+			// The timer exists before d is shared, so a final publish can always stop it; an
+			// unregistered d fires into a CompareAndDelete that fails and does nothing.
+			d.timer = time.AfterFunc(wait, func() {
+				if s.trailing.CompareAndDelete(importID, d) {
+					s.publish(context.WithoutCancel(ctx), orgID, importID, d.status.Load().(string), true)
 				}
-				return
+			})
+			if v, pending := s.trailing.LoadOrStore(importID, d); pending {
+				d.timer.Stop()
+				v.(*deferredPublish).status.Store(status)
 			}
+			return
 		}
 	}
 	s.progress.Store(importID, now)
 	s.publisher.PublishMailboxImportProgress(ctx, orgID, importID, status)
+}
+
+// deferredPublish is a progress event waiting for the end of its one-second window.
+type deferredPublish struct {
+	status atomic.Value
+	timer  *time.Timer
 }
 
 // fillVendorPasswords reads a vendor row's passwords from the vendor into the

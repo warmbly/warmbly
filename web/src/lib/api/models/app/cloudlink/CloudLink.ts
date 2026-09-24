@@ -28,6 +28,8 @@ export interface PoolLinkPlan {
     /** null when unlimited */
     mailbox_limit: number | null;
     enrolled: number;
+    /** Mailboxes with warmup on and not paused; older servers do not send it. */
+    warming?: number;
     price_usd: number;
     /** The cloud's billing page with the warmup plan checkout open; only on the free tier. */
     upgrade_url?: string;

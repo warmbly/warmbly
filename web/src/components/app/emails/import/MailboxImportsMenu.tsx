@@ -47,21 +47,23 @@ function jobState(job: MailboxImport): JobState {
             tone: "working",
         };
     }
+    // What needs the person comes first; an authorization still running is mentioned alongside.
+    const alsoAuthorizing = authorizing > 0 ? ` ${plural(authorizing, "more is", "more are")} still being authorized.` : "";
+    if (c.failed > 0) {
+        return { text: `${c.failed.toLocaleString()} failed`, hint: `Open to see why and retry.${alsoAuthorizing}`, tone: "error" };
+    }
+    if (signin > 0) {
+        return {
+            text: `${plural(signin, "mailbox needs", "mailboxes need")} sign-in`,
+            hint: `Open to sign in to each one.${alsoAuthorizing}`,
+            tone: "action",
+        };
+    }
     if (authorizing > 0) {
         return {
             text: `Authorizing ${plural(authorizing, "mailbox", "mailboxes")}`,
             hint: `${vendorLabel(job.vendor) || "The inbox vendor"} is approving Warmbly. This can take up to an hour and they connect on their own; open it to connect them sooner.`,
             tone: "waiting",
-        };
-    }
-    if (c.failed > 0) {
-        return { text: `${c.failed.toLocaleString()} failed`, hint: "Open to see why and retry.", tone: "error" };
-    }
-    if (signin > 0) {
-        return {
-            text: `${plural(signin, "mailbox needs", "mailboxes need")} sign-in`,
-            hint: "Open to sign in to each one.",
-            tone: "action",
         };
     }
     const ok = c.connected + c.updated;

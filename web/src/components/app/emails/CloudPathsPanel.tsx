@@ -23,7 +23,7 @@ export default function CloudPathsPanel({
     onAdd,
 }: {
     mailboxCount: number;
-    /** Mailboxes with warmup on and not paused; connected is not the same as warming. */
+    /** Mailboxes with warmup on and not paused, from the page's list; used until the server's count loads. */
     warmingCount: number;
     onAdd: () => void;
 }) {
@@ -42,6 +42,9 @@ export default function CloudPathsPanel({
     // stands in while it is in flight.
     const limit = plan ? plan.mailbox_limit : access.paid ? null : FREE_MAILBOXES;
     const used = plan?.enrolled ?? mailboxCount;
+    // The server counts the whole workspace; the page's list is filtered and paged, so it is only a stand-in.
+    const total = plan?.enrolled ?? mailboxCount;
+    const warming = plan?.warming ?? warmingCount;
     const free = limit !== null;
     const allowance = limit ?? FREE_MAILBOXES;
     const canBuy = free && access.billing && access.isOwner;
@@ -99,11 +102,11 @@ export default function CloudPathsPanel({
                 <span className="min-w-0 flex-1 leading-snug">
                     <span className="font-medium">
                         {free ? `${used} of ${allowance} free mailboxes used. ` : ""}
-                        {warmingCount === 0
+                        {warming === 0
                             ? "No mailbox is warming yet."
-                            : `${warmingCount} of ${mailboxCount} mailbox${mailboxCount === 1 ? "" : "es"} warming in the ${onWarmupPlan ? "premium " : ""}pool.`}
+                            : `${warming} of ${total} mailbox${total === 1 ? "" : "es"} warming in the ${onWarmupPlan ? "premium " : ""}pool.`}
                     </span>
-                    {warmingCount === 0 && mailboxCount > 0 && (
+                    {warming === 0 && total > 0 && (
                         <span className="text-slate-500"> Turn on warmup from a mailbox&apos;s Warmup tab, or select several and start it for all.</span>
                     )}
                     {(linkedLabel || (free && canBuy)) && (

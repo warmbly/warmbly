@@ -310,7 +310,11 @@ func (s *service) Plan(ctx context.Context, orgID uuid.UUID) (models.PoolLinkPla
 	if xerr != nil {
 		return models.PoolLinkPlan{}, xerr
 	}
-	plan := models.PoolLinkPlan{Tier: "free", Enrolled: enrolled, PriceUSD: config.PoolLinkPlanPriceUSD, WarmupEntitled: true}
+	warming, xerr := s.emails.CountWarmingForOrganization(ctx, orgID)
+	if xerr != nil {
+		return models.PoolLinkPlan{}, xerr
+	}
+	plan := models.PoolLinkPlan{Tier: "free", Enrolled: enrolled, Warming: warming, PriceUSD: config.PoolLinkPlanPriceUSD, WarmupEntitled: true}
 	if config.BillingProvider() == "none" {
 		plan.Tier = "paid"
 		return plan, nil

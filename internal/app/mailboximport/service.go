@@ -862,17 +862,19 @@ func (s *Service) Dismiss(ctx context.Context, orgID, userID, id uuid.UUID) *err
 	if xerr != nil {
 		return xerr
 	}
-	if imp.Status == models.ImportRunning {
+	status := imp.Status
+	if status == models.ImportRunning {
 		if err := s.repo.Cancel(ctx, orgID, id); err != nil {
 			return errx.InternalError()
 		}
-		s.audit(ctx, orgID, userID, models.AuditActionUpdate, id, map[string]string{"status": models.ImportCancelled})
+		status = models.ImportCancelled
+		s.audit(ctx, orgID, userID, models.AuditActionUpdate, id, map[string]string{"status": status})
 	}
 	if err := s.repo.Dismiss(ctx, orgID, id); err != nil {
 		return errx.InternalError()
 	}
 	s.audit(ctx, orgID, userID, models.AuditActionUpdate, id, map[string]string{"dismissed": "true"})
-	s.publish(ctx, orgID, id, models.ImportCancelled, true)
+	s.publish(ctx, orgID, id, status, true)
 	return nil
 }
 
