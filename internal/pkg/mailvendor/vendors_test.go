@@ -148,6 +148,48 @@ func TestInboxKitSkipsRefusedWorkspace(t *testing.T) {
 	}
 }
 
+// A key that reaches no workspace can read nothing, so it is refused.
+func TestInboxKitNoWorkspace(t *testing.T) {
+	srv := newRecorder(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, `{"error":false,"workspaces":[]}`)
+	})
+	c := newTestClient(t, VendorInboxKit, fieldsFor(VendorInboxKit), srv.URL, nil)
+	if err := c.Verify(context.Background()); !errors.Is(err, ErrNoWorkspace) {
+		t.Fatalf("Verify = %v, want ErrNoWorkspace", err)
+	}
+	if _, err := c.List(context.Background()); !errors.Is(err, ErrNoWorkspace) {
+		t.Fatalf("List = %v, want ErrNoWorkspace", err)
+	}
+}
+
+// A workspace that fails, rather than misses, is reported instead of a missing mailbox.
+func TestFindCredentialsKeepsFailures(t *testing.T) {
+	wss := []workspace{{ID: "a"}, {ID: "b"}}
+	boom := vendorErr("v", 500, "server error", nil)
+	miss := vendorErr("v", 404, "not found", ErrNotFound)
+	_, err := findCredentials("v", wss, func(w workspace) (Credentials, error) {
+		if w.ID == "a" {
+			return Credentials{}, boom
+		}
+		return Credentials{}, miss
+	})
+	if !errors.Is(err, boom) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want the server error", err)
+	}
+	if _, err := findCredentials("v", wss, func(workspace) (Credentials, error) { return Credentials{}, miss }); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("all misses = %v, want ErrNotFound", err)
+	}
+	cr, err := findCredentials("v", wss, func(w workspace) (Credentials, error) {
+		if w.ID == "a" {
+			return Credentials{}, boom
+		}
+		return Credentials{Password: "p"}, nil
+	})
+	if err != nil || cr.Password != "p" {
+		t.Fatalf("found after a failure = %+v, %v", cr, err)
+	}
+}
+
 func TestInboxKitErrorEnvelope(t *testing.T) {
 	srv := newRecorder(t, func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, `{"error":true,"message":"Workspace not found"}`)

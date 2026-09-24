@@ -60,22 +60,30 @@ func unscoped(id string) (ws, rest string) {
 }
 
 // findCredentials asks each workspace in turn, for an id stored before ids carried their workspace.
+// Only a miss moves on quietly; any other failure is returned when no workspace holds the mailbox.
 func findCredentials(vendor string, wss []workspace, fn func(workspace) (Credentials, error)) (Credentials, error) {
-	refused, read := error(nil), 0
+	var refused, failed error
+	read := 0
 	for _, ws := range wss {
 		cr, err := fn(ws)
 		switch {
 		case err == nil:
 			return cr, nil
-		case errors.Is(err, ErrUnauthorized):
-			refused = err
 		case errors.Is(err, ErrRateLimited), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 			return Credentials{}, err
+		case errors.Is(err, ErrUnauthorized):
+			refused = err
+		case errors.Is(err, ErrNotFound):
+			read++
 		default:
+			failed = err
 			read++
 		}
 	}
-	if read == 0 && refused != nil {
+	switch {
+	case failed != nil:
+		return Credentials{}, failed
+	case read == 0 && refused != nil:
 		return Credentials{}, refused
 	}
 	return Credentials{}, vendorErr(vendor, http.StatusOK, "not found", ErrNotFound)

@@ -237,7 +237,8 @@ func TestRateLimitRetryAllVendors(t *testing.T) {
 				writeJSON(w, http.StatusTooManyRequests, `{"status":429,"message":"Too many requests"}`)
 				return
 			}
-			writeJSON(w, http.StatusOK, `{}`)
+			// One workspace, for the vendors whose Verify needs the key to reach one.
+			writeJSON(w, http.StatusOK, `{"workspaces":[{"uid":"ws-1","name":"Main"}]}`)
 		})
 		s := &sleeps{}
 		c := newTestClient(t, d.ID, fieldsFor(d.ID), srv.URL, s)

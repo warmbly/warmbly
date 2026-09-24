@@ -53,8 +53,16 @@ func (c *inboxKit) listWorkspaces(ctx context.Context) ([]workspace, error) {
 	return out, nil
 }
 
+// all is every workspace the key reaches; a key that reaches none can read nothing.
 func (c *inboxKit) all(ctx context.Context) ([]workspace, error) {
-	return c.workspaces.get(ctx, c.listWorkspaces)
+	wss, err := c.workspaces.get(ctx, c.listWorkspaces)
+	if err != nil {
+		return nil, err
+	}
+	if len(wss) == 0 {
+		return nil, vendorErr(VendorInboxKit, http.StatusOK, "no workspace", ErrNoWorkspace)
+	}
+	return wss, nil
 }
 
 type inboxKitList struct {
@@ -84,9 +92,12 @@ func (c *inboxKit) page(ctx context.Context, ws string, page, limit int) (inboxK
 	return out, nil
 }
 
-// Verify reads the workspace list, which checks the key.
+// Verify reads the workspace list, which checks the key and that it reaches one.
 func (c *inboxKit) Verify(ctx context.Context) error {
-	_, err := c.listWorkspaces(ctx)
+	wss, err := c.listWorkspaces(ctx)
+	if err == nil && len(wss) == 0 {
+		err = vendorErr(VendorInboxKit, http.StatusOK, "no workspace", ErrNoWorkspace)
+	}
 	return err
 }
 
@@ -164,8 +175,9 @@ func (c *inboxKit) show(ctx context.Context, ws, uid, email string) (Credentials
 	if err := c.t.do(ctx, call{method: http.MethodGet, path: "/v1/api/mailboxes/show-credentials", query: q, header: inboxKitHeader(ws)}, &res); err != nil {
 		return Credentials{}, err
 	}
+	// An error envelope here means the workspace does not hold the mailbox.
 	if res.Error {
-		return Credentials{}, vendorErr(VendorInboxKit, http.StatusOK, "vendor reported an error", nil)
+		return Credentials{}, vendorErr(VendorInboxKit, http.StatusOK, "not found", ErrNotFound)
 	}
 	return Credentials{Password: res.Password, AppPassword: res.AppPassword}, nil
 }
