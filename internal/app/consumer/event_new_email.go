@@ -442,7 +442,9 @@ func (s *JobsService) acceptWarmupEmail(ctx context.Context, e *models.JobEventN
 	// stored in the unibox, so this is the only record that the message was a
 	// warmup email.
 	if e.Message != nil {
-		_ = s.WarmupRepo.RecordWarmupReceived(ctx, e.Message.EmailID, e.Message.ID, e.Message.MessageID, token.SenderAccountID)
+		if err := s.WarmupRepo.RecordWarmupReceived(ctx, e.Message.EmailID, e.Message.ID, e.Message.MessageID, token.SenderAccountID); err != nil {
+			log.Warn().Err(err).Str("email_id", e.Message.EmailID.String()).Msg("Failed to record warmup receipt")
+		}
 	}
 
 	recipient := s.recipientAccount(ctx, e.Message.EmailID)
@@ -465,14 +467,14 @@ func (s *JobsService) acceptWarmupEmail(ctx context.Context, e *models.JobEventN
 	s.scheduleWarmupReplyBack(ctx, token, e.Message.EmailID)
 
 	// Perform warmup actions
-	rescued := s.performWarmupActions(ctx, e)
+	rescued := s.performWarmupActions(ctx, e, recipient)
 
-	s.recordWarmupPlacement(ctx, e, token, recipient, landed, rescued)
+	s.recordWarmupPlacement(ctx, e, recipient, landed, rescued)
 }
 
 // recordWarmupPlacement adds the arrival to the sender's daily placement
 // history and tells the sender's workspace it moved.
-func (s *JobsService) recordWarmupPlacement(ctx context.Context, e *models.JobEventNewEmail, token *models.WarmupToken, recipient *models.Email, landed string, rescued bool) {
+func (s *JobsService) recordWarmupPlacement(ctx context.Context, e *models.JobEventNewEmail, recipient *models.Email, landed string, rescued bool) {
 	if s.WarmupPlacementRepo == nil || e.Message == nil {
 		return
 	}
@@ -481,25 +483,24 @@ func (s *JobsService) recordWarmupPlacement(ctx context.Context, e *models.JobEv
 		host = recipient.MailHost
 		group = models.WarmupRecipientGroup(recipient.MailHost, recipient.Provider)
 	}
-	if err := s.WarmupPlacementRepo.RecordPlacement(ctx, e.Message.EmailID, e.Message.ID, group, host, landed, rescued); err != nil {
+	sender, err := s.WarmupPlacementRepo.RecordPlacement(ctx, e.Message.EmailID, e.Message.ID, group, host, landed, rescued)
+	if err != nil {
 		log.Warn().Err(err).Str("email_id", e.Message.EmailID.String()).Msg("Failed to record warmup placement")
 		return
 	}
-	if s.StreamingPublisher == nil || s.EmailRepository == nil {
+	// Nothing counted means nothing changed on anyone's dashboard.
+	if sender == nil || sender.OrgID == nil || s.StreamingPublisher == nil {
 		return
 	}
-	sender, err := s.EmailRepository.GetByID(ctx, token.SenderAccountID)
-	if err != nil || sender == nil || sender.OrganizationID == nil {
-		return
-	}
-	s.StreamingPublisher.PublishWarmupPlacement(ctx, sender.OrganizationID.String(), sender.UserID, sender.ID.String(), sender.Email, landed)
+	s.StreamingPublisher.PublishWarmupPlacement(ctx, sender.OrgID.String(), sender.UserID, sender.ID.String(), sender.Email, landed)
 }
 
 // performWarmupActions publishes warmup action events to the worker. Action
 // selection is probabilistic and per-mailbox (see engagementPlan) so the pool
 // doesn't behave in detectable lockstep, with a randomised recipient-side
-// dwell before the actions run. Reports whether a spam rescue was handed to the worker.
-func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEventNewEmail) (rescueQueued bool) {
+// dwell before the actions run. recipient is the receiving mailbox when the
+// caller has it. Reports whether a spam rescue was handed to the worker.
+func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEventNewEmail, recipient *models.Email) (rescueQueued bool) {
 	if s.Publisher == nil {
 		return false
 	}
@@ -523,12 +524,13 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 	// waking-hours engagement guard, and where its owner wants warmup filed).
 	var workerID *uuid.UUID
 	var recipientTZ string
-	if s.EmailRepository != nil {
-		if account, xerr := s.EmailRepository.GetByID(ctx, e.Message.EmailID); xerr == nil && account != nil {
-			workerID = account.WorkerID
-			recipientTZ = account.ClockTimezone()
-			base.Placement, base.TargetFolder = account.WarmupFiling()
-		}
+	if recipient == nil {
+		recipient = s.recipientAccount(ctx, e.Message.EmailID)
+	}
+	if recipient != nil {
+		workerID = recipient.WorkerID
+		recipientTZ = recipient.ClockTimezone()
+		base.Placement, base.TargetFolder = recipient.WarmupFiling()
 	}
 	// A mailbox whose owner wants warmup left in the inbox is not foldered.
 	// Spam-rescue still runs: that is the reputation signal warmup exists for,
@@ -676,15 +678,9 @@ func recipientProviderDomain(acc *models.Email) (string, string) {
 	return acc.Provider, domain
 }
 
-// containsSpamFlag checks if any flag is a spam flag
+// containsSpamFlag checks if any flag is a spam flag.
 func containsSpamFlag(flags []string) bool {
-	spamFlags := []string{"\\Junk", "\\Spam", "SPAM", "Junk"}
-	for _, f := range flags {
-		if slices.Contains(spamFlags, f) {
-			return true
-		}
-	}
-	return false
+	return models.HasSpamFlag(flags)
 }
 
 // tagInboundMessage runs the optional automatic tagger for one arrival.

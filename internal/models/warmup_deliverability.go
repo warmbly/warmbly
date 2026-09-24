@@ -73,14 +73,8 @@ func WarmupRecipientGroup(mailHost, provider string) string {
 // folder and provider flags. The folder matters on IMAP, where a server can
 // file mail into Junk without setting a junk keyword.
 func ClassifyWarmupLanding(folder string, flags []string) string {
-	if folder == FolderSpam {
+	if folder == FolderSpam || HasSpamFlag(flags) {
 		return WarmupLandedSpam
-	}
-	for _, f := range flags {
-		switch f {
-		case "\\Junk", "\\Spam", "SPAM", "Junk":
-			return WarmupLandedSpam
-		}
 	}
 	for _, f := range flags {
 		switch strings.ToUpper(f) {
@@ -119,7 +113,8 @@ type WarmupPlacementCounts struct {
 	Inbox     int `json:"inbox"`
 	Tabs      int `json:"tabs"`
 	Spam      int `json:"spam"`
-	// Rescued is spam placements the recipient moved back to the inbox.
+	// Rescued is spam placements the recipient's mailbox was told to move
+	// back to the inbox; the move itself is not confirmed back.
 	Rescued int `json:"rescued"`
 	// Unconfirmed is mail sent more than WarmupUnconfirmedAfterHours ago that
 	// no recipient has reported seeing.

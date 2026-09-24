@@ -282,14 +282,30 @@ func NormalizeFolder(folder string, flags []string) string {
 		}
 	}
 	for _, f := range flags {
-		switch f {
-		case "SPAM", "\\Junk", "\\Spam", "Junk":
+		if IsSpamFlag(f) {
 			return FolderSpam
-		case "\\Draft":
+		}
+		if f == "\\Draft" {
 			return FolderDrafts
 		}
 	}
 	return FolderInbox
+}
+
+// IsSpamFlag reports whether a provider flag or label marks a message as spam:
+// Gmail's SPAM label, the Junk flag Graph and IMAP set, and the IMAP keywords.
+// The one list every spam check reads, so they cannot disagree.
+func IsSpamFlag(f string) bool {
+	switch f {
+	case "SPAM", "\\Junk", "\\Spam", "Junk":
+		return true
+	}
+	return false
+}
+
+// HasSpamFlag reports whether any flag marks the message as spam.
+func HasSpamFlag(flags []string) bool {
+	return slices.ContainsFunc(flags, IsSpamFlag)
 }
 
 func outboundOnlyFolder(folder string) bool {

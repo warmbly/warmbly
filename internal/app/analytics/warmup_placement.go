@@ -72,21 +72,10 @@ func (s *analyticsService) GetWarmupPlacement(ctx context.Context, orgID uuid.UU
 		return nil, errx.New(errx.BadRequest, fmt.Sprintf("a placement report covers at most %d days", MaxWarmupPlacementDays))
 	}
 
-	// Every mailbox the report may name, which also proves emailID is the org's.
-	names := make(map[uuid.UUID]string)
+	// A single-mailbox report is refused for a mailbox outside the workspace.
 	if emailID != nil {
-		email, xerr := s.emailRepo.Get(ctx, orgID.String(), emailID.String())
-		if xerr != nil {
+		if _, xerr := s.emailRepo.Get(ctx, orgID.String(), emailID.String()); xerr != nil {
 			return nil, xerr
-		}
-		names[email.ID] = email.Email
-	} else {
-		boxes, xerr := s.emailRepo.Search(ctx, orgID.String(), "", nil, nil, 1000, nil)
-		if xerr != nil {
-			return nil, xerr
-		}
-		for _, b := range boxes.Data {
-			names[b.ID] = b.Email
 		}
 	}
 
@@ -152,6 +141,17 @@ func (s *analyticsService) GetWarmupPlacement(ctx context.Context, orgID uuid.UU
 	report.Rate = models.NewWarmupPlacementRate(total[0], total[1], total[2])
 
 	if emailID == nil {
+		// Names come from the org-scoped rows themselves, so no mailbox with
+		// activity is left out of the ranking.
+		names := make(map[uuid.UUID]string)
+		for _, r := range dayRows {
+			names[r.SenderID] = r.Email
+		}
+		for _, rows := range [][]repository.WarmupSenderDayCount{sentRows, unconfirmedRows} {
+			for _, r := range rows {
+				names[r.SenderID] = r.Email
+			}
+		}
 		report.Mailboxes = b.mailboxes(names, rates)
 	}
 	return report, nil

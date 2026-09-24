@@ -240,7 +240,7 @@ Results are scoped to the selected workspace, so every member with access sees t
 
 Returns where warmup mail landed in partners' mailboxes over a date range: the primary inbox, a Gmail category tab (Promotions, Updates, Social or Forums), or spam. Counts are per UTC day, per recipient provider, and, on the workspace report, per mailbox. Requires an organization context. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
 
-Every figure is measured, not estimated: a delivery is counted when the recipient's own sync finds the warmup email and records the folder it arrived in. `rescued` counts spam placements the recipient then moved back to the inbox. `unconfirmed` counts completed sends more than 24 hours old that no recipient has reported seeing, bucketed on the day they were sent; a provider filter cannot split it, so it is only reported unfiltered.
+Every figure is measured, not estimated: a delivery is counted when the recipient's own sync finds the warmup email and records the folder it arrived in. `rescued` counts spam placements the recipient's mailbox was told to move back to the inbox; the move itself is not confirmed back, so it is the rescues requested, not a verified count. `unconfirmed` counts completed sends more than 24 hours old that no recipient has reported seeing, bucketed on the day they were sent; a provider filter cannot split it, so it is only reported unfiltered.
 
 `rate` is the headline deliverability figure the dashboard shows next to each mailbox: `inbox_rate` is inbox plus tabs over everything delivered in the trailing 7 UTC days, and stays `null` until `min_sample` (`20`) deliveries are in. `band` is `good` at `90` or above, `fair` from `80`, `poor` below `80`, `collecting` below the sample floor and `none` with no deliveries. Each day's `rolling_inbox_rate` is the same trailing figure ending on that day. Rates are percentages with two decimals.
 
@@ -295,7 +295,7 @@ A range longer than 366 days, `from` after `to`, a malformed date or an invalid 
 
 The workspace report (no `email_id`) omits `email_account_id` and adds `mailboxes`, one row per mailbox with activity in the range, ordered worst `rate.inbox_rate` first, then mailboxes still collecting. Each row carries the window counts, its own `rate`, and `daily_inbox_rate`, one entry per day of the range (`null` on a day with no deliveries).
 
-Placement history is kept for the life of the mailbox, like warmup volume history, and moves with a workspace export. Deliveries before this report existed are counted from the receipts still on file, with category tabs and rescues reported as `0` for that period.
+Placement history is kept for the life of the mailbox, like warmup volume history, and moves with a workspace export. Deliveries recorded before this report existed, and any arrival the live count missed, are counted by a background pass from the receipts still on file within minutes; those read as inbox or spam only, with category tabs and rescues as `0`.
 
 ## Get campaign analytics
 

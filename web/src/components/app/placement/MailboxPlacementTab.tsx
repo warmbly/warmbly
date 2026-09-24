@@ -141,7 +141,7 @@ export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailbox
                         <Cell label="Inbox rate" value={fmtPct(t.inboxRate)} sub={`${fmtNum(t.inbox)} primary inbox`} tone={BAND[bandForRate(t.inboxRate)].text} />
                         <Cell label="Spam" value={fmtNum(t.spam)} sub={t.spamRate != null ? `${fmtPct(t.spamRate)} of delivered` : "none delivered"} tone={t.spam > 0 ? "text-rose-600" : undefined} />
                         <Cell label="Other tabs" value={fmtNum(t.tabs)} sub="Promotions, Updates…" />
-                        <Cell label="Rescued" value={fmtNum(t.rescued)} sub={t.spam > 0 ? `moved out of spam, of ${fmtNum(t.spam)}` : "nothing to rescue"} />
+                        <Cell label="Rescued" value={fmtNum(t.rescued)} sub={t.spam > 0 ? `rescue sent, of ${fmtNum(t.spam)} in spam` : "nothing to rescue"} />
                         <Cell
                             label="Unconfirmed"
                             value={filtered ? "—" : fmtNum(t.unconfirmed)}
@@ -178,7 +178,7 @@ export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailbox
                 <ul className="mt-2 space-y-1.5 text-[11.5px] text-slate-500 leading-relaxed">
                     <li>Each warmup email is found in the partner's mailbox and recorded where it arrived: the inbox, a Gmail category tab, or spam. Nothing is estimated.</li>
                     <li>The inbox rate counts category tabs as inbox, over a trailing {rate.window_days} days, and appears once {rate.min_sample} deliveries are in. Below 90% is worth watching; below 80% means the mailbox needs attention.</li>
-                    <li>Rescued mail was moved out of spam by the partner, which is the signal providers learn from. Unconfirmed mail has not been seen in the partner's mailbox a day after it was sent.</li>
+                    <li>Rescued counts spam placements the partner's mailbox was told to move back to the inbox, which is the signal providers learn from; the move is requested, not confirmed back. Unconfirmed mail has not been seen in the partner's mailbox a day after it was sent.</li>
                     <li>Days are UTC. This covers warmup mail only, not campaign sends.</li>
                 </ul>
             </div>

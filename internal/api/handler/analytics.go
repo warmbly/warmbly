@@ -79,6 +79,15 @@ func (h *Handler) GetWarmupPlacement(c *gin.Context) {
 
 	now := time.Now().UTC()
 	to := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if raw := c.Query("to"); raw != "" {
+		d, err := time.Parse("2006-01-02", raw)
+		if err != nil {
+			errx.Handle(c, errx.New(errx.BadRequest, "Invalid to date format (expected YYYY-MM-DD)"))
+			return
+		}
+		to = d
+	}
+	// The default window is the 30 days ending on to, whichever to is.
 	from := to.AddDate(0, 0, -29)
 	if raw := c.Query("from"); raw != "" {
 		d, err := time.Parse("2006-01-02", raw)
@@ -87,14 +96,6 @@ func (h *Handler) GetWarmupPlacement(c *gin.Context) {
 			return
 		}
 		from = d
-	}
-	if raw := c.Query("to"); raw != "" {
-		d, err := time.Parse("2006-01-02", raw)
-		if err != nil {
-			errx.Handle(c, errx.New(errx.BadRequest, "Invalid to date format (expected YYYY-MM-DD)"))
-			return
-		}
-		to = d
 	}
 
 	report, xerr := h.AnalyticsService.GetWarmupPlacement(c.Request.Context(), *orgID, emailAccountID, from, to)

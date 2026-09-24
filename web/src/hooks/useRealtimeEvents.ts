@@ -31,18 +31,28 @@ export function useRealtimeEvents() {
     [queryClient],
   )
 
-  // Warmup deliveries arrive in bursts across a whole pool, so their refreshes
-  // are coalesced into one trailing refetch.
+  // Warmup deliveries arrive all day across a whole pool, so their refreshes
+  // are coalesced: placement views every 15s, and the account statuses (a
+  // per-mailbox fan-out whose 7-day rate barely moves) every 5 minutes.
   const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const accountsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refreshPlacement = useCallback(() => {
-    if (placementTimer.current) return
-    placementTimer.current = setTimeout(() => {
-      placementTimer.current = null
-      invalidate([['analytics', 'warmup', 'placement'], ['analytics', 'accounts']])
-    }, 15_000)
+    if (!placementTimer.current) {
+      placementTimer.current = setTimeout(() => {
+        placementTimer.current = null
+        invalidate([['analytics', 'warmup', 'placement']])
+      }, 15_000)
+    }
+    if (!accountsTimer.current) {
+      accountsTimer.current = setTimeout(() => {
+        accountsTimer.current = null
+        invalidate([['analytics', 'accounts']])
+      }, 300_000)
+    }
   }, [invalidate])
   useEffect(() => () => {
     if (placementTimer.current) clearTimeout(placementTimer.current)
+    if (accountsTimer.current) clearTimeout(accountsTimer.current)
   }, [])
 
   const handleRealtimeEvent = useCallback(

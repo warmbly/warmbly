@@ -37637,7 +37637,7 @@
           },
           "rescued": {
             "type": "integer",
-            "description": "Spam placements the recipient moved back to the inbox."
+            "description": "Spam placements the recipient's mailbox was told to move back to the inbox (the move itself is not confirmed back)."
           },
           "unconfirmed": {
             "type": "integer",

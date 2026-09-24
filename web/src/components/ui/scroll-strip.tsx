@@ -51,9 +51,16 @@ export default function ScrollStrip({
         };
     }, [measure]);
 
+    // Scrolls the strip itself only; scrollIntoView would also scroll the page.
     useEffect(() => {
-        const active = ref.current?.querySelector<HTMLElement>('[data-active="true"]');
-        active?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        const el = ref.current;
+        const active = el?.querySelector<HTMLElement>('[data-active="true"]');
+        if (!el || !active) return;
+        const strip = el.getBoundingClientRect();
+        const item = active.getBoundingClientRect();
+        const pad = 36;
+        if (item.left < strip.left + pad) el.scrollBy({ left: item.left - strip.left - pad, behavior: "smooth" });
+        else if (item.right > strip.right - pad) el.scrollBy({ left: item.right - strip.right + pad, behavior: "smooth" });
     }, [activeKey]);
 
     const nudge = (dir: -1 | 1) => {
