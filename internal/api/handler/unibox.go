@@ -502,6 +502,11 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 
 	var forward *models.ForwardedMessage
 	if req.ForwardMessageID != "" {
+		// Forwarding discloses the message, so it needs read access as well as write.
+		if xerr := h.hasAccess(c, models.PermAccessUnibox, models.APIPermReadUnibox); xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
 		forwardID, err := uuid.Parse(req.ForwardMessageID)
 		if err != nil {
 			errx.Handle(c, errx.New(errx.BadRequest, "forward_message_id must be a message id"))
@@ -512,7 +517,7 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 			errx.Handle(c, xerr)
 			return
 		}
-		// Forwarding discloses the message, so its mailbox is checked like the sender's.
+		// Its mailbox is checked like the sender's.
 		if xerr := mailboxAllowed(c, src.EmailID); xerr != nil {
 			errx.Handle(c, xerr)
 			return

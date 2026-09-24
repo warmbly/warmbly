@@ -1109,7 +1109,8 @@ func (r *taskRepository) ListScheduledForUser(ctx context.Context, userID uuid.U
 			et.cc,
 			et.bcc,
 			et.subject,
-			et.body_plain,
+			-- A forward with no note previews the message it forwards.
+			CASE WHEN btrim(et.body_plain) = '' THEN et.forwarded_plain ELSE et.body_plain END,
 			et.body_html,
 			et.thread_id
 		FROM tasks t
@@ -1179,7 +1180,8 @@ func (r *taskRepository) ListScheduledForUserByThread(ctx context.Context, userI
 			et.cc,
 			et.bcc,
 			et.subject,
-			et.body_plain,
+			-- A forward with no note previews the message it forwards.
+			CASE WHEN btrim(et.body_plain) = '' THEN et.forwarded_plain ELSE et.body_plain END,
 			et.body_html,
 			et.thread_id
 		FROM tasks t

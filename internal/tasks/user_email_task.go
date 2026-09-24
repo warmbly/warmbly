@@ -220,8 +220,10 @@ func userEmailBodies(emailTask *repository.EmailTask, account *models.Email) (bo
 		if bodyHTML != "" || forwarding {
 			bodyHTML = AddSignature(bodyHTML, account.SignatureHTML, true)
 		}
-		if bodyPlain != "" || forwarding {
-			bodyPlain = strings.TrimLeft(AddSignature(bodyPlain, account.SignaturePlain, false), "\n")
+		if bodyPlain != "" {
+			bodyPlain = AddSignature(bodyPlain, account.SignaturePlain, false)
+		} else if forwarding {
+			bodyPlain = strings.TrimLeft(AddSignature("", account.SignaturePlain, false), "\n")
 		}
 	}
 	bodyHTML, bodyPlain = AppendForwarded(bodyHTML, bodyPlain, emailTask.ForwardedHTML, emailTask.ForwardedPlain)

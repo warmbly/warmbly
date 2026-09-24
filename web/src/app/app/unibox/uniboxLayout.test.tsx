@@ -19,6 +19,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vite
 import { screen, act, fireEvent } from "@testing-library/react";
 import { useAppStore } from "@/stores";
 import { replyDraftKey } from "@/lib/unibox/replyDraft";
+import { useOutboxStore } from "@/hooks/useOutboxStore";
 import {
     UNIBOX_LIST_DEFAULT_WIDTH,
     UNIBOX_LIST_MAX_WIDTH,
@@ -137,6 +138,19 @@ describe("unibox desktop layout (#473)", SUITE, () => {
         await act(async () => fireEvent.click(screen.getByLabelText("Close composer, keeping the draft")));
         await settle();
         expect(screen.queryByPlaceholderText(/Write your reply/)).toBeNull();
+    });
+
+    it("does not forward a different message when the forwarded one is gone", async () => {
+        await mount("/app/unibox/all");
+        await settle();
+        act(() => useOutboxStore.getState().setReplyRestore({
+            threadId: "thread-4", messageId: "no-longer-here", mode: "forward",
+            to: ["x@example.com"], cc: [], bcc: [], subject: "Fwd: Subject 4", body: "FYI",
+        }));
+        await openThread("Subject 4");
+        expect(screen.queryByPlaceholderText(/Add a note/)).toBeNull();
+        // The thread stays answerable: the Reply/Forward bar is back.
+        expect(screen.getByRole("button", { name: "Forward" })).toBeInTheDocument();
     });
 
     describe("collapsible left navigation", () => {

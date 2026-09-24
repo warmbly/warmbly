@@ -121,6 +121,11 @@ func TestForwardNoteFillsTheMissingPart(t *testing.T) {
 	if h != "<div>Take a <b>look</b></div>" || p != "Take a look" {
 		t.Fatalf("html-only note: html %q plain %q", h, p)
 	}
+	// The composer's empty placeholder is no note.
+	h, _ = forwardNote("<div></div>", "Please review")
+	if !strings.Contains(h, "Please review") {
+		t.Fatalf("placeholder html kept instead of the note: %q", h)
+	}
 	h, p = forwardNote("", "")
 	if h != "" || p != "" {
 		t.Fatalf("an empty note must stay empty: html %q plain %q", h, p)
@@ -184,5 +189,42 @@ func TestSendEmailStoresTheForwardedMessage(t *testing.T) {
 	}
 	if et := tasks.stored; et.ForwardedHTML != "" || et.ForwardedPlain != "" || et.BodyHTML != "" || et.BodyPlain != "Thanks" {
 		t.Fatalf("reply changed: %+v", et)
+	}
+}
+
+type fakeTicketRepo struct {
+	repository.TrackedLinkRepository
+	links map[uuid.UUID]string
+}
+
+func (f *fakeTicketRepo) GetByID(_ context.Context, id uuid.UUID) (*repository.TrackedLink, error) {
+	if d, ok := f.links[id]; ok {
+		return &repository.TrackedLink{ID: id, Destination: d}, nil
+	}
+	return nil, nil
+}
+
+// A forwarded Warmbly send must not credit the new recipient's clicks to the
+// original send, so its tickets go back to their destinations.
+func TestUntrackForwardedRestoresDestinations(t *testing.T) {
+	known, unknown, script := uuid.New(), uuid.New(), uuid.New()
+	svc := &emailSendService{trackedLinkRepo: &fakeTicketRepo{links: map[uuid.UUID]string{
+		known:  "https://acme.com/pricing?a=1&b=2",
+		script: "javascript:alert(1)",
+	}}}
+	ticket := func(id uuid.UUID) string { return "https://t.example.com/c/" + id.String() }
+
+	htmlIn := `<a href="` + ticket(known) + `">Pricing</a> <a href="` + ticket(unknown) + `">Old</a> <a href="` + ticket(script) + `">x</a>`
+	plainIn := "Pricing: " + ticket(known)
+	h, p := svc.untrackForwarded(context.Background(), htmlIn, plainIn)
+
+	if !strings.Contains(h, `href="https://acme.com/pricing?a=1&amp;b=2"`) || strings.Contains(h, ticket(known)) {
+		t.Fatalf("known ticket not restored in html:\n%s", h)
+	}
+	if p != "Pricing: https://acme.com/pricing?a=1&b=2" {
+		t.Fatalf("known ticket not restored in text: %q", p)
+	}
+	if !strings.Contains(h, ticket(unknown)) || !strings.Contains(h, ticket(script)) || strings.Contains(h, "javascript:") {
+		t.Fatalf("unknown or unsafe tickets must stay as they are:\n%s", h)
 	}
 }

@@ -198,7 +198,7 @@ A source's `column_mapping` is validated when the source is written, not on its 
 | GET | `/unibox/:id` | `READ_UNIBOX` |
 | PATCH | `/unibox/seen` | `WRITE_UNIBOX` |
 | PATCH | `/unibox/folder` | `WRITE_UNIBOX` |
-| POST | `/unibox/reply` | `WRITE_UNIBOX` |
+| POST | `/unibox/reply` | `WRITE_UNIBOX` (plus `READ_UNIBOX` with `forward_message_id`) |
 | POST | `/unibox/reply/draft` | `READ_UNIBOX` |
 | GET | `/unibox/compose/candidates` | `READ_UNIBOX` |
 | POST | `/unibox/compose` | `WRITE_UNIBOX` |
@@ -217,6 +217,8 @@ A source's `column_mapping` is validated when the source is written, not on its 
 `GET /unibox` lists every working folder by default. Spam, trash and archive stay out, so a conversation you file leaves every view rather than only the Inbox folder; pass `include_archived=true` for the All mail behaviour, or `folder=archive` to read the folder itself.
 
 `POST /unibox/snooze` accepts `thread_id` for one conversation or `thread_ids` for up to 500. The single form answers with the snooze row, as before; the bulk form answers with `data`. `DELETE /unibox/snooze?thread_id=` accepts a comma-separated list.
+
+`POST /unibox/reply` with `forward_message_id` forwards a stored message, which discloses it, so the key also needs `READ_UNIBOX` and, when it is restricted to certain mailboxes, the mailbox the message belongs to. See [Forwarding a message](/api/reference/unibox/#forwarding-a-message).
 
 `POST /unibox/reply/draft` returns an AI-drafted reply (it never sends) grounded in the thread, the contact, and your [voice profile](/guides/unibox/#ai-reply-drafts). It charges AI credits; see [AI credits](/guides/ai-credits/).
 

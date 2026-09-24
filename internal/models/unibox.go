@@ -61,11 +61,9 @@ type ForwardedMessage struct {
 	Subject string
 	Date    time.Time
 	// BodyHTML is the stored HTML, unsanitized; empty when the message has none.
-	BodyHTML  string
+	BodyHTML string
+	// BodyPlain is the preview snippet when the full body is not stored.
 	BodyPlain string
-	// Truncated marks a message whose body is not stored, so BodyPlain is only
-	// its preview.
-	Truncated bool
 }
 
 type EmailMessageData struct { // used when for kafka when an email arrives

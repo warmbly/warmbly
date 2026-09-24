@@ -1,11 +1,14 @@
 package emailsend
 
 import (
+	"context"
 	"html"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 )
@@ -58,7 +61,7 @@ func renderForwarded(m *models.ForwardedMessage, loc *time.Location) (htmlBody, 
 // forwardNote gives a forward's note both parts. The forwarded message ships
 // as HTML and text, so a note written in only one would vanish from the other.
 func forwardNote(bodyHTML, bodyPlain string) (string, string) {
-	if strings.TrimSpace(bodyHTML) == "" && strings.TrimSpace(bodyPlain) != "" {
+	if !mailhtml.HasContent(bodyHTML) && strings.TrimSpace(bodyPlain) != "" {
 		bodyHTML = mailhtml.FromText(bodyPlain)
 	}
 	if strings.TrimSpace(bodyPlain) == "" && mailhtml.HasContent(bodyHTML) {
@@ -75,4 +78,46 @@ func mailboxLocation(account *models.Email) *time.Location {
 		}
 	}
 	return time.UTC
+}
+
+// clickTicket matches a Warmbly click ticket on any tracking host.
+var clickTicket = regexp.MustCompile(`https?://[^\s"'<>/]+/c/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
+
+// maxForwardedTickets bounds the ticket lookups one forward can cost.
+const maxForwardedTickets = 64
+
+// untrackForwarded swaps click tickets in a forwarded Warmbly send back to
+// their destinations, so the new recipient's clicks are not credited to the
+// original send. Unknown or expired tickets stay as they are.
+func (s *emailSendService) untrackForwarded(ctx context.Context, htmlBody, plain string) (string, string) {
+	if s.trackedLinkRepo == nil {
+		return htmlBody, plain
+	}
+	found := clickTicket.FindAllStringSubmatch(htmlBody+"\n"+plain, -1)
+	dest := make(map[string]string, len(found))
+	for _, m := range found {
+		if _, seen := dest[m[0]]; seen || len(dest) >= maxForwardedTickets {
+			continue
+		}
+		dest[m[0]] = ""
+		id, err := uuid.Parse(m[1])
+		if err != nil {
+			continue
+		}
+		link, err := s.trackedLinkRepo.GetByID(ctx, id)
+		if err != nil || link == nil {
+			continue
+		}
+		if u, err := url.Parse(link.Destination); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+			dest[m[0]] = link.Destination
+		}
+	}
+	for ticket, to := range dest {
+		if to == "" {
+			continue
+		}
+		htmlBody = strings.ReplaceAll(htmlBody, ticket, html.EscapeString(to))
+		plain = strings.ReplaceAll(plain, ticket, to)
+	}
+	return htmlBody, plain
 }

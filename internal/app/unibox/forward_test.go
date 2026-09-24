@@ -66,8 +66,8 @@ func TestForwardSourceReadsStoredBody(t *testing.T) {
 	if got.EmailID != msg.EmailID || got.Subject != "Pricing" || !got.Date.Equal(msg.SentDate) {
 		t.Fatalf("envelope: %+v", got)
 	}
-	if got.BodyPlain != "Hi, full text" || got.BodyHTML != "<p>Hi, <b>full</b></p>" || got.Truncated {
-		t.Fatalf("body: plain %q html %q truncated %v", got.BodyPlain, got.BodyHTML, got.Truncated)
+	if got.BodyPlain != "Hi, full text" || got.BodyHTML != "<p>Hi, <b>full</b></p>" {
+		t.Fatalf("body: plain %q html %q", got.BodyPlain, got.BodyHTML)
 	}
 }
 
@@ -78,8 +78,8 @@ func TestForwardSourceFallsBackToThePreview(t *testing.T) {
 	if xerr != nil {
 		t.Fatal(xerr)
 	}
-	if got.BodyPlain != "Hi, here are..." || !got.Truncated {
-		t.Fatalf("a missing body should forward the preview, flagged: %+v", got)
+	if got.BodyPlain != "Hi, here are..." || got.BodyHTML != "" {
+		t.Fatalf("a missing body should forward the preview: %+v", got)
 	}
 }
 

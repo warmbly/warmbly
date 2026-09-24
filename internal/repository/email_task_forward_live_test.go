@@ -48,12 +48,16 @@ func TestLiveEmailTaskForwardRoundTrip(t *testing.T) {
 
 	repo := NewTaskRepository(pool)
 	at := time.Now().Add(time.Minute)
+	const forwardedPlain = "---------- Forwarded message ---------\nOriginal"
 	for _, tc := range []struct {
-		name        string
+		name, note  string
 		html, plain string
+		// preview is what the Scheduled view lists as the body.
+		preview string
 	}{
-		{"forward", `<div class="gmail_quote">Forwarded message</div>`, "---------- Forwarded message ---------\nOriginal"},
-		{"reply", "", ""},
+		{"forward", "FYI", `<div class="gmail_quote">Forwarded message</div>`, forwardedPlain, "FYI"},
+		{"forward without a note", "", `<div class="gmail_quote">Forwarded message</div>`, forwardedPlain, forwardedPlain},
+		{"reply", "FYI", "", "", "FYI"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			taskID := uuid.New()
@@ -61,7 +65,7 @@ func TestLiveEmailTaskForwardRoundTrip(t *testing.T) {
 				&Task{ID: taskID, TaskType: "email", EmailAccountID: account, Status: "pending", ScheduledAt: &at},
 				&EmailTask{
 					TaskID: taskID, To: []string{"new@example.test"}, Subject: "Fwd: x",
-					Body: "FYI", BodyHTML: "FYI", BodyPlain: "FYI",
+					Body: tc.note, BodyHTML: tc.note, BodyPlain: tc.note,
 					ForwardedHTML: tc.html, ForwardedPlain: tc.plain,
 				})
 			if err != nil {
@@ -73,6 +77,19 @@ func TestLiveEmailTaskForwardRoundTrip(t *testing.T) {
 			}
 			if got.ForwardedHTML != tc.html || got.ForwardedPlain != tc.plain {
 				t.Fatalf("forwarded message did not survive: html %q plain %q", got.ForwardedHTML, got.ForwardedPlain)
+			}
+			listed, err := repo.ListScheduledForUser(ctx, user, 50)
+			if err != nil {
+				t.Fatalf("list scheduled: %v", err)
+			}
+			preview, found := "", false
+			for _, it := range listed {
+				if it.TaskID == taskID {
+					preview, found = it.Body, true
+				}
+			}
+			if !found || preview != tc.preview {
+				t.Fatalf("scheduled preview %q (listed %v), want %q", preview, found, tc.preview)
 			}
 		})
 	}

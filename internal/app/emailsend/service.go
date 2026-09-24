@@ -267,6 +267,7 @@ func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, account
 	var forwardedHTML, forwardedPlain string
 	if req.Forward != nil {
 		forwardedHTML, forwardedPlain = renderForwarded(req.Forward, mailboxLocation(account))
+		forwardedHTML, forwardedPlain = s.untrackForwarded(ctx, forwardedHTML, forwardedPlain)
 		bodyHTML, bodyPlain = forwardNote(bodyHTML, bodyPlain)
 	}
 

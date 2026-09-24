@@ -9174,7 +9174,7 @@
             }
           },
           "403": {
-            "description": "Missing scope/permission, organization lacks unified-inbox access, or the API key is not allowed the sending mailbox or the mailbox of the forwarded message.",
+            "description": "Missing scope/permission (a forward also needs `READ_UNIBOX`), organization lacks unified-inbox access, or the API key is not allowed the sending mailbox or the mailbox of the forwarded message.",
             "content": {
               "application/json": {
                 "schema": {
@@ -30207,7 +30207,7 @@
           "forward_message_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Forwards this stored message (the `id` from `GET /unibox/:id`). It goes out under the body and the mailbox signature with its From, Date, Subject, To and Cc lines. Attachments are not included."
+            "description": "Forwards this stored message (the `id` from `GET /unibox/:id`); needs `READ_UNIBOX` as well. It goes out under the body and the mailbox signature with its From, Date, Subject, To and Cc lines. Attachments are not included."
           }
         }
       },

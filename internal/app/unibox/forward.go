@@ -8,7 +8,6 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
-	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -36,25 +35,7 @@ func (s *uniboxService) ForwardSource(ctx context.Context, orgID, id uuid.UUID) 
 		out.Date = msg.InternalDate
 	}
 
-	body, err := s.GetBody(ctx, ownerID, msg.EmailID, id)
-	if err != nil {
-		// Same degraded read as GetByID: the preview is what is stored.
-		if !isFixtureMessage(msg.MessageID) {
-			errs.CaptureException(err)
-		}
-		out.BodyPlain = msg.Snippet
-		out.Truncated = !isFixtureMessage(msg.MessageID)
-		return out, nil
-	}
-
-	out.BodyPlain = string(body.PlainText)
-	out.BodyHTML = string(body.HTMLBody)
-	if out.BodyHTML != "" && !mailhtml.LooksLikeHTML(out.BodyHTML) {
-		// Legacy rows stored the plain text under both bodies.
-		if out.BodyPlain == "" {
-			out.BodyPlain = out.BodyHTML
-		}
-		out.BodyHTML = ""
-	}
+	// A missing body forwards the preview; the composer warns before sending.
+	out.BodyPlain, out.BodyHTML, _ = s.storedBody(ctx, ownerID, msg.EmailID, id, msg.Snippet, isFixtureMessage(msg.MessageID))
 	return out, nil
 }

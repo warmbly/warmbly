@@ -77,39 +77,38 @@ func (s *uniboxService) GetByID(
 	}
 
 	// Fetch body from object storage under the mailbox owner and account.
-	{
-		out, err := s.GetBody(ctx, ownerID, accountID, id)
-		if err != nil {
-			// A missing blob is a degraded read, not a broken endpoint: mail
-			// synced before body storage existed, or a blob that never landed,
-			// still has its preview text. Returning 500 made the whole message
-			// unopenable instead of showing what we have.
-			if !fixtureMessage {
-				errs.CaptureException(err)
-			}
-			resp.BodyPlain = snippet
-			resp.BodyTruncated = !fixtureMessage
-			return &resp, nil
-		}
-
-		resp.BodyPlain = string(out.PlainText)
-
-		htmlBody := string(out.HTMLBody)
-		if htmlBody != "" && !mailhtml.LooksLikeHTML(htmlBody) {
-			// Legacy rows: a sync from before the IMAP reader addressed parts
-			// individually stored the plain text under both bodies. Serving it
-			// as HTML is what collapsed the message to one line.
-			if resp.BodyPlain == "" {
-				resp.BodyPlain = htmlBody
-			}
-			htmlBody = ""
-		}
-		// The HTML body comes from the sender's mail client and is rendered in
-		// the dashboard, so it is sanitized here rather than at each call site.
-		resp.BodyHTML = mailhtml.Sanitize(htmlBody)
-	}
+	var htmlBody string
+	resp.BodyPlain, htmlBody, resp.BodyTruncated = s.storedBody(ctx, ownerID, accountID, id, snippet, fixtureMessage)
+	// The HTML body comes from the sender's mail client and is rendered in
+	// the dashboard, so it is sanitized here rather than at each call site.
+	resp.BodyHTML = mailhtml.Sanitize(htmlBody)
 
 	return &resp, nil
+}
+
+// storedBody reads a message's stored text and raw HTML. A missing blob is a
+// degraded read, not a failure: mail synced before body storage existed, or a
+// blob that never landed, still has its preview, returned as the text and
+// flagged truncated.
+func (s *uniboxService) storedBody(ctx context.Context, ownerID, accountID, id uuid.UUID, snippet string, fixture bool) (plain, rawHTML string, truncated bool) {
+	out, err := s.GetBody(ctx, ownerID, accountID, id)
+	if err != nil {
+		if !fixture {
+			errs.CaptureException(err)
+		}
+		return snippet, "", !fixture
+	}
+	plain, rawHTML = string(out.PlainText), string(out.HTMLBody)
+	if rawHTML != "" && !mailhtml.LooksLikeHTML(rawHTML) {
+		// Legacy rows: a sync from before the IMAP reader addressed parts
+		// individually stored the plain text under both bodies. Serving it
+		// as HTML is what collapsed the message to one line.
+		if plain == "" {
+			plain = rawHTML
+		}
+		rawHTML = ""
+	}
+	return plain, rawHTML, false
 }
 
 // isFixtureMessage reports whether a message came from the seed/sandbox

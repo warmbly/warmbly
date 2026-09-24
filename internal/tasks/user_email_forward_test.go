@@ -61,3 +61,11 @@ func TestUserEmailBodiesReplyUnchanged(t *testing.T) {
 		t.Fatalf("reply: html %q plain %q", html, plain)
 	}
 }
+
+// Leading blank lines an author typed are theirs; only an empty note is trimmed.
+func TestUserEmailBodiesKeepsLeadingBlankLines(t *testing.T) {
+	_, plain := userEmailBodies(&repository.EmailTask{BodyPlain: "\n\nSpaced"}, signedMailbox())
+	if plain != "\n\nSpaced\n\n-- Ana" {
+		t.Fatalf("reply spacing changed: %q", plain)
+	}
+}

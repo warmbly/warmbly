@@ -347,14 +347,14 @@ Set `forward_message_id` to forward a message from the inbox. Warmbly attaches t
 2. the sending mailbox's signature, when signature sync is on (a forward is signed even without a note)
 3. a `---------- Forwarded message ---------` block with the original From, Date, Subject, To and Cc lines, then the original body
 
-The Date line is written in the sending mailbox's time zone (its own, else the workspace's, else UTC). The original HTML keeps its formatting: its stylesheet is folded into inline styles and it is sanitized like a message opened in Unibox, so scripts, event handlers and Warmbly's own open-tracking pixels are dropped. When the original has only a text part, it is forwarded as text. Links in the forwarded message are never rewritten for click tracking; only your note is tracked, when the mailbox tracks direct mail.
+The Date line is written in the sending mailbox's time zone (its own, else the workspace's, else UTC). The original HTML keeps its formatting: its stylesheet is folded into inline styles and it is sanitized like a message opened in Unibox, so scripts, event handlers and Warmbly's own open-tracking pixels are dropped. When the original has only a text part, it is forwarded as text. Links in the forwarded message are never rewritten for click tracking; only your note is tracked, when the mailbox tracks direct mail. Forwarding one of your own tracked sends (from Sent, say) swaps its tracked links back to their real destinations, so the new recipient's clicks are not counted against the original send.
 
 Two limits:
 
 - attachments on the original are not forwarded
 - a message whose full body is not stored (the reader shows "Only a preview of this message is stored") is forwarded with that preview
 
-Forwarding reads the message, so an API key restricted to certain mailboxes must be allowed the mailbox the message belongs to as well as the sending mailbox; otherwise the request answers `403`. A `forward_message_id` that names no message in the organization answers `404`.
+Forwarding discloses the message, so it takes `READ_UNIBOX` as well as `WRITE_UNIBOX` (for a dashboard session, the `access_unibox` permission covers both), and an API key restricted to certain mailboxes must be allowed the mailbox the message belongs to as well as the sending mailbox. Either missing answers `403`. A `forward_message_id` that names no message in the organization answers `404`.
 
 ```json
 {
