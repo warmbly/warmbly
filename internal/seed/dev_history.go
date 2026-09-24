@@ -131,7 +131,12 @@ func seedDevStats(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("campaign_daily_sends: %w", err)
 	}
 
+	// Spam share per mailbox, so the placement views show every band.
+	spamPct := map[uuid.UUID]int{DevMailboxSendID: 3, DevMailboxOutboundID: 6, DevMailboxGrowthID: 22, DevMailboxPartnersID: 14}
 	for _, id := range []uuid.UUID{DevMailboxSendID, DevMailboxOutboundID, DevMailboxGrowthID, DevMailboxPartnersID} {
+		if err := seedDevPlacement(ctx, pool, id, spamPct[id]); err != nil {
+			return err
+		}
 		// Warmup volume ramps 12 -> 38 toward today, with occasional replies.
 		if _, err := pool.Exec(ctx, `
 			INSERT INTO warmup_statistics (email_account_id, date, emails_sent, emails_replied, target_volume)
@@ -155,6 +160,36 @@ func seedDevStats(ctx context.Context, pool *pgxpool.Pool) error {
 			ON CONFLICT (email_account_id, date) DO UPDATE SET count = EXCLUDED.count
 		`, id); err != nil {
 			return fmt.Errorf("daily_email_counts %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// seedDevPlacement writes 14 days of where the mailbox's warmup mail landed,
+// following the warmup_statistics ramp and split across recipient providers.
+func seedDevPlacement(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, spamPct int) error {
+	groups := []struct {
+		group, host string
+		share       int
+	}{{"google", "google_workspace", 40}, {"google", "gmail", 15}, {"microsoft", "microsoft365", 30}, {"other", "zoho", 15}}
+	for n := 0; n <= 13; n++ {
+		delivered := min(38, 12+(13-n)*2) - n%3
+		for i, g := range groups {
+			got := delivered * g.share / 100
+			pct := spamPct + (n*7+i*5)%5 - 2
+			spam := max(0, (got*pct+50)/100)
+			tabs := 0
+			if g.group == "google" {
+				tabs = (got + 5) / 10
+			}
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO warmup_placement_daily (sender_account_id, date, recipient_group, recipient_host, inbox, tabs, spam, rescued)
+				VALUES ($1, (NOW() - make_interval(days => $2::int))::date, $3, $4, $5, $6, $7, $8)
+				ON CONFLICT (sender_account_id, date, recipient_group, recipient_host) DO UPDATE SET
+					inbox = EXCLUDED.inbox, tabs = EXCLUDED.tabs, spam = EXCLUDED.spam, rescued = EXCLUDED.rescued
+			`, id, n, g.group, g.host, got-tabs-spam, tabs, spam, spam*85/100); err != nil {
+				return fmt.Errorf("warmup_placement_daily %s: %w", id, err)
+			}
 		}
 	}
 	return nil

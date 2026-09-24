@@ -74,6 +74,28 @@ The **Analytics** tab of the same drawer charts the exchange over time: sent, re
 
 Turning off outbound warmup does not remove a healthy mailbox from the recipient pool. Disconnecting it, losing warmup-plan access, or entering a quarantined or blocked state does. Losing access removes the mailbox from its pool within minutes, whether or not it was still warming.
 
+## Seeing where warmup lands
+
+Every warmup email a mailbox sends is looked for in the partner's mailbox, and when it arrives Warmbly records where: the primary inbox, a Gmail category tab (Promotions, Updates, Social or Forums), or spam. Nothing is estimated or sampled, and the history is kept for the life of the mailbox rather than only the latest day.
+
+| Where | What it shows |
+|-------|---------------|
+| **Inbox** column in the Accounts list | The mailbox's inbox rate over the last seven days, coloured by band. Click it to open the breakdown |
+| **Deliverability** tab in the mailbox drawer | The same rate with its counts, then day-by-day inbox, tabs and spam, the rate over time, and the split per recipient provider, for `7d` to `90d` |
+| **Deliverability > Warmup inbox placement** | The workspace total over time and per provider, and every mailbox ranked worst first |
+
+The **inbox rate** is inbox plus category tabs over everything delivered in the last seven days: mail in Promotions was delivered and not filtered, which is what the number is asked to say. The tabs are still counted separately so you can see them.
+
+| Inbox rate | Band |
+|------------|------|
+| `90%` or more | Healthy |
+| `80%` to `90%` | Watch |
+| Below `80%` | Landing in spam |
+
+A rate only appears once `20` deliveries are in the window, the same sample the pool needs before it acts on spam placement. Until then the mailbox shows how far along it is (`8/20`) rather than a percentage that would swing on every delivery. The mailbox's health score is capped at its inbox rate, so a mailbox with some mail in spam reads `97`, not a flat `100`.
+
+Filter the drawer or the page by recipient provider to see whether a problem is general or confined to one: **Google** covers Gmail and Google Workspace, **Microsoft** covers Outlook.com and Microsoft 365, and expanding a provider shows each host inside it. **Rescued** counts spam placements Warmbly told the partner's mailbox to move back to the inbox, the "not spam" signal providers learn from; it is the rescues requested, since the partner's mailbox does not confirm the move. **Unconfirmed** counts mail sent more than a day ago that the partner has not seen yet, usually a partner whose sync is behind, and occasionally mail that never arrived. Spam is read from where the partner's provider filed the message: Gmail's Spam label, Outlook's Junk Email folder, or an IMAP server's Junk folder whether or not the server also flags it, and the same reading feeds [pool safety](#pool-safety). History from before this view existed is filled in from the receipts still on file shortly after an upgrade, without the tab and rescue split. The figures are warmup mail only, not campaign sends, and update live as partners report in. Days are UTC. The same numbers are in the [warmup placement](/api/reference/analytics/#get-warmup-placement) endpoint.
+
 ## The ramp
 
 | Setting | Default | Meaning |

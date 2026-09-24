@@ -93,6 +93,7 @@ import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
 import { taskTypeColor } from "@/components/app/crm/taskTypes";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const PRIORITIES: { id: CRMTaskPriority; label: string; dot: string; text: string }[] = [
     { id: "urgent", label: "Urgent", dot: "bg-red-500", text: "text-red-700" },
@@ -676,10 +677,8 @@ function FlatView({
             <thead className="sticky top-0 bg-white z-[1]">
                 <tr className="border-b border-slate-200">
                     <th className="pl-3 pr-2 py-2 w-9">
-                        <input
-                            type="checkbox"
+                        <Checkbox
                             aria-label="Select every task loaded"
-                            className="w-3.5 h-3.5 rounded accent-sky-600"
                             checked={allLoadedSelected}
                             onChange={onToggleAll}
                         />
@@ -765,10 +764,8 @@ function FlatRow({
             }`}
         >
             <td className="pl-3 pr-2" onClick={(e) => e.stopPropagation()}>
-                <input
-                    type="checkbox"
+                <Checkbox
                     aria-label={`Select ${task.title}`}
-                    className="w-3.5 h-3.5 rounded accent-sky-600"
                     checked={selected}
                     onChange={() => onToggle(!selected)}
                 />
@@ -956,10 +953,8 @@ function BucketGroup({
     return (
         <div className="rounded-md border border-slate-200 bg-white overflow-hidden">
             <div className="h-8 px-3 border-b border-slate-200 flex items-center gap-2">
-                <input
-                    type="checkbox"
+                <Checkbox
                     aria-label={`Select the ${bucket.label} tasks`}
-                    className="w-3.5 h-3.5 rounded accent-sky-600"
                     checked={allSelected(ids)}
                     onChange={() => onToggleMany(ids)}
                 />
@@ -1030,10 +1025,9 @@ function GroupedRow({
                 selected ? "bg-sky-50/60" : "hover:bg-slate-50"
             }`}
         >
-            <input
-                type="checkbox"
+            <Checkbox
                 aria-label={`Select ${task.title}`}
-                className="w-3.5 h-3.5 rounded accent-sky-600 shrink-0"
+                className="shrink-0"
                 checked={selected}
                 onClick={(e) => e.stopPropagation()}
                 onChange={() => onToggle(!selected)}

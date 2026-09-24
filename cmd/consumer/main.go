@@ -464,6 +464,7 @@ func main() {
 		CloudLink:                   cloudlink.NewService(repository.NewCloudLinkRepository(primaryDB.Pool, credEncrypter), emailRepo, nil),
 		WarmupContentRepo:           repository.NewWarmupContentRepository(primaryDB.Pool),
 		WarmupEngagementRepo:        repository.NewWarmupEngagementRepository(primaryDB.Pool),
+		WarmupPlacementRepo:         repository.NewWarmupPlacementRepository(primaryDB),
 		WarmupService:               warmupService,
 		WorkerRepo:                  workerRepo,
 		FleetNodeRepo:               repository.NewFleetNodeRepository(primaryDB),
@@ -516,6 +517,7 @@ func main() {
 	// Deletes warmup mail past its retention window from the mailbox itself
 	// and prunes the per-message warmup records after theirs.
 	go jobsService.StartWarmupMailRetention(ctx)
+	go jobsService.StartWarmupPlacementSweep(ctx)
 	go jobsService.StartPendingWarmupVerification(ctx)
 	// Re-offers inbound mail that reply processing never claimed, so a
 	// reply refused by a since-fixed check is still attributed to its lead.

@@ -16,13 +16,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks"
 )
@@ -234,17 +234,10 @@ func classifyFolder(flags []string) string {
 	return repository.PlacementFolderInbox
 }
 
-// containsSpamFlag mirrors internal/app/consumer/event_new_email.go's
-// containsSpamFlag so placement classification and warmup spam-placement
-// detection agree on what "landed in spam" means.
+// containsSpamFlag reads the same list as warmup spam-placement detection, so
+// placement classification and warmup agree on what "landed in spam" means.
 func containsSpamFlag(flags []string) bool {
-	spamFlags := []string{"\\Junk", "\\Spam", "SPAM", "Junk"}
-	for _, f := range flags {
-		if slices.Contains(spamFlags, f) {
-			return true
-		}
-	}
-	return false
+	return models.HasSpamFlag(flags)
 }
 
 // hasPromotionsLabel reports whether a Gmail CATEGORY_PROMOTIONS label is

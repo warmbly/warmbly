@@ -21,17 +21,19 @@ import {
 } from "@/components/ui/popover-menu";
 import useDeliverability from "@/lib/api/hooks/app/analytics/useDeliverability";
 import AdvisorSummaryBar from "@/components/app/advisor/AdvisorSummaryBar";
+import WarmupPlacementSection from "@/components/app/placement/WarmupPlacementSection";
 import type { DeliverabilityBand, ProviderPlacement, WarmupDomainPlacement } from "@/lib/api/models/app/analytics/Deliverability";
 
 type Range = "7d" | "30d" | "90d";
 type Metric = "bounces" | "complaints" | "opens" | "replies" | "sent";
-type SectionKey = "chart" | "totals" | "providers" | "warmup" | "mailboxes" | "campaigns";
+type SectionKey = "chart" | "totals" | "placement" | "providers" | "warmup" | "mailboxes" | "campaigns";
 
 const RANGE_LABEL: Record<Range, string> = {
     "7d": "Last 7 days",
     "30d": "Last 30 days",
     "90d": "Last 90 days",
 };
+const RANGE_DAYS: Record<Range, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
 const METRICS: { key: Metric; label: string; tone: DitherTone }[] = [
     { key: "bounces", label: "Bounces", tone: "rose" },
@@ -44,7 +46,8 @@ const METRICS: { key: Metric; label: string; tone: DitherTone }[] = [
 const SECTIONS: { key: SectionKey; label: string }[] = [
     { key: "chart", label: "Over time" },
     { key: "totals", label: "Window totals" },
-    { key: "providers", label: "Placement by provider" },
+    { key: "placement", label: "Warmup inbox placement" },
+    { key: "providers", label: "Seed test placement by provider" },
     { key: "warmup", label: "Warmup placement by domain" },
     { key: "mailboxes", label: "Mailboxes at risk" },
     { key: "campaigns", label: "Campaigns at risk" },
@@ -291,9 +294,11 @@ export default function DeliverabilityPage() {
                         </div>
                     )}
 
+                    {show("placement") && <WarmupPlacementSection days={RANGE_DAYS[view.range]} />}
+
                     {show("providers") && (
                         <>
-                            <SectionBar label="Placement by provider" count={d?.by_provider?.length || undefined} />
+                            <SectionBar label="Seed test placement by provider" count={d?.by_provider?.length || undefined} />
                             {q.isPending ? (
                                 <SkeletonRows />
                             ) : (d?.by_provider?.length ?? 0) === 0 ? (

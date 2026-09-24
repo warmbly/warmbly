@@ -968,6 +968,7 @@ func Run(
 				analytics.GET("/inbox-tagging", h.GetInboxTaggingReview)
 				analytics.GET("/deliverability", m.RequireOrganization(), h.GetDeliverabilityDashboard)
 				analytics.GET("/warmup", h.GetWarmupAnalytics)
+				analytics.GET("/warmup/placement", m.RequireOrganization(), h.GetWarmupPlacement)
 				analytics.GET("/campaigns/compare", h.CompareCampaigns)
 				analytics.GET("/campaigns/:id", h.GetCampaignAnalytics)
 				analytics.GET("/campaigns/:id/daily", h.GetCampaignDailyStats)

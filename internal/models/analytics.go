@@ -161,6 +161,9 @@ type EmailAccountStatus struct {
 	// complaints, throttle/quarantine state). Folded into Health.Score and
 	// also exposed in detail here. Nil when the mailbox is not in a pool.
 	WarmupHealth *WarmupHealthInfo `json:"warmup_health,omitempty"`
+	// Placement is where the mailbox's warmup mail landed over the trailing
+	// week; also caps Health.Score. Nil when nothing was delivered in the window.
+	Placement *WarmupPlacementRate `json:"warmup_placement,omitempty"`
 	// InCampaign reports whether the mailbox currently backs a live campaign.
 	// When true a low-volume health-check warmup keeps running even if the
 	// user has warmup paused/off.

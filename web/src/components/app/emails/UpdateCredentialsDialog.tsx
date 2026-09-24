@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/models/app/emails/Service";
 import SecuritySelect from "@/components/app/emails/SecuritySelect";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function UpdateCredentialsDialog({
     mailboxId,
@@ -222,11 +223,9 @@ export default function UpdateCredentialsDialog({
                                     />
                                 </Field>
                                 <label className="flex items-center gap-2 pl-[76px] pt-0.5 cursor-pointer">
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox tone="slate"
                                         checked={sameCreds}
                                         onChange={(e) => setSameCreds(e.target.checked)}
-                                        className="size-3.5 rounded border-slate-300 accent-slate-900"
                                     />
                                     <span className="text-[11.5px] text-slate-600">Use the same login as IMAP</span>
                                 </label>

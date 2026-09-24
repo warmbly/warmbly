@@ -116,6 +116,7 @@ import {
     PopoverMenuTrigger,
     SelectButton,
 } from "@/components/ui/popover-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type SubFilter = "all" | "subscribed" | "unsubscribed";
 
@@ -1269,9 +1270,7 @@ function ContactsTableBody({
                 <thead className="sticky top-0 bg-white z-[1]">
                     <tr className="border-b border-slate-200">
                         <th className="pl-5 pr-2 py-2 w-11">
-                            <input
-                                type="checkbox"
-                                className="w-3.5 h-3.5 rounded accent-sky-600"
+                            <Checkbox
                                 checked={isSelectedAll}
                                 onChange={onToggleAll}
                             />
@@ -1327,9 +1326,7 @@ function ContactsTableBody({
                                     className="pl-5 pr-2"
                                     onClick={(e) => e.stopPropagation()}
                                 >
-                                    <input
-                                        type="checkbox"
-                                        className="w-3.5 h-3.5 rounded accent-sky-600"
+                                    <Checkbox
                                         checked={isSel}
                                         onChange={() => onToggle(c.id, !isSel)}
                                     />

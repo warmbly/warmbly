@@ -586,6 +586,11 @@ var Tables = []Table{
 		Note:  "Warmup volume history travels so the destination resumes the ramp instead of restarting at the floor.",
 	},
 	{
+		Name: "warmup_placement_daily", Group: models.OrgDataGroupWarmup,
+		Scope: `sender_account_id IN ` + orgMailboxes,
+		Note:  "Where each mailbox's warmup mail landed, day by day, so its deliverability history arrives with it.",
+	},
+	{
 		Name: "warmup_appeals", Group: models.OrgDataGroupWarmup,
 		Scope: `email_account_id IN ` + orgMailboxes,
 	},

@@ -28,6 +28,7 @@ import {
 } from "./UniboxFilterPopover";
 import { cn } from "@/lib/utils";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Bucket = "today" | "yesterday" | "week" | "earlier";
 
@@ -382,9 +383,7 @@ export function ConversationList({
             kept everywhere so the feature is discoverable at all. */}
         {selecting ? (
           <label className="h-7 px-2 rounded-md inline-flex items-center gap-1.5 text-[11.5px] text-slate-600 hover:bg-slate-100 cursor-pointer transition-colors shrink-0">
-            <input
-              type="checkbox"
-              className="w-3.5 h-3.5 rounded accent-sky-600"
+            <Checkbox
               checked={allSelected}
               onChange={toggleAll}
               aria-label={allSelected ? "Deselect all" : "Select all loaded"}

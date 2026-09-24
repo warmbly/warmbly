@@ -19,13 +19,6 @@ export const InputSecret = ({onChange, placeholder, value, id, name}: {onChange:
     </div>
 }
 
-export const Checkbox = ({id, value, onChange, children}: {id: string, value: boolean, onChange: (e: React.ChangeEvent<HTMLInputElement>) => void, children?: React.ReactNode}) => {
-    return <div className="flex items-center">
-        <input id={id} checked={value} type="checkbox" onChange={onChange} className="w-4.5 h-4.5 accent-primary bg-muted border-border focus:ring-ring focus:ring-2"/>
-        <label htmlFor={id} className="ms-2 text-sm font-sans text-foreground">{children}</label>
-    </div>
-}
-
 export const TextArea = ({onChange, placeholder, value, id, name}: {onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void, placeholder?: string, value?: string, id?: string, name?: string}) => {
     return <>
         <textarea className="block bg-muted border-2 border-border text-foreground text-md focus:border-ring w-full px-4 py-3 outline-none transition-colors" onChange={onChange} placeholder={placeholder} value={value} id={id} name={name}/>

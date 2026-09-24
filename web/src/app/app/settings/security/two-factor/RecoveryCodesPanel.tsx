@@ -6,6 +6,7 @@ import React from "react";
 import toast from "react-hot-toast";
 import { CheckIcon, CopyIcon, DownloadIcon, PrinterIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const fileStamp = () => new Date().toISOString().slice(0, 10);
 
@@ -116,11 +117,10 @@ export default function RecoveryCodesPanel({
             </div>
 
             <label className="flex items-start gap-2.5 rounded-md border border-slate-200 px-3 py-2.5 cursor-pointer select-none hover:border-slate-300 transition-colors">
-                <input
-                    type="checkbox"
+                <Checkbox
                     checked={saved}
                     onChange={(e) => onSavedChange(e.target.checked)}
-                    className="mt-0.5 size-3.5 rounded-sm border-slate-300 accent-sky-600"
+                    className="mt-0.5"
                 />
                 <span className="text-[12px] leading-snug text-slate-700">
                     I have saved my recovery codes somewhere safe.

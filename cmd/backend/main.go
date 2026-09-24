@@ -1222,6 +1222,9 @@ func main() {
 		if aware, ok := analyticsService.(analytics.LifecycleAware); ok {
 			aware.WireLifecycle(repository.NewSendLifecycleRepository(primaryDB))
 		}
+		if aware, ok := analyticsService.(analytics.WarmupPlacementAware); ok {
+			aware.WireWarmupPlacement(repository.NewWarmupPlacementRepository(primaryDB))
+		}
 
 		// Self-hosted warmup pool link, both roles. The cloud side hands out
 		// codes and runs enrolled mailboxes as warmup-only accounts; the

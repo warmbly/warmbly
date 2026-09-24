@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useSocket } from './context/socket'
@@ -30,6 +30,30 @@ export function useRealtimeEvents() {
     },
     [queryClient],
   )
+
+  // Warmup deliveries arrive all day across a whole pool, so their refreshes
+  // are coalesced: placement views every 15s, and the account statuses (a
+  // per-mailbox fan-out whose 7-day rate barely moves) every 5 minutes.
+  const placementTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const accountsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshPlacement = useCallback(() => {
+    if (!placementTimer.current) {
+      placementTimer.current = setTimeout(() => {
+        placementTimer.current = null
+        invalidate([['analytics', 'warmup', 'placement']])
+      }, 15_000)
+    }
+    if (!accountsTimer.current) {
+      accountsTimer.current = setTimeout(() => {
+        accountsTimer.current = null
+        invalidate([['analytics', 'accounts']])
+      }, 300_000)
+    }
+  }, [invalidate])
+  useEffect(() => () => {
+    if (placementTimer.current) clearTimeout(placementTimer.current)
+    if (accountsTimer.current) clearTimeout(accountsTimer.current)
+  }, [])
 
   const handleRealtimeEvent = useCallback(
     (payload: Record<string, unknown>) => {
@@ -246,6 +270,11 @@ export function useRealtimeEvents() {
           duration: 8000,
         })
         invalidate([['emails', 'list'], ['unibox']])
+        return
+      }
+
+      if (event === 'WARMUP_PLACEMENT') {
+        refreshPlacement()
         return
       }
 
@@ -502,6 +531,7 @@ export function useRealtimeEvents() {
       invalidate,
       myId,
       queryClient,
+      refreshPlacement,
       setSubscription,
       updateCampaign,
       updateDeal,

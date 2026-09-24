@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/popover-menu";
 import { cn } from "@/lib/utils";
 import { nameFromAddr } from "@/lib/helper/emailAddress";
+import { Checkbox } from "@/components/ui/checkbox";
 
 function relative(d: Date): string {
   const diff = Date.now() - d.getTime();
@@ -155,8 +156,7 @@ export function ConversationItem({
           column of names sideways. */}
       <span className="w-4 shrink-0 flex items-center justify-center h-[18px]">
         {onToggleSelect && (
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selected}
             aria-label={`Select ${sender}`}
             // The click does the work, not the change: only the click carries
@@ -170,10 +170,10 @@ export function ConversationItem({
             }}
             onChange={() => {}}
             className={cn(
-              "w-3.5 h-3.5 rounded accent-sky-600 cursor-pointer",
+              "cursor-pointer",
               selected || selecting
-                ? "block"
-                : "hidden md:group-hover:block md:group-focus-within:block",
+                ? "flex"
+                : "hidden md:group-hover:flex md:group-focus-within:flex",
             )}
           />
         )}

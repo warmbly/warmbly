@@ -17,7 +17,8 @@ Scope everything to `7d`, `30d`, or `90d` with the range tabs. It updates live, 
 | Over time | One metric per day: bounces, complaints, opens, replies, or sent. Use it to find the day something spiked |
 | Window totals | Raw counts behind the rates |
 | Seed inbox placement | Inbox vs spam share from test deliveries, with the sample count |
-| Placement by provider | The same split per Gmail, Outlook, and IMAP/SMTP |
+| Warmup inbox placement | Where warmup mail landed each day (inbox, Gmail tabs, spam), the inbox rate over time, the split per recipient provider, and every mailbox ranked by its seven-day inbox rate |
+| Seed test placement by provider | The seed split per Gmail, Outlook, and IMAP/SMTP |
 | Warmup placement by domain | Continuous placement per recipient domain, amber at `10%` spam, red at `20%` |
 | At risk | Mailboxes and campaigns with bounce or complaint activity, worst first |
 
@@ -29,9 +30,9 @@ Use **Customize** to pick which sections show. Your choices and time window pers
 Placement figures only appear once seed data exists, and a small sample is a hint rather than a verdict. Warmbly waits for a meaningful sample before acting.
 </Callout>
 
-**Placement by provider is the check before scaling a campaign.** An aggregate rate can look fine while one provider quietly junks everything: Gmail at `95%` inbox with Outlook at `40%` is a provider-specific problem, usually authentication or content, not volume.
+**Seed test placement by provider is the check before scaling a campaign.** An aggregate rate can look fine while one provider quietly junks everything: Gmail at `95%` inbox with Outlook at `40%` is a provider-specific problem, usually authentication or content, not volume.
 
-**Warmup placement is your continuous signal.** Seed tests are point-in-time probes, but every verified warmup delivery reports inbox or spam, so drift appears here before it becomes complaints on a campaign.
+**Warmup placement is your continuous signal.** Seed tests are point-in-time probes, but every verified warmup delivery reports inbox, tab or spam, so drift appears here before it becomes complaints on a campaign. Click a mailbox in **Warmup inbox placement** to open its own history; see [seeing where warmup lands](/guides/warmup/#seeing-where-warmup-lands) for how the rate is counted.
 
 ## Health bands
 
