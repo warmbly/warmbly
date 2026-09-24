@@ -192,7 +192,7 @@ func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, account
 		// Redis INCR; checked first because it's faster than a SELECT
 		// COUNT and rejects bursts before they touch the DB.
 		//
-		// Layer 2 (pending-count) — MaxPendingScheduledSendsPerUser
+		// Layer 2 (pending-count) — MaxPendingScheduledSendsPerOrg
 		// bounds total queued state, so the DB doesn't accumulate
 		// terabytes of pending message bodies even from a user who
 		// schedules slowly over months.
@@ -212,11 +212,11 @@ func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, account
 			}
 		}
 		if s.taskRepo != nil {
-			pending, perr := s.taskRepo.CountScheduledForUser(ctx, userID)
-			if perr == nil && pending >= int64(config.MaxPendingScheduledSendsPerUser) {
+			pending, perr := s.taskRepo.CountScheduledInOrg(ctx, orgID)
+			if perr == nil && pending >= int64(config.MaxPendingScheduledSendsPerOrg) {
 				return nil, errx.New(errx.TooManyRequests, fmt.Sprintf(
-					"you have %d scheduled sends queued (max %d). Cancel some from the Scheduled view before adding more.",
-					pending, config.MaxPendingScheduledSendsPerUser,
+					"this workspace has %d scheduled sends queued (max %d). Cancel some from the Scheduled view before adding more.",
+					pending, config.MaxPendingScheduledSendsPerOrg,
 				))
 			}
 		}

@@ -78,7 +78,7 @@ func TestLiveEmailTaskForwardRoundTrip(t *testing.T) {
 			if got.ForwardedHTML != tc.html || got.ForwardedPlain != tc.plain {
 				t.Fatalf("forwarded message did not survive: html %q plain %q", got.ForwardedHTML, got.ForwardedPlain)
 			}
-			listed, err := repo.ListScheduledForUser(ctx, user, 50)
+			listed, err := repo.ListScheduledInOrg(ctx, org, nil, 50)
 			if err != nil {
 				t.Fatalf("list scheduled: %v", err)
 			}

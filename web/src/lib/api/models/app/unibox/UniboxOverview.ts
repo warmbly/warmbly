@@ -43,10 +43,10 @@ export default interface UniboxOverview {
   awaiting_reply: number;
   /** Threads with a pending inbox-agent draft awaiting human review. */
   awaiting_agent_draft: number;
-  /** Pending outbound email tasks queued by the user. */
+  /** Pending outbound email tasks queued from the workspace's mailboxes. */
   scheduled_pending: number;
   /**
-   * Hard cap on how many pending scheduled sends one user can queue
+   * Hard cap on how many pending scheduled sends one workspace can queue
    * at once. Each pending send occupies a Cloud Tasks queue slot the
    * platform pays for, so the cap protects against runaway abuse.
    * Dashboard renders `scheduled_pending / scheduled_pending_max` so

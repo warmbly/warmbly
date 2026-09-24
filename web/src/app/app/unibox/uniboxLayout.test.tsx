@@ -145,7 +145,7 @@ describe("unibox desktop layout (#473)", SUITE, () => {
         await settle();
         act(() => useOutboxStore.getState().setReplyRestore({
             threadId: "thread-4", messageId: "no-longer-here", mode: "forward",
-            to: ["x@example.com"], cc: [], bcc: [], subject: "Fwd: Subject 4", body: "FYI",
+            to: ["x@example.com"], cc: [], bcc: [], subject: "Fwd: Subject 4", body: "FYI", emailAccountId: "mbox-1",
         }));
         await openThread("Subject 4");
         expect(screen.queryByPlaceholderText(/Add a note/)).toBeNull();

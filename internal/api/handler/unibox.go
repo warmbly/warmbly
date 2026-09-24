@@ -697,10 +697,10 @@ func (h *Handler) DeleteUniboxSnooze(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// ListUniboxScheduled returns every pending email task the user has
-// queued: what the "Scheduled" scope in the dashboard reads from.
-// When `thread_id` is set we scope the response to a single thread,
-// which the ThreadView uses to render queued replies inline. The
+// ListUniboxScheduled returns every pending email task queued from the
+// organization's mailboxes: what the "Scheduled" scope in the dashboard
+// reads from. When `thread_id` is set we scope the response to a single
+// thread, which the ThreadView uses to render queued replies inline. The
 // response shape is identical either way so the same client + hook
 // handle both forms.
 // GET /unibox/scheduled
@@ -709,15 +709,14 @@ func (h *Handler) ListUniboxScheduled(c *gin.Context) {
 	if !h.gateUnibox(c) {
 		return
 	}
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 
 	if threadID := c.Query("thread_id"); threadID != "" {
-		items, xerr := h.UniboxService.ListScheduledByThread(c.Request.Context(), uid, threadID)
+		items, xerr := h.UniboxService.ListScheduledByThread(c.Request.Context(), *orgID, threadID, middleware.GetAPIKeyAllowedEmailAccounts(c))
 		if xerr != nil {
 			errx.Handle(c, xerr)
 			return
@@ -726,7 +725,7 @@ func (h *Handler) ListUniboxScheduled(c *gin.Context) {
 		return
 	}
 
-	items, xerr := h.UniboxService.ListScheduled(c.Request.Context(), uid)
+	items, xerr := h.UniboxService.ListScheduled(c.Request.Context(), *orgID, middleware.GetAPIKeyAllowedEmailAccounts(c))
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -742,10 +741,9 @@ func (h *Handler) CancelUniboxScheduled(c *gin.Context) {
 	if !h.gateUnibox(c) {
 		return
 	}
-	userID := middleware.GetUserID(c)
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		errx.Handle(c, errx.ErrUser)
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.Handle(c, errx.New(errx.BadRequest, "no organization selected"))
 		return
 	}
 	taskID, err := uuid.Parse(c.Param("task_id"))
@@ -754,7 +752,7 @@ func (h *Handler) CancelUniboxScheduled(c *gin.Context) {
 		return
 	}
 
-	if xerr := h.UniboxService.CancelScheduled(c.Request.Context(), uid, taskID); xerr != nil {
+	if xerr := h.UniboxService.CancelScheduled(c.Request.Context(), *orgID, taskID, middleware.GetAPIKeyAllowedEmailAccounts(c)); xerr != nil {
 		errx.Handle(c, xerr)
 		return
 	}

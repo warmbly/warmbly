@@ -107,24 +107,26 @@ Proton Mail offers no IMAP or SMTP sign-in to other apps; only its Bridge does. 
 
 ## Import from an inbox vendor
 
-Choose **Add account**, then **Inbox vendor**, pick the vendor and enter what it asks for. Warmbly checks the key with the vendor before saving it, lists the mailboxes in that vendor account (marking the ones already in the workspace), and imports the ones you pick, or every one not yet connected.
+Choose **Add account**, then **Inbox vendor**, pick the vendor and paste an API key. That is all any vendor asks for. Warmbly checks the key with the vendor before saving it, lists the mailboxes the key reaches (marking the ones already in the workspace), and imports the ones you pick, or every one not yet connected.
 
-| Vendor | Asks for | Where to find the key |
-| --- | --- | --- |
-| InboxKit | API key and workspace ID (a UUID) | Settings > API & Integrations in the InboxKit dashboard |
-| Zapmail | API key; optionally a workspace ID (blank is your primary workspace) and a mailbox type (`GOOGLE` or `MICROSOFT`, blank imports both) | Settings > Integrations > API in the Zapmail dashboard |
-| Mailforge | API key | Settings > API keys in the Mailforge dashboard |
-| Infraforge | API key; optionally a workspace ID (blank imports every workspace) | Settings > API keys in the Infraforge dashboard |
-| Maildoso | API key (a personal access token) | Settings > API Keys in the Maildoso dashboard |
-| Cheap Inboxes | API key, starting with `ci_live_` | Integrations > API in the Cheap Inboxes dashboard |
-| ScaledMail | API key and organization ID | Settings in the ScaledMail dashboard |
+A key that reaches several workspaces (or, at ScaledMail, organizations) lists the mailboxes of all of them, so there is no workspace ID to look up. Above the list, a workspace switcher narrows it to one workspace and shows how many of each you have picked, and **Select … in** picks every mailbox in that workspace that is not connected yet in one click. Pick the ones you want; the rest stay at the vendor.
+
+| Vendor | Where to find the key |
+| --- | --- |
+| InboxKit | Settings > API & Integrations in the InboxKit dashboard |
+| Zapmail | Settings > Integrations > API in the Zapmail dashboard. Google and Microsoft mailboxes are both listed |
+| Mailforge | Settings > API keys in the Mailforge dashboard |
+| Infraforge | Settings > API keys in the Infraforge dashboard |
+| Maildoso | Settings > API Keys in the Maildoso dashboard (a personal access token) |
+| Cheap Inboxes | Integrations > API in the Cheap Inboxes dashboard (starts with `ci_live_`) |
+| ScaledMail | Settings in the ScaledMail dashboard |
 
 One vendor account lists up to 10,000 mailboxes.
 
 - **Credentials are read when each row is worked.** Picking mailboxes stores only which ones you picked. The password, app password and servers of each are fetched from the vendor at the moment its row connects, and the row is then judged exactly like a file row: Google mailboxes need the app password the vendor holds (or [an admin grant](#connect-a-whole-google-workspace-domain) over the domain), and Microsoft mailboxes wait for sign-in unless [a grant](#connect-a-whole-microsoft-365-organization) covers them.
-- **The key is sealed and never shown again.** The API key and IDs are sealed with the workspace's own encryption key. The list of connections shows each one's vendor, label, status and mailbox count, never the key. **Update** replaces the key after checking the new one with the vendor.
+- **The key is sealed and never shown again.** The API key is sealed with the workspace's own encryption key. The list of connections shows each one's vendor, label, status and mailbox count, never the key. **Update** replaces the key after checking the new one with the vendor.
 - **Passwords the vendor rotates are picked up.** An SMTP and IMAP mailbox that came from a vendor and has stopped with an unresolved connection error is looked at every 15 minutes. When the vendor now holds a different password for it, Warmbly verifies that password against the server and reconnects the mailbox with it. Each mailbox is tried at most once every 6 hours, so a password that still fails is not retried on every pass.
-- **A refused key marks the connection.** When the vendor stops accepting the key, the connection shows as invalid with the vendor's reason, and rows that needed it fail as `vendor_unauthorized` until the key is updated.
+- **A refused key marks the connection.** A key the vendor accepts but that reaches no workspace is refused with `mailbox_vendor_no_workspace`, since there is nothing to list. When the vendor stops accepting the key, the connection shows as invalid with the vendor's reason, and rows that needed it fail as `vendor_unauthorized` until the key is updated.
 - **Deleting the connection keeps the mailboxes.** They stay connected and keep sending; they are no longer reconnected automatically when the vendor rotates a password.
 
 ## Connect a whole Google Workspace domain

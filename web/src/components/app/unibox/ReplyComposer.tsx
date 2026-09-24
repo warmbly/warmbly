@@ -13,6 +13,10 @@
 //
 // A forward sends only its message's id; the server attaches the message, so the note is optional.
 //
+// From defaults to the mailbox holding the message and can be switched to any
+// active mailbox; the backend keeps the provider thread only for a mailbox
+// that holds it, so a switched reply threads on its headers alone.
+//
 // ⌘+Enter sends instantly. Each schedule preset calls /unibox/reply
 // with send_mode="scheduled" plus the concrete scheduled_at.
 
@@ -38,6 +42,8 @@ import TemplatePickerContent from "./TemplatePicker";
 import InsertBookingLink from "./InsertBookingLink";
 import ContactRecipientField from "./compose/ContactRecipientField";
 import ForwardedMessage from "./ForwardedMessage";
+import MailboxPicker from "./compose/MailboxPicker";
+import useComposeCandidates from "@/lib/api/hooks/app/unibox/useComposeCandidates";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { resolveSendAt, useOutboxStore } from "@/hooks/useOutboxStore";
 import { useUserProfile } from "@/hooks/context/user";
@@ -181,9 +187,23 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
     const [bcc, setBcc] = React.useState<string[]>(restored?.bcc ?? []);
     const [showCc, setShowCc] = React.useState((restored?.cc.length ?? 0) > 0);
     const [showBcc, setShowBcc] = React.useState((restored?.bcc.length ?? 0) > 0);
+    // The mailbox holding the message is the default sender; picking another
+    // one is a per-draft override.
+    const threadAccountId = replyTo.account_id ?? "";
+    // A saved pick whose mailbox has since gone falls back to the thread's own.
+    const accountsRef = React.useRef(accounts);
+    accountsRef.current = accounts;
+    const resolveSender = React.useCallback(
+        (id: string | undefined) =>
+            id && (accountsRef.current.length === 0 || accountsRef.current.some((a) => a.id === id))
+                ? id
+                : threadAccountId,
+        [threadAccountId],
+    );
+    const [accountId, setAccountId] = React.useState(() => resolveSender(restored?.email_account_id));
     const [isSending, setIsSending] = React.useState(false);
-    const draft = useReplyDraft(draftKey, { to, cc, bcc, subject, body }, {
-        to: initial.to, cc: [], bcc: [], subject: initial.subject, body: "",
+    const draft = useReplyDraft(draftKey, { to, cc, bcc, subject, body, email_account_id: accountId }, {
+        to: initial.to, cc: [], bcc: [], subject: initial.subject, body: "", email_account_id: threadAccountId,
     });
     const closeKeepingDraft = () => {
         if (!draft.flush()) {
@@ -240,13 +260,31 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
         setShowCc(seed.cc.length > 0);
         setShowBcc(seed.bcc.length > 0);
         setBody(seed.body);
-    }, [seed, resumeDraft]);
+        setAccountId(resolveSender(seed.email_account_id));
+    }, [seed, resumeDraft, resolveSender]);
 
-    // Resolve the sending mailbox from the target message's
-    // account_id. We look it up in the global emails store so we have
-    // the full Inbox record (signature_html, signature_plain, etc).
-    const accountId = replyTo.account_id ?? "";
+    // The full Inbox record (signature_html, signature_plain, etc) of the
+    // chosen sender, from the global emails store.
     const mailbox = accounts.find((a) => a.id === accountId);
+    const switchedMailbox = !!threadAccountId && accountId !== threadAccountId;
+    // A queued send from an inactive or removed mailbox cannot leave, so Send
+    // waits for a sender that can.
+    const senderProblem = !accountId
+        ? null
+        : mailbox
+          ? mailbox.status !== "active"
+              ? `${mailbox.email} is not active, so it cannot send. Pick another mailbox in From, or reconnect it under Emails.`
+              : null
+          : accounts.length > 0
+            ? "This mailbox is no longer connected. Pick another mailbox in From."
+            : null;
+    const threadMailbox = accounts.find((a) => a.id === threadAccountId);
+
+    // Scored like compose (history with the recipient, today's budget, auth),
+    // fetched once From is opened: most replies keep the default mailbox.
+    const [wantCandidates, setWantCandidates] = React.useState(false);
+    const primary = to.length > 0 ? bareEmail(to[0]) : "";
+    const candidatesQ = useComposeCandidates(primary, wantCandidates);
 
     const templatesQuery = useTemplates();
 
@@ -261,7 +299,8 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
     const trimmedBody = body.trim();
     // A forward's note is optional: the forwarded message is the content.
     const hasContent = !!trimmedBody || mode === "forward";
-    const canSend = hasContent && to.length > 0 && to.every(looksLikeEmail) && !!accountId && !isSending;
+    const canSend =
+        hasContent && to.length > 0 && to.every(looksLikeEmail) && !!accountId && !senderProblem && !isSending;
 
     const send = async (scheduledAt?: Date) => {
         if (!canSend && !isSending) {
@@ -281,9 +320,13 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                 toast.error("Couldn't resolve the sending mailbox");
                 return;
             }
+            if (senderProblem) {
+                toast.error(senderProblem);
+                return;
+            }
         }
 
-        const submittedDraft = { to, cc, bcc, subject, body };
+        const submittedDraft = { to, cc, bcc, subject, body, email_account_id: accountId };
         draft.flush();
         setIsSending(true);
         const sentSubject = subject.trim() || (mode === "forward" ? "Fwd:" : "Re:");
@@ -325,6 +368,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                         bcc,
                         subject: sentSubject,
                         body: trimmedBody,
+                        emailAccountId: accountId,
                     },
                 });
             } else {
@@ -533,21 +577,68 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                 )}
 
                 <HeaderRow label="From">
-                    {mailbox ? (
-                        <div className="inline-flex items-center gap-2 min-w-0">
-                            <span className="text-[12.5px] text-slate-800 truncate">
-                                {mailbox.name || mailbox.email}
-                            </span>
-                            <span className="font-mono text-[10.5px] text-slate-400 min-w-0 truncate" title={mailbox.email}>
-                                {mailbox.email}
-                            </span>
-                        </div>
+                    {accountId ? (
+                        <MailboxPicker
+                            value={accountId}
+                            autoTag={null}
+                            allowAuto={false}
+                            onChange={(next) => setAccountId(next)}
+                            onOpen={() => setWantCandidates(true)}
+                            candidates={candidatesQ.data}
+                            loading={candidatesQ.isPending}
+                        />
                     ) : (
                         <span className="text-[12px] text-amber-700">
                             No sending mailbox resolved
                         </span>
                     )}
                 </HeaderRow>
+                <AnimatePresence initial={false}>
+                    {senderProblem && (
+                        <motion.div
+                            key="inactive"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                            className="overflow-hidden"
+                        >
+                            <div
+                                role="status"
+                                className="px-4 py-1.5 flex items-start gap-1.5 border-b border-amber-100 bg-amber-50/60 text-[11px] text-amber-800"
+                            >
+                                <InfoIcon className="w-3 h-3 mt-px shrink-0 text-amber-600" />
+                                <span className="min-w-0 flex-1 leading-snug">{senderProblem}</span>
+                            </div>
+                        </motion.div>
+                    )}
+                    {!senderProblem && switchedMailbox && mode === "reply" && (
+                        <motion.div
+                            key="switched"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                            className="overflow-hidden"
+                        >
+                            <div className="px-4 py-1.5 flex items-start gap-1.5 border-b border-slate-100 bg-slate-50/60 text-[11px] text-slate-500">
+                                <InfoIcon className="w-3 h-3 mt-px shrink-0 text-slate-400" />
+                                <span className="min-w-0 flex-1 leading-snug">
+                                    Replying from another mailbox. It stays in the same conversation for the
+                                    recipient, and their answer comes back to {mailbox?.email ?? "this mailbox"}.
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setAccountId(threadAccountId)}
+                                    title={threadMailbox ? `Reply from ${threadMailbox.email}` : "Reply from the original mailbox"}
+                                    className="shrink-0 text-[11px] font-medium text-sky-700 hover:text-sky-800 transition-colors"
+                                >
+                                    Switch back
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 <div className="flex items-center gap-2 px-4 border-b border-slate-100">
                     <input

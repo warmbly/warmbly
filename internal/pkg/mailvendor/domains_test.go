@@ -32,6 +32,14 @@ func decodeBody(t *testing.T, r seenRequest) map[string]any {
 // testDomain is a domain every vendor's calls accept.
 var testDomain = Domain{ID: "7", Name: "acme.io"}
 
+// testDomainFor is testDomain as the vendor lists it; workspace-scoped vendors carry the workspace in the id.
+func testDomainFor(vendor string) Domain {
+	if vendor == VendorInboxKit || vendor == VendorScaledMail || vendor == VendorZapmail {
+		return Domain{ID: "ws-1:7", Name: "acme.io"}
+	}
+	return testDomain
+}
+
 func TestDomainCapabilitiesAllVendors(t *testing.T) {
 	want := map[string]DomainCapabilities{
 		VendorInboxKit:     {Forwarding: true, ForwardingRemove: true, DNS: true, DNSTypes: allDNSTypes()},
@@ -66,11 +74,11 @@ func TestDomainCallsUnauthorizedAllVendors(t *testing.T) {
 		dm := domainManager(t, newTestClient(t, d.ID, fieldsFor(d.ID), srv.URL, nil))
 		runs := map[string]func() error{
 			"domains":    func() error { _, err := dm.Domains(context.Background()); return err },
-			"forwarding": func() error { return dm.SetForwarding(context.Background(), testDomain, "https://acme.com") },
+			"forwarding": func() error { return dm.SetForwarding(context.Background(), testDomainFor(d.ID), "https://acme.com") },
 		}
 		if dm.DomainCapabilities().DNS {
 			runs["dns"] = func() error {
-				return dm.UpsertDNSRecord(context.Background(), testDomain, DNSRecord{Type: "TXT", Name: "_warmbly.acme.io", Value: "warmbly-verify=abc"})
+				return dm.UpsertDNSRecord(context.Background(), testDomainFor(d.ID), DNSRecord{Type: "TXT", Name: "_warmbly.acme.io", Value: "warmbly-verify=abc"})
 			}
 		}
 		for name, run := range runs {
@@ -211,6 +219,8 @@ func TestInboxKitDomains(t *testing.T) {
 		{"_id":"60f7b8c9e4b0b8c9e4b0b8c4","host":"@","type":"A","value":"192.0.2.2","ttl":3600}]}}`
 	srv := newRecorder(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/v1/api/workspaces/list":
+			writeJSON(w, 200, `{"error":false,"workspaces":[{"uid":"`+ws+`","name":"Main"}]}`)
 		case "/v1/api/domains/list":
 			var body struct{ Page int }
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -233,18 +243,18 @@ func TestInboxKitDomains(t *testing.T) {
 			writeJSON(w, 404, `{}`)
 		}
 	})
-	dm := domainManager(t, newTestClient(t, VendorInboxKit, map[string]string{FieldAPIKey: testKey, FieldWorkspaceID: ws}, srv.URL, nil))
+	dm := domainManager(t, newTestClient(t, VendorInboxKit, map[string]string{FieldAPIKey: testKey}, srv.URL, nil))
 	ctx := context.Background()
 
 	got, err := dm.Domains(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Domain{{ID: "3340bae3-53c3-4ab8-9c61-1d8205b86c70", Name: "example.com", Forwarding: "https://example.org"}, {ID: "u2", Name: "acme.io"}}
+	want := []Domain{{ID: ws + ":3340bae3-53c3-4ab8-9c61-1d8205b86c70", Name: "example.com", Forwarding: "https://example.org"}, {ID: ws + ":u2", Name: "acme.io"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Domains = %+v", got)
 	}
-	d := Domain{ID: "u2", Name: "acme.io"}
+	d := got[1]
 	if err := dm.SetForwarding(ctx, d, "https://acme.com"); err != nil {
 		t.Fatal(err)
 	}
@@ -260,14 +270,20 @@ func TestInboxKitDomains(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A new CNAME on a domain with no records yet.
-	if err := dm.UpsertDNSRecord(ctx, Domain{ID: "fresh", Name: "acme.io"}, DNSRecord{Type: "CNAME", Name: "track.acme.io", Value: "track.warmbly.com"}); err != nil {
+	if err := dm.UpsertDNSRecord(ctx, Domain{ID: ws + ":fresh", Name: "acme.io"}, DNSRecord{Type: "CNAME", Name: "track.acme.io", Value: "track.warmbly.com"}); err != nil {
 		t.Fatal(err)
+	}
+	// A domain id without its workspace cannot be addressed, so nothing is sent.
+	if err := dm.SetForwarding(ctx, Domain{ID: "u2", Name: "acme.io"}, "https://acme.com"); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("unscoped id: %v", err)
 	}
 
 	reqs := srv.requests()
 	for _, r := range reqs {
 		assertHeader(t, r, "Authorization", "Bearer "+testKey)
-		assertHeader(t, r, "X-Workspace-Id", ws)
+		if r.Path != "/v1/api/workspaces/list" {
+			assertHeader(t, r, "X-Workspace-Id", ws)
+		}
 	}
 	var writes []map[string]any
 	var paths []string
@@ -305,7 +321,7 @@ func TestInboxKitDNSWithoutRecordIDs(t *testing.T) {
 		writeJSON(w, 200, `{"error":false,"dns_record":{"records":[{"host":"_warmbly","type":"TXT","value":"warmbly-verify=old"}]}}`)
 	})
 	dm := domainManager(t, newTestClient(t, VendorInboxKit, fieldsFor(VendorInboxKit), srv.URL, nil))
-	err := dm.UpsertDNSRecord(context.Background(), Domain{ID: "u2", Name: "acme.io"}, DNSRecord{Type: "TXT", Name: "_warmbly.acme.io", Value: "warmbly-verify=new"})
+	err := dm.UpsertDNSRecord(context.Background(), Domain{ID: "ws-1:u2", Name: "acme.io"}, DNSRecord{Type: "TXT", Name: "_warmbly.acme.io", Value: "warmbly-verify=new"})
 	if !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("err = %v, want ErrUnsupported", err)
 	}
@@ -313,7 +329,7 @@ func TestInboxKitDNSWithoutRecordIDs(t *testing.T) {
 		t.Fatalf("%d requests, want only the list", n)
 	}
 	// An identical record needs no id: nothing is written.
-	if err := dm.UpsertDNSRecord(context.Background(), Domain{ID: "u2", Name: "acme.io"}, DNSRecord{Type: "TXT", Name: "_warmbly.acme.io", Value: "warmbly-verify=old"}); err != nil {
+	if err := dm.UpsertDNSRecord(context.Background(), Domain{ID: "ws-1:u2", Name: "acme.io"}, DNSRecord{Type: "TXT", Name: "_warmbly.acme.io", Value: "warmbly-verify=old"}); err != nil {
 		t.Fatalf("no-op: %v", err)
 	}
 }
@@ -323,7 +339,7 @@ func TestInboxKitDomainErrorEnvelope(t *testing.T) {
 		writeJSON(w, 200, `{"error":true,"message":"Domain not found"}`)
 	})
 	dm := domainManager(t, newTestClient(t, VendorInboxKit, fieldsFor(VendorInboxKit), srv.URL, nil))
-	if err := dm.SetForwarding(context.Background(), testDomain, "https://acme.com"); err == nil {
+	if err := dm.SetForwarding(context.Background(), testDomainFor(VendorInboxKit), "https://acme.com"); err == nil {
 		t.Fatal("SetForwarding accepted an error envelope")
 	}
 }
@@ -331,6 +347,8 @@ func TestInboxKitDomainErrorEnvelope(t *testing.T) {
 func TestZapmailDomains(t *testing.T) {
 	srv := newRecorder(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/v2/workspaces":
+			writeJSON(w, 200, `{"status":200,"data":[{"id":"ws-123","name":"Main"}]}`)
 		case "/v2/domains":
 			if r.Header.Get("x-service-provider") == "MICROSOFT" {
 				writeJSON(w, 200, `{"status":200,"message":"ok","data":{"totalSearchedCount":1,"currentPage":1,"nextPage":null,"totalPages":1,"domains":[{"id":"ms-d","domain":"contoso.co","status":"ACTIVE","forwardTo":null}]}}`)
@@ -350,20 +368,20 @@ func TestZapmailDomains(t *testing.T) {
 			writeJSON(w, 404, `{}`)
 		}
 	})
-	dm := domainManager(t, newTestClient(t, VendorZapmail, map[string]string{FieldAPIKey: testKey, FieldWorkspaceID: "ws-123"}, srv.URL, nil))
+	dm := domainManager(t, newTestClient(t, VendorZapmail, map[string]string{FieldAPIKey: testKey}, srv.URL, nil))
 	ctx := context.Background()
 	got, err := dm.Domains(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got, []Domain{{ID: "g-d", Name: "acme.io", Forwarding: "acme.com"}, {ID: "ms-d", Name: "contoso.co"}}) {
+	if !reflect.DeepEqual(got, []Domain{{ID: "ws-123:g-d", Name: "acme.io", Forwarding: "acme.com"}, {ID: "ws-123:ms-d", Name: "contoso.co"}}) {
 		t.Fatalf("Domains = %+v", got)
 	}
-	d := Domain{ID: "g-d", Name: "acme.io"}
+	d := got[0]
 	if err := dm.SetForwarding(ctx, d, "https://acme.com"); err != nil {
 		t.Fatal(err)
 	}
-	if err := dm.SetForwarding(ctx, Domain{ID: "ms-d", Name: "contoso.co"}, ""); err != nil {
+	if err := dm.SetForwarding(ctx, got[1], ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := dm.UpsertDNSRecord(ctx, d, DNSRecord{Type: "CNAME", Name: "track.acme.io", Value: "track.warmbly.com", TTL: 60}); err != nil {
@@ -376,7 +394,12 @@ func TestZapmailDomains(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The workspace list comes first; drop it so the indexes below read the domain calls.
 	reqs := srv.requests()
+	if reqs[0].Path != "/v2/workspaces" {
+		t.Fatalf("first call = %s", reqs[0].Path)
+	}
+	reqs = reqs[1:]
 	for _, r := range reqs {
 		assertHeader(t, r, "x-auth-zapmail", testKey)
 		assertHeader(t, r, "x-workspace-key", "ws-123")
@@ -432,20 +455,13 @@ func TestForgeDomains(t *testing.T) {
 					writeJSON(w, 404, `{"code":404,"message":"Domain not found"}`)
 				}
 			})
-			fields := map[string]string{FieldAPIKey: testKey}
-			if vendor == VendorInfraforge {
-				fields[FieldWorkspaceID] = "wks_1"
-			}
-			dm := domainManager(t, newTestClient(t, vendor, fields, srv.URL, nil))
+			dm := domainManager(t, newTestClient(t, vendor, map[string]string{FieldAPIKey: testKey}, srv.URL, nil))
 			ctx := context.Background()
 			got, err := dm.Domains(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := []Domain{{ID: "dom_1", Name: "acme.io", Forwarding: "https://acme.com"}}
-			if vendor == VendorMailforge {
-				want = append(want, Domain{ID: "dom_2", Name: "other.com"})
-			}
+			want := []Domain{{ID: "dom_1", Name: "acme.io", Forwarding: "https://acme.com"}, {ID: "dom_2", Name: "other.com"}}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("Domains = %+v", got)
 			}
@@ -615,6 +631,8 @@ func TestScaledMailDomains(t *testing.T) {
 	const org = "recORG000000001"
 	srv := newRecorder(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/organizations":
+			writeJSON(w, 200, `[{"id":"`+org+`","name":"Acme"}]`)
 		case r.URL.Path == "/domains":
 			writeJSON(w, 200, `{"total":2,"domains":[{"id":"recDOM1","domain":"outreach-one.com","tag":"","redirect":"https://example.com","order_type":"google","status":"Active"},{"id":"recDOM2","domain":"outreach-two.com","redirect":"","order_type":"outlook","status":"Active"}]}`)
 		case strings.HasPrefix(r.URL.Path, "/swap-redirect/"):
@@ -623,10 +641,10 @@ func TestScaledMailDomains(t *testing.T) {
 			writeJSON(w, 404, `{"error":"Domain not found"}`)
 		}
 	})
-	dm := domainManager(t, newTestClient(t, VendorScaledMail, map[string]string{FieldAPIKey: testKey, FieldOrganizationID: org}, srv.URL, nil))
+	dm := domainManager(t, newTestClient(t, VendorScaledMail, map[string]string{FieldAPIKey: testKey}, srv.URL, nil))
 	ctx := context.Background()
 	got, err := dm.Domains(ctx)
-	if err != nil || !reflect.DeepEqual(got, []Domain{{ID: "recDOM1", Name: "outreach-one.com", Forwarding: "https://example.com"}, {ID: "recDOM2", Name: "outreach-two.com"}}) {
+	if err != nil || !reflect.DeepEqual(got, []Domain{{ID: org + ":recDOM1", Name: "outreach-one.com", Forwarding: "https://example.com"}, {ID: org + ":recDOM2", Name: "outreach-two.com"}}) {
 		t.Fatalf("Domains = %+v, %v", got, err)
 	}
 	if err := dm.SetForwarding(ctx, got[0], "https://mybrand.com/landing"); err != nil {
@@ -642,9 +660,9 @@ func TestScaledMailDomains(t *testing.T) {
 	if err := dm.SetForwarding(ctx, got[1], ""); err != nil {
 		t.Fatal(err)
 	}
-	reqs := srv.requests()
+	reqs := srv.requests()[1:]
 	if len(reqs) != 3 {
-		t.Fatalf("%d requests, want 3", len(reqs))
+		t.Fatalf("%d requests after the organization list, want 3", len(reqs))
 	}
 	for _, r := range reqs[1:] {
 		if r.Method != http.MethodPost || r.Path != "/swap-redirect/outreach-one.com" || r.q("organization_id") != org {
