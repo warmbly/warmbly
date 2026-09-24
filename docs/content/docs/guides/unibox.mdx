@@ -174,6 +174,12 @@ Unlike read state, Archive and Delete are Warmbly's own filing. The message keep
 
 Reply, forward, or hover any single message to reply to it specifically. The composer appears when you ask for it or return to a conversation with a saved reply or forward. Replies go from the mailbox that owns the thread, so conversations stay on one account. You can apply a saved **template** or **Insert booking link**.
 
+### Forwarding
+
+**Forward** sends the message you picked to someone new. The subject gets `Fwd:` and the To line starts empty. What you type is an optional note; you can send a forward without one. The recipient gets your note, then your mailbox signature (when signature sync is on), then a `Forwarded message` block with the original From, Date, Subject, To and Cc lines and the original message underneath, formatting included. The Date line uses the sending mailbox's time zone.
+
+The composer shows the message it will forward under your note; expand **Forwarded message** to read it before you send. Attachments on the original are not forwarded. If only a preview of the original is stored (the thread shows "Only a preview of this message is stored"), the composer says so, and the forward carries that preview.
+
 Replies and forwards save after a short typing pause, and save the latest edits when you close the composer, leave the conversation, or reload. Returning to the thread reopens a saved draft, including one addressed to an older message. **Discard** removes it; successfully queuing a send removes it too. Undoing a send restores the message for editing.
 
 These reply drafts are personal to your signed-in user and workspace in this browser. They do not sync to other devices, appear in the mailbox's **Drafts** folder, or travel in a [workspace export](/guides/workspace-export-import/). Clearing browser data removes them. **Draft saved** confirms browser storage succeeded; **Draft not saved** means you should copy your text before leaving.

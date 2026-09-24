@@ -29,6 +29,9 @@ type UniboxService interface {
 		ctx context.Context,
 		orgID, id uuid.UUID,
 	) (*models.EmailMessage, *errx.Error)
+	// ForwardSource is the message a forward carries, read without marking it
+	// seen. NotFound when the id names no message in the organization.
+	ForwardSource(ctx context.Context, orgID, id uuid.UUID) (*models.ForwardedMessage, *errx.Error)
 	GetByThread(
 		ctx context.Context,
 		orgID, emailID uuid.UUID,

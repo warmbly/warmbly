@@ -626,9 +626,10 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
       <AnimatePresence mode="wait" initial={false}>
         {replyState ? (
           (() => {
+            // A forward never falls back: it would send a different message.
             const target =
               messages.find((m) => m.id === replyState.messageId) ??
-              messages[messages.length - 1];
+              (replyState.mode === "reply" ? messages[messages.length - 1] : undefined);
             return target ? (
               <ReplyComposer
                 key={`${userId}-${orgId}-${replyState.messageId}-${replyState.mode}`}

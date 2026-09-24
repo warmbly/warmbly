@@ -50,6 +50,24 @@ type EmailMessage struct { // used for sending to the user
 	BodyTruncated bool `json:"body_truncated"`
 }
 
+// ForwardedMessage is a stored message as a forward carries it: the envelope
+// and the body as synced, before any rendering.
+type ForwardedMessage struct {
+	// EmailID is the mailbox the message belongs to.
+	EmailID uuid.UUID
+	From    []string
+	To      []string
+	CC      []string
+	Subject string
+	Date    time.Time
+	// BodyHTML is the stored HTML, unsanitized; empty when the message has none.
+	BodyHTML  string
+	BodyPlain string
+	// Truncated marks a message whose body is not stored, so BodyPlain is only
+	// its preview.
+	Truncated bool
+}
+
 type EmailMessageData struct { // used when for kafka when an email arrives
 	ID uuid.UUID `json:"id"`
 

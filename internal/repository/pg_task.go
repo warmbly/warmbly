@@ -57,6 +57,10 @@ type EmailTask struct {
 	// Tracked records that this send carries an open pixel and click tickets,
 	// which only happens when the sending mailbox opted in.
 	Tracked bool
+	// ForwardedHTML and ForwardedPlain are the message a forward carries,
+	// appended after the body and signature when the send goes out.
+	ForwardedHTML  string
+	ForwardedPlain string
 }
 
 // TaskFailure represents a task failure record
@@ -260,8 +264,8 @@ func (r *taskRepository) CreateWarmupTask(ctx context.Context, warmupTask *Warmu
 // CreateEmailTask creates email-specific task data
 func (r *taskRepository) CreateEmailTask(ctx context.Context, emailTask *EmailTask) error {
 	query := `
-		INSERT INTO email_tasks (task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted, tracked)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO email_tasks (task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted, tracked, forwarded_html, forwarded_plain)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
 	sendMode := emailTask.SendMode
@@ -283,6 +287,8 @@ func (r *taskRepository) CreateEmailTask(ctx context.Context, emailTask *EmailTa
 		sendMode,
 		emailTask.Encrypted,
 		emailTask.Tracked,
+		emailTask.ForwardedHTML,
+		emailTask.ForwardedPlain,
 	)
 
 	return err
@@ -400,7 +406,8 @@ func (r *taskRepository) GetWarmupTask(ctx context.Context, taskID uuid.UUID) (*
 // GetEmailTask retrieves email task data
 func (r *taskRepository) GetEmailTask(ctx context.Context, taskID uuid.UUID) (*EmailTask, error) {
 	query := `
-		SELECT task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted
+		SELECT task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted,
+		       forwarded_html, forwarded_plain
 		FROM email_tasks
 		WHERE task_id = $1
 	`
@@ -419,6 +426,8 @@ func (r *taskRepository) GetEmailTask(ctx context.Context, taskID uuid.UUID) (*E
 		&emailTask.ThreadID,
 		&emailTask.SendMode,
 		&emailTask.Encrypted,
+		&emailTask.ForwardedHTML,
+		&emailTask.ForwardedPlain,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -577,8 +586,8 @@ func (r *taskRepository) CreateEmailTaskFull(ctx context.Context, task *Task, em
 	}
 
 	etQuery := `
-		INSERT INTO email_tasks (task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted, tracked)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO email_tasks (task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted, tracked, forwarded_html, forwarded_plain)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 	_, err = tx.Exec(ctx, etQuery,
 		emailTask.TaskID,
@@ -594,6 +603,8 @@ func (r *taskRepository) CreateEmailTaskFull(ctx context.Context, task *Task, em
 		sendMode,
 		emailTask.Encrypted,
 		emailTask.Tracked,
+		emailTask.ForwardedHTML,
+		emailTask.ForwardedPlain,
 	)
 	if err != nil {
 		return err

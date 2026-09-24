@@ -10,6 +10,8 @@ export interface SendUniboxReplyRequest {
     body_plain?: string
     in_reply_to?: string[]
     thread_id?: string
+    /** Forwards this stored message: the server attaches it under the body and signature. */
+    forward_message_id?: string
     // "instant" → send right away
     // "smart"   → next slot picked by the per-mailbox scheduler
     // "scheduled" → use scheduled_at verbatim (must be future)

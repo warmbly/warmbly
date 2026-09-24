@@ -9118,7 +9118,7 @@
       "post": {
         "operationId": "unibox_reply",
         "summary": "Reply from the inbox",
-        "description": "Sends or schedules a reply from one of your mailboxes, routed through the per-mailbox scheduler according to `send_mode`. Requires an active organization.",
+        "description": "Sends or schedules a reply or forward from one of your mailboxes, routed through the per-mailbox scheduler according to `send_mode`. With `forward_message_id` the stored message is attached under the body and the mailbox signature, so the body is an optional note. Requires an active organization.",
         "tags": [
           "unibox"
         ],
@@ -9174,7 +9174,17 @@
             }
           },
           "403": {
-            "description": "Missing scope/permission, or organization lacks unified-inbox access.",
+            "description": "Missing scope/permission, organization lacks unified-inbox access, or the API key is not allowed the sending mailbox or the mailbox of the forwarded message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The sending mailbox or the message named by `forward_message_id` is not in the organization.",
             "content": {
               "application/json": {
                 "schema": {
@@ -30193,6 +30203,11 @@
             "type": "string",
             "format": "date-time",
             "description": "Required when `send_mode` is `scheduled`; must be in the future."
+          },
+          "forward_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Forwards this stored message (the `id` from `GET /unibox/:id`). It goes out under the body and the mailbox signature with its From, Date, Subject, To and Cc lines. Attachments are not included."
           }
         }
       },

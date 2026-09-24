@@ -51,6 +51,23 @@ vi.mock("./TemplatePicker", () => ({ default: () => null }));
 vi.mock("./InsertBookingLink", () => ({ default: () => null }));
 vi.mock("./compose/ContactRecipientField", () => ({ default: () => null }));
 vi.mock("@/components/ui/DateTimePicker", () => ({ DateTimePicker: () => null }));
+vi.mock("@/lib/api/hooks/app/unibox/useUniboxEmail", () => ({
+    default: () => ({
+        isPending: false,
+        isError: false,
+        data: {
+            from: ["Them <them@example.com>"],
+            to: ["me@example.com"],
+            cc: [],
+            subject: "Quarterly numbers",
+            date: new Date("2026-09-23T08:34:00Z"),
+            body_html: "",
+            body_plain: "The figures are attached.",
+            body_truncated: true,
+        },
+    }),
+}));
+vi.mock("./EmailBody", () => ({ default: ({ plain }: { plain?: string }) => <p>{plain}</p> }));
 
 const { ReplyComposer } = await import("./ReplyComposer");
 const { replyDraftKey } = await import("@/lib/unibox/replyDraft");
@@ -222,6 +239,42 @@ describe("reply composer drafts", () => {
         view.unmount();
         render(<ReplyComposer threadId="t1" replyTo={message()} mode="forward" onClose={() => {}} />);
         expect(screen.getByPlaceholderText("Subject")).toHaveValue("Custom subject");
+    });
+
+    it("forwards the message by id, with or without a note", async () => {
+        const seed = { to: ["colleague@example.com"], cc: [], bcc: [], subject: "Fwd: Quarterly numbers", body: "" };
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="forward" seed={seed} onClose={() => {}} />);
+        expect(screen.getByText("Forwarded message")).toBeInTheDocument();
+        expect(screen.getByText(/carries that preview/)).toBeInTheDocument();
+
+        const send = screen.getByRole("button", { name: "Send" });
+        expect(send).toBeEnabled();
+        await act(async () => fireEvent.click(send));
+        expect(sendReply).toHaveBeenCalledWith(expect.objectContaining({
+            to: ["colleague@example.com"],
+            forward_message_id: "msg-1",
+            thread_id: undefined,
+            body_plain: "",
+        }));
+    });
+
+    it("previews the forwarded message on demand", () => {
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="forward" onClose={() => {}} />);
+        expect(screen.queryByText("The figures are attached.")).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: /Forwarded message/ }));
+        expect(screen.getByText("The figures are attached.")).toBeInTheDocument();
+        expect(screen.getByText("Attachments on the original are not forwarded.")).toBeInTheDocument();
+    });
+
+    it("keeps a reply's body required and never names a message to forward", async () => {
+        const seed = { to: ["them@example.com"], cc: [], bcc: [], subject: "Re: x", body: "" };
+        const view = render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" seed={seed} onClose={() => {}} />);
+        expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+        expect(screen.queryByText("Forwarded message")).toBeNull();
+        fireEvent.change(body(), { target: { value: "Thanks" } });
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(sendReply).toHaveBeenCalledWith(expect.objectContaining({ thread_id: "t1", forward_message_id: undefined }));
+        view.unmount();
     });
 
     it("does not claim a failed save succeeded or close away the unsaved text", () => {

@@ -288,6 +288,26 @@ func AddSignature(body string, signature string, isHTML bool) string {
 	return mailhtml.AppendToContent(body, block)
 }
 
+// AppendForwarded puts the message a forward carries under the note and
+// signature, the order every mail client writes a forward in.
+func AppendForwarded(bodyHTML, bodyPlain, forwardedHTML, forwardedPlain string) (string, string) {
+	if forwardedHTML != "" {
+		if strings.TrimSpace(bodyHTML) == "" {
+			bodyHTML = forwardedHTML
+		} else {
+			bodyHTML = mailhtml.AppendToContent(bodyHTML, "<br>"+forwardedHTML)
+		}
+	}
+	if forwardedPlain != "" {
+		if note := strings.TrimRight(bodyPlain, " \t\r\n"); note == "" {
+			bodyPlain = forwardedPlain
+		} else {
+			bodyPlain = note + "\n\n" + forwardedPlain
+		}
+	}
+	return bodyHTML, bodyPlain
+}
+
 // AddOpenTrackingPixel adds an invisible tracking pixel to HTML email.
 // The pixel URL points to the tracking service endpoint: /t/o/{taskID}.png.
 //

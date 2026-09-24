@@ -2,6 +2,7 @@ package unibox
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -9,6 +10,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 func (s *uniboxService) GetByID(
@@ -27,6 +29,9 @@ func (s *uniboxService) GetByID(
 	{
 		msg, owner, err := s.uniboxRepository.GetByIDForOrg(ctx, orgID, id)
 		if err != nil {
+			if errors.Is(err, repository.ErrEmailNotFound) {
+				return nil, errx.New(errx.NotFound, "message not found")
+			}
 			errs.CaptureException(err)
 			return nil, errx.InternalError()
 		}
