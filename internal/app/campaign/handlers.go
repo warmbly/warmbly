@@ -609,10 +609,11 @@ func (s *campaignService) WakeCampaigns(ctx context.Context, orgID uuid.UUID, ca
 			continue
 		}
 		var parked *time.Time
+		var parkedTask repository.Task
 		for i := range pending {
 			at := pending[i].ScheduledAt
 			if at != nil && (parked == nil || at.Before(*parked)) {
-				parked = at
+				parked, parkedTask = at, pending[i]
 			}
 		}
 		// Already about to fire.
@@ -620,7 +621,7 @@ func (s *campaignService) WakeCampaigns(ctx context.Context, orgID uuid.UUID, ca
 			continue
 		}
 		if parked != nil {
-			if sent, serr := s.campaignRepository.LastTickSent(ctx, id); serr != nil || sent {
+			if paced, perr := s.campaignRepository.IsPacedSuccessor(ctx, id, parkedTask); perr != nil || paced {
 				continue
 			}
 		}

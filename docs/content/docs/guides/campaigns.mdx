@@ -223,9 +223,9 @@ Within a window Warmbly spreads the day's emails evenly, adds random jitter, and
 
 The spread covers every mailbox on the campaign, not one at a time: the day's remaining capacity across the whole sending pool is paced across the hours left in the window. Adding a second healthy mailbox roughly doubles how fast a campaign works through its leads, while each mailbox still stays inside its own daily cap, hourly ceiling and minimum gap.
 
-The spacing sits between sends, never in front of the first one. A campaign you start (or resume) inside its window with a lead due sends that lead right away, and the paced gap only begins once that email has gone.
+The spacing sits between sends, never in front of the first one. A campaign you start (or resume) with a lead due sends that lead as soon as one of its mailboxes can (inside the sending window, under its daily cap and past its minimum gap), and the paced gap only begins once that email has gone.
 
-When nothing is due (every lead is inside a step's wait, for example), the campaign re-checks itself at least every `15` minutes rather than sleeping until the next step falls due; the activity log notes it once a day rather than on every check. Leads added to a waiting campaign start sending straight away, without waiting for that re-check or a restart, unless the campaign sets a delay before the first email. Leads added while a campaign is mid-send join the queue and go out at its current pace, so adding leads never shortens the gap between two sends.
+When nothing is due (every lead is inside a step's wait, for example), the campaign re-checks itself at least every `15` minutes rather than sleeping until the next step falls due; the activity log notes it once a day rather than on every check. Leads added to a waiting campaign are sent on the same terms, without waiting for that re-check or a restart, unless the campaign sets a delay before the first email. Leads added while a campaign is mid-send join the queue and go out at its current pace, so adding leads never shortens the gap between two sends.
 
 ### Delay before the first email
 

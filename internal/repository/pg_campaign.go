@@ -61,10 +61,9 @@ type CampaignRepository interface {
 	StopCampaign(ctx context.Context, campaignID uuid.UUID) error
 	ValidateCampaignReady(ctx context.Context, campaignID uuid.UUID) error
 	GetPendingCampaignTasks(ctx context.Context, campaignID uuid.UUID) ([]Task, error)
-	// LastTickSent reports whether the campaign's most recent finished tick
-	// dispatched an email, so its pending successor is paced send spacing
-	// rather than a deferral recheck.
-	LastTickSent(ctx context.Context, campaignID uuid.UUID) (bool, error)
+	// IsPacedSuccessor reports whether a pending wakeup was parked by a tick
+	// that sent, so it is send spacing rather than a deferral recheck.
+	IsPacedSuccessor(ctx context.Context, campaignID uuid.UUID, pending Task) (bool, error)
 	// ListCampaignScheduleCandidates returns active campaigns that have NO pending
 	// task — their self-perpetuating chain died and needs re-seeding. Used by the
 	// campaign reconciler.
@@ -1697,22 +1696,24 @@ func (r *campaignRepository) ValidateCampaignReady(ctx context.Context, campaign
 	return nil
 }
 
-// LastTickSent implements the interface comment on CampaignRepository. A
-// campaign with no finished tick has sent nothing and reports false.
-func (r *campaignRepository) LastTickSent(ctx context.Context, campaignID uuid.UUID) (bool, error) {
-	var sent bool
+// IsPacedSuccessor implements the interface comment on CampaignRepository. A
+// sending tick completes and parks its successor in the same call, so a wakeup
+// created later than that (a reconciler re-seed) is not its successor.
+func (r *campaignRepository) IsPacedSuccessor(ctx context.Context, campaignID uuid.UUID, pending Task) (bool, error) {
+	var paced bool
 	err := r.DB.QueryRow(ctx, `
-		SELECT `+taskDispatchedEmail+`
+		SELECT `+taskDispatchedEmail+` AND t.completed_at >= $2::timestamptz - interval '1 minute'
 		FROM tasks t
 		JOIN campaign_tasks ct ON ct.task_id = t.id
-		WHERE ct.campaign_id = $1 AND t.task_type = 'campaign' AND t.status <> 'pending'
+		WHERE ct.campaign_id = $1 AND t.task_type = 'campaign'
+		  AND t.status NOT IN ('pending', 'cancelled') AND t.created_at < $2
 		ORDER BY t.created_at DESC
 		LIMIT 1
-	`, campaignID).Scan(&sent)
+	`, campaignID, pending.CreatedAt).Scan(&paced)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
-	return sent, err
+	return paced, err
 }
 
 // GetPendingCampaignTasks returns all pending tasks for a campaign
