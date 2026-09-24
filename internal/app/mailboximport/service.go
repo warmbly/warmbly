@@ -95,6 +95,8 @@ type VendorAuthorization struct {
 	// Vendor is the vendor's name and Stage its own word for where a pending request is.
 	Vendor string
 	Stage  string
+	// Note is what the person can do about a pending request: a step the vendor waits on, or who to ask when it stalls.
+	Note string
 }
 
 // VendorAuthorizer is a VendorSource that can have the vendor authorize this

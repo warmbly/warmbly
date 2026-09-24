@@ -404,9 +404,12 @@ func authorizingMessage(auth VendorAuthorization, signinCause, domain string) st
 	if auth.Stage != "" {
 		msg += " (" + vendor + " status: " + auth.Stage + ")"
 	}
-	if signinCause == causeGoogleSignin {
+	switch {
+	case auth.Note != "":
+		msg += ". " + auth.Note
+	case signinCause == causeGoogleSignin:
 		msg += ". Google can take up to an hour to apply it."
-	} else {
+	default:
 		msg += ". Microsoft usually takes a few minutes."
 	}
 	return msg + " The mailbox connects on its own, and switches to Sign in if this is not done within 2 hours."

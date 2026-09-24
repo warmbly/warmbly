@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // InboxKit: https://docs.inboxkit.com/llms.txt
@@ -227,8 +228,9 @@ func (c *inboxKit) AuthorizationStatus(ctx context.Context, requestID string) (A
 	var res struct {
 		inboxKitEnvelope
 		Data struct {
-			Status       string  `json:"status"`
-			ErrorMessage *string `json:"error_message"`
+			Status       string    `json:"status"`
+			ErrorMessage *string   `json:"error_message"`
+			UpdatedAt    time.Time `json:"updated_at"`
 		} `json:"data"`
 	}
 	if err := c.t.do(ctx, call{method: http.MethodGet, path: "/v1/api/mailboxes/client-id-request/status/" + url.PathEscape(uid), header: inboxKitHeader(ws)}, &res); err != nil {
@@ -247,7 +249,7 @@ func (c *inboxKit) AuthorizationStatus(ctx context.Context, requestID string) (A
 		}
 		return AuthorizationStatus{State: AuthorizationFailed, Reason: reason}, nil
 	}
-	return AuthorizationStatus{State: AuthorizationPending, Stage: strings.ToLower(strings.TrimSpace(res.Data.Status))}, nil
+	return AuthorizationStatus{State: AuthorizationPending, Stage: strings.ToLower(strings.TrimSpace(res.Data.Status)), UpdatedAt: res.Data.UpdatedAt}, nil
 }
 
 const inboxKitDomainPageSize = 100
