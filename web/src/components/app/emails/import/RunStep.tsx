@@ -377,16 +377,20 @@ export default function RunStep({
                                             className="h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                                         >
                                             {consent.busy ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <Building2Icon className="w-3 h-3" />}
-                                            {consent.busy ? "Waiting for the administrator…" : "Approve as a Microsoft 365 admin"}
+                                            {consent.busy
+                                                ? "Waiting for the administrator…"
+                                                : `Connect all ${authorizing.toLocaleString()} at once (admin sign-in)`}
                                         </button>
                                         <p className="text-[11px] text-sky-800/90 leading-relaxed mt-1">
-                                            Sign in once with the domain&apos;s Global Administrator account ({vendorLabel(data.vendor) || "your inbox vendor"}{" "}
-                                            gives you its login). Every mailbox on the domain then connects within a minute.
+                                            One sign-in with the domain&apos;s Global Administrator account ({vendorLabel(data.vendor) || "your inbox vendor"}{" "}
+                                            gives you its login) does what the vendor is doing: every mailbox on the domain connects within a minute,
+                                            and mailboxes you import there later connect with no sign-in.
                                         </p>
                                     </div>
                                 )}
                                 <p className="text-[11px] text-sky-800/90 leading-relaxed mt-1">
-                                    {msAuthorizing && msGrants && !granted ? "Or use" : "Use"} Sign in on a row to connect that mailbox now.
+                                    {msAuthorizing && msGrants && !granted ? "Or connect them one by one:" : "Connect them one by one:"} Sign in on
+                                    a row signs in as that mailbox and connects only it.
                                 </p>
                             </div>
                         </div>

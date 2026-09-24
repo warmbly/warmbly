@@ -55,7 +55,7 @@ func TestRetryUnansweredRetriesOnlyASilentFleet(t *testing.T) {
 func TestAuthorizingMessageSaysWhoWhatAndHowLong(t *testing.T) {
 	ms := authorizingMessage(VendorAuthorization{Pending: true, Vendor: "InboxKit", Stage: "processing"}, causeMicrosoftSignin, "acme.io")
 	for _, want := range []string{"InboxKit is authorizing Warmbly on acme.io", "InboxKit status: processing", "up to an hour",
-		"use Sign in on this row", "Microsoft 365 administrator", "within 2 hours"} {
+		"use Sign in on this row", "at once with an admin sign-in", "within 2 hours"} {
 		if !strings.Contains(ms, want) {
 			t.Fatalf("microsoft message %q lacks %q", ms, want)
 		}

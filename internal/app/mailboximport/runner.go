@@ -474,7 +474,7 @@ func authorizingMessage(auth VendorAuthorization, signinCause, domain string) st
 	}
 	msg += " The mailbox connects on its own. To connect it sooner, use Sign in on this row"
 	if signinCause != causeGoogleSignin {
-		msg += ", or approve Warmbly once as a Microsoft 365 administrator"
+		msg += ", or connect every mailbox on the domain at once with an admin sign-in"
 	}
 	return msg + ". If it is not done within 2 hours, the row switches to Sign in."
 }
