@@ -8,7 +8,10 @@
 // Layout: a one-line target strip at the top (Reply/Forward to name and
 // subject, plus dismiss), then plain header rows (To with Cc/Bcc toggles,
 // From, unlabelled Subject), the body textarea, the optional signature
-// preview, and the action bar (Send / Schedule / Template / Discard).
+// preview, the forwarded message when forwarding, and the action bar
+// (Send / Schedule / Template / Discard).
+//
+// A forward sends only its message's id; the server attaches the message, so the note is optional.
 //
 // From defaults to the mailbox holding the message and can be switched to any
 // active mailbox; the backend keeps the provider thread only for a mailbox
@@ -38,6 +41,7 @@ import useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
 import TemplatePickerContent from "./TemplatePicker";
 import InsertBookingLink from "./InsertBookingLink";
 import ContactRecipientField from "./compose/ContactRecipientField";
+import ForwardedMessage from "./ForwardedMessage";
 import MailboxPicker from "./compose/MailboxPicker";
 import useComposeCandidates from "@/lib/api/hooks/app/unibox/useComposeCandidates";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
@@ -293,12 +297,14 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
     const scheduleAtCap = scheduledCap > 0 && scheduledUsed >= scheduledCap;
 
     const trimmedBody = body.trim();
+    // A forward's note is optional: the forwarded message is the content.
+    const hasContent = !!trimmedBody || mode === "forward";
     const canSend =
-        !!trimmedBody && to.length > 0 && to.every(looksLikeEmail) && !!accountId && !senderProblem && !isSending;
+        hasContent && to.length > 0 && to.every(looksLikeEmail) && !!accountId && !senderProblem && !isSending;
 
     const send = async (scheduledAt?: Date) => {
         if (!canSend && !isSending) {
-            if (!trimmedBody) {
+            if (!hasContent) {
                 toast.error("Body is empty");
                 return;
             }
@@ -334,6 +340,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                 body_plain: trimmedBody,
                 body_html: plainToHtml(trimmedBody),
                 thread_id: mode === "reply" ? threadId : undefined,
+                forward_message_id: mode === "forward" ? replyTo.id : undefined,
                 ...(scheduledAt
                     ? {
                           send_mode: "scheduled" as const,
@@ -479,7 +486,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                     <span className="font-semibold text-slate-800">
                         {mode === "forward" ? "Forward" : "Reply"}
                     </span>{" "}
-                    to {replyToName}
+                    {mode === "forward" ? "message from" : "to"} {replyToName}
                     <span className="text-slate-400"> · {replyTargetSubject}</span>
                 </span>
                 {draft.saved && (
@@ -744,6 +751,8 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                     one in mailbox settings.
                 </div>
             )}
+
+            {mode === "forward" && <ForwardedMessage email={replyTo} />}
 
             {/* Action bar. flex-wrap so the Send + Schedule + Template
                 + Discard chain doesn't overflow on a 360px-wide phone;

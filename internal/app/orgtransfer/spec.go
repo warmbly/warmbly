@@ -676,6 +676,8 @@ var Tables = []Table{
 			{Column: "body", Domain: KeyDomainOrgDEK, Guard: "encrypted"},
 			{Column: "body_html", Domain: KeyDomainOrgDEK, Guard: "encrypted"},
 			{Column: "body_plain", Domain: KeyDomainOrgDEK, Guard: "encrypted"},
+			{Column: "forwarded_html", Domain: KeyDomainOrgDEK, Guard: "encrypted"},
+			{Column: "forwarded_plain", Domain: KeyDomainOrgDEK, Guard: "encrypted"},
 		},
 	},
 	{

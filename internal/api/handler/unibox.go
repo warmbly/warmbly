@@ -464,9 +464,12 @@ type UniboxReplyRequest struct {
 	ThreadID       string     `json:"thread_id"`
 	SendMode       string     `json:"send_mode"`
 	ScheduledAt    *time.Time `json:"scheduled_at,omitempty"`
+	// ForwardMessageID makes the send a forward of that stored message, which
+	// goes out under the body and signature.
+	ForwardMessageID string `json:"forward_message_id"`
 }
 
-// UniboxReply schedules a reply email from Unibox.
+// UniboxReply schedules a reply or forward email from Unibox.
 // POST /unibox/reply
 func (h *Handler) UniboxReply(c *gin.Context) {
 	orgID := middleware.GetOrganizationID(c)
@@ -497,6 +500,31 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 		return
 	}
 
+	var forward *models.ForwardedMessage
+	if req.ForwardMessageID != "" {
+		// Forwarding discloses the message, so it needs read access as well as write.
+		if xerr := h.hasAccess(c, models.PermAccessUnibox, models.APIPermReadUnibox); xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
+		forwardID, err := uuid.Parse(req.ForwardMessageID)
+		if err != nil {
+			errx.Handle(c, errx.New(errx.BadRequest, "forward_message_id must be a message id"))
+			return
+		}
+		src, xerr := h.UniboxService.ForwardSource(c.Request.Context(), *orgID, forwardID)
+		if xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
+		// Its mailbox is checked like the sender's.
+		if xerr := mailboxAllowed(c, src.EmailID); xerr != nil {
+			errx.Handle(c, xerr)
+			return
+		}
+		forward = src
+	}
+
 	// The composer only knows the provider thread id, but a thread id is
 	// meaningless outside the sending mailbox: the recipient's client threads
 	// on In-Reply-To/References. Resolve the parent Message-ID here so a reply
@@ -519,6 +547,7 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 		ThreadID:    req.ThreadID,
 		SendMode:    req.SendMode,
 		ScheduledAt: req.ScheduledAt,
+		Forward:     forward,
 	}
 	if sendReq.SendMode == "" {
 		sendReq.SendMode = "instant"
@@ -530,10 +559,14 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 		return
 	}
 
-	h.auditOrg(c, models.AuditActionSend, models.AuditEntityUnibox, &accountID, nil, map[string]string{
+	audit := map[string]string{
 		"send_mode":  sendReq.SendMode,
 		"recipients": strconv.Itoa(len(req.To)),
-	})
+	}
+	if forward != nil {
+		audit["forwarded_message_id"] = req.ForwardMessageID
+	}
+	h.auditOrg(c, models.AuditActionSend, models.AuditEntityUnibox, &accountID, nil, audit)
 
 	c.JSON(http.StatusOK, resp)
 }

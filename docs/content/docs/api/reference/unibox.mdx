@@ -296,7 +296,7 @@ Echoes the request back.
 
 `POST /unibox/reply`
 
-Sends or schedules a reply from any mailbox in the organization. The send is routed through the per-mailbox scheduler according to `send_mode`. Requires an active organization. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+Sends or schedules a reply or a forward from any mailbox in the organization. The send is routed through the per-mailbox scheduler according to `send_mode`. Requires an active organization. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Request body
 
@@ -313,6 +313,7 @@ Sends or schedules a reply from any mailbox in the organization. The send is rou
 | `thread_id` | string | No | The conversation being answered. |
 | `send_mode` | string | No | `instant` (default), `smart` (next mailbox gap), or `scheduled` (use `scheduled_at`). |
 | `scheduled_at` | string | No | RFC 3339 timestamp. Required when `send_mode` is `scheduled`; must be in the future. |
+| `forward_message_id` | string | No | UUID of a stored message (the `id` from `GET /unibox/:id`) to forward. See [Forwarding a message](#forwarding-a-message). |
 
 ```json
 {
@@ -339,6 +340,33 @@ Sends or schedules a reply from any mailbox in the organization. The send is rou
 Instant sends are held for the sender's undo window (5 to 120 seconds, default 30) before they actually leave, so `scheduled_at` is that far in the future. Within the window the send can still be cancelled with `DELETE /unibox/scheduled/:task_id`.
 
 Only Gmail has a provider thread handle, and it belongs to the mailbox that holds the thread. So the reply files into the Gmail thread `thread_id` names only when `email_account_id` holds a message in it; a mailbox that already replied into the conversation from outside continues the thread that reply started. Otherwise it goes out with the same In-Reply-To and References headers and the conversation's subject, which keeps it in the same conversation for the recipient, and starts a conversation of its own in the sending mailbox. The queued send still belongs to `thread_id`, so it is listed with that conversation's scheduled sends.
+
+### Forwarding a message
+
+Set `forward_message_id` to forward a message from the inbox. Warmbly attaches the stored message itself, so `body_html` and `body_plain` are an optional note and can be left empty. The message is copied when the request is accepted, so a scheduled forward still carries it if the original is later deleted. What goes out, in both the HTML and the plain-text part:
+
+1. your note, if any
+2. the sending mailbox's signature, when signature sync is on (a forward is signed even without a note)
+3. a `---------- Forwarded message ---------` block with the original From, Date, Subject, To and Cc lines, then the original body
+
+The Date line is written in the sending mailbox's time zone (its own, else the workspace's, else UTC). The original HTML keeps its formatting: its stylesheet is folded into inline styles and it is sanitized like a message opened in Unibox, so scripts, event handlers and Warmbly's own open-tracking pixels are dropped. When the original has only a text part, it is forwarded as text. Links in the forwarded message are never rewritten for click tracking; only your note is tracked, when the mailbox tracks direct mail. Forwarding one of your own tracked sends (from Sent, say) swaps its tracked links back to their real destinations, so the new recipient's clicks are not counted against the original send.
+
+Two limits:
+
+- attachments on the original are not forwarded
+- a message whose full body is not stored (the reader shows "Only a preview of this message is stored") is forwarded with that preview
+
+Forwarding discloses the message, so it takes `READ_UNIBOX` as well as `WRITE_UNIBOX` (for a dashboard session, the `access_unibox` permission covers both), and an API key restricted to certain mailboxes must be allowed the mailbox the message belongs to as well as the sending mailbox. Either missing answers `403`. A `forward_message_id` that names no message in the organization answers `404`.
+
+```json
+{
+  "email_account_id": "2a1b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+  "to": ["finance@acme.com"],
+  "subject": "Fwd: Following up on pricing",
+  "body_plain": "Can you take a look at this?",
+  "forward_message_id": "7f8e9d0c-1b2a-4c3d-9e8f-0a1b2c3d4e5f"
+}
+```
 
 ## List active snoozes
 

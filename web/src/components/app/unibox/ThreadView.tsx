@@ -286,6 +286,12 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
   // let a thread re-render reset the reply composer; keep it memoised, and
   // above the early returns below so the hook order stays fixed.
   const messages = React.useMemo(() => (q.data?.data ?? []).map(toUniboxEmail), [q.data]);
+  // A forward never falls back: it would send a different message. With no
+  // target the Reply/Forward bar shows instead of an empty composer slot.
+  const replyTarget = replyState
+    ? messages.find((m) => m.id === replyState.messageId) ??
+      (replyState.mode === "reply" ? messages[messages.length - 1] : undefined)
+    : undefined;
 
   if (q.isPending) {
     return <ThreadSkeleton />;
@@ -625,25 +631,18 @@ export function ThreadView({ threadId, emailId }: ThreadViewProps) {
       <AgentDraftCard threadId={threadId} />
 
       <AnimatePresence mode="wait" initial={false}>
-        {replyState ? (
-          (() => {
-            const target =
-              messages.find((m) => m.id === replyState.messageId) ??
-              messages[messages.length - 1];
-            return target ? (
-              <ReplyComposer
-                key={`${userId}-${orgId}-${replyState.messageId}-${replyState.mode}`}
-                threadId={threadId}
-                replyTo={target}
-                mode={replyState.mode}
-                seed={replySeed ?? undefined}
-                onClose={() => {
-                  setReplyState(null);
-                  setReplySeed(null);
-                }}
-              />
-            ) : null;
-          })()
+        {replyState && replyTarget ? (
+          <ReplyComposer
+            key={`${userId}-${orgId}-${replyState.messageId}-${replyState.mode}`}
+            threadId={threadId}
+            replyTo={replyTarget}
+            mode={replyState.mode}
+            seed={replySeed ?? undefined}
+            onClose={() => {
+              setReplyState(null);
+              setReplySeed(null);
+            }}
+          />
         ) : (
           <motion.div
             key="reply-rail"

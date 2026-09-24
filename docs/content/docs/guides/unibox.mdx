@@ -180,6 +180,12 @@ Reply, forward, or hover any single message to reply to it specifically. The com
 
 A reply from a different mailbox keeps the conversation's subject and its In-Reply-To and References headers, so the recipient sees it in the same conversation. A provider thread belongs to the mailbox that holds it, so unless the mailbox you pick already has a message in this conversation, the first such reply starts a conversation of its own there (later replies from it continue that one), and the recipient's answer arrives in that mailbox. A note under **From** says so, with **Switch back** to return to the original mailbox. A forward has no thread to keep, so it simply leaves from the mailbox you pick.
 
+### Forwarding
+
+**Forward** sends the message you picked to someone new. The subject gets `Fwd:` and the To line starts empty. What you type is an optional note; you can send a forward without one. The recipient gets your note, then the sending mailbox's signature (when signature sync is on), then a `Forwarded message` block with the original From, Date, Subject, To and Cc lines and the original message underneath, formatting included. The Date line uses the sending mailbox's time zone.
+
+The composer shows the message it will forward under your note; expand **Forwarded message** to read it before you send. Attachments on the original are not forwarded. If only a preview of the original is stored (the thread shows "Only a preview of this message is stored"), the composer says so, and the forward carries that preview. Forwarding one of your own tracked sends puts its links back to their real destinations, so the new recipient's clicks do not count against the original send.
+
 ### Reply drafts
 
 Replies and forwards save after a short typing pause, and save the latest edits when you close the composer, leave the conversation, or reload. Returning to the thread reopens a saved draft, including one addressed to an older message, with the mailbox you picked. **Discard** removes it; successfully queuing a send removes it too. Undoing a send restores the message for editing, from the same mailbox.

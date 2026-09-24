@@ -33,7 +33,7 @@ func TestApplyDirectTracking(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, tracked := svc.applyDirectTracking(context.Background(), tc.account, taskID, tc.body)
+			got, tracked := svc.applyDirectTracking(context.Background(), tc.account, taskID, tc.body, tc.body != "")
 			if tracked != tc.want {
 				t.Fatalf("tracked = %v, want %v", tracked, tc.want)
 			}
@@ -56,7 +56,7 @@ func TestApplyDirectTrackingWithoutHost(t *testing.T) {
 	const body = `<html><body>hi</body></html>`
 	svc := &emailSendService{}
 
-	got, tracked := svc.applyDirectTracking(context.Background(), &models.Email{TrackDirectMail: true}, uuid.New(), body)
+	got, tracked := svc.applyDirectTracking(context.Background(), &models.Email{TrackDirectMail: true}, uuid.New(), body, true)
 	if tracked {
 		t.Fatal("reported tracked with no tracking host configured")
 	}
@@ -73,11 +73,22 @@ func TestApplyDirectTrackingWithoutLinkStore(t *testing.T) {
 	const body = `<html><body><a href="https://example.com/docs">docs</a></body></html>`
 	svc := &emailSendService{}
 
-	got, tracked := svc.applyDirectTracking(context.Background(), &models.Email{TrackDirectMail: true}, uuid.New(), body)
+	got, tracked := svc.applyDirectTracking(context.Background(), &models.Email{TrackDirectMail: true}, uuid.New(), body, true)
 	if !tracked {
 		t.Fatal("expected the pixel to be applied without a link store")
 	}
 	if !strings.Contains(got, "https://example.com/docs") {
 		t.Fatalf("original link did not survive:\n%s", got)
+	}
+}
+
+// A forward always ships an HTML part, so a forward with no note is tracked too.
+func TestApplyDirectTrackingForwardWithoutNote(t *testing.T) {
+	t.Setenv("TRACKING_DOMAIN", "t.example.com")
+
+	taskID := uuid.New()
+	got, tracked := (&emailSendService{}).applyDirectTracking(context.Background(), &models.Email{TrackDirectMail: true}, taskID, "", true)
+	if !tracked || !strings.Contains(got, "/t/o/"+taskID.String()) {
+		t.Fatalf("empty-note forward was not tracked: tracked=%v body=%q", tracked, got)
 	}
 }
