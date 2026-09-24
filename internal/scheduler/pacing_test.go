@@ -42,6 +42,24 @@ func TestDeferSlotCapsAFarFutureWakeup(t *testing.T) {
 	}
 }
 
+// TestWakeSlotStartsASendableChainNow: a chain seeded outside a tick (start,
+// resume, leads arriving) wakes when a send is allowed, not at the paced slot of
+// the send after it, which held a just-started campaign for ten minutes.
+func TestWakeSlotStartsASendableChainNow(t *testing.T) {
+	paced := time.Now().Add(12 * time.Minute)
+	if got := WakeSlot(paced, nil); time.Until(got) > time.Second {
+		t.Fatalf("sendable chain wakes at %s, want now", got)
+	}
+	deferred := time.Now().Add(72 * time.Hour)
+	if got := WakeSlot(deferred, ErrCampaignDeferred); got.After(time.Now().Add(config.CampaignMaxDeferMinutes*time.Minute + time.Second)) {
+		t.Fatalf("deferred chain wakes at %s, past the defer horizon", got)
+	}
+	near := time.Now().Add(3 * time.Minute)
+	if got := WakeSlot(near, ErrLeadDeferred); !got.Equal(near) {
+		t.Fatalf("a near deferral must be kept exactly, got %s want %s", got, near)
+	}
+}
+
 // TestPoolRemainingCountsEveryMailboxSendingToday: the campaign chain runs one
 // task at a time, so the even-distribution interval is the campaign's whole send
 // rate. Pacing it by the selected mailbox alone made a three-mailbox campaign
