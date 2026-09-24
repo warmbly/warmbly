@@ -140,3 +140,13 @@ func TestSanitizePreservesOnlyKnownQuoteMarkers(t *testing.T) {
 		}
 	}
 }
+
+// Reply parsing finds quoted history by its lines, so the stored text keeps
+// them while still collapsing the whitespace inside each one.
+func TestSearchTextKeepsLineBreaks(t *testing.T) {
+	got := SearchText("Sounds good.\r\n\r\n\r\nOn Tue, Jane   wrote:\r\n>   unsubscribe  here\r\n", "", 0)
+	want := "Sounds good.\n\nOn Tue, Jane wrote:\n> unsubscribe here"
+	if got != want {
+		t.Fatalf("SearchText = %q, want %q", got, want)
+	}
+}

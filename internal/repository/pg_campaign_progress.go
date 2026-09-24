@@ -1077,6 +1077,13 @@ func (r *campaignProgressRepository) ClaimInstantFire(ctx context.Context, campa
 	return tag.RowsAffected() == 1, nil
 }
 
+// progressIsEmailStep holds for a campaign_contact_progress row (alias) whose
+// step is an email: action, wait and end steps stamp sent_at for routing but
+// send nothing, so every count of sent mail or replies needs it.
+func progressIsEmailStep(alias string) string {
+	return "EXISTS (SELECT 1 FROM sequences es WHERE es.id = " + alias + ".sequence_id AND es.kind = 'email')"
+}
+
 // GetCampaignProgress retrieves overall campaign progress statistics.
 //
 // Each count comes from its own table. The earlier version joined leads,
@@ -1088,8 +1095,8 @@ func (r *campaignProgressRepository) GetCampaignProgress(ctx context.Context, ca
 	query := `
 		SELECT
 			(SELECT COUNT(DISTINCT contact_id) FROM campaign_leads WHERE campaign_id = $1) AS total_contacts,
-			(SELECT COUNT(*) FROM sequences WHERE campaign_id = $1) AS total_sequences,
-			COUNT(*) FILTER (WHERE ccp.sent_at IS NOT NULL) AS emails_sent,
+			(SELECT COUNT(*) FROM sequences WHERE campaign_id = $1 AND kind = 'email') AS total_sequences,
+			COUNT(*) FILTER (WHERE ccp.sent_at IS NOT NULL AND ` + progressIsEmailStep("ccp") + `) AS emails_sent,
 			COUNT(*) FILTER (WHERE ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine) AS emails_opened,
 			COUNT(*) FILTER (WHERE ccp.clicked_at IS NOT NULL) AS emails_clicked,
 			COUNT(*) FILTER (WHERE ccp.replied_at IS NOT NULL) AS emails_replied,
@@ -1128,8 +1135,8 @@ func (r *campaignProgressRepository) GetCampaignRollingRates(ctx context.Context
 			COUNT(*) FILTER (WHERE sent_at IS NOT NULL AND sent_at >= $2)             AS sent,
 			COUNT(*) FILTER (WHERE bounced_at IS NOT NULL AND bounced_at >= $2)       AS bounced,
 			COUNT(*) FILTER (WHERE complained_at IS NOT NULL AND complained_at >= $2) AS complained
-		FROM campaign_contact_progress
-		WHERE campaign_id = $1
+		FROM campaign_contact_progress p
+		WHERE campaign_id = $1 AND ` + progressIsEmailStep("p") + `
 	`
 	out := &CampaignRollingRates{}
 	err := r.db.QueryRow(ctx, query, campaignID, since).Scan(&out.Sent, &out.Bounced, &out.Complained)
@@ -1242,9 +1249,10 @@ func (r *campaignProgressRepository) CountEmailsSentTodayByOrganization(ctx cont
 func (r *campaignProgressRepository) GetLatestCampaignSequenceForContact(ctx context.Context, contactID uuid.UUID) (*CampaignSequencePair, error) {
 	query := `
 		SELECT campaign_id, sequence_id
-		FROM campaign_contact_progress
+		FROM campaign_contact_progress p
 		WHERE contact_id = $1
 		  AND sent_at IS NOT NULL
+		  AND ` + progressIsEmailStep("p") + `
 		ORDER BY sent_at DESC
 		LIMIT 1
 	`

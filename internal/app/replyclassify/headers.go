@@ -1,6 +1,10 @@
 package replyclassify
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/warmbly/warmbly/internal/pkg/dsn"
+)
 
 // classifyHeaders is Layer 1: a deterministic, offline scan of the message
 // headers (plus subject) for the well-known machine-reply markers. It returns
@@ -17,6 +21,13 @@ import "strings"
 func classifyHeaders(in Input) (Result, bool) {
 	h := newHeaderLookup(in.Headers)
 	subject := strings.ToLower(strings.TrimSpace(in.Subject))
+
+	// --- Delivery failures, before anything else ---
+	// A bounce also carries Auto-Submitted: auto-replied, which on its own
+	// reads as a vacation responder and would hold the lead as out of office.
+	if isDeliveryFailure(h, subject) {
+		return Result{Class: ClassAutoReply, Confidence: 0.95, Source: SourceHeader}, true
+	}
 
 	// --- Out-of-office signals (most specific machine reply) ---
 	// Subject conventions providers emit for vacation autoresponders. Matched
@@ -57,11 +68,9 @@ func classifyHeaders(in Input) (Result, bool) {
 		}
 	}
 
-	// --- Bounce / delivery-status report signals => auto_reply (machine) ---
-	// multipart/report; report-type=delivery-status is a DSN bounce.
-	ct := strings.ToLower(h.first("Content-Type"))
-	if strings.Contains(ct, "multipart/report") &&
-		(strings.Contains(ct, "delivery-status") || strings.Contains(ct, "disposition-notification")) {
+	// A read receipt is a machine report too.
+	if ct := strings.ToLower(h.first("Content-Type")); strings.Contains(ct, "multipart/report") &&
+		strings.Contains(ct, "disposition-notification") {
 		return Result{Class: ClassAutoReply, Confidence: 0.95, Source: SourceHeader}, true
 	}
 
@@ -70,11 +79,9 @@ func classifyHeaders(in Input) (Result, bool) {
 		return Result{Class: ClassAutoReply, Confidence: 0.85, Source: SourceHeader}, true
 	}
 
-	// mailer-daemon / postmaster style senders are machine bounce sources.
+	// No-reply senders are machines.
 	if from := strings.ToLower(h.first("From")); from != "" {
-		if strings.Contains(from, "mailer-daemon") ||
-			strings.Contains(from, "postmaster@") ||
-			strings.Contains(from, "no-reply@") ||
+		if strings.Contains(from, "no-reply@") ||
 			strings.Contains(from, "noreply@") ||
 			strings.Contains(from, "donotreply@") {
 			return Result{Class: ClassAutoReply, Confidence: 0.8, Source: SourceHeader}, true
@@ -82,6 +89,52 @@ func classifyHeaders(in Input) (Result, bool) {
 	}
 
 	return Result{}, false
+}
+
+// IsDeliveryFailure reports a bounce or delivery-status notice.
+func IsDeliveryFailure(in Input) bool {
+	return isDeliveryFailure(newHeaderLookup(in.Headers), strings.ToLower(strings.TrimSpace(in.Subject)))
+}
+
+// isDeliveryFailure reports a bounce from the signals a failure notice carries:
+// a delivery-status report, the failed-recipients header Gmail and Exim add,
+// a mail-system sender, or a mail server's own subject line.
+func isDeliveryFailure(h headerLookup, subject string) bool {
+	ct := strings.ToLower(h.first("Content-Type"))
+	if strings.Contains(ct, "multipart/report") && strings.Contains(ct, "delivery-status") {
+		return true
+	}
+	if h.first("X-Failed-Recipients") != "" {
+		return true
+	}
+	// The same sender and subject lists the worker's bounce parser reads.
+	return dsn.IsBounceSender(h.first("From")) || dsn.HasBounceSubject(subject)
+}
+
+// FlagHeaders reads the "Header:value" pseudo-flags the sync stores next to
+// IMAP flags back into a header map. System flags ("\Seen") are skipped.
+func FlagHeaders(flags []string) map[string][]string {
+	h := map[string][]string{}
+	for _, flag := range flags {
+		i := strings.Index(flag, ":")
+		if i <= 0 {
+			continue
+		}
+		name := strings.TrimSpace(flag[:i])
+		if name == "" || strings.HasPrefix(name, "\\") {
+			continue
+		}
+		h[name] = append(h[name], strings.TrimSpace(flag[i+1:]))
+	}
+	return h
+}
+
+// IsBulkMail reports mail sent to a list, a newsletter or a notification:
+// it carries List-Unsubscribe or List-Id, and its footer's "unsubscribe" is
+// the sender's own, not a request from anyone to us.
+func IsBulkMail(headers map[string][]string) bool {
+	h := newHeaderLookup(headers)
+	return h.first("List-Unsubscribe") != "" || h.first("List-Id") != ""
 }
 
 // headerLookup is a case-insensitive view over an email header map. MIME header

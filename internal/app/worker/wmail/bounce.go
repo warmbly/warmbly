@@ -30,7 +30,8 @@ func (w *WMail) bounceReport(msg *models.EmailMessageData) *models.JobEventInbou
 		return nil
 	}
 
-	report := dsn.Parse(msg.BodyPlain + "\n" + msg.BodyHTML)
+	body := msg.BodyPlain + "\n" + msg.BodyHTML
+	report := dsn.Parse(body).WithFailedRecipients(headerFlagValue(msg.Flags, "X-Failed-Recipients"), msg.Subject, body)
 	if !report.Permanent {
 		return nil
 	}

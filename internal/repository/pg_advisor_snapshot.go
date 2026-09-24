@@ -227,6 +227,7 @@ func (r *advisorRepository) loadCampaigns(ctx context.Context, orgID uuid.UUID) 
 			FROM campaign_contact_progress ccp
 			WHERE ccp.campaign_id = c.id
 			  AND ccp.sent_at > NOW() - INTERVAL '30 days'
+			  AND ` + progressIsEmailStep("ccp") + `
 		) f ON true
 		LEFT JOIN LATERAL (
 			SELECT COUNT(*) AS complaints FROM deliverability_events de
@@ -239,6 +240,7 @@ func (r *advisorRepository) loadCampaigns(ctx context.Context, orgID uuid.UUID) 
 				COUNT(*) FILTER (WHERE NOT EXISTS (
 					SELECT 1 FROM campaign_contact_progress p
 					WHERE p.campaign_id = c.id AND p.contact_id = cl.contact_id AND p.sent_at IS NOT NULL
+					  AND ` + progressIsEmailStep("p") + `
 				)) AS remaining
 			FROM campaign_leads cl WHERE cl.campaign_id = c.id
 		) l ON true

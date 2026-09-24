@@ -2,13 +2,13 @@ package advanced
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/app/inboxtag"
+	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -23,13 +23,19 @@ type InboxTagAction struct {
 	Subject   string
 	MessageID string
 	Plan      inboxtag.Plan
+	// InReplyTo and Headers decide whether the message may opt its sender
+	// out, by the same rule the keyword opt-out applies.
+	InReplyTo []string
+	Headers   map[string][]string
 }
 
 // ApplyInboxTagActions executes a plan on the primitives a member's own click
 // uses (lead hold, CRM task, suppression entry) and returns what landed. Each
 // action is best-effort and independent.
 func (s *service) ApplyInboxTagActions(ctx context.Context, in InboxTagAction) []string {
-	sender := strings.ToLower(strings.TrimSpace(in.Sender))
+	// The sync stores From as "Name <addr>" or "Name (addr)"; the contact and
+	// the suppression entry are keyed on the bare address.
+	sender := parseSenderEmail([]string{in.Sender})
 	if in.OrganizationID == uuid.Nil || sender == "" || in.Plan.Empty() {
 		return nil
 	}
@@ -42,7 +48,7 @@ func (s *service) ApplyInboxTagActions(ctx context.Context, in InboxTagAction) [
 		}
 	}
 
-	if in.Plan.Suppress != "" {
+	if in.Plan.Suppress != "" && s.inboxTagOptOutEligible(ctx, in, contactID != nil) {
 		if s.suppressFromReply(ctx, in, sender) {
 			done = append(done, inboxtag.ActionSuppress)
 		}
@@ -90,6 +96,18 @@ func (s *service) ApplyInboxTagActions(ctx context.Context, in InboxTagAction) [
 		}
 	}
 	return done
+}
+
+// inboxTagOptOutEligible applies the keyword opt-out's rule to a classified
+// reply: the plan only exists for a human reply, so what is left to ask is
+// whether this person is answering our outreach and not a list. A thread that
+// cannot be read is not assumed to be ours.
+func (s *service) inboxTagOptOutEligible(ctx context.Context, in InboxTagAction, fromContact bool) bool {
+	inThread, err := s.inCampaignThread(ctx, in.OrganizationID, in.InReplyTo)
+	if err != nil {
+		log.Warn().Err(err).Str("message_id", in.MessageID).Msg("inbox tagging: could not read the reply's thread")
+	}
+	return replyOptOutEligible(replyclassify.Result{}, inThread, fromContact, in.Headers)
 }
 
 // suppressFromReply puts the sender on the suppression list and clears the

@@ -1407,8 +1407,8 @@ func (r *adminRepository) SearchCampaigns(ctx context.Context, search *models.Ad
 	addInt(`c.daily_limit <= $%d`, search.DailyLimitMax)
 	addInt(`(SELECT COUNT(*) FROM campaign_leads cl WHERE cl.campaign_id = c.id) >= $%d`, search.ContactCountMin)
 	addInt(`(SELECT COUNT(*) FROM campaign_leads cl WHERE cl.campaign_id = c.id) <= $%d`, search.ContactCountMax)
-	addInt(`(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.sent_at IS NOT NULL) >= $%d`, search.SentCountMin)
-	addInt(`(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.sent_at IS NOT NULL) <= $%d`, search.SentCountMax)
+	addInt(`(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.sent_at IS NOT NULL AND `+progressIsEmailStep("ccp")+`) >= $%d`, search.SentCountMin)
+	addInt(`(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.sent_at IS NOT NULL AND `+progressIsEmailStep("ccp")+`) <= $%d`, search.SentCountMax)
 
 	if search.CreatedWithin > 0 {
 		whereClause += " AND c.created_at >= NOW() - ($" + itoa(argNum) + "::int * INTERVAL '1 day')"
@@ -1439,7 +1439,7 @@ func (r *adminRepository) SearchCampaigns(ctx context.Context, search *models.Ad
 	case "contact_count":
 		orderCol = "(SELECT COUNT(*) FROM campaign_leads cl WHERE cl.campaign_id = c.id)"
 	case "sent_count":
-		orderCol = "(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.sent_at IS NOT NULL)"
+		orderCol = "(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.sent_at IS NOT NULL AND " + progressIsEmailStep("ccp") + ")"
 	}
 	orderDir := "DESC"
 	if search.SortBy != "" && !search.SortDesc {
@@ -1455,7 +1455,7 @@ func (r *adminRepository) SearchCampaigns(ctx context.Context, search *models.Ad
 			u.id, u.first_name, u.last_name, u.email,
 			o.id, o.name, o.slug,
 			(SELECT COUNT(*) FROM campaign_leads cl WHERE cl.campaign_id = c.id),
-			(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.sent_at IS NOT NULL),
+			(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.sent_at IS NOT NULL AND ` + progressIsEmailStep("ccp") + `),
 			(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.opened_at IS NOT NULL),
 			(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.clicked_at IS NOT NULL),
 			(SELECT COUNT(*) FROM campaign_contact_progress ccp WHERE ccp.campaign_id = c.id AND ccp.replied_at IS NOT NULL),

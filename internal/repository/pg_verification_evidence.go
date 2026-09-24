@@ -181,6 +181,7 @@ func (r *verificationEvidenceRepository) CreditCleanDeliveries(ctx context.Conte
 			FROM campaign_contact_progress p
 			JOIN contacts c ON c.id = p.contact_id
 			WHERE p.sent_at IS NOT NULL AND p.bounced_at IS NULL
+			  AND ` + progressIsEmailStep("p") + `
 			  AND p.sent_at < NOW() - make_interval(secs => $1)
 			  AND (c.verification_evidence_reset_at IS NULL OR COALESCE(p.dispatched_at, p.sent_at) > c.verification_evidence_reset_at)
 			  AND NOT EXISTS (

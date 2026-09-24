@@ -53,6 +53,7 @@ func (r *orgConductRepository) OrgRecipientOutcomes(ctx context.Context, minSent
 		  FROM campaign_contact_progress ccp
 		  JOIN campaigns c ON c.id = ccp.campaign_id
 		 WHERE ccp.sent_at IS NOT NULL
+		   AND `+progressIsEmailStep("ccp")+`
 		   AND ccp.sent_at >= NOW() - $2::interval
 		   AND c.organization_id IS NOT NULL
 		 GROUP BY c.organization_id

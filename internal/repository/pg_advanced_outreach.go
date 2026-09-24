@@ -42,6 +42,14 @@ type AdvancedOutreachRepository interface {
 	// DeleteSuppressionByEmail removes the address entry with the given source
 	// (the recipient's own resubscribe only undoes a recipient-made entry).
 	DeleteSuppressionByEmail(ctx context.Context, organizationID uuid.UUID, email string, source models.DeliverabilityEventType) (bool, error)
+	// ListUncheckedReplyOptOuts pages, across workspaces, the entries a reply
+	// opt-out wrote that have not been re-read under the current rules.
+	ListUncheckedReplyOptOuts(ctx context.Context, afterID uuid.UUID, limit int) ([]models.SuppressedRecipient, error)
+	// MarkReplyOptOutChecked records the re-read's outcome on the entry.
+	MarkReplyOptOutChecked(ctx context.Context, id uuid.UUID, outcome string) error
+	// DeleteReplyOptOut removes a reply opt-out only while it is still the
+	// row that was read: a newer unsubscribe rewrites it and is kept.
+	DeleteReplyOptOut(ctx context.Context, organizationID, id uuid.UUID, updatedAt time.Time) (bool, error)
 
 	CreateDeliverabilityEvent(ctx context.Context, event *models.DeliverabilityEvent) error
 	GetDeliverabilityDashboard(ctx context.Context, organizationID uuid.UUID, from, to time.Time) (*models.DeliverabilityDashboard, error)
@@ -559,6 +567,55 @@ func (r *advancedOutreachRepository) DeleteSuppressionByEmail(ctx context.Contex
 	return tag.RowsAffected() > 0, nil
 }
 
+// replyOptOutCheckKey marks an entry the reply opt-out recheck has read.
+const replyOptOutCheckKey = "reply_optout_recheck"
+
+func (r *advancedOutreachRepository) ListUncheckedReplyOptOuts(ctx context.Context, afterID uuid.UUID, limit int) ([]models.SuppressedRecipient, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT `+suppressedRecipientColumns+`
+		FROM suppressed_recipients
+		WHERE id > $1
+		  AND kind = 'email'
+		  AND source = $2
+		  AND metadata->>'via' = 'reply'
+		  AND (reason = 'asked to stop in a reply' OR reason LIKE 'asked to stop in a reply sent from %')
+		  AND metadata->>'`+replyOptOutCheckKey+`' IS NULL
+		ORDER BY id
+		LIMIT $3`, afterID, models.DeliverabilityEventUnsubscribe, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.SuppressedRecipient
+	for rows.Next() {
+		entry, err := scanSuppressedRecipient(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *entry)
+	}
+	return out, rows.Err()
+}
+
+func (r *advancedOutreachRepository) DeleteReplyOptOut(ctx context.Context, organizationID, id uuid.UUID, updatedAt time.Time) (bool, error) {
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM suppressed_recipients
+		WHERE organization_id = $1 AND id = $2
+		  AND metadata->>'via' = 'reply' AND updated_at = $3`, organizationID, id, updatedAt)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (r *advancedOutreachRepository) MarkReplyOptOutChecked(ctx context.Context, id uuid.UUID, outcome string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE suppressed_recipients
+		SET metadata = metadata || jsonb_build_object('`+replyOptOutCheckKey+`', $2::text)
+		WHERE id = $1`, id, outcome)
+	return err
+}
+
 func (r *advancedOutreachRepository) CreateDeliverabilityEvent(ctx context.Context, event *models.DeliverabilityEvent) error {
 	metadata, err := marshalJSON(event.Metadata)
 	if err != nil {
@@ -916,6 +973,7 @@ func (r *advancedOutreachRepository) deliverabilityByCampaign(ctx context.Contex
 		SELECT ccp.campaign_id, COUNT(*)
 		FROM campaign_contact_progress ccp JOIN campaigns c ON c.id = ccp.campaign_id
 		WHERE c.organization_id=$1 AND ccp.sent_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3
+		  AND ` + progressIsEmailStep("ccp") + `
 		GROUP BY ccp.campaign_id`
 	if srows, serr := r.db.Query(ctx, sq, orgID, from, to); serr == nil {
 		for srows.Next() {

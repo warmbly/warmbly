@@ -63,6 +63,14 @@ Two things to know. Gmail only shows its button for mail it already classes as b
 
 Warmbly reads every reply to a campaign email. One that asks to stop, in wording such as "unsubscribe", "remove me", "stop emailing me", "opt out" or "do not contact", puts the sender on the suppression list immediately. Only the new text of the reply is read: the quoted history below it carries your own opt-out wording and is ignored. Phrases match on whole words, so "stop by our booth" does not opt anyone out.
 
+Only a person answering you can opt out this way: someone replying in one of your campaign threads, or one of your contacts writing to you. Everything else that lands in a mailbox is left alone, even when it says "unsubscribe":
+
+- a bounce or delivery failure, which returns your own email (and its unsubscribe header) inside the notice
+- an out-of-office or other automatic reply
+- a newsletter or notification sent to a list, whose "unsubscribe" footer is its own sender's
+
+Entries written under an earlier, broader reading of replies are read again once. When neither the message that wrote an entry nor any other message from that address asks to stop under this rule, the entry is lifted, the contact's **Subscribed** flag is restored, and the lift is recorded in the audit log. An entry that began with a link or one-click unsubscribe, or whose mail can no longer be found, stays.
+
 A reply that says "not interested" is classed as negative and can stop the sequence, but it does not suppress the contact. Someone who says no today may be a fit next year; someone who says stop is asking not to be contacted at all.
 
 Turn this off with **Settings > Sending > Honour replies that ask to stop** if you would rather handle such replies by hand. Leaving it off with the reply-to-opt-out line in place means promising an opt-out you then honour manually.

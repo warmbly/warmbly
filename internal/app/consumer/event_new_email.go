@@ -752,6 +752,8 @@ func (s *JobsService) actOnInboxTag(ctx context.Context, orgID uuid.UUID, msg in
 		Subject:        msg.Subject,
 		MessageID:      msg.MessageID,
 		Plan:           plan,
+		InReplyTo:      msg.InReplyTo,
+		Headers:        msg.Headers,
 	})
 	if len(done) == 0 {
 		return

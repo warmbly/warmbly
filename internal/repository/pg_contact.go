@@ -1452,7 +1452,7 @@ func (r *contactRepository) Search(
 	if singleCampaignPlaceholder != "" {
 		leadProgressSelect = fmt.Sprintf(`(
 			SELECT json_build_object(
-				'sent',    COUNT(*) FILTER (WHERE p.sent_at IS NOT NULL),
+				'sent',    COUNT(*) FILTER (WHERE p.sent_at IS NOT NULL AND `+progressIsEmailStep("p")+`),
 				-- Human opens only; automated fetches (Apple MPP prefetch, UA-less
 				-- clients) are counted apart so they never read as engagement.
 				'opened',  COUNT(*) FILTER (WHERE p.opened_at IS NOT NULL AND NOT p.opened_machine),
@@ -1965,7 +1965,11 @@ func leadStatusClause(status, cp string) string {
 			cp, col,
 		)
 	}
-	sent, replied, bounced := has("sent_at"), has("replied_at"), has("bounced_at")
+	sent := fmt.Sprintf(
+		"EXISTS (SELECT 1 FROM campaign_contact_progress p WHERE p.campaign_id = %s AND p.contact_id = c.id AND p.sent_at IS NOT NULL AND %s)",
+		cp, progressIsEmailStep("p"),
+	)
+	replied, bounced := has("replied_at"), has("bounced_at")
 	// failed: a step the mailbox could not send after every retry (sent_at was
 	// walked back and the attempt cap is spent).
 	failed := fmt.Sprintf(
@@ -1976,7 +1980,7 @@ func leadStatusClause(status, cp string) string {
 	// allSent: every email step of the campaign has been sent to this contact.
 	allSent := fmt.Sprintf(
 		"((SELECT COUNT(*) FROM sequences st WHERE st.campaign_id = %[1]s AND st.kind = 'email') > 0 "+
-			"AND (SELECT COUNT(*) FROM campaign_contact_progress p WHERE p.campaign_id = %[1]s AND p.contact_id = c.id AND p.sent_at IS NOT NULL) "+
+			"AND (SELECT COUNT(*) FROM campaign_contact_progress p WHERE p.campaign_id = %[1]s AND p.contact_id = c.id AND p.sent_at IS NOT NULL AND "+progressIsEmailStep("p")+") "+
 			">= (SELECT COUNT(*) FROM sequences st WHERE st.campaign_id = %[1]s AND st.kind = 'email'))",
 		cp,
 	)
@@ -2042,7 +2046,7 @@ func leadEngagementClause(engagement, cp string) string {
 			cp, cond,
 		)
 	}
-	sent := has("p.sent_at IS NOT NULL")
+	sent := has("p.sent_at IS NOT NULL AND " + progressIsEmailStep("p"))
 	opened := has("p.opened_at IS NOT NULL AND NOT p.opened_machine")
 	clicked := has("p.clicked_at IS NOT NULL")
 	replied := has("p.replied_at IS NOT NULL")
@@ -2095,18 +2099,18 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 		CROSS JOIN (SELECT COUNT(*) AS total_steps FROM sequences st WHERE st.campaign_id = $1 AND st.kind = 'email') ts
 		LEFT JOIN LATERAL (
 			SELECT
-				bool_or(p.sent_at IS NOT NULL)    AS has_sent,
+				bool_or(p.sent_at IS NOT NULL AND %[5]s) AS has_sent,
 				bool_or(p.replied_at IS NOT NULL) AS has_replied,
 				bool_or(p.bounced_at IS NOT NULL) AS has_bounced,
 				bool_or(p.opened_at IS NOT NULL AND NOT p.opened_machine) AS has_opened,
 				bool_or(p.clicked_at IS NOT NULL) AS has_clicked,
 				bool_or(p.sent_at IS NULL AND p.failed_at IS NOT NULL AND p.send_attempts >= $3) AS has_failed,
-				COUNT(*) FILTER (WHERE p.sent_at IS NOT NULL) AS sent_steps
+				COUNT(*) FILTER (WHERE p.sent_at IS NOT NULL AND %[5]s) AS sent_steps
 			FROM campaign_contact_progress p
 			WHERE p.campaign_id = cl.campaign_id AND p.contact_id = cl.contact_id
 		) pr ON true
 		WHERE cl.campaign_id = $1
-	`, done, live, undeliverableClause("$1"), held)
+	`, done, live, undeliverableClause("$1"), held, progressIsEmailStep("p"))
 	out := &models.CampaignLeadCounts{}
 	if err := r.DB.QueryRow(ctx, query, campaignID, orgID, config.CampaignSendMaxAttempts).Scan(
 		&out.Total, &out.Unsubscribed, &out.Bounced, &out.Replied, &out.Failed, &out.Completed, &out.Paused, &out.Processing, &out.Undeliverable, &out.Queued,
@@ -3306,13 +3310,13 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 	//    open is a delivery signal, not engagement, here as in analytics.
 	engQuery := `
 		SELECT
-			COUNT(*) FILTER (WHERE sent_at    IS NOT NULL) AS sent,
+			COUNT(*) FILTER (WHERE sent_at    IS NOT NULL AND ` + progressIsEmailStep("p") + `) AS sent,
 			COUNT(*) FILTER (WHERE opened_at  IS NOT NULL AND NOT opened_machine) AS opened,
 			COUNT(*) FILTER (WHERE clicked_at IS NOT NULL) AS clicked,
 			COUNT(*) FILTER (WHERE replied_at IS NOT NULL) AS replied,
 			COUNT(*) FILTER (WHERE bounced_at IS NOT NULL) AS bounced,
-			MAX(sent_at), MAX(opened_at) FILTER (WHERE NOT opened_machine), MAX(clicked_at), MAX(replied_at), MAX(bounced_at)
-		FROM campaign_contact_progress
+			MAX(sent_at) FILTER (WHERE ` + progressIsEmailStep("p") + `), MAX(opened_at) FILTER (WHERE NOT opened_machine), MAX(clicked_at), MAX(replied_at), MAX(bounced_at)
+		FROM campaign_contact_progress p
 		WHERE contact_id = $1
 	`
 	if err := r.DB.QueryRow(ctx, engQuery, contactID).Scan(

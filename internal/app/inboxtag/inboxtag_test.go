@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -397,5 +398,40 @@ func TestDisabledMakesNoCalls(t *testing.T) {
 	}
 	if asker.calls != 0 {
 		t.Fatalf("made %d calls while disabled", asker.calls)
+	}
+}
+
+// A failure notice is a bounce, not a helpdesk receipt, and a delay notice is
+// a soft one. Decided from the headers, with no model call.
+func TestDeterministicKindReadsBounces(t *testing.T) {
+	daemon := map[string][]string{"From": {"Mail Delivery Subsystem <mailer-daemon@googlemail.com>"}}
+	hard := deterministicKind(Message{Headers: daemon, Subject: "Delivery Status Notification (Failure)", BodyText: "The group may not exist."})
+	if hard != KindBounceHard {
+		t.Errorf("failure notice kind = %q, want %q", hard, KindBounceHard)
+	}
+	soft := deterministicKind(Message{Headers: daemon, Subject: "Delivery Status Notification (Delay)", BodyText: "Delivery is delayed; we will retry."})
+	if soft != KindBounceSoft {
+		t.Errorf("delay notice kind = %q, want %q", soft, KindBounceSoft)
+	}
+	if got := deterministicKind(Message{Headers: map[string][]string{"From": {"Jane <jane@example.org>"}}, Subject: "Re: Hi", BodyText: "Sounds good"}); got != "" {
+		t.Errorf("a person's reply kind = %q, want it left to the model", got)
+	}
+}
+
+// The tagger sees the headers the sync carried as pseudo-flags, so a failure
+// notice is a bounce before any model is asked.
+func TestMessageFromReadsSyncedHeaders(t *testing.T) {
+	m := MessageFrom(uuid.New(), uuid.New(), &models.EmailMessageStoreData{
+		Folder:    models.FolderInbox,
+		FromAddr:  []string{"Notifier <alerts@example.org>"},
+		Subject:   "Your message",
+		Flags:     []string{"\\Seen", "X-Failed-Recipients:info@example.org"},
+		InReplyTo: []string{"<a@example.test>"},
+	}, nil, "", "")
+	if deterministicKind(m) != KindBounceHard {
+		t.Errorf("kind = %q, want %q from the synced header", deterministicKind(m), KindBounceHard)
+	}
+	if len(m.InReplyTo) != 1 {
+		t.Errorf("InReplyTo not carried: %v", m.InReplyTo)
 	}
 }

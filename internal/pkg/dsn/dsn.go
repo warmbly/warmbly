@@ -36,21 +36,42 @@ var (
 // senderMarkers identify a machine bounce source in the From line.
 var senderMarkers = []string{"mailer-daemon", "postmaster@", "mail-daemon"}
 
-// subjectMarkers are common bounce subjects across providers.
+// subjectMarkers are the subjects mail servers write on a failure notice.
 var subjectMarkers = []string{
 	"undeliverable", "undelivered mail", "delivery status notification",
-	"returned mail", "delivery failure", "mail delivery failed",
-	"failure notice", "message not delivered", "delivery incomplete",
+	"returned mail", "delivery failure", "mail delivery failed", "mail delivery failure",
+	"delivery has failed", "failure notice", "message not delivered", "delivery incomplete",
+	"non remis", "unzustellbar",
 }
 
-// Detect reports whether an inbound message looks like a bounce, using only the
-// cheap envelope signals (no body parse). Callers gate the full Parse on this.
-func Detect(from, subject, contentType string) bool {
+// IsBounceSender reports a mail-system sender in a From line.
+func IsBounceSender(from string) bool {
 	f := strings.ToLower(from)
 	for _, m := range senderMarkers {
 		if strings.Contains(f, m) {
 			return true
 		}
+	}
+	return false
+}
+
+// HasBounceSubject reports a subject that starts as a mail server's failure
+// notice does. A prefix, so a person's "Re: <subject>" never matches.
+func HasBounceSubject(subject string) bool {
+	s := strings.ToLower(strings.TrimSpace(subject))
+	for _, m := range subjectMarkers {
+		if strings.HasPrefix(s, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// Detect reports whether an inbound message looks like a bounce, using only the
+// cheap envelope signals (no body parse). Callers gate the full Parse on this.
+func Detect(from, subject, contentType string) bool {
+	if IsBounceSender(from) {
+		return true
 	}
 	if strings.Contains(strings.ToLower(contentType), "multipart/report") {
 		return true
@@ -107,4 +128,49 @@ func (r Report) hasNo4xx(body string) bool {
 		return m[1] != "4"
 	}
 	return true
+}
+
+// reReturned starts the copy of the original message a notice returns, whose
+// words are the sender's and say nothing about the delivery.
+var reReturned = regexp.MustCompile(`(?i)(-{2,}\s*original message|original message headers|message/rfc822)`)
+
+// noticeText is the mail system's own part of a notice.
+func noticeText(body string) string {
+	if loc := reReturned.FindStringIndex(body); loc != nil {
+		return body[:loc[0]]
+	}
+	return body
+}
+
+var reTransient = regexp.MustCompile(`(?i)\b(delay|delayed|will retry|will be retried|temporar(y|ily)|still trying)\b`)
+
+// IsTransientNotice reports a notice that says delivery is still being
+// retried: a 4.x.x status, or the mail system's own words about a delay.
+func IsTransientNotice(subject, body string) bool {
+	if m := reStatus.FindStringSubmatch(body); m != nil && m[1] == "4" {
+		return true
+	}
+	return reTransient.MatchString(subject) || reTransient.MatchString(noticeText(body))
+}
+
+// WithFailedRecipients reads a failure notice that carries no RFC 3464 status
+// part, only the X-Failed-Recipients header Gmail and Exim add (a Google Group
+// that refuses the post, say). It is permanent unless something in the notice
+// says delivery is still being retried; a report that already decided keeps
+// its own answer.
+func (r Report) WithFailedRecipients(header, subject, body string) Report {
+	header = strings.TrimSpace(header)
+	if header == "" || r.Permanent {
+		return r
+	}
+	if IsTransientNotice(subject, body) {
+		return r
+	}
+	r.IsBounce = true
+	r.Permanent = true
+	if r.FailedRecipient == "" {
+		first := strings.TrimSpace(strings.Split(header, ",")[0])
+		r.FailedRecipient = strings.Trim(first, "<>")
+	}
+	return r
 }
