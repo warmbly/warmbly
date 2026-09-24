@@ -177,3 +177,50 @@ func TestLiveReconcilerPullsAStaleParkForward(t *testing.T) {
 	t.Logf("pulled the wakeup from %s forward to %s",
 		at.UTC().Format(time.RFC3339), moved.UTC().Format(time.RFC3339))
 }
+
+// TestLiveReseededChainWakesWhenALeadIsDue: a chain seeded with a lead due now
+// wakes now. Its old wakeup was the paced slot of the send after that one, so a
+// campaign that had just started sat at "Sending" for minutes with nothing sent.
+func TestLiveReseededChainWakesWhenALeadIsDue(t *testing.T) {
+	handle := liveCampaignDB(t)
+	svc := liveCampaignService(t, handle, &recordingSender{})
+	f := newCampaignSendFixture(t, handle.Pool)
+
+	if _, err := svc.ReconcileCampaignSchedules(context.Background(), 500); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	_, at := f.parkedWakeup(t)
+	if wait := time.Until(at); wait > time.Minute {
+		t.Fatalf("a campaign with a lead due now first wakes in %s", wait.Round(time.Second))
+	}
+}
+
+// TestLiveLastTickSentTellsAPacedParkFromARecheck: leads arriving may pull a
+// deferral's recheck forward but never the successor a sending tick parked,
+// which is the campaign's send spacing.
+func TestLiveLastTickSentTellsAPacedParkFromARecheck(t *testing.T) {
+	handle := liveCampaignDB(t)
+	sender := &recordingSender{}
+	svc := liveCampaignService(t, handle, sender)
+	ctx := context.Background()
+
+	sent := newCampaignSendFixture(t, handle.Pool)
+	if xerr := svc.HandleCampaignTask(processTask(sent.queueTick(t, svc.taskRepo))); xerr != nil {
+		t.Fatalf("sending tick: %v", xerr)
+	}
+	if sender.count() != 1 {
+		t.Fatalf("the due lead was not sent: sends=%d", sender.count())
+	}
+	if got, err := svc.campaignRepo.LastTickSent(ctx, sent.campaign); err != nil || !got {
+		t.Fatalf("after a send: LastTickSent = %v, %v; want true", got, err)
+	}
+
+	waiting := newCampaignSendFixture(t, handle.Pool)
+	waiting.addWaitingFollowUp(t, 3)
+	if xerr := svc.HandleCampaignTask(processTask(waiting.queueTick(t, svc.taskRepo))); xerr != nil {
+		t.Fatalf("deferred tick: %v", xerr)
+	}
+	if got, err := svc.campaignRepo.LastTickSent(ctx, waiting.campaign); err != nil || got {
+		t.Fatalf("after a deferral: LastTickSent = %v, %v; want false", got, err)
+	}
+}

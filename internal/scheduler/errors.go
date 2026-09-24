@@ -110,3 +110,12 @@ func DeferSlot(at time.Time) time.Time {
 	}
 	return at
 }
+
+// WakeSlot is where a chain seeded outside a tick first wakes: now for a
+// sendable pair, whose time is the paced slot of the send after it.
+func WakeSlot(at time.Time, err error) time.Time {
+	if errors.Is(err, ErrCampaignDeferred) {
+		return DeferSlot(at)
+	}
+	return time.Now()
+}

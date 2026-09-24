@@ -66,12 +66,7 @@ func (s *tasksService) ReconcileCampaignSchedules(ctx context.Context, limit int
 		nextTime, _, accountID, cerr := s.scheduler.CalculateNextCampaignTime(ctx, id)
 		switch {
 		case cerr == nil, errors.Is(cerr, scheduler.ErrCampaignDeferred):
-			schedAt := nextTime
-			if errors.Is(cerr, scheduler.ErrCampaignDeferred) {
-				schedAt = scheduler.DeferSlot(schedAt)
-			} else if schedAt.IsZero() {
-				schedAt = time.Now().UTC().Add(1 * time.Minute)
-			}
+			schedAt := scheduler.WakeSlot(nextTime, cerr)
 			if err := s.createCampaignTask(ctx, id, accountID, schedAt); err != nil {
 				log.Warn().Err(err).Str("campaign_id", id.String()).Msg("campaign reconcile: re-seed failed")
 				continue
@@ -148,10 +143,8 @@ func (s *tasksService) repark(ctx context.Context, limit int) {
 			// loop's business, not this one's; leave the park alone.
 			continue
 		}
-		if errors.Is(cerr, scheduler.ErrCampaignDeferred) {
-			nextTime = scheduler.DeferSlot(nextTime)
-		}
-		if nextTime.IsZero() || !nextTime.Before(p.ScheduledAt.Add(-config.CampaignReparkMarginMinutes*time.Minute)) {
+		nextTime = scheduler.WakeSlot(nextTime, cerr)
+		if !nextTime.Before(p.ScheduledAt.Add(-config.CampaignReparkMarginMinutes * time.Minute)) {
 			continue
 		}
 

@@ -61,6 +61,10 @@ type CampaignRepository interface {
 	StopCampaign(ctx context.Context, campaignID uuid.UUID) error
 	ValidateCampaignReady(ctx context.Context, campaignID uuid.UUID) error
 	GetPendingCampaignTasks(ctx context.Context, campaignID uuid.UUID) ([]Task, error)
+	// LastTickSent reports whether the campaign's most recent finished tick
+	// dispatched an email, so its pending successor is paced send spacing
+	// rather than a deferral recheck.
+	LastTickSent(ctx context.Context, campaignID uuid.UUID) (bool, error)
 	// ListCampaignScheduleCandidates returns active campaigns that have NO pending
 	// task — their self-perpetuating chain died and needs re-seeding. Used by the
 	// campaign reconciler.
@@ -1691,6 +1695,24 @@ func (r *campaignRepository) ValidateCampaignReady(ctx context.Context, campaign
 		return errx.New(errx.BadRequest, "campaign must have at least one active sending mailbox")
 	}
 	return nil
+}
+
+// LastTickSent implements the interface comment on CampaignRepository. A
+// campaign with no finished tick has sent nothing and reports false.
+func (r *campaignRepository) LastTickSent(ctx context.Context, campaignID uuid.UUID) (bool, error) {
+	var sent bool
+	err := r.DB.QueryRow(ctx, `
+		SELECT `+taskDispatchedEmail+`
+		FROM tasks t
+		JOIN campaign_tasks ct ON ct.task_id = t.id
+		WHERE ct.campaign_id = $1 AND t.task_type = 'campaign' AND t.status <> 'pending'
+		ORDER BY t.created_at DESC
+		LIMIT 1
+	`, campaignID).Scan(&sent)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return sent, err
 }
 
 // GetPendingCampaignTasks returns all pending tasks for a campaign

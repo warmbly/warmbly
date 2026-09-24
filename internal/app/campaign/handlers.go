@@ -571,11 +571,9 @@ func (s *campaignService) StartCampaign(ctx context.Context, orgID uuid.UUID, ca
 // leads are attached to a campaign, pull its parked wakeup forward if the
 // campaign can now act sooner than where it sits.
 //
-// It only ever moves a wakeup EARLIER, and only when the parked one is beyond
-// the deferral horizon, so a campaign already ticking on its send pacing is left
-// alone. Everything here is best effort: the reconciler and the capped deferral
-// horizon are the backstops, so a failure delays the new leads rather than
-// losing them.
+// It only ever moves a wakeup EARLIER, and never one a sending tick parked:
+// that park is the campaign's send spacing. Best effort: the reconciler and the
+// capped deferral horizon are the backstops.
 func (s *campaignService) WakeCampaigns(ctx context.Context, orgID uuid.UUID, campaignIDs []string) {
 	if s.scheduler == nil || s.tasksClient == nil || s.taskRepo == nil {
 		return
@@ -617,19 +615,22 @@ func (s *campaignService) WakeCampaigns(ctx context.Context, orgID uuid.UUID, ca
 				parked = at
 			}
 		}
-		// Already about to wake: leave the chain's own pacing alone.
-		if parked != nil && !parked.After(time.Now().Add(config.CampaignMaxDeferMinutes*time.Minute)) {
+		// Already about to fire.
+		if parked != nil && !parked.After(time.Now().Add(config.CampaignNotDueGraceSeconds*time.Second)) {
 			continue
+		}
+		if parked != nil {
+			if sent, serr := s.campaignRepository.LastTickSent(ctx, id); serr != nil || sent {
+				continue
+			}
 		}
 
 		nextTime, _, _, cerr := s.scheduler.CalculateNextCampaignTime(ctx, id)
 		if cerr != nil && !errors.Is(cerr, scheduler.ErrCampaignDeferred) {
 			continue
 		}
-		if errors.Is(cerr, scheduler.ErrCampaignDeferred) {
-			nextTime = scheduler.DeferSlot(nextTime)
-		}
-		if nextTime.IsZero() || (parked != nil && !nextTime.Before(*parked)) {
+		nextTime = scheduler.WakeSlot(nextTime, cerr)
+		if parked != nil && !nextTime.Before(*parked) {
 			continue
 		}
 
@@ -745,11 +746,10 @@ func (s *campaignService) enqueueCampaignWakeup(ctx context.Context, campaignID 
 	}
 
 	nextTime, _, accountID, err := s.scheduler.CalculateNextCampaignTime(ctx, campaignID)
-	// A deferral still yields a usable first-send slot (nextTime) and a nominal
-	// pool mailbox (accountID), so fall through and schedule the first wakeup at
-	// the defer time rather than failing the campaign start.
-	if errors.Is(err, scheduler.ErrCampaignDeferred) {
-		nextTime = scheduler.DeferSlot(nextTime)
+	// A deferral still yields a nominal pool mailbox (accountID), so it wakes
+	// at the defer slot rather than failing the campaign start.
+	if err == nil || errors.Is(err, scheduler.ErrCampaignDeferred) {
+		nextTime = scheduler.WakeSlot(nextTime, err)
 	}
 	if err != nil && !errors.Is(err, scheduler.ErrCampaignDeferred) {
 		switch {
