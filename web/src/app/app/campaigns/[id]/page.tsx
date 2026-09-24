@@ -259,7 +259,9 @@ export default function CampaignOverview() {
                                             <span className="font-mono text-[10.5px] text-slate-400 tabular-nums shrink-0">
                                                 {s.position}
                                             </span>
-                                            <span className="text-[12.5px] text-slate-900 truncate">{s.name}</span>
+                                            <span className="text-[12.5px] text-slate-900 truncate">
+                                                {s.name?.trim() || `Email ${s.position}`}
+                                            </span>
                                         </span>
                                         <span className="w-14 text-right font-mono text-[11.5px] text-slate-700 tabular-nums">
                                             <AnimatedNumber value={s.emails_sent ?? 0} />
