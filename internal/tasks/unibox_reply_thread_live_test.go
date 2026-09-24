@@ -20,6 +20,11 @@ func TestLiveUniboxReplyUsesTheThreadHandleOnlyFromTheMailboxHoldingIt(t *testin
 	handle := liveCampaignDB(t)
 	f := newCampaignSendFixture(t, handle.Pool)
 	other := f.otherMailbox(t, handle.Pool)
+	// Gmail is the one provider with a thread handle to send.
+	if _, err := handle.Pool.Exec(context.Background(),
+		`UPDATE email_accounts SET provider = 'gmail' WHERE id = ANY($1)`, []uuid.UUID{f.mailbox, other}); err != nil {
+		t.Fatalf("make the mailboxes gmail: %v", err)
+	}
 	const thread, parent = "gmail-thread-670", "<parent-670@test.local>"
 	holdThread(t, handle.Pool, f.user, f.mailbox, thread, parent)
 

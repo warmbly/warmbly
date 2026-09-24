@@ -683,7 +683,7 @@ func (h *Handler) ListUniboxScheduled(c *gin.Context) {
 	}
 
 	if threadID := c.Query("thread_id"); threadID != "" {
-		items, xerr := h.UniboxService.ListScheduledByThread(c.Request.Context(), *orgID, threadID)
+		items, xerr := h.UniboxService.ListScheduledByThread(c.Request.Context(), *orgID, threadID, middleware.GetAPIKeyAllowedEmailAccounts(c))
 		if xerr != nil {
 			errx.Handle(c, xerr)
 			return
@@ -692,7 +692,7 @@ func (h *Handler) ListUniboxScheduled(c *gin.Context) {
 		return
 	}
 
-	items, xerr := h.UniboxService.ListScheduled(c.Request.Context(), *orgID)
+	items, xerr := h.UniboxService.ListScheduled(c.Request.Context(), *orgID, middleware.GetAPIKeyAllowedEmailAccounts(c))
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -719,7 +719,7 @@ func (h *Handler) CancelUniboxScheduled(c *gin.Context) {
 		return
 	}
 
-	if xerr := h.UniboxService.CancelScheduled(c.Request.Context(), *orgID, taskID); xerr != nil {
+	if xerr := h.UniboxService.CancelScheduled(c.Request.Context(), *orgID, taskID, middleware.GetAPIKeyAllowedEmailAccounts(c)); xerr != nil {
 		errx.Handle(c, xerr)
 		return
 	}

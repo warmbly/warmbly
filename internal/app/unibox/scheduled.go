@@ -32,8 +32,8 @@ const snippetMaxLen = 240
 // ListScheduled returns the organization's pending email tasks: every queued
 // outbound message that hasn't fired yet, ordered by next-to-fire.
 // The view is read-only — cancel is a separate explicit action.
-func (s *uniboxService) ListScheduled(ctx context.Context, orgID uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error) {
-	rows, err := s.taskRepo.ListScheduledInOrg(ctx, orgID, ScheduledListMax)
+func (s *uniboxService) ListScheduled(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error) {
+	rows, err := s.taskRepo.ListScheduledInOrg(ctx, orgID, accountIDs, ScheduledListMax)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
@@ -62,11 +62,11 @@ func (s *uniboxService) ListScheduled(ctx context.Context, orgID uuid.UUID) ([]m
 // ListScheduledByThread returns pending queued sends for the given
 // thread. Empty threadID is rejected up front so a malformed query
 // can't silently fall back to the full list.
-func (s *uniboxService) ListScheduledByThread(ctx context.Context, orgID uuid.UUID, threadID string) ([]models.UniboxScheduledItem, *errx.Error) {
+func (s *uniboxService) ListScheduledByThread(ctx context.Context, orgID uuid.UUID, threadID string, accountIDs []uuid.UUID) ([]models.UniboxScheduledItem, *errx.Error) {
 	if threadID == "" {
 		return nil, errx.New(errx.BadRequest, "thread_id is required")
 	}
-	rows, err := s.taskRepo.ListScheduledInOrgByThread(ctx, orgID, threadID, ScheduledThreadListMax)
+	rows, err := s.taskRepo.ListScheduledInOrgByThread(ctx, orgID, threadID, accountIDs, ScheduledThreadListMax)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
@@ -110,8 +110,8 @@ func (s *uniboxService) ListScheduledByThread(ctx context.Context, orgID uuid.UU
 // DeleteTask fails for any reason — GCP outage, network blip,
 // already-fired — the handler's status check still short-circuits
 // the dispatch into a harmless no-op, so the user is always safe.
-func (s *uniboxService) CancelScheduled(ctx context.Context, orgID, taskID uuid.UUID) *errx.Error {
-	cloudTaskName, cancelled, err := s.taskRepo.CancelScheduledInOrg(ctx, taskID, orgID)
+func (s *uniboxService) CancelScheduled(ctx context.Context, orgID, taskID uuid.UUID, accountIDs []uuid.UUID) *errx.Error {
+	cloudTaskName, cancelled, err := s.taskRepo.CancelScheduledInOrg(ctx, taskID, orgID, accountIDs)
 	if err != nil {
 		errs.CaptureException(err)
 		return errx.InternalError()

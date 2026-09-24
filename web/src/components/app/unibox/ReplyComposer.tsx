@@ -186,7 +186,17 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
     // The mailbox holding the message is the default sender; picking another
     // one is a per-draft override.
     const threadAccountId = replyTo.account_id ?? "";
-    const [accountId, setAccountId] = React.useState(restored?.email_account_id || threadAccountId);
+    // A saved pick whose mailbox has since gone falls back to the thread's own.
+    const accountsRef = React.useRef(accounts);
+    accountsRef.current = accounts;
+    const resolveSender = React.useCallback(
+        (id: string | undefined) =>
+            id && (accountsRef.current.length === 0 || accountsRef.current.some((a) => a.id === id))
+                ? id
+                : threadAccountId,
+        [threadAccountId],
+    );
+    const [accountId, setAccountId] = React.useState(() => resolveSender(restored?.email_account_id));
     const [isSending, setIsSending] = React.useState(false);
     const draft = useReplyDraft(draftKey, { to, cc, bcc, subject, body, email_account_id: accountId }, {
         to: initial.to, cc: [], bcc: [], subject: initial.subject, body: "", email_account_id: threadAccountId,
@@ -246,20 +256,31 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
         setShowCc(seed.cc.length > 0);
         setShowBcc(seed.bcc.length > 0);
         setBody(seed.body);
-        setAccountId(seed.email_account_id || threadAccountId);
-    }, [seed, resumeDraft, threadAccountId]);
+        setAccountId(resolveSender(seed.email_account_id));
+    }, [seed, resumeDraft, resolveSender]);
 
     // The full Inbox record (signature_html, signature_plain, etc) of the
     // chosen sender, from the global emails store.
     const mailbox = accounts.find((a) => a.id === accountId);
     const switchedMailbox = !!threadAccountId && accountId !== threadAccountId;
-    // A queued send from an inactive mailbox is cancelled when it fires.
-    const mailboxInactive = !!mailbox && mailbox.status !== "active";
+    // A queued send from an inactive or removed mailbox cannot leave, so Send
+    // waits for a sender that can.
+    const senderProblem = !accountId
+        ? null
+        : mailbox
+          ? mailbox.status !== "active"
+              ? `${mailbox.email} is not active, so it cannot send. Pick another mailbox in From, or reconnect it under Emails.`
+              : null
+          : accounts.length > 0
+            ? "This mailbox is no longer connected. Pick another mailbox in From."
+            : null;
     const threadMailbox = accounts.find((a) => a.id === threadAccountId);
 
-    // Scored like compose: history with the recipient, today's budget, auth.
+    // Scored like compose (history with the recipient, today's budget, auth),
+    // fetched once From is opened: most replies keep the default mailbox.
+    const [wantCandidates, setWantCandidates] = React.useState(false);
     const primary = to.length > 0 ? bareEmail(to[0]) : "";
-    const candidatesQ = useComposeCandidates(primary);
+    const candidatesQ = useComposeCandidates(primary, wantCandidates);
 
     const templatesQuery = useTemplates();
 
@@ -273,7 +294,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
 
     const trimmedBody = body.trim();
     const canSend =
-        !!trimmedBody && to.length > 0 && to.every(looksLikeEmail) && !!accountId && !mailboxInactive && !isSending;
+        !!trimmedBody && to.length > 0 && to.every(looksLikeEmail) && !!accountId && !senderProblem && !isSending;
 
     const send = async (scheduledAt?: Date) => {
         if (!canSend && !isSending) {
@@ -293,8 +314,8 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                 toast.error("Couldn't resolve the sending mailbox");
                 return;
             }
-            if (mailboxInactive) {
-                toast.error(`${mailbox?.email} is not active. Pick another mailbox in From.`);
+            if (senderProblem) {
+                toast.error(senderProblem);
                 return;
             }
         }
@@ -555,6 +576,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                             autoTag={null}
                             allowAuto={false}
                             onChange={(next) => setAccountId(next)}
+                            onOpen={() => setWantCandidates(true)}
                             candidates={candidatesQ.data}
                             loading={candidatesQ.isPending}
                         />
@@ -565,7 +587,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                     )}
                 </HeaderRow>
                 <AnimatePresence initial={false}>
-                    {mailboxInactive && (
+                    {senderProblem && (
                         <motion.div
                             key="inactive"
                             initial={{ height: 0, opacity: 0 }}
@@ -579,14 +601,11 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                                 className="px-4 py-1.5 flex items-start gap-1.5 border-b border-amber-100 bg-amber-50/60 text-[11px] text-amber-800"
                             >
                                 <InfoIcon className="w-3 h-3 mt-px shrink-0 text-amber-600" />
-                                <span className="min-w-0 flex-1 leading-snug">
-                                    {mailbox?.email} is not active, so it cannot send. Pick another mailbox in From,
-                                    or reconnect it under Emails.
-                                </span>
+                                <span className="min-w-0 flex-1 leading-snug">{senderProblem}</span>
                             </div>
                         </motion.div>
                     )}
-                    {!mailboxInactive && switchedMailbox && mode === "reply" && (
+                    {!senderProblem && switchedMailbox && mode === "reply" && (
                         <motion.div
                             key="switched"
                             initial={{ height: 0, opacity: 0 }}

@@ -299,6 +299,14 @@ describe("reply composer drafts", () => {
         expect(sendReply).toHaveBeenCalledWith(expect.objectContaining({ email_account_id: "acc2" }));
     });
 
+    it("falls back to the thread's mailbox when a saved one is gone", () => {
+        localStorage.setItem(draftKey(), JSON.stringify({ to: ["them@example.com"], cc: [], bcc: [], subject: "Re: x", body: "saved", email_account_id: "acc9" }));
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        expect(body()).toHaveValue("saved");
+        expect(fromTrigger("me@example.com")).toBeInTheDocument();
+        expect(screen.queryByRole("status")).toBeNull();
+    });
+
     it("closes only the mailbox menu on Escape", () => {
         const onClose = vi.fn();
         render(<ReplyComposer threadId="t1" replyTo={message()} mode="forward" onClose={onClose} />);

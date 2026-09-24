@@ -36,6 +36,8 @@ interface MailboxPickerProps {
     loading?: boolean;
     /** Offer the Auto row. Off where the sender is always an explicit mailbox. */
     allowAuto?: boolean;
+    /** Called as the menu opens, so candidates can be fetched only when wanted. */
+    onOpen?: () => void;
 }
 
 const PANEL_WIDTH = 300;
@@ -47,6 +49,7 @@ export default function MailboxPicker({
     candidates,
     loading,
     allowAuto = true,
+    onOpen,
 }: MailboxPickerProps) {
     const [open, setOpen] = React.useState(false);
     const [search, setSearch] = React.useState("");
@@ -145,7 +148,10 @@ export default function MailboxPicker({
             <button
                 ref={triggerRef}
                 type="button"
-                onClick={() => setOpen((o) => !o)}
+                onClick={() => {
+                    if (!open) onOpen?.();
+                    setOpen(!open);
+                }}
                 className="group max-w-full inline-flex items-center gap-1.5 h-6 pl-1 pr-1 -ml-1 rounded-md hover:bg-slate-50 transition-colors min-w-0"
             >
                 {value === "auto" ? (
@@ -180,7 +186,7 @@ export default function MailboxPicker({
                         <span className="font-mono text-[10.5px] text-slate-500 truncate">
                             {stored.email}
                         </span>
-                        {!loading && stored.status !== "active" && (
+                        {stored.status !== "active" && (
                             <span className="h-4 px-1 rounded bg-amber-50 text-amber-700 text-[9.5px] font-medium uppercase tracking-wide shrink-0">
                                 inactive
                             </span>

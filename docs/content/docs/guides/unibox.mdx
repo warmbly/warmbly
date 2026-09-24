@@ -102,7 +102,7 @@ Each row is a conversation, not a message, with a count next to the sender when 
 
 The list loads more conversations as you reach the end of it, and it keeps its place: opening a conversation, or leaving the inbox and coming back, returns you to the row you were on rather than the top of the list.
 
-Threading applies on both sides. A reply you send carries the provider's thread id, which nests it in your own mailbox, and an `In-Reply-To` header naming the last message in the conversation, which is what nests it for the recipient. Their mail client only ever sees the header: a thread id means nothing outside the mailbox that issued it.
+Threading applies on both sides. A reply carries an `In-Reply-To` header naming the last message in the conversation, which is what nests it for the recipient. From a Gmail mailbox that holds the conversation it also carries Gmail's thread id, which nests it in your own mailbox. The recipient's mail client only ever sees the header: a thread id means nothing outside the mailbox that issued it, so a reply sent [from another mailbox](#choosing-the-sending-mailbox) goes without one.
 
 <Callout type="info" title="Keyboard navigation">
 `j` / `k` move between rows, `Enter` opens, `Esc` closes, `/` focuses search, `c` labels. Press `?` for the full list.
@@ -178,7 +178,9 @@ Reply, forward, or hover any single message to reply to it specifically. The com
 
 **From** starts on the mailbox that holds the message, so a reply you do not touch goes out exactly as before. Click it to send from any other active mailbox in the workspace: the same searchable picker as [Compose](#composing), with each mailbox's budget for today, auth health and history with the recipient. There is no Auto here; a reply always names its mailbox. The signature preview follows the mailbox you pick. When the mailbox holding the message is no longer active, the composer says so and **Send** stays off until you pick one that is.
 
-A reply from a different mailbox keeps the conversation's subject and its In-Reply-To and References headers, so the recipient sees it in the same conversation. A provider thread belongs to the mailbox that holds it, so unless the mailbox you pick already has a message in this conversation, the reply starts a conversation of its own there, and the recipient's answer arrives in that mailbox. A note under **From** says so, with **Switch back** to return to the original mailbox. A forward has no thread to keep, so it simply leaves from the mailbox you pick.
+A reply from a different mailbox keeps the conversation's subject and its In-Reply-To and References headers, so the recipient sees it in the same conversation. A provider thread belongs to the mailbox that holds it, so unless the mailbox you pick already has a message in this conversation, the first such reply starts a conversation of its own there (later replies from it continue that one), and the recipient's answer arrives in that mailbox. A note under **From** says so, with **Switch back** to return to the original mailbox. A forward has no thread to keep, so it simply leaves from the mailbox you pick.
+
+### Reply drafts
 
 Replies and forwards save after a short typing pause, and save the latest edits when you close the composer, leave the conversation, or reload. Returning to the thread reopens a saved draft, including one addressed to an older message, with the mailbox you picked. **Discard** removes it; successfully queuing a send removes it too. Undoing a send restores the message for editing, from the same mailbox.
 

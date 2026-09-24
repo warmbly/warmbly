@@ -9118,7 +9118,7 @@
       "post": {
         "operationId": "unibox_reply",
         "summary": "Reply from the inbox",
-        "description": "Sends or schedules a reply from any mailbox in the organization, routed through the per-mailbox scheduler according to `send_mode`. Requires an active organization. `thread_id` names the conversation; the provider's thread handle is only used when the sending mailbox holds a message in that thread, and a reply from any other mailbox threads for the recipient on In-Reply-To and References alone.",
+        "description": "Sends or schedules a reply from any mailbox in the organization, routed through the per-mailbox scheduler according to `send_mode`. Requires an active organization. `thread_id` names the conversation; the Gmail thread handle is only used by a mailbox holding a message in that thread (or continuing a thread its own earlier reply started), and a reply from any other mailbox threads for the recipient on In-Reply-To and References alone.",
         "tags": [
           "unibox"
         ],
@@ -9421,7 +9421,7 @@
       "get": {
         "operationId": "unibox_list_scheduled",
         "summary": "List scheduled sends",
-        "description": "Outbound emails queued from the organization's mailboxes but not yet sent, whichever member queued them. Pass `thread_id` to scope to a single conversation; the response shape is identical either way.",
+        "description": "Outbound emails queued from the organization's mailboxes but not yet sent, whichever member queued them. An API key limited to certain mailboxes sees only their sends. Pass `thread_id` to scope to a single conversation; the response shape is identical either way.",
         "tags": [
           "unibox"
         ],
@@ -9499,7 +9499,7 @@
       "delete": {
         "operationId": "unibox_cancel_scheduled",
         "summary": "Cancel a scheduled send",
-        "description": "Cancels a pending scheduled send from any of the organization's mailboxes before it fires. The queued task is marked cancelled and short-circuits to a no-op when its run time arrives.",
+        "description": "Cancels a pending scheduled send from any of the organization's mailboxes (for an API key limited to certain mailboxes, from those) before it fires. The queued task is marked cancelled and short-circuits to a no-op when its run time arrives.",
         "tags": [
           "unibox"
         ],

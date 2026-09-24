@@ -338,7 +338,7 @@ Sends or schedules a reply from any mailbox in the organization. The send is rou
 
 Instant sends are held for the sender's undo window (5 to 120 seconds, default 30) before they actually leave, so `scheduled_at` is that far in the future. Within the window the send can still be cancelled with `DELETE /unibox/scheduled/:task_id`.
 
-A provider's thread handle belongs to the mailbox that holds the thread, so the reply only files into that provider thread when `email_account_id` holds a message in `thread_id`. From any other mailbox it goes out with the same In-Reply-To and References headers and the conversation's subject, which keeps it in the same conversation for the recipient; in the sending mailbox it starts a conversation of its own. The queued send still belongs to `thread_id`, so it is listed with that conversation's scheduled sends.
+Only Gmail has a provider thread handle, and it belongs to the mailbox that holds the thread. So the reply files into the Gmail thread `thread_id` names only when `email_account_id` holds a message in it; a mailbox that already replied into the conversation from outside continues the thread that reply started. Otherwise it goes out with the same In-Reply-To and References headers and the conversation's subject, which keeps it in the same conversation for the recipient, and starts a conversation of its own in the sending mailbox. The queued send still belongs to `thread_id`, so it is listed with that conversation's scheduled sends.
 
 ## List active snoozes
 
@@ -416,7 +416,7 @@ Un-snoozes a thread immediately. Idempotent: deleting a snooze that does not exi
 
 `GET /unibox/scheduled`
 
-Returns the outbound emails queued from the organization's mailboxes but not yet sent, whichever member queued them. Pass `thread_id` to scope to a single conversation (used to render queued replies inline); the response shape is identical either way. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Returns the outbound emails queued from the organization's mailboxes but not yet sent, whichever member queued them. An API key limited to certain mailboxes sees only their sends. Pass `thread_id` to scope to a single conversation (used to render queued replies inline); the response shape is identical either way. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -449,7 +449,7 @@ The response wraps the items in a `data` array. Each item is a preview of the qu
 
 `DELETE /unibox/scheduled/:task_id`
 
-Cancels a pending scheduled send from any of the organization's mailboxes before it fires. The queued task is marked cancelled and short-circuits to a no-op when its run time arrives. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
+Cancels a pending scheduled send from any of the organization's mailboxes (for an API key limited to certain mailboxes, from those) before it fires. The queued task is marked cancelled and short-circuits to a no-op when its run time arrives. Auth: **Scope** `WRITE_UNIBOX` · **Org permission** `access_unibox`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |

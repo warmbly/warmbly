@@ -175,13 +175,15 @@ type TaskRepository interface {
 	// ListScheduledInOrg returns every pending email task scheduled
 	// from the organization's mailboxes, ordered by next-to-fire. Used
 	// by the unibox "Scheduled" view.
-	ListScheduledInOrg(ctx context.Context, orgID uuid.UUID, limit int) ([]ScheduledEmailItem, error)
+	// accountIDs, when non-empty, narrows every scheduled read and the cancel
+	// to those mailboxes (an API key's allowlist).
+	ListScheduledInOrg(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID, limit int) ([]ScheduledEmailItem, error)
 	// ListScheduledInOrgByThread is the same query scoped to a
 	// single email thread. ThreadView uses it to render queued sends
 	// inline alongside already-sent messages so the user can see (and
 	// cancel) what's about to fire on the conversation they're
 	// reading.
-	ListScheduledInOrgByThread(ctx context.Context, orgID uuid.UUID, threadID string, limit int) ([]ScheduledEmailItem, error)
+	ListScheduledInOrgByThread(ctx context.Context, orgID uuid.UUID, threadID string, accountIDs []uuid.UUID, limit int) ([]ScheduledEmailItem, error)
 	// CountScheduledInOrg returns the number of pending email tasks
 	// currently scheduled (regardless of fire time). Used for the
 	// scope-rail counter and the pending-send cap.
@@ -194,10 +196,10 @@ type TaskRepository interface {
 	// short-circuits on a non-pending status, so a failed DeleteTask
 	// just degrades to a harmless no-op dispatch — never a real send.
 	// `ok` distinguishes 404 (no row updated) from 200.
-	CancelScheduledInOrg(ctx context.Context, taskID, orgID uuid.UUID) (cloudTaskName *string, ok bool, err error)
-	// ThreadHeldByMailbox reports whether the mailbox holds a message in the
-	// thread, which is what makes the thread id a handle its provider knows.
-	ThreadHeldByMailbox(ctx context.Context, emailAccountID uuid.UUID, threadID string) (bool, error)
+	CancelScheduledInOrg(ctx context.Context, taskID, orgID uuid.UUID, accountIDs []uuid.UUID) (cloudTaskName *string, ok bool, err error)
+	// ProviderThreadForMailbox returns the provider thread the mailbox itself
+	// holds for a unibox conversation, or "" when it holds none.
+	ProviderThreadForMailbox(ctx context.Context, emailAccountID uuid.UUID, threadID string) (string, error)
 }
 
 type taskRepository struct {
@@ -1082,10 +1084,10 @@ func (r *taskRepository) UpdateCampaignTaskTracking(ctx context.Context, taskID,
 	return err
 }
 
-// ListScheduledForUser returns user-initiated email tasks still in
-// 'pending' state, ordered by scheduled_at. Joins tasks → email_tasks
+// ListScheduledInOrg returns the organization's user-initiated email tasks
+// still in 'pending' state, ordered by scheduled_at. Joins tasks → email_tasks
 // → email_accounts so callers don't need three lookups per row.
-func (r *taskRepository) ListScheduledInOrg(ctx context.Context, orgID uuid.UUID, limit int) ([]ScheduledEmailItem, error) {
+func (r *taskRepository) ListScheduledInOrg(ctx context.Context, orgID uuid.UUID, accountIDs []uuid.UUID, limit int) ([]ScheduledEmailItem, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
@@ -1110,10 +1112,11 @@ func (r *taskRepository) ListScheduledInOrg(ctx context.Context, orgID uuid.UUID
 		WHERE ea.organization_id = $1
 		  AND t.task_type = 'email'
 		  AND t.status = 'pending'
+		  AND (COALESCE(cardinality($3::uuid[]), 0) = 0 OR ea.id = ANY($3::uuid[]))
 		ORDER BY t.scheduled_at ASC NULLS LAST, t.created_at ASC
 		LIMIT $2
 	`
-	rows, err := r.db.Query(ctx, query, orgID, limit)
+	rows, err := r.db.Query(ctx, query, orgID, limit, accountIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -1152,7 +1155,7 @@ func (r *taskRepository) ListScheduledInOrg(ctx context.Context, orgID uuid.UUID
 // single thread. Same join + tenant enforcement, plus an extra
 // thread_id filter. Empty threadID is treated as "no rows" so the
 // caller can't accidentally fall back to the full list.
-func (r *taskRepository) ListScheduledInOrgByThread(ctx context.Context, orgID uuid.UUID, threadID string, limit int) ([]ScheduledEmailItem, error) {
+func (r *taskRepository) ListScheduledInOrgByThread(ctx context.Context, orgID uuid.UUID, threadID string, accountIDs []uuid.UUID, limit int) ([]ScheduledEmailItem, error) {
 	if threadID == "" {
 		return []ScheduledEmailItem{}, nil
 	}
@@ -1181,10 +1184,11 @@ func (r *taskRepository) ListScheduledInOrgByThread(ctx context.Context, orgID u
 		  AND t.task_type = 'email'
 		  AND t.status = 'pending'
 		  AND et.thread_id = $2
+		  AND (COALESCE(cardinality($4::uuid[]), 0) = 0 OR ea.id = ANY($4::uuid[]))
 		ORDER BY t.scheduled_at ASC NULLS LAST, t.created_at ASC
 		LIMIT $3
 	`
-	rows, err := r.db.Query(ctx, query, orgID, threadID, limit)
+	rows, err := r.db.Query(ctx, query, orgID, threadID, limit, accountIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -1241,8 +1245,9 @@ func (r *taskRepository) CountScheduledInOrg(ctx context.Context, orgID uuid.UUI
 // Returns the Cloud Task resource name (if the row had one) so the
 // caller can issue a best-effort DeleteTask to clean up the GCP
 // queue. ok=false when the task either doesn't exist, sends from
-// another organization's mailbox, isn't an email task, or already left the pending state.
-func (r *taskRepository) CancelScheduledInOrg(ctx context.Context, taskID, orgID uuid.UUID) (*string, bool, error) {
+// another organization's mailbox or one outside accountIDs, isn't an
+// email task, or already left the pending state.
+func (r *taskRepository) CancelScheduledInOrg(ctx context.Context, taskID, orgID uuid.UUID, accountIDs []uuid.UUID) (*string, bool, error) {
 	query := `
 		UPDATE tasks t
 		SET status = 'cancelled',
@@ -1253,10 +1258,11 @@ func (r *taskRepository) CancelScheduledInOrg(ctx context.Context, taskID, orgID
 		  AND ea.organization_id = $2
 		  AND t.task_type = 'email'
 		  AND t.status = 'pending'
+		  AND (COALESCE(cardinality($3::uuid[]), 0) = 0 OR ea.id = ANY($3::uuid[]))
 		RETURNING t.cloud_task_name
 	`
 	var cloudTaskName *string
-	err := r.db.QueryRow(ctx, query, taskID, orgID).Scan(&cloudTaskName)
+	err := r.db.QueryRow(ctx, query, taskID, orgID, accountIDs).Scan(&cloudTaskName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false, nil
@@ -1266,22 +1272,35 @@ func (r *taskRepository) CancelScheduledInOrg(ctx context.Context, taskID, orgID
 	return cloudTaskName, true, nil
 }
 
-// ThreadHeldByMailbox reports whether the mailbox has a message in the thread,
-// synced or sent and not yet synced back. A thread id is the provider's handle
-// only for a mailbox that holds it.
-func (r *taskRepository) ThreadHeldByMailbox(ctx context.Context, emailAccountID uuid.UUID, threadID string) (bool, error) {
+// ProviderThreadForMailbox returns the provider thread the mailbox holds for a
+// unibox conversation: the conversation's own id when the mailbox has a message
+// in it (synced, or sent and not yet synced back), else the thread its latest
+// earlier reply into the conversation landed in, else "".
+func (r *taskRepository) ProviderThreadForMailbox(ctx context.Context, emailAccountID uuid.UUID, threadID string) (string, error) {
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
-		return false, nil
+		return "", nil
 	}
-	var held bool
+	var handle string
 	err := r.db.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM unibox_emails WHERE email_id = $1 AND thread_id = $2
-		) OR EXISTS (
-			SELECT 1 FROM tasks WHERE email_account_id = $1 AND status = 'completed' AND thread_id = $2
-		)`, emailAccountID, threadID).Scan(&held)
-	return held, err
+		SELECT CASE
+			WHEN EXISTS (SELECT 1 FROM unibox_emails WHERE email_id = $1 AND thread_id = $2)
+			  OR EXISTS (SELECT 1 FROM tasks WHERE email_account_id = $1 AND status = 'completed' AND thread_id = $2)
+			THEN $2
+			ELSE COALESCE((
+				SELECT t.thread_id
+				FROM tasks t
+				JOIN email_tasks et ON et.task_id = t.id
+				WHERE t.email_account_id = $1
+				  AND t.task_type = 'email'
+				  AND t.status = 'completed'
+				  AND t.thread_id <> ''
+				  AND et.thread_id = $2
+				ORDER BY t.completed_at DESC NULLS LAST
+				LIMIT 1
+			), '')
+		END`, emailAccountID, threadID).Scan(&handle)
+	return handle, err
 }
 
 // MarkDirectOpened records the first open and lets a later human open replace a machine open.

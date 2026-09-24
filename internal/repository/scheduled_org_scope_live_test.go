@@ -10,7 +10,8 @@ import (
 
 // Queued sends leave from organization mailboxes, so the workspace that owns
 // the mailbox lists, counts and cancels them, whichever member connected it,
-// and no other workspace can.
+// and no other workspace can. An API key's mailbox allowlist narrows the list
+// and the cancel to its own mailboxes.
 func TestLiveScheduledSendsAreScopedToTheMailboxOrganization(t *testing.T) {
 	_, pool := liveContactDB(t)
 	ctx := context.Background()
@@ -61,11 +62,11 @@ func TestLiveScheduledSendsAreScopedToTheMailboxOrganization(t *testing.T) {
 		org  uuid.UUID
 		want int
 	}{{org, 1}, {foreignOrg, 0}} {
-		all, err := repo.ListScheduledInOrg(ctx, tc.org, 50)
+		all, err := repo.ListScheduledInOrg(ctx, tc.org, nil, 50)
 		if err != nil || len(all) != tc.want {
 			t.Errorf("list for %s = %d rows (err %v), want %d", tc.org, len(all), err, tc.want)
 		}
-		inThread, err := repo.ListScheduledInOrgByThread(ctx, tc.org, thread, 50)
+		inThread, err := repo.ListScheduledInOrgByThread(ctx, tc.org, thread, nil, 50)
 		if err != nil || len(inThread) != tc.want {
 			t.Errorf("thread list for %s = %d rows (err %v), want %d", tc.org, len(inThread), err, tc.want)
 		}
@@ -75,17 +76,33 @@ func TestLiveScheduledSendsAreScopedToTheMailboxOrganization(t *testing.T) {
 		}
 	}
 
-	if _, ok, err := repo.CancelScheduledInOrg(ctx, taskID, foreignOrg); err != nil || ok {
+	elsewhere := []uuid.UUID{uuid.New()}
+	if rows, err := repo.ListScheduledInOrg(ctx, org, elsewhere, 50); err != nil || len(rows) != 0 {
+		t.Errorf("list outside the allowlist = %d rows (err %v), want none", len(rows), err)
+	}
+	if rows, err := repo.ListScheduledInOrgByThread(ctx, org, thread, elsewhere, 50); err != nil || len(rows) != 0 {
+		t.Errorf("thread list outside the allowlist = %d rows (err %v), want none", len(rows), err)
+	}
+	if rows, err := repo.ListScheduledInOrg(ctx, org, []uuid.UUID{mailbox}, 50); err != nil || len(rows) != 1 {
+		t.Errorf("list inside the allowlist = %d rows (err %v), want 1", len(rows), err)
+	}
+
+	if _, ok, err := repo.CancelScheduledInOrg(ctx, taskID, foreignOrg, nil); err != nil || ok {
 		t.Fatalf("foreign cancel ok=%v err=%v, want refused", ok, err)
 	}
-	if _, ok, err := repo.CancelScheduledInOrg(ctx, taskID, org); err != nil || !ok {
+	if _, ok, err := repo.CancelScheduledInOrg(ctx, taskID, org, elsewhere); err != nil || ok {
+		t.Fatalf("cancel outside the allowlist ok=%v err=%v, want refused", ok, err)
+	}
+	if _, ok, err := repo.CancelScheduledInOrg(ctx, taskID, org, nil); err != nil || !ok {
 		t.Fatalf("workspace cancel ok=%v err=%v, want cancelled", ok, err)
 	}
 }
 
-// A thread id is a mailbox's own provider handle once the mailbox holds a
-// message in it, whether synced back or only recorded from its own send.
-func TestLiveThreadHeldByMailbox(t *testing.T) {
+// A conversation id is a mailbox's own provider handle once the mailbox holds a
+// message in it, synced back or only recorded from its own send. A mailbox that
+// replied into the conversation from outside keeps using the thread that reply
+// landed in.
+func TestLiveProviderThreadForMailbox(t *testing.T) {
 	_, pool := liveContactDB(t)
 	ctx := context.Background()
 	owner, org, holder, stranger := uuid.New(), uuid.New(), uuid.New(), uuid.New()
@@ -99,7 +116,8 @@ func TestLiveThreadHeldByMailbox(t *testing.T) {
 	exec(`INSERT INTO users (id, first_name, last_name, email) VALUES ($1, 'Held', 'Thread', $2)`,
 		owner, "held-"+uuid.NewString()+"@example.test")
 	exec(`INSERT INTO organizations (id, name, owner_user_id) VALUES ($1, 'Held', $2)`, org, owner)
-	for _, id := range []uuid.UUID{holder, stranger} {
+	outsider := uuid.New()
+	for _, id := range []uuid.UUID{holder, stranger, outsider} {
 		exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html, provider)
 		      VALUES ($1, $2, $3, $4, 'Held', '', '', 'gmail')`, id, owner, org, "held-"+uuid.NewString()+"@example.test")
 	}
@@ -125,20 +143,32 @@ func TestLiveThreadHeldByMailbox(t *testing.T) {
 	      VALUES ($1, 'email', $2, 'completed', '<sent@example.test>', 'sent-thread', NOW())`, uuid.New(), holder)
 
 	repo := NewTaskRepository(pool)
+	// The outsider's earlier reply into synced-thread landed in its own thread.
+	earlier := uuid.New()
+	conversation := "synced-thread"
+	if err := repo.CreateEmailTaskFull(ctx,
+		&Task{ID: earlier, TaskType: "email", EmailAccountID: outsider, Status: "completed"},
+		&EmailTask{TaskID: earlier, To: []string{"them@example.test"}, Subject: "Re: Hi", Body: "x", BodyPlain: "x", ThreadID: &conversation, SendMode: "instant"},
+	); err != nil {
+		t.Fatalf("earlier reply: %v", err)
+	}
+	exec(`UPDATE tasks SET thread_id = 'outsider-thread', completed_at = NOW() WHERE id = $1`, earlier)
+
 	for _, tc := range []struct {
 		mailbox uuid.UUID
 		thread  string
-		want    bool
+		want    string
 	}{
-		{holder, "synced-thread", true},
-		{holder, "sent-thread", true},
-		{stranger, "synced-thread", false},
-		{stranger, "sent-thread", false},
-		{holder, "", false},
+		{holder, "synced-thread", "synced-thread"},
+		{holder, "sent-thread", "sent-thread"},
+		{stranger, "synced-thread", ""},
+		{stranger, "sent-thread", ""},
+		{outsider, "synced-thread", "outsider-thread"},
+		{holder, "", ""},
 	} {
-		held, err := repo.ThreadHeldByMailbox(ctx, tc.mailbox, tc.thread)
-		if err != nil || held != tc.want {
-			t.Errorf("held(%s, %q) = %v (err %v), want %v", tc.mailbox, tc.thread, held, err, tc.want)
+		handle, err := repo.ProviderThreadForMailbox(ctx, tc.mailbox, tc.thread)
+		if err != nil || handle != tc.want {
+			t.Errorf("thread(%s, %q) = %q (err %v), want %q", tc.mailbox, tc.thread, handle, err, tc.want)
 		}
 	}
 }
