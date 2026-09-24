@@ -1,8 +1,9 @@
 // The mailbox picker the vendor and admin-grant imports share: search, a
-// filter for what is connected already, checkbox rows and paging. The caller
-// owns the selection so the wizard's floating bar can act on it.
+// filter for what is connected already, a workspace switcher when the rows
+// span several, checkbox rows and paging. The caller owns the selection so the
+// wizard's floating bar can act on it.
 import React from "react";
-import { ChevronLeftIcon, ChevronRightIcon, MailIcon, RefreshCwIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, LayersIcon, MailIcon, RefreshCwIcon } from "lucide-react";
 import { SearchInput } from "@/components/ui/field";
 import { CheckSquare } from "@/components/ui/check-square";
 import ProviderLogo from "@/components/app/emails/ProviderLogo";
@@ -15,6 +16,8 @@ export interface PickItem {
     email: string;
     name: string;
     domain?: string;
+    /** A second line under the domain, such as the vendor workspace the mailbox sits in. */
+    group?: string;
     /** Shows a Google / Microsoft / SMTP badge when set. */
     provider?: "google" | "microsoft" | "smtp" | "";
     status?: { label: string; cls: string };
@@ -52,6 +55,7 @@ export default function PickTable({
     noun,
     loadingLogo,
     loadingSteps,
+    groupLabel = "Workspace",
 }: {
     items: PickItem[] | undefined;
     /** Whose mailboxes are being listed, and what is happening while they are. */
@@ -64,38 +68,55 @@ export default function PickTable({
     selected: Set<string>;
     setSelected: React.Dispatch<React.SetStateAction<Set<string>>>;
     noun: { one: string; many: string };
+    /** What PickItem.group names, for the switcher shown when rows span several. */
+    groupLabel?: string;
 }) {
     const [query, setQuery] = React.useState("");
     const [filter, setFilter] = React.useState<Filter>("all");
+    const [group, setGroup] = React.useState<string | null>(null);
     const [page, setPage] = React.useState(0);
 
     const all = React.useMemo(() => items ?? [], [items]);
+    // Each group with its rows, in the order the source lists them; only worth a switcher with two or more.
+    const groups = React.useMemo(() => {
+        const by = new Map<string, PickItem[]>();
+        for (const i of all) {
+            if (!i.group) continue;
+            const list = by.get(i.group);
+            if (list) list.push(i);
+            else by.set(i.group, [i]);
+        }
+        return by.size > 1 ? [...by.entries()].map(([name, rows]) => ({ name, rows })) : [];
+    }, [all]);
+    // A group that disappears on reload drops back to every row.
+    const activeGroup = group !== null && groups.some((g) => g.name === group) ? group : null;
+    const inScope = React.useMemo(() => (activeGroup === null ? all : all.filter((i) => i.group === activeGroup)), [all, activeGroup]);
     const showProvider = all.some((i) => i.provider !== undefined);
     const counts = React.useMemo(
         () => ({
-            all: all.length,
-            new: all.filter((i) => !i.connected).length,
-            moving: all.filter((i) => i.connected && i.upgrade).length,
-            connected: all.filter((i) => i.connected).length,
+            all: inScope.length,
+            new: inScope.filter((i) => !i.connected).length,
+            moving: inScope.filter((i) => i.connected && i.upgrade).length,
+            connected: inScope.filter((i) => i.connected).length,
         }),
-        [all],
+        [inScope],
     );
 
     const q = query.trim().toLowerCase();
     const shown = React.useMemo(
         () =>
-            all.filter((i) => {
+            inScope.filter((i) => {
                 if (filter === "new" && i.connected) return false;
                 if (filter === "connected" && !i.connected) return false;
                 if (filter === "moving" && !(i.connected && i.upgrade)) return false;
                 if (!q) return true;
-                return i.email.toLowerCase().includes(q) || i.name.toLowerCase().includes(q) || (i.domain ?? "").toLowerCase().includes(q);
+                return [i.email, i.name, i.domain ?? "", i.group ?? ""].some((v) => v.toLowerCase().includes(q));
             }),
-        [all, filter, q],
+        [inScope, filter, q],
     );
 
-    // A new search or filter starts from the first page.
-    React.useEffect(() => setPage(0), [q, filter]);
+    // A new search, filter or group starts from the first page.
+    React.useEffect(() => setPage(0), [q, filter, activeGroup]);
 
     const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
     const at = Math.min(page, pages - 1);
@@ -113,6 +134,19 @@ export default function PickTable({
             return next;
         });
     };
+
+    // What "select the group" picks: rows that would be new here, or that move onto this source.
+    const wanted = (i: PickItem) => !i.disabledReason && (!i.connected || !!i.upgrade);
+    const setGroupPicked = (rows: PickItem[], on: boolean) =>
+        setSelected((prev) => {
+            const next = new Set(prev);
+            for (const i of rows) {
+                if (!wanted(i)) continue;
+                if (on) next.add(i.id);
+                else next.delete(i.id);
+            }
+            return next;
+        });
 
     const toggleShown = () =>
         setSelected((prev) => {
@@ -194,6 +228,19 @@ export default function PickTable({
                 )}
             </div>
 
+            {groups.length > 0 && (
+                <GroupSwitcher
+                    label={groupLabel}
+                    groups={groups}
+                    total={all.length}
+                    active={activeGroup}
+                    onPick={setGroup}
+                    selected={selected}
+                    wanted={wanted}
+                    onPickAll={setGroupPicked}
+                />
+            )}
+
             <div className="relative rounded-md border border-slate-200 overflow-hidden">
                 <RefreshBar active={!!fetching} />
                 <div
@@ -248,7 +295,12 @@ export default function PickTable({
                                     <span className="block text-[12px] text-slate-800 truncate">{item.email}</span>
                                     {item.name && <span className="block text-[11px] text-slate-500 truncate">{item.name}</span>}
                                 </span>
-                                <span className="hidden sm:block text-[11.5px] text-slate-600 truncate">{item.domain || "-"}</span>
+                                <span className="hidden sm:block min-w-0">
+                                    <span className="block text-[11.5px] text-slate-600 truncate">{item.domain || "-"}</span>
+                                    {item.group && activeGroup === null && (
+                                        <span className="block text-[11px] text-slate-400 truncate">{item.group}</span>
+                                    )}
+                                </span>
                                 {showProvider && (
                                     <span className="hidden sm:block">
                                         <ProviderBadge provider={item.provider} />
@@ -294,6 +346,80 @@ export default function PickTable({
                         </button>
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+// GroupSwitcher narrows the table to one workspace and picks or clears a whole
+// workspace in one click, with how many of each are picked already.
+function GroupSwitcher({
+    label,
+    groups,
+    total,
+    active,
+    onPick,
+    selected,
+    wanted,
+    onPickAll,
+}: {
+    label: string;
+    groups: { name: string; rows: PickItem[] }[];
+    total: number;
+    active: string | null;
+    onPick: (group: string | null) => void;
+    selected: Set<string>;
+    wanted: (i: PickItem) => boolean;
+    onPickAll: (rows: PickItem[], on: boolean) => void;
+}) {
+    const current = groups.find((g) => g.name === active);
+    const pickable = current ? current.rows.filter(wanted) : [];
+    const picked = pickable.filter((i) => selected.has(i.id)).length;
+    const chip = (key: string | null, name: string, count: number, pickedHere: number) => {
+        const on = active === key;
+        return (
+            <button
+                key={key ?? "__all"}
+                type="button"
+                onClick={() => onPick(key)}
+                aria-pressed={on}
+                className={cn(
+                    "shrink-0 h-6 px-2 rounded-md border text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors max-w-[220px]",
+                    on ? "border-sky-200 bg-sky-50 text-sky-700" : "border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50",
+                )}
+            >
+                <span className="truncate">{name}</span>
+                <span className="tabular-nums opacity-70">{count.toLocaleString()}</span>
+                {pickedHere > 0 && (
+                    <span className="tabular-nums h-4 min-w-4 px-1 rounded bg-sky-600 text-white text-[10px] leading-4 text-center">
+                        {pickedHere.toLocaleString()}
+                    </span>
+                )}
+            </button>
+        );
+    };
+    return (
+        <div className="mb-2 rounded-md border border-slate-200 bg-slate-50/50 px-2.5 py-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
+                <LayersIcon className="w-3 h-3 text-slate-400" />
+                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">
+                    {groups.length} {label.toLowerCase()}s
+                </span>
+                {current && pickable.length > 0 && (
+                    <button
+                        type="button"
+                        onClick={() => onPickAll(current.rows, picked < pickable.length)}
+                        className="ml-auto h-6 px-2 rounded-md text-[11.5px] font-medium text-sky-700 hover:bg-sky-50 inline-flex items-center gap-1 transition-colors"
+                    >
+                        {picked < pickable.length
+                            ? `Select ${(pickable.length - picked).toLocaleString()} in ${current.name}`
+                            : `Clear ${current.name}`}
+                    </button>
+                )}
+            </div>
+            <div className="flex items-center gap-1 overflow-x-auto overflow-y-hidden no-scrollbar">
+                {chip(null, `All ${label.toLowerCase()}s`, total, 0)}
+                {groups.map((g) => chip(g.name, g.name, g.rows.length, g.rows.filter((i) => selected.has(i.id)).length))}
             </div>
         </div>
     );

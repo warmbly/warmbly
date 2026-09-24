@@ -28,12 +28,13 @@ function statusPill(status: string): PickItem["status"] {
     return { label, cls: BAD_STATUS.test(s) ? "text-amber-700 bg-amber-50" : "text-slate-600 bg-slate-100" };
 }
 
-function toItem(m: VendorMailbox): PickItem {
+function toItem(m: VendorMailbox, labelWorkspace: boolean): PickItem {
     return {
         id: m.id,
         email: m.email,
         name: m.name,
         domain: m.domain,
+        group: labelWorkspace ? m.workspace : undefined,
         provider: m.provider,
         status: statusPill(m.status),
         connected: m.connected,
@@ -60,7 +61,11 @@ export default function VendorImportWizard({
     const connections = React.useMemo(() => conns.data?.data ?? [], [conns.data]);
     const conn = connections.find((c) => c.id === connId) ?? null;
     const mailboxes = boxes.data?.data;
-    const items = React.useMemo(() => mailboxes?.map(toItem), [mailboxes]);
+    // The workspace is only worth a line when the key reaches more than one.
+    const items = React.useMemo(() => {
+        const several = new Set((mailboxes ?? []).map((m) => m.workspace ?? "")).size > 1;
+        return mailboxes?.map((m) => toItem(m, several));
+    }, [mailboxes]);
 
     const sourceIssue = !conn
         ? "Pick a vendor account, or connect one."

@@ -183,7 +183,8 @@ The [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) routes (
 
 | `code` | Status | Meaning |
 |--------|--------|---------|
-| `mailbox_vendor_unauthorized` | 400 | The vendor did not accept the API key, or it has no access to the workspace or organization entered. A saved connection is marked invalid until the key is updated |
+| `mailbox_vendor_unauthorized` | 400 | The vendor did not accept the API key. A saved connection is marked invalid until the key is updated |
+| `mailbox_vendor_no_workspace` | 400 | The key is accepted but the vendor lists no workspace or organization for it, so there is nothing to read. Create one at the vendor, then connect again |
 | `mailbox_vendor_invalid_fields` | 400 | A field the vendor requires is empty, or a field holds control characters. `GET /emails/vendors/catalog` lists each vendor's fields |
 | `mailbox_vendor_unknown` | 400 | `vendor` is not one of the supported vendors |
 | `mailbox_vendor_rate_limited` | 429 | The vendor is rate limiting Warmbly's requests. Try again in a minute |

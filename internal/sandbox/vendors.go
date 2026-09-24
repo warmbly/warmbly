@@ -15,7 +15,9 @@ import (
 // at <url>/inboxkit and <url>/mailforge. Any API key is accepted.
 //
 // InboxKit holds Google Workspace mailboxes (password only, as the real API
-// returns) and lets its domains be forwarded and their DNS written. Mailforge
+// returns) across two workspaces, scopes every call but the workspace list by
+// X-Workspace-Id as the real API does, and lets its domains be forwarded and
+// their DNS written. Mailforge
 // hosts its own SMTP/IMAP, pointed here at the sandbox's mailpit and dovecot so
 // its mailboxes import and connect for real, and only forwards domains.
 type VendorMock struct {
@@ -34,8 +36,8 @@ type endpoint struct {
 }
 
 type mockDomain struct {
-	ID, Vendor, Name, Forwarding string
-	Records                      []mockRecord
+	ID, Vendor, Workspace, Name, Forwarding string
+	Records                                 []mockRecord
 }
 
 type mockRecord struct {
@@ -46,7 +48,13 @@ type mockRecord struct {
 }
 
 type mockBox struct {
-	ID, Vendor, User, Domain, First, Last, Platform string
+	ID, Vendor, Workspace, User, Domain, First, Last, Platform string
+}
+
+// inboxKitWorkspaces are the mock InboxKit account's workspaces, by uid.
+var inboxKitWorkspaces = []struct{ UID, Name string }{
+	{"6f1c2d3e-0000-4000-8000-000000000001", "Sunrise Outbound"},
+	{"6f1c2d3e-0000-4000-8000-000000000002", "Sunrise Trials"},
 }
 
 // NewVendorMock seeds both vendors; smtp and imap are where Mailforge's mailboxes connect.
@@ -58,9 +66,9 @@ func NewVendorMock(cfg Config) *VendorMock {
 		latency: cfg.VendorLatency,
 	}
 	for _, d := range []mockDomain{
-		{ID: "ik-d1", Vendor: "inboxkit", Name: "sunrise-outbound.test", Forwarding: "https://sunriselabs.test"},
-		{ID: "ik-d2", Vendor: "inboxkit", Name: "trysunrise.test"},
-		{ID: "mf-d1", Vendor: "mailforge", Name: "sunrisehq.test"},
+		{ID: "ik-d1", Vendor: "inboxkit", Workspace: inboxKitWorkspaces[0].UID, Name: "sunrise-outbound.test", Forwarding: "https://sunriselabs.test"},
+		{ID: "ik-d2", Vendor: "inboxkit", Workspace: inboxKitWorkspaces[1].UID, Name: "trysunrise.test"},
+		{ID: "mf-d1", Vendor: "mailforge", Workspace: "mf-ws", Name: "sunrisehq.test"},
 	} {
 		d := d
 		m.domains[d.ID] = &d
@@ -68,9 +76,9 @@ func NewVendorMock(cfg Config) *VendorMock {
 	people := [][2]string{{"Ava", "Stone"}, {"Leo", "Park"}, {"Mia", "Chen"}, {"Noah", "Reed"}}
 	for i, p := range people {
 		m.boxes = append(m.boxes,
-			mockBox{ID: "ik-" + strconv.Itoa(i+1), Vendor: "inboxkit", User: strings.ToLower(p[0]), Domain: "sunrise-outbound.test", First: p[0], Last: p[1], Platform: "google"},
-			mockBox{ID: "ik-" + strconv.Itoa(i+11), Vendor: "inboxkit", User: strings.ToLower(p[0]) + "." + strings.ToLower(p[1]), Domain: "trysunrise.test", First: p[0], Last: p[1], Platform: "google"},
-			mockBox{ID: "mf-" + strconv.Itoa(i+1), Vendor: "mailforge", User: strings.ToLower(p[0]), Domain: "sunrisehq.test", First: p[0], Last: p[1], Platform: "smtp"},
+			mockBox{ID: "ik-" + strconv.Itoa(i+1), Vendor: "inboxkit", Workspace: inboxKitWorkspaces[0].UID, User: strings.ToLower(p[0]), Domain: "sunrise-outbound.test", First: p[0], Last: p[1], Platform: "google"},
+			mockBox{ID: "ik-" + strconv.Itoa(i+11), Vendor: "inboxkit", Workspace: inboxKitWorkspaces[1].UID, User: strings.ToLower(p[0]) + "." + strings.ToLower(p[1]), Domain: "trysunrise.test", First: p[0], Last: p[1], Platform: "google"},
+			mockBox{ID: "mf-" + strconv.Itoa(i+1), Vendor: "mailforge", Workspace: "mf-ws", User: strings.ToLower(p[0]), Domain: "sunrisehq.test", First: p[0], Last: p[1], Platform: "smtp"},
 		)
 	}
 	return m
@@ -102,42 +110,74 @@ func (m *VendorMock) inboxKit(w http.ResponseWriter, r *http.Request, path strin
 	defer m.mu.Unlock()
 	var body map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&body)
+	if path == "/v1/api/workspaces/list" {
+		out := make([]map[string]any, 0, len(inboxKitWorkspaces))
+		for _, ws := range inboxKitWorkspaces {
+			out = append(out, map[string]any{"uid": ws.UID, "name": ws.Name})
+		}
+		writeMock(w, http.StatusOK, map[string]any{"error": false, "workspaces": out})
+		return
+	}
+	ws := r.Header.Get("X-Workspace-Id")
+	known := false
+	for _, k := range inboxKitWorkspaces {
+		known = known || k.UID == ws
+	}
+	if !known {
+		writeMock(w, http.StatusBadRequest, map[string]any{"error": true, "message": "Workspace not found"})
+		return
+	}
+	domain := func(uid string) *mockDomain {
+		if d := m.domains[uid]; d != nil && d.Vendor == "inboxkit" && d.Workspace == ws {
+			return d
+		}
+		return nil
+	}
 	switch path {
 	case "/v1/api/mailboxes/list":
 		var out []map[string]any
 		for _, b := range m.boxes {
-			if b.Vendor == "inboxkit" {
+			if b.Vendor == "inboxkit" && b.Workspace == ws {
 				out = append(out, map[string]any{"uid": b.ID, "domain_name": b.Domain, "first_name": b.First, "last_name": b.Last,
 					"username": b.User, "platform": b.Platform, "status": "active"})
 			}
 		}
 		writeMock(w, http.StatusOK, map[string]any{"error": false, "mailboxes": out, "pages": 1, "current_page": 1})
 	case "/v1/api/mailboxes/show-credentials":
-		writeMock(w, http.StatusOK, map[string]any{"error": false, "password": "sandbox", "app_password": ""})
+		uid := r.URL.Query().Get("uid")
+		for _, b := range m.boxes {
+			if b.Vendor == "inboxkit" && b.Workspace == ws && b.ID == uid {
+				writeMock(w, http.StatusOK, map[string]any{"error": false, "password": "sandbox", "app_password": ""})
+				return
+			}
+		}
+		writeMock(w, http.StatusNotFound, map[string]any{"error": true, "message": "Mailbox not found"})
 	case "/v1/api/domains/list":
 		var out []map[string]any
 		for _, d := range m.vendorDomains("inboxkit") {
-			out = append(out, map[string]any{"uid": d.ID, "name": d.Name, "forwarding_url": d.Forwarding})
+			if d.Workspace == ws {
+				out = append(out, map[string]any{"uid": d.ID, "name": d.Name, "forwarding_url": d.Forwarding})
+			}
 		}
 		writeMock(w, http.StatusOK, map[string]any{"error": false, "domains": out, "pages": 1})
 	case "/v1/api/domains/forwarding":
 		target, _ := body["forwarding_url"].(string)
 		uids, _ := body["uids"].([]any)
 		for _, u := range uids {
-			if d, ok := m.domains[toString(u)]; ok && d.Vendor == "inboxkit" {
+			if d := domain(toString(u)); d != nil {
 				d.Forwarding = target
 			}
 		}
 		writeMock(w, http.StatusOK, map[string]any{"error": false})
 	case "/v1/api/dns/list":
-		d := m.domains[r.URL.Query().Get("uid")]
+		d := domain(r.URL.Query().Get("uid"))
 		if d == nil {
 			writeMock(w, http.StatusNotFound, map[string]any{"error": true})
 			return
 		}
 		writeMock(w, http.StatusOK, map[string]any{"error": false, "dns_record": map[string]any{"records": d.Records}})
 	case "/v1/api/dns/add", "/v1/api/dns/update", "/v1/api/dns/delete":
-		d := m.domains[toString(body["uid"])]
+		d := domain(toString(body["uid"]))
 		if d == nil {
 			writeMock(w, http.StatusNotFound, map[string]any{"error": true})
 			return
@@ -231,7 +271,7 @@ func (m *VendorMock) mailforge(w http.ResponseWriter, r *http.Request, path stri
 func (m *VendorMock) forgeBox(b mockBox) map[string]any {
 	email := b.User + "@" + b.Domain
 	return map[string]any{
-		"id": b.ID, "email": email, "firstName": b.First, "lastName": b.Last, "domain": b.Domain, "status": "active",
+		"id": b.ID, "email": email, "firstName": b.First, "lastName": b.Last, "domain": b.Domain, "status": "active", "workspaceId": b.Workspace,
 		"credentials": map[string]any{
 			"imapHost": m.imap.Host, "imapPort": m.imap.Port, "imapUsername": email, "imapPassword": "sandbox",
 			"smtpHost": m.smtp.Host, "smtpPort": m.smtp.Port, "smtpUsername": email, "smtpPassword": "sandbox",

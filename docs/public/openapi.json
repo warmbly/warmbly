@@ -37016,6 +37016,10 @@
           "status": {
             "type": "string"
           },
+          "workspace": {
+            "type": "string",
+            "description": "The vendor workspace or organization holding the mailbox, when the vendor has them."
+          },
           "connected": {
             "type": "boolean"
           },

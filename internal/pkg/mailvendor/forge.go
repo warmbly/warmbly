@@ -12,25 +12,57 @@ import (
 
 // Mailforge (https://api.mailforge.ai/swagger/doc.json) and Infraforge
 // (https://api.infraforge.ai/public/swagger/doc.json) share one API shape.
+// The key reaches every workspace of the account, and the mailbox list spans them all.
 type forge struct {
-	vendor    string
-	t         *transport
-	workspace string
-	cache     credCache
-	dnsMu     sync.Mutex
+	vendor     string
+	t          *transport
+	cache      credCache
+	dnsMu      sync.Mutex
+	workspaces workspaceCache
 }
 
-func newForge(vendor, base, workspace string, vals map[string]string, o options) *forge {
+func newForge(vendor, base string, vals map[string]string, o options) *forge {
 	key := vals[FieldAPIKey]
 	// Both take the raw key, with no Bearer prefix.
 	auth := func(h http.Header) { h.Set("Authorization", key) }
-	return &forge{vendor: vendor, t: newTransport(vendor, base, o, auth, 0), workspace: workspace}
+	return &forge{vendor: vendor, t: newTransport(vendor, base, o, auth, 0)}
 }
 
 func (c *forge) Vendor() string { return c.vendor }
 
+// listWorkspaces reads GET /workspaces; a body in another shape yields no names rather than an error.
+func (c *forge) listWorkspaces(ctx context.Context) ([]workspace, error) {
+	var raw json.RawMessage
+	if err := c.t.do(ctx, call{method: http.MethodGet, path: "/workspaces"}, &raw); err != nil {
+		return nil, err
+	}
+	var res []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(raw, &res)
+	out := make([]workspace, 0, len(res))
+	for _, w := range res {
+		out = append(out, workspace{ID: w.ID, Name: w.Name})
+	}
+	return out, nil
+}
+
 func (c *forge) Verify(ctx context.Context) error {
 	return c.t.do(ctx, call{method: http.MethodGet, path: "/workspaces"}, nil)
+}
+
+// workspaceNames labels mailboxes by workspace; it is cosmetic, so a failed read leaves them unlabelled.
+func (c *forge) workspaceNames(ctx context.Context) map[string]string {
+	wss, err := c.workspaces.get(ctx, c.listWorkspaces)
+	if err != nil {
+		return nil
+	}
+	names := make(map[string]string, len(wss))
+	for _, w := range wss {
+		names[w.ID] = w.Name
+	}
+	return names
 }
 
 type forgeMailbox struct {
@@ -40,6 +72,7 @@ type forgeMailbox struct {
 	LastName    string `json:"lastName"`
 	Domain      string `json:"domain"`
 	Status      string `json:"status"`
+	WorkspaceID string `json:"workspaceId"`
 	Credentials *struct {
 		IMAPHost     string `json:"imapHost"`
 		IMAPPort     int    `json:"imapPort"`
@@ -84,16 +117,14 @@ func (m forgeMailbox) mailbox() Mailbox {
 	}
 }
 
-// List reads every mailbox with credentials in one unpaginated call.
+// List reads every workspace's mailboxes with credentials in one unpaginated call.
 func (c *forge) List(ctx context.Context) ([]Mailbox, error) {
 	q := url.Values{"with_credentials": {"true"}}
-	if c.workspace != "" {
-		q.Set("workspace_id", c.workspace)
-	}
 	var res []forgeMailbox
 	if err := c.t.do(ctx, call{method: http.MethodGet, path: "/mailboxes", query: q, limit: listBodyLimit}, &res); err != nil {
 		return nil, err
 	}
+	names := c.workspaceNames(ctx)
 	out := make([]Mailbox, 0, min(len(res), MaxMailboxes))
 	for _, m := range res {
 		if m.ID == "" {
@@ -102,7 +133,9 @@ func (c *forge) List(ctx context.Context) ([]Mailbox, error) {
 		if cr, ok := m.credentials(); ok {
 			c.cache.put(m.ID, cr)
 		}
-		out = append(out, m.mailbox())
+		mb := m.mailbox()
+		mb.Workspace = names[m.WorkspaceID]
+		out = append(out, mb)
 		if len(out) >= MaxMailboxes {
 			break
 		}
@@ -137,7 +170,6 @@ type forgeDomain struct {
 	SLD             string `json:"sld"`
 	TLD             string `json:"tld"`
 	ForwardToDomain string `json:"forwardToDomain"`
-	WorkspaceID     string `json:"workspaceId"`
 }
 
 // Domains reads GET /domains in one unpaginated call.
@@ -159,7 +191,7 @@ func (c *forge) Domains(ctx context.Context) ([]Domain, error) {
 	}
 	out := make([]Domain, 0, min(len(res), MaxDomains))
 	for _, d := range res {
-		if d.ID == "" || (c.workspace != "" && d.WorkspaceID != "" && d.WorkspaceID != c.workspace) {
+		if d.ID == "" {
 			continue
 		}
 		name := d.SLD

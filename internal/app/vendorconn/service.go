@@ -34,6 +34,7 @@ const (
 	ErrIDInvalidFields = "mailbox_vendor_invalid_fields"
 	ErrIDRateLimited   = "mailbox_vendor_rate_limited"
 	ErrIDUnavailable   = "mailbox_vendor_unavailable"
+	ErrIDNoWorkspace   = "mailbox_vendor_no_workspace"
 )
 
 // Mailboxes is the mailbox store's side.
@@ -125,6 +126,9 @@ func (s *Service) Catalog() []Vendor {
 	for _, d := range ds {
 		v := Vendor{ID: d.ID, Label: d.Label, Website: d.Website, KeyHelpURL: d.KeyHelpURL}
 		for _, f := range d.Fields {
+			if f.Legacy {
+				continue
+			}
 			v.Fields = append(v.Fields, VendorField{Key: f.Key, Label: f.Label, Secret: f.Secret, Required: f.Required, Help: f.Help})
 		}
 		out = append(out, v)
@@ -137,7 +141,9 @@ func vendorError(label string, err error) *errx.Error {
 	switch {
 	case errors.Is(err, mailvendor.ErrUnauthorized):
 		return errx.NewWithIdentifier(errx.BadRequest, mailboximport.ErrIDVendorUnauthorized,
-			label+" did not accept this API key. Check that it is current and has access to the workspace or organization entered.")
+			label+" did not accept this API key. Check that it is current and was copied in full.")
+	case errors.Is(err, mailvendor.ErrNoWorkspace):
+		return errx.NewWithIdentifier(errx.BadRequest, ErrIDNoWorkspace, label+" shows no workspace for this API key. Create one at "+label+", then try again.")
 	case errors.Is(err, mailvendor.ErrRateLimited):
 		return errx.NewWithIdentifier(errx.TooManyRequests, ErrIDRateLimited, label+" is rate limiting requests. Try again in a minute.")
 	case errors.Is(err, mailvendor.ErrInvalidConfig):
@@ -374,7 +380,7 @@ func (s *Service) Mailboxes(ctx context.Context, orgID, id uuid.UUID) ([]models.
 		}
 		out = append(out, models.VendorMailbox{
 			ID: m.ID, Email: m.Email, Name: strings.TrimSpace(m.FirstName + " " + m.LastName),
-			Domain: m.Domain, Provider: m.Provider, Status: m.Status,
+			Domain: m.Domain, Provider: m.Provider, Status: m.Status, Workspace: m.Workspace,
 		})
 		emails = append(emails, m.Email)
 	}

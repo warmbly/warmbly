@@ -344,6 +344,7 @@ type VendorMailbox struct {
 	Domain    string     `json:"domain"`
 	Provider  string     `json:"provider"`
 	Status    string     `json:"status"`
+	Workspace string     `json:"workspace,omitempty"`
 	Connected bool       `json:"connected"`
 	AccountID *uuid.UUID `json:"email_account_id,omitempty"`
 }
