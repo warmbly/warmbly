@@ -324,12 +324,13 @@ func (r *analyticsRepository) GetCampaignEngagementBreakdown(ctx context.Context
 	return &models.CampaignEngagementBreakdown{Countries: countries, Clients: clients, Devices: devices, Surfaces: surfaces}, nil
 }
 
+// GetSequenceStats lists email steps in canvas order; Position is the canvas's "Email N".
 func (r *analyticsRepository) GetSequenceStats(ctx context.Context, campaignID uuid.UUID) ([]models.SequenceStats, *errx.Error) {
 	query := `
 		SELECT
 			s.id,
 			s.name,
-			ROW_NUMBER() OVER (ORDER BY s.created_at) as position,
+			ROW_NUMBER() OVER (ORDER BY s.position, s.created_at, s.id) as position,
 			COUNT(CASE WHEN ccp.sent_at IS NOT NULL THEN 1 END) as emails_sent,
 			COUNT(CASE WHEN ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine THEN 1 END) as opens,
 			COUNT(CASE WHEN ccp.opened_at IS NOT NULL AND ccp.opened_machine THEN 1 END) as machine_opens,
@@ -340,8 +341,8 @@ func (r *analyticsRepository) GetSequenceStats(ctx context.Context, campaignID u
 		FROM sequences s
 		LEFT JOIN campaign_contact_progress ccp ON ccp.sequence_id = s.id AND ccp.campaign_id = $1` + machineClicksJoin + `
 		WHERE s.campaign_id = $1 AND s.kind = 'email'
-		GROUP BY s.id, s.name, s.created_at
-		ORDER BY s.created_at
+		GROUP BY s.id, s.name, s.position, s.created_at
+		ORDER BY s.position, s.created_at, s.id
 	`
 
 	params := []any{campaignID}

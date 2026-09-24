@@ -115,9 +115,10 @@ type CampaignSummary struct {
 type SequenceStats struct {
 	SequenceID uuid.UUID `json:"step_id"`
 	Name       string    `json:"name"`
-	Position   int       `json:"position"`
-	EmailsSent int       `json:"emails_sent"`
-	Opens      int       `json:"opens"`
+	// Position is 1-based among the campaign's email steps, in canvas order.
+	Position   int `json:"position"`
+	EmailsSent int `json:"emails_sent"`
+	Opens      int `json:"opens"`
 	// MachineOpens is the subset of Opens from automated fetchers, by the
 	// same rule the summary uses. Human opens = Opens - MachineOpens.
 	MachineOpens int `json:"machine_opens"`

@@ -80,18 +80,18 @@ func TestLiveCampaignStepRatesAreOfTheStepsOwnSends(t *testing.T) {
 
 	near := func(got, want float64) bool { return math.Abs(got-want) < 0.01 }
 
-	// Five sent: three opens (the machine one included, as the summary
-	// counts it), one click, one reply, one bounce.
+	// Five sent: two opens (a person's only; the machine one is counted
+	// apart, as the summary does), one click, one reply, one bounce.
 	s := stats[0]
 	if s.SequenceID != intro || s.Position != 1 {
 		t.Fatalf("first row = %s position %d, want the intro step at position 1", s.SequenceID, s.Position)
 	}
-	if s.EmailsSent != 5 || s.Opens != 3 || s.MachineOpens != 1 || s.Clicks != 1 || s.MachineClicks != 1 || s.Replies != 1 || s.Bounces != 1 {
-		t.Errorf("intro counts = sent %d opens %d machine_opens %d clicks %d machine_clicks %d replies %d bounces %d, want 5/3/1/1/1/1/1",
+	if s.EmailsSent != 5 || s.Opens != 2 || s.MachineOpens != 1 || s.Clicks != 1 || s.MachineClicks != 1 || s.Replies != 1 || s.Bounces != 1 {
+		t.Errorf("intro counts = sent %d opens %d machine_opens %d clicks %d machine_clicks %d replies %d bounces %d, want 5/2/1/1/1/1/1",
 			s.EmailsSent, s.Opens, s.MachineOpens, s.Clicks, s.MachineClicks, s.Replies, s.Bounces)
 	}
-	if !near(s.OpenRate, 60) || !near(s.ClickRate, 20) || !near(s.ReplyRate, 20) || !near(s.BounceRate, 20) {
-		t.Errorf("intro rates = open %.2f click %.2f reply %.2f bounce %.2f, want 60/20/20/20",
+	if !near(s.OpenRate, 40) || !near(s.ClickRate, 20) || !near(s.ReplyRate, 20) || !near(s.BounceRate, 20) {
+		t.Errorf("intro rates = open %.2f click %.2f reply %.2f bounce %.2f, want 40/20/20/20",
 			s.OpenRate, s.ClickRate, s.ReplyRate, s.BounceRate)
 	}
 
