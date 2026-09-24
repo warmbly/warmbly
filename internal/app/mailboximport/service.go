@@ -146,9 +146,10 @@ type Service struct {
 	redirected sync.Map
 
 	kick     chan struct{}
-	progress sync.Map // import id -> time.Time of the last progress event
-	trailing sync.Map // import id -> a progress event deferred to the end of its window
-	causes   sync.Map // scrubbed server reply -> refined cause key
+	inflight sync.WaitGroup // rows being connected, so a shutdown can let them finish
+	progress sync.Map       // import id -> time.Time of the last progress event
+	trailing sync.Map       // import id -> a progress event deferred to the end of its window
+	causes   sync.Map       // scrubbed server reply -> refined cause key
 }
 
 func NewService(d Deps) *Service {

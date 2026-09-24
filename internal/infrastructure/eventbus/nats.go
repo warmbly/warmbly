@@ -259,7 +259,8 @@ func (b *NATSBus) Subscribe(ctx context.Context, topics []string, group string, 
 	}
 
 	cc, err := cons.Consume(func(m jetstream.Msg) {
-		hctx, cancel := context.WithTimeout(ctx, handlerTimeout())
+		// A message already being handled finishes after a shutdown signal; only reading the next one stops.
+		hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), handlerTimeout())
 		defer cancel()
 		key := m.Headers().Get("Warmbly-Key")
 		if key == "" {

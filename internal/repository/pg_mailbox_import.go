@@ -89,6 +89,8 @@ type MailboxImportRepository interface {
 	FinishRow(ctx context.Context, id uuid.UUID, line, attempt int, status, code, cause, message string, accountID *uuid.UUID, keepPayload bool) error
 	// SetRowAccount records the mailbox a claimed row just created, before its settings are applied.
 	SetRowAccount(ctx context.Context, id uuid.UUID, line, attempt int, accountID uuid.UUID) error
+	// Release hands a claimed row that never started back to the queue without counting the claim.
+	Release(ctx context.Context, id uuid.UUID, line, attempt int) error
 	// Touch renews a claimed row's lease when work on it starts; false when another replica has it now.
 	Touch(ctx context.Context, id uuid.UUID, line, attempt int, lease time.Duration) (bool, error)
 	// SettleOrphans closes rows left running in imports that are no longer running.
@@ -507,6 +509,16 @@ func (r *mailboxImportRepository) SetRowAccount(ctx context.Context, id uuid.UUI
 	query := `UPDATE mailbox_import_rows SET email_account_id = $4
 		WHERE import_id = $1 AND line = $2 AND status = 'running' AND attempts = $3`
 	if _, err := r.DB.Exec(ctx, query, id, line, attempt, accountID); err != nil {
+		db.CaptureError(err, query, nil, "exec")
+		return err
+	}
+	return nil
+}
+
+func (r *mailboxImportRepository) Release(ctx context.Context, id uuid.UUID, line, attempt int) error {
+	query := `UPDATE mailbox_import_rows SET status = 'queued', lease_until = NULL, attempts = attempts - 1
+		WHERE import_id = $1 AND line = $2 AND status = 'running' AND attempts = $3`
+	if _, err := r.DB.Exec(ctx, query, id, line, attempt); err != nil {
 		db.CaptureError(err, query, nil, "exec")
 		return err
 	}

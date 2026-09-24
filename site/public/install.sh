@@ -1304,6 +1304,8 @@ name: warmbly
 
 x-app: &app
   restart: unless-stopped
+  # Time for a connect or send in flight to finish before an update stops it.
+  stop_grace_period: 60s
   env_file: [.env]
 
 services:

@@ -62,7 +62,11 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // pass works claimed rows until none are left, then closes finished imports.
+// Once ctx ends (a deploy or restart) nothing new is claimed, a row still
+// waiting for a slot is handed back at once, and rows already connecting finish
+// on a context the shutdown does not cancel, so a deploy loses no work.
 func (s *Service) pass(ctx context.Context) {
+	work := context.WithoutCancel(ctx)
 	lease := time.Duration(config.MailboxImportLeaseSeconds) * time.Second
 	hostSlots := map[string]chan struct{}{}
 	var hostMu sync.Mutex
@@ -87,12 +91,14 @@ func (s *Service) pass(ctx context.Context) {
 		sem := make(chan struct{}, config.MailboxImportConcurrency)
 		for _, w := range rows {
 			wg.Add(1)
+			s.inflight.Add(1)
 			go func(w repository.ImportWorkRow) {
+				defer s.inflight.Done()
 				defer wg.Done()
 				defer func() {
 					if rec := recover(); rec != nil {
 						errs.CaptureException(fmt.Errorf("mailbox import row panic: %v", rec))
-						s.finish(ctx, w, models.ImportRowFailed, causeInternal, causeInternal, causeInfo(causeInternal).Title, nil, true)
+						s.finish(work, w, models.ImportRowFailed, causeInternal, causeInternal, causeInfo(causeInternal).Title, nil, true)
 					}
 				}()
 				sem <- struct{}{}
@@ -100,17 +106,36 @@ func (s *Service) pass(ctx context.Context) {
 				hs := slot(w.MailHost)
 				hs <- struct{}{}
 				defer func() { <-hs }()
-				// The lease starts now that the row has a slot; another replica may have taken it meanwhile.
-				if ok, err := s.repo.Touch(ctx, w.ImportID, w.Line, w.Attempts, lease); err != nil || !ok {
+				if ctx.Err() != nil {
+					_ = s.repo.Release(work, w.ImportID, w.Line, w.Attempts)
 					return
 				}
-				s.process(ctx, w)
+				// The lease starts now that the row has a slot; another replica may have taken it meanwhile.
+				if ok, err := s.repo.Touch(work, w.ImportID, w.Line, w.Attempts, lease); err != nil || !ok {
+					return
+				}
+				s.process(work, w)
 			}(w)
 		}
 		wg.Wait()
-		s.completeFinished(ctx)
+		s.completeFinished(work)
 	}
-	s.completeFinished(ctx)
+	s.completeFinished(work)
+}
+
+// Drain waits for the rows being connected to finish, up to timeout; false when some did not.
+func (s *Service) Drain(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		s.inflight.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 func (s *Service) completeFinished(ctx context.Context) {

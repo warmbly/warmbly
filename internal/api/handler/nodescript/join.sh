@@ -452,7 +452,9 @@ EnvironmentFile=$STATE_DIR/image-ref
 # otherwise wedge the service in a restart loop.
 ExecStartPre=-/usr/bin/docker rm -f $service
 ExecStart=/usr/bin/docker run --rm --name $service --env-file $CONFIG_DIR/node.env --env-file $CONFIG_DIR/node.local.env --network host $MOUNTS \${WARMBLY_IMAGE_REF}
-ExecStop=/usr/bin/docker stop $service
+# A send or import in flight gets time to finish before the container is killed.
+ExecStop=/usr/bin/docker stop --time 45 $service
+TimeoutStopSec=60
 
 [Install]
 WantedBy=multi-user.target
