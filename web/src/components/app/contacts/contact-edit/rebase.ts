@@ -12,7 +12,8 @@
 // for everything they did not touch.
 
 import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
-import type { CustomField } from "./DetailsTab";
+import type { CustomField } from "../customFields";
+import { normalizeCustomKey } from "../importShared";
 
 export function rebase<T>(
     local: T,
@@ -41,15 +42,16 @@ export function sameCampaigns(a: MiniCampaign[], b: MiniCampaign[]): boolean {
     return sameIDs(idsOf(a), idsOf(b));
 }
 
-// The custom-field rows as the record they save as: unnamed rows dropped,
-// names trimmed. Built from entries rather than by assignment, because
-// assigning to `__proto__` sets the prototype instead of adding an own
-// property, and a contact may legitimately have a field by that name.
+// The custom-field rows as the record they save as: unnamed and blank rows
+// dropped (a blank value removes the key), names normalized. Built from
+// entries rather than by assignment, because assigning to `__proto__` sets the
+// prototype instead of adding an own property, and a contact may legitimately
+// have a field by that name.
 export function recordFromCF(fields: CustomField[]): Record<string, string> {
     const entries: [string, string][] = [];
     for (const f of fields) {
-        const name = f.name.trim();
-        if (!name) continue;
+        const name = normalizeCustomKey(f.name);
+        if (!name || f.value.trim() === "") continue;
         entries.push([name, f.value]);
     }
     return Object.fromEntries(entries);

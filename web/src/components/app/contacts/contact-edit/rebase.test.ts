@@ -88,6 +88,16 @@ describe("custom fields", () => {
         ).toEqual({ industry: "Freight" });
     });
 
+    // A blank value removes the key on save, so it is no field at all.
+    it("drops blank values and collapses spaces in names", () => {
+        expect(
+            recordFromCF([
+                { name: "job   title", value: "Ops lead" },
+                { name: "tier", value: "  " },
+            ]),
+        ).toEqual({ "job title": "Ops lead" });
+    });
+
     it("compares rows as the record they save as", () => {
         expect(
             sameFields(

@@ -15,7 +15,6 @@ import {
     PlusIcon,
     SearchIcon,
     SendIcon,
-    TrashIcon,
     UserIcon,
     XIcon,
 } from "lucide-react";
@@ -27,12 +26,10 @@ import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
 import useClickOutside from "@/hooks/useClickOutside";
 import useFlipPlacement from "@/hooks/useFlipPlacement";
 import CategoryPicker from "../CategoryPicker";
+import CustomFieldsEditor from "../CustomFieldsEditor";
+import type { CustomField } from "../customFields";
+import { recordFromCF } from "./rebase";
 import { fmtAbsolute } from "./format";
-
-export interface CustomField {
-    name: string;
-    value: string;
-}
 
 export default function DetailsTab({
     contact,
@@ -133,58 +130,12 @@ export default function DetailsTab({
             <Section
                 title="Custom fields"
                 accessory={
-                    <button
-                        type="button"
-                        onClick={() => setCustomFields((f) => [...f, { name: "", value: "" }])}
-                        className="h-6 px-2 rounded-md border border-slate-200 hover:border-slate-300 text-[11px] text-slate-600 hover:text-slate-900 inline-flex items-center gap-1 transition-colors"
-                    >
-                        <PlusIcon className="w-3 h-3" />
-                        Add field
-                    </button>
+                    <span className="text-[10.5px] text-slate-400 tabular-nums">
+                        {recordSize(customFields)} set
+                    </span>
                 }
             >
-                {customFields.length === 0 ? (
-                    <div className="rounded-md border border-dashed border-slate-200 px-3 py-4 text-[11.5px] text-slate-400 text-center">
-                        No custom fields. Add one to attach extra metadata.
-                    </div>
-                ) : (
-                    <div className="space-y-1.5">
-                        {customFields.map((f, idx) => (
-                            <div key={idx} className="flex items-start gap-1.5">
-                                <TextInput
-                                    value={f.name}
-                                    onChange={(v) =>
-                                        setCustomFields((cur) =>
-                                            cur.map((c, i) => (i === idx ? { ...c, name: v } : c)),
-                                        )
-                                    }
-                                    placeholder="key"
-                                    className="w-[110px] md:w-[140px]"
-                                />
-                                <TextInput
-                                    value={f.value}
-                                    onChange={(v) =>
-                                        setCustomFields((cur) =>
-                                            cur.map((c, i) => (i === idx ? { ...c, value: v } : c)),
-                                        )
-                                    }
-                                    placeholder="value"
-                                    className="flex-1"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setCustomFields((cur) => cur.filter((_, i) => i !== idx))
-                                    }
-                                    aria-label="Remove field"
-                                    className="size-7 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center transition-colors shrink-0"
-                                >
-                                    <TrashIcon className="w-3 h-3" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                <CustomFieldsEditor value={customFields} onChange={setCustomFields} />
             </Section>
 
             <Section title="Metadata">
@@ -203,6 +154,10 @@ export default function DetailsTab({
             </Section>
         </div>
     );
+}
+
+function recordSize(fields: CustomField[]): number {
+    return Object.keys(recordFromCF(fields)).length;
 }
 
 function Section({

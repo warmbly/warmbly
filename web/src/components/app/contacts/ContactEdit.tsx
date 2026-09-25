@@ -35,13 +35,13 @@ import OverviewTab from "./contact-edit/OverviewTab";
 import ActivityTab from "./contact-edit/ActivityTab";
 import NotesTab from "./contact-edit/NotesTab";
 import ResearchTab from "./contact-edit/ResearchTab";
-import DetailsTab, { type CustomField } from "./contact-edit/DetailsTab";
+import DetailsTab from "./contact-edit/DetailsTab";
+import { type CustomField, customFieldsPatch, customFieldsProblem } from "./customFields";
 import {
     fieldsOf,
     hasUnnamedValue,
     idsOf,
     rebase,
-    recordFromCF,
     sameCampaigns,
     sameFields,
     sameIDs,
@@ -177,6 +177,12 @@ function ContactEditPanel({
 
     async function save() {
         if (!changed) return;
+        const problem = customFieldsProblem(customFields);
+        if (problem) {
+            setTab("details");
+            toast.error(problem);
+            return;
+        }
         const data: Record<string, unknown> = {};
         if (firstName !== contact.first_name) data.first_name = firstName;
         if (lastName !== contact.last_name) data.last_name = lastName;
@@ -187,7 +193,7 @@ function ContactEditPanel({
         // Same comparisons `dirty` and the rebase use, so what counts as
         // changed is decided in exactly one place.
         if (!sameFields(customFields, fieldsOf(contact.custom_fields))) {
-            data.custom_fields = recordFromCF(customFields);
+            data.custom_fields = customFieldsPatch(contact.custom_fields, customFields);
         }
         if (!sameCampaigns(campaigns, contact.campaigns ?? [])) data.campaigns = idsOf(campaigns);
         if (!sameIDs(categoryIds, idsOf(contact.categories ?? []))) data.categories = categoryIds;
@@ -212,7 +218,10 @@ function ContactEditPanel({
 
     React.useEffect(() => {
         function onKey(e: KeyboardEvent) {
-            if (e.key === "Escape") requestClose();
+            if (e.key !== "Escape") return;
+            // A dropdown or the confirm on screen owns the key.
+            if (document.querySelector("[data-floating], [role='alertdialog']")) return;
+            requestClose();
         }
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);

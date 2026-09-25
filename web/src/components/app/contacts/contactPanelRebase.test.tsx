@@ -66,6 +66,9 @@ vi.mock("./contact-edit/DetailsTab", () => ({
             >
                 add field
             </button>
+            <button type="button" onClick={() => setCustomFields((prev) => prev.filter((f) => f.name !== "industry"))}>
+                drop industry
+            </button>
             <ul>
                 {customFields.map((f, i) => (
                     <li key={i}>{`row ${f.name}=${f.value}`}</li>
@@ -204,5 +207,16 @@ describe("saving the contact 360 panel", () => {
         await waitFor(() => expect(requested.length).toBe(1));
         expect(requested[0].url).toBe("/contacts/contact-1");
         expect(requested[0].data).toEqual({ categories: ["cat-2"] });
+    });
+
+    // The server merges custom_fields, so a field that is simply left out is
+    // kept; removing one has to send it empty.
+    it("sends a removed custom field as empty so the server drops it", async () => {
+        render(<Panel contacts={[contact({ custom_fields: { industry: "Freight", tier: "A" } })]} />);
+        fireEvent.click(screen.getByText("drop industry"));
+        fireEvent.click(screen.getByText("Save changes"));
+
+        await waitFor(() => expect(requested.length).toBe(1));
+        expect(requested[0].data).toEqual({ custom_fields: { industry: "" } });
     });
 });
