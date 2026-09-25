@@ -130,5 +130,5 @@ export interface BulkDomainResult {
     };
 }
 
-/** The most bulk setup takes in one request. */
-export const BULK_DOMAINS_MAX = 100;
+/** Domains per bulk request: the server takes 100, but at 20s a domain, 4 at a time, 25 always answers inside the client timeout. */
+export const BULK_DOMAINS_CHUNK = 25;

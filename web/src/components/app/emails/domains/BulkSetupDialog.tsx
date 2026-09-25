@@ -93,7 +93,8 @@ function Dialog({
     const forwardVendor = vendorLabel(redirectTargets.find((d) => vendorForwards(d.vendor_domain))?.vendor_domain?.vendor);
     const n = picked.length;
 
-    const lp = trackTargets.some((d) => each[d.domain]?.host === undefined) ? labelProblem(label) : null;
+    const usesLabel = (d: SendingDomain) => each[d.domain]?.host === undefined && !(trackingState(d) === "live" && !replace);
+    const lp = trackTargets.some(usesLabel) ? labelProblem(label) : null;
     const up = redirectTargets.some((d) => each[d.domain]?.url === undefined) ? redirectTargetProblem(url, "") : null;
     const hostProblems = new Map(
         trackTargets.filter((d) => each[d.domain]?.host !== undefined).map((d) => [d.domain, trackingHostProblem(eff(d).host, d.domain)] as const),
@@ -178,17 +179,16 @@ function Dialog({
         setDone(0);
         setResults(new Map());
         try {
+            // Every domain's resolved value goes out as is, so what a row shows is what the domain gets.
             if (trackTargets.length > 0) {
-                const hosts = Object.fromEntries(trackTargets.filter((d) => each[d.domain]?.host !== undefined).map((d) => [d.domain, eff(d).host]));
                 await bulk.mutateAsync({
-                    body: { domains: trackTargets.map((d) => d.domain), tracking_label: lp === null ? base : undefined, tracking_hosts: hosts },
+                    body: { domains: trackTargets.map((d) => d.domain), tracking_hosts: Object.fromEntries(trackTargets.map((d) => [d.domain, eff(d).host])) },
                     onChunk: merge,
                 });
             }
             if (redirectTargets.length > 0) {
-                const urls = Object.fromEntries(redirectTargets.filter((d) => each[d.domain]?.url !== undefined).map((d) => [d.domain, eff(d).url.trim()]));
                 await bulk.mutateAsync({
-                    body: { domains: redirectTargets.map((d) => d.domain), redirect_url: url.trim() || undefined, redirect_urls: urls },
+                    body: { domains: redirectTargets.map((d) => d.domain), redirect_urls: Object.fromEntries(redirectTargets.map((d) => [d.domain, eff(d).url.trim()])) },
                     onChunk: merge,
                 });
             }

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -22,6 +23,9 @@ const ErrIDBulkInvalid = "sending_domain_bulk_invalid"
 
 // bulkConcurrency bounds the vendor calls and DNS probes one bulk setup runs at once.
 const bulkConcurrency = 4
+
+// bulkDomainTimeout bounds one domain, so a slow vendor or resolver cannot hold a slot for the whole request.
+const bulkDomainTimeout = 20 * time.Second
 
 var dnsLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
@@ -129,6 +133,8 @@ func (s *Service) BulkSetup(ctx context.Context, orgID, userID uuid.UUID, in Bul
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			ctx, cancel := context.WithTimeout(ctx, bulkDomainTimeout)
+			defer cancel()
 			if h := hosts[r.Domain]; h != "" {
 				r.Tracking = s.bulkTracking(ctx, orgID, r.Domain, h, link)
 			} else if label != "" {

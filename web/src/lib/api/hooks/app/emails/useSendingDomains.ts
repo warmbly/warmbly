@@ -20,7 +20,7 @@ import type {
     SetDomainRedirectRequest,
     VendorDomainLink,
 } from "@/lib/api/models/app/emails/SendingDomain";
-import { BULK_DOMAINS_MAX } from "@/lib/api/models/app/emails/SendingDomain";
+import { BULK_DOMAINS_CHUNK } from "@/lib/api/models/app/emails/SendingDomain";
 
 export const SENDING_DOMAINS_KEY = ["sending-domains"] as const;
 // Separate from the list on purpose: each read probes DNS, and every mailbox audit would re-run it.
@@ -139,8 +139,8 @@ export function useBulkDomainSetup() {
     return useMutation({
         mutationFn: async ({ body, onChunk }: { body: BulkDomainSetupRequest; onChunk?: (rows: BulkDomainResult[]) => void }) => {
             const out: BulkDomainResult[] = [];
-            for (let i = 0; i < body.domains.length; i += BULK_DOMAINS_MAX) {
-                const res = await bulkDomainSetup({ ...body, domains: body.domains.slice(i, i + BULK_DOMAINS_MAX) });
+            for (let i = 0; i < body.domains.length; i += BULK_DOMAINS_CHUNK) {
+                const res = await bulkDomainSetup({ ...body, domains: body.domains.slice(i, i + BULK_DOMAINS_CHUNK) });
                 out.push(...res.data);
                 onChunk?.(res.data);
             }

@@ -81,7 +81,9 @@ function exportCsv(list: SendingDomain[]) {
     a.href = URL.createObjectURL(blob);
     a.download = `sending-domains-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    // Some browsers start the download after click() returns, so the URL has to outlive this tick.
+    const href = a.href;
+    window.setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
 
 export default function DomainSelectionBar({
