@@ -249,9 +249,12 @@ export function useRealtimeEvents() {
         invalidate([
           ['campaigns', 'list'],
           ['analytics'],
-          ['contacts'],
         ])
-        if (contactId) invalidate([['contacts', contactId]])
+        // Other contacts' campaign-state (a scheduler preview per campaign) is left alone.
+        void queryClient.invalidateQueries({
+          queryKey: ['contacts'],
+          predicate: (q) => !contactId || q.queryKey[2] !== 'campaign-state' || q.queryKey[1] === contactId,
+        })
         return
       }
 

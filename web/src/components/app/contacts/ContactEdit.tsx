@@ -216,8 +216,8 @@ function ContactEditPanel({
     React.useEffect(() => {
         function onKey(e: KeyboardEvent) {
             if (e.key !== "Escape") return;
-            // A dropdown or the confirm on screen owns the key.
-            if (document.querySelector("[data-floating], [role='alertdialog']")) return;
+            // Innermost layer only: an open popover, confirm or dialog takes its own Escape.
+            if (document.querySelector("[data-floating], [role='alertdialog'], [aria-modal='true']")) return;
             requestClose();
         }
         window.addEventListener("keydown", onKey);
@@ -266,7 +266,7 @@ function ContactEditPanel({
                             detailLoading={detail.isLoading}
                         />
                     )}
-                    {tab === "activity" && <ActivityTab contactId={contact.id} />}
+                    {tab === "activity" && <ActivityTab contactId={contact.id} contactName={firstName || lastName ? displayName : contact.email} />}
                     {tab === "notes" && <NotesTab contactId={contact.id} />}
                     {tab === "research" && <ResearchTab contactId={contact.id} />}
                     {tab === "details" && (
