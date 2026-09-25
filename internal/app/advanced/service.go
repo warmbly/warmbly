@@ -2095,6 +2095,15 @@ func (s *service) ReplayDeadLetter(ctx context.Context, organizationID, deadLett
 	if task == nil {
 		return errx.ErrNotFound
 	}
+	if _, handled, rerr := s.replayCampaignPass(ctx, task); handled {
+		if rerr != nil {
+			return toErrx(rerr)
+		}
+		if err := s.repo.MarkTaskDeadLetterReplayed(ctx, deadLetterID); err != nil {
+			return toErrx(err)
+		}
+		return nil
+	}
 
 	scheduleAt := time.Now().UTC().Add(10 * time.Second)
 	cloudTaskName, err := s.tasksClient.CreateTask(ctx, &proto.ProcessTask{TaskId: task.ID.String()}, scheduleAt)
@@ -2111,6 +2120,43 @@ func (s *service) ReplayDeadLetter(ctx context.Context, organizationID, deadLett
 		return toErrx(err)
 	}
 	return nil
+}
+
+// replayCampaignPass replays a dead-lettered campaign pass as a fresh pass,
+// through the per-campaign lock every chain uses, so a campaign whose chain
+// already moved on keeps one. Putting the old pass back to pending would skip
+// that lock and could run a second chain beside the first. handled reports a
+// campaign pass; replayed, that a new pass was queued. An error means nothing
+// was queued and the dead letter stays for another try.
+func (s *service) replayCampaignPass(ctx context.Context, task *repository.Task) (replayed, handled bool, err error) {
+	if task == nil || task.TaskType != "campaign" {
+		return false, false, nil
+	}
+	ct, err := s.taskRepo.GetCampaignTask(ctx, task.ID)
+	if err != nil {
+		return false, true, err
+	}
+	if ct == nil || ct.CampaignID == nil {
+		// The campaign is gone; there is nothing to replay into.
+		return false, true, nil
+	}
+	at := time.Now().UTC().Add(10 * time.Second)
+	id := uuid.New()
+	created, err := s.taskRepo.CreateTaskWithLock(ctx,
+		&repository.Task{ID: id, TaskType: "campaign", EmailAccountID: task.EmailAccountID, Status: "pending", ScheduledAt: &at},
+		&repository.CampaignTask{TaskID: id, CampaignID: ct.CampaignID})
+	if err != nil {
+		return false, true, err
+	}
+	if !created {
+		// The chain already has its next pass.
+		return false, true, nil
+	}
+	name, err := s.tasksClient.CreateTask(ctx, &proto.ProcessTask{TaskId: id.String()}, at)
+	if err == nil {
+		_ = s.taskRepo.UpdateTaskScheduledAt(ctx, id, at, name)
+	}
+	return true, true, nil
 }
 
 // capitalize upper-cases the first rune of a validator message for display.
@@ -2438,6 +2484,20 @@ func (s *service) ProcessRetryableDeadLetters(ctx context.Context) (int, *errx.E
 		task, err := s.taskRepo.GetTask(ctx, dlq.TaskID)
 		if err != nil || task == nil {
 			// Mark as exhausted if the task no longer exists
+			_ = s.repo.MarkTaskDeadLetterReplayed(ctx, dlq.ID)
+			continue
+		}
+
+		if replayed, handled, rerr := s.replayCampaignPass(ctx, task); handled {
+			if rerr != nil {
+				backoff := time.Duration(30*(1<<uint(dlq.Attempts+1))) * time.Second
+				nextRetry := time.Now().UTC().Add(backoff)
+				_ = s.repo.IncrementDeadLetterAttempt(ctx, dlq.ID, &nextRetry)
+				continue
+			}
+			if replayed {
+				retried++
+			}
 			_ = s.repo.MarkTaskDeadLetterReplayed(ctx, dlq.ID)
 			continue
 		}

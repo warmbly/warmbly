@@ -171,10 +171,14 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// their slots.
 	var leadSlot time.Time
 	leadAccount := accounts[0].ID
+	busy := 0
 	for i := range candidates {
 		at, sendable, accountID, perr := s.placeCampaignSend(ctx, campaign, accounts, senderMetaByID, &candidates[i], pass, false)
 		if !errors.Is(perr, ErrLeadDeferred) {
 			return at, sendable, accountID, perr
+		}
+		if errors.Is(perr, ErrSenderBusy) {
+			busy++
 		}
 		if leadSlot.IsZero() || (!at.IsZero() && at.Before(leadSlot)) {
 			leadSlot, leadAccount = at, accountID
@@ -183,7 +187,11 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// Every due lead was refused for its own reason. Re-check on the deferral
 	// horizon rather than completing: the leads are still there, and what
 	// refuses them (a mailbox under budget again, a recipient's morning) comes
-	// back from outside this chain.
+	// back from outside this chain. Said once a day, so a campaign waiting on
+	// its leads is not a campaign that looks stalled for no reason.
+	s.logCampaignDecisionOnce(ctx, campaignID, "leads_waiting",
+		fmt.Sprintf("None of the %d leads due now can be sent this minute: each is waiting for its own mailbox, a same-provider mailbox or its recipient's working hours", len(candidates)),
+		map[string]interface{}{"leads_tried": len(candidates), "waiting_on_sender": busy, "recheck_at": leadSlot.UTC().Format(time.RFC3339)})
 	return leadSlot, nil, leadAccount, ErrCampaignDeferred
 }
 
@@ -415,6 +423,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	budgetSpent := 0
 	hoursClosed := 0
 	healthHeld := 0
+	noWorker := 0
 	var reopensAt time.Time
 	gates := map[uuid.UUID]mailboxGate{}
 
@@ -461,6 +470,8 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 				healthHeld++
 			case gateBudget:
 				budgetSpent++
+			case gateNoWorker:
+				noWorker++
 			}
 			continue
 		}
@@ -543,6 +554,16 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// until midnight are logged once a day, or the feed drowns in them.
 	if len(candidates) == 0 {
 		switch {
+		case noWorker > 0:
+			// Mailboxes that could send once a worker holds them again, which
+			// the worker reconciler sees to within minutes: the soonest any of
+			// the pool can come back, so the pass looks again then. A deferral,
+			// never a pause.
+			logDecisionOnce("mailboxes_unavailable",
+				fmt.Sprintf("No mailbox can send right now: %d not connected to a running sending worker; sending resumes as soon as one is", noWorker),
+				map[string]interface{}{"no_worker": noWorker, "capped_mailboxes": budgetSpent, "hours_closed": hoursClosed,
+					"health_held": healthHeld, "resting_mailboxes": lifecycleGated, "auth_gated": authGated, "pool_size": len(accounts)})
+			return time.Now().Add(workerRecheck), nil, accounts[0].ID, ErrCampaignDeferred
 		case budgetSpent > 0 || hoursClosed > 0:
 			// Resume when the first of them can send again: tomorrow for a
 			// spent budget, the reopening of the mailbox's own 8am-8pm band

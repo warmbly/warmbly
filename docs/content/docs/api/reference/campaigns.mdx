@@ -959,7 +959,7 @@ The arithmetic adds up: `configured_ceiling` minus every `limits[].emails` minus
 }
 ```
 
-`limits[].kind` is one of `campaign_daily_limit`, `campaign_ramp`, `warmup_graduation`, `workspace_risk`, `domain_auth`, `resting`, `warmup_health_hold`, `other_campaigns`, `warmup_health_pace`, `mailbox_hours`, `sending_behavior`, `spacing`, `sending_window`, `not_running`, `org_daily_limit`, `new_lead_cap` or `leads`. `mailboxes[].state` is one of `sending`, `budget_spent`, `hours_closed`, `no_working_day`, `domain_auth`, `resting`, `health_hold` or `window_closed`; `mailboxes[].limited_by` names the clamp that set `cap_today`. See the [campaigns guide](/guides/campaigns/#todays-sending-plan) for what each limit means.
+`limits[].kind` is one of `campaign_daily_limit`, `campaign_ramp`, `warmup_graduation`, `workspace_risk`, `domain_auth`, `resting`, `warmup_health_hold`, `other_campaigns`, `warmup_health_pace`, `mailbox_hours`, `sending_behavior`, `spacing`, `sending_window`, `not_running`, `org_daily_limit`, `new_lead_cap` or `leads`. `mailboxes[].state` is one of `sending`, `budget_spent`, `hours_closed`, `no_working_day`, `domain_auth`, `resting`, `health_hold`, `no_worker` (no running sending worker holds the mailbox right now; its day is still counted, since it is placed on one again within minutes) or `window_closed`; `mailboxes[].limited_by` names the clamp that set `cap_today`. See the [campaigns guide](/guides/campaigns/#todays-sending-plan) for what each limit means.
 
 ## List campaign senders
 

@@ -131,11 +131,11 @@ const (
 	// lead's (ESP-strict has no mailbox for their provider, their own mailbox
 	// is busy, their preferred hours are hours away); the leads behind them are
 	// still sendable, so the pass moves on instead of parking the campaign on
-	// the first refusal (issue #437). Every extra candidate costs a handful of
-	// reads and only on a pass that is being refused, so this is deliberately
-	// generous — but bounded, because a campaign whose every lead is refused
-	// must still end the pass rather than walk a million-row list.
-	CampaignPlacementCandidates = 25
+	// the first refusal (issue #437). The leads at the head of the queue are
+	// the same on every pass, so this reaches well past them; it is bounded
+	// because a campaign whose every lead is refused must still end the pass
+	// rather than walk a million-row list.
+	CampaignPlacementCandidates = 200
 
 	// WarmupReputationLedgerDays is how long the standing of a removed mailbox
 	// is held against its address, counted from the later of its removal and
@@ -158,6 +158,12 @@ const (
 	// tick that actually sent parks its successor at the paced interval, which
 	// is the send spacing and must not be shortened.
 	CampaignMaxDeferMinutes = 15
+
+	// CampaignTickRetrySeconds is how far a campaign pass that failed is moved
+	// before it runs again, and how soon the next pass follows one that could
+	// not hand its send to a worker. The in-process dispatcher fires a due
+	// task every second, so a retry kept at its old slot would run in a loop.
+	CampaignTickRetrySeconds = 60
 
 	// CampaignStaleParkHours is when the reconciler starts distrusting a parked
 	// wakeup. Even-distribution can only push a successor to the end of the

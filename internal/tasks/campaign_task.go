@@ -22,9 +22,19 @@ import (
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
-func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
+func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx.Error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+
+	// A campaign is one self-perpetuating task, so a pass that fails must not
+	// end it: the reconciler would only notice minutes later, and a failure
+	// that repeats would leave every lead queued between its passes.
+	claimed, handedOff := false, false
+	defer func() {
+		if result != nil && claimed {
+			s.keepChainAfterFailure(task.TaskId, handedOff)
+		}
+	}()
 
 	// STEP 1: Parse task ID
 	taskID, err := uuid.Parse(task.TaskId)
@@ -77,6 +87,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		errs.CaptureException(err)
 		return errx.InternalError()
 	}
+	claimed = true
 
 	// STEP 4: Load campaign task details
 	campaignTask, err := s.taskRepo.GetCampaignTask(ctx, taskID)
@@ -320,9 +331,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 				CampaignID: campaign.ID.String(),
 			})
 		}
-		if rerr := s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending"); rerr != nil {
-			errs.CaptureException(rerr)
-		}
+		s.retryCampaignTickLater(ctx, taskRecord)
 		executionStatus = "failed"
 		return errx.InternalError()
 	}
@@ -378,9 +387,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		// somebody who asked not to be is the failure this gate exists for.
 		errs.CaptureException(herr)
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Could not read the lead's hold", herr.Error())
-		if uerr := s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending"); uerr != nil {
-			errs.CaptureException(uerr)
-		}
+		s.retryCampaignTickLater(ctx, taskRecord)
 		executionStatus = "failed"
 		return errx.InternalError()
 	}
@@ -526,9 +533,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 			s.taskRepo.RecordTaskFailure(ctx, taskID, "Could not record the sending mailbox", err.Error())
 			s.recordSchedulerFailure(ctx, campaign.ID, "sender_attribution_failed",
 				fmt.Sprintf("Could not record which mailbox is sending to %s; retrying", contact.Email), err)
-			if uerr := s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending"); uerr != nil {
-				errs.CaptureException(uerr)
-			}
+			s.retryCampaignTickLater(ctx, taskRecord)
 			executionStatus = "failed"
 			return errx.InternalError()
 		}
@@ -631,9 +636,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 					},
 				})
 			}
-			if rerr := s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending"); rerr != nil {
-				errs.CaptureException(rerr)
-			}
+			s.retryCampaignTickLater(ctx, taskRecord)
 			executionStatus = "failed"
 			return errx.InternalError()
 		}
@@ -784,9 +787,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Could not reserve the send", rerr.Error())
 		s.recordSchedulerFailure(ctx, campaign.ID, "send_reservation_failed",
 			fmt.Sprintf("Could not record the send to %s before dispatching it; retrying", contact.Email), rerr)
-		if uerr := s.taskRepo.UpdateTaskStatus(ctx, taskID, "pending"); uerr != nil {
-			errs.CaptureException(uerr)
-		}
+		s.retryCampaignTickLater(ctx, taskRecord)
 		executionStatus = "failed"
 		return errx.InternalError()
 	}
@@ -846,19 +847,32 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 	}
 
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
-		// The send never reached a worker (none assigned, worker offline, bus
-		// or storage down). Nothing is stamped sent; the task is dead-lettered
-		// for the retry loop and the chain is re-seeded by the reconciler.
+		// The send never reached a worker. Nothing is stamped sent, and the
+		// next pass follows shortly (below).
 		//
-		// Give the reservation back so the next tick retries the step — but ONLY
-		// when the command provably never left. A failure of the publish call
-		// itself is ambiguous (the bus may have taken it), so that reservation
-		// stands and is resolved by the worker's own result, or by the reclaimer
-		// if none ever comes.
-		if !errors.Is(err, ErrSendDispatchUnknown) {
+		// What happens to the reservation depends on why:
+		//   - the publish itself failed: ambiguous, the bus may have taken it,
+		//     so the reservation stands for the worker's result or the reclaimer
+		//   - no live worker holds the mailbox, or its liveness could not be read:
+		//     not the lead's doing, so the step is given back whole; the next
+		//     pass passes an offline mailbox over
+		//   - anything else: the step is given back as a failed attempt, so a
+		//     lead that can never be handed off is dropped after the usual
+		//     number of tries instead of being retried every minute for ever
+		switch {
+		case errors.Is(err, ErrSendDispatchUnknown):
+		case errors.Is(err, ErrWorkerOffline), errors.Is(err, ErrWorkerUnconfirmed):
 			if relErr := s.campaignProgressRepo.ReleaseSend(ctx, campaign.ID, contact.ID, sequence.ID, nextPair.IsNewLead); relErr != nil {
 				errs.CaptureException(relErr)
 				log.Error().Err(relErr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to release the reservation for a send that never left; the reclaimer will retry it")
+			}
+		default:
+			if _, _, rolledBack, ferr := s.campaignProgressRepo.RecordSendFailure(ctx, campaign.ID, contact.ID, sequence.ID, err.Error()); ferr != nil {
+				errs.CaptureException(ferr)
+			} else if rolledBack {
+				if derr := s.campaignRepo.DecrementCampaignDailySend(ctx, campaign.ID, time.Now(), nextPair.IsNewLead); derr != nil {
+					log.Warn().Err(derr).Str("campaign_id", campaign.ID.String()).Msg("could not give back the failed hand-off's daily count")
+				}
 			}
 		}
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Send failed", err.Error())
@@ -888,16 +902,19 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) *errx.Error {
 
 			s.streamingPublisher.PublishTaskProgress(ctx, s.sendProgress(ctx, campaign, taskID, contact, sequence, "failed", processedCount, totalEmails, totalContacts))
 		}
-		if s.advanced != nil {
-			_ = s.advanced.CaptureTaskDeadLetter(ctx, taskID, "campaign", map[string]interface{}{
-				"campaign_id": campaign.ID.String(),
-				"contact_id":  contact.ID.String(),
-				"email":       contact.Email,
-			}, err.Error(), 1)
-			_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, "dead_lettered")
+		// The pass ends here, and the campaign's next one follows shortly
+		// rather than waiting on the reconciler: it re-picks a mailbox, and one
+		// its worker cannot take a send is no longer offered. A pass is a
+		// wakeup, not a send to replay, so it is not dead-lettered; a replay
+		// would run beside the chain that already moved on.
+		if cerr := s.createCampaignTask(ctx, campaign.ID, account.ID, time.Now().Add(config.CampaignTickRetrySeconds*time.Second)); cerr != nil {
+			log.Warn().Err(cerr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to schedule the campaign's next pass after a send that never left")
 		}
+		executionStatus = "completed"
 		return nil
 	}
+
+	handedOff = true
 
 	// STEP 16: Store sent email metadata (encrypted) in database
 	// Note: Full email stored in Cassandra by email sync service
@@ -1711,4 +1728,62 @@ func (s *tasksService) resolveOptOut(ctx context.Context, orgID uuid.UUID, campa
 		}
 	}
 	return base.Effective(campaign.UnsubscribeMode)
+}
+
+// retryCampaignTickLater hands a failed pass back for another try a minute
+// out. Its slot moves with it: a due pending task is fired again every second
+// by the in-process dispatcher, and a failure that repeats would run in a loop.
+func (s *tasksService) retryCampaignTickLater(ctx context.Context, task *Task) {
+	// The slot moves first: a pass left pending at its old, due slot is the
+	// loop this exists to prevent.
+	name := ""
+	if task.CloudTaskName != nil {
+		name = *task.CloudTaskName
+	}
+	if err := s.taskRepo.UpdateTaskScheduledAt(ctx, task.ID, time.Now().Add(config.CampaignTickRetrySeconds*time.Second), name); err != nil {
+		errs.CaptureException(err)
+	}
+	if err := s.taskRepo.UpdateTaskStatus(ctx, task.ID, "pending"); err != nil {
+		errs.CaptureException(err)
+	}
+}
+
+// keepChainAfterFailure makes sure a campaign whose pass failed still has a
+// next one. A pass handed back for retry is its own next pass; one that ended
+// active is closed and followed by a fresh pass: as completed when its email
+// was already handed to a worker, whose result then settles the step, and as
+// failed otherwise. Runs on its own context, since the failure may have been
+// the pass's deadline, and reads the campaign itself, since the pass may have
+// failed before it could.
+func (s *tasksService) keepChainAfterFailure(rawTaskID string, handedOff bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	taskID, err := uuid.Parse(rawTaskID)
+	if err != nil {
+		return
+	}
+	rec, gerr := s.taskRepo.GetTask(ctx, taskID)
+	if gerr != nil || rec == nil {
+		return
+	}
+	if rec.Status == "active" {
+		status := "failed"
+		if handedOff {
+			status = "completed"
+		}
+		_ = s.taskRepo.UpdateTaskStatus(ctx, taskID, status)
+	}
+	ct, terr := s.taskRepo.GetCampaignTask(ctx, taskID)
+	if terr != nil || ct == nil || ct.CampaignID == nil {
+		return
+	}
+	campaignID, accountID := *ct.CampaignID, rec.EmailAccountID
+	campaign, cerr := s.campaignRepo.GetByID(ctx, campaignID)
+	if cerr != nil || campaign == nil || campaign.Status != "active" {
+		return
+	}
+	// A no-op while any pass is pending, the retried one included.
+	if err := s.createCampaignTask(ctx, campaignID, accountID, time.Now().Add(config.CampaignTickRetrySeconds*time.Second)); err != nil {
+		log.Warn().Err(err).Str("campaign_id", campaignID.String()).Msg("could not schedule the campaign's next pass after a failed one")
+	}
 }
