@@ -265,12 +265,15 @@ export default function UniboxPage() {
       switch (scope.kind) {
         case "unread":
           next.unseen = true;
+          next.automated = false;
           break;
         case "today":
           next.since = startOfToday();
+          next.automated = false;
           break;
         case "week":
           next.since = startOfWeek();
+          next.automated = false;
           break;
         case "awaiting":
           next.awaitingReply = true;
@@ -283,9 +286,12 @@ export default function UniboxPage() {
           break;
         case "folder":
           next.folder = scope.folder;
+          // Mail nobody wrote lives in the Automated view, not the Inbox.
+          if (scope.folder === "inbox") next.automated = false;
           break;
         case "mailbox":
           next.accountIds = [scope.mailboxId];
+          next.automated = false;
           break;
         case "tag":
           // Tag→mailbox membership resolves through the store's
@@ -293,6 +299,7 @@ export default function UniboxPage() {
           // server only knows accountIds.
           next.accountIds = tagAccountIds ?? [];
           next.tagId = scope.tagId;
+          next.automated = false;
           break;
         case "category":
           // Conversation-label scope resolves to a server-side
@@ -311,7 +318,12 @@ export default function UniboxPage() {
           // A premade view is a set of automatic labels, resolved to the
           // workspace's category rows by slug.
           const v = viewById(scope.view);
-          next.categoryIds = v ? viewCategoryIds(v, viewCategoriesData) : [];
+          if (v?.automated) {
+            next.automated = true;
+          } else {
+            next.categoryIds = v ? viewCategoryIds(v, viewCategoriesData) : [];
+            next.automated = false;
+          }
           break;
         }
         default:

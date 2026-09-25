@@ -78,13 +78,15 @@ Below those sit the premade **Views**, which answer the questions a pipeline tur
 
 | View | Shows |
 | --- | --- |
-| Hot leads | Replies that agreed, proposed a time, asked for a call or asked about pricing |
+| Hot leads | Replies labelled Interested, Meeting or Pricing |
 | Needs a reply | They wrote last and nobody has answered for two days or more |
 | Follow up | You wrote last and heard nothing, or an interested thread went quiet |
-| Declined | Not interested, wrong person, or asked to be removed |
-| Automated | Bounces, autoresponders and platform notices |
+| Declined | Not interested, wrong person, or asked to unsubscribe |
+| Automated | Mail nobody wrote: security alerts, sign-in codes, notifications, newsletters, bounces and auto-replies |
 
 A view is a filter over its labels, so a conversation appears in it as soon as a label lands and leaves it when the label does. Without a classifier key on the instance only the two follow-up views fill, from sent-message dates alone.
+
+**Automated** is different: it is where machine mail lives instead of the inbox. When automatic tagging judges that nobody wrote a conversation, it leaves **Inbox**, Unread, every mailbox and tag view, and the unread badge, and shows only under Automated (and in All mail). A message the classifier was not sure about stays in the inbox. A reply from a person brings the conversation straight back, before it is even classified.
 
 Below the views, the rail lists each mailbox with its unread count, plus your **Labels** and **Tags**. Long lists collapse to the first few with a `Show all` toggle and an inline filter. For a slice of time (today, the last week), use the date range in the filters rather than a view; the list's title shows which view you are in, with how many conversations are loaded.
 
@@ -186,6 +188,12 @@ A reply from a different mailbox keeps the conversation's subject and its In-Rep
 
 The composer shows the message it will forward under your note; expand **Forwarded message** to read it before you send. Attachments on the original are not forwarded. If only a preview of the original is stored (the thread shows "Only a preview of this message is stored"), the composer says so, and the forward carries that preview. Forwarding one of your own tracked sends puts its links back to their real destinations, so the new recipient's clicks do not count against the original send.
 
+### Pausing their follow-ups
+
+The contact panel lists every campaign the sender is a lead of, with their status in it and what happens next: the next step and when, the hold and when it lifts, or why the flow ended. A campaign with a step still to send has **Pause**, which opens the same dialog as the campaign's Leads list (until a date, or until you resume them, with an optional note). A held lead has **Resume** instead. Neither appears on a lead whose flow has ended, and both need the **Manage campaigns** permission. See [Out of office and pausing one lead](/guides/campaigns/#out-of-office-and-pausing-one-lead).
+
+The reply composer offers the same thing for the moment you answer. When the recipient still has a follow-up queued, **Pause follow-ups** next to **Schedule** holds them for 3 days, 1 week, 2 weeks, 30 days or until you resume them. When they are a lead of more than one such campaign, the menu lists each one, all ticked, and you untick the ones to leave running (at least one stays ticked). Nothing is paused until the reply is accepted, and a send that fails pauses nothing. A scheduled reply pauses the follow-ups straight away and counts the length from when the reply goes out, so a follow-up cannot overtake it. Undoing or cancelling the reply does not lift the pause, so use **Resume** in the contact panel if you change your mind. A lead already on hold, for example after an away message arrived while you were writing, keeps that hold.
+
 ### Reply drafts
 
 Replies and forwards save after a short typing pause, and save the latest edits when you close the composer, leave the conversation, or reload. Returning to the thread reopens a saved draft, including one addressed to an older message, with the mailbox you picked. **Discard** removes it; successfully queuing a send removes it too. Undoing a send restores the message for editing, from the same mailbox.
@@ -240,7 +248,7 @@ Scheduled and smart-queued sends skip the undo window, since they already wait. 
 
 ## Realtime
 
-Nothing needs refreshing. New mail appears in the list, updates the open thread, and raises the unread count on its own. The count on **Unibox** in the navigation (and in the browser tab) is the number of unread conversations in **Inbox**, the view it opens, so it never points at mail that view does not list: sent mail, drafts, archived and snoozed conversations are left out. Read-state changes, replies, scheduled sends, snoozes, and label changes all refresh the affected views, keeping rail counts, the list, and the open thread consistent.
+Nothing needs refreshing. New mail appears in the list, updates the open thread, and raises the unread count on its own. The count on **Unibox** in the navigation (and in the browser tab) is the number of unread conversations in **Inbox**, the view it opens, so it never points at mail that view does not list: sent mail, drafts, archived, snoozed and automated conversations are left out. Read-state changes, replies, scheduled sends, snoozes, and label changes all refresh the affected views, keeping rail counts, the list, and the open thread consistent.
 
 <Callout type="info" title="Keeping inboxes healthy">
 Replying promptly supports sender reputation, which warmup and good deliverability practice protect. See [Deliverability](/guides/deliverability/).

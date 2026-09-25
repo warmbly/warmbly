@@ -26,7 +26,6 @@ package inboxtag
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 )
@@ -83,7 +82,7 @@ var kindCriteria = map[string]string{
 	KindAutoReplyTicket: "Automated ticket receipt or \"we got your message\" acknowledgement",
 	KindHumanReply:      "A real person responding to our outreach",
 	KindColdInbound:     "Someone cold-pitching us; not a reply to our campaign",
-	KindNotification:    "Automated notice from a service or platform, not addressed to us personally",
+	KindNotification:    "Automated message from a service, platform or mailing list: security alerts, sign-in and verification codes, account, billing and system notices, receipts, newsletters",
 	KindInternal:        "From our own team or forwarded internally",
 }
 
@@ -253,7 +252,51 @@ func bucket(relevance float64) string {
 
 // LabelNeedsReview is applied when a Choice came back below ConfFloor. It is
 // the one label that means "the system declined to decide".
-const LabelNeedsReview = "needs-review"
+const LabelNeedsReview = "Needs review"
+
+// labelTitles is the label a person reads for each answer, in plain words a
+// non-native speaker understands. An answer missing here is recorded but never
+// becomes a label, because it would sit on most threads and filter nothing.
+// Titles are what workspaces file under, so renaming one needs a migration.
+var labelTitles = map[string]string{
+	KindBounceHard:      "Bounced",
+	KindBounceSoft:      "Bounced",
+	KindAutoReplyOOO:    "Out of office",
+	KindAutoReplyTicket: "Auto-reply",
+	KindNotification:    "Notification",
+	KindColdInbound:     "Sales pitch",
+
+	IntentAgreed:           "Interested",
+	IntentScheduling:       "Meeting",
+	IntentWantsPricing:     "Pricing",
+	IntentWantsInfo:        "Question",
+	IntentInProgress:       "Update",
+	IntentQuestionAnswered: "Update",
+	IntentNotNow:           "Not now",
+	IntentNotInterested:    "Not interested",
+	IntentWrongPerson:      "Wrong person",
+	IntentOptOut:           "Unsubscribe",
+
+	SigAsksForCall:     "Meeting",
+	SigRequestsRemoval: "Unsubscribe",
+	SigLegalThreat:     "Legal threat",
+}
+
+// LabelFor is the label an answer files under, or "" when it has none.
+func LabelFor(id string) string { return labelTitles[id] }
+
+// automatedKinds are the messages no person wrote. A conversation made only of
+// these leaves the inbox for the Automated view.
+var automatedKinds = map[string]bool{
+	KindBounceHard:      true,
+	KindBounceSoft:      true,
+	KindAutoReplyOOO:    true,
+	KindAutoReplyTicket: true,
+	KindNotification:    true,
+}
+
+// IsAutomatedKind reports whether a kind is machine-sent mail.
+func IsAutomatedKind(kind string) bool { return automatedKinds[kind] }
 
 // Questions is the entire question set, built once for one parallel request.
 func Questions() map[string]Question {
@@ -315,43 +358,27 @@ func ScoreLevels(id string) int {
 	return len(scoreCriteria[id])
 }
 
-// AllLabels is every label this system can ever write, kind, intent and the
-// surfaced signals, plus needs-review.
-//
-// It exists so the whole taxonomy can be created up front rather than appearing
-// one label at a time as each first fires. A label that does not exist yet
-// cannot be seen in the scope rail and cannot be filtered on, which would make
-// the feature look broken on a quiet inbox: the labels a workspace can filter
-// by should be the labels the system can produce, not the subset it happens to
-// have produced so far.
+// AllLabels is every label this system can ever write, created up front so a
+// workspace can filter on a label before anything has earned it.
 func AllLabels() []string {
-	out := make([]string, 0, len(kindCriteria)+len(intentCriteria)+5)
-	for k := range kindCriteria {
-		out = append(out, slugOf(k))
+	seen := map[string]bool{}
+	out := make([]string, 0, len(labelTitles)+1+len(FollowUpLabels))
+	add := func(l string) {
+		if l != "" && !seen[l] {
+			seen[l] = true
+			out = append(out, l)
+		}
 	}
-	for k := range intentCriteria {
-		out = append(out, slugOf(k))
+	for _, l := range labelTitles {
+		add(l)
 	}
-	// The signals that become labels. Kept in step with labelsFor in decide.go;
-	// the test asserts the two agree.
-	for _, s := range []string{SigRequestsRemoval, SigLegalThreat, SigAsksForCall, SigNeedsHumanJudgement} {
-		out = append(out, slugOf(s))
+	add(LabelNeedsReview)
+	// Computed rather than classified, but still labels a person filters by.
+	for _, l := range FollowUpLabels {
+		add(l)
 	}
-	out = append(out, LabelNeedsReview)
-	// The follow-up states, which are computed rather than classified but are
-	// still labels a person filters the inbox by.
-	out = append(out, FollowUpLabels...)
 	sortStrings(out)
 	return out
-}
-
-// slugOf renders an identifier as the label a person reads: underscores become
-// hyphens, so `wants_pricing` files as `wants-pricing`.
-func slugOf(id string) string {
-	if id == "" {
-		return ""
-	}
-	return strings.ReplaceAll(id, "_", "-")
 }
 
 func sortStrings(s []string) { sort.Strings(s) }
@@ -366,29 +393,25 @@ func sortStrings(s []string) { sort.Strings(s) }
 //
 // These labels differ from the classification ones in an important way: they
 // change as time passes and as people reply, so they are kept in sync rather
-// than only added. A thread that was awaiting-reply yesterday and is
-// follow-up-due today must not wear both.
+// than only added. A thread that was waiting yesterday and is due a
+// follow-up today must not wear both.
 const (
-	// LabelBallInOurCourt: they answered and we have not. The most actionable
-	// state on the page, and the easiest to lose: a positive reply that nobody
-	// picked up looks exactly like a quiet thread.
-	LabelBallInOurCourt = "ball-in-our-court"
-	// LabelAwaitingReply: we sent last and it is still early.
-	LabelAwaitingReply = "awaiting-reply"
-	// LabelFollowUpDue: we sent last, long enough ago to chase.
-	LabelFollowUpDue = "follow-up-due"
-	// LabelGoingCold: they were interested, then stopped answering. This is the
-	// expensive one, which is why it is its own label rather than a longer
-	// follow-up-due: a stalled deal and an unanswered cold email need different
-	// things from a person.
-	LabelGoingCold = "going-cold"
+	// LabelNeedsReply: they answered and we have not. The most actionable
+	// state on the page, and the easiest to lose.
+	LabelNeedsReply = "Needs reply"
+	// LabelFollowUp: we sent last, long enough ago to chase.
+	LabelFollowUp = "Follow up"
+	// LabelGoneQuiet: they were interested, then stopped answering. Its own
+	// label because a stalled deal needs something different from a person
+	// than an unanswered cold email.
+	LabelGoneQuiet = "Gone quiet"
 )
 
 // FollowUpLabels is the set this feature keeps in sync on a thread. Only these
 // are ever removed, so a label a person applied by hand is never touched.
-var FollowUpLabels = []string{
-	LabelBallInOurCourt, LabelAwaitingReply, LabelFollowUpDue, LabelGoingCold,
-}
+// "We sent last and it is still early" wears nothing: that is most threads,
+// and the Awaiting reply scope already lists them.
+var FollowUpLabels = []string{LabelNeedsReply, LabelFollowUp, LabelGoneQuiet}
 
 // Follow-up timing. Days, because that is the unit a person chasing a deal
 // thinks in.
@@ -400,7 +423,7 @@ const (
 	// working days, allowing for a weekend.
 	FollowUpDueDays = 5
 	// GoingColdDays: silence after a POSITIVE exchange. Longer than
-	// follow-up-due on purpose: someone who said yes has earned more patience
+	// FollowUpDueDays on purpose: someone who said yes has earned more patience
 	// than someone who never answered, and chasing them at day five reads as
 	// pushy rather than diligent.
 	GoingColdDays = 10

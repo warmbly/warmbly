@@ -9,7 +9,7 @@
 // subject, plus dismiss), then plain header rows (To with Cc/Bcc toggles,
 // From, unlabelled Subject), the body textarea, the optional signature
 // preview, the forwarded message when forwarding, and the action bar
-// (Send / Schedule / Template / Discard).
+// (Send / Schedule / Pause follow-ups / Template / Discard).
 //
 // A forward sends only its message's id; the server attaches the message, so the note is optional.
 //
@@ -44,6 +44,9 @@ import ContactRecipientField from "./compose/ContactRecipientField";
 import ForwardedMessage from "./ForwardedMessage";
 import MailboxPicker from "./compose/MailboxPicker";
 import useComposeCandidates from "@/lib/api/hooks/app/unibox/useComposeCandidates";
+import usePauseFollowUps, { type FollowUpTargets } from "@/lib/api/hooks/app/campaigns/usePauseFollowUps";
+import PauseFollowUpsMenu from "./PauseFollowUpsMenu";
+import { followUpPauseUntil, tickedCampaigns, type FollowUpPause } from "@/lib/leadHold";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { resolveSendAt, useOutboxStore } from "@/hooks/useOutboxStore";
 import { useUserProfile } from "@/hooks/context/user";
@@ -286,6 +289,27 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
     const primary = to.length > 0 ? bareEmail(to[0]) : "";
     const candidatesQ = useComposeCandidates(primary, wantCandidates);
 
+    // Holds the recipient's follow-ups once a reply is accepted; a forward goes to someone else.
+    const followUps = usePauseFollowUps(mode === "reply" && primary ? primary : undefined);
+    const [followUpPause, setFollowUpPause] = React.useState<FollowUpPause | null>(null);
+    // Unticked rather than ticked, so a campaign that appears later is included.
+    const [followUpSkip, setFollowUpSkip] = React.useState<string[]>([]);
+    const { pauseAll } = followUps;
+    const applyFollowUpPause = async (p: FollowUpPause, t: FollowUpTargets, sendsAt?: Date) => {
+        const { paused, failed } = await pauseAll(t, followUpPauseUntil(p, sendsAt));
+        if (failed > 0) {
+            toast.error(
+                paused > 0
+                    ? `Follow-ups paused in ${paused} of ${t.campaigns.length} campaigns. Check the contact panel.`
+                    : "Reply queued, but its follow-ups could not be paused. Check the contact panel.",
+            );
+        } else if (paused === 0) {
+            toast.success("Their follow-ups were already on hold");
+        } else {
+            toast.success(p.days == null ? "Follow-ups paused until you resume them" : `Follow-ups paused ${p.label.toLowerCase()}`);
+        }
+    };
+
     const templatesQuery = useTemplates();
 
     // Scheduled-sends pending cap. Disable the Schedule button at 100%
@@ -327,6 +351,11 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
         }
 
         const submittedDraft = { to, cc, bcc, subject, body, email_account_id: accountId };
+        const pauseWith = mode === "reply" ? followUpPause : null;
+        const pauseTargets = {
+            ...followUps.targets,
+            campaigns: tickedCampaigns(followUps.targets.campaigns, followUpSkip),
+        };
         draft.flush();
         setIsSending(true);
         const sentSubject = subject.trim() || (mode === "forward" ? "Fwd:" : "Re:");
@@ -382,6 +411,11 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
             }
             setScheduleOpen(false);
             setCustomMode(false);
+            if (pauseWith && pauseTargets.campaigns.length > 0) {
+                void applyFollowUpPause(pauseWith, pauseTargets, scheduledAt);
+                setFollowUpPause(null);
+                setFollowUpSkip([]);
+            }
             const completed = draft.complete(submittedDraft);
             if (!completed.cleared) toast.error("Reply queued, but the saved draft could not be removed. Discard it before sending again.");
             if (completed.close) onClose();
@@ -860,6 +894,19 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                         </AnimatePresence>
                     </PopoverMenuContent>
                 </PopoverMenu>
+
+                {mode === "reply" && followUps.targets.campaigns.length > 0 && (
+                    <PauseFollowUpsMenu
+                        campaigns={followUps.targets.campaigns.map((c) => ({ id: c.campaign_id, name: c.campaign_name }))}
+                        skipped={followUpSkip}
+                        onToggleCampaign={(id) =>
+                            setFollowUpSkip((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+                        }
+                        value={followUpPause}
+                        onChange={setFollowUpPause}
+                        disabled={isSending}
+                    />
+                )}
 
                 {/* Template picker. Custom rich rows (not
                     PopoverMenuItem) so each row can run two lines

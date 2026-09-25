@@ -11,6 +11,7 @@ import { Label, TextInput } from "@/components/ui/field";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import { usePauseLead } from "@/lib/api/hooks/app/campaigns/useLeadHold";
+import { endOfLocalDay, localDayISO } from "@/lib/leadHold";
 
 interface Props {
     open: boolean;
@@ -20,31 +21,16 @@ interface Props {
     lead: { id: string; name: string } | null;
 }
 
-// A date picker hands back "yyyy-MM-dd". The hold has to be an instant, and
-// the useful one is the END of the chosen day in the member's own timezone:
-// "pause until the 8th" means the 8th is still covered.
-function endOfLocalDay(iso: string): string | null {
-    const [y, m, d] = iso.split("-").map(Number);
-    if (!y || !m || !d) return null;
-    return new Date(y, m - 1, d, 23, 59, 59, 0).toISOString();
-}
-
-function defaultUntil(days: number): string {
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 export default function PauseLeadDialog({ open, onClose, campaign, lead }: Props) {
     const [mode, setMode] = React.useState<"date" | "open">("date");
-    const [until, setUntil] = React.useState(() => defaultUntil(7));
+    const [until, setUntil] = React.useState(() => localDayISO(7));
     const [reason, setReason] = React.useState("");
     const pause = usePauseLead();
 
     React.useEffect(() => {
         if (!open) return;
         setMode("date");
-        setUntil(defaultUntil(7));
+        setUntil(localDayISO(7));
         setReason("");
     }, [open]);
 

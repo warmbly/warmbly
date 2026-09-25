@@ -29,25 +29,19 @@ func (s *contactService) CampaignStates(ctx context.Context, orgID, contactID uu
 	return states, nil
 }
 
+// endedCopy says why a flow is over, keyed by lead status or route exclusion (they share values).
+var endedCopy = map[string]string{
+	models.LeadStatusUnsubscribed:  "Unsubscribed, sending stopped",
+	models.LeadStatusBounced:       "Bounced, sending stopped",
+	models.LeadStatusFailed:        "Dropped after every send attempt failed",
+	models.LeadStatusUndeliverable: "Address failed verification, so the campaign skips it",
+	"suppressed":                   "Suppressed, sending stopped",
+}
+
 func (s *contactService) fillNextAction(ctx context.Context, st *models.ContactCampaignState, contactID uuid.UUID) {
-	// Only the statuses that END the lead return early. "paused" is
-	// deliberately absent: a held lead keeps its place in the sequence, so the
-	// next step is still shown, with the hold as the reason it is waiting.
-	switch st.LeadStatus {
-	case models.LeadStatusUnsubscribed:
-		st.EndedReason = "Unsubscribed, sending stopped"
-		return
-	case models.LeadStatusBounced:
-		st.EndedReason = "Bounced, sending stopped"
-		return
-	case models.LeadStatusReplied:
-		st.EndedReason = "Replied, sending stopped"
-		return
-	case models.LeadStatusFailed:
-		st.EndedReason = "Dropped after every send attempt failed"
-		return
-	case models.LeadStatusUndeliverable:
-		st.EndedReason = "Address failed verification, so the campaign skips it"
+	// Replied and paused are not endings: the router decides both, below.
+	if reason, ok := endedCopy[st.LeadStatus]; ok {
+		st.EndedReason = reason
 		return
 	}
 	if s.previewer == nil {
@@ -60,8 +54,9 @@ func (s *contactService) fillNextAction(ctx context.Context, st *models.ContactC
 		return
 	}
 	route := pv.Route
-	if route.Excluded == "suppressed" {
-		st.EndedReason = "Suppressed, sending stopped"
+	// Replied outranks failed and undeliverable in the status, so the exclusion ends those.
+	if reason, ok := endedCopy[route.Excluded]; ok {
+		st.EndedReason = reason
 		return
 	}
 	current := "the current step"
@@ -78,11 +73,14 @@ func (s *contactService) fillNextAction(ctx context.Context, st *models.ContactC
 			}
 			return
 		}
-		if st.LeadStatus == models.LeadStatusCompleted {
+		switch {
+		case st.LeadStatus == models.LeadStatusReplied:
+			st.EndedReason = "Replied, sending stopped"
+		case st.LeadStatus == models.LeadStatusCompleted:
 			st.EndedReason = "Every step has been sent"
-		} else if st.CurrentStep != nil {
+		case st.CurrentStep != nil:
 			st.EndedReason = "Reached the end of the flow"
-		} else {
+		default:
 			st.EndedReason = "The campaign has no steps"
 		}
 		return

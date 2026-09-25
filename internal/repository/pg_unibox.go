@@ -173,6 +173,26 @@ const (
 	foldersOutsideAllMail      = `('spam', 'trash')`
 )
 
+// automatedThreadSQL is the predicate "no person wrote in this conversation":
+// one of its messages was judged automated and every message that is not ours
+// or junk was too. A new message is not automated until judged, so a reply
+// brings the conversation back to the inbox the moment it lands.
+func automatedThreadSQL(threadExpr, rowAutomatedExpr, orgArg string) string {
+	return fmt.Sprintf(`(CASE WHEN %[1]s = '' THEN %[2]s ELSE (
+			EXISTS (
+				SELECT 1 FROM unibox_emails am
+				WHERE am.thread_id = %[1]s AND am.automated
+				  AND am.email_id IN (SELECT id FROM email_accounts WHERE organization_id = %[3]s)
+			)
+			AND NOT EXISTS (
+				SELECT 1 FROM unibox_emails pm
+				WHERE pm.thread_id = %[1]s AND NOT pm.automated
+				  AND pm.folder NOT IN ('sent', 'drafts', 'spam', 'trash')
+				  AND pm.email_id IN (SELECT id FROM email_accounts WHERE organization_id = %[3]s)
+			)
+		) END)`, threadExpr, rowAutomatedExpr, orgArg)
+}
+
 // bareAddrSQL extracts the exact address out of a raw header entry: the
 // bracketed form every provider writes ("Name <a@b.com>"), the parenthesised
 // form older IMAP rows carry, else the trimmed value. Lowercased, and never a
@@ -203,14 +223,21 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 			flags, bcc, cc, from_addr, in_reply_to, reply_to,
 			to_addr, subject, size, internal_date, sent_date,
 			snippet, seen, created_at, updated_at, body_text, folder,
-			provider_folder
+			provider_folder, automated
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11,
 			$12, $13, $14, $15, $16, $17,
 			$18, $19, $20, $21, $22,
 			$23, $24, $25, $26, $27, $28,
-			$28
+			$28,
+			-- A row re-created by a sync keeps the verdict its message already has.
+			EXISTS (
+				SELECT 1 FROM inbox_tag_results r
+				WHERE r.organization_id = (SELECT organization_id FROM email_accounts WHERE id = $3)
+				  AND r.message_id = $7 AND $7 <> ''
+				  AND r.automated
+			)
 		)
 		ON CONFLICT (id) DO NOTHING
 	`
@@ -429,7 +456,7 @@ func (r *uniboxRepository) GetByThread(ctx context.Context, orgID, emailID uuid.
 		cursorID, err := uuid.Parse(cursor)
 		if err == nil {
 			query += fmt.Sprintf(`
-				AND (internal_date, id) < (
+				AND (internal_date, id) > (
 					SELECT internal_date, id FROM unibox_emails WHERE id = $%d
 				)`, argPos)
 			args = append(args, cursorID)
@@ -503,7 +530,7 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID uuid.UUID, params *
 	// singleton keyed by row id — otherwise every unthreaded message
 	// would collapse into one bogus "conversation".
 	inner := fmt.Sprintf(`
-		SELECT %s,
+		SELECT %s, ue.automated,
 			ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(ue.thread_id, ''), ue.id::text) ORDER BY ue.internal_date DESC, ue.id DESC) AS rn,
 			COUNT(*)              OVER (PARTITION BY COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) AS message_count,
 			bool_or(NOT ue.seen)  OVER (PARTITION BY COALESCE(NULLIF(ue.thread_id, ''), ue.id::text)) AS has_unread
@@ -697,6 +724,16 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID uuid.UUID, params *
 		argPos++
 	}
 
+	if params.Automated != nil {
+		if *params.Automated {
+			query += `
+			AND ` + automatedThreadSQL("b.thread_id", "b.automated", "$1")
+		} else {
+			query += `
+			AND NOT ` + automatedThreadSQL("b.thread_id", "b.automated", "$1")
+		}
+	}
+
 	if params.Uncategorized != nil && *params.Uncategorized {
 		query += `
 			AND NOT EXISTS (
@@ -726,7 +763,7 @@ func (r *uniboxRepository) Search(ctx context.Context, orgID uuid.UUID, params *
 
 func (r *uniboxRepository) GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error) {
 	// Unread threads exactly as the Inbox view (where the badge links) lists
-	// them: inbox folder only, snoozed left out.
+	// them: inbox folder only, snoozed and automated left out.
 	query := `SELECT COUNT(DISTINCT COALESCE(NULLIF(ue.thread_id, ''), ue.id::text))
 		FROM unibox_emails ue
 		WHERE ue.email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
@@ -737,7 +774,8 @@ func (r *uniboxRepository) GetUnseenCount(ctx context.Context, orgID uuid.UUID, 
 			WHERE s.user_id = ue.user_id
 			  AND s.thread_id = ue.thread_id
 			  AND s.snoozed_until > NOW()
-		  )`
+		  )
+		  AND NOT ` + automatedThreadSQL("ue.thread_id", "ue.automated", "$1")
 	args := []any{orgID}
 	if emailAccountID != nil {
 		query += ` AND ue.email_id = $2`
@@ -996,9 +1034,11 @@ func (r *uniboxRepository) queryPreviewList(ctx context.Context, query string, a
 
 	var hasMore bool
 	var nextCursor *string
-	if len(emails) > limit {
+	if limit > 0 && len(emails) > limit {
 		hasMore = true
-		cursor := emails[limit].ID.String()
+		// The last row returned: the next page reads strictly past it, so
+		// pointing at the probe row instead would skip that row entirely.
+		cursor := emails[limit-1].ID.String()
 		nextCursor = &cursor
 		emails = emails[:limit]
 	}
@@ -1046,9 +1086,11 @@ func (r *uniboxRepository) queryThreadList(ctx context.Context, query string, ar
 
 	var hasMore bool
 	var nextCursor *string
-	if len(emails) > limit {
+	if limit > 0 && len(emails) > limit {
 		hasMore = true
-		cursor := emails[limit].ID.String()
+		// The last row returned: the next page reads strictly past it, so
+		// pointing at the probe row instead would skip that row entirely.
+		cursor := emails[limit-1].ID.String()
 		nextCursor = &cursor
 		emails = emails[:limit]
 	}
@@ -1333,6 +1375,8 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 				e.from_addr,
 				e.internal_date,
 				e.seen,
+				e.automated,
+				e.folder IN ('sent', 'drafts') AS is_ours,
 				e.folder = 'archive' AS is_archived,
 				EXISTS (
 					SELECT 1 FROM unibox_snoozes s
@@ -1350,7 +1394,9 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 				bool_or(is_snoozed)                             AS is_snoozed,
 				bool_or(NOT is_archived)                        AS working,
 				bool_or(NOT seen) FILTER (WHERE NOT is_archived) AS has_unread,
-				max(internal_date) FILTER (WHERE NOT is_archived) AS last_date
+				max(internal_date) FILTER (WHERE NOT is_archived) AS last_date,
+				-- The same rule as automatedThreadSQL, over rows already in hand.
+				bool_or(automated) AND NOT COALESCE(bool_or(NOT automated AND NOT is_ours), false) AS is_automated
 			FROM ue
 			GROUP BY tkey
 		),
@@ -1362,10 +1408,12 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 		)
 		SELECT
 			COUNT(*) FILTER (WHERE NOT t.is_snoozed)                                          AS total,
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.has_unread)           AS unread,
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.last_date >= $2)      AS today,
-			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.last_date >= $3)      AS week,
-			COUNT(*) FILTER (WHERE t.is_snoozed AND t.working)                                AS snoozed,
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.has_unread)      AS unread,
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.last_date >= $2) AS today,
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND NOT t.is_automated AND t.last_date >= $3) AS week,
+			COUNT(*) FILTER (WHERE t.is_snoozed AND t.working)                                                  AS snoozed,
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.is_automated)                           AS automated,
+			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.is_automated AND t.has_unread)          AS automated_unread,
 			(SELECT COUNT(*) FROM latest_per_thread l WHERE `+ownAddressSQL("l.from_addr", "$1")+`) AS awaiting,
 			(SELECT COUNT(*) FROM ai_thread_drafts d
 				WHERE d.organization_id = $1 AND d.status = 'pending')                        AS awaiting_agent_draft
@@ -1376,6 +1424,8 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 		&overview.Today,
 		&overview.Week,
 		&overview.Snoozed,
+		&overview.Automated,
+		&overview.AutomatedUnread,
 		&overview.AwaitingReply,
 		&overview.AwaitingAgentDraft,
 	)
@@ -1401,6 +1451,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 			  AND s.thread_id = e.thread_id
 			  AND s.snoozed_until > NOW()
 		  )
+		  AND NOT (e.folder = 'inbox' AND `+automatedThreadSQL("e.thread_id", "e.automated", "$1")+`)
 		GROUP BY e.folder
 	`, orgID)
 	if err != nil {
@@ -1443,6 +1494,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 		FROM email_accounts ea
 		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id AND ue.user_id = ea.user_id
 			AND ue.folder NOT IN `+foldersOutsideWorkingViews+`
+			AND NOT `+automatedThreadSQL("ue.thread_id", "ue.automated", "$1")+`
 		WHERE ea.organization_id = $1
 		GROUP BY ea.id, ea.email, ea.name
 		ORDER BY ea.email ASC
@@ -1486,6 +1538,7 @@ func (r *uniboxRepository) Overview(ctx context.Context, orgID uuid.UUID) (*mode
 		LEFT JOIN email_accounts ea ON ea.id = et.email_id AND ea.organization_id = t.organization_id
 		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id
 			AND ue.folder NOT IN `+foldersOutsideWorkingViews+`
+			AND NOT `+automatedThreadSQL("ue.thread_id", "ue.automated", "$1")+`
 		WHERE t.organization_id = $1
 		GROUP BY t.id, t.title, t.color, t.position
 		ORDER BY t.position ASC, t.title ASC

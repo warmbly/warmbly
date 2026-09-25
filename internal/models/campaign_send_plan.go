@@ -179,6 +179,8 @@ const (
 	MailboxPlanResting      = "resting"
 	MailboxPlanHealthHold   = "health_hold"
 	MailboxPlanWindowClosed = "window_closed"
+	// MailboxPlanNoWorker is a mailbox no heartbeating worker holds right now.
+	MailboxPlanNoWorker = "no_worker"
 )
 
 // SendBottleneckBudgetSpent is the Bottleneck of a campaign that has sent

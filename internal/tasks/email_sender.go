@@ -49,12 +49,17 @@ type WorkerLiveness interface {
 	IsWorkerLive(ctx context.Context, workerID uuid.UUID) (bool, error)
 }
 
-// ErrWorkerOffline is returned by Send when the mailbox's worker has stopped
-// heartbeating. The send is not published: a command queued for a worker that
-// is gone is never executed and never answered, which would leave the step
-// looking sent forever. The worker reconciler moves the mailbox to a live
-// worker and the dead-letter retry replays the task.
+// ErrWorkerOffline is returned by Send when no heartbeating worker holds the
+// mailbox: none is assigned, or the one assigned stopped heartbeating. The send
+// is not published: a command queued for a worker that is gone is never
+// executed and never answered, which would leave the step looking sent
+// forever. The worker reconciler places the mailbox on a live worker, and the
+// scheduler passes the mailbox over until it has.
 var ErrWorkerOffline = errors.New("the mailbox's sending worker is offline")
+
+// ErrWorkerUnconfirmed is returned by Send when the worker's liveness could not
+// be read. Nothing is published, and it says nothing about the recipient.
+var ErrWorkerUnconfirmed = errors.New("the mailbox's sending worker could not be confirmed live")
 
 // ErrSendDispatchUnknown wraps a failure of the publish call itself. Every
 // other Send failure happens before anything is published and is safe to retry
@@ -89,12 +94,12 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 	// Get worker ID for this email account
 	workerID := account.WorkerID
 	if workerID == nil {
-		return fmt.Errorf("no worker assigned to email account %s", account.ID)
+		return fmt.Errorf("%w: no worker holds mailbox %s", ErrWorkerOffline, account.Email)
 	}
 	if s.liveness != nil {
 		live, err := s.liveness.IsWorkerLive(ctx, *workerID)
 		if err != nil {
-			return fmt.Errorf("check worker %s liveness: %w", workerID, err)
+			return fmt.Errorf("%w: worker %s: %w", ErrWorkerUnconfirmed, workerID, err)
 		}
 		if !live {
 			return fmt.Errorf("%w (worker %s, mailbox %s)", ErrWorkerOffline, workerID, account.Email)

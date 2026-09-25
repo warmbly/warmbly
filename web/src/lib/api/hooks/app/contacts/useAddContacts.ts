@@ -12,9 +12,11 @@ export default function useAddContacts() {
             // campaign, so a lead created there needs the list refetched, and
             // ["campaigns"] carries the counts that just moved. A contact created
             // inside a segment is pinned into it, which moves that segment's
-            // count and its pinned-contacts panel.
+            // count and its pinned-contacts panel. A new custom field joins the
+            // workspace's field list.
             return Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["contacts", "list"] }),
+                queryClient.invalidateQueries({ queryKey: ["contacts", "custom-fields"] }),
                 queryClient.invalidateQueries({ queryKey: ["campaigns"] }),
                 queryClient.invalidateQueries({ queryKey: ["segments"] }),
             ])

@@ -2,6 +2,7 @@ package inboxtag
 
 import (
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -14,16 +15,15 @@ func TestAllLabelsCoversEverythingDecideCanWrite(t *testing.T) {
 		all[l] = true
 	}
 
-	// Every kind.
-	for kind := range kindCriteria {
-		if !all[slugOf(kind)] {
-			t.Errorf("kind %q is not in AllLabels", kind)
+	// Every kind and intent that files under a label.
+	for id := range kindCriteria {
+		if l := LabelFor(id); l != "" && !all[l] {
+			t.Errorf("kind %q files under %q, which is not in AllLabels", id, l)
 		}
 	}
-	// Every intent.
-	for intent := range intentCriteria {
-		if !all[slugOf(intent)] {
-			t.Errorf("intent %q is not in AllLabels", intent)
+	for id := range intentCriteria {
+		if l := LabelFor(id); l != "" && !all[l] {
+			t.Errorf("intent %q files under %q, which is not in AllLabels", id, l)
 		}
 	}
 	if !all[LabelNeedsReview] {
@@ -56,37 +56,67 @@ func TestAllLabelsIsSortedAndUnique(t *testing.T) {
 		}
 		seen[l] = true
 	}
-	if len(labels) < 17 {
+	if len(labels) < 15 {
 		t.Errorf("only %d labels; expected the full taxonomy", len(labels))
 	}
 }
 
-// The first backfill over real mail put "needs-human-judgement" on bounces and
-// platform notifications: the model answers the question honestly for any text,
-// but the answer is meaningless on mail no person wrote, and a label that lands
-// on everything is not a filter.
+// The first backfill over real mail put a signal label on bounces and platform
+// notifications: the model answers the question honestly for any text, but the
+// answer is meaningless on mail no person wrote, and a label that lands on
+// everything is not a filter.
 func TestSignalLabelsOnlyOnHumanReplies(t *testing.T) {
 	signals := []string{SigNeedsHumanJudgement, SigAsksForCall, SigRequestsRemoval, SigLegalThreat}
 
 	for _, kind := range []string{KindBounceHard, KindBounceSoft, KindNotification, KindAutoReplyOOO} {
 		got := labelsFor(Decision{Kind: kind, Signals: signals})
-		for _, l := range got {
-			if l != slugOf(kind) {
-				t.Errorf("kind %s got signal label %q; signals only label a human reply", kind, l)
-			}
+		if len(got) != 1 || got[0] != LabelFor(kind) {
+			t.Errorf("kind %s got %v; signals only label a human reply", kind, got)
 		}
 	}
 
 	human := labelsFor(Decision{Kind: KindHumanReply, Intent: IntentAgreed, Signals: signals})
-	for _, want := range []string{"human-reply", "agreed", "asks-for-call", "needs-human-judgement"} {
-		found := false
-		for _, l := range human {
-			if l == want {
-				found = true
-			}
+	want := []string{"Interested", "Meeting", "Unsubscribe", "Legal threat"}
+	if len(human) != len(want) {
+		t.Fatalf("a human reply got %v, want %v", human, want)
+	}
+	for i := range want {
+		if human[i] != want[i] {
+			t.Fatalf("a human reply got %v, want %v", human, want)
 		}
-		if !found {
-			t.Errorf("a human reply lost the %q label: got %v", want, human)
+	}
+}
+
+// A label is read by people who may not speak English well and never learned
+// our taxonomy, so it is plain words: capitalised, no identifier syntax.
+func TestLabelsAreReadable(t *testing.T) {
+	for _, l := range AllLabels() {
+		if strings.ContainsAny(l, "_") || l != strings.TrimSpace(l) || strings.ToUpper(l[:1]) != l[:1] {
+			t.Errorf("label %q reads like an identifier", l)
+		}
+		if n := len(strings.Fields(l)); n > 3 {
+			t.Errorf("label %q is %d words; a chip needs at most three", l, n)
+		}
+	}
+}
+
+// Only a trusted machine verdict takes a conversation out of the inbox.
+func TestAutomated(t *testing.T) {
+	cases := []struct {
+		name string
+		d    Decision
+		want bool
+	}{
+		{"offline out of office", Decide(nil, Facts{DeterministicKind: KindAutoReplyOOO}), true},
+		{"confident notification", Decide(map[string]Answer{"kind": {Type: QuestionChoice, Choice: KindNotification, Confidence: 0.9}}, Facts{}), true},
+		{"unsure notification", Decide(map[string]Answer{"kind": {Type: QuestionChoice, Choice: KindNotification, Confidence: 0.5}}, Facts{}), false},
+		{"a person", Decide(map[string]Answer{"kind": {Type: QuestionChoice, Choice: KindHumanReply, Confidence: 0.9}}, Facts{}), false},
+		{"a pitch", Decide(map[string]Answer{"kind": {Type: QuestionChoice, Choice: KindColdInbound, Confidence: 0.9}}, Facts{}), false},
+		{"our own send", DecideOutbound(), false},
+	}
+	for _, tc := range cases {
+		if got := tc.d.Automated(); got != tc.want {
+			t.Errorf("%s: Automated() = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }
@@ -124,13 +154,13 @@ func TestUnreadableIntentKeepsTheConfidentKind(t *testing.T) {
 		}
 		return false
 	}
-	if !has("human-reply") {
-		t.Errorf("lost the confident kind label: %v", d.Labels)
+	if !has("Meeting") {
+		t.Errorf("lost the confident signal label: %v", d.Labels)
 	}
 	if !has(LabelNeedsReview) {
 		t.Errorf("did not flag it for review: %v", d.Labels)
 	}
-	if has("wants-info") {
+	if has("Question") {
 		t.Errorf("applied the untrusted intent as a label: %v", d.Labels)
 	}
 	if d.Relevance == 0 {
@@ -139,12 +169,12 @@ func TestUnreadableIntentKeepsTheConfidentKind(t *testing.T) {
 }
 
 // The dashboard keeps a hand-written explanation per label
-// (web/src/lib/unibox/tagMeanings.ts) so a chip reading "going-cold" can say
+// (web/src/lib/unibox/tagMeanings.ts) so a chip reading "Gone quiet" can say
 // what it means on hover. That list cannot import this one, so this test pins
 // the count: a label added here without an explanation there ships with no
 // hover text, which is the state the feature started in.
 func TestLabelCountMatchesTheDashboardMeanings(t *testing.T) {
-	const documented = 28 // keep in step with EVERY_AUTOMATIC_LABEL in tagMeanings.test.ts
+	const documented = 19 // keep in step with EVERY_AUTOMATIC_LABEL in tagMeanings.test.ts
 	if got := len(AllLabels()); got != documented {
 		t.Fatalf("AllLabels has %d labels but the dashboard explains %d.\n"+
 			"Add the new label to web/src/lib/unibox/tagMeanings.ts and to\n"+

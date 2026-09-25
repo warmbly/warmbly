@@ -73,6 +73,11 @@ export interface UniboxSearchParams {
    * ids match. Sent to the server as `category_ids`.
    */
   categoryIds?: string[];
+  /**
+   * Conversations no person wrote in (security alerts, bounces, autoresponders):
+   * true lists only those, false leaves them out, undefined is both.
+   */
+  automated?: boolean;
   since?: Date; // From date
   until?: Date; // To date
   sortBy?: "newest" | "oldest";

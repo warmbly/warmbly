@@ -1,6 +1,7 @@
 // New contact dialog — brae-density modal mirroring NewCampaignDialog.
 //
-// Required: email. Everything else optional. Submits via useAddContacts
+// Required: email. Everything else optional, including the workspace's custom
+// fields, each shown as its own input. Submits via useAddContacts
 // which posts an array (the endpoint is bulk-shaped); we send a single
 // item.
 
@@ -14,6 +15,9 @@ import { Label, TextInput } from "@/components/ui/field";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import CategoryPicker from "./CategoryPicker";
+import CustomFieldsEditor from "./CustomFieldsEditor";
+import { type CustomField, customFieldsProblem } from "./customFields";
+import { recordFromCF } from "./contact-edit/rebase";
 
 interface Props {
     open: boolean;
@@ -34,6 +38,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
     const [company, setCompany] = React.useState("");
     const [phone, setPhone] = React.useState("");
     const [categories, setCategories] = React.useState<string[]>([]);
+    const [customFields, setCustomFields] = React.useState<CustomField[]>([]);
     const add = useAddContacts();
 
     React.useEffect(() => {
@@ -44,6 +49,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             setCompany("");
             setPhone("");
             setCategories([]);
+            setCustomFields([]);
         }
     }, [open]);
 
@@ -57,6 +63,12 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             toast.error("Enter a valid email");
             return;
         }
+        const fields = recordFromCF(customFields);
+        const problem = customFieldsProblem(customFields, fields);
+        if (problem) {
+            toast.error(problem);
+            return;
+        }
         const contact: AddContact = {
             email: e,
             first_name: firstName.trim(),
@@ -66,7 +78,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             campaigns: campaign ? [campaign.id] : [],
             categories,
             segments: segment ? [segment.id] : undefined,
-            custom_fields: {},
+            custom_fields: fields,
             source: campaign ? "campaign" : "manual",
         };
         try {
@@ -167,6 +179,10 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
                             <div>
                                 <Label>Categories</Label>
                                 <CategoryPicker value={categories} onChange={setCategories} />
+                            </div>
+                            <div>
+                                <Label>Custom fields</Label>
+                                <CustomFieldsEditor value={customFields} onChange={setCustomFields} />
                             </div>
                         </form>
 

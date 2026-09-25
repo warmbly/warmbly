@@ -30,8 +30,7 @@ func FollowUp(s ThreadState, now time.Time) string {
 	// A thread whose inbound was a bounce, an autoresponder or a platform
 	// notice is not somebody thinking it over. Chasing it would be chasing a
 	// mail server.
-	switch s.LastKind {
-	case KindBounceHard, KindBounceSoft, KindAutoReplyOOO, KindAutoReplyTicket, KindNotification:
+	if IsAutomatedKind(s.LastKind) {
 		return ""
 	}
 
@@ -58,7 +57,7 @@ func FollowUp(s ThreadState, now time.Time) string {
 			return ""
 		}
 		if daysSince(s.LastInboundAt, now) >= OurCourtDays {
-			return LabelBallInOurCourt
+			return LabelNeedsReply
 		}
 		return ""
 	}
@@ -70,15 +69,15 @@ func FollowUp(s ThreadState, now time.Time) string {
 	// expensive silence, so it gets its own label and a longer fuse.
 	if IsPositiveIntent(s.BestIntent) {
 		if days >= GoingColdDays {
-			return LabelGoingCold
+			return LabelGoneQuiet
 		}
-		return LabelAwaitingReply
+		return ""
 	}
 
 	if days >= FollowUpDueDays {
-		return LabelFollowUpDue
+		return LabelFollowUp
 	}
-	return LabelAwaitingReply
+	return ""
 }
 
 // daysSince counts whole days between two instants. Kept as its own function
