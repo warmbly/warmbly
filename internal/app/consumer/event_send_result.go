@@ -43,7 +43,7 @@ func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEma
 		return nil
 	}
 	// The worker reports the Message-ID the provider put on the wire, which is
-	// not always the one the control plane minted: Graph re-stamps it. Take the
+	// not always the one the control plane minted: Graph and Gmail re-stamp it. Take the
 	// worker's answer whenever it differs, because everything that matches a
 	// send back to us later (campaign reply threading, warmup reply candidates)
 	// keys on what the recipient actually received.

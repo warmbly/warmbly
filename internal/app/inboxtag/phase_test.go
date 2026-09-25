@@ -79,10 +79,11 @@ func TestServiceCapabilitiesAreLabelsOnly(t *testing.T) {
 
 	// Capabilities, plus bookkeeping that carries none. seeded/seededMu only
 	// remember which workspaces already have the label rows created; they reach
-	// nothing the categories capability does not already reach.
+	// nothing the categories capability does not already reach. settings only
+	// reads a workspace's own questions and language hint.
 	allowed := map[string]bool{
 		"asker": true, "repo": true, "categories": true, "mailboxes": true, "enabled": true,
-		"seeded": true, "seededMu": true,
+		"seeded": true, "seededMu": true, "settings": true,
 	}
 
 	ast.Inspect(file, func(n ast.Node) bool {

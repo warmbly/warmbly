@@ -290,6 +290,9 @@ func (s *service) UpdateOrganizationSettings(ctx context.Context, organizationID
 	if err := settings.Validate(); err != nil {
 		return errx.NewWithIdentifier(errx.BadRequest, "invalid_setting", err.Error())
 	}
+	if err := inboxtag.ValidateQuestions(settings.InboxTagging.Questions); err != nil {
+		return errx.NewWithIdentifier(errx.BadRequest, "invalid_setting", err.Error())
+	}
 	if err := s.repo.UpsertOutreachSettings(ctx, organizationID, updatedBy, settings); err != nil {
 		return toErrx(err)
 	}
@@ -315,6 +318,10 @@ func (s *service) UpdateCampaignSettings(ctx context.Context, campaignID uuid.UU
 	if settings == nil {
 		return errx.New(errx.BadRequest, "settings are required")
 	}
+	// Tagging questions and languages are the workspace's; a campaign cannot
+	// carry its own.
+	settings.InboxTagging.Questions = nil
+	settings.InboxTagging.Languages = nil
 	settings.Normalize()
 	if err := settings.Validate(); err != nil {
 		return errx.NewWithIdentifier(errx.BadRequest, "invalid_setting", err.Error())

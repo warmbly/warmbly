@@ -135,8 +135,9 @@ func TestFollowUpLabelsAreAllCreated(t *testing.T) {
 
 type fakeCategories struct {
 	// labels[threadID] is what the thread currently wears.
-	labels map[string]map[string]bool
-	seeded []string
+	labels  map[string]map[string]bool
+	seeded  []string
+	removed map[string][]string
 }
 
 func (f *fakeCategories) EnsureCategory(_ context.Context, _ uuid.UUID, slug string) (uuid.UUID, error) {
@@ -173,6 +174,13 @@ func (f *fakeCategories) SyncExclusiveLabels(ctx context.Context, orgID uuid.UUI
 	if want != "" {
 		f.labels[threadID][want] = true
 	}
+	return nil
+}
+func (f *fakeCategories) RemoveAutoLabels(_ context.Context, _ uuid.UUID, threadID string, slugs []string) error {
+	if f.removed == nil {
+		f.removed = map[string][]string{}
+	}
+	f.removed[threadID] = append(f.removed[threadID], slugs...)
 	return nil
 }
 func (f *fakeCategories) has(threadID, label string) bool { return f.labels[threadID][label] }

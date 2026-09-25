@@ -62,7 +62,7 @@ func ReplyClassifier(asker typesafe.Asker, repo repository.InboxTagRepository) r
 		if asker == nil {
 			return replyclassify.Result{}, false
 		}
-		state := BuildState(in.Subject, in.BodyText, "", "")
+		state := BuildState(in.Subject, in.BodyText, "", "", in.Languages...)
 		if !HasContent(state) {
 			return replyclassify.Result{}, false
 		}

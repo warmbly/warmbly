@@ -28,16 +28,17 @@ func ParseReturnDate(subject, body string, now time.Time) (time.Time, bool) {
 	if text == "" {
 		return time.Time{}, false
 	}
-	for _, m := range returnCue.FindAllStringIndex(text, -1) {
+	rs := rulesFor(nil)
+	for _, m := range rs.cue.FindAllStringIndex(text, -1) {
 		// Only the span right after the cue is considered: an auto-reply is
 		// mostly prose, and the first date anywhere in it is usually not the
 		// one that matters.
 		tail := text[m[1]:min(m[1]+returnCueWindow, len(text))]
-		d, ok := firstDate(tail, now)
+		d, ok := firstDate(tail, now, rs.months)
 		if !ok {
 			continue
 		}
-		if inclusiveCues[text[m[0]:m[1]]] {
+		if rs.inclusive[text[m[0]:m[1]]] {
 			// The cue named the last day AWAY, not the day back.
 			d = d.AddDate(0, 0, 1)
 		}
@@ -46,16 +47,11 @@ func ParseReturnDate(subject, body string, now time.Time) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// inclusiveCues name the last day of the absence rather than the first day
-// back ("through Friday", "bis einschliesslich Freitag"), so the return date is
-// the day after the one they wrote. Everything else in returnCue names the
-// return itself; "until" is left out on purpose, because "out of the office
-// until 12 September" is normally read as back ON the 12th.
-var inclusiveCues = map[string]bool{
-	"through":             true,
-	"bis einschliesslich": true,
-	"tot en met":          true,
-}
+// Cues in the inclusive list name the last day of the absence rather than the
+// first day back ("through Friday", "bis einschliesslich Freitag"), so the
+// return date is the day after the one they wrote. "until" is left out on
+// purpose, because "out of the office until 12 September" is normally read as
+// back ON the 12th.
 
 // NextBusinessDay is the day after d, skipping Saturday and Sunday. A contact
 // who is back on the 8th spends that day on the backlog, so the held step
@@ -70,30 +66,6 @@ func NextBusinessDay(d time.Time) time.Time {
 
 // returnCueWindow is how much text after a cue phrase may hold the date.
 const returnCueWindow = 48
-
-// returnCue are the phrases that introduce a return date, in the languages the
-// out-of-office vocabulary covers. Matched on a lower-cased, accent-folded
-// copy of the text.
-var returnCue = regexp.MustCompile(`(?i)\b(` + strings.Join([]string{
-	// English
-	`back on`, `back in the office on`, `back at my desk on`, `be back on`,
-	`return on`, `returning on`, `will return on`, `i return on`, `my return on`,
-	`returns on`, `available again on`, `reachable again on`, `back from`,
-	`until`, `till`, `through`,
-	// German
-	`zurueck am`, `zurueck ab`, `wieder am`, `wieder ab`, `ab dem`, `ab montag den`,
-	`wieder erreichbar am`, `wieder erreichbar ab`, `wieder im buero am`,
-	`bis einschliesslich`, `bis zum`, `bis`,
-	// French
-	`de retour le`, `jusqu'au`, `jusqu au`, `a partir du`,
-	// Spanish / Portuguese
-	`de vuelta el`, `regreso el`, `hasta el`, `a partir del`,
-	`de volta a`, `ate o dia`, `a partir de`,
-	// Dutch
-	`terug op`, `weer aanwezig op`, `tot en met`,
-	// Italian
-	`di ritorno il`, `fino al`, `rientro il`,
-}, `|`) + `)\b`)
 
 // dateFormats are the unambiguous written forms, tried in order against the
 // text right after a cue.
@@ -111,7 +83,7 @@ var (
 // well as the date ("until 10 September; ref 2026-10-01"), and scanning ISO
 // first would answer with the reference number's date and park the lead three
 // weeks too long.
-func firstDate(span string, now time.Time) (time.Time, bool) {
+func firstDate(span string, now time.Time, monthByName map[string]int) (time.Time, bool) {
 	type hit struct {
 		at int
 		d  time.Time
@@ -211,33 +183,6 @@ func atoi(s string) int {
 	return n
 }
 
-// monthByName maps month names and their common abbreviations, in the
-// languages the out-of-office vocabulary covers, to a month number.
-var monthByName = buildMonthIndex(map[int][]string{
-	1:  {"january", "jan", "januar", "janvier", "enero", "ene", "janeiro", "januari", "gennaio"},
-	2:  {"february", "feb", "februar", "fevrier", "febrero", "fevereiro", "februari", "febbraio"},
-	3:  {"march", "mar", "maerz", "marz", "mars", "marzo", "marco", "maart"},
-	4:  {"april", "apr", "avril", "abril", "aprile"},
-	5:  {"may", "mai", "mayo", "maio", "mei", "maggio"},
-	6:  {"june", "jun", "juni", "juin", "junio", "junho", "giugno"},
-	7:  {"july", "jul", "juli", "juillet", "julio", "julho", "luglio"},
-	8:  {"august", "aug", "aout", "agosto", "augustus", "ago"},
-	9:  {"september", "sep", "sept", "septembre", "septiembre", "setembro", "settembre"},
-	10: {"october", "oct", "oktober", "octobre", "octubre", "outubro", "okt", "ottobre"},
-	11: {"november", "nov", "novembre", "noviembre", "novembro"},
-	12: {"december", "dec", "dezember", "decembre", "diciembre", "dezembro", "dez", "december", "dicembre"},
-})
-
-func buildMonthIndex(src map[int][]string) map[string]int {
-	out := make(map[string]int, 128)
-	for month, names := range src {
-		for _, n := range names {
-			out[n] = month
-		}
-	}
-	return out
-}
-
 // accentFolder flattens the accents, typographic quotes and non-breaking
 // spaces the vocabularies would otherwise need two spellings for
 // ("März"/"Maerz", "août"/"aout", "jusqu'au"/"jusqu’au").
@@ -251,8 +196,17 @@ var accentFolder = strings.NewReplacer(
 	"ú", "u", "ù", "u", "û", "u",
 	"ç", "c", "ñ", "n",
 	// Polish and Nordic letters the away-message markers need.
-	"ł", "l", "ą", "a", "ę", "e", "ć", "c", "ś", "s", "ź", "z", "ż", "z",
-	"ø", "o", "æ", "ae", "å", "a",
+	"ł", "l", "ą", "a", "ę", "e", "ć", "c", "ś", "s", "ź", "z", "ż", "z", "ń", "n",
+	"ø", "o", "æ", "ae",
+	// Czech, Slovak, Romanian, Hungarian and Turkish.
+	"č", "c", "ř", "r", "š", "s", "ž", "z", "ý", "y", "ů", "u", "ě", "e", "ň", "n",
+	"ť", "t", "ď", "d", "ľ", "l", "ĺ", "l", "ŕ", "r",
+	"ă", "a", "ș", "s", "ş", "s", "ț", "t", "ţ", "t",
+	"ő", "o", "ű", "u", "ı", "i", "ğ", "g",
+	// The dot a lower-cased Turkish "İ" keeps, and Greek and Cyrillic marks
+	// an all-caps subject drops.
+	"\u0307", "",
+	"ά", "α", "έ", "ε", "ή", "η", "ί", "ι", "ό", "ο", "ύ", "υ", "ώ", "ω", "ϊ", "ι", "ϋ", "υ", "ё", "е",
 	" ", " ",
 )
 

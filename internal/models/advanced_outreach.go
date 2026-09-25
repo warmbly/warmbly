@@ -1,12 +1,17 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
+	"golang.org/x/text/unicode/norm"
 )
 
 type BouncePipelineSettings struct {
@@ -76,6 +81,259 @@ type InboxTaggingSettings struct {
 	// the reply asks to be removed and the classifier is strongly sure of it.
 	// Phase 3: the one irreversible action, and the one with the highest floor.
 	SuppressOnRemovalRequest bool `json:"suppress_on_removal_request"`
+	// Questions are the workspace's own, asked alongside the built-in set in
+	// the same call.
+	Questions []InboxTagQuestion `json:"questions"`
+	// Languages are the languages the workspace's mail is written in, as
+	// MailLanguageNames codes. Tagging reads each with its vocabulary and names
+	// it to the classifier; empty uses the default set only.
+	Languages []string `json:"languages"`
+}
+
+// InboxTagQuestion is one workspace-defined tagging question. A yes/no
+// question applies Label on yes; a choice question applies the label of the
+// option it picked.
+type InboxTagQuestion struct {
+	// ID keys the answer in stored verdicts. Minted on save when empty.
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Question string                 `json:"question"`
+	Label    string                 `json:"label,omitempty"`
+	Action   InboxTagQuestionAction `json:"action"`
+	Choices  []InboxTagChoice       `json:"choices,omitempty"`
+}
+
+// InboxTagChoice is one option of a choice question.
+type InboxTagChoice struct {
+	Label       string                 `json:"label"`
+	Description string                 `json:"description"`
+	Action      InboxTagQuestionAction `json:"action"`
+}
+
+// InboxTagQuestionAction is what a matching reply may do, drawn from the same
+// primitives as the built-in switches.
+type InboxTagQuestionAction struct {
+	Type     string `json:"type"`
+	HoldDays int    `json:"hold_days,omitempty"`
+}
+
+const (
+	InboxTagQuestionYesNo  = "yes_no"
+	InboxTagQuestionChoice = "choice"
+
+	InboxTagActionNone = ""
+	InboxTagActionHold = "hold"
+	InboxTagActionStop = "stop"
+	InboxTagActionTask = "task"
+)
+
+// Bounds on workspace questions. Every question adds input tokens to every
+// classified message, so the count is capped.
+const (
+	InboxTagQuestionsMax        = 10
+	InboxTagQuestionMaxLen      = 300
+	InboxTagChoiceDescMaxLen    = 200
+	InboxTagLabelMaxLen         = 40
+	InboxTagChoicesMin          = 2
+	InboxTagChoicesMax          = 8
+	InboxTagQuestionHoldMin     = 1
+	InboxTagQuestionHoldMax     = 365
+	InboxTagQuestionHoldDefault = 30
+)
+
+// MailLanguageNames are the tagging languages a workspace may choose, by code.
+// Choosing one adds its vocabulary to tagging's offline reading where
+// replyclassify has any, and names it to the classifier.
+var MailLanguageNames = map[string]string{
+	"ar":  "Arabic",
+	"bg":  "Bulgarian",
+	"bn":  "Bengali",
+	"ca":  "Catalan",
+	"cs":  "Czech",
+	"da":  "Danish",
+	"de":  "German",
+	"el":  "Greek",
+	"en":  "English",
+	"es":  "Spanish",
+	"et":  "Estonian",
+	"fa":  "Persian",
+	"fi":  "Finnish",
+	"fil": "Filipino",
+	"fr":  "French",
+	"he":  "Hebrew",
+	"hi":  "Hindi",
+	"hr":  "Croatian",
+	"hu":  "Hungarian",
+	"id":  "Indonesian",
+	"it":  "Italian",
+	"ja":  "Japanese",
+	"ko":  "Korean",
+	"lt":  "Lithuanian",
+	"lv":  "Latvian",
+	"ms":  "Malay",
+	"nb":  "Norwegian",
+	"nl":  "Dutch",
+	"pl":  "Polish",
+	"pt":  "Portuguese",
+	"ro":  "Romanian",
+	"ru":  "Russian",
+	"sk":  "Slovak",
+	"sl":  "Slovenian",
+	"sr":  "Serbian",
+	"sv":  "Swedish",
+	"sw":  "Swahili",
+	"ta":  "Tamil",
+	"th":  "Thai",
+	"tr":  "Turkish",
+	"uk":  "Ukrainian",
+	"ur":  "Urdu",
+	"vi":  "Vietnamese",
+	"zh":  "Chinese",
+}
+
+var inboxTagIDPattern = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
+
+// InboxTagLabelName is a label name as it is filed: plain words like the
+// built-in labels ("Later maybe"), letters and digits in any script with
+// single spaces or hyphens between them, anything else dropped. NFC first, so
+// "später" keeps its letter rather than a combining mark.
+func InboxTagLabelName(name string) string {
+	var b strings.Builder
+	pending := rune(0)
+	for _, r := range norm.NFC.String(name) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			if pending != 0 && b.Len() > 0 {
+				b.WriteRune(pending)
+			}
+			pending = 0
+			b.WriteRune(r)
+		case r == '-' && pending != ' ':
+			pending = '-'
+		default:
+			pending = ' '
+		}
+	}
+	return b.String()
+}
+
+func (a *InboxTagQuestionAction) normalize() {
+	a.Type = strings.ToLower(strings.TrimSpace(a.Type))
+	if a.Type != InboxTagActionHold {
+		a.HoldDays = 0
+		return
+	}
+	if a.HoldDays == 0 {
+		a.HoldDays = InboxTagQuestionHoldDefault
+	}
+	a.HoldDays = min(max(a.HoldDays, InboxTagQuestionHoldMin), InboxTagQuestionHoldMax)
+}
+
+func (a InboxTagQuestionAction) validate() error {
+	switch a.Type {
+	case InboxTagActionNone, InboxTagActionHold, InboxTagActionStop, InboxTagActionTask:
+		return nil
+	}
+	return fmt.Errorf("%q is not a tagging action; use hold, stop or task", a.Type)
+}
+
+// normalizeInboxTagQuestions trims and clamps what can be clamped and mints
+// missing ids, so validation only refuses what cannot be repaired.
+func normalizeInboxTagQuestions(qs []InboxTagQuestion) {
+	for i := range qs {
+		q := &qs[i]
+		q.ID = strings.ToLower(strings.TrimSpace(q.ID))
+		if q.ID == "" {
+			q.ID = strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+		}
+		q.Type = strings.ToLower(strings.TrimSpace(q.Type))
+		q.Question = ClampLine(q.Question, InboxTagQuestionMaxLen)
+		q.Action.normalize()
+		if q.Type == InboxTagQuestionChoice {
+			q.Label = ""
+			q.Action = InboxTagQuestionAction{}
+		} else {
+			q.Label = InboxTagLabelName(q.Label)
+			q.Choices = nil
+		}
+		for j := range q.Choices {
+			c := &q.Choices[j]
+			c.Label = InboxTagLabelName(c.Label)
+			c.Description = ClampLine(c.Description, InboxTagChoiceDescMaxLen)
+			c.Action.normalize()
+		}
+	}
+}
+
+func validateInboxTagLabel(label string) error {
+	if label == "" {
+		return errors.New("every tagging question needs a label")
+	}
+	if len([]rune(label)) > InboxTagLabelMaxLen {
+		return fmt.Errorf("label %q is longer than %d characters", label, InboxTagLabelMaxLen)
+	}
+	if InboxTagLabelName(label) != label {
+		return fmt.Errorf("label %q may use letters, digits, and single spaces or hyphens only", label)
+	}
+	return nil
+}
+
+func validateInboxTagQuestions(qs []InboxTagQuestion) error {
+	if len(qs) > InboxTagQuestionsMax {
+		return fmt.Errorf("at most %d tagging questions", InboxTagQuestionsMax)
+	}
+	ids := map[string]bool{}
+	labels := map[string]bool{}
+	claim := func(label string) error {
+		if err := validateInboxTagLabel(label); err != nil {
+			return err
+		}
+		key := strings.ToLower(label)
+		if labels[key] {
+			return fmt.Errorf("label %q is used by more than one question or option", label)
+		}
+		labels[key] = true
+		return nil
+	}
+	for _, q := range qs {
+		if !inboxTagIDPattern.MatchString(q.ID) {
+			return fmt.Errorf("question id %q may use lower-case letters and digits only, up to 16", q.ID)
+		}
+		if ids[q.ID] {
+			return fmt.Errorf("question id %q is used twice", q.ID)
+		}
+		ids[q.ID] = true
+		if strings.TrimSpace(q.Question) == "" {
+			return errors.New("every tagging question needs its question text")
+		}
+		switch q.Type {
+		case InboxTagQuestionYesNo:
+			if err := claim(q.Label); err != nil {
+				return err
+			}
+			if err := q.Action.validate(); err != nil {
+				return err
+			}
+		case InboxTagQuestionChoice:
+			if len(q.Choices) < InboxTagChoicesMin || len(q.Choices) > InboxTagChoicesMax {
+				return fmt.Errorf("a choice question needs between %d and %d options", InboxTagChoicesMin, InboxTagChoicesMax)
+			}
+			for _, c := range q.Choices {
+				if err := claim(c.Label); err != nil {
+					return err
+				}
+				if strings.TrimSpace(c.Description) == "" {
+					return fmt.Errorf("option %q needs a description", c.Label)
+				}
+				if err := c.Action.validate(); err != nil {
+					return err
+				}
+			}
+		default:
+			return fmt.Errorf("%q is not a question type; use yes_no or choice", q.Type)
+		}
+	}
+	return nil
 }
 
 // Bounds on the not-now hold.
@@ -180,6 +438,8 @@ func (s *AdvancedOutreachSettings) Normalize() {
 		s.InboxTagging.NotNowHoldDays = NotNowHoldDaysDefault
 	}
 	s.InboxTagging.NotNowHoldDays = min(max(s.InboxTagging.NotNowHoldDays, NotNowHoldDaysMin), NotNowHoldDaysMax)
+	s.InboxTagging.Languages = normalizeCodes(s.InboxTagging.Languages)
+	normalizeInboxTagQuestions(s.InboxTagging.Questions)
 	if !ValidUnsubscribeMode(string(s.Unsubscribe.Mode)) || s.Unsubscribe.Mode == UnsubscribeModeInherit {
 		s.Unsubscribe.Mode = UnsubscribeModeText
 	}
@@ -201,7 +461,25 @@ func (s *AdvancedOutreachSettings) Validate() error {
 			return fmt.Errorf("%q is not a reply intent", intent)
 		}
 	}
-	return nil
+	for _, lang := range s.InboxTagging.Languages {
+		if _, ok := MailLanguageNames[lang]; !ok {
+			return fmt.Errorf("%q is not a supported tagging language", lang)
+		}
+	}
+	return validateInboxTagQuestions(s.InboxTagging.Questions)
+}
+
+// normalizeCodes lower-cases, trims and de-duplicates a code list, keeping
+// the caller's order.
+func normalizeCodes(in []string) []string {
+	var out []string
+	for _, v := range in {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v != "" && !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // normalizeIntents lower-cases, trims and de-duplicates an intent list while

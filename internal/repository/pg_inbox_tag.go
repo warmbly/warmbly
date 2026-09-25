@@ -52,7 +52,11 @@ type InboxTagRepository interface {
 
 	// ListUntagged and PreviousOutbound back the historical backfill.
 	ListUntagged(ctx context.Context, orgID uuid.UUID, since time.Time, limit int) ([]BackfillCandidate, error)
-	PreviousOutbound(ctx context.Context, accountID uuid.UUID, threadID string, before time.Time) (string, string, error)
+	PreviousOutbound(ctx context.Context, accountID uuid.UUID, threadID string, inReplyTo []string, before time.Time) (string, string, error)
+	// ListColdInboundInCampaignThreads and Reopen back the re-check of
+	// verdicts made before the campaign behind a thread could be resolved.
+	ListColdInboundInCampaignThreads(ctx context.Context, orgID uuid.UUID, since time.Time, limit int) ([]BackfillCandidate, error)
+	Reopen(ctx context.Context, orgID uuid.UUID, messageID, kind string) ([]string, error)
 
 	// ThreadStates backs the follow-up sweep: who spoke last, when, and how far
 	// the thread ever got.
@@ -288,9 +292,45 @@ type BackfillCandidate struct {
 //   - anything already in inbox_tag_results, so a re-run resumes rather than
 //     repeats. Same key the live path is idempotent on.
 func (r *inboxTagRepository) ListUntagged(ctx context.Context, orgID uuid.UUID, since time.Time, limit int) ([]BackfillCandidate, error) {
-	const q = `
+	return r.listCandidates(ctx, `
+		  AND NOT EXISTS (
+		        SELECT 1 FROM inbox_tag_results r
+		        WHERE r.organization_id = $1 AND r.message_id = ue.message_id
+		          AND (r.status = 'complete' OR r.claimed_at >= NOW() - INTERVAL '15 minutes')
+		      )`, orgID, since, limit)
+}
+
+// ListColdInboundInCampaignThreads returns inbound messages stored as
+// cold_inbound whose thread a campaign send of the same mailbox answers for:
+// by the Gmail thread handle, by a Message-ID the reply names, or by the sent
+// copy in the thread.
+func (r *inboxTagRepository) ListColdInboundInCampaignThreads(ctx context.Context, orgID uuid.UUID, since time.Time, limit int) ([]BackfillCandidate, error) {
+	return r.listCandidates(ctx, `
+		  AND EXISTS (
+		        SELECT 1 FROM inbox_tag_results r
+		        WHERE r.organization_id = $1 AND r.message_id = ue.message_id
+		          AND r.status = 'complete' AND r.kind = 'cold_inbound'
+		      )
+		  AND EXISTS (
+		        SELECT 1 FROM tasks t
+		        WHERE t.email_account_id = ue.email_id AND t.task_type = 'campaign'
+		          AND (
+		                (ue.thread_id <> '' AND t.thread_id = ue.thread_id)
+		             OR BTRIM(t.message_id, '<> ') IN (
+		                    SELECT BTRIM(ref, '<> ') FROM unnest(COALESCE(ue.in_reply_to, '{}')) AS ref
+		                    UNION ALL
+		                    SELECT BTRIM(s.message_id, '<> ') FROM unibox_emails s
+		                    WHERE s.email_id = ue.email_id AND s.thread_id = ue.thread_id
+		                      AND ue.thread_id <> '' AND s.folder = 'sent'
+		                )
+		          )
+		      )`, orgID, since, limit)
+}
+
+func (r *inboxTagRepository) listCandidates(ctx context.Context, filter string, orgID uuid.UUID, since time.Time, limit int) ([]BackfillCandidate, error) {
+	q := `
 		SELECT ue.email_id, ue.user_id, ue.message_id, ue.thread_id,
-		       ue.subject, ue.body_text, COALESCE(ue.from_addr[1], ''), ue.in_reply_to, ue.flags, ue.internal_date
+		       ue.subject, ue.body_text, COALESCE(ue.from_addr[1], ''), COALESCE(ue.in_reply_to, '{}'), ue.flags, ue.internal_date
 		FROM unibox_emails ue
 		JOIN email_accounts ea ON ea.id = ue.email_id
 		WHERE ea.organization_id = $1
@@ -302,12 +342,7 @@ func (r *inboxTagRepository) ListUntagged(ctx context.Context, orgID uuid.UUID, 
 		        NULLIF((regexp_match(COALESCE(ue.from_addr[1], ''), '\(([^()]+)\)\s*$'))[1], ''),
 		        TRIM(COALESCE(ue.from_addr[1], ''))
 		      ))
-		      NOT IN (SELECT LOWER(email) FROM email_accounts WHERE organization_id = $1)
-		  AND NOT EXISTS (
-		        SELECT 1 FROM inbox_tag_results r
-			        WHERE r.organization_id = $1 AND r.message_id = ue.message_id
-			          AND (r.status = 'complete' OR r.claimed_at >= NOW() - INTERVAL '15 minutes')
-		      )
+		      NOT IN (SELECT LOWER(email) FROM email_accounts WHERE organization_id = $1)` + filter + `
 		ORDER BY ue.internal_date DESC
 		LIMIT $3
 	`
@@ -329,34 +364,82 @@ func (r *inboxTagRepository) ListUntagged(ctx context.Context, orgID uuid.UUID, 
 	return out, rows.Err()
 }
 
+// Reopen drops one stored verdict of the given kind so the message can be
+// classified again, and returns the labels it had written. Only a complete
+// verdict of that kind is touched.
+func (r *inboxTagRepository) Reopen(ctx context.Context, orgID uuid.UUID, messageID, kind string) ([]string, error) {
+	var labels []string
+	err := r.db.QueryRow(ctx, `
+		DELETE FROM inbox_tag_results
+		WHERE organization_id = $1 AND message_id = $2 AND status = 'complete' AND kind = $3
+		RETURNING labels
+	`, orgID, messageID, kind).Scan(&labels)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return labels, err
+}
+
 // PreviousOutbound is the plain text of the last message we sent in a thread
-// before a given moment.
+// before a given moment, and the name of the campaign the thread belongs to.
 //
 // Without it a reply cannot be read: "yes", "that works" and "sounds good" are
 // answers, and the question they answer is not in them. Giving the model our
 // side of the exchange is what lets the reply mean anything.
-func (r *inboxTagRepository) PreviousOutbound(ctx context.Context, accountID uuid.UUID, threadID string, before time.Time) (string, string, error) {
-	if threadID == "" {
+//
+// The campaign resolves from any of three facts, all scoped to the mailbox: the
+// sent copy's Message-ID, a Message-ID the reply names in In-Reply-To, or the
+// provider thread handle the worker recorded on the send (Gmail only). The
+// handle is what holds when the Message-ID on the task is not the one the
+// provider put on the wire.
+func (r *inboxTagRepository) PreviousOutbound(ctx context.Context, accountID uuid.UUID, threadID string, inReplyTo []string, before time.Time) (string, string, error) {
+	if threadID == "" && len(inReplyTo) == 0 {
 		return "", "", nil
 	}
+	if inReplyTo == nil {
+		inReplyTo = []string{}
+	}
 	const q = `
-		SELECT ue.body_text, COALESCE(c.name, '')
-		FROM unibox_emails ue
-		LEFT JOIN tasks t
-		       ON t.email_account_id = ue.email_id
-		      AND t.task_type = 'campaign'
-		      AND BTRIM(t.message_id, '<> ') = BTRIM(ue.message_id, '<> ')
-		LEFT JOIN campaign_tasks ct ON ct.task_id = t.id
-		LEFT JOIN campaigns c ON c.id = ct.campaign_id
-		WHERE ue.email_id = $1 AND ue.thread_id = $2 AND ue.folder = 'sent' AND ue.internal_date < $3
-		ORDER BY ue.internal_date DESC
-		LIMIT 1
+		WITH prev AS (
+			SELECT ue.body_text, ue.message_id
+			FROM unibox_emails ue
+			WHERE $2 <> '' AND ue.email_id = $1 AND ue.thread_id = $2
+			  AND ue.folder = 'sent' AND ue.internal_date < $3
+			ORDER BY ue.internal_date DESC
+			LIMIT 1
+		),
+		ids AS (
+			SELECT DISTINCT x FROM (
+				SELECT BTRIM(message_id, '<> ') AS x FROM prev
+				UNION ALL
+				SELECT BTRIM(ref, '<> ') FROM unnest($4::text[]) AS ref
+			) raw
+			WHERE x <> ''
+		),
+		matched AS (
+			SELECT t.id, 0 AS rank, t.created_at
+			FROM tasks t
+			WHERE t.message_id IN (SELECT x FROM ids UNION ALL SELECT '<' || x || '>' FROM ids)
+			  AND t.email_account_id = $1 AND t.task_type = 'campaign'
+			UNION ALL
+			SELECT t.id, 1 AS rank, t.created_at
+			FROM tasks t
+			WHERE $2 <> '' AND t.email_account_id = $1 AND t.thread_id = $2
+			  AND t.task_type = 'campaign'
+		)
+		SELECT COALESCE((SELECT body_text FROM prev), ''),
+		       COALESCE((
+		           SELECT c.name
+		           FROM matched m
+		           JOIN campaign_tasks ct ON ct.task_id = m.id
+		           JOIN campaigns c ON c.id = ct.campaign_id
+		           ORDER BY m.rank, m.created_at DESC
+		           LIMIT 1
+		       ), '')
 	`
 	var body, campaign string
-	if err := r.db.QueryRow(ctx, q, accountID, threadID, before).Scan(&body, &campaign); err != nil {
-		// No previous message is the normal case for the first inbound of a
-		// thread, not an error worth failing a classification over.
-		return "", "", nil
+	if err := r.db.QueryRow(ctx, q, accountID, threadID, before, inReplyTo).Scan(&body, &campaign); err != nil {
+		return "", "", err
 	}
 	return body, campaign, nil
 }

@@ -25,7 +25,7 @@ func classifyHeaders(in Input) (Result, bool) {
 	// --- Delivery failures, before anything else ---
 	// A bounce also carries Auto-Submitted: auto-replied, which on its own
 	// reads as a vacation responder and would hold the lead as out of office.
-	if isDeliveryFailure(h, subject) {
+	if isDeliveryFailure(h, subject, in.Languages) {
 		return Result{Class: ClassAutoReply, Confidence: 0.95, Source: SourceHeader}, true
 	}
 
@@ -35,7 +35,7 @@ func classifyHeaders(in Input) (Result, bool) {
 	// autoresponder is written by the mail provider, while "I'm on holiday
 	// next week" in a body is a human reply, and reading that as automated
 	// would stop stop_on_reply from firing for a person who actually answered.
-	if matchesOOOSubject(subject) {
+	if matchesOOOSubject(subject, in.Languages) {
 		return Result{Class: ClassOutOfOffice, Confidence: 0.98, Source: SourceHeader}, true
 	}
 
@@ -93,13 +93,13 @@ func classifyHeaders(in Input) (Result, bool) {
 
 // IsDeliveryFailure reports a bounce or delivery-status notice.
 func IsDeliveryFailure(in Input) bool {
-	return isDeliveryFailure(newHeaderLookup(in.Headers), strings.ToLower(strings.TrimSpace(in.Subject)))
+	return isDeliveryFailure(newHeaderLookup(in.Headers), strings.ToLower(strings.TrimSpace(in.Subject)), in.Languages)
 }
 
 // isDeliveryFailure reports a bounce from the signals a failure notice carries:
 // a delivery-status report, the failed-recipients header Gmail and Exim add,
 // a mail-system sender, or a mail server's own subject line.
-func isDeliveryFailure(h headerLookup, subject string) bool {
+func isDeliveryFailure(h headerLookup, subject string, langs []string) bool {
 	ct := strings.ToLower(h.first("Content-Type"))
 	if strings.Contains(ct, "multipart/report") && strings.Contains(ct, "delivery-status") {
 		return true
@@ -108,7 +108,16 @@ func isDeliveryFailure(h headerLookup, subject string) bool {
 		return true
 	}
 	// The same sender and subject lists the worker's bounce parser reads.
-	return dsn.IsBounceSender(h.first("From")) || dsn.HasBounceSubject(subject)
+	if dsn.IsBounceSender(h.first("From")) || dsn.HasBounceSubject(subject) {
+		return true
+	}
+	// A workspace's own languages add the subjects their servers write.
+	for _, m := range rulesFor(langs).bounce {
+		if strings.HasPrefix(subject, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // FlagHeaders reads the "Header:value" pseudo-flags the sync stores next to
@@ -186,35 +195,17 @@ func (h headerLookup) has(name string) bool {
 // Reply markers are deliberately NOT stripped first. "AW: Abwesenheitsnotiz"
 // is a person forwarding or replying ABOUT an away message; the away message
 // itself does not carry one.
-var oooSubjectMarkers = []string{
-	// English
-	"out of office", "out of the office", "automatic reply", "automated reply",
-	"autoreply", "auto-reply", "auto reply", "auto:", "away:", "on vacation:", "vacation reply",
-	// German
-	"abwesenheit", "abwesend", "automatische antwort", "autom. antwort",
-	"ausser haus", "nicht im buero", "im urlaub:",
-	// French
-	"reponse automatique", "absence du bureau", "message d'absence",
-	// Spanish / Portuguese
-	"respuesta automatica", "ausencia de la oficina", "ausencia temporal",
-	"resposta automatica", "fora do escritorio",
-	// Italian
-	"risposta automatica", "fuori sede:", "assente dall'ufficio",
-	// Dutch
-	"automatisch antwoord", "afwezigheid", "afwezigheidsbericht",
-	// Nordic / Polish
-	"automatiskt svar", "automatisk svar", "autosvar", "fravaer", "fravaersmelding",
-	"automatyczna odpowiedz",
-}
+// The markers themselves live in languages.go, the base set for everyone and
+// more for each language a workspace reads mail in.
 
 // matchesOOOSubject reports whether a subject was written by a vacation
 // autoresponder. Accents are folded so each marker is listed in one spelling.
-func matchesOOOSubject(subject string) bool {
+func matchesOOOSubject(subject string, langs []string) bool {
 	subject = foldAccents(subject)
 	if subject == "" {
 		return false
 	}
-	for _, m := range oooSubjectMarkers {
+	for _, m := range rulesFor(langs).ooo {
 		if strings.HasPrefix(subject, m) {
 			return true
 		}

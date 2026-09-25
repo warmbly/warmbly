@@ -59,10 +59,14 @@ func (s *service) ApplyInboxTagActions(ctx context.Context, in InboxTagAction) [
 	if contactID != nil && s.campaignProgressRepo != nil {
 		if in.Plan.HoldDays > 0 {
 			until := time.Now().UTC().AddDate(0, 0, in.Plan.HoldDays)
+			reason := in.Plan.HoldReason
+			if reason == "" {
+				reason = "replied not now"
+			}
 			held, err := s.campaignProgressRepo.HoldLeadEverywhere(ctx, *contactID, &until,
-				"replied not now", models.LeadHoldSourceInboxTagging)
+				reason, models.LeadHoldSourceInboxTagging)
 			if err != nil {
-				log.Warn().Err(err).Str("contact_id", contactID.String()).Msg("inbox tagging: not-now hold could not be written")
+				log.Warn().Err(err).Str("contact_id", contactID.String()).Msg("inbox tagging: hold could not be written")
 			} else if len(held) > 0 {
 				done = append(done, inboxtag.ActionHold)
 			}
