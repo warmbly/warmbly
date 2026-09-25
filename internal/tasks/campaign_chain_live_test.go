@@ -12,6 +12,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/scheduler"
+	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
 // A campaign is one self-perpetuating task, and "leads stay Queued until the
@@ -320,5 +321,47 @@ func TestLiveCampaignHandOffFailuresCountOnlyWhenTheyAreTheLeads(t *testing.T) {
 			}
 			f.parkedWakeup(t)
 		})
+	}
+}
+
+// flakyQueue refuses its first n enqueues.
+type flakyQueue struct{ refuse int }
+
+func (q *flakyQueue) CreateTask(context.Context, *proto.ProcessTask, time.Time) (string, error) {
+	if q.refuse > 0 {
+		q.refuse--
+		return "", errors.New("queue unavailable")
+	}
+	return "queued", nil
+}
+func (*flakyQueue) DeleteTask(context.Context, string) error { return nil }
+
+// A next pass the task queue refused is taken back, not left pending with
+// nothing to fire it, so the retry seeds one that runs.
+func TestLiveCampaignChainRecoversWhenTheQueueRefusesTheNextPass(t *testing.T) {
+	handle := liveCampaignDB(t)
+	f := newCampaignSendFixture(t, handle.Pool)
+	sender := &recordingSender{}
+	sender.setFail(fmt.Errorf("%w (worker gone)", ErrWorkerOffline))
+	svc := liveCampaignService(t, handle, sender)
+	svc.tasksClient = &flakyQueue{refuse: 1}
+
+	taskID := f.queueTick(t, svc.taskRepo)
+	if xerr := svc.HandleCampaignTask(processTask(taskID)); xerr != nil {
+		t.Fatalf("tick: %v", xerr)
+	}
+	var pending int
+	if err := f.pool.QueryRow(context.Background(), `SELECT count(*) FROM tasks t JOIN campaign_tasks ct ON ct.task_id = t.id
+	    WHERE ct.campaign_id = $1 AND t.status = 'pending'`, f.campaign).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending != 1 {
+		t.Fatalf("%d pending passes, want exactly the one the retry queued", pending)
+	}
+	var name string
+	_ = f.pool.QueryRow(context.Background(), `SELECT COALESCE(t.cloud_task_name, '') FROM tasks t JOIN campaign_tasks ct ON ct.task_id = t.id
+	    WHERE ct.campaign_id = $1 AND t.status = 'pending'`, f.campaign).Scan(&name)
+	if name != "queued" {
+		t.Fatalf("the pending pass was never queued (cloud_task_name %q)", name)
 	}
 }

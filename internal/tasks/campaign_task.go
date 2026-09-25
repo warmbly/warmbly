@@ -1577,6 +1577,11 @@ func (s *tasksService) createCampaignTask(ctx context.Context, campaignID, accou
 
 	cloudTaskName, err := s.tasksClient.CreateTask(ctx, processTask, scheduleTime)
 	if err != nil {
+		// Nothing will fire the row, and while it is pending no other pass can
+		// be seeded: take it back so a retry can.
+		if derr := s.taskRepo.DeleteTask(context.Background(), newTaskID); derr != nil {
+			log.Warn().Err(derr).Str("task_id", newTaskID.String()).Msg("could not remove a campaign pass the task queue refused; overdue reconciliation will")
+		}
 		return err
 	}
 
