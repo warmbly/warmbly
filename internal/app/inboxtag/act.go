@@ -26,6 +26,8 @@ type Plan struct {
 	// HoldDays parks the contact's sequences for this many days. Zero means
 	// no timed hold.
 	HoldDays int
+	// HoldReason is shown on the lead; empty reads as the not-now hold.
+	HoldReason string
 	// Stop parks the contact's sequences for StopHoldDays.
 	Stop bool
 	// Task opens a follow-up for the mailbox owner, with this title.
@@ -79,12 +81,14 @@ func PlanActions(d Decision, s models.InboxTaggingSettings) Plan {
 			p.Task = "They asked for a call"
 		}
 	}
+	planCustom(&p, d)
 	if s.SuppressOnRemovalRequest && removalStrong(d) {
 		p.Suppress = "asked to be removed in a reply"
 		// A person who asked to be removed is not held, they are stopped: the
 		// suppression already ends every sequence, and a hold on top of it
 		// would be a second thing for a member to find and lift.
 		p.HoldDays = 0
+		p.HoldReason = ""
 		p.Stop = false
 		p.Task = ""
 	}

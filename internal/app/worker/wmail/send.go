@@ -290,10 +290,33 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 	}
 
 	result.Success = true
-	result.MessageID = req.MessageID
+	result.MessageID = gmailSentMessageID(ctx, w.GoogleData.Client, req.TaskID.String(), gmailMsg.Id, req.MessageID)
 	result.ProviderMsgID = gmailMsg.Id
 	result.ThreadID = gmailMsg.ThreadId
 	return result
+}
+
+// gmailStamp reads the Message-ID a sent Gmail message carries.
+type gmailStamp interface {
+	SentMessageID(ctx context.Context, id string) (string, error)
+}
+
+// gmailSentMessageID reports the Message-ID Gmail stamped, as the Graph path
+// does, falling back to the minted one when the read fails. The send already
+// happened, so a failed read must never turn it into a failure.
+func gmailSentMessageID(ctx context.Context, client gmailStamp, taskID, gmailID, minted string) string {
+	if client == nil || gmailID == "" {
+		return minted
+	}
+	stamped, err := client.SentMessageID(ctx, gmailID)
+	if err != nil {
+		log.Warn().Str("task_id", taskID).Err(err).Msg("Gmail sent the message but its Message-ID could not be read; reporting the minted one")
+		return minted
+	}
+	if stamped == "" {
+		return minted
+	}
+	return stamped
 }
 
 // sendViaGraph sends an email through Microsoft Graph. Graph re-stamps the

@@ -27562,6 +27562,92 @@
               "suppress_on_removal_request": {
                 "type": "boolean",
                 "description": "Add the sender to the suppression list when the classifier is at least 80% sure the reply asks to be removed."
+              },
+              "languages": {
+                "type": ["array", "null"],
+                "description": "The languages the workspace's mail is written in, for inbox tagging. Each is named to the classifier, and where Warmbly has its vocabulary, tagging also cuts that language's quoted history and recognises its away messages and bounce notices before asking. Nothing about a language is used until it is listed. Empty reads with the default set only.",
+                "items": {
+                  "type": "string",
+                  "enum": ["ar", "bg", "bn", "ca", "cs", "da", "de", "el", "en", "es", "et", "fa", "fi", "fil", "fr", "he", "hi", "hr", "hu", "id", "it", "ja", "ko", "lt", "lv", "ms", "nb", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sr", "sv", "sw", "ta", "th", "tr", "uk", "ur", "vi", "zh"]
+                }
+              },
+              "questions": {
+                "type": ["array", "null"],
+                "maxItems": 10,
+                "description": "The workspace's own tagging questions, asked in the same call as the built-in set. They add labels and may act; they never change kind, intent or relevance.",
+                "items": {
+                  "type": "object",
+                  "required": ["type", "question"],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9]{1,16}$",
+                      "description": "Keys the answer in stored verdicts. Minted when omitted; send it back unchanged when updating."
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": ["yes_no", "choice"]
+                    },
+                    "question": {
+                      "type": "string",
+                      "maxLength": 300,
+                      "description": "One plain statement or question, read literally."
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "description": "yes_no only: the label applied on yes (noul 0.60 or more); its action runs at 0.80 or more. Plain words: letters, digits, and single spaces or hyphens. A built-in label name, in any capitalization, is refused."
+                    },
+                    "action": {
+                    "type": "object",
+                    "description": "What a match may do. Only a confident human reply acts.",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["", "hold", "stop", "task"],
+                        "description": "Empty labels only. hold parks the contact's sequences for hold_days, stop parks them for a year, task opens a CRM task for the mailbox owner."
+                      },
+                      "hold_days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 365,
+                        "default": 30
+                      }
+                    }
+                  },
+                    "choices": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 8,
+                      "description": "choice only: the options. The picked option's label applies at confidence 0.70 or more; a reply that fits none gets no label.",
+                      "items": {
+                        "type": "object",
+                        "required": ["label", "description"],
+                        "properties": {
+                          "label": { "type": "string", "maxLength": 40 },
+                          "description": { "type": "string", "maxLength": 200 },
+                          "action": {
+                          "type": "object",
+                          "description": "What a match may do. Only a confident human reply acts.",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": ["", "hold", "stop", "task"],
+                              "description": "Empty labels only. hold parks the contact's sequences for hold_days, stop parks them for a year, task opens a CRM task for the mailbox owner."
+                            },
+                            "hold_days": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 365,
+                              "default": 30
+                            }
+                          }
+                        }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           },

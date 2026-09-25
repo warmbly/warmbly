@@ -100,6 +100,29 @@ func (c *Client) sendRaw(
 	return sent, nil
 }
 
+// SentMessageID reads the Message-ID a sent message carries. Gmail may replace
+// the one we minted with its own, and only the stamped value matches what the
+// recipient received and what the sent copy syncs back with.
+func (c *Client) SentMessageID(ctx context.Context, id string) (string, error) {
+	if id == "" || c.srv == nil {
+		return "", nil
+	}
+	msg, err := c.srv.Users.Messages.Get("me", id).
+		Format("metadata").MetadataHeaders("Message-ID").
+		Context(ctx).Do()
+	if err != nil {
+		return "", HandleError(err)
+	}
+	return stampedMessageID(msg), nil
+}
+
+func stampedMessageID(msg *gmail.Message) string {
+	if msg == nil || msg.Payload == nil {
+		return ""
+	}
+	return strings.TrimSpace(getSingleHeader(msg.Payload.Headers, "Message-ID"))
+}
+
 type header struct{ name, value string }
 
 // buildMIME assembles the message body using the narrowest structure the

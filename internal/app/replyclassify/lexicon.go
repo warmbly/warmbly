@@ -16,7 +16,7 @@ import (
 //  2. Clear interest phrases => positive.
 //  3. Clear rejection phrases => negative.
 func classifyLexicon(in Input) (Result, bool) {
-	text := quoteFolder.Replace(strings.ToLower(strings.TrimSpace(in.Subject + "\n" + StripQuoted(in.BodyText))))
+	text := quoteFolder.Replace(strings.ToLower(strings.TrimSpace(in.Subject + "\n" + StripQuoted(in.BodyText, in.Languages...))))
 	if text == "" {
 		return Result{}, false
 	}
@@ -116,7 +116,7 @@ func IsOptOut(subject, body string) bool {
 	return matchesOptOut(text)
 }
 
-// quoteMarkers begin the quoted history a mail client appends to a reply.
+// quoteMarker begins the quoted history a mail client appends to a reply.
 //
 // The attributions are matched anywhere, not only as whole lines: a client
 // wraps a long "On ... wrote:" across two lines, and bodies stored before line
@@ -124,17 +124,12 @@ func IsOptOut(subject, body string) bool {
 // and the quoted footer ("unsubscribe") reads as the reply. An attribution
 // carries a date, a time or an address between its words, which keeps prose
 // such as "not on the team, our CTO wrote:" from cutting the reply short.
-var quoteMarkers = []*regexp.Regexp{
-	attribution(`on`, `wrote:`),
-	regexp.MustCompile(`(?i)-{2,}\s*(original|forwarded) message\s*-{2,}`),
-	regexp.MustCompile(`(?i)_{10,}`),
-	regexp.MustCompile(`(?im)^\s*from:\s.+$`),
-	regexp.MustCompile(`(?is)(^|\s)from:\s.{1,300}?\s(sent|date):\s`),
-	attribution(`le`, `a écrit\s*:`),
-	attribution(`am`, `schrieb\b`),
-	attribution(`el`, `escribió\s*:`),
-	attribution(`op`, `schreef\b`),
-	attribution(`il`, `ha scritto\s*:`),
+// Each language's markers live in languages.go.
+type quoteMarker struct {
+	re *regexp.Regexp
+	// lineStart cuts from the start of the matched line: the attribution
+	// opens with a name or a weekday the pattern does not reach back to.
+	lineStart bool
 }
 
 // attribution matches "<lead> ... <tail>" with a year, a time or an address
@@ -143,16 +138,35 @@ func attribution(lead, tail string) *regexp.Regexp {
 	return regexp.MustCompile(`(?is)(^|\s)` + lead + `\s[^\n]{0,250}?(\d{4}|\d{1,2}[:.]\d{2}|@)[^\n]{0,250}?\n?[^\n]{0,250}?\s` + tail)
 }
 
+// headerBlock matches Outlook's quoted header block, "<From>: ... <Sent>: ",
+// which two labels within a few lines of each other identify.
+func headerBlock(from, sent string) *regexp.Regexp {
+	return regexp.MustCompile(`(?is)(^|\s)(` + from + `):\s.{1,300}?\s(` + sent + `):\s`)
+}
+
 // StripQuoted drops the quoted history from a reply body: everything from the
-// first reply marker on, plus any line that is itself a ">" quote.
-func StripQuoted(body string) string {
+// first reply marker on, plus any line that is itself a ">" quote. langs adds
+// those languages' markers to the base set.
+func StripQuoted(body string, langs ...string) string {
 	if body == "" {
 		return ""
 	}
 	cut := len(body)
-	for _, re := range quoteMarkers {
-		if loc := re.FindStringIndex(body); loc != nil && loc[0] < cut {
-			cut = loc[0]
+	for _, m := range rulesFor(langs).quote {
+		loc := m.re.FindStringIndex(body)
+		if loc == nil {
+			continue
+		}
+		at := loc[0]
+		// Only a body that keeps its line breaks has a line to go back to;
+		// on a single stored line that would take the reply with it.
+		if m.lineStart {
+			if nl := strings.LastIndexByte(body[:at], '\n'); nl >= 0 {
+				at = nl + 1
+			}
+		}
+		if at < cut {
+			cut = at
 		}
 	}
 	body = body[:cut]

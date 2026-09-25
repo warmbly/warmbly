@@ -24,6 +24,9 @@ type State struct {
 	// Campaign names the outreach this belongs to, which is what makes
 	// "cold_inbound" separable from "human_reply".
 	Campaign string `json:"campaign,omitempty"`
+	// Language names the languages the workspace says its mail is written in.
+	// It translates nothing; it only tells the reader what to expect.
+	Language string `json:"language,omitempty"`
 }
 
 // BuildState assembles the state for one inbound message.
@@ -31,11 +34,11 @@ type State struct {
 // StripQuoted comes from replyclassify rather than a second implementation
 // here: it is the same job, it already handles the reply markers several mail
 // clients and three languages emit, and two copies would drift.
-func BuildState(subject, body, previousMessage, campaign string) State {
+func BuildState(subject, body, previousMessage, campaign string, langs ...string) State {
 	return State{
 		Subject:         strings.TrimSpace(subject),
-		Body:            trimTo(replyclassify.StripQuoted(body), BodyLimit),
-		PreviousMessage: trimTo(replyclassify.StripQuoted(previousMessage), BodyLimit),
+		Body:            trimTo(replyclassify.StripQuoted(body, langs...), BodyLimit),
+		PreviousMessage: trimTo(replyclassify.StripQuoted(previousMessage, langs...), BodyLimit),
 		Campaign:        strings.TrimSpace(campaign),
 	}
 }

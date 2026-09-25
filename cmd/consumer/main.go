@@ -443,6 +443,7 @@ func main() {
 		tagCategories,
 		classify,
 	)
+	inboxTagger.WireSettings(advancedRepo)
 	if typeSafeClient != nil {
 		// The reply classifier's model layer and the inbox agent's gate both
 		// read the verdict the tagger stored moments earlier, so a reply is

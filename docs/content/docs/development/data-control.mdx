@@ -78,7 +78,7 @@ Mail over a daily budget is deferred, never dropped: the provider cursor is held
 
 | Judgment | On by | What is sent | Where the verdict lives |
 |---|---|---|---|
-| Automatic inbox tagging | `INBOX_TAGGING_ENABLED=true` | The inbound subject and bounded plain-text body, plus the previous outbound message in the thread when one exists | `inbox_tag_results`, with the raw probabilities and the actions taken. Completed results travel with the Inbox group in a workspace export; processing claims do not |
+| Automatic inbox tagging | `INBOX_TAGGING_ENABLED=true` | The inbound subject and bounded plain-text body, plus the previous outbound message in the thread and the name of the campaign it belongs to when one exists, the workspace's own tagging questions, and the names of its tagging languages when any are chosen | `inbox_tag_results`, with the raw probabilities and the actions taken. Completed results travel with the Inbox group in a workspace export; processing claims do not |
 | Reply classification | The key alone | The subject and body of a reply to a campaign, only when no tagging verdict exists for it and the offline layers could not decide | `campaign_contact_progress.reply_class` and `reply_intent` |
 | Copy judgment | The key alone | The subject and body of a campaign step, at Advisor evaluation and on the editor's re-check | `copy_judgments`, keyed by a hash of the copy and never exported |
 | Warmup content lint | The key alone | A generated warmup thread before it enters the bank | Rejected threads are counted on the generation job; nothing else is kept |
