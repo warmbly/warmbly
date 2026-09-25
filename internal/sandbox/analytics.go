@@ -256,7 +256,7 @@ func seedDeliverabilityEvents(ctx context.Context, pool *pgxpool.Pool) error {
 			INSERT INTO deliverability_events
 				(organization_id, campaign_id, contact_id, event_type, provider, recipient_email, reason, idempotency_key, created_at)
 			VALUES ($1, $2, $3, $4, 'sandbox', $5, $6, $7, NOW() - INTERVAL '%f days')
-			ON CONFLICT (idempotency_key) DO NOTHING`, e.daysAgo)
+			ON CONFLICT (organization_id, idempotency_key) DO NOTHING`, e.daysAgo)
 		if _, err := pool.Exec(ctx, sql, sandboxOrg, e.campaign, e.contact, e.eventType, e.email, e.reason, e.key); err != nil {
 			return fmt.Errorf("deliverability %s: %w", e.key, err)
 		}

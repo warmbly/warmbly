@@ -16,7 +16,7 @@ import { PREVIEW_STATUS, linesText, plural } from "./importFields";
 import { Banner, HostMark, Linkified, Pill, SectionLabel, StatCard } from "./parts";
 import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import { OnExistingChoice, SettingsSection } from "./SettingsSection";
-import { DomainChoiceControls } from "./DomainChoices";
+import { DomainChoicesPanel } from "./DomainChoices";
 import { offersChoices, type DomainPicks } from "./domainChoiceRules";
 
 const DETECTED_FROM: Record<DomainDetection["source"], string> = {
@@ -167,29 +167,19 @@ function Domains({
 }) {
     const [all, setAll] = React.useState(false);
     const shown = all ? domains : domains.slice(0, 6);
-    const choices = domains.some(offersChoices);
     return (
         <div>
             <SectionLabel className="mb-1.5">Domains</SectionLabel>
-            {choices && (
-                <p className="text-[11.5px] text-slate-500 leading-relaxed -mt-0.5 mb-1.5">
-                    A tracking domain and a redirect of the root to your website are optional, per domain. Any DNS still to add waits on
-                    the Sending domains page after the import.
-                </p>
+            {domains.some(offersChoices) && (
+                <div className="mb-2">
+                    <DomainChoicesPanel infos={domains} picks={picks} setPicks={setPicks} />
+                </div>
             )}
             <div className="rounded-md border border-slate-200 divide-y divide-slate-100">
                 {shown.map((d) => (
                     <DomainRow
                         key={d.domain}
                         d={d}
-                        choices={
-                            <DomainChoiceControls
-                                info={d}
-                                pick={picks[d.domain]}
-                                onChange={(p) => setPicks((prev) => ({ ...prev, [d.domain]: p }))}
-                                className="mt-1.5 pt-1.5 border-t border-dashed border-slate-100"
-                            />
-                        }
                     />
                 ))}
                 {domains.length > shown.length && (

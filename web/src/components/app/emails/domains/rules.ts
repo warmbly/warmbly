@@ -153,3 +153,27 @@ export function redirectPill(d: SendingDomain): PillInfo {
             return { tone: "slate", label: "None", title: `${d.domain} does not redirect anywhere yet.` };
     }
 }
+
+/** The website most of the workspace's domains already send visitors to, to offer for the rest. */
+export function commonWebsite(list: SendingDomain[]): string {
+    const counts = new Map<string, number>();
+    for (const d of list) {
+        const url = d.redirect?.target_url || d.vendor_domain?.forwarding || "";
+        if (url) counts.set(url, (counts.get(url) ?? 0) + 1);
+    }
+    let best = "";
+    let n = 0;
+    for (const [url, c] of counts) {
+        if (c > n) [best, n] = [url, c];
+    }
+    return best;
+}
+
+/** Why a typed tracking host cannot be used for a domain, or null. */
+export function trackingHostProblem(raw: string, domain: string): string | null {
+    const h = raw.trim().toLowerCase().replace(/\.$/, "");
+    if (!h) return "Enter a tracking host, or untick tracking.";
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(h)) return `Use a plain hostname, like link.${domain}.`;
+    if (!h.endsWith(`.${domain}`)) return `Use a subdomain of ${domain}, like link.${domain}.`;
+    return null;
+}

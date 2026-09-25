@@ -199,11 +199,11 @@ func TestRedirectRefusesForeignAndSharedDomains(t *testing.T) {
 func TestTrackingSuggestionFindsAnExistingRecord(t *testing.T) {
 	dns := baseDNS()
 	s, _ := newTest(dns)
-	if sug := s.TrackingSuggestion(context.Background(), "acme.io", nil); sug.Status != "suggested" || sug.Host != "track.acme.io" {
+	if sug := s.TrackingSuggestion(context.Background(), "acme.io", nil); sug.Status != "suggested" || sug.Host != "link.acme.io" {
 		t.Fatalf("suggestion = %+v", sug)
 	}
-	dns.cname["link.acme.io"] = "track.warmbly.test"
-	if sug := s.TrackingSuggestion(context.Background(), "acme.io", nil); sug.Status != "found" || sug.Host != "link.acme.io" {
+	dns.cname["track.acme.io"] = "track.warmbly.test"
+	if sug := s.TrackingSuggestion(context.Background(), "acme.io", nil); sug.Status != "found" || sug.Host != "track.acme.io" {
 		t.Fatalf("suggestion = %+v", sug)
 	}
 	inUse := []models.TrackingDomainUse{{Host: "t.acme.io", Verified: true, Mailboxes: 2}}
@@ -288,5 +288,70 @@ func TestVendorDomainsTakeTheEasyPath(t *testing.T) {
 	s.WireVendors(&fakeVendors{forwards: map[string]string{}})
 	if xerr := s.AutoRedirect(ctx, org, user, "acme.io", "acme.com"); xerr != nil || len(repo.rows) != 1 {
 		t.Fatalf("no redirect row without a vendor: %v", xerr)
+	}
+}
+
+func TestBulkSetupTakesEachDomainsEasiestPath(t *testing.T) {
+	s, repo := newTest(baseDNS())
+	s.mailboxes = &fakeMailboxes{counts: map[string]int{"acme.io": 2, "acme.co": 1}}
+	v := &fakeVendors{links: map[string]models.VendorDomainLink{"acme.io": {Vendor: "inboxkit", CanForward: true, CanDNS: true, DNSTypes: []string{"CNAME"}}}, forwards: map[string]string{}}
+	s.WireVendors(v)
+	org, user := uuid.New(), uuid.New()
+	ctx := context.Background()
+
+	for _, in := range []BulkInput{
+		{TrackingLabel: "link"},
+		{Domains: []string{"acme.io"}},
+		{Domains: []string{"acme.io"}, TrackingLabel: "link.x"},
+		{Domains: []string{"acme.io"}, TrackingLabel: "-link"},
+	} {
+		if _, xerr := s.BulkSetup(ctx, org, user, in); xerr == nil || xerr.Identifier != ErrIDBulkInvalid {
+			t.Fatalf("%+v was accepted: %v", in, xerr)
+		}
+	}
+
+	rows, xerr := s.BulkSetup(ctx, org, user, BulkInput{Domains: []string{"ACME.io", "acme.co", "other.io", "www.acme.io"}, TrackingLabel: "link", RedirectURL: "acme.com"})
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("duplicates were not folded: %+v", rows)
+	}
+	by := map[string]BulkResult{}
+	for _, r := range rows {
+		by[r.Domain] = r
+	}
+	if r := by["acme.io"]; r.Tracking.Via != "vendor" || r.Tracking.Host != "link.acme.io" || r.Redirect.Via != "vendor" || r.Redirect.Error != "" {
+		t.Fatalf("vendor domain = %+v %+v", r.Tracking, r.Redirect)
+	}
+	if len(v.records) != 1 || v.records[0] != "acme.io CNAME link.acme.io track.warmbly.test" || v.forwards["acme.io"] != "https://acme.com" {
+		t.Fatalf("vendor was not used: %v %v", v.records, v.forwards)
+	}
+	if r := by["acme.co"]; r.Tracking.Via != "dns" || r.Tracking.Error != "" || r.Redirect.Via != "dns" || r.Redirect.Error != "" || len(repo.rows) != 1 {
+		t.Fatalf("DNS domain = %+v %+v, %d redirect rows", r.Tracking, r.Redirect, len(repo.rows))
+	}
+	if r := by["other.io"]; r.Tracking.Code != ErrIDNotYours || r.Redirect.Code != ErrIDNotYours {
+		t.Fatalf("a domain outside the workspace = %+v %+v", r.Tracking, r.Redirect)
+	}
+
+	// A domain's own value wins over the shared one; the others keep the shared one.
+	rows, xerr = s.BulkSetup(ctx, org, user, BulkInput{
+		Domains: []string{"acme.io", "acme.co"}, TrackingLabel: "link", RedirectURL: "acme.com",
+		TrackingHosts: map[string]string{"ACME.co": "go.acme.co"}, RedirectURLs: map[string]string{"acme.co": "https://acme.co.uk"},
+	})
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	for _, r := range rows {
+		want, wantURL := "link."+r.Domain, "https://acme.com"
+		if r.Domain == "acme.co" {
+			want, wantURL = "go.acme.co", "https://acme.co.uk"
+		}
+		if r.Tracking.Host != want || (r.Redirect.Via == "dns" && r.Redirect.TargetURL != wantURL) {
+			t.Fatalf("%s = %+v %+v", r.Domain, r.Tracking, r.Redirect)
+		}
+	}
+	if v.forwards["acme.io"] != "https://acme.com" {
+		t.Fatalf("the shared website did not reach acme.io: %v", v.forwards)
 	}
 }

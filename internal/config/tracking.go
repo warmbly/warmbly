@@ -53,6 +53,13 @@ func TrackingHostname() string {
 	return hostWithoutPort(TrackingHost())
 }
 
+// DefaultTrackingLabel is the subdomain offered for a domain's tracking host.
+// "link" reads as an ordinary link in a recipient's status bar; "track" does not.
+const DefaultTrackingLabel = "link"
+
+// DefaultTrackingHost is the tracking host offered for a sending domain.
+func DefaultTrackingHost(domain string) string { return DefaultTrackingLabel + "." + domain }
+
 // NormalizeTrackingHost reduces anything a human might paste (a full URL, a
 // trailing dot, mixed case, surrounding space) to the bare host[:port] the rest
 // of the system stores and compares.

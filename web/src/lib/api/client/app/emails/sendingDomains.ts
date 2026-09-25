@@ -1,6 +1,8 @@
 // /emails/domains: the workspace's sending domains, their tracking host and root redirect.
 import Request from "@/lib/api/client/Request";
 import type {
+    BulkDomainResult,
+    BulkDomainSetupRequest,
     DomainRedirect,
     SendingDomain,
     SetDomainRedirectRequest,
@@ -79,5 +81,16 @@ export async function setDomainVendorTracking(domain: string, host: string): Pro
         data: { host },
         authorization: true,
         timeout: 60_000,
+    });
+}
+
+// Every domain runs vendor calls and a DNS probe, so a full chunk can take a minute.
+export async function bulkDomainSetup(body: BulkDomainSetupRequest): Promise<{ data: BulkDomainResult[] }> {
+    return await Request<{ data: BulkDomainResult[] }>({
+        method: "POST",
+        url: "/emails/domains/bulk",
+        data: body,
+        authorization: true,
+        timeout: 180_000,
     });
 }

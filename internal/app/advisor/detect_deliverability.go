@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -415,7 +416,7 @@ func trackingDomainSteps() []string {
 func trackingDomainSnippets(m repository.AdvisorMailbox, trackingHost string) []models.AdvisorSnippet {
 	host := m.TrackingDomain
 	if host == "" {
-		host = "track." + emailDomain(m.Email)
+		host = config.DefaultTrackingHost(emailDomain(m.Email))
 	}
 	out := []models.AdvisorSnippet{
 		{Label: "Record type", Value: "CNAME"},

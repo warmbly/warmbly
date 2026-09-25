@@ -4,7 +4,7 @@
 import React from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeftIcon, ChevronRightIcon, GlobeIcon, PlusIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronRightIcon, GlobeIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
 import { useUserProfile } from "@/hooks/context/user";
@@ -17,8 +17,23 @@ import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import { Page, PageBody } from "@/components/layout/Page";
 import { LogoStack } from "@/components/app/emails/ProviderLogo";
 import SendingDomainDrawer, { type DomainTab } from "@/components/app/emails/domains/SendingDomainDrawer";
+import BulkSetupDialog, { type BulkSetupIntent } from "@/components/app/emails/domains/BulkSetupDialog";
+import DomainSelectionBar from "@/components/app/emails/domains/DomainSelectionBar";
 import { StatusPill, VendorChip } from "@/components/app/emails/domains/parts";
-import { authPill, domainStats, domainVendor, needsAttention, redirectPill, trackingPill } from "@/components/app/emails/domains/rules";
+import {
+    authPill,
+    domainStats,
+    domainVendor,
+    needsAttention,
+    noDnsControl,
+    redirectPill,
+    redirectState,
+    trackingPill,
+    trackingState,
+    vendorCanCname,
+} from "@/components/app/emails/domains/rules";
+import { Checkbox } from "@/components/ui/checkbox";
+import { vendorLabel } from "@/lib/api/models/app/emails/MailboxSources";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "attention" | "vendor";
@@ -30,7 +45,23 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 const ROW_GRID =
-    "grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1.5fr)_72px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_16px] items-center gap-x-3";
+    "grid grid-cols-[14px_minmax(0,1fr)_auto] md:grid-cols-[14px_minmax(0,1.5fr)_72px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_16px] items-center gap-x-3";
+
+/** Domains still on the shared tracking host, and domains whose root goes nowhere. */
+function setupTodo(list: SendingDomain[]) {
+    const own = list.filter((d) => !noDnsControl(d.domain));
+    const tracking = own.filter((d) => {
+        const s = trackingState(d);
+        return s === "none" || s === "partial";
+    });
+    const redirect = own.filter((d) => redirectState(d) === "none");
+    const union = [...new Set([...tracking, ...redirect].map((d) => d.domain))];
+    const byVendor = tracking.filter(vendorCanCname).length;
+    const vendor = vendorLabel(tracking.find(vendorCanCname)?.vendor_domain?.vendor);
+    return { tracking, redirect, union, byVendor, vendor };
+}
+
+const NUDGE_KEY = "warmbly.sendingDomains.setupNudge";
 
 export default function SendingDomainsPage() {
     const canView = usePermission("MANAGE_EMAILS");
@@ -41,6 +72,9 @@ export default function SendingDomainsPage() {
     const [open, setOpen] = React.useState("");
     const [tab, setTab] = React.useState<DomainTab>("overview");
     const [searchParams, setSearchParams] = useSearchParams();
+    const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
+    const [bulk, setBulk] = React.useState<BulkSetupIntent | null>(null);
+    const [nudgeHidden, setNudgeHidden] = React.useState(() => localStorage.getItem(NUDGE_KEY) ?? "");
 
     const domains = list.data?.data;
     const all = React.useMemo(() => domains ?? [], [domains]);
@@ -54,6 +88,49 @@ export default function SendingDomainsPage() {
         });
     }, [all, query, filter]);
     const counts: Record<Filter, number> = { all: stats.domains, attention: stats.attention, vendor: stats.vendor };
+    const todo = React.useMemo(() => setupTodo(all), [all]);
+    // Dismissed for the domains it named; a domain added later brings it back.
+    const nudgeKey = todo.union.slice().sort().join(",");
+    const showNudge = todo.union.length > 0 && nudgeHidden !== nudgeKey;
+
+    // A domain that left the list leaves the selection too.
+    React.useEffect(() => {
+        setSelected((prev) => {
+            const names = new Set(all.map((d) => d.domain));
+            const next = new Set([...prev].filter((d) => names.has(d)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [all]);
+
+    const selectedDomains = React.useMemo(() => all.filter((d) => selected.has(d.domain)), [all, selected]);
+    const anchor = React.useRef<string | null>(null);
+    // Shift-click selects every shown row between the last one clicked and this one.
+    const toggleOne = (d: string, shift: boolean) => {
+        const from = anchor.current ? shown.findIndex((x) => x.domain === anchor.current) : -1;
+        const to = shown.findIndex((x) => x.domain === d);
+        setSelected((prev) => {
+            const next = new Set(prev);
+            const on = !prev.has(d);
+            if (shift && from >= 0 && to >= 0) {
+                for (let i = Math.min(from, to); i <= Math.max(from, to); i++) {
+                    if (on) next.add(shown[i].domain);
+                    else next.delete(shown[i].domain);
+                }
+            } else if (on) next.add(d);
+            else next.delete(d);
+            return next;
+        });
+        anchor.current = d;
+    };
+    const allShownSelected = shown.length > 0 && shown.every((d) => selected.has(d.domain));
+    const toggleShown = () =>
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (allShownSelected) shown.forEach((d) => next.delete(d.domain));
+            else shown.forEach((d) => next.add(d.domain));
+            return next;
+        });
+    const openBulk = (domains: string[], tracking: boolean, redirect: boolean) => setBulk({ domains, tracking, redirect });
 
     // ?domain=<name>&tab=redirect opens that domain on arrival, e.g. from an import's DNS link.
     React.useEffect(() => {
@@ -133,6 +210,65 @@ export default function SendingDomainsPage() {
                 </div>
             )}
 
+            <AnimatePresence initial={false}>
+                {!loading && !empty && showNudge && (
+                    <motion.div
+                        key="nudge"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                        className="overflow-hidden shrink-0"
+                    >
+                        <div className="px-5 py-3 border-b border-slate-200">
+                            <div className="rounded-lg border border-sky-200 bg-sky-50/50 px-3 py-2.5 flex flex-wrap sm:flex-nowrap items-start gap-3">
+                                <div className="size-7 rounded-md bg-white border border-sky-100 text-sky-600 inline-flex items-center justify-center shrink-0">
+                                    <SparklesIcon className="w-3.5 h-3.5" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-[12.5px] font-medium text-slate-900">
+                                        Finish setting up {todo.union.length.toLocaleString()} {todo.union.length === 1 ? "domain" : "domains"}
+                                    </p>
+                                    <p className="mt-0.5 text-[11.5px] text-slate-600 leading-relaxed">
+                                        {[
+                                            todo.tracking.length > 0 &&
+                                                `${todo.tracking.length.toLocaleString()} still ${todo.tracking.length === 1 ? "uses" : "use"} the shared tracking host`,
+                                            todo.redirect.length > 0 &&
+                                                `${todo.redirect.length.toLocaleString()} ${todo.redirect.length === 1 ? "has" : "have"} no website redirect`,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" and ")}
+                                        . A link.yourdomain.com tracking host and a redirect to your website make each domain look like part of your
+                                        company, one of the cheapest deliverability wins there is.
+                                        {todo.byVendor > 0 && ` ${todo.vendor} can add the tracking record on ${todo.byVendor.toLocaleString()} for you.`}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                                    <button
+                                        type="button"
+                                        onClick={() => openBulk(todo.union, todo.tracking.length > 0, todo.redirect.length > 0)}
+                                        className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                                    >
+                                        Set up all
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            localStorage.setItem(NUDGE_KEY, nudgeKey);
+                                            setNudgeHidden(nudgeKey);
+                                        }}
+                                        aria-label="Dismiss"
+                                        className="size-7 rounded-md text-slate-400 hover:text-slate-700 hover:bg-white inline-flex items-center justify-center transition-colors"
+                                    >
+                                        <XIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {!empty && (
                 <div className="px-5 border-b border-slate-200 flex flex-wrap items-center gap-x-3 gap-y-1.5 shrink-0">
                     <div className="flex items-center gap-1 -ml-2.5 overflow-x-auto overflow-y-hidden no-scrollbar" role="tablist" aria-label="Filter domains">
@@ -201,6 +337,11 @@ export default function SendingDomainsPage() {
                 ) : (
                     <>
                         <div className={cn(ROW_GRID, "hidden md:grid px-5 h-8 border-b border-slate-200/60 bg-slate-50/40")}>
+                            <Checkbox
+                                checked={allShownSelected}
+                                onChange={toggleShown}
+                                aria-label={allShownSelected ? "Deselect all domains" : "Select all domains"}
+                            />
                             <Th>Domain</Th>
                             <Th className="text-right">Mailboxes</Th>
                             <Th>Authentication</Th>
@@ -219,7 +360,7 @@ export default function SendingDomainsPage() {
                                         exit={{ opacity: 0, transition: { duration: 0.12 } }}
                                         transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                                     >
-                                        <DomainRow d={d} onOpen={openDomain} />
+                                        <DomainRow d={d} onOpen={openDomain} selected={selected.has(d.domain)} onSelect={(shift) => toggleOne(d.domain, shift)} />
                                     </motion.div>
                                 ))}
                                 {shown.length === 0 && (
@@ -249,6 +390,26 @@ export default function SendingDomainsPage() {
             </PageBody>
 
             <SendingDomainDrawer domains={domains} open={open} tab={tab} setTab={setTab} onClose={() => setOpen("")} />
+
+            <DomainSelectionBar
+                selected={selectedDomains}
+                onTracking={() => openBulk([...selected], true, false)}
+                onRedirect={() => openBulk([...selected], false, true)}
+                onClear={() => setSelected(new Set())}
+            />
+
+            <BulkSetupDialog
+                intent={bulk}
+                all={all}
+                onClose={() => {
+                    setBulk(null);
+                    setSelected(new Set());
+                }}
+                onOpenDomain={(d) => {
+                    setBulk(null);
+                    openDomain(d, "redirect");
+                }}
+            />
         </Page>
     );
 }
@@ -307,7 +468,17 @@ function StatCard({
     );
 }
 
-function DomainRow({ d, onOpen }: { d: SendingDomain; onOpen: (domain: string, tab?: DomainTab) => void }) {
+function DomainRow({
+    d,
+    onOpen,
+    selected,
+    onSelect,
+}: {
+    d: SendingDomain;
+    onOpen: (domain: string, tab?: DomainTab) => void;
+    selected: boolean;
+    onSelect: (shift: boolean) => void;
+}) {
     const auth = authPill(d);
     const tracking = trackingPill(d);
     const redirect = redirectPill(d);
@@ -325,9 +496,20 @@ function DomainRow({ d, onOpen }: { d: SendingDomain; onOpen: (domain: string, t
             }}
             className={cn(
                 ROW_GRID,
-                "group px-5 py-2.5 gap-y-2 border-b border-slate-200/60 bg-white hover:bg-slate-50/80 cursor-pointer transition-colors outline-none focus-visible:bg-slate-50",
+                "group px-5 py-2.5 gap-y-2 border-b border-slate-200/60 hover:bg-slate-50/80 cursor-pointer transition-colors outline-none focus-visible:bg-slate-50",
+                selected ? "bg-sky-50/40" : "bg-white",
             )}
         >
+            <Checkbox
+                checked={selected}
+                onChange={() => {}}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(e.shiftKey);
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+                aria-label={`Select ${d.domain}`}
+            />
             <div className="flex items-center gap-2.5 min-w-0">
                 {hosts.length > 0 ? (
                     <LogoStack ids={hosts} size="md" max={2} className="shrink-0" />
@@ -364,7 +546,7 @@ function DomainRow({ d, onOpen }: { d: SendingDomain; onOpen: (domain: string, t
                 </StatusPill>
             </div>
             <ChevronRightIcon className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all justify-self-end" />
-            <div className="md:hidden col-span-2 flex flex-wrap gap-1.5 min-w-0">
+            <div className="md:hidden col-start-2 col-span-2 flex flex-wrap gap-1.5 min-w-0">
                 <StatusPill tone={auth.tone} title={auth.title}>
                     {auth.label}
                 </StatusPill>
@@ -384,6 +566,7 @@ function RowsSkeleton() {
         <div>
             {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className={cn(ROW_GRID, "px-5 py-3 border-b border-slate-200/60")}>
+                    <span />
                     <div className="flex items-center gap-2.5">
                         <div className="size-6 rounded-md bg-slate-100 animate-pulse" />
                         <div className="h-3 rounded bg-slate-100 animate-pulse" style={{ width: `${40 + ((i * 17) % 35)}%` }} />

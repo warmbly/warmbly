@@ -46,6 +46,7 @@ type DomainSetup interface {
 	TrackingSuggestion(ctx context.Context, domain string, inUse []models.TrackingDomainUse) *models.TrackingSuggestion
 	AutoRedirect(ctx context.Context, orgID, userID uuid.UUID, domain, target string) *errx.Error
 	AutoTracking(ctx context.Context, orgID uuid.UUID, domain, host string)
+	VendorLinks(ctx context.Context, orgID uuid.UUID) map[string]models.VendorDomainLink
 }
 
 // Mailboxes is the mailbox store, for duplicate checks and host classification.
@@ -354,12 +355,15 @@ const maxAuthChecks = 40
 // domainSummary is the per-domain summary: who hosts it, the servers, and its sending authentication.
 func (s *Service) domainSummary(ctx context.Context, orgID uuid.UUID, detections map[string]mailhost.Detection, rows map[string]int) []models.MailboxImportDomain {
 	known := map[string]models.SendingDomain{}
+	var links map[string]models.VendorDomainLink
 	if s.domains != nil {
 		if list, xerr := s.domains.Overview(ctx, orgID); xerr == nil {
 			for _, d := range list {
 				known[d.Domain] = d
 			}
 		}
+		// Domains new to the workspace too, so the review can say their vendor writes the DNS.
+		links = s.domains.VendorLinks(ctx, orgID)
 	}
 	names := make([]string, 0, len(rows))
 	for d := range rows {
@@ -387,10 +391,13 @@ func (s *Service) domainSummary(ctx context.Context, orgID uuid.UUID, detections
 		if k, ok := known[name]; ok {
 			d.Redirect = k.Redirect
 		}
+		if l, ok := links[name]; ok {
+			d.VendorDomain = &l
+		}
 		out[i] = d
 		if i >= maxAuthChecks {
 			if target := config.TrackingHostname(); target != "" {
-				out[i].Tracking = &models.TrackingSuggestion{Host: "track." + name, Status: "suggested", CNAMETarget: target}
+				out[i].Tracking = &models.TrackingSuggestion{Host: config.DefaultTrackingHost(name), Status: "suggested", CNAMETarget: target}
 			}
 			continue
 		}
