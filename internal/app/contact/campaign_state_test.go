@@ -21,8 +21,7 @@ func (f *fakePreviewer) PreviewContactSend(context.Context, uuid.UUID, uuid.UUID
 	return f.pv, nil
 }
 
-// A reply ends the flow only when the router says so: a campaign without
-// stop_on_reply, or a reply branch, keeps sending to someone who replied.
+// A reply ends the flow only when the router says so (stop_on_reply off, or a reply branch).
 func TestFillNextActionAsksTheRouterAboutARepliedLead(t *testing.T) {
 	step := uuid.New()
 	due := time.Now().Add(48 * time.Hour)
@@ -63,8 +62,7 @@ func TestFillNextActionEndsARepliedLeadTheRouterStopped(t *testing.T) {
 	}
 }
 
-// A reply outranks a failed or undeliverable send in the status, so the
-// router's exclusion has to end the flow instead.
+// Replied outranks failed and undeliverable in the status, so the exclusion ends the flow.
 func TestFillNextActionEndsARepliedLeadTheRouterExcludes(t *testing.T) {
 	step := uuid.New()
 	for _, excluded := range []string{"failed", "undeliverable", "bounced", "suppressed"} {

@@ -39,14 +39,17 @@ export function ResumeLeadButton({
     contactId,
     label = "Resume",
     disabled = false,
+    onBusyChange,
 }: {
     campaignId: string;
     contactId: string;
     label?: string;
     disabled?: boolean;
+    onBusyChange?: (busy: boolean) => void;
 }) {
     const resume = useResumeLead();
     async function run() {
+        onBusyChange?.(true);
         try {
             await toast.promise(resume.mutateAsync({ campaignId, contactId }), {
                 loading: "Resuming lead…",
@@ -55,6 +58,8 @@ export function ResumeLeadButton({
             });
         } catch {
             /* toast.promise already surfaced it */
+        } finally {
+            onBusyChange?.(false);
         }
     }
     return (

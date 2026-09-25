@@ -10,7 +10,7 @@ import {
     PopoverMenuTrigger,
 } from "@/components/ui/popover-menu";
 import { CheckSquare } from "@/components/ui/check-square";
-import { FOLLOW_UP_PAUSES, type FollowUpPause } from "@/lib/leadHold";
+import { FOLLOW_UP_PAUSES, tickedCampaigns, type FollowUpPause } from "@/lib/leadHold";
 import { cn } from "@/lib/utils";
 
 export default function PauseFollowUpsMenu({
@@ -22,14 +22,18 @@ export default function PauseFollowUpsMenu({
     disabled = false,
 }: {
     campaigns: { id: string; name: string }[];
-    // Unticked campaigns; the last ticked one cannot be unticked, so an armed pause always has a target.
+    // Unticked campaigns; the last ticked one stays ticked, so an armed pause always has a target.
     skipped: string[];
     onToggleCampaign: (id: string) => void;
     value: FollowUpPause | null;
     onChange: (p: FollowUpPause | null) => void;
     disabled?: boolean;
 }) {
-    const ticked = campaigns.filter((c) => !skipped.includes(c.id));
+    const ticked = tickedCampaigns(
+        campaigns.map((c) => ({ ...c, campaign_id: c.id })),
+        skipped,
+    );
+    const isTicked = (id: string) => ticked.some((c) => c.id === id);
     const armed = !!value;
     return (
         <PopoverMenu align="start" side="top">
@@ -76,7 +80,7 @@ export default function PauseFollowUpsMenu({
                         <PopoverMenuSeparator />
                         <PopoverMenuLabel>In</PopoverMenuLabel>
                         {campaigns.map((c) => {
-                            const on = !skipped.includes(c.id);
+                            const on = isTicked(c.id);
                             return (
                                 <PopoverMenuItem
                                     key={c.id}

@@ -46,7 +46,7 @@ import MailboxPicker from "./compose/MailboxPicker";
 import useComposeCandidates from "@/lib/api/hooks/app/unibox/useComposeCandidates";
 import usePauseFollowUps, { type FollowUpTargets } from "@/lib/api/hooks/app/campaigns/usePauseFollowUps";
 import PauseFollowUpsMenu from "./PauseFollowUpsMenu";
-import { followUpPauseUntil, type FollowUpPause } from "@/lib/leadHold";
+import { followUpPauseUntil, tickedCampaigns, type FollowUpPause } from "@/lib/leadHold";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { resolveSendAt, useOutboxStore } from "@/hooks/useOutboxStore";
 import { useUserProfile } from "@/hooks/context/user";
@@ -297,14 +297,16 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
     const { pauseAll } = followUps;
     const applyFollowUpPause = async (p: FollowUpPause, t: FollowUpTargets, sendsAt?: Date) => {
         const { paused, failed } = await pauseAll(t, followUpPauseUntil(p, sendsAt));
-        if (paused === 0 && failed === 0) {
-            toast.success("Nothing to pause: their follow-ups are already on hold or finished");
-        } else if (failed === 0) {
-            toast.success(p.days == null ? "Follow-ups paused until you resume them" : `Follow-ups paused ${p.label.toLowerCase()}`);
-        } else if (paused > 0) {
-            toast.error(`Follow-ups paused in ${paused} of ${paused + failed} campaigns. Check the contact panel.`);
+        if (failed > 0) {
+            toast.error(
+                paused > 0
+                    ? `Follow-ups paused in ${paused} of ${t.campaigns.length} campaigns. Check the contact panel.`
+                    : "Reply queued, but its follow-ups could not be paused. Check the contact panel.",
+            );
+        } else if (paused === 0) {
+            toast.success("Their follow-ups were already on hold");
         } else {
-            toast.error("Reply queued, but its follow-ups could not be paused");
+            toast.success(p.days == null ? "Follow-ups paused until you resume them" : `Follow-ups paused ${p.label.toLowerCase()}`);
         }
     };
 
@@ -352,7 +354,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
         const pauseWith = mode === "reply" ? followUpPause : null;
         const pauseTargets = {
             ...followUps.targets,
-            campaigns: followUps.targets.campaigns.filter((c) => !followUpSkip.includes(c.campaign_id)),
+            campaigns: tickedCampaigns(followUps.targets.campaigns, followUpSkip),
         };
         draft.flush();
         setIsSending(true);
@@ -409,7 +411,11 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
             }
             setScheduleOpen(false);
             setCustomMode(false);
-            if (pauseWith && pauseTargets.campaigns.length > 0) void applyFollowUpPause(pauseWith, pauseTargets, scheduledAt);
+            if (pauseWith && pauseTargets.campaigns.length > 0) {
+                void applyFollowUpPause(pauseWith, pauseTargets, scheduledAt);
+                setFollowUpPause(null);
+                setFollowUpSkip([]);
+            }
             const completed = draft.complete(submittedDraft);
             if (!completed.cleared) toast.error("Reply queued, but the saved draft could not be removed. Discard it before sending again.");
             if (completed.close) onClose();

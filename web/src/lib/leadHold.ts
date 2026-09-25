@@ -38,3 +38,9 @@ export const FOLLOW_UP_PAUSES: FollowUpPause[] = [
 export function followUpPauseUntil(p: FollowUpPause, from: Date = new Date()): string | null {
     return p.days == null ? null : endOfLocalDay(localDayISO(p.days, from));
 }
+
+// The campaigns a pause applies to: the unticked are skipped, but never all of them.
+export function tickedCampaigns<T extends { campaign_id: string }>(campaigns: T[], skipped: string[]): T[] {
+    const ticked = campaigns.filter((c) => !skipped.includes(c.campaign_id));
+    return ticked.length > 0 ? ticked : campaigns;
+}

@@ -425,6 +425,7 @@ function HoldBar({
 }) {
     const write = useWriteGuard("MANAGE_CAMPAIGNS");
     const pause = usePauseLead();
+    const [resuming, setResuming] = React.useState(false);
 
     async function run(p: Promise<unknown>, loading: string, success: string) {
         try {
@@ -447,12 +448,13 @@ function HoldBar({
                         contactId={contactId}
                         label="Resume now"
                         disabled={pause.isPending}
+                        onBusyChange={setResuming}
                     />
                 )}
                 {write.allowed && hold.until && (
                     <button
                         type="button"
-                        disabled={pause.isPending}
+                        disabled={pause.isPending || resuming}
                         title="Keep this lead paused with no end date. They stay subscribed and stay in the campaign."
                         onClick={() =>
                             run(

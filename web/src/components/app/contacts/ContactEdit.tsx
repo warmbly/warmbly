@@ -213,8 +213,7 @@ function ContactEditPanel({
     React.useEffect(() => {
         function onKey(e: KeyboardEvent) {
             if (e.key !== "Escape") return;
-            // Innermost layer only: a popover, a confirm or a dialog opened
-            // from a tab (pausing a lead) takes its own Escape.
+            // Innermost layer only: an open popover, confirm or dialog takes its own Escape.
             if (document.querySelector("[data-floating], [role='alertdialog'], [aria-modal='true']")) return;
             requestClose();
         }

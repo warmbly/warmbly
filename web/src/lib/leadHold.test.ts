@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type ContactCampaignState from "@/lib/api/models/app/contacts/ContactCampaignState";
-import { FOLLOW_UP_PAUSES, endOfLocalDay, followUpPauseUntil, leadCanBePaused, localDayISO } from "./leadHold";
+import {
+    FOLLOW_UP_PAUSES,
+    endOfLocalDay,
+    followUpPauseUntil,
+    leadCanBePaused,
+    localDayISO,
+    tickedCampaigns,
+} from "./leadHold";
 
 function state(over: Partial<ContactCampaignState>): ContactCampaignState {
     return {
@@ -52,5 +59,16 @@ describe("hold dates", () => {
         const week = FOLLOW_UP_PAUSES.find((p) => p.days === 7)!;
         expect(followUpPauseUntil(week, new Date(2026, 9, 10, 9, 0))).toBe(endOfLocalDay("2026-10-17"));
         expect(followUpPauseUntil(FOLLOW_UP_PAUSES.find((p) => p.days === null)!)).toBeNull();
+    });
+});
+
+describe("tickedCampaigns", () => {
+    const cs = [{ campaign_id: "c1" }, { campaign_id: "c2" }];
+    it("skips the unticked", () => {
+        expect(tickedCampaigns(cs, ["c2"])).toEqual([{ campaign_id: "c1" }]);
+    });
+    it("never leaves an armed pause with nothing to pause", () => {
+        expect(tickedCampaigns([{ campaign_id: "c2" }], ["c2"])).toEqual([{ campaign_id: "c2" }]);
+        expect(tickedCampaigns(cs, ["c1", "c2"])).toEqual(cs);
     });
 });

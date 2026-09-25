@@ -359,9 +359,9 @@ function campaignLine(s: ContactCampaignState): { text: string; title?: string }
     if (next) {
         let when = "";
         if (next.state === "due") when = "due";
+        else if (next.state === "paused" || next.state === "blocked") when = next.constraint || next.state;
         else if (next.not_before) when = shortDate(next.not_before);
-        else if (next.state === "blocked") when = "blocked";
-        else if (next.state === "paused") when = "on hold";
+        else if (next.constraint) when = next.constraint;
         const text = `Next: ${next.step_label}${when ? ` · ${when}` : ""}`;
         return { text, title: next.constraint ? `${text}. ${next.constraint}` : text };
     }
