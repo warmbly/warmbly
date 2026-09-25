@@ -11,7 +11,8 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { PanelLeftIcon, PenLineIcon, SearchIcon } from "lucide-react";
+import { CheckIcon, PanelLeftIcon, PenLineIcon, SearchIcon } from "lucide-react";
+import { AnimatedRow } from "./AnimatedRow";
 import { ConversationItem } from "./ConversationItem";
 import { SelectionBar } from "./SelectionBar";
 import { useConversationActions } from "@/hooks/useConversationActions";
@@ -38,6 +39,10 @@ const BUCKET_LABELS: Record<Bucket, string> = {
   week: "This week",
   earlier: "Earlier",
 };
+
+// Views where an empty list means the work is done rather than that nothing
+// ever landed there.
+const CAUGHT_UP_SCOPES = new Set(["folder:inbox", "unread", "awaiting", "all"]);
 
 function bucketFor(d: Date): Bucket {
   const now = new Date();
@@ -244,18 +249,70 @@ export function ConversationList({
     fetchNextPage,
   ]);
 
-  // Group rows by time bucket. The server already orders newest to oldest so a
-  // single pass preserves both global order and group adjacency.
-  const grouped = React.useMemo(() => {
-    const groups: { bucket: Bucket; rows: typeof emails }[] = [];
+  // Rows and their time-bucket headers as one flat sequence, so a single
+  // AnimatePresence sees every entry and exit (a header leaves with the last
+  // row under it). The server orders newest first, so one pass keeps both
+  // the order and the grouping.
+  const items = React.useMemo(() => {
+    const out: (
+      | { kind: "header"; key: string; bucket: Bucket }
+      | { kind: "row"; key: string; row: (typeof emails)[number] }
+    )[] = [];
+    let last: Bucket | null = null;
     for (const e of emails) {
       const b = bucketFor(new Date(e.internal_date));
-      const tail = groups[groups.length - 1];
-      if (tail && tail.bucket === b) tail.rows.push(e);
-      else groups.push({ bucket: b, rows: [e] });
+      if (b !== last) out.push({ kind: "header", key: `bucket:${b}`, bucket: b });
+      last = b;
+      out.push({ kind: "row", key: rowKey(e), row: e });
     }
-    return groups;
-  }, [emails]);
+    return out;
+  }, [emails, rowKey]);
+
+  // Which items were on screen last time, and a generation per key that
+  // left. A key that comes back gets a fresh presence key: AnimatePresence
+  // unmounts exiting children only when every one has finished, and one that
+  // re-enters mid-exit never reports, stranding the rest of the batch (a
+  // date header when the list refills, rows restored by a failed action).
+  const itemSig = React.useMemo(() => items.map((i) => i.key).join("\n"), [items]);
+  // A new result set remounts every row, so nothing in it counts as kept.
+  const resultSet = shownKey.current;
+  const [shown, setShown] = React.useState<{
+    sig: string;
+    set: string;
+    prev: ReadonlySet<string>;
+    gen: ReadonlyMap<string, number>;
+  }>(() => ({ sig: "", set: resultSet, prev: new Set<string>(), gen: new Map() }));
+  if (shown.sig !== itemSig || shown.set !== resultSet) {
+    const sameSet = shown.set === resultSet;
+    const prev = sameSet && shown.sig ? shown.sig.split("\n") : [];
+    const now = new Set(itemSig ? itemSig.split("\n") : []);
+    const gen = new Map(sameSet ? shown.gen : []);
+    for (const k of prev) if (!now.has(k)) gen.set(k, (gen.get(k) ?? 0) + 1);
+    setShown({ sig: itemSig, set: resultSet, prev: new Set(prev), gen });
+  }
+  const presenceKey = (key: string) => {
+    const g = shown.gen.get(key);
+    return g ? `${key}~${g}` : key;
+  };
+
+  // How each new row should appear. One inserted above rows already on
+  // screen (an arrival, an Undo) grows into place; rows added below them (a
+  // page, a refill after a bulk action) fade up in a short stagger and take
+  // their full height at once, so the infinite-scroll sentinel is pushed out
+  // of range immediately instead of chaining every page in behind them.
+  const entering = React.useMemo(() => {
+    const keys = itemSig ? itemSig.split("\n") : [];
+    let lastKept = -1;
+    keys.forEach((k, i) => {
+      if (shown.prev.has(k)) lastKept = i;
+    });
+    const out = new Map<string, { arrival: boolean; rank: number }>();
+    let rank = 0;
+    keys.forEach((k, i) => {
+      if (!shown.prev.has(k)) out.set(k, { arrival: i < lastKept, rank: rank++ });
+    });
+    return out;
+  }, [itemSig, shown.prev]);
 
   // Keyboard navigation. We work off `emails` (flat order) so j/k moves across
   // bucket boundaries naturally. The keys themselves live in the global
@@ -462,7 +519,8 @@ export function ConversationList({
       <div
         ref={listRef}
         className={cn(
-          "flex-1 overflow-y-auto transition-opacity duration-200",
+          // The x clip keeps a row sliding out from drawing a scrollbar.
+          "flex-1 overflow-y-auto overflow-x-hidden transition-opacity duration-200",
           stale && emails.length > 0 && "opacity-50",
         )}
         aria-busy={stale || undefined}
@@ -485,85 +543,82 @@ export function ConversationList({
               Try again
             </button>
           </div>
-        ) : emails.length === 0 ? (
-          <div className="px-5 py-16 text-center">
-            <p className="text-[12.5px] text-slate-700 font-medium mb-1">
-              {filtering ? "No matches" : "Nothing here"}
-            </p>
-            <p className="text-[11.5px] text-slate-400 max-w-[32ch] mx-auto leading-relaxed">
-              {filtering
-                ? search.trim()
-                  ? `Nothing in ${scopeLabel.toLowerCase()} matches "${search.trim()}". The search covers names, addresses, subjects and message bodies.`
-                  : "Try a different search or clear the filters."
-                : "New mail shows up here as it arrives."}
-            </p>
-            {/* The commonest reason a search finds nothing is that the thing
-                is filed somewhere else. Offer the wider search rather than
-                quietly overriding the scope the reader chose. */}
-            {filtering && search.trim() && onSearchAllMail && (
-              <button
-                type="button"
-                onClick={onSearchAllMail}
-                className="mt-3 h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors"
-              >
-                <SearchIcon className="w-3 h-3" />
-                Search all mail
-              </button>
-            )}
-          </div>
         ) : (
           <React.Fragment key={shownKey.current}>
-            {grouped.map((g) => (
-              <section key={g.bucket}>
-                <div className="sticky top-0 z-10 px-4 h-7 bg-white/95 backdrop-blur-sm flex items-center">
-                  <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">
-                    {BUCKET_LABELS[g.bucket]}
-                  </span>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  <AnimatePresence initial={false}>
-                  {g.rows.map((e) => (
-                    <motion.div
-                      key={e.thread_id || e.id}
-                      data-thread-id={e.thread_id || e.id}
-                      // A row that arrives fades in; one that is filed,
-                      // snoozed or deleted folds away instead of vanishing.
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                      style={{ overflow: "hidden" }}
-                    >
-                      <ConversationItem
-                        // The row's actions read the scope: Archive and Trash
-                        // offer the way back rather than the way out.
-                        scope={rowScope}
-                        selected={picked.has(e.thread_id || e.id)}
-                        selecting={selecting}
-                        onToggleSelect={toggleSelect}
-                        actions={actions}
-                        email={{
-                          id: e.id,
-                          from: e.from_addr?.[0] ?? "",
-                          to: e.to_addr?.[0] ?? "",
-                          subject: e.subject,
-                          snippet: e.snippet,
-                          date: new Date(e.internal_date),
-                          // Bold the whole conversation when any message in
-                          // the thread is unread.
-                          is_seen: !e.has_unread,
-                          thread_id: e.thread_id,
-                          account_id: e.email_id,
-                          message_count: e.message_count,
-                          labels: e.labels,
-                        }}
-                      />
-                    </motion.div>
-                  ))}
-                  </AnimatePresence>
-                </div>
-              </section>
-            ))}
+            <AnimatePresence>
+              {items.map((item) =>
+                item.kind === "header" ? (
+                  <motion.div
+                    key={presenceKey(item.key)}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1, height: 28, transition: { duration: 0.2 } }}
+                    // Leaves after the rows under it have slid away.
+                    exit={{ opacity: 0, height: 0, transition: { duration: 0.2, delay: 0.24 } }}
+                    className="sticky top-0 z-10 px-4 h-7 bg-white/95 backdrop-blur-sm flex items-center overflow-hidden"
+                  >
+                    <span className="text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">
+                      {BUCKET_LABELS[item.bucket]}
+                    </span>
+                  </motion.div>
+                ) : (
+                  <AnimatedRow
+                    key={presenceKey(item.key)}
+                    motionKey={item.key}
+                    custom={{
+                      id: item.key,
+                      arrival: entering.get(item.key)?.arrival ?? false,
+                      rank: entering.get(item.key)?.rank ?? 0,
+                    }}
+                  >
+                    <ConversationItem
+                      // The row's actions read the scope: Archive and Trash
+                      // offer the way back rather than the way out.
+                      scope={rowScope}
+                      selected={picked.has(item.key)}
+                      selecting={selecting}
+                      onToggleSelect={toggleSelect}
+                      actions={actions}
+                      email={{
+                        id: item.row.id,
+                        from: item.row.from_addr?.[0] ?? "",
+                        to: item.row.to_addr?.[0] ?? "",
+                        subject: item.row.subject,
+                        snippet: item.row.snippet,
+                        date: new Date(item.row.internal_date),
+                        // Bold the whole conversation when any message in
+                        // the thread is unread.
+                        is_seen: !item.row.has_unread,
+                        thread_id: item.row.thread_id,
+                        account_id: item.row.email_id,
+                        message_count: item.row.message_count,
+                        labels: item.row.labels,
+                      }}
+                    />
+                  </AnimatedRow>
+                ),
+              )}
+            </AnimatePresence>
+            {/* Mounted beside the rows rather than instead of them, so the last
+                ones can still animate out when an action empties the list. It
+                waits for them before it appears. */}
+            <AnimatePresence>
+              {emails.length === 0 && !hasNextPage && (
+                <motion.div
+                  key="empty"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0, transition: { duration: 0.28, delay: 0.3, ease: [0.16, 1, 0.3, 1] } }}
+                  exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                >
+                  <EmptyState
+                    caughtUp={!filtering && CAUGHT_UP_SCOPES.has(scopeKey)}
+                    filtering={filtering}
+                    search={search}
+                    scopeLabel={scopeLabel}
+                    onSearchAllMail={onSearchAllMail}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
             {hasNextPage && (
               <div ref={setSentinel}>
                 {isFetchingNextPage ? (
@@ -590,12 +645,79 @@ export function ConversationList({
         )}
       </div>
 
-      <SelectionBar
-        threadIds={selectedIds}
-        actions={actions}
-        scope={rowScope}
-        onClear={clearSelection}
-      />
+      <AnimatePresence>
+        {selectedIds.length > 0 && (
+          <SelectionBar
+            key="selection"
+            threadIds={selectedIds}
+            actions={actions}
+            scope={rowScope}
+            onClear={clearSelection}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function EmptyState({
+  caughtUp,
+  filtering,
+  search,
+  scopeLabel,
+  onSearchAllMail,
+}: {
+  caughtUp: boolean;
+  filtering: boolean;
+  search: string;
+  scopeLabel: string;
+  onSearchAllMail?: () => void;
+}) {
+  if (caughtUp) {
+    return (
+      <div className="px-5 py-16 text-center">
+        <motion.div
+          initial={{ scale: 0.6, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 380, damping: 22, delay: 0.36 }}
+          className="mx-auto mb-3 size-9 rounded-full bg-emerald-50 text-emerald-600 inline-flex items-center justify-center"
+        >
+          <CheckIcon className="w-4 h-4" strokeWidth={2.25} />
+        </motion.div>
+        <p className="text-[12.5px] text-slate-700 font-medium mb-1">
+          All caught up
+        </p>
+        <p className="text-[11.5px] text-slate-400 max-w-[32ch] mx-auto leading-relaxed">
+          New mail shows up here as it arrives.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="px-5 py-16 text-center">
+      <p className="text-[12.5px] text-slate-700 font-medium mb-1">
+        {filtering ? "No matches" : "Nothing here"}
+      </p>
+      <p className="text-[11.5px] text-slate-400 max-w-[32ch] mx-auto leading-relaxed">
+        {filtering
+          ? search.trim()
+            ? `Nothing in ${scopeLabel.toLowerCase()} matches "${search.trim()}". The search covers names, addresses, subjects and message bodies.`
+            : "Try a different search or clear the filters."
+          : "New mail shows up here as it arrives."}
+      </p>
+      {/* The commonest reason a search finds nothing is that the thing is
+          filed somewhere else. Offer the wider search rather than quietly
+          overriding the scope the reader chose. */}
+      {filtering && search.trim() && onSearchAllMail && (
+        <button
+          type="button"
+          onClick={onSearchAllMail}
+          className="mt-3 h-7 px-2.5 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[11.5px] font-medium inline-flex items-center gap-1.5 transition-colors"
+        >
+          <SearchIcon className="w-3 h-3" />
+          Search all mail
+        </button>
+      )}
     </div>
   );
 }

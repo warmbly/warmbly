@@ -20,8 +20,8 @@ export default function useMoveFolder() {
         mutationFn: ({ ids, folder, threadIds }: MoveFolderInput) =>
             moveFolder({ ids, threadIds, folder }),
         // The rows go now; the refetch below confirms it.
-        onMutate: async ({ threadIds }) => {
-            if (threadIds?.length) await removeThreadsFromLists(queryClient, threadIds);
+        onMutate: async ({ threadIds, folder }) => {
+            if (threadIds?.length) await removeThreadsFromLists(queryClient, threadIds, folder);
         },
         // A move changes which scopes the thread belongs to and every folder's
         // counts, so the whole unibox tree is re-read rather than patched. On

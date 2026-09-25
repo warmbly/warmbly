@@ -456,7 +456,7 @@ func (r *uniboxRepository) GetByThread(ctx context.Context, orgID, emailID uuid.
 		cursorID, err := uuid.Parse(cursor)
 		if err == nil {
 			query += fmt.Sprintf(`
-				AND (internal_date, id) < (
+				AND (internal_date, id) > (
 					SELECT internal_date, id FROM unibox_emails WHERE id = $%d
 				)`, argPos)
 			args = append(args, cursorID)
@@ -1034,9 +1034,11 @@ func (r *uniboxRepository) queryPreviewList(ctx context.Context, query string, a
 
 	var hasMore bool
 	var nextCursor *string
-	if len(emails) > limit {
+	if limit > 0 && len(emails) > limit {
 		hasMore = true
-		cursor := emails[limit].ID.String()
+		// The last row returned: the next page reads strictly past it, so
+		// pointing at the probe row instead would skip that row entirely.
+		cursor := emails[limit-1].ID.String()
 		nextCursor = &cursor
 		emails = emails[:limit]
 	}
@@ -1084,9 +1086,11 @@ func (r *uniboxRepository) queryThreadList(ctx context.Context, query string, ar
 
 	var hasMore bool
 	var nextCursor *string
-	if len(emails) > limit {
+	if limit > 0 && len(emails) > limit {
 		hasMore = true
-		cursor := emails[limit].ID.String()
+		// The last row returned: the next page reads strictly past it, so
+		// pointing at the probe row instead would skip that row entirely.
+		cursor := emails[limit-1].ID.String()
 		nextCursor = &cursor
 		emails = emails[:limit]
 	}

@@ -95,7 +95,13 @@ export function useConversationActions(): ConversationActions {
                 if (folder === "inbox") toast.success(done);
                 else offerUndo(done, threadIds);
             } catch {
-                toast.error(copy.failed);
+                // The rows left the list on click; the refetch is putting them
+                // back, and the toast has to say so or it reads as a glitch.
+                toast.error(
+                    threadIds.length === 1
+                        ? `${copy.failed}. It's back in the list.`
+                        : `${copy.failed} ${threadIds.length.toLocaleString()} conversations. They're back in the list.`,
+                );
             }
         },
         [moveFolder, offerUndo],
@@ -130,7 +136,7 @@ export function useConversationActions(): ConversationActions {
             }
             // Gone from the list the moment it is snoozed; the refetch confirms
             // it, and on error that same refetch is the rollback.
-            await removeThreadsFromLists(queryClient, threadIds);
+            await removeThreadsFromLists(queryClient, threadIds, "snooze");
             try {
                 await snoozeThreads(threadIds, until);
                 toast.success(
