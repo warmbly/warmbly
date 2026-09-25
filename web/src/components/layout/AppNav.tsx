@@ -60,7 +60,7 @@ import AdvisorNavBadge from "@/components/app/advisor/AdvisorNavBadge";
 import type { AdvisorSurface } from "@/lib/api/models/app/advisor/Advisor";
 import { UserNav } from "./UserNav";
 import { Logo } from "@/components/svg";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipGroupRoot, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
@@ -187,15 +187,14 @@ function NavTip({
 }) {
     if (!collapsed) return children;
     return (
-        // The shared Tooltip mounts its own provider per instance, so there is
-        // no shared skip-delay across the rail: without a delay every row the
-        // cursor crosses on its way down pops one.
-        <Tooltip delayDuration={300}>
+        // Rooted in the rail's shared provider: after the first tip, moving to
+        // the next row shows its name at once instead of waiting again.
+        <TooltipGroupRoot>
             <TooltipTrigger asChild>{children}</TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
                 {label}
             </TooltipContent>
-        </Tooltip>
+        </TooltipGroupRoot>
     );
 }
 
@@ -1089,6 +1088,9 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
                 )}
             />
 
+            {/* One provider for every rail tip: a short wait for the first,
+                then none while the cursor moves between rows. */}
+            <TooltipProvider delayDuration={120} skipDelayDuration={500}>
             <aside
                 className={cn(
                     // Mobile: off-canvas drawer that slides in from the left.
@@ -1129,7 +1131,9 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
             {/* overflow-x-hidden: mid-animation the rail is narrower than the
                 expanded rows still laid out inside it, and without this the
                 column grows a horizontal scrollbar for those 200ms. */}
-            <nav className="flex-1 overflow-y-auto overflow-x-hidden pb-3">
+            {/* Collapsed, pt-1 leaves room for the unread badge that sits
+                above the first row's corner, which the scroller would clip. */}
+            <nav className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-3", iconOnly && "pt-1")}>
                 <div className="space-y-px">
                     {topItems.map((it) => (
                         <NavRow key={it.url + it.title} item={it} collapsed={iconOnly} />
@@ -1157,6 +1161,7 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
                 <UserNav collapsed={iconOnly} />
             </div>
             </aside>
+            </TooltipProvider>
         </>
     );
 }

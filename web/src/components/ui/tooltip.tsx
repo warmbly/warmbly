@@ -26,6 +26,14 @@ function Tooltip({
   )
 }
 
+// TooltipGroupRoot is a Tooltip without its own provider, for a group of
+// triggers sharing one TooltipProvider (and so one skip-delay window).
+function TooltipGroupRoot({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+}
+
 function TooltipTrigger({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
@@ -56,4 +64,4 @@ function TooltipContent({
   )
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+export { Tooltip, TooltipGroupRoot, TooltipTrigger, TooltipContent, TooltipProvider }
