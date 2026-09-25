@@ -59,7 +59,7 @@ func QuestionsFor(custom []models.InboxTagQuestion) map[string]Question {
 // someone said, so it labels none of these.
 func automatedKind(kind string) bool {
 	switch kind {
-	case KindBounceHard, KindBounceSoft, KindAutoReplyOOO, KindAutoReplyTicket:
+	case KindBounceHard, KindBounceSoft, KindAutoReplyOOO, KindAutoReplyTicket, KindNotification:
 		return true
 	}
 	return false

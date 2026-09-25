@@ -37,7 +37,7 @@ const SECONDARY =
 const PRIMARY =
     "h-7 px-3 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 const ICON_BUTTON =
-    "h-7 w-7 rounded-md inline-flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors";
+    "h-7 w-7 rounded-md inline-flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:pointer-events-none";
 
 function newID(): string {
     return crypto.randomUUID().replace(/-/g, "").slice(0, 12);
@@ -131,23 +131,27 @@ export default function TaggingQuestions({
     onChange: (next: InboxTagQuestion[]) => void;
 }) {
     const confirm = useConfirm();
-    // index null is a new question; the draft is the form's own copy.
-    const [editing, setEditing] = React.useState<{ index: number | null; draft: InboxTagQuestion } | null>(null);
+    // Keyed by the question's id, not its position: the list can change while
+    // the form is open. The draft is the form's own copy.
+    const [editing, setEditing] = React.useState<{ isNew: boolean; draft: InboxTagQuestion } | null>(null);
     const atMax = value.length >= INBOX_TAG_QUESTIONS_MAX;
+    // While a question is open in the form the list is read-only, so the draft
+    // is never replaced or shifted under it; Cancel or Save frees it.
+    const locked = editing !== null;
+    const lockedHint = locked ? "Save or cancel the question you are editing first" : undefined;
 
-    const open = (index: number | null) => {
-        const draft = index === null ? blankQuestion() : structuredClone(value[index]);
+    const open = (existing: InboxTagQuestion | null) => {
+        const draft = existing === null ? blankQuestion() : structuredClone(existing);
         if (draft.type === "choice" && (draft.choices ?? []).length === 0) draft.choices = [blankChoice(), blankChoice()];
-        setEditing({ index, draft });
+        setEditing({ isNew: existing === null, draft });
     };
 
-    const remove = (index: number) => {
-        const q = value[index];
+    const remove = (q: InboxTagQuestion) => {
         confirm.show(
             `Remove the question "${q.question}"? Labels it already applied stay on their threads.`,
             async () => {
-                onChange(value.filter((_, i) => i !== index));
-                if (editing?.index === index) setEditing(null);
+                onChange(value.filter((x) => x.id !== q.id));
+                setEditing((prev) => (prev?.draft.id === q.id ? null : prev));
             },
         );
     };
@@ -163,16 +167,20 @@ export default function TaggingQuestions({
 
             {value.length > 0 && (
                 <div className="rounded-md border border-slate-200 divide-y divide-slate-100 bg-white">
-                    {value.map((q, i) => (
+                    {value.map((q) => (
                         <div
                             key={q.id}
                             role="button"
-                            tabIndex={0}
-                            onClick={() => open(i)}
+                            tabIndex={locked ? -1 : 0}
+                            aria-disabled={locked}
+                            title={lockedHint}
+                            onClick={() => !locked && open(q)}
                             onKeyDown={(e) => {
-                                if (e.key === "Enter") open(i);
+                                if (e.key === "Enter" && !locked) open(q);
                             }}
-                            className="group px-3 py-2 flex items-start gap-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                            className={`group px-3 py-2 flex items-start gap-3 transition-colors ${
+                                locked ? "opacity-60 cursor-default" : "cursor-pointer hover:bg-slate-50"
+                            }`}
                         >
                             <div className="min-w-0 flex-1">
                                 <p className="text-[12.5px] text-slate-900 leading-snug">{q.question}</p>
@@ -198,9 +206,10 @@ export default function TaggingQuestions({
                                 <button
                                     type="button"
                                     aria-label="Edit question"
+                                    disabled={locked}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        open(i);
+                                        open(q);
                                     }}
                                     className={ICON_BUTTON}
                                 >
@@ -209,9 +218,10 @@ export default function TaggingQuestions({
                                 <button
                                     type="button"
                                     aria-label="Remove question"
+                                    disabled={locked}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        remove(i);
+                                        remove(q);
                                     }}
                                     className={`${ICON_BUTTON} hover:text-red-600 hover:bg-red-50`}
                                 >
@@ -227,11 +237,11 @@ export default function TaggingQuestions({
                 <QuestionForm
                     key={editing.draft.id}
                     initial={editing.draft}
-                    isNew={editing.index === null}
+                    isNew={editing.isNew}
                     taken={
                         new Set(
                             value
-                                .filter((_, i) => i !== editing.index)
+                                .filter((x) => x.id !== editing.draft.id)
                                 .flatMap(labelsOf)
                                 .map((l) => l.toLowerCase()),
                         )
@@ -239,9 +249,9 @@ export default function TaggingQuestions({
                     onCancel={() => setEditing(null)}
                     onSave={(q) => {
                         onChange(
-                            editing.index === null
-                                ? [...value, q]
-                                : value.map((existing, i) => (i === editing.index ? q : existing)),
+                            value.some((x) => x.id === q.id)
+                                ? value.map((x) => (x.id === q.id ? q : x))
+                                : [...value, q],
                         );
                         setEditing(null);
                     }}

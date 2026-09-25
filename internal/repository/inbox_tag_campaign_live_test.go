@@ -119,6 +119,13 @@ func TestLiveInboxTagRecheckListsColdInboundInCampaignThreads(t *testing.T) {
 		t.Fatalf("listed %+v, want only the reply in the campaign thread", got)
 	}
 
+	// A verdict already made with the campaign in front of it is not asked again.
+	f.exec(`UPDATE inbox_tag_results SET campaign = 'Thread Parent' WHERE organization_id = $1 AND message_id = '<reply@lead.test>'`, f.org)
+	if again, err := repo.ListColdInboundInCampaignThreads(ctx, f.org, now.Add(-time.Hour), 50); err != nil || len(again) != 0 {
+		t.Fatalf("re-listed a verdict made with its campaign: %+v %v", again, err)
+	}
+	f.exec(`UPDATE inbox_tag_results SET campaign = '' WHERE organization_id = $1`, f.org)
+
 	if labels, err := repo.Reopen(ctx, f.org, "<reply@lead.test>", "human_reply"); err != nil || labels != nil {
 		t.Fatalf("reopen other kind: %v %v", labels, err)
 	}

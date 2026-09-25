@@ -116,6 +116,8 @@ func TestStripQuotedKeepsProseInEveryLanguage(t *testing.T) {
 		"תודה, בתאריך 3.3.2025 קיבלנו מכתב מאת הלקוח.",
 		"Od: jutra jestem dostępny, zapraszam.",
 		"Obrigado, em 2024 o cliente escreveu muito.",
+		"Давайте созвонимся 12 марта 2026 г. в 14:00, если вам удобно.",
+		"2026年3月12日(木) 14:00 からいかがでしょうか。",
 	} {
 		if got := StripQuoted(prose, all...); got != prose {
 			t.Errorf("prose cut: %q -> %q", prose, got)

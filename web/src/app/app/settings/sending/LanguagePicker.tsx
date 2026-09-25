@@ -5,6 +5,7 @@ import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PlusIcon, XIcon } from "lucide-react";
 import { CheckSquare } from "@/components/ui/check-square";
+import { SearchInput } from "@/components/ui/field";
 import useClickOutside from "@/hooks/useClickOutside";
 import useFlipPlacement from "@/hooks/useFlipPlacement";
 import { MAIL_LANGUAGES, OFFLINE_RULE_LANGUAGES } from "@/lib/api/models/app/outreach/OutreachSettings";
@@ -93,13 +94,13 @@ export default function LanguagePicker({ value, onChange }: { value: string[]; o
                             placement === "top" ? "bottom-full mb-1" : "top-full mt-1"
                         }`}
                     >
-                        <div className="px-2 py-1.5 border-b border-slate-200">
-                            <input
+                        <div className="p-1.5 border-b border-slate-200">
+                            <SearchInput
                                 value={query}
-                                onChange={(e) => setQuery(e.target.value)}
+                                onChange={setQuery}
                                 placeholder="Search languages…"
                                 autoFocus
-                                className="w-full h-5 bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 outline-none"
+                                className="w-full"
                             />
                         </div>
                         <div className="max-h-56 overflow-y-auto py-1">

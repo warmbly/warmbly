@@ -196,7 +196,7 @@ var languageRules = map[string]langRules{
 	},
 	"ru": {
 		quote: []quoteMarker{
-			{re: regexp.MustCompile(`(?i)\d{4}\s*г\.\s+в\s+\d{1,2}:\d{2},\s`), lineStart: true},
+			{re: regexp.MustCompile(`(?i)\d{4}\s*г\.\s+в\s+\d{1,2}:\d{2},\s[^\n]{0,200}?<[^<>\n]*@[^<>\n]*>\s*:`), lineStart: true},
 			cyrillicAttribution,
 			{re: headerBlock(`от`, `отправлено|дата`)},
 		},
@@ -230,7 +230,7 @@ var languageRules = map[string]langRules{
 	},
 	"ja": {
 		quote: []quoteMarker{
-			{re: regexp.MustCompile(`\d{4}年\s?\d{1,2}月\s?\d{1,2}日\s*[(（][^)）\n]{1,4}[)）]\s*\d{1,2}:\d{2}\s`), lineStart: true},
+			{re: regexp.MustCompile(`\d{4}年\s?\d{1,2}月\s?\d{1,2}日\s*[(（][^)）\n]{1,4}[)）]\s*\d{1,2}:\d{2}\s[^\n]{0,200}?<[^<>\n]*@[^<>\n]*>\s*[:：]`), lineStart: true},
 			{re: regexp.MustCompile(`(?s)差出人\s?[:：].{1,300}?\s(送信日時|日付)\s?[:：]`)},
 		},
 		separators: []string{`元のメッセージ`, `転送されたメッセージ`},

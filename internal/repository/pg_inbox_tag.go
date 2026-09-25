@@ -30,7 +30,10 @@ type InboxTagResult struct {
 	// Automated is a trusted verdict that no person wrote the message. It is
 	// mirrored onto unibox_emails.automated, which is what keeps the
 	// conversation out of the inbox.
-	Automated   bool
+	Automated bool
+	// Campaign is the campaign the verdict was made with, "" when none was
+	// known.
+	Campaign    string
 	Answers     json.RawMessage
 	Labels      []string
 	Model       string
@@ -121,8 +124,8 @@ func (r *inboxTagRepository) Save(ctx context.Context, res *InboxTagResult) erro
 				organization_id, email_account_id, message_id, thread_id,
 				kind, kind_confidence, kind_source, intent, intent_confidence,
 				relevance, priority, needs_review, review_reason, answers, labels, model, input_tokens,
-				automated
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+				automated, campaign
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 			ON CONFLICT (organization_id, message_id) DO UPDATE SET
 				email_account_id = EXCLUDED.email_account_id,
 				thread_id = EXCLUDED.thread_id,
@@ -140,6 +143,7 @@ func (r *inboxTagRepository) Save(ctx context.Context, res *InboxTagResult) erro
 				model = EXCLUDED.model,
 				input_tokens = EXCLUDED.input_tokens,
 				automated = EXCLUDED.automated,
+				campaign = EXCLUDED.campaign,
 				status = 'complete',
 				updated_at = NOW()
 			RETURNING email_account_id, message_id, automated
@@ -163,7 +167,7 @@ func (r *inboxTagRepository) Save(ctx context.Context, res *InboxTagResult) erro
 		res.OrganizationID, res.EmailAccountID, res.MessageID, res.ThreadID,
 		res.Kind, res.KindConfidence, res.KindSource, res.Intent, res.IntentConfidence,
 		res.Relevance, res.Priority, res.NeedsReview, res.ReviewReason, answers, labels, res.Model, res.InputTokens,
-		res.Automated,
+		res.Automated, res.Campaign,
 	)
 	return err
 }
@@ -301,28 +305,35 @@ func (r *inboxTagRepository) ListUntagged(ctx context.Context, orgID uuid.UUID, 
 }
 
 // ListColdInboundInCampaignThreads returns inbound messages stored as
-// cold_inbound whose thread a campaign send of the same mailbox answers for:
-// by the Gmail thread handle, by a Message-ID the reply names, or by the sent
-// copy in the thread.
+// cold_inbound, by a verdict made without a campaign, whose thread a campaign
+// send of the same mailbox answers for: by the Gmail thread handle, by a
+// Message-ID the reply names, or by the sent copy in the thread. A verdict
+// made with the campaign in front of it is not asked again.
 func (r *inboxTagRepository) ListColdInboundInCampaignThreads(ctx context.Context, orgID uuid.UUID, since time.Time, limit int) ([]BackfillCandidate, error) {
 	return r.listCandidates(ctx, `
 		  AND EXISTS (
 		        SELECT 1 FROM inbox_tag_results r
 		        WHERE r.organization_id = $1 AND r.message_id = ue.message_id
-		          AND r.status = 'complete' AND r.kind = 'cold_inbound'
+		          AND r.status = 'complete' AND r.kind = 'cold_inbound' AND r.campaign = ''
 		      )
 		  AND EXISTS (
-		        SELECT 1 FROM tasks t
+		        SELECT 1
+		        FROM tasks t
+		        JOIN campaign_tasks ct ON ct.task_id = t.id
+		        JOIN campaigns c ON c.id = ct.campaign_id
 		        WHERE t.email_account_id = ue.email_id AND t.task_type = 'campaign'
 		          AND (
 		                (ue.thread_id <> '' AND t.thread_id = ue.thread_id)
-		             OR BTRIM(t.message_id, '<> ') IN (
-		                    SELECT BTRIM(ref, '<> ') FROM unnest(COALESCE(ue.in_reply_to, '{}')) AS ref
-		                    UNION ALL
-		                    SELECT BTRIM(s.message_id, '<> ') FROM unibox_emails s
-		                    WHERE s.email_id = ue.email_id AND s.thread_id = ue.thread_id
-		                      AND ue.thread_id <> '' AND s.folder = 'sent'
-		                )
+		             OR (t.message_id <> '' AND t.message_id IN (
+		                    SELECT v FROM (
+		                        SELECT BTRIM(ref, '<> ') AS id FROM unnest(COALESCE(ue.in_reply_to, '{}')) AS ref
+		                        UNION
+		                        SELECT BTRIM(s.message_id, '<> ') FROM unibox_emails s
+		                        WHERE s.email_id = ue.email_id AND s.thread_id = ue.thread_id
+		                          AND ue.thread_id <> '' AND s.folder = 'sent'
+		                    ) ids, LATERAL (VALUES (ids.id), ('<' || ids.id || '>')) AS forms(v)
+		                    WHERE ids.id <> ''
+		                ))
 		          )
 		      )`, orgID, since, limit)
 }
@@ -419,7 +430,8 @@ func (r *inboxTagRepository) PreviousOutbound(ctx context.Context, accountID uui
 		matched AS (
 			SELECT t.id, 0 AS rank, t.created_at
 			FROM tasks t
-			WHERE t.message_id IN (SELECT x FROM ids UNION ALL SELECT '<' || x || '>' FROM ids)
+			WHERE t.message_id <> ''
+			  AND t.message_id IN (SELECT x FROM ids UNION ALL SELECT '<' || x || '>' FROM ids)
 			  AND t.email_account_id = $1 AND t.task_type = 'campaign'
 			UNION ALL
 			SELECT t.id, 1 AS rank, t.created_at

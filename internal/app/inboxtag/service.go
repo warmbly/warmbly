@@ -313,6 +313,7 @@ func (s *Service) persist(ctx context.Context, m Message, d Decision, answers ma
 		NeedsReview:      d.NeedsReview,
 		ReviewReason:     d.ReviewReason,
 		Automated:        d.Automated(),
+		Campaign:         m.Campaign,
 		Answers:          raw,
 		Labels:           d.Labels,
 		Model:            model,
@@ -519,7 +520,10 @@ func (s *Service) Backfill(ctx context.Context, orgID uuid.UUID, opts BackfillOp
 		})
 		// Whatever the old verdict wrote and the new one does not comes off,
 		// unless another verdict in the thread still carries it.
-		if drop := labelsNotIn(stale, d.Labels); err == nil && len(drop) > 0 && s.categories != nil {
+		// Only a verdict that was actually stored may take labels away: a lost
+		// claim or an empty body returns no error and no verdict.
+		stored := err == nil && d.KindSource != "" && !d.Skipped()
+		if drop := labelsNotIn(stale, d.Labels); stored && len(drop) > 0 && s.categories != nil {
 			if rerr := s.categories.RemoveAutoLabels(ctx, orgID, c.ThreadID, drop); rerr != nil {
 				log.Warn().Err(rerr).Str("thread_id", c.ThreadID).Msg("inbox tagging recheck: stale labels kept")
 			}

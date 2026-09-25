@@ -115,6 +115,7 @@ func TestWorkspaceQuestionsSkipAutomatedAndUntrustedKinds(t *testing.T) {
 	for name, kind := range map[string]Answer{
 		"bounce":     {Choice: KindBounceHard, Confidence: 0.95},
 		"ooo":        {Choice: KindAutoReplyOOO, Confidence: 0.95},
+		"notice":     {Choice: KindNotification, Confidence: 0.95},
 		"kind floor": {Choice: KindHumanReply, Confidence: 0.4},
 	} {
 		d := DecideWith(map[string]Answer{"kind": kind, "custom_q1": {Noul: 0.99}}, Facts{}, custom)
@@ -367,5 +368,21 @@ func TestClassifyReadsQuotesInTheWorkspaceLanguages(t *testing.T) {
 		if asker.state.Body != c.want {
 			t.Errorf("languages %v: body %q", c.langs, asker.state.Body)
 		}
+	}
+}
+
+// A recheck that stores no new verdict (a lost claim, an empty body) must not
+// take the thread's labels away.
+func TestRecheckKeepsLabelsWhenNothingWasStored(t *testing.T) {
+	c := candidates(1)
+	c[0].Subject, c[0].BodyText = "", ""
+	repo := &fakeRepo{cold: c, campaign: "Q3 outreach"}
+	cats := &fakeCategories{}
+	svc := NewService(&capturingAsker{resp: Response{Answers: confidentReply()}}, repo, cats, nil, true)
+	if _, err := svc.Backfill(context.Background(), uuid.New(), BackfillOptions{RecheckColdInbound: true}); err != nil {
+		t.Fatalf("recheck: %v", err)
+	}
+	if len(cats.removed) != 0 {
+		t.Fatalf("labels removed with no verdict stored: %v", cats.removed)
 	}
 }
