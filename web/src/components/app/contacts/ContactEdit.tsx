@@ -35,17 +35,17 @@ import OverviewTab from "./contact-edit/OverviewTab";
 import ActivityTab from "./contact-edit/ActivityTab";
 import NotesTab from "./contact-edit/NotesTab";
 import ResearchTab from "./contact-edit/ResearchTab";
-import DetailsTab, { type CustomField } from "./contact-edit/DetailsTab";
+import DetailsTab from "./contact-edit/DetailsTab";
+import { type CustomField, customFieldsPatch, customFieldsProblem } from "./customFields";
 import {
     fieldsOf,
     hasUnnamedValue,
     idsOf,
     rebase,
-    recordFromCF,
+    rebaseFields,
     sameCampaigns,
     sameFields,
     sameIDs,
-    sameRows,
 } from "./contact-edit/rebase";
 import {
     CONTACT_SLIDE_TABS,
@@ -146,11 +146,8 @@ function ContactEditPanel({
         setCategoryIds((v) =>
             rebase(v, idsOf(prev.categories ?? []), idsOf(contact.categories ?? []), sameIDs),
         );
-        // sameRows, not sameFields: a row the user has typed a value into but
-        // not yet named saves as nothing, so the save-shaped comparison would
-        // call the draft untouched and throw that row away.
         setCustomFields((v) =>
-            rebase(v, fieldsOf(prev.custom_fields), fieldsOf(contact.custom_fields), sameRows),
+            rebaseFields(v, fieldsOf(prev.custom_fields), fieldsOf(contact.custom_fields)),
         );
     }, [contact]);
 
@@ -177,6 +174,14 @@ function ContactEditPanel({
 
     async function save() {
         if (!changed) return;
+        const fieldsChanged = !sameFields(customFields, fieldsOf(contact.custom_fields));
+        const fieldsPatch = fieldsChanged ? customFieldsPatch(contact.custom_fields, customFields) : {};
+        const problem = customFieldsProblem(customFields, fieldsPatch);
+        if (problem) {
+            setTab("details");
+            toast.error(problem);
+            return;
+        }
         const data: Record<string, unknown> = {};
         if (firstName !== contact.first_name) data.first_name = firstName;
         if (lastName !== contact.last_name) data.last_name = lastName;
@@ -186,9 +191,7 @@ function ContactEditPanel({
         if (subscribed !== contact.subscribed) data.subscribed = subscribed;
         // Same comparisons `dirty` and the rebase use, so what counts as
         // changed is decided in exactly one place.
-        if (!sameFields(customFields, fieldsOf(contact.custom_fields))) {
-            data.custom_fields = recordFromCF(customFields);
-        }
+        if (fieldsChanged) data.custom_fields = fieldsPatch;
         if (!sameCampaigns(campaigns, contact.campaigns ?? [])) data.campaigns = idsOf(campaigns);
         if (!sameIDs(categoryIds, idsOf(contact.categories ?? []))) data.categories = categoryIds;
 
@@ -212,7 +215,10 @@ function ContactEditPanel({
 
     React.useEffect(() => {
         function onKey(e: KeyboardEvent) {
-            if (e.key === "Escape") requestClose();
+            if (e.key !== "Escape") return;
+            // A dropdown or the confirm on screen owns the key.
+            if (document.querySelector("[data-floating], [role='alertdialog']")) return;
+            requestClose();
         }
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
