@@ -38,7 +38,7 @@ export default function ComposeDraftsItem() {
     if (drafts.length === 0) return null;
 
     return (
-        <div ref={boxRef} className="relative mt-1">
+        <div ref={boxRef} className="relative">
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}
