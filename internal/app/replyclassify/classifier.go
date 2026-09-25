@@ -60,6 +60,9 @@ type Input struct {
 	// Optional; the offline layers never read them.
 	OrganizationID uuid.UUID
 	MessageID      string
+	// Languages are the workspace's tagging languages, which add their
+	// vocabulary to the offline layers. Empty reads with the base set.
+	Languages []string
 }
 
 // Result is the classifier verdict. Confidence is in [0,1]. Source names the

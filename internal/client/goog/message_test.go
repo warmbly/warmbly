@@ -79,3 +79,16 @@ func TestGmailMapping_NilPayloadSafe(t *testing.T) {
 		t.Errorf("nil payload should still map id, got %q", d.GmailID)
 	}
 }
+
+func TestStampedMessageID(t *testing.T) {
+	msg := &gmail.Message{Payload: &gmail.MessagePart{Headers: []*gmail.MessagePartHeader{
+		gh("Subject", "Hello"),
+		gh("Message-Id", " <CABx1@mail.gmail.com> "),
+	}}}
+	if got := stampedMessageID(msg); got != "<CABx1@mail.gmail.com>" {
+		t.Fatalf("stamped id = %q", got)
+	}
+	if got := stampedMessageID(&gmail.Message{}); got != "" {
+		t.Fatalf("no payload should read empty, got %q", got)
+	}
+}

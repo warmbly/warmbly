@@ -95,7 +95,41 @@ Four actions, each behind its own switch under **Settings > Sending > Classified
 
 The suppression follows the same rule as a reply that says "unsubscribe": it only fires for someone replying in one of your campaign threads, or one of your contacts writing in, and never for mail sent to a list. It is the one irreversible action, so it reads its own yes/no question ("the sender asks to be removed") at the strong floor rather than the eight-way intent, and when it fires nothing else does: a suppressed address has no sequence left to hold or chase. A hold written by a classified reply never overrides a hold a member set by hand, and never cuts a longer automatic hold short. A call request opens one task, whichever of the tagging switch and the reply follow-up setting would have opened it.
 
+Your own questions can act too; see [Your own questions](#your-own-questions).
+
 Every action is recorded on the verdict, so the review page shows what was done next to the answer that caused it, and the **Actions taken** count at the top tells you how often the switches fire. Actions run on mail as it arrives; a backfill over history labels and never acts.
+
+## Your own questions
+
+The built-in labels answer what every workspace needs to know. Anything more specific to yours, you can ask yourself under **Settings > Sending > Tagging languages and questions**. For example: "The sender says there is no suitable position right now but they will get back later", labelled **Later maybe**, holding the contact for 60 days.
+
+A question is one of two kinds:
+
+- **Yes or no.** One plain statement about the message. When the answer is yes, the thread gets the question's label.
+- **Pick one.** A question with two to eight options, each with its own label and a one-line description of when it applies. The thread gets the label of the option the classifier picked. A reply that fits none of them gets no label, so no option has to be a catch-all.
+
+Write each question the way the classifier reads it: literally. One judgment per question, no double negatives, no "unless". Labels are plain words like the built-in ones: letters (in any script) and digits, with single spaces or hyphens between them, up to 40 characters. A label cannot reuse a built-in name in any capitalization.
+
+Each label, or each option, can also act, with the same primitives as the switches above: **hold** the contact's sequences for 1 to 365 days, **stop** them for a year, or **open a task** for the mailbox owner. These run whatever the built-in switches say, and follow the same rules: only a confident human reply acts, never a verdict marked **Needs review**, and a suppression ends every other action. A yes/no question labels at 60% and acts at 80%; an option labels and acts at the 70% floor. When two holds apply, the longer one wins.
+
+Your questions ride in the same call as the built-in ones, so they cost input tokens on every classified message but never a second request. A workspace can ask up to 10. They add labels and nothing else to a verdict: the kind, the intent and the relevance score are calibrated on the built-in questions alone and are never moved by yours. The labels are created the first time they apply, or within the hour by the hourly sweep. Questions are part of the workspace settings, so they travel with a [workspace export](/guides/workspace-export-import/).
+
+## Tagging languages
+
+Tagging reads English, German, French, Spanish, Italian and Dutch replies out of the box. If your mail also arrives in other languages, add them under **Settings > Sending > Tagging languages and questions**. Nothing about a language is used until a workspace adds it: a language nobody on your team writes in only adds patterns that could misread someone's mail, so leave it off. The setting changes inbox tagging only; campaign reply handling reads replies the same way whatever it says.
+
+Adding a language does two things:
+
+- **It is named to the classifier**, alongside each message, so it knows what to expect. It is a hint, not a translation: nothing about the message or the questions changes, and the built-in questions stay in English. Any of 44 languages can be named: Arabic, Bengali, Bulgarian, Catalan, Chinese, Croatian, Czech, Danish, Dutch, English, Estonian, Filipino, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Latvian, Lithuanian, Malay, Norwegian, Persian, Polish, Portuguese, Romanian, Russian, Serbian, Slovak, Slovenian, Spanish, Swahili, Swedish, Tamil, Thai, Turkish, Ukrainian, Urdu and Vietnamese.
+- **It adds that language to the reading done before any call**, for these 27: Arabic, Chinese, Czech, Danish, Dutch, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Norwegian, Polish, Portuguese, Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian and Vietnamese. The picker marks the others as a classifier hint only.
+
+The reading before any call covers:
+
+- **Quoted history**, cut from a reply so the classifier reads what the person wrote and not your own message quoted under it: the reply line each mail client writes ("Den ... skrev", "W dniu ... pisze:", "于 ... 写道：" and the like), Outlook's quoted `From: / Sent:` block in that language (`Von: / Gesendet:`, `De : / Envoyé :`, `差出人: / 送信日時:`), and the dashed "Original message" and "Forwarded message" lines.
+- **Out-of-office replies**, recognized by the subject their mail provider writes (`Автоматический ответ`, `自動応答`, `자동 회신`, `رد تلقائي` and so on) and decided with no call at all.
+- **Non-delivery notices**, by the subject Exchange writes in Spanish, Italian, Dutch and Portuguese. A notice carrying a delivery-status report is recognized in any language without this.
+
+Tagging languages are part of the workspace settings, so they travel with a [workspace export](/guides/workspace-export-import/).
 
 ## What else reads the verdict
 
@@ -113,6 +147,8 @@ That floor is not caution for its own sake. A low-confidence answer is not merel
 ## What it never asks
 
 Anything Warmbly already knows is established in code and never sent as a question: which direction a message travelled, which mailbox it belongs to, which campaign it answers, whether the sender is already suppressed.
+
+The campaign is what separates a reply to your outreach from someone pitching you, so it is resolved from every fact the mailbox holds: a Message-ID the reply names, your sent copy in the thread, and on Gmail the conversation the send landed in. Gmail can replace the Message-ID a message is sent with by its own, so the thread is what still ties a Gmail reply to its campaign.
 
 This matters more than it sounds. Given only a message body, the model classified one of our own outbound sends as a human reply at 0.94 confidence. The answer was reasonable for the question; the question should never have been asked. Your own sends are filtered out before anything is asked about them.
 
@@ -152,6 +188,14 @@ It is bounded and resumable. Every message is idempotent on its Message-ID, so h
 Only inbound mail is covered. Your own sends are excluded, and so is mail from one of your connected mailboxes to another, which lands in the second one's inbox and is still yours.
 
 A backfill fills in the previous message in each thread from your sent mail, so a reply reading "yes, let's do it" is judged against the thing it is agreeing to.
+
+A reply classified before its campaign could be found can be labelled **Sales pitch** instead of being read as a reply. To ask again about those, with the campaign in front of the classifier this time:
+
+```bash
+warmblyctl inbox-tag backfill --org you@example.com --days 30 --recheck-cold-inbound
+```
+
+Only messages stored as a sales pitch in a thread one of your campaign sends belongs to are asked again; nothing else is sent. Any automatic label the old verdict wrote and the new one does not comes off the thread, unless another message in it still carries it. A label a teammate applied by hand is never removed. A message the classifier still reads as a sales pitch with the campaign in front of it keeps that verdict, and is asked about again if you run the command again. Like any backfill, it labels and never acts.
 
 ## What it costs
 

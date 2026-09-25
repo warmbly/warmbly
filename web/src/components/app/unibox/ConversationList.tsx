@@ -1,7 +1,7 @@
 // Middle pane of the unibox.
 //
-// A title row (the scope, its count, the filter button; on phones also the
-// view switcher and Compose, since the rail is hidden there), a search row,
+// A title row (the scope, its count, the filter button and Compose; on phones
+// also the view switcher, since the rail is hidden there), a search row,
 // then the rows grouped under quiet Today / Yesterday / This week / Earlier
 // headers. Keyboard: j/k step through rows, Enter opens, Esc deselects, and
 // `/` focuses search; the `?` modal is where they are listed.
@@ -11,7 +11,7 @@
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckIcon, PanelLeftIcon, PenLineIcon, SearchIcon } from "lucide-react";
+import { CheckIcon, PanelLeftIcon, SearchIcon } from "lucide-react";
 import { AnimatedRow } from "./AnimatedRow";
 import { ConversationItem } from "./ConversationItem";
 import { SelectionBar } from "./SelectionBar";
@@ -21,7 +21,7 @@ import { useShortcutActions } from "@/hooks/useShortcutActions";
 import useDebouncedValue from "@/hooks/useDebouncedValue";
 import { useScrollMemory } from "@/hooks/useScrollMemory";
 import { useAppStore } from "@/stores";
-import { useComposeStore } from "@/hooks/useComposeStore";
+import ComposeButton from "@/components/app/unibox/compose/ComposeButton";
 import {
   countUserFilters,
   UniboxFilterButton,
@@ -463,16 +463,7 @@ export function ConversationList({
           open={filtersOpen}
           onOpenChange={setFiltersOpen}
         />
-        {/* Desktop has the rail's Compose button; this is the phone and tablet
-            entry, where the rail is hidden. */}
-        <button
-          type="button"
-          onClick={() => useComposeStore.getState().openCompose()}
-          aria-label="New email"
-          className="lg:hidden size-7 rounded-md bg-sky-600 hover:bg-sky-700 text-white inline-flex items-center justify-center transition-colors shrink-0"
-        >
-          <PenLineIcon className="w-3.5 h-3.5" />
-        </button>
+        <ComposeButton />
       </div>
 
       <div className="px-3 pb-2 shrink-0 border-b border-slate-200">

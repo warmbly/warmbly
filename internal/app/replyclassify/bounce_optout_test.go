@@ -133,3 +133,30 @@ func TestStripQuotedKeepsProseThatMentionsWriting(t *testing.T) {
 		t.Error("an opt-out after prose mentioning writing was missed")
 	}
 }
+
+// German Outlook quotes the original under a "Von: / Gesendet:" block or an
+// "Ursprüngliche Nachricht" separator; both carry our own footer. Read once a
+// workspace says its mail is German.
+func TestStripQuotedGermanOutlook(t *testing.T) {
+	cases := []string{
+		"Danke, passt.\n\nVon: Max Muster <max@example.de>\nGesendet: Montag, 3. März 2025 10:12\nAn: Anna\nBetreff: Zusammenarbeit\n\nAntworten Sie mit STOP, um sich abzumelden. Reply stop to unsubscribe.",
+		"Danke, passt.\n\n-----Ursprüngliche Nachricht-----\nVon: Max\nReply stop to unsubscribe.",
+		"Danke, passt. Von: Max Muster <max@example.de> Datum: 3. März 2025 An: Anna Betreff: Zusammenarbeit Reply stop to unsubscribe.",
+		"Danke, passt.\n\n---------- Weitergeleitete Nachricht ---------\nVon: Max",
+	}
+	for _, body := range cases {
+		if got := StripQuoted(body, "de"); got != "Danke, passt." {
+			t.Errorf("StripQuoted(%q) = %q", body, got)
+		}
+		if IsOptOut("AW: Zusammenarbeit", StripQuoted(body, "de")) {
+			t.Errorf("the quoted footer opted out: %q", body)
+		}
+		if StripQuoted(body) == "Danke, passt." {
+			t.Errorf("read without German: %q", body)
+		}
+	}
+	prose := "Das Angebot kam von: unserem Partner, gesendet hat er es nie."
+	if got := StripQuoted(prose, "de"); got != prose {
+		t.Errorf("prose cut to %q", got)
+	}
+}

@@ -235,3 +235,25 @@ func (s *TagCategoryStore) SyncExclusiveLabels(ctx context.Context, orgID uuid.U
 	}
 	return tx.Commit(ctx)
 }
+
+// RemoveAutoLabels takes automatic labels off a thread when no stored verdict
+// in it still carries them. Only rows with no applier are removed, so a label
+// a person applied by hand stays.
+func (s *TagCategoryStore) RemoveAutoLabels(ctx context.Context, orgID uuid.UUID, threadID string, slugs []string) error {
+	if threadID == "" || len(slugs) == 0 {
+		return nil
+	}
+	_, err := s.db.Exec(ctx, `
+		DELETE FROM unibox_thread_labels l
+		USING categories c
+		WHERE l.organization_id = $1 AND l.thread_id = $2 AND l.user_id IS NULL
+		  AND c.id = l.category_id AND c.organization_id = $1
+		  AND LOWER(c.title) IN (SELECT LOWER(x) FROM unnest($3::text[]) AS x)
+		  AND NOT EXISTS (
+		        SELECT 1 FROM inbox_tag_results r, unnest(r.labels) AS kept
+		        WHERE r.organization_id = $1 AND r.thread_id = $2
+		          AND r.status = 'complete' AND LOWER(kept) = LOWER(c.title)
+		      )
+	`, orgID, threadID, slugs)
+	return err
+}

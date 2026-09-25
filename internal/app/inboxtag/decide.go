@@ -3,6 +3,8 @@ package inboxtag
 import (
 	"math"
 	"sort"
+
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // Facts are what the system already knows, established in code before anything
@@ -62,6 +64,10 @@ type Decision struct {
 	// is what the weights multiply. The raw score and every probability are
 	// persisted separately; these are what the arithmetic used.
 	Scores map[string]float64
+
+	// Custom are the workspace questions that fired. Their labels are already
+	// in Labels; they never move relevance.
+	Custom []CustomMatch
 }
 
 // Automated reports a trusted verdict that no person wrote this message. An
@@ -88,6 +94,12 @@ func DecideOutbound() Decision {
 // re-tuned and re-verified offline for free. Re-running the model over history
 // costs money; re-running the arithmetic does not.
 func Decide(answers map[string]Answer, facts Facts) Decision {
+	return DecideWith(answers, facts, nil)
+}
+
+// DecideWith is Decide plus the workspace's own questions, which add labels
+// and nothing else to the built-in verdict.
+func DecideWith(answers map[string]Answer, facts Facts, custom []models.InboxTagQuestion) Decision {
 	if facts.Outbound {
 		return DecideOutbound()
 	}
@@ -179,6 +191,7 @@ func Decide(answers map[string]Answer, facts Facts) Decision {
 	d.Relevance = relevance(d)
 	d.Priority = bucket(float64(d.Relevance))
 	d.Labels = labelsFor(d)
+	decideCustom(&d, answers, custom)
 	if d.NeedsReview {
 		d.Labels = append(d.Labels, LabelNeedsReview)
 	}
