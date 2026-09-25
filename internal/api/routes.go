@@ -592,6 +592,7 @@ func Run(
 			sendingDomains.Use(m.RequireOrganization(), m.RequirePermission(models.PermManageEmails), m.RateLimitMiddleware(models.RateLimitWrite))
 			{
 				sendingDomains.GET("", h.ListSendingDomains)
+				sendingDomains.POST("/bulk", h.BulkDomainSetup)
 				sendingDomains.GET("/:domain/tracking-suggestion", h.GetTrackingSuggestion)
 				sendingDomains.PUT("/:domain/tracking", h.SetDomainTracking)
 				sendingDomains.PUT("/:domain/redirect", h.SetDomainRedirect)

@@ -509,7 +509,7 @@ function TrackingTab({
     }
 
     const vendorOffer = vendorCanCname(domain) && trackingState(domain) !== "live";
-    const hostProblem = host && host !== domain.domain && !host.endsWith(`.${domain.domain}`) ? `The host has to be on ${domain.domain}, like track.${domain.domain}.` : null;
+    const hostProblem = host && host !== domain.domain && !host.endsWith(`.${domain.domain}`) ? `The host has to be on ${domain.domain}, like link.${domain.domain}.` : null;
 
     async function applyViaVendor() {
         if (!host || hostProblem || viaVendor.isPending) return;
@@ -617,7 +617,7 @@ function TrackingTab({
                             <TextInput
                                 value={draft ?? sug?.host ?? ""}
                                 onChange={setDraft}
-                                placeholder={`track.${domain.domain}`}
+                                placeholder={`link.${domain.domain}`}
                                 className="flex-1 font-mono"
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter") void apply();

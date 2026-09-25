@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -55,7 +56,36 @@ func (h *Handler) GetTrackingSuggestion(c *gin.Context) {
 		errx.Handle(c, errx.NewWithIdentifier(errx.BadRequest, sendingdomain.ErrIDNoTracking, "Open and click tracking is not set up on this instance."))
 		return
 	}
+	sug.VendorDomain = h.SendingDomainService.VendorLink(c.Request.Context(), orgID, domain)
 	c.JSON(http.StatusOK, sug)
+}
+
+// BulkDomainSetup is POST /emails/domains/bulk: one tracking subdomain and one
+// root redirect for up to 100 domains, each through its vendor when the vendor
+// can. Every row reports its own outcome. Safe to retry: each setting is set, not added.
+func (h *Handler) BulkDomainSetup(c *gin.Context) {
+	orgID, userID, ok := importCaller(c)
+	if !ok {
+		return
+	}
+	var req sendingdomain.BulkInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errx.Handle(c, errx.ErrInvalid)
+		return
+	}
+	rows, xerr := h.SendingDomainService.BulkSetup(c.Request.Context(), orgID, userID, req)
+	if xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	meta := map[string]string{"domains": strconv.Itoa(len(rows)), "via": "bulk"}
+	if req.TrackingLabel != "" {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityEmailAccount, nil, map[string]string{"tracking_label": req.TrackingLabel}, meta)
+	}
+	if req.RedirectURL != "" {
+		h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityDomainRedirect, nil, map[string]string{"target_url": req.RedirectURL}, meta)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": rows})
 }
 
 type domainTrackingRequest struct {

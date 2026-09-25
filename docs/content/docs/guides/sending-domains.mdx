@@ -23,11 +23,36 @@ Each domain shows:
 
 A tracking host is normally set per mailbox. From the domain you can set one for every mailbox on it in one step, or clear it for all of them.
 
-Warmbly suggests a host: one a verified mailbox on the domain already uses, else one whose DNS already points at this instance (it tries `track`, `t`, `link`, `links`, `click`, `go`, `email` and `trk`), else `track.<domain>`. The suggestion comes with the `CNAME` value to add.
+Warmbly suggests a host: one a verified mailbox on the domain already uses, else one whose DNS already points at this instance (it tries `link`, `links`, `track`, `t`, `click`, `go`, `email` and `trk`), else `link.<domain>`. The suggestion comes with the `CNAME` value to add. `link` is the default because it reads as an ordinary link when a recipient hovers one.
 
 The host is saved even before its DNS record exists. Until the record resolves, links keep using the shared tracking host, so nothing breaks; the hourly tracking check verifies the host by itself, and new sends switch to it from then on. Setting the same host again changes nothing.
 
 When an inbox vendor account holds the domain and can write DNS records for it, Warmbly can add the `CNAME` for you instead; see [domains held by an inbox vendor](#domains-held-by-an-inbox-vendor).
+
+## Set up many domains at once
+
+Tick domains in the list (or the box in the header for every domain shown; hold Shift to tick every row between two clicks) and a bar appears at the bottom:
+
+| Action | What it does |
+| --- | --- |
+| **Tracking domain** | Opens the setup dialog below with the tracking domain on |
+| **Redirect** | Opens the setup dialog below with the redirect on |
+| **More > Check DNS now** | Re-checks every tracking host and redirect still waiting for DNS, instead of waiting for the next automatic check |
+| **More > Copy DNS records to add** | Copies every record the picked domains still need, one per line with the domain, type, name and value, ready to paste into a sheet or a DNS provider's bulk import |
+| **More > Export as CSV** | Downloads the picked domains with their mailboxes, authentication, tracking host, redirect and vendor |
+| **More > Clear tracking domain** | After a confirmation, puts every mailbox on the picked domains back on the shared tracking host |
+| **More > Remove redirect** | After a confirmation, stops each redirect, and removes vendor forwarding where the vendor's API allows it |
+
+The setup dialog takes one base value for every picked domain:
+
+- **Own tracking domain.** A subdomain, `link` unless you change it, set on each domain as `link.<domain>` for every mailbox on it. A domain whose tracking domain is already verified keeps it, unless you tick the option to replace those too.
+- **Redirect the root to your website.** One website for every picked domain. It is filled in with the website most of your domains already redirect to, when there is one.
+
+**Change per domain** opens a list of the picked domains, each with its own tracking host and website filled in from the base values. Type over either to give one domain something else, untick it to leave that domain out, or press **Reset** to put it back on the base values. Changing a base value later updates every domain nobody changed and leaves the changed ones alone.
+
+The dialog says up front how many domains an [inbox vendor](#domains-held-by-an-inbox-vendor) sets up for you and how many need DNS you add. Each domain takes the easiest path on its own: the vendor writes the `CNAME` or forwards the root when its API can, and otherwise the host or redirect is saved and waits for DNS exactly as it would when set one domain at a time. When it finishes, the dialog lists the `CNAME` records still to add (with **Copy all**), the redirects waiting for DNS, and any domain that was refused and why. A refusal on one domain never stops the others, and running the same setup again changes nothing that is already in place.
+
+While any domain still uses the shared tracking host or has no redirect, the top of the page says how many and offers **Set up all**, which opens the same dialog for exactly those domains. Dismissing it hides it until another domain needs setting up.
 
 ## Root redirects
 

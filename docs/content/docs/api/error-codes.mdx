@@ -205,6 +205,7 @@ The [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) routes (
 | `sending_domain_shared_provider` | 400 | The domain belongs to a shared email provider, such as `gmail.com`, and cannot be redirected |
 | `domain_redirect_invalid_target` | 400 | `target_url` (or a vendor forwarding `url`) is not an `http` or `https` address on a host, carries credentials, is longer than 2,048 characters, or points back at the same domain or its `www`. An import's `redirects` option answers the same. Also returned by `vendor-tracking` when `host` is not a subdomain of the domain |
 | `domain_redirect_taken` | 409 | Another workspace on this instance already serves a verified redirect for this domain. The redirect is saved but does not verify |
+| `sending_domain_bulk_invalid` | 400 | A bulk setup named no domain, more than 100, neither a `tracking_label` nor a `redirect_url`, or a `tracking_label` that is not one DNS label |
 | `tracking_host_not_configured` | 400 | This instance has no tracking host (`TRACKING_DOMAIN`), so it cannot serve a tracking domain or a redirect |
 
 ```json

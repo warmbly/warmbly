@@ -2,6 +2,7 @@
 // and mailbox_vendor audit spine keeps every teammate's view live.
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+    bulkDomainSetup,
     deleteDomainRedirect,
     getTrackingSuggestion,
     listSendingDomains,
@@ -12,11 +13,14 @@ import {
     verifyDomainRedirect,
 } from "@/lib/api/client/app/emails/sendingDomains";
 import type {
+    BulkDomainResult,
+    BulkDomainSetupRequest,
     DomainRedirect,
     SendingDomain,
     SetDomainRedirectRequest,
     VendorDomainLink,
 } from "@/lib/api/models/app/emails/SendingDomain";
+import { BULK_DOMAINS_MAX } from "@/lib/api/models/app/emails/SendingDomain";
 
 export const SENDING_DOMAINS_KEY = ["sending-domains"] as const;
 // Separate from the list on purpose: each read probes DNS, and every mailbox audit would re-run it.
@@ -125,6 +129,27 @@ export function useSetVendorTracking() {
             qc.invalidateQueries({ queryKey: SENDING_DOMAINS_KEY });
             qc.invalidateQueries({ queryKey: ["emails", "list"] });
             qc.invalidateQueries({ queryKey: [SUGGESTION_KEY, domain] });
+        },
+    });
+}
+
+/** Runs a bulk setup in chunks the server takes, reporting each chunk's rows as they land. */
+export function useBulkDomainSetup() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ body, onChunk }: { body: BulkDomainSetupRequest; onChunk?: (rows: BulkDomainResult[]) => void }) => {
+            const out: BulkDomainResult[] = [];
+            for (let i = 0; i < body.domains.length; i += BULK_DOMAINS_MAX) {
+                const res = await bulkDomainSetup({ ...body, domains: body.domains.slice(i, i + BULK_DOMAINS_MAX) });
+                out.push(...res.data);
+                onChunk?.(res.data);
+            }
+            return out;
+        },
+        onSettled: (_, __, { body }) => {
+            qc.invalidateQueries({ queryKey: SENDING_DOMAINS_KEY });
+            qc.invalidateQueries({ queryKey: ["emails", "list"] });
+            for (const d of body.domains) qc.invalidateQueries({ queryKey: [SUGGESTION_KEY, d] });
         },
     });
 }

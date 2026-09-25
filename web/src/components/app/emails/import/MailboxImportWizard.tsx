@@ -27,7 +27,7 @@ import SourceStep from "./SourceStep";
 import MapStep from "./MapStep";
 import ReviewStep from "./ReviewStep";
 import RunStep from "./RunStep";
-import { dnsFollowUps, domainChoiceIssue, domainOptions, type DomainPicks } from "./domainChoiceRules";
+import { dnsFollowUps, domainChoiceIssue, domainOptions, emptyPicks, type DomainPicks } from "./domainChoiceRules";
 import { Stepper, WizardPanes } from "./wizard";
 
 type StepKey = "source" | "map" | "review" | "run";
@@ -71,7 +71,7 @@ export default function MailboxImportWizard({
 
     const [onExisting, setOnExisting] = React.useState<OnExisting>("update");
     const [settings, setSettings] = React.useState<MailboxImportSettings>({});
-    const [domainPicks, setDomainPicks] = React.useState<DomainPicks>({});
+    const [domainPicks, setDomainPicks] = React.useState<DomainPicks>(emptyPicks);
     const [dnsLeft, setDnsLeft] = React.useState(0);
     const [importId, setImportId] = React.useState<string | null>(initialImportId ?? null);
 
@@ -278,7 +278,7 @@ export default function MailboxImportWizard({
         setAutoMapped(false);
         setOnExisting("update");
         setSettings({});
-        setDomainPicks({});
+        setDomainPicks(emptyPicks());
         setDnsLeft(0);
         setImportId(null);
         go("source");

@@ -242,7 +242,7 @@ func seedAdvisorSendVolume(ctx context.Context, pool *pgxpool.Pool) error {
 			'sbx-advisor-bounce-' || n,
 			NOW() - make_interval(mins => n * 22 * 27)
 		FROM generate_series(1, 72) AS n
-		ON CONFLICT (idempotency_key) DO NOTHING`, sandboxOrg, campaignLaunch); err != nil {
+		ON CONFLICT (organization_id, idempotency_key) DO NOTHING`, sandboxOrg, campaignLaunch); err != nil {
 		return fmt.Errorf("advisor bounces: %w", err)
 	}
 
@@ -258,7 +258,7 @@ func seedAdvisorSendVolume(ctx context.Context, pool *pgxpool.Pool) error {
 			'sbx-advisor-complaint-1',
 			NOW() - INTERVAL '9 days'
 		)
-		ON CONFLICT (idempotency_key) DO NOTHING`, sandboxOrg, campaignLaunch); err != nil {
+		ON CONFLICT (organization_id, idempotency_key) DO NOTHING`, sandboxOrg, campaignLaunch); err != nil {
 		return fmt.Errorf("advisor complaint: %w", err)
 	}
 

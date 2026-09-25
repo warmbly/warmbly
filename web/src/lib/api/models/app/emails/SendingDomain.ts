@@ -77,6 +77,8 @@ export interface TrackingSuggestion {
     host: string;
     status: "active" | "found" | "suggested";
     cname_target: string;
+    /** Set when a connected inbox vendor account holds the domain. */
+    vendor_domain?: VendorDomainLink | null;
 }
 
 export interface SetDomainTrackingResult {
@@ -89,3 +91,44 @@ export interface SetDomainRedirectRequest {
     target_url: string;
     include_www?: boolean;
 }
+
+/** POST /emails/domains/bulk: one tracking subdomain and one redirect website for up to 100 domains. */
+export interface BulkDomainSetupRequest {
+    domains: string[];
+    /** Sets <label>.<domain> as each domain's tracking host. */
+    tracking_label?: string;
+    redirect_url?: string;
+    /** A domain's own tracking host or website, in place of the shared one. */
+    tracking_hosts?: Record<string, string>;
+    redirect_urls?: Record<string, string>;
+}
+
+/** "vendor": the vendor holding the domain did it; "dns": the record is yours to add. */
+export type BulkVia = "vendor" | "dns";
+
+export interface BulkDomainResult {
+    domain: string;
+    tracking?: {
+        host: string;
+        via: BulkVia;
+        verified: boolean;
+        mailboxes: number;
+        cname_target?: string;
+        /** Why the vendor did not write the record when it was asked. */
+        note?: string;
+        error?: string;
+        code?: string;
+    };
+    redirect?: {
+        target_url?: string;
+        via: BulkVia;
+        verified: boolean;
+        /** The vendor's staff apply the forwarding later. */
+        reviewed?: boolean;
+        error?: string;
+        code?: string;
+    };
+}
+
+/** The most bulk setup takes in one request. */
+export const BULK_DOMAINS_MAX = 100;

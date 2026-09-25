@@ -2,7 +2,7 @@
 // pasted list and says what it would do, POST /emails/imports starts a job the
 // backend runs row by row, and the job's rows carry every outcome.
 import type MailboxAllowance from "./MailboxAllowance";
-import type { DomainRedirect, TrackingSuggestion } from "./SendingDomain";
+import type { DomainRedirect, TrackingSuggestion, VendorDomainLink } from "./SendingDomain";
 import type { MailSecurity } from "./Service";
 
 /** Which mailbox host an address belongs to; "" until detected. */
@@ -97,7 +97,7 @@ export interface MailboxImportOptions {
     save_mapping?: boolean;
     /** Create only; preview ignores it. */
     settings?: MailboxImportSettings;
-    /** A tracking host per sending domain, e.g. {"acme.io": "track.acme.io"}, applied as each mailbox connects. */
+    /** A tracking host per sending domain, e.g. {"acme.io": "link.acme.io"}, applied as each mailbox connects. */
     tracking_domains?: Record<string, string>;
     /** A website per sending domain its root redirects to, e.g. {"acme.io": "https://acme.com"}. */
     redirects?: Record<string, string>;
@@ -163,6 +163,8 @@ export interface DomainDetection {
     tracking?: TrackingSuggestion | null;
     /** The domain's root redirect, when one exists. */
     redirect?: DomainRedirect | null;
+    /** Set when a connected inbox vendor account holds the domain. */
+    vendor_domain?: VendorDomainLink | null;
 }
 
 export interface ImportIssue {

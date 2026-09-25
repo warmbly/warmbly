@@ -110,10 +110,10 @@ func (s *Service) Overview(ctx context.Context, orgID uuid.UUID) ([]models.Sendi
 }
 
 // trackingLabels are the names people and vendors usually give a tracking host.
-var trackingLabels = []string{"track", "t", "link", "links", "click", "go", "email", "trk"}
+var trackingLabels = []string{config.DefaultTrackingLabel, "links", "track", "t", "click", "go", "email", "trk"}
 
 // TrackingSuggestion is the tracking host to offer a domain: one already in
-// use and verified, one whose DNS already points here, or track.<domain>.
+// use and verified, one whose DNS already points here, or link.<domain>.
 func (s *Service) TrackingSuggestion(ctx context.Context, domain string, inUse []models.TrackingDomainUse) *models.TrackingSuggestion {
 	target := s.target()
 	if target == "" {
@@ -133,7 +133,7 @@ func (s *Service) TrackingSuggestion(ctx context.Context, domain string, inUse [
 			return &models.TrackingSuggestion{Host: host, Status: "found", CNAMETarget: target}
 		}
 	}
-	return &models.TrackingSuggestion{Host: "track." + domain, Status: "suggested", CNAMETarget: target}
+	return &models.TrackingSuggestion{Host: config.DefaultTrackingHost(domain), Status: "suggested", CNAMETarget: target}
 }
 
 // ApplyTracking puts one tracking host on every workspace mailbox on the domain.
@@ -407,7 +407,8 @@ type VendorDomains interface {
 // WireVendors attaches the inbox vendor accounts; optional.
 func (s *Service) WireVendors(v VendorDomains) { s.vendors = v }
 
-func (s *Service) vendorLink(ctx context.Context, orgID uuid.UUID, domain string) *models.VendorDomainLink {
+// VendorLinks maps every domain the workspace's vendor accounts hold; empty when none is connected.
+func (s *Service) VendorLinks(ctx context.Context, orgID uuid.UUID) map[string]models.VendorDomainLink {
 	if s.vendors == nil {
 		return nil
 	}
@@ -415,7 +416,12 @@ func (s *Service) vendorLink(ctx context.Context, orgID uuid.UUID, domain string
 	if xerr != nil {
 		return nil
 	}
-	if l, ok := links[domain]; ok {
+	return links
+}
+
+// VendorLink is the vendor account holding the domain, or nil.
+func (s *Service) VendorLink(ctx context.Context, orgID uuid.UUID, domain string) *models.VendorDomainLink {
+	if l, ok := s.VendorLinks(ctx, orgID)[normalizeDomain(domain)]; ok {
 		return &l
 	}
 	return nil
@@ -489,7 +495,7 @@ func (s *Service) writeTrackingCNAME(ctx context.Context, orgID uuid.UUID, domai
 // redirect served here once DNS is in place.
 func (s *Service) AutoRedirect(ctx context.Context, orgID, userID uuid.UUID, domain, target string) *errx.Error {
 	domain = normalizeDomain(domain)
-	if l := s.vendorLink(ctx, orgID, domain); l != nil && l.CanForward {
+	if l := s.VendorLink(ctx, orgID, domain); l != nil && l.CanForward {
 		_, xerr := s.VendorForward(ctx, orgID, userID, domain, target)
 		return xerr
 	}
@@ -501,7 +507,7 @@ func (s *Service) AutoRedirect(ctx context.Context, orgID, userID uuid.UUID, dom
 // can; otherwise the customer adds it and the tracking sweep picks it up.
 func (s *Service) AutoTracking(ctx context.Context, orgID uuid.UUID, domain, host string) {
 	domain = normalizeDomain(domain)
-	l := s.vendorLink(ctx, orgID, domain)
+	l := s.VendorLink(ctx, orgID, domain)
 	if l == nil || !l.CanDNS {
 		return
 	}

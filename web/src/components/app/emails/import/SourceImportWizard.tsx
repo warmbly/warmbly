@@ -20,7 +20,7 @@ import PickTable, { type PickItem } from "./PickTable";
 import RunStep from "./RunStep";
 import { OnExistingChoice, SettingsSection } from "./SettingsSection";
 import { DomainChoicesSection } from "./DomainChoices";
-import { dnsFollowUps, domainChoiceIssue, domainOptions, type DomainInfo, type DomainPicks } from "./domainChoiceRules";
+import { dnsFollowUps, domainChoiceIssue, domainOptions, emptyPicks, picksTouched, type DomainInfo, type DomainPicks } from "./domainChoiceRules";
 import { PrimaryButton, Stepper, WizardFooter, WizardPanes, type WizardStep } from "./wizard";
 
 type StepKey = string;
@@ -121,7 +121,7 @@ export default function SourceImportWizard(props: SourceImportWizardProps) {
     const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
     const [onExisting, setOnExisting] = React.useState<OnExisting>("update");
     const [settings, setSettings] = React.useState<MailboxImportSettings>({});
-    const [domainPicks, setDomainPicks] = React.useState<DomainPicks>({});
+    const [domainPicks, setDomainPicks] = React.useState<DomainPicks>(emptyPicks);
     const [dnsLeft, setDnsLeft] = React.useState(0);
     const [importId, setImportId] = React.useState<string | null>(null);
     const allowance = useMailboxAllowance(true);
@@ -132,7 +132,7 @@ export default function SourceImportWizard(props: SourceImportWizardProps) {
     }, [sourceKey]);
 
     const dirty =
-        !importId && (selected.size > 0 || Object.keys(settings).length > 0 || Object.keys(domainPicks).length > 0 || !!sourceDirty);
+        !importId && (selected.size > 0 || Object.keys(settings).length > 0 || picksTouched(domainPicks) || !!sourceDirty);
     React.useEffect(() => {
         onDirtyChange?.(dirty);
     }, [dirty, onDirtyChange]);
@@ -160,6 +160,7 @@ export default function SourceImportWizard(props: SourceImportWizardProps) {
         tracking: suggestions[i]?.data ?? null,
         trackingLoading: suggestions[i]?.isLoading ?? false,
         redirect: sendingDomains.data?.data.find((x) => x.domain === d)?.redirect ?? null,
+        vendor_domain: suggestions[i]?.data?.vendor_domain ?? sendingDomains.data?.data.find((x) => x.domain === d)?.vendor_domain ?? null,
     }));
     const a = allowance.data;
     const remaining = a && a.allowance != null ? (a.remaining ?? 0) : null;
@@ -250,7 +251,7 @@ export default function SourceImportWizard(props: SourceImportWizardProps) {
         setSelected(new Set());
         setOnExisting("update");
         setSettings({});
-        setDomainPicks({});
+        setDomainPicks(emptyPicks());
         setDnsLeft(0);
         setImportId(null);
         onStartOver?.();

@@ -23623,6 +23623,126 @@
         }
       }
     },
+    "/emails/domains/bulk": {
+      "post": {
+        "operationId": "sending_domains_bulk_setup",
+        "summary": "Set up many sending domains at once",
+        "description": "Sets link-style tracking hosts (<tracking_label>.<domain>) and a root redirect to one website on up to 100 domains. Each domain takes the easiest path: its inbox vendor writes the CNAME or forwards the root when its API can, otherwise the host or redirect is saved and waits for DNS. Every row reports its own outcome. Safe to retry: each setting is set, not added. Requires a user session token (not an API key) and the manage_emails organization permission.",
+        "tags": [
+          "mailboxes"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "domains"
+                ],
+                "properties": {
+                  "domains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "tracking_label": {
+                    "type": "string",
+                    "description": "One DNS label, such as link. Each domain gets <label>.<domain> as the tracking host of every mailbox on it."
+                  },
+                  "redirect_url": {
+                    "type": "string",
+                    "description": "The website every domain's root redirects to, such as https://yourcompany.com."
+                  },
+                  "tracking_hosts": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "A listed domain's own tracking host, keyed by domain, in place of <tracking_label>.<domain>."
+                  },
+                  "redirect_urls": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "A listed domain's own redirect website, keyed by domain, in place of redirect_url."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One row per domain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SendingDomainBulkResult"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, sending_domain_bulk_invalid (no domain, more than 100, nothing to do, or a tracking_label that is not one DNS label), or tracking_host_not_configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing manage_emails permission, or called with an API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/emails/domains/{domain}/tracking-suggestion": {
       "get": {
         "operationId": "sending_domains_tracking_suggestion",
@@ -37563,6 +37683,10 @@
           },
           "cname_target": {
             "type": "string"
+          },
+          "vendor_domain": {
+            "$ref": "#/components/schemas/VendorDomainLink",
+            "description": "Set when a connected inbox vendor account holds the domain; when it can write a CNAME, a vendor-tracking call needs no DNS from you."
           }
         }
       },
@@ -37887,6 +38011,81 @@
               "$ref": "#/components/schemas/WarmupPlacementMailbox"
             },
             "description": "Workspace report only, worst inbox rate first."
+          }
+        }
+      },
+      "SendingDomainBulkResult": {
+        "type": "object",
+        "description": "What one domain got from a bulk setup. A refusal is reported on the row and never stops the other domains.",
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "tracking": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "via": {
+                "type": "string",
+                "enum": [
+                  "vendor",
+                  "dns"
+                ],
+                "description": "vendor when the domain's inbox vendor wrote the CNAME, dns when the record is yours to add."
+              },
+              "verified": {
+                "type": "boolean"
+              },
+              "mailboxes": {
+                "type": "integer",
+                "description": "Mailboxes on the domain that now use the host."
+              },
+              "cname_target": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string",
+                "description": "Why the vendor did not write the record, when it was asked and refused. The host is still set."
+              },
+              "error": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string",
+                "description": "The stable error code, such as sending_domain_not_in_workspace."
+              }
+            }
+          },
+          "redirect": {
+            "type": "object",
+            "properties": {
+              "target_url": {
+                "type": "string"
+              },
+              "via": {
+                "type": "string",
+                "enum": [
+                  "vendor",
+                  "dns"
+                ],
+                "description": "vendor when the vendor forwards the root, dns when this instance serves the redirect once DNS proves the domain."
+              },
+              "verified": {
+                "type": "boolean"
+              },
+              "reviewed": {
+                "type": "boolean",
+                "description": "The vendor's staff apply the forwarding later."
+              },
+              "error": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              }
+            }
           }
         }
       }

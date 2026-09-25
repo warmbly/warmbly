@@ -1581,10 +1581,10 @@ function normalizeTrackingDomain(raw: string): string {
 function trackingDomainProblem(host: string): string | null {
     if (!host) return null;
     if (host.length > 253) return "That domain is too long.";
-    if (/[^a-z0-9.-]/.test(host)) return "Use a plain hostname, like track.yourdomain.com.";
-    if (!host.includes(".")) return "Use a subdomain of a domain you own, like track.yourdomain.com.";
+    if (/[^a-z0-9.-]/.test(host)) return "Use a plain hostname, like link.yourdomain.com.";
+    if (!host.includes(".")) return "Use a subdomain of a domain you own, like link.yourdomain.com.";
     if (host.split(".").some((l) => !l || l.startsWith("-") || l.endsWith("-"))) {
-        return "Use a plain hostname, like track.yourdomain.com.";
+        return "Use a plain hostname, like link.yourdomain.com.";
     }
     if (!/^[a-z]{2,}$/.test(host.split(".").pop() ?? "")) return "That does not end in a domain ending, like .com.";
     return null;
@@ -1682,7 +1682,7 @@ function TrackingDomainCard({ mailbox }: { mailbox: Inbox }) {
             </div>
 
             <FieldShell label="Custom tracking domain" hint="Track opens & clicks through your own subdomain instead of the shared host, and serve the unsubscribe link there too. Improves deliverability.">
-                <TextInput value={domain} placeholder="track.yourdomain.com" onChange={setDomain} className="w-full h-9" />
+                <TextInput value={domain} placeholder="link.yourdomain.com" onChange={setDomain} className="w-full h-9" />
             </FieldShell>
 
             {problem && (

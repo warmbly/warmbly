@@ -92,7 +92,7 @@ type MailboxImportOptions struct {
 	OnExisting     string                `json:"on_existing"`
 	SaveMapping    *bool                 `json:"save_mapping"`
 	Settings       MailboxImportSettings `json:"settings"`
-	// TrackingDomains picks a tracking host per sending domain, e.g. {"acme.io": "track.acme.io"}.
+	// TrackingDomains picks a tracking host per sending domain, e.g. {"acme.io": "link.acme.io"}.
 	TrackingDomains map[string]string `json:"tracking_domains,omitempty"`
 	// Redirects sends a sending domain's root to a website, e.g. {"acme.io": "https://acme.com"}.
 	Redirects map[string]string `json:"redirects,omitempty"`
@@ -158,6 +158,8 @@ type MailboxImportDomain struct {
 	Tracking *TrackingSuggestion `json:"tracking,omitempty"`
 	// Redirect is the domain's root redirect, when one exists.
 	Redirect *DomainRedirect `json:"redirect,omitempty"`
+	// VendorDomain is set when a connected vendor account holds the domain.
+	VendorDomain *VendorDomainLink `json:"vendor_domain,omitempty"`
 }
 
 // MailboxImportIssue is one cause shared by several rows, with its fix.
@@ -411,6 +413,8 @@ type TrackingSuggestion struct {
 	// Status is "active" (a mailbox here already uses it, verified), "found" (DNS already points it at this instance) or "suggested".
 	Status      string `json:"status"`
 	CNAMETarget string `json:"cname_target"`
+	// VendorDomain is set when a connected vendor account holds the domain, so its API may write the CNAME.
+	VendorDomain *VendorDomainLink `json:"vendor_domain,omitempty"`
 }
 
 // VendorDomainLink is a sending domain held by an inbox vendor account, with what its API can do for it.
