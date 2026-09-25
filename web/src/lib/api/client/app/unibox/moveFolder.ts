@@ -1,4 +1,5 @@
 import Request from "../../Request";
+import { pairedChunks, UNIBOX_BULK_MAX } from "./chunks";
 
 // The three folders a user can file a conversation into. sent/drafts/spam are
 // verdicts the provider reaches, and the backend refuses them here.
@@ -16,14 +17,16 @@ export default async function moveFolder(data: {
     threadIds?: string[];
     folder: FilableFolder;
 }): Promise<void> {
-    return await Request<void>({
-        method: "PATCH",
-        url: `/unibox/folder`,
-        data: {
-            email_ids: data.ids ?? [],
-            thread_ids: data.threadIds ?? [],
-            folder: data.folder,
-        },
-        authorization: true,
-    })
+    for (const part of pairedChunks(data.ids ?? [], data.threadIds ?? [], UNIBOX_BULK_MAX)) {
+        await Request<void>({
+            method: "PATCH",
+            url: `/unibox/folder`,
+            data: {
+                email_ids: part.a,
+                thread_ids: part.b,
+                folder: data.folder,
+            },
+            authorization: true,
+        });
+    }
 }

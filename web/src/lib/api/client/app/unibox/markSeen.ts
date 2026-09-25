@@ -1,4 +1,5 @@
 import Request from "../../Request";
+import { pairedChunks, UNIBOX_BULK_MAX } from "./chunks";
 
 // PATCH /unibox/seen marks unibox emails seen/unseen. The backend body is
 // { email_ids, thread_ids, folder, seen } (models.MarkSeen); callers pass
@@ -12,15 +13,24 @@ export default async function markSeen(data: {
     folder?: string;
     seen?: boolean;
 }): Promise<void> {
-    return await Request<void>({
-        method: "PATCH",
-        url: `/unibox/seen`,
-        data: {
-            email_ids: data.ids ?? [],
-            thread_ids: data.threadIds ?? [],
-            folder: data.folder,
-            seen: data.seen ?? true,
-        },
-        authorization: true,
-    })
+    if (data.folder) {
+        return await Request<void>({
+            method: "PATCH",
+            url: `/unibox/seen`,
+            data: { email_ids: [], thread_ids: [], folder: data.folder, seen: data.seen ?? true },
+            authorization: true,
+        });
+    }
+    for (const part of pairedChunks(data.ids ?? [], data.threadIds ?? [], UNIBOX_BULK_MAX)) {
+        await Request<void>({
+            method: "PATCH",
+            url: `/unibox/seen`,
+            data: {
+                email_ids: part.a,
+                thread_ids: part.b,
+                seen: data.seen ?? true,
+            },
+            authorization: true,
+        });
+    }
 }
