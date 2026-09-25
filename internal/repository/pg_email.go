@@ -2208,7 +2208,7 @@ func (r *emailRepository) GetByTags(ctx context.Context, scope AccountScope, tag
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
-		 ea.auth_state, ea.auth_failing_since,
+		 ea.auth_state, ea.auth_failing_since, ea.worker_id,
 		 ea.created_at, ea.updated_at
 		FROM email_accounts ea
 		JOIN email_tags eat ON eat.email_id = ea.id
@@ -2234,7 +2234,7 @@ func (r *emailRepository) GetByTags(ctx context.Context, scope AccountScope, tag
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
 			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone, &i.OrgTimezone,
-			&i.AuthState, &i.AuthFailingSince,
+			&i.AuthState, &i.AuthFailingSince, &i.WorkerID,
 			&i.CreatedAt, &i.UpdatedAt,
 		)
 		if err != nil {
@@ -2263,7 +2263,7 @@ func (r *emailRepository) GetAllActiveInScope(ctx context.Context, scope Account
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
-		 ea.auth_state, ea.auth_failing_since,
+		 ea.auth_state, ea.auth_failing_since, ea.worker_id,
 		 ea.created_at, ea.updated_at
 		FROM email_accounts ea
 		WHERE ea.organization_id = $1
@@ -2287,7 +2287,7 @@ func (r *emailRepository) GetAllActiveInScope(ctx context.Context, scope Account
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
 			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone, &i.OrgTimezone,
-			&i.AuthState, &i.AuthFailingSince,
+			&i.AuthState, &i.AuthFailingSince, &i.WorkerID,
 			&i.CreatedAt, &i.UpdatedAt,
 		)
 		if err != nil {
@@ -2328,7 +2328,7 @@ func (r *emailRepository) GetByCampaignSenders(ctx context.Context, scope Accoun
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
 		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
-		 ea.auth_state, ea.auth_failing_since,
+		 ea.auth_state, ea.auth_failing_since, ea.worker_id,
 		 ea.created_at, ea.updated_at,
 		 cs.weight, cs.rotation_position, cs.last_sent_at
 		FROM email_accounts ea
@@ -2357,7 +2357,7 @@ func (r *emailRepository) GetByCampaignSenders(ctx context.Context, scope Accoun
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
 			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone, &i.OrgTimezone,
-			&i.AuthState, &i.AuthFailingSince,
+			&i.AuthState, &i.AuthFailingSince, &i.WorkerID,
 			&i.CreatedAt, &i.UpdatedAt,
 			&sender.Weight, &sender.RotationPosition, &sender.LastSentAt,
 		)

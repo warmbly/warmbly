@@ -31,6 +31,7 @@ export type MailboxPlanState =
     | "domain_auth"
     | "resting"
     | "health_hold"
+    | "no_worker"
     | "window_closed";
 
 export interface SendLimit {
