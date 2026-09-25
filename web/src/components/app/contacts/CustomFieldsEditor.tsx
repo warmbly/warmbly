@@ -1,6 +1,4 @@
-// A contact's custom fields as a form: every field the workspace already uses
-// is a labelled input, so filling one in means typing a value, not its name.
-// "New field" names one nobody has yet.
+// A contact's custom fields as a form: each workspace field is a labelled input.
 
 import React from "react";
 import { ChevronDownIcon, PlusIcon, TrashIcon } from "lucide-react";
@@ -8,8 +6,10 @@ import { SearchInput, TextInput } from "@/components/ui/field";
 import useCustomFieldKeys from "@/lib/api/hooks/app/contacts/useCustomFieldKeys";
 import { cn } from "@/lib/utils";
 import CustomFieldKeyInput from "./CustomFieldKeyInput";
-import { type CustomField, draftMatch, labelledKeys, suggestKeys } from "./customFields";
+import { type CustomField, draftMatch, labelledKeys, newDraft, suggestKeys } from "./customFields";
 import { CUSTOM_KEY_RULES, isValidCustomKey, normalizeCustomKey } from "./importShared";
+
+const LOCKED_HINT = "This field's name predates the naming rules, so it cannot be changed here.";
 
 // Empty workspace fields past this many wait behind "Show more".
 const COLLAPSE_AFTER = 6;
@@ -18,16 +18,18 @@ const FILTER_FROM = 12;
 export default function CustomFieldsEditor({
     value,
     onChange,
+    pinned = [],
 }: {
     value: CustomField[];
     onChange: React.Dispatch<React.SetStateAction<CustomField[]>>;
+    // Fields always shown, cleared or not: the ones the saved contact has.
+    pinned?: string[];
 }) {
     const { data: workspace = [], isPending } = useCustomFieldKeys();
     const [expanded, setExpanded] = React.useState(false);
     const [filter, setFilter] = React.useState("");
 
-    // Every field the form has held stays on screen once cleared, so emptying
-    // one does not make it vanish from under the cursor.
+    // A field stays on screen once cleared, so it does not vanish from under the cursor.
     const [held, setHeld] = React.useState<string[]>(() => labelledNames(value));
     React.useEffect(() => {
         setHeld((cur) => {
@@ -36,14 +38,18 @@ export default function CustomFieldsEditor({
         });
     }, [value]);
 
-    const keys = labelledKeys(workspace, [...held, ...labelledNames(value)]);
-    const valueOf = (key: string) => value.find((r) => !r.draft && r.name === key)?.value ?? "";
-    const filled = (key: string) => valueOf(key).trim() !== "";
+    const values = new Map(value.filter((r) => !r.draft).map((r) => [r.name, r.value]));
+    const shown = new Set([...pinned, ...held, ...values.keys()]);
+    // An old name the server refuses is shown only where the contact has it, locked.
+    const keys = labelledKeys(workspace.filter(isValidCustomKey), shown);
+    const usable = keys.filter(isValidCustomKey);
+    const valueOf = (key: string) => values.get(key) ?? "";
+    const filled = (key: string) => valueOf(key) !== "";
 
     const filtering = filter.trim() !== "";
     const matching = filtering ? new Set(suggestKeys(filter, keys, keys.length)) : null;
     const visible = keys.filter((k, i) =>
-        matching ? matching.has(k) : expanded || i < COLLAPSE_AFTER || held.includes(k),
+        matching ? matching.has(k) : expanded || i < COLLAPSE_AFTER || shown.has(k),
     );
     const hidden = filtering ? 0 : keys.length - visible.length;
     const drafts = value.map((r, i) => ({ row: r, index: i })).filter((d) => d.row.draft);
@@ -52,7 +58,7 @@ export default function CustomFieldsEditor({
         setHeld((cur) => (cur.includes(key) ? cur : [...cur, key]));
         onChange((cur) => {
             const i = cur.findIndex((r) => !r.draft && r.name === key);
-            // A cleared field is no field: the row goes and the save removes the key.
+            // A cleared field is no field; the save removes the key.
             if (i === -1) return v === "" ? cur : [...cur, { name: key, value: v }];
             if (v === "") return cur.filter((_, j) => j !== i);
             return cur.map((r, j) => (j === i ? { ...r, value: v } : r));
@@ -60,7 +66,7 @@ export default function CustomFieldsEditor({
     }
 
     function addDraft() {
-        onChange((cur) => [...cur, { name: "", value: "", draft: true }]);
+        onChange((cur) => [...cur, newDraft()]);
     }
 
     function updateDraft(index: number, patch: Partial<CustomField>) {
@@ -71,11 +77,10 @@ export default function CustomFieldsEditor({
         onChange((cur) => cur.filter((_, j) => j !== index));
     }
 
-    // Move a draft onto the labelled field it names. A field already filled in
-    // keeps its value; the draft just takes the name and the hint explains.
+    // Move a draft onto the field it names; a filled field keeps its value and the hint explains.
     function adopt(index: number, key: string) {
         const draft = value[index];
-        if (draft && filled(key) && draft.value.trim() !== "") {
+        if (draft && filled(key) && draft.value !== "") {
             updateDraft(index, { name: key });
             return;
         }
@@ -83,7 +88,7 @@ export default function CustomFieldsEditor({
         onChange((cur) => {
             const d = cur[index];
             const rest = cur.filter((_, j) => j !== index);
-            if (!d || d.value.trim() === "") return rest;
+            if (!d || d.value === "") return rest;
             const i = rest.findIndex((r) => !r.draft && r.name === key);
             if (i === -1) return [...rest, { name: key, value: d.value }];
             return rest.map((r, j) => (j === i ? { ...r, value: d.value } : r));
@@ -123,6 +128,8 @@ export default function CustomFieldsEditor({
                                     value={valueOf(k)}
                                     onChange={(v) => setValue(k, v)}
                                     placeholder="Empty"
+                                    disabled={!isValidCustomKey(k)}
+                                    title={isValidCustomKey(k) ? undefined : LOCKED_HINT}
                                     className="flex-1"
                                 />
                             </label>
@@ -139,9 +146,9 @@ export default function CustomFieldsEditor({
                 <div className="space-y-2">
                     {drafts.map(({ row, index }, n) => (
                         <DraftRow
-                            key={`draft-${n}`}
+                            key={row.id ?? `row-${n}`}
                             row={row}
-                            keys={keys}
+                            keys={usable}
                             targetFilled={filled}
                             onName={(v) => updateDraft(index, { name: v })}
                             onValue={(v) => updateDraft(index, { value: v })}
@@ -197,7 +204,7 @@ function DraftRow({
     onRemove: () => void;
 }) {
     const name = normalizeCustomKey(row.name);
-    const hasValue = row.value.trim() !== "";
+    const hasValue = row.value !== "";
     const invalid = name !== "" && !isValidCustomKey(name);
     const match = name !== "" && !invalid ? draftMatch(name, keys) : null;
 
@@ -205,7 +212,7 @@ function DraftRow({
     let tone: "muted" | "warn" | "error" = "muted";
     let canAdopt = false;
     if (name === "") {
-        if (hasValue) {
+        if (row.value.trim() !== "") {
             hint = "Name this field, or remove it.";
             tone = "warn";
         }

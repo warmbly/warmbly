@@ -42,16 +42,12 @@ export function sameCampaigns(a: MiniCampaign[], b: MiniCampaign[]): boolean {
     return sameIDs(idsOf(a), idsOf(b));
 }
 
-// The custom-field rows as the record they save as: unnamed and blank rows
-// dropped (a blank value removes the key), names normalized. Built from
-// entries rather than by assignment, because assigning to `__proto__` sets the
-// prototype instead of adding an own property, and a contact may legitimately
-// have a field by that name.
+// The rows as they save (unnamed and empty dropped); built from entries so a field named `__proto__` stays an own property.
 export function recordFromCF(fields: CustomField[]): Record<string, string> {
     const entries: [string, string][] = [];
     for (const f of fields) {
         const name = normalizeCustomKey(f.name);
-        if (!name || f.value.trim() === "") continue;
+        if (!name || f.value === "") continue;
         entries.push([name, f.value]);
     }
     return Object.fromEntries(entries);
@@ -83,7 +79,36 @@ export function sameFields(a: CustomField[], b: CustomField[]): boolean {
 // delete what they were typing.
 export function sameRows(a: CustomField[], b: CustomField[]): boolean {
     if (a.length !== b.length) return false;
-    return a.every((f, i) => f.name === b[i].name && f.value === b[i].value);
+    return a.every((f, i) => f.name === b[i].name && f.value === b[i].value && !f.draft === !b[i].draft);
+}
+
+// Key by key, so a teammate's new field reaches the draft instead of being saved as a removal.
+export function rebaseFields(
+    local: CustomField[],
+    prevServer: CustomField[],
+    nextServer: CustomField[],
+): CustomField[] {
+    if (sameRows(local, prevServer)) return nextServer;
+    const prev = new Map(prevServer.map((f) => [f.name, f.value]));
+    const next = new Map(nextServer.map((f) => [f.name, f.value]));
+    const out: CustomField[] = [];
+    const drafts: CustomField[] = [];
+    const named = new Set<string>();
+    for (const f of local) {
+        if (f.draft) {
+            drafts.push(f);
+            continue;
+        }
+        named.add(f.name);
+        const untouched = prev.has(f.name) && prev.get(f.name) === f.value;
+        if (!untouched) out.push(f);
+        else if (next.has(f.name)) out.push({ ...f, value: next.get(f.name)! });
+    }
+    // A field the server gained that the user neither has nor removed.
+    for (const [name, value] of next) {
+        if (!named.has(name) && !prev.has(name)) out.push({ name, value });
+    }
+    return [...out, ...drafts];
 }
 
 // A row with a value but no name yet saves nowhere, so no comparison of what

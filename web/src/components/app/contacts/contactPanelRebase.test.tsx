@@ -209,6 +209,19 @@ describe("saving the contact 360 panel", () => {
         expect(requested[0].data).toEqual({ categories: ["cat-2"] });
     });
 
+    // The save is a diff, so a teammate's field that arrives mid-edit must not
+    // be sent as a removal.
+    it("keeps a custom field a teammate added while the user edited", async () => {
+        const first = contact({ custom_fields: { industry: "Freight" } });
+        const { rerender } = render(<Panel contacts={[first]} />);
+        fireEvent.click(screen.getByText("drop industry"));
+        rerender(<Panel contacts={[contact({ custom_fields: { industry: "Freight", tier: "A" } })]} />);
+        fireEvent.click(screen.getByText("Save changes"));
+
+        await waitFor(() => expect(requested.length).toBe(1));
+        expect(requested[0].data).toEqual({ custom_fields: { industry: "" } });
+    });
+
     // The server merges custom_fields, so a field that is simply left out is
     // kept; removing one has to send it empty.
     it("sends a removed custom field as empty so the server drops it", async () => {

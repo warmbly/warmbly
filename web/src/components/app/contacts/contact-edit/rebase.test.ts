@@ -10,6 +10,7 @@ import {
     hasUnnamedValue,
     idsOf,
     rebase,
+    rebaseFields,
     recordFromCF,
     sameCampaigns,
     sameFields,
@@ -88,14 +89,15 @@ describe("custom fields", () => {
         ).toEqual({ industry: "Freight" });
     });
 
-    // A blank value removes the key on save, so it is no field at all.
-    it("drops blank values and collapses spaces in names", () => {
+    // An empty value removes the key on save, so it is no field at all.
+    it("drops empty values and collapses spaces in names", () => {
         expect(
             recordFromCF([
                 { name: "job   title", value: "Ops lead" },
-                { name: "tier", value: "  " },
+                { name: "tier", value: "" },
+                { name: "notes", value: "  " },
             ]),
-        ).toEqual({ "job title": "Ops lead" });
+        ).toEqual({ "job title": "Ops lead", notes: "  " });
     });
 
     it("compares rows as the record they save as", () => {
@@ -204,5 +206,71 @@ describe("hasUnnamedValue", () => {
         expect(hasUnnamedValue([{ name: "", value: "   " }])).toBe(false);
         expect(hasUnnamedValue([{ name: "industry", value: "Freight" }])).toBe(false);
         expect(hasUnnamedValue([])).toBe(false);
+    });
+});
+
+describe("rebaseFields", () => {
+    // A draft that happens to match a stored row is still the user's work.
+    it("does not mistake a draft for the stored row it matches", () => {
+        const draft = [{ name: "tier", value: "A", draft: true }];
+        expect(sameRows(draft, [{ name: "tier", value: "A" }])).toBe(false);
+    });
+
+    const prev = [
+        { name: "industry", value: "Freight" },
+        { name: "tier", value: "A" },
+    ];
+
+    // The save is a diff against the server, so a field the user never saw
+    // has to reach the draft or the diff deletes it.
+    it("takes a field a teammate added while the user edited another", () => {
+        const local = [
+            { name: "industry", value: "Freight" },
+            { name: "tier", value: "B" },
+        ];
+        const next = [...prev, { name: "region", value: "EU" }];
+        expect(rebaseFields(local, prev, next)).toEqual([
+            { name: "industry", value: "Freight" },
+            { name: "tier", value: "B" },
+            { name: "region", value: "EU" },
+        ]);
+    });
+
+    it("takes the server's value for a field the user left alone", () => {
+        const local = [
+            { name: "tier", value: "A" },
+            { name: "industry", value: "Freight" },
+            { name: "", value: "half typed", draft: true },
+        ];
+        const next = [
+            { name: "industry", value: "Rail" },
+            { name: "tier", value: "A" },
+        ];
+        expect(rebaseFields(local, prev, next)).toEqual([
+            { name: "tier", value: "A" },
+            { name: "industry", value: "Rail" },
+            { name: "", value: "half typed", draft: true },
+        ]);
+    });
+
+    it("keeps the user's removal and edit over the server's change", () => {
+        const local = [{ name: "tier", value: "C" }];
+        const next = [
+            { name: "industry", value: "Rail" },
+            { name: "tier", value: "B" },
+        ];
+        expect(rebaseFields(local, prev, next)).toEqual([{ name: "tier", value: "C" }]);
+    });
+
+    it("drops a field the server removed that the user left alone", () => {
+        const local = [
+            { name: "industry", value: "Freight" },
+            { name: "tier", value: "A" },
+            { name: "", value: "x", draft: true },
+        ];
+        expect(rebaseFields(local, prev, [{ name: "industry", value: "Freight" }])).toEqual([
+            { name: "industry", value: "Freight" },
+            { name: "", value: "x", draft: true },
+        ]);
     });
 });

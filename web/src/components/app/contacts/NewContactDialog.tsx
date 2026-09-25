@@ -63,7 +63,8 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             toast.error("Enter a valid email");
             return;
         }
-        const problem = customFieldsProblem(customFields);
+        const fields = recordFromCF(customFields);
+        const problem = customFieldsProblem(customFields, fields);
         if (problem) {
             toast.error(problem);
             return;
@@ -77,7 +78,7 @@ export function NewContactDialog({ open, onClose, campaign, segment }: Props) {
             campaigns: campaign ? [campaign.id] : [],
             categories,
             segments: segment ? [segment.id] : undefined,
-            custom_fields: recordFromCF(customFields),
+            custom_fields: fields,
             source: campaign ? "campaign" : "manual",
         };
         try {

@@ -135,7 +135,11 @@ export default function DetailsTab({
                     </span>
                 }
             >
-                <CustomFieldsEditor value={customFields} onChange={setCustomFields} />
+                <CustomFieldsEditor
+                    value={customFields}
+                    onChange={setCustomFields}
+                    pinned={Object.keys(contact.custom_fields ?? {})}
+                />
             </Section>
 
             <Section title="Metadata">

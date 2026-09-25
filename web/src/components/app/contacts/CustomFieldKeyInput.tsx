@@ -1,5 +1,4 @@
-// A custom-field name input that offers the workspace's existing fields as
-// the user types, so a field is picked instead of retyped.
+// A custom-field name input that suggests the workspace's existing fields as the user types.
 
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -56,9 +55,10 @@ export default function CustomFieldKeyInput({
             setOpen(true);
             const step = e.key === "ArrowDown" ? 1 : -1;
             setActive((i) => (i + step + matches.length) % matches.length);
-        } else if (e.key === "Enter" && shown && active >= 0 && active < matches.length) {
+        } else if (e.key === "Enter") {
+            // Never submits the surrounding form; it only picks a highlighted field.
             e.preventDefault();
-            pick(matches[active]);
+            if (shown && active >= 0 && active < matches.length) pick(matches[active]);
         } else if (e.key === "Escape" && shown) {
             // The list is the innermost layer; the dialog behind it stays open.
             e.stopPropagation();

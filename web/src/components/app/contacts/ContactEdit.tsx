@@ -42,10 +42,10 @@ import {
     hasUnnamedValue,
     idsOf,
     rebase,
+    rebaseFields,
     sameCampaigns,
     sameFields,
     sameIDs,
-    sameRows,
 } from "./contact-edit/rebase";
 import {
     CONTACT_SLIDE_TABS,
@@ -146,11 +146,8 @@ function ContactEditPanel({
         setCategoryIds((v) =>
             rebase(v, idsOf(prev.categories ?? []), idsOf(contact.categories ?? []), sameIDs),
         );
-        // sameRows, not sameFields: a row the user has typed a value into but
-        // not yet named saves as nothing, so the save-shaped comparison would
-        // call the draft untouched and throw that row away.
         setCustomFields((v) =>
-            rebase(v, fieldsOf(prev.custom_fields), fieldsOf(contact.custom_fields), sameRows),
+            rebaseFields(v, fieldsOf(prev.custom_fields), fieldsOf(contact.custom_fields)),
         );
     }, [contact]);
 
@@ -177,7 +174,9 @@ function ContactEditPanel({
 
     async function save() {
         if (!changed) return;
-        const problem = customFieldsProblem(customFields);
+        const fieldsChanged = !sameFields(customFields, fieldsOf(contact.custom_fields));
+        const fieldsPatch = fieldsChanged ? customFieldsPatch(contact.custom_fields, customFields) : {};
+        const problem = customFieldsProblem(customFields, fieldsPatch);
         if (problem) {
             setTab("details");
             toast.error(problem);
@@ -192,9 +191,7 @@ function ContactEditPanel({
         if (subscribed !== contact.subscribed) data.subscribed = subscribed;
         // Same comparisons `dirty` and the rebase use, so what counts as
         // changed is decided in exactly one place.
-        if (!sameFields(customFields, fieldsOf(contact.custom_fields))) {
-            data.custom_fields = customFieldsPatch(contact.custom_fields, customFields);
-        }
+        if (fieldsChanged) data.custom_fields = fieldsPatch;
         if (!sameCampaigns(campaigns, contact.campaigns ?? [])) data.campaigns = idsOf(campaigns);
         if (!sameIDs(categoryIds, idsOf(contact.categories ?? []))) data.categories = categoryIds;
 

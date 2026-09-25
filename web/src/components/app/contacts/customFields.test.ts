@@ -42,16 +42,23 @@ describe("customFieldsProblem", () => {
                 { name: "industry", value: "Freight" },
                 { name: "", value: "", draft: true },
                 { name: "Company Mobile", value: "+1", draft: true },
-            ]),
+            ], {}),
         ).toBeNull();
     });
 
     it("refuses a filled row with no name", () => {
-        expect(customFieldsProblem([{ name: " ", value: "x", draft: true }])).toMatch(/Name every/);
+        expect(customFieldsProblem([{ name: " ", value: "x", draft: true }], {})).toMatch(/Name every/);
     });
 
     it("refuses a name the API cannot store", () => {
-        expect(customFieldsProblem([{ name: "a/b", value: "x", draft: true }])).toMatch(/cannot be used/);
+        expect(customFieldsProblem([{ name: "a/b", value: "x", draft: true }], {})).toMatch(/cannot be used/);
+    });
+
+    // The server refuses a write naming an old key, so only an untouched one may ride along.
+    it("allows an old stored name until the save would send it", () => {
+        const rows = [{ name: "linkedin.url", value: "x" }];
+        expect(customFieldsProblem(rows, {})).toBeNull();
+        expect(customFieldsProblem([], { "linkedin.url": "" })).toMatch(/old field name/);
     });
 
     it("refuses the same field filled in twice", () => {
@@ -59,7 +66,7 @@ describe("customFieldsProblem", () => {
             customFieldsProblem([
                 { name: "industry", value: "Freight" },
                 { name: "industry ", value: "Rail", draft: true },
-            ]),
+            ], {}),
         ).toMatch(/filled in twice/);
     });
 
@@ -68,7 +75,7 @@ describe("customFieldsProblem", () => {
             customFieldsProblem([
                 { name: "industry", value: "" },
                 { name: "industry", value: "Rail", draft: true },
-            ]),
+            ], {}),
         ).toBeNull();
     });
 });
@@ -78,8 +85,8 @@ describe("customFieldsPatch", () => {
     // kept; removing one has to send it empty.
     it("sends a removed or cleared field as empty", () => {
         expect(
-            customFieldsPatch({ industry: "Freight", tier: "A" }, [{ name: "tier", value: "   " }]),
-        ).toEqual({ industry: "", tier: "" });
+            customFieldsPatch({ industry: "Freight", tier: "A", notes: "  " }, [{ name: "tier", value: "" }]),
+        ).toEqual({ industry: "", tier: "", notes: "" });
     });
 
     it("sends only what changed", () => {

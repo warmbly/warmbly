@@ -3,7 +3,7 @@
 
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import type { CustomField } from "./customFields";
 
 const workspaceKeys = vi.hoisted(() => ({ current: [] as string[] }));
@@ -42,6 +42,16 @@ describe("CustomFieldsEditor", () => {
         fireEvent.change(input("legacy"), { target: { value: "" } });
         expect(latest).toEqual([]);
         expect(input("legacy").value).toBe("");
+    });
+
+    it("locks an old field name the server would refuse and never offers it elsewhere", () => {
+        workspaceKeys.current = ["linkedin.url", "industry"];
+        render(<Harness initial={[{ name: "linkedin.url", value: "x" }]} />);
+        expect(input("linkedin.url").disabled).toBe(true);
+        cleanup();
+
+        render(<Harness />);
+        expect(screen.queryByLabelText("linkedin.url")).toBeNull();
     });
 
     it("hides empty fields past the first few behind Show more", () => {

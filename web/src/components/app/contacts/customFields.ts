@@ -14,10 +14,10 @@ export interface CustomField {
     name: string;
     value: string;
     draft?: boolean;
+    id?: string;
 }
 
-// The labelled fields a form shows: the workspace's, most used first, then any
-// the form has held that the cached list does not have yet.
+// Workspace fields, most used first, then held ones the cached list lacks.
 export function labelledKeys(workspace: string[], held: Iterable<string>): string[] {
     const out = [...workspace];
     const known = new Set(out);
@@ -29,8 +29,7 @@ export function labelledKeys(workspace: string[], held: Iterable<string>): strin
     return out;
 }
 
-// The labelled field a draft's name refers to, spelled exactly or differing
-// only in case and separators.
+// The labelled field a draft names, exactly or up to case and separators.
 export function draftMatch(name: string, keys: string[]): { key: string; exact: boolean } | null {
     const n = normalizeCustomKey(name);
     const key = matchExistingKey(n, keys);
@@ -43,26 +42,26 @@ export function suggestKeys(query: string, keys: string[], limit = 8): string[] 
     return keys.filter((k) => q === "" || foldCustomKey(k).includes(q)).slice(0, limit);
 }
 
-// Why the rows cannot be saved as they stand, or null.
-export function customFieldsProblem(rows: CustomField[]): string | null {
+// Why the rows cannot be saved, or null; `payload` is what the save would send.
+export function customFieldsProblem(rows: CustomField[], payload: Record<string, string>): string | null {
     const seen = new Set<string>();
     for (const r of rows) {
         const name = normalizeCustomKey(r.name);
-        const filled = r.value.trim() !== "";
         if (name === "") {
-            if (filled) return "Name every custom field you filled in, or remove it.";
+            if (r.value.trim() !== "") return "Name every custom field you filled in, or remove it.";
             continue;
         }
-        if (!isValidCustomKey(name)) return `“${name}” cannot be used as a field name. ${CUSTOM_KEY_RULES}`;
-        if (!filled) continue;
+        if (r.draft && !isValidCustomKey(name)) return `“${name}” cannot be used as a field name. ${CUSTOM_KEY_RULES}`;
+        if (r.value === "") continue;
         if (seen.has(name)) return `“${name}” is filled in twice.`;
         seen.add(name);
     }
-    return null;
+    // The server refuses the whole write over one old name, even to remove it.
+    const stale = Object.keys(payload).find((k) => !isValidCustomKey(k));
+    return stale === undefined ? null : `“${stale}” is an old field name that can no longer be changed.`;
 }
 
-// The PATCH body: the server merges it into the stored fields and an empty
-// value removes a key, so a cleared or removed field is sent as "".
+// The PATCH body: the server merges it and "" removes a key, so a removed field is sent as "".
 export function customFieldsPatch(
     server: Record<string, string> | undefined,
     rows: CustomField[],
@@ -77,4 +76,11 @@ export function customFieldsPatch(
         if (!Object.hasOwn(after, k)) entries.push([k, ""]);
     }
     return Object.fromEntries(entries);
+}
+
+let draftSeq = 0;
+
+export function newDraft(): CustomField {
+    draftSeq += 1;
+    return { name: "", value: "", draft: true, id: `new-${draftSeq}` };
 }
