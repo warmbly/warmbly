@@ -103,8 +103,8 @@ export default function DomainSelectionBar({
     const refresh = () => qc.invalidateQueries({ queryKey: SENDING_DOMAINS_KEY });
 
     async function checkDns() {
-        // One host covering the domain is re-applied as is, which re-checks its CNAME; the redirect is verified.
-        const hosts = selected.filter((d) => d.tracking_domains.length === 1 && trackingState(d) !== "live");
+        // A lone host waiting for DNS is re-applied as is, which re-checks its CNAME; the redirect is verified.
+        const hosts = selected.filter((d) => d.tracking_domains.length === 1 && trackingState(d) === "pending");
         const redirects = selected.filter((d) => d.redirect && !d.redirect.verified);
         if (hosts.length + redirects.length === 0) {
             toast.success("Nothing is waiting for DNS on these domains");
