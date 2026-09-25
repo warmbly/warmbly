@@ -111,6 +111,7 @@ const STATE_META: Record<MailboxPlan["state"], { label: string; tone: string }> 
     domain_auth: { label: "Auth failing", tone: "bg-rose-50 text-rose-700 ring-rose-200" },
     resting: { label: "Resting", tone: "bg-slate-100 text-slate-600 ring-slate-200" },
     health_hold: { label: "Health hold", tone: "bg-rose-50 text-rose-700 ring-rose-200" },
+    no_worker: { label: "Reconnecting", tone: "bg-amber-50 text-amber-700 ring-amber-200" },
     window_closed: { label: "Window closed", tone: "bg-amber-50 text-amber-700 ring-amber-200" },
 };
 

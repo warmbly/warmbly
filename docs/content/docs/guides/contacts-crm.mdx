@@ -65,6 +65,12 @@ This is not address verification. It reads the addresses; verification asks the 
 
 For anything beyond identity: industry, plan tier, account owner. Create them by mapping a column to a new custom field during import, or on a contact's Details tab. A later import can map into the same field by picking it from the mapping menu (see [Mapping into your custom fields](#mapping-into-your-custom-fields)).
 
+### Filling them in by hand
+
+**New contact** (**Add lead** on a campaign's Leads tab) and a contact's **Details** tab list your workspace's custom fields as a form: each field is its own input with its name beside it, most used first, so filling one in means typing only the value. The first six are shown and **Show N more** opens the rest; with more than twelve, a filter box finds one by name. Fields the contact already has are always shown. Clearing a field's value removes it from the contact when you save.
+
+**New field** adds a field nobody has used yet. As you type its name, your existing fields are suggested, and picking one moves what you typed into that field. A name that matches an existing field, or differs from one only in case or separators, says so with **Use it** to switch to that field. A name Warmbly cannot use, a value with no name, or the same field filled in twice is flagged before anything is saved. A field whose name was stored before the naming rules above existed is shown on the contacts that have it, but locked: it cannot be changed or removed from the form.
+
 They feed personalization, which is the main reason to get imports right.
 
 Field names may use letters, numbers, underscores, spaces, and dashes: `industry`, `account_owner`, `Company Mobile`, `first-name`. Other characters (`/`, `#`, `(`, `)`) are rejected because there would be no way to merge that field into an email. When you map a column to a custom field the wizard fills the name in from the column header and flags it inline if it cannot be used.
@@ -119,7 +125,7 @@ The email address can be changed here, which is the right move when someone's ad
 
 ## Editing many contacts at once
 
-Tick rows in any contact list, a segment's members or a campaign's leads, and the selection bar's **Edit** opens a bulk panel. It can add or remove campaigns, add or remove categories, force a subscription state, and queue custom-field operations (add, edit, delete, rename) that run on every selected contact, including a **Select all matching** selection that reaches past the loaded pages.
+Tick rows in any contact list, a segment's members or a campaign's leads, and the selection bar's **Edit** opens a bulk panel. It can add or remove campaigns, add or remove categories, force a subscription state, and queue custom-field operations (add, edit, delete, rename) that run on every selected contact (the key box suggests your existing fields as you type), including a **Select all matching** selection that reaches past the loaded pages.
 
 Nothing is applied while you build it up. The header names the list the selection came from, and a **Will apply** strip above the buttons lists every queued change as a chip you can take back one at a time before pressing Apply. A field operation missing its key, or its value where one is needed, is marked and skipped rather than sent half-finished.
 

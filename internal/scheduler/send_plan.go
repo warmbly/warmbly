@@ -128,7 +128,11 @@ func (s *schedulerService) planMailbox(ctx context.Context, pass *campaignPass, 
 	// below where its delta can be named.
 	gate, _ := s.gateFor(ctx, pass, acct, 1)
 	d.health = s.healthFor(ctx, pass, acct.ID)
-	if !gate.open() && gate.reason != gateBudget {
+	// A mailbox without a live worker is back within minutes, so its day is
+	// still expected; it is only shown as reconnecting, as the capacity
+	// estimate counts it.
+	reconnecting := gate.reason == gateNoWorker
+	if !gate.open() && gate.reason != gateBudget && !reconnecting {
 		d.gate = gate
 		d.byGate = r
 		r = 0
@@ -282,6 +286,9 @@ func (s *schedulerService) planMailbox(ctx context.Context, pass *campaignPass, 
 	d.remaining = r
 	if r > 0 {
 		d.state = models.MailboxPlanSending
+		if reconnecting {
+			d.state = models.MailboxPlanNoWorker
+		}
 		return d
 	}
 	// Its next allowed send falls after the day's sending time ends.
@@ -623,7 +630,8 @@ func (s *schedulerService) PoolCapacityToday(ctx context.Context, campaign *mode
 	for _, acct := range accounts {
 		out.ConfiguredCeiling += acct.CampaignLimit
 		stages, _ := stagedCap(pass, acct)
-		if gate, _ := s.gateFor(ctx, pass, acct, 1); !gate.open() && gate.reason != gateBudget {
+		// A worker gap is minutes long, not a day's capacity.
+		if gate, _ := s.gateFor(ctx, pass, acct, 1); !gate.open() && gate.reason != gateBudget && gate.reason != gateNoWorker {
 			out.Held++
 			continue
 		}

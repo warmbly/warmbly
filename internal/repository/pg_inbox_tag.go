@@ -27,10 +27,14 @@ type InboxTagResult struct {
 	Priority         string
 	NeedsReview      bool
 	ReviewReason     string
-	Answers          json.RawMessage
-	Labels           []string
-	Model            string
-	InputTokens      int
+	// Automated is a trusted verdict that no person wrote the message. It is
+	// mirrored onto unibox_emails.automated, which is what keeps the
+	// conversation out of the inbox.
+	Automated   bool
+	Answers     json.RawMessage
+	Labels      []string
+	Model       string
+	InputTokens int
 	// Actions is what the workspace's switches let this verdict do: "hold",
 	// "stop", "task", "suppress". Empty for a verdict that only labelled.
 	Actions   []string
@@ -106,30 +110,42 @@ func (r *inboxTagRepository) ReleaseClaim(ctx context.Context, orgID uuid.UUID, 
 }
 
 func (r *inboxTagRepository) Save(ctx context.Context, res *InboxTagResult) error {
+	// One statement, so the verdict and the inbox placement cannot disagree.
 	const q = `
-		INSERT INTO inbox_tag_results (
-			organization_id, email_account_id, message_id, thread_id,
-			kind, kind_confidence, kind_source, intent, intent_confidence,
-			relevance, priority, needs_review, review_reason, answers, labels, model, input_tokens
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-		ON CONFLICT (organization_id, message_id) DO UPDATE SET
-			email_account_id = EXCLUDED.email_account_id,
-			thread_id = EXCLUDED.thread_id,
-			kind = EXCLUDED.kind,
-			kind_confidence = EXCLUDED.kind_confidence,
-			kind_source = EXCLUDED.kind_source,
-			intent = EXCLUDED.intent,
-			intent_confidence = EXCLUDED.intent_confidence,
-			relevance = EXCLUDED.relevance,
-			priority = EXCLUDED.priority,
-			needs_review = EXCLUDED.needs_review,
-			review_reason = EXCLUDED.review_reason,
-			answers = EXCLUDED.answers,
-			labels = EXCLUDED.labels,
-			model = EXCLUDED.model,
-			input_tokens = EXCLUDED.input_tokens,
-			status = 'complete',
-			updated_at = NOW()
+		WITH saved AS (
+			INSERT INTO inbox_tag_results (
+				organization_id, email_account_id, message_id, thread_id,
+				kind, kind_confidence, kind_source, intent, intent_confidence,
+				relevance, priority, needs_review, review_reason, answers, labels, model, input_tokens,
+				automated
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+			ON CONFLICT (organization_id, message_id) DO UPDATE SET
+				email_account_id = EXCLUDED.email_account_id,
+				thread_id = EXCLUDED.thread_id,
+				kind = EXCLUDED.kind,
+				kind_confidence = EXCLUDED.kind_confidence,
+				kind_source = EXCLUDED.kind_source,
+				intent = EXCLUDED.intent,
+				intent_confidence = EXCLUDED.intent_confidence,
+				relevance = EXCLUDED.relevance,
+				priority = EXCLUDED.priority,
+				needs_review = EXCLUDED.needs_review,
+				review_reason = EXCLUDED.review_reason,
+				answers = EXCLUDED.answers,
+				labels = EXCLUDED.labels,
+				model = EXCLUDED.model,
+				input_tokens = EXCLUDED.input_tokens,
+				automated = EXCLUDED.automated,
+				status = 'complete',
+				updated_at = NOW()
+			RETURNING email_account_id, message_id, automated
+		)
+		UPDATE unibox_emails ue
+		SET automated = saved.automated
+		FROM saved
+		WHERE ue.email_id = saved.email_account_id
+		  AND ue.message_id = saved.message_id
+		  AND ue.automated IS DISTINCT FROM saved.automated
 	`
 	answers := res.Answers
 	if len(answers) == 0 {
@@ -143,6 +159,7 @@ func (r *inboxTagRepository) Save(ctx context.Context, res *InboxTagResult) erro
 		res.OrganizationID, res.EmailAccountID, res.MessageID, res.ThreadID,
 		res.Kind, res.KindConfidence, res.KindSource, res.Intent, res.IntentConfidence,
 		res.Relevance, res.Priority, res.NeedsReview, res.ReviewReason, answers, labels, res.Model, res.InputTokens,
+		res.Automated,
 	)
 	return err
 }
@@ -251,7 +268,10 @@ type BackfillCandidate struct {
 	Subject        string
 	BodyText       string
 	FromAddr       string
-	InternalDate   time.Time
+	InReplyTo      []string
+	// Flags carries the classification headers the sync stores as pseudo-flags.
+	Flags        []string
+	InternalDate time.Time
 }
 
 // ListUntagged returns inbound messages that have never been classified, newest
@@ -270,7 +290,7 @@ type BackfillCandidate struct {
 func (r *inboxTagRepository) ListUntagged(ctx context.Context, orgID uuid.UUID, since time.Time, limit int) ([]BackfillCandidate, error) {
 	const q = `
 		SELECT ue.email_id, ue.user_id, ue.message_id, ue.thread_id,
-		       ue.subject, ue.body_text, COALESCE(ue.from_addr[1], ''), ue.internal_date
+		       ue.subject, ue.body_text, COALESCE(ue.from_addr[1], ''), ue.in_reply_to, ue.flags, ue.internal_date
 		FROM unibox_emails ue
 		JOIN email_accounts ea ON ea.id = ue.email_id
 		WHERE ea.organization_id = $1
@@ -301,7 +321,7 @@ func (r *inboxTagRepository) ListUntagged(ctx context.Context, orgID uuid.UUID, 
 	for rows.Next() {
 		var c BackfillCandidate
 		if err := rows.Scan(&c.EmailAccountID, &c.UserID, &c.MessageID, &c.ThreadID,
-			&c.Subject, &c.BodyText, &c.FromAddr, &c.InternalDate); err != nil {
+			&c.Subject, &c.BodyText, &c.FromAddr, &c.InReplyTo, &c.Flags, &c.InternalDate); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

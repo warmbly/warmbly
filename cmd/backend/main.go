@@ -1357,6 +1357,11 @@ func main() {
 		if aware, ok := schedulerService.(scheduler.LifecycleAware); ok {
 			aware.WireLifecycle(repository.NewSendLifecycleRepository(primaryDB))
 		}
+		// A mailbox no heartbeating worker holds is passed over, not picked:
+		// the send path would refuse the hand-off with the same check.
+		if aware, ok := schedulerService.(scheduler.WorkerLivenessAware); ok {
+			aware.WireWorkerLiveness(tasks.NewWorkerLiveness(workerRepository, cache))
+		}
 		campaignService = campaign.NewService(campaignRepostory, taskRepository, emailRepostory, campaignLogRepository, featureGateService, dailyThrottleService, schedulerService, tasksClient, streamingPublisher)
 		// The launch gate refuses a list that is known to be largely
 		// undeliverable, using the same projection preflight reports.
