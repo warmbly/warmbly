@@ -24,12 +24,16 @@ func TestLivePlanShowsAMailboxWithoutAWorkerAsReconnecting(t *testing.T) {
 	s := loggedScheduler(t, f)
 	planner := s.(CampaignSendPlanner)
 
-	before, err := planner.PlanCampaignDay(context.Background(), f.campaign, 0)
+	// -1: no workspace allowance, which would otherwise clamp both to zero.
+	before, err := planner.PlanCampaignDay(context.Background(), f.campaign, -1)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if before.ExpectedRemaining <= 0 {
+		t.Fatalf("baseline remaining %d, want positive capacity", before.ExpectedRemaining)
+	}
 	s.(WorkerLivenessAware).WireWorkerLiveness(noWorkers{})
-	plan, err := planner.PlanCampaignDay(context.Background(), f.campaign, 0)
+	plan, err := planner.PlanCampaignDay(context.Background(), f.campaign, -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +51,7 @@ func TestLivePlanShowsAMailboxWithoutAWorkerAsReconnecting(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM warmup_pool_participants WHERE email_account_id = $1`, f.mailbox)
 	})
-	held, err := planner.PlanCampaignDay(context.Background(), f.campaign, 0)
+	held, err := planner.PlanCampaignDay(context.Background(), f.campaign, -1)
 	if err != nil {
 		t.Fatal(err)
 	}

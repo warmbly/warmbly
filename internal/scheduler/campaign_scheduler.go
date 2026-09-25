@@ -556,14 +556,21 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 		switch {
 		case noWorker > 0:
 			// Mailboxes that could send once a worker holds them again, which
-			// the worker reconciler sees to within minutes: the soonest any of
-			// the pool can come back, so the pass looks again then. A deferral,
-			// never a pause.
-			logDecisionOnce("mailboxes_unavailable",
+			// the worker reconciler sees to within minutes, unless a mailbox
+			// whose hours reopen sooner comes back first. A deferral, never a
+			// pause, logged under its own name so an earlier line about
+			// budgets or hours does not hide it for the rest of the day.
+			resume := time.Now().Add(workerRecheck)
+			if hoursClosed > 0 {
+				if open := nextScheduleSlot(reopensAt, windows, campaignTZ); open.Before(resume) {
+					resume = open
+				}
+			}
+			logDecisionOnce("mailboxes_no_worker",
 				fmt.Sprintf("No mailbox can send right now: %d not connected to a running sending worker; sending resumes as soon as one is", noWorker),
 				map[string]interface{}{"no_worker": noWorker, "capped_mailboxes": budgetSpent, "hours_closed": hoursClosed,
 					"health_held": healthHeld, "resting_mailboxes": lifecycleGated, "auth_gated": authGated, "pool_size": len(accounts)})
-			return time.Now().Add(workerRecheck), nil, accounts[0].ID, ErrCampaignDeferred
+			return resume, nil, accounts[0].ID, ErrCampaignDeferred
 		case budgetSpent > 0 || hoursClosed > 0:
 			// Resume when the first of them can send again: tomorrow for a
 			// spent budget, the reopening of the mailbox's own 8am-8pm band

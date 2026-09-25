@@ -909,6 +909,9 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		// would run beside the chain that already moved on.
 		if cerr := s.createCampaignTask(ctx, campaign.ID, account.ID, time.Now().Add(config.CampaignTickRetrySeconds*time.Second)); cerr != nil {
 			log.Warn().Err(cerr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to schedule the campaign's next pass after a send that never left")
+			// The pass's deadline may have run out during the send; the
+			// safety net closes it and seeds the next on a fresh context.
+			s.keepChainAfterFailure(task.TaskId, false)
 		}
 		executionStatus = "completed"
 		return nil

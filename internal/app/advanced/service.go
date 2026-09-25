@@ -2153,9 +2153,15 @@ func (s *service) replayCampaignPass(ctx context.Context, task *repository.Task)
 		return false, true, nil
 	}
 	name, err := s.tasksClient.CreateTask(ctx, &proto.ProcessTask{TaskId: id.String()}, at)
-	if err == nil {
-		_ = s.taskRepo.UpdateTaskScheduledAt(ctx, id, at, name)
+	if err != nil {
+		// Nothing will fire the row, and while it is pending the chain can
+		// seed no other pass: take it back and keep the dead letter.
+		if derr := s.taskRepo.DeleteTask(ctx, id); derr != nil {
+			log.Warn().Err(derr).Str("task_id", id.String()).Msg("dead-letter replay: could not remove a pass that was never queued; overdue reconciliation will")
+		}
+		return false, true, err
 	}
+	_ = s.taskRepo.UpdateTaskScheduledAt(ctx, id, at, name)
 	return true, true, nil
 }
 

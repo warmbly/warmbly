@@ -36,6 +36,12 @@ type replayTasks struct {
 	created    bool
 	inserted   int
 	repended   int
+	deleted    int
+}
+
+func (t *replayTasks) DeleteTask(context.Context, uuid.UUID) error {
+	t.deleted++
+	return nil
 }
 
 func (t *replayTasks) GetTask(context.Context, uuid.UUID) (*repository.Task, error) {
@@ -65,9 +71,12 @@ func (t *replayTasks) UpdateTaskStatus(context.Context, uuid.UUID, string) error
 	return nil
 }
 
-type replayClient struct{}
+type replayClient struct{ fail bool }
 
-func (replayClient) CreateTask(context.Context, *proto.ProcessTask, time.Time) (string, error) {
+func (c replayClient) CreateTask(context.Context, *proto.ProcessTask, time.Time) (string, error) {
+	if c.fail {
+		return "", errors.New("queue unavailable")
+	}
 	return "local", nil
 }
 func (replayClient) DeleteTask(context.Context, string) error { return nil }
@@ -81,19 +90,22 @@ func TestReplayDeadLetterForACampaignPass(t *testing.T) {
 		name         string
 		ctErr        error
 		created      bool
+		queueFails   bool
 		wantErr      bool
 		wantInserted int
 		wantReplayed int
+		wantDeleted  int
 	}{
 		{name: "chain has no pass", created: true, wantInserted: 1, wantReplayed: 1},
 		{name: "chain already has its next pass", created: false, wantReplayed: 1},
 		{name: "campaign task unreadable", ctErr: errors.New("connection reset"), wantErr: true},
+		{name: "queue refuses the new pass", created: true, queueFails: true, wantErr: true, wantInserted: 1, wantDeleted: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			task := &repository.Task{ID: uuid.New(), TaskType: "campaign", EmailAccountID: uuid.New()}
 			repo := &replayRepo{dlq: &models.TaskDeadLetter{ID: uuid.New(), TaskID: task.ID}}
 			tasks := &replayTasks{task: task, campaignID: &campaignID, ctErr: tc.ctErr, created: tc.created}
-			svc := &service{repo: repo, taskRepo: tasks, tasksClient: replayClient{}}
+			svc := &service{repo: repo, taskRepo: tasks, tasksClient: replayClient{fail: tc.queueFails}}
 
 			xerr := svc.ReplayDeadLetter(context.Background(), uuid.New(), repo.dlq.ID)
 			if (xerr != nil) != tc.wantErr {
@@ -102,8 +114,9 @@ func TestReplayDeadLetterForACampaignPass(t *testing.T) {
 			if tasks.repended != 0 {
 				t.Fatal("the old pass was put back to pending")
 			}
-			if tasks.inserted != tc.wantInserted || repo.replayed != tc.wantReplayed {
-				t.Fatalf("inserted %d replayed %d, want %d and %d", tasks.inserted, repo.replayed, tc.wantInserted, tc.wantReplayed)
+			if tasks.inserted != tc.wantInserted || repo.replayed != tc.wantReplayed || tasks.deleted != tc.wantDeleted {
+				t.Fatalf("inserted %d replayed %d deleted %d, want %d, %d and %d",
+					tasks.inserted, repo.replayed, tasks.deleted, tc.wantInserted, tc.wantReplayed, tc.wantDeleted)
 			}
 		})
 	}
