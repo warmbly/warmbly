@@ -172,6 +172,17 @@ func (h *Handler) GetUniboxIncoming(c *gin.Context) {
 		params.Uncategorized = &v
 	}
 
+	// automated=true lists only conversations no person wrote in, false leaves
+	// them out; absent is both.
+	switch c.Query("automated") {
+	case "true":
+		v := true
+		params.Automated = &v
+	case "false":
+		v := false
+		params.Automated = &v
+	}
+
 	// Conversation-label filter: category_ids=<uuid>,<uuid>. A thread
 	// matches if it carries any of the listed labels. Invalid UUIDs are
 	// dropped, matching the email_ids behaviour.

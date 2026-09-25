@@ -435,3 +435,22 @@ func TestMessageFromReadsSyncedHeaders(t *testing.T) {
 		t.Errorf("InReplyTo not carried: %v", m.InReplyTo)
 	}
 }
+
+// A no-reply security alert is a notification, and only machine mail that
+// answers something is an auto-reply. The sender alone decides it, which is
+// all the backfill has.
+func TestDeterministicKindTellsNoticesFromAutoReplies(t *testing.T) {
+	alert := deterministicKind(Message{FromAddr: "Google <no-reply@accounts.google.com>", Subject: "Security alert", BodyText: "2-Step Verification turned on"})
+	if alert != KindNotification {
+		t.Errorf("security alert kind = %q, want %q", alert, KindNotification)
+	}
+	ack := deterministicKind(Message{
+		FromAddr:  "Support <noreply@helpdesk.example>",
+		Subject:   "Re: Partnership",
+		BodyText:  "We received your request.",
+		InReplyTo: []string{"<ours@example.test>"},
+	})
+	if ack != KindAutoReplyTicket {
+		t.Errorf("ticket receipt kind = %q, want %q", ack, KindAutoReplyTicket)
+	}
+}

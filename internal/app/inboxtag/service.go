@@ -197,8 +197,16 @@ func (s *Service) isOwn(ctx context.Context, m Message) bool {
 // Only the classes headers decide definitively are mapped; everything else
 // falls through to the model.
 func deterministicKind(m Message) string {
+	headers := m.Headers
+	if len(headers["From"]) == 0 && m.FromAddr != "" {
+		headers = make(map[string][]string, len(m.Headers)+1)
+		for k, v := range m.Headers {
+			headers[k] = v
+		}
+		headers["From"] = []string{m.FromAddr}
+	}
 	in := replyclassify.Input{
-		Headers:  m.Headers,
+		Headers:  headers,
 		Subject:  m.Subject,
 		BodyText: m.BodyText,
 	}
@@ -213,13 +221,28 @@ func deterministicKind(m Message) string {
 	case replyclassify.ClassOutOfOffice:
 		return KindAutoReplyOOO
 	case replyclassify.ClassAutoReply:
-		return KindAutoReplyTicket
+		// The header layer's auto-reply is any machine mail. Only an answer to
+		// something is an auto-reply; a no-reply alert or a list mailing is a
+		// notification.
+		if isAnswer(m) {
+			return KindAutoReplyTicket
+		}
+		return KindNotification
 	default:
 		// Positive, negative and neutral are lexicon guesses about a human
 		// reply, not statements about what the message is. They are exactly
 		// the judgment the model is better at, so they are not mapped.
 		return ""
 	}
+}
+
+// isAnswer reports a message that replies to an earlier one.
+func isAnswer(m Message) bool {
+	if len(m.InReplyTo) > 0 {
+		return true
+	}
+	subject := strings.ToLower(strings.TrimSpace(m.Subject))
+	return strings.HasPrefix(subject, "re:") || strings.HasPrefix(subject, "aw:") || strings.HasPrefix(subject, "sv:")
 }
 
 func (s *Service) persist(ctx context.Context, m Message, d Decision, answers map[string]Answer, model string, tokens int) error {
@@ -241,6 +264,7 @@ func (s *Service) persist(ctx context.Context, m Message, d Decision, answers ma
 		Priority:         d.Priority,
 		NeedsReview:      d.NeedsReview,
 		ReviewReason:     d.ReviewReason,
+		Automated:        d.Automated(),
 		Answers:          raw,
 		Labels:           d.Labels,
 		Model:            model,
@@ -407,6 +431,8 @@ func (s *Service) Backfill(ctx context.Context, orgID uuid.UUID, opts BackfillOp
 			Subject:         c.Subject,
 			BodyText:        c.BodyText,
 			FromAddr:        c.FromAddr,
+			Headers:         replyclassify.FlagHeaders(c.Flags),
+			InReplyTo:       c.InReplyTo,
 			PreviousMessage: previous,
 			Campaign:        campaign,
 		})

@@ -244,10 +244,11 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
             Views
           </div>
           {UNIBOX_VIEWS.map((v) => {
-            const members = viewCategories(v, data.categories);
             // Unread across the member labels. A thread wearing two of them
             // counts twice, which is close enough for a rail number.
-            const unread = members.reduce((n, c) => n + c.unread, 0);
+            const unread = v.automated
+              ? data.automated_unread
+              : viewCategories(v, data.categories).reduce((n, c) => n + c.unread, 0);
             return (
               <Tooltip key={v.id}>
                 <TooltipTrigger asChild>

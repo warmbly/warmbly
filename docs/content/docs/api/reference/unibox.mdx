@@ -29,6 +29,7 @@ Returns the inbox list, collapsed to one row per thread (the newest message), wi
 | `email_ids` | query | string | Comma-separated mailbox UUIDs. A thread matches if it landed in any of them. Invalid UUIDs are dropped. |
 | `category_ids` | query | string | Comma-separated conversation-label UUIDs. A thread matches if it carries any of them. |
 | `uncategorized` | query | boolean | `true` returns only threads carrying no conversation labels. |
+| `automated` | query | boolean | `true` returns only conversations no person wrote in: security alerts, notifications, bounces and auto-replies, as judged by [automatic inbox tagging](/guides/inbox-tagging/). `false` leaves them out, which is how the dashboard's Inbox reads. Omit for both. A conversation counts as automated only while every message in it that is not yours was judged automated, so a reply brings it back. |
 
 The response is a `data` plus `pagination` envelope. Each row summarises the whole thread behind it (`message_count`, `has_unread`) plus the conversation's labels.
 
@@ -65,7 +66,7 @@ The response is a `data` plus `pagination` envelope. Each row summarises the who
 
 `GET /unibox/count`
 
-Returns the number of unread conversations in the Inbox folder, optionally scoped to one mailbox. Snoozed conversations and mail in other folders (sent, drafts, archive, spam, trash) are not counted, so the number matches what the Inbox view lists as unread. Backs the inbox badge. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Returns the number of unread conversations in the Inbox folder, optionally scoped to one mailbox. Snoozed conversations, automated conversations (see `automated` above) and mail in other folders (sent, drafts, archive, spam, trash) are not counted, so the number matches what the Inbox view lists as unread. Backs the inbox badge. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -83,7 +84,7 @@ Returns the number of unread conversations in the Inbox folder, optionally scope
 
 `GET /unibox/overview`
 
-Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages, except `scheduled_pending`, which counts the sends queued from the organization's mailboxes against the workspace cap in `scheduled_pending_max`. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
+Rolls up the scope rail and top metric strip in one call: unread, today, week, snoozed, awaiting-reply, and pending-scheduled counts, plus per-folder, per-mailbox, per-tag, and per-conversation-label breakdowns. The `folders` array always lists all six canonical folders, zero-filled, in sidebar order; the headline counts exclude `spam` and `trash`. All counts are threads, not messages, except `scheduled_pending`, which counts the sends queued from the organization's mailboxes against the workspace cap in `scheduled_pending_max`. Automated conversations are counted in `automated` and `automated_unread` and left out of `unread`, `today`, `week`, the `inbox` folder and the per-mailbox and per-tag counts; `total` and the label counts still include them. Auth: **Scope** `READ_UNIBOX` · **Org permission** `access_unibox`.
 
 ### Response
 
@@ -95,6 +96,8 @@ Rolls up the scope rail and top metric strip in one call: unread, today, week, s
   "week": 88,
   "snoozed": 3,
   "awaiting_reply": 9,
+  "automated": 41,
+  "automated_unread": 6,
   "scheduled_pending": 2,
   "scheduled_pending_max": 10000,
   "folders": [

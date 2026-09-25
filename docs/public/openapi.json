@@ -8427,6 +8427,15 @@
             }
           },
           {
+            "name": "automated",
+            "in": "query",
+            "required": false,
+            "description": "`true` returns only conversations no person wrote in (security alerts, notifications, bounces, auto-replies), as judged by automatic inbox tagging. `false` leaves them out, which is how the dashboard's Inbox reads. Omit for both.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "snoozed",
             "in": "query",
             "required": false,
@@ -30064,6 +30073,14 @@
           },
           "awaiting_reply": {
             "type": "integer"
+          },
+          "automated": {
+            "type": "integer",
+            "description": "Conversations no person wrote in. Left out of unread, today, week, the inbox folder and the mailbox and tag counts."
+          },
+          "automated_unread": {
+            "type": "integer",
+            "description": "Automated conversations with an unread message."
           },
           "scheduled_pending": {
             "type": "integer"

@@ -363,6 +363,9 @@ type MailSearchParams struct {
 	// Uncategorized, when true, narrows to threads carrying no
 	// conversation labels at all. nil = no filter.
 	Uncategorized *bool
+	// Automated narrows to conversations no person wrote in (true) or leaves
+	// them out (false). nil = both.
+	Automated *bool
 	// Folder narrows to one canonical folder (inbox/sent/drafts/archive/
 	// spam/trash). nil = every working folder, so junk and filed mail never
 	// bleed into the combined view.
@@ -464,6 +467,10 @@ type UniboxOverview struct {
 	Week          int64 `json:"week"`
 	Snoozed       int64 `json:"snoozed"`
 	AwaitingReply int64 `json:"awaiting_reply"`
+	// Automated counts conversations no person wrote in. They are left out of
+	// Unread, Today, Week, the Inbox folder and the mailbox and tag counts.
+	Automated       int64 `json:"automated"`
+	AutomatedUnread int64 `json:"automated_unread"`
 	// AwaitingAgentDraft is the count of threads with a pending inbox-agent draft
 	// waiting for human review (M10).
 	AwaitingAgentDraft int64 `json:"awaiting_agent_draft"`
