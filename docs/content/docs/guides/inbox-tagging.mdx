@@ -1,6 +1,6 @@
 ---
 title: "Automatic inbox tagging"
-description: "Label and score inbound mail as it arrives, and let a confident verdict hold, stop, follow up or suppress. Optional, off by default."
+description: "Label and score inbound mail as it arrives, keep automated mail out of the inbox, and let a confident verdict hold, stop, follow up or suppress. Optional, off by default."
 ---
 
 Automatic tagging reads each inbound message and files it under workspace labels, then scores how much it deserves your attention. It is optional and off until an operator turns it on.
@@ -9,50 +9,66 @@ Classification sends message content to TypeSafe, so it is opt-in twice: an oper
 
 ## What it does
 
-It writes labels and a relevance score for every inbound message. That part needs nothing from you beyond turning the feature on.
+It writes labels and a relevance score for every inbound message, and moves mail nobody wrote (security alerts, notifications, bounces, auto-replies) out of the inbox into the **Automated** view. That part needs nothing from you beyond turning the feature on.
 
 It can also act on a confident verdict: hold a contact who said not now, stop a contact who declined, open a task when someone asks for a call, and suppress a sender who asked to be removed. Each of those is its own switch under **Settings > Sending > Classified replies**. The three reversible ones are on from the start; the suppression is off until you turn it on, because it is the one the system cannot undo. See [Acting on a verdict](#acting-on-a-verdict).
 
 ## Nothing to set up
 
-The whole label set is created when a workspace is created (and, on an instance that turned the feature on later, within the hour by the follow-up sweep), so the inbox can filter for `opt-out` before anything has opted out. The premade **Views** in the inbox rail (Hot leads, Needs a reply, Follow up, Declined, Automated) are built on those labels and fill as mail is classified; see [Unified inbox](/guides/unibox/). Every label has a hover explanation, so nobody has to learn the taxonomy first.
+The whole label set is created when a workspace is created (and, on an instance that turned the feature on later, within the hour by the follow-up sweep), so the inbox can filter for **Unsubscribe** before anyone has asked. The premade **Views** in the inbox rail (Hot leads, Needs a reply, Follow up, Declined, Automated) are built on those labels and fill as mail is classified; see [Unified inbox](/guides/unibox/). Every label has a hover explanation, so nobody has to learn the taxonomy first.
 
 ## The labels
 
-Four families, all of them ordinary workspace labels. The inbox filters on them like any label you made yourself, and the whole set is created when the feature is switched on, so you can filter for `opt-out` before anything has opted out.
+Labels are plain words, so anyone on the team can read them without learning a taxonomy first. They are ordinary workspace labels: the inbox filters on them like any label you made yourself. A workspace that already had a label with the same name keeps it and the automatic one files under it.
 
-**What the message is.** Exactly one applies: `bounce-hard`, `bounce-soft`, `auto-reply-ooo`, `auto-reply-ticket`, `human-reply`, `cold-inbound`, `notification`, `internal`.
+**What the message is.** At most one: **Bounced**, **Out of office**, **Auto-reply**, **Notification** or **Sales pitch**. A reply from a person carries no label for being a reply, because nearly every thread is one.
 
-**What a reply wants.** Only on a human reply.
+**What a reply wants.** Only on a person's reply:
 
-For a first answer to an approach: `agreed`, `wants-info`, `wants-pricing`, `not-now`, `not-interested`, `wrong-person`, `opt-out`.
+| Label | Means |
+|---|---|
+| **Interested** | They said yes to the call, the partnership or the next step |
+| **Meeting** | They asked for a call or meeting, or proposed or confirmed a time |
+| **Pricing** | They asked about price, terms or commercials |
+| **Question** | Open to it, but asking questions before deciding |
+| **Update** | News on something already agreed, or the answer to something you asked |
+| **Not now** | Interested in principle, but the timing is wrong |
+| **Not interested** | They declined |
+| **Wrong person** | Not the right contact, or they named someone else |
+| **Unsubscribe** | They asked to stop receiving email, or complained |
+| **Legal threat** | They threatened legal action or named a regulator |
 
-For a thread that is already a working relationship: `scheduling` (proposes or confirms a time), `in-progress` (reports progress, or says their side is done), `question-answered` (answers something you asked). Most of a real inbox is this, once anything has been agreed, and without these buckets those replies score badly for the wrong reason.
+The classifier answers more questions than this (whether the sender is the decision maker, mentions a competitor, is hostile, and a dozen more). Those feed the relevance score without becoming labels, because a thread wearing fifteen chips is not easier to read than one wearing two. A reply whose intent genuinely cannot be read gets no intent label rather than a wrong one.
 
-`unclear` is deliberate. A reply whose intent genuinely cannot be read needs somewhere to go, or it gets forced into a bucket that is simply wrong.
+**Needs review** means the classifier was not sure. See below.
 
-**Signals worth finding a thread by**: `asks-for-call`, `requests-removal`, `legal-threat`, `needs-human-judgement`. Ten more signals are recorded and feed the score without becoming labels, because a thread wearing fifteen chips is not easier to read than one wearing three.
+## Automated mail stays out of the inbox
 
-**`needs-review`** means the classifier declined to decide. See below.
+Security alerts, sign-in and verification codes, account and billing notices, receipts, newsletters, bounces and auto-replies are not mail anyone has to answer. When the verdict is that no person wrote a message, its conversation leaves **Inbox**, Unread, every mailbox and tag view and the unread badge, and is listed under the **Automated** view instead. **All mail** still shows everything.
+
+Only a confident verdict moves a conversation: a message the classifier was unsure about stays in the inbox. A conversation counts as automated only while every message in it that is not yours was judged automated, so a reply from a person brings it back to the inbox the moment it arrives, before it is even classified. Nothing is moved in the mailbox itself; the provider's folders are untouched.
+
+Common senders and headers (no-reply addresses, bulk mail, out-of-office subjects, delivery failures) are decided offline without a model call. Everything else is judged by the model.
 
 ## Follow-ups: who owes whom a reply
 
-Four labels answer the question a pipeline actually turns on, which is not "what is this message" but "what have I dropped".
+Three labels answer the question a pipeline actually turns on, which is not "what is this message" but "what have I dropped".
 
-| label | means |
+| Label | Means |
 |---|---|
-| `ball-in-our-court` | They replied and you have not answered for two days or more |
-| `awaiting-reply` | You sent last and it is still early |
-| `follow-up-due` | You sent last, five days ago, and heard nothing |
-| `going-cold` | They were interested, then went quiet for ten days |
+| **Needs reply** | They replied and you have not answered for two days or more |
+| **Follow up** | You sent last, five days ago, and heard nothing |
+| **Gone quiet** | They were interested, then went quiet for ten days |
 
-`going-cold` is separate from `follow-up-due` on purpose. A stalled deal and an unanswered cold email need different things from you, and someone who already said yes has earned more patience than someone who never answered. That is why its fuse is longer.
+A thread you wrote to recently wears nothing: there is nothing to do yet, and the **Awaiting reply** scope already lists it.
+
+**Gone quiet** is separate from **Follow up** on purpose. A stalled deal and an unanswered cold email need different things from you, and someone who already said yes has earned more patience than someone who never answered. That is why its fuse is longer.
 
 **The sweep makes no additional model calls.** When automatic tagging is enabled, it reuses stored classifications so bounces, autoresponders, and platform notices are not treated as human replies.
 
-**Threads that said no are never chased.** A reply classified `not-interested`, `opt-out`, `wrong-person` or `not-now` gets no follow-up label, ever. Nagging someone who declined is rude, and nagging someone who asked to be removed is a compliance problem rather than a missed opportunity. Bounces, autoresponders and platform notices are skipped too: there is nobody on the other end to chase.
+**Threads that said no are never chased.** A reply classified Not interested, Unsubscribe, Wrong person or Not now gets no follow-up label, ever. Nagging someone who declined is rude, and nagging someone who asked to be removed is a compliance problem rather than a missed opportunity. Automated mail is skipped too: there is nobody on the other end to chase.
 
-These labels change as the calendar moves, so they are recomputed hourly and **replaced rather than added**. A thread is never wearing both `awaiting-reply` and `follow-up-due`; it wears its state, not its history. A reply clears the follow-up label within the hour.
+These labels change as the calendar moves, so they are recomputed hourly and **replaced rather than added**. A thread is never wearing both **Follow up** and **Needs reply**; it wears its state, not its history. A reply clears the follow-up label within the hour.
 
 To recompute on demand:
 
@@ -68,13 +84,13 @@ The score is arithmetic over the answers, computed in Warmbly rather than asked.
 
 ## Acting on a verdict
 
-Four actions, each behind its own switch under **Settings > Sending > Classified replies**. The hold, the stop and the task are on by default; the suppression is off. Only a confident human reply may act: a verdict marked `needs-review`, a bounce, an autoresponder or a cold pitch never does, whatever its signals say. The intent has to clear the same `0.70` floor the labels use, because an action on an intent the labels did not trust is an action on a coin toss.
+Four actions, each behind its own switch under **Settings > Sending > Classified replies**. The hold, the stop and the task are on by default; the suppression is off. Only a confident human reply may act: a verdict marked **Needs review**, a bounce, an autoresponder or a cold pitch never does, whatever its signals say. The intent has to clear the same `0.70` floor the labels use, because an action on an intent the labels did not trust is an action on a coin toss.
 
 | Switch | Fires on | What happens |
 |---|---|---|
-| Hold a contact who says not now | `not-now` | The contact's sequences are parked, in every campaign they are in, for the number of days you set (default 30, between 1 and 90). The hold shows on the campaign's Leads tab and lifts on its own |
-| Stop a contact who declines | `not-interested`, `wrong-person` | The contact's sequences are parked for a year, in every campaign they are in. Nothing is unsubscribed and nothing is deleted; resume the lead from the Leads tab if the reply was misread |
-| Open a task when they ask for a call | `asks-for-call`, `scheduling` | A high-priority CRM task for the mailbox owner, due in 24 hours, titled with what they asked |
+| Hold a contact who says not now | **Not now** | The contact's sequences are parked, in every campaign they are in, for the number of days you set (default 30, between 1 and 90). The hold shows on the campaign's Leads tab and lifts on its own |
+| Stop a contact who declines | **Not interested**, **Wrong person** | The contact's sequences are parked for a year, in every campaign they are in. Nothing is unsubscribed and nothing is deleted; resume the lead from the Leads tab if the reply was misread |
+| Open a task when they ask for a call | **Meeting** | A high-priority CRM task for the mailbox owner, due in 24 hours, titled with what they asked |
 | Suppress a contact who asks to be removed | requests removal at `0.80` or above | The sender goes on the suppression list with the reason, and the contact's subscription flag is cleared, exactly as a reply that says "unsubscribe" does today |
 
 The suppression follows the same rule as a reply that says "unsubscribe": it only fires for someone replying in one of your campaign threads, or one of your contacts writing in, and never for mail sent to a list. It is the one irreversible action, so it reads its own yes/no question ("the sender asks to be removed") at the strong floor rather than the eight-way intent, and when it fires nothing else does: a suppressed address has no sequence left to hold or chase. A hold written by a classified reply never overrides a hold a member set by hand, and never cuts a longer automatic hold short. A call request opens one task, whichever of the tagging switch and the reply follow-up setting would have opened it.
@@ -85,12 +101,12 @@ Every action is recorded on the verdict, so the review page shows what was done 
 
 Two other features reuse a stored verdict rather than paying for a second judgment:
 
-- **Campaign reply handling.** The reply classifier that drives `stop_on_reply` and the reply branches reads the stored kind and intent when one exists, so `agreed` routes as a positive reply and `not-interested` as a negative one with the classifier's real confidence. The intent itself is also stored on the contact's progress, and a sequence can branch on it with the `reply_intent` condition (see [Campaigns](/guides/campaigns/)). Without tagging, the classifier asks TypeSafe one three-way question instead, and without a key it falls back to the platform LLM as before.
-- **The inbox agent.** A reply the verdict shows as closed (`not-interested`, `opt-out`, `wrong-person`, `not-now`), a one-line acknowledgement, a legal threat or a message that needs a person to read it is not drafted, so no credits are spent answering it.
+- **Campaign reply handling.** The reply classifier that drives `stop_on_reply` and the reply branches reads the stored kind and intent when one exists, so an interested reply routes as positive and a declined one as negative with the classifier's real confidence. The intent itself is also stored on the contact's progress, and a sequence can branch on it with the `reply_intent` condition (see [Campaigns](/guides/campaigns/)). Without tagging, the classifier asks TypeSafe one three-way question instead, and without a key it falls back to the platform LLM as before.
+- **The inbox agent.** A reply the verdict shows as closed (Not interested, Unsubscribe, Wrong person, Not now), a one-line acknowledgement, a legal threat or a message that needs a person to read it is not drafted, so no credits are spent answering it.
 
 ## When it declines to decide
 
-Every classification carries a confidence. If the message kind is below 0.70, the thread is labelled `needs-review` and no inferred kind, intent, or signal label is applied. If the kind is confident but the intent is below 0.70, the trusted kind and relevance remain, the uncertain intent label is omitted, and `needs-review` is added.
+Every classification carries a confidence. If the message kind is below 0.70, the thread is labelled **Needs review**, no other label is applied, and the conversation stays in the inbox. If the kind is confident but the intent is below 0.70, the trusted kind and relevance remain, the uncertain intent label is omitted, and **Needs review** is added.
 
 That floor is not caution for its own sake. A low-confidence answer is not merely uncertain, it is not reproducible: the same ambiguous message run three times returned a different winning label each time while confidence stayed near 0.2. A label that would not survive being asked again is not one to file mail under.
 
@@ -104,7 +120,7 @@ Common out-of-office subject prefixes and automated sender addresses are checked
 
 ## Follow-ups without TypeSafe
 
-With no `TYPESAFE_API_KEY`, Warmbly can still compute `awaiting-reply` and `follow-up-due` locally from sent-message dates. It makes no external call. `ball-in-our-court` and `going-cold` also need a trusted stored classification so an automated message is not mistaken for a person and a weak intent is not treated as interest.
+With no `TYPESAFE_API_KEY`, Warmbly can still compute **Follow up** locally from sent-message dates. It makes no external call. **Needs reply** and **Gone quiet** also need a trusted stored classification so an automated message is not mistaken for a person and a weak intent is not treated as interest, and without classification nothing leaves the inbox as automated.
 
 The key and switch add message classification. When both are unset, automatic inbox tagging sends no message content to TypeSafe. Other optional AI features use their separately configured provider; see [data control](/development/data-control/).
 

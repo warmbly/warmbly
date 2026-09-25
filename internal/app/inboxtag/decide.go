@@ -64,6 +64,13 @@ type Decision struct {
 	Scores map[string]float64
 }
 
+// Automated reports a trusted verdict that no person wrote this message. An
+// untrusted kind is never automated, so a message the model was unsure about
+// stays in the inbox.
+func (d Decision) Automated() bool {
+	return IsAutomatedKind(d.Kind) && d.ReviewReason != "kind" && !d.Skipped()
+}
+
 // Skipped reports a decision that did nothing because the message was ours.
 func (d Decision) Skipped() bool { return d.KindSource == "skipped" }
 
@@ -216,49 +223,36 @@ func relevance(d Decision) int {
 	return int(math.Round(clamp(total, 0, 100)))
 }
 
-// labelsFor is the slug list this decision writes. Every slug here must exist
-// as a workspace category before it can be applied; ensureCategories does that
-// mapping, and this function never invents a slug that is not in the taxonomy.
+// labelsFor is the label list this decision writes. Every title comes from
+// labelTitles in policy.go; this function never invents one.
 func labelsFor(d Decision) []string {
 	seen := map[string]bool{}
 	var out []string
-	add := func(s string) {
-		if s == "" || seen[s] {
+	add := func(id string) {
+		l := LabelFor(id)
+		if l == "" || seen[l] {
 			return
 		}
-		seen[s] = true
-		out = append(out, s)
+		seen[l] = true
+		out = append(out, l)
 	}
 
-	add(slug(d.Kind))
+	add(d.Kind)
 	if d.Kind == KindHumanReply && d.ReviewReason != "intent" {
-		add(slug(d.Intent))
+		add(d.Intent)
 	}
 
-	// Only the signals a human would want to find a thread by, and only where
-	// they can mean anything.
-	//
-	// Gated on a human reply because the first backfill over real mail put
-	// "needs-human-judgement" on nearly every row, bounces and platform
-	// notifications included. A label that is on everything is not a filter,
-	// and "a bounce needs a person to read it" is not true. The signals are
-	// still recorded and still feed the score for every kind; they just do not
-	// become labels on mail no person wrote.
+	// Signals become labels only on a human reply. The first backfill over
+	// real mail put signal labels on bounces and platform notices, and a label
+	// that is on everything is not a filter.
 	if d.Kind == KindHumanReply {
 		for _, sig := range d.Signals {
-			switch sig {
-			case SigRequestsRemoval, SigLegalThreat, SigAsksForCall, SigNeedsHumanJudgement:
-				add(slug(sig))
-			}
+			add(sig)
 		}
 	}
 
 	return out
 }
-
-// slug renders an identifier as the label a person reads: underscores become
-// hyphens, so `wants_pricing` files as `wants-pricing`.
-func slug(id string) string { return slugOf(id) }
 
 func clamp(v, lo, hi float64) float64 {
 	return math.Max(lo, math.Min(hi, v))
