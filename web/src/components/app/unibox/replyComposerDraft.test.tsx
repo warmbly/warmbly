@@ -63,6 +63,16 @@ vi.mock("@/lib/api/hooks/app/unibox/useComposeCandidates", () => ({
         },
     }),
 }));
+const followUps = vi.hoisted(() => ({
+    campaigns: [] as { campaign_id: string; campaign_name: string }[],
+    pauseAll: vi.fn(async () => ({ paused: 1, failed: 0 })),
+}));
+vi.mock("@/lib/api/hooks/app/campaigns/usePauseFollowUps", () => ({
+    default: (email?: string) => ({
+        targets: { contactId: email ? "ct1" : "", campaigns: email ? followUps.campaigns : [] },
+        pauseAll: followUps.pauseAll,
+    }),
+}));
 vi.mock("@/hooks/useOutboxStore", () => ({
     useOutboxStore: (sel: (s: { add: () => void }) => unknown) => sel({ add: () => {} }),
     resolveSendAt: () => new Date(),
@@ -99,6 +109,7 @@ vi.mock("./EmailBody", () => ({ default: ({ plain }: { plain?: string }) => <p>{
 
 const { ReplyComposer } = await import("./ReplyComposer");
 const { replyDraftKey } = await import("@/lib/unibox/replyDraft");
+const { endOfLocalDay, localDayISO } = await import("@/lib/leadHold");
 const draftKey = () => replyDraftKey("u1", "org1", "t1", "msg-1", "reply");
 
 // The thread maps its payload through `toUniboxEmail` on every render, so each
@@ -130,6 +141,7 @@ function pickSender(current: string, next: string) {
 describe("reply composer drafts", () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        followUps.campaigns = [];
         setupStorage();
         vi.useFakeTimers();
     });
@@ -370,6 +382,89 @@ describe("reply composer drafts", () => {
         expect(screen.queryByPlaceholderText("Search mailboxes…")).toBeNull();
         expect(fromTrigger("me@example.com")).toHaveFocus();
         expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("pauses the recipient's follow-ups once the reply is accepted, when asked to", async () => {
+        followUps.campaigns = [{ campaign_id: "c1", campaign_name: "Q3 outreach" }];
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        fireEvent.click(screen.getByRole("button", { name: /Pause follow-ups/ }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "For 1 week" }));
+        expect(screen.getByRole("button", { name: /Pause follow-ups: 1 week/ })).toBeInTheDocument();
+        fireEvent.change(body(), { target: { value: "Let's talk next month" } });
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(sendReply).toHaveBeenCalledOnce();
+        expect(followUps.pauseAll).toHaveBeenCalledWith(
+            { contactId: "ct1", campaigns: followUps.campaigns },
+            expect.any(String),
+        );
+        expect(sendReply.mock.invocationCallOrder[0]).toBeLessThan(followUps.pauseAll.mock.invocationCallOrder[0]);
+    });
+
+    it("pauses with no end when told to wait for a resume", async () => {
+        followUps.campaigns = [{ campaign_id: "c1", campaign_name: "Q3 outreach" }];
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        fireEvent.click(screen.getByRole("button", { name: /Pause follow-ups/ }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "Until I resume them" }));
+        fireEvent.change(body(), { target: { value: "Noted" } });
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(followUps.pauseAll).toHaveBeenCalledWith(expect.objectContaining({ contactId: "ct1" }), null);
+    });
+
+    it("pauses nothing unless asked, or when the send fails", async () => {
+        followUps.campaigns = [{ campaign_id: "c1", campaign_name: "Q3 outreach" }];
+        const view = render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        fireEvent.change(body(), { target: { value: "Plain reply" } });
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(sendReply).toHaveBeenCalledOnce();
+        expect(followUps.pauseAll).not.toHaveBeenCalled();
+        view.unmount();
+
+        sendReply.mockRejectedValueOnce(new Error("offline"));
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        fireEvent.click(screen.getByRole("button", { name: /Pause follow-ups/ }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "For 3 days" }));
+        fireEvent.change(body(), { target: { value: "Will fail" } });
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(followUps.pauseAll).not.toHaveBeenCalled();
+    });
+
+    it("counts a scheduled reply's pause from when it goes out", async () => {
+        followUps.campaigns = [{ campaign_id: "c1", campaign_name: "Q3 outreach" }];
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        fireEvent.click(screen.getByRole("button", { name: /Pause follow-ups/ }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "For 3 days" }));
+        fireEvent.change(body(), { target: { value: "Talk tomorrow" } });
+        fireEvent.click(screen.getByRole("button", { name: /Schedule/ }));
+        await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "Tomorrow 9:00" })));
+        expect(sendReply).toHaveBeenCalledWith(expect.objectContaining({ send_mode: "scheduled" }));
+        expect(followUps.pauseAll).toHaveBeenCalledWith(expect.anything(), endOfLocalDay(localDayISO(4)));
+    });
+
+    it("pauses only the campaigns left ticked", async () => {
+        followUps.campaigns = [
+            { campaign_id: "c1", campaign_name: "Q3 outreach" },
+            { campaign_id: "c2", campaign_name: "Partners" },
+        ];
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        fireEvent.click(screen.getByRole("button", { name: /Pause follow-ups/ }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "Partners" }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "For 2 weeks" }));
+        fireEvent.change(body(), { target: { value: "Only this one" } });
+        await act(async () => fireEvent.keyDown(body(), { key: "Enter", ctrlKey: true }));
+        expect(followUps.pauseAll).toHaveBeenCalledWith(
+            { contactId: "ct1", campaigns: [followUps.campaigns[0]] },
+            expect.any(String),
+        );
+    });
+
+    it("offers no pause on a forward or with nothing left to send", () => {
+        const view = render(<ReplyComposer threadId="t1" replyTo={message()} mode="reply" onClose={() => {}} />);
+        expect(screen.queryByRole("button", { name: /Pause follow-ups/ })).toBeNull();
+        view.unmount();
+        followUps.campaigns = [{ campaign_id: "c1", campaign_name: "Q3 outreach" }];
+        const seed = { to: ["them@example.com"], cc: [], bcc: [], subject: "Fwd: x", body: "" };
+        render(<ReplyComposer threadId="t1" replyTo={message()} mode="forward" seed={seed} onClose={() => {}} />);
+        expect(screen.queryByRole("button", { name: /Pause follow-ups/ })).toBeNull();
     });
 
     it("does not claim a failed save succeeded or close away the unsaved text", () => {

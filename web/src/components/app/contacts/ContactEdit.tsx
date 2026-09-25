@@ -212,7 +212,11 @@ function ContactEditPanel({
 
     React.useEffect(() => {
         function onKey(e: KeyboardEvent) {
-            if (e.key === "Escape") requestClose();
+            if (e.key !== "Escape") return;
+            // Innermost layer only: a popover, a confirm or a dialog opened
+            // from a tab (pausing a lead) takes its own Escape.
+            if (document.querySelector("[data-floating], [role='alertdialog'], [aria-modal='true']")) return;
+            requestClose();
         }
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
@@ -260,7 +264,7 @@ function ContactEditPanel({
                             detailLoading={detail.isLoading}
                         />
                     )}
-                    {tab === "activity" && <ActivityTab contactId={contact.id} />}
+                    {tab === "activity" && <ActivityTab contactId={contact.id} contactName={firstName || lastName ? displayName : contact.email} />}
                     {tab === "notes" && <NotesTab contactId={contact.id} />}
                     {tab === "research" && <ResearchTab contactId={contact.id} />}
                     {tab === "details" && (

@@ -40,6 +40,14 @@ import TaskTypePicker from "@/components/app/crm/TaskTypePicker";
 import DueInDays from "@/components/app/crm/DueInDays";
 import { dueInDaysToISO } from "@/lib/helper/dueDate";
 import useContactByEmail from "@/lib/api/hooks/app/contacts/useContactByEmail";
+import useContactCampaignStates from "@/lib/api/hooks/app/contacts/useContactCampaignStates";
+import type ContactCampaignState from "@/lib/api/models/app/contacts/ContactCampaignState";
+import type MiniCampaign from "@/lib/api/models/app/campaigns/MiniCampaign";
+import { holdSummary } from "@/lib/api/models/app/contacts/Contact";
+import { leadCanBePaused } from "@/lib/leadHold";
+import { usePermission } from "@/hooks/usePermission";
+import { PauseLeadButton, ResumeLeadButton } from "@/components/app/contacts/LeadHoldButtons";
+import LeadStatusPill from "@/components/app/contacts/LeadStatusPill";
 import useContact from "@/lib/api/hooks/app/contacts/useContact";
 import useContactDeals from "@/lib/api/hooks/app/contacts/useContactDeals";
 import useContactNotes from "@/lib/api/hooks/app/contacts/useContactNotes";
@@ -203,23 +211,8 @@ export default function ContactContextPanel({
                             )}
                         </div>
 
-                        {/* Lead source : campaigns */}
-                        <Section label="Campaigns" hint={campaigns.length ? undefined : "Not in any campaign"}>
-                            {campaigns.length > 0 && (
-                                <div className="flex flex-wrap gap-1.5">
-                                    {campaigns.map((c) => (
-                                        <Link
-                                            key={c.id}
-                                            to="/app/campaigns"
-                                            className="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-white border border-slate-200 hover:border-sky-300 text-[10.5px] text-slate-600 hover:text-sky-700 transition-colors"
-                                        >
-                                            <MegaphoneIcon className="w-2.5 h-2.5 text-slate-400" />
-                                            <span className="truncate max-w-[140px]">{c.name}</span>
-                                        </Link>
-                                    ))}
-                                </div>
-                            )}
-                        </Section>
+                        {/* Campaigns, with pause / resume so a reply can hold follow-ups in place. */}
+                        <CampaignsSection contactId={contact.id} contactName={name} fallback={campaigns} />
 
                         {/* Engagement */}
                         {eng && (
@@ -276,6 +269,113 @@ export default function ContactContextPanel({
             </aside>
         </>
     );
+}
+
+// One row per campaign: the lead's state, what happens next, and pause / resume.
+function CampaignsSection({
+    contactId,
+    contactName,
+    fallback,
+}: {
+    contactId: string;
+    contactName: string;
+    fallback: MiniCampaign[];
+}) {
+    const statesQ = useContactCampaignStates(contactId);
+    const canWrite = usePermission("MANAGE_CAMPAIGNS");
+    const states = statesQ.data?.data;
+
+    // The contact's own campaign list stands in until the per-campaign state loads.
+    if (!states) {
+        return (
+            <Section label="Campaigns" hint={fallback.length || statesQ.isPending ? undefined : "Not in any campaign"}>
+                {fallback.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                        {fallback.map((c) => (
+                            <Link
+                                key={c.id}
+                                to={`/app/campaigns/${c.id}/leads`}
+                                className="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-white border border-slate-200 hover:border-sky-300 text-[10.5px] text-slate-600 hover:text-sky-700 transition-colors"
+                            >
+                                <MegaphoneIcon className="w-2.5 h-2.5 text-slate-400" />
+                                <span className="truncate max-w-[140px]">{c.name}</span>
+                            </Link>
+                        ))}
+                    </div>
+                )}
+            </Section>
+        );
+    }
+
+    return (
+        <Section label="Campaigns" hint={states.length ? undefined : "Not in any campaign"}>
+            <div className="space-y-1.5">
+                {states.map((s) => {
+                    const line = campaignLine(s);
+                    return (
+                        <div key={s.campaign_id} className="rounded-md border border-slate-200 px-2.5 py-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                                <MegaphoneIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                                <Link
+                                    to={`/app/campaigns/${s.campaign_id}/leads`}
+                                    title={s.campaign_name}
+                                    className="min-w-0 flex-1 truncate text-[12px] font-medium text-slate-800 hover:text-sky-700 transition-colors"
+                                >
+                                    {s.campaign_name}
+                                </Link>
+                                <LeadStatusPill status={s.lead_status} />
+                            </div>
+                            <div className="mt-1 flex items-center gap-2 min-w-0">
+                                <span
+                                    title={line.title}
+                                    className={`min-w-0 flex-1 truncate text-[11px] ${s.hold ? "text-violet-700" : "text-slate-500"}`}
+                                >
+                                    {line.text}
+                                </span>
+                                {canWrite && s.hold ? (
+                                    <ResumeLeadButton campaignId={s.campaign_id} contactId={contactId} />
+                                ) : canWrite && leadCanBePaused(s) ? (
+                                    <PauseLeadButton
+                                        campaign={{ id: s.campaign_id, name: s.campaign_name }}
+                                        lead={{ id: contactId, name: contactName }}
+                                    />
+                                ) : null}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </Section>
+    );
+}
+
+// A row's second line: the hold, else the next step and its timing, else why it ended.
+function campaignLine(s: ContactCampaignState): { text: string; title?: string } {
+    if (s.hold) {
+        const text = holdSummary(s.hold);
+        return { text, title: text };
+    }
+    const next = s.next;
+    if (next) {
+        let when = "";
+        if (next.state === "due") when = "due";
+        else if (next.not_before) when = shortDate(next.not_before);
+        else if (next.state === "blocked") when = "blocked";
+        else if (next.state === "paused") when = "on hold";
+        const text = `Next: ${next.step_label}${when ? ` · ${when}` : ""}`;
+        return { text, title: next.constraint ? `${text}. ${next.constraint}` : text };
+    }
+    const text = s.ended_reason || "Nothing scheduled";
+    return { text, title: text };
+}
+
+function shortDate(iso: string): string {
+    return new Date(iso).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
 }
 
 // Resolve the org's first pipeline + its first stage, used as the default
