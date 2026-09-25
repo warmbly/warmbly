@@ -1,4 +1,4 @@
-// ComposeDraftsItem — the "Drafts (n)" row under the rail's Compose button.
+// ComposeDraftsItem — the "Drafts (n)" row at the top of the unibox rail.
 // Opens a small popover listing autosaved compose drafts; clicking one resumes
 // it in the compose window, the trash deletes it. Renders nothing while there
 // are no drafts, so the rail stays clean for most users.

@@ -3,7 +3,7 @@
 // Reads /unibox/overview so every count is server-truth. One visual
 // language for every row: a quiet icon, the label, a bare tabular count.
 //
-//   Compose
+//   Compose drafts               (only when there are any)
 //   All mail / Inbox / Unread / Awaiting reply / Agent drafts / Snoozed
 //   Drafts / Sent / Scheduled / Archive / Spam / Trash
 //   Views                        (premade, over the automatic labels)
@@ -25,7 +25,6 @@ import {
   MoonIcon,
   MoreHorizontalIcon,
   OctagonAlertIcon,
-  PenLineIcon,
   ReplyIcon,
   SearchIcon,
   SendIcon,
@@ -39,10 +38,8 @@ import {
 } from "lucide-react";
 import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import useMarkSeen from "@/lib/api/hooks/app/unibox/useMarkSeen";
-import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import ComposeDraftsItem from "@/components/app/unibox/compose/ComposeDraftsItem";
-import { useComposeStore } from "@/hooks/useComposeStore";
 import { cn } from "@/lib/utils";
 import { DitherMeter } from "@/components/ui/dither";
 import {
@@ -157,17 +154,8 @@ export function ScopeRail({ scope, onChange }: ScopeRailProps) {
 
   return (
     <nav className="h-full w-full bg-white border-r border-slate-200 overflow-y-auto py-3">
-      <div className="px-3 pb-3">
-        <ShortcutTooltip label="New email" combo="n" side="bottom">
-          <button
-            type="button"
-            onClick={() => useComposeStore.getState().openCompose()}
-            className="w-full h-8 rounded-md bg-sky-600 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5 hover:bg-sky-700 active:bg-sky-800 transition-colors"
-          >
-            <PenLineIcon className="w-3.5 h-3.5" />
-            Compose
-          </button>
-        </ShortcutTooltip>
+      {/* Collapses when there are no drafts. */}
+      <div className="px-3 pb-2 empty:hidden">
         <ComposeDraftsItem />
       </div>
 
