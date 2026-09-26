@@ -227,7 +227,7 @@ $ warmbly campaign start 6f1c…
 ! `warmbly campaign start` sends real mail. Continue? [y/N]
 ```
 
-`--yes` is the only way past it, which makes it the flag to grep for in a script review. The commands that behave this way are `campaign start`, `campaign test`, `mailbox send`, `inbox reply`, `inbox compose` and `inbox approve-draft`.
+`--yes` is the only way past it, which makes it the flag to grep for in a script review. The commands that behave this way are `campaign start`, `campaign test`, `placement test`, `mailbox send`, `inbox reply`, `inbox compose` and `inbox approve-draft`.
 
 ## Commands
 
@@ -249,6 +249,7 @@ Run `warmbly <command> --help` for the flags, and `warmbly <command> <subcommand
 | `form` | lead capture forms, submissions and stats |
 | `deal`, `pipeline`, `task` | the CRM |
 | `analytics` | dashboard, deliverability, warmup, per-mailbox and per-campaign numbers |
+| `placement` | [inbox placement tests](/guides/placement-tests/): overview, test, list, view, cancel, seed inboxes, a campaign's scheduled test |
 | `audit` | the workspace's audit trail |
 | `advisor` | recommendations, and applying or dismissing them |
 | `webhook` | endpoints, deliveries, redelivery, event types |

@@ -28,12 +28,12 @@ All errors follow this structure:
 |------|-------|-------------|
 | 400 | Bad Request | Invalid request syntax or parameters, or a quota that would be passed (`storage_limit_reached`) |
 | 401 | Unauthorized | Missing or invalid authentication |
-| 402 | Payment Required | Out of AI credits (`insufficient_credits`) |
+| 402 | Payment Required | Out of AI credits (`insufficient_credits`), or no placement tests left this month (`placement_quota_exceeded`, `placement_not_entitled`) |
 | 403 | Forbidden | Authenticated but lacks permission, or the workspace's mailbox allowance is full (`mailbox_allowance_reached`) |
 | 404 | Not Found | Resource doesn't exist |
 | 409 | Conflict | Resource already exists |
 | 422 | Unprocessable | Validation failed |
-| 429 | Too Many Requests | Rate limit or AI usage cap exceeded (`rate_limit_exceeded`, `usage_cap_exceeded`) |
+| 429 | Too Many Requests | Rate limit or AI usage cap exceeded (`rate_limit_exceeded`, `usage_cap_exceeded`), or too many placement tests running at once (`placement_too_many_running`) |
 
 ### Server errors (5xx)
 
@@ -226,6 +226,37 @@ The [inbox vendor](/guides/mailbox-import/#import-from-an-inbox-vendor) routes (
 | `app_password_invalid` | 400 | `app_password` is not 16 letters once spaces are removed. Create one at myaccount.google.com/apppasswords and send it as Google shows it |
 | `mailbox_not_google_signin` | 409 | The mailbox is not connected with per-mailbox Google sign-in: it is already on an app password or an admin grant, is an Outlook or SMTP/IMAP mailbox, or its sign-in is held by Warmbly Cloud. A repeat of a switch that succeeded answers this |
 
+#### Placement test refusals
+
+The [inbox placement test](/guides/placement-tests/) routes (`/placement/*` and `/campaigns/:id/placement-monitor`) answer these. A refused test sends nothing: every check runs before the first copy is scheduled.
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `placement_not_entitled` | 402 | The workspace has no active trial or subscription, so it cannot start a test. Only the hosted product answers this |
+| `placement_quota_exceeded` | 402 | The workspace has used its monthly allowance of tests on the instance panel, or the linked Warmbly Cloud workspace has used its allowance on Warmbly Cloud's panel. A tracking comparison needs two. Tests on the workspace's own seed inboxes are never counted |
+| `placement_too_many_running` | 429 | The workspace already has `3` tests running, counting each half of a tracking comparison. Wait for one to finish |
+| `placement_sender_busy` | 409 | The sending mailbox still has copies of another test waiting to be sent. One test sends from a mailbox at a time |
+| `placement_sender_unavailable` | 409 | The sending mailbox is not connected and active, or it is itself a seed inbox, which receives tests and cannot send one |
+| `placement_daily_budget` | 409 | The test needs more sends than the mailbox has left of its daily limit today. The `message` gives both numbers. Every copy is a send from that limit |
+| `placement_no_seeds` | 409 | The panel has no seed inbox the test could use: none were added, none is connected, or every one is on the sender's own domain, which is always skipped |
+| `placement_panel_unavailable` | 409 | `panel` is `cloud` on an instance that is not linked to Warmbly Cloud |
+| `placement_invalid_tracking` | 400 | `tracking` is `on` or `compare` for a campaign that sends plain text, which carries no tracking |
+| `placement_not_running` | 409 | `POST /placement/tests/:id/cancel` on a test that has already finished or been cancelled |
+| `placement_seed_unavailable` | 409 | The mailbox cannot be marked as a seed inbox: it is on the instance panel, or a placement test is still sending from it |
+| `placement_seed_limit` | 409 | The workspace already has `50` seed inboxes. Unmark one first |
+| `mailbox_is_seed` | 409 | Warmup was started or resumed on a seed inbox. A seed never warms up; unmark it first with `PUT /placement/seeds/:email_account_id` |
+
+```json
+{
+  "error": "Conflict",
+  "message": "This test sends 40 emails from sales@yourdomain.com, which has 12 left of its daily limit today.",
+  "code": "placement_daily_budget",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
+A `400` without one of these codes is a malformed request: an unknown `panel` or `tracking`, a `sequence_id` without its `campaign_id`, a missing subject or body on an ad-hoc test, a monitor `interval_days` outside `1` to `30` or an `alert_below` outside `0` to `100`.
+
 ### 401 Unauthorized
 
 Returned when authentication fails.
@@ -273,6 +304,8 @@ Returned when an AI action is requested but the organization is out of credits. 
 **How to fix:**
 - Wait for the monthly allowance to reset, or buy a top-up pack (see [AI credits](/guides/ai-credits/))
 - Related: a `429` with code `usage_cap_exceeded` means a short-term AI usage cap was hit; retry later
+
+Placement tests answer `402` too, with `placement_not_entitled` or `placement_quota_exceeded`; see [placement test refusals](#placement-test-refusals).
 
 ### 403 Forbidden
 
@@ -430,6 +463,7 @@ A few conflicts carry their own `code`. The mailbox import's are under [mailbox 
 | `code` | Status | Meaning |
 |--------|--------|---------|
 | `contact_email_taken` | 409 | The address given to [update a contact](/api/reference/contacts/#update-a-contact) already belongs to another contact |
+| `mailbox_is_seed` | 409 | Warmup was started or resumed on a placement seed inbox. See [placement test refusals](#placement-test-refusals) |
 | `mailbox_not_google_signin` | 409 | `POST /emails/onboarding/app-password/:id` on a mailbox that is not connected with per-mailbox Google sign-in. See [app password switch refusals](#app-password-switch-refusals) |
 | `mailbox_cloud_unenroll_failed` | 409 | The mailbox is linked to [Warmbly Cloud](/guides/warmbly-cloud/) and its link could not be released, so `DELETE /emails/{id}` would leave Warmbly Cloud holding its credential or its claim on it. The mailbox record remains, and restoration onto its worker is attempted |
 

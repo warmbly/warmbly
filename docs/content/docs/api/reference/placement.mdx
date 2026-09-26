@@ -1,0 +1,388 @@
+---
+title: Inbox placement tests
+description: Start placement tests, read where each copy landed, manage the workspace's seed inboxes, and schedule a campaign's placement monitor.
+---
+
+An inbox placement test sends a template or a campaign step from one of the workspace's mailboxes to a panel of seed inboxes and reports where each copy landed: the primary inbox, a Gmail tab, spam, or nowhere. The [placement tests guide](/guides/placement-tests/) explains how copies are rendered, sent and found, and how to read a result.
+
+Every route is scoped to the selected organization (API keys are always bound to one), and every id in a request is checked against it: a sending mailbox, campaign, step or contact from another workspace is a `404`. Errors follow the shared `{error, message, code, request_id}` envelope; the codes these routes add are listed under [placement test refusals](/api/error-codes/#placement-test-refusals).
+
+Changes are pushed live as a `PLACEMENT_TEST_UPDATED` event on the organization's [realtime](/api/realtime/) channel when a test starts, on every new verdict, and when it finishes or is cancelled.
+
+## Get the overview
+
+`GET /placement/overview`
+
+Returns the seed panels this workspace can test on, with each panel's seed count and provider mix, and the workspace's monthly allowance.
+
+Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`
+
+### Response
+
+```json
+{
+  "data": {
+    "panels": [
+      {
+        "panel": "instance",
+        "available": true,
+        "seeds": 38,
+        "families": [
+          { "family": "gmail", "label": "Gmail", "seeds": 10 },
+          { "family": "google_workspace", "label": "Google Workspace", "seeds": 8 },
+          { "family": "microsoft365", "label": "Microsoft 365", "seeds": 8 },
+          { "family": "outlook", "label": "Outlook.com", "seeds": 6 },
+          { "family": "yahoo", "label": "Yahoo Mail", "seeds": 6 }
+        ],
+        "metered": true
+      },
+      {
+        "panel": "workspace",
+        "available": false,
+        "reason": "Mark one of this workspace's mailboxes as a seed inbox to test on it.",
+        "seeds": 0,
+        "families": [],
+        "metered": false
+      }
+    ],
+    "usage": {
+      "used": 4,
+      "limit": 40,
+      "period_start": "2026-09-01T00:00:00Z",
+      "period_end": "2026-10-01T00:00:00Z"
+    },
+    "workspace_seeds": 0,
+    "seeds_per_test": 40,
+    "spacing_seconds": 20
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `panels[].panel` | `instance` (the operator's panel), `workspace` (the workspace's own seed inboxes) or `cloud` (Warmbly Cloud's panel). `cloud` is listed on a self-hosted instance, and elsewhere only when it is available |
+| `panels[].available` | Whether a test can run on the panel now. `reason` says why not, in one sentence |
+| `panels[].families` | Seeds per provider family. `family` is a stable id (`gmail`, `google_workspace`, `microsoft365`, `outlook`, `yahoo`, `aol`, `icloud`, `zoho`, `fastmail`, `gmx`, `proton`, `yandex`, `other` and more); `label` is its display name |
+| `panels[].metered` | Whether a test on the panel counts against a monthly allowance |
+| `usage` | Metered tests this calendar month (UTC). `limit` is `null` when the instance does not meter tests, which is always the case on a self-hosted instance |
+| `seeds_per_test` | The most seeds one test sends to |
+| `spacing_seconds` | The average gap between two copies from one sender |
+
+## Start a test
+
+`POST /placement/tests`
+
+Starts a test, or two linked tests for a tracking comparison. Every check (entitlement, allowance, tests in flight, the sender's state and daily limit, available seeds) runs before anything is scheduled, so a refused request sends nothing. Supports `Idempotency-Key`.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `sender_account_id` | uuid | yes | The mailbox that sends every copy. It must be connected and active, cannot be a seed inbox, and must be one an API key with a mailbox allowlist may use |
+| `campaign_id` | uuid | no | Test with this campaign's settings: its opt-out line, tracking and attachments |
+| `sequence_id` | uuid | no | A step of `campaign_id`. Its subject and body are used when the request carries neither. Needs `campaign_id` |
+| `contact_id` | uuid | no | The contact merge fields and AI blocks are rendered for. Defaults to the campaign's first lead |
+| `subject` | string | no | The subject. Required when there is no step to take it from |
+| `body_html` | string | no | HTML body. A test needs this or `body_plain` |
+| `body_plain` | string | no | Plain-text body |
+| `tracking` | string | no | `campaign` (default: the campaign's own open and click tracking, none for an ad-hoc test), `on`, `off`, or `compare` (one untracked and one tracked test to the same seeds) |
+| `panel` | string | no | `instance` (default), `workspace` or `cloud` |
+
+```json
+{
+  "sender_account_id": "a0a1a2a3-0000-0000-0000-000000000003",
+  "campaign_id": "b1f2c3d4-0000-0000-0000-000000000001",
+  "sequence_id": "c7d8e9f0-0000-0000-0000-000000000002",
+  "tracking": "compare"
+}
+```
+
+### Response
+
+`201 Created` with the new tests: one, or two sharing a `compare_group_id` for a comparison. Their copies start going out within seconds.
+
+```json
+{
+  "data": [
+    {
+      "id": "d1e2f3a4-0000-0000-0000-000000000010",
+      "sender_account_id": "a0a1a2a3-0000-0000-0000-000000000003",
+      "sender_email": "sales@yourdomain.com",
+      "created_by": "9c2a0000-0000-0000-0000-000000000001",
+      "campaign_id": "b1f2c3d4-0000-0000-0000-000000000001",
+      "sequence_id": "c7d8e9f0-0000-0000-0000-000000000002",
+      "contact_id": "e5f6a7b8-0000-0000-0000-000000000004",
+      "monitor_id": null,
+      "subject": "Quick question about outbound at Acme",
+      "open_tracking": false,
+      "link_tracking": false,
+      "compare_group_id": "f0f1f2f3-0000-0000-0000-000000000020",
+      "origin": "manual",
+      "panel": "instance",
+      "status": "running",
+      "created_at": "2026-09-25T14:00:00Z",
+      "finished_at": null,
+      "summary": {
+        "total": 38, "pending": 38, "inbox": 0, "promotions": 0, "other": 0, "spam": 0,
+        "missing": 0, "failed": 0, "cancelled": 0, "delivered": 0,
+        "inbox_rate": null, "tabs_rate": null, "spam_rate": null, "missing_rate": null
+      },
+      "families": []
+    }
+  ]
+}
+```
+
+The second element (omitted above) is the tracked half, with `open_tracking` and `link_tracking` set. A comparison counts as two tests against the allowance and the limit on tests in flight, and sends twice as many copies.
+
+## List tests
+
+`GET /placement/tests`
+
+Returns the workspace's tests, newest first, each with its counts. The copy's bodies are left out of the list.
+
+Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`
+
+| Parameter | In | Type | Description |
+|-----------|----|------|-------------|
+| `limit` | query | integer | `1` to `100`, default `25`. Anything else is a `400` |
+| `cursor` | query | string | Opaque cursor from a previous `pagination.next_cursor`. One this API did not issue is a `400` |
+| `campaign_id` | query | uuid | Only tests of this campaign |
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "d1e2f3a4-0000-0000-0000-000000000010",
+      "sender_email": "sales@yourdomain.com",
+      "status": "completed",
+      "panel": "instance",
+      "origin": "manual",
+      "finished_at": "2026-09-25T16:20:00Z",
+      "summary": {
+        "total": 38, "pending": 0, "inbox": 27, "promotions": 4, "other": 1, "spam": 4,
+        "missing": 2, "failed": 0, "cancelled": 0, "delivered": 38,
+        "inbox_rate": 0.7105, "tabs_rate": 0.1316, "spam_rate": 0.1053, "missing_rate": 0.0526
+      },
+      "families": [
+        {
+          "family": "gmail",
+          "label": "Gmail",
+          "counts": {
+            "total": 10, "pending": 0, "inbox": 5, "promotions": 4, "other": 1, "spam": 0,
+            "missing": 0, "failed": 0, "cancelled": 0, "delivered": 10,
+            "inbox_rate": 0.5, "tabs_rate": 0.5, "spam_rate": 0, "missing_rate": 0
+          }
+        }
+      ]
+    }
+  ],
+  "pagination": { "total": 12, "has_more": false, "next_cursor": null }
+}
+```
+
+Each test carries the fields shown under [start a test](#start-a-test); the example trims them.
+
+| Field | Description |
+|-------|-------------|
+| `status` | `running`, `completed`, `cancelled` or `failed`. A test fails when no copy was delivered at all, with the reason in `error` |
+| `origin` | `manual` (started by a person or a key), `monitor` (a campaign's placement monitor), `admin` (an operator) or `remote` |
+| `summary` | Counts over every copy. `delivered` is `inbox + promotions + other + spam + missing`: every copy that left the sender and got a verdict |
+| `summary.*_rate` | Fractions from `0` to `1` of `delivered`, `null` until something is delivered. `tabs_rate` covers `promotions` and `other` |
+| `families` | The same counts per provider family |
+
+## Get a test
+
+`GET /placement/tests/:id`
+
+Returns one test with its copy, every seed's result, the content check of the copy and, for a tracking comparison, the other half.
+
+Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "d1e2f3a4-0000-0000-0000-000000000010",
+    "subject": "Quick question about outbound at Acme",
+    "body_html": "<p>Hi Dana,</p><p>...</p>",
+    "body_plain": "Hi Dana,\n\n...",
+    "status": "completed",
+    "panel": "instance",
+    "summary": { "total": 38, "inbox": 27, "delivered": 38, "inbox_rate": 0.7105 },
+    "families": [],
+    "results": [
+      {
+        "seed": "a***@gmail.com",
+        "family": "gmail",
+        "family_label": "Gmail",
+        "folder": "promotions",
+        "scheduled_at": "2026-09-25T14:00:05Z",
+        "sent_at": "2026-09-25T14:00:06Z",
+        "detected_at": "2026-09-25T14:01:30Z"
+      }
+    ],
+    "content": {
+      "score": 84,
+      "issues": []
+    }
+  }
+}
+```
+
+The test's own fields are the ones listed under [list tests](#list-tests), plus `body_html` and `body_plain`; the example trims them.
+
+| Field | Description |
+|-------|-------------|
+| `results[].seed` | The seed's address, masked on the `instance` and `cloud` panels and shown in full on `workspace` |
+| `results[].folder` | `pending`, `inbox`, `promotions`, `other` (another Gmail tab: Updates, Social or Forums), `spam`, `missing` (not seen within 120 minutes of `sent_at`), `failed` (never left the sender; `error` says why) or `cancelled` |
+| `content` | The advisory content score of the test's copy, the same shape as [score template content](/api/reference/deliverability-ops/#score-template-content) |
+| `compare` | Present only on a tracking comparison: the other half, with its counts and without its results |
+
+## Cancel a test
+
+`POST /placement/tests/:id/cancel`
+
+Stops the copies that have not been sent yet. Copies already sent keep being classified. Supports `Idempotency-Key`.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+### Response
+
+`200 OK` with the test, in the list shape. A test that has already finished answers `409` with `placement_not_running`.
+
+## List seed inboxes
+
+`GET /placement/seeds`
+
+Returns every mailbox of the workspace with whether it is one of the workspace's seed inboxes. A key restricted to certain mailboxes sees only those.
+
+Auth: **Scope** `READ_EMAILS` · **Org permission** `view_campaigns`
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "email_account_id": "a0a1a2a3-0000-0000-0000-000000000009",
+      "email": "dana.seed@gmail.com",
+      "family": "gmail",
+      "label": "Gmail",
+      "status": "active",
+      "seed": true
+    },
+    {
+      "email_account_id": "a0a1a2a3-0000-0000-0000-000000000003",
+      "email": "sales@yourdomain.com",
+      "family": "google_workspace",
+      "label": "Google Workspace",
+      "status": "active",
+      "seed": false,
+      "blocker": "A placement test is sending from this mailbox"
+    }
+  ]
+}
+```
+
+`blocker` is present when the mailbox cannot become a seed inbox right now, and says why.
+
+## Mark a seed inbox
+
+`PUT /placement/seeds/:email_account_id`
+
+Makes a workspace mailbox one of its seed inboxes, or an ordinary mailbox again. A seed never warms up (its warmup is turned off here, and starting it again is refused with `mailbox_is_seed`), never sends campaign mail, and cannot send a placement test. The body states the value to hold, so a retry lands on the same state.
+
+Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
+
+### Request body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `seed` | boolean | yes | `true` to make the mailbox a seed inbox, `false` to make it an ordinary mailbox |
+
+```json
+{ "seed": true }
+```
+
+### Response
+
+`200 OK` with the mailbox, in the shape of [list seed inboxes](#list-seed-inboxes). A mailbox on the instance panel, or one a test is still sending from, answers `409` with `placement_seed_unavailable`; a workspace that already has `50` seed inboxes answers `placement_seed_limit`.
+
+## Get a campaign's placement monitor
+
+`GET /campaigns/:id/placement-monitor`
+
+Returns the campaign's scheduled placement test, or `null` when it has none.
+
+Auth: **Scope** `READ_CAMPAIGNS` · **Org permission** `view_campaigns`
+
+### Response
+
+```json
+{
+  "data": {
+    "id": "a9b8c7d6-0000-0000-0000-000000000030",
+    "campaign_id": "b1f2c3d4-0000-0000-0000-000000000001",
+    "created_by": "9c2a0000-0000-0000-0000-000000000001",
+    "enabled": true,
+    "interval_days": 7,
+    "panel": "instance",
+    "alert_below": 70,
+    "pause_on_alert": false,
+    "next_run_at": "2026-10-02T14:05:00Z",
+    "last_run_at": "2026-09-25T14:05:00Z",
+    "last_test_id": "d1e2f3a4-0000-0000-0000-000000000010",
+    "last_alert_at": null,
+    "created_at": "2026-09-18T14:00:00Z",
+    "updated_at": "2026-09-25T14:05:00Z"
+  }
+}
+```
+
+`last_error` is present when the last run could not start a test, and says why (for example, the campaign was not running); the monitor then tries again a day later.
+
+## Set a campaign's placement monitor
+
+`PUT /campaigns/:id/placement-monitor`
+
+Creates or updates the campaign's monitor. Every field is optional: an absent field keeps its current value, or its default on a new monitor. The body states values rather than changes, so a retry lands on the same state. A new or re-enabled monitor runs its first test within about five minutes; changing `interval_days` moves the next run to that interval after the last one.
+
+Each run tests the campaign's first email step with a subject and a body, rendered for its first lead with the campaign's own tracking, from the next of the campaign's sending mailboxes in turn. It runs only while the campaign is `active`, and counts against the allowance and the mailbox's daily limit like any other test.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+### Request body
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Whether the monitor runs |
+| `interval_days` | integer | `7` | Days between runs, `1` to `30` |
+| `panel` | string | `instance` | `instance`, `workspace` or `cloud` |
+| `alert_below` | integer | `70` | Inbox percentage, `0` to `100`. A run whose primary-inbox share lands below it notifies every member who can view campaigns with a `placement_alert` notification |
+| `pause_on_alert` | boolean | `false` | Also pause the campaign when a run alerts. The campaign moves to `paused_guardrail` with the reason in its activity log and stays paused until it is started again |
+
+```json
+{ "interval_days": 3, "alert_below": 80, "pause_on_alert": true }
+```
+
+### Response
+
+`200 OK` with the monitor, in the shape above.
+
+## Remove a campaign's placement monitor
+
+`DELETE /campaigns/:id/placement-monitor`
+
+Removes the campaign's monitor. Tests it already ran stay in the list.
+
+Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
+
+### Response
+
+`204 No Content`. A campaign with no monitor answers `404`.

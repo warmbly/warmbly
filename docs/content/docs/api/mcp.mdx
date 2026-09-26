@@ -111,6 +111,8 @@ Every tool is gated by its API permission. `tools/list` returns only the tools y
 | `set_lead_hold` | Hold or resume one contact's flow in one campaign, without unsubscribing them | `WRITE_CAMPAIGNS` |
 | `get_dashboard_analytics` | Org-wide sending stats for a period | `READ_ANALYTICS` |
 | `list_mailboxes` | Sender mailboxes with health + warmup state | `READ_ANALYTICS` |
+| `list_placement_tests` / `get_placement_test` | Inbox placement tests and where each copy landed | `READ_ANALYTICS` |
+| `run_placement_test` | Send a step or template to the seed inboxes from one mailbox | `SEND_CAMPAIGNS` |
 | `add_contact` / `delete_contact` | Create or delete a contact | `WRITE_CONTACTS` |
 | `bulk_edit_contacts` | Tag or subscribe many contacts at once | `BULK_CONTACTS` |
 | `get_contact_timeline` / `get_contact_sent_emails` | Read a contact's activity and sent mail | `READ_CONTACTS` |

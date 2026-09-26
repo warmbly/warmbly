@@ -17,7 +17,7 @@ A message goes through three gates after you hand it to a mailbox provider. **Ac
 
 "Delivery rate" almost always reports gate one only. A Gmail or Microsoft endpoint will accept 99% of validly-formed mail and then quietly route it to Spam if reputation is poor. The SMTP transaction never tells you that happened. Postfix logs the 250. Your tool shows a green check.
 
-The only way to know placement after the fact is to probe it: warmup pool partners reporting where mail landed (`X-Warmbly-Seed: probe`), Gmail Postmaster Tools showing the IP and domain reputation buckets, or a seed-list service like GlockApps/MailGenius. None of those are inferable from the SMTP response.
+The only way to know placement after the fact is to probe it: warmup pool partners reporting where mail landed, a [placement test](/guides/placement-tests/) sending a copy to seed inboxes at each provider, Gmail Postmaster Tools showing the IP and domain reputation buckets, or a seed-list service like GlockApps/MailGenius. None of those are inferable from the SMTP response.
 
 <Callout type="info" title="Working definition">
 **Deliverability = P(placement = Inbox | acceptance).** Everything in this handbook moves that conditional probability.

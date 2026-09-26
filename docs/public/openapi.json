@@ -62,6 +62,10 @@
       "description": "Campaign and deliverability analytics."
     },
     {
+      "name": "placement",
+      "description": "Inbox placement tests, seed inboxes and campaign placement monitors."
+    },
+    {
       "name": "integrations",
       "description": "Third-party connections and automations."
     },
@@ -5043,6 +5047,298 @@
           },
           "404": {
             "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{id}/placement-monitor": {
+      "get": {
+        "operationId": "campaigns_placement_monitor_get",
+        "tags": [
+          "campaigns",
+          "placement"
+        ],
+        "summary": "Get a campaign's placement monitor",
+        "description": "The campaign's scheduled placement test, or null when it has none. Scope READ_CAMPAIGNS, org permission view_campaigns.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Campaign id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The monitor, or null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/PlacementMonitor"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not in the workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "campaigns_placement_monitor_put",
+        "tags": [
+          "campaigns",
+          "placement"
+        ],
+        "summary": "Set a campaign's placement monitor",
+        "description": "Create or update the campaign's monitor, which re-tests its first email step on a schedule while it is active, rotating through its sending mailboxes. Absent fields keep their value, or the default on a new monitor. A new or re-enabled monitor runs within about five minutes. The body states values, so a retry lands on the same state. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Campaign id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlacementMonitorRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The monitor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlacementMonitor"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, interval_days outside 1 to 30, alert_below outside 0 to 100, or an unknown panel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not in the workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "campaigns_placement_monitor_delete",
+        "tags": [
+          "campaigns",
+          "placement"
+        ],
+        "summary": "Remove a campaign's placement monitor",
+        "description": "Remove the campaign's monitor. Tests it already ran stay. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Campaign id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "description": "Invalid id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The campaign is not in the workspace, or it has no monitor.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14100,6 +14396,719 @@
           },
           "404": {
             "description": "The email account is not in the workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/placement/overview": {
+      "get": {
+        "operationId": "placement_overview",
+        "tags": [
+          "placement"
+        ],
+        "summary": "Get the placement overview",
+        "description": "The seed panels this workspace can test on, each with its seed count and provider mix, and the workspace's monthly allowance. Scope READ_ANALYTICS, org permission view_analytics.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Panels and allowance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlacementOverview"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No organization selected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/placement/tests": {
+      "get": {
+        "operationId": "placement_tests_list",
+        "tags": [
+          "placement"
+        ],
+        "summary": "List placement tests",
+        "description": "The workspace's placement tests, newest first, with where their copies landed overall and per provider family. Bodies are left out. Scope READ_ANALYTICS, org permission view_analytics.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size, 1 to 100. Default 25.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque cursor from a previous pagination.next_cursor.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "required": false,
+            "description": "Only tests of this campaign.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of tests.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "pagination"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PlacementTest"
+                      }
+                    },
+                    "pagination": {
+                      "$ref": "#/components/schemas/Pagination"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor, limit or campaign_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "placement_tests_create",
+        "tags": [
+          "placement"
+        ],
+        "summary": "Start a placement test",
+        "description": "Send a template or a campaign step from one of the workspace's mailboxes to a seed panel, one copy per seed, each a send charged to the mailbox's daily limit. A tracking comparison starts two linked tests. Every check runs before anything is scheduled, so a refused request sends nothing. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlacementTestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new test, or two sharing a compare_group_id for a tracking comparison.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PlacementTest"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, panel or tracking; a sequence_id without campaign_id; no subject or body; or placement_invalid_tracking.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "placement_not_entitled (no active trial or subscription) or placement_quota_exceeded (monthly allowance used).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions, or an API key that may not use the sending mailbox.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The sending mailbox, campaign, step or contact is not in the workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "placement_sender_busy, placement_sender_unavailable, placement_daily_budget, placement_no_seeds or placement_panel_unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "placement_too_many_running (3 tests in flight per workspace), or rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Warmbly Cloud did not open the test.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/placement/tests/{id}": {
+      "get": {
+        "operationId": "placement_tests_get",
+        "tags": [
+          "placement"
+        ],
+        "summary": "Get a placement test",
+        "description": "One test with its copy, every seed's result, the content check of the copy and, for a tracking comparison, the other half. Seed addresses are masked on the instance and cloud panels. Scope READ_ANALYTICS, org permission view_analytics.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Placement test id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The test.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlacementTestDetail"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/placement/tests/{id}/cancel": {
+      "post": {
+        "operationId": "placement_tests_cancel",
+        "tags": [
+          "placement"
+        ],
+        "summary": "Cancel a placement test",
+        "description": "Stop the copies not yet sent. Copies already sent keep being classified. Scope SEND_CAMPAIGNS, org permission send_campaigns.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Placement test id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cancelled test.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlacementTest"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "placement_not_running: the test already finished.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/placement/seeds": {
+      "get": {
+        "operationId": "placement_seeds_list",
+        "tags": [
+          "placement"
+        ],
+        "summary": "List seed inboxes",
+        "description": "Every mailbox of the workspace with whether it is one of its seed inboxes, and why it cannot become one when it cannot. An API key restricted to certain mailboxes sees only those. Scope READ_EMAILS, org permission view_campaigns.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workspace's mailboxes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PlacementWorkspaceSeed"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/placement/seeds/{email_account_id}": {
+      "put": {
+        "operationId": "placement_seeds_set",
+        "tags": [
+          "placement"
+        ],
+        "summary": "Mark a seed inbox",
+        "description": "Make a workspace mailbox one of its seed inboxes, or an ordinary mailbox again. A seed never warms up (its warmup is turned off here), never sends campaign mail and cannot send a placement test. The body states the value to hold, so a retry lands on the same state. Scope WRITE_EMAILS, org permission manage_emails.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_account_id",
+            "in": "path",
+            "required": true,
+            "description": "The mailbox id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPlacementSeedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The mailbox.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/PlacementWorkspaceSeed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id, or seed missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mailbox is not in the workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "placement_seed_unavailable (on the instance panel, or a test is sending from it) or placement_seed_limit (50 per workspace).",
             "content": {
               "application/json": {
                 "schema": {
@@ -32896,6 +33905,54 @@
             "items": {
               "$ref": "#/components/schemas/DeliverabilityCampaign"
             }
+          },
+          "by_provider": {
+            "type": "array",
+            "description": "Placement test samples per seed provider family.",
+            "items": {
+              "$ref": "#/components/schemas/DeliverabilityProviderPlacement"
+            }
+          }
+        }
+      },
+      "DeliverabilityProviderPlacement": {
+        "type": "object",
+        "description": "Placement test copies with a verdict in the window, per seed provider family.",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "Provider family id, e.g. gmail, google_workspace, microsoft365, outlook."
+          },
+          "label": {
+            "type": "string"
+          },
+          "samples": {
+            "type": "integer"
+          },
+          "inbox": {
+            "type": "integer"
+          },
+          "promotions": {
+            "type": "integer"
+          },
+          "spam": {
+            "type": "integer"
+          },
+          "other": {
+            "type": "integer",
+            "description": "Other Gmail tabs."
+          },
+          "missing": {
+            "type": "integer",
+            "description": "Copies that never arrived."
+          },
+          "inbox_rate": {
+            "type": "number",
+            "description": "Percentage of samples."
+          },
+          "spam_rate": {
+            "type": "number",
+            "description": "Percentage of samples."
           }
         }
       },
@@ -37838,6 +38895,633 @@
                 }
               }
             }
+          }
+        }
+      },
+      "PlacementPanelFamily": {
+        "type": "object",
+        "description": "Seeds one provider family contributes to a panel.",
+        "properties": {
+          "family": {
+            "type": "string",
+            "description": "Provider family id: gmail, google_workspace, microsoft365, outlook, yahoo, aol, icloud, zoho, fastmail, gmx, proton, yandex, other, and more."
+          },
+          "label": {
+            "type": "string",
+            "description": "Display name, e.g. Google Workspace."
+          },
+          "seeds": {
+            "type": "integer"
+          }
+        }
+      },
+      "PlacementPanelInfo": {
+        "type": "object",
+        "description": "Whether the workspace can test on one seed panel.",
+        "properties": {
+          "panel": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "workspace",
+              "cloud"
+            ]
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the panel is unavailable, in one sentence. Absent when available."
+          },
+          "seeds": {
+            "type": "integer"
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlacementPanelFamily"
+            }
+          },
+          "metered": {
+            "type": "boolean",
+            "description": "Whether a test on this panel counts against a monthly allowance."
+          }
+        }
+      },
+      "PlacementUsage": {
+        "type": "object",
+        "description": "Metered tests this calendar month (UTC).",
+        "properties": {
+          "used": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Null when the instance does not meter tests (self-hosted)."
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PlacementOverview": {
+        "type": "object",
+        "properties": {
+          "panels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlacementPanelInfo"
+            }
+          },
+          "usage": {
+            "$ref": "#/components/schemas/PlacementUsage"
+          },
+          "workspace_seeds": {
+            "type": "integer",
+            "description": "How many of the workspace's mailboxes are seed inboxes and can receive a test."
+          },
+          "seeds_per_test": {
+            "type": "integer",
+            "description": "The most seeds one test sends to."
+          },
+          "spacing_seconds": {
+            "type": "integer",
+            "description": "The average gap between two copies from one sender."
+          }
+        }
+      },
+      "PlacementCounts": {
+        "type": "object",
+        "description": "Where a set of copies landed. delivered is inbox + promotions + other + spam + missing; the rates are fractions from 0 to 1 of delivered, null until something is delivered.",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "pending": {
+            "type": "integer"
+          },
+          "inbox": {
+            "type": "integer"
+          },
+          "promotions": {
+            "type": "integer"
+          },
+          "other": {
+            "type": "integer",
+            "description": "A Gmail tab other than Promotions: Updates, Social or Forums."
+          },
+          "spam": {
+            "type": "integer"
+          },
+          "missing": {
+            "type": "integer",
+            "description": "Left the sender and not seen in the seed within 120 minutes."
+          },
+          "failed": {
+            "type": "integer",
+            "description": "Never left the sender."
+          },
+          "cancelled": {
+            "type": "integer"
+          },
+          "delivered": {
+            "type": "integer"
+          },
+          "inbox_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Primary inbox share of delivered."
+          },
+          "tabs_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Gmail tabs (promotions and other) share of delivered."
+          },
+          "spam_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Spam share of delivered."
+          },
+          "missing_rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Never-arrived share of delivered."
+          }
+        }
+      },
+      "PlacementFamilyCounts": {
+        "type": "object",
+        "properties": {
+          "family": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/PlacementCounts"
+          }
+        }
+      },
+      "PlacementTest": {
+        "type": "object",
+        "description": "One placement test with its counts.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender_account_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sender_email": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "campaign_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sequence_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "contact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "monitor_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body_html": {
+            "type": "string",
+            "description": "Only on GET /placement/tests/{id}."
+          },
+          "body_plain": {
+            "type": "string",
+            "description": "Only on GET /placement/tests/{id}."
+          },
+          "open_tracking": {
+            "type": "boolean"
+          },
+          "link_tracking": {
+            "type": "boolean"
+          },
+          "compare_group_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Shared by the two halves of a tracking comparison."
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "monitor",
+              "admin",
+              "remote"
+            ]
+          },
+          "panel": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "workspace",
+              "cloud"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "cancelled",
+              "failed"
+            ]
+          },
+          "error": {
+            "type": "string",
+            "description": "Why a test failed. Absent otherwise."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PlacementCounts"
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlacementFamilyCounts"
+            }
+          }
+        }
+      },
+      "PlacementResult": {
+        "type": "object",
+        "description": "One copy to one seed.",
+        "properties": {
+          "seed": {
+            "type": "string",
+            "description": "The seed's address, masked (a***@gmail.com) on the instance and cloud panels."
+          },
+          "family": {
+            "type": "string"
+          },
+          "family_label": {
+            "type": "string"
+          },
+          "folder": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "inbox",
+              "promotions",
+              "other",
+              "spam",
+              "missing",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "scheduled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "sent_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "detected_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error": {
+            "type": "string",
+            "description": "Why the copy failed. Absent otherwise."
+          }
+        }
+      },
+      "PlacementTestDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PlacementTest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "results": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PlacementResult"
+                }
+              },
+              "content": {
+                "type": "object",
+                "description": "The advisory content score of the test's copy, as POST /templates/score returns it.",
+                "properties": {
+                  "score": {
+                    "type": "integer"
+                  },
+                  "issues": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/TemplateScoreIssue"
+                    }
+                  }
+                }
+              },
+              "compare": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PlacementTest"
+                  }
+                ],
+                "description": "Present only on a tracking comparison: the other half."
+              }
+            }
+          }
+        ]
+      },
+      "CreatePlacementTestRequest": {
+        "type": "object",
+        "required": [
+          "sender_account_id"
+        ],
+        "properties": {
+          "sender_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The mailbox that sends every copy: connected, active and not a seed inbox."
+          },
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Render with this campaign's opt-out line, tracking and attachments."
+          },
+          "sequence_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A step of campaign_id; its subject and body are used when the request carries neither."
+          },
+          "contact_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The contact to render merge fields and AI blocks for. Defaults to the campaign's first lead."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Required when there is no step to take it from."
+          },
+          "body_html": {
+            "type": "string"
+          },
+          "body_plain": {
+            "type": "string"
+          },
+          "tracking": {
+            "type": "string",
+            "enum": [
+              "campaign",
+              "on",
+              "off",
+              "compare"
+            ],
+            "default": "campaign"
+          },
+          "panel": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "workspace",
+              "cloud"
+            ],
+            "default": "instance"
+          }
+        }
+      },
+      "PlacementWorkspaceSeed": {
+        "type": "object",
+        "properties": {
+          "email_account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "revoked"
+            ]
+          },
+          "seed": {
+            "type": "boolean",
+            "description": "Whether the mailbox is one of the workspace's seed inboxes."
+          },
+          "blocker": {
+            "type": "string",
+            "description": "Why the mailbox cannot become a seed inbox now. Absent when it can."
+          }
+        }
+      },
+      "SetPlacementSeedRequest": {
+        "type": "object",
+        "required": [
+          "seed"
+        ],
+        "properties": {
+          "seed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PlacementMonitor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "campaign_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          },
+          "panel": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "workspace",
+              "cloud"
+            ]
+          },
+          "alert_below": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Inbox percentage below which a run alerts."
+          },
+          "pause_on_alert": {
+            "type": "boolean"
+          },
+          "next_run_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_run_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_test_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "last_alert_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Why the last run could not start a test. Absent otherwise."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PlacementMonitorRequest": {
+        "type": "object",
+        "description": "Every field is optional; an absent field keeps its value, or the default on a new monitor.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "interval_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 7
+          },
+          "panel": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "workspace",
+              "cloud"
+            ],
+            "default": "instance"
+          },
+          "alert_below": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 70
+          },
+          "pause_on_alert": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also pause the campaign (paused_guardrail) when a run alerts."
           }
         }
       },

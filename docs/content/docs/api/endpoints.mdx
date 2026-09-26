@@ -72,6 +72,9 @@ Campaigns, steps and activity logs are scoped to the selected organization for s
 | POST | `/campaigns/:id/test-email` | `SEND_CAMPAIGNS` |
 | POST | `/campaigns/:id/start` | `SEND_CAMPAIGNS` |
 | POST | `/campaigns/:id/stop` | `SEND_CAMPAIGNS` |
+| GET | `/campaigns/:id/placement-monitor` | `READ_CAMPAIGNS` |
+| PUT | `/campaigns/:id/placement-monitor` | `SEND_CAMPAIGNS` |
+| DELETE | `/campaigns/:id/placement-monitor` | `SEND_CAMPAIGNS` |
 | GET | `/campaigns/:id/leads/:contactId/hold` | `READ_CAMPAIGNS` |
 | POST | `/campaigns/:id/leads/:contactId/pause` | `WRITE_CAMPAIGNS` |
 | POST | `/campaigns/:id/leads/:contactId/resume` | `WRITE_CAMPAIGNS` |
@@ -276,6 +279,24 @@ The `agent-drafts` endpoints back the [inbox agent](/guides/inbox-agent/): the a
 Analytics reads use the selected workspace for JWT callers and the key's workspace for API-key callers. This includes warmup and usage totals, so teammates see the same workspace history regardless of which member connected a mailbox or created a campaign.
 
 `GET /analytics/inbox-tagging` accepts `limit`, opaque `cursor`, and `needs_review` query parameters and returns `data`, aggregate `summary`, and `pagination`. Each row carries `actions`, the list of what the verdict was allowed to do (`hold`, `stop`, `task`, `suppress`), and `summary.acted` counts the rows that did anything. Invalid cursors, limits, or booleans return `400`.
+
+### Inbox placement tests
+
+A [placement test](/guides/placement-tests/) sends real mail from one of the workspace's mailboxes, so starting and cancelling one takes the same permission as starting a campaign, while reading results is an analytics read. Everything here is scoped to the workspace: a test, a sending mailbox, a campaign, a step and a contact are each checked to belong to it before anything is sent.
+
+| Method | Path | API Permission |
+|--------|------|----------------|
+| GET | `/placement/overview` | `READ_ANALYTICS` |
+| GET | `/placement/tests` | `READ_ANALYTICS` |
+| GET | `/placement/tests/:id` | `READ_ANALYTICS` |
+| POST | `/placement/tests` | `SEND_CAMPAIGNS` |
+| POST | `/placement/tests/:id/cancel` | `SEND_CAMPAIGNS` |
+| GET | `/placement/seeds` | `READ_EMAILS` |
+| PUT | `/placement/seeds/:email_account_id` | `WRITE_EMAILS` |
+
+For session callers the matching organization permissions are **View analytics** for the three reads, **Send campaigns** for starting and cancelling, **View campaigns** for listing seed inboxes and **Manage mailboxes** for marking one. The campaign's placement monitor (`/campaigns/:id/placement-monitor`, listed under campaigns above) is read with **View campaigns** and changed with **Send campaigns**.
+
+A key restricted to certain mailboxes can only start a test from one of them and only sees and marks those mailboxes as seeds. `POST /placement/tests` accepts an `Idempotency-Key`; `PUT /placement/seeds/:email_account_id` and `PUT /campaigns/:id/placement-monitor` state an absolute value, so a retry lands on the same state. `GET /placement/tests` takes `limit` (`1` to `100`, default `25`), an opaque `cursor` and an optional `campaign_id`, and returns `data` plus `pagination`; an invalid cursor or limit is a `400`. See the [placement endpoint reference](/api/reference/placement/).
 
 ### Advisor
 

@@ -346,7 +346,7 @@ Same shape as Update the tracking domain.
 
 `POST /emails/:id/warmup/start`
 
-Enables warmup for a mailbox. When resuming from a paused state it preserves ramp progress and seeds the warmup task chain immediately rather than waiting for the next reconciler pass.
+Enables warmup for a mailbox. When resuming from a paused state it preserves ramp progress and seeds the warmup task chain immediately rather than waiting for the next reconciler pass. A [placement seed inbox](/api/reference/placement/#mark-a-seed-inbox) never warms up, so starting or resuming warmup on one answers `409` with `mailbox_is_seed`.
 
 Auth: **Scope** `WRITE_EMAILS` · **Org permission** `manage_emails`
 
