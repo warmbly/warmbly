@@ -29,6 +29,11 @@ const SPINE: SpineGroup[] = [
         ],
     },
     {
+        id: "placement",
+        match: (n) => n.includes("PLACEMENT"),
+        keys: [["admin", "placement"]],
+    },
+    {
         id: "campaigns",
         match: (n) => n.includes("CAMPAIGN"),
         keys: [["admin", "campaigns"]],

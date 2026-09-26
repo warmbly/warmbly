@@ -41,6 +41,7 @@ import WarmupContentLayout from "@/app/dashboard/warmup-content/WarmupContentLay
 import WarmupContentOverviewPage from "@/app/dashboard/warmup-content/OverviewPage";
 import WarmupContentLibraryPage from "@/app/dashboard/warmup-content/LibraryPage";
 import WarmupContentJobsPage from "@/app/dashboard/warmup-content/JobsPage";
+import PlacementPage from "@/app/dashboard/PlacementPage";
 import CampaignsPage from "@/app/dashboard/CampaignsPage";
 import SendsPage from "@/app/dashboard/SendsPage";
 import LimitRequestsPage from "@/app/dashboard/LimitRequestsPage";
@@ -153,6 +154,7 @@ const router = createBrowserRouter([
                                     { path: "jobs", element: <WarmupContentJobsPage /> },
                                 ],
                             },
+                            { path: "placement", element: gated(AdminPerm.ViewWarmupPool, <PlacementPage />) },
                             { path: "campaigns", element: gated(AdminPerm.ViewCampaigns, <CampaignsPage />) },
                             { path: "sends", element: gated(AdminPerm.ViewCampaigns, <SendsPage />) },
 
