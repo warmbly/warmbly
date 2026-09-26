@@ -25,6 +25,8 @@ export interface SegmentFieldSpec {
     group: string;
     kind: SegmentFieldKind;
     options?: string[];
+    // Display names for an enum's values, where the value alone is not readable.
+    option_labels?: Record<string, string>;
 }
 
 export default interface Segment {

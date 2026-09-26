@@ -33,6 +33,7 @@ Every field is optional; an empty body matches all contacts in the organization.
 | `category_ids` | string[] | No | Contact must have ALL of these categories. |
 | `segment_ids` | string[] | No | Contact must be a member of ALL of these segments (conditions plus manual overrides). An id that is not a valid UUID is rejected with `400`; an unknown segment matches nothing. |
 | `verification_status` | string | No | Filter by verification verdict: `valid`, `risky`, `invalid`, or `unknown`. |
+| `mail_hosts` | string[] | No | Contacts whose inbox is hosted by any of these `mail_host` values (see [Email provider](#email-provider)). `""` matches contacts whose provider is not detected yet. An unknown value is rejected with `invalid_mail_host`. |
 | `min_campaigns` | integer | No | Minimum number of associated campaigns. |
 | `max_campaigns` | integer | No | Maximum number of associated campaigns. |
 | `subscribed` | boolean | No | Filter by subscription status. |
@@ -40,7 +41,7 @@ Every field is optional; an empty body matches all contacts in the organization.
 | `created_before` | string (RFC 3339) | No | Created on or before this time. |
 | `updated_after` | string (RFC 3339) | No | Updated on or after this time. |
 | `updated_before` | string (RFC 3339) | No | Updated on or before this time. |
-| `sort_by` | string | No | Sort column: `created_at` (the default), `updated_at`, `first_name`, `last_name`, `email`, `company`, `phone`, or `campaign_count`. `custom:<key>` sorts on a custom field, as text, with contacts that lack the field (or have it blank) grouped last when ascending and first when descending. A custom-field name that could never exist is rejected with `invalid_sort_by`; any other unknown value falls back to `created_at`. |
+| `sort_by` | string | No | Sort column: `created_at` (the default), `updated_at`, `first_name`, `last_name`, `email`, `company`, `phone`, `campaign_count`, or `mail_host`. `mail_host` sorts by the provider value, with contacts whose provider is not detected yet grouped last when ascending and first when descending. `custom:<key>` sorts on a custom field, as text, with contacts that lack the field (or have it blank) grouped last when ascending and first when descending. A custom-field name that could never exist is rejected with `invalid_sort_by`; any other unknown value falls back to `created_at`. |
 | `reverse` | boolean | No | Ascending when true. The default is descending. |
 
 ```json
@@ -79,6 +80,7 @@ Returns a `data` array of contacts plus a `pagination` envelope. Paginate by pas
       "verification_provider": "builtin",
       "verification_checked_at": "2026-06-10T11:58:00Z",
       "is_catch_all": false,
+      "mail_host": "gmail",
       "esp_provider": "gmail",
       "updated_at": "2026-06-10T12:00:00Z",
       "created_at": "2026-05-01T09:30:00Z"
@@ -94,9 +96,15 @@ Returns a `data` array of contacts plus a `pagination` envelope. Paginate by pas
 
 Every contact carries its address verification: `verification_status` (`valid`, `risky`, `invalid`, or `unknown`), `verification_sub_status` (`catch_all`, `disposable`, `role`, `spamtrap`, `mailbox_full`, `no_mx`, `syntax`, `undisclosed`, or empty), `verification_source` (`probe` for the built-in check, `provider` for a connected verification service, `imported` for a verdict that came with the contact, `manual` for one a member set, empty when never checked), `verification_provider` (who produced it), `verification_reason`, `verification_checked_at`, `verification_requested_at` (set while a re-check a member asked for is waiting to run; the verdict stands until it lands), and `verification_confidence` (0 to 100, scored from the check plus what real mail to the address showed; see [what real mail teaches the check](/guides/deliverability/#what-real-mail-teaches-the-check)). Campaigns never send to `invalid`, and send to `risky` only when their `risky_emails` setting is on.
 
+### Email provider
+
+Every contact carries `mail_host`, who hosts the inbox the address belongs to, and `esp_provider`, that host's family. Warmbly reads them from the domain's DNS in the background, usually within a minute of the contact being added or its address changing: the MX records first, then the SPF record when a filtering gateway such as Proofpoint or Mimecast sits in front of the real host. Consumer domains like `gmail.com` are known without a lookup. Each domain is looked up once however many contacts share it, and nothing about the address is sent to a third party.
+
+`mail_host` is one of `google_workspace`, `gmail`, `microsoft365`, `outlook`, `zoho`, `yahoo`, `aol`, `icloud`, `fastmail`, `godaddy`, `namecheap`, `ionos`, `hostinger`, `ovh`, `migadu`, `purelymail`, `rackspace`, `yandex`, `gmx`, `proton`, or `other` (the domain receives mail, on a host Warmbly does not name), and is empty until the check has run or when the domain has no mail server. `esp_provider` is `gmail` for either Google product, `outlook` for either Microsoft one, `other` for the rest, and empty with `mail_host`. Campaign [ESP matching](/guides/campaigns/) pairs senders and recipients by `esp_provider`. A domain whose provider could not be read is checked again a week later; one whose lookup failed is retried within the hour.
+
 When the search filters by exactly one campaign, each contact additionally carries a `campaign_lead` object with its processing state inside that campaign (`status`, `sent`, `opened`, `machine_opened`, `clicked`, `replied`, `bounced`, `current_step`, `sender`, `last_activity_at`, `hold` when held, and `failure_reason` when failed). `sender` is the mailbox address the lead's whole sequence sends from, fixed when its first email went out and absent until then. `opened` counts steps opened by a person; steps fetched automatically by a mail client (Apple Mail Privacy Protection and similar) are in `machine_opened` instead, matching the machine opens the analytics summary reports. The `status` derivation, highest priority first, is `unsubscribed` (not subscribed), then `bounced`, `replied`, `failed` (a step could not be sent after every retry; `failure_reason` carries the sending worker's reason), `completed` (every email step sent, no reply), `paused` (the lead's flow is held, by an out-of-office auto-reply or by hand; the `hold` object carries `since`, `until`, `reason` and `source`), `active` (some steps sent, more to send), `undeliverable` (pre-send verification refused the address, so the campaign skips the lead and never sends to it), and `pending` (queued, nothing sent). A step counts as sent only once the sending worker has delivered it to the mailbox provider; a send the worker could not complete is retried on the campaign's next pass and never shows as sent. The `lead_status` filter narrows to one of these buckets.
 
-When the search filters by exactly one campaign, the first page (no `cursor`) also includes a `lead_counts` object: per-status lead totals for that campaign, independent of the `lead_status` and `engagement` filters so every scope's total is available at once. The status buckets include `paused`. Alongside them it carries engagement totals that match the `engagement` filter: `contacted` (leads sent at least one step), `opened` (a human open on any step), `clicked`, and `replied_any` (a reply on any step, whatever the derived status).
+When the search filters by exactly one campaign, the first page (no `cursor`) also includes a `lead_counts` object: per-status lead totals for that campaign, independent of the `lead_status` and `engagement` filters so every scope's total is available at once. The status buckets include `paused`. Alongside them it carries engagement totals that match the `engagement` filter: `contacted` (leads sent at least one step), `opened` (a human open on any step), `clicked`, and `replied_any` (a reply on any step, whatever the derived status). `providers` splits the campaign's leads by [email provider](#email-provider) family, the grouping ESP matching uses: `gmail`, `outlook`, `other`, and `undetected` for leads whose provider has not been read yet.
 
 ```json
 {
@@ -192,6 +200,7 @@ Returns the created contacts as a bare JSON array (same contact shape as search)
     "campaigns": [],
     "categories": [{ "id": "6f1c...", "title": "VIP", "color": "#0ea5e9" }],
     "verification_status": "unknown",
+    "mail_host": "",
     "esp_provider": "",
     "updated_at": "2026-06-11T10:00:00Z",
     "created_at": "2026-06-11T10:00:00Z"
@@ -532,6 +541,7 @@ Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
     "campaigns": [],
     "categories": [],
     "verification_status": "valid",
+    "mail_host": "gmail",
     "esp_provider": "gmail",
     "updated_at": "2026-06-10T12:00:00Z",
     "created_at": "2026-05-01T09:30:00Z"
@@ -566,6 +576,7 @@ Auth: **Scope** `READ_CONTACTS` · **Org permission** `view_contacts`
   "campaigns": [{ "id": "c1...", "name": "Q3 Outbound" }],
   "categories": [{ "id": "6f1c...", "title": "VIP", "color": "#0ea5e9" }],
   "verification_status": "valid",
+  "mail_host": "gmail",
   "esp_provider": "gmail",
   "updated_at": "2026-06-10T12:00:00Z",
   "created_at": "2026-05-01T09:30:00Z",
@@ -603,7 +614,7 @@ When the contact is suppressed, `suppression` is an object: `{ "id", "kind", "va
 
 Partially updates a single contact. Only the fields present are changed. Campaign and category lists can be set wholesale or adjusted with diff-style add/remove.
 
-`email` replaces the contact's address. It is stored lowercased, a display name (`Dana Reyes <dana@acme.com>`) is reduced to the address inside it, and anything that is not an address answers `400`. The address has to be free: one another contact already holds answers `409` with `code` `contact_email_taken` rather than merging the two. A changed address drops the contact's verification verdict back to `unknown`, clears the delivery evidence behind it and forgets the cached `esp_provider`, because all three belonged to the old mailbox; the next verification pass checks the new address and the recipient provider is derived again from the new domain. Steps already sent went to the old address and keep their history.
+`email` replaces the contact's address. It is stored lowercased, a display name (`Dana Reyes <dana@acme.com>`) is reduced to the address inside it, and anything that is not an address answers `400`. The address has to be free: one another contact already holds answers `409` with `code` `contact_email_taken` rather than merging the two. A changed address drops the contact's verification verdict back to `unknown`, clears the delivery evidence behind it and forgets its `mail_host` and `esp_provider`, because all of them belonged to the old mailbox; the next verification pass checks the new address and the provider is read again from the new domain. Steps already sent went to the old address and keep their history.
 
 Auth: **Scope** `WRITE_CONTACTS` · **Org permission** `manage_contacts`
 
@@ -1115,7 +1126,7 @@ Each condition names a `field`, an `operator`, and either a `value` (scalar oper
 | Kind | Fields | Operators | Value |
 | --- | --- | --- | --- |
 | text | `first_name`, `last_name`, `email`, `email_domain`, `phone`, `company`, `custom.*` | `equals`, `not_equals`, `contains`, `not_contains`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty` | `value` string; comparisons ignore case |
-| enum | `source`, `verification_status`, `esp_provider` | `in`, `not_in` | `values`, drawn from the field's `options` |
+| enum | `source`, `verification_status`, `mail_host`, `esp_provider` | `in`, `not_in` | `values`, drawn from the field's `options`; `option_labels` names them for display |
 | bool | `subscribed`, `suppressed`, `is_catch_all` | `is_true`, `is_false` | none |
 | date | `created_at`, `updated_at`, `last_sent_at`, `last_opened_at`, `last_clicked_at`, `last_replied_at` | `within_days`, `not_within_days` (`value` is a day count, 1 to 3650); `before`, `after` (`value` is `YYYY-MM-DD` or RFC 3339); `is_empty`, `is_not_empty` | see operators |
 | number | `campaign_count`, `emails_sent`, `emails_opened`, `emails_clicked`, `emails_replied`, `emails_bounced` | `equals`, `not_equals`, `gt`, `gte`, `lt`, `lte` | `value`, a whole number |

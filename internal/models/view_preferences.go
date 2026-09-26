@@ -22,15 +22,15 @@ var KnownViews = map[string]bool{
 // step with the dashboard's column registry (web/src/components/app/contacts/
 // columns.tsx). A saved layout may name only these and custom fields.
 var ViewBuiltinColumns = map[string][]string{
-	ViewContacts:      {"name", "company", "phone", "status", "campaigns", "created_at", "updated_at"},
-	ViewCampaignLeads: {"name", "company", "phone", "progress", "opened", "clicked", "replied", "current_step", "sender", "last_activity", "created_at", "updated_at"},
+	ViewContacts:      {"name", "company", "phone", "mail_host", "status", "campaigns", "created_at", "updated_at"},
+	ViewCampaignLeads: {"name", "company", "phone", "mail_host", "progress", "opened", "clicked", "replied", "current_step", "sender", "last_activity", "created_at", "updated_at"},
 }
 
 // ContactBuiltinSorts are the sort_by values the contacts search knows besides
 // "custom:<key>", the same set contactSorts holds in the repository.
 var ContactBuiltinSorts = map[string]bool{
 	"created_at": true, "updated_at": true, "first_name": true, "last_name": true,
-	"email": true, "company": true, "phone": true, "campaign_count": true,
+	"email": true, "company": true, "phone": true, "campaign_count": true, "mail_host": true,
 }
 
 // ViewPreferencesMaxColumns bounds one layout; no list here has anywhere near

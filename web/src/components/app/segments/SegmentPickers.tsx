@@ -210,11 +210,13 @@ export function EnumMultiPicker({
     value,
     onChange,
     options,
+    labels,
 }: {
     value: string[];
     onChange: (next: string[]) => void;
     options: string[];
+    labels?: Record<string, string>;
 }) {
-    const opts = React.useMemo<PickOption[]>(() => options.map((o) => ({ id: o, label: ENUM_LABELS[o] ?? o })), [options]);
-    return <MultiPicker value={value} onChange={onChange} options={opts} placeholder="Pick values…" searchable={false} />;
+    const opts = React.useMemo<PickOption[]>(() => options.map((o) => ({ id: o, label: labels?.[o] ?? ENUM_LABELS[o] ?? o })), [options, labels]);
+    return <MultiPicker value={value} onChange={onChange} options={opts} placeholder="Pick values…" searchable={options.length > 8} />;
 }

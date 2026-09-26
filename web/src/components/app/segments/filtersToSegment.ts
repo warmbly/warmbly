@@ -43,6 +43,9 @@ export function filtersToSegment(f: SearchContacts, campaignID?: string): Segmen
         conditions.push({ field: "subscribed", operator: f.subscribed ? "is_true" : "is_false" });
     }
     if (f.verification_status) conditions.push({ field: "verification_status", operator: "in", values: [f.verification_status] });
+    // A segment enum has no empty value, so "not detected yet" does not carry over.
+    const hosts = (f.mail_hosts ?? []).filter(Boolean);
+    if (hosts.length > 0) conditions.push({ field: "mail_host", operator: "in", values: hosts });
     if (f.min_campaigns !== undefined) conditions.push({ field: "campaign_count", operator: "gte", value: String(f.min_campaigns) });
     if (f.max_campaigns !== undefined) conditions.push({ field: "campaign_count", operator: "lte", value: String(f.max_campaigns) });
     if (f.created_after) conditions.push({ field: "created_at", operator: "after", value: isoDate(f.created_after) });

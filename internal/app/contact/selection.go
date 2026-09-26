@@ -30,6 +30,9 @@ func (s *contactService) ResolveSelection(ctx context.Context, orgID uuid.UUID, 
 	if xerr := validateSort(*sel.Filters); xerr != nil {
 		return nil, xerr
 	}
+	if xerr := validateMailHosts(*sel.Filters); xerr != nil {
+		return nil, xerr
+	}
 
 	ids, xerr := s.contactRepository.SearchIDs(ctx, orgID.String(), *sel.Filters, models.MaxContactBulkSelection)
 	if xerr != nil {

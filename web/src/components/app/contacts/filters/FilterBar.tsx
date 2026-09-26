@@ -6,6 +6,7 @@ import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckIcon, ChevronDownIcon, LayersIcon, Loader2Icon, PlusIcon, XIcon } from "lucide-react";
 
+import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { NumberInput, TextInput } from "@/components/ui/field";
 import {
@@ -27,6 +28,8 @@ import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import type SearchContactsFilter from "@/lib/api/models/app/contacts/SearchContactsFilter";
 import type { SearchContactsFilterType } from "@/lib/api/models/app/contacts/search-contacts.types";
 import type { LeadEngagement, LeadStatus, VerificationStatus } from "@/lib/api/models/app/contacts/Contact";
+import type { MailHost } from "@/lib/api/models/app/emails/MailboxImport";
+import { MAIL_HOST_LABELS } from "@/lib/mailHost";
 import { cn } from "@/lib/utils";
 import { countActiveFilters, isCompleteCustomFilter } from "./helpers";
 
@@ -66,8 +69,18 @@ const VERIFICATION: { id: VerificationStatus; label: string }[] = [
     { id: "unknown", label: "Unverified" },
 ];
 
+// Every inbox host the backend detects, then the contacts it has not reached yet.
+const PROVIDERS: Option[] = [
+    ...(Object.entries(MAIL_HOST_LABELS) as [MailHost, string][]).map(([id, label]) => ({
+        id,
+        label,
+        icon: <ProviderLogo id={id} size="xs" framed={false} />,
+    })),
+    { id: "", label: "Not detected yet" },
+];
+
 // Optional pills, shown once added from the menu or when their value is set.
-type ExtraKey = "created" | "updated" | "campaign_count" | "lead_status" | "engagement" | "verification";
+type ExtraKey = "created" | "updated" | "campaign_count" | "lead_status" | "engagement" | "verification" | "provider";
 
 function toIso(d?: Date): string {
     return d ? new Date(d).toISOString().slice(0, 10) : "";
@@ -121,6 +134,8 @@ export default function FilterBar({
                 return !!filters.engagement;
             case "verification":
                 return !!filters.verification_status;
+            case "provider":
+                return !!filters.mail_hosts?.length;
         }
     };
 
@@ -144,6 +159,8 @@ export default function FilterBar({
                     return { ...s, engagement: undefined };
                 case "verification":
                     return { ...s, verification_status: undefined };
+                case "provider":
+                    return { ...s, mail_hosts: undefined };
             }
         });
     }
@@ -195,6 +212,7 @@ export default function FilterBar({
         { key: "updated", label: "Last updated", hidden: shown("updated") },
         { key: "campaign_count", label: "Number of campaigns", hidden: shown("campaign_count") },
         { key: "verification", label: "Address verification", hidden: shown("verification") },
+        { key: "provider", label: "Email provider", hidden: shown("provider") },
         { key: "lead_status", label: "Lead status", hidden: !campaignCtx || shown("lead_status") },
         { key: "engagement", label: "Engagement", hidden: !campaignCtx || shown("engagement") },
     ];
@@ -303,6 +321,25 @@ export default function FilterBar({
                     options={VERIFICATION}
                     onRemove={() => removeExtra("verification")}
                 />
+            )}
+            {shown("provider") && (
+                <Pill
+                    id="provider"
+                    label="Provider"
+                    summary={summarize(filters.mail_hosts ?? [], PROVIDERS)}
+                    active={!!filters.mail_hosts?.length}
+                    openKey={openKey}
+                    setOpenKey={setOpenKey}
+                    onRemove={() => removeExtra("provider")}
+                >
+                    <CheckList
+                        value={filters.mail_hosts ?? []}
+                        onChange={(v) => setFilters((s) => ({ ...s, mail_hosts: v.length ? (v as MailHost[]) : undefined }))}
+                        options={PROVIDERS}
+                        empty="No providers."
+                        hint="Contacts at any selected provider."
+                    />
+                </Pill>
             )}
             {shown("lead_status") && (
                 <ChoicePill<LeadStatus | undefined>
@@ -485,6 +522,7 @@ interface Option {
     id: string;
     label: string;
     color?: string;
+    icon?: React.ReactNode;
 }
 
 function summarize(ids: string[], options: Option[]): string {
@@ -547,6 +585,7 @@ function CheckList({
                                 {checked && <CheckIcon className="w-2 h-2 text-white" />}
                             </span>
                             {o.color && <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: o.color }} />}
+                            {o.icon}
                             <span className="truncate">{o.label}</span>
                         </button>
                     );

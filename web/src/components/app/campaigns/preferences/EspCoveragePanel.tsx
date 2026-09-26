@@ -4,10 +4,12 @@
 // match and an SMTP wildcard is obvious. No connector lines, no new API.
 //
 // Grounded in the scheduler (internal/scheduler/campaign_scheduler.go):
-//   • recipient provider is derived from the domain → "gmail" | "outlook" |
-//     unknown (everything else).
-//   • a mailbox matches a recipient when: mailbox is smtp_imap (WILDCARD —
-//     serves any provider, even in strict), OR the recipient is unknown
+//   • recipient provider is the contact's esp_provider, read from its domain's
+//     MX → "gmail" (Google) | "outlook" (Microsoft) | anything else (wildcard).
+//   • a mailbox's provider is its connection, or for an SMTP/IMAP mailbox on
+//     Google Workspace or Microsoft 365 that host's family.
+//   • a mailbox matches a recipient when: mailbox is other SMTP/IMAP (a
+//     wildcard outside strict), OR the recipient is not Google/Microsoft
 //     (wildcard), OR provider equality (gmail↔gmail, outlook↔outlook).
 //   • strict + no matching mailbox → the recipient is DEFERRED (held to the next
 //     slot), never sent cross-provider and never skipped.
@@ -18,6 +20,8 @@
 
 import React from "react";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
+import useSearchContacts from "@/lib/api/hooks/app/contacts/useSearchContacts";
+import { mailHostLogo } from "@/lib/mailHost";
 import ProviderLogo from "./ProviderLogo";
 
 type Mode = "off" | "prefer" | "strict";
@@ -25,21 +29,39 @@ type Status = "ok" | "warn" | "blocked" | "any";
 
 const LABEL: Record<string, string> = {
     gmail: "Google",
-    outlook: "Outlook",
+    outlook: "Microsoft",
     smtp_imap: "Other / SMTP",
     other: "Other domains",
 };
+
+// The family the scheduler matches a mailbox by (senderESP in the scheduler).
+function mailboxFamily(e: { provider: string; mail_host?: string }): "gmail" | "outlook" | "smtp_imap" {
+    if (e.provider === "gmail" || e.provider === "outlook") return e.provider;
+    const host = mailHostLogo(e.mail_host);
+    return host === "google" ? "gmail" : host === "microsoft" ? "outlook" : "smtp_imap";
+}
 
 export default function EspCoveragePanel({
     mode,
     emailTags,
     explicitAccounts,
+    campaignId,
 }: {
     mode: Mode;
     emailTags: string[];
     explicitAccounts: string[];
+    // The campaign whose leads are counted by provider; none on a draft.
+    campaignId?: string;
 }) {
     const { emails, isLoading } = useEmails({ query: "", tag: "", limit: 200 });
+    const leadSearch = useSearchContacts({
+        options: { query: "", custom_field_filters: [], campaign_ids: campaignId ? [campaignId] : [], sort_by: "created_at", reverse: false },
+        limit: 1,
+        enabled: !!campaignId,
+    });
+    const leads = leadSearch.data?.pages[0]?.lead_counts?.providers;
+    const leadCount = (n: number | undefined) =>
+        leads && n !== undefined ? <span className="ml-1.5 text-[11px] font-normal text-slate-400 tabular-nums">{n.toLocaleString()} {n === 1 ? "lead" : "leads"}</span> : null;
 
     const pool = React.useMemo(() => {
         const explicit = new Set(explicitAccounts);
@@ -58,8 +80,9 @@ export default function EspCoveragePanel({
         let outlook = 0;
         let smtp = 0;
         for (const e of pool) {
-            if (e.provider === "gmail") gmail++;
-            else if (e.provider === "outlook") outlook++;
+            const family = mailboxFamily(e);
+            if (family === "gmail") gmail++;
+            else if (family === "outlook") outlook++;
             else smtp++;
         }
         return { gmail, outlook, smtp, total: pool.length };
@@ -121,7 +144,7 @@ export default function EspCoveragePanel({
                 {(["gmail", "outlook"] as const).map((r) => {
                     const sameCount = r === "gmail" ? counts.gmail : counts.outlook;
                     const hasSame = sameCount > 0;
-                    // SMTP/IMAP is a wildcard for Gmail/Outlook recipients only OUTSIDE
+                    // SMTP/IMAP is a wildcard for Google/Microsoft recipients only OUTSIDE
                     // strict — under strict, "same provider" excludes unknown-ESP SMTP.
                     const wildServes = counts.smtp > 0 && mode !== "strict";
                     // prefer falls back cross-provider when no same + no wildcard.
@@ -146,6 +169,7 @@ export default function EspCoveragePanel({
                             <div className="min-w-0 flex-1">
                                 <div className="text-[12.5px] font-medium text-slate-800 leading-tight">
                                     {LABEL[r]} recipients
+                                    {leadCount(leads?.[r])}
                                 </div>
                                 <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                                     <span className="text-[10px] uppercase tracking-[0.1em] text-slate-400">via</span>
@@ -184,7 +208,10 @@ export default function EspCoveragePanel({
                 <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
                     <ProviderLogo provider="other" className="size-8" />
                     <div className="min-w-0 flex-1">
-                        <div className="text-[12.5px] font-medium text-slate-800 leading-tight">Other domains</div>
+                        <div className="text-[12.5px] font-medium text-slate-800 leading-tight">
+                            Other providers
+                            {leadCount(leads?.other)}
+                        </div>
                         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                             <span className="text-[10px] uppercase tracking-[0.1em] text-slate-400">via</span>
                             <AnyMailbox />
@@ -197,8 +224,14 @@ export default function EspCoveragePanel({
             {mode === "strict" && onlyWildcard && (
                 <p className="rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 text-[11px] text-amber-700 leading-relaxed">
                     All your mailboxes are SMTP/IMAP, which can send to any provider — so Strict can't narrow by
-                    provider here and behaves like Off. Connect a Google or Outlook mailbox to truly restrict
+                    provider here and behaves like Off. Connect a Google or Microsoft mailbox to truly restrict
                     same-provider sending.
+                </p>
+            )}
+
+            {leads && leads.undetected > 0 && (
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                    {leads.undetected.toLocaleString()} {leads.undetected === 1 ? "lead's provider is" : "leads' providers are"} still being read from their domain's mail records. Until then only their address is used, so a gmail.com or outlook.com lead still matches.
                 </p>
             )}
 
@@ -206,7 +239,7 @@ export default function EspCoveragePanel({
                 {mode === "off"
                     ? "Provider matching is off — any recipient can be sent from any mailbox in the pool."
                     : mode === "strict"
-                      ? "Strict sends Google and Outlook recipients only from a same-provider mailbox (the sky match) — a recipient with no same-provider mailbox is held (deferred) until one frees up, never sent cross-provider. SMTP/IMAP mailboxes only carry non-Google/Outlook (“other”) domains under strict."
+                      ? "Strict sends Google and Microsoft recipients only from a same-provider mailbox (the sky match). A recipient with no same-provider mailbox is held until one frees up, never sent cross-provider. Other SMTP/IMAP mailboxes only carry recipients on other providers under strict."
                       : "Prefer uses a same-provider mailbox when one has capacity (the sky match), otherwise it falls back to another provider (the amber chip) — it never holds a recipient. SMTP/IMAP mailboxes can carry any provider."}
             </p>
         </div>

@@ -128,6 +128,7 @@ var segmentEnumColumns = map[string]string{
 	"source":              "c.source",
 	"verification_status": "c.verification_status",
 	"esp_provider":        "c.esp_provider",
+	"mail_host":           "c.mail_host",
 }
 
 var segmentDateExprs = map[string]string{
