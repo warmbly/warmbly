@@ -15,6 +15,11 @@ import (
 // placed where the worker's real IMAP sync will find it. One short-lived
 // connection per delivery keeps the client trivially correct.
 func deliverToInbox(imapAddr, user, password string, raw []byte) error {
+	return deliverToFolder(imapAddr, user, password, "INBOX", raw)
+}
+
+// deliverToFolder is deliverToInbox for any folder, created on first use.
+func deliverToFolder(imapAddr, user, password, folder string, raw []byte) error {
 	c, err := imapclient.DialTLS(imapAddr, &imapclient.Options{
 		// Dovecot's cert is self-signed; this client only ever talks to the
 		// local sandbox container.
@@ -29,7 +34,11 @@ func deliverToInbox(imapAddr, user, password string, raw []byte) error {
 		return fmt.Errorf("imap login %s: %w", user, err)
 	}
 
-	cmd := c.Append("INBOX", int64(len(raw)), nil)
+	if folder != "INBOX" {
+		// Already there on every delivery after the first.
+		_ = c.Create(folder, nil).Wait()
+	}
+	cmd := c.Append(folder, int64(len(raw)), nil)
 	if _, err := cmd.Write(raw); err != nil {
 		return fmt.Errorf("imap append write: %w", err)
 	}
