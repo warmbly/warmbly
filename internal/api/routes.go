@@ -662,6 +662,11 @@ func Run(
 				campaigns.POST("/:id/preflight", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.RunCampaignPreflight)
 				campaigns.GET("/:id/ab-analysis", m.RequireOrganization(), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetCampaignABAnalysis)
 				campaigns.POST("/:id/test-email", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.SendTestEmail)
+				// The campaign's scheduled placement test. PUT is a full-state
+				// write, so a retry lands on the same monitor.
+				campaigns.GET("/:id/placement-monitor", m.RequireOrganization(), m.RequireAccess(models.PermViewCampaigns, models.APIPermReadCampaigns), h.GetPlacementMonitor)
+				campaigns.PUT("/:id/placement-monitor", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.PutPlacementMonitor)
+				campaigns.DELETE("/:id/placement-monitor", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.DeletePlacementMonitor)
 
 				// Campaign start/stop
 				campaigns.POST("/:id/start", m.RequireOrganization(), m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.StartCampaign)
@@ -978,6 +983,21 @@ func Run(
 				analytics.GET("/accounts", h.GetAllAccountStatuses)
 				analytics.GET("/accounts/:id", h.GetAccountStatus)
 				analytics.GET("/usage", h.GetUsageOverview)
+			}
+
+			// Inbox placement tests: a template or campaign step sent to a seed
+			// panel from a real mailbox. Reads are analytics; starting one sends
+			// mail, so it takes the campaign-sending gate like a test email.
+			placementTests := protected.Group("/placement")
+			placementTests.Use(m.RequireOrganization())
+			{
+				placementTests.GET("/overview", m.RateLimitMiddleware(models.RateLimitAnalytics), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetPlacementOverview)
+				placementTests.GET("/tests", m.RateLimitMiddleware(models.RateLimitAnalytics), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.ListPlacementTests)
+				placementTests.GET("/tests/:id", m.RateLimitMiddleware(models.RateLimitAnalytics), m.RequireAccess(models.PermViewAnalytics, models.APIPermReadAnalytics), h.GetPlacementTest)
+				placementTests.POST("/tests", m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.CreatePlacementTest)
+				placementTests.POST("/tests/:id/cancel", m.RequireAccess(models.PermSendCampaigns, models.APIPermSendCampaigns), h.CancelPlacementTest)
+				placementTests.GET("/seeds", m.RequireAccess(models.PermViewCampaigns, models.APIPermReadEmails), h.ListPlacementSeeds)
+				placementTests.PUT("/seeds/:id", m.RequireAccess(models.PermManageEmails, models.APIPermWriteEmails), middleware.RequireAPIKeyEmailAccountParam("id"), h.SetPlacementSeed)
 			}
 
 			// Audit logs
@@ -1482,6 +1502,11 @@ func Run(
 				poolLinkInstance.POST("/mailboxes/:remoteId/warmup-deliveries", h.PoolLinkVerifyWarmupDelivery)
 				poolLinkInstance.GET("/workspace-mailboxes", h.PoolLinkWorkspaceMailboxes)
 				poolLinkInstance.POST("/mailboxes/adopt", h.PoolLinkAdopt)
+				// The placement seed panel lent to linked instances.
+				poolLinkInstance.GET("/placement/panel", h.PoolLinkPlacementPanel)
+				poolLinkInstance.POST("/placement/tests", h.PoolLinkStartPlacement)
+				poolLinkInstance.GET("/placement/tests/:testId", h.PoolLinkPlacementVerdicts)
+				poolLinkInstance.POST("/placement/tests/:testId/sends", h.PoolLinkPlacementSends)
 			}
 
 			// Self-hosted side: Settings > Warmbly Cloud.

@@ -314,6 +314,8 @@ The same tab decides where warmup mail lands **in your own mail client**: its ow
 
 Keep warmup running after campaigns begin rather than switching it off once a mailbox looks ready. See [Warmup](/guides/warmup/).
 
+A mailbox marked as a [placement seed inbox](/guides/placement-tests/#your-own-seed-inboxes) is the exception: it never warms up (starting warmup on it is refused until it is unmarked) and never sends campaign mail, because a test inbox has to stay a stranger to your senders.
+
 <Callout type="info" title="Warmup is a paid feature">
   The model still supports separate free and premium pools, but access is gated to paid workspaces today.
 </Callout>

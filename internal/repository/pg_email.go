@@ -2215,6 +2215,8 @@ func (r *emailRepository) GetByTags(ctx context.Context, scope AccountScope, tag
 		WHERE ea.organization_id = $1
 		  AND eat.tag_id = ANY($2)
 		  AND ea.status = 'active'
+		  -- A seed mailbox is a placement test inbox and never sends campaign mail.
+		  AND ea.seed_scope IS NULL
 		ORDER BY ea.id
 	`
 
@@ -2268,6 +2270,8 @@ func (r *emailRepository) GetAllActiveInScope(ctx context.Context, scope Account
 		FROM email_accounts ea
 		WHERE ea.organization_id = $1
 		  AND ea.status = 'active'
+		  -- A seed mailbox is a placement test inbox and never sends campaign mail.
+		  AND ea.seed_scope IS NULL
 		ORDER BY ea.id
 	`
 
@@ -2337,6 +2341,8 @@ func (r *emailRepository) GetByCampaignSenders(ctx context.Context, scope Accoun
 		  AND cs.enabled
 		  AND ea.organization_id = $1
 		  AND ea.status = 'active'
+		  -- A seed mailbox is a placement test inbox and never sends campaign mail.
+		  AND ea.seed_scope IS NULL
 		ORDER BY ea.id
 	`
 

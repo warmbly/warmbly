@@ -35,7 +35,7 @@ func resourceSpecs() []resource {
 	out = append(out, campaignSpec(), contactSpec(), suppressionSpec(), mailboxSpec(), inboxSpec())
 	out = append(out, segmentSpec(), templateSpec(), automationSpec(), formSpec())
 	out = append(out, dealSpec(), pipelineSpec(), taskSpec())
-	out = append(out, analyticsSpec(), auditSpec(), advisorSpec())
+	out = append(out, analyticsSpec(), placementSpec(), auditSpec(), advisorSpec())
 	out = append(out, webhookSpec(), keySpec(), oauthAppSpec(), toolSpec())
 	out = append(out, orgSpec(), teamSpec(), settingsSpec(), warmupRoutingSpec(), integrationSpec())
 	return out
@@ -1455,6 +1455,115 @@ func taskSpec() resource {
 			{
 				Name: "types", Short: "The task types in use",
 				Method: http.MethodGet, Path: "/crm/task-types",
+			},
+		},
+	}
+}
+
+func placementSpec() resource {
+	testTable := output.Table{
+		Root: "data",
+		Columns: []output.Column{
+			col("ID", "id"),
+			colt("SENDER", "sender_email", 30),
+			colt("SUBJECT", "subject", 30),
+			col("PANEL", "panel"),
+			col("STATUS", "status"),
+			col("INBOX", "summary.inbox"),
+			col("TABS", "summary.promotions"),
+			col("SPAM", "summary.spam"),
+			col("MISSING", "summary.missing"),
+			colf("CREATED", "created_at", "time"),
+		},
+		Empty: "No placement tests yet. Start one with `warmbly placement test --mailbox MAILBOX_ID --campaign CAMPAIGN_ID`.",
+	}
+	return resource{
+		Name:    "placement",
+		Aliases: []string{"placement-test", "placement-tests"},
+		Short:   "Test where a template lands: inbox, a Gmail tab or spam",
+		Group:   groupData,
+		Long: `Send a campaign step or a template from one of your mailboxes to a panel of
+seed inboxes and see where each copy landed.
+
+Every copy is a real send from that mailbox, counted against its daily limit,
+so starting a test asks before it does it.`,
+		Endpoints: []endpoint{
+			{Name: "overview", Short: "The seed panels you can test on and this month's allowance", Method: http.MethodGet, Path: "/placement/overview"},
+			{
+				Name: "list", Aliases: []string{"ls"}, Short: "List placement tests",
+				Method: http.MethodGet, Path: "/placement/tests", Paginate: true,
+				Flag:  withPaging(flagSpec{Name: "campaign", Help: "Only this campaign's tests", Query: true, Key: "campaign_id"}),
+				Table: testTable,
+			},
+			{
+				Name: "view", Aliases: []string{"get", "show"}, Short: "Show one test with where every copy landed",
+				Method: http.MethodGet, Path: "/placement/tests/{id}",
+				Args: []argSpec{{Name: "id", Help: "The test's id"}},
+			},
+			{
+				Name: "test", Aliases: []string{"run", "start"}, Short: "Start a placement test",
+				Method: http.MethodPost, Path: "/placement/tests", Body: bodyRequired, Sends: true, Idempotent: true,
+				Example: "  $ warmbly placement test --mailbox MAILBOX_ID --campaign CAMPAIGN_ID --step STEP_ID\n" +
+					"  $ warmbly placement test --mailbox MAILBOX_ID --subject \"Quick question\" --text \"Hi there\" --tracking compare",
+				Flag: []flagSpec{
+					{Name: "mailbox", Help: "The mailbox to send from (required)", Key: "sender_account_id"},
+					{Name: "campaign", Help: "Test this campaign's copy", Key: "campaign_id"},
+					{Name: "step", Help: "The step to test; with --campaign", Key: "sequence_id"},
+					{Name: "contact", Help: "Render the copy for this contact's id; the campaign's first lead when omitted", Key: "contact_id"},
+					{Name: "subject", Help: "Subject of an ad-hoc template", Key: "subject"},
+					{Name: "text", Help: "Plain-text body of an ad-hoc template", Key: "body_plain"},
+					{Name: "html", Help: "HTML body of an ad-hoc template", Key: "body_html"},
+					{Name: "tracking", Help: "campaign, on, off or compare (sends twice, with and without)", Key: "tracking"},
+					{Name: "panel", Help: "instance, workspace or cloud", Key: "panel"},
+				},
+				Table: testTable,
+			},
+			{
+				Name: "cancel", Short: "Stop the copies of a running test that have not been sent",
+				Method: http.MethodPost, Path: "/placement/tests/{id}/cancel", Body: bodyOptional,
+				Args:    []argSpec{{Name: "id", Help: "The test's id"}},
+				Success: "Placement test cancelled.",
+			},
+			{
+				Name: "seeds", Short: "List your mailboxes and which are seed inboxes",
+				Method: http.MethodGet, Path: "/placement/seeds",
+				Table: output.Table{Root: "data", Columns: []output.Column{
+					col("ID", "email_account_id"), colt("MAILBOX", "email", 36), col("PROVIDER", "label"),
+					colf("SEED", "seed", "bool"), colt("NOTE", "blocker", 40),
+				}, Empty: "No mailboxes in this workspace."},
+			},
+			{
+				Name: "set-seed", Short: "Make a mailbox a seed inbox, or an ordinary mailbox again",
+				Method: http.MethodPut, Path: "/placement/seeds/{id}", Body: bodyRequired,
+				Args:    []argSpec{{Name: "id", Help: "The mailbox's id"}},
+				Example: "  $ warmbly placement set-seed MAILBOX_ID --seed\n  $ warmbly placement set-seed MAILBOX_ID --seed=false",
+				Flag:    []flagSpec{{Name: "seed", Help: "true to make it a seed inbox, false to stop", Kind: flagBool, Key: "seed"}},
+				Success: "Seed inbox updated.",
+			},
+			{
+				Name: "monitor", Short: "Show a campaign's scheduled placement test",
+				Method: http.MethodGet, Path: "/campaigns/{id}/placement-monitor",
+				Args: []argSpec{{Name: "id", Help: "The campaign's id"}},
+			},
+			{
+				Name: "set-monitor", Short: "Schedule or change a campaign's placement test",
+				Method: http.MethodPut, Path: "/campaigns/{id}/placement-monitor", Body: bodyRequired,
+				Args:    []argSpec{{Name: "id", Help: "The campaign's id"}},
+				Example: "  $ warmbly placement set-monitor CAMPAIGN_ID --enabled --interval-days 7 --alert-below 70",
+				Flag: []flagSpec{
+					{Name: "enabled", Help: "Run the scheduled test", Kind: flagBool, Key: "enabled"},
+					{Name: "interval-days", Help: "Days between tests, 1 to 30", Kind: flagInt, Key: "interval_days"},
+					{Name: "alert-below", Help: "Alert when the inbox rate falls below this percent", Kind: flagInt, Key: "alert_below"},
+					{Name: "panel", Help: "instance, workspace or cloud", Key: "panel"},
+					{Name: "pause-on-alert", Help: "Pause the campaign when it alerts", Kind: flagBool, Key: "pause_on_alert"},
+				},
+				Success: "Placement monitor saved.",
+			},
+			{
+				Name: "delete-monitor", Short: "Stop a campaign's scheduled placement test",
+				Method: http.MethodDelete, Path: "/campaigns/{id}/placement-monitor",
+				Args:    []argSpec{{Name: "id", Help: "The campaign's id"}},
+				Success: "Placement monitor removed.",
 			},
 		},
 	}

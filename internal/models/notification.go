@@ -28,6 +28,12 @@ const (
 	// It is the warning shot before the send/warmup gate applies, so it must
 	// reach the owner while there is still time to fix the DNS records.
 	NotifDomainAuth NotificationCategory = "health_domain_auth"
+	// NotifPlacementFinished tells whoever started an inbox placement test
+	// where its copies landed.
+	NotifPlacementFinished NotificationCategory = "placement_finished"
+	// NotifPlacementAlert fires when a campaign's scheduled placement test
+	// comes back below its alert threshold, so it emails by default.
+	NotifPlacementAlert NotificationCategory = "placement_alert"
 )
 
 // ChannelPrefs is the per-category delivery toggles: in-app feed, account
@@ -58,6 +64,9 @@ type NotificationPreferences struct {
 	TeamActivity    CategoryPref `json:"team_activity"`
 	CampaignPaused  CategoryPref `json:"campaign_paused"`
 	DomainAuth      CategoryPref `json:"health_domain_auth"`
+	// PlacementFinished and PlacementAlert are the inbox placement test pair.
+	PlacementFinished CategoryPref `json:"placement_finished"`
+	PlacementAlert    CategoryPref `json:"placement_alert"`
 
 	// EmailDigestMinutes is the email-channel bundling window: pending
 	// notification emails hold this long, then flush as one email. Bounded
@@ -95,6 +104,8 @@ func DefaultNotificationPreferences() NotificationPreferences {
 		TeamActivity:       on,
 		CampaignPaused:     campaignPaused,
 		DomainAuth:         domainAuth,
+		PlacementFinished:  on,
+		PlacementAlert:     domainAuth,
 		EmailDigestMinutes: 30,
 	}
 }
@@ -122,6 +133,10 @@ func (p NotificationPreferences) CategoryPref(c NotificationCategory) CategoryPr
 		return p.CampaignPaused
 	case NotifDomainAuth:
 		return p.DomainAuth
+	case NotifPlacementFinished:
+		return p.PlacementFinished
+	case NotifPlacementAlert:
+		return p.PlacementAlert
 	default:
 		return CategoryPref{}
 	}

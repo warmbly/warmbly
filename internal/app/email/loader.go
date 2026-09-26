@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -464,6 +465,17 @@ func (s *emailService) syncDataFor(ctx context.Context, emailID uuid.UUID) (*mod
 	// A pool-linked mailbox is a warmup-only mirror: no history import.
 	if s.poolLink != nil {
 		if linked, err := s.poolLink.GetMailboxByAccount(ctx, emailID); err == nil && linked != nil {
+			data.Policy.BackfillDays = 1
+			data.Policy.BackfillMessages = 25
+		}
+	}
+	// A seed receives every workspace's test copies, so the per-mailbox budget
+	// that fits one person's mail would defer them past the classify window.
+	// It never needs its history.
+	if s.seedScope != nil {
+		if scope, err := s.seedScope.SeedScope(ctx, emailID); err == nil && scope != "" {
+			data.Policy.DailyMessages = max(data.Policy.DailyMessages, config.PlacementSeedDailySyncMessages)
+			data.Policy.OrgDailyMessages = max(data.Policy.OrgDailyMessages, config.PlacementSeedDailySyncMessages)
 			data.Policy.BackfillDays = 1
 			data.Policy.BackfillMessages = 25
 		}

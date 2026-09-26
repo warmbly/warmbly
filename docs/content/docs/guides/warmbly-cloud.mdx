@@ -90,6 +90,18 @@ Enrolled mailboxes are ordinary members of the hosted pool and are held to the s
 
 For mailboxes signed in through Warmbly Cloud the enforcement reaches sending too. Every access token the instance draws is checked on the cloud: a mailbox the cloud has **blocked**, one that is no longer active there, one that was removed from the workspace, or an instance whose link was revoked gets no token, and the instance stops sending and syncing from that mailbox as soon as its cached token expires.
 
+## Placement tests on Warmbly Cloud's seed panel
+
+A self-hosted instance's own seed panel holds whatever its administrator added, often nothing. A linked instance can borrow Warmbly Cloud's instead: pick **Warmbly Cloud** as the panel when you start an [inbox placement test](/guides/placement-tests/), or for a campaign's placement monitor.
+
+The split is the same as for warmup, only narrower:
+
+- **Your instance renders and sends every copy.** The cloud stores no template and never gets the mailbox's credentials; its seed inboxes receive the rendered copies like any recipient. A campaign step renders for a placeholder contact here, not the campaign's first lead, so no lead's details reach the cloud's seed inboxes unless you pick a contact for the test. Copies go out from your mailbox through your own workers, paced and charged to the mailbox's daily limit exactly like a test on any other panel.
+- **The cloud only hands out seed addresses and reports where each copy landed.** It picks seeds for the test (never one on your sender's domain), your instance tells it the Message-ID of each copy it sent, and the cloud answers with the folder each seed found it in. Seed addresses are shown masked, as on any shared panel.
+- **Tests count against the linked cloud workspace's allowance**, the same monthly allowance a hosted workspace on the same plan gets, and a tracking comparison counts as two. Tests on your instance's own panel and on your own seed inboxes are never counted.
+
+The panel is offered only while the instance is linked. Without a link a test on it is refused with `placement_panel_unavailable`.
+
 ## Unlinking
 
 On your instance, **Settings > Warmbly Cloud > Disconnect** removes every enrolled mailbox from the pool, deletes their credentials on the cloud and lets local warmup take over. On Warmbly Cloud, **Settings > Linked instances** lists the instances linked to a workspace and can unlink any of them from the other side.

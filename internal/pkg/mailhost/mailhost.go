@@ -91,6 +91,29 @@ func (h Host) Google() bool { return h == GoogleWorkspace || h == Gmail }
 // Microsoft reports whether h is either Microsoft product.
 func (h Host) Microsoft() bool { return h == Microsoft365 || h == Outlook }
 
+// ForMailbox is who hosts a connected mailbox: its stored mail_host when the
+// connect path recorded one, else read from how it connects and its address.
+// provider is the email_provider value (gmail, outlook, smtp_imap).
+func ForMailbox(stored, provider, address string) Host {
+	domain := ""
+	if at := strings.LastIndex(address, "@"); at >= 0 {
+		domain = NormalizeDomain(address[at+1:])
+	}
+	if h := Host(stored); stored != "" && Valid(stored) {
+		return Refine(h, domain)
+	}
+	switch provider {
+	case "gmail":
+		return Refine(Gmail, domain)
+	case "outlook":
+		return Refine(Microsoft365, domain)
+	}
+	if h, ok := knownDomain(domain); ok {
+		return h
+	}
+	return Other
+}
+
 // PasswordAuth says how a password signs in on a host.
 type PasswordAuth string
 

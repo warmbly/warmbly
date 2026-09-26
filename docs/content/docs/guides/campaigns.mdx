@@ -331,6 +331,12 @@ The AI score is deliberately not sampled, so re-checking copy you did not touch 
 
 When the draft has moved on from the analysis on screen, the panel says so and highlights the button, rather than presenting stale findings as current.
 
+## Testing placement
+
+A content score reads the copy; a placement test sends it. Test any email step from **Placement tests** by choosing the campaign and the step: the copy is rendered the way this campaign sends it (merge fields for its first lead, its opt-out line, its tracking and attachments) and sent from one of its mailboxes to seed inboxes at the major providers, which report whether it reached the inbox, a Gmail tab or spam, or never arrived. Each copy is a send from that mailbox's daily limit.
+
+A **placement monitor** repeats that on a schedule while the campaign runs, every `7` days by default, rotating through the campaign's mailboxes. When a run lands below its alert threshold (`70%` inbox by default), everyone who can view campaigns is notified, and the monitor can pause the campaign too, as an auto-pause you restart yourself. See [inbox placement tests](/guides/placement-tests/).
+
 ## Easing out of warmup
 
 A mailbox that has been warming does not jump straight to its full cold cap. Going from 40 warmup emails a day to 50 cold emails the next morning is the volume jump mailbox providers penalise, so Warmbly ramps into it.
@@ -388,6 +394,9 @@ Warmbly limits a campaign mailbox to at most five warmup messages per day, so ca
   </Card>
   <Card title="Deliverability" href="/guides/deliverability/">
     Warmup, authentication, tracking, and sender reputation.
+  </Card>
+  <Card title="Inbox placement tests" href="/guides/placement-tests/">
+    Send a step to seed inboxes and see where it lands, once or on a schedule.
   </Card>
   <Card title="Sequences" href="/guides/sequences/">
     Multi-step follow-ups with delays and branching.

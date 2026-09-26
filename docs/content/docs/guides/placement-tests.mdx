@@ -1,0 +1,195 @@
+---
+title: "Inbox placement tests"
+description: "Send a campaign step or a template from one of your mailboxes to seed inboxes at the major providers, and see where each copy landed."
+---
+
+A placement test answers one question before your prospects do: when this mailbox sends this email, where does it land? Warmbly sends a copy from a real mailbox of yours to a panel of seed inboxes spread across providers, then reads each seed's mail to see whether the copy reached the primary inbox, a Gmail tab, spam, or nowhere at all.
+
+Tests live under **Placement tests** in the dashboard. Reading results needs the **View analytics** permission, and starting or cancelling a test needs **Send campaigns**, because a test sends real mail from a real mailbox.
+
+## What a test measures
+
+Every copy gets one of these verdicts:
+
+| Verdict | Meaning |
+|---------|---------|
+| Inbox | The primary inbox |
+| Promotions | Gmail's Promotions tab, which is where cold mail goes to be ignored |
+| Other tab | Another Gmail tab: Updates, Social or Forums |
+| Spam | The spam or junk folder |
+| Never arrived | The copy left your mailbox but was not seen in the seed within 120 minutes of being sent |
+| Failed | The copy never left your mailbox, for example because its worker was offline |
+| Cancelled | The test was cancelled before this copy was sent |
+
+The rates are shares of the copies that were **delivered**, meaning every copy that left the sender and got a verdict: inbox, both kinds of tab, spam and never arrived. Failed and cancelled copies are not in the denominator, because they say nothing about the receiving side. The inbox rate counts the primary inbox only, so a copy in Promotions counts against it.
+
+Results are broken down by provider family: Gmail, Google Workspace, Outlook.com, Microsoft 365, Yahoo Mail, iCloud, Zoho and the rest. Gmail and Google Workspace are kept apart, as are Outlook.com and Microsoft 365, because the consumer and business services filter differently and an email can do well at one and badly at the other.
+
+## How a test runs
+
+### The copy is the one your campaign sends
+
+Each copy is rendered the way a campaign send is, in the same order: merge fields and spintax for a sample lead, AI blocks for that lead, form links, the mailbox's signature, the opt-out line, the `List-Unsubscribe` header, attachments, and the open pixel and wrapped links when tracking is on. What a test leaves out is what only a real conversation has: threading into an earlier message, the A/B variant choice, and the campaign's CC and BCC.
+
+When you test a campaign step, the copy renders for the campaign's first lead unless you pick another contact (on the Warmbly Cloud panel it renders for a placeholder instead, so a lead's details leave your instance only when you pick one, and AI blocks are left out), and the step is copied when the test starts, so an edit halfway through does not change what the later seeds receive. A follow-up step that threads under an earlier one has no subject of its own, so the test uses the subject of the step it threads under, without the `Re:`. A template you write by hand renders the way a new campaign would, with the workspace's default opt-out line and the unsubscribe header on.
+
+Nothing is added to the message for the test's sake: no marker in the subject, no special header, no hidden text. Each copy is found again by its Message-ID, so what the seed's filter judges is exactly what a prospect would receive.
+
+The test also runs the same [content check](/guides/campaigns/#content-checks) the campaign editor uses and shows its score and issues next to the results.
+
+### Sent one at a time from the real mailbox
+
+Copies go out one by one, each as its own send from the mailbox you chose, through the worker that mailbox normally sends from. They are spaced about 60 seconds apart by default, varied by up to a third either way, and alternate between providers so no single provider sees a burst. A test with 20 seeds takes around 20 minutes to send.
+
+The sending mailbox's own copy of each probe is kept out of your unibox.
+
+### Found in the seed's mail
+
+Seed inboxes are ordinary connected mailboxes that Warmbly syncs. As a seed's mail comes in, each copy is matched by its Message-ID and the folder and Gmail labels it arrived with become its verdict. Results appear on the test live, one copy at a time, for everyone looking at it.
+
+A copy not seen within 120 minutes of being sent is marked **never arrived**. Copies on Warmbly Cloud's panel get half an hour more, because their verdict travels back from the cloud. A test finishes when every copy has a verdict. A test in which no copy was delivered at all ends as **failed**, with the reason.
+
+## Seed panels
+
+A test runs against one panel of seed inboxes:
+
+| Panel | Whose seeds | Available |
+|-------|-------------|-----------|
+| **Shared panel** | The panel the instance operator runs for every workspace (`instance` in the API). On the hosted product this is Warmbly's own | Whenever the operator has put seed inboxes on it. On a self-hosted instance, an administrator adds them from the admin panel |
+| **Your seed inboxes** | Mailboxes of your own workspace that you marked as seeds (`workspace` in the API) | Once you mark at least one |
+| **Warmbly Cloud panel** | Warmbly Cloud's panel (`cloud` in the API) | Only on a self-hosted instance [linked to Warmbly Cloud](/guides/warmbly-cloud/#placement-tests-on-warmbly-clouds-seed-panel) |
+
+The page shows each panel's seed count and its mix of providers, and says why a panel is unavailable when it is.
+
+Addresses on the instance and Warmbly Cloud panels are shown masked (`a***@gmail.com`), so a shared panel cannot be listed and added to a sender's allowlist. Your own seed inboxes are shown in full.
+
+Each test uses up to 20 seeds by default (the operator can change this). They are picked round-robin across provider families, so even a small test covers every provider the panel has. Two kinds of seed are always skipped:
+
+- **Seeds on the sender's own domain.** Mail between two mailboxes in the same tenant skips most of the filtering a test is there to observe, so a seed at `acme.com` never receives a test sent from `sales@acme.com`.
+- **The sending mailbox itself.**
+
+If nothing is left after that, the test is refused with `placement_no_seeds` and nothing is sent.
+
+## Your own seed inboxes
+
+Any mailbox connected to your workspace can become a seed inbox. Mark mailboxes on the **Seed inboxes** tab of the placement tests page; it needs the **Manage mailboxes** permission, and a workspace can have up to 50.
+
+A good seed inbox is one that behaves like a stranger's inbox:
+
+- **A separate address on a different domain from your senders.** Seeds on a sender's domain are skipped, as described above.
+- **Personal accounts at the big providers.** A Gmail, an Outlook.com and a Yahoo account cover most consumer filtering. Add a Google Workspace or Microsoft 365 mailbox on another domain you own to see the business side.
+- **Left alone.** Do not add your senders to its contacts, mark their mail as not spam, or change its filtering. Every one of those teaches the provider that your mail is wanted, which is exactly what a prospect's inbox has not learned.
+
+Marking a mailbox as a seed changes how Warmbly treats it:
+
+- **It never warms up.** Its warmup is turned off when you mark it, and starting warmup on it is refused (`mailbox_is_seed`) until you unmark it. A seed that exchanged mail with the warmup pool would stop being a stranger to every sender in it.
+- **It never sends campaign mail.** It is left out of every campaign's sending mailboxes, and it cannot send a placement test itself.
+- **It syncs for tests.** It gets a large daily sync allowance, so copies arriving from many tests are never deferred past the 120 minute window, and it imports no history. The copies it receives are stored like any other mail it syncs.
+
+A mailbox on the instance panel cannot also be one of your seeds, and a mailbox cannot be marked while a test is still sending from it. Unmarking a seed makes it an ordinary mailbox again; its warmup stays off until you start it.
+
+## Starting a test
+
+A test needs a sending mailbox, a panel, and a copy to send. The sending mailbox has to be connected and active, and cannot itself be a seed inbox.
+
+- **Test a campaign step** by choosing the campaign and the step. The step's subject and body are filled in, and the campaign's opt-out line, tracking and attachments apply. Pick a contact if you want the merge fields and AI blocks rendered for someone other than the campaign's first lead.
+- **Test an ad-hoc template** by writing a subject and a body. This is the way to try a draft before it becomes a campaign.
+
+Cancelling a running test stops the copies that have not been sent yet. Copies already sent keep being classified, so a cancelled test still shows where they landed.
+
+### Tracking
+
+| Choice | What the copies carry |
+|--------|----------------------|
+| Campaign | The campaign's own open and click tracking. An ad-hoc template has none. This is the default |
+| On | The open pixel and wrapped links |
+| Off | Neither |
+| Compare | Two linked tests to the same seeds, one without tracking and one with it |
+
+A comparison sends each seed both versions back to back, in a random order per seed, so both see the same filter at the same moment. The difference between the two halves is what the pixel and the wrapped links cost you. It counts as two tests and sends twice as many copies. A campaign that sends plain text carries no tracking, so **On** and **Compare** are refused for it (`placement_invalid_tracking`).
+
+## What a test costs
+
+**Every copy is a send from the sending mailbox.** It is charged to the mailbox's daily campaign limit, and the mailbox's campaigns see those sends in their daily budget and in their minimum gap between sends. A test to 20 seeds uses 20 sends of that day; a comparison uses 40. Copies still waiting to go out already hold their place in the day, so a campaign cannot spend them while the test sends. When the mailbox has less left than a full test needs, the test goes to fewer seeds instead; below five seeds per test it is refused with `placement_daily_budget`, because a smaller test is noise. Test from a mailbox with headroom, or before its campaigns run for the day.
+
+A mailbox runs one test at a time: until every copy of a test has been sent, another test from the same mailbox is refused with `placement_sender_busy`.
+
+### Monthly allowance
+
+On the hosted product, tests on the instance panel count against a monthly allowance:
+
+| Workspace | Tests per month |
+|-----------|-----------------|
+| On a free trial | `3` |
+| On a paid plan | `40` |
+
+These are the defaults, and the operator can change them. The month is the calendar month in UTC. A tracking comparison counts as two tests, and a monitor's scheduled tests count like any other. The placement tests page shows how many you have used. A workspace with no active trial or subscription cannot start a test (`placement_not_entitled`), and one that has used its allowance is refused with `placement_quota_exceeded` until the next month.
+
+Tests on your own seed inboxes are never counted. A self-hosted instance does not meter its own panel at all. Tests on Warmbly Cloud's panel count against the allowance of the Warmbly Cloud workspace the instance is linked to.
+
+## Campaign placement monitors
+
+A monitor re-tests a running campaign on a schedule, so a drop in placement shows up before it shows up in your reply rate. Set it up from the campaign.
+
+| Setting | Default | Range |
+|---------|---------|-------|
+| Interval | every `7` days | `1` to `30` days |
+| Panel | Instance | Instance, your seed inboxes, or Warmbly Cloud |
+| Alert below | `70%` inbox | `0` to `100` |
+| Pause on alert | off | on or off |
+
+Each run tests the campaign's first email step that has both a subject and a body, rendered for its first lead, with the campaign's own tracking. The runs rotate through the campaign's sending mailboxes, one mailbox per run, because every mailbox has its own standing and the one that slipped is the one you want to find. A new or re-enabled monitor runs its first test within about five minutes.
+
+A monitor only tests a campaign that is running. When a run cannot start (the campaign is paused, none of its mailboxes is connected, the allowance is used, or the mailbox has too little of its daily limit left), the monitor records why and tries again a day later rather than a whole interval later. Its tests count against the monthly allowance and the mailbox's daily limit like any other.
+
+**When a monitor's test lands below its threshold**, everyone in the workspace who can view campaigns gets a **Placement monitor alert**, with the result and a link to the test. With **Pause on alert** on, the campaign is also paused automatically, with the reason in its activity log. Like every [auto-pause](/guides/campaigns/#auto-pause-guardrails), it does not resume on its own: find out what changed, then start the campaign again yourself.
+
+## Reading the results honestly
+
+A placement test is a signal, not a verdict. Read it with its limits in mind:
+
+- **Seeds are not your prospects.** A seed inbox has never heard from you, which is what makes it useful, but it also has none of the history a real recipient's mailbox builds up, and providers weigh each recipient's own behaviour heavily.
+- **Corporate gateways are not covered.** Many business recipients sit behind a security gateway such as Mimecast, Proofpoint or Cisco before their Microsoft 365 or Google Workspace mailbox. A seed shows the provider's own filter, not what a gateway in front of it would do.
+- **One test is noise.** A panel holds a handful of seeds per provider, and filters do not treat every copy of the same email alike. One copy in spam is not a problem; the same provider junking most copies across several tests is.
+- **Compare over several tests and providers.** Test more than one sending mailbox, repeat the test on another day, and look for a pattern: a single provider going bad usually points at authentication or content at that provider, while every provider going bad points at the sender.
+- **Never arrived is its own signal.** A copy can go missing because the provider dropped or delayed it, or because the seed had not synced it yet. One missing copy means little; most copies missing at one provider usually means that provider is refusing or deferring your mail.
+
+Tests also feed the seed placement figures on the [Deliverability](/guides/deliverability/#the-dashboard) page, which roll every test in the window up by provider.
+
+## Notifications
+
+| Notification | Who gets it | Default |
+|--------------|-------------|---------|
+| Placement test finished | Whoever started the test by hand, once every copy has a verdict. A tracking comparison reports once, with both halves | On, in-app and push, no email |
+| Placement monitor alert | Everyone who can view campaigns, when a monitor's test lands below its threshold | On, including email |
+
+Both open the test. Change them under **Settings > Notifications**; see [notifications](/guides/notifications/).
+
+## Limits
+
+| Limit | Value |
+|-------|-------|
+| Tests running at once per workspace | `3` (a comparison counts as two) |
+| Tests sending from one mailbox at once | `1` |
+| Seeds per test | up to `40` by default, at most `100` (operator setting) |
+| Your own seed inboxes | `50` per workspace |
+| Time for a copy to arrive | `120` minutes after it was sent |
+| Monitor interval | `1` to `30` days |
+
+## Moving a workspace
+
+Placement tests and their results travel in a [workspace export](/guides/workspace-export-import/) as a record, under Delivery events, and campaign placement monitors travel with the campaigns. Which mailboxes are seed inboxes does not travel, so mark them again on the destination. A test that is still sending leaves its unsent copies behind.
+
+## Related guides
+
+<Cards>
+  <Card title="Deliverability" href="/guides/deliverability/">
+    Bounce, complaint and placement health, and the thresholds Warmbly acts on.
+  </Card>
+  <Card title="Campaigns" href="/guides/campaigns/">
+    Content checks, tracking and auto-pause guardrails.
+  </Card>
+  <Card title="Placement tests API" href="/api/reference/placement/">
+    Start tests, read results and manage seeds and monitors programmatically.
+  </Card>
+</Cards>

@@ -51,9 +51,12 @@ type JobsService struct {
 	WarmupEngagementRepo repository.WarmupEngagementRepository
 	// WarmupPlacementRepo keeps each sender's daily placement history. Optional.
 	WarmupPlacementRepo repository.WarmupPlacementRepository
-	WarmupService       warmupapp.Service
-	WorkerRepo          repository.WorkerRepository
-	FleetNodeRepo       repository.FleetNodeRepository
+	// PlacementRepo resolves placement test probes from worker send results.
+	// Optional.
+	PlacementRepo repository.PlacementRepository
+	WarmupService warmupapp.Service
+	WorkerRepo    repository.WorkerRepository
+	FleetNodeRepo repository.FleetNodeRepository
 	// LifecycleRepo moves mailboxes in and out of cold rotation. Nil disables
 	// the lifecycle rebalancer entirely.
 	LifecycleRepo repository.SendLifecycleRepository

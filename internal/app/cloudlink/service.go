@@ -121,6 +121,14 @@ type Service interface {
 	// IsCloudWarmupThreadReply asks by ancestry: whether what a tokenless
 	// message answers is a turn of one of the cloud's warmup conversations.
 	IsCloudWarmupThreadReply(ctx context.Context, accountID uuid.UUID, messageID string, inReplyTo []string) (bool, error)
+
+	// The placement seed panel the cloud lends a linked instance. The
+	// instance renders and sends every copy; the cloud only hands out seed
+	// addresses and reports where each copy landed.
+	PlacementPanel(ctx context.Context) (*models.PlacementCloudPanel, *errx.Error)
+	StartPlacement(ctx context.Context, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error)
+	ReportPlacementSends(ctx context.Context, testID uuid.UUID, sends []models.PlacementCloudSend) *errx.Error
+	PlacementVerdicts(ctx context.Context, testID uuid.UUID) (*models.PlacementCloudTest, *errx.Error)
 }
 
 type service struct {

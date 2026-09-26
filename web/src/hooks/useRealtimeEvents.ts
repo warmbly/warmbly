@@ -73,6 +73,14 @@ export function useRealtimeEvents() {
       // and must never trigger a react-query refetch.
       if (event.startsWith('LIVE_')) return
 
+      // A placement test started, got a verdict, finished or was cancelled.
+      // Checked this early because its name would otherwise match the warmup
+      // placement and campaign branches below.
+      if (event === 'PLACEMENT_TEST_UPDATED') {
+        invalidate([['placement'], ['analytics', 'deliverability']])
+        return
+      }
+
       const getString = (key: string) => {
         const value = payload[key]
         return typeof value === 'string' && value.length > 0 ? value : null
@@ -421,7 +429,8 @@ export function useRealtimeEvents() {
           // rolled plan), so a teammate retuning a mailbox's sending behaviour
           // refreshes everyone's open drawer instead of only the list row.
           // A mailbox write can move it off Google sign-in, so the migration list follows.
-          email_account: [['emails'], ['analytics', 'accounts'], ['sending-domains'], ['mailbox-grants', 'migration'], ['pool-link']],
+          // A seed toggle is audited here too, so the placement seed list follows.
+          email_account: [['emails'], ['analytics', 'accounts'], ['sending-domains'], ['mailbox-grants', 'migration'], ['pool-link'], ['placement', 'seeds'], ['placement', 'overview']],
           // A mailbox import created, retried or cancelled by a teammate; it may move mailboxes onto a grant.
           mailbox_import: [['emails', 'imports'], ['mailbox-grants', 'migration']],
           // An admin grant added, re-checked or removed, and an inbox vendor
@@ -481,6 +490,9 @@ export function useRealtimeEvents() {
           crm_deal: [['crm', 'deals'], ['contacts']],
           crm_task: [['crm', 'tasks'], ['crm', 'deals']],
           warmup_routing_rule: [['analytics', 'warmup']],
+          // Placement tests started or stopped and campaign monitors changed.
+          placement_test: [['placement']],
+          placement_monitor: [['placement']],
           cloud_link: [['cloud-link'], ['emails']],
           pool_link: [['pool-link'], ['emails']],
           // Folders / tags / categories ride the user payload.

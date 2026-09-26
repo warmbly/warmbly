@@ -1945,14 +1945,6 @@ func main() {
 		emailVerificationScheduler := jobs.NewEmailVerificationScheduler(emailVerificationJob, time.Duration(config.VerificationIntervalSeconds)*time.Second)
 		go emailVerificationScheduler.Start(ctx)
 
-		// Seed inbox-placement testing: send a tokenized copy of a template
-		// through a real sender to the seed panel, then classify where it landed
-		// by looking the token up in each seed's synced unibox entries.
-		placementRepository = repository.NewPlacementRepository(primaryDB)
-		placementService = placement.NewService(placementRepository, emailRepostory, emailSender)
-		placementPoller := jobs.NewPlacementPoller(placementService, 2*time.Minute)
-		go placementPoller.Start(ctx)
-
 		// Auto-pause guardrails: pause any active campaign whose bounce,
 		// complaint, or reply rate has left the band its owner set. Fifteen
 		// minutes is fast enough that a campaign cannot do much damage inside
@@ -1967,6 +1959,37 @@ func main() {
 		guardrailJob := jobs.NewGuardrailJob(guardrailService, behaviorRepository)
 		guardrailScheduler := jobs.NewGuardrailScheduler(guardrailJob, 15*time.Minute)
 		go guardrailScheduler.Start(ctx)
+
+		// Inbox placement tests: a template or campaign step rendered as the
+		// campaign would send it, one paced task per seed, read back from each
+		// seed's synced mail by Message-ID.
+		placementRepository = repository.NewPlacementRepository(primaryDB)
+		placementDeps := placement.Deps{
+			Repo:      placementRepository,
+			Emails:    emailRepostory,
+			Campaigns: campaignRepostory,
+			Contacts:  contactRepostory,
+			Tasks:     taskRepository,
+			Scheduler: tasksClient,
+			Policy:    instanceSettings,
+			Gate:      featureGateService,
+			Notifier:  notificationService,
+			Mailboxes: emailService,
+			Pauser:    guardrailService,
+		}
+		if streamingPublisher != nil {
+			placementDeps.Publisher = streamingPublisher
+		}
+		// A self-hosted instance borrows Warmbly Cloud's panel through its link;
+		// the hosted product is the cloud and runs its own.
+		if config.SelfHosted() && cloudLinkService != nil {
+			placementDeps.Cloud = cloudLinkService
+		}
+		placementService = placement.NewService(placementDeps)
+		aitools.RegisterPlacementTools(aiToolRegistry, placementService, auditService)
+		tasksService.SetPlacement(placementRepository)
+		emailService.WireSeedScope(placementRepository)
+		go jobs.NewPlacementPoller(placementService, 30*time.Second).Start(ctx)
 
 		// Advisor. Detection is deterministic Go over a per-org snapshot and
 		// always runs; the narrator is optional and only rewrites the card copy,

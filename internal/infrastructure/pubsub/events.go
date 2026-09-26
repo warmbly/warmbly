@@ -51,6 +51,9 @@ const (
 	// or stopped holding it. Status carries the backfill status, Reason the
 	// throttle reason (empty when released).
 	EventAccountSyncState EventType = "ACCOUNT_SYNC_STATE"
+	// EventPlacementTest: an inbox placement test started, got a verdict for
+	// a copy, or finished.
+	EventPlacementTest EventType = "PLACEMENT_TEST_UPDATED"
 
 	// Bulk operation events
 	EventBulkStarted   EventType = "BULK_STARTED"
@@ -590,6 +593,37 @@ func (p *StreamingPublisher) PublishFormSubmission(ctx context.Context, orgID, f
 	if err := p.client.Publish(ctx, TopicUserEvents, event, attrs); err != nil {
 		// Best-effort: realtime is a nicety, not a requirement.
 	}
+}
+
+// PlacementTestEvent is the org-scoped placement test signal. Ids and status
+// only: where the copies landed stays behind the read endpoint's permission.
+type PlacementTestEvent struct {
+	BaseEvent
+	OrgID      string `json:"org_id"`
+	TestID     string `json:"test_id"`
+	CampaignID string `json:"campaign_id,omitempty"`
+	Status     string `json:"status"`
+}
+
+// PublishPlacementTest emits an org-scoped placement test signal.
+func (p *StreamingPublisher) PublishPlacementTest(ctx context.Context, orgID, testID uuid.UUID, campaignID *uuid.UUID, status string) {
+	if p == nil || p.client == nil || orgID == uuid.Nil {
+		return
+	}
+	event := &PlacementTestEvent{
+		BaseEvent: BaseEvent{EventType: EventPlacementTest, Timestamp: time.Now()},
+		OrgID:     orgID.String(),
+		TestID:    testID.String(),
+		Status:    status,
+	}
+	if campaignID != nil {
+		event.CampaignID = campaignID.String()
+	}
+	attrs := map[string]string{
+		"org_id":     orgID.String(),
+		"event_type": string(EventPlacementTest),
+	}
+	_ = p.client.Publish(ctx, TopicUserEvents, event, attrs)
 }
 
 // AutomationEvent is an org-scoped automation lifecycle/run signal. The web

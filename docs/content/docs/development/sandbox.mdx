@@ -39,6 +39,7 @@ Two other entry points:
 - AI credits: the plan's monthly allowance plus a 5,000-credit purchased top-up, so the assistant and every other AI surface work out of the box (re-seeding refills both pools)
 - 20 sender mailboxes on `@sunrise.test` (a healthy warmup pool by the dashboard's own coverage bar), assigned to the worker `make sandbox` runs, spread across the whole warmup lifecycle: seven graduated senders that finished their ramp weeks ago and carry full (~50/day) cold volume, eight mid-ramp, three freshly connected, one with warmup paused, and one on reduced health with an open provider warning. Every account has matching warmup ramp stats and daily send counts backfilled, varied pool health scores, a personal signature, and a tag (VIP, Agency, or Cold); pacing is demo friendly (45s minimum gap, 100/day cap)
 - campaigns in every list bucket: two active ("Sunrise Q3 launch outreach", 3 steps, 48 contacts; "Agency partnerships", 2 steps, 24 contacts), one paused, one completed, and one draft, all with tracking enabled, every step connected to the next (the scheduler only follows explicit step connections), all 20 senders in the rotation, and a realistic funnel of sent, opened, clicked, replied, and bounced timestamps spread over three weeks
+- six placement seed inboxes on the instance panel, on domains of their own (`gmail-seeds.test`, `workspace-seeds.test`, `m365-seeds.test`, `outlook-seeds.test`, `yahoo-seeds.test`) with the provider each stands in for, so a [placement test](/guides/placement-tests/) from any Sunrise mailbox has somewhere to land
 - a live unified inbox: threaded inbound replies across several senders, including a meeting request, an out-of-office autoreply, a not-interested reply, and a bounce notice, with a mix of read and unread
 - a CRM pipeline with five stages, five deals across them, tasks, contact notes, and per-contact activity timelines
 - the analytics tables behind the deliverability and reporting views: deliverability events (opens, clicks, replies, bounces, complaints, unsubscribes), reply-intent classifications, a suppression list, and resolved and open mailbox errors
@@ -69,7 +70,7 @@ Real mail servers stand in for the internet's mail infrastructure:
 - **Mailpit** is the SMTP sink. Every mailbox's outbound server points at it, so all sends (campaign and warmup) are captured and visible in its UI.
 - **Dovecot** hosts the mailboxes' inboxes. It accepts any username with the password `sandbox` and auto-creates the maildir on first use. The worker's real IMAP sync polls it every minute.
 
-The simulator bridges the two and plays every human:
+The simulator bridges the two and plays every human. It also plays the spam filter for the seed inboxes: a placement copy the content check scores below 70 goes to Junk, and a fixed share of the rest does too, more on the Microsoft and Yahoo seeds and more again for tracked copy, so a test and its tracking comparison both show a spread:
 
 1. It polls Mailpit's API for new messages (the read flag is its cursor).
 2. Mail addressed to a hosted mailbox (for example warmup mail between pool members) is appended into that user's Dovecot inbox. The recipient's worker sync picks it up, the warmup token verifies, and engagement actions run against the real IMAP folders.

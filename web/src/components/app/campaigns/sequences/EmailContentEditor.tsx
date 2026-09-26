@@ -24,7 +24,7 @@ import type { TemplatePreview } from "@/lib/api/client/app/campaigns/previewTemp
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import formatBytes from "@/lib/helper/formatBytes";
-import { PreviewContactPicker, PreviewMailboxPicker, SendTestButton } from "./PreviewControls";
+import { PlacementTestButton, PreviewContactPicker, PreviewMailboxPicker, SendTestButton } from "./PreviewControls";
 import { SAMPLE_CONTACT_LABEL, contactLabel, useCampaignSenderInboxes } from "./previewContext";
 import { Label, TextInput } from "@/components/ui/field";
 import {
@@ -333,7 +333,8 @@ export default function EmailContentEditor({
                                 <PreviewContactPicker campaignId={campaignId} value={previewContact} onChange={setPreviewContact} />
                                 <PreviewMailboxPicker inboxes={senders.inboxes} value={previewMailbox} onChange={setPreviewMailbox} />
                                 {stepId && canSendTest && (
-                                    <div className="ml-auto">
+                                    <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                                        <PlacementTestButton campaignId={campaignId} stepId={stepId} dirty={dirty} />
                                         <SendTestButton
                                             campaignId={campaignId}
                                             stepId={stepId}

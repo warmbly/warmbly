@@ -16,9 +16,9 @@ Scope everything to `7d`, `30d`, or `90d` with the range tabs. It updates live, 
 | Headline rates | Deliverability score, bounce rate, complaint rate, spam placement, suppressed count |
 | Over time | One metric per day: bounces, complaints, opens, replies, or sent. Use it to find the day something spiked |
 | Window totals | Raw counts behind the rates |
-| Seed inbox placement | Inbox vs spam share from test deliveries, with the sample count |
+| Seed inbox placement | Inbox vs spam share across your [placement tests](/guides/placement-tests/) in the window, with the number of copies behind it |
 | Warmup inbox placement | Where warmup mail landed each day (inbox, Gmail tabs, spam), the inbox rate over time, the split per recipient provider, and every mailbox ranked by its seven-day inbox rate |
-| Seed test placement by provider | The seed split per Gmail, Outlook, and IMAP/SMTP |
+| Seed test placement by provider | Where placement test copies landed per provider family (Gmail, Google Workspace, Outlook.com, Microsoft 365, Yahoo Mail and the rest): inbox, Promotions, other Gmail tabs, spam, and copies that never arrived |
 | Warmup placement by domain | Continuous placement per recipient domain, amber at `10%` spam, red at `20%` |
 | At risk | Mailboxes and campaigns with bounce or complaint activity, worst first |
 
@@ -27,10 +27,10 @@ The **score** is a `0-100` composite starting at `100`: bounce rate subtracts up
 Use **Customize** to pick which sections show. Your choices and time window persist per browser.
 
 <Callout type="info" title="Placement needs a sample">
-Placement figures only appear once seed data exists, and a small sample is a hint rather than a verdict. Warmbly waits for a meaningful sample before acting.
+Seed placement figures only appear once a placement test has results in the window, and a small sample is a hint rather than a verdict. Warmbly waits for a meaningful sample before acting.
 </Callout>
 
-**Seed test placement by provider is the check before scaling a campaign.** An aggregate rate can look fine while one provider quietly junks everything: Gmail at `95%` inbox with Outlook at `40%` is a provider-specific problem, usually authentication or content, not volume.
+**Seed test placement by provider is the check before scaling a campaign.** An aggregate rate can look fine while one provider quietly junks everything: Gmail at `95%` inbox with Outlook.com at `40%` is a provider-specific problem, usually authentication or content, not volume. The rates are shares of every copy that left the sender, so a copy that never arrived counts against the inbox rate rather than dropping out of the sample; a provider with many missing copies is usually refusing or deferring your mail. Run a test from **Placement tests**, or let a campaign's monitor run one on a schedule; see [inbox placement tests](/guides/placement-tests/) for how copies are sent, found and classified, and how to read one test against several.
 
 **Warmup placement is your continuous signal.** Seed tests are point-in-time probes, but every verified warmup delivery reports inbox, tab or spam, so drift appears here before it becomes complaints on a campaign. Click a mailbox in **Warmup inbox placement** to open its own history; see [seeing where warmup lands](/guides/warmup/#seeing-where-warmup-lands) for how the rate is counted.
 
@@ -199,6 +199,7 @@ The habit that matters: keep complaint rate and spam placement low. A clean repu
 
 <Cards>
   <Card title="Warmup" href="/guides/warmup/" />
+  <Card title="Inbox placement tests" href="/guides/placement-tests/" />
   <Card title="Personalization & expressions" href="/guides/expressions/" />
   <Card title="Error codes" href="/api/error-codes/" />
 </Cards>

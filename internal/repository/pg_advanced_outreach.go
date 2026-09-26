@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 )
 
 type AdvancedOutreachRepository interface {
@@ -743,7 +744,9 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 	placementQuery := `
 		SELECT pr.provider, pr.folder, COUNT(*)
 		FROM placement_results pr JOIN placement_tests pt ON pt.id = pr.test_id
-		WHERE pt.organization_id = $1 AND pr.detected_at >= $2 AND pr.detected_at <= $3 AND pr.folder <> 'pending'
+		WHERE pt.organization_id = $1 AND pr.detected_at >= $2 AND pr.detected_at <= $3
+		  AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing')
+		  AND pt.origin <> 'remote'
 		GROUP BY pr.provider, pr.folder`
 	if rows, perr := r.db.Query(ctx, placementQuery, organizationID, from, to); perr == nil {
 		for rows.Next() {
@@ -753,7 +756,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 				placementTotal += n
 				p := byProvider[provider]
 				if p == nil {
-					p = &models.ProviderPlacement{Provider: provider}
+					p = &models.ProviderPlacement{Provider: provider, Label: mailhost.Host(provider).Label()}
 					byProvider[provider] = p
 				}
 				p.Samples += n
@@ -766,6 +769,8 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 					p.Inbox += n
 				case "promotions":
 					p.Promotions += n
+				case "missing":
+					p.Missing += n
 				default:
 					p.Other += n
 				}

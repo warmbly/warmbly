@@ -146,6 +146,11 @@ const (
 	// spine so the settings page and mailbox lists refresh for every member.
 	AuditEntityPoolLink  AuditEntityType = "pool_link"
 	AuditEntityCloudLink AuditEntityType = "cloud_link"
+
+	// Inbox placement: a test started or cancelled, and a campaign's
+	// scheduled test set up, changed or removed.
+	AuditEntityPlacementTest    AuditEntityType = "placement_test"
+	AuditEntityPlacementMonitor AuditEntityType = "placement_monitor"
 )
 
 // AuditActor is the minimal identity of the member who performed an action,

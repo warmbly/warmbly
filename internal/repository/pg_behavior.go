@@ -232,7 +232,7 @@ func (r *behaviorRepository) CountSendsBetween(ctx context.Context, accountID uu
 		SELECT COUNT(*)
 		FROM tasks t
 		WHERE t.email_account_id = $1
-		  AND t.task_type = $2::task_type
+		  AND (t.task_type = $2::task_type OR ($2 = 'campaign' AND t.task_type = 'placement'))
 		  AND t.status = 'completed'
 		  AND t.completed_at >= $3
 		  AND t.completed_at < $4

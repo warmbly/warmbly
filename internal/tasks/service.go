@@ -94,6 +94,10 @@ type TasksService interface {
 	// SetFormLinks wires the minter that resolves {{form_link:...}} markers
 	// into per-recipient form URLs. Nil-safe: markers drop with a warning.
 	SetFormLinks(m FormLinkMinter)
+	// SetPlacement wires the placement test store; without it a placement
+	// task fails cleanly.
+	SetPlacement(repo repository.PlacementRepository)
+	HandlePlacementTask(task *proto.ProcessTask) *errx.Error
 }
 
 // CloudLinkReader reports whether Warmbly Cloud warms a mailbox.
@@ -181,6 +185,9 @@ type tasksService struct {
 	// unsubTickets stores the short form of those links. Nil-safe: without it
 	// the address is the signed token, which is longer but works the same.
 	unsubTickets repository.UnsubscribeLinkRepository
+
+	// placementRepo backs the placement probe handler (SetPlacement).
+	placementRepo repository.PlacementRepository
 }
 
 // SetUnsubscribeLinks wires the unsubscribe link signer and ticket store.

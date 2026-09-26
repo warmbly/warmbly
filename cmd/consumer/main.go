@@ -469,6 +469,7 @@ func main() {
 		WarmupContentRepo:           repository.NewWarmupContentRepository(primaryDB.Pool),
 		WarmupEngagementRepo:        repository.NewWarmupEngagementRepository(primaryDB.Pool),
 		WarmupPlacementRepo:         repository.NewWarmupPlacementRepository(primaryDB),
+		PlacementRepo:               repository.NewPlacementRepository(primaryDB),
 		WarmupService:               warmupService,
 		WorkerRepo:                  workerRepo,
 		FleetNodeRepo:               repository.NewFleetNodeRepository(primaryDB),

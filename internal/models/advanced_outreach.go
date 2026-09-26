@@ -925,14 +925,18 @@ type CampaignDeliverability struct {
 // ProviderPlacement is one recipient provider's seed placement rollup in the
 // window (from placement_results; folders mirror the table CHECK constraint).
 type ProviderPlacement struct {
-	Provider   string  `json:"provider"`
-	Samples    int     `json:"samples"`
-	Inbox      int     `json:"inbox"`
-	Promotions int     `json:"promotions"`
-	Spam       int     `json:"spam"`
-	Other      int     `json:"other"`
-	InboxRate  float64 `json:"inbox_rate"`
-	SpamRate   float64 `json:"spam_rate"`
+	// Provider is the seed's host family (a mailhost value), Label its name.
+	Provider   string `json:"provider"`
+	Label      string `json:"label"`
+	Samples    int    `json:"samples"`
+	Inbox      int    `json:"inbox"`
+	Promotions int    `json:"promotions"`
+	Spam       int    `json:"spam"`
+	Other      int    `json:"other"`
+	// Missing is copies that never arrived.
+	Missing   int     `json:"missing"`
+	InboxRate float64 `json:"inbox_rate"`
+	SpamRate  float64 `json:"spam_rate"`
 }
 
 // WarmupDomainPlacement is one recipient domain's warmup placement rollup:

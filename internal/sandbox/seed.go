@@ -265,6 +265,9 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 	if err := seedMailboxes(ctx, pool); err != nil {
 		return err
 	}
+	if err := seedPlacementPanel(ctx, pool); err != nil {
+		return err
+	}
 	if err := seedSubscription(ctx, pool); err != nil {
 		return err
 	}
@@ -303,6 +306,7 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 	fmt.Println("sandbox seeded:")
 	fmt.Printf("  dashboard  %s / %s (org: Sunrise Labs)\n", SandboxLoginEmail, SandboxLoginPassword)
 	fmt.Printf("  mailboxes  %d senders on @sunrise.test (SMTP -> mailpit, IMAP -> dovecot), signatures + tags on all\n", len(sandboxMailboxes))
+	fmt.Printf("  placement  %d seed inboxes on the instance panel; the simulator files each test copy into Inbox or Junk\n", len(sandboxSeeds))
 	fmt.Println("  campaigns  active, paused, completed, and draft - every list bucket filled")
 	fmt.Println("  warmup     enabled on all senders, premium pool, 10 days of ramp stats")
 	fmt.Println("  history    funnel progress, unified inbox, CRM pipeline, templates, notifications, chart rollups")

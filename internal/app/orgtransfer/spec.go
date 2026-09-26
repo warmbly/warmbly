@@ -91,7 +91,7 @@ const (
 	orgMailboxes   = `(SELECT id FROM email_accounts WHERE organization_id = $1)`
 	orgCampaigns   = `(SELECT id FROM campaigns WHERE organization_id = $1)`
 	orgContacts    = `(SELECT id FROM contacts WHERE organization_id = $1)`
-	orgTasks       = `(SELECT id FROM tasks WHERE email_account_id IN ` + orgMailboxes + `)`
+	orgTasks       = `(SELECT id FROM tasks WHERE email_account_id IN ` + orgMailboxes + ` AND task_type <> 'placement')`
 	orgThreads     = `(SELECT DISTINCT thread_id FROM unibox_emails WHERE email_id IN ` + orgMailboxes + `)`
 	orgPipelines   = `(SELECT id FROM pipelines WHERE organization_id = $1)`
 	orgInvitations = `(SELECT id FROM organization_invitations WHERE organization_id = $1)`
@@ -195,9 +195,12 @@ var Tables = []Table{
 		// mailbox it watched send. Importing "resting" would silence a mailbox
 		// on the destination for a reason nothing there observed; importing
 		// "active" would assert readiness the destination has not seen.
+		// seed_scope is the operator's choice of test inboxes on this
+		// instance; an archive must not add mailboxes to another instance's
+		// seed panel.
 		ResetOnImport: []string{
 			"worker_id", "auth_checked_at", "auth_failing_since", "cold_ramp_started_at",
-			"send_lifecycle", "send_lifecycle_since", "send_lifecycle_reason",
+			"send_lifecycle", "send_lifecycle_since", "send_lifecycle_reason", "seed_scope",
 		},
 	},
 	{
@@ -425,6 +428,13 @@ var Tables = []Table{
 	{
 		Name: "campaign_leads", Group: models.OrgDataGroupCampaigns,
 		Scope: `campaign_id IN ` + orgCampaigns,
+	},
+	{
+		// A campaign's scheduled placement test. Its run history names this
+		// instance's tests, which import later in the list.
+		Name: "placement_monitors", Group: models.OrgDataGroupCampaigns,
+		Scope:         scopeOrg,
+		ResetOnImport: []string{"last_test_id", "last_run_at", "last_alert_at", "last_error"},
 	},
 	{
 		// The recipient's opt-out address. It travels because an unsubscribe
@@ -662,7 +672,9 @@ var Tables = []Table{
 	// ---------- send pipeline ----------
 	{
 		Name: "tasks", Group: models.OrgDataGroupSending,
-		Scope: `email_account_id IN ` + orgMailboxes,
+		// A placement probe's task stays behind: a pending one would send from
+		// the destination to the source instance's seeds.
+		Scope: `email_account_id IN ` + orgMailboxes + ` AND task_type <> 'placement'`,
 		// The handle belongs to the source instance's queue.
 		ResetOnImport: []string{"cloud_task_name"},
 	},
@@ -748,12 +760,16 @@ var Tables = []Table{
 		Scope: scopeOrg,
 	},
 	{
+		// The results travel as a record. The link to a cloud-run test and the
+		// seeds on the source instance's panel do not.
 		Name: "placement_tests", Group: models.OrgDataGroupEvents,
-		Scope: scopeOrg,
+		Scope:         scopeOrg,
+		ResetOnImport: []string{"remote_instance_id", "remote_test_id"},
 	},
 	{
 		Name: "placement_results", Group: models.OrgDataGroupEvents,
-		Scope: `test_id IN ` + orgPlacements,
+		Scope:         `test_id IN ` + orgPlacements,
+		ResetOnImport: []string{"seed_account_id", "remote_seed_id", "task_id", "remote_synced_at"},
 	},
 	{
 		Name: "webhook_deliveries", Group: models.OrgDataGroupEvents,

@@ -97,7 +97,7 @@ func conversationResponseFormat() openai.ChatCompletionNewParamsResponseFormatUn
 // thread. Both GenerateConversation (sync) and SubmitBatch (Batch API) use this
 // so the request bodies are identical; the only difference is the transport.
 func buildConversationParams(theme, model string, maxMessages int) openai.ChatCompletionNewParams {
-	chatModel := openai.ChatModelGPT4oMini
+	chatModel := openai.ChatModel(ModelWritingFreeOpenAI)
 	if model != "" {
 		chatModel = openai.ChatModel(model)
 	}
@@ -116,7 +116,7 @@ func buildConversationParams(theme, model string, maxMessages int) openai.ChatCo
 // The prompt is tuned for warmup deliverability: plaintext, a few short
 // sentences, one natural question, and explicitly NO links, phone numbers,
 // attachments, emoji, or marketing language (all of which raise spam scores).
-// Empty model falls back to gpt-4o-mini for direct callers.
+// Empty model falls back to ModelWritingFreeOpenAI for direct callers.
 func (c *GenerationClient) GenerateConversation(ctx context.Context, theme, model string, maxMessages int) (*Conversation, error) {
 	req := buildConversationParams(theme, model, normalizeMaxMessages(maxMessages))
 

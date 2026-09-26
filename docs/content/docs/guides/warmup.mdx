@@ -50,6 +50,8 @@ Every draw also favours the inbox that is owed the most. A mailbox that has sent
 
 Warmbly spreads sends across many partners and recipient domains rather than looping the same two mailboxes, since tight reciprocal pairs are easy for providers to spot. **Pool quality matters more than pool size.**
 
+A [placement seed inbox](/guides/placement-tests/#your-own-seed-inboxes) never joins a pool: marking a mailbox as a seed turns its warmup off, and starting warmup on a seed is refused, because a seed that exchanged mail with the pool would stop being a stranger to every sender in it. It never sends campaign mail either.
+
 Self-hosted instances warm only among their own mailboxes unless they are linked to Warmbly Cloud, which puts their enrolled mailboxes into these same pools. See [Warmbly Cloud for self-hosted instances](/guides/warmbly-cloud/).
 
 ### Choosing partners

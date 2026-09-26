@@ -28,6 +28,8 @@ const HEALTH: { key: NotificationCategoryKey; label: string; hint: string }[] = 
     { key: "health_worker_downtime", label: "Worker downtime", hint: "A sender worker stops responding." },
     { key: "health_domain_auth", label: "Domain authentication failing", hint: "A sending domain lost its SPF or DMARC record. Cold sending and warmup stop from it if it is not fixed." },
     { key: "campaign_paused", label: "Campaign auto-paused", hint: "A guardrail stopped a campaign because its bounce, complaint, or reply rate left the band." },
+    { key: "placement_alert", label: "Placement monitor alert", hint: "A campaign's scheduled placement test found less of its mail in the inbox than its alert threshold." },
+    { key: "placement_finished", label: "Placement test finished", hint: "A placement test you started has a verdict for every copy." },
 ];
 
 const SECURITY: { key: NotificationCategoryKey; label: string; hint: string }[] = [
@@ -111,6 +113,8 @@ export default function NotificationsSettingsPage() {
         "health_worker_downtime",
         "health_domain_auth",
         "campaign_paused",
+        "placement_alert",
+        "placement_finished",
         "security_new_signin",
         "billing_alert",
         "team_activity",

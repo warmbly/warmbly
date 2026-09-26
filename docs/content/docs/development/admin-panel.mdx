@@ -38,6 +38,7 @@ The landing page. Instance-wide counters and their trends, acquisition by channe
 | **Warmup** | The pools, the blocked list, and the block and unblock history |
 | **Warmup Appeals** | Appeals from blocked mailboxes, to approve or reject |
 | **Warmup Content** | The generated and reviewed warmup conversation bank, its library and generation jobs |
+| **Seed panel** | The instance's placement seed inboxes by provider, adding and removing them, every workspace's recent [placement tests](/guides/placement-tests/) with their results, and an operator test that counts against no allowance |
 | **Campaigns** | Every campaign on the instance with its state and owner |
 | **Sends** | In-flight reservations no worker has answered, and the reclaimer that resolves them after 30 minutes; dead letters with replay; task failures; customer webhook delivery health, with reclaim |
 
@@ -92,7 +93,7 @@ Reading the list needs `view_organizations`; creating, editing and deleting need
 | Overview, Live Events | none beyond signing in as an admin |
 | Workers, Fleet | `view_workers` |
 | Mailboxes, Sync, Users | `view_users` |
-| Warmup, Warmup Content | `view_warmup_pool` |
+| Warmup, Warmup Content, Seed panel | `view_warmup_pool` (changing seeds or running a test needs `manage_warmup_bans`) |
 | Warmup Appeals | `review_appeals` |
 | Campaigns, Sends | `view_campaigns` |
 | Organizations, Limit requests, Promo codes, Outreach, Transfers | `view_organizations` |

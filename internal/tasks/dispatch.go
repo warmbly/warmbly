@@ -43,6 +43,8 @@ func (s *tasksService) HandleTask(task *proto.ProcessTask) *errx.Error {
 	// anywhere in the database.
 	case "email":
 		return s.HandleUserEmailTask(task)
+	case "placement":
+		return s.HandlePlacementTask(task)
 	default:
 		log.Warn().Str("task_id", taskID.String()).Str("task_type", rec.TaskType).Msg("task dispatch: unknown task type")
 		return errx.New(errx.BadRequest, "unknown task type")

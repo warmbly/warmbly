@@ -36,6 +36,9 @@ type simulator struct {
 type hostedMailbox struct {
 	Email string
 	Name  string
+	// Seed and Host mark a placement seed inbox and who it stands in for.
+	Seed bool
+	Host string
 }
 
 type contactInfo struct {
@@ -97,13 +100,13 @@ func Simulate(ctx context.Context, pool *pgxpool.Pool, cfg Config) error {
 // accounts, which the seeder pointed at the local stack) and seeded contacts.
 func (s *simulator) refreshDirectory(ctx context.Context) error {
 	hosted := map[string]hostedMailbox{}
-	rows, err := s.pool.Query(ctx, `SELECT email, name FROM email_accounts WHERE provider = 'smtp_imap'`)
+	rows, err := s.pool.Query(ctx, `SELECT email, name, seed_scope IS NOT NULL, mail_host FROM email_accounts WHERE provider = 'smtp_imap'`)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var m hostedMailbox
-		if err := rows.Scan(&m.Email, &m.Name); err != nil {
+		if err := rows.Scan(&m.Email, &m.Name, &m.Seed, &m.Host); err != nil {
 			rows.Close()
 			return err
 		}
@@ -186,11 +189,17 @@ func (s *simulator) handleMessage(ctx context.Context, summary mailpitSummary) e
 		// Hosted recipient (another sandbox/warmup mailbox): final delivery
 		// into its dovecot INBOX; the worker's real IMAP sync takes it from
 		// there (warmup token verification, unibox, engagement actions).
-		if _, ok := hosted[addr]; ok {
-			if err := deliverToInbox(s.cfg.IMAPAddr, addr, s.cfg.IMAPPassword, raw); err != nil {
+		if m, ok := hosted[addr]; ok {
+			// A seed inbox stands in for a real provider, so something has to
+			// play that provider's spam filter.
+			folder := "INBOX"
+			if m.Seed {
+				folder = seedFolder(m.Host, detail)
+			}
+			if err := deliverToFolder(s.cfg.IMAPAddr, addr, s.cfg.IMAPPassword, folder, raw); err != nil {
 				return fmt.Errorf("deliver to %s: %w", addr, err)
 			}
-			fmt.Printf("delivered  %-34s %q\n", addr, detail.Subject)
+			fmt.Printf("delivered  %-34s %q (%s)\n", addr, detail.Subject, folder)
 			continue
 		}
 

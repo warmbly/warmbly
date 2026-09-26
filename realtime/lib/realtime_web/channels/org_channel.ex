@@ -467,6 +467,10 @@ defmodule RealtimeWeb.OrgChannel do
       String.contains?(event_type, "DIRECT_EMAIL_") ->
         has.(:view_analytics)
 
+      # Inbox placement tests: results sit behind the analytics read endpoints.
+      String.contains?(event_type, "PLACEMENT_TEST") ->
+        has.(:view_analytics)
+
       # Campaign activity: lifecycle, task progress, send/open/click/reply pulses
       String.contains?(event_type, "CAMPAIGN") or String.contains?(event_type, "TASK_PROGRESS") or
           event_type in [
