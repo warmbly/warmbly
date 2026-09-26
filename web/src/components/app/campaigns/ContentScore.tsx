@@ -105,7 +105,8 @@ function SpanList({ spans }: { spans: TemplateScoreSpan[] }) {
     );
 }
 
-function IssueRow({ issue }: { issue: TemplateScoreIssue }) {
+// Exported for the placement test detail, which shows the same rules pass.
+export function IssueRow({ issue }: { issue: TemplateScoreIssue }) {
     const high = issue.severity === "high";
     const Icon = high ? AlertCircleIcon : AlertTriangleIcon;
     const spans = issue.spans ?? [];

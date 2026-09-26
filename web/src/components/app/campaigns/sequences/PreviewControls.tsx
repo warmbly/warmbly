@@ -4,7 +4,7 @@
 // variants so every arm previews against the same lead and sender.
 
 import React from "react";
-import { Loader2Icon, MailIcon, SendIcon, UserRoundIcon } from "lucide-react";
+import { Loader2Icon, MailCheckIcon, MailIcon, SendIcon, UserRoundIcon } from "lucide-react";
 import toast from "react-hot-toast";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/popover-menu";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
+import { usePermission, showPermissionDenied } from "@/hooks/usePermission";
+import NewPlacementTestDialog from "@/components/app/placement/tests/NewPlacementTestDialog";
 import { SAMPLE_CONTACT_LABEL, contactLabel } from "./previewContext";
 
 // Picks the contact the preview renders for. Lists the campaign's own leads
@@ -218,5 +220,38 @@ export function SendTestButton({
                 </div>
             </PopoverMenuContent>
         </PopoverMenu>
+    );
+}
+
+// Opens a placement test of the saved step: the same copy sent to a panel of
+// seed inboxes to see whether it reaches the inbox, a tab or spam.
+export function PlacementTestButton({ campaignId, stepId, dirty }: { campaignId: string; stepId: string; dirty: boolean }) {
+    const [open, setOpen] = React.useState(false);
+    const canStart = usePermission("SEND_CAMPAIGNS");
+    const onClick = () => {
+        if (!canStart) {
+            showPermissionDenied("SEND_CAMPAIGNS");
+            return;
+        }
+        if (dirty) {
+            toast.error("Save the step first so the test carries the latest copy.");
+            return;
+        }
+        setOpen(true);
+    };
+    return (
+        <>
+            <button
+                type="button"
+                onClick={onClick}
+                title={dirty ? "Save the step first so the test carries the latest copy." : "Send this step to seed inboxes and see where it lands"}
+                className="h-7 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white text-[12px] font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+            >
+                <MailCheckIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Test inbox placement</span>
+                <span className="sm:hidden">Placement</span>
+            </button>
+            <NewPlacementTestDialog open={open} onClose={() => setOpen(false)} prefill={{ campaignId, stepId }} />
+        </>
     );
 }

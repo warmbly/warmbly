@@ -31,6 +31,8 @@ export interface NotificationPreferences {
     team_activity: CategoryPref;
     campaign_paused: CategoryPref;
     health_domain_auth: CategoryPref;
+    placement_finished: CategoryPref;
+    placement_alert: CategoryPref;
     email_digest_minutes: number;
 }
 
@@ -74,6 +76,10 @@ export function normalizeNotificationPreferences(
         // Emails by default too: a sending domain the platform will stop
         // sending from has to reach whoever can edit the DNS.
         health_domain_auth: p?.health_domain_auth ?? billing,
+        placement_finished: p?.placement_finished ?? on,
+        // Emails by default: a campaign landing in spam has to reach whoever
+        // can fix it even when nobody has the dashboard open.
+        placement_alert: p?.placement_alert ?? billing,
         email_digest_minutes: Math.min(Math.max(minutes, EMAIL_WINDOW_MIN_MINUTES), EMAIL_WINDOW_MAX_MINUTES),
     };
 }

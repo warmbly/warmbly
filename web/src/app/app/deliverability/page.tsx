@@ -298,13 +298,26 @@ export default function DeliverabilityPage() {
 
                     {show("providers") && (
                         <>
-                            <SectionBar label="Seed test placement by provider" count={d?.by_provider?.length || undefined} />
+                            <SectionBar label="Seed test placement by provider" count={d?.by_provider?.length || undefined}>
+                                <Link to="/app/placement" className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-900 transition-colors">
+                                    Run a placement test
+                                    <ArrowUpRightIcon className="w-3 h-3" />
+                                </Link>
+                            </SectionBar>
                             {q.isPending ? (
                                 <SkeletonRows />
                             ) : (d?.by_provider?.length ?? 0) === 0 ? (
                                 <EmptyBlock
                                     title="No placement test samples in this window"
-                                    body="Run a seed placement test to see where your mail lands (inbox, promotions, or spam) at each provider."
+                                    body="Run a placement test to see where your mail lands (inbox, a Gmail tab, spam, or nowhere) at each provider."
+                                    cta={
+                                        <Link
+                                            to="/app/placement"
+                                            className="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium bg-sky-600 hover:bg-sky-700 text-white transition-colors"
+                                        >
+                                            Run a placement test
+                                        </Link>
+                                    }
                                 />
                             ) : (
                                 <div className="divide-y divide-slate-200/60">
@@ -418,11 +431,12 @@ function ProviderRow({ p }: { p: ProviderPlacement }) {
         { n: p.inbox, tone: "emerald" as DitherTone, label: "Inbox" },
         { n: p.promotions, tone: "violet" as DitherTone, label: "Promotions" },
         { n: p.spam, tone: "rose" as DitherTone, label: "Spam" },
-        { n: p.other, tone: "slate" as DitherTone, label: "Other" },
+        { n: p.other, tone: "sky" as DitherTone, label: "Other tabs" },
+        { n: p.missing ?? 0, tone: "slate" as DitherTone, label: "Never arrived" },
     ].filter((s) => s.n > 0);
     return (
         <div className="h-11 px-5 flex items-center gap-3">
-            <span className="text-[12.5px] font-medium text-slate-900 w-28 shrink-0 truncate">{providerLabel(p.provider)}</span>
+            <span className="text-[12.5px] font-medium text-slate-900 w-28 shrink-0 truncate">{p.label || providerLabel(p.provider)}</span>
             <div className="flex-1 min-w-16" title={segments.map((s) => `${s.label} ${s.n}`).join(" · ")}>
                 <DitherStack
                     segments={segments.map((s) => ({ frac: s.n / Math.max(1, p.samples), tone: s.tone }))}
@@ -432,6 +446,9 @@ function ProviderRow({ p }: { p: ProviderPlacement }) {
             <span className="flex items-center gap-2 md:gap-4 font-mono text-[11px] tabular-nums shrink-0">
                 <span title="Inbox rate" className="text-emerald-600">{pct(p.inbox_rate)} inbox</span>
                 <span title="Spam rate" className="text-rose-600">{pct(p.spam_rate)} spam</span>
+                {(p.missing ?? 0) > 0 && (
+                    <span title="Copies that never arrived" className="hidden sm:inline text-slate-500">{num(p.missing)} missing</span>
+                )}
                 <span title="Samples" className="hidden md:inline text-slate-500">{num(p.samples)} samples</span>
             </span>
         </div>

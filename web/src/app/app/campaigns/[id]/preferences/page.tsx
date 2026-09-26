@@ -18,6 +18,7 @@ import {
 import CampaignContactOrder from "@/components/app/campaigns/preferences/CampaignContactOrder";
 import { FirstEmailSection } from "@/components/app/campaigns/preferences/CampaignFirstEmail";
 import { GuardrailsSection } from "@/components/app/campaigns/preferences/CampaignGuardrails";
+import { PlacementMonitorSection } from "@/components/app/campaigns/preferences/CampaignPlacementMonitor";
 import { guardrailValidationError } from "@/lib/helper/guardrail";
 import CampaignFolderField from "@/components/app/campaigns/CampaignFolderField";
 import CampaignDangerZone from "@/components/app/campaigns/preferences/CampaignDangerZone";
@@ -60,6 +61,11 @@ const SECTIONS = [
         id: "guardrails",
         label: "Auto-pause",
         description: "Stop this campaign automatically when its bounce, complaint, or reply rate leaves the band you set.",
+    },
+    {
+        id: "placement",
+        label: "Placement monitor",
+        description: "Test where this campaign's first email lands on a schedule, and get told when it slips.",
     },
     {
         id: "first-email",
@@ -382,6 +388,8 @@ export default function CampaignPreferences() {
                         explicitAccounts={explicitAccounts}
                     />
                 );
+            case "placement":
+                return <PlacementMonitorSection campaignId={campaign.id} />;
             case "first-email":
                 return <FirstEmailSection newCampaign={newData} setNewCampaign={setNewData} />;
             case "leadflow":

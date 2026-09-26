@@ -36,13 +36,18 @@ export interface CampaignDeliverability {
     band: DeliverabilityBand;
 }
 
+// One mail host family's seed placement: `provider` is the family id
+// (gmail, microsoft365, yahoo, ...) and `label` its display name.
 export interface ProviderPlacement {
     provider: string;
+    label?: string;
     samples: number;
     inbox: number;
     promotions: number;
     spam: number;
     other: number;
+    // Copies that never arrived within the detection window.
+    missing?: number;
     inbox_rate: number;
     spam_rate: number;
 }
