@@ -41,6 +41,15 @@ export interface WarmupStatusInfo {
     days_active: number;
     /** Present while a recent junk placement is holding the ramp. */
     ramp_hold?: WarmupRampHold;
+    /** Present while today's target is capped by the partners the mailbox can still reach. */
+    partner_limit?: WarmupPartnerLimit;
+}
+
+// A target held below the ramp because a mailbox never writes to the same
+// partner twice in a day.
+export interface WarmupPartnerLimit {
+    reachable: number;
+    ramp_target: number;
 }
 
 // Why the warmup ramp is not climbing. Present for the whole freeze;
@@ -55,6 +64,8 @@ export interface WarmupRampHold {
 // Warmup-pool reputation for this mailbox. Folded into health.score and also
 // surfaced in detail. Present only when the mailbox is in a warmup pool.
 export interface WarmupHealthInfo {
+    /** The pool the mailbox warms in. */
+    pool_type?: "premium" | "free";
     state: "healthy" | "watch" | "throttled" | "quarantined" | "blocked";
     score: number;
     /** @deprecated Always 0 since the warmup spam score was retired; read score and reason. */

@@ -34643,12 +34643,34 @@
           },
           "days_active": {
             "type": "integer"
+          },
+          "partner_limit": {
+            "type": "object",
+            "description": "Single-mailbox status only. Present while today's target is capped by how many partners the mailbox can still reach. A mailbox never writes to the same partner twice in a day, so target_volume is then the reachable count (or what was already sent today, if higher) rather than the ramp.",
+            "properties": {
+              "reachable": {
+                "type": "integer",
+                "description": "Partners available to this mailbox today, including any it already wrote to. Partners at their daily inbound limit are left out."
+              },
+              "ramp_target": {
+                "type": "integer",
+                "description": "What the ramp alone would send today."
+              }
+            }
           }
         }
       },
       "WarmupHealth": {
         "type": "object",
         "properties": {
+          "pool_type": {
+            "type": "string",
+            "enum": [
+              "premium",
+              "free"
+            ],
+            "description": "The warmup pool the mailbox warms in."
+          },
           "state": {
             "type": "string",
             "enum": [

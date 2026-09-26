@@ -1151,12 +1151,16 @@ const partnerProvenSQL = `
 // not offered. The cap is decided here, before any count or sample is taken
 // from the set, so a thin tier is sized on who can still receive. Aggregated
 // once per set rather than per row, so a pool of thousands costs a few index
-// scans, not thousands. The fragments are constants; nothing from a request
-// is spliced in.
-var (
-	partnerCandidateSelectPrefix = `
+// scans, not thousands. The fragments are built from constants; nothing from a
+// request is spliced in.
+const partnerCandidateSelectPrefix = `
 		WITH cand AS (`
-	partnerCandidateSelectSuffix = `),
+
+// partnerCandidateSelectSuffix closes the wrapper with the inbound cap scaled
+// to sharePercent, which is how a free sender leaves part of every inbox's day
+// to paying senders. Built once per share by the two vars below.
+func partnerCandidateSelectSuffix(sharePercent int) string {
+	return `),
 		recv AS (
 			SELECT wr.email_account_id,
 			       COUNT(*) AS week,
@@ -1188,15 +1192,46 @@ var (
 		LEFT JOIN sent ON sent.sender_account_id = cand.id
 		LEFT JOIN inflight ON inflight.recipient_account_id = cand.id
 		WHERE GREATEST(COALESCE(recv.today, 0), COALESCE(inflight.today, 0))
-		      < LEAST(GREATEST(((COALESCE(sent.week, 0) + 6) / 7) * ` + inboundDailyMultipleSQL + `, ` + inboundDailyFloorSQL + `), ` + inboundDailyCeilingSQL + `)`
+		      < LEAST(GREATEST(((COALESCE(sent.week, 0) + 6) / 7) * ` + inboundDailyMultipleSQL + `, ` + inboundDailyFloorSQL + `), ` + inboundDailyCeilingSQL + `) * ` + strconv.Itoa(sharePercent) + ` / 100`
+}
+
+// A paying sender may fill all of an inbox's daily cap; a free sender stops
+// short, so the rest of every inbox's day stays open to the premium tier.
+var (
+	premiumCandidateSuffix = partnerCandidateSelectSuffix(100)
+	freeCandidateSuffix    = partnerCandidateSelectSuffix(config.WarmupFreeInboundSharePercent)
 )
 
+func candidateSuffixFor(poolType string) string {
+	if poolType == string(models.WarmupPoolPremium) {
+		return premiumCandidateSuffix
+	}
+	return freeCandidateSuffix
+}
+
+// borrowQualitySQL ranks a borrowed free mailbox: a Google or Microsoft
+// mailbox first, then a seasoned member, then one actively sending (the tail
+// adds 1 for that), so each outranks everything after it.
+const borrowQualitySQL = `
+		       (CASE WHEN ea.provider IN ('gmail', 'outlook') THEN 4 ELSE 0 END
+		        + CASE WHEN wpp.joined_at <= NOW() - make_interval(days => $5) THEN 2 ELSE 0 END) AS quality`
+
 // WarmupPartnerCandidates is everyone the sender may be paired with right now.
-// Its own tier always; a thin premium tier adds proven free mailboxes; a proven
-// free mailbox adds the paying mailboxes that wrote to it recently. Every set
-// is already filtered by the inbound cap, so the scheduler and the selector
+// Its own tier always; a premium tier with too few partners outside the
+// sender's workspace adds the best proven free mailboxes; a proven free
+// mailbox adds the paying mailboxes that wrote to it recently. Every set is
+// already filtered by the inbound cap, so the scheduler and the selector
 // agree on who can still receive today.
 func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType string, senderID uuid.UUID) ([]models.WarmupPartnerCandidate, error) {
+	var senderOrg *uuid.UUID
+	var senderMax int
+	err := r.db.QueryRow(ctx, `SELECT organization_id, warmup_max FROM email_accounts WHERE id = $1`, senderID).
+		Scan(&senderOrg, &senderMax)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	suffix := candidateSuffixFor(poolType)
+
 	own, err := r.queryPartnerCandidates(ctx, `
 		SELECT wpp.email_account_id AS id, ea.email, ea.organization_id
 		FROM warmup_pool_participants wpp
@@ -1205,25 +1240,29 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 		WHERE wp.pool_type = $1
 		  AND wpp.email_account_id <> $2
 		  AND `+partnerEligibleSQL,
-		"", poolType, models.WarmupPartnerOwnTier, poolType, senderID)
+		suffix, "", poolType, models.WarmupPartnerOwnTier, poolType, senderID)
 	if err != nil {
 		return nil, err
 	}
 
-	if borrowFrom, ok := models.WarmupPoolBorrowsFrom(poolType); ok && len(own) < config.WarmupPoolTierFallbackFloor {
-		// A random sample bounds the cost and spreads the borrowing. It is
-		// drawn after the cap, so a capped mailbox never uses up a slot.
+	// Siblings do not count: mail between one workspace's own mailboxes
+	// builds nothing, so a customer with many mailboxes must still borrow.
+	floor := max(config.WarmupPoolTierFallbackFloor, senderMax)
+	if borrowFrom, ok := models.WarmupPoolBorrowsFrom(poolType); ok && outsideWorkspace(own, senderOrg) < floor {
+		// Best first, random within a rank, so the borrowing spreads. Drawn
+		// after the cap, so a capped mailbox never uses up a slot.
 		borrowed, err := r.queryPartnerCandidates(ctx, `
-			SELECT wpp.email_account_id AS id, ea.email, ea.organization_id
+			SELECT wpp.email_account_id AS id, ea.email, ea.organization_id,`+borrowQualitySQL+`
 			FROM warmup_pool_participants wpp
 			JOIN warmup_pools wp ON wpp.pool_id = wp.id
 			JOIN email_accounts ea ON ea.id = wpp.email_account_id
 			JOIN organizations o ON o.id = ea.organization_id
 			WHERE wp.pool_type = $1
+			  AND ea.organization_id IS DISTINCT FROM $4
 			  AND `+partnerEligibleSQL+`
 			  AND `+partnerProvenSQL,
-			` ORDER BY random() LIMIT $3`,
-			borrowFrom, models.WarmupPartnerBorrowed, borrowFrom, config.WarmupPoolFallbackMinAgeDays, config.WarmupPoolTierFallbackFloor)
+			suffix, ` ORDER BY cand.quality + (COALESCE(sent.week, 0) > 0)::int DESC, random() LIMIT $3`,
+			borrowFrom, models.WarmupPartnerBorrowed, borrowFrom, config.WarmupPoolFallbackMinAgeDays, floor, senderOrg, config.WarmupPoolBorrowSeasonedDays)
 		if err != nil {
 			return nil, err
 		}
@@ -1258,7 +1297,7 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 			        AND ea.status = 'active'
 			        AND `+partnerProvenSQL+`
 			  )`,
-			"", returnTo, models.WarmupPartnerReturn, returnTo, config.WarmupPoolFallbackMinAgeDays, senderID, config.WarmupPoolReturnVisitDays, poolType)
+			suffix, "", returnTo, models.WarmupPartnerReturn, returnTo, config.WarmupPoolFallbackMinAgeDays, senderID, config.WarmupPoolReturnVisitDays, poolType)
 		if err != nil {
 			return nil, err
 		}
@@ -1267,11 +1306,23 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 	return own, nil
 }
 
+// outsideWorkspace counts the candidates that belong to another workspace.
+// An unknown owner on either side counts as outside, as the selector does.
+func outsideWorkspace(cands []models.WarmupPartnerCandidate, org *uuid.UUID) int {
+	n := 0
+	for _, c := range cands {
+		if org == nil || c.OrganizationID == nil || *c.OrganizationID != *org {
+			n++
+		}
+	}
+	return n
+}
+
 // queryPartnerCandidates runs one candidate set through the reciprocity and
 // cap wrapper. tail is appended after the cap, so an ORDER BY or LIMIT there
 // samples only mailboxes that can still receive.
-func (r *warmupRepository) queryPartnerCandidates(ctx context.Context, candidateSQL, tail string, poolType string, origin models.WarmupPartnerOrigin, args ...any) ([]models.WarmupPartnerCandidate, error) {
-	rows, err := r.db.Query(ctx, partnerCandidateSelectPrefix+candidateSQL+partnerCandidateSelectSuffix+tail, args...)
+func (r *warmupRepository) queryPartnerCandidates(ctx context.Context, candidateSQL, suffix, tail string, poolType string, origin models.WarmupPartnerOrigin, args ...any) ([]models.WarmupPartnerCandidate, error) {
+	rows, err := r.db.Query(ctx, partnerCandidateSelectPrefix+candidateSQL+suffix+tail, args...)
 	if err != nil {
 		return nil, err
 	}

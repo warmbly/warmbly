@@ -24,6 +24,9 @@ type AnalyticsService interface {
 
 	// Email account status
 	GetAccountStatus(ctx context.Context, orgID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error)
+	// GetAccountStatusDetail adds what is too costly to read per mailbox on a
+	// list: the partner cap on today's warmup target.
+	GetAccountStatusDetail(ctx context.Context, orgID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error)
 	GetAllAccountStatuses(ctx context.Context, orgID uuid.UUID) ([]models.EmailAccountStatus, *errx.Error)
 
 	// Usage overview
@@ -168,12 +171,17 @@ func (s *analyticsService) GetCampaignDailyStats(ctx context.Context, orgID, cam
 }
 
 func (s *analyticsService) GetAccountStatus(ctx context.Context, orgID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error) {
-	return s.accountStatus(ctx, orgID, accountID, s.placementRates(ctx, orgID, &accountID))
+	return s.accountStatus(ctx, orgID, accountID, s.placementRates(ctx, orgID, &accountID), false)
+}
+
+func (s *analyticsService) GetAccountStatusDetail(ctx context.Context, orgID, accountID uuid.UUID) (*models.EmailAccountStatus, *errx.Error) {
+	return s.accountStatus(ctx, orgID, accountID, s.placementRates(ctx, orgID, &accountID), true)
 }
 
 // accountStatus builds one mailbox's status; rates is the org's rolling
-// placement, read once by the caller.
-func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID uuid.UUID, rates map[uuid.UUID]models.WarmupPlacementRate) (*models.EmailAccountStatus, *errx.Error) {
+// placement, read once by the caller. withPartners adds the partner cap, a
+// pool-wide read that lists must not repeat per mailbox.
+func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID uuid.UUID, rates map[uuid.UUID]models.WarmupPlacementRate, withPartners bool) (*models.EmailAccountStatus, *errx.Error) {
 	// Get email account (org-scoped lookup)
 	email, xerr := s.emailRepo.Get(ctx, orgID.String(), accountID.String())
 	if xerr != nil {
@@ -231,6 +239,13 @@ func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID u
 	var warmupStatus *models.WarmupStatusInfo
 	if email.Warmup != nil {
 		target, hold := s.warmupTargetAndHold(ctx, email, warmupHealthState(warmupHealth), inCampaign)
+		var limit *models.WarmupPartnerLimit
+		if withPartners {
+			limit = s.warmupPartnerLimit(ctx, email, warmupHealth, target)
+		}
+		if limit != nil {
+			target = max(limit.Reachable, usage.WarmupSent)
+		}
 		warmupStatus = &models.WarmupStatusInfo{
 			Enabled:       true,
 			Paused:        email.WarmupPausedAt != nil,
@@ -242,6 +257,7 @@ func (s *analyticsService) accountStatus(ctx context.Context, orgID, accountID u
 			ReplyRate:     email.WarmupReplyRate,
 			DaysActive:    int(time.Since(*email.Warmup).Hours() / 24),
 			RampHold:      hold,
+			PartnerLimit:  limit,
 		}
 	}
 
@@ -291,6 +307,7 @@ func (s *analyticsService) buildWarmupHealth(ctx context.Context, accountID uuid
 			continue
 		}
 		info := &models.WarmupHealthInfo{
+			PoolType:     poolType,
 			State:        string(h.HealthState),
 			Score:        h.LastHealthScore,
 			BlockedUntil: h.BlockedUntil,
@@ -366,7 +383,7 @@ func (s *analyticsService) GetAllAccountStatuses(ctx context.Context, orgID uuid
 	rates := s.placementRates(ctx, orgID, nil)
 	statuses := make([]models.EmailAccountStatus, 0, len(emailsResult.Data))
 	for _, email := range emailsResult.Data {
-		status, xerr := s.accountStatus(ctx, orgID, email.ID, rates)
+		status, xerr := s.accountStatus(ctx, orgID, email.ID, rates, false)
 		if xerr != nil {
 			return nil, xerr
 		}
@@ -494,6 +511,20 @@ func (s *analyticsService) warmupTargetAndHold(ctx context.Context, email *model
 		VolumeCut:  plan.Cut(),
 		ResumesAt:  *plan.FrozenUntil,
 	}
+}
+
+// warmupPartnerLimit applies the scheduler's partner cap to the drawer's
+// target: a mailbox never writes to one partner twice in a day, so it cannot
+// send more than the partners it can still reach.
+func (s *analyticsService) warmupPartnerLimit(ctx context.Context, email *models.Email, wh *models.WarmupHealthInfo, target int) *models.WarmupPartnerLimit {
+	if s.warmupRepo == nil || wh == nil || wh.PoolType == "" || target <= 0 || !email.IsWarmingActive() {
+		return nil
+	}
+	cands, err := s.warmupRepo.WarmupPartnerCandidates(ctx, wh.PoolType, email.ID)
+	if err != nil || len(cands) >= target {
+		return nil
+	}
+	return &models.WarmupPartnerLimit{Reachable: len(cands), RampTarget: target}
 }
 
 // Dashboard Analytics implementations
