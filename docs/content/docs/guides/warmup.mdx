@@ -108,7 +108,7 @@ At defaults a mailbox sends 10 on day one, 11 the next, and levels off at 40 aft
 
 Four things shape the real daily number: sends are spread across your warmup hours with jitter, the target is capped by how many eligible partners exist, a mailbox whose health drops gets reduced volume and wider spacing until it recovers, and a recent spam placement holds the ramp where it is.
 
-The partner cap exists because a mailbox never writes to the same partner twice in a day. When it applies, the **Warmup** tab of the mailbox drawer says so: it shows the ramp's number next to how many partners can still receive from the mailbox today, and the target it reports is the lower of the two. The count can fall during the day as partners reach their daily limit, and it recovers the next day. The same tab names the pool the mailbox warms in.
+The partner cap exists because a mailbox never writes to the same partner twice in a day. When it applies, the **Warmup** tab of the mailbox drawer says so: it shows the ramp's number next to how many partners are available to the mailbox today, and the target it reports is the lower of the two. The count can fall during the day as partners reach their daily limit, and it recovers the next day. The same tab names the pool the mailbox warms in.
 
 Warmup hours are read in the mailbox's timezone: its own when one is set on the **Settings** tab of its drawer, otherwise the workspace timezone under **Settings > Profile > Timezones**, and UTC when neither is set. Set the workspace timezone once and every mailbox that follows it reads its warmup hours in the team's day. A mailbox with its own timezone keeps it, and changing the workspace timezone does not change any mailbox's hours.
 

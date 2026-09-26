@@ -1310,7 +1310,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                     {ws.partner_limit && (
                         <p className="mt-2 text-[11.5px] text-slate-500 leading-relaxed">
                             The ramp is at {ws.partner_limit.ramp_target} today, but only {ws.partner_limit.reachable}{" "}
-                            {ws.partner_limit.reachable === 1 ? "partner" : "partners"} can still receive from this mailbox, and it
+                            {ws.partner_limit.reachable === 1 ? "partner is" : "partners are"} available to this mailbox, and it
                             never writes to the same partner twice in a day. It sends more as partners free up.
                         </p>
                     )}

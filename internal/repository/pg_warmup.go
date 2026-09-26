@@ -1158,7 +1158,7 @@ const partnerCandidateSelectPrefix = `
 
 // partnerCandidateSelectSuffix closes the wrapper with the inbound cap scaled
 // to sharePercent, which is how a free sender leaves part of every inbox's day
-// to paying senders.
+// to paying senders. Built once per share by the two vars below.
 func partnerCandidateSelectSuffix(sharePercent int) string {
 	return `),
 		recv AS (
@@ -1195,21 +1195,26 @@ func partnerCandidateSelectSuffix(sharePercent int) string {
 		      < LEAST(GREATEST(((COALESCE(sent.week, 0) + 6) / 7) * ` + inboundDailyMultipleSQL + `, ` + inboundDailyFloorSQL + `), ` + inboundDailyCeilingSQL + `) * ` + strconv.Itoa(sharePercent) + ` / 100`
 }
 
-// inboundSharePercent is how much of an inbox's daily cap a sender in this
-// pool may fill. Paying senders fill all of it; free senders stop short, so
-// the rest of every inbox's day stays open to the premium tier.
-func inboundSharePercent(poolType string) int {
-	if poolType == "premium" {
-		return 100
+// A paying sender may fill all of an inbox's daily cap; a free sender stops
+// short, so the rest of every inbox's day stays open to the premium tier.
+var (
+	premiumCandidateSuffix = partnerCandidateSelectSuffix(100)
+	freeCandidateSuffix    = partnerCandidateSelectSuffix(config.WarmupFreeInboundSharePercent)
+)
+
+func candidateSuffixFor(poolType string) string {
+	if poolType == string(models.WarmupPoolPremium) {
+		return premiumCandidateSuffix
 	}
-	return config.WarmupFreeInboundSharePercent
+	return freeCandidateSuffix
 }
 
 // borrowQualitySQL ranks a borrowed free mailbox: a Google or Microsoft
-// mailbox, a seasoned member and one that is actively sending go first.
+// mailbox first, then a seasoned member, then one actively sending (the tail
+// adds 1 for that), so each outranks everything after it.
 const borrowQualitySQL = `
-		       (CASE WHEN ea.provider IN ('gmail', 'outlook') THEN 2 ELSE 0 END
-		        + CASE WHEN wpp.joined_at <= NOW() - make_interval(days => $5) THEN 1 ELSE 0 END) AS quality`
+		       (CASE WHEN ea.provider IN ('gmail', 'outlook') THEN 4 ELSE 0 END
+		        + CASE WHEN wpp.joined_at <= NOW() - make_interval(days => $5) THEN 2 ELSE 0 END) AS quality`
 
 // WarmupPartnerCandidates is everyone the sender may be paired with right now.
 // Its own tier always; a premium tier with too few partners outside the
@@ -1225,7 +1230,7 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
-	suffix := partnerCandidateSelectSuffix(inboundSharePercent(poolType))
+	suffix := candidateSuffixFor(poolType)
 
 	own, err := r.queryPartnerCandidates(ctx, `
 		SELECT wpp.email_account_id AS id, ea.email, ea.organization_id

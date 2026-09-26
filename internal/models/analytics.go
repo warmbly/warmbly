@@ -259,7 +259,8 @@ type WarmupStatusInfo struct {
 // WarmupPartnerLimit explains a target held below the ramp because a mailbox
 // never writes to the same partner twice in a day.
 type WarmupPartnerLimit struct {
-	// Reachable is how many partners can still receive from it today.
+	// Reachable is how many partners are available to it today, including
+	// any it already wrote to; those at their inbound limit are left out.
 	Reachable int `json:"reachable"`
 	// RampTarget is what the ramp alone would send today.
 	RampTarget int `json:"ramp_target"`
