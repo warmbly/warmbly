@@ -1986,6 +1986,7 @@ func main() {
 			placementDeps.Cloud = cloudLinkService
 		}
 		placementService = placement.NewService(placementDeps)
+		aitools.RegisterPlacementTools(aiToolRegistry, placementService, auditService)
 		tasksService.SetPlacement(placementRepository)
 		emailService.WireSeedScope(placementRepository)
 		go jobs.NewPlacementPoller(placementService, 30*time.Second).Start(ctx)
