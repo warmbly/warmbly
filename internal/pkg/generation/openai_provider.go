@@ -57,7 +57,7 @@ const defaultOpenAIBaseURL = "https://api.openai.com/v1"
 
 // defaultLocalModel is the fall-back model tag for a free/local backend
 // (AI_FREE) when no explicit model id is set, so a dev who forgets
-// AI_MODEL does not 404 on "gpt-4o-mini". llama3.1 has reliable
+// AI_MODEL does not 404 on "gpt-6-luna". llama3.1 has reliable
 // tool-calling in Ollama; override with AI_MODEL (or AI_MODEL_TRIAL / _PAID).
 const defaultLocalModel = "llama3.1"
 

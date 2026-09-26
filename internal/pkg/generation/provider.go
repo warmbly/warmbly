@@ -219,7 +219,7 @@ type ProviderConfig struct {
 	OpenAIBaseURL string
 	// OpenAIModelTrial / OpenAIModelPaid override the per-tier model ids (so a
 	// self-hoster can route to whatever their endpoint serves). Empty uses the
-	// built-in gpt-4o-mini / gpt-4o defaults (or the local default when Local).
+	// built-in gpt-6-luna default (or the local default when Local).
 	OpenAIModelTrial string
 	OpenAIModelPaid  string
 

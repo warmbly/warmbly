@@ -140,7 +140,7 @@ func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 		CadenceHours:         6,
 		RefreshEnabled:       true,
 		RefreshPerRun:        10,
-		Model:                "gpt-5-mini",
+		Model:                "gpt-6-luna",
 		MaxMessagesPerThread: 5,
 		DailyGenerationCap:   1000,
 		AISelectionShare:     70,
@@ -174,7 +174,7 @@ func (s *WarmupGenerationSettings) Normalize() {
 	s.RefreshPerRun = 25
 	s.DailyGenerationCap = 1000
 	s.AISelectionShare = 70
-	s.Model = "gpt-5-mini"
+	s.Model = "gpt-6-luna"
 	s.MaxMessagesPerThread = 5
 	s.Engagement.SpamRescueRate = clampPct(s.Engagement.SpamRescueRate)
 	s.Engagement.MarkImportantRate = clampPct(s.Engagement.MarkImportantRate)

@@ -675,7 +675,7 @@ AI_BASE_URL=             # required for custom (any OpenAI-compatible endpoint)
 
 | `AI_PROVIDER` | Endpoint | Notes |
 |---|---|---|
-| `openai` | api.openai.com | also the only provider for warmup content batch generation |
+| `openai` | api.openai.com | defaults to `gpt-6-luna`; also the only provider for warmup content batch generation |
 | `openrouter` | openrouter.ai | one key fronts every vendor; switch via `AI_MODEL` |
 | `groq` | api.groq.com | fast, free tier |
 | `ollama` | localhost:11434 | no key, free local model (`AI_FREE` is automatically true) |

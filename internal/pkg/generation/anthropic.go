@@ -27,8 +27,8 @@ const (
 	// OpenAI models. These are the PRIMARY writing/agent models for Warmbly's
 	// hosted product (OpenAI-first) and the default for any OpenAI-compatible
 	// self-hosted endpoint.
-	ModelWritingFreeOpenAI = "gpt-4o-mini"
-	ModelWritingPaidOpenAI = "gpt-4o"
+	ModelWritingFreeOpenAI = "gpt-6-luna"
+	ModelWritingPaidOpenAI = "gpt-6-luna"
 
 	// Agent-loop models for the Anthropic connector (self-host only): haiku for
 	// trial orgs, sonnet for paid.
