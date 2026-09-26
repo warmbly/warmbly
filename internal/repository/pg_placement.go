@@ -483,7 +483,7 @@ func (r *placementRepository) ExpireProbes(ctx context.Context, sentBefore, sche
 	if _, err := r.db.Exec(ctx, `
 		UPDATE placement_results SET folder = 'missing', detected_at = NOW()
 		WHERE folder = 'pending' AND sent_at IS NOT NULL
-		  AND sent_at < $1 - CASE WHEN remote_seed_id IS NULL THEN interval '0' ELSE interval '30 minutes' END
+		  AND sent_at < $1::timestamptz - CASE WHEN remote_seed_id IS NULL THEN interval '0' ELSE interval '30 minutes' END
 	`, sentBefore); err != nil {
 		return err
 	}
