@@ -340,6 +340,24 @@ const (
 	UniboxLimitMax     = 100
 	UniboxLimitDefault = 50
 
+	// ContactMailHostBatchSize is how many contacts one provider sweep pass
+	// reads; lookups are per distinct domain, so a pass costs far fewer.
+	ContactMailHostBatchSize = 2000
+	// ContactMailHostIntervalSeconds is how often the provider sweep passes. A
+	// full batch runs again immediately, so an import drains without waiting.
+	ContactMailHostIntervalSeconds = 60
+	// ContactMailHostConcurrency bounds parallel domain lookups in one pass.
+	ContactMailHostConcurrency = 16
+	// ContactMailHostRecheckDays is how long a domain with no known host waits
+	// before it is looked up again.
+	ContactMailHostRecheckDays = 7
+	// ContactMailHostRetryMinutes is how soon a lookup that failed transiently
+	// is tried again.
+	ContactMailHostRetryMinutes = 60
+	// ContactMailHostCacheHours is how long a domain's host is cached across
+	// sweeps and backend replicas.
+	ContactMailHostCacheHours = 24
+
 	// VerificationRecheckDays is how long a verification verdict is trusted
 	// before the address is checked again. Mailboxes get created and closed;
 	// a verdict from last quarter is a guess.

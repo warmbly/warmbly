@@ -14,7 +14,9 @@ import {
     PhoneIcon,
     type LucideIcon,
 } from "lucide-react";
+import ProviderLogo from "@/components/app/emails/ProviderLogo";
 import clippedTitle from "@/lib/helper/clippedTitle";
+import { mailHostLabel } from "@/lib/mailHost";
 import type { ContactCampaignProgress, VerificationSource, VerificationStatus } from "@/lib/api/models/app/contacts/Contact";
 import type { SearchContactsSortBy } from "@/lib/api/models/app/contacts/search-contacts.types";
 import type { ViewName } from "@/lib/api/models/app/views/ViewPreferences";
@@ -43,6 +45,7 @@ export interface ContactRow {
     verification_checked_at?: string | null;
     verification_confidence?: number;
     verification_requested_at?: string | null;
+    mail_host?: string;
     created_at: Date;
     updated_at?: Date;
 }
@@ -178,6 +181,29 @@ function companyColumn(view: ViewName): ContactColumn {
                 <div className="flex items-center gap-1.5 min-w-0">
                     <Building2Icon className="w-3 h-3 shrink-0 text-slate-400" />
                     <span className="truncate" {...clippedTitle}>{c.company}</span>
+                </div>
+            ) : (
+                <Dash />
+            ),
+    };
+}
+
+// Who hosts the contact's inbox. Empty until the backend's DNS check reaches
+// the contact, a minute or so after it is added.
+function mailHostColumn(view: ViewName): ContactColumn {
+    return {
+        id: "mail_host",
+        label: "Email provider",
+        width: "w-40",
+        hideBelow: view === "campaign_leads" ? "2xl" : "xl",
+        sortKey: "mail_host",
+        sortAsc: true,
+        cellClassName: "text-[12px] text-slate-600",
+        cell: ({ c }) =>
+            c.mail_host ? (
+                <div className="flex items-center gap-1.5 min-w-0">
+                    <ProviderLogo id={c.mail_host} size="xs" framed={false} />
+                    <span className="truncate" {...clippedTitle}>{mailHostLabel(c.mail_host)}</span>
                 </div>
             ) : (
                 <Dash />
@@ -369,6 +395,7 @@ export function builtinColumns(view: ViewName): ContactColumn[] {
         return [
             nameColumn,
             companyColumn(view),
+            mailHostColumn(view),
             phoneColumn,
             progressColumn,
             engagement(
@@ -390,12 +417,12 @@ export function builtinColumns(view: ViewName): ContactColumn[] {
             updatedColumn,
         ];
     }
-    return [nameColumn, companyColumn(view), phoneColumn, statusColumn, campaignsColumn, addedColumn(view), updatedColumn];
+    return [nameColumn, companyColumn(view), mailHostColumn(view), phoneColumn, statusColumn, campaignsColumn, addedColumn(view), updatedColumn];
 }
 
 // The layout a member sees before choosing anything.
 export const DEFAULT_COLUMNS: Record<ViewName, string[]> = {
-    contacts: ["name", "company", "phone", "status", "campaigns", "created_at"],
+    contacts: ["name", "company", "mail_host", "phone", "status", "campaigns", "created_at"],
     campaign_leads: ["name", "company", "progress", "opened", "clicked", "replied", "current_step", "sender", "last_activity"],
 };
 
@@ -448,6 +475,7 @@ export function sortOptions(view: ViewName): SortOption[] {
         { key: "email", label: "Email", asc: true },
         { key: "company", label: "Company", asc: true },
         { key: "phone", label: "Phone", asc: true },
+        { key: "mail_host", label: "Email provider", asc: true },
     ];
     if (view === "contacts") base.push({ key: "campaign_count", label: "Campaigns", asc: false });
     return base;

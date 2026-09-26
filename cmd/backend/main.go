@@ -1282,6 +1282,7 @@ func main() {
 		formService.SetDomains(organizationRepoForHandler)
 		go jobs.NewFormEventsRetentionJob(formEventRepository).WireRetention(instanceSettings).Start(ctx, 12*time.Hour)
 		go jobs.NewFormsDomainSweep(organizationRepoForHandler).Start(ctx, time.Hour)
+		go jobs.NewContactMailHostSweep(contactRepoForHandler, cache, streamingPublisher).Start(ctx)
 		// A visibly bad import is filed on the workspace's posture. On its own
 		// it can only reach `watch`, which changes nothing.
 		if aware, ok := contactService.(contact.OrgRiskAware); ok && orgRiskService != nil {

@@ -263,9 +263,9 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 		}
 	}
 
-	// STEP 3.5: Resolve the recipient ESP/provider for ESP matching. Cheap:
-	// prefer the cached contact.esp_provider, else derive from the domain
-	// string. NEVER dial MX on the hot path. Empty => unknown => wildcard.
+	// STEP 3.5: Resolve the recipient ESP/provider for ESP matching from what
+	// the provider sweep stored, else the domain string. NEVER dial MX on the
+	// hot path. Empty => unknown => wildcard.
 	// STEP 3.4: Recipient-timezone policy. Disabled, absent or unreadable all
 	// leave the send on the sending mailbox's clock.
 	sendPref := s.sendTimePreference(ctx, campaign.OrganizationID)
@@ -280,15 +280,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 
 	recipientProvider := ""
 	if campaign.ESPMatchMode != "off" && recipientContact != nil {
-		if recipientContact.ESPProvider != "" {
-			recipientProvider = recipientContact.ESPProvider
-		} else {
-			recipientProvider = providerForEmailDomain(recipientContact.Email)
-			// Opportunistically cache the derived provider (best-effort).
-			if recipientProvider != "" && !preview {
-				_ = s.contactRepo.SetContactESP(ctx, recipientContact.ID, recipientProvider)
-			}
-		}
+		recipientProvider = recipientESP(recipientContact)
 	}
 
 	// STEP 4: Calculate base time from sequence wait_after
@@ -506,7 +498,7 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 			RemainingToday: remaining,
 			WarmupAgeDays:  warmupAgeDays,
 			Weight:         computeWeight(remaining, warmupAgeDays),
-			ProviderMatch:  providerMatches(acct.Provider),
+			ProviderMatch:  providerMatches(senderESP(acct)),
 			Behavior:       pass.behaviors[acct.ID],
 			OpenAt:         openAt,
 			OpenLoc:        openLoc,

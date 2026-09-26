@@ -89,7 +89,7 @@ See [Personalization & expressions](/guides/expressions/) for the full templatin
 
 ## Filtering the list
 
-A filter bar sits above the contact list. **Category**, **Segment**, **Status** and **Campaign** are always there; open one, tick values, and the list updates immediately with the matching count next to the bar. **Add filter** adds a custom-field condition (field, contains/is/starts with/ends with, value), a date-added or last-updated range, a number-of-campaigns range, the address verification verdict and, on a campaign's Leads tab, lead status and engagement. Each active filter is a pill you can reopen to change or remove with its cross; **Clear** drops them all, and **Save as segment** turns the current set into a [segment](/guides/segments/). Free-text search, sort and the column chooser stay in the toolbar.
+A filter bar sits above the contact list. **Category**, **Segment**, **Status** and **Campaign** are always there; open one, tick values, and the list updates immediately with the matching count next to the bar. **Add filter** adds a custom-field condition (field, contains/is/starts with/ends with, value), a date-added or last-updated range, a number-of-campaigns range, the address verification verdict, the [email provider](#email-provider) and, on a campaign's Leads tab, lead status and engagement. Each active filter is a pill you can reopen to change or remove with its cross; **Clear** drops them all, and **Save as segment** turns the current set into a [segment](/guides/segments/). Free-text search, sort and the column chooser stay in the toolbar.
 
 Free-text search matches first name, last name, email, company and phone. Every word you type has to match one of those, so `Test Demo` finds the contact whose first name is Test and last name is Demo, and `Demo Acme` finds everyone named Demo at Acme. Words can be in any order, and only the first six count.
 
@@ -101,9 +101,15 @@ The layout is yours: it is saved to your account for this workspace, so it follo
 
 ## Sorting
 
-Click a column header to sort by it, and click it again to flip the direction. Text columns (name, company, phone, custom fields) start ascending; dates and counts start with the newest or largest first. The **Sort** menu in the toolbar reaches the same orderings, including columns that are hidden or that a phone screen has no room for, and every custom field in the workspace.
+Click a column header to sort by it, and click it again to flip the direction. Text columns (name, company, email provider, phone, custom fields) start ascending; dates and counts start with the newest or largest first. The **Sort** menu in the toolbar reaches the same orderings, including columns that are hidden or that a phone screen has no room for, and every custom field in the workspace.
 
 A sort on a custom field orders the values as text. Contacts that do not have the field, or have it blank, are grouped at the end when ascending and at the start when descending. The sort is saved with your layout, so the list opens the way you left it.
+
+## Email provider
+
+The **Email provider** column shows who hosts each contact's inbox: Google Workspace, Gmail, Microsoft 365, Outlook.com, Yahoo Mail, iCloud Mail, Zoho Mail and the other hosts Warmbly recognises, with the provider's logo. It works for company domains too: `dana@acme.com` reads as Google Workspace when Acme's mail is hosted by Google. Warmbly reads it from the domain's mail records in the background, usually within a minute of a contact being added, and fills the list in live. A dash means the check has not reached the contact yet, or the domain has no mail server at all.
+
+It is part of the standard layout on the contacts page (if you have already arranged your own columns, add it from **Columns**) and one tick away in the column chooser on a campaign's Leads tab. From there you can sort by it, filter with **Add filter** > **Email provider** (including **Unknown or not checked yet**), select every match and act on them in bulk (add them to a campaign, tag them, export them), or save the filter as a segment. Campaign [ESP matching](/guides/campaigns/) uses the same data to pair each lead with a same-provider mailbox.
 
 ## Selecting rows
 

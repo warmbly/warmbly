@@ -60,10 +60,12 @@ type ContactRepository interface {
 	UndeliverableLeadIDs(ctx context.Context, orgID, campaignID uuid.UUID) ([]uuid.UUID, *errx.Error)
 	// VerificationCounts is the org's contacts by verdict.
 	VerificationCounts(ctx context.Context, orgID uuid.UUID) (models.ContactVerificationCounts, *errx.Error)
-	// SetContactESP caches the recipient ESP/provider resolved from the contact's
-	// domain (control-plane only, no MX dial). Best-effort: a failure should not
-	// block sending.
-	SetContactESP(ctx context.Context, contactID uuid.UUID, provider string) error
+	// ListMailHostPending returns contacts whose inbox host the provider sweep
+	// has not detected, never-checked first. Instance-wide: control plane only.
+	ListMailHostPending(ctx context.Context, limit int) ([]ContactMailHostPending, error)
+	// SetContactMailHosts stores the sweep's results and returns the
+	// organizations whose contacts changed.
+	SetContactMailHosts(ctx context.Context, results []ContactMailHostResult) ([]uuid.UUID, error)
 	GetByEmailsAndUser(ctx context.Context, userID uuid.UUID, emails []string) (map[string]models.Contact, *errx.Error)
 	// ResolveCategoryNames maps category titles (as typed in an imported file)
 	// to the workspace's category IDs, creating the ones that don't exist yet.
@@ -593,7 +595,7 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 			c.custom_fields, c.subscribed, c.updated_at, c.created_at,
 			c.verification_status, c.verification_reason, c.is_catch_all, c.verification_checked_at,
 			c.verification_source, c.verification_provider, c.verification_sub_status, c.verification_confidence,
-			c.verification_requested_at, c.esp_provider, c.esp_resolved_at
+			c.verification_requested_at, c.mail_host, c.esp_provider, c.esp_resolved_at
 		FROM contacts c
 		WHERE c.id = $1
 	`
@@ -605,7 +607,7 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 		&contact.UpdatedAt, &contact.CreatedAt,
 		&contact.VerificationStatus, &contact.VerificationReason, &contact.IsCatchAll, &contact.VerificationCheckedAt,
 		&contact.VerificationSource, &contact.VerificationProvider, &contact.VerificationSubStatus, &contact.VerificationConfidence,
-		&contact.VerificationRequestedAt, &contact.ESPProvider, &contact.ESPResolvedAt,
+		&contact.VerificationRequestedAt, &contact.MailHost, &contact.ESPProvider, &contact.ESPResolvedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -620,17 +622,97 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 	return &contact, nil
 }
 
-// SetContactESP caches the recipient ESP/provider on the contact row. It is a
-// single keyed UPDATE and intentionally tolerant: callers treat any error as a
-// best-effort cache miss and fall back to deriving the provider on the fly.
-func (r *contactRepository) SetContactESP(ctx context.Context, contactID uuid.UUID, provider string) error {
+// ContactMailHostPending is one contact the provider sweep has to look at.
+type ContactMailHostPending struct {
+	ID    uuid.UUID
+	Email string
+}
+
+// ContactMailHostResult is the sweep's answer for one contact. Email is the
+// address it was resolved for, so an address changed meanwhile is left alone.
+type ContactMailHostResult struct {
+	ID       uuid.UUID
+	Email    string
+	MailHost string
+	ESP      string
+	// Transient marks a lookup that failed and should be retried soon.
+	Transient bool
+}
+
+func (r *contactRepository) ListMailHostPending(ctx context.Context, limit int) ([]ContactMailHostPending, error) {
 	query := `
-		UPDATE contacts
-		SET esp_provider = $2, esp_resolved_at = NOW()
-		WHERE id = $1
+		SELECT id, email
+		FROM contacts
+		WHERE mail_host = ''
+		  AND (esp_resolved_at IS NULL OR esp_resolved_at < NOW() - make_interval(days => $2))
+		ORDER BY esp_resolved_at NULLS FIRST
+		LIMIT $1
 	`
-	_, err := r.DB.Exec(ctx, query, contactID, provider)
-	return err
+	rows, err := r.DB.Query(ctx, query, limit, config.ContactMailHostRecheckDays)
+	if err != nil {
+		db.CaptureError(err, query, []any{limit}, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ContactMailHostPending
+	for rows.Next() {
+		var p ContactMailHostPending
+		if err := rows.Scan(&p.ID, &p.Email); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (r *contactRepository) SetContactMailHosts(ctx context.Context, results []ContactMailHostResult) ([]uuid.UUID, error) {
+	if len(results) == 0 {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, len(results))
+	emails := make([]string, len(results))
+	hosts := make([]string, len(results))
+	esps := make([]string, len(results))
+	transient := make([]bool, len(results))
+	for i, res := range results {
+		ids[i], emails[i], hosts[i], esps[i], transient[i] = res.ID, res.Email, res.MailHost, res.ESP, res.Transient
+	}
+	// A transient failure is stamped as checked long enough ago that the
+	// pending read offers it again after the retry delay, not the recheck window.
+	query := `
+		WITH u AS (
+			SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[], $5::bool[])
+				AS t(id, email, mail_host, esp, transient)
+		), changed AS (
+			UPDATE contacts c
+			SET mail_host = u.mail_host,
+			    esp_provider = u.esp,
+			    esp_resolved_at = CASE WHEN u.transient
+			        THEN NOW() - make_interval(days => $6) + make_interval(mins => $7)
+			        ELSE NOW() END
+			FROM u
+			WHERE c.id = u.id AND c.email = u.email AND c.mail_host = ''
+			RETURNING c.organization_id, (u.mail_host <> '') AS found
+		)
+		SELECT DISTINCT organization_id FROM changed
+		WHERE found AND organization_id IS NOT NULL
+	`
+	args := []any{ids, emails, hosts, esps, transient, config.ContactMailHostRecheckDays, config.ContactMailHostRetryMinutes}
+	rows, err := r.DB.Query(ctx, query, args...)
+	if err != nil {
+		db.CaptureError(err, query, nil, "query")
+		return nil, err
+	}
+	defer rows.Close()
+	var orgs []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		orgs = append(orgs, id)
+	}
+	return orgs, rows.Err()
 }
 
 // UpdateContactVerification stores the outcome of a verification pass on the
@@ -1080,6 +1162,8 @@ var contactSorts = map[string]contactSort{
 	"created_at":     {expr: "c.created_at", kind: sortTimestamp},
 	"updated_at":     {expr: "c.updated_at", kind: sortTimestamp},
 	"campaign_count": {expr: "COALESCE(cl.campaign_count,0)", kind: sortNumber},
+	// Contacts the provider sweep has not reached sort after every known host.
+	"mail_host": {expr: "NULLIF(c.mail_host, '')", kind: sortText, nullable: true},
 }
 
 // resolveContactSort turns a request's sort_by into the column the list orders
@@ -1212,6 +1296,11 @@ func (r *contactRepository) buildContactFilter(ctx context.Context, orgID string
 	if filters.VerificationStatus != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("c.verification_status = $%d", argIndex))
 		args = append(args, filters.VerificationStatus)
+		argIndex++
+	}
+	if len(filters.MailHosts) > 0 {
+		whereClauses = append(whereClauses, fmt.Sprintf("c.mail_host = ANY($%d)", argIndex))
+		args = append(args, filters.MailHosts)
 		argIndex++
 	}
 
@@ -1554,7 +1643,7 @@ func (r *contactRepository) Search(
 			c.custom_fields, c.subscribed, c.updated_at, c.created_at,
 			c.verification_status, c.verification_reason, c.is_catch_all, c.verification_checked_at,
 			c.verification_source, c.verification_provider, c.verification_sub_status, c.verification_confidence,
-			c.verification_requested_at,
+			c.verification_requested_at, c.mail_host, c.esp_provider,
 			COALESCE(
 				(
 					SELECT json_agg(json_build_object('id', cam.id, 'name', cam.name))
@@ -1640,7 +1729,7 @@ func (r *contactRepository) Search(
 			&c.UpdatedAt, &c.CreatedAt,
 			&c.VerificationStatus, &c.VerificationReason, &c.IsCatchAll, &c.VerificationCheckedAt,
 			&c.VerificationSource, &c.VerificationProvider, &c.VerificationSubStatus, &c.VerificationConfidence,
-			&c.VerificationRequestedAt,
+			&c.VerificationRequestedAt, &c.MailHost, &c.ESPProvider,
 			&campaignsJSON, &categoriesJSON, &leadProgressJSON,
 			&sortValue,
 		); err != nil {
@@ -2093,7 +2182,11 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 			COUNT(*) FILTER (WHERE COALESCE(pr.has_sent, false)) AS contacted,
 			COUNT(*) FILTER (WHERE COALESCE(pr.has_opened, false)) AS opened,
 			COUNT(*) FILTER (WHERE COALESCE(pr.has_clicked, false)) AS clicked,
-			COUNT(*) FILTER (WHERE COALESCE(pr.has_replied, false)) AS replied_any
+			COUNT(*) FILTER (WHERE COALESCE(pr.has_replied, false)) AS replied_any,
+			COUNT(*) FILTER (WHERE c.esp_provider = 'gmail') AS provider_gmail,
+			COUNT(*) FILTER (WHERE c.esp_provider = 'outlook') AS provider_outlook,
+			COUNT(*) FILTER (WHERE c.esp_provider = 'other' OR (c.esp_provider = '' AND c.esp_resolved_at IS NOT NULL)) AS provider_other,
+			COUNT(*) FILTER (WHERE c.esp_provider = '' AND c.esp_resolved_at IS NULL) AS provider_undetected
 		FROM campaign_leads cl
 		JOIN contacts c ON c.id = cl.contact_id AND c.organization_id = $2
 		CROSS JOIN (SELECT COUNT(*) AS total_steps FROM sequences st WHERE st.campaign_id = $1 AND st.kind = 'email') ts
@@ -2115,6 +2208,7 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 	if err := r.DB.QueryRow(ctx, query, campaignID, orgID, config.CampaignSendMaxAttempts).Scan(
 		&out.Total, &out.Unsubscribed, &out.Bounced, &out.Replied, &out.Failed, &out.Completed, &out.Paused, &out.Processing, &out.Undeliverable, &out.Queued,
 		&out.Contacted, &out.Opened, &out.Clicked, &out.RepliedAny,
+		&out.Providers.Google, &out.Providers.Microsoft, &out.Providers.Other, &out.Providers.Undetected,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return out, nil
@@ -2261,10 +2355,9 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 				// the next pass and hand the new address a verdict it never
 				// earned.
 				"verification_evidence_reset_at = NOW()",
-				// esp_provider is derived from the address domain and cached
-				// forever: the scheduler only fills it when it is empty, so a
-				// gmail-to-outlook correction would keep routing ESP-matched
-				// sends by the old provider.
+				// The inbox host belongs to the old domain; clearing it puts
+				// the contact back in front of the provider sweep.
+				"mail_host = ''",
 				"esp_provider = ''",
 				"esp_resolved_at = NULL",
 			)

@@ -16,6 +16,7 @@ export function countActiveFilters(f: SearchContacts, campaignContext: boolean):
     if (!campaignContext && f.campaign_ids.length > 0) n++;
     if (f.subscribed !== undefined) n++;
     if (f.verification_status) n++;
+    if (f.mail_hosts?.length) n++;
     if (f.min_campaigns !== undefined || f.max_campaigns !== undefined) n++;
     if (f.created_after || f.created_before) n++;
     if (f.updated_after || f.updated_before) n++;
@@ -37,6 +38,7 @@ export function hasNarrowingFilters(f: SearchContacts, base?: SearchContacts): b
         (f.category_ids?.length ?? 0) > 0 ||
         f.subscribed !== undefined ||
         !!f.verification_status ||
+        (f.mail_hosts?.length ?? 0) > 0 ||
         !!f.lead_status ||
         !!f.engagement ||
         f.min_campaigns !== undefined ||

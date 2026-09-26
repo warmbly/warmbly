@@ -164,6 +164,8 @@ type ContactEvent struct {
 // BulkOperationEvent for bulk operation signals
 type BulkOperationEvent struct {
 	BaseEvent
+	// OrgID routes the event to every member of the organization.
+	OrgID          string  `json:"org_id,omitempty"`
 	OperationID    string  `json:"operation_id"`
 	OperationType  string  `json:"operation_type"`
 	EntityType     string  `json:"entity_type"`
@@ -414,6 +416,28 @@ func (p *StreamingPublisher) PublishContactsReload(ctx context.Context, userID, 
 	if err := p.client.Publish(ctx, TopicBulkOps, event, attrs); err != nil {
 		// Log error but don't fail
 	}
+}
+
+// PublishOrgContactsReload tells every member of an organization to reload
+// its contact lists, for a change no single member made.
+func (p *StreamingPublisher) PublishOrgContactsReload(ctx context.Context, orgID, operationID string) {
+	if p.client == nil {
+		return
+	}
+	event := &BulkOperationEvent{
+		BaseEvent: BaseEvent{
+			EventType: EventContactsReload,
+			Timestamp: time.Now(),
+		},
+		OrgID:       orgID,
+		OperationID: operationID,
+		EntityType:  "contacts",
+	}
+	attrs := map[string]string{
+		"org_id":     orgID,
+		"event_type": string(EventContactsReload),
+	}
+	_ = p.client.Publish(ctx, TopicBulkOps, event, attrs)
 }
 
 // PublishBulkProgress sends bulk operation progress update

@@ -54,9 +54,11 @@ type Contact struct {
 	// to run; the verdict above stands until it lands.
 	VerificationRequestedAt *time.Time `json:"verification_requested_at,omitempty"`
 
-	// Recipient ESP/provider, derived in the control plane from the recipient
-	// domain (never an MX dial on the send hot path). '' | 'gmail' | 'outlook'
-	// | 'other'. Used by the campaign ESP-matching feature.
+	// MailHost is who hosts the contact's inbox (a mailhost.Host value), read
+	// from the domain's MX by the backend sweep; '' until it has run.
+	MailHost string `json:"mail_host"`
+	// ESPProvider is MailHost's family for campaign ESP matching: '' | 'gmail'
+	// | 'outlook' | 'other'. Resolved with it, never on the send hot path.
 	ESPProvider   string     `json:"esp_provider"`
 	ESPResolvedAt *time.Time `json:"esp_resolved_at,omitempty"`
 
@@ -235,6 +237,18 @@ type CampaignLeadCounts struct {
 	Opened     int `json:"opened"`
 	Clicked    int `json:"clicked"`
 	RepliedAny int `json:"replied_any"`
+	// Providers splits the leads by their inbox's family, as ESP matching sees it.
+	Providers CampaignLeadProviderCounts `json:"providers"`
+}
+
+// CampaignLeadProviderCounts are a campaign's leads by esp_provider family.
+// Other includes checked domains with no known host, which match like other;
+// Undetected counts the leads the provider check has not reached yet.
+type CampaignLeadProviderCounts struct {
+	Google     int `json:"gmail"`
+	Microsoft  int `json:"outlook"`
+	Other      int `json:"other"`
+	Undetected int `json:"undetected"`
 }
 
 // ContactsCounts are org-wide contact facet totals for the browse sidebar.
@@ -847,6 +861,7 @@ type SearchContacts struct {
 	MaxCampaigns       *int                   `json:"max_campaigns"`        // Maximum number of associated campaigns
 	Subscribed         *bool                  `json:"subscribed"`           // Filter by subscription status
 	VerificationStatus string                 `json:"verification_status"`  // Filter by verification verdict: valid | risky | invalid | unknown
+	MailHosts          []string               `json:"mail_hosts"`           // Contacts whose inbox host is any of these; "" matches not detected yet
 	CreatedAfter       *time.Time             `json:"created_after"`        // Contacts created after this date
 	CreatedBefore      *time.Time             `json:"created_before"`       // Contacts created before this date
 	UpdatedAfter       *time.Time             `json:"updated_after"`        // Contacts updated after this date

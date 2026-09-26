@@ -227,6 +227,7 @@ export function EspMatchingSection({
                 mode={newCampaign.esp_match_mode}
                 emailTags={newCampaign.email_tags}
                 explicitAccounts={explicitAccounts}
+                campaignId={newCampaign.id}
             />
         </div>
     );

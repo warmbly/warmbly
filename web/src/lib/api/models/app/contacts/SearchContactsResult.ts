@@ -53,6 +53,17 @@ export interface CampaignLeadCounts {
     opened: number;
     clicked: number;
     replied_any: number;
+    // Leads by their inbox's provider family, the grouping ESP matching uses.
+    providers?: CampaignLeadProviderCounts;
+}
+
+export interface CampaignLeadProviderCounts {
+    gmail: number;
+    outlook: number;
+    // Includes checked domains with no known provider; they match like other.
+    other: number;
+    // Leads whose provider the background check has not read yet.
+    undetected: number;
 }
 
 export default interface SearchContactsResult {

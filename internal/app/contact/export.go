@@ -76,6 +76,9 @@ func (s *contactService) Export(
 		if err := validateLeadFilters(*searchFilters); err != nil {
 			return "", "", 0, err
 		}
+		if err := validateMailHosts(*searchFilters); err != nil {
+			return "", "", 0, err
+		}
 	}
 
 	rows, xerr := s.contactRepository.ExportAll(ctx, orgID, searchFilters, contactIDs, models.MaxContactExportRows)

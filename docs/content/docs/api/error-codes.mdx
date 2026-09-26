@@ -92,6 +92,7 @@ Fields are named by their JSON key, with nested fields as a dotted path (`inner.
 | `invalid_lead_status` | `POST /contacts/search` or `POST /contacts/export` was given a `lead_status` that is not one of the documented values |
 | `invalid_sort_by` | `POST /contacts/search`, `POST /contacts/export` or a bulk action's `all` selection was given a `sort_by` of the form `custom:<key>` whose key could never be a custom-field name (letters, numbers, underscores, spaces or dashes) |
 | `invalid_column`, `duplicate_column`, `too_many_columns`, `invalid_sort` | `PUT /me/views/:view` was given a column id that view cannot render, the same column twice, more than 64 columns, or a sort that names neither a sortable contact column nor a well-formed `custom:<key>` |
+| `invalid_mail_host` | `POST /contacts/search`, `POST /contacts/export` or a bulk action's `all` selection was given a `mail_hosts` entry that is not a documented provider value |
 | `invalid_engagement` | `POST /contacts/search` or `POST /contacts/export` was given an `engagement` that is not one of the documented values |
 | `lead_filter_requires_campaign` | `lead_status` or `engagement` was set without exactly one `campaign_ids` entry; both filters describe a contact inside one campaign |
 | `unknown_verification_status` | A contact's `verification_status` is not a value any known verification service writes |

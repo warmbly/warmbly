@@ -17,7 +17,7 @@ Give the segment a name and a color, then add conditions. Each condition is a fi
 |-------|--------|-----------|
 | Contact | First name, last name, email, email domain, phone, and every custom field | is, is not, contains, does not contain, starts with, ends with, is empty, is not empty |
 | Contact | Subscribed, on the suppression list, catch-all domain | is yes, is no |
-| Contact | Source, verification status, email provider | is any of, is none of |
+| Contact | Source, verification status, email provider, email provider family | is any of, is none of |
 | Contact | Created, updated | in the last N days, not in the last N days, after, before |
 | Contact | Category | has any of, has none of, has none, has any |
 | Company | Company name | the text operators above |
@@ -26,6 +26,8 @@ Give the segment a name and a color, then add conditions. Each condition is a fi
 | Email engagement | Emails sent, emails opened, links clicked, replies, bounces | the number operators above |
 | Email engagement | Last email sent, last open, last click, last reply | in the last N days, not in the last N days, after, before, never, ever |
 | Segments | In segment | is in any of, is in none of |
+
+**Email provider** is who hosts the contact's inbox (Google Workspace, Microsoft 365, Yahoo Mail, and so on), read from the domain's mail records; **email provider family** groups those into Google, Microsoft and other, the grouping [ESP matching](/guides/campaigns/) uses. See [email provider](/guides/contacts-crm/#email-provider).
 
 Engagement counts add up every campaign the contact has been in. Opens count human opens only; automated fetches are ignored, the same way the campaign analytics report them. Text comparisons ignore case.
 

@@ -10,6 +10,7 @@ export type SearchContactsSortBy =
     | 'company'
     | 'phone'
     | 'campaign_count'
+    | 'mail_host'
     | `custom:${string}`;
 
 export type SearchContactsFilterType =

@@ -1,5 +1,6 @@
 import type MiniCampaign from "../campaigns/MiniCampaign";
 import type MiniCategory from "./MiniCategory";
+import type { MailHost } from "../emails/MailboxImport";
 
 // LeadStatus mirrors models.ContactCampaignProgress.Status, a contact's
 // processing state inside a single campaign. "completed" = every step sent, no
@@ -121,6 +122,11 @@ export default interface Contact {
     // above stands until it lands.
     verification_requested_at?: string | null;
     is_catch_all?: boolean;
+
+    // Who hosts the contact's inbox, read from its domain's MX; "" until
+    // detected. esp_provider is its family, the one ESP matching uses.
+    mail_host?: MailHost;
+    esp_provider?: "" | "gmail" | "outlook" | "other";
 
     // Present only in the campaign Leads view (single-campaign search). Drives
     // the per-lead processing-state column.

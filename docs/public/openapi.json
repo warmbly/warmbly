@@ -29293,6 +29293,7 @@
           "verification_status",
           "verification_reason",
           "is_catch_all",
+          "mail_host",
           "esp_provider",
           "updated_at",
           "created_at"
@@ -29386,9 +29387,13 @@
             "format": "date-time",
             "description": "Set while a re-check a member asked for is waiting to run; the verdict stands until it lands."
           },
+          "mail_host": {
+            "type": "string",
+            "description": "Who hosts the contact's inbox, read from the domain's MX (and SPF behind a filtering gateway) by a background check: google_workspace, gmail, microsoft365, outlook, zoho, yahoo, aol, icloud, fastmail, godaddy, namecheap, ionos, hostinger, ovh, migadu, purelymail, rackspace, yandex, gmx, proton, or other. Empty until checked, or when the domain has no mail server."
+          },
           "esp_provider": {
             "type": "string",
-            "description": "Recipient ESP derived from the domain: '' | gmail | outlook | other."
+            "description": "mail_host's family, the one campaign ESP matching uses: gmail (either Google product), outlook (either Microsoft one), other, or empty with mail_host."
           },
           "esp_resolved_at": {
             "type": [
@@ -29603,6 +29608,13 @@
             "type": "integer",
             "description": "Maximum number of associated campaigns."
           },
+          "mail_hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Contacts whose mail_host is any of these; \"\" matches contacts with no known provider (not checked yet, or a domain with no mail server). An unknown value is rejected with 400 invalid_mail_host."
+          },
           "subscribed": {
             "type": "boolean"
           },
@@ -29624,7 +29636,7 @@
           },
           "sort_by": {
             "type": "string",
-            "description": "Sort column: created_at (the default), updated_at, first_name, last_name, email, company, phone, or campaign_count. custom:<key> sorts on a custom field as text, with contacts lacking the field grouped last when ascending and first when descending; a custom-field name that could never exist is rejected with 400 invalid_sort_by. Any other unknown value falls back to created_at."
+            "description": "Sort column: created_at (the default), updated_at, first_name, last_name, email, company, phone, campaign_count, or mail_host (contacts with no known provider grouped last when ascending and first when descending). custom:<key> sorts on a custom field as text, with contacts lacking the field grouped last when ascending and first when descending; a custom-field name that could never exist is rejected with 400 invalid_sort_by. Any other unknown value falls back to created_at."
           },
           "reverse": {
             "type": "boolean",
