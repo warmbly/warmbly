@@ -48,6 +48,7 @@ func TestRecipient(t *testing.T) {
 		{"gmail.com", Gmail, true},
 		{"hotmail.co.uk", Outlook, true},
 		{"icloud.com", ICloud, true},
+		{"contoso.onmicrosoft.com", Microsoft365, true},
 		{"yahoo.com", Yahoo, true},
 		{"acme.example", GoogleWorkspace, true},
 		{"contoso.example", Microsoft365, true},
@@ -74,5 +75,14 @@ func TestRecipientKnownDomainSkipsDNS(t *testing.T) {
 	}
 	if f.mxCalls != 0 {
 		t.Fatalf("known domain dialled DNS %d times", f.mxCalls)
+	}
+}
+
+func TestKnownDomainTenant(t *testing.T) {
+	if got := KnownDomain("ops@contoso.onmicrosoft.com"); got != Microsoft365 {
+		t.Fatalf("tenant domain = %q", got)
+	}
+	if SharedProvider("contoso.onmicrosoft.com") {
+		t.Fatal("a tenant domain is not a consumer provider")
 	}
 }

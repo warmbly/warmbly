@@ -29613,7 +29613,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Contacts whose mail_host is any of these; \"\" matches contacts whose provider is not detected yet. An unknown value is rejected with 400 invalid_mail_host."
+            "description": "Contacts whose mail_host is any of these; \"\" matches contacts with no known provider (not checked yet, or a domain with no mail server). An unknown value is rejected with 400 invalid_mail_host."
           },
           "subscribed": {
             "type": "boolean"
@@ -29636,7 +29636,7 @@
           },
           "sort_by": {
             "type": "string",
-            "description": "Sort column: created_at (the default), updated_at, first_name, last_name, email, company, phone, campaign_count, or mail_host (contacts whose provider is not detected yet grouped last when ascending and first when descending). custom:<key> sorts on a custom field as text, with contacts lacking the field grouped last when ascending and first when descending; a custom-field name that could never exist is rejected with 400 invalid_sort_by. Any other unknown value falls back to created_at."
+            "description": "Sort column: created_at (the default), updated_at, first_name, last_name, email, company, phone, campaign_count, or mail_host (contacts with no known provider grouped last when ascending and first when descending). custom:<key> sorts on a custom field as text, with contacts lacking the field grouped last when ascending and first when descending; a custom-field name that could never exist is rejected with 400 invalid_sort_by. Any other unknown value falls back to created_at."
           },
           "reverse": {
             "type": "boolean",

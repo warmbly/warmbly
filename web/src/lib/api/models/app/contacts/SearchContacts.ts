@@ -18,7 +18,7 @@ export default interface SearchContacts {
     max_campaigns?: number;
     subscribed?: boolean;
     verification_status?: VerificationStatus;
-    // Contacts whose inbox is hosted by any of these; "" matches not detected yet.
+    // Contacts whose inbox is hosted by any of these; "" matches no known provider.
     mail_hosts?: MailHost[];
     created_after?: Date;
     created_before?: Date;

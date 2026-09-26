@@ -24,7 +24,7 @@ func Recipient(ctx context.Context, r RecipientResolver, domain string) (Host, b
 	if norm == "" {
 		return Unknown, true
 	}
-	if h, _, ok := known(norm); ok {
+	if h := recipientKnown(norm); h != Unknown {
 		return h, true
 	}
 	if r == nil {
@@ -53,8 +53,19 @@ func Recipient(ctx context.Context, r RecipientResolver, domain string) (Host, b
 // KnownDomain names the host of a consumer mail domain, or of an address's
 // domain, from the built-in list with no DNS; Unknown for anything else.
 func KnownDomain(s string) Host {
-	h, _ := knownDomain(NormalizeDomain(s))
-	return h
+	return recipientKnown(NormalizeDomain(s))
+}
+
+// recipientKnown is knownDomain plus Microsoft 365 tenant domains, which are
+// Microsoft's mail but not a consumer service, so SharedProvider leaves them out.
+func recipientKnown(domain string) Host {
+	if h, ok := knownDomain(domain); ok {
+		return h
+	}
+	if strings.HasSuffix(domain, ".onmicrosoft.com") {
+		return Microsoft365
+	}
+	return Unknown
 }
 
 // ESPFamily is h's family as campaign ESP matching and contacts.esp_provider

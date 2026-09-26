@@ -241,7 +241,8 @@ type CampaignLeadCounts struct {
 	Providers CampaignLeadProviderCounts `json:"providers"`
 }
 
-// CampaignLeadProviderCounts are a campaign's leads by esp_provider family;
+// CampaignLeadProviderCounts are a campaign's leads by esp_provider family.
+// Other includes checked domains with no known host, which match like other;
 // Undetected counts the leads the provider check has not reached yet.
 type CampaignLeadProviderCounts struct {
 	Google     int `json:"gmail"`

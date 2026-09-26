@@ -76,7 +76,7 @@ const PROVIDERS: Option[] = [
         label,
         icon: <ProviderLogo id={id} size="xs" framed={false} />,
     })),
-    { id: "", label: "Not detected yet" },
+    { id: "", label: "Unknown or not checked yet" },
 ];
 
 // Optional pills, shown once added from the menu or when their value is set.

@@ -124,8 +124,9 @@ func TestLiveContactMailHostSweepWritesAndSearchReads(t *testing.T) {
 	if xerr != nil {
 		t.Fatalf("lead counts: %v", xerr)
 	}
-	if p := counts.Providers; p.Google != 1 || p.Microsoft != 0 || p.Other != 0 || p.Undetected != 3 {
-		t.Fatalf("lead counts by provider = %+v, want 1 Google and 3 undetected", p)
+	// The failed lookup was checked, so it counts with other; two were never reached.
+	if p := counts.Providers; p.Google != 1 || p.Microsoft != 0 || p.Other != 1 || p.Undetected != 2 {
+		t.Fatalf("lead counts by provider = %+v, want 1 Google, 1 other and 2 undetected", p)
 	}
 
 	for _, reverse := range []bool{true, false} {

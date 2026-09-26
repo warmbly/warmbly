@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/config"
@@ -20,7 +21,13 @@ const (
 	contactMailHostMaxPasses = 50
 	contactMailHostLease     = "lock:contactmailhost"
 	contactMailHostLeaseTTL  = 10 * time.Minute
+	// contactMailHostRunBudget ends a run while the lease still has room for
+	// the lookups already in flight, so two replicas never sweep at once.
+	contactMailHostRunBudget = contactMailHostLeaseTTL - 2*time.Minute
 )
+
+// releaseContactMailHostLease deletes the lease only while this run still holds it.
+var releaseContactMailHostLease = redis.NewScript(`if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`)
 
 // ContactMailHostStore is the slice of the contact repository the sweep uses.
 type ContactMailHostStore interface {
@@ -55,13 +62,15 @@ type cachedMailHost struct {
 func (j *ContactMailHostSweep) Run(ctx context.Context) error {
 	// One replica sweeps at a time; a Redis outage fails open.
 	if j.cache != nil {
-		if got, err := j.cache.SetNX(ctx, contactMailHostLease, "1", contactMailHostLeaseTTL).Result(); err == nil {
+		token := uuid.NewString()
+		if got, err := j.cache.SetNX(ctx, contactMailHostLease, token, contactMailHostLeaseTTL).Result(); err == nil {
 			if !got {
 				return nil
 			}
-			defer j.cache.Del(context.WithoutCancel(ctx), contactMailHostLease)
+			defer releaseContactMailHostLease.Run(context.WithoutCancel(ctx), j.cache, []string{contactMailHostLease}, token)
 		}
 	}
+	deadline := time.Now().Add(contactMailHostRunBudget)
 	for range contactMailHostMaxPasses {
 		pending, err := j.contacts.ListMailHostPending(ctx, config.ContactMailHostBatchSize)
 		if err != nil {
@@ -70,10 +79,14 @@ func (j *ContactMailHostSweep) Run(ctx context.Context) error {
 		if len(pending) == 0 {
 			return nil
 		}
-		hosts := j.resolveDomains(ctx, pending)
+		hosts, skipped := j.resolveDomains(ctx, pending, deadline)
 		results := make([]repository.ContactMailHostResult, 0, len(pending))
 		for _, p := range pending {
-			r, ok := hosts[mailhost.NormalizeDomain(p.Email)]
+			d := mailhost.NormalizeDomain(p.Email)
+			if skipped[d] {
+				continue
+			}
+			r, ok := hosts[d]
 			res := repository.ContactMailHostResult{ID: p.ID, Email: p.Email, Transient: !ok}
 			if ok {
 				res.MailHost, res.ESP = string(r), mailhost.ESPFamily(r)
@@ -89,7 +102,7 @@ func (j *ContactMailHostSweep) Run(ctx context.Context) error {
 				j.reloader.PublishOrgContactsReload(ctx, org.String(), "contacts:mail_host")
 			}
 		}
-		if len(pending) < config.ContactMailHostBatchSize || ctx.Err() != nil {
+		if len(pending) < config.ContactMailHostBatchSize || len(skipped) > 0 || ctx.Err() != nil {
 			return ctx.Err()
 		}
 	}
@@ -97,9 +110,10 @@ func (j *ContactMailHostSweep) Run(ctx context.Context) error {
 }
 
 // resolveDomains answers each distinct domain once. A domain missing from the
-// result failed transiently.
-func (j *ContactMailHostSweep) resolveDomains(ctx context.Context, pending []repository.ContactMailHostPending) map[string]mailhost.Host {
+// result failed transiently; one in skipped was not asked before the deadline.
+func (j *ContactMailHostSweep) resolveDomains(ctx context.Context, pending []repository.ContactMailHostPending, deadline time.Time) (map[string]mailhost.Host, map[string]bool) {
 	out := map[string]mailhost.Host{}
+	skipped := map[string]bool{}
 	var todo []string
 	for _, p := range pending {
 		d := mailhost.NormalizeDomain(p.Email)
@@ -108,6 +122,10 @@ func (j *ContactMailHostSweep) resolveDomains(ctx context.Context, pending []rep
 		}
 		out[d] = mailhost.Unknown
 		if d == "" {
+			continue
+		}
+		if h := mailhost.KnownDomain(d); h != mailhost.Unknown {
+			out[d] = h
 			continue
 		}
 		var hit cachedMailHost
@@ -122,8 +140,13 @@ func (j *ContactMailHostSweep) resolveDomains(ctx context.Context, pending []rep
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, config.ContactMailHostConcurrency)
 	for _, d := range todo {
-		wg.Add(1)
 		sem <- struct{}{}
+		if time.Now().After(deadline) {
+			<-sem
+			skipped[d] = true
+			continue
+		}
+		wg.Add(1)
 		go func(d string) {
 			defer wg.Done()
 			defer func() { <-sem }()
@@ -144,7 +167,10 @@ func (j *ContactMailHostSweep) resolveDomains(ctx context.Context, pending []rep
 		}(d)
 	}
 	wg.Wait()
-	return out
+	for d := range skipped {
+		delete(out, d)
+	}
+	return out, skipped
 }
 
 func contactMailHostKey(domain string) string { return "contactmailhost:" + domain }

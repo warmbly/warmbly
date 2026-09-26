@@ -60,6 +60,7 @@ export interface CampaignLeadCounts {
 export interface CampaignLeadProviderCounts {
     gmail: number;
     outlook: number;
+    // Includes checked domains with no known provider; they match like other.
     other: number;
     // Leads whose provider the background check has not read yet.
     undetected: number;

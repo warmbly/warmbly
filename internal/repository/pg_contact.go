@@ -2185,8 +2185,8 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 			COUNT(*) FILTER (WHERE COALESCE(pr.has_replied, false)) AS replied_any,
 			COUNT(*) FILTER (WHERE c.esp_provider = 'gmail') AS provider_gmail,
 			COUNT(*) FILTER (WHERE c.esp_provider = 'outlook') AS provider_outlook,
-			COUNT(*) FILTER (WHERE c.esp_provider = 'other') AS provider_other,
-			COUNT(*) FILTER (WHERE c.esp_provider = '') AS provider_undetected
+			COUNT(*) FILTER (WHERE c.esp_provider = 'other' OR (c.esp_provider = '' AND c.esp_resolved_at IS NOT NULL)) AS provider_other,
+			COUNT(*) FILTER (WHERE c.esp_provider = '' AND c.esp_resolved_at IS NULL) AS provider_undetected
 		FROM campaign_leads cl
 		JOIN contacts c ON c.id = cl.contact_id AND c.organization_id = $2
 		CROSS JOIN (SELECT COUNT(*) AS total_steps FROM sequences st WHERE st.campaign_id = $1 AND st.kind = 'email') ts

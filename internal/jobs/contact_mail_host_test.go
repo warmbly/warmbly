@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -93,5 +94,25 @@ func TestContactMailHostSweep(t *testing.T) {
 	}
 	if dns.calls["gmail.com"] != 0 {
 		t.Errorf("a consumer domain dialled DNS")
+	}
+}
+
+func TestContactMailHostSweepSkipsPastDeadline(t *testing.T) {
+	dns := &mailHostDNS{mx: map[string][]string{"acme.example": {"aspmx.l.google.com"}}, calls: map[string]int{}}
+	j := NewContactMailHostSweep(&mailHostStore{}, nil, nil)
+	j.resolver = dns
+	pending := []repository.ContactMailHostPending{
+		{ID: uuid.New(), Email: "a@acme.example"},
+		{ID: uuid.New(), Email: "dana@gmail.com"},
+	}
+	hosts, skipped := j.resolveDomains(context.Background(), pending, time.Now().Add(-time.Second))
+	if !skipped["acme.example"] || dns.calls["acme.example"] != 0 {
+		t.Fatalf("a lookup past the deadline ran: skipped=%v calls=%v", skipped, dns.calls)
+	}
+	if _, ok := hosts["acme.example"]; ok {
+		t.Fatal("a skipped domain has an answer")
+	}
+	if hosts["gmail.com"] != "gmail" {
+		t.Fatalf("a known domain needs no lookup and is never skipped: %v", hosts)
 	}
 }
