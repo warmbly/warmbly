@@ -25,7 +25,7 @@ func (r candidateRepo) WarmupPartnerCandidates(context.Context, string, uuid.UUI
 	return r.candidates, nil
 }
 
-func (candidateRepo) SenderPlacementByProvider(context.Context, uuid.UUID, time.Time) (map[string]repository.ProviderPlacementStat, error) {
+func (candidateRepo) SenderPlacementByHost(context.Context, uuid.UUID, time.Time) (map[string]repository.HostPlacementStat, error) {
 	return nil, nil
 }
 

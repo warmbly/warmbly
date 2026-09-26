@@ -11,12 +11,12 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// Issue #143: partner selection needs THIS sender's record per recipient
-// provider, not the pool-wide rollup the admin overview reads. These prove the
-// two queries that feed it against the real schema.
+// Issue #143: partner selection needs THIS sender's record per recipient mail
+// host, not the pool-wide rollup the admin overview reads. These prove the
+// queries that feed both against the real schema.
 //
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable \
-//	  go test ./internal/repository/ -run LiveProviderRouting -v
+//	  go test ./internal/repository/ -run 'LiveProviderRouting|LiveHostPlacement|LivePoolPlacements' -v
 
 // premiumPoolID is the premium pool migration 000156 seeds on every instance.
 var premiumPoolID = models.WarmupPoolPremiumID
@@ -98,31 +98,6 @@ func newProviderRoutingFixture(t *testing.T) *providerRoutingFixture {
 	return f
 }
 
-func (f *providerRoutingFixture) send(t *testing.T, recipient uuid.UUID, n int, status string) {
-	t.Helper()
-	for i := 0; i < n; i++ {
-		// warmup_tokens.task_id is a real foreign key, so each send needs the
-		// task it belongs to.
-		taskID := uuid.New()
-		if _, err := f.pool.Exec(context.Background(),
-			`INSERT INTO tasks (id, task_type, email_account_id, status, message_id)
-			 VALUES ($1, 'warmup', $2, $3, '')`, taskID, f.sender, status); err != nil {
-			t.Fatalf("insert task: %v", err)
-		}
-		if _, err := f.pool.Exec(context.Background(),
-			`INSERT INTO warmup_tokens (token, task_id, sender_account_id, recipient_account_id, created_at)
-			 VALUES (gen_random_uuid(), $1, $2, $3, NOW())`,
-			taskID, f.sender, recipient); err != nil {
-			t.Fatalf("insert token: %v", err)
-		}
-	}
-}
-
-func (f *providerRoutingFixture) placement(t *testing.T, domain string, n int) {
-	t.Helper()
-	f.placementFrom(t, "smtp_imap", domain, n)
-}
-
 // placementFrom writes the row the way the consumer does: recipient_provider is
 // the connect method the mailbox uses, recipient_domain is who its mail is at.
 func (f *providerRoutingFixture) placementFrom(t *testing.T, connectMethod, domain string, n int) {
@@ -138,42 +113,52 @@ func (f *providerRoutingFixture) placementFrom(t *testing.T, connectMethod, doma
 	}
 }
 
-func TestLiveProviderRoutingSegmentsOneSendersRecord(t *testing.T) {
-	handle, _ := liveContactDB(t)
-	f := newProviderRoutingFixture(t)
-	repo := NewWarmupRepository(handle.Pool)
-	ctx := context.Background()
-
-	f.send(t, f.atGoogle, 20, "completed")
-	f.send(t, f.atMSGraph, 20, "completed")
-	f.placement(t, "outlook.com", 10) // failing only at Microsoft
-
-	got, err := repo.SenderPlacementByProvider(ctx, f.sender, time.Now().Add(-24*time.Hour))
-	if err != nil {
-		t.Fatalf("SenderPlacementByProvider: %v", err)
-	}
-	if g := got["google"]; g.Sends != 20 || g.Placements != 0 || g.Rate() != 0 {
-		t.Errorf("google = %+v (rate %v), want 20 sends and nothing in junk", g, g.Rate())
-	}
-	if m := got["microsoft"]; m.Sends != 20 || m.Placements != 10 || m.Rate() != 0.5 {
-		t.Errorf("microsoft = %+v (rate %v), want 20 sends, 10 placements, 0.5", m, m.Rate())
+// rollup writes one day of the sender's placement the way the consumer counts
+// it: keyed by the recipient's resolved mail host.
+func (f *providerRoutingFixture) rollup(t *testing.T, group, host string, daysAgo, inbox, spam int) {
+	t.Helper()
+	if _, err := f.pool.Exec(context.Background(),
+		`INSERT INTO warmup_placement_daily (sender_account_id, date, recipient_group, recipient_host, inbox, spam)
+		 VALUES ($1, (NOW() AT TIME ZONE 'UTC')::date - $4::int, $2, $3, $5, $6)`,
+		f.sender, group, host, daysAgo, inbox, spam); err != nil {
+		t.Fatalf("insert rollup: %v", err)
 	}
 }
 
-func TestLiveProviderRoutingWindowExcludesOldSignal(t *testing.T) {
+// Two custom domains, one on Google Workspace and one on a small host, must
+// not share a record: that is the split partner selection exists to act on.
+func TestLiveHostPlacementSegmentsOneSendersRecord(t *testing.T) {
 	handle, _ := liveContactDB(t)
 	f := newProviderRoutingFixture(t)
 	repo := NewWarmupRepository(handle.Pool)
-	ctx := context.Background()
 
-	f.send(t, f.atMSGraph, 5, "completed")
-	f.placement(t, "outlook.com", 5)
+	f.rollup(t, "google", "google_workspace", 0, 20, 0)
+	f.rollup(t, "other", "hostinger", 0, 10, 10)
+	f.rollup(t, "other", "hostinger", 1, 0, 0)
 
-	// A window that starts after everything was written must see nothing, or
-	// a sender would be penalized forever for a provider it has recovered at.
-	got, err := repo.SenderPlacementByProvider(ctx, f.sender, time.Now().Add(time.Hour))
+	got, err := repo.SenderPlacementByHost(context.Background(), f.sender, time.Now().Add(-7*24*time.Hour))
 	if err != nil {
-		t.Fatalf("SenderPlacementByProvider: %v", err)
+		t.Fatalf("SenderPlacementByHost: %v", err)
+	}
+	if g := got["google_workspace"]; g.Delivered != 20 || g.Spam != 0 || g.Rate() != 0 {
+		t.Errorf("google_workspace = %+v (rate %v), want 20 delivered and nothing in junk", g, g.Rate())
+	}
+	if h := got["hostinger"]; h.Delivered != 20 || h.Spam != 10 || h.Rate() != 0.5 {
+		t.Errorf("hostinger = %+v (rate %v), want 20 delivered, 10 spam, 0.5", h, h.Rate())
+	}
+}
+
+// A sender must not be penalised forever at a host it has recovered at.
+func TestLiveHostPlacementWindowExcludesOldSignal(t *testing.T) {
+	handle, _ := liveContactDB(t)
+	f := newProviderRoutingFixture(t)
+	repo := NewWarmupRepository(handle.Pool)
+
+	f.rollup(t, "other", "zoho", 10, 0, 20)
+
+	got, err := repo.SenderPlacementByHost(context.Background(), f.sender, time.Now().Add(-7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("SenderPlacementByHost: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("out-of-window rows returned: %+v", got)
@@ -203,54 +188,25 @@ func TestLiveProviderRoutingParticipantProviders(t *testing.T) {
 	}
 }
 
-// A token is written before the send goes out, so a failed send leaves one
-// behind. Counting it would put the failure in the denominator and understate
-// the provider's junk rate exactly when the sender is doing worst.
-func TestLiveProviderRoutingIgnoresFailedSends(t *testing.T) {
+// A receipt counted with no host belongs to no host. Keying it anywhere would
+// demote partners for a failure that was never theirs.
+func TestLiveHostPlacementIgnoresUnattributedRows(t *testing.T) {
 	handle, _ := liveContactDB(t)
 	f := newProviderRoutingFixture(t)
 	repo := NewWarmupRepository(handle.Pool)
 
-	f.send(t, f.atMSGraph, 10, "completed")
-	f.send(t, f.atMSGraph, 90, "failed")
-	f.placement(t, "outlook.com", 5)
+	f.rollup(t, "other", "", 0, 0, 5)
+	f.rollup(t, "other", "other", 0, 10, 0)
 
-	got, err := repo.SenderPlacementByProvider(context.Background(), f.sender, time.Now().Add(-24*time.Hour))
+	got, err := repo.SenderPlacementByHost(context.Background(), f.sender, time.Now().Add(-24*time.Hour))
 	if err != nil {
-		t.Fatalf("SenderPlacementByProvider: %v", err)
+		t.Fatalf("SenderPlacementByHost: %v", err)
 	}
-	m := got["microsoft"]
-	if m.Sends != 10 {
-		t.Errorf("sends = %d, want only the 10 that completed", m.Sends)
+	if _, ok := got[""]; ok {
+		t.Error("a hostless row was attributed")
 	}
-	if m.Rate() != 0.5 {
-		t.Errorf("rate = %v, want 0.5; counting the failures would have read 0.05", m.Rate())
-	}
-}
-
-// An unattributed placement (the recipient account could not be resolved when
-// it was recorded) has no domain, so it belongs to no provider. Charging it to
-// ProviderCustom would demote every custom-domain partner for a failure that
-// was never theirs, and the send side can never produce a blank domain to put
-// underneath it.
-func TestLiveProviderRoutingIgnoresUnattributedPlacement(t *testing.T) {
-	handle, _ := liveContactDB(t)
-	f := newProviderRoutingFixture(t)
-	repo := NewWarmupRepository(handle.Pool)
-
-	f.send(t, f.atCustom, 10, "completed")
-	f.placement(t, "", 5)
-
-	got, err := repo.SenderPlacementByProvider(context.Background(), f.sender, time.Now().Add(-24*time.Hour))
-	if err != nil {
-		t.Fatalf("SenderPlacementByProvider: %v", err)
-	}
-	c := got["custom"]
-	if c.Sends != 10 {
-		t.Errorf("sends = %d, want the 10 that went to the custom domain", c.Sends)
-	}
-	if c.Placements != 0 || c.Rate() != 0 {
-		t.Errorf("custom = %+v (rate %v), want the domainless placements ignored", c, c.Rate())
+	if o := got["other"]; o.Delivered != 10 || o.Spam != 0 {
+		t.Errorf("other = %+v, want the hostless spam kept out of it", o)
 	}
 }
 

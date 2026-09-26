@@ -311,6 +311,20 @@ func (w *WorkerService) runImapWarmupActions(ctx context.Context, mail *wmail.WM
 	// whatever message inherits the number.
 	moved := false
 
+	// A message still in Junk gets the not-junk keywords once, before either
+	// move takes it out, because its UID is void afterwards.
+	inJunk := sourceBox != nil && boxName == sourceBox.Name && imap.IsSpamMailbox(sourceBox.Name, sourceBox.Attrs)
+	unjunked := false
+	unjunk := func() {
+		if !inJunk || unjunked {
+			return
+		}
+		unjunked = true
+		if err := imapClient.MarkNotJunk(ctx, boxName, uid); err != nil {
+			log.Debug().Err(err).Uint32("uid", uid).Msg("Server refused not-junk keywords (IMAP)")
+		}
+	}
+
 	for _, act := range action.Actions {
 		if moved {
 			continue
@@ -320,6 +334,7 @@ func (w *WorkerService) runImapWarmupActions(ctx context.Context, mail *wmail.WM
 			if dst == "" {
 				continue
 			}
+			unjunk()
 			// A message already in the destination is not moved, and its UID is
 			// still good for the actions after this one.
 			did, err := imapClient.MoveToFolder(ctx, boxName, dst, uid)
@@ -336,9 +351,10 @@ func (w *WorkerService) runImapWarmupActions(ctx context.Context, mail *wmail.WM
 			// Only a message still sitting in a Junk folder is rescued. With any
 			// placement but "inbox" the filing move above already took it out of
 			// Junk, which is itself the not-spam signal the server learns from.
-			if sourceBox == nil || boxName != sourceBox.Name || !imap.IsSpamMailbox(sourceBox.Name, sourceBox.Attrs) {
+			if !inJunk {
 				continue
 			}
+			unjunk()
 			if err := imapClient.RemoveFromSpam(ctx, boxName, inboxName, uid); err != nil {
 				log.Error().Err(err).Uint32("uid", uid).Msg("Failed to remove from spam (IMAP)")
 				continue

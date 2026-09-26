@@ -17,6 +17,7 @@ import (
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
+	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 )
 
 func (s *JobsService) HandleNewEmail(ctx context.Context, e *models.JobEventNewEmail) error {
@@ -488,8 +489,10 @@ func (s *JobsService) recordWarmupPlacement(ctx context.Context, e *models.JobEv
 	}
 	group, host := models.WarmupRecipientOther, ""
 	if recipient != nil {
-		host = recipient.MailHost
-		group = models.WarmupRecipientGroup(recipient.MailHost, recipient.Provider)
+		// Resolved, not stored: a mailbox connected before host detection
+		// still counts under the host partner selection keys it by.
+		host = string(mailhost.ForMailbox(recipient.MailHost, recipient.Provider, recipient.Email))
+		group = models.WarmupRecipientGroup(host, recipient.Provider)
 	}
 	sender, err := s.WarmupPlacementRepo.RecordPlacement(ctx, e.Message.EmailID, e.Message.ID, group, host, landed, rescued)
 	if err != nil {

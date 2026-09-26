@@ -61,12 +61,12 @@ Partners outside your own workspace come first. Mail your own mailboxes exchange
 Within that order, partners are picked by weight rather than at random. Three things move the weight:
 
 - **Domain spread.** Recipient domains you have already used a lot recently are downweighted, so warmup does not loop through the same handful of inboxes.
-- **Where you are landing.** Warmbly tracks your spam-placement rate separately for each recipient provider over the last seven days, grouped by who actually runs that recipient's mail (Google, Microsoft, Yahoo and so on, the same grouping routing rules use). A mailbox landing in spam at Microsoft but not Google is sent fewer Microsoft partners until that rate falls, without waiting for an overall health band to trip.
+- **Where you are landing.** Warmbly tracks your spam-placement rate separately for each recipient mail host over the last seven days: who actually runs that recipient's mail (Google Workspace, Microsoft 365, Zoho Mail, Hostinger and so on), read from the partner's mail servers rather than its address, so two custom domains on different hosts are judged apart. A mailbox landing in spam at one host but not the others is sent fewer partners on that host until the rate falls, without waiting for an overall health band to trip.
 - **Your routing rules**, when you have configured any. A rule's weight multiplies a partner's chance; a weight of `0` is not a weight but an exclusion, so that pairing never happens.
 
 An exclusion is honoured even when it leaves nothing: if every available partner is excluded by your rules, the mailbox sends no warmup mail that tick and tries again later, rather than mailing someone you ruled out because the pool had nobody else. The same holds when a partner writes first: your mailbox does not reply to an address your rules exclude. Rules apply to paid-tier mailboxes.
 
-A struggling provider is downweighted, never excluded: a sender that stops mailing a provider entirely can never discover that it recovered there. A provider is only judged once you have sent it at least five warmup emails in the window, so one bad delivery out of two is treated as noise rather than a pattern. You can see the per-domain numbers this reads under **Deliverability > Warmup placement by domain**.
+A struggling host is downweighted, never excluded: a sender that stops mailing a host entirely can never discover that it recovered there. A host is only judged once at least five of your warmup emails have verifiably arrived there in the window, so one bad delivery out of two is treated as noise rather than a pattern. You can see the numbers this reads under **Deliverability > Warmup inbox placement**, by expanding a provider to its hosts.
 
 ### Seeing the diversity you are getting
 
@@ -160,7 +160,7 @@ The filing is per mailbox, on the **Warmup** tab of its drawer:
 
 The folder is created the first time it is needed, and it is also the answer to "what is this message?": nothing but warmup is filed there, so the folder itself is what identifies warmup traffic in a mail client. If another tool already made a folder you use for this, name that one instead and warmup joins it rather than adding a second.
 
-Anything that landed in spam is rescued before it is filed, so the provider records the positive placement signal warmup exists for. On Gmail that means the `SPAM` label comes off, exactly as pressing **Not spam** does, and the message then goes where your placement says rather than straight back into the inbox.
+Anything that landed in spam is rescued before it is filed, so the provider records the positive placement signal warmup exists for. On Gmail that means the `SPAM` label comes off, exactly as pressing **Not spam** does, and the message then goes where your placement says rather than straight back into the inbox. On an IMAP server the message also gets the standard not-junk keywords (`$NotJunk`, `NonJunk`) and loses the junk ones before it leaves the Junk folder, for servers and mail clients that learn from keywords rather than from the move.
 
 Mail that arrives somewhere unexpected is still handled. A server-side rule, or another warmup tool's filter, can put warmup mail in a folder of its own choosing before Warmbly sees it; the message is found there and filed from there, and one already sitting in the destination is left alone rather than moved onto itself.
 

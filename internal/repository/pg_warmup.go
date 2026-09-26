@@ -185,10 +185,10 @@ type WarmupRepository interface {
 	// Pool-wide placement analytics (admin overview)
 	PoolSpamPlacementRate(ctx context.Context, since time.Time) (float64, error)
 	PoolSpamPlacementsByProvider(ctx context.Context, since time.Time) (map[string]int, error)
-	// SenderPlacementByProvider is one SENDER's record keyed by who RUNS the
-	// recipient's mail, not how that mailbox connects: email_accounts.provider
-	// collapses every custom host into smtp_imap.
-	SenderPlacementByProvider(ctx context.Context, senderAccountID uuid.UUID, since time.Time) (map[string]ProviderPlacementStat, error)
+	// SenderPlacementByHost is one SENDER's verified placement keyed by the
+	// recipient's mail host (mailhost.Host), not by how that mailbox connects
+	// or its domain: a custom domain can be run by anyone.
+	SenderPlacementByHost(ctx context.Context, senderAccountID uuid.UUID, since time.Time) (map[string]HostPlacementStat, error)
 
 	// Warmup token management
 	CreateWarmupToken(ctx context.Context, token *models.WarmupToken) error
@@ -218,8 +218,8 @@ type WarmupRepository interface {
 	GetRecentPartnerCounts(ctx context.Context, accountID uuid.UUID, since time.Time) (map[uuid.UUID]int, error)
 	GetLatestReplyCandidate(ctx context.Context, senderAccountID, recipientAccountID uuid.UUID) (*WarmupReplyCandidate, error)
 
-	// GetPoolParticipantProviders maps each participant to the provider that
-	// runs its mail, in the same vocabulary as SenderPlacementByProvider.
+	// GetPoolParticipantProviders maps each participant to its provider bucket
+	// (models.ClassifyProvider on the address).
 	GetPoolParticipantProviders(ctx context.Context, poolType string, excludeBlocked bool) (map[uuid.UUID]string, error)
 	// WarmupPartnerCandidates is everyone a sender may be paired with: its own
 	// tier, plus proven free mailboxes when a premium tier is thin. The
@@ -1032,79 +1032,45 @@ func (r *warmupRepository) PoolSpamPlacementsByProvider(ctx context.Context, sin
 	return out, rows.Err()
 }
 
-// ProviderPlacementStat is a sender's warmup record against one recipient
-// provider: how many it sent, and how many of those were filtered into junk.
-type ProviderPlacementStat struct {
-	Sends      int
-	Placements int
+// HostPlacementStat is a sender's warmup record at one recipient mail host:
+// how many arrivals were verified there, and how many of those landed in junk.
+type HostPlacementStat struct {
+	Delivered int
+	Spam      int
 }
 
-// Rate is the share of sends that landed in junk, 0 when nothing was sent.
-func (p ProviderPlacementStat) Rate() float64 {
-	if p.Sends <= 0 {
+// Rate is the share of deliveries that landed in junk, 0 when nothing arrived.
+func (p HostPlacementStat) Rate() float64 {
+	if p.Delivered <= 0 {
 		return 0
 	}
-	return float64(p.Placements) / float64(p.Sends)
+	return float64(p.Spam) / float64(p.Delivered)
 }
 
-func (r *warmupRepository) SenderPlacementByProvider(ctx context.Context, senderAccountID uuid.UUID, since time.Time) (map[string]ProviderPlacementStat, error) {
-	out := make(map[string]ProviderPlacementStat)
-
-	// Only sends that actually completed. A token is written before the send
-	// goes out, so counting every token would put failed sends in the
-	// denominator and understate the provider's junk rate.
-	sendRows, err := r.db.Query(ctx, `
-		SELECT lower(split_part(ea.email, '@', 2)), COUNT(*)
-		FROM warmup_tokens wt
-		JOIN email_accounts ea ON ea.id = wt.recipient_account_id
-		JOIN tasks t ON t.id = wt.task_id AND t.status = 'completed'
-		WHERE wt.sender_account_id = $1 AND wt.created_at >= $2
+func (r *warmupRepository) SenderPlacementByHost(ctx context.Context, senderAccountID uuid.UUID, since time.Time) (map[string]HostPlacementStat, error) {
+	// Read from the rollup the placement dashboard reads, so the selector and
+	// the charts cannot disagree. A row with no host is unattributable.
+	rows, err := r.db.Query(ctx, `
+		SELECT recipient_host, SUM(inbox + tabs + spam)::int, SUM(spam)::int
+		FROM warmup_placement_daily
+		WHERE sender_account_id = $1 AND date >= ($2::timestamptz AT TIME ZONE 'UTC')::date
+		  AND recipient_host <> ''
 		GROUP BY 1
 	`, senderAccountID, since)
 	if err != nil {
 		return nil, err
 	}
-	defer sendRows.Close()
-	for sendRows.Next() {
-		var domain string
-		var n int
-		if err := sendRows.Scan(&domain, &n); err != nil {
+	defer rows.Close()
+	out := make(map[string]HostPlacementStat)
+	for rows.Next() {
+		var host string
+		var stat HostPlacementStat
+		if err := rows.Scan(&host, &stat.Delivered, &stat.Spam); err != nil {
 			return nil, err
 		}
-		key := string(models.ClassifyProvider(domain))
-		stat := out[key]
-		stat.Sends += n
-		out[key] = stat
+		out[host] = stat
 	}
-	if err := sendRows.Err(); err != nil {
-		return nil, err
-	}
-
-	// A blank domain is unattributable and the send side never produces one, so
-	// counting it would demote every custom-domain partner for nobody's failure.
-	placementRows, err := r.db.Query(ctx, `
-		SELECT recipient_domain, COUNT(*)
-		FROM warmup_spam_reports
-		WHERE reported_account_id = $1 AND report_type = 'spam_placement' AND created_at >= $2
-		  AND recipient_domain <> ''
-		GROUP BY 1
-	`, senderAccountID, since)
-	if err != nil {
-		return nil, err
-	}
-	defer placementRows.Close()
-	for placementRows.Next() {
-		var domain string
-		var n int
-		if err := placementRows.Scan(&domain, &n); err != nil {
-			return nil, err
-		}
-		key := string(models.ClassifyProvider(domain))
-		stat := out[key]
-		stat.Placements += n
-		out[key] = stat
-	}
-	return out, placementRows.Err()
+	return out, rows.Err()
 }
 
 // The inbound cap's three numbers as SQL literals, so the rule that decides
@@ -1185,7 +1151,7 @@ func partnerCandidateSelectSuffix(sharePercent int) string {
 			  AND wt.recipient_account_id IN (SELECT id FROM cand)
 			GROUP BY wt.recipient_account_id
 		)
-		SELECT cand.id, cand.email, cand.organization_id,
+		SELECT cand.id, cand.email, cand.organization_id, cand.provider, cand.mail_host,
 		       COALESCE(sent.week, 0), COALESCE(recv.week, 0)
 		FROM cand
 		LEFT JOIN recv ON recv.email_account_id = cand.id
@@ -1233,7 +1199,7 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 	suffix := candidateSuffixFor(poolType)
 
 	own, err := r.queryPartnerCandidates(ctx, `
-		SELECT wpp.email_account_id AS id, ea.email, ea.organization_id
+		SELECT wpp.email_account_id AS id, ea.email, ea.organization_id, ea.provider::text AS provider, ea.mail_host
 		FROM warmup_pool_participants wpp
 		JOIN warmup_pools wp ON wpp.pool_id = wp.id
 		JOIN email_accounts ea ON ea.id = wpp.email_account_id
@@ -1252,7 +1218,7 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 		// Best first, random within a rank, so the borrowing spreads. Drawn
 		// after the cap, so a capped mailbox never uses up a slot.
 		borrowed, err := r.queryPartnerCandidates(ctx, `
-			SELECT wpp.email_account_id AS id, ea.email, ea.organization_id,`+borrowQualitySQL+`
+			SELECT wpp.email_account_id AS id, ea.email, ea.organization_id, ea.provider::text AS provider, ea.mail_host,`+borrowQualitySQL+`
 			FROM warmup_pool_participants wpp
 			JOIN warmup_pools wp ON wpp.pool_id = wp.id
 			JOIN email_accounts ea ON ea.id = wpp.email_account_id
@@ -1274,7 +1240,7 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 		// the window, and only while the sender itself is proven: a mailbox on
 		// watch keeps warming in its own tier but stops calling on paying ones.
 		returns, err := r.queryPartnerCandidates(ctx, `
-			SELECT wpp.email_account_id AS id, ea.email, ea.organization_id
+			SELECT wpp.email_account_id AS id, ea.email, ea.organization_id, ea.provider::text AS provider, ea.mail_host
 			FROM warmup_pool_participants wpp
 			JOIN warmup_pools wp ON wpp.pool_id = wp.id
 			JOIN email_accounts ea ON ea.id = wpp.email_account_id
@@ -1330,7 +1296,7 @@ func (r *warmupRepository) queryPartnerCandidates(ctx context.Context, candidate
 	var out []models.WarmupPartnerCandidate
 	for rows.Next() {
 		c := models.WarmupPartnerCandidate{PoolType: poolType, Origin: origin}
-		if err := rows.Scan(&c.ID, &c.Email, &c.OrganizationID, &c.Sent7d, &c.Received7d); err != nil {
+		if err := rows.Scan(&c.ID, &c.Email, &c.OrganizationID, &c.Provider, &c.MailHost, &c.Sent7d, &c.Received7d); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

@@ -472,7 +472,7 @@ The full catalog is available at `GET /webhooks/event-types`. Below is the compl
 | --- | --- | --- |
 | `warmup.email_sent` | A warmup message is sent. | yes |
 | `warmup.health_changed` | A mailbox's warmup health state transitions. | |
-| `warmup.placement_in_spam` | A warmup message is observed landing in the spam folder. | |
+| `warmup.placement_in_spam` | A warmup message is observed landing in the spam folder. The payload carries the sending mailbox (`email_account_id`, `email`), `content_source`, and the recipient's `recipient_provider` (how it connects) and `recipient_host` (who runs its mail, such as `google_workspace` or `zoho`), never its address or domain. | |
 | `warmup.quarantined` | A mailbox is quarantined from the shared warmup pool. | |
 | `warmup.blocked` | A mailbox is blocked from the shared warmup pool. | |
 

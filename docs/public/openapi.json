@@ -33912,6 +33912,42 @@
             "items": {
               "$ref": "#/components/schemas/DeliverabilityProviderPlacement"
             }
+          },
+          "warmup_placement": {
+            "type": "array",
+            "description": "Verified warmup arrivals in the window per recipient mail host, most delivered first.",
+            "items": {
+              "$ref": "#/components/schemas/DeliverabilityWarmupHostPlacement"
+            }
+          }
+        }
+      },
+      "DeliverabilityWarmupHostPlacement": {
+        "type": "object",
+        "description": "Warmup placement at one recipient mail host. No recipient address or domain is reported.",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "Mail host id, e.g. google_workspace, microsoft365, zoho, hostinger, other; or the provider group (google, microsoft, yahoo, other) when the host was not detected."
+          },
+          "label": {
+            "type": "string"
+          },
+          "delivered": {
+            "type": "integer",
+            "description": "Verified warmup arrivals."
+          },
+          "spam": {
+            "type": "integer",
+            "description": "Arrivals the recipient's provider filed into junk."
+          },
+          "inbox_rate": {
+            "type": "number",
+            "description": "Percentage of delivered."
+          },
+          "spam_rate": {
+            "type": "number",
+            "description": "Percentage of delivered."
           }
         }
       },

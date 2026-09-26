@@ -157,6 +157,42 @@ func (c *Client) MarkImportant(ctx context.Context, mailboxName string, uid uint
 	return nil
 }
 
+// Junk keywords from the RFC 5788 registry plus the Thunderbird spellings;
+// servers and clients that learn from keywords read one pair or the other.
+var (
+	junkKeywords    = []imap.Flag{"$Junk", "Junk"}
+	notJunkKeywords = []imap.Flag{"$NotJunk", "NonJunk"}
+)
+
+// MarkNotJunk clears the junk keywords on the UID and sets the not-junk ones,
+// the not-spam verdict for a server that learns from keywords rather than
+// from a move out of Junk. A server that refuses keywords answers NO, which
+// the caller treats as nothing learned.
+func (c *Client) MarkNotJunk(ctx context.Context, mailboxName string, uid uint32) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if merr := c.ensureConnected(); merr != nil {
+		return merr
+	}
+	c.lifecycle.RLock()
+	defer c.lifecycle.RUnlock()
+	defer c.begin()()
+	name := c.qualifyMailboxLocked(mailboxName)
+	if _, err := c.selectMailbox(name, nil); err != nil {
+		return fmt.Errorf("select %q: %w", name, err)
+	}
+
+	set := imap.UIDSetNum(imap.UID(uid))
+	if err := c.client.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsDel, Silent: true, Flags: junkKeywords}, nil).Close(); err != nil {
+		return fmt.Errorf("clear junk keywords: %w", err)
+	}
+	if err := c.client.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: notJunkKeywords}, nil).Close(); err != nil {
+		return fmt.Errorf("store not-junk keywords: %w", err)
+	}
+	return nil
+}
+
 // RemoveFromSpam moves the UID from sourceMailbox into inboxName.
 // inboxName is usually "INBOX" but is provided so callers can supply
 // the value resolved from the worker's mailbox list.

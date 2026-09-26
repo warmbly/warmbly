@@ -801,69 +801,52 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		spamRate = sr
 	}
 
-	out.WarmupPlacement = r.warmupPlacementByDomain(ctx, organizationID, from, to)
+	out.WarmupPlacement = r.warmupPlacementByHost(ctx, organizationID, from, to)
 
 	out.Band = models.DeliverabilityBand(out.BounceRate, out.ComplaintRate, spamRate)
 	out.Score = models.DeliverabilityScore(out.BounceRate, out.ComplaintRate, spamRate)
 	return out, nil
 }
 
-// warmupPlacementByDomain rolls the continuous warmup placement signal up per
-// recipient domain: delivered = verified warmup arrivals at partner mailboxes
-// (warmup_received), spam = the subset the recipient's provider filed into
-// junk (warmup_spam_reports, report_type=spam_placement). Org scope is the
-// sending account. Best-effort: an error returns an empty list.
-func (r *advancedOutreachRepository) warmupPlacementByDomain(ctx context.Context, orgID uuid.UUID, from, to time.Time) []models.WarmupDomainPlacement {
-	out := []models.WarmupDomainPlacement{}
-	byDomain := map[string]*models.WarmupDomainPlacement{}
-
-	deliveredQ := `
-		SELECT rcpt.provider, split_part(lower(rcpt.email), '@', 2), COUNT(*)
-		FROM warmup_received wr
-		JOIN email_accounts snd ON snd.id = wr.sender_account_id
-		JOIN email_accounts rcpt ON rcpt.id = wr.email_account_id
-		WHERE snd.organization_id = $1 AND wr.created_at >= $2 AND wr.created_at <= $3
+// warmupPlacementByHost rolls the continuous warmup placement signal up per
+// recipient mail host from the placement rollup: delivered is every verified
+// arrival, spam the subset the recipient's provider filed into junk. Org scope
+// is the sending account, and no recipient domain leaves the query: most
+// recipients belong to other workspaces. Best-effort: an error returns an empty list.
+func (r *advancedOutreachRepository) warmupPlacementByHost(ctx context.Context, orgID uuid.UUID, from, to time.Time) []models.WarmupHostPlacement {
+	out := []models.WarmupHostPlacement{}
+	const query = `
+		SELECT p.recipient_group, p.recipient_host, SUM(p.inbox + p.tabs + p.spam)::int, SUM(p.spam)::int
+		FROM warmup_placement_daily p
+		JOIN email_accounts snd ON snd.id = p.sender_account_id
+		WHERE snd.organization_id = $1 AND p.date >= $2::date AND p.date <= $3::date
 		GROUP BY 1, 2`
-	if rows, err := r.db.Query(ctx, deliveredQ, orgID, from, to); err == nil {
-		for rows.Next() {
-			var provider, domain string
-			var n int
-			if rows.Scan(&provider, &domain, &n) == nil && domain != "" {
-				byDomain[domain] = &models.WarmupDomainPlacement{Provider: provider, Domain: domain, Delivered: n}
-			}
-		}
-		rows.Close()
+	rows, err := r.db.Query(ctx, query, orgID, from, to)
+	if err != nil {
+		return out
 	}
-
-	spamQ := `
-		SELECT sr.recipient_provider, sr.recipient_domain, COUNT(*)
-		FROM warmup_spam_reports sr
-		JOIN email_accounts snd ON snd.id = sr.reported_account_id
-		WHERE snd.organization_id = $1 AND sr.report_type = 'spam_placement'
-		  AND sr.created_at >= $2 AND sr.created_at <= $3 AND sr.recipient_domain <> ''
-		GROUP BY 1, 2`
-	if rows, err := r.db.Query(ctx, spamQ, orgID, from, to); err == nil {
-		for rows.Next() {
-			var provider, domain string
-			var n int
-			if rows.Scan(&provider, &domain, &n) == nil {
-				p := byDomain[domain]
-				if p == nil {
-					p = &models.WarmupDomainPlacement{Provider: provider, Domain: domain}
-					byDomain[domain] = p
-				}
-				p.Spam += n
-				// A spam-flagged arrival can be reported without (or before) its
-				// warmup_received row; keep delivered >= spam so rates stay sane.
-				if p.Delivered < p.Spam {
-					p.Delivered = p.Spam
-				}
-			}
+	defer rows.Close()
+	byHost := map[string]*models.WarmupHostPlacement{}
+	for rows.Next() {
+		var group, host string
+		var delivered, spam int
+		if rows.Scan(&group, &host, &delivered, &spam) != nil || delivered == 0 {
+			continue
 		}
-		rows.Close()
+		key, label := host, mailhost.Host(host).Label()
+		if host == "" || label == "" {
+			// A receipt with no detected host is known only by its group.
+			key, label = group, models.WarmupRecipientGroupLabel(group)
+		}
+		p := byHost[key]
+		if p == nil {
+			p = &models.WarmupHostPlacement{Provider: key, Label: label}
+			byHost[key] = p
+		}
+		p.Delivered += delivered
+		p.Spam += spam
 	}
-
-	for _, p := range byDomain {
+	for _, p := range byHost {
 		p.InboxRate = models.Rate(p.Delivered-p.Spam, p.Delivered)
 		p.SpamRate = models.Rate(p.Spam, p.Delivered)
 		out = append(out, *p)
@@ -872,11 +855,8 @@ func (r *advancedOutreachRepository) warmupPlacementByDomain(ctx context.Context
 		if out[i].Delivered != out[j].Delivered {
 			return out[i].Delivered > out[j].Delivered
 		}
-		return out[i].Domain < out[j].Domain
+		return out[i].Provider < out[j].Provider
 	})
-	if len(out) > 25 {
-		out = out[:25]
-	}
 	return out
 }
 

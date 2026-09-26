@@ -14,7 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
-// Issue #143 end to end: the per-provider placement signal has to reach the
+// Issue #143 end to end: the per-host placement signal has to reach the
 // partner the selector actually returns, not just the query that computes it.
 // The repository tests prove the numbers; this proves selectWarmupPartner
 // wires them into the weight. Skipped unless WARMBLY_TEST_DB is set:
@@ -28,13 +28,13 @@ import (
 var freePoolID = models.WarmupPoolFreeID
 
 type partnerRoutingFixture struct {
-	pool     *pgxpool.Pool
-	svc      *tasksService
-	sender   models.Email
-	user     uuid.UUID
-	org      uuid.UUID
-	atGoogle uuid.UUID
-	atMS     uuid.UUID
+	pool        *pgxpool.Pool
+	svc         *tasksService
+	sender      models.Email
+	user        uuid.UUID
+	org         uuid.UUID
+	atWorkspace uuid.UUID
+	atSmallHost uuid.UUID
 }
 
 // requireEmptyPool skips when the pool has members: a pick is weighted across
@@ -67,7 +67,7 @@ func newPartnerRoutingFixture(t *testing.T) *partnerRoutingFixture {
 
 	f := &partnerRoutingFixture{
 		pool: handle.Pool, user: uuid.New(), org: uuid.New(),
-		atGoogle: uuid.New(), atMS: uuid.New(),
+		atWorkspace: uuid.New(), atSmallHost: uuid.New(),
 	}
 	senderID := uuid.New()
 	exec := func(sql string, args ...any) {
@@ -80,20 +80,23 @@ func newPartnerRoutingFixture(t *testing.T) *partnerRoutingFixture {
 		f.user, "pick-"+f.user.String()[:8]+"@test.local")
 	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Pick Test', $2, $3)`,
 		f.org, "pick-"+f.org.String()[:8], f.user)
+	// Both partners are on custom domains, so only the detected host can tell
+	// them apart.
 	for _, m := range []struct {
 		id     uuid.UUID
 		domain string
+		host   string
 	}{
-		{senderID, "test.local"},
-		{f.atGoogle, "gmail.com"},
-		{f.atMS, "outlook.com"},
+		{senderID, "test.local", ""},
+		{f.atWorkspace, "acme.test", "google_workspace"},
+		{f.atSmallHost, "shop.test", "hostinger"},
 	} {
 		exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain,
-		          signature_html, provider, status, campaign_limit, min_wait_time, timezone)
-		      VALUES ($1, $2, $3, $4, 'Pick', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
-			m.id, f.user, f.org, "pick-"+m.id.String()[:8]+"@"+m.domain)
+		          signature_html, provider, status, campaign_limit, min_wait_time, timezone, mail_host)
+		      VALUES ($1, $2, $3, $4, 'Pick', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5)`,
+			m.id, f.user, f.org, "pick-"+m.id.String()[:8]+"@"+m.domain, m.host)
 	}
-	for _, id := range []uuid.UUID{f.atGoogle, f.atMS} {
+	for _, id := range []uuid.UUID{f.atWorkspace, f.atSmallHost} {
 		exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id, participant_role, health_state)
 		      VALUES ($1, $2, 'sender_receiver', 'healthy')`, freePoolID, id)
 	}
@@ -153,21 +156,20 @@ func (f *partnerRoutingFixture) history(t *testing.T, recipient uuid.UUID, n int
 	}
 }
 
-func (f *partnerRoutingFixture) junked(t *testing.T, domain string, n int) {
+// placed writes a day of verified placement at one host, as the consumer
+// counts it.
+func (f *partnerRoutingFixture) placed(t *testing.T, group, host string, inbox, spam int) {
 	t.Helper()
-	for i := 0; i < n; i++ {
-		if _, err := f.pool.Exec(context.Background(),
-			`INSERT INTO warmup_spam_reports (id, reporter_account_id, reported_account_id, message_id,
-			     report_type, recipient_domain, created_at)
-			 VALUES (gen_random_uuid(), $1, $1, $2, 'spam_placement', $3, NOW() - INTERVAL '1 day')`,
-			f.sender.ID, "m-"+uuid.New().String(), domain); err != nil {
-			t.Fatalf("insert placement: %v", err)
-		}
+	if _, err := f.pool.Exec(context.Background(),
+		`INSERT INTO warmup_placement_daily (sender_account_id, date, recipient_group, recipient_host, inbox, spam)
+		 VALUES ($1, (NOW() AT TIME ZONE 'UTC')::date - 1, $2, $3, $4, $5)`,
+		f.sender.ID, group, host, inbox, spam); err != nil {
+		t.Fatalf("insert placement: %v", err)
 	}
 }
 
 // picks runs the real selector n times and reports how often each partner won.
-func (f *partnerRoutingFixture) picks(t *testing.T, n int) (google, microsoft int) {
+func (f *partnerRoutingFixture) picks(t *testing.T, n int) (workspace, smallHost int) {
 	t.Helper()
 	ctx := context.Background()
 	for i := 0; i < n; i++ {
@@ -176,46 +178,48 @@ func (f *partnerRoutingFixture) picks(t *testing.T, n int) (google, microsoft in
 			t.Fatalf("selectWarmupPartner: %v", err)
 		}
 		switch partner.ID {
-		case f.atGoogle:
-			google++
-		case f.atMS:
-			microsoft++
+		case f.atWorkspace:
+			workspace++
+		case f.atSmallHost:
+			smallHost++
 		default:
 			t.Fatalf("selector returned a mailbox outside the fixture: %s", partner.ID)
 		}
 	}
-	return google, microsoft
+	return workspace, smallHost
 }
 
-// The whole point of #143: a sender landing in junk only at Microsoft stops
-// being handed Microsoft partners, without an aggregate health band tripping.
-func TestLiveWarmupPartnerRoutesAwayFromTheProviderItLandsInJunkAt(t *testing.T) {
+// The whole point of #143: a sender landing in junk only at one host stops
+// being handed partners there, without an aggregate health band tripping, and
+// without costing a partner on another host that shares no domain with it.
+func TestLiveWarmupPartnerRoutesAwayFromTheHostItLandsInJunkAt(t *testing.T) {
 	f := newPartnerRoutingFixture(t)
 	const rounds = 200
 
 	// Equal history on both sides, so the domain-diversity weight cannot be
 	// what moves the split.
-	f.history(t, f.atGoogle, 10)
-	f.history(t, f.atMS, 10)
+	f.history(t, f.atWorkspace, 10)
+	f.history(t, f.atSmallHost, 10)
+	f.placed(t, "google", "google_workspace", 10, 0)
 
-	baseGoogle, baseMS := f.picks(t, rounds)
-	if baseGoogle < rounds*35/100 || baseGoogle > rounds*65/100 {
-		t.Fatalf("baseline split is not even: google %d, microsoft %d of %d", baseGoogle, baseMS, rounds)
+	baseWorkspace, baseSmall := f.picks(t, rounds)
+	if baseWorkspace < rounds*35/100 || baseWorkspace > rounds*65/100 {
+		t.Fatalf("baseline split is not even: workspace %d, small host %d of %d", baseWorkspace, baseSmall, rounds)
 	}
 
-	// 6 of the 10 Microsoft sends were filtered into junk. Nothing about the
-	// Google side changed.
-	f.junked(t, "outlook.com", 6)
+	// 6 of the 10 verified arrivals at the small host were filed into junk.
+	// Nothing about the Workspace side changed.
+	f.placed(t, "other", "hostinger", 4, 6)
 
-	google, microsoft := f.picks(t, rounds)
-	// weight ratio is 1 : 1/(1+4*0.6), so google should take ~77%.
-	if google <= rounds*60/100 {
-		t.Errorf("placement signal did not reach the selector: google %d, microsoft %d of %d (baseline was %d/%d)",
-			google, microsoft, rounds, baseGoogle, baseMS)
+	workspace, smallHost := f.picks(t, rounds)
+	// weight ratio is 1 : 1/(1+4*0.6), so the Workspace partner should take ~77%.
+	if workspace <= rounds*60/100 {
+		t.Errorf("placement signal did not reach the selector: workspace %d, small host %d of %d (baseline was %d/%d)",
+			workspace, smallHost, rounds, baseWorkspace, baseSmall)
 	}
-	// Downweighted, never excluded: a sender that stops mailing a provider
+	// Downweighted, never excluded: a sender that stops mailing a host
 	// entirely can never discover it recovered there.
-	if microsoft == 0 {
-		t.Errorf("microsoft was excluded outright over %d picks; the penalty must only downweight", rounds)
+	if smallHost == 0 {
+		t.Errorf("the small host was excluded outright over %d picks; the penalty must only downweight", rounds)
 	}
 }
