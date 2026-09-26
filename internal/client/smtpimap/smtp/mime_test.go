@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"mime"
+	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
 	"slices"
@@ -96,5 +97,46 @@ func TestHeaderOrderIsStable(t *testing.T) {
 		"MIME-Version", "Content-Type", "Content-Transfer-Encoding", "X-Mailtrace-Verify"}
 	if !slices.Equal(first, want) {
 		t.Errorf("header order = %v, want %v", first, want)
+	}
+}
+
+// With an attachment, a lone body is a direct child of multipart/mixed, and
+// both bodies still nest in an alternative.
+func TestMixedSendNestsAlternativeOnlyForTwoBodies(t *testing.T) {
+	srv := newFakeServer(t, "")
+	host, port := srv.addr()
+	c := newTestClient(host, port)
+	file := []Attachment{{Filename: "a.txt", MimeType: "text/plain", Data: []byte("x")}}
+
+	childTypes := func(plain, html string) []string {
+		t.Helper()
+		raw, err := c.Send(t.Context(), "", []string{"to@example.test"}, nil, nil,
+			"id@warmbly.test", "Hi", plain, html, "", file)
+		if err != nil {
+			t.Fatalf("send: %v", err.Message)
+		}
+		msg, _ := mail.ReadMessage(bytes.NewReader(raw))
+		mediaType, params, _ := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+		if mediaType != "multipart/mixed" {
+			t.Fatalf("Content-Type = %q, want multipart/mixed", mediaType)
+		}
+		var types []string
+		r := multipart.NewReader(msg.Body, params["boundary"])
+		for {
+			part, perr := r.NextPart()
+			if perr != nil {
+				break
+			}
+			mt, _, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
+			types = append(types, mt)
+		}
+		return types
+	}
+
+	if got := childTypes("plain", ""); !slices.Equal(got, []string{"text/plain", "text/plain"}) {
+		t.Errorf("plain + file children = %v, want [text/plain text/plain]", got)
+	}
+	if got := childTypes("plain", "<p>html</p>"); !slices.Equal(got, []string{"multipart/alternative", "text/plain"}) {
+		t.Errorf("both + file children = %v, want [multipart/alternative text/plain]", got)
 	}
 }

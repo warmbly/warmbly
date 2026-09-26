@@ -223,16 +223,20 @@ func (c *Client) writeMixedBody(msg *bytes.Buffer, headers map[string]string, bo
 	headers["Content-Type"] = fmt.Sprintf("multipart/mixed; boundary=%s", mixed.Boundary())
 	writeHeaders(msg, headers)
 
-	// multipart/alternative sub-tree for the text bodies.
-	var altBuf bytes.Buffer
-	alt := multipart.NewWriter(&altBuf)
-	writeTextParts(alt, bodyPlain, bodyHTML)
-	alt.Close()
+	if bodyPlain == "" || bodyHTML == "" {
+		// One body is a direct child: filters read nested parts too.
+		writeTextParts(mixed, bodyPlain, bodyHTML)
+	} else {
+		var altBuf bytes.Buffer
+		alt := multipart.NewWriter(&altBuf)
+		writeTextParts(alt, bodyPlain, bodyHTML)
+		alt.Close()
 
-	altPart, _ := mixed.CreatePart(textproto.MIMEHeader{
-		"Content-Type": {fmt.Sprintf("multipart/alternative; boundary=%s", alt.Boundary())},
-	})
-	altPart.Write(altBuf.Bytes())
+		altPart, _ := mixed.CreatePart(textproto.MIMEHeader{
+			"Content-Type": {fmt.Sprintf("multipart/alternative; boundary=%s", alt.Boundary())},
+		})
+		altPart.Write(altBuf.Bytes())
+	}
 
 	// One attachment part per file.
 	for _, a := range attachments {
