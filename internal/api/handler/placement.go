@@ -525,7 +525,7 @@ func (h *Handler) AdminSetSeedMailbox(c *gin.Context) {
 		errx.JSON(c, xerr)
 		return
 	}
-	h.audit(c, models.AuditActionUpdate, models.AuditEntityPlacementTest, &id, map[string]string{
+	h.audit(c, models.AuditActionUpdate, models.AuditEntityEmailAccount, &id, map[string]string{
 		"seed":  strconv.FormatBool(*req.Seed),
 		"email": seed.Email,
 	})

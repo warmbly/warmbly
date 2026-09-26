@@ -36,8 +36,10 @@ func (s *service) Tick(ctx context.Context) error {
 	}
 
 	timeout := now.Add(-time.Duration(config.PlacementClassifyTimeoutMinutes) * time.Minute)
-	// An instance sends its whole test within the hour; six covers a slow one.
-	if err := s.Repo.ExpireProbes(ctx, timeout, timeout, now.Add(-6*time.Hour)); err != nil {
+	// An instance reports failed and cancelled copies itself; this only
+	// catches one that went away. The longest test the settings allow (100
+	// seeds, twice, 600 seconds apart) sends in about 33 hours.
+	if err := s.Repo.ExpireProbes(ctx, timeout, timeout, now.Add(-48*time.Hour)); err != nil {
 		errs.CaptureException(err)
 	}
 

@@ -324,6 +324,9 @@ type PlacementCloudStartRequest struct {
 	// Tests is how many tests the request covers (two for a tracking
 	// comparison), each charged against the cloud workspace's allowance.
 	Tests int `json:"tests"`
+	// MaxSeeds is how many seeds the sender's day can pay for; zero means the
+	// cloud's own cap.
+	MaxSeeds int `json:"max_seeds,omitempty"`
 }
 
 // PlacementCloudSeed is one cloud seed a linked instance sends a copy to.

@@ -136,7 +136,7 @@ func (s *service) DeleteMonitor(ctx context.Context, orgID, campaignID uuid.UUID
 // the campaign sends from has its own standing.
 func (s *service) runMonitors(ctx context.Context) {
 	now := s.now()
-	due, err := s.Repo.ListDueMonitors(ctx, now, 20)
+	due, err := s.Repo.ClaimDueMonitors(ctx, now, 20)
 	if err != nil {
 		errs.CaptureException(err)
 		return

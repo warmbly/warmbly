@@ -212,7 +212,7 @@ const PLACEMENT_FIELDS = [
         label: "Seeds per test",
         min: 1,
         max: 100,
-        help: "The most seeds one test sends to, which is also how many sends it takes from the sending mailbox's daily limit.",
+        help: "The most seeds one test sends to, which is also how many sends it takes from the sending mailbox's daily limit. A test is sized down to what the mailbox has left today, and refused below five seeds.",
     },
     {
         key: "spacingSeconds",
@@ -230,8 +230,8 @@ type PlacementFieldKey = (typeof PLACEMENT_FIELDS)[number]["key"];
 const PLACEMENT_DEFAULTS: InstanceSettings["placement"] = {
     tests_per_month_trial: 3,
     tests_per_month_paid: 40,
-    seeds_per_test: 40,
-    spacing_seconds: 20,
+    seeds_per_test: 20,
+    spacing_seconds: 60,
 };
 
 interface FormState {

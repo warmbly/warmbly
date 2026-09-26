@@ -52,8 +52,8 @@ Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`
       "period_end": "2026-10-01T00:00:00Z"
     },
     "workspace_seeds": 0,
-    "seeds_per_test": 40,
-    "spacing_seconds": 20
+    "seeds_per_test": 20,
+    "spacing_seconds": 60
   }
 }
 ```
@@ -83,7 +83,7 @@ Auth: **Scope** `SEND_CAMPAIGNS` · **Org permission** `send_campaigns`
 | `sender_account_id` | uuid | yes | The mailbox that sends every copy. It must be connected and active, cannot be a seed inbox, and must be one an API key with a mailbox allowlist may use |
 | `campaign_id` | uuid | no | Test with this campaign's settings: its opt-out line, tracking and attachments |
 | `sequence_id` | uuid | no | A step of `campaign_id`. Its subject and body are used when the request carries neither. Needs `campaign_id` |
-| `contact_id` | uuid | no | The contact merge fields and AI blocks are rendered for. Defaults to the campaign's first lead |
+| `contact_id` | uuid | no | The contact merge fields and AI blocks are rendered for. Defaults to the campaign's first lead, except on the `cloud` panel, where it defaults to a placeholder so no lead's details leave the instance unless you choose one; AI blocks are left out when no contact is used |
 | `subject` | string | no | The subject. Required when there is no step to take it from |
 | `body_html` | string | no | HTML body. A test needs this or `body_plain` |
 | `body_plain` | string | no | Plain-text body |

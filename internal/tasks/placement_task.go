@@ -90,6 +90,16 @@ func (s *tasksService) HandlePlacementTask(task *proto.ProcessTask) *errx.Error 
 		return fail(reason)
 	}
 
+	// The Message-ID is stored before the send, so the worker's answer (Gmail
+	// and Graph restamp it) can only ever correct it, never be overwritten.
+	if err := s.taskRepo.UpdateTaskMessageID(ctx, taskID, msg.MessageID); err != nil {
+		errs.CaptureException(err)
+		return errx.InternalError()
+	}
+	if err := s.placementRepo.SetProbeMessageID(ctx, probe.Result.ID, msg.MessageID); err != nil {
+		errs.CaptureException(err)
+		return errx.InternalError()
+	}
 	if err := s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "active"); err != nil {
 		errs.CaptureException(err)
 		return errx.InternalError()
@@ -107,9 +117,6 @@ func (s *tasksService) HandlePlacementTask(task *proto.ProcessTask) *errx.Error 
 		default:
 			return fail("The send could not be handed to a worker")
 		}
-	}
-	if err := s.taskRepo.UpdateTaskMessageID(ctx, taskID, msg.MessageID); err != nil {
-		errs.CaptureException(err)
 	}
 	if err := s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "completed"); err != nil {
 		errs.CaptureException(err)
@@ -187,6 +194,14 @@ func (s *tasksService) renderPlacementProbe(ctx context.Context, taskID uuid.UUI
 		if err != nil {
 			return EmailMessage{}, "The AI blocks in the copy could not be generated"
 		}
+	}
+
+	// With no lead there is nothing to generate for, so the blocks drop out
+	// the way a block that cannot be generated does.
+	if !realContact {
+		subject = aiVarTokenRE.ReplaceAllString(subject, "")
+		bodyHTML = aiVarTokenRE.ReplaceAllString(aiVarSpanRE.ReplaceAllString(bodyHTML, ""), "")
+		bodyPlain = aiVarTokenRE.ReplaceAllString(bodyPlain, "")
 	}
 
 	if campaign.TextOnly {

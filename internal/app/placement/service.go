@@ -232,7 +232,9 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 	}
 	// A campaign test renders for the campaign's first lead unless told
 	// otherwise, so merge fields and AI blocks read as a lead would get them.
-	if in.ContactID == nil && campaign != nil {
+	// Not on the cloud panel: those copies land in another operator's inboxes,
+	// so a real lead's details go there only when someone chose that lead.
+	if in.ContactID == nil && campaign != nil && in.Panel != models.PlacementPanelCloud {
 		if lead, err := s.Repo.SampleLead(ctx, campaign.ID); err == nil {
 			in.ContactID = lead
 		}
@@ -319,6 +321,19 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 	pol := s.policy(ctx)
 	senderDomain := domainOf(sender.SendFrom())
 
+	// Every probe is a send from the sender's day, so the test is sized to
+	// what is left of it rather than refused for a few sends short.
+	left, xerr := s.remainingSends(ctx, sender)
+	if xerr != nil {
+		return nil, xerr
+	}
+	perVariant := min(pol.SeedsPerTest, left/len(variants))
+	budgetShort := func(need int) *errx.Error {
+		return placementErr(errx.Conflict, "placement_daily_budget",
+			"This test needs at least "+strconv.Itoa(need*len(variants))+" sends from "+sender.Email+
+				", which has "+strconv.Itoa(max(0, left))+" left of its daily limit today.")
+	}
+
 	// Seeds, per panel.
 	var seeds []models.PlacementSeed
 	var cloudStart *models.PlacementCloudStart
@@ -333,23 +348,30 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 			errs.CaptureException(err)
 			return nil, errx.InternalError()
 		}
-		seeds = pickSeeds(rows, sender.ID, senderDomain, pol.SeedsPerTest)
+		wanted := len(pickSeeds(rows, sender.ID, senderDomain, pol.SeedsPerTest))
+		if floor := min(wanted, config.PlacementSeedsPerTestMin); wanted > 0 && perVariant < floor {
+			return nil, budgetShort(floor)
+		}
+		seeds = pickSeeds(rows, sender.ID, senderDomain, perVariant)
 	case models.PlacementPanelCloud:
 		if s.Cloud == nil {
 			return nil, placementErr(errx.Conflict, "placement_panel_unavailable", "Link this instance to Warmbly Cloud to test on its seed panel.")
 		}
 		// The cloud charges its allowance when it opens the test, so what can
-		// be refused here is refused before that.
+		// be refused is refused before that, and the cloud is told how many
+		// seeds the sender's day can pay for.
+		if perVariant < config.PlacementSeedsPerTestMin {
+			return nil, budgetShort(config.PlacementSeedsPerTestMin)
+		}
 		if panel, xerr := s.Cloud.PlacementPanel(ctx); xerr == nil && panel != nil {
 			if lim := panel.Usage.Limit; lim != nil && panel.Usage.Used+len(variants) > *lim {
 				return nil, placementErr(errx.PaymentRequired, "placement_quota_exceeded",
 					"The linked Warmbly Cloud workspace has used its placement tests for the month.")
 			}
-			if xerr := s.checkBudget(ctx, sender, len(variants)*min(panel.Panel.Seeds, pol.SeedsPerTest)); xerr != nil {
-				return nil, xerr
-			}
 		}
-		start, xerr := s.Cloud.StartPlacement(ctx, models.PlacementCloudStartRequest{SenderDomain: senderDomain, Tests: len(variants)})
+		start, xerr := s.Cloud.StartPlacement(ctx, models.PlacementCloudStartRequest{
+			SenderDomain: senderDomain, Tests: len(variants), MaxSeeds: perVariant,
+		})
 		if xerr != nil {
 			return nil, xerr
 		}
@@ -366,9 +388,9 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		return nil, placementErr(errx.Conflict, "placement_no_seeds", noSeedsMessage(in.Panel))
 	}
 
-	// Budget: every probe is a send from the sender's day.
-	if xerr := s.checkBudget(ctx, sender, len(seeds)*len(variants)); xerr != nil {
-		return nil, xerr
+	// A cloud that predates MaxSeeds may hand back more than was asked for.
+	if len(seeds)*len(variants) > left {
+		seeds = seeds[:max(0, left/len(variants))]
 	}
 
 	// Build the tests, their probes and one task per probe.
@@ -438,13 +460,18 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		}
 	}
 
+	// Both halves of a comparison are written together, then scheduled.
+	bundles := make([]repository.PlacementBundle, len(out))
+	for i := range out {
+		bundles[i] = repository.PlacementBundle{Test: &out[i].test, Results: out[i].results, Tasks: out[i].tasks}
+	}
+	if err := s.Repo.CreateTests(ctx, bundles); err != nil {
+		errs.CaptureException(err)
+		return nil, errx.InternalError()
+	}
 	views := make([]TestView, 0, len(out))
 	for i := range out {
 		b := &out[i]
-		if err := s.Repo.CreateTest(ctx, &b.test, b.results, b.tasks); err != nil {
-			errs.CaptureException(err)
-			return nil, errx.InternalError()
-		}
 		s.enqueue(ctx, b.tasks, b.results)
 		s.publish(ctx, &b.test)
 		views = append(views, s.view(b.test, b.results, false))
@@ -452,23 +479,18 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 	return views, nil
 }
 
-// checkBudget refuses a test whose copies do not fit in what is left of the
-// sender's daily campaign limit.
-func (s *service) checkBudget(ctx context.Context, sender *models.Email, probes int) *errx.Error {
+// remainingSends is what is left of the sender's daily campaign limit,
+// counting campaign sends and probes already queued today.
+func (s *service) remainingSends(ctx context.Context, sender *models.Email) (int, *errx.Error) {
 	if s.Tasks == nil {
-		return nil
+		return sender.CampaignLimit, nil
 	}
 	sent, err := s.Tasks.CountCampaignEmailsSentToday(ctx, sender.ID)
 	if err != nil {
 		errs.CaptureException(err)
-		return errx.InternalError()
+		return 0, errx.InternalError()
 	}
-	if left := sender.CampaignLimit - sent; probes > left {
-		return placementErr(errx.Conflict, "placement_daily_budget",
-			"This test sends "+strconv.Itoa(probes)+" emails from "+sender.Email+", which has "+strconv.Itoa(max(0, left))+
-				" left of its daily limit today.")
-	}
-	return nil
+	return max(0, sender.CampaignLimit-sent), nil
 }
 
 // enqueue hands each probe's task to the scheduler. The local scheduler picks

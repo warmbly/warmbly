@@ -108,9 +108,10 @@ const (
 	PlacementTestsPerMonthTrialDefault = 3
 	PlacementTestsPerMonthPaidDefault  = 40
 	PlacementTestsPerMonthMax          = 100_000
-	PlacementSeedsPerTestDefault       = 40
+	PlacementSeedsPerTestDefault       = 20
 	PlacementSeedsPerTestMax           = 100
-	PlacementSpacingSecondsDefault     = 20 // gap between two probes from one sender
+	PlacementSeedsPerTestMin           = 5  // below this a test is noise, so it is refused rather than shrunk
+	PlacementSpacingSecondsDefault     = 60 // gap between two probes from one sender
 	PlacementSpacingSecondsMin         = 5
 	PlacementSpacingSecondsMax         = 600
 	PlacementClassifyTimeoutMinutes    = 120 // after the send, a copy not seen in the seed is missing

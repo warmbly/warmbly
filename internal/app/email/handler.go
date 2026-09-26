@@ -472,6 +472,13 @@ func (s *emailService) syncWarmupPoolMembership(ctx context.Context, account *mo
 		s.removeFromAllWarmupPools(ctx, account)
 		return
 	}
+	// A placement seed must stay a stranger to every sender, recipient role included.
+	if s.seedScope != nil {
+		if scope, err := s.seedScope.SeedScope(ctx, account.ID); err == nil && scope != "" {
+			s.removeFromAllWarmupPools(ctx, account)
+			return
+		}
+	}
 
 	role := "recipient_only"
 	if account.Warmup != nil {

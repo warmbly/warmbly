@@ -55,6 +55,12 @@ func (f *fakeRepo) CreateTest(_ context.Context, t *models.PlacementTest, result
 	f.tasks = append(f.tasks, tasks)
 	return nil
 }
+func (f *fakeRepo) CreateTests(ctx context.Context, bundles []repository.PlacementBundle) error {
+	for _, b := range bundles {
+		_ = f.CreateTest(ctx, b.Test, b.Results, b.Tasks)
+	}
+	return nil
+}
 func (f *fakeRepo) FailProbe(_ context.Context, id uuid.UUID, _ string) error {
 	f.failures = append(f.failures, id)
 	return nil
@@ -260,5 +266,35 @@ func TestSummaryAndMasking(t *testing.T) {
 		if d := jitter(30 * time.Second); d < 20*time.Second || d > 40*time.Second {
 			t.Fatalf("jitter %v outside a third of 30s", d)
 		}
+	}
+}
+
+func TestCreateTestsShrinksToTheSendersDayAndRefusesBelowTheFloor(t *testing.T) {
+	h := newHarness(t)
+	operator, worker := uuid.New(), uuid.New()
+	for _, addr := range []string{"g@gmail.com", "h@gmail.com", "i@gmail.com"} {
+		h.repo.seeds = append(h.repo.seeds, repository.SeedAccount{ID: uuid.New(), OrganizationID: &operator, Email: addr,
+			Provider: "smtp_imap", MailHost: "gmail", Status: "active", WorkerID: &worker, SeedScope: models.SeedScopeInstance})
+	}
+	policy := instancesettings.DefaultPlacement()
+	policy.SeedsPerTest = 8
+	h.svc.Policy = fakePolicy{policy}
+
+	h.tasks.sentToday = 44 // six sends left of fifty
+	if _, xerr := h.svc.CreateTests(context.Background(), h.input()); xerr != nil {
+		t.Fatalf("CreateTests: %v", xerr)
+	}
+	if got := len(h.repo.results[0]); got != 6 {
+		t.Fatalf("sent to %d seeds; want the six the day can pay for", got)
+	}
+
+	in := h.input()
+	in.Tracking = models.PlacementTrackingCompare // three per half is under the five-seed floor
+	h.repo.created = nil
+	if _, xerr := h.svc.CreateTests(context.Background(), in); xerr == nil || xerr.Identifier != "placement_daily_budget" {
+		t.Fatalf("got %v; want placement_daily_budget", xerr)
+	}
+	if len(h.repo.created) != 0 {
+		t.Fatalf("a refused comparison wrote %d tests", len(h.repo.created))
 	}
 }

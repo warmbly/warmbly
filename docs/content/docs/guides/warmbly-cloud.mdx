@@ -96,7 +96,7 @@ A self-hosted instance's own seed panel holds whatever its administrator added, 
 
 The split is the same as for warmup, only narrower:
 
-- **Your instance renders and sends every copy.** The template, the lead it is rendered for, and the mailbox's credentials never leave your server. Copies go out from your mailbox through your own workers, paced and charged to the mailbox's daily limit exactly like a test on any other panel.
+- **Your instance renders and sends every copy.** The cloud stores no template and never gets the mailbox's credentials; its seed inboxes receive the rendered copies like any recipient. A campaign step renders for a placeholder contact here, not the campaign's first lead, so no lead's details reach the cloud's seed inboxes unless you pick a contact for the test. Copies go out from your mailbox through your own workers, paced and charged to the mailbox's daily limit exactly like a test on any other panel.
 - **The cloud only hands out seed addresses and reports where each copy landed.** It picks seeds for the test (never one on your sender's domain), your instance tells it the Message-ID of each copy it sent, and the cloud answers with the folder each seed found it in. Seed addresses are shown masked, as on any shared panel.
 - **Tests count against the linked cloud workspace's allowance**, the same monthly allowance a hosted workspace on the same plan gets, and a tracking comparison counts as two. Tests on your instance's own panel and on your own seed inboxes are never counted.
 

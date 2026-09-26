@@ -198,7 +198,7 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
     const seedsPerTest = overview.data?.seeds_per_test ?? 0;
     const perTest = panel ? Math.min(panel.seeds, seedsPerTest || panel.seeds) : 0;
     const copies = perTest * (compare ? 2 : 1);
-    const spacing = overview.data?.spacing_seconds ?? 20;
+    const spacing = overview.data?.spacing_seconds ?? 60;
     const minutes = Math.max(1, Math.round((copies * spacing) / 60));
     const usage = overview.data?.usage;
     const testsNeeded = compare ? 2 : 1;
@@ -542,7 +542,7 @@ function DialogBody({ onClose, prefill }: { onClose: () => void; prefill?: NewPl
                         <div className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-[11.5px] leading-relaxed text-slate-600">
                             Sends up to <b className="font-medium text-slate-900">{copies}</b> email{copies === 1 ? "" : "s"} from{" "}
                             <b className="font-medium text-slate-900">{sender.email}</b>, one every ~{spacing} seconds, counted
-                            against its daily limit. Sending takes about {minutes} minute{minutes === 1 ? "" : "s"}; a copy
+                            against its daily limit, and fewer when the mailbox has less than that left today. Sending takes about {minutes} minute{minutes === 1 ? "" : "s"}; a copy
                             not seen within 2 hours counts as never arrived. Seeds on the sender&apos;s own domain are skipped.
                         </div>
                     )}

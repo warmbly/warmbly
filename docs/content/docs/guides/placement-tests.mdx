@@ -31,7 +31,7 @@ Results are broken down by provider family: Gmail, Google Workspace, Outlook.com
 
 Each copy is rendered the way a campaign send is, in the same order: merge fields and spintax for a sample lead, AI blocks for that lead, form links, the mailbox's signature, the opt-out line, the `List-Unsubscribe` header, attachments, and the open pixel and wrapped links when tracking is on. What a test leaves out is what only a real conversation has: threading into an earlier message, the A/B variant choice, and the campaign's CC and BCC.
 
-When you test a campaign step, the copy renders for the campaign's first lead unless you pick another contact, and the step is copied when the test starts, so an edit halfway through does not change what the later seeds receive. A follow-up step that threads under an earlier one has no subject of its own, so the test uses the subject of the step it threads under, without the `Re:`. A template you write by hand renders the way a new campaign would, with the workspace's default opt-out line and the unsubscribe header on.
+When you test a campaign step, the copy renders for the campaign's first lead unless you pick another contact (on the Warmbly Cloud panel it renders for a placeholder instead, so a lead's details leave your instance only when you pick one, and AI blocks are left out), and the step is copied when the test starts, so an edit halfway through does not change what the later seeds receive. A follow-up step that threads under an earlier one has no subject of its own, so the test uses the subject of the step it threads under, without the `Re:`. A template you write by hand renders the way a new campaign would, with the workspace's default opt-out line and the unsubscribe header on.
 
 Nothing is added to the message for the test's sake: no marker in the subject, no special header, no hidden text. Each copy is found again by its Message-ID, so what the seed's filter judges is exactly what a prospect would receive.
 
@@ -39,7 +39,7 @@ The test also runs the same [content check](/guides/campaigns/#content-checks) t
 
 ### Sent one at a time from the real mailbox
 
-Copies go out one by one, each as its own send from the mailbox you chose, through the worker that mailbox normally sends from. They are spaced about 20 seconds apart by default, varied by up to a third either way, and alternate between providers so no single provider sees a burst. A test with 40 seeds takes around 13 minutes to send.
+Copies go out one by one, each as its own send from the mailbox you chose, through the worker that mailbox normally sends from. They are spaced about 60 seconds apart by default, varied by up to a third either way, and alternate between providers so no single provider sees a burst. A test with 20 seeds takes around 20 minutes to send.
 
 The sending mailbox's own copy of each probe is kept out of your unibox.
 
@@ -63,7 +63,7 @@ The page shows each panel's seed count and its mix of providers, and says why a 
 
 Addresses on the instance and Warmbly Cloud panels are shown masked (`a***@gmail.com`), so a shared panel cannot be listed and added to a sender's allowlist. Your own seed inboxes are shown in full.
 
-Each test uses up to 40 seeds by default (the operator can change this). They are picked round-robin across provider families, so even a small test covers every provider the panel has. Two kinds of seed are always skipped:
+Each test uses up to 20 seeds by default (the operator can change this). They are picked round-robin across provider families, so even a small test covers every provider the panel has. Two kinds of seed are always skipped:
 
 - **Seeds on the sender's own domain.** Mail between two mailboxes in the same tenant skips most of the filtering a test is there to observe, so a seed at `acme.com` never receives a test sent from `sales@acme.com`.
 - **The sending mailbox itself.**
@@ -110,7 +110,7 @@ A comparison sends each seed both versions back to back, in a random order per s
 
 ## What a test costs
 
-**Every copy is a send from the sending mailbox.** It is charged to the mailbox's daily campaign limit, and the mailbox's campaigns see those sends in their daily budget and in their minimum gap between sends. A test to 40 seeds uses 40 sends of that day; a comparison uses 80. A test that would need more than the mailbox has left today is refused with `placement_daily_budget` and the numbers, rather than sent partly. Test from a mailbox with headroom, or before its campaigns run for the day.
+**Every copy is a send from the sending mailbox.** It is charged to the mailbox's daily campaign limit, and the mailbox's campaigns see those sends in their daily budget and in their minimum gap between sends. A test to 20 seeds uses 20 sends of that day; a comparison uses 40. Copies still waiting to go out already hold their place in the day, so a campaign cannot spend them while the test sends. When the mailbox has less left than a full test needs, the test goes to fewer seeds instead; below five seeds per test it is refused with `placement_daily_budget`, because a smaller test is noise. Test from a mailbox with headroom, or before its campaigns run for the day.
 
 A mailbox runs one test at a time: until every copy of a test has been sent, another test from the same mailbox is refused with `placement_sender_busy`.
 

@@ -111,5 +111,18 @@ ALTER TABLE placement_results
     ADD CONSTRAINT placement_results_folder_check
         CHECK (folder IN ('pending', 'inbox', 'promotions', 'other', 'spam', 'missing', 'failed', 'cancelled'));
 
+-- A result keeps the seed's address and a test the sender's, so removing a
+-- mailbox leaves the history in place instead of deleting it.
+ALTER TABLE placement_results
+    DROP CONSTRAINT placement_results_seed_account_id_fkey,
+    ADD CONSTRAINT placement_results_seed_account_id_fkey
+        FOREIGN KEY (seed_account_id) REFERENCES email_accounts (id) ON DELETE SET NULL;
+ALTER TABLE placement_tests
+    DROP CONSTRAINT placement_tests_sender_account_id_fkey,
+    ADD CONSTRAINT placement_tests_sender_account_id_fkey
+        FOREIGN KEY (sender_account_id) REFERENCES email_accounts (id) ON DELETE SET NULL;
+UPDATE placement_tests pt SET sender_email = ea.email
+FROM email_accounts ea WHERE ea.id = pt.sender_account_id AND pt.sender_email = '';
+
 CREATE UNIQUE INDEX idx_placement_results_test_address ON placement_results (test_id, lower(seed_address));
 CREATE UNIQUE INDEX idx_placement_results_task ON placement_results (task_id) WHERE task_id IS NOT NULL;

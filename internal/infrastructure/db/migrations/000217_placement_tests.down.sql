@@ -5,6 +5,10 @@ DROP INDEX IF EXISTS idx_placement_results_test_address;
 -- Results of tests that never had a local seed cannot go back to a NOT NULL
 -- seed column.
 DELETE FROM placement_results WHERE seed_account_id IS NULL;
+ALTER TABLE placement_results
+    DROP CONSTRAINT placement_results_seed_account_id_fkey,
+    ADD CONSTRAINT placement_results_seed_account_id_fkey
+        FOREIGN KEY (seed_account_id) REFERENCES email_accounts (id) ON DELETE CASCADE;
 UPDATE placement_results SET folder = 'other', raw_flags = 'timeout' WHERE folder = 'missing';
 UPDATE placement_results SET folder = 'other' WHERE folder IN ('failed', 'cancelled');
 
@@ -29,6 +33,10 @@ DROP INDEX IF EXISTS idx_placement_tests_campaign;
 DROP INDEX IF EXISTS idx_placement_tests_group;
 
 DELETE FROM placement_tests WHERE sender_account_id IS NULL;
+ALTER TABLE placement_tests
+    DROP CONSTRAINT placement_tests_sender_account_id_fkey,
+    ADD CONSTRAINT placement_tests_sender_account_id_fkey
+        FOREIGN KEY (sender_account_id) REFERENCES email_accounts (id) ON DELETE CASCADE;
 UPDATE placement_tests SET status = 'pending' WHERE status = 'running';
 UPDATE placement_tests SET status = 'completed' WHERE status IN ('cancelled', 'failed');
 

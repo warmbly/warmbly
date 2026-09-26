@@ -113,7 +113,7 @@ export function placementErrorMessage(
         case "placement_sender_unavailable":
             return { field: "sender", message: "This mailbox cannot send a test: it is not connected, or it is a seed inbox itself." };
         case "placement_daily_budget":
-            return { field: "sender", message: "This mailbox does not have enough of today's sending limit left for every copy. Pick another mailbox or try again tomorrow." };
+            return { field: "sender", message: "This mailbox has too little of today's sending limit left for a useful test. Pick another mailbox or try again tomorrow." };
         case "placement_no_seeds":
             return {
                 field: "panel",

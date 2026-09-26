@@ -237,7 +237,7 @@ The [inbox placement test](/guides/placement-tests/) routes (`/placement/*` and 
 | `placement_too_many_running` | 429 | The workspace already has `3` tests running, counting each half of a tracking comparison. Wait for one to finish |
 | `placement_sender_busy` | 409 | The sending mailbox still has copies of another test waiting to be sent. One test sends from a mailbox at a time |
 | `placement_sender_unavailable` | 409 | The sending mailbox is not connected and active, or it is itself a seed inbox, which receives tests and cannot send one |
-| `placement_daily_budget` | 409 | The test needs more sends than the mailbox has left of its daily limit today. The `message` gives both numbers. Every copy is a send from that limit |
+| `placement_daily_budget` | 409 | The mailbox has too little of its daily limit left today for a useful test (at least five seeds per test, ten for a comparison). A test that fits otherwise is sized down to what is left rather than refused. The `message` gives both numbers |
 | `placement_no_seeds` | 409 | The panel has no seed inbox the test could use: none were added, none is connected, or every one is on the sender's own domain, which is always skipped |
 | `placement_panel_unavailable` | 409 | `panel` is `cloud` on an instance that is not linked to Warmbly Cloud |
 | `placement_invalid_tracking` | 400 | `tracking` is `on` or `compare` for a campaign that sends plain text, which carries no tracking |

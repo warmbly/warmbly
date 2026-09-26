@@ -62,6 +62,13 @@ type PlacementTestFilter struct {
 	Offset         int
 }
 
+// PlacementBundle is one test with its probes and their tasks.
+type PlacementBundle struct {
+	Test    *models.PlacementTest
+	Results []models.PlacementResult
+	Tasks   []Task
+}
+
 // PlacementRemoteReport is a delivered cloud probe the instance still has to
 // tell the cloud about.
 type PlacementRemoteReport struct {
@@ -81,6 +88,9 @@ type PlacementRepository interface {
 	// sent from this instance, the pending task that sends each one, in one
 	// transaction. tasks may be nil for a test with nothing to send here.
 	CreateTest(ctx context.Context, t *models.PlacementTest, results []models.PlacementResult, tasks []Task) error
+	// CreateTests writes several tests in one transaction, so both halves of a
+	// tracking comparison exist or neither does.
+	CreateTests(ctx context.Context, bundles []PlacementBundle) error
 	GetTest(ctx context.Context, id uuid.UUID) (*models.PlacementTest, error)
 	// GetOrgTest is GetTest scoped to one workspace; nil when it is another's.
 	GetOrgTest(ctx context.Context, orgID, id uuid.UUID) (*models.PlacementTest, error)
@@ -93,6 +103,10 @@ type PlacementRepository interface {
 
 	// GetProbeByTask loads the probe a placement task sends.
 	GetProbeByTask(ctx context.Context, taskID uuid.UUID) (*PlacementProbe, error)
+	// SetProbeMessageID stores the Message-ID a probe is about to go out
+	// with, before the send, so the worker's answer can only correct it.
+	SetProbeMessageID(ctx context.Context, resultID uuid.UUID, messageID string) error
+	// MarkProbeSent stamps the send; a Message-ID already stored wins.
 	MarkProbeSent(ctx context.Context, resultID uuid.UUID, messageID string, sentAt time.Time) error
 	// FailProbe records a probe that never left. No-op once it has a verdict.
 	FailProbe(ctx context.Context, resultID uuid.UUID, reason string) error
@@ -156,7 +170,9 @@ type PlacementRepository interface {
 	GetMonitorByID(ctx context.Context, id uuid.UUID) (*models.PlacementMonitor, error)
 	UpsertMonitor(ctx context.Context, m *models.PlacementMonitor) error
 	DeleteMonitor(ctx context.Context, orgID, campaignID uuid.UUID) (bool, error)
-	ListDueMonitors(ctx context.Context, now time.Time, limit int) ([]models.PlacementMonitor, error)
+	// ClaimDueMonitors takes the due monitors for this caller and pushes each
+	// one's next run out, so a second backend replica cannot take it too.
+	ClaimDueMonitors(ctx context.Context, now time.Time, limit int) ([]models.PlacementMonitor, error)
 	MarkMonitorRun(ctx context.Context, id uuid.UUID, next time.Time, testID, senderID *uuid.UUID, lastErr string) error
 	MarkMonitorAlert(ctx context.Context, id uuid.UUID, at time.Time) error
 }
@@ -198,59 +214,66 @@ func scanPlacementResult(row pgx.Row) (models.PlacementResult, error) {
 }
 
 func (r *placementRepository) CreateTest(ctx context.Context, t *models.PlacementTest, results []models.PlacementResult, tasks []Task) error {
+	return r.CreateTests(ctx, []PlacementBundle{{Test: t, Results: results, Tasks: tasks}})
+}
+
+func (r *placementRepository) CreateTests(ctx context.Context, bundles []PlacementBundle) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	err = tx.QueryRow(ctx, `
-		INSERT INTO placement_tests (id, organization_id, sender_account_id, sender_email, created_by, campaign_id,
-			sequence_id, contact_id, monitor_id, subject, body_plain, body_html, open_tracking, link_tracking,
-			compare_group_id, origin, panel, status, error, remote_instance_id, remote_test_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW())
-		RETURNING created_at
-	`, t.ID, t.OrganizationID, t.SenderAccountID, t.SenderEmail, t.CreatedBy, t.CampaignID,
-		t.SequenceID, t.ContactID, t.MonitorID, t.Subject, t.BodyPlain, t.BodyHTML, t.OpenTracking, t.LinkTracking,
-		t.CompareGroupID, t.Origin, t.Panel, t.Status, t.Error, t.RemoteInstanceID, t.RemoteTestID).Scan(&t.CreatedAt)
-	if err != nil {
-		return err
-	}
-
-	batch := &pgx.Batch{}
-	// The task rows go first: each result points at its task.
-	for i := range tasks {
-		task := &tasks[i]
-		batch.Queue(`
-			INSERT INTO tasks (id, task_type, email_account_id, status, message_id, scheduled_at, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-		`, task.ID, task.TaskType, task.EmailAccountID, task.Status, task.MessageID, task.ScheduledAt)
-	}
-	for i := range results {
-		res := &results[i]
-		if res.ID == uuid.Nil {
-			res.ID = uuid.New()
-		}
-		folder := res.Folder
-		if folder == "" {
-			folder = models.PlacementFolderPending
-		}
-		batch.Queue(`
-			INSERT INTO placement_results (id, test_id, seed_account_id, seed_address, provider, remote_seed_id,
-				task_id, message_id, folder, scheduled_at, error)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		`, res.ID, t.ID, res.SeedAccountID, res.SeedAddress, res.Family, res.RemoteSeedID,
-			res.TaskID, res.MessageID, folder, res.ScheduledAt, res.Error)
-	}
-	br := tx.SendBatch(ctx, batch)
-	for range len(tasks) + len(results) {
-		if _, err := br.Exec(); err != nil {
-			_ = br.Close()
+	for _, b := range bundles {
+		t := b.Test
+		err = tx.QueryRow(ctx, `
+			INSERT INTO placement_tests (id, organization_id, sender_account_id, sender_email, created_by, campaign_id,
+				sequence_id, contact_id, monitor_id, subject, body_plain, body_html, open_tracking, link_tracking,
+				compare_group_id, origin, panel, status, error, remote_instance_id, remote_test_id, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW())
+			RETURNING created_at
+		`, t.ID, t.OrganizationID, t.SenderAccountID, t.SenderEmail, t.CreatedBy, t.CampaignID,
+			t.SequenceID, t.ContactID, t.MonitorID, t.Subject, t.BodyPlain, t.BodyHTML, t.OpenTracking, t.LinkTracking,
+			t.CompareGroupID, t.Origin, t.Panel, t.Status, t.Error, t.RemoteInstanceID, t.RemoteTestID).Scan(&t.CreatedAt)
+		if err != nil {
 			return err
 		}
-	}
-	if err := br.Close(); err != nil {
-		return err
+
+		batch := &pgx.Batch{}
+		// The task rows go first: each result points at its task.
+		for i := range b.Tasks {
+			task := &b.Tasks[i]
+			batch.Queue(`
+				INSERT INTO tasks (id, task_type, email_account_id, status, message_id, scheduled_at, created_at, updated_at)
+				VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+			`, task.ID, task.TaskType, task.EmailAccountID, task.Status, task.MessageID, task.ScheduledAt)
+		}
+		for i := range b.Results {
+			res := &b.Results[i]
+			if res.ID == uuid.Nil {
+				res.ID = uuid.New()
+			}
+			folder := res.Folder
+			if folder == "" {
+				folder = models.PlacementFolderPending
+			}
+			batch.Queue(`
+				INSERT INTO placement_results (id, test_id, seed_account_id, seed_address, provider, remote_seed_id,
+					task_id, message_id, folder, scheduled_at, error)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			`, res.ID, t.ID, res.SeedAccountID, res.SeedAddress, res.Family, res.RemoteSeedID,
+				res.TaskID, res.MessageID, folder, res.ScheduledAt, res.Error)
+		}
+		br := tx.SendBatch(ctx, batch)
+		for range len(b.Tasks) + len(b.Results) {
+			if _, err := br.Exec(); err != nil {
+				_ = br.Close()
+				return err
+			}
+		}
+		if err := br.Close(); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
@@ -396,9 +419,15 @@ func (r *placementRepository) GetProbeByTask(ctx context.Context, taskID uuid.UU
 	return &PlacementProbe{Test: *test, Result: res}, nil
 }
 
+func (r *placementRepository) SetProbeMessageID(ctx context.Context, resultID uuid.UUID, messageID string) error {
+	_, err := r.db.Exec(ctx, `UPDATE placement_results SET message_id = $2 WHERE id = $1 AND folder = 'pending'`, resultID, messageID)
+	return err
+}
+
 func (r *placementRepository) MarkProbeSent(ctx context.Context, resultID uuid.UUID, messageID string, sentAt time.Time) error {
 	_, err := r.db.Exec(ctx, `
-		UPDATE placement_results SET message_id = $2, sent_at = $3
+		UPDATE placement_results
+		SET message_id = CASE WHEN message_id = '' THEN $2 ELSE message_id END, sent_at = $3
 		WHERE id = $1 AND folder = 'pending'
 	`, resultID, messageID, sentAt)
 	return err
@@ -432,27 +461,34 @@ func (r *placementRepository) FindLandings(ctx context.Context, limit int) ([]Pl
 	if limit <= 0 {
 		limit = 500
 	}
-	// The window reaches an hour before the send: internal_date is the
-	// message's own Date header on some providers, and clocks drift.
+	// One range scan of each seed's recent mail, not one per probe. The window
+	// reaches an hour before the earliest send: internal_date is the message's
+	// own Date header on some providers, and clocks drift.
 	rows, err := r.db.Query(ctx, `
-		SELECT pr.id, pr.test_id, ue.folder, ue.flags
-		FROM placement_results pr
-		JOIN email_accounts ea ON ea.id = pr.seed_account_id
-		JOIN LATERAL (
-			SELECT u.folder, u.flags
-			FROM unibox_emails u
-			WHERE u.user_id = ea.user_id
-			  AND u.email_id = pr.seed_account_id
-			  AND u.internal_date >= pr.sent_at - interval '1 hour'
-			  AND btrim(u.message_id, '<> ') = btrim(pr.message_id, '<> ')
-			ORDER BY u.internal_date DESC
-			LIMIT 1
-		) ue ON true
-		WHERE pr.folder = 'pending'
-		  AND pr.sent_at IS NOT NULL
-		  AND pr.message_id <> ''
-		  AND pr.seed_account_id IS NOT NULL
-		LIMIT $1
+		WITH pending AS (
+			SELECT pr.id, pr.test_id, pr.seed_account_id, btrim(pr.message_id, '<> ') AS mid, pr.sent_at
+			FROM placement_results pr
+			WHERE pr.folder = 'pending'
+			  AND pr.sent_at IS NOT NULL
+			  AND pr.message_id <> ''
+			  AND pr.seed_account_id IS NOT NULL
+			ORDER BY pr.sent_at
+			LIMIT $1
+		), seeds AS (
+			SELECT p.seed_account_id, MIN(p.sent_at) AS since, array_agg(p.mid) AS mids
+			FROM pending p
+			GROUP BY p.seed_account_id
+		)
+		SELECT DISTINCT ON (p.id) p.id, p.test_id, u.folder, u.flags
+		FROM seeds s
+		JOIN email_accounts ea ON ea.id = s.seed_account_id
+		JOIN unibox_emails u
+		  ON u.user_id = ea.user_id
+		 AND u.email_id = s.seed_account_id
+		 AND u.internal_date >= s.since - interval '1 hour'
+		 AND btrim(u.message_id, '<> ') = ANY (s.mids)
+		JOIN pending p ON p.seed_account_id = s.seed_account_id AND p.mid = btrim(u.message_id, '<> ')
+		ORDER BY p.id, u.internal_date DESC
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -916,17 +952,23 @@ func (r *placementRepository) DeleteMonitor(ctx context.Context, orgID, campaign
 	return tag.RowsAffected() > 0, nil
 }
 
-func (r *placementRepository) ListDueMonitors(ctx context.Context, now time.Time, limit int) ([]models.PlacementMonitor, error) {
+func (r *placementRepository) ClaimDueMonitors(ctx context.Context, now time.Time, limit int) ([]models.PlacementMonitor, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT `+placementMonitorCols+`
-		FROM placement_monitors
-		WHERE enabled AND next_run_at <= $1
-		ORDER BY next_run_at
-		LIMIT $2
-	`, now, limit)
+		WITH due AS (
+			SELECT id FROM placement_monitors
+			WHERE enabled AND next_run_at <= $1
+			ORDER BY next_run_at
+			LIMIT $2
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE placement_monitors m
+		SET next_run_at = $1 + interval '1 hour'
+		FROM due
+		WHERE m.id = due.id
+		RETURNING `+prefixCols("m.", placementMonitorCols), now, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -940,6 +982,15 @@ func (r *placementRepository) ListDueMonitors(ctx context.Context, now time.Time
 		out = append(out, *m)
 	}
 	return out, rows.Err()
+}
+
+// prefixCols qualifies a comma-separated column list with a table alias.
+func prefixCols(prefix, cols string) string {
+	parts := strings.Split(cols, ",")
+	for i, p := range parts {
+		parts[i] = prefix + strings.TrimSpace(p)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (r *placementRepository) MarkMonitorRun(ctx context.Context, id uuid.UUID, next time.Time, testID, senderID *uuid.UUID, lastErr string) error {

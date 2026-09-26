@@ -9,12 +9,14 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // The cloud side: Warmbly Cloud lends its instance panel to a linked
 // self-hosted instance. The instance renders and sends every copy itself, so
-// the cloud never holds the template; it hands out seed addresses, takes the
-// Message-IDs back, and answers with where each copy landed.
+// the cloud stores no template; its seed inboxes receive the copies like any
+// recipient. It hands out seed addresses, takes the Message-IDs back, and
+// answers with where each copy landed.
 
 // RemotePanel is the cloud panel and the linked workspace's allowance.
 func (s *service) RemotePanel(ctx context.Context, inst *models.PoolLinkInstance) (*models.PlacementCloudPanel, *errx.Error) {
@@ -62,7 +64,11 @@ func (s *service) RemoteStart(ctx context.Context, inst *models.PoolLinkInstance
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
 	}
-	seeds := pickSeeds(rows, uuid.Nil, req.SenderDomain, s.policy(ctx).SeedsPerTest)
+	limit := s.policy(ctx).SeedsPerTest
+	if req.MaxSeeds > 0 {
+		limit = min(limit, req.MaxSeeds)
+	}
+	seeds := pickSeeds(rows, uuid.Nil, req.SenderDomain, limit)
 	if len(seeds) == 0 {
 		return nil, placementErr(errx.Conflict, "placement_no_seeds", noSeedsMessage(models.PlacementPanelCloud))
 	}
@@ -73,8 +79,9 @@ func (s *service) RemoteStart(ctx context.Context, inst *models.PoolLinkInstance
 	for _, seed := range seeds {
 		out.Seeds = append(out.Seeds, models.PlacementCloudSeed{ID: *seed.AccountID, Address: seed.Address, Family: seed.Family})
 	}
+	bundles := make([]repository.PlacementBundle, 0, req.Tests)
 	for range req.Tests {
-		test := models.PlacementTest{
+		test := &models.PlacementTest{
 			ID:               uuid.New(),
 			OrganizationID:   &org,
 			Origin:           models.PlacementOriginRemote,
@@ -91,11 +98,12 @@ func (s *service) RemoteStart(ctx context.Context, inst *models.PoolLinkInstance
 				Folder:        models.PlacementFolderPending,
 			})
 		}
-		if err := s.Repo.CreateTest(ctx, &test, results, nil); err != nil {
-			errs.CaptureException(err)
-			return nil, errx.InternalError()
-		}
+		bundles = append(bundles, repository.PlacementBundle{Test: test, Results: results})
 		out.TestIDs = append(out.TestIDs, test.ID)
+	}
+	if err := s.Repo.CreateTests(ctx, bundles); err != nil {
+		errs.CaptureException(err)
+		return nil, errx.InternalError()
 	}
 	out.Usage.Used += req.Tests
 	return out, nil

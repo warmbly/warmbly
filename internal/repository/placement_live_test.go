@@ -297,9 +297,9 @@ func TestLivePlacementMonitorRoundTrip(t *testing.T) {
 	if err := f.repo.UpsertMonitor(ctx, &stolen); err == nil {
 		t.Fatalf("UpsertMonitor from another workspace succeeded")
 	}
-	due, err := f.repo.ListDueMonitors(ctx, time.Now(), 500)
+	due, err := f.repo.ClaimDueMonitors(ctx, time.Now(), 500)
 	if err != nil {
-		t.Fatalf("ListDueMonitors: %v", err)
+		t.Fatalf("ClaimDueMonitors: %v", err)
 	}
 	found := false
 	for _, d := range due {
@@ -307,6 +307,16 @@ func TestLivePlacementMonitorRoundTrip(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("monitor not due")
+	}
+	// A second replica asking at the same moment gets nothing: the claim moved it.
+	again, err := f.repo.ClaimDueMonitors(ctx, time.Now(), 500)
+	if err != nil {
+		t.Fatalf("ClaimDueMonitors: %v", err)
+	}
+	for _, d := range again {
+		if d.ID == m.ID {
+			t.Fatalf("monitor claimed twice")
+		}
 	}
 	next := time.Now().Add(7 * 24 * time.Hour)
 	if err := f.repo.MarkMonitorRun(ctx, m.ID, next, nil, &f.sender, ""); err != nil {
