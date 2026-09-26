@@ -115,6 +115,11 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
 
             <SectionBar label="Warmup placement by provider" count={report.providers.length || undefined} />
             <ProviderBreakdown providers={report.providers} />
+            <p className="px-5 py-3 text-[11.5px] text-slate-500 leading-relaxed border-t border-slate-200/60">
+                Warmup partner selection reads these numbers per mail host: a mailbox landing in spam at one host is sent
+                fewer partners there while the rate stays high, and more again once it recovers. It is never cut off
+                entirely, because a sender that stops mailing a host can never find out that it recovered.
+            </p>
 
             <SectionBar label="Mailboxes by inbox rate" count={listed.length || undefined}>
                 <button

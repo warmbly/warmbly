@@ -69,6 +69,19 @@ func WarmupRecipientGroup(mailHost, provider string) string {
 	return WarmupRecipientOther
 }
 
+// WarmupRecipientGroupLabel is a recipient group's display name.
+func WarmupRecipientGroupLabel(group string) string {
+	switch group {
+	case WarmupRecipientGoogle:
+		return "Google"
+	case WarmupRecipientMicrosoft:
+		return "Microsoft"
+	case WarmupRecipientYahoo:
+		return "Yahoo & AOL"
+	}
+	return "Other providers"
+}
+
 // ClassifyWarmupLanding reads where an arriving message sits from its canonical
 // folder and provider flags. The folder matters on IMAP, where a server can
 // file mail into Junk without setting a junk keyword.

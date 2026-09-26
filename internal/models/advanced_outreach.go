@@ -882,8 +882,8 @@ type DeliverabilityDashboard struct {
 	// ByProvider breaks seed placement results down per recipient provider.
 	ByProvider []ProviderPlacement `json:"by_provider"`
 	// WarmupPlacement is the continuous warmup-derived placement signal per
-	// recipient domain (inbox = verified arrivals not flagged spam).
-	WarmupPlacement []WarmupDomainPlacement `json:"warmup_placement"`
+	// recipient mail host (inbox = verified arrivals not filed as spam).
+	WarmupPlacement []WarmupHostPlacement `json:"warmup_placement"`
 }
 
 // DeliverabilityDailyPoint is one UTC day in the deliverability timeseries.
@@ -939,11 +939,12 @@ type ProviderPlacement struct {
 	SpamRate  float64 `json:"spam_rate"`
 }
 
-// WarmupDomainPlacement is one recipient domain's warmup placement rollup:
-// Delivered counts verified warmup arrivals, Spam the ones flagged into junk.
-type WarmupDomainPlacement struct {
+// WarmupHostPlacement is one recipient mail host's warmup placement rollup:
+// Delivered counts verified warmup arrivals, Spam the ones filed into junk.
+// Keyed by host, never by domain: most recipients are other workspaces' mailboxes.
+type WarmupHostPlacement struct {
 	Provider  string  `json:"provider"`
-	Domain    string  `json:"domain"`
+	Label     string  `json:"label"`
 	Delivered int     `json:"delivered"`
 	Spam      int     `json:"spam"`
 	InboxRate float64 `json:"inbox_rate"`

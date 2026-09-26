@@ -178,6 +178,10 @@ type WarmupPartnerCandidate struct {
 	// pinned to it, never to the sender's pool (#495).
 	PoolType string
 	Origin   WarmupPartnerOrigin
+	// Provider and MailHost resolve who runs the candidate's mail, which is
+	// what the sender's per-host placement record is keyed by.
+	Provider string
+	MailHost string
 	// Sent7d and Received7d are the candidate's verified warmup sends and
 	// arrivals over the last seven days, so the draw can favour an inbox that
 	// gives more than it gets. The inbound cap that keeps a candidate out of

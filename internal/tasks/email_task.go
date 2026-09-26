@@ -13,6 +13,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
+	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
@@ -531,7 +532,7 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 	// weighting it: a weight cannot survive a pool of one (#501).
 	eligible := make([]models.WarmupPartnerCandidate, 0, len(candidates))
 	domainsByID := make(map[uuid.UUID]string, len(candidates))
-	providersByID := make(map[uuid.UUID]string, len(candidates))
+	hostsByID := make(map[uuid.UUID]string, len(candidates))
 	ruleWeight := make(map[uuid.UUID]float64, len(candidates))
 	starvation := make(map[uuid.UUID]float64, len(candidates))
 	poolOf := make(map[uuid.UUID]string, len(candidates))
@@ -547,7 +548,7 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 		}
 		domain := strings.ToLower(models.EmailDomain(c.Email))
 		domainsByID[c.ID] = domain
-		providersByID[c.ID] = string(models.ClassifyProvider(domain))
+		hostsByID[c.ID] = partnerHost(c)
 		ruleWeight[c.ID] = weight
 		starvation[c.ID] = c.Starvation()
 		poolOf[c.ID] = c.PoolType
@@ -565,11 +566,11 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 	}
 	candidates = eligible
 
-	// This sender's recent record per recipient provider. Best-effort: a lookup
+	// This sender's recent record per recipient mail host. Best-effort: a lookup
 	// error leaves the map empty and weighting degrades to domain diversity.
-	placementByProvider, placeErr := s.warmupRepo.SenderPlacementByProvider(ctx, account.ID, time.Now().Add(-providerPlacementWindow))
+	placementByHost, placeErr := s.warmupRepo.SenderPlacementByHost(ctx, account.ID, time.Now().Add(-hostPlacementWindow))
 	if placeErr != nil {
-		placementByProvider = nil
+		placementByHost = nil
 	}
 
 	recentPartnerSet := map[uuid.UUID]struct{}{}
@@ -636,12 +637,12 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 	}
 
 	sig := partnerSignals{
-		domainsByID:         domainsByID,
-		domainCounts:        domainCounts,
-		providersByID:       providersByID,
-		placementByProvider: placementByProvider,
-		ruleWeight:          ruleWeight,
-		starvation:          starvation,
+		domainsByID:     domainsByID,
+		domainCounts:    domainCounts,
+		hostsByID:       hostsByID,
+		placementByHost: placementByHost,
+		ruleWeight:      ruleWeight,
+		starvation:      starvation,
 	}
 
 	// A pick that fails the gate is dropped and the draw repeats; an emptied
@@ -684,6 +685,12 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 	return nil, errNoEligibleWarmupPartners
 }
 
+// partnerHost is who runs a candidate's mail, the key its sender's placement
+// record is kept under. Never the domain: a custom domain can be on any host.
+func partnerHost(c models.WarmupPartnerCandidate) string {
+	return string(mailhost.ForMailbox(c.MailHost, c.Provider, c.Email))
+}
+
 // sameOrganization treats unknown ownership as outside rather than guessing.
 func sameOrganization(a, b *uuid.UUID) bool {
 	return a != nil && b != nil && *a == *b
@@ -703,11 +710,11 @@ func removePartnerID(ids []uuid.UUID, target uuid.UUID) []uuid.UUID {
 
 const (
 	// weight *= 1/(1 + k*rate). Never an exclusion: a sender that stops mailing
-	// a provider cannot discover it recovered there.
-	providerPlacementPenaltyK = 4.0
-	// Below this sample a provider's rate is noise, not a pattern.
-	providerPlacementMinSends = 5
-	providerPlacementWindow   = 7 * 24 * time.Hour
+	// a host cannot discover it recovered there.
+	hostPlacementPenaltyK = 4.0
+	// Below this many verified deliveries a host's rate is noise, not a pattern.
+	hostPlacementMinDelivered = 5
+	hostPlacementWindow       = 7 * 24 * time.Hour
 	// weight *= 1 + k*starvation. An inbox that has received nothing back for
 	// what it sent is drawn this many times more often than one in balance,
 	// and the boost fades as the pool pays it back, so traffic settles near
@@ -719,9 +726,10 @@ const (
 type partnerSignals struct {
 	domainsByID  map[uuid.UUID]string
 	domainCounts map[string]int
-	// Keyed by who RUNS the recipient's mail (models.ClassifyProvider).
-	providersByID       map[uuid.UUID]string
-	placementByProvider map[string]repository.ProviderPlacementStat
+	// Keyed by who RUNS the recipient's mail (mailhost.ForMailbox), so a custom
+	// domain on Workspace and one on a small host are told apart.
+	hostsByID       map[uuid.UUID]string
+	placementByHost map[string]repository.HostPlacementStat
 	// ruleWeight is the customer's routing multiplier per candidate. An
 	// exclusion never appears here: it removed the candidate (#501).
 	ruleWeight map[uuid.UUID]float64
@@ -742,23 +750,23 @@ func (sig partnerSignals) reciprocityBoost(partnerID uuid.UUID) float64 {
 	return 1.0 + reciprocityBoostK*starved
 }
 
-// providerPenalty weights sending to one provider by how this sender has
+// hostPenalty weights sending to one mail host by how this sender has
 // recently landed there. 1.0 on too small a sample, and on every error path.
-func (sig partnerSignals) providerPenalty(partnerID uuid.UUID) float64 {
-	provider, ok := sig.providersByID[partnerID]
-	if !ok || len(sig.placementByProvider) == 0 {
+func (sig partnerSignals) hostPenalty(partnerID uuid.UUID) float64 {
+	host, ok := sig.hostsByID[partnerID]
+	if !ok || len(sig.placementByHost) == 0 {
 		return 1.0
 	}
-	stat, ok := sig.placementByProvider[provider]
-	if !ok || stat.Sends < providerPlacementMinSends {
+	stat, ok := sig.placementByHost[host]
+	if !ok || stat.Delivered < hostPlacementMinDelivered {
 		return 1.0
 	}
-	return 1.0 / (1.0 + providerPlacementPenaltyK*stat.Rate())
+	return 1.0 / (1.0 + hostPlacementPenaltyK*stat.Rate())
 }
 
 // pickWeightedPartner picks a partner ID using a composite weight:
 //   - inverse-frequency on the partner's recipient domain (diversity)
-//   - this sender's recent junk rate at the partner's provider (feedback)
+//   - this sender's recent junk rate at the partner's mail host (feedback)
 //   - how far behind the partner is on what it sent (reciprocity)
 //   - customer-defined routing rule multipliers (preference)
 //
@@ -768,7 +776,7 @@ func pickWeightedPartner(candidates []uuid.UUID, sig partnerSignals) uuid.UUID {
 	if len(candidates) == 1 {
 		return candidates[0]
 	}
-	if len(sig.domainsByID) == 0 && len(sig.ruleWeight) == 0 && len(sig.placementByProvider) == 0 && len(sig.starvation) == 0 {
+	if len(sig.domainsByID) == 0 && len(sig.ruleWeight) == 0 && len(sig.placementByHost) == 0 && len(sig.starvation) == 0 {
 		return candidates[rand.Intn(len(candidates))]
 	}
 
@@ -779,8 +787,8 @@ func pickWeightedPartner(candidates []uuid.UUID, sig partnerSignals) uuid.UUID {
 		// Diversity base weight.
 		w := 1.0 / float64(1+sig.domainCounts[domain])
 
-		// Per-provider placement feedback.
-		w *= sig.providerPenalty(id)
+		// Per-host placement feedback.
+		w *= sig.hostPenalty(id)
 
 		// The pool's debt to this inbox.
 		w *= sig.reciprocityBoost(id)

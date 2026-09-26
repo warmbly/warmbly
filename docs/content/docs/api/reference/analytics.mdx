@@ -87,7 +87,7 @@ An `opened` or `clicked` entry in `recent_activity` carries `origin` when the pe
 
 `GET /analytics/deliverability`
 
-Returns the organization's deliverability posture for a time window: bounce, complaint, open, click, and reply counts and rates, suppression and dead-letter pressure, reply-intent breakdown, seed inbox-placement (overall and per recipient provider), warmup-derived placement per recipient domain, an overall health band and a `0-100` composite score (both from the documented thresholds), a daily timeseries, and per-mailbox and per-campaign breakdowns. Requires an organization context. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+Returns the organization's deliverability posture for a time window: bounce, complaint, open, click, and reply counts and rates, suppression and dead-letter pressure, reply-intent breakdown, seed inbox-placement (overall and per recipient provider), warmup-derived placement per recipient mail host, an overall health band and a `0-100` composite score (both from the documented thresholds), a daily timeseries, and per-mailbox and per-campaign breakdowns. Requires an organization context. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -178,8 +178,8 @@ Returns the organization's deliverability posture for a time window: bounce, com
   ],
   "warmup_placement": [
     {
-      "provider": "outlook",
-      "domain": "outlook.com",
+      "provider": "microsoft365",
+      "label": "Microsoft 365",
       "delivered": 132,
       "spam": 6,
       "inbox_rate": 95.45,
@@ -191,7 +191,7 @@ Returns the organization's deliverability posture for a time window: bounce, com
 
 The `intent_*` counters and `reply_count` are two different things and do not add up to each other. `reply_count` counts `reply` deliverability events, which are the ones a provider or your own integration reports to [record an event](/api/reference/deliverability-ops/). The `intent_*` counters are the replies Warmbly classified as they arrived in a connected mailbox, one per reply, including the machine ones: a vacation notice lands in `intent_out_of_office` and an autoresponder, ticket acknowledgement or bounce notice in `intent_automated`. A workspace that reports no reply events sees `reply_count` at zero with intents counted normally.
 
-`spam_placement_rate` and `inbox_placement_rate` are omitted when there are no seed samples in the window. Seed samples are the copies of the workspace's [placement tests](/api/reference/placement/) that got a verdict in the window: `inbox`, `promotions`, `other` (another Gmail tab), `spam`, or `missing` (never arrived); copies that failed to send or were cancelled are not samples. `by_provider` rolls the same samples up per seed's provider family, where `provider` is the family id (`gmail`, `google_workspace`, `microsoft365`, `outlook`, `yahoo` and so on) and `label` its display name, and the rates are percentages of `samples`; `warmup_placement` is the continuous warmup signal per recipient domain, where `delivered` counts verified warmup arrivals and `spam` the subset the recipient's provider filed into junk. `score` starts at `100` and subtracts saturating penalties for bounce rate (up to `40` points, maxed at `10%`), complaint rate (up to `30` points, maxed at `0.30%`), and spam placement (up to `40` points, maxed at `40%`).
+`spam_placement_rate` and `inbox_placement_rate` are omitted when there are no seed samples in the window. Seed samples are the copies of the workspace's [placement tests](/api/reference/placement/) that got a verdict in the window: `inbox`, `promotions`, `other` (another Gmail tab), `spam`, or `missing` (never arrived); copies that failed to send or were cancelled are not samples. `by_provider` rolls the same samples up per seed's provider family, where `provider` is the family id (`gmail`, `google_workspace`, `microsoft365`, `outlook`, `yahoo` and so on) and `label` its display name, and the rates are percentages of `samples`; `warmup_placement` is the continuous warmup signal per recipient mail host, where `provider` is the host id (`google_workspace`, `microsoft365`, `zoho`, `hostinger`, `other` and so on, or the provider group `google`, `microsoft`, `yahoo` or `other` for an arrival whose host was not detected), `label` its display name, `delivered` counts verified warmup arrivals and `spam` the subset the recipient's provider filed into junk. Warmup recipients are mostly other workspaces' mailboxes, so no recipient address or domain is reported. `score` starts at `100` and subtracts saturating penalties for bounce rate (up to `40` points, maxed at `10%`), complaint rate (up to `30` points, maxed at `0.30%`), and spam placement (up to `40` points, maxed at `40%`).
 
 ## Get warmup analytics
 

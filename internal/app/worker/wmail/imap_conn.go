@@ -55,6 +55,9 @@ type ImapConn interface {
 	// already in the destination is left where it is.
 	MoveToFolder(ctx context.Context, sourceMailbox, dstFolder string, uid uint32) (bool, error)
 	RemoveFromSpam(ctx context.Context, sourceMailbox, inboxName string, uid uint32) error
+	// MarkNotJunk swaps the junk keywords for the not-junk ones before a
+	// warmup message is moved out of Junk.
+	MarkNotJunk(ctx context.Context, mailboxName string, uid uint32) error
 	// FindUIDByMessageID relocates a warmup message whose UID went void when an
 	// earlier engagement leg moved it.
 	FindUIDByMessageID(ctx context.Context, mailboxName, rfcMessageID string) (uint32, error)

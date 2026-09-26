@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhost"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -315,14 +316,15 @@ func (s *service) RecordSpamPlacement(ctx context.Context, reporterAccountID, re
 		return s.getParticipantForAnyPool(ctx, reportedAccountID)
 	}
 	// Fan a warmup.placement_in_spam webhook for the sender (best-effort).
-	s.dispatchPlacementInSpam(ctx, reportedAccountID, contentSource, recipientProvider, recipientDomain)
+	s.dispatchPlacementInSpam(ctx, reportedAccountID, reporterAccountID, contentSource, recipientProvider)
 	return s.evaluateAndPersistAnyPool(ctx, reportedAccountID)
 }
 
 // dispatchPlacementInSpam fires the warmup.placement_in_spam customer webhook for
 // the sending mailbox. Best-effort; no-op when webhooks aren't wired (consumer
-// still records the signal and the health evaluation still runs).
-func (s *service) dispatchPlacementInSpam(ctx context.Context, accountID uuid.UUID, contentSource, recipientProvider, recipientDomain string) {
+// still records the signal and the health evaluation still runs). The recipient
+// is named by its mail host only: it is usually another workspace's mailbox.
+func (s *service) dispatchPlacementInSpam(ctx context.Context, accountID, recipientID uuid.UUID, contentSource, recipientProvider string) {
 	if s.webhooks == nil || s.emailRepo == nil {
 		return
 	}
@@ -330,12 +332,16 @@ func (s *service) dispatchPlacementInSpam(ctx context.Context, accountID uuid.UU
 	if account == nil || account.OrganizationID == nil {
 		return
 	}
+	host := ""
+	if recipient, _ := s.emailRepo.GetByID(ctx, recipientID); recipient != nil {
+		host = string(mailhost.ForMailbox(recipient.MailHost, recipient.Provider, recipient.Email))
+	}
 	_, _ = s.webhooks.Dispatch(ctx, *account.OrganizationID, models.WebhookEventWarmupPlacementInSpam, map[string]any{
 		"email_account_id":   accountID,
 		"email":              account.Email,
 		"content_source":     contentSource,
 		"recipient_provider": recipientProvider,
-		"recipient_domain":   recipientDomain,
+		"recipient_host":     host,
 	})
 }
 

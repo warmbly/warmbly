@@ -17,9 +17,8 @@ Scope everything to `7d`, `30d`, or `90d` with the range tabs. It updates live, 
 | Over time | One metric per day: bounces, complaints, opens, replies, or sent. Use it to find the day something spiked |
 | Window totals | Raw counts behind the rates |
 | Seed inbox placement | Inbox vs spam share across your [placement tests](/guides/placement-tests/) in the window, with the number of copies behind it |
-| Warmup inbox placement | Where warmup mail landed each day (inbox, Gmail tabs, spam), the inbox rate over time, the split per recipient provider, and every mailbox ranked by its seven-day inbox rate |
+| Warmup inbox placement | Where warmup mail landed each day (inbox, Gmail tabs, spam), the inbox rate over time, the split per recipient provider and each mail host inside it, and every mailbox ranked by its seven-day inbox rate |
 | Seed test placement by provider | Where placement test copies landed per provider family (Gmail, Google Workspace, Outlook.com, Microsoft 365, Yahoo Mail and the rest): inbox, Promotions, other Gmail tabs, spam, and copies that never arrived |
-| Warmup placement by domain | Continuous placement per recipient domain, amber at `10%` spam, red at `20%` |
 | At risk | Mailboxes and campaigns with bounce or complaint activity, worst first |
 
 The **score** is a `0-100` composite starting at `100`: bounce rate subtracts up to `40` points (maxed at `10%`), complaint rate up to `30` (maxed at `0.30%`), spam placement up to `40` (maxed at `40%`). Bounce rate is highlighted at `5%`, complaint rate at `0.1%`.
@@ -189,7 +188,7 @@ If your workspace is restricted or suspended and you believe it is wrong, reply 
 
 1. Start with the headline numbers. Bounce at `5%` and complaints at `0.1%` are the highlighted danger lines.
 2. If a rate looks off, switch the chart to that metric and find the spike day. It usually points at one campaign or one imported list.
-3. Check placement by provider and by domain to see whether mail actually reaches inboxes.
+3. Check placement by provider, and the hosts inside each one, to see whether mail actually reaches inboxes.
 4. Read the at-risk lists. The chips show which senders Warmbly is already acting on.
 5. Slow down anything in Watch and let it recover. Leave Quarantine and Blocked out of sending until they requalify.
 

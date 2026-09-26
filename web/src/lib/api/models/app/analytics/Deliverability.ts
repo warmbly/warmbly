@@ -52,9 +52,11 @@ export interface ProviderPlacement {
     spam_rate: number;
 }
 
-export interface WarmupDomainPlacement {
+// One recipient mail host's warmup placement: `provider` is the host id
+// (google_workspace, zoho, hostinger, ...) and `label` its display name.
+export interface WarmupHostPlacement {
     provider: string;
-    domain: string;
+    label: string;
     delivered: number;
     spam: number;
     inbox_rate: number;
@@ -101,5 +103,5 @@ export default interface DeliverabilityDashboard {
     by_mailbox: MailboxDeliverability[];
     by_campaign: CampaignDeliverability[];
     by_provider: ProviderPlacement[];
-    warmup_placement: WarmupDomainPlacement[];
+    warmup_placement: WarmupHostPlacement[];
 }
