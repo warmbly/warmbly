@@ -49,7 +49,7 @@ func (s *service) GetMonitor(ctx context.Context, orgID, campaignID uuid.UUID) (
 }
 
 // PutMonitor creates or updates a campaign's monitor. A new or re-enabled
-// monitor runs its first test within the hour, not an interval from now.
+// monitor runs its first test within minutes, not an interval from now.
 func (s *service) PutMonitor(ctx context.Context, orgID, userID, campaignID uuid.UUID, in MonitorInput) (*models.PlacementMonitor, *errx.Error) {
 	if _, xerr := s.ownedCampaign(ctx, orgID, campaignID); xerr != nil {
 		return nil, xerr
@@ -59,10 +59,15 @@ func (s *service) PutMonitor(ctx context.Context, orgID, userID, campaignID uuid
 		errs.CaptureException(err)
 		return nil, errx.InternalError()
 	}
+	// An API key has no user behind it.
+	var createdBy *uuid.UUID
+	if userID != uuid.Nil {
+		createdBy = &userID
+	}
 	m := models.PlacementMonitor{
 		OrganizationID: orgID,
 		CampaignID:     campaignID,
-		CreatedBy:      &userID,
+		CreatedBy:      createdBy,
 		Enabled:        true,
 		IntervalDays:   config.PlacementMonitorIntervalDaysDef,
 		Panel:          models.PlacementPanelInstance,

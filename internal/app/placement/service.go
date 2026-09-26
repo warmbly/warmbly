@@ -338,6 +338,17 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		if s.Cloud == nil {
 			return nil, placementErr(errx.Conflict, "placement_panel_unavailable", "Link this instance to Warmbly Cloud to test on its seed panel.")
 		}
+		// The cloud charges its allowance when it opens the test, so what can
+		// be refused here is refused before that.
+		if panel, xerr := s.Cloud.PlacementPanel(ctx); xerr == nil && panel != nil {
+			if lim := panel.Usage.Limit; lim != nil && panel.Usage.Used+len(variants) > *lim {
+				return nil, placementErr(errx.PaymentRequired, "placement_quota_exceeded",
+					"The linked Warmbly Cloud workspace has used its placement tests for the month.")
+			}
+			if xerr := s.checkBudget(ctx, sender, len(variants)*min(panel.Panel.Seeds, pol.SeedsPerTest)); xerr != nil {
+				return nil, xerr
+			}
+		}
 		start, xerr := s.Cloud.StartPlacement(ctx, models.PlacementCloudStartRequest{SenderDomain: senderDomain, Tests: len(variants)})
 		if xerr != nil {
 			return nil, xerr
@@ -356,18 +367,8 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 	}
 
 	// Budget: every probe is a send from the sender's day.
-	probes := len(seeds) * len(variants)
-	if s.Tasks != nil {
-		sent, err := s.Tasks.CountCampaignEmailsSentToday(ctx, sender.ID)
-		if err != nil {
-			errs.CaptureException(err)
-			return nil, errx.InternalError()
-		}
-		if left := sender.CampaignLimit - sent; probes > left {
-			return nil, placementErr(errx.Conflict, "placement_daily_budget",
-				"This test sends "+strconv.Itoa(probes)+" emails from "+sender.Email+", which has "+strconv.Itoa(max(0, left))+
-					" left of its daily limit today.")
-		}
+	if xerr := s.checkBudget(ctx, sender, len(seeds)*len(variants)); xerr != nil {
+		return nil, xerr
 	}
 
 	// Build the tests, their probes and one task per probe.
@@ -449,6 +450,25 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		views = append(views, s.view(b.test, b.results, false))
 	}
 	return views, nil
+}
+
+// checkBudget refuses a test whose copies do not fit in what is left of the
+// sender's daily campaign limit.
+func (s *service) checkBudget(ctx context.Context, sender *models.Email, probes int) *errx.Error {
+	if s.Tasks == nil {
+		return nil
+	}
+	sent, err := s.Tasks.CountCampaignEmailsSentToday(ctx, sender.ID)
+	if err != nil {
+		errs.CaptureException(err)
+		return errx.InternalError()
+	}
+	if left := sender.CampaignLimit - sent; probes > left {
+		return placementErr(errx.Conflict, "placement_daily_budget",
+			"This test sends "+strconv.Itoa(probes)+" emails from "+sender.Email+", which has "+strconv.Itoa(max(0, left))+
+				" left of its daily limit today.")
+	}
+	return nil
 }
 
 // enqueue hands each probe's task to the scheduler. The local scheduler picks
