@@ -80,6 +80,10 @@ func (s *tasksService) HandlePlacementTask(task *proto.ProcessTask) *errx.Error 
 	if account.Status != "active" {
 		return fail("The sending mailbox is not active")
 	}
+	// A probe is outbound mail from the same domains a suspension protects.
+	if s.orgBlocksSending(ctx, account.OrganizationID) {
+		return fail("Sending is suspended for this workspace")
+	}
 
 	msg, reason := s.renderPlacementProbe(ctx, taskID, &test, account, probe.Result.SeedAddress)
 	if reason != "" {
