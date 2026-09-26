@@ -404,3 +404,133 @@ func TestLiveGetPartnerDiversityCountsArrivals(t *testing.T) {
 		t.Fatalf("received/senders = %d/%d, want 3/2", d.Received, d.Senders)
 	}
 }
+
+// addMember adds an active mailbox to a pool in the given workspace, a member
+// for memberForDays.
+func (f *partnerOrgFixture) addMember(t *testing.T, org, poolID uuid.UUID, provider string, memberForDays int) uuid.UUID {
+	t.Helper()
+	id := uuid.New()
+	f.exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain,
+	            signature_html, provider, status, campaign_limit, min_wait_time, timezone)
+	        VALUES ($1, $2, $3, $4, 'Pool member', '', '', $5, 'active', 50, 600, 'UTC')`,
+		id, f.user, org, "m-"+id.String()[:8]+"@"+id.String()[:8]+".test", provider)
+	f.exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id, participant_role, health_state, joined_at)
+	        VALUES ($1, $2, 'sender_receiver', 'healthy', NOW() - make_interval(days => $3))`, poolID, id, memberForDays)
+	return id
+}
+
+func borrowedCount(cands []models.WarmupPartnerCandidate) int {
+	n := 0
+	for _, c := range cands {
+		if c.Borrowed() {
+			n++
+		}
+	}
+	return n
+}
+
+// Mail between one workspace's own mailboxes builds nothing, so a customer
+// with more mailboxes than the floor still borrows outside partners.
+func TestLiveWarmupPartnerCandidatesSiblingsDoNotSatisfyTheFloor(t *testing.T) {
+	f := newPartnerOrgFixture(t)
+	ctx := context.Background()
+	repo := &warmupRepository{db: f.pool}
+	for i := 0; i < config.WarmupPoolTierFallbackFloor; i++ {
+		f.addMember(t, f.org, premiumPoolID, "smtp_imap", 0)
+	}
+	free := f.addMember(t, f.other, models.WarmupPoolFreeID, "smtp_imap", config.WarmupPoolFallbackMinAgeDays)
+	f.exec(`UPDATE email_accounts SET warmup_max = $2 WHERE id = $1`, f.sender, config.WarmupPoolTierFallbackFloor)
+
+	cands, err := repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
+	if err != nil {
+		t.Fatalf("WarmupPartnerCandidates: %v", err)
+	}
+	c, ok := candidateByID(cands, free)
+	if !ok || !c.Borrowed() {
+		t.Fatalf("a premium sender whose partners are mostly its own siblings borrowed nothing (%d candidates)", len(cands))
+	}
+}
+
+// A sender ramping above the floor needs that many partners, so its warmup
+// max raises the floor.
+func TestLiveWarmupPartnerCandidatesFloorFollowsTheWarmupMax(t *testing.T) {
+	f := newPartnerOrgFixture(t)
+	ctx := context.Background()
+	repo := &warmupRepository{db: f.pool}
+	for i := 0; i < config.WarmupPoolTierFallbackFloor; i++ {
+		f.addMember(t, f.other, premiumPoolID, "smtp_imap", 0)
+	}
+	free := f.addMember(t, f.other, models.WarmupPoolFreeID, "smtp_imap", config.WarmupPoolFallbackMinAgeDays)
+
+	f.exec(`UPDATE email_accounts SET warmup_max = $2 WHERE id = $1`, f.sender, config.WarmupPoolTierFallbackFloor)
+	cands, err := repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
+	if err != nil {
+		t.Fatalf("WarmupPartnerCandidates: %v", err)
+	}
+	if n := borrowedCount(cands); n != 0 {
+		t.Fatalf("a sender with enough outside partners for its max borrowed %d", n)
+	}
+
+	f.exec(`UPDATE email_accounts SET warmup_max = $2 WHERE id = $1`, f.sender, config.WarmupPoolTierFallbackFloor+10)
+	cands, err = repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
+	if err != nil {
+		t.Fatalf("WarmupPartnerCandidates: %v", err)
+	}
+	if _, ok := candidateByID(cands, free); !ok {
+		t.Fatal("a sender whose max exceeds its outside partners did not borrow")
+	}
+}
+
+// When more free mailboxes qualify than are borrowed, the best go first.
+func TestLiveWarmupPartnerCandidatesBorrowTheBestFirst(t *testing.T) {
+	f := newPartnerOrgFixture(t)
+	ctx := context.Background()
+	repo := &warmupRepository{db: f.pool}
+	for i := 0; i < config.WarmupPoolTierFallbackFloor+15; i++ {
+		f.addMember(t, f.other, models.WarmupPoolFreeID, "smtp_imap", config.WarmupPoolFallbackMinAgeDays)
+	}
+	best := f.addMember(t, f.other, models.WarmupPoolFreeID, "gmail", config.WarmupPoolBorrowSeasonedDays)
+	f.exec(`UPDATE email_accounts SET warmup_max = $2 WHERE id = $1`, f.sender, config.WarmupPoolTierFallbackFloor)
+
+	for i := 0; i < 10; i++ {
+		cands, err := repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
+		if err != nil {
+			t.Fatalf("WarmupPartnerCandidates: %v", err)
+		}
+		if n := borrowedCount(cands); n != config.WarmupPoolTierFallbackFloor {
+			t.Fatalf("borrowed %d, want %d", n, config.WarmupPoolTierFallbackFloor)
+		}
+		if _, ok := candidateByID(cands, best); !ok {
+			t.Fatal("a seasoned Google mailbox was left out of the borrow for newer SMTP ones")
+		}
+	}
+}
+
+// A free sender leaves part of every inbox's day to premium senders.
+func TestLiveWarmupPartnerCandidatesReserveInboxCapacityForPremium(t *testing.T) {
+	f := newPartnerOrgFixture(t)
+	ctx := context.Background()
+	repo := &warmupRepository{db: f.pool}
+	freeSender := f.addMember(t, f.org, models.WarmupPoolFreeID, "smtp_imap", config.WarmupPoolFallbackMinAgeDays)
+	inbox := f.addMember(t, f.other, models.WarmupPoolFreeID, "smtp_imap", config.WarmupPoolFallbackMinAgeDays)
+
+	freeShare := config.WarmupInboundDailyFloor * config.WarmupFreeInboundSharePercent / 100
+	for i := 0; i < freeShare; i++ {
+		f.received(t, inbox, freeSender, time.Now().Add(-time.Minute))
+	}
+
+	cands, err := repo.WarmupPartnerCandidates(ctx, "free", freeSender)
+	if err != nil {
+		t.Fatalf("WarmupPartnerCandidates: %v", err)
+	}
+	if _, ok := candidateByID(cands, inbox); ok {
+		t.Fatalf("a free sender was offered an inbox that already received its free share of %d", freeShare)
+	}
+	cands, err = repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
+	if err != nil {
+		t.Fatalf("WarmupPartnerCandidates: %v", err)
+	}
+	if _, ok := candidateByID(cands, inbox); !ok {
+		t.Fatal("the capacity kept back from free senders is not open to a premium sender")
+	}
+}

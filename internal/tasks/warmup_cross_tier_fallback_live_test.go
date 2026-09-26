@@ -109,7 +109,7 @@ func (f *crossTierFixture) sender(id uuid.UUID, tier string) models.Email {
 func TestLiveWarmupBorrowThinPremiumTierBorrowsAProvenFreeMailbox(t *testing.T) {
 	f := newCrossTierFixture(t)
 	sender := f.member(t, models.WarmupPoolPremiumID, 0)
-	borrowed := f.member(t, models.WarmupPoolFreeID, 4)
+	borrowed := f.memberOf(t, f.workspace(t, models.OrgRiskTrusted), models.WarmupPoolFreeID, 4)
 
 	partner, err := f.svc.selectWarmupPartner(context.Background(), f.sender(sender, "premium"))
 	if err != nil {
@@ -146,9 +146,10 @@ func TestLiveWarmupBorrowSkipsARestrictedWorkspace(t *testing.T) {
 func TestLiveWarmupBorrowPrefersAFreshOwnTierPartner(t *testing.T) {
 	f := newCrossTierFixture(t)
 	sender := f.member(t, models.WarmupPoolPremiumID, 0)
-	own := f.member(t, models.WarmupPoolPremiumID, 0)
+	outside := f.workspace(t, models.OrgRiskTrusted)
+	own := f.memberOf(t, outside, models.WarmupPoolPremiumID, 0)
 	for i := 0; i < 5; i++ {
-		f.member(t, models.WarmupPoolFreeID, 4)
+		f.memberOf(t, outside, models.WarmupPoolFreeID, 4)
 	}
 
 	partner, err := f.svc.selectWarmupPartner(context.Background(), f.sender(sender, "premium"))
@@ -161,18 +162,20 @@ func TestLiveWarmupBorrowPrefersAFreshOwnTierPartner(t *testing.T) {
 }
 
 // The floor counts the other mailboxes: a premium tier of exactly the floor
-// including the sender is one short and still borrows.
+// including the sender is one short and still borrows. The others sit in
+// another workspace, since siblings never count towards it.
 func TestLiveWarmupBorrowFloorCountsTheOtherMailboxes(t *testing.T) {
 	f := newCrossTierFixture(t)
 	sender := f.member(t, models.WarmupPoolPremiumID, 0)
+	outside := f.workspace(t, models.OrgRiskTrusted)
 	// Every own-tier partner was used today, so only a borrowed one can be picked.
 	for i := 1; i < config.WarmupPoolTierFallbackFloor; i++ {
-		own := f.member(t, models.WarmupPoolPremiumID, 0)
+		own := f.memberOf(t, outside, models.WarmupPoolPremiumID, 0)
 		task := uuid.New()
 		f.exec(t, `INSERT INTO tasks (id, task_type, email_account_id, status, message_id) VALUES ($1, 'warmup', $2, 'completed', '')`, task, sender)
 		f.exec(t, `INSERT INTO warmup_tokens (task_id, sender_account_id, recipient_account_id) VALUES ($1, $2, $3)`, task, sender, own)
 	}
-	borrowed := f.member(t, models.WarmupPoolFreeID, 4)
+	borrowed := f.memberOf(t, outside, models.WarmupPoolFreeID, 4)
 
 	partner, err := f.svc.selectWarmupPartner(context.Background(), f.sender(sender, "premium"))
 	if err != nil {
@@ -180,5 +183,17 @@ func TestLiveWarmupBorrowFloorCountsTheOtherMailboxes(t *testing.T) {
 	}
 	if partner.ID != borrowed {
 		t.Fatalf("selected %s, want the borrowed free mailbox %s", partner.ID, borrowed)
+	}
+}
+
+// Borrowing a mailbox from the sender's own workspace would add nothing the
+// siblings do not, so the borrow looks only outside it.
+func TestLiveWarmupBorrowSkipsTheSendersOwnWorkspace(t *testing.T) {
+	f := newCrossTierFixture(t)
+	sender := f.member(t, models.WarmupPoolPremiumID, 0)
+	f.member(t, models.WarmupPoolFreeID, 4)
+
+	if partner, err := f.svc.selectWarmupPartner(context.Background(), f.sender(sender, "premium")); !errors.Is(err, errNoWarmupPartners) {
+		t.Fatalf("got (%v, %v); the sender's own free mailbox must not be borrowed", partner, err)
 	}
 }

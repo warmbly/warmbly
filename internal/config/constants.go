@@ -439,7 +439,8 @@ const (
 	PoolLinkPollIntervalSeconds  = 3
 	PoolLinkPlanID               = "00000000-0000-0000-0000-000000000002"
 	PoolLinkPlanPriceUSD         = 15
-	WarmupPoolTierFallbackFloor  = 25 // below this many own-tier recipients, a premium tier borrows up to this many proven free mailboxes
+	WarmupPoolTierFallbackFloor  = 25 // below this many recipients outside its workspace (or its warmup max, if higher), a premium sender borrows that many proven free mailboxes
+	WarmupPoolBorrowSeasonedDays = 14 // a borrowed free mailbox this long in the pool ranks ahead of a newer one
 	WarmupPoolFallbackMinAgeDays = 3  // a free mailbox must have been a pool member this long before premium may borrow it, or write back to one
 	WarmupPoolReturnVisitDays    = 14 // a proven free mailbox may write back to a paying mailbox that wrote to it this recently
 	// What one inbox may receive from the pool in a day: WarmupInboundDailyMultiple
@@ -450,7 +451,10 @@ const (
 	WarmupInboundDailyFloor    = 10
 	WarmupInboundDailyCeiling  = 60
 	WarmupInboundDailyMultiple = 2
-	DailyThrottleNewOrgs       = 3 // new workspaces per owner per day
+	// A free sender stops at this share of an inbox's daily cap, so the rest
+	// of every inbox's day is left for premium senders.
+	WarmupFreeInboundSharePercent = 75
+	DailyThrottleNewOrgs          = 3 // new workspaces per owner per day
 
 	// CLI sign-in handshake (`warmbly auth login`). Shorter-lived than the pool
 	// link handshake because a person is watching the terminal while it runs.

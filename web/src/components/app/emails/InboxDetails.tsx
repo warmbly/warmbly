@@ -1307,6 +1307,13 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                     <div className="mt-2.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                         <div className="h-full rounded-full bg-orange-400 transition-all" style={{ width: `${Math.min(100, (ws.current_volume / Math.max(1, ws.target_volume)) * 100)}%` }} />
                     </div>
+                    {ws.partner_limit && (
+                        <p className="mt-2 text-[11.5px] text-slate-500 leading-relaxed">
+                            The ramp is at {ws.partner_limit.ramp_target} today, but only {ws.partner_limit.reachable}{" "}
+                            {ws.partner_limit.reachable === 1 ? "partner" : "partners"} can still receive from this mailbox, and it
+                            never writes to the same partner twice in a day. It sends more as partners free up.
+                        </p>
+                    )}
                 </div>
             )}
 
@@ -1314,7 +1321,12 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
             {wh && (
                 <div className="px-5 py-4">
                     <div className="flex items-center justify-between">
-                        <Eyebrow>Warmup reputation</Eyebrow>
+                        <div className="flex items-center gap-2">
+                            <Eyebrow>Warmup reputation</Eyebrow>
+                            {wh.pool_type && (
+                                <span className="text-[10.5px] text-slate-400">{wh.pool_type === "premium" ? "Premium pool" : "Free pool"}</span>
+                            )}
+                        </div>
                         <span className={cn("inline-flex items-center gap-1 text-[11px] font-medium", warmupStateTone[wh.state]?.text ?? "text-slate-500")}>
                             <ShieldCheckIcon className="w-3.5 h-3.5" /> {warmupStateTone[wh.state]?.label ?? wh.state}
                         </span>

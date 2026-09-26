@@ -190,9 +190,11 @@ type ColdRampInfo struct {
 }
 
 type WarmupHealthInfo struct {
-	State  string  `json:"state"` // healthy/watch/throttled/quarantined/blocked
-	Score  float64 `json:"score"`
-	Reason string  `json:"reason,omitempty"`
+	// PoolType is the pool the mailbox warms in: premium or free.
+	PoolType string  `json:"pool_type,omitempty"`
+	State    string  `json:"state"` // healthy/watch/throttled/quarantined/blocked
+	Score    float64 `json:"score"`
+	Reason   string  `json:"reason,omitempty"`
 	// SpamScore is always 0. The accumulating score it reported was retired in
 	// #491 because it tracked volume rather than misbehaviour; the key stays so
 	// a published v1 client does not break, and goes at the next API version.
@@ -248,6 +250,19 @@ type WarmupStatusInfo struct {
 	// RampHold explains a ramp that is not climbing, so a target below the
 	// plain ramp is never an unexplained drop.
 	RampHold *WarmupRampHold `json:"ramp_hold,omitempty"`
+	// PartnerLimit is present while today's target is capped by how many
+	// partners the mailbox can still reach, so a target below the ramp is
+	// never an unexplained drop.
+	PartnerLimit *WarmupPartnerLimit `json:"partner_limit,omitempty"`
+}
+
+// WarmupPartnerLimit explains a target held below the ramp because a mailbox
+// never writes to the same partner twice in a day.
+type WarmupPartnerLimit struct {
+	// Reachable is how many partners can still receive from it today.
+	Reachable int `json:"reachable"`
+	// RampTarget is what the ramp alone would send today.
+	RampTarget int `json:"ramp_target"`
 }
 
 // WarmupRampHold explains a ramp that is not climbing. Present for the whole

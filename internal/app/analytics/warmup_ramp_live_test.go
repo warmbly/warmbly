@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/encrypt"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -194,5 +195,69 @@ func TestLiveRampStillReportsAHoldAfterTheCutExpires(t *testing.T) {
 	// The cut is gone, so the target is the frozen ramp at full volume.
 	if target != 17 {
 		t.Errorf("target = %d, want the uncut frozen ramp of 17", target)
+	}
+}
+
+// A mailbox cannot send more than the partners it can reach, so the drawer
+// reports the scheduler's partner cap and says why.
+func TestLiveWarmupTargetIsCappedByReachablePartners(t *testing.T) {
+	f := newRampFixture(t, 10, 10, 1, 40)
+	ctx := context.Background()
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := f.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("fixture %q: %v", sql[:min(60, len(sql))], err)
+		}
+	}
+	other := uuid.New()
+	t.Cleanup(func() {
+		c := context.Background()
+		for _, step := range []struct {
+			sql string
+			arg any
+		}{
+			{`DELETE FROM warmup_pool_participants WHERE email_account_id IN (SELECT id FROM email_accounts WHERE user_id = $1)`, f.user},
+			{`DELETE FROM email_accounts WHERE organization_id = $1`, other},
+			{`DELETE FROM organizations WHERE id = $1`, other},
+		} {
+			if _, err := f.pool.Exec(c, step.sql, step.arg); err != nil {
+				t.Errorf("cleanup %q: %v", step.sql, err)
+			}
+		}
+	})
+	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Ramp partners', $2, $3)`,
+		other, "ramp-p-"+other.String()[:8], f.user)
+	ids := []uuid.UUID{f.mailbox}
+	for i := 0; i < 3; i++ {
+		id := uuid.New()
+		exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain,
+		          signature_html, provider, status, campaign_limit, min_wait_time, timezone)
+		      VALUES ($1, $2, $3, $4, 'Partner', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
+			id, f.user, other, "ramp-p-"+id.String()[:8]+"@test.local")
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id, participant_role, health_state)
+		      VALUES ($1, $2, 'sender_receiver', 'healthy')`, models.WarmupPoolPremiumID, id)
+	}
+
+	if st, xerr := f.svc.GetAccountStatus(ctx, f.org, f.mailbox); xerr != nil {
+		t.Fatalf("account status: %v", xerr.Message)
+	} else if st.WarmupStatus == nil || st.WarmupStatus.PartnerLimit != nil {
+		t.Fatal("the list-shaped status paid for the pool-wide partner read")
+	}
+	st, xerr := f.svc.GetAccountStatusDetail(ctx, f.org, f.mailbox)
+	if xerr != nil {
+		t.Fatalf("account status: %v", xerr.Message)
+	}
+	ws := st.WarmupStatus
+	if ws == nil || ws.PartnerLimit == nil {
+		t.Fatal("a mailbox with 3 partners and a ramp of 20 reports no partner limit")
+	}
+	if ws.TargetVolume != 3 || ws.PartnerLimit.Reachable != 3 || ws.PartnerLimit.RampTarget != 20 {
+		t.Fatalf("target %d, limit %+v; want 3 of a ramp of 20", ws.TargetVolume, *ws.PartnerLimit)
+	}
+	if st.WarmupHealth == nil || st.WarmupHealth.PoolType != "premium" {
+		t.Fatalf("warmup health %+v does not name the premium pool", st.WarmupHealth)
 	}
 }

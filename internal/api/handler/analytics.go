@@ -214,7 +214,7 @@ func (h *Handler) GetAccountStatus(c *gin.Context) {
 		return
 	}
 
-	status, xerr := h.AnalyticsService.GetAccountStatus(c.Request.Context(), *orgID, accountID)
+	status, xerr := h.AnalyticsService.GetAccountStatusDetail(c.Request.Context(), *orgID, accountID)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
