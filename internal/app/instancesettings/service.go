@@ -51,6 +51,8 @@ type Service interface {
 	// DomainAuth is the sending-domain authentication gate: whether it is
 	// enforced at all, and how long a domain must stay failing first.
 	DomainAuth(ctx context.Context) (enforce bool, grace time.Duration)
+	// PlacementPolicy is the inbox placement test section, already normalized.
+	PlacementPolicy(ctx context.Context) Placement
 }
 
 type service struct {
@@ -154,6 +156,12 @@ func (s *service) TrackingPolicy(ctx context.Context) Tracking {
 	t := s.Get(ctx).Tracking
 	t.Normalize()
 	return t
+}
+
+func (s *service) PlacementPolicy(ctx context.Context) Placement {
+	p := s.Get(ctx).Placement
+	p.Normalize()
+	return p
 }
 
 func (s *service) DomainAuth(ctx context.Context) (bool, time.Duration) {

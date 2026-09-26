@@ -558,3 +558,25 @@ func TestValidAndLabels(t *testing.T) {
 		t.Fatal("Label")
 	}
 }
+
+func TestForMailbox(t *testing.T) {
+	cases := []struct {
+		stored, provider, address string
+		want                      Host
+	}{
+		{"", "gmail", "a@gmail.com", Gmail},
+		{"", "gmail", "a@acme.io", GoogleWorkspace},
+		{"", "outlook", "a@hotmail.com", Outlook},
+		{"", "outlook", "a@acme.io", Microsoft365},
+		{"", "smtp_imap", "a@yahoo.com", Yahoo},
+		{"", "smtp_imap", "a@acme.io", Other},
+		{"zoho", "smtp_imap", "a@acme.io", Zoho},
+		{"google_workspace", "smtp_imap", "a@gmail.com", Gmail},
+		{"bogus", "smtp_imap", "a@acme.io", Other},
+	}
+	for _, c := range cases {
+		if got := ForMailbox(c.stored, c.provider, c.address); got != c.want {
+			t.Errorf("ForMailbox(%q, %q, %q) = %q, want %q", c.stored, c.provider, c.address, got, c.want)
+		}
+	}
+}

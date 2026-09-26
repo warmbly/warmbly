@@ -187,6 +187,56 @@ type Deliverability struct {
 	AuthGraceHours int `json:"auth_grace_hours"`
 }
 
+// Placement holds the inbox placement test knobs.
+type Placement struct {
+	// TestsPerMonthTrial and TestsPerMonthPaid are how many tests one workspace
+	// may run on the instance and cloud seed panels per calendar month. Tests
+	// on a workspace's own seed mailboxes are not counted.
+	TestsPerMonthTrial int `json:"tests_per_month_trial"`
+	TestsPerMonthPaid  int `json:"tests_per_month_paid"`
+	// SeedsPerTest caps how many seed mailboxes one test sends to, which is
+	// also how many sends it takes from the sender's day.
+	SeedsPerTest int `json:"seeds_per_test"`
+	// SpacingSeconds is the gap between two probes from one sender.
+	SpacingSeconds int `json:"spacing_seconds"`
+}
+
+// DefaultPlacement is the compiled placement test allowance and pacing.
+func DefaultPlacement() Placement {
+	return Placement{
+		TestsPerMonthTrial: config.PlacementTestsPerMonthTrialDefault,
+		TestsPerMonthPaid:  config.PlacementTestsPerMonthPaidDefault,
+		SeedsPerTest:       config.PlacementSeedsPerTestDefault,
+		SpacingSeconds:     config.PlacementSpacingSecondsDefault,
+	}
+}
+
+// Normalize clamps every knob; zero and negative resolve to the compiled
+// default, so a document written before this section existed keeps it.
+func (p *Placement) Normalize() {
+	month := func(v, def int) int {
+		if v <= 0 {
+			return def
+		}
+		return min(v, config.PlacementTestsPerMonthMax)
+	}
+	p.TestsPerMonthTrial = month(p.TestsPerMonthTrial, config.PlacementTestsPerMonthTrialDefault)
+	p.TestsPerMonthPaid = month(p.TestsPerMonthPaid, config.PlacementTestsPerMonthPaidDefault)
+	if p.SeedsPerTest <= 0 {
+		p.SeedsPerTest = config.PlacementSeedsPerTestDefault
+	}
+	p.SeedsPerTest = min(p.SeedsPerTest, config.PlacementSeedsPerTestMax)
+	if p.SpacingSeconds <= 0 {
+		p.SpacingSeconds = config.PlacementSpacingSecondsDefault
+	}
+	p.SpacingSeconds = max(config.PlacementSpacingSecondsMin, min(p.SpacingSeconds, config.PlacementSpacingSecondsMax))
+}
+
+// Spacing is the gap between two probes as a duration.
+func (p Placement) Spacing() time.Duration {
+	return time.Duration(p.SpacingSeconds) * time.Second
+}
+
 // Document is the whole Tier B settings document. Every key here is one no
 // environment variable owns, so there is no precedence to resolve.
 type Document struct {
@@ -196,6 +246,7 @@ type Document struct {
 	Retention      Retention      `json:"retention"`
 	Tracking       Tracking       `json:"tracking"`
 	Deliverability Deliverability `json:"deliverability"`
+	Placement      Placement      `json:"placement"`
 	Notifications  Notifications  `json:"notifications"`
 }
 
@@ -213,6 +264,7 @@ func Defaults() Document {
 		Retention:      DefaultRetention(),
 		Tracking:       DefaultTracking(),
 		Deliverability: DefaultDeliverability(),
+		Placement:      DefaultPlacement(),
 	}
 }
 
@@ -291,6 +343,7 @@ func (d *Document) Normalize() {
 	d.Retention.Normalize()
 	d.Tracking.Normalize()
 	d.Deliverability.Normalize()
+	d.Placement.Normalize()
 	d.Notifications.Normalize()
 }
 
@@ -371,6 +424,12 @@ type Patch struct {
 		EnforceDomainAuth *bool `json:"enforce_domain_auth"`
 		AuthGraceHours    *int  `json:"auth_grace_hours"`
 	} `json:"deliverability"`
+	Placement *struct {
+		TestsPerMonthTrial *int `json:"tests_per_month_trial"`
+		TestsPerMonthPaid  *int `json:"tests_per_month_paid"`
+		SeedsPerTest       *int `json:"seeds_per_test"`
+		SpacingSeconds     *int `json:"spacing_seconds"`
+	} `json:"placement"`
 	// Channels replaces the whole list when present. A channel that comes back
 	// with a masked target or secret keeps the stored value, so the admin panel
 	// can round-trip a redacted read without wiping credentials.
@@ -450,6 +509,20 @@ func (p Patch) Apply(doc Document) Document {
 			if doc.Deliverability.AuthGraceHours < AuthGraceHoursMin {
 				doc.Deliverability.AuthGraceHours = AuthGraceHoursMin
 			}
+		}
+	}
+	if p.Placement != nil {
+		if p.Placement.TestsPerMonthTrial != nil {
+			doc.Placement.TestsPerMonthTrial = *p.Placement.TestsPerMonthTrial
+		}
+		if p.Placement.TestsPerMonthPaid != nil {
+			doc.Placement.TestsPerMonthPaid = *p.Placement.TestsPerMonthPaid
+		}
+		if p.Placement.SeedsPerTest != nil {
+			doc.Placement.SeedsPerTest = *p.Placement.SeedsPerTest
+		}
+		if p.Placement.SpacingSeconds != nil {
+			doc.Placement.SpacingSeconds = *p.Placement.SpacingSeconds
 		}
 	}
 	if p.Notifications != nil && p.Notifications.Channels != nil {

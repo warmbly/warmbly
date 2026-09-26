@@ -83,6 +83,14 @@ func (s *JobsService) ingestNewEmail(ctx context.Context, e *models.JobEventNewE
 		return nil
 	}
 
+	// A placement test's copies are the seeds' business; the sender's own
+	// sent copy of each stays out of its unibox.
+	if s.PlacementRepo != nil && e.Message.Folder == models.FolderSent && e.Message.MessageID != "" {
+		if probe, perr := s.PlacementRepo.IsProbeSentCopy(ctx, e.Message.EmailID, e.Message.MessageID); perr == nil && probe {
+			return nil
+		}
+	}
+
 	// A pool-linked mailbox is warmup-only: everything else is dropped unread.
 	if s.PoolLinkRepo != nil {
 		if linked, lerr := s.PoolLinkRepo.GetMailboxByAccount(ctx, e.Message.EmailID); lerr == nil && linked != nil {

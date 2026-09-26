@@ -102,6 +102,26 @@ const (
 	// window keeps double coverage. Operator-editable under Instance settings.
 	FormEventsRetentionDaysDefault = 180
 
+	// Inbox placement tests. The monthly allowance covers tests on the
+	// instance and cloud seed panels only; a workspace's own seeds cost the
+	// operator nothing. Operator-editable under Instance settings.
+	PlacementTestsPerMonthTrialDefault = 3
+	PlacementTestsPerMonthPaidDefault  = 40
+	PlacementTestsPerMonthMax          = 100_000
+	PlacementSeedsPerTestDefault       = 40
+	PlacementSeedsPerTestMax           = 100
+	PlacementSpacingSecondsDefault     = 20 // gap between two probes from one sender
+	PlacementSpacingSecondsMin         = 5
+	PlacementSpacingSecondsMax         = 600
+	PlacementClassifyTimeoutMinutes    = 120 // after the send, a copy not seen in the seed is missing
+	PlacementRunningPerOrgMax          = 3   // tests one workspace may have in flight at once
+	PlacementSeedsPerWorkspaceMax      = 50  // a workspace's own seed mailboxes
+	PlacementSeedDailySyncMessages     = 50_000
+	PlacementMonitorIntervalDaysMin    = 1
+	PlacementMonitorIntervalDaysMax    = 30
+	PlacementMonitorIntervalDaysDef    = 7
+	PlacementMonitorAlertBelowDefault  = 70 // inbox rate, percent
+
 	// Sequences. Empty by default so the editor shows a smart, position-based
 	// label (e.g. "Email 1") until the user names the step themselves.
 	SequenceDefaultName  = ""

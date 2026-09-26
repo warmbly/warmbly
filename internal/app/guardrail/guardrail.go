@@ -28,6 +28,9 @@ const (
 	RuleComplaintRate Rule = "complaint_rate"
 	RuleBounceRate    Rule = "bounce_rate"
 	RuleReplyRate     Rule = "reply_rate"
+	// RulePlacement is a scheduled inbox placement test below its alert
+	// threshold, on a monitor set to pause the campaign.
+	RulePlacement Rule = "placement"
 )
 
 // Breach is one rule's verdict on one campaign.

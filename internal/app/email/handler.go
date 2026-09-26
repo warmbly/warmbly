@@ -109,6 +109,15 @@ func (s *emailService) BulkUpdateTags(ctx context.Context, orgID string, emailID
 // of an organization's mailbox, and the route's gate is already the
 // organization's manage-emails permission.
 func (s *emailService) SetWarmupLifecycle(ctx context.Context, orgID, emailAccountID, action string) (*models.Email, *errx.Error) {
+	// A placement seed stays a stranger to every sender, so it never warms.
+	if (action == "start" || action == "resume") && s.seedScope != nil {
+		if id, perr := uuid.Parse(emailAccountID); perr == nil {
+			if scope, err := s.seedScope.SeedScope(ctx, id); err == nil && scope != "" {
+				return nil, errx.NewWithIdentifier(errx.Conflict, "mailbox_is_seed",
+					"This mailbox is a placement seed inbox, which never warms up. Remove it from the seed inboxes first.")
+			}
+		}
+	}
 	account, err := s.emailRepository.SetWarmupLifecycle(ctx, orgID, emailAccountID, action)
 	if err != nil {
 		return nil, err

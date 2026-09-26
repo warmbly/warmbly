@@ -116,6 +116,9 @@ type EmailService interface {
 	WireMailboxes(repo repository.MailboxRepository)
 	WireUnibox(repo repository.UniboxRepository)
 	WireSyncBudget(src SyncBudgetSource)
+	// WireSeedScope lets the loader give a placement seed mailbox the sync
+	// allowance a whole instance's test traffic needs.
+	WireSeedScope(src SeedScopeSource)
 	WirePoolLink(repo repository.PoolLinkRepository)
 	// WireCloudLink marks managed mailboxes, which ship to the worker without a credential.
 	WireCloudLink(repo repository.CloudLinkRepository)
@@ -178,6 +181,7 @@ type emailService struct {
 	syncState          repository.EmailSyncStateRepository
 	mailboxes          repository.MailboxRepository
 	syncBudget         SyncBudgetSource
+	seedScope          SeedScopeSource
 	// poolLink marks linked warmup-only mailboxes, which sync with no history.
 	poolLink repository.PoolLinkRepository
 	// cloudLink marks managed mailboxes whose credential the cloud holds.
@@ -259,6 +263,16 @@ func (s *emailService) WireMailboxes(repo repository.MailboxRepository) {
 // WireSyncBudget attaches the instance settings the sync policy is read from.
 func (s *emailService) WireSyncBudget(src SyncBudgetSource) {
 	s.syncBudget = src
+}
+
+// SeedScopeSource reports whether a mailbox is a placement seed.
+type SeedScopeSource interface {
+	SeedScope(ctx context.Context, accountID uuid.UUID) (string, error)
+}
+
+// WireSeedScope attaches the seed lookup the loader reads.
+func (s *emailService) WireSeedScope(src SeedScopeSource) {
+	s.seedScope = src
 }
 
 // WirePoolLink attaches the pool-link repository so linked mailboxes get the

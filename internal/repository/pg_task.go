@@ -453,16 +453,21 @@ const taskDispatchedEmail = `(t.task_type <> 'campaign' OR t.message_id <> '' OR
 		SELECT 1 FROM campaign_contact_progress ccp WHERE ccp.dispatch_task_id = t.id))`
 
 // CountCampaignEmailsSentToday counts the campaign emails a mailbox dispatched
-// today (excludes warmup, and the campaign chain's own wake-ups).
+// today (excludes warmup, and the campaign chain's own wake-ups). Placement
+// test probes count too: they are cold mail from the same daily budget.
 func (r *taskRepository) CountCampaignEmailsSentToday(ctx context.Context, accountID uuid.UUID) (int, error) {
+	// Two counts so the campaign half keeps its partial index; the probe half
+	// is a range on (email_account_id, completed_at).
 	query := `
-		SELECT COUNT(*)
-		FROM tasks t
-		WHERE t.email_account_id = $1
-		  AND t.status = 'completed'
-		  AND t.task_type = 'campaign'
-		  AND DATE(t.completed_at) = CURRENT_DATE
-		  AND ` + taskDispatchedEmail + `
+		SELECT (
+			SELECT COUNT(*)
+			FROM tasks t
+			WHERE t.email_account_id = $1
+			  AND t.status = 'completed'
+			  AND t.task_type = 'campaign'
+			  AND DATE(t.completed_at) = CURRENT_DATE
+			  AND ` + taskDispatchedEmail + `
+		) + (` + placementSentTodaySQL + ` AND t.email_account_id = $1)
 	`
 
 	var count int
@@ -517,6 +522,14 @@ func (r *taskRepository) CountCampaignEmailsSentTodayByAccounts(ctx context.Cont
 		  AND DATE(t.completed_at) = CURRENT_DATE
 		  AND ` + taskDispatchedEmail + `
 		GROUP BY t.email_account_id
+		UNION ALL
+		SELECT t.email_account_id, COUNT(*)
+		FROM tasks t
+		WHERE t.email_account_id = ANY($1)
+		  AND t.status = 'completed'
+		  AND t.task_type = 'placement'
+		  AND t.completed_at >= CURRENT_DATE AND t.completed_at < CURRENT_DATE + 1
+		GROUP BY t.email_account_id
 	`
 	rows, err := r.db.Query(ctx, query, accountIDs)
 	if err != nil {
@@ -529,10 +542,18 @@ func (r *taskRepository) CountCampaignEmailsSentTodayByAccounts(ctx context.Cont
 		if err := rows.Scan(&id, &n); err != nil {
 			return nil, err
 		}
-		out[id] = n
+		out[id] += n
 	}
 	return out, rows.Err()
 }
+
+// placementSentTodaySQL counts today's placement probes; callers add the
+// mailbox predicate.
+const placementSentTodaySQL = `
+	SELECT COUNT(*) FROM tasks t
+	WHERE t.status = 'completed'
+	  AND t.task_type = 'placement'
+	  AND t.completed_at >= CURRENT_DATE AND t.completed_at < CURRENT_DATE + 1`
 
 // CountCampaignSendsTodayBySender is CountCampaignEmailsSentToday for one
 // campaign, split by mailbox. Same ledger and the same day boundary, so the
