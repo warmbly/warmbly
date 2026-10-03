@@ -27,6 +27,7 @@ import useSwitchOrganization from "@/lib/api/hooks/app/organizations/useSwitchOr
 import useLogout from "@/lib/api/hooks/auth/useLogout";
 import useUser from "@/lib/api/hooks/auth/useUser";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
+import useBrand from "@/hooks/useBrand";
 import { useAppStore } from "@/stores";
 import { Logo } from "@/components/svg";
 import { NewWorkspaceDialog } from "@/components/app/organizations/NewWorkspaceDialog";
@@ -67,6 +68,7 @@ export default function SelectOrgPage() {
 
 function SelectOrgPageInner() {
     const navigate = useNavigate();
+    const brand = useBrand();
     const [createOpen, setCreateOpen] = React.useState(false);
 
     const orgs = useOrganizations();
@@ -143,7 +145,7 @@ function SelectOrgPageInner() {
                         style={{ fontFamily: "var(--font-display)" }}
                         className="font-bold text-[13px] tracking-tight text-slate-900 shrink-0"
                     >
-                        Warmbly
+                        {brand.name}
                     </span>
                     <div className="h-4 w-px bg-slate-200 shrink-0" />
                     <span className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium min-w-0 truncate">
@@ -212,9 +214,7 @@ function SelectOrgPageInner() {
                                 </div>
                             )}
 
-                            {/* Existing memberships — informative rows. Role +
-                                plan + how long ago you joined replace the
-                                opaque "id slice + Open →" filler. */}
+                            {/* Existing memberships */}
                             {orgList.length > 0 && (
                                 <div className="mb-5">
                                     <div className="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium mb-1.5 flex items-center gap-1.5">
@@ -222,7 +222,7 @@ function SelectOrgPageInner() {
                                         Your workspaces
                                         <span className="font-mono tabular-nums">{orgList.length}</span>
                                     </div>
-                                    <div className="border border-slate-200 rounded-md overflow-hidden divide-y divide-slate-200/60">
+                                    <div className="space-y-1.5">
                                         {orgList.map((o) => {
                                             const isCurrent = currentOrg?.id === o.id;
                                             return (
@@ -231,44 +231,42 @@ function SelectOrgPageInner() {
                                                     type="button"
                                                     onClick={() => onPickExisting(o.id)}
                                                     disabled={switchOrg.isPending}
-                                                    className={`w-full px-3 py-2.5 flex items-center gap-2.5 transition-colors text-left disabled:opacity-50 ${
-                                                        isCurrent
-                                                            ? "bg-sky-50/60 hover:bg-sky-50"
-                                                            : "hover:bg-slate-50/80"
-                                                    }`}
+                                                    className="w-full h-14 px-3 rounded-md border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/70 flex items-center justify-between gap-3 text-left transition-colors disabled:opacity-50"
                                                 >
-                                                    <div className="size-7 rounded bg-slate-900 text-white flex items-center justify-center text-[10px] font-semibold shrink-0">
-                                                        {initials(o.name)}
-                                                    </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="text-[12.5px] font-medium text-slate-900 truncate">
-                                                                {o.name}
-                                                            </span>
-                                                            {isCurrent && (
-                                                                <span className="text-[9.5px] uppercase tracking-[0.1em] text-sky-700 bg-sky-100 px-1 rounded-sm font-semibold">
-                                                                    Current
-                                                                </span>
-                                                            )}
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <div className="size-7 rounded bg-slate-900 text-white flex items-center justify-center text-[10px] font-semibold shrink-0">
+                                                            {initials(o.name)}
                                                         </div>
-                                                        <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5">
-                                                            <span className="uppercase tracking-[0.08em]">
-                                                                {o.role}
-                                                            </span>
-                                                            {showPlan && o.plan && (
-                                                                <>
-                                                                    <span className="text-slate-300">·</span>
-                                                                    <span>{o.plan}</span>
-                                                                </>
-                                                            )}
-                                                            {o.created_at && (
-                                                                <>
-                                                                    <span className="text-slate-300">·</span>
-                                                                    <span className="font-mono tabular-nums text-slate-400">
-                                                                        joined {relativeAge(o.created_at)}
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="text-[12.5px] font-medium text-slate-900 truncate">
+                                                                    {o.name}
+                                                                </span>
+                                                                {isCurrent && (
+                                                                    <span className="text-[9.5px] uppercase tracking-[0.1em] text-sky-700 bg-sky-100 px-1 rounded-sm font-semibold">
+                                                                        Current
                                                                     </span>
-                                                                </>
-                                                            )}
+                                                                )}
+                                                            </div>
+                                                            <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5">
+                                                                <span className="uppercase tracking-[0.08em]">
+                                                                    {o.role}
+                                                                </span>
+                                                                {showPlan && o.plan && (
+                                                                    <>
+                                                                        <span className="text-slate-300">·</span>
+                                                                        <span>{o.plan}</span>
+                                                                    </>
+                                                                )}
+                                                                {o.created_at && (
+                                                                    <>
+                                                                        <span className="text-slate-300">·</span>
+                                                                        <span className="font-mono tabular-nums text-slate-400">
+                                                                            joined {relativeAge(o.created_at)}
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <span className="text-[11px] text-slate-400 shrink-0">

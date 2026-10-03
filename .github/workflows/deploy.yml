@@ -1,0 +1,40 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - res
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to VPS Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH into VPS and Update
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script_stop: true
+          script: |
+            echo "==> Navigating to project directory..."
+            cd /var/www/warmbly
+
+            echo "==> Fetching latest changes from res branch..."
+            git fetch origin res
+            git reset --hard origin/res
+
+            echo "==> Building updated images while existing containers stay live (ZERO DOWNTIME)..."
+            docker compose build
+
+            echo "==> Recreating containers with new images seamlessly..."
+            docker compose up -d --remove-orphans
+
+            echo "==> Cleaning up unused Docker images..."
+            docker image prune -f
+
+            echo "==> Deployment completed successfully!"

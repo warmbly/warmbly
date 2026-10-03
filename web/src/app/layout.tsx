@@ -1,6 +1,7 @@
 import RippleProvider from "@/hooks/RippleProvider";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { Outlet } from "react-router-dom";
+import ReauthModal from "@/components/app/modals/ReauthModal";
 
 export default function RootLayout() {
   // Keep the browser tab title in sync with the active route across the whole
@@ -10,6 +11,8 @@ export default function RootLayout() {
   return (
     <RippleProvider>
       <Outlet />
+      <ReauthModal />
     </RippleProvider>
   );
 }
+

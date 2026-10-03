@@ -88,7 +88,7 @@ export function UpdateDialog({ open, onOpenChange }: Props) {
     const phase: Phase = useMemo(() => {
         if (isUpdating(state)) return "running";
         if (started && (jobQ.isError || stateQ.isError)) return "restarting";
-        const last = state?.updater.last_job;
+        const last = state?.updater?.last_job;
         if (started && last && last.status !== "running") {
             return last.status === "succeeded" ? "done" : "failed";
         }
@@ -97,9 +97,9 @@ export function UpdateDialog({ open, onOpenChange }: Props) {
 
     const canApply =
         canManage &&
-        state?.updater.status === "ok" &&
+        state?.updater?.status === "ok" &&
         !!state?.update_available &&
-        !state?.updater.checkout?.dirty &&
+        !state?.updater?.checkout?.dirty &&
         phase === "idle";
 
     // Leaving the confirmation open once the update can no longer start
@@ -287,8 +287,8 @@ export function UpdateDialog({ open, onOpenChange }: Props) {
 
 function Overview({ state }: { state: UpdateState }) {
     const { latest, updater } = state;
-    const checkout = updater.checkout;
-    const release = updater.release;
+    const checkout = updater?.checkout;
+    const release = updater?.release;
     return (
         <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-2 text-[13px]">
             <dt className="text-muted-foreground">Latest release</dt>
@@ -382,14 +382,14 @@ function Overview({ state }: { state: UpdateState }) {
 
             <dt className="text-muted-foreground">Updater</dt>
             <dd>
-                {updater.status === "ok" && (
+                {updater?.status === "ok" && (
                     <span>
                         ready
                         <span className="text-muted-foreground"> ({updater.mode} mode)</span>
                     </span>
                 )}
-                {updater.status === "off" && <span className="text-muted-foreground">not configured</span>}
-                {updater.status === "unreachable" && <span className="text-amber-700">unreachable</span>}
+                {updater?.status === "off" && <span className="text-muted-foreground">not configured</span>}
+                {updater?.status === "unreachable" && <span className="text-amber-700">unreachable</span>}
             </dd>
         </dl>
     );
@@ -405,13 +405,13 @@ function UpdaterNotice({ state }: { state: UpdateState }) {
     // A pinned install needs the tag edited first: pulling again resolves the
     // same fixed version and updates nothing, which is the kind of instruction
     // that looks like it worked.
-    const pinnedTag = u.release?.pinned ? (state.latest?.tag ?? "vX.Y.Z") : null;
-    const byHand = u.release
+    const pinnedTag = u?.release?.pinned ? (state.latest?.tag ?? "vX.Y.Z") : null;
+    const byHand = u?.release
         ? "docker compose pull && docker compose up -d"
-        : u.checkout
+        : u?.checkout
           ? "git pull && make up"
           : null;
-    if (u.status === "unreachable") {
+    if (u?.status === "unreachable") {
         return (
             <Notice tone="warning">
                 <div className="font-medium text-foreground">The updater is not answering</div>
@@ -471,7 +471,7 @@ function Progress({
     job: UpdateJob | undefined;
     restarting: boolean;
 }) {
-    const mode = state?.updater.mode ?? "compose";
+    const mode = state?.updater?.mode ?? "compose";
     const steps = STEPS[mode] ?? STEPS.compose;
     const current = restarting ? "wait" : (job?.step ?? "starting");
     const currentIdx = Math.max(0, steps.indexOf(current));

@@ -54,10 +54,10 @@ export function VersionPill() {
     // the reload itself when it is open.
     React.useEffect(() => {
         if (!started || !admin || updating || open) return;
-        const last = admin.updater.last_job;
+        const last = admin?.updater?.last_job;
         const moved =
-            (admin.running.commit && admin.running.commit !== started.fromCommit) ||
-            (admin.running.version && admin.running.version !== started.fromVersion);
+            (admin.running?.commit && admin.running.commit !== started.fromCommit) ||
+            (admin.running?.version && admin.running.version !== started.fromVersion);
         if (last?.status === "failed") {
             clearUpdateStarted();
             toast.error(`The update failed: ${last.error ?? "open the version pill for the log"}`);
@@ -100,7 +100,7 @@ export function VersionPill() {
         label = restarting ? "Reconnecting" : "Updating";
         icon = <Loader2Icon className="w-3 h-3 animate-spin" />;
         tone = "bg-sky-50 text-sky-700 border-sky-200";
-        title = restarting ? "The backend is restarting after an update" : `Update in progress: ${admin?.updater.job?.step ?? ""}`;
+        title = restarting ? "The backend is restarting after an update" : `Update in progress: ${admin?.updater?.job?.step ?? ""}`;
     }
 
     const className = cn(

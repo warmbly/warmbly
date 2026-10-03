@@ -142,7 +142,7 @@ function UpdateCard() {
                 <span className="text-muted-foreground">
                     {" "}
                     running {buildLabel(state)}
-                    {state.updater.checkout && !state.updater.checkout.detached
+                    {state.updater?.checkout && !state.updater.checkout.detached
                         ? ` on ${state.updater.checkout.branch}`
                         : ""}
                     {state.checked_at

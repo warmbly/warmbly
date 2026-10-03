@@ -1,0 +1,19 @@
+services:
+  backend:
+    ports: !override
+      - "127.0.0.1:18080:8080"
+  realtime:
+    ports: !override
+      - "127.0.0.1:14000:4000"
+  tracking:
+    ports: !override
+      - "127.0.0.1:13000:3000"
+  web:
+    ports: !override
+      - "127.0.0.1:5173:80"
+  admin:
+    ports: !override
+      - "127.0.0.1:5174:80"
+  forms:
+    ports: !override
+      - "127.0.0.1:8090:8090"

@@ -99,7 +99,7 @@ export default function UpdateDialog({ open, onClose }: Props) {
     // drives overview <-> confirm.
     const running = isUpdateRunning(state);
     const backendDown = !!started && (logQ.isError || stateQ.isError);
-    const lastJob = state?.updater.last_job;
+    const lastJob = state?.updater?.last_job;
     const finished = !!started && !running && !backendDown && lastJob && lastJob.status !== "running";
 
     React.useEffect(() => {
@@ -149,8 +149,8 @@ export default function UpdateDialog({ open, onClose }: Props) {
         onError: (err: unknown) => toast.error(buildError(err as AppError)),
     });
 
-    const job = state?.updater.job ?? state?.updater.last_job;
-    const steps = state?.updater.mode === "command" ? COMMAND_STEPS : COMPOSE_STEPS;
+    const job = state?.updater?.job ?? state?.updater?.last_job;
+    const steps = state?.updater?.mode === "command" ? COMMAND_STEPS : COMPOSE_STEPS;
 
     return (
         <AnimatePresence>
@@ -289,7 +289,7 @@ function OverviewPane({ state, loading }: { state?: InstanceUpdate; loading: boo
         );
     }
     const { latest, updater } = state;
-    const checkout = updater.checkout;
+    const checkout = updater?.checkout;
     const available = state.update_available;
 
     return (
@@ -378,15 +378,15 @@ function OverviewPane({ state, loading }: { state?: InstanceUpdate; loading: boo
                     </Row>
                 )}
                 <Row label="Updater">
-                    {updater.status === "ok" && (
+                    {updater?.status === "ok" && (
                         <span className="inline-flex items-center gap-1.5 text-slate-700">
                             <span className="size-1.5 rounded-full bg-emerald-500" />
                             ready
                             <span className="text-slate-400">({updater.mode} mode)</span>
                         </span>
                     )}
-                    {updater.status === "off" && <span className="text-slate-500">not configured</span>}
-                    {updater.status === "unreachable" && (
+                    {updater?.status === "off" && <span className="text-slate-500">not configured</span>}
+                    {updater?.status === "unreachable" && (
                         <span className="inline-flex items-center gap-1.5 text-amber-700">
                             <span className="size-1.5 rounded-full bg-amber-500" />
                             unreachable
@@ -400,14 +400,14 @@ function OverviewPane({ state, loading }: { state?: InstanceUpdate; loading: boo
                 </Row>
             </dl>
 
-            {updater.status !== "ok" && (
-                <Notice tone={updater.status === "unreachable" ? "warning" : "info"}>
+            {updater?.status !== "ok" && (
+                <Notice tone={updater?.status === "unreachable" ? "warning" : "info"}>
                     <div className="font-medium text-slate-900">
-                        {updater.status === "unreachable" ? "The updater is not answering" : "Updates run from a shell here"}
+                        {updater?.status === "unreachable" ? "The updater is not answering" : "Updates run from a shell here"}
                     </div>
                     <div className="mt-0.5">
-                        {updater.status === "unreachable"
-                            ? updater.error
+                        {updater?.status === "unreachable"
+                            ? updater?.error
                             : "No updater is configured on this instance, so apply updates on the host:"}
                     </div>
                     <code className="mt-1.5 block rounded bg-white/80 border border-slate-200 px-2 py-1 font-mono text-[11.5px] text-slate-800">
@@ -424,7 +424,7 @@ function OverviewPane({ state, loading }: { state?: InstanceUpdate; loading: boo
                     </a>
                 </Notice>
             )}
-            {checkout?.dirty && updater.status === "ok" && (
+            {checkout?.dirty && updater?.status === "ok" && (
                 <Notice tone="warning">
                     The checkout has local modifications. The updater refuses to move it until they are
                     committed or stashed.
@@ -721,7 +721,7 @@ function Footer({
     onRetry: () => void;
     onClose: () => void;
 }) {
-    const canApply = !!state && state.updater.status === "ok" && state.update_available && !state.updater.checkout?.dirty;
+    const canApply = !!state && state.updater?.status === "ok" && state.update_available && !state.updater?.checkout?.dirty;
     return (
         <div className="flex items-center gap-2 px-5 h-14 border-t border-slate-200 bg-slate-50/60 shrink-0">
             <a

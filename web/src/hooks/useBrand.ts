@@ -15,15 +15,12 @@ import type { DeploymentBrand } from "@/lib/api/models/auth/AuthConfig";
 export default function useBrand(): DeploymentBrand & { apiURL: string } {
     const { config } = useAuthConfig();
     return {
-        name: config.brand?.name || "Warmbly",
+        name: config.brand?.name || "Cloudsnow",
         website_url: config.brand?.website_url,
         website_label: config.brand?.website_label,
         terms_url: config.brand?.terms_url,
         privacy_url: config.brand?.privacy_url,
         support_email: config.brand?.support_email,
-        // The backend's own answer wins; a backend that predates the field
-        // leaves the dashboard's configured API origin, which is the same
-        // address for every deployment that is not behind a split proxy.
         apiURL: config.api_url || API_URL,
     };
 }

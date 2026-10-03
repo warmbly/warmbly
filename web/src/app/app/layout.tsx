@@ -17,7 +17,6 @@ import AddEmailModal from "@/components/app/modals/AddEmailModal";
 import ComposeWindow from "@/components/app/unibox/compose/ComposeWindow";
 import PasskeyEnrollPrompt from "@/components/app/modals/PasskeyEnrollPrompt";
 import PermissionDeniedModal from "@/components/app/modals/PermissionDeniedModal";
-import ReauthModal from "@/components/app/modals/ReauthModal";
 
 export default function RootAppLayout() {
     const token = getToken();
@@ -65,7 +64,6 @@ export default function RootAppLayout() {
                     <ComposeWindow />
                     <PasskeyEnrollPrompt />
                     <PermissionDeniedModal />
-                    <ReauthModal />
                 </UpgradeDialogProvider>
             </ConfirmProvider>
         </DataSyncProvider>

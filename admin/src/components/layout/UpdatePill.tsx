@@ -30,10 +30,10 @@ export function UpdatePill() {
     // outcome once, then refresh everything so no page shows stale data.
     useEffect(() => {
         if (!started || !state || updating) return;
-        const last = state.updater.last_job;
+        const last = state?.updater?.last_job;
         const moved =
-            (state.running.commit && state.running.commit !== started.fromCommit) ||
-            (state.running.version && state.running.version !== started.fromVersion);
+            (state.running?.commit && state.running.commit !== started.fromCommit) ||
+            (state.running?.version && state.running.version !== started.fromVersion);
         if (last?.status === "failed") {
             clearUpdateStarted();
             toast.error(`The update failed: ${last.error ?? "see the update dialog"}`);
@@ -62,7 +62,7 @@ export function UpdatePill() {
         tone = "border-sky-200 bg-sky-50 text-sky-700";
         label = "Updating";
         icon = <Loader2 className="size-3 animate-spin" />;
-        title = `Update in progress: ${state?.updater.job?.step ?? ""}`;
+        title = `Update in progress: ${state?.updater?.job?.step ?? ""}`;
     } else if (state?.update_available) {
         tone = "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100";
         label = state.latest?.tag && state.reason === "release" ? `Update to ${state.latest.tag}` : "Update available";
@@ -73,7 +73,7 @@ export function UpdatePill() {
             </span>
         );
         title = `A newer version is available; running ${buildLabel(state)}`;
-    } else if (state?.updater.status === "unreachable") {
+    } else if (state?.updater?.status === "unreachable") {
         tone = "border-amber-200 bg-white text-amber-700";
         title = "The updater is not answering";
     }

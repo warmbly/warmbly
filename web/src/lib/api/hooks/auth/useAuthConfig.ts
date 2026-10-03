@@ -36,7 +36,7 @@ export const AUTH_CONFIG_FALLBACK: AuthConfig = {
     // An unreachable backend cannot tell us whose instance this is, and the
     // fallback fails self-host-safe everywhere else, so it claims no branding
     // either: no website, no terms, no privacy link.
-    brand: { name: "Warmbly" },
+    brand: { name: "Cloudsnow" },
 };
 
 export default function useAuthConfig() {
@@ -48,9 +48,18 @@ export default function useAuthConfig() {
         retry: 1,
     });
 
+    const data = query.data;
+    const config: AuthConfig = data
+        ? {
+              ...AUTH_CONFIG_FALLBACK,
+              ...data,
+              providers: Array.isArray(data.providers) ? data.providers : [],
+          }
+        : AUTH_CONFIG_FALLBACK;
+
     return {
         ...query,
-        config: query.data ?? AUTH_CONFIG_FALLBACK,
+        config,
         // Callers must not render the captcha widget or provider buttons until
         // the real answer arrives, or the widget mounts and then unmounts.
         ready: !query.isLoading,

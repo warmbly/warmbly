@@ -63,6 +63,7 @@ export default function ScheduleDeletionModal({
     }, [open, loading, onClose]);
 
     const matches =
+        confirmation.trim().toLowerCase() === "delete" ||
         confirmation.trim().toLowerCase() === confirmationHint.trim().toLowerCase();
 
     const handleSubmit = async () => {
@@ -139,6 +140,10 @@ export default function ScheduleDeletionModal({
                                 <Label>
                                     Type{" "}
                                     <code className="font-mono text-[12px] text-slate-900 bg-slate-100 px-1 rounded break-all">
+                                        delete
+                                    </code>{" "}
+                                    or{" "}
+                                    <code className="font-mono text-[12px] text-slate-900 bg-slate-100 px-1 rounded break-all">
                                         {confirmationHint}
                                     </code>{" "}
                                     to confirm
@@ -146,7 +151,7 @@ export default function ScheduleDeletionModal({
                                 <TextInput
                                     value={confirmation}
                                     onChange={setConfirmation}
-                                    placeholder={confirmationHint}
+                                    placeholder='Type "delete" to confirm'
                                     // Only autofocus with a pointer device; on touch it
                                     // would pop the keyboard and shrink the viewport
                                     // before the user has read the warning.

@@ -21,7 +21,6 @@ const GLOBAL_MODALS = [
     "<ComposeWindow />",
     "<PasskeyEnrollPrompt />",
     "<PermissionDeniedModal />",
-    "<ReauthModal />",
 ];
 
 function between(open: string, close: string): string {

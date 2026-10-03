@@ -6,7 +6,7 @@ export const INSTANCE_UPDATE_KEY = ["admin", "instance", "update"] as const;
 export const INSTANCE_UPDATE_LOG_KEY = ["admin", "instance", "update", "log"] as const;
 
 export function isUpdateRunning(state: InstanceUpdate | undefined): boolean {
-    return state?.updater.job?.status === "running";
+    return state?.updater?.job?.status === "running";
 }
 
 // The admin's full view: polled every minute, every few seconds while a job
@@ -35,8 +35,8 @@ export function useInstanceUpdateLog(enabled: boolean) {
 
 export function runningLabel(state: InstanceUpdate | undefined): string {
     if (!state) return "";
-    const v = state.running.version;
+    const v = state.running?.version;
     if (v && v !== "dev") return v;
-    const c = state.running.commit ?? state.updater.checkout?.commit ?? "";
+    const c = state.running?.commit ?? state.updater?.checkout?.commit ?? "";
     return c ? `dev ${c.slice(0, 7)}` : "dev";
 }

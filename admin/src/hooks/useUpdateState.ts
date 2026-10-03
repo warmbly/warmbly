@@ -31,15 +31,15 @@ export function useUpdateJob(enabled: boolean) {
 }
 
 export function isUpdating(state: UpdateState | undefined): boolean {
-    return state?.updater.job?.status === "running";
+    return state?.updater?.job?.status === "running";
 }
 
 // A short, stable label for the running build: the tag when there is one,
 // otherwise the commit.
 export function buildLabel(state: UpdateState | undefined): string {
     if (!state) return "";
-    const v = state.running.version;
+    const v = state.running?.version;
     if (v && v !== "dev") return v;
-    const c = state.running.commit ?? state.updater.checkout?.commit ?? "";
+    const c = state.running?.commit ?? state.updater?.checkout?.commit ?? "";
     return c ? `dev ${c.slice(0, 7)}` : "dev";
 }

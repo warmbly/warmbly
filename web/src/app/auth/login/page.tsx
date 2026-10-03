@@ -765,7 +765,7 @@ export default function LoginPage() {
                             mode={mode}
                             canSignUp={signupPossible && authConfigReady}
                             invited={!!inviteToken}
-                            providers={authConfig.providers}
+                            providers={authConfig.providers ?? []}
                             passkeysEnabled={passkeysEnabled}
                             onProvider={handleProvider}
                             onModeChange={handleModeChange}
@@ -784,7 +784,7 @@ export default function LoginPage() {
                         <SignInStep
                             email={email}
                             pending={pending}
-                            ssoEnabled={authConfig.providers.includes("oidc")}
+                            ssoEnabled={(authConfig.providers ?? []).includes("oidc")}
                             ssoLabel={authConfig.provider_labels?.oidc}
                             onSSO={handleSSO}
                             onBack={() => goTo("email", -1)}
@@ -956,7 +956,8 @@ function EmailStep({
     const passkeyLocked = passkeyPending || passkeyStatus === "waiting";
     const passkeyLabel = passkeyStatus === "preparing" ? "Preparing" : passkeyStatus === "waiting" ? "Waiting" : "Passkey";
     const passkeyCell = mode === "signin" && passkeysEnabled && passkeySupported();
-    const socialCell = providers.includes("google") || providers.includes("apple");
+    const providersList = Array.isArray(providers) ? providers : [];
+    const socialCell = providersList.includes("google") || providersList.includes("apple");
 
     return (
         <div className="space-y-6">

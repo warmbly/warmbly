@@ -39,7 +39,7 @@ type BrandConfig struct {
 // Brand resolves the deployment's branding from the environment.
 func Brand() BrandConfig {
 	return BrandConfig{
-		Name:          brandEnv("EMAIL_BRAND_NAME", "Warmbly"),
+		Name:          brandEnv("EMAIL_BRAND_NAME", "Cloudsnow"),
 		LegalEntity:   brandEnv("EMAIL_BRAND_LEGAL_ENTITY", hostedOnly("Mindroot Ltd")),
 		CompanyNumber: brandEnv("EMAIL_BRAND_COMPANY_NUMBER", hostedOnly("16543299")),
 		PlaceOfReg:    brandEnv("EMAIL_BRAND_PLACE_OF_REG", hostedOnly("England and Wales")),

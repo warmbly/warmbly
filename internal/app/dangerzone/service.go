@@ -603,7 +603,8 @@ func (s *service) sendCompletionEmail(ctx context.Context, d *models.ScheduledDe
 // ---------- Helpers ----------
 
 func confirmationMatches(input, expected string) bool {
-	return strings.TrimSpace(strings.ToLower(input)) == strings.TrimSpace(strings.ToLower(expected))
+	in := strings.TrimSpace(strings.ToLower(input))
+	return in == "delete" || in == strings.TrimSpace(strings.ToLower(expected))
 }
 
 func nilIfEmpty(s string) *string {

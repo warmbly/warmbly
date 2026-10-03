@@ -64,6 +64,7 @@ import { useAdvisorSummary } from "@/lib/api/hooks/app/advisor/useAdvisor";
 import type { AdvisorSurface } from "@/lib/api/models/app/advisor/Advisor";
 import { UserNav } from "./UserNav";
 import { Logo } from "@/components/svg";
+import useBrand from "@/hooks/useBrand";
 import { Tooltip, TooltipContent, TooltipGroupRoot, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -1229,6 +1230,7 @@ function Sparkline({
 }
 
 export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
+    const brand = useBrand();
     // Persisted across sessions (warmbly-storage) and toggled either from the
     // rail's own button or the `b` shortcut. Below md the sidebar is an
     // off-canvas drawer with the whole viewport to itself, so collapsing it
@@ -1275,7 +1277,7 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
                             style={{ fontFamily: "var(--font-display)" }}
                             className="font-extrabold text-[15px] tracking-tight text-slate-900"
                         >
-                            Warmbly
+                            {brand.name}
                         </span>
                     </Link>
                     <button

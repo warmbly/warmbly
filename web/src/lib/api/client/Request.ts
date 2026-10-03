@@ -36,10 +36,10 @@ function promptForReauth(): Promise<void> {
             fn();
         };
 
-        // ReauthModal is mounted under the /app layout. A gated call made from
-        // outside that tree would otherwise leave this promise pending forever
-        // and the mutation spinning with nothing on screen, so a listener that
-        // never answers is treated as a refusal.
+        // ReauthModal is mounted at the root layout. A gated call made when no
+        // prompt is mounted or responded to would otherwise leave this promise
+        // pending forever and the mutation spinning with nothing on screen, so a
+        // listener that never answers is treated as a refusal.
         const timer = window.setTimeout(
             once(() => reject(new Error("no confirmation prompt is available here"))),
             REAUTH_PROMPT_TIMEOUT_MS,

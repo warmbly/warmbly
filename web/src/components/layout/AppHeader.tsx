@@ -27,6 +27,7 @@ import { BetaPill } from "./BetaPill";
 import { PlanPill } from "./PlanPill";
 import { VersionPill } from "./VersionPill";
 import { CreditsMeter } from "./CreditsMeter";
+import useBrand from "@/hooks/useBrand";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +68,7 @@ function pretty(segment: string): string {
 
 export function AppHeader({ onMenu }: { onMenu?: () => void }) {
     const { pathname } = useLocation();
+    const brand = useBrand();
     const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
     // The logo zone spans the sidebar column, so it has to collapse with it or
     // the breadcrumb stops lining up with the content panel below.
@@ -109,17 +111,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                     navCollapsed ? "md:w-14 md:px-0 md:justify-center" : "md:w-64 md:px-5",
                 )}
             >
-                {/* Cool blue-leaning gray at rest; deeper blue-gray on hover.
-                    Light enough to read as neutral chrome, but with a clear
-                    blue lean so the brand sneaks in. */}
-                {/* Logo color tuned to read as a real brand mark, not
-                    a washed-out accent. Deep slate (#0f172a) at rest +
-                    slight warm shift on hover. The earlier blue-gray
-                    was too pale and competed with the chrome rather
-                    than anchoring it. */}
                 <Logo className="w-7 text-slate-900 group-hover:text-slate-700 transition-colors duration-150" />
-                {/* Wordmark hides on mobile — the mark + the drawer's own brand
-                    header carry it there, leaving room for the workspace pill. */}
                 <span
                     style={{ fontFamily: "var(--font-display)" }}
                     className={cn(
@@ -127,7 +119,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                         navCollapsed ? "hidden" : "hidden md:inline",
                     )}
                 >
-                    Warmbly
+                    {brand.name}
                 </span>
             </Link>
 

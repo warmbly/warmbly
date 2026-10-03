@@ -51,8 +51,9 @@ export default function ExternalLogin({
     // Which provider is mid-handoff. The click ends in a full page navigation,
     // so without this the button sits inert for the length of a round trip.
     const [busy, setBusy] = useState<string | null>(null);
-    const google = providers.includes("google");
-    const apple = providers.includes("apple");
+    const providersList = Array.isArray(providers) ? providers : [];
+    const google = providersList.includes("google");
+    const apple = providersList.includes("apple");
 
     const start = async (provider: string) => {
         if (busy) return;

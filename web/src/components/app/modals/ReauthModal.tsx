@@ -81,8 +81,8 @@ export default function ReauthModal() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    // Above the z-[110] dialogs a gated action can start from; below the z-[200] confirm.
-                    className="fixed inset-0 z-[190] bg-slate-900/30 flex items-center justify-center p-4"
+                    // Above all dialogs and confirm modals (z-[200]).
+                    className="fixed inset-0 z-[250] bg-slate-900/30 flex items-center justify-center p-4"
                     onMouseDown={(e) => {
                         if (e.target === e.currentTarget) cancel();
                     }}
