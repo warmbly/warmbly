@@ -138,6 +138,7 @@ func (s *tasksService) execSequenceSwitchStep(ctx context.Context, campaign *mod
 		StepID:       sequenceID.String(),
 		ContactID:    contact.ID.String(),
 		ContactEmail: contact.Email,
+		AISurface:    models.AISurfaceSequenceAI,
 	}})
 
 	// The key is stable per (campaign, contact, step), so an at-least-once task
@@ -684,6 +685,7 @@ func (s *tasksService) execSequenceAIAgentStep(ctx context.Context, campaign *mo
 		StepID:       sequenceID.String(),
 		ContactID:    contact.ID.String(),
 		ContactEmail: contact.Email,
+		AISurface:    models.AISurfaceSequenceAI,
 	}})
 
 	model := s.aiProvider.ModelForTier(cfg.AIThinking)

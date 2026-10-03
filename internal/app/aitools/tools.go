@@ -144,11 +144,39 @@ func BuildRegistry(d Deps) *Registry {
 }
 
 // logAudit fires an AUDIT_CREATED event via the normal audit path so the
-// dashboard spine refreshes for every teammate after a write-class tool runs.
+// dashboard spine refreshes for every teammate after a write-class tool runs,
+// with the invocation's AI provenance merged into the metadata.
 func (d Deps) logAudit(ctx context.Context, inv Invocation, action models.AuditAction, entity models.AuditEntityType, entityID *uuid.UUID, meta map[string]string) {
 	if d.Audit != nil {
-		d.Audit.LogAction(ctx, inv.OrgID, inv.UserID, action, entity, entityID, inv.IP, inv.UserAgent, nil, meta)
+		d.Audit.LogAction(ctx, inv.OrgID, inv.UserID, action, entity, entityID, inv.IP, inv.UserAgent, nil, provenanceMeta(inv, meta))
 	}
+}
+
+// provenanceMeta merges the invocation's AI provenance into the audit metadata
+// so every AI-caused write names its surface and the decision that authorized
+// it. Call-site keys win over provenance keys on collision: provenance is
+// additive and must never overwrite explicit existing metadata.
+func provenanceMeta(inv Invocation, meta map[string]string) map[string]string {
+	if inv.AISurface == "" && inv.AIDecision == "" && inv.SessionID == "" && inv.MessageID == "" {
+		return meta
+	}
+	out := make(map[string]string, len(meta)+4)
+	if inv.AISurface != "" {
+		out[models.MetaKeyAISurface] = string(inv.AISurface)
+	}
+	if inv.AIDecision != "" {
+		out[models.MetaKeyAIDecision] = string(inv.AIDecision)
+	}
+	if inv.SessionID != "" {
+		out[models.MetaKeyAISession] = inv.SessionID
+	}
+	if inv.MessageID != "" {
+		out[models.MetaKeyAIMessage] = inv.MessageID
+	}
+	for k, v := range meta {
+		out[k] = v
+	}
+	return out
 }
 
 // --- shared helpers ---

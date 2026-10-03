@@ -295,6 +295,7 @@ func (s *service) execAIAction(ctx context.Context, a models.Automation, n model
 		NodeID:         n.ID,
 		RunID:          stringFromMap(data, automationRunIDKey),
 		Detail:         string(n.Action),
+		AISurface:      models.AISurfaceAutomationAI,
 	}})
 	if !s.aiProvider.IsLocal() {
 		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, aiNodeCredits, "automation_ai", model, 0, idemKey); cerr != nil {
@@ -400,6 +401,7 @@ func (s *service) execAIAgentStep(ctx context.Context, a models.Automation, n mo
 		NodeID:         n.ID,
 		RunID:          runID,
 		Detail:         "ai_agent",
+		AISurface:      models.AISurfaceAutomationAI,
 	}})
 
 	// Charge per iteration before each model call; out-of-credits stops the loop
@@ -795,6 +797,7 @@ func (s *service) evalAICondition(ctx context.Context, a models.Automation, n mo
 		NodeID:         n.ID,
 		RunID:          stringFromMap(data, automationRunIDKey),
 		Detail:         "ask_ai: " + truncate(question, 120),
+		AISurface:      models.AISurfaceAutomationAI,
 	}})
 	if !s.aiProvider.IsLocal() {
 		if _, cerr := s.credits.Consume(ctx, a.OrganizationID, aiNodeCredits, "automation_ai", model, 0, idemKey); cerr != nil {

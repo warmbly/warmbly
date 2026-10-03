@@ -266,7 +266,7 @@ func (p placementTools) runBatch(ctx context.Context, inv Invocation, args json.
 	id := batch.ID
 	if p.audit != nil {
 		p.audit.LogAction(ctx, inv.OrgID, inv.UserID, models.AuditActionCreate, models.AuditEntityPlacementBatch, &id,
-			inv.IP, inv.UserAgent, nil, map[string]string{"senders": strconv.Itoa(batch.SenderCount), "panel": batch.Panel})
+			inv.IP, inv.UserAgent, nil, provenanceMeta(inv, map[string]string{"senders": strconv.Itoa(batch.SenderCount), "panel": batch.Panel}))
 	}
 	return jsonResult(map[string]any{
 		"batch": batchSummary(*batch),
@@ -424,7 +424,7 @@ func (p placementTools) run(ctx context.Context, inv Invocation, args json.RawMe
 		id := t.ID
 		if p.audit != nil {
 			p.audit.LogAction(ctx, inv.OrgID, inv.UserID, models.AuditActionCreate, models.AuditEntityPlacementTest, &id,
-				inv.IP, inv.UserAgent, nil, map[string]string{"sender": t.SenderEmail, "panel": t.Panel})
+				inv.IP, inv.UserAgent, nil, provenanceMeta(inv, map[string]string{"sender": t.SenderEmail, "panel": t.Panel}))
 		}
 		out = append(out, placementSummary(t))
 	}

@@ -154,6 +154,11 @@ func (h *Handler) ApplyAdvisorFinding(c *gin.Context) {
 		return
 	}
 
+	// Provenance for audit rows: the member clicked apply on an AI
+	// recommendation, and the registry tool inside enforces their bits.
+	inv.AISurface = models.AISurfaceAdvisor
+	inv.AIDecision = models.AIDecisionPermissionBit
+
 	f, xerr := h.AdvisorService.Apply(c.Request.Context(), inv, id)
 	if xerr != nil {
 		errx.JSON(c, xerr)
@@ -182,6 +187,9 @@ func (h *Handler) AgentFixAdvisorFinding(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid recommendation id"))
 		return
 	}
+
+	inv.AISurface = models.AISurfaceAdvisor
+	inv.AIDecision = models.AIDecisionPermissionBit
 
 	res, xerr := h.AdvisorService.FixWithAgent(c.Request.Context(), inv, id)
 	if xerr != nil {

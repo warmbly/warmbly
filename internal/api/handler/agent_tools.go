@@ -17,6 +17,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
@@ -112,6 +113,11 @@ func (h *Handler) CallAgentTool(c *gin.Context) {
 	}
 
 	name := c.Param("name")
+
+	// Provenance for audit rows: a direct tool call's whole authorization is
+	// the caller's permission bits (same rule as the MCP endpoint).
+	inv.AISurface = models.AISurfaceAPITools
+	inv.AIDecision = models.AIDecisionPermissionBit
 
 	// Send-class tools are never exposed or callable over this surface,
 	// matching the MCP endpoint.

@@ -26,6 +26,9 @@ type CreditContext struct {
 	SessionID      string `json:"session_id,omitempty"`
 	// Detail is a short free-form note (e.g. what an Ask AI branch asked).
 	Detail string `json:"detail,omitempty"`
+	// AISurface marks AI-attributed spends with the surface that caused them
+	// (models.AISurface); empty on non-AI spends.
+	AISurface AISurface `json:"ai_surface,omitempty"`
 }
 
 // Empty reports whether nothing was attributed.

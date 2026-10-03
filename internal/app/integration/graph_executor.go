@@ -448,6 +448,12 @@ func actionRunOutput(n models.AutomationNode, data map[string]any) map[string]an
 		for _, k := range aiOutputKeys(n.Action, cfg) {
 			out[k] = truncate(valueString(data[k]), 200)
 		}
+		// Provenance: the node's own output names the AI surface that produced
+		// it; agent mode adds the allowlist decision that authorized its tools.
+		out[models.MetaKeyAISurface] = string(models.AISurfaceAutomationAI)
+		if resolveMode(n.Action, cfg) == aiModeAgent {
+			out[models.MetaKeyAIDecision] = string(models.AIDecisionAllowlisted)
+		}
 	}
 	if len(out) == 0 {
 		return nil

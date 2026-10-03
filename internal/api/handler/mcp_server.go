@@ -14,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/api/middleware"
 	"github.com/warmbly/warmbly/internal/app/aitools"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
@@ -55,6 +56,10 @@ func (h *Handler) MCPEndpoint(c *gin.Context) {
 		APIPerms:  middleware.GetAPIKeyPermissions(c),
 		IP:        c.ClientIP(),
 		UserAgent: c.Request.UserAgent(),
+		// Non-interactive surface: the caller's permission bits are the whole
+		// authorization (there is no approval loop to attribute).
+		AISurface:  models.AISurfaceMCP,
+		AIDecision: models.AIDecisionPermissionBit,
 	}
 	if uid, err := middleware.GetUserUUID(c); err == nil {
 		inv.UserID = uid

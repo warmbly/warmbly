@@ -357,6 +357,12 @@ func (s *service) RunMessage(ctx context.Context, inv aitools.Invocation, sessio
 	_ = s.repo.UpdateSessionContext(ctx, inv.OrgID, owner, sessionID, sess.Context)
 	_ = s.repo.UpdateSessionTitle(ctx, inv.OrgID, owner, sessionID, deriveTitle(text))
 
+	// Provenance for audit rows: only policy-pre-approved writes can execute in
+	// this segment (anything else pauses), so the decision is always_allow.
+	inv.AISurface = models.AISurfaceAgent
+	inv.AIDecision = models.AIDecisionAlwaysAllow
+	inv.SessionID = sessionID.String()
+	inv.MessageID = messageID
 	return s.runLoop(ctx, inv, sess, genMsgs, len(genMsgs), messageID, emit)
 }
 
@@ -382,6 +388,12 @@ func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID 
 		_ = s.repo.SetToolPolicy(ctx, inv.OrgID, pending.ToolName, "always_allow", inv.UserID)
 	}
 
+	// Provenance for audit rows: every execution in this segment traces to the
+	// paused tool's original user message.
+	inv.AISurface = models.AISurfaceAgent
+	inv.SessionID = sessionID.String()
+	inv.MessageID = pending.MessageID
+
 	assistant := generation.AgentMessage{Role: "assistant", ToolCalls: []generation.ToolCall{{
 		ID: pending.ToolCallID, Name: pending.ToolName, Args: pending.Args,
 	}}}
@@ -393,8 +405,11 @@ func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID 
 		emit(StreamEvent{Type: evTool, Tool: pending.ToolName, Risk: pending.Risk, ArgsSummary: pending.ArgsSummary, ToolCallID: pending.ToolCallID})
 		// Resolve the pending tool from the invocation's full tool set (static
 		// registry tools PLUS dynamic per-org tools like connected MCP servers),
-		// which registry.Call does not cover.
-		out, cerr := s.executeTool(ctx, inv, pending.ToolName, pending.Args)
+		// which registry.Call does not cover. It runs under a human-approved
+		// invocation; the continued loop below goes back to policy-gated writes.
+		approved := inv
+		approved.AIDecision = models.AIDecisionHumanApproved
+		out, cerr := s.executeTool(ctx, approved, pending.ToolName, pending.Args)
 		if cerr != nil {
 			b, _ := json.Marshal(map[string]string{"error": cerr.Error()})
 			out = string(b)
@@ -417,6 +432,7 @@ func (s *service) Resume(ctx context.Context, inv aitools.Invocation, sessionID 
 	// already consumed messageID:1..N), so the resumed loop's iterations 1..N
 	// would replay for free. Pending is cleared above, so a resume is single-
 	// shot and a fresh id is safe.
+	inv.AIDecision = models.AIDecisionAlwaysAllow
 	return s.runLoop(ctx, inv, sess, genMsgs, baseline, "resume:"+uuid.NewString(), emit)
 }
 

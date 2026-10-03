@@ -124,6 +124,7 @@ func (d Deps) markThreadSeen(ctx context.Context, inv Invocation, args json.RawM
 	if _, xerr := d.Unibox.MarkSeenBulk(ctx, inv.OrgID, &models.MarkSeen{ThreadIDs: []string{in.ThreadID}, Seen: seen}); xerr != nil {
 		return "", fromErrx(xerr)
 	}
+	d.logAudit(ctx, inv, models.AuditActionUpdate, models.AuditEntityUnibox, nil, nil)
 	return jsonResult(map[string]any{"ok": true, "updated": len(ids), "seen": seen})
 }
 

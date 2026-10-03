@@ -31,6 +31,16 @@ type Invocation struct {
 	// IP / UserAgent flow into the audit trail for write-class tools.
 	IP        string
 	UserAgent string
+	// AI provenance: which AI surface issued this invocation and how its writes
+	// were authorized. Stamped by each surface's entry point and merged into
+	// audit metadata by Deps.logAudit. Zero values are legal — read-only
+	// invocations (e.g. web research tools) never reach the audit path.
+	AISurface  models.AISurface
+	AIDecision models.AIDecision
+	// SessionID / MessageID tie the audit row to the dashboard-agent run that
+	// caused it; empty on direct MCP/REST tool calls.
+	SessionID string
+	MessageID string
 }
 
 // Handler executes a tool. args is the raw JSON the model produced; the return

@@ -229,6 +229,7 @@ func (d Deps) verifyWebhook(ctx context.Context, inv Invocation, args json.RawMe
 	if verr := d.Webhooks.VerifyEndpoint(ctx, inv.OrgID, wid); verr != nil {
 		return "", verr
 	}
+	d.logAudit(ctx, inv, models.AuditActionTest, models.AuditEntityWebhook, &wid, nil)
 	return jsonResult(map[string]any{"ok": true, "webhook_id": wid.String()})
 }
 

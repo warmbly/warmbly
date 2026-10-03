@@ -278,6 +278,9 @@ func (s *service) autopilot(ctx context.Context, orgID uuid.UUID, settings *mode
 		// so it is gated on org permissions like any dashboard action.
 		IsAPIKey:  false,
 		UserAgent: "warmbly-advisor-autopilot",
+		// Provenance for audit rows: unattended member-acting automation.
+		AISurface:  models.AISurfaceAdvisor,
+		AIDecision: models.AIDecisionPermissionBit,
 	}
 
 	applied := 0
