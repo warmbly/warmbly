@@ -6215,7 +6215,7 @@
       "get": {
         "operationId": "campaigns_send_plan",
         "summary": "Today's sending plan",
-        "description": "What the campaign sends today and every limit that decided it, worked out through the scheduler's own gates. Nothing is stored or written. Scope READ_CAMPAIGNS, org permission view_campaigns.",
+        "description": "What the campaign sends today and every limit that decided it, worked out through the scheduler's own gates. An active campaign is served from a snapshot computed in the background (`computed_at` says when, `stale` says a refresh is pending); a campaign with no snapshot yet is computed on the request. Scope READ_CAMPAIGNS, org permission view_campaigns.",
         "tags": [
           "campaigns"
         ],
@@ -30540,13 +30540,14 @@
       },
       "CampaignSendPlan": {
         "type": "object",
-        "description": "Today's sending plan for a campaign, derived through the scheduler's gates on every read.",
+        "description": "Today's sending plan for a campaign, derived through the scheduler's gates and served from a background snapshot for an active campaign.",
         "required": [
           "campaign_id",
           "status",
           "day",
           "timezone",
           "computed_at",
+          "stale",
           "configured_ceiling",
           "projected_today",
           "sent_today",
@@ -30574,7 +30575,12 @@
           },
           "computed_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "When this plan was computed. For a snapshot, the moment it was last walked."
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "True when the snapshot has been outrun by an edit, a start or stop, or a new budget day, or has grown older than the snapshot's maximum age even though nothing changed, and a refreshed plan is already being computed. Always false for a plan computed on the request."
           },
           "configured_ceiling": {
             "type": "integer",
