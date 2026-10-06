@@ -56,6 +56,12 @@ func (s *schedulerService) CalculateNextCampaignTime(ctx context.Context, campai
 	// first one whose mailbox is full.
 	pass := s.newCampaignPass(ctx, campaign, accounts)
 	paced := s.pacedSenders(ctx, pass, accounts)
+	if campaign.RotateSenderPerStep {
+		// A lead's next step is not tied to the mailbox that sent the previous
+		// one when rotation is on, so routing must not hold the lead back for
+		// that mailbox: the placer picks another eligible one.
+		paced = nil
+	}
 
 	// STEP 3: Get campaign progress - find next contact/sequence to send.
 	// Honor the new-lead-per-day cap and the prioritize-new-leads ordering.
@@ -423,7 +429,27 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// campaign can send from. Its gates are the same as everyone else's; what
 	// differs is that a closed hour moves the send rather than dropping the
 	// mailbox, because there is no second address to fall back to.
+	//
+	// With per-step sender rotation this binding is not a rule: the previous
+	// step's mailbox is only a preference against (below), and the campaign's
+	// rotation mode picks the next step's sender.
 	bound := boundSender(accounts, nextPair.AssignedSender)
+	var lastDelivered *uuid.UUID
+	if campaign.RotateSenderPerStep {
+		// The binding can name a mailbox whose dispatch was rolled back (a
+		// mid-sequence ReleaseSend/RecordSendFailure keeps it), while the last
+		// address the contact actually heard from is a different one. The
+		// delivered sender, when there is one, is what the next step excludes.
+		if last, lerr := s.campaignProgressRepo.LastSenderForLead(ctx, campaignID, nextPair.ContactID); lerr == nil {
+			lastDelivered = last
+		}
+	}
+	previousSender := resolvePreviousSender(
+		campaign.RotateSenderPerStep, nextPair.AssignedSender, lastDelivered,
+	)
+	if campaign.RotateSenderPerStep {
+		bound = nil
+	}
 
 	// A lead can have steps but no recorded binding: it was removed from the
 	// campaign and added back, which keeps its progress and starts a new lead
@@ -432,8 +458,9 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 	// not. It cannot be waited for the way a recorded binding is: routing does
 	// not know about it, so a lead waiting on one would hold up every lead
 	// behind it. The next send records it, and from then on it is a rule.
+	// Per-step rotation disables this preference: it wants a different mailbox.
 	prefer := bound
-	if bound == nil && nextPair.AssignedSender == nil && !nextPair.IsNewLead {
+	if !campaign.RotateSenderPerStep && bound == nil && nextPair.AssignedSender == nil && !nextPair.IsNewLead {
 		if last, lerr := s.campaignProgressRepo.LastSenderForLead(ctx, campaignID, nextPair.ContactID); lerr == nil {
 			prefer = boundSender(accounts, last)
 		}
@@ -684,6 +711,16 @@ func (s *schedulerService) placeCampaignSend(ctx context.Context, campaign *mode
 				candidates = matching
 			}
 		}
+	}
+
+	// STEP 8.4: Per-step sender rotation. A step never leaves from the mailbox
+	// that sent the previous one while another eligible mailbox exists; the
+	// campaign's rotation mode picks among the rest. The previous mailbox is
+	// used again only when it is the sole eligible one (a single-mailbox pool,
+	// or an ESP-strict match that leaves nothing else), so rotation never
+	// strands a sequence it cannot rotate.
+	if previousSender != nil {
+		candidates = withoutSender(candidates, *previousSender)
 	}
 
 	// STEP 8.5: Select the mailbox. A lead already bound to one keeps it; only a

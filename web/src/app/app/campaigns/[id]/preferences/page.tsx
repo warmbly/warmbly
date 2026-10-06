@@ -227,6 +227,9 @@ export default function CampaignPreferences() {
 
             // Rotation
             ...(newData.rotation_mode !== campaign.rotation_mode && { rotation_mode: newData.rotation_mode }),
+            ...(newData.rotate_sender_per_step !== campaign.rotate_sender_per_step && {
+                rotate_sender_per_step: newData.rotate_sender_per_step,
+            }),
 
             // Ramp-up
             ...(newData.ramp_enabled !== campaign.ramp_enabled && { ramp_enabled: newData.ramp_enabled }),

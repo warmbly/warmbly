@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/warmbly/warmbly/internal/app/behavior"
 	"github.com/warmbly/warmbly/internal/bitmask"
 	"github.com/warmbly/warmbly/internal/models"
@@ -557,4 +559,35 @@ func selectAccountByRotationMode(rotationMode string, candidates []AccountCandid
 	default:
 		return selectAccountWeighted(candidates)
 	}
+}
+
+// withoutSender drops one mailbox from the eligible set for per-step sender
+// rotation. Excluding the previous step's mailbox must never make a sendable
+// step unsendable: a single-mailbox pool, or an ESP-strict match that only
+// leaves that one mailbox, keeps the original set so the sequence still sends.
+func withoutSender(candidates []AccountCandidate, id uuid.UUID) []AccountCandidate {
+	filtered := make([]AccountCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Account.ID != id {
+			filtered = append(filtered, candidate)
+		}
+	}
+	if len(filtered) == 0 {
+		return candidates
+	}
+	return filtered
+}
+
+// resolvePreviousSender chooses the mailbox per-step rotation must exclude for
+// the next step: the last sender a delivered step actually used when the lead
+// has one, otherwise the current binding (which may name a mailbox whose
+// dispatch was rolled back). Rotation off means no exclusion at all.
+func resolvePreviousSender(rotate bool, assigned, lastDelivered *uuid.UUID) *uuid.UUID {
+	if !rotate {
+		return nil
+	}
+	if lastDelivered != nil {
+		return lastDelivered
+	}
+	return assigned
 }

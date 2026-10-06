@@ -138,6 +138,13 @@ type Campaign struct {
 	RotationMode   string           `json:"rotation_mode"`
 	Senders        []CampaignSender `json:"senders,omitempty"` // loaded on demand, not in the base SELECT
 
+	// RotateSenderPerStep lets every step of a contact's sequence go out from a
+	// (different) mailbox chosen by RotationMode, instead of binding the whole
+	// sequence to the mailbox that sent the first email. The mailbox that sent
+	// the previous step is preferred against: it is reused only when no other
+	// mailbox in the pool is eligible for this step right now.
+	RotateSenderPerStep bool `json:"rotate_sender_per_step"`
+
 	// Per-campaign daily ramp-up. Applied only via min() against the per-mailbox
 	// cap, so it can never raise volume above the cold cap. RampLevel/RampLevelDate
 	// are server-managed (persisted across pause/resume).
@@ -420,8 +427,9 @@ type UpdateCampaign struct {
 
 	// Net-new send controls. The explicit sender LIST is edited via
 	// PUT /campaigns/:id/senders; only the strategy/mode toggles ride PATCH.
-	SenderStrategy *string `json:"sender_strategy,omitempty"`
-	RotationMode   *string `json:"rotation_mode,omitempty"`
+	SenderStrategy      *string `json:"sender_strategy,omitempty"`
+	RotationMode        *string `json:"rotation_mode,omitempty"`
+	RotateSenderPerStep *bool   `json:"rotate_sender_per_step,omitempty"`
 
 	RampEnabled   *bool `json:"ramp_enabled,omitempty"`
 	RampStart     *int  `json:"ramp_start,omitempty"`
@@ -496,9 +504,10 @@ type CreateCampaign struct {
 
 	// Sending-account selection + rotation (net-new). When sender_strategy is
 	// "explicit", Senders is the mailbox pool; otherwise EmailTagIDs are used.
-	SenderStrategy *string               `json:"sender_strategy,omitempty"`
-	RotationMode   *string               `json:"rotation_mode,omitempty"`
-	Senders        []CampaignSenderInput `json:"senders,omitempty"`
+	SenderStrategy      *string               `json:"sender_strategy,omitempty"`
+	RotationMode        *string               `json:"rotation_mode,omitempty"`
+	RotateSenderPerStep *bool                 `json:"rotate_sender_per_step,omitempty"`
+	Senders             []CampaignSenderInput `json:"senders,omitempty"`
 
 	// Per-campaign daily ramp-up (net-new). ramp_level is server-owned.
 	RampEnabled   *bool `json:"ramp_enabled,omitempty"`
