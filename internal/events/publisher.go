@@ -18,6 +18,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 	"github.com/warmbly/warmbly/internal/pkg/emsg"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -64,6 +65,8 @@ type SendEmailParams struct {
 	CC             []string
 	BCC            []string
 	InReplyTo      string
+	References     []string
+	DispatchNonce  string
 	ThreadID       string
 	Subject        string
 	MessageID      string
@@ -93,9 +96,11 @@ type SendEmailParams struct {
 // sender is the identity a message goes out under, carried together because
 // the halves are one decision and are read as a set.
 type sender struct {
-	Name    string
-	Email   string
-	ReplyTo string
+	Name          string
+	Email         string
+	ReplyTo       string
+	References    string
+	DispatchNonce string
 }
 
 type publisher struct {
@@ -136,8 +141,12 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 		// would be published body-less and fail there.
 		return fmt.Errorf("object storage not configured; cannot hand send %s to a worker", params.TaskID)
 	}
+	references, err := mailhdr.References(params.References)
+	if err != nil {
+		return err
+	}
 	s3Key, err := p.storeEmailBody(ctx, params.TaskID, params.OrgID, params.BodyPlain, params.BodyHTML, params.Attachments,
-		sender{Name: params.FromName, Email: params.FromEmail, ReplyTo: params.ReplyTo})
+		sender{Name: params.FromName, Email: params.FromEmail, ReplyTo: params.ReplyTo, References: references, DispatchNonce: params.DispatchNonce})
 	if err != nil {
 		return fmt.Errorf("failed to store email body: %w", err)
 	}
@@ -237,11 +246,13 @@ func (p *publisher) storeEmailBody(ctx context.Context, taskID, orgID uuid.UUID,
 	// Create email blob. Attachment refs are carried inside the blob so the
 	// worker can fetch each file's bytes from object storage at send time.
 	blob := &emsg.EmailBlob{
-		PlainText: []byte(encPlainText),
-		HTMLBody:  []byte(encHTMLBody),
-		FromName:  from.Name,
-		FromEmail: from.Email,
-		ReplyTo:   from.ReplyTo,
+		PlainText:     []byte(encPlainText),
+		HTMLBody:      []byte(encHTMLBody),
+		FromName:      from.Name,
+		FromEmail:     from.Email,
+		ReplyTo:       from.ReplyTo,
+		References:    from.References,
+		DispatchNonce: from.DispatchNonce,
 	}
 	for _, a := range attachments {
 		blob.Attachments = append(blob.Attachments, emsg.Attachment{

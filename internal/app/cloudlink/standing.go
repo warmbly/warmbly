@@ -39,36 +39,49 @@ func (s *service) recordStanding(ctx context.Context, accountID uuid.UUID, h *mo
 
 // carryStanding keeps a cloud quarantine or block in force on the local pool
 // row a mailbox rejoins when it leaves the cloud.
-func (s *service) carryStanding(ctx context.Context, m models.CloudLinkMailbox) {
+func (s *service) carryStanding(ctx context.Context, m models.CloudLinkMailbox) error {
 	h := m.Standing
 	if h == nil {
-		return
+		return nil
 	}
 	switch models.WarmupHealthState(h.State) {
 	case models.WarmupHealthBlocked:
 		// A block with no end requires review; it carries as one.
 		if h.BlockedUntil != nil && !h.BlockedUntil.After(time.Now()) {
-			return
+			return nil
 		}
 	case models.WarmupHealthQuarantined:
-		if h.BlockedUntil == nil || !h.BlockedUntil.After(time.Now()) {
-			return
+		if h.BlockedUntil != nil && !h.BlockedUntil.After(time.Now()) {
+			return nil
 		}
 	default:
-		return
+		return nil
 	}
-	if err := s.repo.CarryStanding(ctx, m.EmailAccountID, h); err != nil {
-		log.Warn().Err(err).Str("account_id", m.EmailAccountID.String()).Msg("cloud link: warmup standing could not be carried to the local pool")
-	}
+	return s.repo.CarryStanding(ctx, m.EmailAccountID, h)
 }
 
 func (s *service) SyncStanding(ctx context.Context) ([]models.CloudLinkStandingChange, *errx.Error) {
+	if !reconciliationLocked(ctx) {
+		var changes []models.CloudLinkStandingChange
+		xerr := s.reconcileLocked(ctx, func(ctx context.Context) *errx.Error {
+			var xerr *errx.Error
+			changes, xerr = s.SyncStanding(ctx)
+			return xerr
+		})
+		return changes, xerr
+	}
 	l, err := s.repo.Get(ctx)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
 	if l == nil {
 		return nil, nil
+	}
+	if l.DisconnectPending {
+		return nil, s.Disconnect(ctx)
+	}
+	if xerr := s.reconcileManagedConsents(ctx, l); xerr != nil {
+		return nil, xerr
 	}
 	enrolled, err := s.repo.List(ctx)
 	if err != nil {
@@ -77,6 +90,13 @@ func (s *service) SyncStanding(ctx context.Context) ([]models.CloudLinkStandingC
 	if len(enrolled) == 0 {
 		return nil, nil
 	}
+	if xerr := s.reconcileEnrollments(ctx, l, enrolled); xerr != nil {
+		return nil, xerr
+	}
+	enrolled, err = s.repo.List(ctx)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
 	byRemote, xerr := s.fetchStanding(ctx, l)
 	if xerr != nil {
 		return nil, xerr
@@ -84,12 +104,15 @@ func (s *service) SyncStanding(ctx context.Context) ([]models.CloudLinkStandingC
 	var changes []models.CloudLinkStandingChange
 	for _, m := range enrolled {
 		h := byRemote[m.RemoteID]
-		if h == nil || sameStanding(m.Standing, h) {
+		if h == nil || !knownHealthState(h.State) {
+			if err := s.repo.InvalidateStanding(ctx, m.EmailAccountID); err != nil {
+				return changes, errx.InternalError()
+			}
 			continue
 		}
 		prev, ok := s.recordStanding(ctx, m.EmailAccountID, h, false)
 		if !ok {
-			continue
+			return changes, errx.InternalError()
 		}
 		// A first reading is measured against the unrestricted mailbox this
 		// instance saw until now, so a hold it starts enforcing is announced.

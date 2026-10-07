@@ -14,12 +14,41 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/emsg"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // errMailboxNotLoaded is what an owner reads when the worker never connected the mailbox.
 const errMailboxNotLoaded = "The sending worker has not loaded this mailbox yet, so nothing was sent. A mail server the worker cannot reach, or one that refuses its login, keeps a mailbox from loading."
 
 func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.SendEmail) error {
+	workerID, workerIDErr := uuid.Parse(w.ID)
+	var dispatch repository.WorkerWarmupDispatch
+	var requiresNonce bool
+	if sendEmail.IsWarmup {
+		if d, ok := w.SyncContextRepository.(repository.WorkerWarmupDispatch); ok {
+			if workerIDErr != nil || workerID == uuid.Nil {
+				return errors.New("invalid warmup worker identity")
+			}
+			dispatch = d
+			state, err := d.WarmupDispatch(ctx, sendEmail.TaskID, sendEmail.EmailID, workerID, uuid.Nil, false, nil)
+			if err != nil {
+				return err
+			}
+			if state == nil {
+				return errors.New("warmup dispatch authority unavailable")
+			}
+			requiresNonce = state.State == "authorized"
+			if state.State == "started" || state.State == "denied" {
+				return nil
+			}
+			if state.State == "finished" {
+				return w.replayWarmupResult(state.Result)
+			}
+			if !requiresNonce && state.State != "legacy" {
+				return errors.New("invalid warmup dispatch state")
+			}
+		}
+	}
 	log.Info().
 		Str("task_id", sendEmail.TaskID.String()).
 		Str("email_id", sendEmail.EmailID.String()).
@@ -67,6 +96,28 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 	}
 
 	// Use unified Send method
+	if requiresNonce && body.DispatchNonce == "" {
+		return errors.New("warmup dispatch nonce missing")
+	}
+	if body.DispatchNonce != "" {
+		if dispatch == nil {
+			return errors.New("warmup dispatch authority unavailable")
+		}
+		nonce, err := uuid.Parse(body.DispatchNonce)
+		if err != nil {
+			return err
+		}
+		state, err := dispatch.WarmupDispatch(ctx, sendEmail.TaskID, sendEmail.EmailID, workerID, nonce, true, nil)
+		if err != nil {
+			return err
+		}
+		if state.State == "finished" {
+			return w.replayWarmupResult(state.Result)
+		}
+		if state.State != "execute" {
+			return nil
+		}
+	}
 	w.recordSendAttempt()
 	sendStart := time.Now()
 	result := mail.Send(ctx, &wmail.SendRequest{
@@ -79,6 +130,7 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 		BodyPlain:      body.Plain,
 		BodyHTML:       body.HTML,
 		InReplyTo:      sendEmail.InReplyTo,
+		References:     body.References,
 		Parent:         sendEmail.Parent,
 		IsWarmup:       sendEmail.IsWarmup,
 		WarmupToken:    sendEmail.WarmupToken,
@@ -90,6 +142,22 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 	})
 	w.recordSendLatency(time.Since(sendStart))
 	w.recordSendOutcome(result)
+	if body.DispatchNonce != "" {
+		stored := models.SendEmailResult{TaskID: sendEmail.TaskID, Success: result.Success, MessageID: result.MessageID, ProviderMsgID: result.ProviderMsgID, ThreadID: result.ThreadID, SentAt: time.Now().UTC()}
+		if result.Error != nil {
+			stored.Error = wmail.MailErrorToSendError(result.Error)
+		}
+		if _, err := dispatch.WarmupDispatch(ctx, sendEmail.TaskID, sendEmail.EmailID, workerID, uuid.Nil, false, &stored); err != nil {
+			return err
+		}
+		if err := w.replayWarmupResult(&stored); err != nil {
+			return err
+		}
+		if result.Success {
+			w.deleteTransportEmailBody(ctx, sendEmail.TaskID, sendEmail.BodyS3Key)
+			return nil
+		}
+	}
 
 	if result.Success {
 		log.Info().
@@ -115,6 +183,17 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 	return nil
 }
 
+func (w *WorkerService) replayWarmupResult(result *models.SendEmailResult) error {
+	if result == nil {
+		return errors.New("warmup result unavailable")
+	}
+	kind := models.JobEventTypeEmailFailed
+	if result.Success {
+		kind = models.JobEventTypeEmailSent
+	}
+	return w.Produce(kind, result.TaskID.String(), *result)
+}
+
 func (w *WorkerService) deleteTransportEmailBody(ctx context.Context, taskID uuid.UUID, s3Key string) {
 	if w.Storage == nil || s3Key == "" {
 		return
@@ -134,12 +213,14 @@ func (w *WorkerService) deleteTransportEmailBody(ctx context.Context, taskID uui
 // time. The identity fields are empty when the publisher predates them, which
 // means "use the mailbox's own".
 type sendBody struct {
-	Plain       string
-	HTML        string
-	Attachments []emsg.Attachment
-	FromName    string
-	FromEmail   string
-	ReplyTo     string
+	DispatchNonce string
+	References    string
+	Plain         string
+	HTML          string
+	Attachments   []emsg.Attachment
+	FromName      string
+	FromEmail     string
+	ReplyTo       string
 }
 
 // fetchEmailBody fetches and decodes the email body from S3.
@@ -186,12 +267,14 @@ func (w *WorkerService) fetchEmailBody(ctx context.Context, orgID uuid.UUID, s3K
 	}
 
 	return &sendBody{
-		Plain:       bodyPlain,
-		HTML:        bodyHTML,
-		Attachments: blob.Attachments,
-		FromName:    blob.FromName,
-		FromEmail:   blob.FromEmail,
-		ReplyTo:     blob.ReplyTo,
+		Plain:         bodyPlain,
+		HTML:          bodyHTML,
+		Attachments:   blob.Attachments,
+		FromName:      blob.FromName,
+		FromEmail:     blob.FromEmail,
+		ReplyTo:       blob.ReplyTo,
+		References:    blob.References,
+		DispatchNonce: blob.DispatchNonce,
 	}, nil
 }
 
@@ -322,11 +405,15 @@ func (w *WorkerService) sendEmailError(taskID uuid.UUID, emailID uuid.UUID, mail
 
 // sendEmailFailure sends a generic failure result (for non-MailError cases)
 func (w *WorkerService) sendEmailFailure(taskID uuid.UUID, emailID uuid.UUID, mail *wmail.WMail, errorMsg string) {
+	now := time.Now().UTC()
 	result := models.SendEmailResult{
 		TaskID:         taskID,
 		Success:        false,
 		LegacyErrorMsg: errorMsg,
-		SentAt:         time.Now(),
+		SentAt:         now,
+		Error: &models.EmailSendError{Code: string(errx.MailErrorCodeServerUnreachable), Message: errorMsg, Failure: &errx.SendFailure{
+			Protocol: "internal", Stage: "prepare", Disposition: errx.SendRetry, Scope: "mailbox", ObservedAt: now,
+		}},
 	}
 
 	if err := w.Produce(models.JobEventTypeEmailFailed, taskID.String(), result); err != nil {

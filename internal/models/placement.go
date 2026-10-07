@@ -66,6 +66,9 @@ const (
 	// PlacementFolderFailed is a copy that never left the sender.
 	PlacementFolderFailed    = "failed"
 	PlacementFolderCancelled = "cancelled"
+	PlacementFolderUnknown   = "unknown"
+	PlacementFolderArchive   = "archive"
+	PlacementFolderCustom    = "custom"
 )
 
 // PlacementFolderResolved reports whether a folder is a final answer about
@@ -73,7 +76,7 @@ const (
 func PlacementFolderResolved(folder string) bool {
 	switch folder {
 	case PlacementFolderInbox, PlacementFolderPromotions, PlacementFolderOther,
-		PlacementFolderSpam, PlacementFolderMissing:
+		PlacementFolderSpam, PlacementFolderMissing, PlacementFolderUnknown, PlacementFolderArchive, PlacementFolderCustom:
 		return true
 	}
 	return false
@@ -83,8 +86,15 @@ func PlacementFolderResolved(folder string) bool {
 // canonical folder and provider flags, splitting Gmail's Promotions tab from
 // the other tabs because Promotions is where cold mail goes to be ignored.
 func ClassifyPlacementLanding(folder string, flags []string) string {
-	if folder == FolderSpam || HasSpamFlag(flags) {
+	switch ClassifyWarmupLanding(folder, flags) {
+	case WarmupLandedSpam:
 		return PlacementFolderSpam
+	case WarmupLandedUnknown:
+		return PlacementFolderUnknown
+	case WarmupLandedArchive:
+		return PlacementFolderArchive
+	case WarmupLandedCustom:
+		return PlacementFolderCustom
 	}
 	tab := ""
 	for _, f := range flags {
@@ -171,30 +181,41 @@ type PlacementResult struct {
 	SeedAddress   string     `json:"seed_address"`
 	// Family is who hosts the seed, a mailhost value (google_workspace,
 	// gmail, microsoft365, outlook, yahoo, ...). Stored as provider.
-	Family         string     `json:"family"`
-	RemoteSeedID   *uuid.UUID `json:"-"`
-	TaskID         *uuid.UUID `json:"-"`
-	MessageID      string     `json:"-"`
-	Folder         string     `json:"folder"`
-	ScheduledAt    *time.Time `json:"scheduled_at"`
-	SentAt         *time.Time `json:"sent_at"`
-	DetectedAt     *time.Time `json:"detected_at"`
-	RawFlags       string     `json:"-"`
-	Error          string     `json:"error,omitempty"`
-	RemoteSyncedAt *time.Time `json:"-"`
+	Family         string            `json:"family"`
+	RemoteSeedID   *uuid.UUID        `json:"-"`
+	TaskID         *uuid.UUID        `json:"-"`
+	MessageID      string            `json:"-"`
+	Folder         string            `json:"folder"`
+	ScheduledAt    *time.Time        `json:"scheduled_at"`
+	SentAt         *time.Time        `json:"sent_at"`
+	DetectedAt     *time.Time        `json:"detected_at"`
+	RawFlags       string            `json:"-"`
+	Error          string            `json:"error,omitempty"`
+	RemoteSyncedAt *time.Time        `json:"-"`
+	FirstFolder    *string           `json:"first_folder,omitempty"`
+	ObservedAt     *time.Time        `json:"observed_at,omitempty"`
+	Evidence       *ReceivedEvidence `json:"evidence,omitempty"`
 }
 
 // PlacementCounts is where a set of probes landed.
 type PlacementCounts struct {
-	Total      int `json:"total"`
-	Pending    int `json:"pending"`
-	Inbox      int `json:"inbox"`
-	Promotions int `json:"promotions"`
-	Other      int `json:"other"`
-	Spam       int `json:"spam"`
-	Missing    int `json:"missing"`
-	Failed     int `json:"failed"`
-	Cancelled  int `json:"cancelled"`
+	Total         int                `json:"total"`
+	Pending       int                `json:"pending"`
+	Inbox         int                `json:"inbox"`
+	Promotions    int                `json:"promotions"`
+	Other         int                `json:"other"`
+	Spam          int                `json:"spam"`
+	Missing       int                `json:"missing"`
+	Failed        int                `json:"failed"`
+	Cancelled     int                `json:"cancelled"`
+	Unknown       int                `json:"unknown"`
+	Archived      int                `json:"archive"`
+	Custom        int                `json:"custom"`
+	Observed      int                `json:"observed_receipts"`
+	Classified    int                `json:"classified_receipts"`
+	Unresolved    int                `json:"unresolved"`
+	PrimaryMetric *ObservationMetric `json:"primary_metric"`
+	NonSpamMetric *ObservationMetric `json:"non_spam_metric"`
 	// Delivered is every copy that left and got a verdict:
 	// inbox + promotions + other + spam + missing.
 	Delivered int `json:"delivered"`
@@ -228,6 +249,12 @@ func (c *PlacementCounts) AddN(folder string, n int) {
 		c.Failed += n
 	case PlacementFolderCancelled:
 		c.Cancelled += n
+	case PlacementFolderUnknown:
+		c.Unknown += n
+	case PlacementFolderArchive:
+		c.Archived += n
+	case PlacementFolderCustom:
+		c.Custom += n
 	default:
 		c.Pending += n
 	}
@@ -236,6 +263,11 @@ func (c *PlacementCounts) AddN(folder string, n int) {
 // Finish derives Delivered and the rates.
 func (c *PlacementCounts) Finish() {
 	c.Delivered = c.Inbox + c.Promotions + c.Other + c.Spam + c.Missing
+	c.Classified = c.Inbox + c.Promotions + c.Other + c.Spam
+	c.Observed = c.Classified + c.Unknown + c.Archived + c.Custom
+	c.Unresolved = c.Missing + c.Pending
+	c.PrimaryMetric = NewObservationMetric("seed_panel", "classified_observed_receipts", "fraction", c.Inbox, c.Classified, c.Unresolved+c.Unknown+c.Archived+c.Custom)
+	c.NonSpamMetric = NewObservationMetric("seed_panel", "classified_observed_receipts", "fraction", c.Inbox+c.Promotions+c.Other, c.Classified, c.Unresolved+c.Unknown+c.Archived+c.Custom)
 	c.InboxRate, c.TabsRate, c.SpamRate, c.MissingRate = nil, nil, nil, nil
 	if c.Delivered == 0 {
 		return

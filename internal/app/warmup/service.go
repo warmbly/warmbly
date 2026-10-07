@@ -253,6 +253,13 @@ func (s *service) RemoveFromAllPools(ctx context.Context, accountID uuid.UUID) *
 }
 
 func (s *service) CanParticipate(ctx context.Context, accountID uuid.UUID, poolType string) (bool, string, *errx.Error) {
+	eligible, err := s.repo.IsPoolEligible(ctx, accountID, poolType, false)
+	if err != nil {
+		return false, "", errx.InternalError()
+	}
+	if !eligible {
+		return false, "pool_authority_unavailable", nil
+	}
 	health, err := s.repo.GetParticipantHealth(ctx, accountID, poolType)
 	if err != nil {
 		return false, "", errx.InternalError()

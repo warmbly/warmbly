@@ -15,6 +15,9 @@ export type PlacementFolder =
     | "other"
     | "spam"
     | "missing"
+    | "unknown"
+    | "archive"
+    | "custom"
     | "failed"
     | "cancelled";
 
@@ -29,6 +32,10 @@ export interface PlacementCounts {
     failed: number;
     cancelled: number;
     delivered: number;
+	unknown?: number;
+	archive?: number;
+	custom?: number;
+	observed_receipts?: number;
     // Fractions 0..1 of delivered; null until something is delivered.
     inbox_rate: number | null;
     tabs_rate: number | null;

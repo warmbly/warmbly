@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -32,6 +32,14 @@ var errSendResultEarly = errors.New("send result arrived before the task was sta
 // the delivered email would otherwise leave no sent_at for follow-up pacing to
 // read, so a reserved step is stamped here from the worker's own confirmation.
 func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEmailResult) error {
+	result.Success = true
+	if recovery, ok := s.TaskRepo.(repository.SendResultRecovery); ok {
+		return recovery.ApplySendResult(ctx, result, func(ctx context.Context) error { return s.applyEmailSent(ctx, result) })
+	}
+	return s.applyEmailSent(ctx, result)
+}
+
+func (s *JobsService) applyEmailSent(ctx context.Context, result models.SendEmailResult) error {
 	if s.TaskRepo == nil || result.TaskID == uuid.Nil {
 		return nil
 	}
@@ -50,7 +58,7 @@ func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEma
 	// keys on what the recipient actually received.
 	if result.MessageID != "" && result.MessageID != task.MessageID {
 		if err := s.TaskRepo.UpdateTaskMessageID(ctx, task.ID, result.MessageID); err != nil {
-			log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("could not record worker message id")
+			return err
 		}
 	}
 	// The provider-side conversation handle (Gmail only). Without it a
@@ -60,7 +68,7 @@ func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEma
 	// (issue #472).
 	if result.ThreadID != "" {
 		if err := s.TaskRepo.UpdateTaskThreadID(ctx, task.ID, result.ThreadID); err != nil {
-			log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("could not record worker thread id")
+			return err
 		}
 	}
 	switch task.TaskType {
@@ -87,7 +95,7 @@ func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEma
 		// against when the verify header did not survive delivery.
 		if s.WarmupRepo != nil && result.MessageID != "" {
 			if err := s.WarmupRepo.RecordWarmupTokenDelivery(ctx, task.ID, result.MessageID); err != nil {
-				log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("could not record the delivered warmup message id")
+				return err
 			}
 		}
 	}
@@ -127,6 +135,17 @@ func (s *JobsService) repairCampaignSendStamp(ctx context.Context, task *reposit
 // that completed while the send was in flight is reopened. Once the retry cap
 // is spent the lead is marked failed and routing drops it.
 func (s *JobsService) HandleEmailFailed(ctx context.Context, result models.SendEmailResult) error {
+	result.Success = false
+	if recovery, ok := s.TaskRepo.(repository.SendResultRecovery); ok {
+		return recovery.ApplySendResult(ctx, result, func(ctx context.Context) error { return s.applyEmailFailed(ctx, result) })
+	}
+	if result.Error != nil && result.Error.Failure != nil && result.Error.Failure.Disposition == errx.SendAmbiguous {
+		return nil
+	}
+	return s.applyEmailFailed(ctx, result)
+}
+
+func (s *JobsService) applyEmailFailed(ctx context.Context, result models.SendEmailResult) error {
 	if s.TaskRepo == nil || result.TaskID == uuid.Nil {
 		return nil
 	}

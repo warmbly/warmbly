@@ -19,6 +19,7 @@ import {
     bandForRate,
     fmtNum,
     fmtPct,
+    observedCount,
     rateSentence,
     shortDate,
     type DayView,
@@ -140,15 +141,15 @@ export function LandedLegend({ className }: { className?: string }) {
 // the pointer (or the whole range when nothing is hovered).
 export function PlacementColumns({ days, height = 140 }: { days: DayView[]; height?: number }) {
     const [hover, setHover] = useState<number | null>(null);
-    const data = React.useMemo(() => days.map((d) => ({ key: d.date, parts: [d.inbox, d.tabs, d.spam] })), [days]);
-    const any = days.some((d) => d.delivered > 0);
-    if (!any) return <EmptyChart height={height + 34} label="No warmup deliveries in this window" />;
+    const data = React.useMemo(() => days.map((d) => ({ key: d.date, parts: [d.inbox, d.tabs, d.spam, d.unknown ?? 0, d.archived ?? 0, d.custom ?? 0] })), [days]);
+    const any = days.some((d) => observedCount(d) > 0);
+    if (!any) return <EmptyChart height={height + 34} label="No observed receipts in this window" />;
 
     const d = hover != null ? days[hover] : null;
     return (
         <div>
             <div className="relative w-full" style={{ height: height + 16 }}>
-                <DitherColumns data={data} tones={["emerald", "violet", "rose"]} height={height} onHover={setHover} />
+                <DitherColumns data={data} tones={["emerald", "violet", "rose", "slate", "slate", "slate"]} height={height} onHover={setHover} />
                 <div className="absolute left-0 right-0 h-px bg-slate-200/80" style={{ top: height }} />
                 <div className="absolute left-0 right-0 bottom-0 flex justify-between font-mono text-[9.5px] text-slate-400">
                     <span>{shortDate(days[0].date)}</span>
@@ -157,14 +158,15 @@ export function PlacementColumns({ days, height = 140 }: { days: DayView[]; heig
             </div>
             <p className="mt-2 h-4 text-[11px] text-slate-500 font-mono tabular-nums truncate">
                 {d ? (
-                    d.delivered > 0 ? (
+                    observedCount(d) > 0 ? (
                         <>
                             {shortDate(d.date)}: <span className="text-emerald-600">{d.inbox} inbox</span>
                             {d.tabs > 0 && <> · <span className="text-violet-600">{d.tabs} tabs</span></>} · <span className="text-rose-600">{d.spam} spam</span>
-                            {d.rescued > 0 && <> ({d.rescued} rescued)</>} · {fmtPct(((d.inbox + d.tabs) / d.delivered) * 100)} inbox
+                            {d.rescued > 0 && <> ({d.rescued} rescue requests)</>} · {fmtPct(d.delivered > 0 ? ((d.inbox + d.tabs) / d.delivered) * 100 : null)} non-spam
+                            {d.unknown != null && <> · {d.unknown} unknown · {d.archived} archive · {d.custom} custom</>}
                         </>
                     ) : (
-                        <>{shortDate(d.date)}: no deliveries</>
+                        <>{shortDate(d.date)}: no observed receipts</>
                     )
                 ) : (
                     <span className="text-slate-400">Point at a day for its breakdown</span>
@@ -305,7 +307,7 @@ export function ProviderBreakdown({ providers }: { providers: PlacementProvider[
         <div className="divide-y divide-slate-200/60">
             {providers.map((p) => {
                 const expanded = open === p.group;
-                const hosts = p.hosts.filter((h) => h.delivered > 0);
+                const hosts = p.hosts.filter((h) => observedCount(h) > 0);
                 const canExpand = hosts.length > 1 || (hosts.length === 1 && hosts[0].host !== "");
                 return (
                     <div key={p.group}>
@@ -320,7 +322,7 @@ export function ProviderBreakdown({ providers }: { providers: PlacementProvider[
                             <ChevronRightIcon className={cn("w-3 h-3 shrink-0 text-slate-300 transition-transform", expanded && "rotate-90", !canExpand && "invisible")} />,
                             <ProviderLogo id={GROUP_LOGO[p.group]} size="sm" />,
                             <span className="text-[12.5px] font-medium text-slate-900 w-24 sm:w-32 shrink-0 truncate">{GROUP_LABEL[p.group]}</span>,
-                            <PlacementBar inbox={p.inbox} tabs={p.tabs} spam={p.spam} />,
+                            <PlacementBar inbox={p.inbox} tabs={p.tabs} spam={p.spam} unknown={p.unknown} archived={p.archived} custom={p.custom} />,
                             <RateCells inbox={p.inbox_rate} spam={p.spam_rate} delivered={p.delivered} />,
                         )}
                         {expanded && (
@@ -328,7 +330,7 @@ export function ProviderBreakdown({ providers }: { providers: PlacementProvider[
                                 {hosts.map((h) => (
                                     <div key={h.host || "unknown"} className="min-h-9 pl-14 pr-5 py-1.5 flex items-center gap-3">
                                         <span className="text-[11.5px] text-slate-600 w-24 sm:w-32 shrink-0 truncate">{mailHostLabel(h.host) || "Host not detected"}</span>
-                                        <PlacementBar inbox={h.inbox} tabs={h.tabs} spam={h.spam} height={4} />
+                                        <PlacementBar inbox={h.inbox} tabs={h.tabs} spam={h.spam} unknown={h.unknown} archived={h.archived} custom={h.custom} height={4} />
                                         <RateCells inbox={h.inbox_rate} spam={h.spam_rate} delivered={h.delivered} />
                                     </div>
                                 ))}
@@ -341,9 +343,9 @@ export function ProviderBreakdown({ providers }: { providers: PlacementProvider[
     );
 }
 
-function PlacementBar({ inbox, tabs, spam, height = 6 }: { inbox: number; tabs: number; spam: number; height?: number }) {
-    const total = Math.max(1, inbox + tabs + spam);
-    const title = `${inbox} inbox · ${tabs} other tabs · ${spam} spam`;
+function PlacementBar({ inbox, tabs, spam, unknown, archived, custom, height = 6 }: { inbox: number; tabs: number; spam: number; unknown?: number; archived?: number; custom?: number; height?: number }) {
+    const total = Math.max(1, inbox + tabs + spam + (unknown ?? 0) + (archived ?? 0) + (custom ?? 0));
+    const title = `${inbox} inbox · ${tabs} other tabs · ${spam} spam` + (unknown != null ? ` · ${unknown} unknown · ${archived} archive · ${custom} custom` : " · unclassified evidence unavailable");
     return (
         <div className="flex-1 min-w-12" title={title}>
             <DitherStack
@@ -352,6 +354,9 @@ function PlacementBar({ inbox, tabs, spam, height = 6 }: { inbox: number; tabs: 
                     { frac: inbox / total, tone: "emerald" },
                     { frac: tabs / total, tone: "violet" },
                     { frac: spam / total, tone: "rose" },
+                    { frac: (unknown ?? 0) / total, tone: "slate" },
+                    { frac: (archived ?? 0) / total, tone: "slate" },
+                    { frac: (custom ?? 0) / total, tone: "slate" },
                 ] satisfies { frac: number; tone: DitherTone }[]).filter((s) => s.frac > 0)}
             />
         </div>
@@ -361,9 +366,9 @@ function PlacementBar({ inbox, tabs, spam, height = 6 }: { inbox: number; tabs: 
 function RateCells({ inbox, spam, delivered }: { inbox: number | null; spam: number | null; delivered: number }) {
     return (
         <span className="flex items-center gap-2 sm:gap-3 font-mono text-[11px] tabular-nums shrink-0">
-            <span title="Inbox rate (tabs count as inbox)" className={BAND[bandForRate(inbox)].text}>{fmtPct(inbox)}</span>
+            <span title="Non-spam share among classified receipts (includes tabs)" className={BAND[bandForRate(inbox)].text}>{fmtPct(inbox)}</span>
             <span title="Spam rate" className="hidden sm:inline text-rose-600 w-12 text-right">{fmtPct(spam)} spam</span>
-            <span title="Delivered" className="text-slate-400 w-10 text-right">{fmtNum(delivered)}</span>
+            <span title="Classified receipts" className="text-slate-400 w-10 text-right">{fmtNum(delivered)}</span>
         </span>
     );
 }

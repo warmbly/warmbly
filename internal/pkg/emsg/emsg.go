@@ -13,12 +13,14 @@ const Version = 1
 
 // Bitmask flags for sections
 const (
-	FlagPlainText   uint32 = 1 << 0
-	FlagHTMLBody    uint32 = 1 << 1
-	FlagAttachments uint32 = 1 << 2
-	FlagFromName    uint32 = 1 << 3
-	FlagFromEmail   uint32 = 1 << 4
-	FlagReplyTo     uint32 = 1 << 5
+	FlagPlainText     uint32 = 1 << 0
+	FlagHTMLBody      uint32 = 1 << 1
+	FlagAttachments   uint32 = 1 << 2
+	FlagFromName      uint32 = 1 << 3
+	FlagFromEmail     uint32 = 1 << 4
+	FlagReplyTo       uint32 = 1 << 5
+	FlagReferences    uint32 = 1 << 6
+	FlagDispatchNonce uint32 = 1 << 7
 )
 
 // Attachment is a single attachment reference carried inside the S3 body blob.
@@ -47,7 +49,9 @@ type EmailBlob struct {
 	FromEmail string
 	// ReplyTo is the address the send's Reply-To header names. Empty means
 	// no header, so replies go to the From address.
-	ReplyTo string
+	ReplyTo       string
+	References    string
+	DispatchNonce string
 }
 
 // EncodeBinary serializes the blob into binary format. Layout:
@@ -85,6 +89,12 @@ func (b *EmailBlob) EncodeBinary() ([]byte, error) {
 	}
 	if b.ReplyTo != "" {
 		flags |= FlagReplyTo
+	}
+	if b.References != "" {
+		flags |= FlagReferences
+	}
+	if b.DispatchNonce != "" {
+		flags |= FlagDispatchNonce
 	}
 
 	buf := new(bytes.Buffer)
@@ -127,6 +137,14 @@ func (b *EmailBlob) EncodeBinary() ([]byte, error) {
 	if flags&FlagReplyTo != 0 {
 		binary.Write(buf, binary.BigEndian, uint32(len(b.ReplyTo)))
 		buf.WriteString(b.ReplyTo)
+	}
+	if flags&FlagReferences != 0 {
+		binary.Write(buf, binary.BigEndian, uint32(len(b.References)))
+		buf.WriteString(b.References)
+	}
+	if flags&FlagDispatchNonce != 0 {
+		binary.Write(buf, binary.BigEndian, uint32(len(b.DispatchNonce)))
+		buf.WriteString(b.DispatchNonce)
 	}
 
 	return buf.Bytes(), nil
@@ -226,6 +244,20 @@ func DecodeBinary(r io.Reader) (*EmailBlob, error) {
 			return nil, err
 		}
 		b.ReplyTo = string(addr)
+	}
+	if flags&FlagReferences != 0 {
+		refs, err := readSection()
+		if err != nil {
+			return nil, err
+		}
+		b.References = string(refs)
+	}
+	if flags&FlagDispatchNonce != 0 {
+		nonce, err := readSection()
+		if err != nil {
+			return nil, err
+		}
+		b.DispatchNonce = string(nonce)
 	}
 
 	return b, nil

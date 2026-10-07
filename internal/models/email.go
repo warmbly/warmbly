@@ -540,6 +540,7 @@ type Oauth2SmtpImap struct {
 }
 
 type NewOauthAccount struct {
+	ID             uuid.UUID `json:"-"`
 	OrganizationID *uuid.UUID
 	// Allowance, when set, is enforced again inside the insert transaction
 	// under the organization's mailbox lock, so concurrent connects cannot

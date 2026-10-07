@@ -32,6 +32,9 @@ func (s *tasksService) HandleTask(task *proto.ProcessTask) *errx.Error {
 	if rec == nil {
 		return errx.ErrNotFound
 	}
+	if rec.Status != "pending" || rec.ScheduledAt != nil && rec.ScheduledAt.After(time.Now()) {
+		return nil
+	}
 
 	switch rec.TaskType {
 	case "campaign":

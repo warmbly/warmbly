@@ -197,6 +197,7 @@ var Tables = []Table{
 	{
 		Name: "email_accounts", Group: models.OrgDataGroupCore,
 		Scope: scopeOrg,
+		// Send cooldowns and recovery holds travel as mailbox columns; never reset them.
 		// Worker placement is a property of the instance the mailbox runs on,
 		// never of the mailbox. The destination assigns its own.
 		//
@@ -252,6 +253,16 @@ var Tables = []Table{
 	{
 		Name: "email_account_behavior", Group: models.OrgDataGroupCore,
 		Scope: `email_account_id IN ` + orgMailboxes,
+	},
+	{
+		Name: "cloud_managed_consents", Group: models.OrgDataGroupCore, Scope: scopeOrg,
+		ResetOnImport: []string{"instance_id", "remote_id", "session_hash", "cloud_account_id", "planned_account_id"},
+		Note:          "Managed consent history and restrictions travel; process-local session and link handles reset and cannot authorize a destination.",
+	},
+	{
+		Name: "pool_link_managed_operations", Group: models.OrgDataGroupCore, Scope: scopeOrg,
+		ResetOnImport: []string{"instance_id", "remote_id", "session_hash", "planned_account_id", "activation_pending"},
+		Note:          "Cloud consent history travels without a live instance or resumable OAuth operation.",
 	},
 	{
 		// Below organization_members: user_id names the creator, and the
@@ -785,8 +796,9 @@ var Tables = []Table{
 	},
 	{
 		Name: "warmup_tasks", Group: models.OrgDataGroupSending,
-		PartnerRefs: []string{"target_account_id"},
-		Scope:       `task_id IN ` + orgTasks,
+		PartnerRefs:   []string{"target_account_id"},
+		Scope:         `task_id IN ` + orgTasks,
+		ResetOnImport: []string{"parent_task_id", "parent_received_id", "parent_message_id", "lineage_version", "schedule_revision", "queued_revision", "dispatch_nonce", "dispatch_worker_id", "dispatch_started_at", "dispatch_result"},
 	},
 	{
 		Name: "warmup_tokens", Group: models.OrgDataGroupSending,
@@ -972,6 +984,7 @@ var Tables = []Table{
 // with the reason. Kept as data so the docs page and the coverage test both
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
+	"warmup_received":              "Raw receiving-mailbox observations and provider thread handles are source-instance evidence, not portable send authority. Aggregated warmup placement history travels; imported threads cannot continue without new verified observations.",
 	"warmup_pending_filings":       "Provider filing awaiting acknowledgement on this instance. The destination resyncs mailbox messages.",
 	"unibox_pending_emails":        "Unverified mailbox-sync events awaiting this instance's warmup checks. The destination resyncs provider mail with its own warmup and cloud-link state.",
 	"organization_encrypted_keys":  "The organization's data key, wrapped by the source instance's KMS. The destination cannot unwrap it, and shipping it would put every org secret behind one exported blob.",

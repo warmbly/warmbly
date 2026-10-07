@@ -234,10 +234,8 @@ func TestLiveReleaseSendReturnsTheStep(t *testing.T) {
 	}
 }
 
-// TestLiveStuckDispatchIsReclaimed covers the send nobody ever answered: the
-// worker died mid-send, so no EMAIL_SENT and no EMAIL_FAILED. The lead must not
-// sit in flight forever.
-func TestLiveStuckDispatchIsReclaimed(t *testing.T) {
+// Missing results must not release capacity or authorize a duplicate send.
+func TestLiveStuckDispatchIsHeld(t *testing.T) {
 	handle := liveDB(t)
 	ctx := context.Background()
 	s := liveJobsService(handle)
@@ -270,37 +268,37 @@ func TestLiveStuckDispatchIsReclaimed(t *testing.T) {
 		Scan(&sentAt, &dispatchedAt, &attempts); err != nil {
 		t.Fatalf("read progress: %v", err)
 	}
-	if sentAt != nil || dispatchedAt != nil {
-		t.Fatalf("the reclaimed step still looks in flight: sent=%v dispatched=%v", sentAt, dispatchedAt)
+	if sentAt != nil || dispatchedAt == nil {
+		t.Fatalf("the unknown step lost its reservation: sent=%v dispatched=%v", sentAt, dispatchedAt)
 	}
-	if attempts != 1 {
-		t.Fatalf("the lost send spent %d attempts, want 1", attempts)
+	if attempts != 0 {
+		t.Fatalf("the lost send spent %d attempts without refusal evidence", attempts)
 	}
-	if pair := f.nextPair(t, s); pair == nil || pair.SequenceID != f.step {
-		t.Fatalf("a reclaimed step should be retryable, got %+v", pair)
+	if pair := f.nextPair(t, s); pair != nil {
+		t.Fatalf("an unknown step became retryable: %+v", pair)
 	}
 	var sent int
 	if err := handle.Pool.QueryRow(ctx, `SELECT emails_sent FROM campaign_daily_sends
 		WHERE campaign_id = $1 AND send_date = CURRENT_DATE`, f.campaign).Scan(&sent); err != nil {
 		t.Fatalf("read daily counters: %v", err)
 	}
-	if sent != 0 {
-		t.Fatalf("emails_sent = %d after a reclaim, want the count given back", sent)
+	if sent != 1 {
+		t.Fatalf("emails_sent = %d after a missing result, want reservation held", sent)
 	}
 	var status string
 	if err := handle.Pool.QueryRow(ctx, `SELECT status FROM campaigns WHERE id = $1`, f.campaign).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
-	if status != "active" {
-		t.Fatalf("campaign status = %s, want active (reopened for the retry)", status)
+	if status != "completed" {
+		t.Fatalf("campaign status = %s, want completed without inventing a retry", status)
 	}
 	var logs int
 	if err := handle.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM campaign_logs
 		WHERE campaign_id = $1 AND event_type = 'email_failed' AND metadata->>'code' = 'SEND_OUTCOME_LOST'`, f.campaign).Scan(&logs); err != nil {
 		t.Fatal(err)
 	}
-	if logs != 1 {
-		t.Fatalf("the lost outcome produced %d activity log entries, want 1", logs)
+	if logs != 0 {
+		t.Fatalf("the lost outcome produced %d refusal activity entries", logs)
 	}
 
 	// A second pass has nothing left to do.
@@ -309,8 +307,15 @@ func TestLiveStuckDispatchIsReclaimed(t *testing.T) {
 		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3`, f.campaign, f.contact, f.step).Scan(&attempts); err != nil {
 		t.Fatalf("read attempts: %v", err)
 	}
-	if attempts != 1 {
+	if attempts != 0 {
 		t.Fatalf("a second reclaim pass spent another attempt (%d)", attempts)
+	}
+	var hold bool
+	if err := handle.Pool.QueryRow(ctx, `SELECT send_recovery_hold FROM email_accounts WHERE id = $1`, f.mailbox).Scan(&hold); err != nil {
+		t.Fatal(err)
+	}
+	if !hold {
+		t.Fatal("missing result did not durably hold the mailbox")
 	}
 }
 

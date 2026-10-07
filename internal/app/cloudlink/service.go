@@ -162,11 +162,10 @@ type service struct {
 	emails   repository.EmailRepository
 	emailSvc email.EmailService
 
-	mu       sync.Mutex
-	pending  *PendingConnect
-	sessions map[string]oauthSession
-	tokens   map[uuid.UUID]cachedToken
-	offer    cachedOffer
+	mu      sync.Mutex
+	pending *PendingConnect
+	tokens  map[uuid.UUID]cachedToken
+	offer   cachedOffer
 	// offerFetch lets one caller ask Cloud for the offer while the others wait for its answer.
 	offerFetch sync.Mutex
 
@@ -174,7 +173,7 @@ type service struct {
 }
 
 func NewService(repo repository.CloudLinkRepository, emails repository.EmailRepository, emailSvc email.EmailService) Service {
-	return &service{repo: repo, emails: emails, emailSvc: emailSvc, sessions: map[string]oauthSession{}, tokens: map[uuid.UUID]cachedToken{}}
+	return &service{repo: repo, emails: emails, emailSvc: emailSvc, tokens: map[uuid.UUID]cachedToken{}}
 }
 
 func (s *service) link(ctx context.Context) (*models.CloudLink, *errx.Error) {
@@ -184,6 +183,9 @@ func (s *service) link(ctx context.Context) (*models.CloudLink, *errx.Error) {
 	}
 	if l == nil {
 		return nil, ErrNotConnected
+	}
+	if l.DisconnectPending && !reconciliationLocked(ctx) {
+		return nil, ErrAlreadyLinked
 	}
 	return l, nil
 }
@@ -325,13 +327,28 @@ func linkAlreadyGone(xerr *errx.Error) bool {
 }
 
 func (s *service) Disconnect(ctx context.Context) *errx.Error {
+	if !reconciliationLocked(ctx) {
+		return s.reconcileLocked(ctx, s.Disconnect)
+	}
 	l, xerr := s.link(ctx)
 	if xerr != nil {
 		return xerr
 	}
+	if err := s.repo.SetDisconnectPending(ctx); err != nil {
+		return errx.InternalError()
+	}
+	if r, ok := s.repo.(repository.CloudManagedConsentRepository); ok {
+		if err := r.RevokeManagedConsents(ctx, l.InstanceID, nil); err != nil {
+			return errx.InternalError()
+		}
+	}
 	// The cloud must confirm (or already have dropped) the link before local
 	// state goes, or managed mailboxes stay owned there with no way to retry.
 	if xerr := s.clientFor(l).do(ctx, http.MethodDelete, "/instance", nil, nil); xerr != nil && !linkAlreadyGone(xerr) {
+		return xerr
+	}
+	l.DisconnectPending = true
+	if xerr := s.reconcileManagedConsents(ctx, l); xerr != nil {
 		return xerr
 	}
 	// Managed mirrors have no credential of their own; they end with the link.
@@ -345,15 +362,22 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 	var released []models.CloudLinkMailbox
 	for _, m := range rows {
 		if !m.Managed {
+			if err := s.carryStanding(ctx, m); err != nil {
+				return errx.InternalError()
+			}
 			released = append(released, m)
 			continue
 		}
 		if s.emailSvc == nil {
-			continue
+			return errx.InternalError()
 		}
 		if acc, xerr := s.emails.GetByID(ctx, m.EmailAccountID); xerr == nil && acc.OrganizationID != nil {
 			s.forgetToken(m.EmailAccountID)
-			_ = s.emailSvc.Delete(ctx, acc.OrganizationID.String(), acc.ID.String())
+			if xerr := s.emailSvc.Delete(ctx, acc.OrganizationID.String(), acc.ID.String()); xerr != nil {
+				return xerr
+			}
+		} else {
+			return errx.InternalError()
 		}
 	}
 	if err := s.repo.UnenrollAll(ctx); err != nil {
@@ -365,7 +389,6 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 	// The mailboxes the cloud was warming rejoin this instance's pool.
 	for _, m := range released {
 		s.syncLocalPool(ctx, m.EmailAccountID)
-		s.carryStanding(ctx, m)
 	}
 	s.forgetOffer()
 	for _, fn := range s.disconnected {
@@ -376,7 +399,7 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 
 func (s *service) IsEnrolled(ctx context.Context, accountID uuid.UUID) bool {
 	ok, err := s.repo.IsEnrolled(ctx, accountID)
-	return err == nil && ok
+	return err != nil || ok
 }
 
 func (s *service) CheckEnrollment(ctx context.Context, accountID uuid.UUID) (bool, error) {
@@ -420,6 +443,8 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 			row.Enrolled = true
 			row.EnrolledAt = &at
 			row.Managed = e.Managed
+			row.EnrollmentState = e.EnrollmentState
+			row.StandingObservedAt = e.StandingObservedAt
 			row.Cloud = cloudByRemote[e.RemoteID]
 			// The recorded standing covers a mailbox the cloud holds out of its pool.
 			if row.Cloud != nil && row.Cloud.Health == nil && e.Standing != nil {
@@ -482,9 +507,21 @@ func (s *service) syncLocalPool(ctx context.Context, accountID uuid.UUID) {
 }
 
 func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*models.CloudLinkMailboxRow, *errx.Error) {
+	if !reconciliationLocked(ctx) {
+		var row *models.CloudLinkMailboxRow
+		xerr := s.reconcileLocked(ctx, func(ctx context.Context) *errx.Error {
+			var xerr *errx.Error
+			row, xerr = s.Enroll(ctx, orgID, accountID)
+			return xerr
+		})
+		return row, xerr
+	}
 	l, xerr := s.link(ctx)
 	if xerr != nil {
 		return nil, xerr
+	}
+	if l.DisconnectPending {
+		return nil, ErrAlreadyLinked
 	}
 	acc, xerr := s.ownedAccount(ctx, orgID, accountID)
 	if xerr != nil {
@@ -518,14 +555,15 @@ func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*mode
 	}
 
 	var state models.PoolLinkMailboxState
+	if err := s.repo.BeginEnrollment(ctx, acc.ID, acc.ID); err != nil {
+		return nil, errx.InternalError()
+	}
+	s.syncLocalPool(ctx, acc.ID)
 	if xerr := s.clientFor(l).do(ctx, http.MethodPost, "/instance/mailboxes", req, &state); xerr != nil {
 		return nil, xerr
 	}
 	if _, err := s.repo.Enroll(ctx, acc.ID, acc.ID, false); err != nil {
-		// Without the local row the mailbox would warm in both places; undo the cloud side.
-		if xerr := s.clientFor(l).do(ctx, http.MethodDelete, "/instance/mailboxes/"+acc.ID.String(), nil, nil); xerr != nil {
-			log.Error().Str("account_id", acc.ID.String()).Str("code", xerr.Identifier).Msg("cloud link: local enrollment failed and the cloud copy could not be removed; unenroll it from Settings")
-		}
+		// The durable intent remains unavailable locally until retry confirms enrollment.
 		return nil, errx.InternalError()
 	}
 	s.syncLocalPool(ctx, acc.ID)
@@ -539,7 +577,7 @@ func (s *service) RefreshCredentials(ctx context.Context, orgID, accountID uuid.
 		return errx.InternalError()
 	}
 	// A managed mailbox's sign-in lives on the cloud; nothing here to hand over.
-	if m == nil || m.Managed {
+	if m == nil || m.Managed || m.EnrollmentState == "pending_remove" {
 		return nil
 	}
 	// Enrolling again is how the cloud takes a new credential: it updates the mailbox it already holds.
@@ -548,10 +586,24 @@ func (s *service) RefreshCredentials(ctx context.Context, orgID, accountID uuid.
 }
 
 func (s *service) Unenroll(ctx context.Context, orgID, accountID uuid.UUID) *errx.Error {
+	if !reconciliationLocked(ctx) {
+		return s.reconcileLocked(ctx, func(ctx context.Context) *errx.Error { return s.Unenroll(ctx, orgID, accountID) })
+	}
 	// Called for the tenant check, not the row: everything below keys on the
 	// workspace the caller proved here.
 	if _, xerr := s.ownedAccount(ctx, orgID, accountID); xerr != nil {
 		return xerr
+	}
+	if r, ok := s.repo.(repository.CloudManagedConsentRepository); ok {
+		l, err := s.repo.Get(ctx)
+		if err != nil {
+			return errx.InternalError()
+		}
+		if l != nil {
+			if err := r.RevokeManagedConsents(ctx, l.InstanceID, &accountID); err != nil {
+				return errx.InternalError()
+			}
+		}
 	}
 	m, err := s.repo.GetByAccount(ctx, accountID)
 	if err != nil {
@@ -563,33 +615,33 @@ func (s *service) Unenroll(ctx context.Context, orgID, accountID uuid.UUID) *err
 	if m.Managed {
 		return s.removeManaged(ctx, orgID.String(), m)
 	}
-	// Local row first, so a failed cloud call can be retried from a consistent
-	// state instead of leaving the mailbox with no warmup anywhere.
-	if err := s.repo.Unenroll(ctx, accountID); err != nil {
+	l, err := s.repo.Get(ctx)
+	if err != nil {
 		return errx.InternalError()
 	}
-	if l, err := s.repo.Get(ctx); err == nil && l != nil {
-		if xerr := s.clientFor(l).do(ctx, http.MethodDelete, "/instance/mailboxes/"+m.RemoteID.String(), nil, nil); xerr != nil && xerr.Identifier != "pool_link_mailbox_not_found" {
-			if _, rerr := s.repo.Enroll(ctx, accountID, m.RemoteID, false); rerr != nil {
-				log.Error().Str("account_id", accountID.String()).Msg("cloud link: cloud unenroll failed and the local row could not be restored")
-			} else if m.Standing != nil {
-				// The restored row keeps the hold it had.
-				s.recordStanding(ctx, accountID, m.Standing, true)
-			}
-			return xerr
-		}
-	}
-	s.syncLocalPool(ctx, accountID)
-	s.carryStanding(ctx, *m)
-	return nil
+	return s.releaseEnrollment(ctx, l, *m)
 }
 
 // RevokeForDelete releases the mailbox on the cloud before local deletion makes
 // retries impossible. It is a leaf, so the email service can call it for a
 // managed mirror without recursing through removeManaged.
 func (s *service) RevokeForDelete(ctx context.Context, orgID, accountID uuid.UUID) *errx.Error {
+	if !reconciliationLocked(ctx) {
+		return s.reconcileLocked(ctx, func(ctx context.Context) *errx.Error { return s.RevokeForDelete(ctx, orgID, accountID) })
+	}
 	if _, xerr := s.ownedAccount(ctx, orgID, accountID); xerr != nil {
 		return xerr
+	}
+	if r, ok := s.repo.(repository.CloudManagedConsentRepository); ok {
+		l, err := s.repo.Get(ctx)
+		if err != nil {
+			return errx.InternalError()
+		}
+		if l != nil {
+			if err := r.RevokeManagedConsents(ctx, l.InstanceID, &accountID); err != nil {
+				return errx.InternalError()
+			}
+		}
 	}
 	m, err := s.repo.GetByAccount(ctx, accountID)
 	if err != nil {
@@ -597,6 +649,12 @@ func (s *service) RevokeForDelete(ctx context.Context, orgID, accountID uuid.UUI
 	}
 	if m == nil {
 		return nil
+	}
+	if err := s.repo.BeginRemoval(ctx, accountID); err != nil {
+		return errx.InternalError()
+	}
+	if err := s.carryStanding(ctx, *m); err != nil {
+		return errx.InternalError()
 	}
 	l, err := s.repo.Get(ctx)
 	if err != nil {
@@ -614,7 +672,7 @@ func (s *service) RevokeForDelete(ctx context.Context, orgID, accountID uuid.UUI
 	s.forgetToken(accountID)
 	// The mailbox delete also removes any stale local enrollment by cascade.
 	if err := s.repo.Unenroll(ctx, accountID); err != nil {
-		log.Warn().Err(err).Str("account_id", accountID.String()).Msg("cloud link: enrollment revoked but the local row could not be dropped; the mailbox delete removes it")
+		return errx.InternalError()
 	}
 	return nil
 }
@@ -635,6 +693,9 @@ func (s *service) SetLifecycle(ctx context.Context, orgID, accountID uuid.UUID, 
 		return nil, errx.InternalError()
 	}
 	if m == nil {
+		return nil, errx.ErrNotFound
+	}
+	if m.EnrollmentState == "pending_remove" {
 		return nil, errx.ErrNotFound
 	}
 	var state models.PoolLinkMailboxState

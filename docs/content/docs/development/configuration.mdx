@@ -643,6 +643,8 @@ Automatic inbox tagging is read by the backend, consumer, and `warmblyctl`. Both
 
 ## Tasks and billing
 
+Warmup replies use the same persisted SQL task identity with either queue provider. They wait at least 45 minutes after the exact parent receipt and recheck mailbox windows, roles, consent, standing, suppression and remaining budgets before native dispatch. Queue callbacks do not grant sending authority. See [diagnostic generation and rollout](/development/warmup-generation/).
+
 | Variable | What it does | Default |
 |---|---|---|
 | `TASKS_PROVIDER` | `local` (an in-process Postgres poller) or `gcloud` (Cloud Tasks) | `local` |
@@ -899,6 +901,7 @@ These are the only settings a browser can change, and no environment variable ow
 | `tracking.machine_window_probable_seconds` | integer, 1 to 86400 | `600` | The window used instead of the two above when the tracking service recognised the source as a mail-security network that also renders clicked pages for people, which Proofpoint, Mimecast and Cisco do through browser isolation. Such a match cannot settle whether a person is behind the request, so it widens the window rather than deciding: inside it the event is the delivery-time scan, past it the recipient who got to the mail later. Never applied shorter than the window for the kind of event in hand, so naming a network can only ever catch more scans. Its ceiling reaches a day because how long a vendor takes to detonate a link is the vendor's property, not the instance's |
 | `deliverability.enforce_domain_auth` | boolean | `true` | Whether a sending domain that fails SPF or DMARC stops cold campaign sending and warmup sending from every mailbox on it. Off keeps the check running and still shows the state and the Advisor card, it just never blocks |
 | `deliverability.auth_grace_hours` | integer, 1 to 720 | `72` | How long a domain must stay failing before the gate applies. The clock starts when the background check first sees the failure, so this is also how much warning the owner gets |
+| `warmup_generation` | object | Existing saved provider/model configuration, with generation enabled and bounded control defaults | Effective provider, cadence, stop, daily reservation cap, AI selection share, pools and canonical reply-count controls. See [all supported fields and defaults](/development/warmup-generation/) before editing; do not remove credentials while batches drain |
 | `placement.tests_per_month_trial` | integer, 1 to 100000 | `3` | How many free [placement tests](/guides/placement-tests/) a workspace on a free trial may run per calendar month on the instance seed panel. Only an instance running with `DEPLOYMENT_MODE=cloud` meters; a self-hosted instance never counts its own tests. Tests on a workspace's own seed inboxes are never counted |
 | `placement.tests_per_month_paid` | integer, 1 to 100000 | `40` | The same free allowance for a workspace on a paid plan. Past it, a test costs `placement.credits_per_test` credits |
 | `placement.seeds_per_test` | integer, 1 to 100 | `20` | The most seed inboxes one test sends to. Every copy is a send from the sending mailbox's daily limit, so this is also how much of that limit one test takes. A test is sized down to what the mailbox has left that day, and refused below five seeds |

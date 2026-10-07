@@ -42,6 +42,32 @@ func TestPlainOnlySendIsASingleTextPart(t *testing.T) {
 	}
 }
 
+func TestDiagnosticIdentityAndReferencesSurviveMIMEEncoding(t *testing.T) {
+	name := "Árvíztűrő Support <EMEA> {Ops} \"Team\""
+	srv := newFakeServer(t, "")
+	host, port := srv.addr()
+	client := newTestClient(host, port)
+	raw, sendErr := client.Send(t.Context(), name, []string{"to@example.test"}, nil, nil, "child@warmbly.test", "Diagnostic example", "Closed.\n\nSimulated diagnostic.\n"+name, "", "", nil, map[string]string{"In-Reply-To": "<parent@warmbly.test>", "References": "<root@warmbly.test> <parent@warmbly.test>"})
+	if sendErr != nil {
+		t.Fatal(sendErr)
+	}
+	msg, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, err := mail.ParseAddress(msg.Header.Get("From"))
+	if err != nil || from.Name != name {
+		t.Fatalf("actual name lost at MIME boundary: %q %v", msg.Header.Get("From"), err)
+	}
+	if msg.Header.Get("References") != "<root@warmbly.test> <parent@warmbly.test>" || msg.Header.Get("In-Reply-To") != "<parent@warmbly.test>" {
+		t.Fatal("ancestry lost")
+	}
+	body, err := io.ReadAll(quotedprintable.NewReader(msg.Body))
+	if err != nil || !strings.HasSuffix(string(body), name) {
+		t.Fatal("actual plain-text signature changed")
+	}
+}
+
 // Both bodies still make a multipart/alternative.
 func TestPlainAndHTMLSendIsAlternative(t *testing.T) {
 	srv := newFakeServer(t, "")

@@ -3,8 +3,13 @@
 // library stock vs the scheduler's targets, today's generation budget,
 // headline counts, and the content-source vs spam-placement A/B comparison.
 
-import { useMemo, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { useAdminPerm } from "@/hooks/useAdminPerm";
+import { AdminPerm } from "@/lib/auth/permissions";
 import {
     Archive,
     CheckCircle2,
@@ -30,6 +35,8 @@ import { cn } from "@/lib/utils";
 import {
     getWarmupContentAb,
     getWarmupContentOverview,
+    putWarmupGenerationSettings,
+    type WarmupGenerationSettings,
     type WarmupContentOverview,
 } from "@/lib/api/client/admin/warmupContent";
 import { Td, Th } from "./components";
@@ -41,19 +48,16 @@ interface PipelineStep {
     detail: string;
 }
 
-// The controller is always enabled. The only external dependency is an AI
-// provider; without one, reviewed static content keeps sends operational.
+// Cached-content selection and new generation have independent controls.
 function pipelineSteps(d: WarmupContentOverview): PipelineStep[] {
     const totalTarget = d.stock.reduce((n, s) => n + s.target, 0);
     const totalStock = d.stock.reduce((n, s) => n + Math.min(s.active, s.target), 0);
     const stocked = totalTarget > 0 && totalStock >= totalTarget;
     return [
         {
-            label: "AI client configured",
-            ok: d.ai_configured,
-            detail: d.ai_configured
-                ? "OPENAI_API_KEY is set on the backend"
-                : "Set OPENAI_API_KEY on the backend, then restart it",
+            label: "Generation enabled",
+            ok: d.ai_configured && d.generation_enabled !== false,
+            detail: !d.ai_configured ? "No compatible generation client configured" : d.generation_enabled === false ? "New jobs stopped; existing batches drain" : "Configured model checked before submission",
         },
         {
             label: "AI content enabled",
@@ -100,7 +104,7 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
     const firstGap = steps.findIndex((s) => !s.ok);
     const capped = data.daily_generation_cap > 0;
     const budgetUsed = capped
-        ? Math.min(100, Math.round((data.generated_today / data.daily_generation_cap) * 100))
+        ? Math.min(100, Math.round(((data.reserved_today ?? data.generated_today) / data.daily_generation_cap) * 100))
         : 0;
 
     return (
@@ -108,7 +112,7 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
             title="Automatic extension"
             actions={
                 <StatusBadge tone="success" dot>
-                    Autopilot
+                    {data.generation_enabled === false ? "Generation stopped" : "Generation control"}
                 </StatusBadge>
             }
             bodyClassName="p-0"
@@ -116,7 +120,7 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
             <p className="px-4 pt-3 text-[12.5px] leading-relaxed text-muted-foreground">
                 {allOk
                     ? data.refresh_enabled
-                        ? "The library extends itself: every run generates new threads, humanizes and lints them, and recycles the most-used ones so fresh content keeps flowing indefinitely."
+                        ? "Scheduled generation preserves canonical content and reviews complete rendered diagnostic threads before activating them."
                         : "The library tops itself up to the target. Continuous refresh is off, so generation pauses once the target is reached."
                     : "Not fully automatic yet. Fix the first amber step below and the library will keep itself stocked without manual runs."}
             </p>
@@ -148,8 +152,8 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
                     {capped ? (
                         <span className="inline-flex flex-wrap items-center gap-2.5">
                             <span className="tabular-nums">
-                                {data.generated_today.toLocaleString()} / {data.daily_generation_cap.toLocaleString()}{" "}
-                                threads
+                                {(data.reserved_today ?? data.generated_today).toLocaleString()} / {data.daily_generation_cap.toLocaleString()}{" "}
+                                requests reserved today
                             </span>
                             <Meter value={budgetUsed} tone={budgetUsed >= 100 ? "warning" : "success"} className="w-24" />
                         </span>
@@ -175,6 +179,44 @@ function AutomationPanel({ data }: { data: WarmupContentOverview }) {
                 Generated threads are humanized, lint-gated, and any send that fails the gate falls back to the static
                 library. Threads with a meaningful sample and unsafe spam placement are archived automatically.
             </p>
+        </Panel>
+    );
+}
+
+function GenerationSettingsPanel({ data }: { data: WarmupContentOverview }) {
+    const canManage = useAdminPerm(AdminPerm.ManageSettings);
+    const qc = useQueryClient();
+    const [draft, setDraft] = useState<string | null>(null);
+    const save = useMutation({
+        mutationFn: putWarmupGenerationSettings,
+        onSuccess: () => {
+            setDraft(null);
+            void qc.invalidateQueries({ queryKey: ["admin", "warmup-content"] });
+            toast.success("Generation settings saved");
+        },
+        onError: (err: Error) => toast.error(err.message || "Failed to save generation settings"),
+    });
+    if (!data.effective_settings) return <Panel title="Effective generation settings">This backend does not expose generation controls. Upgrade the backend before changing settings.</Panel>;
+    const text = draft ?? JSON.stringify(data.effective_settings, null, 2);
+    const submit = () => {
+        try {
+            const settings: WarmupGenerationSettings = JSON.parse(text);
+            if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw new Error("Expected a settings object");
+            save.mutate(settings);
+        } catch {
+            toast.error("Enter a valid JSON settings object");
+        }
+    };
+    return (
+        <Panel title="Effective generation settings">
+            <p className="mb-3 text-sm text-muted-foreground">Stopping generation blocks new jobs without deleting credentials. Already submitted batches continue polling and ingest safely; cancel them explicitly in Jobs. Cached-content use is controlled separately by enabled. A stop is effective only after all backends are upgraded.</p>
+            <p className="mb-3 text-sm text-muted-foreground">{data.provider_capability}</p>
+            <Textarea aria-label="Effective generation settings JSON" value={text} onChange={(e) => setDraft(e.target.value)} readOnly={!canManage} className="min-h-72 font-mono text-xs" />
+            {canManage && <div className="mt-3 flex gap-2">
+                <Button disabled={save.isPending} onClick={submit}>Save settings</Button>
+                <Button variant="outline" disabled={save.isPending} onClick={() => save.mutate({ generation_enabled: !data.generation_enabled })}>{data.generation_enabled ? "Stop new generation" : "Resume generation"}</Button>
+                <Button variant="ghost" disabled={save.isPending || draft === null} onClick={() => setDraft(null)}>Discard edits</Button>
+            </div>}
         </Panel>
     );
 }
@@ -314,6 +356,8 @@ export default function OverviewPage() {
             <Section>
                 <AutomationPanel data={data} />
             </Section>
+
+            <Section><GenerationSettingsPanel data={data} /></Section>
 
             <Section>
                 <StatGrid className="grid-cols-1 sm:grid-cols-3 md:grid-cols-3">

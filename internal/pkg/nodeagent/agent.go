@@ -32,11 +32,12 @@ import (
 const DefaultInterval = 90 * time.Second
 
 type Config struct {
-	NodeID  uuid.UUID
-	Role    models.NodeRole
-	Name    string
-	Region  string
-	Address string
+	WarmupSendProtocol int
+	NodeID             uuid.UUID
+	Role               models.NodeRole
+	Name               string
+	Region             string
+	Address            string
 	// CapacityTarget is meaningful for workers only. Zero leaves the control
 	// plane's stored/default target unchanged.
 	CapacityTarget float64
@@ -140,16 +141,17 @@ func paceFrom(livenessSeconds int) time.Duration {
 
 func (a *Agent) beat(ctx context.Context, booted, stopping bool) *models.NodeHeartbeatReply {
 	beat := models.NodeHeartbeat{
-		NodeID:         a.cfg.NodeID,
-		Role:           a.cfg.Role,
-		Name:           a.cfg.Name,
-		Region:         a.cfg.Region,
-		Address:        a.address,
-		CapacityTarget: a.cfg.CapacityTarget,
-		Version:        a.cfg.Version,
-		Usage:          a.sampleUsage(),
-		Booted:         booted,
-		Stopping:       stopping,
+		WarmupSendProtocol: a.cfg.WarmupSendProtocol,
+		NodeID:             a.cfg.NodeID,
+		Role:               a.cfg.Role,
+		Name:               a.cfg.Name,
+		Region:             a.cfg.Region,
+		Address:            a.address,
+		CapacityTarget:     a.cfg.CapacityTarget,
+		Version:            a.cfg.Version,
+		Usage:              a.sampleUsage(),
+		Booted:             booted,
+		Stopping:           stopping,
 	}
 	if !stopping {
 		beat.Address = a.publicAddress(ctx)

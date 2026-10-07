@@ -39,6 +39,17 @@ type BatchCounts struct {
 	Total     int
 }
 
+// CheckModel checks visibility, not Batch or structured-output capability.
+func (c *GenerationClient) CheckModel(ctx context.Context, model string) error {
+	if strings.TrimSpace(model) == "" {
+		return fmt.Errorf("generation model is required")
+	}
+	if _, err := c.client.Models.Get(ctx, model); err != nil {
+		return fmt.Errorf("configured generation model is unavailable")
+	}
+	return nil
+}
+
 // batchInputLine is one line of the Batch API JSONL input file. The body is the
 // same chat-completion request the sync path sends, so sync and batch produce
 // identical threads.

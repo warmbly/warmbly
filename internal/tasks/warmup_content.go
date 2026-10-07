@@ -8,16 +8,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
 // warmupContent is the rendered content for one warmup send plus the cohort
 // metadata recorded on the verification token for the A/B harness.
 type warmupContent struct {
-	subject        string
-	body           string
-	theme          string
-	contentSource  string
-	conversationID *uuid.UUID
+	subject          string
+	body             string
+	theme            string
+	contentSource    string
+	conversationID   *uuid.UUID
+	scenarioVersion  string
+	renderingVersion string
+	maxTurns         int
 }
 
 // getWarmupSettings returns the warmup generation settings with a short
@@ -62,31 +66,37 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email) 
 		// affect content (only mailbox reputation isolation uses the pool).
 		segment := strings.TrimSpace(account.WarmupTag)
 		conv, err := s.warmupContentRepo.PickConversation(ctx, segment)
-		if err == nil && conv != nil {
-			c := Conversation{ID: conv.ID, Theme: conv.Theme, Description: conv.Description, Messages: conv.Messages}
+		if err == nil && conv != nil && conv.ScenarioVersion != nil && conv.RenderingVersion != nil && conv.Status == models.WarmupConversationActive && conv.ReplyEligible && conv.LintPassed {
+			c := Conversation{ID: conv.ID, Subject: conv.Subject, Theme: conv.Theme, Description: conv.Description, Messages: conv.Messages}
 			body := GenerateConversationOpeningEmail(c, account)
-			subject := spinClean(conv.Subject)
-			if subject == "" {
-				subject = generateWarmupSubject()
-			}
-			id := conv.ID
-			return warmupContent{
-				subject:        subject,
-				body:           body,
-				theme:          conv.Theme,
-				contentSource:  models.WarmupContentSourceAI,
-				conversationID: &id,
+			subject := strings.TrimSpace(conv.Subject)
+			if body != "" && subject != "" && !strings.ContainsAny(subject, "<>{}\x00\r\n") {
+				id := conv.ID
+				return warmupContent{
+					subject:          subject,
+					body:             body,
+					theme:            conv.Theme,
+					contentSource:    models.WarmupContentSourceAI,
+					conversationID:   &id,
+					scenarioVersion:  *conv.ScenarioVersion,
+					renderingVersion: *conv.RenderingVersion,
+					maxTurns:         len(conv.Messages) + 1,
+				}
 			}
 		}
 	}
 
-	conversation := randomWarmupConversation()
+	bank := VettedDiagnosticConversations()
+	conversation := bank[rand.Intn(len(bank))]
 	staticID := conversation.ID
 	return warmupContent{
-		subject:        generateWarmupSubject(),
-		body:           GenerateConversationEmail(conversation, account, false),
-		theme:          conversation.Theme,
-		contentSource:  models.WarmupContentSourceStatic,
-		conversationID: &staticID,
+		subject:          conversation.Subject,
+		body:             GenerateConversationEmail(conversation, account, false),
+		theme:            conversation.Theme,
+		contentSource:    models.WarmupContentSourceStatic,
+		conversationID:   &staticID,
+		scenarioVersion:  conversation.Version,
+		renderingVersion: generation.CanonicalRenderingVersion,
+		maxTurns:         len(conversation.Messages) + 1,
 	}
 }

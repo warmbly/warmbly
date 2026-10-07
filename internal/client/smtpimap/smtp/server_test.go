@@ -396,10 +396,7 @@ func contextWithDeadline(t *testing.T, d time.Duration) (context.Context, contex
 	return context.WithTimeout(t.Context(), d)
 }
 
-// A refused recipient has to carry the server's own words: "the address was
-// rejected" alone cannot tell a mailbox that no longer exists from one a
-// policy blocked, and that is the difference between suppressing an address
-// and fixing a configuration.
+// Native codes explain refusal without transporting raw provider messages.
 func TestRecipientRejectionCarriesTheServersReason(t *testing.T) {
 	srv := newRejectingServer(t, "LOGIN", map[string]string{"RCPT": "550 5.1.1 no such user here"})
 	host, port := srv.addr()
@@ -409,8 +406,8 @@ func TestRecipientRejectionCarriesTheServersReason(t *testing.T) {
 	if err == nil {
 		t.Fatal("send succeeded against a refused recipient")
 	}
-	if !strings.Contains(err.Message, "no such user here") {
-		t.Errorf("message = %q, want the server's own reason in it", err.Message)
+	if err.Failure == nil || err.Failure.EnhancedStatus != "5.1.1" || err.Failure.Status != 550 || !strings.Contains(err.Message, "5.1.1") || strings.Contains(err.Message, "no such user here") {
+		t.Errorf("message=%q failure=%+v, want safe native recipient evidence", err.Message, err.Failure)
 	}
 	// Named apart from the message, so a refused copy is not read as the lead.
 	if err.Recipient != "to@example.test" {

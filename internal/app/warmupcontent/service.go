@@ -7,7 +7,6 @@ package warmupcontent
 import (
 	"context"
 	"errors"
-	"hash/fnv"
 	"strings"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/pkg/generation"
-	"github.com/warmbly/warmbly/internal/pkg/humanlint"
 	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -23,6 +21,8 @@ import (
 // ErrNotConfigured is returned when generation is requested but no AI client is
 // wired (the provider is not OpenAI or AI_API_KEY is unset).
 var ErrNotConfigured = errors.New("warmup AI generation is not configured")
+
+var ErrGenerationStopped = errors.New("warmup content generation is stopped")
 
 // defaultThemes seed topic variety when a generation run doesn't pin a theme.
 var defaultThemes = []string{
@@ -47,7 +47,7 @@ const (
 // AdaptiveThreadTarget sizes the bank from recent demand while bounding model
 // spend. The configured target is a floor, not an ongoing tuning obligation.
 func AdaptiveThreadTarget(sevenDaySends, aiSelectionShare, configuredFloor int) int {
-	if configuredFloor < minimumAdaptiveThreads {
+	if configuredFloor <= 0 {
 		configuredFloor = minimumAdaptiveThreads
 	}
 	averageDaily := (sevenDaySends + 6) / 7
@@ -101,16 +101,28 @@ type Service interface {
 
 type service struct {
 	repo repository.WarmupContentRepository
-	gen  *generation.GenerationClient
+	gen  generationBackend
 	// judge rejects generated threads that carry a pitch or read as filler.
 	// Nil means the deterministic lints are the only gate.
 	judge typesafe.Asker
 }
 
+type generationBackend interface {
+	CheckModel(context.Context, string) error
+	SubmitBatch(context.Context, []generation.BatchRequest, string) (string, string, error)
+	GetBatch(context.Context, string) (generation.BatchState, error)
+	CancelBatch(context.Context, string) error
+	FetchBatchResults(context.Context, string) ([]generation.BatchResult, error)
+}
+
 // NewService creates the generation service. gen may be nil (provider not OpenAI),
 // in which case generation requests return ErrNotConfigured.
 func NewService(repo repository.WarmupContentRepository, gen *generation.GenerationClient) Service {
-	return &service{repo: repo, gen: gen}
+	svc := &service{repo: repo}
+	if gen != nil {
+		svc.gen = gen
+	}
+	return svc
 }
 
 func (s *service) Enabled() bool { return s.gen != nil }
@@ -125,7 +137,7 @@ func (s *service) RunScheduled(ctx context.Context) error {
 	if err != nil || settings == nil {
 		return err
 	}
-	if !settings.ScheduleEnabled {
+	if !settings.GenerationEnabled || !settings.ScheduleEnabled {
 		return nil
 	}
 
@@ -160,7 +172,10 @@ func (s *service) RunScheduled(ctx context.Context) error {
 			segmentSet[segment] = struct{}{}
 		}
 		for segment := range segmentSet {
-			active, _ := s.repo.CountActiveConversations(ctx, pool.PoolType, segment)
+			active, err := s.repo.CountActiveConversations(ctx, pool.PoolType, segment)
+			if err != nil {
+				return err
+			}
 			target := AdaptiveThreadTarget(totalDemand, settings.AISelectionShare, pool.TargetActiveThreads)
 
 			// Continuous refresh: once the library is at target, retire the
@@ -204,7 +219,7 @@ func (s *service) RunScheduled(ctx context.Context) error {
 			// Scheduled work is asynchronous and discounted. It never holds the
 			// scheduler loop open on model latency, and the durable job is picked up
 			// by the batch poller after restarts.
-			_, err := s.GenerateBatch(ctx, GenerateRequest{
+			_, err = s.GenerateBatch(ctx, GenerateRequest{
 				Trigger:  "schedule",
 				PoolType: pool.PoolType,
 				Segment:  segment,
@@ -230,28 +245,14 @@ func cleanMessages(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, m := range in {
 		m = strings.TrimSpace(m)
-		if m != "" {
-			out = append(out, m)
-		}
+		out = append(out, m)
 	}
 	return out
 }
 
-// humanizeThread runs the deterministic humanizer over a generated thread's
-// subject, opening line, and follow-ups, seeded by content so the same thread
-// humanizes identically (reproducible) while differing across threads. Shared
-// by the batch ingest path.
-func humanizeThread(subject, description string, messages []string) (string, string, []string) {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(subject + "|" + description))
-	seed := int64(h.Sum64())
-
-	subject = humanlint.HumanizeSubject(subject, seed)
-	description = humanlint.Humanize(description, seed+1)
-	for i := range messages {
-		messages[i] = humanlint.Humanize(messages[i], seed+int64(i)+2)
-	}
-	return subject, description, messages
+// Only surrounding whitespace may change; reply positions and facts are fixed.
+func preserveCanonicalThread(subject, description string, messages []string) (string, string, []string) {
+	return strings.TrimSpace(subject), strings.TrimSpace(description), cleanMessages(messages)
 }
 
 func dailyRemaining(ctx context.Context, repo repository.WarmupContentRepository, dailyCap int) int {
@@ -259,9 +260,9 @@ func dailyRemaining(ctx context.Context, repo repository.WarmupContentRepository
 		return 1 << 30 // effectively unlimited
 	}
 	since := time.Now().Truncate(24 * time.Hour)
-	used, err := repo.GeneratedCountSince(ctx, since)
+	used, err := repo.ReservedGenerationCountSince(ctx, since)
 	if err != nil {
-		return dailyCap
+		return 0
 	}
 	return dailyCap - used
 }

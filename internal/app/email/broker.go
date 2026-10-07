@@ -42,6 +42,10 @@ func (s *emailService) OAuthCallbackOrigin(provider models.InboxProvider) (strin
 }
 
 func (s *emailService) OAuthConnectWithCode(ctx context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider, code, verifier string) (*models.Email, *errx.Error) {
+	return s.OAuthConnectWithCodeForAccount(ctx, userID, orgID, provider, code, verifier, uuid.Nil)
+}
+
+func (s *emailService) OAuthConnectWithCodeForAccount(ctx context.Context, userID string, orgID *uuid.UUID, provider models.InboxProvider, code, verifier string, accountID uuid.UUID) (*models.Email, *errx.Error) {
 	ctx, cancel := detach(ctx, connectBudget)
 	defer cancel()
 	if code = strings.TrimSpace(code); code == "" {
@@ -90,6 +94,7 @@ func (s *emailService) OAuthConnectWithCode(ctx context.Context, userID string, 
 		name = deriveNameFromEmail(owner.Email)
 	}
 	acc, xerr := s.emailRepository.NewOauthAccount(ctx, userID, models.NewOauthAccount{
+		ID:             accountID,
 		OrganizationID: orgID,
 		Allowance:      allowance,
 		Provider:       provider,
@@ -104,6 +109,9 @@ func (s *emailService) OAuthConnectWithCode(ctx context.Context, userID string, 
 		return nil, xerr
 	}
 	s.captureSendIdentity(ctx, acc, tok)
+	if accountID != uuid.Nil {
+		return acc, nil
+	}
 	s.syncWarmupPoolMembership(ctx, acc)
 	s.publishAccountEvent(ctx, pubsub.EventAccountConnected, acc)
 	s.dispatchAccountConnected(ctx, orgID, acc)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -108,7 +109,7 @@ func TestLiveWarmupSendFailureGivesTheDayBack(t *testing.T) {
 
 	if err := s.HandleEmailFailed(ctx, models.SendEmailResult{
 		TaskID: taskID, Success: false,
-		Error: &models.EmailSendError{Code: "SERVER_UNREACHABLE", Message: "the connection to the mail server could not be established"},
+		Error: &models.EmailSendError{Code: "SERVER_UNREACHABLE", Message: "the connection to the mail server could not be established", Failure: &errx.SendFailure{Disposition: errx.SendRetry, Stage: "dial", Scope: "mailbox"}},
 	}); err != nil {
 		t.Fatalf("handle failed: %v", err)
 	}
@@ -174,7 +175,7 @@ func TestLiveWarmupSendGiveBackIsIdempotent(t *testing.T) {
 
 	result := models.SendEmailResult{
 		TaskID: taskID, Success: false,
-		Error: &models.EmailSendError{Code: "SERVER_UNREACHABLE", Message: "unreachable"},
+		Error: &models.EmailSendError{Code: "SERVER_UNREACHABLE", Message: "unreachable", Failure: &errx.SendFailure{Disposition: errx.SendRetry, Stage: "dial", Scope: "mailbox"}},
 	}
 	for i := 0; i < 3; i++ {
 		if err := s.HandleEmailFailed(ctx, result); err != nil {

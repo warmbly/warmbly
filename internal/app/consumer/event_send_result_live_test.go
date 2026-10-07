@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/config"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -242,7 +243,7 @@ func TestLiveHandleEmailFailedWalksBackAndRetriesUntilCap(t *testing.T) {
 	// dropped and marked failed.
 	for i := 2; i <= config.CampaignSendMaxAttempts; i++ {
 		id := f.stampSend(t, s)
-		if err := s.HandleEmailFailed(ctx, models.SendEmailResult{TaskID: id, LegacyErrorMsg: "still broken"}); err != nil {
+		if err := s.HandleEmailFailed(ctx, models.SendEmailResult{TaskID: id, Error: &models.EmailSendError{Code: "SERVER_UNREACHABLE", Failure: &errx.SendFailure{Disposition: errx.SendRetry, Stage: "dial", Scope: "mailbox"}}}); err != nil {
 			t.Fatalf("attempt %d: %v", i, err)
 		}
 		readProgress()

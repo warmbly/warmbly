@@ -121,11 +121,12 @@ func (n *FleetNode) NeedsUpdate() bool {
 
 // NodeHeartbeat is what a node POSTs on every beat.
 type NodeHeartbeat struct {
-	NodeID  uuid.UUID `json:"node_id"`
-	Role    NodeRole  `json:"role"`
-	Name    string    `json:"name,omitempty"`
-	Region  string    `json:"region,omitempty"`
-	Address string    `json:"address,omitempty"`
+	WarmupSendProtocol int       `json:"warmup_send_protocol,omitempty"`
+	NodeID             uuid.UUID `json:"node_id"`
+	Role               NodeRole  `json:"role"`
+	Name               string    `json:"name,omitempty"`
+	Region             string    `json:"region,omitempty"`
+	Address            string    `json:"address,omitempty"`
 	// CapacityTarget is reported by workers. Zero means no opinion, which
 	// preserves the stored/default target for older node versions.
 	CapacityTarget float64   `json:"capacity_target,omitempty"`

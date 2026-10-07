@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 )
@@ -48,6 +51,14 @@ func (c *Client) SendMessage(
 
 	draftID, assignedID, err := c.createDraft(ctx, raw)
 	if err != nil {
+		var mailErr *errx.MailError
+		if errors.As(err, &mailErr) && mailErr.Failure != nil {
+			mailErr.Failure.Stage = "create_draft"
+		}
+		if errors.As(err, &mailErr) && (mailErr.Type == errx.MailErrorCritical || mailErr.Failure != nil) &&
+			!(mailErr.Failure != nil && mailErr.Failure.Status == http.StatusForbidden && mailErr.Failure.RetryAt == nil) {
+			return "", err
+		}
 		// Nothing was created, so nothing can be double-sent: fall back to the
 		// single-shot path with our own Message-ID. The send still lands; only
 		// the id we learn is lost.
@@ -69,7 +80,10 @@ func (c *Client) SendMessage(
 	if err := c.sendDraft(ctx, draftID); err != nil {
 		// The draft is still sitting in Drafts; leaving it there would show up
 		// in the customer's own mail client as an unsent message.
-		c.discardDraft(ctx, draftID)
+		var mailErr *errx.MailError
+		if !errors.As(err, &mailErr) || mailErr.Failure == nil || mailErr.Failure.Disposition != errx.SendAmbiguous {
+			c.discardDraft(ctx, draftID)
+		}
 		return "", err
 	}
 	return assignedID, nil
@@ -104,6 +118,14 @@ func sendHeaders(from string, to, cc, bcc []string, messageID, subject string, p
 	}
 	if len(customHeaders) > 0 {
 		for k, v := range customHeaders[0] {
+			if strings.EqualFold(k, "References") {
+				for i := range hdrs {
+					if strings.EqualFold(hdrs[i].name, "References") {
+						hdrs = append(hdrs[:i], hdrs[i+1:]...)
+						break
+					}
+				}
+			}
 			hdrs = append(hdrs, hdr{k, v})
 		}
 	}
@@ -152,11 +174,11 @@ func (c *Client) draftMessageID(ctx context.Context, draftID string) string {
 func (c *Client) sendDraft(ctx context.Context, draftID string) error {
 	resp, err := c.do(ctx, http.MethodPost, c.messageURL(draftID)+"/send", "", nil)
 	if err != nil {
-		return transportError(err)
+		return submissionFailure(transportError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return HandleError(resp)
+		return submissionFailure(HandleError(resp))
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
@@ -191,12 +213,30 @@ func (c *Client) sendMIME(ctx context.Context, raw []byte) error {
 	encoded := base64.StdEncoding.EncodeToString(raw)
 	resp, err := c.do(ctx, http.MethodPost, c.root()+"/sendMail", "text/plain", []byte(encoded))
 	if err != nil {
-		return transportError(err)
+		return submissionFailure(transportError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return HandleError(resp)
+		return submissionFailure(HandleError(resp))
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
+}
+
+func submissionFailure(mailErr *errx.MailError) *errx.MailError {
+	if mailErr.Type == errx.MailErrorCritical {
+		return mailErr
+	}
+	if mailErr.Failure == nil {
+		return errx.WithSendFailure(mailErr, errx.SendFailure{Provider: "microsoft", Protocol: "http",
+			Stage: "submit", Scope: "mailbox", Disposition: errx.SendAmbiguous, ObservedAt: time.Now().UTC()})
+	}
+	mailErr.Failure.Stage = "submit"
+	if mailErr.Failure.Disposition == errx.SendPermanent && mailErr.Code == errx.MailErrorCodeServerUnreachable {
+		mailErr.Code = errx.MailErrorCodeSendRejected
+	}
+	if mailErr.Failure.Status >= 500 {
+		mailErr.Failure.Disposition = errx.SendAmbiguous
+	}
+	return mailErr
 }

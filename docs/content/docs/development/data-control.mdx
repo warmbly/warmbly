@@ -283,6 +283,12 @@ The `rsync` alternative works too and is sometimes simpler, as long as the stack
 
 ## Outbound calls
 
+### Diagnostic and managed-consent portability
+
+Warmup placement aggregates travel in a [workspace archive](/guides/workspace-export-import/). Raw `warmup_received` first-observation, authentication-header and provider-thread provenance is explicitly instance-local and is not exported. Imported task lineage, parent receipt/message handles, queue revisions and worker dispatch nonces/results reset, so historical metadata does not authorize a continuation or replay on another instance.
+
+Managed OAuth consent tables contain operation/reference hashes and restrictive history, not authorization codes, PKCE verifiers, raw session handles or credentials. History remains until organization deletion. Browser/PKCE state in Redis expires after ten minutes; encrypted provider credentials retain their normal Cloud mailbox lifetime. Import keeps restrictive history while clearing source-instance/session/remote/planned-account/activation handles. Disconnect does not erase that history, and downgrade refuses to discard it. Revoking instance access does not delete the independently Cloud-owned provider grant or mailbox; pause or delete that mailbox on Cloud separately. See [managed consent recovery](/guides/warmbly-cloud/).
+
 A self-hosted Warmbly makes no outbound call of its own except the one below, which is off with a single setting. The mail host lookup and company logos are listed too: both are off on a self-host unless you turn them on.
 
 | Call | When | Turn it off |

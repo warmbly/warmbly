@@ -29,9 +29,19 @@ Use **Customize** to pick which sections show. Your choices and time window pers
 Seed placement figures only appear once a placement test has results in the window, and a small sample is a hint rather than a verdict. Warmbly waits for a meaningful sample before acting.
 </Callout>
 
-**Seed test placement by provider is the check before scaling a campaign.** An aggregate rate can look fine while one provider quietly junks everything: Gmail at `95%` inbox with Outlook.com at `40%` is a provider-specific problem, usually authentication or content, not volume. The rates are shares of every copy that left the sender, so a copy that never arrived counts against the inbox rate rather than dropping out of the sample; a provider with many missing copies is usually refusing or deferring your mail. Run a test from **Placement tests**, or let a campaign's monitor run one on a schedule; see [inbox placement tests](/guides/placement-tests/) for how copies are sent, found and classified, and how to read one test against several.
+**Inspect seed placement by provider before scaling a campaign.** An aggregate can hide differences between Gmail and Outlook.com. Those differences warrant investigation, but do not establish a cause. Historical fractional rates include copies not observed by the timeout in their denominator; a timeout does not prove refusal, deferral, or non-arrival. Run a test from **Placement tests**, or let a campaign's monitor run one on a schedule; see [inbox placement tests](/guides/placement-tests/) for how copies are sent, found and classified, and how to read one test against several.
 
-**Warmup placement is your continuous signal.** Seed tests are point-in-time probes, but every verified warmup delivery reports inbox, tab or spam, so drift appears here before it becomes complaints on a campaign. Click a mailbox in **Warmup inbox placement** to open its own history; see [seeing where warmup lands](/guides/warmup/#seeing-where-warmup-lands) for how the rate is counted.
+**Warmup placement is a controlled observation.** Seed tests and partner mailboxes measure those test recipients, not real-customer inbox probability. Connector acceptance records a submission, not receipt or inbox placement. Click a mailbox in **Warmup inbox placement** to inspect its history.
+
+### Observation scope and missingness
+
+New receipts preserve the first recorded folder before later actions. Inbox and spam require explicit folder or spam evidence. Empty and unclassified folders remain **unknown**; archive and custom folders are shown separately and are not counted as inbox. A copy **not observed by timeout** can be delayed or unreported; it is not proof of a bounce. A late seed observation is recorded separately without rewriting the timeout verdict.
+
+Warmup's non-spam share includes inbox and category tabs among classified receipts. Seed tests retain the historical `delivered` field and fractional rates, whose denominator includes timeouts. Additive `observed_receipts`, `classified_receipts`, `unresolved`, and metric metadata expose the different evidence bases. Missing rates are null, not zero. Historical classification counts remain intact and are labelled uninstrumented; upgrades do not manufacture first folders or authentication passes for earlier messages.
+
+Metric metadata specifies the population, numerator, denominator, missingness, unit, source, and classification policy. Warmup reports include their date range; the headline rate uses a seven-day window. The optional 95% Wilson interval assumes independent observations. Repeated mailboxes, seeds, routes, and timing violate that assumption, so this interval is not an efficacy claim or calibrated real-recipient inbox probability.
+
+Google, Microsoft, and Yahoo family totals are not interchangeable with their consumer and business services. Inspect the host-level breakdown when Gmail versus Google Workspace or Outlook.com versus Microsoft 365 matters. Hosts that cannot be distinguished remain unknown. Pool placement, organic recipient activity, opens, bounces, and complaints stay separate. A **rescue request** is an action attempt, not confirmed movement or proof that reputation recovered.
 
 ## Health bands
 
@@ -68,7 +78,7 @@ Time elapsing is not enough. A blocked mailbox must requalify: SPF, DKIM, and DM
 
 ## Domain authentication
 
-Gmail, Yahoo, and Outlook all require SPF, DKIM, and DMARC, and failed alignment is the most common silent reason mail lands in spam. Warmbly checks each sending domain in the background about once a day, and on demand from the mailbox.
+SPF, DKIM, and DMARC requirements depend on the provider and sending context. Warmbly checks DNS records about once a day and on demand from the mailbox. This is record discovery, not actual-route alignment.
 
 - **Passing**: SPF and DMARC both present, the two records readable authoritatively from DNS.
 - **Failing**: SPF or DMARC missing.
@@ -78,7 +88,9 @@ A record is only reported missing once the domain's own nameservers agree. When 
 
 DKIM is reported separately as **Found** or **Not verified**, never as missing. A DKIM key lives at a selector its owner chose, and DNS has no way to list the selectors under a domain, so nothing answering proves nothing. The check does better than guessing blindly: it reads the domain's own SPF and MX records, which name the provider handling its mail, and probes the selectors that provider publishes, on top of a default set covering the common ones. Providers that mint a random per-account selector, Amazon SES among them, stay unverifiable by design.
 
-So a domain can be Passing with DKIM unverified, and that is the normal result on plenty of correctly signed domains. It never affects whether a mailbox may send. If yours shows Not verified, confirm DKIM signing is on in your provider's console; a message you send to yourself shows `dkim=pass` in its `Authentication-Results` header when it is working.
+So DNS discovery can be Passing with DKIM unverified. Missing selector discovery does not prevent sending. Confirm signing in your provider's console and inspect the receiving provider's own trusted message-authentication diagnostics. A copied header or arbitrary `Authentication-Results` value is not proof of authentication.
+
+The readiness explanation lists DNS discovery, receiver authentication, delivery TLS, and eligible bulk-mail one-click unsubscribe separately. Retrieved message headers provide bounded diagnostic claims for visible From, envelope domain, and signing domain/selector when available, with source and observation time. They are unverified claims: actual SPF/DKIM/DMARC verdicts, alignment, and TLS remain **unknown** without a trusted receiving-boundary evaluation. Unknown message evidence does not add a new sending prerequisite for existing mailboxes.
 
 A DMARC record on the parent domain covers its subdomains, so a dedicated sending subdomain like `mail.yourdomain.com` passes on the record published at `yourdomain.com`. Where the parent sets `sp=`, that is the policy shown, because `sp=` is what the parent publishes for its subdomains. SPF works the other way: it never inherits, so every sending subdomain needs its own SPF record.
 
@@ -104,7 +116,7 @@ If a campaign has already been paused because every one of its mailboxes was gat
 
 ## Built-in protections
 
-**An opt-out in every email.** Each campaign email ends with a way to stop hearing from you: by default a plain "just reply and let me know" sentence, whose replies are detected and honoured automatically, or an unsubscribe link if you prefer one. Campaigns can also attach the RFC 8058 `List-Unsubscribe` headers, which put a native Unsubscribe control in mail clients that show one. Either way, someone who can opt out cleanly rarely hits "mark as spam" instead, and every opt-out is suppressed automatically. See [unsubscribe and suppression](/guides/unsubscribe/).
+**An opt-out in every email.** Each campaign email ends with a way to stop hearing from you: by default a plain "just reply and let me know" sentence, whose replies are detected and honoured automatically, or an unsubscribe link. Eligible marketing/bulk messages can attach one-click unsubscribe headers. RFC 8058 requires an HTTPS URI, `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, and a valid DKIM signature covering both headers. The endpoint must process the POST without cookies, authorization context, or a redirect. Header presence and claimed signing coverage alone do not establish compliance; the delivered signature and endpoint must be checked. This requirement does not turn an ordinary personal reply into bulk marketing mail. See [unsubscribe and suppression](/guides/unsubscribe/).
 
 **Pre-send verification** checks every address before a campaign sends to it and skips the undeliverable ones, keeping bad addresses from becoming the hard bounces that drive the `5%` and `10%` thresholds above. There is nothing to run: new contacts are checked in the background within a minute of being added, each contact carries its verdict (a small mark next to the email), and Settings > Sending shows the whole workspace at a glance. See [address verification](#address-verification) below for how verdicts are produced and what to do when one is wrong.
 

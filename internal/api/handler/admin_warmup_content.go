@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -9,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/api/middleware"
 
 	"github.com/warmbly/warmbly/internal/app/warmupcontent"
 	"github.com/warmbly/warmbly/internal/errx"
@@ -17,6 +22,54 @@ import (
 )
 
 const warmupContentEntity models.AuditEntityType = "warmup_content"
+
+// AdminPutWarmupContentSettings preserves absent keys and returns effective values.
+func (h *Handler) AdminPutWarmupContentSettings(c *gin.Context) {
+	adminID := middleware.GetAdminUserID(c)
+	if adminID == nil {
+		errx.JSON(c, errx.ErrUnauthorized)
+		return
+	}
+	settings, err := h.WarmupContentRepo.GetGenerationSettings(c.Request.Context())
+	if err != nil || settings == nil {
+		errx.JSON(c, errx.InternalError())
+		return
+	}
+	updated, err := decodeWarmupGenerationSettings(c.Request.Body, *settings)
+	if err != nil {
+		errx.JSON(c, errx.New(errx.BadRequest, "Invalid generation settings document."))
+		return
+	}
+	settings = &updated
+	if err := h.WarmupContentRepo.PutGenerationSettings(c.Request.Context(), *settings, adminID); err != nil {
+		errx.JSON(c, errx.InternalError())
+		return
+	}
+	h.audit(c, models.AuditActionUpdate, warmupContentEntity, nil, map[string]string{"generation_enabled": strconv.FormatBool(settings.GenerationEnabled)})
+	c.JSON(http.StatusOK, gin.H{"data": settings})
+}
+
+func decodeWarmupGenerationSettings(reader io.Reader, current models.WarmupGenerationSettings) (models.WarmupGenerationSettings, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, 64*1024+1))
+	if err != nil {
+		return current, err
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(data) > 64*1024 || len(trimmed) == 0 || trimmed[0] != '{' {
+		return current, fmt.Errorf("expected a settings object of at most 64 KiB")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&current); err != nil {
+		return current, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return current, fmt.Errorf("expected one settings document")
+	}
+	current.Normalize()
+	return current, nil
+}
 
 // --- cursor helpers (opaque base64 offset) ---
 
@@ -81,15 +134,20 @@ func (h *Handler) AdminWarmupContentOverview(c *gin.Context) {
 		totalArchived += s.Archived
 	}
 	lastGen, _ := h.WarmupContentRepo.LastGeneratedAt(ctx)
-	settings, _ := h.WarmupContentRepo.GetGenerationSettings(ctx)
-	if settings == nil {
-		def := models.DefaultWarmupGenerationSettings()
-		settings = &def
+	settings, err := h.WarmupContentRepo.GetGenerationSettings(ctx)
+	if err != nil || settings == nil {
+		errx.JSON(c, errx.InternalError())
+		return
 	}
 
 	aiConfigured := h.WarmupContentService != nil && h.WarmupContentService.Enabled()
 	// Same daily window the scheduler uses for its cap accounting.
 	generatedToday, _ := h.WarmupContentRepo.GeneratedCountSince(ctx, time.Now().Truncate(24*time.Hour))
+	reservedToday, reserveErr := h.WarmupContentRepo.ReservedGenerationCountSince(ctx, time.Now().UTC().Truncate(24*time.Hour))
+	if reserveErr != nil {
+		errx.JSON(c, errx.InternalError())
+		return
+	}
 
 	totalDemand, _ := h.WarmupContentRepo.WarmupSendsSince(ctx, time.Now().AddDate(0, 0, -7))
 
@@ -124,29 +182,36 @@ func (h *Handler) AdminWarmupContentOverview(c *gin.Context) {
 		"ai_enabled":           settings.Enabled,
 		"schedule_enabled":     settings.ScheduleEnabled,
 		"ai_configured":        aiConfigured,
+		"generation_enabled":   settings.GenerationEnabled,
+		"effective_settings":   settings,
+		"provider_capability":  "model visibility checked before submission; batch and structured-output support validated by provider, not assumed",
 		"cadence_hours":        settings.CadenceHours,
 		"refresh_enabled":      settings.RefreshEnabled,
 		"refresh_per_run":      settings.RefreshPerRun,
 		"ai_selection_share":   settings.AISelectionShare,
 		"daily_generation_cap": settings.DailyGenerationCap,
 		"generated_today":      generatedToday,
+		"reserved_today":       reservedToday,
 		"stock":                stock,
 	})
 }
 
 type conversationListItem struct {
-	ID           uuid.UUID `json:"id"`
-	PoolType     string    `json:"pool_type"`
-	Segment      string    `json:"segment"`
-	Source       string    `json:"source"`
-	Theme        string    `json:"theme"`
-	Subject      string    `json:"subject"`
-	Description  string    `json:"description"`
-	MessageCount int       `json:"message_count"`
-	Status       string    `json:"status"`
-	LintPassed   bool      `json:"lint_passed"`
-	UsageCount   int64     `json:"usage_count"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID               uuid.UUID `json:"id"`
+	PoolType         string    `json:"pool_type"`
+	Segment          string    `json:"segment"`
+	Source           string    `json:"source"`
+	Theme            string    `json:"theme"`
+	Subject          string    `json:"subject"`
+	Description      string    `json:"description"`
+	MessageCount     int       `json:"message_count"`
+	Status           string    `json:"status"`
+	LintPassed       bool      `json:"lint_passed"`
+	SemanticReview   string    `json:"semantic_review"`
+	ScenarioVersion  *string   `json:"scenario_version,omitempty"`
+	RenderingVersion *string   `json:"rendering_version,omitempty"`
+	UsageCount       int64     `json:"usage_count"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // AdminListWarmupConversations lists cached conversations with filters.
@@ -179,6 +244,7 @@ func (h *Handler) AdminListWarmupConversations(c *gin.Context) {
 			Theme: r.Theme, Subject: r.Subject, Description: r.Description,
 			MessageCount: len(r.Messages), Status: r.Status, LintPassed: r.LintPassed,
 			UsageCount: r.UsageCount, CreatedAt: r.CreatedAt,
+			SemanticReview: r.SemanticReview, ScenarioVersion: r.ScenarioVersion, RenderingVersion: r.RenderingVersion,
 		})
 	}
 

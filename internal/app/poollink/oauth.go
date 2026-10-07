@@ -41,12 +41,19 @@ var (
 // BrokerStatePrefix marks a consent state as brokered so the callback can route it.
 const BrokerStatePrefix = "pl_"
 
+const CorrelatedBrokerStatePrefix = "pc1_"
+
+func IsBrokerState(state string) bool {
+	return strings.HasPrefix(state, BrokerStatePrefix) || strings.HasPrefix(state, CorrelatedBrokerStatePrefix)
+}
+
 // BrokerConsentPath is the cloud page that names the requesting instance before the provider opens.
 const BrokerConsentPath = "/addresses/connect"
 
 const brokerTTL = 10 * time.Minute
 
 type brokerState struct {
+	RemoteID   uuid.UUID `json:"remote_id,omitempty"`
 	InstanceID uuid.UUID `json:"instance_id"`
 	Provider   string    `json:"provider"`
 	ReturnURL  string    `json:"return_url"`
@@ -58,6 +65,7 @@ type brokerState struct {
 }
 
 type brokerResult struct {
+	StartURL   string    `json:"start_url,omitempty"`
 	InstanceID uuid.UUID `json:"instance_id"`
 	RemoteID   uuid.UUID `json:"remote_id"`
 	Pending    bool      `json:"pending"`
@@ -96,6 +104,23 @@ func returnURLAllowed(raw, instanceURL string) bool {
 }
 
 func (s *service) StartOAuth(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkOAuthStartRequest) (*models.PoolLinkOAuthStartResponse, *errx.Error) {
+	if req.Protocol != 0 {
+		if req.Protocol != models.ManagedConsentProtocol || req.RemoteID == uuid.Nil || len(req.Session) < 32 || len(req.Session) > 128 {
+			return nil, ErrBadRequest
+		}
+		if !managedOperationLocked(ctx) {
+			var out *models.PoolLinkOAuthStartResponse
+			xerr := s.withManagedOperationLock(ctx, inst.ID, func(ctx context.Context) *errx.Error {
+				var xerr *errx.Error
+				out, xerr = s.StartOAuth(ctx, inst, req)
+				return xerr
+			})
+			return out, xerr
+		}
+		if xerr := s.currentManagedInstance(ctx, inst); xerr != nil {
+			return nil, xerr
+		}
+	}
 	if s.cache == nil {
 		return nil, errx.InternalError()
 	}
@@ -123,6 +148,33 @@ func (s *service) StartOAuth(ctx context.Context, inst *models.PoolLinkInstance,
 	if xerr != nil {
 		return nil, xerr
 	}
+	ttl := brokerTTL
+	if req.Protocol != 0 {
+		r := s.repo.(repository.PoolLinkManagedRepository)
+		hash, planned := crypt.SHA256(req.Session), uuid.New()
+		op := &models.PoolLinkManagedOperation{OrganizationID: inst.OrganizationID, InstanceID: &inst.ID, RemoteID: &req.RemoteID,
+			SessionHash: &hash, Kind: "oauth", Provider: req.Provider, PlannedAccountID: &planned, ExpiresAt: time.Now().Add(brokerTTL)}
+		if err := r.CreateManagedOperation(ctx, op); err != nil {
+			return nil, errx.InternalError()
+		}
+		op, err := r.GetManagedOperation(ctx, inst.ID, req.RemoteID)
+		if err != nil {
+			return nil, errx.InternalError()
+		}
+		if op == nil || op.State != "pending" || !time.Now().Before(op.ExpiresAt) {
+			return nil, ErrOAuthSession
+		}
+		ttl = time.Until(op.ExpiresAt)
+		var previous brokerResult
+		if err := s.cache.GetJSON(ctx, brokerSessionKey(req.Session), &previous); err == nil {
+			if previous.InstanceID != inst.ID || !previous.Pending || previous.StartURL == "" {
+				return nil, ErrOAuthSession
+			}
+			return &models.PoolLinkOAuthStartResponse{URL: previous.StartURL, Session: req.Session}, nil
+		} else if !errors.Is(err, redis.Nil) {
+			return nil, errx.InternalError()
+		}
+	}
 	nonce, err := crypt.Nonce()
 	if err != nil {
 		return nil, errx.InternalError()
@@ -131,21 +183,29 @@ func (s *service) StartOAuth(ctx context.Context, inst *models.PoolLinkInstance,
 	if err != nil {
 		return nil, errx.InternalError()
 	}
+	if req.Protocol != 0 {
+		session = req.Session
+	}
 	state := BrokerStatePrefix + nonce
-	st := brokerState{InstanceID: inst.ID, Provider: string(req.Provider), ReturnURL: req.ReturnURL, Session: session, Verifier: oauth2.GenerateVerifier()}
-	if err := s.cache.SetJSON(ctx, brokerStateKey(state), st, brokerTTL); err != nil {
+	remoteID := uuid.Nil
+	if req.Protocol != 0 {
+		state = CorrelatedBrokerStatePrefix + nonce
+		remoteID = req.RemoteID
+	}
+	st := brokerState{RemoteID: remoteID, InstanceID: inst.ID, Provider: string(req.Provider), ReturnURL: req.ReturnURL, Session: session, Verifier: oauth2.GenerateVerifier()}
+	consentURL := origin + BrokerConsentPath + "?" + url.Values{"state": {state}}.Encode()
+	if err := s.cache.SetJSON(ctx, brokerStateKey(state), st, ttl); err != nil {
 		return nil, errx.InternalError()
 	}
-	if err := s.cache.SetJSON(ctx, brokerSessionKey(session), brokerResult{InstanceID: inst.ID, Pending: true}, brokerTTL); err != nil {
+	if err := s.cache.SetJSON(ctx, brokerSessionKey(session), brokerResult{InstanceID: inst.ID, Pending: true, StartURL: consentURL}, ttl); err != nil {
 		return nil, errx.InternalError()
 	}
 	// Only the consent page hands out the provider URL, to the browser that continues there.
-	consentURL := origin + BrokerConsentPath + "?" + url.Values{"state": {state}}.Encode()
 	return &models.PoolLinkOAuthStartResponse{URL: consentURL, Session: session}, nil
 }
 
 func (s *service) peekBrokerState(ctx context.Context, state string) (*brokerState, *errx.Error) {
-	if s.cache == nil || !strings.HasPrefix(state, BrokerStatePrefix) {
+	if s.cache == nil || !IsBrokerState(state) {
 		return nil, ErrOAuthSession
 	}
 	var st brokerState
@@ -188,12 +248,44 @@ func (s *service) DescribeOAuthConsent(ctx context.Context, state string) (*mode
 
 // ContinueOAuth binds the round trip to the browser that chose to continue and returns the provider URL.
 func (s *service) ContinueOAuth(ctx context.Context, state, binding string) (string, *errx.Error) {
+	pending, xerr := s.peekBrokerState(ctx, state)
+	if xerr != nil {
+		return "", xerr
+	}
+	if pending.RemoteID != uuid.Nil && !managedOperationLocked(ctx) {
+		var out string
+		xerr := s.withManagedOperationLock(ctx, pending.InstanceID, func(ctx context.Context) *errx.Error {
+			var xerr *errx.Error
+			out, xerr = s.ContinueOAuth(ctx, state, binding)
+			return xerr
+		})
+		return out, xerr
+	}
 	if len(binding) < 16 {
 		return "", ErrOAuthBrowser
 	}
 	st, xerr := s.peekBrokerState(ctx, state)
 	if xerr != nil {
 		return "", xerr
+	}
+	if st.RemoteID != uuid.Nil {
+		inst, err := s.repo.GetInstance(ctx, st.InstanceID)
+		if err != nil {
+			return "", errx.InternalError()
+		}
+		if inst == nil {
+			return "", ErrInstanceRevoked
+		}
+		if xerr := s.currentManagedInstance(ctx, inst); xerr != nil {
+			return "", xerr
+		}
+		op, err := s.repo.(repository.PoolLinkManagedRepository).GetManagedOperation(ctx, st.InstanceID, st.RemoteID)
+		if err != nil {
+			return "", errx.InternalError()
+		}
+		if op == nil || op.State != "pending" || !time.Now().Before(op.ExpiresAt) {
+			return "", ErrOAuthSession
+		}
 	}
 	st.Binding = binding
 	raw, err := json.Marshal(st)
@@ -212,6 +304,24 @@ func (s *service) ContinueOAuth(ctx context.Context, state, binding string) (str
 
 // CompleteOAuthCallback finishes a brokered consent; every completed outcome redirects to the instance.
 func (s *service) CompleteOAuthCallback(ctx context.Context, provider, code, state, providerErr, binding string) (string, *errx.Error) {
+	pendingState, xerr := s.peekBrokerState(ctx, state)
+	if xerr != nil {
+		return "", xerr
+	}
+	if pendingState.RemoteID != uuid.Nil {
+		if pendingState.Provider != provider || !bindingMatches(pendingState.Binding, binding) {
+			return "", ErrOAuthBrowser
+		}
+		if !managedOperationLocked(ctx) {
+			var out string
+			xerr := s.withManagedOperationLock(ctx, pendingState.InstanceID, func(ctx context.Context) *errx.Error {
+				var xerr *errx.Error
+				out, xerr = s.CompleteOAuthCallback(ctx, provider, code, state, providerErr, binding)
+				return xerr
+			})
+			return out, xerr
+		}
+	}
 	if s.cache == nil {
 		return "", ErrOAuthSession
 	}
@@ -232,6 +342,11 @@ func (s *service) CompleteOAuthCallback(ctx context.Context, provider, code, sta
 	}
 	res := brokerResult{InstanceID: st.InstanceID}
 	if providerErr != "" {
+		if st.RemoteID != uuid.Nil {
+			if err := s.repo.(repository.PoolLinkManagedRepository).RevokeManagedOperations(ctx, st.InstanceID, &st.RemoteID); err != nil {
+				return "", errx.InternalError()
+			}
+		}
 		res.ErrorCode, res.ErrorText = providerErr, "The provider did not complete the sign-in."
 	} else if code == "" {
 		res.ErrorCode, res.ErrorText = "missing_code", "The provider returned no authorization code."
@@ -270,6 +385,15 @@ func (s *service) storeBrokerResult(ctx context.Context, session string, res bro
 }
 
 func (s *service) connectBrokered(ctx context.Context, st brokerState, code string) (uuid.UUID, *errx.Error) {
+	if _, ok := s.repo.(repository.PoolLinkManagedRepository); ok && !managedOperationLocked(ctx) {
+		var remoteID uuid.UUID
+		xerr := s.withManagedOperationLock(ctx, st.InstanceID, func(ctx context.Context) *errx.Error {
+			var xerr *errx.Error
+			remoteID, xerr = s.connectBrokered(ctx, st, code)
+			return xerr
+		})
+		return remoteID, xerr
+	}
 	inst, err := s.repo.GetInstance(ctx, st.InstanceID)
 	if err != nil {
 		return uuid.Nil, errx.InternalError()
@@ -282,6 +406,37 @@ func (s *service) connectBrokered(ctx context.Context, st brokerState, code stri
 		return uuid.Nil, xerr
 	}
 	orgID := inst.OrganizationID
+	if st.RemoteID != uuid.Nil {
+		r := s.repo.(repository.PoolLinkManagedRepository)
+		op, err := r.GetManagedOperation(ctx, inst.ID, st.RemoteID)
+		if err != nil {
+			return uuid.Nil, errx.InternalError()
+		}
+		if op == nil || op.SessionHash == nil || *op.SessionHash != crypt.SHA256(st.Session) || op.Provider != models.InboxProvider(st.Provider) || op.PlannedAccountID == nil {
+			return uuid.Nil, ErrOAuthSession
+		}
+		claimed, err := r.ClaimManagedOperation(ctx, inst.ID, st.RemoteID)
+		if err != nil {
+			return uuid.Nil, errx.InternalError()
+		}
+		if !claimed {
+			return uuid.Nil, ErrOAuthSession
+		}
+		if xerr := s.managedCapacity(ctx, inst, st.RemoteID); xerr != nil {
+			return uuid.Nil, xerr
+		}
+		acc, xerr := s.emailSvc.OAuthConnectWithCodeForAccount(ctx, userID, &orgID, models.InboxProvider(st.Provider), code, st.Verifier, *op.PlannedAccountID)
+		if xerr != nil {
+			return uuid.Nil, ErrOAuthUnknown
+		}
+		if err := r.CompleteManagedOperation(ctx, inst.ID, st.RemoteID, acc.ID); err != nil {
+			return uuid.Nil, errx.InternalError()
+		}
+		if _, xerr := s.FinishManagedOAuth(ctx, inst, models.PoolLinkOAuthFinishRequest{Protocol: models.ManagedConsentProtocol, RemoteID: st.RemoteID}); xerr != nil {
+			return uuid.Nil, xerr
+		}
+		return st.RemoteID, nil
+	}
 	acc, xerr := s.emailSvc.OAuthConnectWithCode(ctx, userID, &orgID, models.InboxProvider(st.Provider), code, st.Verifier)
 	if xerr != nil {
 		return uuid.Nil, xerr
@@ -334,6 +489,20 @@ func (s *service) FinishOAuth(ctx context.Context, inst *models.PoolLinkInstance
 
 // AccessToken is the enforcement point: a revoked link or a removed, inactive or blocked mailbox gets no token.
 func (s *service) AccessToken(ctx context.Context, inst *models.PoolLinkInstance, remoteID uuid.UUID) (*models.PoolLinkAccessToken, *errx.Error) {
+	if _, ok := s.repo.(repository.PoolLinkManagedRepository); ok {
+		if !managedOperationLocked(ctx) {
+			var out *models.PoolLinkAccessToken
+			xerr := s.withManagedOperationLock(ctx, inst.ID, func(ctx context.Context) *errx.Error {
+				var xerr *errx.Error
+				out, xerr = s.AccessToken(ctx, inst, remoteID)
+				return xerr
+			})
+			return out, xerr
+		}
+		if _, xerr := s.managedAuthority(ctx, inst, remoteID); xerr != nil {
+			return nil, xerr
+		}
+	}
 	m, err := s.repo.GetMailboxByRemote(ctx, inst.ID, remoteID)
 	if err != nil {
 		return nil, errx.InternalError()
@@ -374,6 +543,21 @@ func (s *service) ListWorkspaceMailboxes(ctx context.Context, inst *models.PoolL
 
 // Adopt links a mailbox that was connected directly on the workspace.
 func (s *service) Adopt(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkAdoptRequest) (*models.PoolLinkMailboxState, *errx.Error) {
+	if req.Protocol != 0 {
+		if req.Protocol != models.ManagedConsentProtocol || req.RemoteID == uuid.Nil || req.EmailAccountID == uuid.Nil {
+			return nil, ErrBadRequest
+		}
+		return s.adoptManaged(ctx, inst, req)
+	}
+	if _, ok := s.repo.(repository.PoolLinkManagedRepository); ok && !managedOperationLocked(ctx) {
+		var out *models.PoolLinkMailboxState
+		xerr := s.withManagedOperationLock(ctx, inst.ID, func(ctx context.Context) *errx.Error {
+			var xerr *errx.Error
+			out, xerr = s.Adopt(ctx, inst, req)
+			return xerr
+		})
+		return out, xerr
+	}
 	if req.RemoteID == uuid.Nil || req.EmailAccountID == uuid.Nil {
 		return nil, ErrBadRequest
 	}

@@ -29,8 +29,16 @@ func (s *service) Tick(ctx context.Context) error {
 	}
 	for _, l := range landings {
 		folder := models.ClassifyPlacementLanding(l.Folder, l.Flags)
-		if err := s.Repo.RecordLanding(ctx, l.ResultID, folder, strings.Join(l.Flags, ","), now); err != nil {
-			errs.CaptureException(err)
+		var recordErr error
+		if recorder, ok := s.Repo.(interface {
+			RecordLandingObservation(context.Context, uuid.UUID, string, []string, time.Time) error
+		}); ok {
+			recordErr = recorder.RecordLandingObservation(ctx, l.ResultID, l.Folder, l.Flags, now)
+		} else {
+			recordErr = s.Repo.RecordLanding(ctx, l.ResultID, folder, strings.Join(l.Flags, ","), now)
+		}
+		if recordErr != nil {
+			errs.CaptureException(recordErr)
 			continue
 		}
 		touched[l.TestID] = true

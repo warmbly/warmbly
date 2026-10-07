@@ -49,7 +49,7 @@ func TestEndedBatchOutcome(t *testing.T) {
 		{
 			name:  "failed never ran, so there is nothing to ingest",
 			state: generation.BatchState{Status: "failed", FailureReason: "quota exceeded"},
-			err:   "batch failed: quota exceeded",
+			err:   "batch failed",
 		},
 		{
 			name:  "failed without a provider reason still names the status",

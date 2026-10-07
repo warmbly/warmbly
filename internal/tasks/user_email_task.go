@@ -193,6 +193,9 @@ func (s *tasksService) HandleUserEmailTask(task *proto.ProcessTask) *errx.Error 
 		Tracking:  nil,
 	}
 
+	if err := s.sendAdmission(ctx, account); err != nil {
+		return errx.InternalError()
+	}
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Send failed", err.Error())
 		if s.advanced != nil {

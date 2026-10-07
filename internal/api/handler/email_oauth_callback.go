@@ -133,7 +133,7 @@ func (h *Handler) renderOAuthCallback(c *gin.Context, provider string) {
 	providerErr := c.Query("error")
 
 	// A brokered consent completes here, only in the browser the consent page bound it to.
-	if h.PoolLinkService != nil && strings.HasPrefix(state, poollink.BrokerStatePrefix) {
+	if h.PoolLinkService != nil && poollink.IsBrokerState(state) {
 		binding, _ := c.Cookie(brokerCookieName)
 		to, xerr := h.PoolLinkService.CompleteOAuthCallback(c.Request.Context(), provider, code, state, providerErr, binding)
 		if xerr != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"google.golang.org/api/gmail/v1"
 )
 
@@ -65,6 +66,7 @@ type SendRequest struct {
 	BodyPlain   string
 	BodyHTML    string
 	InReplyTo   string
+	References  string
 	Parent      *models.EmailParent
 	IsWarmup    bool
 	WarmupToken string
@@ -92,6 +94,11 @@ type SendRequest struct {
 // unsubscribe headers (campaign sends). Returns nil when there are none so callers can branch.
 func buildSendHeaders(req *SendRequest) map[string]string {
 	h := map[string]string{}
+	if req.References != "" && req.InReplyTo != "" {
+		if value, err := mailhdr.References(strings.Fields(req.References)); err == nil {
+			h["References"] = value
+		}
+	}
 	if req.WarmupToken != "" {
 		h[config.WarmupVerifyHeader] = req.WarmupToken
 	}
@@ -205,6 +212,9 @@ func (w *WMail) Send(ctx context.Context, req *SendRequest) *SendResult {
 		if result.Success {
 			return result
 		}
+		if result.Error != nil && result.Error.Failure != nil {
+			return result
+		}
 
 		// Don't retry critical/auth errors - only transient ones.
 		if result.Error != nil && result.Error.Type == errx.MailErrorCritical {
@@ -300,6 +310,16 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 	if err != nil {
 		// Convert to MailError using goog.HandleError
 		if mailErr := goog.HandleError(err); mailErr != nil {
+			if mailErr.Failure == nil && mailErr.Type != errx.MailErrorCritical {
+				mailErr = errx.WithSendFailure(mailErr, errx.SendFailure{Provider: "google", Protocol: "http",
+					Stage: "submit", Scope: "mailbox", Disposition: errx.SendAmbiguous, ObservedAt: time.Now().UTC()})
+			}
+			if mailErr.Failure != nil && mailErr.Failure.Status >= 500 {
+				mailErr.Failure.Disposition = errx.SendAmbiguous
+			}
+			if mailErr.Failure != nil {
+				mailErr.Failure.Stage = "submit"
+			}
 			result.Error = mailErr
 		} else {
 			// Generic error
@@ -551,6 +571,14 @@ func DetermineErrorEventType(err *errx.MailError) models.JobEventType {
 	if err == nil {
 		return models.JobEventTypeEmailFailed
 	}
+	if err.Failure != nil {
+		switch err.Failure.Disposition {
+		case errx.SendRetry, errx.SendAmbiguous:
+			return models.JobEventTypeEmailServerError
+		case errx.SendThrottle:
+			return models.JobEventTypeEmailRateLimited
+		}
+	}
 
 	switch err.Code {
 	case errx.MailErrorCodeGoogleAuth, errx.MailErrorCodeAuthenticationFailed, errx.MailErrorCodeInvalidCredentials:
@@ -577,8 +605,15 @@ func MailErrorToSendError(err *errx.MailError) *models.EmailSendError {
 	}
 
 	userInfo := err.GetUserErrorInfo()
+	failure := err.Failure
+	if failure == nil && err.RetryAfter > 0 && (err.Code == errx.MailErrorCodeSendingTooFast || err.Code == errx.MailErrorCodeQuotaExceeded) {
+		now := time.Now().UTC()
+		at := now.Add(err.RetryAfter)
+		failure = &errx.SendFailure{Disposition: errx.SendThrottle, Scope: "mailbox", ObservedAt: now, RetryAt: &at}
+	}
 
 	return &models.EmailSendError{
+		Failure:        failure,
 		Code:           string(err.Code),
 		Type:           string(err.Type),
 		Message:        err.Message,

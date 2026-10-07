@@ -14,6 +14,7 @@
     "warmblyctl",
     "data-control",
     "configuration",
+    "warmup-generation",
     "whole-domain-connect",
     "slack-app",
     "instance-health",

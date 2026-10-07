@@ -165,6 +165,14 @@ func GmailMessageToEmailData(msg *gmail.Message) *models.EmailMessageData {
 		Folder:   Folder(msg.LabelIds),
 		Flags: func() []string {
 			flags := []string{}
+			if len(msg.LabelIds) == 0 {
+				flags = append(flags, models.ObservationUnknownFolderFlag)
+			}
+			observedHeaders := make(map[string][]string)
+			for _, h := range headers {
+				observedHeaders[h.Name] = append(observedHeaders[h.Name], h.Value)
+			}
+			flags = append(flags, mailhdr.ReceivedEvidence(observedHeaders, "gmail_api").Flag())
 			// Gmail models read state inversely: the UNREAD label is present on
 			// unread mail, so \Seen applies only when UNREAD is absent.
 			seen := true

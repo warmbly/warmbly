@@ -2235,7 +2235,7 @@ func (r *campaignRepository) DecrementCampaignDailySend(ctx context.Context, cam
 	if newLead {
 		newLeadDec = 1
 	}
-	_, err := r.DB.Exec(ctx, `
+	_, err := resultDB(ctx, r.DB).Exec(ctx, `
 		UPDATE campaign_daily_sends
 		SET emails_sent = GREATEST(emails_sent - 1, 0),
 		    new_leads_started = GREATEST(new_leads_started - $3, 0)
@@ -2248,7 +2248,7 @@ func (r *campaignRepository) DecrementCampaignDailySend(ctx context.Context, cam
 // completed state is touched: a paused campaign stays paused and picks the
 // retry up when it is resumed.
 func (r *campaignRepository) ReopenAfterSendFailure(ctx context.Context, campaignID uuid.UUID) (bool, error) {
-	tag, err := r.DB.Exec(ctx, `
+	tag, err := resultDB(ctx, r.DB).Exec(ctx, `
 		UPDATE campaigns
 		SET status = 'active', last_status_change_at = NOW(), updated_at = NOW()
 		WHERE id = $1 AND status = 'completed'

@@ -96,7 +96,7 @@ func newPartnerRoutingFixture(t *testing.T) *partnerRoutingFixture {
 		      VALUES ($1, $2, $3, $4, 'Pick', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5)`,
 			m.id, f.user, f.org, "pick-"+m.id.String()[:8]+"@"+m.domain, m.host)
 	}
-	for _, id := range []uuid.UUID{f.atWorkspace, f.atSmallHost} {
+	for _, id := range []uuid.UUID{senderID, f.atWorkspace, f.atSmallHost} {
 		exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id, participant_role, health_state)
 		      VALUES ($1, $2, 'sender_receiver', 'healthy')`, freePoolID, id)
 	}

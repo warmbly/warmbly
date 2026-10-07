@@ -110,8 +110,8 @@ func TestThreadJudgmentReject(t *testing.T) {
 		{name: "template needs a strong answer", j: ThreadJudgment{Template: 0.79, Naturalness: 1, Confidence: 0.9}},
 		{name: "template strong", j: ThreadJudgment{Template: 0.80, Naturalness: 1, Confidence: 0.9}, reject: true, reason: "filler"},
 		{name: "unnatural and confident", j: ThreadJudgment{Naturalness: 0, Confidence: 0.70}, reject: true, reason: "unnatural"},
-		{name: "unnatural but unsure is accepted", j: ThreadJudgment{Naturalness: 0, Confidence: 0.69}},
-		{name: "middle of the rubric is accepted", j: ThreadJudgment{Naturalness: 0.5, Confidence: 0.99}},
+		{name: "unsure is not approval", j: ThreadJudgment{Naturalness: 0, Confidence: 0.69}, reject: true, reason: "unnatural"},
+		{name: "ambiguous is not approval", j: ThreadJudgment{Naturalness: 0.5, Confidence: 0.99}, reject: true, reason: "unnatural"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
