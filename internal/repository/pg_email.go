@@ -856,6 +856,10 @@ func (r *emailRepository) NewOauthAccount(ctx context.Context, userID string, da
 	t := time.Now()
 	id := uuid.New()
 
+	if data.ID != uuid.Nil {
+		id = data.ID
+	}
+
 	// warmup_tag is the content segment (defaults to '' = generic). It used to
 	// be seeded with a random RID, which silently broke segment-aware content
 	// selection because a random tag never matches a real segment.
@@ -962,6 +966,9 @@ func (r *emailRepository) NewManagedAccount(ctx context.Context, userID string, 
 	sightml := utils.GetSignatureHTML(data.Name)
 	t := time.Now()
 	id := uuid.New()
+	if data.ID != uuid.Nil {
+		id = data.ID
+	}
 	query := `
 		INSERT INTO email_accounts (id, user_id, organization_id, email, name, provider, signature_plain, signature_html, tracking_domain, last_synced_at, created_at, updated_at, warmup_tag, mail_host, auth_method)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $10, $11, $12, $13)

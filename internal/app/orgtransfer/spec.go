@@ -254,6 +254,16 @@ var Tables = []Table{
 		Scope: `email_account_id IN ` + orgMailboxes,
 	},
 	{
+		Name: "cloud_managed_consents", Group: models.OrgDataGroupCore, Scope: scopeOrg,
+		ResetOnImport: []string{"instance_id", "remote_id", "session_hash", "cloud_account_id", "planned_account_id"},
+		Note:          "Managed consent history and restrictions travel; process-local session and link handles reset and cannot authorize a destination.",
+	},
+	{
+		Name: "pool_link_managed_operations", Group: models.OrgDataGroupCore, Scope: scopeOrg,
+		ResetOnImport: []string{"instance_id", "remote_id", "session_hash", "planned_account_id", "activation_pending"},
+		Note:          "Cloud consent history travels without a live instance or resumable OAuth operation.",
+	},
+	{
 		// Below organization_members: user_id names the creator, and the
 		// importer needs that row present or it blanks the attribution.
 		Name: "tags", Group: models.OrgDataGroupCore,

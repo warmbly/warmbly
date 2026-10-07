@@ -25,6 +25,39 @@ type partnerOrgFixture struct {
 	exec    func(sql string, args ...any)
 }
 
+func TestLiveWarmupAdmissionUsesRoleCurrentAuthorityAndHealth(t *testing.T) {
+	f := newPartnerOrgFixture(t)
+	ctx := context.Background()
+	r := NewWarmupRepository(f.pool)
+	assertEligible := func(sending, want bool) {
+		t.Helper()
+		got, err := r.IsPoolEligible(ctx, f.sender, "premium", sending)
+		if err != nil || got != want {
+			t.Fatalf("eligible(sending=%v) = %v, %v; want %v", sending, got, err, want)
+		}
+	}
+	assertEligible(true, true)
+	f.exec(`UPDATE warmup_pool_participants SET participant_role = 'recipient_only' WHERE email_account_id = $1`, f.sender)
+	assertEligible(true, false)
+	assertEligible(false, true)
+	f.exec(`UPDATE organizations SET risk_state = 'restricted' WHERE id = $1`, f.org)
+	assertEligible(false, false)
+	f.exec(`UPDATE organizations SET risk_state = 'watch' WHERE id = $1`, f.org)
+	assertEligible(false, true)
+	f.exec(`UPDATE email_accounts SET status = 'inactive' WHERE id = $1`, f.sender)
+	assertEligible(false, false)
+	f.exec(`UPDATE email_accounts SET status = 'active' WHERE id = $1`, f.sender)
+	f.exec(`UPDATE warmup_pool_participants SET health_state = 'quarantined', blocked_until = NULL WHERE email_account_id = $1`, f.sender)
+	assertEligible(false, false)
+	f.exec(`UPDATE warmup_pool_participants SET blocked_until = NOW() - INTERVAL '1 second' WHERE email_account_id = $1`, f.sender)
+	assertEligible(false, true)
+	cancelCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	if allowed, err := r.IsPoolEligible(cancelCtx, f.sender, "premium", false); err == nil || allowed {
+		t.Fatalf("unavailable authority admitted recipient: %v, %v", allowed, err)
+	}
+}
+
 func newPartnerOrgFixture(t *testing.T) *partnerOrgFixture {
 	t.Helper()
 	_, pool := liveContactDB(t)

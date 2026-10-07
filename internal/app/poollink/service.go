@@ -91,6 +91,7 @@ type Service interface {
 	// CompleteOAuthCallback finishes a brokered consent and returns where to send the browser.
 	CompleteOAuthCallback(ctx context.Context, provider, code, state, providerErr, binding string) (string, *errx.Error)
 	FinishOAuth(ctx context.Context, inst *models.PoolLinkInstance, session string) (*models.PoolLinkMailboxState, *errx.Error)
+	FinishManagedOAuth(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkOAuthFinishRequest) (*models.PoolLinkMailboxState, *errx.Error)
 	AccessToken(ctx context.Context, inst *models.PoolLinkInstance, remoteID uuid.UUID) (*models.PoolLinkAccessToken, *errx.Error)
 	ListWorkspaceMailboxes(ctx context.Context, inst *models.PoolLinkInstance) ([]models.PoolLinkWorkspaceMailbox, *errx.Error)
 	Adopt(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkAdoptRequest) (*models.PoolLinkMailboxState, *errx.Error)
@@ -365,9 +366,10 @@ func (s *service) InstanceInfo(ctx context.Context, inst *models.PoolLinkInstanc
 	}
 	inst.MailboxCount = len(mailboxes)
 	return &models.PoolLinkInstanceInfo{
-		Instance:     *inst,
-		Organization: models.PoolLinkOrgInfo{ID: org.ID, Name: org.Name},
-		Plan:         plan,
+		ManagedConsentProtocol: models.ManagedConsentProtocol,
+		Instance:               *inst,
+		Organization:           models.PoolLinkOrgInfo{ID: org.ID, Name: org.Name},
+		Plan:                   plan,
 	}, nil
 }
 
@@ -380,12 +382,23 @@ func (s *service) ListInstances(ctx context.Context, orgID uuid.UUID) ([]models.
 }
 
 func (s *service) RevokeInstance(ctx context.Context, orgID, instanceID uuid.UUID) *errx.Error {
+	if _, ok := s.repo.(repository.PoolLinkManagedRepository); ok && !managedOperationLocked(ctx) {
+		return s.withManagedOperationLock(ctx, instanceID, func(ctx context.Context) *errx.Error { return s.RevokeInstance(ctx, orgID, instanceID) })
+	}
 	inst, err := s.repo.GetInstance(ctx, instanceID)
 	if err != nil {
 		return errx.InternalError()
 	}
 	if inst == nil || inst.OrganizationID != orgID {
 		return ErrInstanceNotFound
+	}
+	if r, ok := s.repo.(repository.PoolLinkManagedRepository); ok {
+		if err := r.RevokeManagedOperations(ctx, inst.ID, nil); err != nil {
+			return errx.InternalError()
+		}
+	}
+	if err := s.repo.RevokeInstance(ctx, inst.ID); err != nil {
+		return errx.InternalError()
 	}
 	mailboxes, err := s.repo.ListMailboxes(ctx, inst.ID)
 	if err != nil {
@@ -395,9 +408,6 @@ func (s *service) RevokeInstance(ctx context.Context, orgID, instanceID uuid.UUI
 		if xerr := s.Unenroll(ctx, inst, m.RemoteID); xerr != nil {
 			log.Warn().Str("account_id", m.EmailAccountID.String()).Msg("pool link: mailbox removal failed during revoke; continuing")
 		}
-	}
-	if err := s.repo.RevokeInstance(ctx, inst.ID); err != nil {
-		return errx.InternalError()
 	}
 	return nil
 }
@@ -621,6 +631,26 @@ func (s *service) state(ctx context.Context, inst *models.PoolLinkInstance, m *m
 }
 
 func (s *service) PatchMailbox(ctx context.Context, inst *models.PoolLinkInstance, remoteID uuid.UUID, patch models.PoolLinkMailboxPatch) (*models.PoolLinkMailboxState, *errx.Error) {
+	if r, ok := s.repo.(repository.PoolLinkManagedRepository); ok {
+		if !managedOperationLocked(ctx) {
+			var out *models.PoolLinkMailboxState
+			xerr := s.withManagedOperationLock(ctx, inst.ID, func(ctx context.Context) *errx.Error {
+				var xerr *errx.Error
+				out, xerr = s.PatchMailbox(ctx, inst, remoteID, patch)
+				return xerr
+			})
+			return out, xerr
+		}
+		op, xerr := s.managedAuthority(ctx, inst, remoteID)
+		if xerr != nil {
+			return nil, xerr
+		}
+		if op != nil && patch.Lifecycle != "" {
+			if err := r.CompleteManagedActivation(ctx, inst.ID, remoteID); err != nil {
+				return nil, errx.InternalError()
+			}
+		}
+	}
 	m, err := s.repo.GetMailboxByRemote(ctx, inst.ID, remoteID)
 	if err != nil {
 		return nil, errx.InternalError()
@@ -669,6 +699,14 @@ func (s *service) PatchMailbox(ctx context.Context, inst *models.PoolLinkInstanc
 }
 
 func (s *service) Unenroll(ctx context.Context, inst *models.PoolLinkInstance, remoteID uuid.UUID) *errx.Error {
+	if _, ok := s.repo.(repository.PoolLinkManagedRepository); ok && !managedOperationLocked(ctx) {
+		return s.withManagedOperationLock(ctx, inst.ID, func(ctx context.Context) *errx.Error { return s.Unenroll(ctx, inst, remoteID) })
+	}
+	if r, ok := s.repo.(repository.PoolLinkManagedRepository); ok {
+		if err := r.RevokeManagedOperations(ctx, inst.ID, &remoteID); err != nil {
+			return errx.InternalError()
+		}
+	}
 	m, err := s.repo.GetMailboxByRemote(ctx, inst.ID, remoteID)
 	if err != nil {
 		return errx.InternalError()

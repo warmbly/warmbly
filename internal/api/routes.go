@@ -1661,6 +1661,9 @@ func Run(
 				// Cloud-managed mailboxes: consent on this deployment's OAuth app, brokered tokens.
 				poolLinkInstance.POST("/oauth/start", h.PoolLinkOAuthStart)
 				poolLinkInstance.POST("/oauth/finish", h.PoolLinkOAuthFinish)
+				poolLinkInstance.POST("/oauth/start-correlated", h.PoolLinkOAuthStart)
+				poolLinkInstance.POST("/oauth/finish-correlated", h.PoolLinkOAuthFinish)
+				poolLinkInstance.POST("/mailboxes/adopt-correlated", h.PoolLinkAdopt)
 				poolLinkInstance.GET("/mailboxes/:remoteId/token", h.PoolLinkAccessToken)
 				poolLinkInstance.GET("/mailboxes/:remoteId/warmup-tokens/:token", h.PoolLinkVerifyWarmupToken)
 				poolLinkInstance.POST("/mailboxes/:remoteId/warmup-deliveries", h.PoolLinkVerifyWarmupDelivery)

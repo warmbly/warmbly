@@ -118,6 +118,7 @@ type WarmupMailToRetire struct {
 // WarmupRepository defines methods for warmup data access
 type WarmupRepository interface {
 	// Pool management
+	IsPoolEligible(ctx context.Context, accountID uuid.UUID, poolType string, sending bool) (bool, error)
 	GetPoolParticipants(ctx context.Context, poolType string, excludeBlocked bool) ([]uuid.UUID, error)
 	// MoveToPool joins this pool, or moves an existing membership over. A new
 	// member starts from the standing mirrored for its address (see migration
@@ -321,7 +322,7 @@ func (r *warmupRepository) GetPoolParticipants(ctx context.Context, poolType str
 		JOIN email_accounts ea ON ea.id = wpp.email_account_id
 		WHERE wp.pool_type = $1
 		  AND wpp.participant_role = 'sender_receiver'
-		  AND ea.status = 'active'
+		  AND ` + poolAuthoritySQL + `
 	`
 
 	if excludeBlocked {
@@ -368,6 +369,18 @@ func (r *warmupRepository) MoveToPool(ctx context.Context, poolID, accountID uui
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	var admitted bool
+	err = tx.QueryRow(ctx, `SELECT ea.status = 'active' AND ea.seed_scope IS NULL
+	AND EXISTS (SELECT 1 FROM organizations o WHERE o.id = ea.organization_id AND o.risk_state IN ('trusted', 'watch'))
+	AND NOT EXISTS (SELECT 1 FROM cloud_link_mailboxes clm WHERE clm.email_account_id = ea.id)
+	FROM email_accounts ea WHERE ea.id = $1 FOR UPDATE`, accountID).Scan(&admitted)
+	if err != nil {
+		return err
+	}
+	if !admitted {
+		return errors.New("warmup pool authority unavailable")
+	}
 
 	// An existing member keeps everything it has; only its pool and role move,
 	// which the mirror trigger ignores (000156), so its retention window holds.
@@ -416,6 +429,7 @@ func (r *warmupRepository) PurgeExpiredReputationLedger(ctx context.Context) (in
 	tag, err := r.db.Exec(ctx, `
 		DELETE FROM warmup_reputation_ledger l
 		 WHERE l.standing_until IS NOT NULL
+		   AND (l.cloud_health_state IS NULL OR (l.cloud_blocked_until IS NOT NULL AND l.cloud_blocked_until + ($1::int * interval '1 day') <= now()))
 		   AND GREATEST(l.standing_until, l.recorded_at) + ($1::int * interval '1 day') <= now()
 		   AND NOT EXISTS (
 		       SELECT 1
@@ -491,6 +505,19 @@ func (r *warmupRepository) BlockFromPool(ctx context.Context, accountID uuid.UUI
 type WarmupHealthRead struct {
 	State        models.WarmupHealthState
 	BlockedUntil *time.Time
+}
+
+// IsPoolEligible checks current role, authority and health independently of price.
+func (r *warmupRepository) IsPoolEligible(ctx context.Context, accountID uuid.UUID, poolType string, sending bool) (bool, error) {
+	var ok bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS (
+ SELECT 1 FROM warmup_pool_participants wpp
+ JOIN warmup_pools wp ON wp.id = wpp.pool_id
+ JOIN email_accounts ea ON ea.id = wpp.email_account_id
+ WHERE ea.id = $1 AND wp.pool_type = $2
+ AND (NOT $3 OR wpp.participant_role = 'sender_receiver')
+	AND `+partnerEligibleSQL+`)`, accountID, poolType, sending).Scan(&ok)
+	return ok, err
 }
 
 // GetHealthStates is GetHealthState over a pool: the worst standing per
@@ -646,6 +673,14 @@ func (r *warmupRepository) GetCloudStanding(ctx context.Context, accountID uuid.
 	}
 	if err != nil {
 		return nil, err
+	}
+	var state, reason string
+	var until *time.Time
+	if err := r.db.QueryRow(ctx, `SELECT health_state, blocked_until, COALESCE(last_health_reason, '') FROM (`+warmupStandingSQL("$1")+`) standing`, accountID).Scan(&state, &until, &reason); err != nil {
+		return nil, err
+	}
+	if state == string(models.WarmupHealthBlocked) && reason == "cloud_evidence_unavailable" {
+		return &models.WarmupHealthInfo{State: state, Reason: reason, BlockedUntil: until}, nil
 	}
 	return m.Standing, nil
 }
@@ -1191,7 +1226,18 @@ var (
 // partnerEligibleSQL is the predicate for a recipient the draw may reach: an
 // active mailbox that receives, in a standing that is live, or an expired
 // quarantine or block that the gate re-evaluates.
-const partnerEligibleSQL = `
+const poolAuthoritySQL = `
+          ea.status = 'active' AND ea.seed_scope IS NULL
+          AND wpp.participant_role IN ('sender_receiver', 'recipient_only')
+          AND EXISTS (SELECT 1 FROM organizations o WHERE o.id = ea.organization_id
+                      AND o.risk_state IN ('trusted', 'watch'))
+          AND NOT EXISTS (SELECT 1 FROM cloud_link_mailboxes clm WHERE clm.email_account_id = ea.id)
+          AND NOT EXISTS (SELECT 1 FROM warmup_reputation_ledger l
+              WHERE l.organization_id = ea.organization_id AND l.email = lower(btrim(ea.email))
+              AND l.cloud_health_state IN ('quarantined', 'blocked')
+              AND (l.cloud_blocked_until IS NULL OR l.cloud_blocked_until > NOW()))`
+
+var partnerEligibleSQL = poolAuthoritySQL + ` AND
 		  wpp.participant_role IN ('sender_receiver', 'recipient_only')
 		  AND ea.status = 'active'
 		  AND (
@@ -1290,7 +1336,7 @@ func candidateSuffixFor(poolType string) string {
 // mailbox first, then a seasoned member, then one actively sending (the tail
 // adds 1 for that), so each outranks everything after it.
 const borrowQualitySQL = `
-		       (CASE WHEN ea.provider IN ('gmail', 'outlook') THEN 4 ELSE 0 END
+		       (CASE WHEN ea.provider IN ('gmail', 'outlook') OR ea.mail_host IN ('gmail', 'google_workspace', 'outlook', 'microsoft365') THEN 4 ELSE 0 END
 		        + CASE WHEN wpp.joined_at <= NOW() - make_interval(days => $5) THEN 2 ELSE 0 END) AS quality`
 
 // WarmupPartnerCandidates is everyone the sender may be paired with right now.
@@ -1300,9 +1346,13 @@ const borrowQualitySQL = `
 // already filtered by the inbound cap, so the scheduler and the selector
 // agree on who can still receive today.
 func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType string, senderID uuid.UUID) ([]models.WarmupPartnerCandidate, error) {
+	eligible, err := r.IsPoolEligible(ctx, senderID, poolType, true)
+	if err != nil || !eligible {
+		return nil, err
+	}
 	var senderOrg *uuid.UUID
 	var senderMax int
-	err := r.db.QueryRow(ctx, `SELECT organization_id, warmup_max FROM email_accounts WHERE id = $1`, senderID).
+	err = r.db.QueryRow(ctx, `SELECT organization_id, warmup_max FROM email_accounts WHERE id = $1`, senderID).
 		Scan(&senderOrg, &senderMax)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err

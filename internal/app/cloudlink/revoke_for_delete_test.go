@@ -33,6 +33,19 @@ func (r *stubLinkRepo) Get(context.Context) (*models.CloudLink, error) {
 	return r.link, r.linkErr
 }
 
+func (r *stubLinkRepo) WithReconciliationLock(_ context.Context, fn func() error) error { return fn() }
+func (r *stubLinkRepo) SetDisconnectPending(context.Context) error {
+	r.link.DisconnectPending = true
+	return nil
+}
+func (r *stubLinkRepo) BeginRemoval(context.Context, uuid.UUID) error {
+	r.mailbox.EnrollmentState = "pending_remove"
+	return nil
+}
+func (r *stubLinkRepo) CarryStanding(context.Context, uuid.UUID, *models.WarmupHealthInfo) error {
+	return nil
+}
+
 func (r *stubLinkRepo) GetByAccount(context.Context, uuid.UUID) (*models.CloudLinkMailbox, error) {
 	return r.mailbox, r.mailboxErr
 }
@@ -87,10 +100,9 @@ func newRevokeFixture(t *testing.T, cloudStatus int) *revokeFixture {
 		mailbox: &models.CloudLinkMailbox{EmailAccountID: account, RemoteID: account},
 	}
 	svc := &service{
-		repo:     repo,
-		emails:   stubEmails{account: &models.Email{ID: account, OrganizationID: &org}},
-		sessions: map[string]oauthSession{},
-		tokens:   map[uuid.UUID]cachedToken{},
+		repo:   repo,
+		emails: stubEmails{account: &models.Email{ID: account, OrganizationID: &org}},
+		tokens: map[uuid.UUID]cachedToken{},
 	}
 	return &revokeFixture{svc: svc, repo: repo, org: org, account: account, deletes: deletes}
 }
@@ -171,12 +183,12 @@ func TestRevokeForDeleteRefusesAnEnrollmentWithoutALink(t *testing.T) {
 }
 
 // Local cleanup failure does not undo confirmed remote revocation.
-func TestRevokeForDeleteSucceedsEvenIfTheLocalRowCannotBeDropped(t *testing.T) {
+func TestRevokeForDeleteRetainsRetryWhenTheLocalRowCannotBeDropped(t *testing.T) {
 	f := newRevokeFixture(t, http.StatusNoContent)
 	f.repo.unenrollErr = errors.New("db down")
 
-	if xerr := f.svc.RevokeForDelete(context.Background(), f.org, f.account); xerr != nil {
-		t.Fatalf("revocation refused over local bookkeeping: %v", xerr)
+	if xerr := f.svc.RevokeForDelete(context.Background(), f.org, f.account); xerr == nil {
+		t.Fatal("cleanup failure must retain the pending removal")
 	}
 	if len(*f.deletes) != 1 {
 		t.Fatalf("cloud deletes = %v, want one", *f.deletes)
