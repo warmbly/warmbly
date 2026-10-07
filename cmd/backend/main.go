@@ -1714,6 +1714,11 @@ func main() {
 			advancedService.WireBounceJudge(typeSafeClient)
 		}
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
+		if aware, ok := emailSender.(interface {
+			WireSendAdmission(repository.OutboundAdmissionRepository)
+		}); ok {
+			aware.WireSendAdmission(taskRepository.(repository.OutboundAdmissionRepository))
+		}
 		// Never hand a send to a worker that stopped heartbeating: nothing
 		// would execute it and nothing would report it, so the step would
 		// look sent forever. The worker reconciler re-places the mailbox and

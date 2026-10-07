@@ -1578,7 +1578,7 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 	if settings.ReplyIntent.AutoSuppressOnUnsubWord &&
 		replyOptOutEligible(verdict, referencesCampaignThread, contactID != nil, buildReplyHeaders(msg)) &&
 		replyclassify.IsOptOut(msg.Subject, firstNonEmpty(msg.BodyText, msg.Snippet)) {
-		_ = s.repo.UpsertSuppressedRecipient(ctx, &models.SuppressedRecipient{
+		if err := s.repo.UpsertSuppressedRecipient(ctx, &models.SuppressedRecipient{
 			OrganizationID: *account.OrganizationID,
 			Email:          sender,
 			Kind:           models.SuppressionKindEmail,
@@ -1588,7 +1588,9 @@ func (s *service) ProcessIncomingReply(ctx context.Context, emailAccountID uuid.
 			Metadata: map[string]interface{}{
 				"via": "reply",
 			},
-		})
+		}); err != nil {
+			return toErrx(err)
+		}
 		if err := s.contactRepo.SetSubscribedByEmail(ctx, *account.OrganizationID, sender, false); err != nil {
 			log.Warn().Err(err).Msg("reply opt-out: could not clear the contact's subscription flag")
 		}
@@ -1953,18 +1955,22 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 	}
 
 	if shouldSuppress {
-		_ = s.repo.UpsertSuppressedRecipient(ctx, &models.SuppressedRecipient{
+		if err := s.repo.UpsertSuppressedRecipient(ctx, &models.SuppressedRecipient{
 			OrganizationID: organizationID,
 			Email:          req.RecipientEmail,
 			Reason:         fmt.Sprintf("%s: %s", eventType, req.Reason),
 			Source:         eventType,
 			CampaignID:     req.CampaignID,
 			Metadata:       req.Metadata,
-		})
+		}); err != nil {
+			return toErrx(err)
+		}
 	}
 
 	if req.CampaignID != nil && req.ContactID != nil {
-		_ = s.repo.MarkVariantEvent(ctx, *req.CampaignID, *req.ContactID, string(eventType))
+		if err := s.repo.MarkVariantEvent(ctx, *req.CampaignID, *req.ContactID, string(eventType)); err != nil {
+			return toErrx(err)
+		}
 	}
 
 	// Record bounces + complaints in campaign progress so analytics and the
@@ -1979,7 +1985,9 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 				// A bounce that was not about the address does not drop the
 				// lead: the step is offered again once the mailbox recovers.
 				if !addressFine {
-					_ = s.campaignProgressRepo.RecordEmailBounced(ctx, *req.CampaignID, *req.ContactID, *campaignTask.SequenceID)
+					if err := s.campaignProgressRepo.RecordEmailBounced(ctx, *req.CampaignID, *req.ContactID, *campaignTask.SequenceID); err != nil {
+						return toErrx(err)
+					}
 				}
 				// Only a bounce that names the recipient is evidence against
 				// the address; a full mailbox or a policy block is not.
@@ -1994,7 +2002,9 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 					s.evidence.RecordEvidence(ctx, *req.ContactID, models.Step(campaignTask.CampaignID, campaignTask.SequenceID), kind, req.IdempotencyKey, req.Reason)
 				}
 			case models.DeliverabilityEventComplaint:
-				_ = s.campaignProgressRepo.RecordEmailComplained(ctx, *req.CampaignID, *req.ContactID, *campaignTask.SequenceID)
+				if err := s.campaignProgressRepo.RecordEmailComplained(ctx, *req.CampaignID, *req.ContactID, *campaignTask.SequenceID); err != nil {
+					return toErrx(err)
+				}
 			}
 		}
 	}
@@ -2010,7 +2020,9 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 		(eventType == models.DeliverabilityEventBounce || eventType == models.DeliverabilityEventComplaint) {
 		task, tErr := s.taskRepo.GetTask(ctx, *req.TaskID)
 		if tErr == nil && task != nil {
-			_, _ = s.warmupService.ApplySpamReport(ctx, uuid.Nil, task.EmailAccountID, req.IdempotencyKey, string(eventType))
+			if _, err := s.warmupService.ApplySpamReport(ctx, task.EmailAccountID, task.EmailAccountID, req.IdempotencyKey, string(eventType)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -2059,7 +2071,12 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 					title = "Spam complaint: " + req.RecipientEmail
 				}
 				org := organizationID
-				s.notify(uid, &org, cat, title, req.Reason, "/app/deliverability", map[string]any{"provider": provider})
+				if s.notifier != nil && repository.QueueSendResultEffect(ctx, "notification:"+uid.String()+":"+string(cat), repository.SendResultEffect{Kind: "notification", OrganizationID: org, UserID: uid, Category: cat, Title: title, Body: req.Reason, Link: "/app/deliverability", Data: map[string]any{"provider": provider}}) {
+					return nil
+				}
+				repository.AfterSendResultCommit(ctx, func(context.Context) {
+					s.notify(uid, &org, cat, title, req.Reason, "/app/deliverability", map[string]any{"provider": provider})
+				})
 			}
 		}
 	}

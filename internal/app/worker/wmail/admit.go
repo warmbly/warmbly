@@ -149,6 +149,7 @@ func (w *WMail) endTick(stats *tickStats) {
 // events. mapKey is the id the provider reports on later remove/flag events
 // (RFC Message-ID for IMAP, provider message id for Gmail and Graph).
 func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data *models.EmailMessageStoreData, mapKey string) error {
+	w.verifyDiagnostic(ctx, msg)
 	evidence := models.EvidenceFromFlags(data.Flags)
 	if evidence.Source != "unavailable" {
 		evidence.ObservedAt = time.Now().UTC()

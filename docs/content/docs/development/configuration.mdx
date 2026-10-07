@@ -645,6 +645,8 @@ Automatic inbox tagging is read by the backend, consumer, and `warmblyctl`. Both
 
 Warmup replies use the same persisted SQL task identity with either queue provider. They wait at least 45 minutes after the exact parent receipt and recheck mailbox windows, roles, consent, standing, suppression and remaining budgets before native dispatch. Queue callbacks do not grant sending authority. See [diagnostic generation and rollout](/development/warmup-generation/).
 
+Per-mailbox `test_mode`, `test_send_enabled` and `test_receive_enabled` separate diagnostic sending from receiving; new mailboxes default off and legacy NULL values keep prior behavior. Positive `shared_daily_limit` and `rolling_recipient_limit` optionally constrain all outbound lanes above their separate cold/diagnostic allocations. These are database-backed mailbox PATCH fields, not environment variables or global admin settings. Current participation, calendars, suppression, provider holds and durable reservations are rechecked by protocol-2 executors. See [defaults, repair evidence and rollout](/development/send-safety/).
+
 | Variable | What it does | Default |
 |---|---|---|
 | `TASKS_PROVIDER` | `local` (an in-process Postgres poller) or `gcloud` (Cloud Tasks) | `local` |

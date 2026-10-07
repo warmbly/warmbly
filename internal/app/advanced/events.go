@@ -46,7 +46,10 @@ func (s *service) emit(ctx context.Context, orgID uuid.UUID, eventType models.We
 	if s.dispatcher == nil || orgID == uuid.Nil {
 		return
 	}
-	_, _ = s.dispatcher.Dispatch(ctx, orgID, eventType, data)
+	if repository.QueueSendResultEffect(ctx, "webhook:"+string(eventType), repository.SendResultEffect{Kind: "webhook", OrganizationID: orgID, EventType: eventType, Data: data}) {
+		return
+	}
+	repository.AfterSendResultCommit(ctx, func(ctx context.Context) { _, _ = s.dispatcher.Dispatch(ctx, orgID, eventType, data) })
 }
 
 // EmitCampaignEvent dispatches a campaign event (e.g. from a sequence "notify"

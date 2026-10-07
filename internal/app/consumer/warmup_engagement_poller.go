@@ -49,6 +49,13 @@ func (s *JobsService) drainDueEngagements(ctx context.Context) error {
 			// Mailbox now unassigned — drop (best-effort low-stakes engagement).
 			continue
 		}
+		if account.Status != "active" {
+			continue
+		}
+		action.Actions = account.PermittedWarmupActions(action.Actions)
+		if len(action.Actions) == 0 {
+			continue
+		}
 
 		action.DelaySeconds = 0 // dwell already elapsed; run immediately
 		s.Publisher.PublishWarmupAction(cctx, *account.WorkerID, &action)

@@ -77,6 +77,7 @@ func newPartnerOrgFixture(t *testing.T) *partnerOrgFixture {
 	for _, org := range []uuid.UUID{f.org, f.other} {
 		f.exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Org pairing', $2, $3)`,
 			org, "org-pair-"+org.String()[:8], f.user)
+		f.exec(`UPDATE organizations SET risk_state='trusted' WHERE id=$1`, org)
 	}
 	for _, m := range []struct {
 		id     uuid.UUID
@@ -91,6 +92,7 @@ func newPartnerOrgFixture(t *testing.T) *partnerOrgFixture {
 		            signature_html, provider, status, campaign_limit, min_wait_time, timezone)
 		        VALUES ($1, $2, $3, $4, 'Org pairing', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
 			m.id, f.user, m.org, "box-"+m.id.String()[:8]+"@"+m.domain)
+		f.exec(`UPDATE email_accounts SET test_mode=NULL WHERE id=$1`, m.id)
 	}
 	for _, id := range []uuid.UUID{f.sender, f.sibling, f.outside} {
 		f.exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id, participant_role, health_state)
@@ -447,6 +449,7 @@ func (f *partnerOrgFixture) addMember(t *testing.T, org, poolID uuid.UUID, provi
 	            signature_html, provider, status, campaign_limit, min_wait_time, timezone)
 	        VALUES ($1, $2, $3, $4, 'Pool member', '', '', $5, 'active', 50, 600, 'UTC')`,
 		id, f.user, org, "m-"+id.String()[:8]+"@"+id.String()[:8]+".test", provider)
+	f.exec(`UPDATE email_accounts SET test_mode=NULL WHERE id=$1`, id)
 	f.exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id, participant_role, health_state, joined_at)
 	        VALUES ($1, $2, 'sender_receiver', 'healthy', NOW() - make_interval(days => $3))`, poolID, id, memberForDays)
 	return id

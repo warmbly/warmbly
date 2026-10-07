@@ -106,6 +106,7 @@ func (r *cloudLinkRepository) CanBrokerManagedToken(ctx context.Context, account
  WHERE ea.id = $1 AND ea.status = 'active' AND o.risk_state IN ('trusted','watch')
  AND clm.managed AND clm.enrollment_state = 'active' AND NOT l.disconnect_pending
  AND clm.standing_observed_at > NOW() - INTERVAL '15 minutes'
+ AND clm.standing_observed_at <= NOW()
  AND (standing.health_state NOT IN ('blocked','quarantined') OR standing.blocked_until <= NOW())
  AND NOT EXISTS (SELECT 1 FROM cloud_managed_consents c WHERE c.instance_id = l.instance_id
  AND (c.email_account_id = ea.id OR c.planned_account_id = ea.id) AND c.consent_state <> 'active'))`, accountID).Scan(&allowed)

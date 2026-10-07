@@ -145,6 +145,31 @@ func TestLiveSendRecoveryUpgradesReleased265WithoutInventingHistory(t *testing.T
 		t.Fatal(err)
 	}
 	assertLegacy()
+	var legacyMode *string
+	if err := conn.QueryRow(ctx, `SELECT test_mode FROM email_accounts WHERE id=$1`, mailbox).Scan(&legacyMode); err != nil || legacyMode != nil {
+		t.Fatal("upgrade changed legacy consent", legacyMode, err)
+	}
+	admissionDown, err := migrationsFS.ReadFile("migrations/000272_shared_send_admission.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, restriction := range []struct{ set, reset string }{
+		{`UPDATE email_accounts SET test_mode='off' WHERE id=$1`, `UPDATE email_accounts SET test_mode=NULL WHERE id=$1`},
+		{`UPDATE tasks SET send_reserved_at=NOW() WHERE email_account_id=$1`, `UPDATE tasks SET send_reserved_at=NULL WHERE email_account_id=$1`},
+		{`INSERT INTO send_result_effects(task_id,effect_key,organization_id,kind,payload) SELECT t.id,'rollback',ea.organization_id,'webhook','{}' FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE ea.id=$1 LIMIT 1`, `DELETE FROM send_result_effects WHERE task_id IN(SELECT id FROM tasks WHERE email_account_id=$1)`},
+		{`INSERT INTO diagnostic_auth_verifications(task_id,email_account_id,message_id,nonce)SELECT t.id,t.email_account_id,'rollback',gen_random_uuid() FROM tasks t WHERE t.email_account_id=$1 LIMIT 1`, `DELETE FROM diagnostic_auth_verifications WHERE email_account_id=$1`},
+		{`INSERT INTO send_recovery_resolutions(organization_id,email_account_id,recovery_task_id,previous_reason,evidence_type,confirmation_reference)SELECT ea.organization_id,ea.id,t.id,'authentication','operator_provider_confirmation','fixture' FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE ea.id=$1 LIMIT 1`, `DELETE FROM send_recovery_resolutions WHERE email_account_id=$1`},
+	} {
+		if _, err = conn.Exec(ctx, restriction.set, mailbox); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = conn.Exec(ctx, string(admissionDown)); err == nil || !strings.Contains(err.Error(), "shared admission") {
+			t.Fatal("admission rollback discarded retained state", err)
+		}
+		if _, err = conn.Exec(ctx, restriction.reset, mailbox); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := m.Migrate(265); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatal(err)
 	}

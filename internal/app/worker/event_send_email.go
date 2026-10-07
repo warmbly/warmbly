@@ -24,7 +24,7 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 	workerID, workerIDErr := uuid.Parse(w.ID)
 	var dispatch repository.WorkerWarmupDispatch
 	var requiresNonce bool
-	if sendEmail.IsWarmup {
+	{
 		if d, ok := w.SyncContextRepository.(repository.WorkerWarmupDispatch); ok {
 			if workerIDErr != nil || workerID == uuid.Nil {
 				return errors.New("invalid warmup worker identity")
@@ -38,6 +38,12 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 				return errors.New("warmup dispatch authority unavailable")
 			}
 			requiresNonce = state.State == "authorized"
+			if requiresNonce && state.Recipients != nil {
+				recipients := append(append(append([]string{}, sendEmail.To...), sendEmail.Cc...), sendEmail.Bcc...)
+				if state.OrganizationID == nil || *state.OrganizationID != sendEmail.OrgID || !repository.MatchOutboundRecipients(state.Recipients, recipients) {
+					return errors.New("send envelope does not match durable authorization")
+				}
+			}
 			if state.State == "started" || state.State == "denied" {
 				return nil
 			}
@@ -52,7 +58,6 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 	log.Info().
 		Str("task_id", sendEmail.TaskID.String()).
 		Str("email_id", sendEmail.EmailID.String()).
-		Strs("to", sendEmail.To).
 		Bool("is_warmup", sendEmail.IsWarmup).
 		Msg("Processing send email event")
 
@@ -66,6 +71,10 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 		// redelivery a few times so a queued ADD_EMAIL gets processed first,
 		// then report the failure so the control plane retries the step.
 		return w.failSend(ctx, sendEmail, errMailboxNotLoaded, true)
+	}
+
+	if sendEmail.OrgID != uuid.Nil && (mail.OrgID == nil || *mail.OrgID != sendEmail.OrgID) {
+		return errors.New("send organization does not own loaded mailbox")
 	}
 
 	// Decrypt subject

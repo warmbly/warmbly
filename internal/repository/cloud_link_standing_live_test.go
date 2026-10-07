@@ -94,6 +94,10 @@ func TestLiveCloudStandingFreshnessIsBoundedWithoutInventingAProviderBlock(t *te
 		t.Fatal(err)
 	}
 	assertState(models.WarmupHealthHealthy, "")
+	if _, err := f.pool.Exec(ctx, `UPDATE cloud_link_mailboxes SET standing_observed_at=NOW()+INTERVAL '1 minute' WHERE email_account_id=$1`, f.sender); err != nil {
+		t.Fatal(err)
+	}
+	assertState(models.WarmupHealthBlocked, "cloud_evidence_unavailable")
 	if _, err := f.pool.Exec(ctx, `UPDATE cloud_link_mailboxes SET standing_observed_at = NOW() - INTERVAL '16 minutes' WHERE email_account_id = $1`, f.sender); err != nil {
 		t.Fatal(err)
 	}

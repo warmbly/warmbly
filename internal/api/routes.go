@@ -209,6 +209,8 @@ func Run(
 		// Worker runtime config.
 		node.GET("/worker/config", h.InternalWorkerConfig)
 		node.POST("/worker/warmup-dispatch", h.InternalWarmupDispatch)
+		node.POST("/worker/warmup-actions", h.InternalWarmupActions)
+		node.POST("/worker/diagnostic-auth", h.InternalDiagnosticAuth)
 	}
 
 	// The role-agnostic node heartbeat. A node still sending INTERNAL_API_TOKEN

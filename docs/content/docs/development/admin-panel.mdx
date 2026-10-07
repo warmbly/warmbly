@@ -59,6 +59,8 @@ The landing page. Instance-wide counters and their trends, acquisition by channe
 | **Warmup** | The pools, the blocked list, and the block and unblock history |
 | **Warmup appeals** | Appeals from blocked mailboxes, to approve or reject |
 | **Warmup content** | The generated and reviewed [diagnostic conversation bank](/development/warmup-generation/), effective generation controls, library and generation jobs. Changing effective controls requires `manage_settings`; existing library reads still require `view_warmup_pool` |
+
+Mailbox diagnostic participation, sender/recipient flags and shared/rolling limits are organization-scoped mailbox fields, not new admin-panel switches. Use the existing authorized mailbox PATCH; no new UI is implied. An operator-reviewed `send_recovery_resolution` binds the current held task/reason and definite repair/provider evidence, never an unknown send. See [send safety](/development/send-safety/).
 | **Seed panel** | The instance's placement seed inboxes by provider, adding and removing them, every workspace's recent [placement tests](/guides/placement-tests/) with their results, and an operator test that counts against no allowance |
 | **Campaigns** | Every campaign on the instance with its state and owner |
 | **Sends** | In-flight reservations no worker has answered, and the reclaimer that resolves them after 30 minutes; dead letters with replay; task failures; customer webhook delivery health, with reclaim |

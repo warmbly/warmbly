@@ -15,6 +15,7 @@
     "data-control",
     "configuration",
     "warmup-generation",
+    "send-safety",
     "whole-domain-connect",
     "slack-app",
     "instance-health",

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 )
 
 // ConversationFilter narrows a warmup_conversations listing.
@@ -140,12 +141,15 @@ const qualifiedConversationCols = `c.id, c.pool_type, c.segment, c.source, c.the
 // accounting atomic prevents hot threads and removes one database round trip
 // from every warmup send. A small random tie-break keeps concurrent senders from
 // marching through the bank in the same order.
+const openingConversationSQL = `status='active' AND reply_eligible AND lint_passed
+ AND scenario_version='` + generation.DiagnosticScenarioVersion + `' AND rendering_version='` + generation.CanonicalRenderingVersion + `'`
+
 func (r *warmupContentRepository) PickConversation(ctx context.Context, segment string) (*models.WarmupConversation, error) {
 	query := `
 		WITH picked AS (
 			SELECT id
 			FROM warmup_conversations
-			WHERE status = 'active' AND (segment = $1 OR segment = '')
+			WHERE ` + openingConversationSQL + ` AND (segment = $1 OR segment = '')
 			ORDER BY (segment = $1) DESC, usage_count ASC, random()
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
@@ -300,7 +304,7 @@ func (r *warmupContentRepository) DeleteConversation(ctx context.Context, id uui
 func (r *warmupContentRepository) CountActiveConversations(ctx context.Context, poolType, segment string) (int, error) {
 	var n int
 	err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM warmup_conversations WHERE pool_type = $1 AND segment = $2 AND status = 'active'`,
+		`SELECT COUNT(*) FROM warmup_conversations WHERE pool_type = $1 AND segment = $2 AND `+openingConversationSQL,
 		poolType, segment).Scan(&n)
 	return n, err
 }

@@ -671,6 +671,7 @@ func (r *emailRepository) ListWarmupScheduleCandidates(ctx context.Context, limi
 		FROM email_accounts ea
 		WHERE ea.status = 'active'
 		  AND ea.worker_id IS NOT NULL
+		  AND (ea.test_mode IS NULL OR ea.test_mode='legacy' OR ea.test_mode='diagnostic' AND ea.test_send_enabled)
 		  AND (
 		    (ea.warmup IS NOT NULL AND ea.warmup_paused_at IS NULL)
 		    OR EXISTS (
@@ -1153,7 +1154,7 @@ func (r *emailRepository) Search(ctx context.Context, orgID, search string, curs
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail,
 		 ea.auth_state, ea.auth_spf, ea.auth_dkim, ea.auth_dmarc, ea.auth_dmarc_policy, ea.auth_reason, ea.auth_checked_at, ea.auth_failing_since,
 		 ea.warmup, ea.warmup_paused_at, ea.warmup_base,
-		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag, COALESCE(ea.warmup_pool_type, 'free') AS warmup_pool_type, ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.warmup_placement, ea.warmup_folder, COALESCE(ea.warmup_retention_days, 0) AS warmup_retention_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone, ea.save_to_sent, ea.relay_folder_moves,
+		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag, COALESCE(ea.warmup_pool_type, 'free') AS warmup_pool_type, ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.test_mode, ea.test_send_enabled, ea.test_receive_enabled, ea.shared_daily_limit, ea.rolling_recipient_limit, ea.warmup_placement, ea.warmup_folder, COALESCE(ea.warmup_retention_days, 0) AS warmup_retention_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone, ea.save_to_sent, ea.relay_folder_moves,
 		 ea.created_at, ea.updated_at,
 		 COALESCE(
 			array_agg(eat.tag_id) FILTER (WHERE eat.tag_id IS NOT NULL), '{}'
@@ -1204,7 +1205,7 @@ func (r *emailRepository) Search(ctx context.Context, orgID, search string, curs
 			&i.LastSyncedAt, &i.LastID, &i.CampaignLimit, &i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail,
 			&i.AuthState, &i.AuthSPF, &i.AuthDKIM, &i.AuthDMARC, &i.AuthDMARCPolicy, &i.AuthReason, &i.AuthCheckedAt, &i.AuthFailingSince,
 			&i.Warmup, &i.WarmupPausedAt, &i.WarmupBase, &i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag, &i.WarmupPoolType,
-			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.WarmupPlacement, &i.WarmupFolder, &i.WarmupRetentionDays, &i.Timezone, &i.OrgTimezone, &i.SaveToSent, &i.RelayFolderMoves,
+			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.TestMode, &i.TestSendEnabled, &i.TestReceiveEnabled, &i.SharedDailyLimit, &i.RollingRecipientLimit, &i.WarmupPlacement, &i.WarmupFolder, &i.WarmupRetentionDays, &i.Timezone, &i.OrgTimezone, &i.SaveToSent, &i.RelayFolderMoves,
 			&i.CreatedAt, &i.UpdatedAt, &i.Tags,
 		)
 		if err != nil {
@@ -1280,7 +1281,7 @@ func (r *emailRepository) Get(ctx context.Context, orgID, emailAccountID string)
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail,
 		 ea.auth_state, ea.auth_spf, ea.auth_dkim, ea.auth_dmarc, ea.auth_dmarc_policy, ea.auth_reason, ea.auth_checked_at, ea.auth_failing_since,
 		 ea.warmup, ea.warmup_paused_at, ea.warmup_base,
-		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag, COALESCE(ea.warmup_pool_type, 'free') AS warmup_pool_type, ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.warmup_placement, ea.warmup_folder, COALESCE(ea.warmup_retention_days, 0) AS warmup_retention_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone, ea.save_to_sent, ea.relay_folder_moves,
+		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag, COALESCE(ea.warmup_pool_type, 'free') AS warmup_pool_type, ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.test_mode, ea.test_send_enabled, ea.test_receive_enabled, ea.shared_daily_limit, ea.rolling_recipient_limit, ea.warmup_placement, ea.warmup_folder, COALESCE(ea.warmup_retention_days, 0) AS warmup_retention_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone, ea.save_to_sent, ea.relay_folder_moves,
 		 ea.created_at, ea.updated_at,
 		 COALESCE(array_agg(eat.tag_id) FILTER (WHERE eat.tag_id IS NOT NULL), '{}') AS tags
 		FROM email_accounts ea
@@ -1304,7 +1305,7 @@ func (r *emailRepository) Get(ctx context.Context, orgID, emailAccountID string)
 		&i.LastSyncedAt, &i.LastID, &i.CampaignLimit, &i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail,
 		&i.AuthState, &i.AuthSPF, &i.AuthDKIM, &i.AuthDMARC, &i.AuthDMARCPolicy, &i.AuthReason, &i.AuthCheckedAt, &i.AuthFailingSince,
 		&i.Warmup, &i.WarmupPausedAt, &i.WarmupBase, &i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag, &i.WarmupPoolType,
-		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.WarmupPlacement, &i.WarmupFolder, &i.WarmupRetentionDays, &i.Timezone, &i.OrgTimezone, &i.SaveToSent, &i.RelayFolderMoves,
+		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.TestMode, &i.TestSendEnabled, &i.TestReceiveEnabled, &i.SharedDailyLimit, &i.RollingRecipientLimit, &i.WarmupPlacement, &i.WarmupFolder, &i.WarmupRetentionDays, &i.Timezone, &i.OrgTimezone, &i.SaveToSent, &i.RelayFolderMoves,
 		&i.CreatedAt, &i.UpdatedAt, &i.Tags,
 	)
 	if err != nil {
@@ -1579,11 +1580,47 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		argPos++
 	}
 
+	if udata.TestMode != nil {
+		if *udata.TestMode != "legacy" && *udata.TestMode != "diagnostic" && *udata.TestMode != "off" {
+			return nil, errx.ErrNotEnough
+		}
+		setClauses = append(setClauses, fmt.Sprintf("test_mode = $%d", argPos))
+		args = append(args, *udata.TestMode)
+		argPos++
+	}
+	for _, setting := range []struct {
+		column string
+		value  *bool
+	}{
+		{"test_send_enabled", udata.TestSendEnabled}, {"test_receive_enabled", udata.TestReceiveEnabled},
+	} {
+		if setting.value != nil {
+			setClauses = append(setClauses, fmt.Sprintf("%s = $%d", setting.column, argPos))
+			args = append(args, *setting.value)
+			argPos++
+		}
+	}
+	for _, setting := range []struct {
+		column string
+		value  *int
+	}{
+		{"shared_daily_limit", udata.SharedDailyLimit}, {"rolling_recipient_limit", udata.RollingRecipientLimit},
+	} {
+		if setting.value != nil {
+			if *setting.value < 0 {
+				return nil, errx.ErrNotEnough
+			}
+			setClauses = append(setClauses, fmt.Sprintf("%s = NULLIF($%d, 0)", setting.column, argPos))
+			args = append(args, *setting.value)
+			argPos++
+		}
+	}
+
 	// Tags are not a column on the row, so a patch that only moves them still
 	// leaves setClauses empty. Refusing it made the mailbox drawer's tag
 	// picker unable to save on its own, which is how the dashboard sends it:
 	// only the fields that actually changed.
-	if argPos == 3 && udata.Tags == nil {
+	if argPos == 3 && udata.Tags == nil && udata.SendRecoveryResolution == nil {
 		return nil, errx.ErrNotEnough
 	}
 
@@ -1595,7 +1632,36 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		return nil, errx.InternalError()
 	}
 	defer tx.Rollback(ctx)
-
+	if udata.SendRecoveryResolution != nil {
+		resolution := udata.SendRecoveryResolution
+		if strings.ContainsAny(resolution.ConfirmationReference, "\r\n") || len(resolution.ConfirmationReference) > 256 {
+			return nil, errx.ErrInvalid
+		}
+		var evidenceTask any
+		if resolution.EvidenceTaskID != nil {
+			evidenceTask = *resolution.EvidenceTaskID
+		}
+		tag, resolveErr := tx.Exec(ctx, `WITH held AS(
+		 SELECT ea.organization_id,ea.id,ea.send_recovery_task_id,ea.send_recovery_reason,t.completed_at,ea.last_synced_at
+		 FROM email_accounts ea LEFT JOIN tasks t ON t.id=ea.send_recovery_task_id
+		 WHERE ea.organization_id=$1 AND ea.id=$2 AND ea.status='active' AND ea.send_recovery_hold AND ea.send_recovery_task_id=$6 AND ea.send_recovery_reason=$7 AND ea.send_recovery_reason IN('authentication','permanent','conflict')
+		 AND (ea.send_cooldown_provider IS NULL OR ea.send_cooldown_provider=ea.provider::text) FOR UPDATE OF ea),
+		 valid AS(SELECT * FROM held WHERE NOT EXISTS(SELECT 1 FROM tasks u WHERE u.email_account_id=held.id AND u.send_result_state='unknown' AND u.send_result_applied_at IS NULL)
+		 AND (($3='authentication_repaired' AND held.send_recovery_reason='authentication' AND held.last_synced_at>held.completed_at)
+		 OR ($3='operator_provider_confirmation' AND held.send_recovery_reason IN('permanent','conflict') AND length($5)>0 AND $4::uuid IS NOT NULL
+		 AND EXISTS(SELECT 1 FROM tasks e WHERE e.id=$4 AND e.email_account_id=held.id AND e.send_result_state IN('sent','failed') AND e.send_result_applied_at IS NOT NULL)))),
+		 history AS(INSERT INTO send_recovery_resolutions(organization_id,email_account_id,recovery_task_id,evidence_task_id,previous_reason,evidence_type,confirmation_reference)
+		 SELECT organization_id,id,send_recovery_task_id,$4,send_recovery_reason,$3,$5 FROM valid RETURNING email_account_id)
+		 UPDATE email_accounts ea SET send_recovery_hold=false,send_recovery_reason=NULL,send_recovery_task_id=NULL
+		 FROM history WHERE ea.id=history.email_account_id`, orgID, emailAccountID, resolution.EvidenceType, evidenceTask, strings.TrimSpace(resolution.ConfirmationReference), resolution.HeldTaskID, resolution.HeldReason)
+		if resolveErr != nil {
+			db.CaptureError(resolveErr, "resolve send recovery", nil, "exec")
+			return nil, errx.InternalError()
+		}
+		if tag.RowsAffected() != 1 {
+			return nil, errx.ErrInvalid
+		}
+	}
 	query := fmt.Sprintf(`
 		UPDATE email_accounts
 		SET %s
@@ -1604,7 +1670,7 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		          COALESCE(last_synced_at, created_at) AS last_synced_at, last_id, campaign_limit, min_wait_time, reply_to, tracking_domain, tracking_domain_verified, tracking_domain_verified_at, track_direct_mail,
 		          auth_state, auth_spf, auth_dkim, auth_dmarc, auth_dmarc_policy, auth_reason, auth_checked_at, auth_failing_since,
 		          warmup, warmup_paused_at, warmup_base, warmup_max, warmup_increase, warmup_reply_rate, warmup_tag, warmup_pool_type,
-		          warmup_start_time, warmup_end_time, warmup_days, warmup_placement, warmup_folder, COALESCE(warmup_retention_days, 0) AS warmup_retention_days, save_to_sent, relay_folder_moves, created_at, updated_at,
+		          warmup_start_time, warmup_end_time, warmup_days, test_mode, test_send_enabled, test_receive_enabled, shared_daily_limit, rolling_recipient_limit, warmup_placement, warmup_folder, COALESCE(warmup_retention_days, 0) AS warmup_retention_days, save_to_sent, relay_folder_moves, created_at, updated_at,
 		          timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = email_accounts.organization_id), '') AS org_timezone
 	`, strings.Join(setClauses, ", "))
 
@@ -1617,7 +1683,7 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		// dashboard on every unrelated edit.
 		&i.AuthState, &i.AuthSPF, &i.AuthDKIM, &i.AuthDMARC, &i.AuthDMARCPolicy, &i.AuthReason, &i.AuthCheckedAt, &i.AuthFailingSince,
 		&i.Warmup, &i.WarmupPausedAt, &i.WarmupBase, &i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag, &i.WarmupPoolType,
-		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.WarmupPlacement, &i.WarmupFolder, &i.WarmupRetentionDays, &i.SaveToSent, &i.RelayFolderMoves,
+		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.TestMode, &i.TestSendEnabled, &i.TestReceiveEnabled, &i.SharedDailyLimit, &i.RollingRecipientLimit, &i.WarmupPlacement, &i.WarmupFolder, &i.WarmupRetentionDays, &i.SaveToSent, &i.RelayFolderMoves,
 		&i.CreatedAt, &i.UpdatedAt,
 		&i.Timezone, &i.OrgTimezone,
 	)
@@ -2109,7 +2175,7 @@ func (r *emailRepository) GetByID(ctx context.Context, emailAccountID uuid.UUID)
 		 ea.provider, ea.mail_host, ea.auth_method, ea.domain_grant_id, ea.vendor_connection_id, COALESCE((SELECT vc.vendor FROM mailbox_vendor_connections vc WHERE vc.id = ea.vendor_connection_id), ''), ea.avatar_url, ea.status, COALESCE(ea.last_synced_at, ea.created_at) AS last_synced_at, ea.last_id, ea.campaign_limit,
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag, ea.warmup_pool_type,
-		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.warmup_placement, ea.warmup_folder, COALESCE(ea.warmup_retention_days, 0) AS warmup_retention_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone, ea.save_to_sent, ea.relay_folder_moves,
+		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.test_mode, ea.test_send_enabled, ea.test_receive_enabled, ea.shared_daily_limit, ea.rolling_recipient_limit, ea.warmup_placement, ea.warmup_folder, COALESCE(ea.warmup_retention_days, 0) AS warmup_retention_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone, ea.save_to_sent, ea.relay_folder_moves,
 		 ea.auth_state, ea.auth_failing_since,
 		 ea.created_at, ea.updated_at,
 		 COALESCE(array_agg(eat.tag_id) FILTER (WHERE eat.tag_id IS NOT NULL), '{}') AS tags
@@ -2125,7 +2191,7 @@ func (r *emailRepository) GetByID(ctx context.Context, emailAccountID uuid.UUID)
 		&i.Provider, &i.MailHost, &i.AuthMethod, &i.DomainGrantID, &i.VendorConnectionID, &i.Vendor, &i.AvatarURL, &i.Status, &i.LastSyncedAt, &i.LastID, &i.CampaignLimit,
 		&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 		&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag, &i.WarmupPoolType,
-		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.WarmupPlacement, &i.WarmupFolder, &i.WarmupRetentionDays, &i.Timezone, &i.OrgTimezone, &i.SaveToSent, &i.RelayFolderMoves,
+		&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.TestMode, &i.TestSendEnabled, &i.TestReceiveEnabled, &i.SharedDailyLimit, &i.RollingRecipientLimit, &i.WarmupPlacement, &i.WarmupFolder, &i.WarmupRetentionDays, &i.Timezone, &i.OrgTimezone, &i.SaveToSent, &i.RelayFolderMoves,
 		&i.AuthState, &i.AuthFailingSince,
 		&i.CreatedAt, &i.UpdatedAt, &i.Tags,
 	)
@@ -2246,7 +2312,7 @@ func (r *emailRepository) GetByTags(ctx context.Context, scope AccountScope, tag
 		 ea.provider, ea.mail_host, ea.auth_method, ea.domain_grant_id, ea.vendor_connection_id, COALESCE((SELECT vc.vendor FROM mailbox_vendor_connections vc WHERE vc.id = ea.vendor_connection_id), ''), ea.avatar_url, ea.status, COALESCE(ea.last_synced_at, ea.created_at) AS last_synced_at, ea.last_id, ea.campaign_limit,
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
-		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
+		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.test_mode, ea.test_send_enabled, ea.test_receive_enabled, ea.shared_daily_limit, ea.rolling_recipient_limit, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
 		 ea.auth_state, ea.auth_failing_since, ea.worker_id,
 		 ea.created_at, ea.updated_at
 		FROM email_accounts ea
@@ -2274,7 +2340,7 @@ func (r *emailRepository) GetByTags(ctx context.Context, scope AccountScope, tag
 			&i.Provider, &i.MailHost, &i.AuthMethod, &i.DomainGrantID, &i.VendorConnectionID, &i.Vendor, &i.AvatarURL, &i.Status, &i.LastSyncedAt, &i.LastID, &i.CampaignLimit,
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
-			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone, &i.OrgTimezone,
+			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.TestMode, &i.TestSendEnabled, &i.TestReceiveEnabled, &i.SharedDailyLimit, &i.RollingRecipientLimit, &i.Timezone, &i.OrgTimezone,
 			&i.AuthState, &i.AuthFailingSince, &i.WorkerID,
 			&i.CreatedAt, &i.UpdatedAt,
 		)
@@ -2303,7 +2369,7 @@ func (r *emailRepository) GetAllActiveInScope(ctx context.Context, scope Account
 		 ea.provider, ea.mail_host, ea.auth_method, ea.domain_grant_id, ea.vendor_connection_id, COALESCE((SELECT vc.vendor FROM mailbox_vendor_connections vc WHERE vc.id = ea.vendor_connection_id), ''), ea.avatar_url, ea.status, COALESCE(ea.last_synced_at, ea.created_at) AS last_synced_at, ea.last_id, ea.campaign_limit,
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
-		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
+		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.test_mode, ea.test_send_enabled, ea.test_receive_enabled, ea.shared_daily_limit, ea.rolling_recipient_limit, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
 		 ea.auth_state, ea.auth_failing_since, ea.worker_id,
 		 ea.created_at, ea.updated_at
 		FROM email_accounts ea
@@ -2329,7 +2395,7 @@ func (r *emailRepository) GetAllActiveInScope(ctx context.Context, scope Account
 			&i.Provider, &i.MailHost, &i.AuthMethod, &i.DomainGrantID, &i.VendorConnectionID, &i.Vendor, &i.AvatarURL, &i.Status, &i.LastSyncedAt, &i.LastID, &i.CampaignLimit,
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
-			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone, &i.OrgTimezone,
+			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.TestMode, &i.TestSendEnabled, &i.TestReceiveEnabled, &i.SharedDailyLimit, &i.RollingRecipientLimit, &i.Timezone, &i.OrgTimezone,
 			&i.AuthState, &i.AuthFailingSince, &i.WorkerID,
 			&i.CreatedAt, &i.UpdatedAt,
 		)
@@ -2370,7 +2436,7 @@ func (r *emailRepository) GetByCampaignSenders(ctx context.Context, scope Accoun
 		 ea.provider, ea.mail_host, ea.auth_method, ea.domain_grant_id, ea.vendor_connection_id, COALESCE((SELECT vc.vendor FROM mailbox_vendor_connections vc WHERE vc.id = ea.vendor_connection_id), ''), ea.avatar_url, ea.status, COALESCE(ea.last_synced_at, ea.created_at) AS last_synced_at, ea.last_id, ea.campaign_limit,
 		 ea.min_wait_time, ea.reply_to, ea.tracking_domain, ea.tracking_domain_verified, ea.tracking_domain_verified_at, ea.track_direct_mail, ea.warmup, ea.warmup_paused_at, ea.warmup_base,
 		 ea.warmup_max, ea.warmup_increase, ea.warmup_reply_rate, ea.warmup_tag,
-		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
+		 ea.warmup_start_time, ea.warmup_end_time, ea.warmup_days, ea.test_mode, ea.test_send_enabled, ea.test_receive_enabled, ea.shared_daily_limit, ea.rolling_recipient_limit, ea.timezone, COALESCE((SELECT o.timezone FROM organizations o WHERE o.id = ea.organization_id), '') AS org_timezone,
 		 ea.auth_state, ea.auth_failing_since, ea.worker_id,
 		 ea.created_at, ea.updated_at,
 		 cs.weight, cs.rotation_position, cs.last_sent_at
@@ -2401,7 +2467,7 @@ func (r *emailRepository) GetByCampaignSenders(ctx context.Context, scope Accoun
 			&i.Provider, &i.MailHost, &i.AuthMethod, &i.DomainGrantID, &i.VendorConnectionID, &i.Vendor, &i.AvatarURL, &i.Status, &i.LastSyncedAt, &i.LastID, &i.CampaignLimit,
 			&i.MinWaitTime, &i.ReplyTo, &i.TrackingDomain, &i.TrackingDomainVerified, &i.TrackingDomainVerifiedAt, &i.TrackDirectMail, &i.Warmup, &i.WarmupPausedAt, &i.WarmupBase,
 			&i.WarmupMax, &i.WarmupIncrease, &i.WarmupReplyRate, &i.WarmupTag,
-			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.Timezone, &i.OrgTimezone,
+			&i.WarmupStartTime, &i.WarmupEndTime, &i.WarmupDays, &i.TestMode, &i.TestSendEnabled, &i.TestReceiveEnabled, &i.SharedDailyLimit, &i.RollingRecipientLimit, &i.Timezone, &i.OrgTimezone,
 			&i.AuthState, &i.AuthFailingSince, &i.WorkerID,
 			&i.CreatedAt, &i.UpdatedAt,
 			&sender.Weight, &sender.RotationPosition, &sender.LastSentAt,

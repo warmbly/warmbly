@@ -447,8 +447,8 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 			row.StandingObservedAt = e.StandingObservedAt
 			row.Cloud = cloudByRemote[e.RemoteID]
 			// The recorded standing covers a mailbox the cloud holds out of its pool.
-			if row.Cloud != nil && row.Cloud.Health == nil && e.Standing != nil {
-				row.Cloud.Health = e.Standing
+			if row.Cloud != nil {
+				row.Cloud.Health = e.EffectiveStanding(time.Now())
 			}
 		}
 		rows = append(rows, row)

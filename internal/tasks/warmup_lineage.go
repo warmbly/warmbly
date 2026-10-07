@@ -110,6 +110,9 @@ func (s *tasksService) sendAdmission(ctx context.Context, account *Email) error 
 }
 
 func (s *tasksService) validateWarmupPair(ctx context.Context, sender, recipient *Email, pool string, reply bool) error {
+	if !sender.TestSendingAllowed() || !recipient.TestReceivingAllowed() {
+		return errors.New("diagnostic participation unavailable")
+	}
 	if reply && !sender.IsWarmingActive() {
 		return errors.New("reply consent unavailable")
 	}
@@ -179,6 +182,9 @@ func (s *tasksService) ValidateWarmupExecution(ctx context.Context, taskID uuid.
 	}
 	if account == nil {
 		return errors.New("warmup mailbox unavailable")
+	}
+	if !account.TestSendingAllowed() {
+		return errors.New("diagnostic sending stopped")
 	}
 	source, err := s.diagnosticSource(ctx, current)
 	if err != nil {

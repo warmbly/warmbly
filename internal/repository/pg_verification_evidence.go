@@ -73,7 +73,7 @@ func (r *verificationEvidenceRepository) Record(ctx context.Context, contactID u
 		ON CONFLICT (contact_id, kind, ref) DO NOTHING
 	`
 	params := []any{contactID, kind, ref, detail, observedAt, step.CampaignID, step.SequenceID}
-	cmd, err := r.DB.Exec(ctx, query, params...)
+	cmd, err := resultDB(ctx, r.DB).Exec(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "exec")
 		return false, err
@@ -89,7 +89,7 @@ func (r *verificationEvidenceRepository) ListForContact(ctx context.Context, con
 		ORDER BY observed_at DESC
 		LIMIT 50
 	`
-	rows, err := r.DB.Query(ctx, query, contactID)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, contactID)
 	if err != nil {
 		db.CaptureError(err, query, []any{contactID}, "query")
 		return nil, err
@@ -118,7 +118,7 @@ func (r *verificationEvidenceRepository) Verdict(ctx context.Context, contactID 
 		            THEN verification_check_status ELSE verification_status END,
 		       verification_source, verification_provider, verification_checked_at, verification_requested_at
 		FROM contacts WHERE id = $1`
-	if err := r.DB.QueryRow(ctx, query, contactID).Scan(&stored, &status, &source, &provider, &checked, &v.RequestedAt); err != nil {
+	if err := resultDB(ctx, r.DB).QueryRow(ctx, query, contactID).Scan(&stored, &status, &source, &provider, &checked, &v.RequestedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return v, errx.ErrNotFound
 		}
@@ -154,7 +154,7 @@ func (r *verificationEvidenceRepository) SetScore(ctx context.Context, contactID
 		WHERE id = $1
 	`
 	params := []any{contactID, confidence, lp, status, decisive, reason}
-	if _, err := r.DB.Exec(ctx, query, params...); err != nil {
+	if _, err := resultDB(ctx, r.DB).Exec(ctx, query, params...); err != nil {
 		db.CaptureError(err, query, params, "exec")
 		return err
 	}
@@ -201,7 +201,7 @@ func (r *verificationEvidenceRepository) CreditCleanDeliveries(ctx context.Conte
 		SELECT DISTINCT contact_id FROM ins
 	`
 	params := []any{window.Seconds(), limit}
-	rows, err := r.DB.Query(ctx, query, params...)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "query")
 		return nil, err

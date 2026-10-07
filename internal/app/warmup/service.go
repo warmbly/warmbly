@@ -180,6 +180,10 @@ func (s *service) PublishHealthTransition(ctx context.Context, accountID uuid.UU
 // fires when webhooks aren't wired (e.g. in the consumer). No-op on a
 // no-change transition or when the account can't be resolved.
 func (s *service) dispatchHealthEvent(ctx context.Context, accountID uuid.UUID, oldState, newState models.WarmupHealthState, reason string) {
+	repository.AfterSendResultCommit(ctx, func(ctx context.Context) { s.publishHealthEvent(ctx, accountID, oldState, newState, reason) })
+}
+
+func (s *service) publishHealthEvent(ctx context.Context, accountID uuid.UUID, oldState, newState models.WarmupHealthState, reason string) {
 	if s.emailRepo == nil || oldState == newState {
 		return
 	}

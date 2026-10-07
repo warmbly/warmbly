@@ -15,13 +15,24 @@ import (
 
 type sendResultKey struct{}
 type sendResultContext struct {
-	tx     pgx.Tx
-	taskID uuid.UUID
+	tx          pgx.Tx
+	taskID      uuid.UUID
+	effects     *[]func(context.Context)
+	effectError *error
+}
+
+func AfterSendResultCommit(ctx context.Context, effect func(context.Context)) {
+	if state, ok := ctx.Value(sendResultKey{}).(sendResultContext); ok && state.effects != nil {
+		*state.effects = append(*state.effects, effect)
+		return
+	}
+	effect(ctx)
 }
 
 type sendResultDB interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
+	Query(context.Context, string, ...any) (pgx.Rows, error)
 }
 
 type sendResultBeginner interface {
@@ -160,19 +171,30 @@ func (r *taskRepository) ApplySendResult(ctx context.Context, result models.Send
 	if _, err = tx.Exec(ctx, `UPDATE tasks SET send_result_state = $2, send_result_evidence = $3 WHERE id = $1`, result.TaskID, state, evidence); err != nil {
 		return err
 	}
+	var effects []func(context.Context)
+	var effectError error
 	if state != "unknown" {
-		inner := context.WithValue(ctx, sendResultKey{}, sendResultContext{tx: tx, taskID: result.TaskID})
+		inner := context.WithValue(ctx, sendResultKey{}, sendResultContext{tx: tx, taskID: result.TaskID, effects: &effects, effectError: &effectError})
 		if err = apply(inner); err != nil {
 			return err
 		}
-		if _, err = tx.Exec(ctx, `UPDATE tasks SET send_result_applied_at = NOW() WHERE id = $1`, result.TaskID); err != nil {
+		if effectError != nil {
+			return effectError
+		}
+		if _, err = tx.Exec(ctx, `UPDATE tasks SET send_result_applied_at = NOW(), send_released_at=CASE WHEN send_result_state='failed' THEN NOW() ELSE send_released_at END WHERE id = $1`, result.TaskID); err != nil {
 			return err
 		}
 	}
 	if err = persistSendHold(ctx, tx, mailboxID, result, state); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	for _, effect := range effects {
+		effect(ctx)
+	}
+	return nil
 }
 
 func persistSendHold(ctx context.Context, tx pgx.Tx, mailboxID uuid.UUID, result models.SendEmailResult, state string) error {

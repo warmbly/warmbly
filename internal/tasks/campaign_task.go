@@ -901,7 +901,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		//     number of tries instead of being retried every minute for ever
 		switch {
 		case errors.Is(err, ErrSendDispatchUnknown):
-		case errors.Is(err, ErrWorkerOffline), errors.Is(err, ErrWorkerUnconfirmed):
+		case errors.Is(err, ErrWorkerOffline), errors.Is(err, ErrWorkerUnconfirmed) || errors.Is(err, repository.ErrSendAdmissionDenied):
 			if relErr := s.campaignProgressRepo.ReleaseSend(ctx, campaign.ID, contact.ID, sequence.ID, nextPair.IsNewLead); relErr != nil {
 				errs.CaptureException(relErr)
 				log.Error().Err(relErr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to release the reservation for a send that never left; the reclaimer will retry it")

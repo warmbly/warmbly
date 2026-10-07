@@ -50,8 +50,8 @@ func newPoolLinkFixture(t *testing.T) *poolLinkFixture {
 	for _, id := range []uuid.UUID{f.recipient, f.sender} {
 		addr := "pl-" + id.String()[:8] + "@test.local"
 		exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain,
-		          signature_html, provider, status, campaign_limit, min_wait_time, timezone)
-		      VALUES ($1, $2, $3, $4, 'PL', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
+		          signature_html, provider, status, campaign_limit, min_wait_time, timezone,test_mode)
+		      VALUES ($1, $2, $3, $4, 'PL', '', '', 'smtp_imap', 'active', 50, 600, 'UTC',NULL)`,
 			id, f.user, f.org, addr)
 		if id == f.sender {
 			f.senderTo = addr

@@ -591,6 +591,7 @@ func (s *JobsService) performWarmupActions(ctx context.Context, e *models.JobEve
 		workerID = recipient.WorkerID
 		recipientTZ = recipient.ClockTimezone()
 		base.Placement, base.TargetFolder = recipient.WarmupFiling()
+		actions = recipient.PermittedWarmupActions(actions)
 	}
 	// A mailbox whose owner wants warmup left in the inbox is not foldered.
 	// Spam-rescue still runs: that is the reputation signal warmup exists for,

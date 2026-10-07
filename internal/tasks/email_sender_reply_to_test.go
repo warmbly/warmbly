@@ -8,11 +8,26 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 type capturingPublisher struct {
 	events.Publisher
 	params *events.SendEmailParams
+}
+
+type payloadAdmission struct {
+	repository.OutboundAdmissionRepository
+}
+
+func (payloadAdmission) ReserveOutbound(context.Context, repository.OutboundReservation) (uuid.UUID, error) {
+	return uuid.New(), nil
+}
+
+func payloadSender(pub *capturingPublisher) EmailSender {
+	sender := NewEmailSender(nil, pub)
+	sender.(*emailSender).WireSendAdmission(payloadAdmission{})
+	return sender
 }
 
 func (p *capturingPublisher) PublishSendEmail(_ context.Context, _ uuid.UUID, params *events.SendEmailParams) error {
@@ -34,7 +49,7 @@ func TestSendCarriesReplyToOnlyOutsideWarmup(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			pub := &capturingPublisher{}
-			sender := NewEmailSender(nil, pub)
+			sender := payloadSender(pub)
 			if err := sender.Send(context.Background(), uuid.New(), EmailMessage{To: []string{"x@y.test"}, IsWarmup: tt.warmup}, account); err != nil {
 				t.Fatal(err)
 			}
@@ -56,7 +71,7 @@ func TestWarmupSendPreservesConfiguredIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	pub := &capturingPublisher{}
-	sender := NewEmailSender(nil, pub)
+	sender := payloadSender(pub)
 	if err := sender.Send(t.Context(), uuid.New(), EmailMessage{IsWarmup: true, BodyPlain: body, To: []string{"recipient@example.test"}}, account); err != nil {
 		t.Fatal(err)
 	}

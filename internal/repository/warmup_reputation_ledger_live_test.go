@@ -40,7 +40,7 @@ func newLedgerFixture(t *testing.T) *ledgerFixture {
 	f.address = "Ledger-" + f.org.String()[:8] + "@Test.Local"
 	f.exec(t, `INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Ledger', 'Test')`,
 		f.user, "ledger-"+f.user.String()[:8]+"@test.local")
-	f.exec(t, `INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Ledger Test', $2, $3)`,
+	f.exec(t, `INSERT INTO organizations (id, name, slug, owner_user_id,risk_state) VALUES ($1, 'Ledger Test', $2, $3,'trusted')`,
 		f.org, "ledger-"+f.org.String()[:8], f.user)
 
 	t.Cleanup(func() {
@@ -74,8 +74,8 @@ func (f *ledgerFixture) addMailbox(t *testing.T, user uuid.UUID) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
 	f.exec(t, `INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain,
-	              signature_html, provider, status, campaign_limit, min_wait_time, timezone)
-	          VALUES ($1, $2, $3, $4, 'Ledger', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
+	              signature_html, provider, status, campaign_limit, min_wait_time, timezone,test_mode)
+	          VALUES ($1, $2, $3, $4, 'Ledger', '', '', 'smtp_imap', 'active', 50, 600, 'UTC',NULL)`,
 		id, user, f.org, f.address)
 	return id
 }
@@ -98,7 +98,7 @@ func (f *ledgerFixture) penalise(t *testing.T, id uuid.UUID, score float64, stat
 
 func (f *ledgerFixture) remove(t *testing.T, user, id uuid.UUID) {
 	t.Helper()
-	if xerr := f.emails.Delete(context.Background(), user.String(), id.String(), 0); xerr != nil {
+	if xerr := f.emails.Delete(context.Background(), f.org.String(), id.String(), 0); xerr != nil {
 		t.Fatalf("Delete: %v", xerr)
 	}
 }

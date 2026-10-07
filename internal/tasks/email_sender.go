@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -75,6 +76,7 @@ type emailSender struct {
 	emailRepo repository.EmailRepository
 	publisher events.Publisher
 	liveness  WorkerLiveness
+	admission repository.OutboundAdmissionRepository
 }
 
 // NewEmailSender creates a new email sender
@@ -100,6 +102,8 @@ func (s *emailSender) WarmupWorkerReady(ctx context.Context, account models.Emai
 	}
 	return capable.SupportsWarmupSendProtocol(ctx, *account.WorkerID)
 }
+
+func (s *emailSender) WireSendAdmission(r repository.OutboundAdmissionRepository) { s.admission = r }
 
 // Send publishes an email to the worker service for sending
 func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessage, account models.Email) error {
@@ -174,6 +178,28 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 		// campaign and unibox mail points replies elsewhere.
 		params.ReplyTo = account.ReplyToHeader()
 	}
+
+	if s.admission == nil {
+		return repository.ErrSendAdmissionDenied
+	}
+	recipients := append(append(append([]string{}, msg.To...), msg.CC...), msg.BCC...)
+	nonce, err := s.admission.ReserveOutbound(ctx, repository.OutboundReservation{
+		TaskID: taskID, MailboxID: account.ID, OrganizationID: *account.OrganizationID, WorkerID: *workerID,
+		Provider: models.InboxProvider(account.Provider), Recipients: recipients,
+	})
+	if err != nil {
+		if msg.IsWarmup && msg.DispatchNonce != "" {
+			if r, ok := s.admission.(repository.WarmupDispatchRepository); ok {
+				if n, nerr := uuid.Parse(msg.DispatchNonce); nerr == nil {
+					if derr := r.DeferWarmupDispatch(ctx, taskID, account.ID, *workerID, n, time.Now().Add(5*time.Minute)); derr != nil {
+						return derr
+					}
+				}
+			}
+		}
+		return err
+	}
+	params.DispatchNonce = nonce.String()
 
 	// Publish send email event to worker
 	if err := s.publisher.PublishSendEmail(ctx, *workerID, params); err != nil {

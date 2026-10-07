@@ -1,0 +1,87 @@
+---
+title: Send safety and diagnostic controls
+description: Shared admission, explicit diagnostic participation, actual-message DKIM and conservative upgrade behavior.
+---
+
+This control system restricts sending using current authority and observed evidence. It does not manufacture engagement, promise inbox placement or establish a reputation benefit from local tests.
+
+## Explicit participation and complete stop
+
+`PATCH /emails/:id` keeps its existing `WRITE_EMAILS` scope and organization boundary. The additive fields are:
+
+| Field | Behavior |
+|---|---|
+| `test_mode` | `diagnostic`, `off` or explicit `legacy`. Existing NULL values retain legacy behavior; newly connected mailboxes default to `off` |
+| `test_send_enabled` | Enables diagnostic sending only in `diagnostic` mode |
+| `test_receive_enabled` | Separately enables diagnostic receiving only in `diagnostic` mode |
+| `shared_daily_limit` | Positive mailbox-wide calendar-day ceiling across campaign, manual, warmup and placement reservations |
+| `rolling_recipient_limit` | Positive rolling 24-hour ceiling counting each To/CC/BCC recipient occurrence, not just messages |
+
+Choose sender-only, recipient-only or both explicitly. Recipient-only does not authorize a reply. `off` excludes diagnostic starts, active-campaign health checks, reply-back and new recipient selection. It does not stop legitimate campaign/manual traffic by itself: pause the campaign or mailbox for that. Diagnostic mode disables synthetic read, star, importance and spam-rescue actions. Authorized filing and deletion remain housekeeping, not positive deliverability evidence. Cleanup can remove an already received diagnostic after participation stops.
+
+The control plane checks participation before publication; capable executors recheck it immediately before native execution. A queued command is not consent. Queue callbacks, received text and model output cannot authorize sending. Revoke receiving before a queued diagnostic starts and it is denied; revoke sending and a recipient-only mailbox cannot reply. No software can retroactively cancel a provider submission that already began.
+
+`warmup_generation.generation_enabled=false` is independent. It blocks new generation submissions, edits/replacements and generated source use; an already submitted provider job can drain. Preserve the configured credentials while it does. See [generation controls](/development/warmup-generation/).
+
+### Local aliases versus Cloud mailboxes
+
+Local participation and unlinking restrict local use of an alias. They do not revoke an independently Cloud-owned native mailbox, its provider OAuth grant, or accepted Cloud-native work. Pause/delete or change participation on that Cloud mailbox separately if that is the intended outcome. Enrolled SMTP mirrors also have Cloud-side participation; a newly created Cloud mailbox is off until its owner explicitly enables it. Do not treat healthy standing as participation consent. Existing lifecycle enrollment and account IDs remain unchanged.
+
+## Shared send-time admission
+
+Every new outbound lane goes through a mailbox/task advisory lock and one durable SQL reservation: campaigns, manual/Unibox sends, normal warmup, campaign-backed health checks/reply-back, and placement/seed probes. Campaign progress already reserved for the same task is not counted twice. Cold/manual and diagnostic allocations remain distinct constraints, with optional shared and rolling ceilings layered above them. Calendar days use the mailbox/organization timezone, including daylight-saving changes; rolling recipient totals do not reset at midnight.
+
+Reservation requires an active organization-owned mailbox, its current configured provider and worker, current suppression and recovery state, and the exact recipient envelope. Campaign sends additionally require active campaign/lead/progress state and current calendar/pacing policy. Diagnostic partners retain their real pool, role, tier, trust, standing and inbound capacity constraints. Seed mailboxes stay measurements, not conversation partners. Future, missing or stale positive Cloud standing is unavailable evidence; restrictive holds are not erased.
+
+The executor rechecks organization, mailbox, worker, provider, durable task/nonce and exact recipients before starting. A command cannot broaden its CC/BCC or switch tenants after reservation. Worker silence, publication uncertainty, provider timeout and executor restart are unknown outcomes, not unsent proof. Their reservations and mailbox hold remain until a correlated definite result resolves them. Terminal replay returns the saved result without resending. A definite native throttle records only the evidence and scope actually observed; legacy codes preserve conservative mailbox/provider cooldowns without invented HTTP or SMTP codes.
+
+Result reconciliation commits task, campaign progress, variant, suppression and warmup-health changes together. Bounce webhooks and notifications enter an idempotent durable outbox in that transaction, and result consumers drain it after commit. Failed delivery retains a leased retry row; a consumer restart does not lose the effect. Stable downstream webhook delivery and notification-feed IDs prevent duplicate stored rows. External integration, Slack/push and realtime delivery remain at least once/best effort, not exactly-once delivery. Core accounting and unknown holds remain durable.
+
+## Evidence-based repair holds
+
+Authentication, permanent and conflicting-result holds do not clear merely because time passed, a reconnect occurred or an unrelated send succeeded. An organization-authorized operator can use `send_recovery_resolution` in the existing mailbox PATCH after investigating the current held task and reason:
+
+```json
+{
+  "send_recovery_resolution": {
+    "held_task_id": "00000000-0000-0000-0000-000000000001",
+    "held_reason": "authentication",
+    "evidence_type": "authentication_repaired"
+  }
+}
+```
+
+`authentication_repaired` requires a newer successful mailbox sync after the held task. `operator_provider_confirmation` instead requires `evidence_task_id` naming a definitive, applied result on that same mailbox and a non-empty `confirmation_reference`. Include the exact `held_task_id` and `held_reason` (`authentication`, `permanent`, `conflict`) inspected by the operator. A changed hold, inactive mailbox, mismatched configured provider, cross-organization request or any remaining `send_result_state=unknown` refuses resolution. Investigate unknown tasks first; never label them failed merely to free capacity. The history and previous reason are inserted atomically before clearing only the repair hold. Cooldowns, suppression and other restrictions remain. References must not contain credentials, message bodies or raw provider payloads.
+
+## Actual-message authentication
+
+An updated worker can retrieve bounded raw MIME for exactly one already authorized application-owned warmup diagnostic received through Gmail or Microsoft Graph. The control plane first binds the immutable diagnostic token/task, exact sender and recipient, provider message ID, current mailbox/worker and participation. A short-lived nonce binds the result submission. The worker retrieves only that named message, not an unrelated inbox corpus. Gmail uses raw format; Graph uses the named message's MIME `$value`.
+
+Cryptographic verification uses `go-msgauth/dkim-v0.7.0`, at most 1 MiB of MIME and four signatures, with context-bounded key lookup. A valid DKIM signature is pass; exact From-domain/signer equality establishes only a conservative alignment-pass subset. Body mutation fails verification. Forged or copied Authentication-Results cannot become proof. The stored result includes verifier/version and observation time, not raw MIME or DNS responses. The exact receipt receives the minimal proof; duplicate results cannot replace it with unrelated evidence.
+
+SPF, DMARC and receiving-hop TLS remain unknown absent independent evidence. IMAP/SMTP diagnostics, seed/placement messages outside this authorized warmup context, legacy workers, unavailable MIME, transient key/DNS failures, size/signature bounds and absent authorization remain unknown. Parsed provider Authentication-Results are kept separately as unverified claims. DNS configuration discovery is useful readiness input, not proof of a received message authenticating. Generated prose cannot claim a provider/client check actually passed.
+
+## Unsubscribe and negative feedback
+
+The existing signed unsubscribe URL provides scanner-safe GET and a context-independent POST that durably suppresses future matching traffic. HTTPS messages emit `List-Unsubscribe` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`; the visible body link and suppression checks remain. A connected transport's DKIM signer must cover both headers for full RFC 8058 signing compliance. Warmbly cannot assert that arbitrary external SMTP/API signers covered them without inspecting a genuine delivered message. The scoped diagnostic DKIM verifier does not establish that broader signing requirement.
+
+Hard bounce/complaint/suppression and authentication failures remain negative evidence. Spam placement can slow sending but is not alone a quarantine reason. First-folder observation, native outcome, Cloud trust and content provenance are distinct measurements, not a synthetic engagement score. Coherent disclosed hypothetical diagnostic conversations preserve immutable subjects, versions, facts and exact-parent closure; they do not invent real customer relationships or actions.
+
+## Upgrade, rollback and portability
+
+1. Back up and preserve released migrations 1 through 265 byte-for-byte. Apply the contiguous additive 266 through 272 sequence; no new environment variable is required.
+2. Pause dispatch during a mixed control-plane rollout. Upgrade every backend/result consumer, including Cloud replicas, before relying on generation stop, exact-parent resolution, current participation or correlated managed consent.
+3. Drain/reconcile previously accepted work, then upgrade execution workers. Protocol `warmup_send_protocol=2` is required for shared reservations, execution-time action authority and cryptographic diagnostics. Protocol 1 supports only its previous lineage capability. Old JSON and Avro payloads remain readable; old capability is not stronger cancellation/admission support. Use matching Kafka-tagged binaries where applicable.
+4. Recheck holds, actual configured provider, worker liveness, schedules, directional participation, shared/rolling limits and Cloud-side settings before resuming. New mailboxes default off; existing NULL participation stays legacy rather than silently relabeling historical consent. No migration rewrites legacy AI provenance as reviewed. Legacy NULL-provenance sources do not count toward new versioned selection/readiness; existing exact-parent ambiguity stays closed.
+
+Organization export retains participation, ceilings, restrictive task/account evidence and audited repair history. Executor worker/nonce/start/result handles are reset on import. Exact provider-message diagnostic authorization and nonces are instance-local and excluded; minimal first-observation proof is portable historical evidence, never a reusable execution grant. See [workspace moves](/guides/workspace-export-import/).
+
+The source-instance reconciliation outbox is excluded from organization archives so an import cannot replay customer notifications. Drain pending effects before moving; whole-instance backups retain the queue. Delivered outbox rows expire after seven days; pending rows remain until delivery or organization/task deletion. They contain event/notification metadata, not raw MIME, provider responses or credentials. Repair history lasts with the organization and must not contain sensitive message content.
+
+Rollback refuses unresolved reservations, explicit participation state, diagnostic authorization/proof, pending outbox effects and repair history instead of discarding them. Earlier component migrations also refuse restrictive dispatch or managed consent history. Restore or complete a reviewed reconciliation; do not delete negative evidence simply to make downgrade succeed. Legacy deployments remain readable, but do not resume a mixed-old executor fleet assuming new guarantees.
+
+## Verification and limits
+
+R1 stop/consent, R2 shared budgets, R3 recovery and transactional hooks, R5 bounded actual-message DKIM, R7 disclosed coherent content, and R11 calendar/pacing controls have separate deterministic and live PostgreSQL fixtures. Upgrade fixtures start at the released 265 schema and preserve legacy IDs/state. Mixed campaign/warmup/placement/manual contenders prove shared capacity and unknown reservation retention; worker fixtures exercise replay, envelope binding, current consent and old JSON/Avro readability. Provider MIME fixtures test mutation, forged headers, timeout and bounds without provider access.
+
+These checks establish local engineering behavior, not production efficacy, provider consent, real delivery, all-provider authentication, signed RFC 8058 headers or exactly-once external notification delivery. They perform no live sends, browser proof or production reads.

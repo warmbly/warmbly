@@ -13,23 +13,24 @@ const ObservationUnknownFolderFlag = "Warmbly-Unknown-Folder"
 
 // ReceivedEvidence separates header claims from verified receiver verdicts.
 type ReceivedEvidence struct {
-	Version                      string    `json:"version"`
-	Source                       string    `json:"source"`
-	Trust                        string    `json:"trust"`
-	ObservedAt                   time.Time `json:"observed_at"`
-	SPF                          string    `json:"spf"`
-	DKIM                         string    `json:"dkim"`
-	DMARC                        string    `json:"dmarc"`
-	Alignment                    string    `json:"alignment"`
-	TLS                          string    `json:"tls"`
-	FromDomain                   string    `json:"from_domain,omitempty"`
-	EnvelopeDomain               string    `json:"envelope_domain_claim,omitempty"`
-	SigningDomain                string    `json:"signing_domain_claim,omitempty"`
-	Selector                     string    `json:"selector_claim,omitempty"`
-	AuthenticationResultsPresent bool      `json:"authentication_results_present"`
-	OneClickHeaders              bool      `json:"one_click_headers_present"`
-	OneClickSigningClaim         bool      `json:"one_click_signing_claim"`
-	OneClickCompliance           string    `json:"one_click_compliance"`
+	DKIMVerification             *DiagnosticDKIMResult `json:"dkim_verification,omitempty"`
+	Version                      string                `json:"version"`
+	Source                       string                `json:"source"`
+	Trust                        string                `json:"trust"`
+	ObservedAt                   time.Time             `json:"observed_at"`
+	SPF                          string                `json:"spf"`
+	DKIM                         string                `json:"dkim"`
+	DMARC                        string                `json:"dmarc"`
+	Alignment                    string                `json:"alignment"`
+	TLS                          string                `json:"tls"`
+	FromDomain                   string                `json:"from_domain,omitempty"`
+	EnvelopeDomain               string                `json:"envelope_domain_claim,omitempty"`
+	SigningDomain                string                `json:"signing_domain_claim,omitempty"`
+	Selector                     string                `json:"selector_claim,omitempty"`
+	AuthenticationResultsPresent bool                  `json:"authentication_results_present"`
+	OneClickHeaders              bool                  `json:"one_click_headers_present"`
+	OneClickSigningClaim         bool                  `json:"one_click_signing_claim"`
+	OneClickCompliance           string                `json:"one_click_compliance"`
 }
 
 func UnknownReceivedEvidence() *ReceivedEvidence {
@@ -77,6 +78,7 @@ func EvidenceFromFlags(flags []string) *ReceivedEvidence {
 			continue
 		}
 		e.Trust, e.SPF, e.DKIM, e.DMARC, e.Alignment, e.TLS, e.OneClickCompliance = "unverified_headers", "unknown", "unknown", "unknown", "unknown", "unknown", "unknown"
+		e.DKIMVerification = nil
 		return e
 	}
 	return UnknownReceivedEvidence()

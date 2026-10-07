@@ -347,6 +347,10 @@ The hosted service at warmbly.com does measure its own marketing site, dashboard
 
 If you do want product analytics on your own instance, the variables are on [configuration](/development/configuration/#product-analytics-and-session-replay) and they accept a self-hosted PostHog. The server-side `POSTHOG_KEY` carries the backend's error tracking and its product events; the browser-side `WARMBLY_POSTHOG_KEY` is what turns on the dashboard's and the admin panel's analytics, session replay and browser errors, and `WARMBLY_POSTHOG_ERROR_TRACKING` and `WARMBLY_POSTHOG_SESSION_REPLAY` switch those last two off separately. That is your decision to make, and nothing about it points at us.
 
+## Diagnostic evidence and sending restrictions
+
+Diagnostic participation, shared limits, durable recovery evidence and operator repair history are organization data. Raw MIME is never persisted by the bounded Gmail/Graph DKIM verifier. Minimal verifier/version/time results can attach to historical receipt evidence; source-worker/message authorization nonces are excluded from workspace moves. The SQL reconciliation outbox is source-instance-local and retained by full database backups, not organization archives. Drain it before moving a workspace; pending effects survive restart, delivered rows expire after seven days, and organization/task deletion cascades their removal. Repair audit history lasts with the organization. Rollback refuses pending effects, unknown sends and retained restrictive state. See [send safety](/development/send-safety/).
+
 ## See also
 
 - [Install](/development/install/): the wizard that asks all of this up front

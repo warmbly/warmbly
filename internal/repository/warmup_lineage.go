@@ -65,7 +65,7 @@ func (r *taskRepository) RecordVerifiedWarmupParent(ctx context.Context, parent,
 			return errors.New("verified warmup receipt context unavailable")
 		}
 	}
-	return nil
+	return attachDiagnosticAuth(ctx, r.db, parent, recipient)
 }
 
 func (r *taskRepository) BindWarmupSuccessor(ctx context.Context, parent, recipient, internalID uuid.UUID, at time.Time) (bool, error) {

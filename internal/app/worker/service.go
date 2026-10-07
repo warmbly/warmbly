@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/google/uuid"
+
 	"github.com/warmbly/warmbly/internal/app/cipher"
 	"github.com/warmbly/warmbly/internal/app/worker/mailmanager"
 	"github.com/warmbly/warmbly/internal/config"
@@ -74,6 +76,7 @@ func (s *WorkerService) Init() error {
 	if s.TokenBroker != nil {
 		s.mailManager.WireTokenBroker(s.TokenBroker)
 	}
+	s.mailManager.ExecutorID, _ = uuid.Parse(s.ID)
 
 	return nil
 }
