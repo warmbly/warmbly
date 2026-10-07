@@ -917,6 +917,13 @@ type ColdRampState struct {
 	Placements        []time.Time
 }
 
+func (s ColdRampState) WithKnownWarmup(startedAt *time.Time) ColdRampState {
+	if s.WarmupStartedAt == nil {
+		s.WarmupStartedAt = startedAt
+	}
+	return s
+}
+
 func (r *warmupRepository) ColdRampStateForAccounts(ctx context.Context, accountIDs []uuid.UUID, since time.Time) (map[uuid.UUID]ColdRampState, error) {
 	out := make(map[uuid.UUID]ColdRampState, len(accountIDs))
 	if len(accountIDs) == 0 {

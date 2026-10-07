@@ -797,18 +797,18 @@ func (s *analyticsService) CompareCampaigns(ctx context.Context, orgID uuid.UUID
 // coldRampInfo explains a graduation ceiling holding this mailbox below its own
 // cold cap. Nil when nothing is holding it, so the drawer stays quiet.
 func (s *analyticsService) coldRampInfo(ctx context.Context, email *models.Email) *models.ColdRampInfo {
-	if email.Warmup == nil || s.warmupRepo == nil || email.CampaignLimit <= 0 {
+	if email.Warmup == nil || email.CampaignLimit <= 0 {
 		return nil
 	}
-	states, err := s.warmupRepo.ColdRampStateForAccounts(ctx,
-		[]uuid.UUID{email.ID}, time.Now().Add(-warmupramp.LookbackWindow))
-	if err != nil {
-		return nil
+	state := repository.ColdRampState{}
+	if s.warmupRepo != nil {
+		states, err := s.warmupRepo.ColdRampStateForAccounts(ctx,
+			[]uuid.UUID{email.ID}, time.Now().Add(-warmupramp.LookbackWindow))
+		if err == nil {
+			state = states[email.ID]
+		}
 	}
-	state, ok := states[email.ID]
-	if !ok {
-		return nil
-	}
+	state = state.WithKnownWarmup(email.Warmup)
 	info := warmupramp.Notice(state.WarmupStartedAt, state.ColdRampStartedAt, state.Placements, email.CampaignLimit, time.Now(), state.ConfirmedReplies)
 	if info == nil || info.Ceiling >= email.CampaignLimit {
 		return nil

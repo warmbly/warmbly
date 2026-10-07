@@ -340,7 +340,8 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 				p.cap = r
 			}
 		}
-		p.cold, p.hasCold = pass.coldRamp[acct.ID]
+		p.cold = pass.coldRamp[acct.ID].WithKnownWarmup(acct.Warmup)
+		p.hasCold = p.cold.WarmupStartedAt != nil
 		h := s.healthFor(ctx, pass, acct.ID)
 		if h.known {
 			p.health = h.state

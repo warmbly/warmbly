@@ -398,7 +398,7 @@ A diagnostic-history mailbox starts cold sending at a conservative ceiling of fi
 
 Confirmed human replies to actual campaign recipients in the last seven days permit bounded increases: at most five per clean day, and never more than the confirmed reply count. Complaints clear positive progression. Without reply evidence, the ceiling stays five/day.
 
-Configured campaign/mailbox caps, shared daily/rolling recipient limits and negative-feedback holds still bind. This is product pacing, not a universal provider-approved safe volume or proven reputation benefit. Missing evidence leaves full-cap dates unknown rather than projecting synthetic age into readiness.
+Configured campaign/mailbox caps, shared daily/rolling recipient limits and negative-feedback holds still bind. This is product pacing, not a universal provider-approved safe volume or proven reputation benefit. Missing evidence leaves full-cap dates unknown rather than projecting synthetic age into readiness. If the feedback lookup fails or omits a known warmed mailbox, its execution, projection and displayed explanation retain the conservative ceiling. A missing lookup does not mean the mailbox never warmed.
 
 <Callout type="info" title="Only for mailboxes that warmed">
 A mailbox that never used warmup is not gated. This exists to smooth the warmup-to-cold transition, not to cap senders who never opted into warmup.
@@ -424,15 +424,15 @@ Above `4%` projected bounce the launch is refused with the number and what to do
 Defaults are deliberately conservative, aiming at a low complaint rate rather than maximum throughput:
 
 - **Spacing over bursts**: the minimum gap and even distribution keep a natural cadence.
-- **Spread, don't concentrate**: volume splits across many mailboxes and worker IPs.
+- **Honor provider limits**: adding mailboxes or worker IPs is not a way to bypass provider restrictions.
 - **Ramp gradually**: raise volume only while performance stays healthy.
 - **Health gating**: a mailbox in deliverability trouble has its cold volume cut or paused automatically.
 - **Human timing**: mailboxes with [sending behavior](/guides/sending-behavior/) enabled keep randomized working hours, volume, and spacing in their own timezone.
 
-A practical band is `30` to `50`/day for warmed mailboxes, starting newer ones at `10` to `20`.
+Choose configured caps using provider policy, recipient permission and observed campaign outcomes. A configured cap is a maximum, not evidence that the volume is safe or that the mailbox is ready for it.
 
-<Callout type="warn" title="Keep warmup running">
-Warmbly limits a campaign mailbox to at most five warmup messages per day, so campaign traffic stays primary. Warmup cannot compensate for one repetitive template sent to a poorly targeted list: personalize, test meaningful A/B variants, and honor suppression and unsubscribe signals.
+<Callout type="warn" title="Diagnostics are optional">
+When enabled, Warmbly limits a campaign mailbox to at most five diagnostic warmup messages per day, so campaign traffic stays primary. Diagnostic participation is not a proven reputation benefit and cannot compensate for a repetitive template sent to a poorly targeted list: personalize, test meaningful A/B variants, and honor suppression and unsubscribe signals.
 </Callout>
 
 ## Related guides
