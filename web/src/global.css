@@ -43,40 +43,131 @@
   --sidebar-accent-foreground: oklch(0.20 0.01 260);
   --sidebar-border: oklch(0.92 0.005 260);
   --sidebar-ring: oklch(0.55 0.01 260);
+  --chrome-bg: #f5f6f8;
+
+  --app-bg-image: none;
+  --app-bg-blur: 0px;
+  --app-bg-opacity: 1;
+  --app-glass-opacity: 0.88;
+  --app-glass-blur: 12px;
+  --app-glass-card-opacity: 0.92;
+  --app-glass-card-blur: 8px;
 }
 
 .dark {
-  --background: #111214;
-  --foreground: #f7f8f8;
-  --card: #1a1b1e;
-  --card-foreground: #f7f8f8;
-  --popover: #1a1b1e;
-  --popover-foreground: #f7f8f8;
-  --primary: #f7f8f8;
-  --primary-foreground: #111214;
-  --secondary: #25262a;
-  --secondary-foreground: #f7f8f8;
-  --muted: #1c1d20;
-  --muted-foreground: #8a8f98;
-  --accent: #25262a;
-  --accent-foreground: #f7f8f8;
+  /* ── Core palette (used by elements that already use CSS variables) ── */
+  --background: oklch(0.13 0.01 260);
+  --foreground: oklch(0.95 0.005 260);
+  --card: rgba(26, 29, 39, 0.82);
+  --card-foreground: oklch(0.95 0.005 260);
+  --popover: oklch(0.16 0.01 260);
+  --popover-foreground: oklch(0.95 0.005 260);
+  --primary: oklch(0.85 0.005 260);
+  --primary-foreground: oklch(0.13 0.01 260);
+  --secondary: oklch(0.22 0.01 260);
+  --secondary-foreground: oklch(0.95 0.005 260);
+  --muted: oklch(0.20 0.01 260);
+  --muted-foreground: oklch(0.60 0.01 260);
+  --accent: oklch(0.22 0.01 260);
+  --accent-foreground: oklch(0.95 0.005 260);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: #26272b;
-  --input: #2e2f34;
-  --ring: oklch(74.6% 0.16 232.661 / 0.5);
-  --chart-1: oklch(0.70 0.15 240);
-  --chart-2: oklch(0.70 0.14 165);
-  --chart-3: oklch(0.72 0.13 60);
-  --chart-4: oklch(0.68 0.16 300);
-  --chart-5: oklch(0.70 0.10 200);
-  --sidebar: #070708;
-  --sidebar-foreground: #f7f8f8;
-  --sidebar-primary: #f7f8f8;
-  --sidebar-primary-foreground: #111214;
-  --sidebar-accent: #1c1d20;
-  --sidebar-accent-foreground: #f7f8f8;
-  --sidebar-border: #26272b;
-  --sidebar-ring: oklch(74.6% 0.16 232.661 / 0.5);
+  --border: oklch(0.26 0.01 260);
+  --input: oklch(0.26 0.01 260);
+  --ring: oklch(0.60 0.01 260);
+  --chart-1: oklch(0.60 0.15 250);
+  --chart-2: oklch(0.55 0.12 160);
+  --chart-3: oklch(0.58 0.10 30);
+  --chart-4: oklch(0.52 0.14 300);
+  --chart-5: oklch(0.55 0.08 200);
+  --sidebar: oklch(0.14 0.01 260);
+  --sidebar-foreground: oklch(0.95 0.005 260);
+  --sidebar-primary: oklch(0.85 0.005 260);
+  --sidebar-primary-foreground: oklch(0.13 0.01 260);
+  --sidebar-accent: oklch(0.22 0.01 260);
+  --sidebar-accent-foreground: oklch(0.95 0.005 260);
+  --sidebar-border: oklch(0.26 0.01 260);
+  --sidebar-ring: oklch(0.60 0.01 260);
+  --chrome-bg: oklch(0.13 0.01 260);
+
+  --surface: oklch(0.18 0.015 260);
+  --surface-raised: oklch(0.22 0.015 260);
+  --surface-sunken: oklch(0.10 0.01 260);
+  --surface-hover: oklch(0.24 0.015 260);
+
+  --app-glass-opacity: 0.85;
+  --app-glass-card-opacity: 0.88;
+  --app-glass-card-blur: 10px;
+
+  color-scheme: dark;
+
+  /* Surfaces — cards and elevated surfaces lighter than the page background
+     so hierarchy reads clearly even without glass. */
+  .bg-white,
+  .bg-white\/60,
+  .bg-white\/80,
+  .bg-white\/90 { background-color: var(--card); }
+
+  .bg-slate-50,
+  .bg-slate-100 { background-color: var(--surface); }
+  .bg-slate-200 { background-color: var(--border); }
+  .bg-slate-300 { background-color: oklch(0.42 0.015 260); }
+  .bg-slate-50\/60 { background-color: var(--surface); }
+  .bg-slate-50\/40,
+  .bg-slate-100\/40 { background-color: rgba(26, 29, 39, 0.6); }
+
+  /* Text */
+  .text-slate-900,
+  .text-slate-800,
+  .text-slate-700 { color: var(--foreground); }
+  .text-slate-600 { color: oklch(0.75 0.01 260); }
+  .text-slate-500,
+  .text-slate-400 { color: var(--muted-foreground); }
+  .text-slate-300 { color: var(--border); }
+  .text-white { color: var(--foreground); }
+
+  /* Borders */
+  .border-slate-200,
+  .border-slate-300,
+  .border-slate-200\/70,
+  .border-slate-200\/50 { border-color: var(--border); }
+  .border-white\/20,
+  .border-white\/30 { border-color: rgba(255,255,255,0.12); }
+
+  /* Hover / active states */
+  .hover\:bg-slate-200:hover,
+  .hover\:bg-slate-100:hover { background-color: var(--surface-hover); }
+  .hover\:bg-slate-50:hover { background-color: var(--surface-hover); }
+  .hover\:text-slate-900:hover,
+  .hover\:text-slate-700:hover { color: var(--foreground); }
+
+  /* Overlays / scrims */
+  .bg-black\/40,
+  .bg-black\/50 { background-color: rgba(0,0,0,0.6); }
+  .bg-slate-900\/40 { background-color: rgba(0,0,0,0.5); }
+
+  /* Focus / ring states */
+  .focus\:border-slate-300:focus { border-color: var(--ring); }
+  .focus\:ring-slate-100:focus { --tw-ring-color: var(--ring); }
+
+  /* Disabled / muted surfaces */
+  .disabled\:bg-slate-50:disabled { background-color: var(--surface); }
+  .disabled\:text-slate-400:disabled { color: var(--muted-foreground); }
+
+  /* Divider hairlines */
+  .divide-slate-200\/70 > * + * { border-color: var(--border); }
+
+  /* Cloud blobs — near-white in light mode, very subtle in dark mode
+     so they read as ambient texture rather than bright spots. */
+  .cloud-blob,
+  .cloud-blob-2,
+  .cloud-blob-3 { background: rgba(255,255,255,0.06); }
+
+  /* Sidebar selected nav item — force a light translucent surface and dark
+     text so the active row stays readable in dark mode. */
+  .glassmorphism-enabled .app-shell-nav a.bg-slate-200\/70 {
+    background-color: rgba(255, 255, 255, 0.85);
+    color: rgba(0, 0, 0, 0.85);
+  }
 }
 
 @theme inline {
@@ -555,6 +646,20 @@ svg.loading circle {
     scrollbar-width: none;
   }
 
+  .bg-chrome {
+    background-color: var(--chrome-bg);
+  }
+
+  .cloud-blob {
+    background: rgba(255,255,255,0.95);
+  }
+  .cloud-blob-2 {
+    background: rgba(255,255,255,0.85);
+  }
+  .cloud-blob-3 {
+    background: rgba(255,255,255,0.90);
+  }
+
   .animate-card-float {
     animation: card-float 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
@@ -805,4 +910,206 @@ svg.loading circle {
    desktop type is untouched. */
 @media (max-width: 767px) {
   input, select, textarea, [contenteditable="true"] { font-size: max(16px, 1em) !important; }
+}
+
+/* ── Appearance system ────────────────────────── */
+
+/* Background image layer: fixed viewport-level layer behind the entire
+   application. z-index: -1 places it behind SkyChrome and all app
+   surfaces. Never intercepts pointer events. */
+.appearance-bg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--app-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: var(--app-bg-opacity);
+  filter: blur(var(--app-bg-blur));
+  transform: translateZ(0);
+  will-change: filter, opacity;
+  transition: opacity 0.5s ease, filter 0.5s ease;
+}
+
+.appearance-bg-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, transparent 50%, rgba(0,0,0,0.08) 100%);
+  pointer-events: none;
+}
+
+/* When a background is active, SkyChrome's solid background fades out
+   so the background layer shows through the chrome area. The cloud
+   blobs also dim so they don't compete with a user-selected image. */
+.appearance-bg-active .app-shell-chrome {
+  background: transparent;
+}
+.appearance-bg-active .app-shell-chrome > div:first-child {
+  background: transparent;
+}
+.appearance-bg-active .cloud-blob,
+.appearance-bg-active .cloud-blob-2,
+.appearance-bg-active .cloud-blob-3 {
+  opacity: 0.08;
+}
+
+/* When a background is active, the header and sidebar need their own
+   semi-opaque surfaces so text stays readable. Glassmorphism adds the
+   blur on top. These rules are the single source of truth for chrome
+   surface readability — they are NOT !important because they sit at
+   the same specificity as the component classes and load after them. */
+.appearance-bg-active .app-shell-header,
+.appearance-bg-active .app-shell-nav {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.appearance-bg-active main.app-shell-content {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 4px 24px -4px rgba(0,0,0,0.06);
+}
+.dark .appearance-bg-active .app-shell-header,
+.dark .appearance-bg-active .app-shell-nav {
+  background: rgba(22, 22, 30, 0.82);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.dark .appearance-bg-active main.app-shell-content {
+  background: rgba(22, 22, 30, 0.88);
+  box-shadow: 0 4px 24px -4px rgba(0,0,0,0.3);
+}
+
+/* Glassmorphism: applied conditionally via the .glassmorphism-enabled
+   class on the document root. Adds translucent blur to actual surface
+   elements — header, sidebar, content panel, dialogs, popovers, dropdowns.
+   Never targets the chrome background or the background layer. */
+.glassmorphism-enabled .app-shell-header,
+.glassmorphism-enabled .app-shell-nav,
+.glassmorphism-enabled main.app-shell-content,
+.glassmorphism-enabled [data-dialog-content],
+.glassmorphism-enabled .popover-content,
+.glassmorphism-enabled .dropdown-menu-content,
+.glassmorphism-enabled [role="dialog"] {
+  background: rgba(255, 255, 255, var(--app-glass-opacity));
+  backdrop-filter: blur(var(--app-glass-blur));
+  -webkit-backdrop-filter: blur(var(--app-glass-blur));
+  border-color: rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 24px -4px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+
+.dark .glassmorphism-enabled .app-shell-header,
+.dark .glassmorphism-enabled .app-shell-nav,
+.dark .glassmorphism-enabled main.app-shell-content,
+.dark .glassmorphism-enabled [data-dialog-content],
+.dark .glassmorphism-enabled .popover-content,
+.dark .glassmorphism-enabled .dropdown-menu-content,
+.dark .glassmorphism-enabled [role="dialog"] {
+  background: rgba(22, 22, 30, var(--app-glass-opacity));
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 24px -4px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* Smooth transitions for theme and glass changes on app shell surfaces */
+.app-shell-header,
+.app-shell-nav,
+main.app-shell-content,
+[data-dialog-content],
+.popover-content,
+.dropdown-menu-content,
+[role="dialog"] {
+  transition: background-color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+/* ── Glass panels (cards, elevated surfaces) ───────────────────────
+   Opt-in class for cards that want to participate in the same glass
+   system as the shell. Uses its own opacity/blur tokens so cards read
+   as one level below the header/nav/content panel. */
+.glassmorphism-enabled .glass-panel {
+  background: rgba(255, 255, 255, var(--app-glass-card-opacity));
+  backdrop-filter: blur(var(--app-glass-card-blur));
+  -webkit-backdrop-filter: blur(var(--app-glass-card-blur));
+  border-color: rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px -4px rgba(0,0,0,0.04);
+}
+
+.glassmorphism-enabled .glass-panel:hover {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.dark .glassmorphism-enabled .glass-panel {
+  background: rgba(26, 29, 39, var(--app-glass-card-opacity));
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2), 0 4px 16px -4px rgba(0,0,0,0.15);
+}
+
+.dark .glassmorphism-enabled .glass-panel:hover {
+  background: rgba(26, 29, 39, 0.90);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.appearance-bg-active .glass-panel {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+.appearance-bg-active .glass-panel:hover {
+  background: rgba(255, 255, 255, 0.80);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.dark .appearance-bg-active .glass-panel {
+  background: rgba(26, 29, 39, 0.78);
+}
+
+.dark .appearance-bg-active .glass-panel:hover {
+  background: rgba(26, 29, 39, 0.80);
+}
+
+/* ── Transparent page surfaces under glass ─────────────────────────
+   Page, PageTopbar and StatStrip normally paint their own white
+   backgrounds. Under glass they become transparent so the shell glass
+   shows through and the whole content area reads as one continuous
+   surface. */
+.glassmorphism-enabled .glass-page,
+.glassmorphism-enabled .glass-topbar,
+.glassmorphism-enabled .glass-strip {
+  background: transparent;
+}
+
+.appearance-bg-active .glass-page,
+.appearance-bg-active .glass-topbar,
+.appearance-bg-active .glass-strip {
+  background: transparent;
+}
+
+.glass-panel,
+.glass-page,
+.glass-topbar,
+.glass-strip {
+  transition: background-color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appearance-bg-layer {
+    transition: none;
+  }
+  .app-shell-header,
+  .app-shell-nav,
+  main.app-shell-content,
+  [data-dialog-content],
+  .popover-content,
+  .dropdown-menu-content,
+  [role="dialog"],
+  .glass-panel,
+  .glass-page,
+  .glass-topbar,
+  .glass-strip {
+    transition: none;
+  }
 }

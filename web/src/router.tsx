@@ -84,6 +84,7 @@ export const dashboardPages = {
     audit: () => import("./app/app/audit/page"),
     unibox: () => import("./app/app/unibox/page"),
     settingsLayout: () => import("./app/app/settings/layout"),
+    appearance: () => import("./app/app/settings/appearance/page"),
     profile: () => import("./app/app/settings/profile/page"),
     notifications: () => import("./app/app/settings/notifications/page"),
     security: () => import("./app/app/settings/security/page"),
@@ -365,6 +366,7 @@ const settingsIndex = forward(settingsRoute, "/", "/app/settings/profile");
 const settingsChildren = [
     settingsIndex,
     dash(settingsRoute, "profile", dashboardPages.profile, "Profile"),
+    dash(settingsRoute, "appearance", dashboardPages.appearance, "Appearance"),
     dash(settingsRoute, "notifications", dashboardPages.notifications, "Notifications"),
     dash(settingsRoute, "security", dashboardPages.security, "Security"),
     dash(settingsRoute, "members", dashboardPages.members, "Members", loaders.membersLoader),

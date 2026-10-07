@@ -29,6 +29,8 @@ import { CommandPalette } from "@/components/shared/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { GlobalCursorsProvider } from "@/components/app/presence/GlobalCursors";
 import AgentPanel from "@/components/app/agent/AgentPanel";
+import { BackgroundLayer } from "@/components/appearance/BackgroundLayer";
+import { useAppStore } from "@/stores";
 import { useRouteKey } from "@/hooks/useRouteKey";
 import { useScrollMemory, type ScrollStore } from "@/hooks/useScrollMemory";
 import { RouteFallback } from "./RouteStates";
@@ -38,6 +40,10 @@ const entryOffsets: ScrollStore = new Map();
 
 export function AppShell() {
     useKeyboardShortcuts();
+
+    const glassmorphismEnabled = useAppStore((state) => state.glassmorphismEnabled)
+    const glassOpacity = useAppStore((state) => state.glassOpacity)
+    const glassBlur = useAppStore((state) => state.glassBlur)
 
     // Mobile nav drawer. On >=md the sidebar is a static column and this is
     // ignored; below md it's an off-canvas drawer toggled from the header.
@@ -56,8 +62,16 @@ export function AppShell() {
     if (scrollFor.routeKey !== routeKey) setScrollFor({ routeKey, key: `${routeKey}@${entryKey}` });
     useScrollMemory(scrollRef, scrollFor.key, entryOffsets);
 
+    useEffect(() => {
+        const root = document.documentElement
+        root.style.setProperty('--app-glass-opacity', String(glassmorphismEnabled ? glassOpacity / 100 : 0.15))
+        root.style.setProperty('--app-glass-blur', `${glassBlur}px`)
+    }, [glassmorphismEnabled, glassOpacity, glassBlur])
+
     return (
-        <div className="fixed inset-0 flex flex-col">
+        <div className={`fixed inset-0 flex flex-col ${glassmorphismEnabled ? "glassmorphism-enabled" : ""}`}>
+            <BackgroundLayer />
+
             <SkyChrome />
 
             <div className="relative z-10 flex flex-col h-full">
@@ -72,11 +86,11 @@ export function AppShell() {
                 <div className="flex-1 flex min-h-0">
                     <AppNav open={navOpen} onClose={() => setNavOpen(false)} />
 
-                    {/* Content panel — pure white work surface. The inner
-                        corner is softened (rounded-tl-2xl) only on >=md, where
+                    {/* Content panel — supports custom backgrounds and glassmorphism.
+                        The inner corner is softened (rounded-tl-2xl) only on >=md, where
                         the sidebar sits beside it; on mobile the panel is
                         full-bleed with just a top hairline. */}
-                    <main className="wb-panel flex-1 min-w-0 bg-white overflow-hidden border-t border-slate-200/70 md:rounded-tl-2xl md:border-l">
+                    <main className="wb-panel app-shell-content flex-1 min-w-0 bg-background overflow-hidden border-t border-slate-200/70 md:rounded-tl-2xl md:border-l">
                         {/* Dark theme only: a soft light from the top edge, laid over every page whatever it paints. */}
                         <div aria-hidden className="pointer-events-none relative z-20 hidden h-0 dark:block">
                             <div className="wb-panel-light absolute inset-x-0 top-0 h-[420px]" />

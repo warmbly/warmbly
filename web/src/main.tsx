@@ -50,8 +50,9 @@ const idle = (cb: () => void) =>
   typeof window.requestIdleCallback === 'function' ? window.requestIdleCallback(cb) : setTimeout(cb, 1200)
 let warmed = false
 const stopWarming = router.subscribe('onResolved', ({ toLocation }) => {
-  if (warmed || !toLocation.pathname.startsWith('/app')) return
-  warmed = true
-  idle(warmPages)
-  stopWarming()
+  if (!warmed && toLocation.pathname.startsWith('/app')) {
+    warmed = true
+    idle(warmPages)
+    stopWarming()
+  }
 })

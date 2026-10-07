@@ -4,6 +4,7 @@ export {
   useIsAuthenticated,
   useTheme,
   useSidebar,
+  useAppearance,
   useCurrentOrg,
   useOrganizations,
   useCachedData,

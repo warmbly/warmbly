@@ -22,6 +22,7 @@ export function clearClientSession(queryClient?: QueryClient) {
     store.logout();
     store.setOrganizations([]);
     store.setCurrentOrganization(null);
+    store.resetAppearance();
 
     // Drop persisted slices (currentOrganization, theme, etc.). Theme
     // re-hydrates from the system preference on next mount, which is the right

@@ -3,6 +3,18 @@ import { applyTheme, readStoredTheme, resolveTheme, storeTheme, type ResolvedThe
 
 export type { Theme } from '@/lib/theme'
 
+export type BackgroundPreset = 'default' | 'gradient-1' | 'gradient-4' | 'gradient-5'
+
+export interface AppearanceState {
+  glassmorphismEnabled: boolean
+  glassOpacity: number
+  glassBlur: number
+  backgroundPreset: BackgroundPreset
+  backgroundImage: string
+  backgroundBlur: number
+  backgroundOpacity: number
+}
+
 // Unibox list-column bounds. These are the preference's bounds; what the column
 // can actually render is additionally capped against the viewport at the drag
 // site, so the stored value survives a narrow window instead of being rewritten
@@ -13,6 +25,36 @@ export const UNIBOX_LIST_DEFAULT_WIDTH = 360
 
 // A favorite's own name is a rail label, so it stays about as long as one.
 export const UNIBOX_RAIL_FAVORITE_NAME_MAX = 40
+
+export const clampAppearanceGlassOpacity = (v: unknown): number => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return 88
+  return Math.round(Math.min(100, Math.max(60, v)))
+}
+
+export const clampAppearanceGlassBlur = (v: unknown): number => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return 12
+  return Math.round(Math.min(40, Math.max(0, v)))
+}
+
+export const clampAppearanceBackgroundBlur = (v: unknown): number => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return 0
+  return Math.round(Math.min(40, Math.max(0, v)))
+}
+
+export const clampAppearanceBackgroundOpacity = (v: unknown): number => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return 100
+  return Math.round(Math.min(100, Math.max(0, v)))
+}
+
+export const sanitizeBackgroundPreset = (v: unknown): BackgroundPreset => {
+  if (v === 'gradient-1' || v === 'gradient-4' || v === 'gradient-5') return v
+  return 'default'
+}
+
+export const sanitizeBackgroundImage = (v: unknown): string => {
+  if (typeof v !== 'string') return ''
+  return v
+}
 
 // A scope pinned to the rail's Favorites section, with an optional name of its own.
 export interface UniboxRailFavorite {
@@ -29,100 +71,7 @@ export const clampUniboxRailWidth = (w: unknown): number => {
   return Math.round(Math.min(UNIBOX_RAIL_MAX_WIDTH, Math.max(UNIBOX_RAIL_MIN_WIDTH, w)))
 }
 
-// Exported because rehydration bypasses the setter: zustand's default merge
-// writes localStorage straight into state, so the clamp has to run there too or
-// a hand-edited (or newly out-of-range) value reaches the DOM unchecked.
-export const clampUniboxListWidth = (w: unknown): number => {
-  // Only a real number survives. Coercing would be worse than useless here:
-  // `Number(null)` is 0, so a null in storage would silently become the minimum
-  // width instead of falling back to the default.
-  if (typeof w !== 'number' || !Number.isFinite(w)) return UNIBOX_LIST_DEFAULT_WIDTH
-  return Math.round(Math.min(UNIBOX_LIST_MAX_WIDTH, Math.max(UNIBOX_LIST_MIN_WIDTH, w)))
-}
-
-export interface UISlice {
-  // Sidebar. Deliberately NOT the old `sidebarCollapsed` key: that one was
-  // persisted and toggled by `b` for a long time while nothing rendered from
-  // it, so a stored `true` reflects a keystroke nobody remembers. A new key
-  // starts everyone expanded without needing a migration, which zustand would
-  // not have run anyway: it only migrates a store whose version is a number,
-  // and every store written before this had no version field at all.
-  navCollapsed: boolean
-  sidebarMobileOpen: boolean
-  // Folded sidebar sections, keyed by the section's stable id (not its label).
-  navCollapsedSections: Record<string, boolean>
-
-  // Unibox scope rail: folded sections (stable ids, same shape as the nav map)
-  // and the rows the user hid, as the rail's scopeKey values.
-  uniboxRailFolded: Record<string, boolean>
-  uniboxRailHidden: string[]
-  // Row order per section and the order of the sections; absent means default.
-  uniboxRailOrder: Record<string, string[]>
-  uniboxRailSectionOrder: string[]
-  // Favorites, in rail order; each key is a scopeKey from any section.
-  uniboxRailFavorites: UniboxRailFavorite[]
-  // Whose saved rail the four fields above hold ("<userId>:<orgId>"); null
-  // for a layout made before the rail was saved to the account.
-  uniboxRailOwner: string | null
-
-  // Theme
-  theme: Theme
-  resolvedTheme: ResolvedTheme
-
-  // Modals
-  tagsModalOpen: boolean
-  foldersModalOpen: boolean
-  addEmailModalOpen: boolean
-  shortcutsModalOpen: boolean
-  commandPaletteOpen: boolean
-
-  // AI assistant panel (right-side, persistent across routes)
-  aiAssistantOpen: boolean
-
-  // Unibox layout preferences (persisted). The list column is drag-resizable
-  // against the thread pane; the CRM rail remembers the last explicit toggle
-  // so closing it survives opening the next thread.
-  uniboxListWidth: number
-  uniboxRailWidth: number
-  uniboxContactRailOpen: boolean
-
-  // Actions - Sidebar
-  toggleSidebar: () => void
-  setSidebarCollapsed: (collapsed: boolean) => void
-  setSidebarMobileOpen: (open: boolean) => void
-  toggleNavSection: (id: string) => void
-
-  // Actions - Unibox scope rail
-  toggleUniboxRailSection: (id: string) => void
-  toggleUniboxRailRow: (key: string) => void
-  setUniboxRailFolded: (folded: Record<string, boolean>) => void
-  setUniboxRailRowsHidden: (keys: string[], hidden: boolean) => void
-  setUniboxRailOrder: (section: string, keys: string[] | null) => void
-  setUniboxRailSectionOrder: (ids: string[]) => void
-  toggleUniboxRailFavorite: (key: string) => void
-  setUniboxRailFavorites: (favorites: UniboxRailFavorite[]) => void
-
-  // Actions - Theme
-  // origin is where the switch was asked for; the new theme spreads from it.
-  setTheme: (theme: Theme, origin?: ThemeOrigin) => void
-  setResolvedTheme: (theme: ResolvedTheme, origin?: ThemeOrigin) => void
-
-  // Actions - Modals
-  setTagsModalOpen: (open: boolean) => void
-  setFoldersModalOpen: (open: boolean) => void
-  setAddEmailModalOpen: (open: boolean) => void
-  setShortcutsModalOpen: (open: boolean) => void
-  setCommandPaletteOpen: (open: boolean) => void
-  setAIAssistantOpen: (open: boolean) => void
-  toggleAIAssistant: () => void
-
-  // Actions - Unibox layout
-  setUniboxListWidth: (width: number) => void
-  setUniboxRailWidth: (width: number) => void
-  setUniboxContactRailOpen: (open: boolean) => void
-}
-
-// Rehydration bypasses the setter, so a stored value that is not a map of
+// Exported because rehydration bypasses the setter, so a stored value that is not a map of
 // booleans (older build, hand edit) falls back to everything expanded.
 export const sanitizeNavCollapsedSections = (v: unknown): Record<string, boolean> => {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
@@ -182,6 +131,156 @@ export const applyRailOrder = (defaults: string[], stored: string[] | undefined)
   return out
 }
 
+// Exported because rehydration bypasses the setter: zustand's default merge
+// writes localStorage straight into state, so the clamp has to run there too or
+// a hand-edited (or newly out-of-range) value reaches the DOM unchecked.
+export const clampUniboxListWidth = (w: unknown): number => {
+  // Only a real number survives. Coercing would be worse than useless here:
+  // `Number(null)` is 0, so a null in storage would silently become the minimum
+  // width instead of falling back to the default.
+  if (typeof w !== 'number' || !Number.isFinite(w)) return UNIBOX_LIST_DEFAULT_WIDTH
+  return Math.round(Math.min(UNIBOX_LIST_MAX_WIDTH, Math.max(UNIBOX_LIST_MIN_WIDTH, w)))
+}
+
+export interface UISlice {
+  // Sidebar. Deliberately NOT the old `sidebarCollapsed` key: that one was
+  // persisted and toggled by `b` for a long time while nothing rendered from
+  // it, so a stored `true` reflects a keystroke nobody remembers. A new key
+  // starts everyone expanded without needing a migration, which zustand would
+  // not have run anyway: it only migrates a store whose version is a number,
+  // and every store written before this had no version field at all.
+  navCollapsed: boolean
+  sidebarMobileOpen: boolean
+  // Folded sidebar sections, keyed by the section's stable id (not its label).
+  navCollapsedSections: Record<string, boolean>
+
+  // Unibox scope rail: folded sections (stable ids, same shape as the nav map)
+  // and the rows the user hid, as the rail's scopeKey values.
+  uniboxRailFolded: Record<string, boolean>
+  uniboxRailHidden: string[]
+  // Row order per section and the order of the sections; absent means default.
+  uniboxRailOrder: Record<string, string[]>
+  uniboxRailSectionOrder: string[]
+  // Favorites, in rail order; each key is a scopeKey from any section.
+  uniboxRailFavorites: UniboxRailFavorite[]
+  // Whose saved rail the four fields above hold ("<userId>:<orgId>"); null
+  // for a layout made before the rail was saved to the account.
+  uniboxRailOwner: string | null
+
+  // Theme
+  theme: Theme
+  resolvedTheme: ResolvedTheme
+
+  // Appearance
+  glassmorphismEnabled: boolean
+  glassOpacity: number
+  glassBlur: number
+  backgroundPreset: BackgroundPreset
+  backgroundImage: string
+  backgroundBlur: number
+  backgroundOpacity: number
+
+  // Modals
+  tagsModalOpen: boolean
+  foldersModalOpen: boolean
+  addEmailModalOpen: boolean
+  shortcutsModalOpen: boolean
+  commandPaletteOpen: boolean
+
+  // AI assistant panel (right-side, persistent across routes)
+  aiAssistantOpen: boolean
+
+  // Unibox layout preferences (persisted). The list column is drag-resizable
+  // against the thread pane; the CRM rail remembers the last explicit toggle
+  // so closing it survives opening the next thread.
+  uniboxListWidth: number
+  uniboxRailWidth: number
+  uniboxContactRailOpen: boolean
+
+  // Actions - Sidebar
+  toggleSidebar: () => void
+  setSidebarCollapsed: (collapsed: boolean) => void
+  setSidebarMobileOpen: (open: boolean) => void
+  toggleNavSection: (id: string) => void
+
+  // Actions - Unibox scope rail
+  toggleUniboxRailSection: (id: string) => void
+  toggleUniboxRailRow: (key: string) => void
+  setUniboxRailFolded: (folded: Record<string, boolean>) => void
+  setUniboxRailRowsHidden: (keys: string[], hidden: boolean) => void
+  setUniboxRailOrder: (section: string, keys: string[] | null) => void
+  setUniboxRailSectionOrder: (ids: string[]) => void
+  toggleUniboxRailFavorite: (key: string) => void
+  setUniboxRailFavorites: (favorites: UniboxRailFavorite[]) => void
+
+  // Actions - Theme
+  // origin is where the switch was asked for; the new theme spreads from it.
+  setTheme: (theme: Theme, origin?: ThemeOrigin) => void
+  setResolvedTheme: (theme: ResolvedTheme, origin?: ThemeOrigin) => void
+
+  // Actions - Appearance
+  setGlassmorphismEnabled: (enabled: boolean) => void
+  setGlassOpacity: (opacity: number) => void
+  setGlassBlur: (blur: number) => void
+  setBackgroundPreset: (preset: BackgroundPreset) => void
+  setBackgroundImage: (url: string) => void
+  setBackgroundBlur: (blur: number) => void
+  setBackgroundOpacity: (opacity: number) => void
+  resetAppearance: () => void
+
+  // Actions - Modals
+  setTagsModalOpen: (tagsModalOpen: boolean) => void
+  setFoldersModalOpen: (foldersModalOpen: boolean) => void
+  setAddEmailModalOpen: (addEmailModalOpen: boolean) => void
+  setShortcutsModalOpen: (shortcutsModalOpen: boolean) => void
+  setCommandPaletteOpen: (commandPaletteOpen: boolean) => void
+  setAIAssistantOpen: (aiAssistantOpen: boolean) => void
+  toggleAIAssistant: () => void
+
+  // Actions - Unibox layout
+  setUniboxListWidth: (width: number) => void
+  setUniboxRailWidth: (width: number) => void
+  setUniboxContactRailOpen: (open: boolean) => void
+}
+
+const getInitialAppearance = (): AppearanceState => {
+  if (typeof window === 'undefined') {
+    return {
+      glassmorphismEnabled: false,
+      glassOpacity: 88,
+      glassBlur: 12,
+      backgroundPreset: 'default',
+      backgroundImage: '',
+      backgroundBlur: 0,
+      backgroundOpacity: 100,
+    }
+  }
+  try {
+    const raw = localStorage.getItem('warmbly-storage')
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AppearanceState>
+      return {
+        glassmorphismEnabled: typeof parsed.glassmorphismEnabled === 'boolean' ? parsed.glassmorphismEnabled : false,
+        glassOpacity: typeof parsed.glassOpacity === 'number' && Number.isFinite(parsed.glassOpacity) ? Math.max(60, Math.min(100, parsed.glassOpacity)) : 88,
+        glassBlur: typeof parsed.glassBlur === 'number' && Number.isFinite(parsed.glassBlur) ? Math.max(0, Math.min(40, parsed.glassBlur)) : 12,
+        backgroundPreset: parsed.backgroundPreset === 'gradient-1' || parsed.backgroundPreset === 'gradient-4' || parsed.backgroundPreset === 'gradient-5' ? parsed.backgroundPreset : 'default',
+        backgroundImage: typeof parsed.backgroundImage === 'string' ? parsed.backgroundImage : '',
+        backgroundBlur: typeof parsed.backgroundBlur === 'number' && Number.isFinite(parsed.backgroundBlur) ? Math.max(0, Math.min(40, parsed.backgroundBlur)) : 0,
+        backgroundOpacity: typeof parsed.backgroundOpacity === 'number' && Number.isFinite(parsed.backgroundOpacity) ? Math.max(0, Math.min(100, parsed.backgroundOpacity)) : 100,
+      }
+    }
+  } catch { /* ignore */ }
+  return {
+    glassmorphismEnabled: false,
+    glassOpacity: 88,
+    glassBlur: 12,
+    backgroundPreset: 'default',
+    backgroundImage: '',
+    backgroundBlur: 0,
+    backgroundOpacity: 100,
+  }
+}
+
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) => ({
   // Sidebar
   navCollapsed: false,
@@ -197,6 +296,9 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
   // Theme
   theme: readStoredTheme(),
   resolvedTheme: resolveTheme(readStoredTheme()),
+
+  // Appearance — initialized from localStorage; falls back to defaults.
+  ...getInitialAppearance(),
 
   // Modals
   tagsModalOpen: false,
@@ -270,6 +372,34 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
     set((state) => (state.resolvedTheme === resolvedTheme ? state : { resolvedTheme }))
   },
 
+  // Actions - Appearance
+  setGlassmorphismEnabled: (glassmorphismEnabled) =>
+    set((state) => (state.glassmorphismEnabled === glassmorphismEnabled ? state : { glassmorphismEnabled })),
+  setGlassOpacity: (glassOpacity) => {
+    const next = clampAppearanceGlassOpacity(glassOpacity)
+    set((state) => (state.glassOpacity === next ? state : { glassOpacity: next }))
+  },
+  setGlassBlur: (glassBlur) => {
+    const next = clampAppearanceGlassBlur(glassBlur)
+    set((state) => (state.glassBlur === next ? state : { glassBlur: next }))
+  },
+  setBackgroundPreset: (backgroundPreset) =>
+    set((state) => (state.backgroundPreset === backgroundPreset ? state : { backgroundPreset })),
+  setBackgroundImage: (backgroundImage) =>
+    set((state) => (state.backgroundImage === backgroundImage ? state : { backgroundImage })),
+  setBackgroundBlur: (backgroundBlur) => {
+    const next = clampAppearanceBackgroundBlur(backgroundBlur)
+    set((state) => (state.backgroundBlur === next ? state : { backgroundBlur: next }))
+  },
+  setBackgroundOpacity: (backgroundOpacity) => {
+    const next = clampAppearanceBackgroundOpacity(backgroundOpacity)
+    set((state) => (state.backgroundOpacity === next ? state : { backgroundOpacity: next }))
+  },
+  resetAppearance: () => {
+    const defaults = getInitialAppearance()
+    set(defaults)
+  },
+
   // Actions - Modals
   setTagsModalOpen: (tagsModalOpen) =>
     set((state) => (state.tagsModalOpen === tagsModalOpen ? state : { tagsModalOpen })),
@@ -298,4 +428,4 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set, get) 
     set((state) =>
       state.uniboxContactRailOpen === uniboxContactRailOpen ? state : { uniboxContactRailOpen },
     ),
-})
+  })

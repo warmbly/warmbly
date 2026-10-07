@@ -40,7 +40,7 @@ export function Page({ children, className }: {
     width?: "default" | "wide" | "full";
 }) {
     return (
-        <div className={cn("flex flex-col min-h-full bg-white", className)}>
+        <div className={cn("flex flex-col min-h-full bg-white glass-page", className)}>
             {children}
         </div>
     );
@@ -67,7 +67,7 @@ export function PageTopbar({
             className={cn(
                 // Single 48px row on >=md; on mobile it wraps so action
                 // clusters drop to a second line instead of widening the page.
-                "min-h-12 md:h-12 px-5 py-1.5 md:py-0 border-b border-slate-200 flex flex-wrap md:flex-nowrap items-center gap-3 gap-y-1.5 shrink-0 bg-white dark:bg-[rgb(17_18_20/0.72)] dark:backdrop-blur-md sticky top-0 z-10",
+                "min-h-12 md:h-12 px-5 py-1.5 md:py-0 border-b border-slate-200 flex flex-wrap md:flex-nowrap items-center gap-3 gap-y-1.5 shrink-0 bg-white sticky top-0 z-10 glass-topbar dark:bg-[rgb(17_18_20/0.72)] dark:backdrop-blur-md",
                 className,
             )}
         >
@@ -162,7 +162,7 @@ export function StatStrip({ children, cols = 4 }: { children: React.ReactNode; c
     return (
         <div
             className={cn(
-                "grid border-b border-slate-200 shrink-0 bg-white",
+                "grid border-b border-slate-200 shrink-0 bg-white glass-strip",
                 // On the mobile 2-col layout, drop the right-hand hairline on
                 // cells that end a row so no stray rule hugs the panel edge.
                 "max-md:[&>*:nth-child(2n)]:border-r-0 max-md:[&>*:last-child]:border-r-0",

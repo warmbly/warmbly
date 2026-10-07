@@ -3,7 +3,7 @@ import { devtools, persist } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
 import { createUserSlice, type UserSlice } from './slices/userSlice'
 import { createOrganizationSlice, type OrganizationSlice } from './slices/organizationSlice'
-import { createUISlice, clampUniboxListWidth, clampUniboxRailWidth, sanitizeNavCollapsedSections, sanitizeUniboxRailFavorites, sanitizeUniboxRailHidden, sanitizeUniboxRailOrder, type UISlice } from './slices/uiSlice'
+import { createUISlice, clampUniboxListWidth, clampUniboxRailWidth, sanitizeNavCollapsedSections, sanitizeUniboxRailFavorites, sanitizeUniboxRailHidden, sanitizeUniboxRailOrder, clampAppearanceGlassOpacity, clampAppearanceGlassBlur, clampAppearanceBackgroundBlur, clampAppearanceBackgroundOpacity, sanitizeBackgroundPreset, sanitizeBackgroundImage, type UISlice } from './slices/uiSlice'
 import { createShortcutSlice, type ShortcutSlice } from './slices/shortcutSlice'
 import { createDataSlice, type DataSlice } from './slices/dataSlice'
 import { createRealtimeSlice, type RealtimeSlice } from './slices/realtimeSlice'
@@ -66,11 +66,25 @@ export const useAppStore = create<AppStore>()(
             // The theme lives under its own key, which index.html reads before first paint.
             theme: current.theme,
             resolvedTheme: current.resolvedTheme,
+            glassOpacity: clampAppearanceGlassOpacity(p.glassOpacity),
+            glassBlur: clampAppearanceGlassBlur(p.glassBlur),
+            backgroundPreset: sanitizeBackgroundPreset(p.backgroundPreset),
+            backgroundImage: sanitizeBackgroundImage(p.backgroundImage),
+            backgroundBlur: clampAppearanceBackgroundBlur(p.backgroundBlur),
+            backgroundOpacity: clampAppearanceBackgroundOpacity(p.backgroundOpacity),
           }
         },
         partialize: (state) => ({
           // Only persist UI preferences
           navCollapsed: state.navCollapsed,
+          // Appearance
+          glassmorphismEnabled: state.glassmorphismEnabled,
+          glassOpacity: state.glassOpacity,
+          glassBlur: state.glassBlur,
+          backgroundPreset: state.backgroundPreset,
+          backgroundImage: state.backgroundImage,
+          backgroundBlur: state.backgroundBlur,
+          backgroundOpacity: state.backgroundOpacity,
           navCollapsedSections: state.navCollapsedSections,
           // Assistant panel layout (edge + width + floating window geometry)
           agentSide: state.agentSide,
@@ -113,6 +127,38 @@ export const useSidebar = () =>
     setCollapsed: state.setSidebarCollapsed,
     setMobileOpen: state.setSidebarMobileOpen,
   })))
+export const useAppearance = () => {
+  const glassmorphismEnabled = useAppStore((state) => state.glassmorphismEnabled)
+  const glassOpacity = useAppStore((state) => state.glassOpacity)
+  const glassBlur = useAppStore((state) => state.glassBlur)
+  const backgroundPreset = useAppStore((state) => state.backgroundPreset)
+  const backgroundImage = useAppStore((state) => state.backgroundImage)
+  const backgroundBlur = useAppStore((state) => state.backgroundBlur)
+  const backgroundOpacity = useAppStore((state) => state.backgroundOpacity)
+  const setGlassmorphismEnabled = useAppStore((state) => state.setGlassmorphismEnabled)
+  const setGlassOpacity = useAppStore((state) => state.setGlassOpacity)
+  const setGlassBlur = useAppStore((state) => state.setGlassBlur)
+  const setBackgroundPreset = useAppStore((state) => state.setBackgroundPreset)
+  const setBackgroundImage = useAppStore((state) => state.setBackgroundImage)
+  const setBackgroundBlur = useAppStore((state) => state.setBackgroundBlur)
+  const setBackgroundOpacity = useAppStore((state) => state.setBackgroundOpacity)
+  return {
+    glassmorphismEnabled,
+    glassOpacity,
+    glassBlur,
+    backgroundPreset,
+    backgroundImage,
+    backgroundBlur,
+    backgroundOpacity,
+    setGlassmorphismEnabled,
+    setGlassOpacity,
+    setGlassBlur,
+    setBackgroundPreset,
+    setBackgroundImage,
+    setBackgroundBlur,
+    setBackgroundOpacity,
+  }
+}
 export const useCurrentOrg = () => useAppStore((state) => state.currentOrganization)
 export const useOrganizations = () =>
   useAppStore(useShallow((state) => ({
