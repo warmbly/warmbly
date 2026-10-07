@@ -197,6 +197,7 @@ var Tables = []Table{
 	{
 		Name: "email_accounts", Group: models.OrgDataGroupCore,
 		Scope: scopeOrg,
+		// Send cooldowns and recovery holds travel as mailbox columns; never reset them.
 		// Worker placement is a property of the instance the mailbox runs on,
 		// never of the mailbox. The destination assigns its own.
 		//

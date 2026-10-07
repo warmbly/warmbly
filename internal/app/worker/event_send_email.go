@@ -322,11 +322,15 @@ func (w *WorkerService) sendEmailError(taskID uuid.UUID, emailID uuid.UUID, mail
 
 // sendEmailFailure sends a generic failure result (for non-MailError cases)
 func (w *WorkerService) sendEmailFailure(taskID uuid.UUID, emailID uuid.UUID, mail *wmail.WMail, errorMsg string) {
+	now := time.Now().UTC()
 	result := models.SendEmailResult{
 		TaskID:         taskID,
 		Success:        false,
 		LegacyErrorMsg: errorMsg,
-		SentAt:         time.Now(),
+		SentAt:         now,
+		Error: &models.EmailSendError{Code: string(errx.MailErrorCodeServerUnreachable), Message: errorMsg, Failure: &errx.SendFailure{
+			Protocol: "internal", Stage: "prepare", Disposition: errx.SendRetry, Scope: "mailbox", ObservedAt: now,
+		}},
 	}
 
 	if err := w.Produce(models.JobEventTypeEmailFailed, taskID.String(), result); err != nil {

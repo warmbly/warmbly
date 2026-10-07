@@ -59,7 +59,7 @@ for app in web admin; do
   [ -f "$app/public/_redirects" ] || fail "$app/public/_redirects is missing; deep links would 404 on a static host"
   if [ "$app" = web ]; then
     [ -f "$app/public/404.html" ] || fail "web needs a 404.html to disable Pages' implicit SPA fallback for assets"
-    grep -qE '^/app/\*[[:space:]]+/index\.html[[:space:]]+200' "$app/public/_redirects" \
+    grep -qE '^/app/\*[[:space:]]+/[[:space:]]+200' "$app/public/_redirects" \
       || fail "web has no dashboard deep-link rewrite"
     if grep -qE '^/\*[[:space:]]+/index\.html' "$app/public/_redirects"; then
       fail "web rewrites missing assets to HTML"

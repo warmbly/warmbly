@@ -319,7 +319,7 @@ func (r *taskRepository) GetTask(ctx context.Context, taskID uuid.UUID) (*Task, 
 	`
 
 	task := &Task{}
-	err := r.db.QueryRow(ctx, query, taskID).Scan(
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, taskID).Scan(
 		&task.ID,
 		&task.TaskType,
 		&task.EmailAccountID,
@@ -384,7 +384,7 @@ func (r *taskRepository) GetCampaignTask(ctx context.Context, taskID uuid.UUID) 
 	`
 
 	campaignTask := &CampaignTask{}
-	err := r.db.QueryRow(ctx, query, taskID).Scan(
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, taskID).Scan(
 		&campaignTask.TaskID,
 		&campaignTask.CampaignID,
 		&campaignTask.ContactID,
@@ -837,7 +837,7 @@ func (r *taskRepository) UpdateTaskStatus(ctx context.Context, taskID uuid.UUID,
 		WHERE id = $2
 	`
 
-	_, err := r.db.Exec(ctx, query, status, taskID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, status, taskID)
 	return err
 }
 
@@ -918,7 +918,7 @@ func (r *taskRepository) RecordTaskFailure(ctx context.Context, taskID uuid.UUID
 		    message = EXCLUDED.message
 	`
 
-	_, err = r.db.Exec(ctx, query, taskID, title, message)
+	_, err = resultDB(ctx, r.db).Exec(ctx, query, taskID, title, message)
 	return err
 }
 
@@ -1116,7 +1116,7 @@ func (r *taskRepository) UpdateTaskStatusWithLock(ctx context.Context, taskID uu
 // message_id <> ”, so without persisting it here the reply path never finds a
 // prior message to reply to and warmup conversations never thread.
 func (r *taskRepository) UpdateTaskMessageID(ctx context.Context, taskID uuid.UUID, messageID string) error {
-	_, err := r.db.Exec(ctx,
+	_, err := resultDB(ctx, r.db).Exec(ctx,
 		`UPDATE tasks SET message_id = $1, updated_at = NOW() WHERE id = $2`,
 		messageID, taskID)
 	return err
@@ -1128,7 +1128,7 @@ func (r *taskRepository) UpdateTaskMessageID(ctx context.Context, taskID uuid.UU
 // Subject and In-Reply-To are not enough (issue #472). Guarded on a change so
 // the common "already recorded" case writes nothing.
 func (r *taskRepository) UpdateTaskThreadID(ctx context.Context, taskID uuid.UUID, threadID string) error {
-	_, err := r.db.Exec(ctx,
+	_, err := resultDB(ctx, r.db).Exec(ctx,
 		`UPDATE tasks SET thread_id = $1, updated_at = NOW() WHERE id = $2 AND thread_id <> $1`,
 		threadID, taskID)
 	return err

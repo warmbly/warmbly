@@ -205,6 +205,9 @@ func (w *WMail) Send(ctx context.Context, req *SendRequest) *SendResult {
 		if result.Success {
 			return result
 		}
+		if result.Error != nil && result.Error.Failure != nil {
+			return result
+		}
 
 		// Don't retry critical/auth errors - only transient ones.
 		if result.Error != nil && result.Error.Type == errx.MailErrorCritical {
@@ -300,6 +303,16 @@ func (w *WMail) sendViaGmail(ctx context.Context, req *SendRequest, bodyHTML str
 	if err != nil {
 		// Convert to MailError using goog.HandleError
 		if mailErr := goog.HandleError(err); mailErr != nil {
+			if mailErr.Failure == nil && mailErr.Type != errx.MailErrorCritical {
+				mailErr = errx.WithSendFailure(mailErr, errx.SendFailure{Provider: "google", Protocol: "http",
+					Stage: "submit", Scope: "mailbox", Disposition: errx.SendAmbiguous, ObservedAt: time.Now().UTC()})
+			}
+			if mailErr.Failure != nil && mailErr.Failure.Status >= 500 {
+				mailErr.Failure.Disposition = errx.SendAmbiguous
+			}
+			if mailErr.Failure != nil {
+				mailErr.Failure.Stage = "submit"
+			}
 			result.Error = mailErr
 		} else {
 			// Generic error
@@ -551,6 +564,14 @@ func DetermineErrorEventType(err *errx.MailError) models.JobEventType {
 	if err == nil {
 		return models.JobEventTypeEmailFailed
 	}
+	if err.Failure != nil {
+		switch err.Failure.Disposition {
+		case errx.SendRetry, errx.SendAmbiguous:
+			return models.JobEventTypeEmailServerError
+		case errx.SendThrottle:
+			return models.JobEventTypeEmailRateLimited
+		}
+	}
 
 	switch err.Code {
 	case errx.MailErrorCodeGoogleAuth, errx.MailErrorCodeAuthenticationFailed, errx.MailErrorCodeInvalidCredentials:
@@ -579,6 +600,7 @@ func MailErrorToSendError(err *errx.MailError) *models.EmailSendError {
 	userInfo := err.GetUserErrorInfo()
 
 	return &models.EmailSendError{
+		Failure:        err.Failure,
 		Code:           string(err.Code),
 		Type:           string(err.Type),
 		Message:        err.Message,

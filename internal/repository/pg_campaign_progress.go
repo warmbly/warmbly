@@ -468,7 +468,7 @@ func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID
 // Guarded on sent_at IS NULL so a reservation that was stamped in the meantime
 // (the worker answered first) is never released.
 func (r *campaignProgressRepository) ReleaseSend(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, newLead bool) error {
-	tx, err := r.db.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.db)
 	if err != nil {
 		return err
 	}
@@ -480,8 +480,9 @@ func (r *campaignProgressRepository) ReleaseSend(ctx context.Context, campaignID
 		SET dispatched_at = NULL, dispatch_task_id = NULL
 		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
 		  AND sent_at IS NULL AND dispatched_at IS NOT NULL
+		  AND ($4::uuid IS NULL OR dispatch_task_id = $4 OR dispatch_task_id IS NULL)
 		RETURNING true
-	`, campaignID, contactID, sequenceID).Scan(&released)
+	`, campaignID, contactID, sequenceID, resultTaskID(ctx)).Scan(&released)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -545,12 +546,13 @@ func (r *campaignProgressRepository) RecordEmailSent(ctx context.Context, campai
 // somebody really reserved, and on sent_at so it never moves a stamp that is
 // already there.
 func (r *campaignProgressRepository) StampDispatchedSend(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error) {
-	tag, err := r.db.Exec(ctx, `
+	tag, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE campaign_contact_progress
 		SET sent_at = NOW(), failed_at = NULL, failure_reason = ''
 		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
 		  AND sent_at IS NULL AND dispatched_at IS NOT NULL
-	`, campaignID, contactID, sequenceID)
+		  AND ($4::uuid IS NULL OR dispatch_task_id = $4 OR dispatch_task_id IS NULL)
+	`, campaignID, contactID, sequenceID, resultTaskID(ctx))
 	if err != nil {
 		return false, err
 	}
@@ -619,6 +621,7 @@ func (r *campaignProgressRepository) WalkBackSend(ctx context.Context, campaignI
 			    failure_reason = $4
 			WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
 			  AND (sent_at IS NOT NULL OR dispatched_at IS NOT NULL)
+			  AND ($6::uuid IS NULL OR dispatch_task_id = $6 OR dispatch_task_id IS NULL)
 			RETURNING send_attempts
 		), unbound AS (
 			UPDATE campaign_leads cl
@@ -635,7 +638,7 @@ func (r *campaignProgressRepository) WalkBackSend(ctx context.Context, campaignI
 		SELECT send_attempts FROM walked
 	`
 	var attempts int
-	err := r.db.QueryRow(ctx, query, campaignID, contactID, sequenceID, reason, inc).Scan(&attempts)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, campaignID, contactID, sequenceID, reason, inc, resultTaskID(ctx)).Scan(&attempts)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, false, false, nil
@@ -759,7 +762,7 @@ func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, ca
 // the contact.
 func (r *campaignProgressRepository) HasSentSteps(ctx context.Context, campaignID, contactID uuid.UUID) (bool, error) {
 	var has bool
-	err := r.db.QueryRow(ctx, `
+	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM campaign_contact_progress
 			WHERE campaign_id = $1 AND contact_id = $2 AND sent_at IS NOT NULL
@@ -979,7 +982,7 @@ func (r *campaignProgressRepository) RecordEmailBounced(ctx context.Context, cam
 		  AND bounced_at IS NULL
 	`
 
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID)
 	return err
 }
 

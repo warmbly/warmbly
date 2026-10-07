@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/errx"
 	"golang.org/x/oauth2"
 )
 
@@ -103,14 +104,15 @@ type TrackingInfo struct {
 
 // EmailSendError contains detailed error information for failed email sends
 type EmailSendError struct {
-	Code           string `json:"code" avro:"code"`
-	Type           string `json:"type" avro:"type"`
-	Message        string `json:"message" avro:"message"`
-	ResolveMethod  string `json:"resolve_method" avro:"resolve_method"`
-	UserVisible    bool   `json:"user_visible" avro:"user_visible"`
-	UserTitle      string `json:"user_title,omitempty" avro:"user_title"`
-	UserMessage    string `json:"user_message,omitempty" avro:"user_message"`
-	ActionRequired string `json:"action_required,omitempty" avro:"action_required"`
+	Failure        *errx.SendFailure `json:"failure,omitempty" avro:"failure"`
+	Code           string            `json:"code" avro:"code"`
+	Type           string            `json:"type" avro:"type"`
+	Message        string            `json:"message" avro:"message"`
+	ResolveMethod  string            `json:"resolve_method" avro:"resolve_method"`
+	UserVisible    bool              `json:"user_visible" avro:"user_visible"`
+	UserTitle      string            `json:"user_title,omitempty" avro:"user_title"`
+	UserMessage    string            `json:"user_message,omitempty" avro:"user_message"`
+	ActionRequired string            `json:"action_required,omitempty" avro:"action_required"`
 	// Recipient is the address a refusal named, when the server refused one
 	// recipient rather than the message.
 	Recipient string `json:"recipient,omitempty" avro:"recipient"`

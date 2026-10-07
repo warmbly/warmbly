@@ -488,12 +488,12 @@ func (r *placementRepository) SetProbeMessageIDByTask(ctx context.Context, taskI
 	if strings.TrimSpace(messageID) == "" {
 		return nil
 	}
-	_, err := r.db.Exec(ctx, `UPDATE placement_results SET message_id = $2 WHERE task_id = $1`, taskID, messageID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, `UPDATE placement_results SET message_id = $2 WHERE task_id = $1`, taskID, messageID)
 	return err
 }
 
 func (r *placementRepository) FailProbeByTask(ctx context.Context, taskID uuid.UUID, reason string) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE placement_results SET folder = 'failed', error = $2, detected_at = NOW()
 		WHERE task_id = $1 AND folder = 'pending'
 	`, taskID, truncateRunes(reason, 500))

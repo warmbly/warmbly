@@ -4,11 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/warmbly/warmbly/internal/errx"
 )
 
@@ -35,43 +32,30 @@ func HandleError(resp *http.Response) *errx.MailError {
 	var env graphErrorEnvelope
 	_ = json.Unmarshal(body, &env)
 
-	logError := func() {
-		log.Debug().
-			Int("status", resp.StatusCode).
-			Str("code", env.Error.Code).
-			Str("message", env.Error.Message).
-			Msg("Graph API error")
-	}
-
+	now := time.Now().UTC()
+	failure := errx.SendFailure{Provider: "microsoft", Protocol: "http", Status: resp.StatusCode,
+		Cause: errx.SafeProviderCode(env.Error.Code), Scope: "mailbox", ObservedAt: now,
+		Disposition: errx.SendRetry, RetryAt: errx.RetryAfterAt(resp.Header.Get("Retry-After"), now)}
+	base := errx.ErrMailServerUnreachable
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return errx.ErrMailAuthenticationFailed
+		base, failure.Disposition = errx.ErrMailAuthenticationFailed, errx.SendAuth
 	case http.StatusForbidden:
-		return errx.ErrMailAuthorizationFailed
+		base, failure.Disposition = errx.ErrMailAuthorizationFailed, errx.SendAuth
 	case http.StatusNotFound:
-		logError()
-		return errx.ErrMailResourceNotFound
+		base, failure.Disposition = errx.ErrMailResourceNotFound, errx.SendPermanent
 	case http.StatusTooManyRequests:
-		mailErr := errx.MError(
-			errx.ErrMailSendingTooFast.Type,
-			errx.ErrMailSendingTooFast.Code,
-			errx.ErrMailSendingTooFast.Message,
-			errx.ErrMailSendingTooFast.ResolveMethod,
-		)
-		mailErr.RetryAfter = retryAfter(resp.Header.Get("Retry-After"), time.Now())
-		return mailErr
+		base, failure.Disposition = errx.ErrMailSendingTooFast, errx.SendThrottle
 	default:
-		logError()
-		return errx.ErrMailServerUnreachable
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			failure.Disposition = errx.SendPermanent
+		}
 	}
+	return errx.WithSendFailure(base, failure)
 }
 
 func retryAfter(value string, now time.Time) time.Duration {
-	value = strings.TrimSpace(value)
-	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
-		return time.Duration(seconds) * time.Second
-	}
-	if at, err := http.ParseTime(value); err == nil && at.After(now) {
+	if at := errx.RetryAfterAt(value, now); at != nil {
 		return at.Sub(now)
 	}
 	return 0

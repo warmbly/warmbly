@@ -67,7 +67,7 @@ func TestLiveGreylistedSendIsNotRecordedAsABounce(t *testing.T) {
 		taskID := f.stampSend(t, s)
 		if err := s.HandleEmailFailed(ctx, models.SendEmailResult{
 			TaskID: taskID, Success: false,
-			Error: &models.EmailSendError{Code: tc.code, Message: tc.reason},
+			Error: &models.EmailSendError{Code: tc.code, Message: tc.reason, Failure: &errx.SendFailure{Disposition: map[string]string{"greylisted": errx.SendRetry, "no such user": errx.SendPermanent}[tc.name], Scope: "recipient", Stage: "rcpt to"}},
 		}); err != nil {
 			t.Fatalf("%s: handle failed: %v", tc.name, err)
 		}

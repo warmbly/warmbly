@@ -930,7 +930,7 @@ func (r *warmupRepository) ColdRampStateForAccounts(ctx context.Context, account
 }
 
 func (r *warmupRepository) StampColdRampStart(ctx context.Context, accountID uuid.UUID) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE email_accounts
 		   SET cold_ramp_started_at = NOW()
 		 WHERE id = $1 AND cold_ramp_started_at IS NULL
@@ -1004,7 +1004,7 @@ func (r *warmupRepository) IncrementReplyCount(ctx context.Context, accountID uu
 
 // FailWarmupSend makes the task transition and counter refund one retryable write.
 func (r *warmupRepository) FailWarmupSend(ctx context.Context, accountID, taskID uuid.UUID, date time.Time, title, message string) error {
-	tx, err := r.db.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.db)
 	if err != nil {
 		return err
 	}
@@ -1591,7 +1591,7 @@ func (r *warmupRepository) RecordWarmupTokenDelivery(ctx context.Context, taskID
 	if messageID == "" {
 		return nil
 	}
-	_, err := r.db.Exec(ctx,
+	_, err := resultDB(ctx, r.db).Exec(ctx,
 		`UPDATE warmup_tokens SET sent_message_id = $2 WHERE task_id = $1`,
 		taskID, messageID)
 	return err
