@@ -94,8 +94,8 @@ func (f *crossTierFixture) memberOf(t *testing.T, org, poolID uuid.UUID, provenD
 	t.Helper()
 	id := uuid.New()
 	f.exec(t, `INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain, signature_html,
-	          provider, status, campaign_limit, min_wait_time, timezone)
-	      VALUES ($1, $2, $3, $4, 'Borrow', '', '', 'smtp_imap', 'active', 50, 600, 'UTC')`,
+	          provider, status, campaign_limit, min_wait_time, timezone, test_mode, test_send_enabled, test_receive_enabled)
+	      VALUES ($1, $2, $3, $4, 'Borrow', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', 'diagnostic', true, true)`,
 		id, f.user, org, "borrow-"+id.String()[:8]+"@test.local")
 	f.exec(t, `INSERT INTO warmup_pool_participants (pool_id, email_account_id, participant_role, health_state, joined_at)
 	      VALUES ($1, $2, 'sender_receiver', 'healthy', NOW() - make_interval(days => $3))`, poolID, id, provenDays)

@@ -37,6 +37,14 @@ func TestLiveSendRecoveryResolutionRequiresEvidenceAndRetainsUnknown(t *testing.
 	if _, err := f.pool.Exec(ctx, `DELETE FROM tasks WHERE id=$1`, unknown); err != nil {
 		t.Fatal(err)
 	}
+	if _, xerr := repo.Update(ctx, f.org.String(), f.sender.String(), resolve); xerr == nil {
+		t.Fatal("fresh inbox sync alone cleared outbound authentication hold")
+	}
+	evidence := uuid.New()
+	if _, err := f.pool.Exec(ctx, `INSERT INTO tasks(id,task_type,email_account_id,status,message_id,send_result_state,send_result_applied_at,send_executor_started_at)VALUES($1,'email',$2,'completed','evidence@example.test','sent',NOW(),NOW())`, evidence, f.sender); err != nil {
+		t.Fatal(err)
+	}
+	resolve.SendRecoveryResolution.EvidenceTaskID = &evidence
 	if _, xerr := repo.Update(ctx, f.org.String(), f.sender.String(), resolve); xerr != nil {
 		t.Fatal(xerr)
 	}

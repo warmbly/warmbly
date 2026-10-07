@@ -33,14 +33,6 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 				}); err != nil {
 					return fmt.Errorf("hold warmup spam move: %w", err)
 				}
-			case containsTrashFlag(e.Flags) && warmupDeletionCounts(rec, time.Now()):
-				// Gmail reports Delete as gaining the TRASH label and only
-				// reports the message gone when Trash is emptied, weeks later.
-				// The label is the owner's act, so it is judged here, on the
-				// same freshness rule as a removal; the later purge is then
-				// outside the window and reads as housekeeping.
-				hHarmer, _ := s.WarmupService.RecordTampering(ctx, e.EmailID, rec.MessageID, "deletion")
-				s.markRiskBandFromWarmupHealth(ctx, e.EmailID, hHarmer)
 			}
 			return nil
 		}

@@ -47,5 +47,5 @@ func coldCeilingFor(state repository.ColdRampState, mailboxCap int) int {
 	if state.ColdRampStartedAt != nil {
 		rampStart = *state.ColdRampStartedAt
 	}
-	return warmupramp.ColdCeiling(warmupDays, rampStart, state.Placements, now, mailboxCap)
+	return warmupramp.ColdCeiling(warmupDays, rampStart, state.Placements, now, mailboxCap, state.ConfirmedReplies)
 }

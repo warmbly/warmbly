@@ -217,24 +217,25 @@ type PoolLinkWarmupDeliveryQuery struct {
 
 // PoolLinkMailboxState is the per-mailbox view shown in both dashboards.
 type PoolLinkMailboxState struct {
-	ConsentCompletedAt *time.Time             `json:"consent_completed_at,omitempty"`
-	RemoteID           uuid.UUID              `json:"remote_id"`
-	EmailAccountID     uuid.UUID              `json:"email_account_id"`
-	Email              string                 `json:"email"`
-	Name               string                 `json:"name"`
-	Provider           string                 `json:"provider"`
-	Status             string                 `json:"status"`
-	EnrolledAt         time.Time              `json:"enrolled_at"`
-	Managed            bool                   `json:"managed"`
-	Warmup             *WarmupStatusInfo      `json:"warmup,omitempty"`
-	Health             *WarmupHealthInfo      `json:"health,omitempty"`
-	SentToday          int                    `json:"sent_today"`
-	Sent7d             int                    `json:"sent_7d"`
-	Replied7d          int                    `json:"replied_7d"`
-	SpamPlaced7d       int                    `json:"spam_placed_7d"`
-	Errors             []AccountError         `json:"errors,omitempty"`
-	AuthState          string                 `json:"auth_state"`
-	Settings           PoolLinkWarmupSettings `json:"settings"`
+	Participation      *DiagnosticParticipation `json:"participation,omitempty"`
+	ConsentCompletedAt *time.Time               `json:"consent_completed_at,omitempty"`
+	RemoteID           uuid.UUID                `json:"remote_id"`
+	EmailAccountID     uuid.UUID                `json:"email_account_id"`
+	Email              string                   `json:"email"`
+	Name               string                   `json:"name"`
+	Provider           string                   `json:"provider"`
+	Status             string                   `json:"status"`
+	EnrolledAt         time.Time                `json:"enrolled_at"`
+	Managed            bool                     `json:"managed"`
+	Warmup             *WarmupStatusInfo        `json:"warmup,omitempty"`
+	Health             *WarmupHealthInfo        `json:"health,omitempty"`
+	SentToday          int                      `json:"sent_today"`
+	Sent7d             int                      `json:"sent_7d"`
+	Replied7d          int                      `json:"replied_7d"`
+	SpamPlaced7d       int                      `json:"spam_placed_7d"`
+	Errors             []AccountError           `json:"errors,omitempty"`
+	AuthState          string                   `json:"auth_state"`
+	Settings           PoolLinkWarmupSettings   `json:"settings"`
 }
 
 // PoolLinkMailboxStanding is one enrolled mailbox's warmup standing, the
@@ -246,11 +247,25 @@ type PoolLinkMailboxStanding struct {
 
 // PoolLinkMailboxPatch updates a mailbox's ramp or lifecycle on the cloud.
 type PoolLinkMailboxPatch struct {
+	Participation *DiagnosticParticipation `json:"participation,omitempty"`
 	// Lifecycle is "pause", "resume" or empty.
 	Lifecycle string                   `json:"lifecycle,omitempty"`
 	Warmup    *PoolLinkWarmupSettings  `json:"warmup,omitempty"`
 	OAuth     *PoolLinkOAuthCredential `json:"oauth,omitempty"`
 	SMTPIMAP  *SmtpImap                `json:"smtp_imap,omitempty"`
+}
+
+type DiagnosticParticipation struct {
+	Mode                  TestParticipationMode `json:"mode"`
+	Send                  bool                  `json:"send"`
+	Receive               bool                  `json:"receive"`
+	SharedDailyLimit      *int                  `json:"shared_daily_limit,omitempty"`
+	RollingRecipientLimit *int                  `json:"rolling_recipient_limit,omitempty"`
+}
+
+func (p DiagnosticParticipation) Valid() bool {
+	return (p.Mode == TestParticipationDiagnostic || p.Mode == TestParticipationOff && !p.Send && !p.Receive) &&
+		(p.SharedDailyLimit == nil || *p.SharedDailyLimit >= 0) && (p.RollingRecipientLimit == nil || *p.RollingRecipientLimit >= 0)
 }
 
 // CloudLink is the self-hosted instance's single link row; Token is never serialized.

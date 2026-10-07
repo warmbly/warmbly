@@ -772,6 +772,10 @@ var Tables = []Table{
 		ResetOnImport: []string{"cloud_task_name", "send_executor_nonce", "send_executor_worker", "send_executor_started_at", "send_executor_result"},
 	},
 	{
+		Name: "outbound_attempts", Group: models.OrgDataGroupSending,
+		Scope: `email_account_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)`,
+	},
+	{
 		Name: "send_recovery_resolutions", Group: models.OrgDataGroupSending,
 		Scope: scopeOrg,
 		Owner: scopeOrg,

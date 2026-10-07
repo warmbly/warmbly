@@ -1660,6 +1660,7 @@ func Run(
 				poolLinkInstance.POST("/mailboxes", h.PoolLinkEnroll)
 				poolLinkInstance.GET("/mailboxes/:remoteId", h.PoolLinkGetMailbox)
 				poolLinkInstance.PATCH("/mailboxes/:remoteId", h.PoolLinkPatchMailbox)
+				poolLinkInstance.PATCH("/mailboxes/:remoteId/participation", h.PoolLinkPatchMailbox)
 				poolLinkInstance.DELETE("/mailboxes/:remoteId", h.PoolLinkUnenroll)
 				// Cloud-managed mailboxes: consent on this deployment's OAuth app, brokered tokens.
 				poolLinkInstance.POST("/oauth/start", h.PoolLinkOAuthStart)
@@ -1700,6 +1701,7 @@ func Run(
 				members.DELETE("/mailboxes/:id/enroll", h.CloudLinkUnenroll)
 				members.POST("/mailboxes/:id/pause", h.CloudLinkPause)
 				members.POST("/mailboxes/:id/resume", h.CloudLinkResume)
+				members.PATCH("/mailboxes/:id/participation", h.CloudLinkParticipation)
 				members.POST("/oauth/start", h.CloudLinkOAuthStart)
 				members.POST("/oauth/finish", h.CloudLinkOAuthFinish)
 				operator := cloudLink.Group("", m.AdminMiddleware(), middleware.RequireAdminPermission(models.AdminPermManageSettings))

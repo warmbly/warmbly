@@ -147,7 +147,7 @@ func TestAttributeSpamMovesAppliesTheVerdict(t *testing.T) {
 		want        []string
 	}{
 		{name: "owner", move: spamMoveAfter(6 * time.Hour), ev: owner,
-			want: []string{"fix:owner", "sender:user_complaint", "strike:spam_flag", "complete"}},
+			want: []string{"fix:owner", "sender:user_complaint", "complete"}},
 		{name: "provider on arrival", move: spamMoveAfter(time.Minute),
 			want: []string{"fix:provider", "sender:spam_placement", "complete"}},
 		{name: "unattributed", move: spamMoveAfter(6 * time.Hour), ev: repository.WarmupSpamMoveEvidence{OwnerActiveRecently: true, PatternSenders: 1},

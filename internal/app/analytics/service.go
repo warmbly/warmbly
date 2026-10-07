@@ -809,7 +809,7 @@ func (s *analyticsService) coldRampInfo(ctx context.Context, email *models.Email
 	if !ok {
 		return nil
 	}
-	info := warmupramp.Notice(state.WarmupStartedAt, state.ColdRampStartedAt, state.Placements, email.CampaignLimit, time.Now())
+	info := warmupramp.Notice(state.WarmupStartedAt, state.ColdRampStartedAt, state.Placements, email.CampaignLimit, time.Now(), state.ConfirmedReplies)
 	if info == nil || info.Ceiling >= email.CampaignLimit {
 		return nil
 	}

@@ -29,8 +29,12 @@ func TestLiveDiagnosticAuthBindsWorkerContextAndRetainsOnlyMinimalProof(t *testi
 	exec(`UPDATE email_accounts SET send_as_email='unused-alias@example.test' WHERE id=$1`, f.sender)
 	exec(`INSERT INTO warmup_pool_participants(pool_id,email_account_id)SELECT id,$1 FROM warmup_pools WHERE pool_type='free'`, f.recipient)
 	exec(`INSERT INTO warmup_tasks(task_id,lineage_version,subject,scenario_version,rendering_version,max_turns)VALUES($1,1,'Diagnostic','diagnostic-v1','canonical-v1',1)`, f.task)
-	exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,sent_message_id)VALUES($1,$2,$3,$4,'<probe@example.test>')`, token, f.task, f.sender, f.recipient)
+	exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,sent_message_id)VALUES($1,$2,$3,$4,'')`, token, f.task, f.sender, f.recipient)
 	request := models.DiagnosticAuthRequest{Token: token, MailboxID: f.recipient, WorkerID: worker, MessageID: "probe@example.test"}
+	if grant, err := r.DiagnosticAuth(ctx, request); err == nil || grant != nil {
+		t.Fatal("receipt-before-result authorized raw retrieval", grant, err)
+	}
+	exec(`UPDATE warmup_tokens SET sent_message_id='<probe@example.test>' WHERE token=$1`, token)
 	for _, bad := range []models.DiagnosticAuthRequest{
 		{Token: token, MailboxID: f.recipient, WorkerID: uuid.New(), MessageID: request.MessageID},
 		{Token: token, MailboxID: f.sender, WorkerID: worker, MessageID: request.MessageID},

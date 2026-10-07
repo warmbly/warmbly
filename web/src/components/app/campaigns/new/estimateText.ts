@@ -56,16 +56,14 @@ export function estimateHeadline(
 }
 
 // Why it takes as long as it does, in the pool's own terms.
-export function bottleneckText(e: CampaignEstimateResult, tz?: string): string | null {
+export function bottleneckText(e: CampaignEstimateResult, _tz?: string): string | null {
     switch (e.bottleneck) {
         case "warmup_graduation":
-            return `${plural(e.ramping, "mailbox", "mailboxes")} ${e.ramping === 1 ? "is" : "are"} graduating from warmup: cold volume starts low and climbs 5 a day${
-                e.full_capacity_at ? `, reaching full speed around ${fmtDay(e.full_capacity_at, tz)}` : ""
-            }. This protects their reputation, so it cannot be skipped.`;
+            return `${plural(e.ramping, "mailbox", "mailboxes")} use conservative cold pacing. Synthetic test age does not unlock volume; recent real-recipient replies and negative feedback constrain increases. No full-speed date or reputation benefit is guaranteed.`;
         case "spacing":
             return "The sending window is the limit: with the gap between sends, and warmup sharing the same clock, mailboxes run out of hours before they reach their cap. A wider window goes faster.";
         case "campaign_limit":
-            return "The daily limit per mailbox is the limit. Raise it to go faster, but stay near 50 until the mailboxes have proven their reputation.";
+            return "The configured daily limit per mailbox is the constraint. Raising it is not proof that a higher volume is safe; consider provider policies, recipient permission and observed feedback.";
         case "other_campaigns":
             return `These mailboxes already send about ${e.other_campaigns_per_day.toLocaleString()} a day for other campaigns, and that shares their daily caps.`;
         case "health":

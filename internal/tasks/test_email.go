@@ -3,10 +3,12 @@ package tasks
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // GetCampaignSequences returns the sequences for a campaign ordered by position
@@ -76,7 +78,14 @@ func (s *tasksService) SendTestEmail(ctx context.Context, orgID uuid.UUID, accou
 	}
 
 	taskID := uuid.New()
+	if s.taskRepo == nil {
+		return errx.InternalError()
+	}
+	if err := s.taskRepo.CreateTask(ctx, &repository.Task{ID: taskID, TaskType: "email", EmailAccountID: account.ID, Status: "active", MessageID: emailMsg.MessageID, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		return errx.InternalError()
+	}
 	if err := s.emailSender.Send(ctx, taskID, emailMsg, *account); err != nil {
+		_ = s.taskRepo.RecordTaskFailure(ctx, taskID, "Test send not dispatched", "Outbound admission or publication failed")
 		return errx.New(errx.Internal, fmt.Sprintf("failed to send test email: %v", err))
 	}
 

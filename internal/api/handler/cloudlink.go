@@ -156,6 +156,28 @@ func (h *Handler) CloudLinkResume(c *gin.Context) {
 	h.cloudLinkLifecycle(c, "resume", models.AuditActionResume)
 }
 
+func (h *Handler) CloudLinkParticipation(c *gin.Context) {
+	if !h.cloudLinkReady(c) {
+		return
+	}
+	id, orgID, ok := cloudLinkAccountID(c)
+	if !ok {
+		return
+	}
+	var p models.DiagnosticParticipation
+	if err := c.ShouldBindJSON(&p); err != nil {
+		errx.JSON(c, errx.InvalidBody(err))
+		return
+	}
+	row, xerr := h.CloudLinkService.SetParticipation(c.Request.Context(), *orgID, id, p)
+	if xerr != nil {
+		errx.JSON(c, xerr)
+		return
+	}
+	h.auditOrg(c, models.AuditActionUpdate, models.AuditEntityCloudLink, &id, nil, nil)
+	c.JSON(http.StatusOK, row)
+}
+
 func (h *Handler) cloudLinkLifecycle(c *gin.Context, action string, audit models.AuditAction) {
 	if !h.cloudLinkReady(c) {
 		return

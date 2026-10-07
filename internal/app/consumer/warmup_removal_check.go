@@ -61,11 +61,6 @@ func (s *JobsService) HandleWarmupRemovalChecked(ctx context.Context, e *models.
 		withdraw = true
 	case models.WarmupRemovalTrashed, models.WarmupRemovalGone:
 		if !e.Recheck {
-			health, xerr := s.WarmupService.RecordTampering(ctx, e.EmailID, e.RFCMessageID, "deletion")
-			if xerr != nil {
-				return fmt.Errorf("record warmup strike: %w", xerr)
-			}
-			s.markRiskBandFromWarmupHealth(ctx, e.EmailID, health)
 			return nil
 		}
 		if s.WarmupRepo == nil {

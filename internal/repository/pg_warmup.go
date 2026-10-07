@@ -911,6 +911,7 @@ func (r *warmupRepository) CountWarmupSpamReportsSince(ctx context.Context, acco
 
 // ColdRampState is one mailbox's warmup-to-cold graduation inputs.
 type ColdRampState struct {
+	ConfirmedReplies  int
 	WarmupStartedAt   *time.Time
 	ColdRampStartedAt *time.Time
 	Placements        []time.Time
@@ -966,7 +967,38 @@ func (r *warmupRepository) ColdRampStateForAccounts(ctx context.Context, account
 		state.Placements = append(state.Placements, at)
 		out[id] = state
 	}
-	return out, placementRows.Err()
+	if err := placementRows.Err(); err != nil {
+		return nil, err
+	}
+	placementRows.Close()
+	feedback, err := resultDB(ctx, r.db).Query(ctx, `SELECT t.email_account_id,COUNT(DISTINCT p.contact_id) FILTER(WHERE p.replied_at>NOW()-INTERVAL '7 days' AND p.bounced_at IS NULL AND p.complained_at IS NULL),
+	 MAX(p.bounced_at),MAX(p.complained_at)
+	 FROM campaign_contact_progress p JOIN tasks t ON t.id=p.dispatch_task_id
+	 WHERE t.email_account_id=ANY($1::uuid[]) AND t.task_type='campaign' AND p.sent_at IS NOT NULL
+	 AND p.sent_at>NOW()-INTERVAL '7 days' GROUP BY t.email_account_id`, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer feedback.Close()
+	for feedback.Next() {
+		var id uuid.UUID
+		var replies int
+		var bounced, complained *time.Time
+		if err := feedback.Scan(&id, &replies, &bounced, &complained); err != nil {
+			return nil, err
+		}
+		state := out[id]
+		state.ConfirmedReplies = replies
+		if bounced != nil {
+			state.Placements = append(state.Placements, *bounced)
+		}
+		if complained != nil {
+			state.Placements = append(state.Placements, *complained)
+			state.ConfirmedReplies = 0
+		}
+		out[id] = state
+	}
+	return out, feedback.Err()
 }
 
 func (r *warmupRepository) StampColdRampStart(ctx context.Context, accountID uuid.UUID) error {

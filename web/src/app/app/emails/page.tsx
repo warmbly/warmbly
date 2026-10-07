@@ -7,6 +7,7 @@ import useEmails from "@/lib/api/hooks/app/emails/useEmails";
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
 import useWarmupLifecycle from "@/lib/api/hooks/app/emails/useWarmupLifecycle";
+import { diagnosticSendingAllowed, diagnosticWarmupActive } from "@/lib/diagnosticParticipation";
 import useAccountStatuses from "@/lib/api/hooks/app/analytics/useAccountStatuses";
 import useFeatureStatus from "@/lib/api/hooks/app/subscription/useFeatureStatus";
 import warmupLifecycle from "@/lib/api/client/app/emails/warmupLifecycle";
@@ -344,7 +345,7 @@ export default function AddressesPage() {
     // Mailboxes actively warming (enabled and not paused). Warmup pairs mailboxes
     // with each other, so too few starves it; the notice below warns on that.
     const warmupActive = useMemo(
-        () => (emailsData.emails ?? []).filter((e) => !!e.warmup && !e.warmup_paused_at).length,
+        () => (emailsData.emails ?? []).filter(diagnosticWarmupActive).length,
         [emailsData.emails],
     );
 
@@ -771,9 +772,9 @@ function MailboxRow({
     const source = mailboxSource(box);
     const brand = mailboxBrand(box);
 
-    const off = !box.warmup;
-    const paused = !!box.warmup && !!box.warmup_paused_at;
-    const active = !!box.warmup && !box.warmup_paused_at;
+    const off = !box.warmup || box.test_mode === "off";
+    const paused = !off && !!box.warmup && (!!box.warmup_paused_at || !diagnosticSendingAllowed(box));
+    const active = diagnosticWarmupActive(box);
     // Warmup only runs on a mailbox that is on, whatever its warmup setting says.
     const warming = active && box.status === "active";
 
@@ -808,7 +809,7 @@ function MailboxRow({
             ? "Stopped"
         : paused
             ? "Paused"
-            : inCampaign
+            : inCampaign && diagnosticSendingAllowed(box)
                 ? "Health-check"
                 : "Off";
     const warmupTone = sendFailure
@@ -825,20 +826,23 @@ function MailboxRow({
             ? "text-slate-400"
         : paused
             ? "text-amber-600"
-            : inCampaign
+            : inCampaign && diagnosticSendingAllowed(box)
                 ? "text-sky-600"
                 : "text-slate-400";
 
     const run = (action: "start" | "pause" | "resume", verb: string) => {
-        life.mutate(action, {
+        const execute = () => life.mutate(action, {
             onSuccess: () => toast.success(`Warmup ${verb} for ${box.email}`),
             onError: (e) => toast.error(warmupErrorMessage(e as unknown as AppError)),
         });
+        if (action === "start" || action === "resume") {
+            confirm.show("Authorize disclosed automated diagnostic sending? Starting from Off also enables receiving tests. This is not organic engagement or a proven reputation benefit; provider policies apply.", execute);
+        } else execute();
     };
 
     const stopReset = () => {
         confirm.show(
-            `Stop warmup for ${box.email}? This resets ramp progress — restarting begins from the base volume. Use Pause to keep progress.`,
+            `Stop all diagnostic sending and receiving for ${box.email}? Ramp history and safety holds are retained. Updated workers recheck pending work, but accepted provider sends cannot be recalled.`,
             async () => {
                 try {
                     await life.mutateAsync("stop");
@@ -1213,7 +1217,7 @@ const MAILBOX_COLUMNS: MailboxColumn[] = [
         sortValue: (b, s) =>
             b.status !== "active" || s?.errors?.length
                 ? -1
-                : (s?.in_campaign ? 2 : 0) + (b.warmup && !b.warmup_paused_at ? 1 : 0),
+                : (s?.in_campaign ? 2 : 0) + (diagnosticWarmupActive(b) ? 1 : 0),
     },
     {
         id: "sent",
@@ -1227,7 +1231,7 @@ const MAILBOX_COLUMNS: MailboxColumn[] = [
         label: "Warmup",
         header: <InfoHeader label="Warmup" title="Warmup emails sent today, against today's ramp target." aria="How warmup is counted" />,
         className: "w-28",
-        sortValue: (b, s) => (b.warmup && !b.warmup_paused_at ? (s?.warmup_status?.current_volume ?? 0) : -1),
+        sortValue: (b, s) => (diagnosticWarmupActive(b) ? (s?.warmup_status?.current_volume ?? 0) : -1),
     },
     {
         id: "inbox",
@@ -1312,8 +1316,8 @@ function MailboxStatusPill({ box, status, warming }: { box: Inbox; status?: Acco
         sending ? "Sending campaign emails" : resting ? `Held out of campaign sending${lifecycle?.reason ? `: ${lifecycle.reason}` : ""}` : "Not in a live campaign",
         warming
             ? "warming up"
-            : inCampaign
-              ? "a low-volume health-check warmup keeps running"
+            : inCampaign && diagnosticSendingAllowed(box)
+              ? "low-volume diagnostic health checks are enabled"
               : box.warmup && box.warmup_paused_at
                 ? "warmup paused"
                 : "warmup off",

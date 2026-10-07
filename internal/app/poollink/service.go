@@ -587,6 +587,7 @@ func (s *service) state(ctx context.Context, inst *models.PoolLinkInstance, m *m
 		return nil, xerr
 	}
 	st := &models.PoolLinkMailboxState{
+		Participation:  &models.DiagnosticParticipation{Mode: models.TestParticipationLegacy, Send: acc.TestSendingAllowed(), Receive: acc.TestReceivingAllowed(), SharedDailyLimit: acc.SharedDailyLimit, RollingRecipientLimit: acc.RollingRecipientLimit},
 		RemoteID:       m.RemoteID,
 		EmailAccountID: acc.ID,
 		Email:          acc.Email,
@@ -600,6 +601,9 @@ func (s *service) state(ctx context.Context, inst *models.PoolLinkInstance, m *m
 			Base: acc.WarmupBase, Max: acc.WarmupMax, Increase: acc.WarmupIncrease, ReplyRate: acc.WarmupReplyRate,
 			StartTime: acc.WarmupStartTime, EndTime: acc.WarmupEndTime, Days: acc.WarmupDays, Timezone: acc.ClockTimezone(),
 		},
+	}
+	if acc.TestMode != nil {
+		st.Participation.Mode = *acc.TestMode
 	}
 	if s.analytics != nil {
 		// Detail carries the partner cap, so a target no partner can meet is never shown as one.
@@ -631,6 +635,9 @@ func (s *service) state(ctx context.Context, inst *models.PoolLinkInstance, m *m
 }
 
 func (s *service) PatchMailbox(ctx context.Context, inst *models.PoolLinkInstance, remoteID uuid.UUID, patch models.PoolLinkMailboxPatch) (*models.PoolLinkMailboxState, *errx.Error) {
+	if patch.Participation != nil && !patch.Participation.Valid() {
+		return nil, errx.ErrInvalid
+	}
 	if r, ok := s.repo.(repository.PoolLinkManagedRepository); ok {
 		if !managedOperationLocked(ctx) {
 			var out *models.PoolLinkMailboxState
@@ -680,6 +687,18 @@ func (s *service) PatchMailbox(ctx context.Context, inst *models.PoolLinkInstanc
 	}
 	if patch.Warmup != nil {
 		s.applyWarmupSettings(ctx, inst.OrganizationID, userID, m.EmailAccountID, *patch.Warmup)
+	}
+	if p := patch.Participation; p != nil {
+		upd := &models.UpdateEmail{TestMode: &p.Mode, TestSendEnabled: &p.Send, TestReceiveEnabled: &p.Receive, SharedDailyLimit: p.SharedDailyLimit, RollingRecipientLimit: p.RollingRecipientLimit}
+		if p.Send {
+			upd.Warmup = &p.Send
+		}
+		if _, xerr := s.emailSvc.Update(ctx, inst.OrganizationID.String(), userID, m.EmailAccountID.String(), upd); xerr != nil {
+			return nil, xerr
+		}
+		if p.Send && s.scheduler != nil {
+			_ = s.scheduler.EnsureWarmupScheduled(ctx, m.EmailAccountID)
+		}
 	}
 	switch patch.Lifecycle {
 	case "pause", "resume":

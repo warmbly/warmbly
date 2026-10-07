@@ -58,9 +58,10 @@ type SmtpImapData struct {
 }
 
 type WMail struct {
-	ExecutorID uuid.UUID
-	UserID     uuid.UUID
-	ID         uuid.UUID
+	diagnosticRetries map[uuid.UUID]diagnosticRetry
+	ExecutorID        uuid.UUID
+	UserID            uuid.UUID
+	ID                uuid.UUID
 	// OrgID scopes the organization-wide sync budget; nil for a legacy
 	// personal mailbox.
 	OrgID *uuid.UUID

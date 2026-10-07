@@ -123,7 +123,7 @@ func (s *schedulerService) planMailbox(ctx context.Context, pass *campaignPass, 
 	d.byGraduation = step(stages[3])
 	d.byRisk = step(stages[4])
 	if st, ok := pass.coldRamp[acct.ID]; ok && stages[3] < stages[2] {
-		d.graduation = warmupramp.Notice(st.WarmupStartedAt, st.ColdRampStartedAt, st.Placements, stages[2], now)
+		d.graduation = warmupramp.Notice(st.WarmupStartedAt, st.ColdRampStartedAt, st.Placements, stages[2], now, st.ConfirmedReplies)
 	}
 
 	// Standing gates: authentication, cold rotation, warmup health. Asked with

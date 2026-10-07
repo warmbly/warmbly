@@ -616,6 +616,8 @@ Alongside them, `api_url` is this API's own public base (for a copyable example 
 
 ### Internal execution and managed consent
 
+`PATCH /cloud-link/mailboxes/:id/participation` is self-hosted JWT-only with `MANAGE_EMAILS` and organization ownership. It accepts typed `mode` (`diagnostic` or `off`), `send`, `receive` and optional positive shared/rolling limits. Cloud mirrors it through instance-token-only `PATCH /pool-link/instance/mailboxes/:remoteId/participation`, scoped to the calling instance. These dedicated routes prevent an old Cloud silently ignoring additive consent fields; old state without participation is not explicit diagnostic consent. The existing native lifecycle routes select diagnostic send/receive on start/resume and complete off on stop while retaining history. See [participation and send safety](/development/send-safety/).
+
 Cloud-managed OAuth additionally exposes `POST /pool-link/instance/oauth/start-correlated`, `POST /pool-link/instance/oauth/finish-correlated` and `POST /pool-link/instance/mailboxes/adopt-correlated`, all instance-token only and requiring `protocol: 1`. The authenticated instance response advertises `managed_consent_protocol: 1`. Legacy routes remain unchanged; absence of the capability cannot be bypassed with fields an old replica might ignore. See [the Cloud route and recovery contract](/guides/warmbly-cloud/).
 
 `POST /internal/worker/warmup-dispatch` is an execution-plane internal-token route, not a public JWT/API-key scope. It inspects, begins and durably finishes a task/mailbox/worker/nonce-bound command. Start repeats authoritative policy checks; unknown or denied authority cannot permit native execution. Receipt/header/model text supplies no authorization.

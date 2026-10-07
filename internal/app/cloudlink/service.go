@@ -114,6 +114,7 @@ type Service interface {
 	// alike, without ever calling back into the email service.
 	RevokeForDelete(ctx context.Context, orgID, accountID uuid.UUID) *errx.Error
 	SetLifecycle(ctx context.Context, orgID, accountID uuid.UUID, action string) (*models.CloudLinkMailboxRow, *errx.Error)
+	SetParticipation(ctx context.Context, orgID, accountID uuid.UUID, participation models.DiagnosticParticipation) (*models.CloudLinkMailboxRow, *errx.Error)
 
 	// Root redirects Warmbly Cloud serves for this instance (redirects.go).
 	RedirectOffer(ctx context.Context) (*models.PoolLinkRedirectOffer, bool)
@@ -700,6 +701,32 @@ func (s *service) SetLifecycle(ctx context.Context, orgID, accountID uuid.UUID, 
 	}
 	var state models.PoolLinkMailboxState
 	if xerr := s.clientFor(l).do(ctx, http.MethodPatch, "/instance/mailboxes/"+m.RemoteID.String(), models.PoolLinkMailboxPatch{Lifecycle: action}, &state); xerr != nil {
+		return nil, xerr
+	}
+	s.recordStanding(ctx, accountID, state.Health, true)
+	return s.row(ctx, orgID, accountID)
+}
+
+func (s *service) SetParticipation(ctx context.Context, orgID, accountID uuid.UUID, participation models.DiagnosticParticipation) (*models.CloudLinkMailboxRow, *errx.Error) {
+	if !participation.Valid() {
+		return nil, errx.ErrInvalid
+	}
+	l, xerr := s.link(ctx)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if _, xerr = s.ownedAccount(ctx, orgID, accountID); xerr != nil {
+		return nil, xerr
+	}
+	m, err := s.repo.GetByAccount(ctx, accountID)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	if m == nil || m.EnrollmentState == "pending_remove" {
+		return nil, errx.ErrNotFound
+	}
+	var state models.PoolLinkMailboxState
+	if xerr = s.clientFor(l).do(ctx, http.MethodPatch, "/instance/mailboxes/"+m.RemoteID.String()+"/participation", models.PoolLinkMailboxPatch{Participation: &participation}, &state); xerr != nil {
 		return nil, xerr
 	}
 	s.recordStanding(ctx, accountID, state.Health, true)

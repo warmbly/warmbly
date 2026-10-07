@@ -21,6 +21,19 @@ func TestSimulateLeadsSingleStep(t *testing.T) {
 	}
 }
 
+func TestFullCapacityDateDoesNotProjectMissingFeedbackIntoReadiness(t *testing.T) {
+	warmed := time.Now().Add(-90 * 24 * time.Hour)
+	ramp := time.Now().Add(-30 * 24 * time.Hour)
+	p := &projectedSender{cap: 50, hasCold: true, cold: repository.ColdRampState{WarmupStartedAt: &warmed, ColdRampStartedAt: &ramp}}
+	if fullCapacityEvidenceKnown([]*projectedSender{p}) {
+		t.Fatal("synthetic age projected full-cap readiness")
+	}
+	p.cold.ConfirmedReplies = 100
+	if !fullCapacityEvidenceKnown([]*projectedSender{p}) {
+		t.Fatal("current already-full evidence lost")
+	}
+}
+
 func TestSimulateLeadsFollowUpsFirst(t *testing.T) {
 	// Two steps three days apart: day 3's capacity goes to day 0's follow-ups
 	// before any new contact.

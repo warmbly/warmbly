@@ -151,6 +151,24 @@ func (r *taskRepository) ReserveOutbound(ctx context.Context, in OutboundReserva
 		return uuid.Nil, err
 	}
 	// Calendar counters and rolling recipient occurrences are independent constraints.
+	var attemptedRecipients, attemptedToday int
+	err = tx.QueryRow(ctx, `SELECT COALESCE(SUM(recipient_count) FILTER(WHERE attempted_at>NOW()-INTERVAL '24 hours'),0),
+	 COUNT(*) FILTER(WHERE (attempted_at AT TIME ZONE $2)::date=(NOW() AT TIME ZONE $2)::date)
+	 FROM outbound_attempts WHERE email_account_id=$1`, in.MailboxID, timezone).Scan(&attemptedRecipients, &attemptedToday)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	var reservedAttemptRecipients, reservedAttemptsToday int
+	err = tx.QueryRow(ctx, `SELECT COALESCE(SUM(GREATEST(1,cardinality(send_recipients))) FILTER(WHERE COALESCE(send_reserved_at,completed_at)>NOW()-INTERVAL '24 hours'),0),
+	 COUNT(*) FILTER(WHERE COALESCE(send_business_day,(completed_at AT TIME ZONE $3)::date)=(NOW() AT TIME ZONE $3)::date)
+	 FROM tasks t WHERE email_account_id=$1 AND id<>$2 AND task_type IN('email','campaign','warmup','placement')
+	 AND ((send_reserved_at IS NOT NULL AND send_released_at IS NULL) OR (send_reserved_at IS NULL AND status='completed' AND completed_at IS NOT NULL
+	 AND (task_type<>'campaign' OR EXISTS(SELECT 1 FROM campaign_tasks ct WHERE ct.task_id=t.id AND ct.sequence_id IS NOT NULL))))
+	 AND NOT EXISTS(SELECT 1 FROM outbound_attempts a WHERE a.nonce=t.send_executor_nonce)`, in.MailboxID, in.TaskID, timezone).Scan(&reservedAttemptRecipients, &reservedAttemptsToday)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	occurrences = attemptedRecipients + reservedAttemptRecipients
 	var dayTotal, dayCold, dayDiagnostic int
 	err = tx.QueryRow(ctx, `SELECT COUNT(*),COUNT(*) FILTER(WHERE task_type IN ('campaign','email')),COUNT(*) FILTER(WHERE task_type IN ('warmup','placement')) FROM tasks t
 	 WHERE email_account_id=$1 AND id<>$2 AND task_type IN ('campaign','email','warmup','placement')
@@ -160,7 +178,14 @@ func (r *taskRepository) ReserveOutbound(ctx context.Context, in OutboundReserva
 	if err != nil {
 		return uuid.Nil, err
 	}
-	if shared != nil && dayTotal >= *shared || rolling != nil && occurrences+len(recipients) > *rolling || (lane == "campaign" || lane == "email") && dayCold >= campaignCap || (lane == "warmup" || lane == "placement") && dayDiagnostic >= warmupCap {
+	sharedCap, rollingCap := max(1, campaignCap+warmupCap), max(1, campaignCap+warmupCap)
+	if shared != nil {
+		sharedCap = *shared
+	}
+	if rolling != nil {
+		rollingCap = *rolling
+	}
+	if max(dayTotal, attemptedToday+reservedAttemptsToday) >= sharedCap || occurrences+len(recipients) > rollingCap || (lane == "campaign" || lane == "email") && dayCold >= campaignCap || (lane == "warmup" || lane == "placement") && dayDiagnostic >= warmupCap {
 		return uuid.Nil, ErrSendAdmissionDenied
 	}
 	if lane == "campaign" {
@@ -336,6 +361,9 @@ func (r *taskRepository) BeginOutbound(ctx context.Context, task, mailbox, worke
 	}
 	_, err = tx.Exec(ctx, `UPDATE tasks SET send_executor_started_at=NOW() WHERE id=$1`, task)
 	if err != nil {
+		return nil, err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO outbound_attempts(nonce,task_id,email_account_id,provider,attempted_at,recipient_count) VALUES($1,$2,$3,$4,NOW(),$5)`, nonce, task, mailbox, provider, len(recipients)); err != nil {
 		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {

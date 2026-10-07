@@ -1462,18 +1462,24 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		return nil, errx.ErrEmailWarmupBase
 	}
 	if udata.Warmup != nil {
-		var warmupTime *time.Time
-		if *udata.Warmup {
-			t := time.Now()
-			warmupTime = &t
+		if udata.TestMode == nil {
+			mode := models.TestParticipationOff
+			if *udata.Warmup {
+				mode = models.TestParticipationDiagnostic
+			}
+			udata.TestMode = &mode
+			if udata.TestSendEnabled == nil {
+				udata.TestSendEnabled = udata.Warmup
+			}
+			if udata.TestReceiveEnabled == nil {
+				udata.TestReceiveEnabled = udata.Warmup
+			}
 		}
-		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", "warmup", argPos))
-		args = append(args, warmupTime)
-		argPos++
-		// A direct warmup on/off via PATCH always clears the pause marker so
-		// state stays coherent (enable = fresh ramp, disable = off). Pause and
-		// resume that preserve ramp progress go through the lifecycle endpoints.
-		setClauses = append(setClauses, "warmup_paused_at = NULL")
+		if *udata.Warmup {
+			setClauses = append(setClauses, `warmup = CASE WHEN warmup IS NULL THEN now() WHEN warmup_paused_at IS NOT NULL THEN warmup+(now()-warmup_paused_at) ELSE warmup END`, "warmup_paused_at = NULL")
+		} else {
+			setClauses = append(setClauses, `warmup_paused_at = CASE WHEN warmup IS NOT NULL THEN COALESCE(warmup_paused_at,now()) ELSE NULL END`)
+		}
 	}
 	if udata.WarmupBase != nil {
 		if *udata.WarmupBase < 0 || *udata.WarmupBase > 100 {
@@ -1580,8 +1586,12 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		argPos++
 	}
 
+	if udata.TestMode == nil && (udata.TestSendEnabled != nil || udata.TestReceiveEnabled != nil) {
+		mode := models.TestParticipationDiagnostic
+		udata.TestMode = &mode
+	}
 	if udata.TestMode != nil {
-		if *udata.TestMode != "legacy" && *udata.TestMode != "diagnostic" && *udata.TestMode != "off" {
+		if *udata.TestMode != "diagnostic" && *udata.TestMode != "off" {
 			return nil, errx.ErrNotEnough
 		}
 		setClauses = append(setClauses, fmt.Sprintf("test_mode = $%d", argPos))
@@ -1647,8 +1657,9 @@ func (r *emailRepository) Update(ctx context.Context, orgID, emailAccountID stri
 		 WHERE ea.organization_id=$1 AND ea.id=$2 AND ea.status='active' AND ea.send_recovery_hold AND ea.send_recovery_task_id=$6 AND ea.send_recovery_reason=$7 AND ea.send_recovery_reason IN('authentication','permanent','conflict')
 		 AND (ea.send_cooldown_provider IS NULL OR ea.send_cooldown_provider=ea.provider::text) FOR UPDATE OF ea),
 		 valid AS(SELECT * FROM held WHERE NOT EXISTS(SELECT 1 FROM tasks u WHERE u.email_account_id=held.id AND u.send_result_state='unknown' AND u.send_result_applied_at IS NULL)
-		 AND (($3='authentication_repaired' AND held.send_recovery_reason='authentication' AND held.last_synced_at>held.completed_at)
-		 OR ($3='operator_provider_confirmation' AND held.send_recovery_reason IN('permanent','conflict') AND length($5)>0 AND $4::uuid IS NOT NULL
+		 AND (($3='authentication_repaired' AND held.send_recovery_reason='authentication' AND $4::uuid IS NOT NULL
+		 AND EXISTS(SELECT 1 FROM tasks e WHERE e.id=$4 AND e.email_account_id=held.id AND e.send_result_state='sent' AND e.send_result_applied_at>held.completed_at AND e.send_executor_started_at>held.completed_at))
+		 OR ($3='operator_provider_confirmation' AND held.send_recovery_reason IN('authentication','permanent','conflict') AND length($5)>0 AND $4::uuid IS NOT NULL
 		 AND EXISTS(SELECT 1 FROM tasks e WHERE e.id=$4 AND e.email_account_id=held.id AND e.send_result_state IN('sent','failed') AND e.send_result_applied_at IS NOT NULL)))),
 		 history AS(INSERT INTO send_recovery_resolutions(organization_id,email_account_id,recovery_task_id,evidence_task_id,previous_reason,evidence_type,confirmation_reference)
 		 SELECT organization_id,id,send_recovery_task_id,$4,send_recovery_reason,$3,$5 FROM valid RETURNING email_account_id)
@@ -2132,14 +2143,19 @@ func (r *emailRepository) SetWarmupLifecycle(ctx context.Context, orgID, emailAc
 				WHEN warmup_paused_at IS NOT NULL THEN warmup + (now() - warmup_paused_at)
 				ELSE warmup
 			END,
-			warmup_paused_at = NULL`
+			warmup_paused_at = NULL,
+			test_receive_enabled = CASE WHEN test_mode IS NULL OR test_mode IN ('off','legacy') THEN true ELSE test_receive_enabled END,
+			test_mode = 'diagnostic', test_send_enabled = true`
 	case "pause":
 		setClause = `warmup_paused_at = CASE
 				WHEN warmup IS NOT NULL AND warmup_paused_at IS NULL THEN now()
 				ELSE warmup_paused_at
-			END`
+			END,
+			test_receive_enabled = CASE WHEN test_mode IS NULL OR test_mode='legacy' THEN true ELSE test_receive_enabled END,
+			test_mode = 'diagnostic', test_send_enabled = false`
 	case "disable", "stop":
-		setClause = `warmup = NULL, warmup_paused_at = NULL`
+		setClause = `warmup_paused_at = CASE WHEN warmup IS NOT NULL THEN COALESCE(warmup_paused_at,now()) ELSE NULL END,
+			test_mode = 'off', test_send_enabled = false, test_receive_enabled = false`
 	default:
 		return nil, errx.ErrInvalid
 	}

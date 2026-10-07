@@ -172,8 +172,8 @@ func TestRemovalCheckedJudgesOnWhereTheMessageIs(t *testing.T) {
 		verified int
 	}{
 		{"moved to another folder", models.WarmupRemovalPresent, false, false, []string{"withdraw:deletion"}, 0},
-		{"in the trash", models.WarmupRemovalTrashed, false, false, []string{"deletion"}, 0},
-		{"gone for good", models.WarmupRemovalGone, false, false, []string{"deletion"}, 0},
+		{"in the trash", models.WarmupRemovalTrashed, false, false, nil, 0},
+		{"gone for good", models.WarmupRemovalGone, false, false, nil, 0},
 		{"a fresh search that cannot tell charges nothing", models.WarmupRemovalUnknown, false, false, nil, 0},
 		{"recheck: still in the mailbox", models.WarmupRemovalPresent, true, false, []string{"withdraw:deletion"}, 0},
 		{"recheck: in the trash confirms without a new strike", models.WarmupRemovalTrashed, true, false, nil, 1},
@@ -206,14 +206,13 @@ func TestRemovalCheckedJudgesOnWhereTheMessageIs(t *testing.T) {
 	}
 }
 
-// A strike the service could not record is redelivered, not acked.
-func TestRemovalCheckedRedeliversAFailedStrike(t *testing.T) {
+func TestRemovalCheckedDoesNotChargeRecipientWithdrawal(t *testing.T) {
 	s, svc := retentionService(nil)
 	svc.fail = true
 	if err := s.HandleWarmupRemovalChecked(context.Background(), &models.JobEventWarmupRemovalChecked{
 		UserID: uuid.New(), EmailID: uuid.New(), RFCMessageID: "<m@example.test>", Outcome: models.WarmupRemovalTrashed,
-	}); err == nil {
-		t.Fatal("a failed strike was acked")
+	}); err != nil || len(svc.strikes) != 0 {
+		t.Fatal("recipient withdrawal was penalized", err, svc.strikes)
 	}
 }
 

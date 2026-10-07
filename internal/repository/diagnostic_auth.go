@@ -50,8 +50,9 @@ func (r *taskRepository) DiagnosticAuth(ctx context.Context, req models.Diagnost
 	if req.Result == nil {
 		grant.Nonce = uuid.New()
 		err = tx.QueryRow(ctx, `INSERT INTO diagnostic_auth_verifications(task_id,email_account_id,worker_id,nonce,message_id)VALUES($1,$2,$3,$4,$5)
- ON CONFLICT(task_id,email_account_id) DO UPDATE SET worker_id=EXCLUDED.worker_id,nonce=EXCLUDED.nonce,message_id=EXCLUDED.message_id,authorized_at=NOW()
- WHERE diagnostic_auth_verifications.result IS NULL RETURNING nonce`, task, req.MailboxID, req.WorkerID, grant.Nonce, grant.MessageID).Scan(&grant.Nonce)
+ ON CONFLICT(task_id,email_account_id) DO UPDATE SET worker_id=EXCLUDED.worker_id,nonce=EXCLUDED.nonce,message_id=EXCLUDED.message_id,authorized_at=NOW(),result=NULL,verified_at=NULL,attempts=diagnostic_auth_verifications.attempts+1
+ WHERE diagnostic_auth_verifications.attempts<3 AND diagnostic_auth_verifications.authorized_at<NOW()-INTERVAL '30 seconds'
+ AND (diagnostic_auth_verifications.result IS NULL OR diagnostic_auth_verifications.result->>'dkim'='unknown') RETURNING nonce`, task, req.MailboxID, req.WorkerID, grant.Nonce, grant.MessageID).Scan(&grant.Nonce)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
