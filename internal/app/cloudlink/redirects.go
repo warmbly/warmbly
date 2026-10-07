@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
@@ -88,7 +89,8 @@ func (s *service) ListRedirects(ctx context.Context) ([]models.DomainRedirect, *
 			Data []models.DomainRedirect `json:"data"`
 		}
 		if xerr := s.clientFor(&l).do(ctx, http.MethodGet, "/instance/redirects", nil, &out); xerr != nil {
-			return nil, xerr
+			log.Warn().Str("instance_id", l.InstanceID.String()).Str("code", xerr.ResponseCode()).Msg("cloud link: redirect listing failed")
+			continue
 		}
 		for i := range out.Data {
 			out.Data[i].CloudLinkInstanceID = &l.InstanceID

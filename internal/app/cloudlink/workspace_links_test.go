@@ -58,6 +58,33 @@ func (r *workspaceLinkRepo) UnenrollAll(_ context.Context, id uuid.UUID) error {
 }
 func (r *workspaceLinkRepo) CanStore() error { return nil }
 
+func (r *workspaceLinkRepo) ListLinks(context.Context) ([]models.CloudLink, error) {
+	out := make([]models.CloudLink, 0, len(r.links))
+	for _, link := range r.links {
+		out = append(out, *link)
+	}
+	return out, nil
+}
+
+func TestRedirectListingPreservesHealthyLinkOwnershipWhenAnotherLinkFails(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer unavailable" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []models.DomainRedirect{{Domain: "healthy.example"}}})
+	}))
+	defer srv.Close()
+	healthy := &models.CloudLink{InstanceID: uuid.New(), CloudURL: srv.URL, Token: "healthy"}
+	unavailable := &models.CloudLink{InstanceID: uuid.New(), CloudURL: srv.URL, Token: "unavailable"}
+	s := &service{repo: &workspaceLinkRepo{links: map[uuid.UUID]*models.CloudLink{healthy.InstanceID: healthy, unavailable.InstanceID: unavailable}}}
+	rows, xerr := s.ListRedirects(context.Background())
+	if xerr != nil || len(rows) != 1 || rows[0].Domain != "healthy.example" || rows[0].CloudLinkInstanceID == nil || *rows[0].CloudLinkInstanceID != healthy.InstanceID {
+		t.Fatalf("healthy redirects not preserved: %+v, %v", rows, xerr)
+	}
+}
+
 func (r *workspaceLinkRepo) ListForOrg(context.Context, uuid.UUID, *uuid.UUID) ([]models.CloudLinkMailbox, error) {
 	return r.List(context.Background())
 }
