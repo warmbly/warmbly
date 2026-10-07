@@ -11,7 +11,7 @@ overrides:
   path-to-regexp: ^8.4.0
   # Floor transitive dependencies at their patched releases.
   js-yaml: ^4.3.2
-  sharp: ^0.35.0
+  sharp: ^0.35.5
   # next pins an exact postcss; lift it to the patched line.
   postcss: ^8.5.23
   nanoid: ^3.3.17
