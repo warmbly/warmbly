@@ -149,7 +149,14 @@ func (s *analyticsService) GetWarmupPlacement(ctx context.Context, orgID uuid.UU
 		report.Summary.Add(d.WarmupPlacementCounts)
 	}
 	report.Summary.Finish()
+	report.Summary.NonSpamMetric.WindowDays = len(b.dates)
 	report.Providers = placementProviders(hostRows)
+	for i := range report.Providers {
+		report.Providers[i].NonSpamMetric.WindowDays = len(b.dates)
+		for j := range report.Providers[i].Hosts {
+			report.Providers[i].Hosts[j].NonSpamMetric.WindowDays = len(b.dates)
+		}
+	}
 
 	var total models.WarmupPlacementWindow
 	for _, w := range windows {
@@ -235,6 +242,10 @@ func (b *placementBuilder) addDelivery(r repository.WarmupPlacementDayRow) {
 		c.Tabs += r.Tabs
 		c.Spam += r.Spam
 		c.Rescued += r.Rescued
+		c.Unknown += r.Unknown
+		c.Archived += r.Archived
+		c.Custom += r.Custom
+		c.Instrumented += r.Instrumented
 	}
 	add(&b.day[i])
 	sp := b.sender(r.SenderID)
@@ -253,6 +264,9 @@ func (b *placementBuilder) addDelivery(r repository.WarmupPlacementDayRow) {
 	g.Tabs += r.Tabs
 	g.Spam += r.Spam
 	g.Rescued += r.Rescued
+	g.Unknown += r.Unknown
+	g.Archived += r.Archived
+	g.Custom += r.Custom
 }
 
 func (b *placementBuilder) addCount(r repository.WarmupSenderDayCount, apply func(*models.WarmupPlacementCounts, int)) {
@@ -271,6 +285,7 @@ func (b *placementBuilder) days() []models.WarmupPlacementDay {
 	for i, date := range b.dates {
 		c := b.day[i]
 		c.Finish()
+		c.NonSpamMetric.WindowDays = 1
 		groups := make([]models.WarmupPlacementGroupCounts, 0, len(b.groups[i]))
 		for _, key := range models.WarmupRecipientGroups {
 			if g, ok := b.groups[i][key]; ok {
@@ -309,6 +324,7 @@ func (b *placementBuilder) mailboxes(names map[uuid.UUID]string, rates map[uuid.
 		}
 		total := sp.total
 		total.Finish()
+		total.NonSpamMetric.WindowDays = len(b.dates)
 		daily := make([]*float64, len(sp.days))
 		for i, d := range sp.days {
 			d.Finish()
@@ -354,6 +370,10 @@ func placementProviders(rows []repository.WarmupPlacementHostRow) []models.Warmu
 		host.Tabs += row.Tabs
 		host.Spam += row.Spam
 		host.Rescued += row.Rescued
+		host.Unknown += row.Unknown
+		host.Archived += row.Archived
+		host.Custom += row.Custom
+		host.Instrumented += row.Instrumented
 		byHost[key] = host
 	}
 	byGroup := make(map[string]*models.WarmupPlacementProvider)
@@ -363,7 +383,7 @@ func placementProviders(rows []repository.WarmupPlacementHostRow) []models.Warmu
 			p = &models.WarmupPlacementProvider{Group: r.Group, Hosts: make([]models.WarmupPlacementHost, 0)}
 			byGroup[r.Group] = p
 		}
-		c := models.WarmupPlacementCounts{Inbox: r.Inbox, Tabs: r.Tabs, Spam: r.Spam, Rescued: r.Rescued}
+		c := models.WarmupPlacementCounts{Inbox: r.Inbox, Tabs: r.Tabs, Spam: r.Spam, Rescued: r.Rescued, Unknown: r.Unknown, Archived: r.Archived, Custom: r.Custom, Instrumented: r.Instrumented}
 		p.Add(c)
 		c.Finish()
 		p.Hosts = append(p.Hosts, models.WarmupPlacementHost{Host: r.Host, WarmupPlacementCounts: c})

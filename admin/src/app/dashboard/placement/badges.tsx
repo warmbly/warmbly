@@ -26,6 +26,9 @@ const FOLDER_LABEL: Record<PlacementFolder, string> = {
     other: "Other tab",
     spam: "Spam",
     missing: "Missing",
+    unknown: "Folder unknown",
+    archive: "Archive",
+    custom: "Custom folder",
     failed: "Failed",
     cancelled: "Cancelled",
 };
@@ -37,6 +40,9 @@ const FOLDER_TONE: Record<PlacementFolder, Tone> = {
     other: "info",
     spam: "danger",
     missing: "warning",
+    unknown: "neutral",
+    archive: "neutral",
+    custom: "neutral",
     failed: "danger",
     cancelled: "neutral",
 };

@@ -14,8 +14,14 @@ func TestClassifyWarmupLanding(t *testing.T) {
 		{"graph junk", FolderSpam, []string{"\\Junk"}, WarmupLandedSpam},
 		{"imap junk folder without keyword", FolderSpam, []string{"\\Seen"}, WarmupLandedSpam},
 		{"gmail promotions", FolderInbox, []string{"CATEGORY_PROMOTIONS"}, WarmupLandedTabs},
-		{"gmail updates", "", []string{"CATEGORY_UPDATES"}, WarmupLandedTabs},
-		{"gmail primary", "", []string{"CATEGORY_PERSONAL"}, WarmupLandedInbox},
+		{"gmail updates without inbox", "", []string{"CATEGORY_UPDATES"}, WarmupLandedUnknown},
+		{"gmail primary without inbox", "", []string{"CATEGORY_PERSONAL"}, WarmupLandedUnknown},
+		{"mixed case inbox", " InBoX ", nil, WarmupLandedInbox},
+		{"mixed case spam", "SPAM", nil, WarmupLandedSpam},
+		{"missing folder", "", nil, WarmupLandedUnknown},
+		{"custom folder", "Invoices", nil, WarmupLandedCustom},
+		{"archive with category", FolderArchive, []string{"CATEGORY_PROMOTIONS"}, WarmupLandedArchive},
+		{"sent copy", FolderSent, nil, WarmupLandedUnknown},
 		{"spam outranks a tab", "", []string{"CATEGORY_PROMOTIONS", "SPAM"}, WarmupLandedSpam},
 	}
 	for _, c := range cases {

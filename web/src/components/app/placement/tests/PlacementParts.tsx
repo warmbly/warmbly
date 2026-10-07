@@ -69,12 +69,13 @@ export function FolderChip({ folder }: { folder: PlacementFolder }) {
 // the part still waiting shows as the empty track.
 export function PlacementBar({ counts, height = 6, className }: { counts: PlacementCounts; height?: number; className?: string }) {
     const { total, inbox, promotions, other, spam, missing } = counts;
+    const unknown = counts.unknown ?? 0, archive = counts.archive ?? 0, custom = counts.custom ?? 0;
     const segments = React.useMemo(() => {
         const denom = Math.max(1, total);
-        const n: Record<(typeof LANDED_FOLDERS)[number], number> = { inbox, promotions, other, spam, missing };
+        const n: Record<(typeof LANDED_FOLDERS)[number], number> = { inbox, promotions, other, spam, missing, unknown, archive, custom };
         return LANDED_FOLDERS.filter((f) => n[f] > 0).map((f) => ({ frac: n[f] / denom, tone: FOLDER[f].tone }));
-    }, [total, inbox, promotions, other, spam, missing]);
-    const title = LANDED_FOLDERS.map((f) => `${FOLDER[f].label} ${counts[f]}`).join(", ");
+    }, [total, inbox, promotions, other, spam, missing, unknown, archive, custom]);
+    const title = LANDED_FOLDERS.map((f) => `${FOLDER[f].label} ${counts[f] ?? "unavailable"}`).join(", ");
     return (
         <div title={title} className={className}>
             <DitherStack segments={segments} height={height} />

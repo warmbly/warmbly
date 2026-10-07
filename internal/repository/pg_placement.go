@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -239,12 +240,12 @@ func scanPlacementTest(row pgx.Row) (*models.PlacementTest, error) {
 }
 
 const placementResultCols = `id, test_id, seed_account_id, seed_address, provider, remote_seed_id, task_id,
-	message_id, folder, scheduled_at, sent_at, detected_at, raw_flags, error, remote_synced_at`
+	message_id, folder, scheduled_at, sent_at, detected_at, raw_flags, error, remote_synced_at, first_folder, observed_at, evidence`
 
 func scanPlacementResult(row pgx.Row) (models.PlacementResult, error) {
 	var r models.PlacementResult
 	err := row.Scan(&r.ID, &r.TestID, &r.SeedAccountID, &r.SeedAddress, &r.Family, &r.RemoteSeedID, &r.TaskID,
-		&r.MessageID, &r.Folder, &r.ScheduledAt, &r.SentAt, &r.DetectedAt, &r.RawFlags, &r.Error, &r.RemoteSyncedAt)
+		&r.MessageID, &r.Folder, &r.ScheduledAt, &r.SentAt, &r.DetectedAt, &r.RawFlags, &r.Error, &r.RemoteSyncedAt, &r.FirstFolder, &r.ObservedAt, &r.Evidence)
 	return r, err
 }
 
@@ -531,7 +532,7 @@ func (r *placementRepository) FindLandings(ctx context.Context, limit int) ([]Pl
 		 AND u.internal_date >= s.since - interval '1 hour'
 		 AND btrim(u.message_id, '<> ') = ANY (s.mids)
 		JOIN pending p ON p.seed_account_id = s.seed_account_id AND p.mid = btrim(u.message_id, '<> ')
-		ORDER BY p.id, u.internal_date DESC
+		ORDER BY p.id, u.internal_date ASC
 	`, limit)
 	if err != nil {
 		return nil, err
@@ -553,6 +554,43 @@ func (r *placementRepository) RecordLanding(ctx context.Context, resultID uuid.U
 		UPDATE placement_results SET folder = $2, raw_flags = $3, detected_at = $4
 		WHERE id = $1 AND folder = 'pending'
 	`, resultID, folder, truncateRunes(rawFlags, 1000), at)
+	return err
+}
+
+func (r *placementRepository) RecordProbeObservation(ctx context.Context, accountID uuid.UUID, messageID, folder string, flags []string, at time.Time) error {
+	if strings.Trim(messageID, "<> ") == "" || strings.EqualFold(folder, models.FolderSent) {
+		return nil
+	}
+	evidence, err := json.Marshal(models.EvidenceFromFlags(flags))
+	if err != nil {
+		return err
+	}
+	observationFlags := models.PlacementObservationFlags(flags)
+	_, err = r.db.Exec(ctx, `
+		UPDATE placement_results
+		SET folder=CASE WHEN folder='pending' AND sent_at IS NOT NULL THEN $3 ELSE folder END,
+		    raw_flags=$4, detected_at=COALESCE(detected_at,$5), observed_at=$5,
+		    first_landing=$3, first_folder=$6, first_flags=$7, evidence=$8
+		WHERE seed_account_id=$1 AND btrim(message_id,'<> ')=btrim($2,'<> ')
+		  AND folder IN ('pending','missing') AND first_folder IS NULL`,
+		accountID, messageID, models.ClassifyPlacementLanding(folder, flags), truncateRunes(strings.Join(observationFlags, ","), 1000), at, folder, observationFlags, evidence)
+	return err
+}
+
+func (r *placementRepository) RecordLandingObservation(ctx context.Context, resultID uuid.UUID, folder string, flags []string, at time.Time) error {
+	evidence, err := json.Marshal(models.EvidenceFromFlags(flags))
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, `
+		UPDATE placement_results SET folder=COALESCE(first_landing,$2),
+		    detected_at=COALESCE(detected_at,$3), observed_at=COALESCE(observed_at,$3),
+		    first_landing=COALESCE(first_landing,$2), first_folder=COALESCE(first_folder,$4),
+		    first_flags=COALESCE(first_flags,$5), evidence=COALESCE(evidence,$6),
+		    raw_flags=CASE WHEN first_folder IS NULL THEN $7 ELSE raw_flags END
+		WHERE id=$1 AND folder='pending' AND sent_at IS NOT NULL`, resultID,
+		models.ClassifyPlacementLanding(folder, flags), at, folder,
+		models.PlacementObservationFlags(flags), evidence, truncateRunes(strings.Join(models.PlacementObservationFlags(flags), ","), 1000))
 	return err
 }
 
@@ -589,14 +627,14 @@ func (r *placementRepository) FinishTests(ctx context.Context) ([]PlacementFinis
 				WHEN pt.status <> 'running' THEN pt.status
 				WHEN NOT EXISTS (
 					SELECT 1 FROM placement_results pr
-					WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing')
+					WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing','unknown','archive','custom')
 				) THEN 'failed'
 				ELSE 'completed'
 			END,
 			error = CASE
 				WHEN pt.status = 'running' AND NOT EXISTS (
 					SELECT 1 FROM placement_results pr
-					WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing')
+					WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing','unknown','archive','custom')
 				) THEN 'No copy of the test left the sender'
 				ELSE pt.error
 			END,
@@ -762,7 +800,7 @@ func (r *placementRepository) CountMeteredTests(ctx context.Context, orgID uuid.
 		  AND pt.created_at >= $2
 		  AND (pt.finished_at IS NULL OR EXISTS (
 			SELECT 1 FROM placement_results pr
-			WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing')
+			WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing','unknown','archive','custom')
 		  ))
 	`, orgID, since).Scan(&n)
 	return n, err
@@ -809,7 +847,7 @@ func (r *placementRepository) UnsettledPaidTests(ctx context.Context, limit int)
 		SELECT pt.id, pt.organization_id, pt.created_by, pt.credits_charged,
 			EXISTS (
 				SELECT 1 FROM placement_results pr
-				WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing')
+				WHERE pr.test_id = pt.id AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing','unknown','archive','custom')
 			)
 		FROM placement_tests pt
 		WHERE pt.credits_charged > 0

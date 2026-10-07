@@ -1140,21 +1140,16 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
         refresh.mutate();
     };
 
-    // The verdict follows what the check can actually prove. SPF and DMARC are
-    // discoverable, so a miss there is a real miss; DKIM is not, so a domain
-    // with both of those in place is aligned as far as anyone can tell, and
-    // saying "needs attention" over an unverifiable DKIM is a false alarm. A
-    // lookup DNS did not answer proves nothing either way.
-    const unanswered = !!data?.lookup_error;
+    const unanswered = !!data?.lookup_error || !!data?.reserved || data?.domain === "";
     const verdict = !data
         ? null
         : unanswered
           ? { ok: false, tone: "text-slate-600", title: "DNS did not answer" }
           : data.all_aligned
-            ? { ok: true, tone: "text-emerald-700", title: "Authentication aligned" }
+            ? { ok: true, tone: "text-emerald-700", title: "SPF, DKIM and DMARC records found" }
             : data.spf_found && data.dmarc_found
-              ? { ok: true, tone: "text-emerald-700", title: "SPF and DMARC aligned, DKIM unverified" }
-              : { ok: false, tone: "text-amber-700", title: "Authentication needs attention" };
+              ? { ok: true, tone: "text-emerald-700", title: "SPF and DMARC records found, DKIM unverified" }
+              : { ok: false, tone: "text-amber-700", title: "DNS records need attention" };
     const discoverable = (found: boolean): AuthRecordState => (found ? "found" : unanswered ? "unverified" : "missing");
 
     return (
@@ -1162,7 +1157,7 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
             <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                     <Eyebrow>Domain authentication</Eyebrow>
-                    <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">Live SPF, DKIM &amp; DMARC check on the sending domain.</p>
+                    <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">DNS record discovery. Actual-message alignment and delivery TLS are separate, unverified checks.</p>
                 </div>
                 <button
                     onClick={run}
@@ -1194,6 +1189,11 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
                                 <div className="min-w-0">
                                     <div className="text-[12px] font-medium">{verdict.title}</div>
                                     {data.summary && <div className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">{data.summary}</div>}
+                                    {data.readiness?.filter((c) => c.state !== "record-present").map((c) => (
+                                        <div key={c.component} className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+                                            {c.component.replaceAll("_", " ")}: {c.state}. {c.reason}
+                                        </div>
+                                    ))}
                                     {unanswered && (
                                         <div className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">
                                             Nothing is held against the domain for this. Try again in a minute.

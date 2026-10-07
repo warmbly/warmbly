@@ -31,7 +31,7 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
     const navigate = useNavigate();
 
     const groups = useMemo<PlacementGroup[]>(
-        () => GROUP_ORDER.filter((g) => report?.providers.some((p) => p.group === g && p.delivered > 0)),
+        () => GROUP_ORDER.filter((g) => report?.providers.some((p) => p.group === g && (p.observed_receipts ?? p.delivered) > 0)),
         [report],
     );
     const activeGroup: GroupFilter = group !== "all" && !groups.includes(group) ? "all" : group;
@@ -56,13 +56,13 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
             </>
         );
     }
-    if (!report || report.summary.delivered === 0) {
+    if (!report || (report.summary.observed_receipts ?? report.summary.delivered) === 0) {
         return (
             <>
                 <SectionBar label="Warmup inbox placement" />
                 <EmptyBlock
-                    title={q.isError ? "Couldn't load warmup placement" : "No warmup deliveries in this window"}
-                    body="Every warmup email is checked in the partner's mailbox and recorded as inbox, another Gmail tab, or spam, per provider and per mailbox."
+                    title={q.isError ? "Couldn't load warmup placement" : "No warmup receipts observed in this window"}
+                    body="Partner mailbox observations are separate from connector submissions. No observations does not prove delivery failure."
                 />
             </>
         );
@@ -79,23 +79,30 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
 
             <StatStrip cols={5}>
                 <Stat
-                    label="Inbox rate · 7 days"
+                    label="Non-spam share · 7 days"
                     value={<span className={BAND[rate.band].text}>{rate.inbox_rate != null ? fmtPct(rate.inbox_rate) : "—"}</span>}
                     sub={rate.inbox_rate != null ? (otherHostsNote(rate, true) ?? BAND[rate.band].label) : rateSentence(rate)}
                 />
                 <Stat
-                    label="Inbox rate · window"
+                    label="Non-spam share · window"
                     value={<span className={BAND[bandForRate(t.inboxRate)].text}>{fmtPct(t.inboxRate)}</span>}
                     sub={filtered ? `at ${GROUP_LABEL[activeGroup]}` : `${fmtNum(t.inbox)} primary · ${fmtNum(t.tabs)} tabs`}
                 />
-                <Stat label="Delivered" value={t.delivered} sub={filtered ? "sends are not split by provider" : `of ${fmtNum(t.sent)} sent`} />
+                <Stat label="Classified receipts" value={t.delivered} sub={filtered ? "sends are not split by provider" : `of ${fmtNum(t.sent)} submissions`} />
                 <Stat
                     label="Spam"
                     value={<span className={t.spam > 0 ? "text-rose-600" : undefined}>{fmtNum(t.spam)}</span>}
-                    sub={`${fmtPct(t.spamRate)} · ${fmtNum(t.rescued)} rescued`}
+                    sub={`${fmtPct(t.spamRate)} · ${fmtNum(t.rescued)} rescue requests`}
                 />
                 <Stat label="Unconfirmed" value={filtered ? "—" : t.unconfirmed} sub="sent 24h+ ago, not seen yet" last />
             </StatStrip>
+            <p className="px-5 py-3 text-[11.5px] text-slate-500 leading-relaxed">
+                Controlled partner observations, not real-customer inbox probability. Unclassified receipts:
+                {report.summary.unknown == null ? " unavailable on this API version" : ` ${fmtNum(report.summary.unknown)} unknown, ${fmtNum(report.summary.archived)} archive, ${fmtNum(report.summary.custom)} custom folder`}.
+                {report.summary.legacy_uninstrumented_receipts != null && ` ${fmtNum(report.summary.legacy_uninstrumented_receipts)} historical receipts lack first-observation instrumentation.`}
+                {!filtered && report.summary.non_spam_metric && ` Non-spam numerator/denominator: ${report.summary.non_spam_metric.numerator}/${report.summary.non_spam_metric.denominator} classified receipts.`}
+                {!filtered && report.summary.non_spam_metric?.wilson_95_independence_interval && ` Independence-based Wilson 95% interval: ${fmtPct(report.summary.non_spam_metric.wilson_95_independence_interval.lower)} to ${fmtPct(report.summary.non_spam_metric.wilson_95_independence_interval.upper)}. Repeated observations are correlated; this is not causal efficacy evidence.`}
+            </p>
 
             <div className="grid lg:grid-cols-2 border-b border-slate-200/60">
                 <div className="px-5 py-4 lg:border-r lg:border-slate-200/60">
@@ -107,7 +114,7 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
                 </div>
                 <div className="px-5 py-4">
                     <div className="mb-3">
-                        <Eyebrow>Inbox rate over time</Eyebrow>
+                        <Eyebrow>Non-spam share over time</Eyebrow>
                     </div>
                     <RateTrend days={view} windowDays={rate.window_days} height={130} />
                 </div>
@@ -167,7 +174,7 @@ function MailboxRow({ m, onOpen }: { m: PlacementMailbox; onOpen: () => void }) 
                 <RateSpark values={m.daily_inbox_rate} />
             </span>
             <span className="hidden sm:flex items-center gap-3 font-mono text-[11px] tabular-nums text-slate-500 shrink-0">
-                <span title="Delivered in this window" className="w-16 text-right">{fmtNum(m.delivered)} dlv</span>
+                <span title="Classified receipts in this window" className="w-16 text-right">{fmtNum(m.delivered)} obs</span>
                 <span title="Spam in this window" className={cn("w-14 text-right", m.spam > 0 ? "text-rose-600" : "text-slate-400")}>{fmtNum(m.spam)} spam</span>
             </span>
             <span className="w-12 text-right shrink-0">
