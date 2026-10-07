@@ -4,16 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiagnosticParticipation } from "@/lib/api/models/app/cloudlink/CloudLink";
 import CloudWarmupCard from "./CloudWarmupCard";
 
-const fixtures = vi.hoisted(() => ({ participation: undefined as DiagnosticParticipation | undefined, patch: vi.fn() }));
-vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ manageable: true, connected: true, rowFor: () => ({ enrolled: true, managed: false, cloud: { participation: fixtures.participation, settings: { base: 10 }, sent_today: 0, sent_7d: 0 } }) }) }));
+const fixtures = vi.hoisted(() => ({ participation: undefined as DiagnosticParticipation | undefined, workspaceConnected: true, patch: vi.fn() }));
+vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ manageable: true, connected: true, workspaceConnected: fixtures.workspaceConnected, isEnrolled: (id: string) => id === "mailbox", rowFor: () => ({ enrolled: true, managed: false, cloud: { participation: fixtures.participation, settings: { base: 10 }, sent_today: 0, sent_7d: 0 } }) }) }));
 vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({ useEnrollCloudLinkMailbox: () => ({}), useUnenrollCloudLinkMailbox: () => ({}), useCloudLinkMailboxLifecycle: () => ({}) }));
 vi.mock("@/hooks/context/confirm", () => ({ useConfirm: () => ({ show: (_: string, confirm: () => void) => confirm() }) }));
 vi.mock("@/lib/api/client/app/cloudlink/cloudLink", () => ({ setCloudLinkParticipation: fixtures.patch }));
 vi.mock("./WarmupPartnerDiversity", () => ({ default: () => null }));
 vi.mock("./WarmupSendFailureNote", () => ({ default: () => null }));
 
-describe("Cloud diagnostic participation", () => {
-    beforeEach(() => { fixtures.participation = undefined; fixtures.patch.mockReset().mockResolvedValue({}); });
+describe.each([true, false])("Cloud diagnostic participation with workspace connection %s", (workspaceConnected) => {
+    beforeEach(() => { fixtures.participation = undefined; fixtures.workspaceConnected = workspaceConnected; fixtures.patch.mockReset().mockResolvedValue({}); });
     afterEach(cleanup);
     const draw = () => render(<QueryClientProvider client={new QueryClient()}><CloudWarmupCard mailboxId="mailbox" email="fixture@example.test" provider="smtp_imap" /></QueryClientProvider>);
 
