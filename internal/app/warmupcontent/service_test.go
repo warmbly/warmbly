@@ -12,6 +12,7 @@ func TestAdaptiveThreadTarget(t *testing.T) {
 	}{
 		{name: "idle library keeps safety floor", sends: 0, share: 70, floor: 0, wantTarget: 200},
 		{name: "configured floor wins", sends: 700, share: 70, floor: 300, wantTarget: 300},
+		{name: "valid smaller floor survives", sends: 0, share: 0, floor: 12, wantTarget: 12},
 		{name: "busy segment grows from demand", sends: 70000, share: 70, floor: 200, wantTarget: 350},
 		{name: "extreme volume stays bounded", sends: 10000000, share: 100, floor: 200, wantTarget: 5000},
 	}

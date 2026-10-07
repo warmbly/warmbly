@@ -74,11 +74,13 @@ type WarmupContentRepository interface {
 	// It reports whether the job was claimed.
 	MarkBatchCancelling(ctx context.Context, id uuid.UUID, reason string) (bool, error)
 	GeneratedCountSince(ctx context.Context, since time.Time) (int, error)
+	ReservedGenerationCountSince(ctx context.Context, since time.Time) (int, error)
 	ExpireStaleScheduledJobs(ctx context.Context, before time.Time) (int64, error)
 	WarmupSendsSince(ctx context.Context, since time.Time) (int, error)
 
 	// Settings (admin_settings key/value)
 	GetGenerationSettings(ctx context.Context) (*models.WarmupGenerationSettings, error)
+	PutGenerationSettings(ctx context.Context, settings models.WarmupGenerationSettings, updatedBy *uuid.UUID) error
 
 	// Content-cohort A/B analytics
 	SpamPlacementByCohort(ctx context.Context, since time.Time) ([]WarmupCohortStat, error)
@@ -103,12 +105,13 @@ func (r *warmupContentRepository) InsertConversation(ctx context.Context, c *mod
 	}
 	query := `
 		INSERT INTO warmup_conversations
-			(id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			(id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id, scenario_version, rendering_version, semantic_review)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE(NULLIF($16, ''), 'legacy_unknown'))
+		ON CONFLICT (id) DO NOTHING
 	`
 	_, err = r.db.Exec(ctx, query,
 		c.ID, c.PoolType, c.Segment, c.Source, c.Theme, c.Subject, c.Description,
-		msgs, c.Status, c.LintPassed, c.ReplyEligible, c.UsageCount, c.GeneratedByJob,
+		msgs, c.Status, c.LintPassed, c.ReplyEligible, c.UsageCount, c.GeneratedByJob, c.ScenarioVersion, c.RenderingVersion, c.SemanticReview,
 	)
 	return err
 }
@@ -118,7 +121,7 @@ func scanConversation(row pgx.Row) (*models.WarmupConversation, error) {
 	var msgs []byte
 	err := row.Scan(
 		&c.ID, &c.PoolType, &c.Segment, &c.Source, &c.Theme, &c.Subject, &c.Description,
-		&msgs, &c.Status, &c.LintPassed, &c.ReplyEligible, &c.UsageCount, &c.GeneratedByJob, &c.CreatedAt, &c.UpdatedAt,
+		&msgs, &c.Status, &c.LintPassed, &c.ReplyEligible, &c.UsageCount, &c.GeneratedByJob, &c.CreatedAt, &c.UpdatedAt, &c.ScenarioVersion, &c.RenderingVersion, &c.SemanticReview,
 	)
 	if err != nil {
 		return nil, err
@@ -129,8 +132,8 @@ func scanConversation(row pgx.Row) (*models.WarmupConversation, error) {
 	return &c, nil
 }
 
-const conversationCols = `id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id, created_at, updated_at`
-const qualifiedConversationCols = `c.id, c.pool_type, c.segment, c.source, c.theme, c.subject, c.description, c.messages, c.status, c.lint_passed, c.reply_eligible, c.usage_count, c.generated_by_job_id, c.created_at, c.updated_at`
+const conversationCols = `id, pool_type, segment, source, theme, subject, description, messages, status, lint_passed, reply_eligible, usage_count, generated_by_job_id, created_at, updated_at, scenario_version, rendering_version, semantic_review`
+const qualifiedConversationCols = `c.id, c.pool_type, c.segment, c.source, c.theme, c.subject, c.description, c.messages, c.status, c.lint_passed, c.reply_eligible, c.usage_count, c.generated_by_job_id, c.created_at, c.updated_at, c.scenario_version, c.rendering_version, c.semantic_review`
 
 // PickConversation returns a lightly-used active conversation from the shared
 // library and increments its usage in the same statement. Keeping selection and
@@ -224,7 +227,10 @@ func (r *warmupContentRepository) ListConversations(ctx context.Context, f Conve
 }
 
 func (r *warmupContentRepository) SetConversationStatus(ctx context.Context, id uuid.UUID, status string) error {
-	_, err := r.db.Exec(ctx, `UPDATE warmup_conversations SET status = $2, updated_at = NOW() WHERE id = $1`, id, status)
+	tag, err := r.db.Exec(ctx, `UPDATE warmup_conversations SET status = $2, updated_at = NOW() WHERE id = $1 AND ($2 != 'active' OR semantic_review IN ('passed', 'legacy_unknown'))`, id, status)
+	if err == nil && tag.RowsAffected() == 0 {
+		return errors.New("conversation missing or semantic review does not permit activation")
+	}
 	return err
 }
 
@@ -334,7 +340,33 @@ func (r *warmupContentRepository) LastGeneratedAt(ctx context.Context) (*time.Ti
 	return t, err
 }
 
+const warmupGenerationPolicyLockID int64 = 1791368245
+
 func (r *warmupContentRepository) CreateGenerationJob(ctx context.Context, j *models.WarmupGenerationJob) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, warmupGenerationPolicyLockID); err != nil {
+		return err
+	}
+	settings, err := getGenerationSettings(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !settings.GenerationEnabled {
+		return errors.New("warmup content generation is stopped")
+	}
+	if settings.DailyGenerationCap > 0 {
+		var reserved int
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(requested_count), 0) FROM warmup_generation_jobs WHERE created_at >= $1`, time.Now().UTC().Truncate(24*time.Hour)).Scan(&reserved); err != nil {
+			return err
+		}
+		if j.RequestedCount <= 0 || j.RequestedCount > settings.DailyGenerationCap-reserved {
+			return errors.New("daily generation reservation cap reached")
+		}
+	}
 	if j.ID == uuid.Nil {
 		j.ID = uuid.New()
 	}
@@ -347,14 +379,17 @@ func (r *warmupContentRepository) CreateGenerationJob(ctx context.Context, j *mo
 	query := `
 		INSERT INTO warmup_generation_jobs
 			(id, requested_by, trigger, mode, pool_type, segment, theme, model, requested_count, status,
-			 batch_id, batch_input_file_id, batch_output_file_id, batch_status, completion_window)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			 batch_id, batch_input_file_id, batch_output_file_id, batch_status, completion_window, content_version, max_messages_per_thread)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
-	_, err := r.db.Exec(ctx, query,
+	_, err = tx.Exec(ctx, query,
 		j.ID, j.RequestedBy, j.Trigger, j.Mode, j.PoolType, j.Segment, j.Theme, j.Model, j.RequestedCount, j.Status,
-		j.BatchID, j.BatchInputFileID, j.BatchOutputFileID, j.BatchStatus, j.CompletionWindow,
+		j.BatchID, j.BatchInputFileID, j.BatchOutputFileID, j.BatchStatus, j.CompletionWindow, j.ContentVersion, j.MaxMessagesPerThread,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *warmupContentRepository) UpdateGenerationJob(ctx context.Context, j *models.WarmupGenerationJob) error {
@@ -418,7 +453,7 @@ func (r *warmupContentRepository) ExpireStaleScheduledJobs(ctx context.Context, 
 	return tag.RowsAffected(), nil
 }
 
-const generationJobCols = `id, requested_by, trigger, mode, pool_type, segment, theme, model, requested_count, generated_count, lint_rejected_count, failed_count, status, error, batch_id, batch_input_file_id, batch_output_file_id, batch_status, completion_window, started_at, finished_at, created_at, updated_at`
+const generationJobCols = `id, requested_by, trigger, mode, pool_type, segment, theme, model, requested_count, generated_count, lint_rejected_count, failed_count, status, error, batch_id, batch_input_file_id, batch_output_file_id, batch_status, completion_window, started_at, finished_at, created_at, updated_at, content_version, max_messages_per_thread`
 
 func scanGenerationJob(row pgx.Row) (*models.WarmupGenerationJob, error) {
 	var j models.WarmupGenerationJob
@@ -426,7 +461,7 @@ func scanGenerationJob(row pgx.Row) (*models.WarmupGenerationJob, error) {
 		&j.ID, &j.RequestedBy, &j.Trigger, &j.Mode, &j.PoolType, &j.Segment, &j.Theme, &j.Model,
 		&j.RequestedCount, &j.GeneratedCount, &j.LintRejectedCount, &j.FailedCount,
 		&j.Status, &j.Error, &j.BatchID, &j.BatchInputFileID, &j.BatchOutputFileID, &j.BatchStatus, &j.CompletionWindow,
-		&j.StartedAt, &j.FinishedAt, &j.CreatedAt, &j.UpdatedAt,
+		&j.StartedAt, &j.FinishedAt, &j.CreatedAt, &j.UpdatedAt, &j.ContentVersion, &j.MaxMessagesPerThread,
 	)
 	if err != nil {
 		return nil, err
@@ -515,9 +550,23 @@ func (r *warmupContentRepository) WarmupSendsSince(ctx context.Context, since ti
 	return sends, err
 }
 
+func (r *warmupContentRepository) ReservedGenerationCountSince(ctx context.Context, since time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx, `SELECT COALESCE(SUM(requested_count), 0) FROM warmup_generation_jobs WHERE created_at >= $1`, since).Scan(&n)
+	return n, err
+}
+
 func (r *warmupContentRepository) GetGenerationSettings(ctx context.Context) (*models.WarmupGenerationSettings, error) {
+	return getGenerationSettings(ctx, r.db)
+}
+
+type generationSettingsReader interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func getGenerationSettings(ctx context.Context, db generationSettingsReader) (*models.WarmupGenerationSettings, error) {
 	var raw []byte
-	err := r.db.QueryRow(ctx, `SELECT value FROM admin_settings WHERE key = $1`, models.AdminSettingsKeyWarmupGeneration).Scan(&raw)
+	err := db.QueryRow(ctx, `SELECT value FROM admin_settings WHERE key = $1`, models.AdminSettingsKeyWarmupGeneration).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		def := models.DefaultWarmupGenerationSettings()
 		return &def, nil
@@ -533,6 +582,29 @@ func (r *warmupContentRepository) GetGenerationSettings(ctx context.Context) (*m
 	}
 	s.Normalize()
 	return &s, nil
+}
+
+func (r *warmupContentRepository) PutGenerationSettings(ctx context.Context, settings models.WarmupGenerationSettings, updatedBy *uuid.UUID) error {
+	settings.Normalize()
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, warmupGenerationPolicyLockID); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO admin_settings (key, value, updated_by, updated_at) VALUES ($1, $2, $3, now())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+		models.AdminSettingsKeyWarmupGeneration, raw, updatedBy)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *warmupContentRepository) SpamPlacementByCohort(ctx context.Context, since time.Time) ([]WarmupCohortStat, error) {

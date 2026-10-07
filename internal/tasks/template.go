@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/pkg/tmplfuncs"
 	"github.com/warmbly/warmbly/internal/pkg/warmpersona"
@@ -19,6 +20,8 @@ import (
 // Conversation represents a warmup conversation for AI generation
 type Conversation struct {
 	ID          uuid.UUID
+	Version     string
+	Subject     string
 	Theme       string
 	Description string
 	Messages    []string
@@ -332,8 +335,8 @@ func GenerateConversationReplyEmail(conversation Conversation, account models.Em
 	if turn < 1 || turn > len(conversation.Messages) {
 		return "", false
 	}
-	body := spinClean(conversation.Messages[turn-1])
-	if body == "" {
+	body := strings.TrimSpace(conversation.Messages[turn-1])
+	if body == "" || strings.ContainsAny(body, "<>{}\x00\r") {
 		return "", false
 	}
 
@@ -342,88 +345,55 @@ func GenerateConversationReplyEmail(conversation Conversation, account models.Em
 		signature = account.Email
 	}
 
-	persona := warmpersona.For(account.ID)
-	signoffs := []string{"Best regards,", "Best,", "Cheers,", "Thanks,", "Talk soon,", "All the best,", "Speak soon,", "Take care,"}
-	signoff := personaPick(persona, "signoff", signoffs)
-
-	return body + "\n\n" + signoff + "\n" + signature, true
+	rendered, err := generation.RenderCanonicalTurn(body, signature)
+	return rendered, err == nil
 }
 
 // GenerateConversationOpeningEmail renders an AI opening without consuming a
 // pre-generated reply turn.
 func GenerateConversationOpeningEmail(conversation Conversation, account models.Email) string {
-	return generateConversationOpeningEmail(conversation, account, false)
+	return generateConversationOpeningEmail(conversation, account)
 }
 
-// GenerateConversationEmail retains the reviewed static-library renderer.
+// GenerateConversationEmail renders an opening or the first ordered reply.
 func GenerateConversationEmail(conversation Conversation, account models.Email, isReply bool) string {
 	if isReply {
-		if body, ok := GenerateConversationReplyEmail(conversation, account, 1); ok {
-			return body
-		}
+		body, _ := GenerateConversationReplyEmail(conversation, account, 1)
+		return body
 	}
-	return generateConversationOpeningEmail(conversation, account, true)
+	return generateConversationOpeningEmail(conversation, account)
 }
 
-// generateConversationOpeningEmail renders a plaintext opening. Reviewed
-// static content can append one question; AI openings keep all ordered reply
-// turns unused for the later back-and-forth.
-func generateConversationOpeningEmail(conversation Conversation, account models.Email, includeQuestion bool) string {
+// Openings never consume a future reply or append a random question.
+func generateConversationOpeningEmail(conversation Conversation, account models.Email) string {
 	signature := account.Name
 	if signature == "" {
 		signature = account.Email
 	}
 
-	persona := warmpersona.For(account.ID)
-
-	greetings := []string{"Hi,", "Hey,", "Hi there,", "Hello,", "Hey there,", "Morning,", "Hello there,"}
-	signoffs := []string{"Best regards,", "Best,", "Cheers,", "Thanks,", "Talk soon,", "All the best,", "Speak soon,", "Take care,"}
-
-	greeting := personaPick(persona, "greeting", greetings)
-	signoff := personaPick(persona, "signoff", signoffs)
-
-	pickMessage := func() string {
-		if len(conversation.Messages) == 0 {
-			return ""
-		}
-		return spinClean(conversation.Messages[rand.Intn(len(conversation.Messages))])
+	description := strings.TrimSpace(conversation.Description)
+	if description == "" || strings.ContainsAny(description, "<>{}\x00\r") {
+		return ""
 	}
+	rendered, _ := generation.RenderCanonicalTurn(description, signature)
+	return rendered
+}
 
-	description := spinClean(conversation.Description)
-	if description == "" {
-		description = "Just wanted to check in with a quick note."
+// VettedDiagnosticConversations uses a separate immutable source-ID namespace.
+func VettedDiagnosticConversations() []Conversation {
+	return []Conversation{
+		{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-clock:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-clock", Subject: "Simulated diagnostic: fictional clock", Description: "Simulated diagnostic. In this fictional example, the clock reads 14:00, not 15:00. Which time does the example use?", Messages: []string{"The fictional example uses 14:00, not 15:00.", "Agreed. The example is closed; no real meeting was scheduled."}},
+		{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-count:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-count", Subject: "Simulated diagnostic: sample count", Description: "Simulated diagnostic. This hypothetical sample contains 3 blue cards and 2 green cards. How many cards are in the sample?", Messages: []string{"There are 5 cards in the hypothetical sample: 3 blue and 2 green.", "That matches the hypothetical sample. This scenario is complete; no physical cards were exchanged."}},
 	}
+}
 
-	openers := []string{
-		"Hope your week is going well.",
-		"Hope you're doing well.",
-		"Hope things are good on your end.",
-		"Hope you've had a good start to the week.",
-		"Hope all's well with you.",
-	}
-
-	var sb strings.Builder
-	sb.WriteString(greeting)
-	sb.WriteString("\n\n")
-	// ~60% include a short opener for a warmer, less terse message.
-	if rand.Float64() < 0.6 {
-		sb.WriteString(openers[rand.Intn(len(openers))])
-		sb.WriteString(" ")
-	}
-	sb.WriteString(description)
-
-	if includeQuestion {
-		if question := pickMessage(); question != "" {
-			sb.WriteString("\n\n")
-			sb.WriteString(question)
+func ResolveDiagnosticConversation(id uuid.UUID) (Conversation, bool) {
+	for _, c := range VettedDiagnosticConversations() {
+		if c.ID == id {
+			return c, true
 		}
 	}
-
-	sb.WriteString("\n\n")
-	sb.WriteString(signoff)
-	sb.WriteString("\n")
-	sb.WriteString(signature)
-	return sb.String()
+	return Conversation{}, false
 }
 
 // ExtractPlainTextFromHTML derives the text/plain alternative that ships

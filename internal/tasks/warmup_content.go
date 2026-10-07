@@ -63,27 +63,27 @@ func (s *tasksService) pickNewWarmupContent(ctx context.Context, account Email) 
 		segment := strings.TrimSpace(account.WarmupTag)
 		conv, err := s.warmupContentRepo.PickConversation(ctx, segment)
 		if err == nil && conv != nil {
-			c := Conversation{ID: conv.ID, Theme: conv.Theme, Description: conv.Description, Messages: conv.Messages}
+			c := Conversation{ID: conv.ID, Subject: conv.Subject, Theme: conv.Theme, Description: conv.Description, Messages: conv.Messages}
 			body := GenerateConversationOpeningEmail(c, account)
-			subject := spinClean(conv.Subject)
-			if subject == "" {
-				subject = generateWarmupSubject()
-			}
-			id := conv.ID
-			return warmupContent{
-				subject:        subject,
-				body:           body,
-				theme:          conv.Theme,
-				contentSource:  models.WarmupContentSourceAI,
-				conversationID: &id,
+			subject := strings.TrimSpace(conv.Subject)
+			if body != "" && subject != "" && !strings.ContainsAny(subject, "<>{}\x00\r\n") {
+				id := conv.ID
+				return warmupContent{
+					subject:        subject,
+					body:           body,
+					theme:          conv.Theme,
+					contentSource:  models.WarmupContentSourceAI,
+					conversationID: &id,
+				}
 			}
 		}
 	}
 
-	conversation := randomWarmupConversation()
+	bank := VettedDiagnosticConversations()
+	conversation := bank[rand.Intn(len(bank))]
 	staticID := conversation.ID
 	return warmupContent{
-		subject:        generateWarmupSubject(),
+		subject:        conversation.Subject,
 		body:           GenerateConversationEmail(conversation, account, false),
 		theme:          conversation.Theme,
 		contentSource:  models.WarmupContentSourceStatic,

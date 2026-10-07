@@ -1,0 +1,47 @@
+---
+title: Warmup diagnostic content generation
+description: Effective generation policy, stopping new jobs, batch draining and versioned diagnostic content.
+---
+
+Warmup content is an explicitly simulated diagnostic exchange for consenting test mailboxes. It is not a customer conversation or evidence of inbox placement, authentication, improved reputation or human engagement. Hypothetical facts and closure must remain consistent across every rendered turn.
+
+## Effective policy and stopping
+
+In **Admin > Warmup content > Overview**, the effective settings editor shows the configuration actually read from `admin_settings.warmup_generation`. Save supported operator values without removing provider credentials. Manage settings permission is required for writes; existing read access is unchanged.
+
+`PUT /admin/warmup-content/settings` accepts a JSON settings object and returns `{ "data": effectiveSettings }`. Omitted fields retain their current effective values. Unknown fields, non-object payloads, multiple JSON documents and documents over 64 KiB are rejected. The overview returns `effective_settings`, `generation_enabled`, `reserved_today` and `provider_capability`. This is an admin endpoint, not a workspace API-key scope.
+
+| Setting | Default for an absent field | Supported behavior |
+| --- | --- | --- |
+| `generation_enabled` | `true` | `false` prevents new persisted generation-job reservations. It does not delete credentials or disable cached-content use. |
+| `enabled` | `true` | Controls selection of cached AI content separately from generation. |
+| `schedule_enabled` | `true` | Enables scheduled runs; the generation stop takes precedence. |
+| `cadence_hours` | `6` | Integer from 1 to 168. |
+| `refresh_enabled` | `true` | Permits scheduled retirement and replacement. |
+| `refresh_per_run` | `10` | Integer from 0 to 25; zero means no refresh retirement. |
+| `daily_generation_cap` | `1000` | Non-negative; zero retains the existing unlimited policy. Counts reserved requests, including unfinished, rejected or cancelled work, so concurrent replicas cannot overspend by counting only approved output. Resets at the UTC day boundary. |
+| `ai_selection_share` | `70` | Integer percentage from 0 to 100; zero selects no AI openings. |
+| `model` | Existing default `gpt-6-luna` | A stored non-empty model is retained, not replaced. Availability is provider-checked before submission; the default is not a claim of availability. |
+| `max_messages_per_thread` | `5` | Integer from 1 to 5 ordered replies. |
+| `pools` | One enabled `premium` library with target 200 and the generic segment | Content is shared across mailbox tiers. Legacy multi-pool settings collapse to one canonical library, preferring an enabled entry. Its enabled flag, target from 1 to 5000 and distinct trimmed segments survive. |
+| `engagement` | Existing engagement defaults | Percentages clamp to 0 to 100; dwell bounds clamp to 0 to 3600 seconds with maximum at least minimum. These controls do not constitute consent or evidence of engagement. |
+
+Targets are configured floors; demand-based sizing may increase them, bounded at 5000. The scheduler also maintains the generic fallback segment. Supported values round-trip; out-of-range values clamp to the documented bounds. A backend that predates these controls must be upgraded before the admin editor is available.
+
+## Outstanding batches and capability
+
+A committed stop serializes against new job reservations. Jobs reserved before it, including a provider submission already in progress, cannot be retroactively unsent. Already submitted batches continue polling and ingesting completed output. **Jobs > Cancel** remains an explicit, separate provider operation; cancellation may leave completed output to ingest. Do not remove credentials while batches still need polling or cancellation.
+
+The provider must expose the configured model to the configured client. Model visibility alone does not prove Batch API or structured-output support. Submission errors from the provider determine those capabilities; the system does not silently substitute a different model. A configured client is not an assurance that a generation run will succeed.
+
+## Rendering, review and old data
+
+New scenario and rendering provenance are `diagnostic-v1` and `canonical-v1`. New jobs retain the requested reply count, so a later settings change does not reinterpret accepted output. Ordered body text, hypothetical numbers, dates, negation, promises and subject are immutable; there is no spintax, random appended question or body humanization. Rendered turns include truthful diagnostic disclosure and the sender identity. New generated content must pass structural checks and a semantic review of the complete rendered thread before activation.
+
+Review states distinguish `passed`, `rejected`, `unavailable`, `unreviewed`, `legacy_unknown` and `legacy_unreviewed`. An unavailable judge is not approval. Rejected or unavailable newly generated conversations stay archived and cannot be activated through the status control. Existing stored conversations and their IDs are not replaced or relabeled as reviewed; their missing historical evidence is `legacy_unknown`. Existing provider job IDs remain pollable. Unversioned old-job output is retained archived as `legacy_unreviewed`, without claiming it meets the new contract.
+
+Vetted static scenarios use a new stable UUID namespace; historical static source IDs must never be remapped to unrelated scenarios. Exact-parent continuation, exhaustion and missing/retired source handling are required at the live dispatch integration boundary.
+
+## Upgrade order
+
+Apply the additive content-provenance migration before starting the new backend. Deploy every backend instance before relying on `generation_enabled=false`; mixed old backends do not honor the new stop or resolve the new static scenario namespace. Pause warmup dispatch through existing controls during a mixed-version rollout, and resume only after all control-plane replicas understand exact-parent resolution. Deploy the matching admin frontend after the backend. Keep provider credentials while existing jobs drain. No migration replaces saved models, existing job IDs, source IDs or customer credentials, and no live efficacy claim follows from local tests.
