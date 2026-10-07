@@ -240,7 +240,7 @@ func (s *service) Overview(ctx context.Context, orgID uuid.UUID) (*Overview, *er
 	case s.Cloud == nil:
 		cloud.Reason = "Link this instance to Warmbly Cloud to test on its seed panel."
 	default:
-		if panel, xerr := s.Cloud.PlacementPanel(ctx); xerr != nil {
+		if panel, xerr := s.Cloud.PlacementPanel(ctx, orgID); xerr != nil {
 			cloud.Reason = xerr.Message
 		} else if panel != nil {
 			cloud = panel.Panel

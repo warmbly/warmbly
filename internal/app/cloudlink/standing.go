@@ -62,21 +62,38 @@ func (s *service) carryStanding(ctx context.Context, m models.CloudLinkMailbox) 
 	}
 }
 
+func mailboxGroups(rows []models.CloudLinkMailbox) map[uuid.UUID][]models.CloudLinkMailbox {
+	groups := map[uuid.UUID][]models.CloudLinkMailbox{}
+	for _, m := range rows {
+		groups[m.InstanceID] = append(groups[m.InstanceID], m)
+	}
+	return groups
+}
+
 func (s *service) SyncStanding(ctx context.Context) ([]models.CloudLinkStandingChange, *errx.Error) {
-	l, err := s.repo.Get(ctx)
-	if err != nil {
-		return nil, errx.InternalError()
-	}
-	if l == nil {
-		return nil, nil
-	}
 	enrolled, err := s.repo.List(ctx)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
-	if len(enrolled) == 0 {
-		return nil, nil
+	var changes []models.CloudLinkStandingChange
+	var lastError *errx.Error
+	for _, rows := range mailboxGroups(enrolled) {
+		l, xerr := s.mailboxLink(ctx, &rows[0])
+		if xerr != nil {
+			lastError = xerr
+			continue
+		}
+		part, xerr := s.syncStanding(ctx, l, rows)
+		if xerr != nil {
+			lastError = xerr
+			continue
+		}
+		changes = append(changes, part...)
 	}
+	return changes, lastError
+}
+
+func (s *service) syncStanding(ctx context.Context, l *models.CloudLink, enrolled []models.CloudLinkMailbox) ([]models.CloudLinkStandingChange, *errx.Error) {
 	byRemote, xerr := s.fetchStanding(ctx, l)
 	if xerr != nil {
 		return nil, xerr

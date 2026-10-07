@@ -32,6 +32,7 @@ export default function useCloudPool() {
         selfHosted,
         manageable,
         connected,
+        workspaceConnected: connected && !!status.data?.link?.organization_id,
         reachable: status.data?.reachable === true,
         orgName: status.data?.link?.organization_name ?? "",
         plan,

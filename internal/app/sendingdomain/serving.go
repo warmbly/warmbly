@@ -19,12 +19,13 @@ import (
 // CloudRedirects is Warmbly Cloud serving root redirects for this linked instance.
 type CloudRedirects interface {
 	// RedirectOffer is Cloud's offer and whether the instance is linked; a linked instance gets nil while Cloud is unreachable.
-	RedirectOffer(ctx context.Context) (*models.PoolLinkRedirectOffer, bool)
+	RedirectOffer(ctx context.Context, orgID uuid.UUID) (*models.PoolLinkRedirectOffer, bool)
+	ReleaseRedirect(ctx context.Context, instanceID uuid.UUID, domain string) *errx.Error
 	ListRedirects(ctx context.Context) ([]models.DomainRedirect, *errx.Error)
-	PutRedirect(ctx context.Context, domain string, in models.DomainRedirectRequest) (*models.DomainRedirect, *errx.Error)
-	GetRedirect(ctx context.Context, domain string) (*models.DomainRedirect, *errx.Error)
-	VerifyRedirect(ctx context.Context, domain string) (*models.DomainRedirect, *errx.Error)
-	DeleteRedirect(ctx context.Context, domain string) *errx.Error
+	PutRedirect(ctx context.Context, orgID uuid.UUID, domain string, in models.DomainRedirectRequest) (*models.DomainRedirect, *errx.Error)
+	GetRedirect(ctx context.Context, orgID uuid.UUID, domain string) (*models.DomainRedirect, *errx.Error)
+	VerifyRedirect(ctx context.Context, orgID uuid.UUID, domain string) (*models.DomainRedirect, *errx.Error)
+	DeleteRedirect(ctx context.Context, orgID uuid.UUID, domain string) *errx.Error
 }
 
 // WireCloud attaches the instance's link to Warmbly Cloud; optional.
@@ -57,7 +58,7 @@ func (s *Service) cloudServable(ctx context.Context, orgID uuid.UUID, domain str
 		return errx.NewWithIdentifier(errx.Conflict, ErrIDCloudUnavailable, "Connect this instance to Warmbly Cloud to serve redirects from there.")
 	}
 	if !alreadyCloud {
-		offer, linked := s.cloud.RedirectOffer(ctx)
+		offer, linked := s.cloud.RedirectOffer(ctx, orgID)
 		switch {
 		case !linked:
 			return errx.NewWithIdentifier(errx.Conflict, ErrIDCloudUnavailable, "Connect this instance to Warmbly Cloud to serve redirects from there.")
@@ -102,11 +103,11 @@ func cloudGone(xerr *errx.Error) bool {
 }
 
 // releaseCloud stops Cloud serving a domain before this instance forgets it did.
-func (s *Service) releaseCloud(ctx context.Context, domain string) *errx.Error {
+func (s *Service) releaseCloud(ctx context.Context, orgID uuid.UUID, domain string) *errx.Error {
 	if s.cloud == nil {
 		return nil
 	}
-	if xerr := s.cloud.DeleteRedirect(ctx, domain); xerr != nil && !cloudGone(xerr) {
+	if xerr := s.cloud.DeleteRedirect(ctx, orgID, domain); xerr != nil && !cloudGone(xerr) {
 		return errx.NewWithIdentifier(errx.ServiceUnavailable, ErrIDCloudUnreachable,
 			"Warmbly Cloud could not be reached, so the redirect is still served there. Try again in a moment.")
 	}
@@ -138,14 +139,14 @@ func (s *Service) checkCloud(ctx context.Context, r *models.DomainRedirect, forc
 	var remote *models.DomainRedirect
 	var xerr *errx.Error
 	if force {
-		remote, xerr = s.cloud.VerifyRedirect(ctx, r.Domain)
+		remote, xerr = s.cloud.VerifyRedirect(ctx, r.OrganizationID, r.Domain)
 	} else {
-		remote, xerr = s.cloud.GetRedirect(ctx, r.Domain)
+		remote, xerr = s.cloud.GetRedirect(ctx, r.OrganizationID, r.Domain)
 	}
 	// A row Cloud lost, or holds with an older target (a save whose answer was lost), is sent again.
 	if (xerr != nil && xerr.Identifier == ErrIDRemoteNotFound) || (xerr == nil && (remote.TargetURL != r.TargetURL || remote.IncludeWWW != r.IncludeWWW)) {
 		www := r.IncludeWWW
-		remote, xerr = s.cloud.PutRedirect(ctx, r.Domain, models.DomainRedirectRequest{TargetURL: r.TargetURL, IncludeWWW: &www})
+		remote, xerr = s.cloud.PutRedirect(ctx, r.OrganizationID, r.Domain, models.DomainRedirectRequest{TargetURL: r.TargetURL, IncludeWWW: &www})
 	}
 	if xerr != nil {
 		if cloudGone(xerr) {
@@ -193,8 +194,9 @@ func (s *Service) reconcileCloud(ctx context.Context) {
 		return
 	}
 	for _, r := range remote {
-		if !local[r.Domain] && time.Since(r.CreatedAt) > cloudOrphanGrace {
-			if xerr := s.cloud.DeleteRedirect(ctx, r.Domain); xerr != nil && !cloudGone(xerr) {
+		owner, exists := local[r.Domain]
+		if r.CloudLinkInstanceID != nil && (!exists || owner != *r.CloudLinkInstanceID) && time.Since(r.CreatedAt) > cloudOrphanGrace {
+			if xerr := s.cloud.ReleaseRedirect(ctx, *r.CloudLinkInstanceID, r.Domain); xerr != nil && !cloudGone(xerr) {
 				log.Warn().Str("domain", r.Domain).Str("code", xerr.ResponseCode()).Msg("domain redirect sweep: could not release a Cloud redirect")
 			}
 		}
@@ -202,8 +204,8 @@ func (s *Service) reconcileCloud(ctx context.Context) {
 }
 
 // MarkCloudUnlinked stops every cloud-served redirect claiming to be live, once the link to Cloud ends.
-func (s *Service) MarkCloudUnlinked(ctx context.Context) {
-	_ = s.redirects.UnverifyCloudServed(ctx, unlinkedMessage)
+func (s *Service) MarkCloudUnlinked(ctx context.Context, instanceID uuid.UUID) {
+	_ = s.redirects.UnverifyCloudServed(ctx, instanceID, unlinkedMessage)
 }
 
 // The Cloud side: rows served for a linked instance, proven against this deployment's own TXT value and tracking host.
@@ -280,6 +282,9 @@ func (s *Service) LinkedSet(ctx context.Context, inst *models.PoolLinkInstance, 
 		if other != nil {
 			return nil, errx.NewWithIdentifier(errx.Conflict, ErrIDTaken, "Your Warmbly Cloud workspace already has a redirect for this domain. Remove it there first.")
 		}
+	}
+	if existing == nil && inst.RemoteOrganizationID == nil {
+		return nil, errx.NewWithIdentifier(errx.Conflict, "pool_link_workspace_required", "Connect per workspace to add redirects. Existing legacy redirects keep working.")
 	}
 	instanceID := inst.ID
 	r := &models.DomainRedirect{ID: uuid.New(), OrganizationID: inst.OrganizationID, Domain: domain, TargetURL: target, IncludeWWW: www,

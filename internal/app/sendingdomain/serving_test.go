@@ -14,12 +14,13 @@ import (
 
 // fakeCloud is Warmbly Cloud as the linked instance sees it.
 type fakeCloud struct {
-	offer    *models.PoolLinkRedirectOffer
-	rows     map[string]*models.DomainRedirect
-	down     bool
-	unlinked bool
-	deletes  []string
-	putErr   *errx.Error
+	releasedInstances []uuid.UUID
+	offer             *models.PoolLinkRedirectOffer
+	rows              map[string]*models.DomainRedirect
+	down              bool
+	unlinked          bool
+	deletes           []string
+	putErr            *errx.Error
 }
 
 func newFakeCloud() *fakeCloud {
@@ -36,7 +37,7 @@ func (f *fakeCloud) fail() *errx.Error {
 	return nil
 }
 
-func (f *fakeCloud) RedirectOffer(context.Context) (*models.PoolLinkRedirectOffer, bool) {
+func (f *fakeCloud) RedirectOffer(context.Context, uuid.UUID) (*models.PoolLinkRedirectOffer, bool) {
 	if f.unlinked {
 		return nil, false
 	}
@@ -45,7 +46,7 @@ func (f *fakeCloud) RedirectOffer(context.Context) (*models.PoolLinkRedirectOffe
 	}
 	return f.offer, true
 }
-func (f *fakeCloud) PutRedirect(_ context.Context, domain string, in models.DomainRedirectRequest) (*models.DomainRedirect, *errx.Error) {
+func (f *fakeCloud) PutRedirect(_ context.Context, _ uuid.UUID, domain string, in models.DomainRedirectRequest) (*models.DomainRedirect, *errx.Error) {
 	if xerr := f.fail(); xerr != nil {
 		return nil, xerr
 	}
@@ -56,7 +57,8 @@ func (f *fakeCloud) PutRedirect(_ context.Context, domain string, in models.Doma
 		old.TargetURL, old.IncludeWWW = in.TargetURL, *in.IncludeWWW
 		return old, nil
 	}
-	r := &models.DomainRedirect{Domain: domain, TargetURL: in.TargetURL, IncludeWWW: *in.IncludeWWW, ServeHost: "t.warmbly.cloud", CreatedAt: time.Now(),
+	id := uuid.Nil
+	r := &models.DomainRedirect{CloudLinkInstanceID: &id, Domain: domain, TargetURL: in.TargetURL, IncludeWWW: *in.IncludeWWW, ServeHost: "t.warmbly.cloud", CreatedAt: time.Now(),
 		Records: []models.DNSRecord{{Purpose: "root", Type: "A", Name: domain, Value: "198.51.100.7"}}, LastError: "The TXT record is not there yet."}
 	f.rows[domain] = r
 	return r, nil
@@ -71,7 +73,7 @@ func (f *fakeCloud) ListRedirects(context.Context) ([]models.DomainRedirect, *er
 	}
 	return out, nil
 }
-func (f *fakeCloud) GetRedirect(_ context.Context, domain string) (*models.DomainRedirect, *errx.Error) {
+func (f *fakeCloud) GetRedirect(_ context.Context, _ uuid.UUID, domain string) (*models.DomainRedirect, *errx.Error) {
 	if xerr := f.fail(); xerr != nil {
 		return nil, xerr
 	}
@@ -80,10 +82,10 @@ func (f *fakeCloud) GetRedirect(_ context.Context, domain string) (*models.Domai
 	}
 	return nil, errx.NewWithIdentifier(errx.NotFound, ErrIDRemoteNotFound, "none")
 }
-func (f *fakeCloud) VerifyRedirect(ctx context.Context, domain string) (*models.DomainRedirect, *errx.Error) {
-	return f.GetRedirect(ctx, domain)
+func (f *fakeCloud) VerifyRedirect(ctx context.Context, orgID uuid.UUID, domain string) (*models.DomainRedirect, *errx.Error) {
+	return f.GetRedirect(ctx, orgID, domain)
 }
-func (f *fakeCloud) DeleteRedirect(_ context.Context, domain string) *errx.Error {
+func (f *fakeCloud) DeleteRedirect(_ context.Context, _ uuid.UUID, domain string) *errx.Error {
 	if xerr := f.fail(); xerr != nil {
 		return xerr
 	}
@@ -171,7 +173,7 @@ func TestCloudServedRedirectStopsWhenTheLinkEnds(t *testing.T) {
 	if !r.Verified {
 		t.Fatal("not live")
 	}
-	s.MarkCloudUnlinked(ctx)
+	s.MarkCloudUnlinked(ctx, uuid.Nil)
 	if row := repo.rows[r.ID]; row.Verified || row.LastError != unlinkedMessage {
 		t.Fatalf("still live after the link ended: %+v", row)
 	}
@@ -217,7 +219,7 @@ func TestLinkedRedirectsProveOwnershipOnCloud(t *testing.T) {
 	s, repo := newTest(dns)
 	ctx := context.Background()
 	creator := uuid.New()
-	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: uuid.New(), CreatedBy: &creator}
+	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: uuid.New(), CreatedBy: &creator, RemoteOrganizationID: &creator}
 
 	// No mailbox on Cloud is needed: the instance's workspace sends from there.
 	r, xerr := s.LinkedSet(ctx, inst, "frost.io", models.DomainRedirectRequest{TargetURL: "frost.se"})
@@ -410,6 +412,7 @@ func TestARefusedNewLinkedRowDoesNotStayBehind(t *testing.T) {
 	s, repo := newTest(dns)
 	ctx := context.Background()
 	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: uuid.New()}
+	inst.RemoteOrganizationID = &inst.OrganizationID
 	// Another workspace already serves the domain verified, so the new row cannot verify.
 	other := &models.DomainRedirect{ID: uuid.New(), OrganizationID: uuid.New(), Domain: "frost.io", TargetURL: "https://x.com", Verified: true, ServedBy: models.RedirectServedByInstance}
 	repo.rows[other.ID] = other
@@ -500,7 +503,8 @@ func TestTheSweepReleasesCloudRedirectsNothingHereHas(t *testing.T) {
 	cloud := newFakeCloud()
 	s.WireCloud(cloud)
 	ctx := context.Background()
-	old := &models.DomainRedirect{Domain: "gone.io", CreatedAt: time.Now().Add(-time.Hour)}
+	id := uuid.Nil
+	old := &models.DomainRedirect{CloudLinkInstanceID: &id, Domain: "gone.io", CreatedAt: time.Now().Add(-time.Hour)}
 	young := &models.DomainRedirect{Domain: "saving.io", CreatedAt: time.Now()}
 	cloud.rows["gone.io"], cloud.rows["saving.io"] = old, young
 	if _, xerr := s.SetRedirect(ctx, uuid.New(), uuid.New(), "acme.io", RedirectInput{TargetURL: "acme.com", ServedBy: models.RedirectServedByCloud}); xerr != nil {
@@ -546,6 +550,7 @@ func TestARefusedUpdateOfALinkedRowPutsItBack(t *testing.T) {
 	s, repo := newTest(dns)
 	ctx := context.Background()
 	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: uuid.New()}
+	inst.RemoteOrganizationID = &inst.OrganizationID
 	if _, xerr := s.LinkedSet(ctx, inst, "frost.io", models.DomainRedirectRequest{TargetURL: "frost.se"}); xerr != nil {
 		t.Fatal(xerr)
 	}
@@ -560,5 +565,41 @@ func TestARefusedUpdateOfALinkedRowPutsItBack(t *testing.T) {
 	got, _ := repo.GetLinked(ctx, inst.ID, "frost.io")
 	if got == nil || got.TargetURL != "https://frost.se" {
 		t.Fatalf("a refused update kept its target: %+v", got)
+	}
+}
+
+func (f *fakeCloud) ReleaseRedirect(ctx context.Context, instanceID uuid.UUID, domain string) *errx.Error {
+	f.releasedInstances = append(f.releasedInstances, instanceID)
+	return f.DeleteRedirect(ctx, instanceID, domain)
+}
+
+func TestLegacyCloudRedirectsCanBeUpdatedButNotCreated(t *testing.T) {
+	s, _ := newTest(baseDNS())
+	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: uuid.New()}
+	in := models.DomainRedirectRequest{TargetURL: "frost.se"}
+	if _, xerr := s.LinkedSet(context.Background(), inst, "frost.io", in); xerr == nil || xerr.Identifier != "pool_link_workspace_required" {
+		t.Fatalf("new legacy redirect = %v", xerr)
+	}
+	inst.RemoteOrganizationID = &inst.OrganizationID
+	if _, xerr := s.LinkedSet(context.Background(), inst, "frost.io", in); xerr != nil {
+		t.Fatal(xerr)
+	}
+	inst.RemoteOrganizationID = nil
+	if _, xerr := s.LinkedSet(context.Background(), inst, "frost.io", in); xerr != nil {
+		t.Fatalf("existing legacy redirect stopped working: %v", xerr)
+	}
+}
+
+func TestSweepReleasesOnlyThePreviousLinksRedirect(t *testing.T) {
+	s, repo := newTest(baseDNS())
+	cloud := newFakeCloud()
+	s.WireCloud(cloud)
+	oldID, currentID := uuid.New(), uuid.New()
+	domain := "moved.io"
+	repo.rows[uuid.New()] = &models.DomainRedirect{Domain: domain, ServedBy: models.RedirectServedByCloud, CloudLinkInstanceID: &currentID}
+	cloud.rows[domain] = &models.DomainRedirect{Domain: domain, CloudLinkInstanceID: &oldID, CreatedAt: time.Now().Add(-time.Hour)}
+	s.reconcileCloud(context.Background())
+	if len(cloud.releasedInstances) != 1 || cloud.releasedInstances[0] != oldID {
+		t.Fatal("sweep did not use original link")
 	}
 }

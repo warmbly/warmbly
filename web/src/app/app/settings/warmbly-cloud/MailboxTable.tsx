@@ -19,7 +19,7 @@ import { TableSurface, Toggle } from "../_components/SectionShell";
 import { providerLabel, providerSupported } from "./providers";
 import { cloudWarmupPaused } from "@/lib/cloudWarmup";
 
-export default function MailboxTable() {
+export default function MailboxTable({ allowEnrollment = true }: { allowEnrollment?: boolean }) {
     const rows = useCloudLinkMailboxes();
     const enroll = useEnrollCloudLinkMailbox();
     const unenroll = useUnenrollCloudLinkMailbox();
@@ -92,6 +92,7 @@ export default function MailboxTable() {
                                             <p className="text-[11px] text-slate-400 truncate">
                                                 {providerLabel(row.provider)}
                                                 {row.managed && " · signed in through Warmbly Cloud"}
+                                                {row.legacy && " · legacy connection"}
                                                 {!supported && " · signed in with this instance's own OAuth app; add it again through Warmbly Cloud to warm it"}
                                                 {row.enrolled && !cloud && " · waiting for the cloud"}
                                                 {cloud?.errors && cloud.errors.length > 0 && (
@@ -147,7 +148,7 @@ export default function MailboxTable() {
                                             {busy === row.id ? (
                                                 <Loader2Icon className="w-3.5 h-3.5 animate-spin text-slate-400" />
                                             ) : (
-                                                <Toggle on={row.enrolled} disabled={!supported} onChange={() => flip(row)} />
+                                                <Toggle on={row.enrolled} disabled={!supported || (!row.enrolled && !allowEnrollment)} onChange={() => flip(row)} />
                                             )}
                                         </div>
                                     </td>

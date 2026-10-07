@@ -75,10 +75,10 @@ type CampaignPauser interface {
 // CloudPanel is the instance side of Warmbly Cloud's seed panel. The
 // cloudlink service satisfies it; nil when the instance is not linked.
 type CloudPanel interface {
-	PlacementPanel(ctx context.Context) (*models.PlacementCloudPanel, *errx.Error)
-	StartPlacement(ctx context.Context, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error)
-	ReportPlacementSends(ctx context.Context, testID uuid.UUID, sends []models.PlacementCloudSend) *errx.Error
-	PlacementVerdicts(ctx context.Context, testID uuid.UUID) (*models.PlacementCloudTest, *errx.Error)
+	PlacementPanel(ctx context.Context, orgID uuid.UUID) (*models.PlacementCloudPanel, *errx.Error)
+	StartPlacement(ctx context.Context, orgID uuid.UUID, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error)
+	ReportPlacementSends(ctx context.Context, instanceID, testID uuid.UUID, sends []models.PlacementCloudSend) *errx.Error
+	PlacementVerdicts(ctx context.Context, instanceID, testID uuid.UUID) (*models.PlacementCloudTest, *errx.Error)
 }
 
 // Deps are the service's collaborators. Repo, Emails, Campaigns, Tasks and
@@ -384,13 +384,13 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		if perVariant < config.PlacementSeedsPerTestMin {
 			return nil, budgetShort(config.PlacementSeedsPerTestMin)
 		}
-		if panel, xerr := s.Cloud.PlacementPanel(ctx); xerr == nil && panel != nil {
+		if panel, xerr := s.Cloud.PlacementPanel(ctx, in.OrgID); xerr == nil && panel != nil {
 			if lim := panel.Usage.Limit; lim != nil && panel.Usage.Used+len(variants) > *lim {
 				return nil, placementErr(errx.PaymentRequired, "placement_quota_exceeded",
 					"The linked Warmbly Cloud workspace has used its placement tests for the month.")
 			}
 		}
-		start, xerr := s.Cloud.StartPlacement(ctx, models.PlacementCloudStartRequest{
+		start, xerr := s.Cloud.StartPlacement(ctx, in.OrgID, models.PlacementCloudStartRequest{
 			SenderDomain: senderDomain, Tests: len(variants), MaxSeeds: perVariant, Families: families,
 		})
 		if xerr != nil {
@@ -470,6 +470,7 @@ func (s *service) CreateTests(ctx context.Context, in CreateInput) ([]TestView, 
 		if cloudStart != nil {
 			remote := cloudStart.TestIDs[i]
 			out[i].test.RemoteTestID = &remote
+			out[i].test.RemoteInstanceID = &cloudStart.InstanceID
 		}
 	}
 	// One probe every spacing, jittered, alternating variants per seed in a

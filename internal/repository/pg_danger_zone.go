@@ -109,6 +109,23 @@ func (r *dangerZoneRepository) CreatePending(ctx context.Context, d *models.Sche
 	}
 	defer tx.Rollback(ctx)
 
+	var linked bool
+	var check string
+	switch d.ResourceType {
+	case models.DeletionResourceOrganization:
+		check = `SELECT EXISTS (SELECT 1 FROM cloud_link WHERE organization_id = $1)`
+	case models.DeletionResourceUser:
+		check = `SELECT EXISTS (SELECT 1 FROM cloud_link cl JOIN organizations o ON o.id = cl.organization_id WHERE o.owner_user_id = $1)`
+	}
+	if check != "" {
+		if err := tx.QueryRow(ctx, check, d.ResourceID).Scan(&linked); err != nil {
+			return err
+		}
+		if linked {
+			return ErrOrganizationCloudLinked
+		}
+	}
+
 	const insertQ = `
 		INSERT INTO scheduled_deletions (
 			id, resource_type, resource_id, organization_id,

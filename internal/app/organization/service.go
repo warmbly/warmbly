@@ -301,7 +301,7 @@ func (s *organizationService) Create(ctx context.Context, userID uuid.UUID, name
 	// Daily creation throttle — caps "new workspaces per owner per
 	// day" so a script can't spawn 100 orgs from one user account.
 	// Scope is the owner uuid (not the org, which doesn't exist yet).
-	if s.throttle != nil {
+	if !config.SelfHosted() && s.throttle != nil {
 		if xerr := s.throttle.CheckAndIncrement(ctx, userID, dailythrottle.ResourceOrg, config.DailyThrottleNewOrgs); xerr != nil {
 			return nil, xerr
 		}
@@ -317,13 +317,15 @@ func (s *organizationService) Create(ctx context.Context, userID uuid.UUID, name
 		return nil, errx.New(errx.NotFound, "user not found")
 	}
 
-	ownedCount, countErr := s.orgRepo.GetUserOwnedOrganizationCount(ctx, userID)
-	if countErr != nil {
-		errs.CaptureException(countErr)
-		return nil, errx.New(errx.Internal, "failed to get organization count")
-	}
-	if ownedCount >= user.MaxOrganizations {
-		return nil, errx.New(errx.Forbidden, "maximum organization limit reached")
+	if !config.SelfHosted() {
+		ownedCount, countErr := s.orgRepo.GetUserOwnedOrganizationCount(ctx, userID)
+		if countErr != nil {
+			errs.CaptureException(countErr)
+			return nil, errx.New(errx.Internal, "failed to get organization count")
+		}
+		if ownedCount >= user.MaxOrganizations {
+			return nil, errx.New(errx.Forbidden, "maximum organization limit reached")
+		}
 	}
 
 	org := &models.Organization{
@@ -526,6 +528,9 @@ func (s *organizationService) Update(ctx context.Context, orgID uuid.UUID, req *
 // Delete deletes an organization
 func (s *organizationService) Delete(ctx context.Context, orgID uuid.UUID) *errx.Error {
 	if err := s.orgRepo.Delete(ctx, orgID); err != nil {
+		if errors.Is(err, repository.ErrOrganizationCloudLinked) {
+			return errx.NewWithIdentifier(errx.Conflict, "organization_cloud_connected", "Disconnect this workspace from Warmbly Cloud before deleting it.")
+		}
 		errs.CaptureException(err)
 		return errx.New(errx.Internal, "failed to delete organization")
 	}

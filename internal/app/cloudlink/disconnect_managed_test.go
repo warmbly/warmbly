@@ -25,12 +25,12 @@ func (r *disconnectRepo) List(context.Context) ([]models.CloudLinkMailbox, error
 	return r.rows, nil
 }
 
-func (r *disconnectRepo) UnenrollAll(context.Context) error {
+func (r *disconnectRepo) UnenrollAll(context.Context, uuid.UUID) error {
 	r.unenrollAll++
 	return nil
 }
 
-func (r *disconnectRepo) Delete(context.Context) error {
+func (r *disconnectRepo) Delete(context.Context, uuid.UUID) error {
 	r.deleted++
 	return nil
 }
@@ -77,7 +77,7 @@ func TestDisconnectDeletesManagedMirrorsAfterTheInstanceIsRevoked(t *testing.T) 
 	calls, refused := &[]string{}, &[]*errx.Error{}
 	f.svc.emailSvc = revokingEmails{stubEmailDeletes: stubEmailDeletes{deletes: calls}, svc: f.svc, org: f.org, refused: refused}
 
-	if xerr := f.svc.Disconnect(context.Background()); xerr != nil {
+	if xerr := f.svc.Disconnect(context.Background(), f.org, true); xerr != nil {
 		t.Fatalf("Disconnect: %v", xerr)
 	}
 	if len(*refused) != 0 {

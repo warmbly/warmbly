@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"net/url"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ import (
 )
 
 var (
+	ErrLegacyLink        = errx.NewWithIdentifier(errx.Conflict, "pool_link_workspace_required", "Reconnect per workspace to add mailboxes. Existing legacy enrollments continue working.")
+	ErrWorkspaceLinked   = errx.NewWithIdentifier(errx.Conflict, "pool_link_workspace_connected", "This Cloud workspace already has an active connection. Use a separate Cloud workspace and subscription, or disconnect the existing link first.")
 	ErrCodeNotFound      = errx.NewWithIdentifier(errx.NotFound, "pool_link_code_not_found", "That code is unknown or has expired. Start the connection again from your instance.")
 	ErrCodeNotPending    = errx.NewWithIdentifier(errx.Conflict, "pool_link_code_used", "That code has already been used.")
 	ErrCodeDenied        = errx.NewWithIdentifier(errx.Forbidden, "pool_link_denied", "The connection was declined.")
@@ -169,7 +172,10 @@ func NormalizeUserCode(raw string) string {
 }
 
 func (s *service) StartCode(ctx context.Context, req models.PoolLinkStartRequest) (*models.PoolLinkStartResponse, *errx.Error) {
-	if strings.TrimSpace(req.InstanceName) == "" {
+	if strings.TrimSpace(req.InstanceName) == "" || req.RemoteOrganizationID == uuid.Nil {
+		if req.RemoteOrganizationID == uuid.Nil {
+			return nil, ErrLegacyLink
+		}
 		return nil, ErrBadRequest
 	}
 	// Shown to the approving workspace, so it follows the workspace naming rules.
@@ -203,6 +209,7 @@ func (s *service) StartCode(ctx context.Context, req models.PoolLinkStartRequest
 		return nil, errx.InternalError()
 	}
 	return &models.PoolLinkStartResponse{
+		WorkspaceScoped: true,
 		DeviceCode:      deviceCode,
 		UserCode:        code.UserCode,
 		VerificationURL: config.AppBaseURL() + "/connect?code=" + url.QueryEscape(code.UserCode),
@@ -267,18 +274,26 @@ func (s *service) ApproveCode(ctx context.Context, userCode string, orgID, userI
 		return nil, errx.InternalError()
 	}
 	inst := &models.PoolLinkInstance{
-		ID:             uuid.New(),
-		OrganizationID: orgID,
-		Name:           code.InstanceName,
-		URL:            code.InstanceURL,
-		Version:        code.InstanceVersion,
-		CreatedBy:      &userID,
+		ID:                   uuid.New(),
+		RemoteOrganizationID: code.RemoteOrganizationID,
+		OrganizationID:       orgID,
+		Name:                 code.InstanceName,
+		URL:                  code.InstanceURL,
+		Version:              code.InstanceVersion,
+		CreatedBy:            &userID,
+	}
+	if code.RemoteOrganizationID == nil || *code.RemoteOrganizationID == uuid.Nil {
+		return nil, ErrLegacyLink
 	}
 	if err := s.repo.CreateInstance(ctx, inst, hashToken(token)); err != nil {
+		if errors.Is(err, repository.ErrCloudWorkspaceLinked) {
+			return nil, ErrWorkspaceLinked
+		}
 		return nil, errx.InternalError()
 	}
 	ok, err := s.repo.ApproveCode(ctx, code.UserCode, orgID, userID, inst.ID, token)
 	if err != nil {
+		_ = s.repo.RevokeInstance(ctx, inst.ID)
 		return nil, errx.InternalError()
 	}
 	if !ok {
@@ -423,6 +438,10 @@ func (s *service) Enroll(ctx context.Context, inst *models.PoolLinkInstance, req
 	} else if existing != nil {
 		// Re-enrolling refreshes the credential and ramp, nothing else.
 		return s.PatchMailbox(ctx, inst, req.RemoteID, models.PoolLinkMailboxPatch{Warmup: &req.Warmup, OAuth: req.OAuth, SMTPIMAP: req.SMTPIMAP})
+	}
+
+	if inst.RemoteOrganizationID == nil {
+		return nil, ErrLegacyLink
 	}
 
 	plan, xerr := s.Plan(ctx, inst.OrganizationID)

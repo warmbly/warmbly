@@ -318,13 +318,15 @@ func TestLiveDomainRedirectServing(t *testing.T) {
 		}
 	}
 
-	if list, _ := redirects.CloudServedDomains(ctx); list[domain] {
+	if list, _ := redirects.CloudServedDomains(ctx); list[domain] != uuid.Nil {
 		t.Fatal("a redirect served here is listed as Cloud's")
 	}
 
 	// The link ending stops every cloud-served row.
 	mustImport(t, redirects.Upsert(ctx, cloudRow, &f.owner))
-	mustImport(t, redirects.UnverifyCloudServed(ctx, "unlinked"))
+	_, bindErr := pool.Exec(ctx, `UPDATE domain_redirects SET cloud_link_instance_id = $2 WHERE id = $1`, cloudRow.ID, uuid.Nil)
+	mustImport(t, bindErr)
+	mustImport(t, redirects.UnverifyCloudServed(ctx, uuid.Nil, "unlinked"))
 	if got, _ = redirects.Get(ctx, f.org, domain); got.Verified || got.LastError != "unlinked" {
 		t.Fatalf("still live after the link ended: %+v", got)
 	}

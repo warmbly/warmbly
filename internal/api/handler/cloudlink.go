@@ -24,7 +24,12 @@ func (h *Handler) CloudLinkStatus(c *gin.Context) {
 	if !h.cloudLinkReady(c) {
 		return
 	}
-	st, xerr := h.CloudLinkService.Status(c.Request.Context())
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.ErrNoOrganization)
+		return
+	}
+	st, xerr := h.CloudLinkService.Status(c.Request.Context(), *orgID)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return
@@ -36,6 +41,11 @@ func (h *Handler) CloudLinkConnectStart(c *gin.Context) {
 	if !h.cloudLinkReady(c) {
 		return
 	}
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.ErrNoOrganization)
+		return
+	}
 	userID, err := middleware.GetUserUUID(c)
 	if err != nil {
 		errx.JSON(c, errx.ErrUnauthorized)
@@ -45,7 +55,7 @@ func (h *Handler) CloudLinkConnectStart(c *gin.Context) {
 		CloudURL string `json:"cloud_url"`
 	}
 	_ = c.ShouldBindJSON(&req)
-	p, xerr := h.CloudLinkService.StartConnect(c.Request.Context(), userID, req.CloudURL)
+	p, xerr := h.CloudLinkService.StartConnect(c.Request.Context(), *orgID, userID, req.CloudURL)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return
@@ -57,12 +67,17 @@ func (h *Handler) CloudLinkConnectPoll(c *gin.Context) {
 	if !h.cloudLinkReady(c) {
 		return
 	}
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.ErrNoOrganization)
+		return
+	}
 	userID, err := middleware.GetUserUUID(c)
 	if err != nil {
 		errx.JSON(c, errx.ErrUnauthorized)
 		return
 	}
-	res, xerr := h.CloudLinkService.PollConnect(c.Request.Context(), userID)
+	res, xerr := h.CloudLinkService.PollConnect(c.Request.Context(), *orgID, userID)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return
@@ -77,7 +92,12 @@ func (h *Handler) CloudLinkDisconnect(c *gin.Context) {
 	if !h.cloudLinkReady(c) {
 		return
 	}
-	if xerr := h.CloudLinkService.Disconnect(c.Request.Context()); xerr != nil {
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.ErrNoOrganization)
+		return
+	}
+	if xerr := h.CloudLinkService.Disconnect(c.Request.Context(), *orgID, c.Query("legacy") == "true"); xerr != nil {
 		errx.JSON(c, xerr)
 		return
 	}
@@ -230,7 +250,12 @@ func (h *Handler) CloudLinkWorkspaceMailboxes(c *gin.Context) {
 	if !h.cloudLinkReady(c) {
 		return
 	}
-	list, xerr := h.CloudLinkService.ListWorkspaceMailboxes(c.Request.Context())
+	orgID := middleware.GetOrganizationID(c)
+	if orgID == nil {
+		errx.JSON(c, errx.ErrNoOrganization)
+		return
+	}
+	list, xerr := h.CloudLinkService.ListWorkspaceMailboxes(c.Request.Context(), *orgID)
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return

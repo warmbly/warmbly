@@ -1,4 +1,4 @@
-// The three-step link flow: link this instance to a Warmbly Cloud workspace,
+// Link the selected local workspace to its own Warmbly Cloud workspace,
 // pick the mailboxes the cloud should warm, done. Steps slide directionally
 // like NewCampaignDialog; a step cannot be skipped ahead of.
 

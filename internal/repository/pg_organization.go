@@ -2,12 +2,14 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -218,8 +220,14 @@ func (r *organizationRepository) UpdateAvatar(ctx context.Context, orgID uuid.UU
 }
 
 // Delete deletes an organization
+var ErrOrganizationCloudLinked = errors.New("disconnect workspace Cloud link before deleting")
+
 func (r *organizationRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, id)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.ConstraintName == "cloud_link_organization_id_fkey" {
+		return ErrOrganizationCloudLinked
+	}
 	return err
 }
 
@@ -560,12 +568,14 @@ func (r *organizationRepository) GetUserPendingInvitations(ctx context.Context, 
 }
 
 // DeleteInvitation deletes an invitation
+
 func (r *organizationRepository) DeleteInvitation(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM organization_invitations WHERE id = $1`, id)
 	return err
 }
 
 // DeleteExpiredInvitations deletes all expired invitations
+
 func (r *organizationRepository) DeleteExpiredInvitations(ctx context.Context) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM organization_invitations WHERE expires_at < NOW()`)
 	return err

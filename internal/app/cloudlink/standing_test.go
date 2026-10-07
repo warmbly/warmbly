@@ -22,7 +22,9 @@ type standingRepo struct {
 	current  map[uuid.UUID]models.WarmupHealthState
 }
 
-func (r *standingRepo) Get(context.Context) (*models.CloudLink, error) { return r.link, nil }
+func (r *standingRepo) GetByInstance(context.Context, uuid.UUID) (*models.CloudLink, error) {
+	return r.link, nil
+}
 
 func (r *standingRepo) List(context.Context) ([]models.CloudLinkMailbox, error) {
 	return r.enrolled, nil
