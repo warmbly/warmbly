@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +74,45 @@ func TestLiveSendRecoveryUpgradesReleased265WithoutInventingHistory(t *testing.T
 		}
 	}
 	if err := m.Up(); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var down []byte
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), "_send_result_recovery.down.sql") {
+			down, err = migrationsFS.ReadFile("migrations/" + entry.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(down) == 0 {
+		t.Fatal("recovery down migration missing")
+	}
+	for _, restriction := range []string{
+		`UPDATE email_accounts SET send_recovery_hold=true WHERE id=$1`,
+		`UPDATE email_accounts SET send_cooldown_until=NOW()+INTERVAL '10 minutes' WHERE id=$1`,
+	} {
+		if _, err := conn.Exec(ctx, restriction, mailbox); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Exec(ctx, string(down)); err == nil || !strings.Contains(err.Error(), "unresolved send recovery") {
+			t.Fatalf("rollback discarded restriction: %v", err)
+		}
+		if _, err := conn.Exec(ctx, `UPDATE email_accounts SET send_recovery_hold=false,send_cooldown_until=NULL WHERE id=$1`, mailbox); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := conn.Exec(ctx, `UPDATE tasks SET send_result_state='unknown' WHERE id=$1`, unknownTask); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(ctx, string(down)); err == nil || !strings.Contains(err.Error(), "unresolved send recovery") {
+		t.Fatalf("rollback discarded unknown outcome: %v", err)
+	}
+	if _, err := conn.Exec(ctx, `UPDATE tasks SET send_result_state=NULL WHERE id=$1`, unknownTask); err != nil {
 		t.Fatal(err)
 	}
 	assertLegacy := func() {
