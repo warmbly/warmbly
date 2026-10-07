@@ -384,6 +384,60 @@ func VettedDiagnosticConversations() []Conversation {
 	return []Conversation{
 		{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-clock:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-clock", Subject: "Simulated diagnostic: fictional clock", Description: "Simulated diagnostic. In this fictional example, the clock reads 14:00, not 15:00. Which time does the example use?", Messages: []string{"The fictional example uses 14:00, not 15:00.", "Agreed. The example is closed; no real meeting was scheduled."}},
 		{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-count:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-count", Subject: "Simulated diagnostic: sample count", Description: "Simulated diagnostic. This hypothetical sample contains 3 blue cards and 2 green cards. How many cards are in the sample?", Messages: []string{"There are 5 cards in the hypothetical sample: 3 blue and 2 green.", "That matches the hypothetical sample. This scenario is complete; no physical cards were exchanged."}},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-document:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-document", Subject: "Simulated diagnostic: hypothetical draft review",
+			Description: "Simulated diagnostic. In this hypothetical draft, Section A lists assumptions and Section B lists unknowns. An erroneous summary says inbox placement passed, but the draft contains no measured delivery results. Which claim needs correction?",
+			Messages: []string{
+				"The hypothetical inbox-placement claim needs correction: neither assumptions nor unknowns establish a measured result. Should the summary instead distinguish Section A from Section B?",
+				"Yes. Section A lists assumptions; Section B lists unknowns. Neither section proves inbox placement. Can we close the fictional review with that distinction?",
+				"Agreed. The fictional summary distinguishes assumptions from unknowns and makes no placement claim. This review scenario is closed; no real document was reviewed or changed.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-summary:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-summary", Subject: "Simulated diagnostic: summary correction",
+			Description: "Simulated diagnostic. A fictional checklist has 12 items: 9 marked complete and 3 marked unknown, with none marked failed. A draft incorrectly calls all 12 complete. What should the corrected summary say?",
+			Messages: []string{
+				"The fictional checklist has 9 complete items and 3 unknown items, not 12 complete items. Does an unknown item count as failed or passed?",
+				"No. Unknown items are neither failed nor passed; the checklist has none marked failed. Should the corrected summary keep the 9 complete and 3 unknown counts separate?",
+				"Yes. The corrected hypothetical summary keeps 9 complete and 3 unknown items separate, with none marked failed. The example is closed; no actual provider check was performed.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-timezone:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-timezone", Subject: "Simulated diagnostic: fixed-offset date note",
+			Description: "Simulated diagnostic. On 2026-10-08 the fictional clock reads 09:00 UTC, or 11:00 at the fixed offset UTC+02:00. This is not a meeting invitation. Which local date and time belong in the hypothetical note?",
+			Messages: []string{
+				"The note should use 2026-10-08 at 11:00 with the fixed offset UTC+02:00, corresponding to 09:00 UTC. Should it keep the fixed offset rather than guess a regional timezone?",
+				"Yes. Keep 2026-10-08, 09:00 UTC and 11:00 at UTC+02:00 unchanged. The example specifies no regional timezone or meeting. Can we close without creating an appointment?",
+				"Agreed. The fictional date remains 2026-10-08, with 09:00 UTC equal to 11:00 at UTC+02:00. This example is closed; no appointment was created.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-plaintext:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-plaintext", Subject: "Simulated diagnostic: plaintext label review",
+			Description: "Simulated diagnostic. This constructed plaintext example uses written labels, not color or linked instructions. Its hypothetical items are Status: unknown and Next step: review. Can the labels be understood without opening a link?",
+			Messages: []string{
+				"Yes. Status: unknown and Next step: review are written in the example, without a link or color requirement. Does that alone prove how an email client displays a delivered message?",
+				"No. This is a locally constructed example, not a delivered-client accessibility test. Should the summary preserve the unknown status and that testing limit?",
+				"Yes. The example retains Status: unknown and Next step: review. This label-review scenario is closed; no delivered-client accessibility result is claimed.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-conditional:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-conditional", Subject: "Simulated diagnostic: conditional wording",
+			Description: "Simulated diagnostic. In a hypothetical plan, a draft may be updated only if a reviewer approves it. No approval exists, and no update is promised for 2026-10-09. What should the draft status say?",
+			Messages: []string{
+				"The hypothetical status is pending review: no approval exists and the update is conditional. Should the wording promise an update on 2026-10-09?",
+				"No. The approval condition has not been met, so no update is promised for 2026-10-09. Can we keep pending review instead of implying an approval?",
+				"Agreed. The hypothetical draft remains pending review, without approval or a promised update for 2026-10-09. This scenario is closed; no real draft was changed or commitment made.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-summary-hu:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-summary-hu", Subject: "Simulated diagnostic: magyar összefoglaló",
+			Description: "Simulated diagnostic. Ebben a kitalált jegyzetben 4 ellenőrzésből 3 eredménye ismeretlen, 1 pedig nincs elvégezve. Egyik sem igazolt siker. Hogyan őrizzük meg ezt a különbséget az összefoglalóban?",
+			Messages: []string{
+				"Az összefoglalóban 3 ismeretlen eredményt és 1 el nem végzett ellenőrzést írjunk; ne állítsunk sikert. Jelenthet-e az ismeretlen eredmény igazolt sikert?",
+				"Nem. Az ismeretlen nem igazolt siker, az el nem végzett ellenőrzés pedig továbbra sincs elvégezve. Maradjon ez kitalált példa, ne szolgáltatói mérés?",
+				"Igen. A kitalált példa lezárult: 3 eredmény ismeretlen, 1 ellenőrzés nincs elvégezve. Valós szolgáltatói tesztet nem végeztünk.",
+			},
+		},
 	}
 }
 

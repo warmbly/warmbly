@@ -42,6 +42,10 @@ Review states distinguish `passed`, `rejected`, `unavailable`, `unreviewed`, `le
 
 Vetted static scenarios use a new stable UUID namespace; historical static source IDs must never be remapped to unrelated scenarios. Exact-parent continuation, exhaustion and missing/retired source handling are required at the live dispatch integration boundary.
 
+The vetted fallback bank includes eight small causal scenarios: the original fictional clock and sample-count examples, hypothetical document review, summary correction, fixed-offset date/time continuity, plaintext label review, conditional wording and a Hungarian summary. Each preserves its own facts, alternating sender identities and explicit closure. The Hungarian body retains the same English subject-prefix and per-turn diagnostic disclosure; it does not change language controls or translate existing scenarios. Existing scenario IDs and text are immutable; a revised scenario needs a new versioned ID.
+
+These examples review hypothetical wording, not customer documents, relationships or real actions. The plaintext example uses application-constructed written labels; it does not claim an email client passed an accessibility test. A scenario saying a check is complete does not establish a provider result, authentication pass or delivery outcome. Genuine diagnostic facts must come from separately verified, application-owned observations, never from generated prose.
+
 ## Upgrade order
 
 Apply the additive content-provenance migration before starting the new backend. Deploy every backend instance before relying on `generation_enabled=false`; mixed old backends do not honor the new stop or resolve the new static scenario namespace. Pause warmup dispatch through existing controls during a mixed-version rollout, and resume only after all control-plane replicas understand exact-parent resolution. Deploy the matching admin frontend after the backend. Keep provider credentials while existing jobs drain. No migration replaces saved models, existing job IDs, source IDs or customer credentials, and no live efficacy claim follows from local tests.
