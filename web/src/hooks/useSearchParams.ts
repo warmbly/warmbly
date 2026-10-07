@@ -33,3 +33,16 @@ export function useSearchParams(): [
 
     return [params, setParams];
 }
+
+export function useSearchParam(key: string): [string, (value: string) => void] {
+    const [params, setParams] = useSearchParams();
+    const setValue = React.useCallback((value: string) => {
+        setParams((prev) => {
+            const next = new URLSearchParams(prev);
+            if (value) next.set(key, value);
+            else next.delete(key);
+            return next;
+        }, { replace: true });
+    }, [key, setParams]);
+    return [params.get(key) ?? "", setValue];
+}

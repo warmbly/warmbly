@@ -53,6 +53,7 @@ import {
 } from "./new/draft";
 import { draftSignature, freshMeta, loadServerDraft, saveServerDraft, type DraftMeta } from "./new/serverDraft";
 import { EmailsStep, LeadsStep, LaunchPlanRail, ReviewStep, ScheduleStep, type EstimateState } from "./new/steps";
+import type { Patch } from "./new/fields";
 
 interface Props {
     open: boolean;
@@ -146,9 +147,12 @@ export function NewCampaignDialog({ open, onClose, draftId = null }: Props) {
         }
     }, [open, draftId, defaultTimezone]);
 
-    const patch = React.useCallback((p: Partial<Draft>) => {
-        if (p.timezone !== undefined) tzTouched.current = true;
-        setDraft((d) => ({ ...d, ...p }));
+    const patch = React.useCallback<Patch>((p) => {
+        setDraft((d) => {
+            const update = typeof p === "function" ? p(d) : p;
+            if (update.timezone !== undefined) tzTouched.current = true;
+            return { ...d, ...update };
+        });
     }, []);
 
     // Names for the auto name and the review.

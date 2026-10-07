@@ -13,7 +13,7 @@ import { followWorkspaceLabel, timezoneOptions } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import { EVERY_DAY_MASK, WEEKDAYS, WEEKDAYS_MASK, daysLabel, fmt12, type Draft } from "./draft";
 
-export type Patch = (p: Partial<Draft>) => void;
+export type Patch = (p: Partial<Draft> | ((draft: Draft) => Partial<Draft>)) => void;
 
 export function StepIntro({ title, hint, children }: { title: string; hint?: string; children?: React.ReactNode }) {
     return (

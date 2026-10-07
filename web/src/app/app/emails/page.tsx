@@ -1,6 +1,6 @@
 import { RiFireLine, RiMoreLine } from "@remixicon/react";
 import React, { useEffect, useMemo, useRef } from "react";
-import { useSearchParams } from "@/hooks/useSearchParams";
+import { useSearchParam, useSearchParams } from "@/hooks/useSearchParams";
 import toast from "react-hot-toast/headless";
 import { useQueryClient } from "@tanstack/react-query";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
@@ -127,7 +127,8 @@ export default function AddressesPage() {
     const canView = usePermission("MANAGE_EMAILS");
 
     const [query, setQuery] = React.useState<string>("");
-    const [tag, setTag] = React.useState<string>("");
+    const [selectedTag, setTag] = useSearchParam("tag");
+    const tag = p.user.tags.some((t) => t.id === selectedTag) ? selectedTag : "";
     const emailsData = useEmails({ query, tag });
     const [selected, setSelected] = React.useState<string[]>([]);
     const [view, setView] = React.useState<string>("");

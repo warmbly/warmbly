@@ -287,7 +287,7 @@ function EmailsEditor({
     const index = Math.min(selected, draft.emails.length - 1);
     const email = draft.emails[index];
     const update = (i: number, p: Partial<Draft["emails"][number]>) =>
-        patch({ emails: draft.emails.map((e, idx) => (idx === i ? { ...e, ...p } : e)) });
+        patch((d) => ({ emails: d.emails.map((e, idx) => (idx === i ? { ...e, ...p } : e)) }));
     const add = (wait: number) => {
         patch({ emails: [...draft.emails, newEmail(wait)] });
         setSelected(draft.emails.length);
