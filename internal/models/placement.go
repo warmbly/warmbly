@@ -366,9 +366,10 @@ type PlacementCloudSeed struct {
 
 // PlacementCloudStart is the cloud's answer: the seeds, once per test.
 type PlacementCloudStart struct {
-	TestIDs []uuid.UUID          `json:"test_ids"`
-	Seeds   []PlacementCloudSeed `json:"seeds"`
-	Usage   PlacementUsage       `json:"usage"`
+	InstanceID uuid.UUID            `json:"-"`
+	TestIDs    []uuid.UUID          `json:"test_ids"`
+	Seeds      []PlacementCloudSeed `json:"seeds"`
+	Usage      PlacementUsage       `json:"usage"`
 }
 
 // PlacementCloudSend reports one copy the instance sent, or failed to send.

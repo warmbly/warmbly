@@ -35,7 +35,7 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
         }
     };
 
-    if (!pool.connected) {
+    if (!pool.connected || (!pool.workspaceConnected && !pool.isEnrolled(mailboxId))) {
         return (
             <div className="px-5 py-3 flex items-center gap-2.5 text-[12px] text-slate-500">
                 <CloudIcon className="w-3.5 h-3.5 text-sky-600 shrink-0" />

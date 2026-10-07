@@ -10,8 +10,8 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-func (s *service) PlacementPanel(ctx context.Context) (*models.PlacementCloudPanel, *errx.Error) {
-	l, xerr := s.link(ctx)
+func (s *service) PlacementPanel(ctx context.Context, orgID uuid.UUID) (*models.PlacementCloudPanel, *errx.Error) {
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -22,8 +22,8 @@ func (s *service) PlacementPanel(ctx context.Context) (*models.PlacementCloudPan
 	return &out, nil
 }
 
-func (s *service) StartPlacement(ctx context.Context, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error) {
-	l, xerr := s.link(ctx)
+func (s *service) StartPlacement(ctx context.Context, orgID uuid.UUID, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error) {
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -31,11 +31,12 @@ func (s *service) StartPlacement(ctx context.Context, req models.PlacementCloudS
 	if xerr := s.clientFor(l).do(ctx, http.MethodPost, "/instance/placement/tests", req, &out); xerr != nil {
 		return nil, xerr
 	}
+	out.InstanceID = l.InstanceID
 	return &out, nil
 }
 
-func (s *service) ReportPlacementSends(ctx context.Context, testID uuid.UUID, sends []models.PlacementCloudSend) *errx.Error {
-	l, xerr := s.link(ctx)
+func (s *service) ReportPlacementSends(ctx context.Context, instanceID, testID uuid.UUID, sends []models.PlacementCloudSend) *errx.Error {
+	l, xerr := s.mailboxLink(ctx, &models.CloudLinkMailbox{InstanceID: instanceID})
 	if xerr != nil {
 		return xerr
 	}
@@ -43,8 +44,8 @@ func (s *service) ReportPlacementSends(ctx context.Context, testID uuid.UUID, se
 		models.PlacementCloudSends{Sends: sends}, nil)
 }
 
-func (s *service) PlacementVerdicts(ctx context.Context, testID uuid.UUID) (*models.PlacementCloudTest, *errx.Error) {
-	l, xerr := s.link(ctx)
+func (s *service) PlacementVerdicts(ctx context.Context, instanceID, testID uuid.UUID) (*models.PlacementCloudTest, *errx.Error) {
+	l, xerr := s.mailboxLink(ctx, &models.CloudLinkMailbox{InstanceID: instanceID})
 	if xerr != nil {
 		return nil, xerr
 	}

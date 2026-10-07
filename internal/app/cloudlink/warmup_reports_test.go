@@ -20,7 +20,9 @@ type warmupReportRepo struct {
 	mailboxes []models.CloudLinkMailbox
 }
 
-func (r warmupReportRepo) Get(context.Context) (*models.CloudLink, error) { return r.link, nil }
+func (r warmupReportRepo) GetByInstance(context.Context, uuid.UUID) (*models.CloudLink, error) {
+	return r.link, nil
+}
 func (r warmupReportRepo) ListForOrg(_ context.Context, org uuid.UUID, id *uuid.UUID) ([]models.CloudLinkMailbox, error) {
 	out := make([]models.CloudLinkMailbox, 0)
 	if org == r.org {

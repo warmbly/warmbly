@@ -152,6 +152,8 @@ export interface PoolLinkMailboxState {
 }
 
 export interface CloudLink {
+    /** Absent on a legacy instance-wide connection. */
+    organization_id?: string | null;
     cloud_url: string;
     instance_id: string;
     organization_name: string;
@@ -161,6 +163,7 @@ export interface CloudLink {
 }
 
 export interface CloudLinkStatus {
+    legacy_connected?: boolean;
     connected: boolean;
     link?: CloudLink | null;
     info?: PoolLinkInstanceInfo | null;
@@ -184,6 +187,7 @@ export interface CloudLinkPollResult {
 }
 
 export interface CloudLinkMailboxRow {
+    legacy?: boolean;
     id: string;
     email: string;
     name: string;

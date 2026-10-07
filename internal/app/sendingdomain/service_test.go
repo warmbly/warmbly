@@ -154,7 +154,7 @@ func (m *memRedirects) SetRemote(_ context.Context, id uuid.UUID, host string, r
 	m.rows[id].RemoteHost, m.rows[id].RemoteRecords = host, records
 	return nil
 }
-func (m *memRedirects) UnverifyCloudServed(_ context.Context, last string) error {
+func (m *memRedirects) UnverifyCloudServed(_ context.Context, _ uuid.UUID, last string) error {
 	for _, e := range m.rows {
 		if e.ServedBy == models.RedirectServedByCloud {
 			e.Verified, e.LastError, e.Reach = false, last, nil
@@ -162,11 +162,15 @@ func (m *memRedirects) UnverifyCloudServed(_ context.Context, last string) error
 	}
 	return nil
 }
-func (m *memRedirects) CloudServedDomains(context.Context) (map[string]bool, error) {
-	out := map[string]bool{}
+func (m *memRedirects) CloudServedDomains(context.Context) (map[string]uuid.UUID, error) {
+	out := map[string]uuid.UUID{}
 	for _, e := range m.rows {
 		if e.ServedBy == models.RedirectServedByCloud {
-			out[e.Domain] = true
+			if e.CloudLinkInstanceID != nil {
+				out[e.Domain] = *e.CloudLinkInstanceID
+			} else {
+				out[e.Domain] = uuid.Nil
+			}
 		}
 	}
 	return out, nil

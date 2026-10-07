@@ -39,9 +39,9 @@ type DomainRedirectRepository interface {
 	// SetRemote mirrors Warmbly Cloud's host and records for a cloud-served row.
 	SetRemote(ctx context.Context, id uuid.UUID, host string, records []models.DNSRecord) error
 	// UnverifyCloudServed stops every cloud-served row claiming to be live, when the link to Cloud ends.
-	UnverifyCloudServed(ctx context.Context, lastError string) error
+	UnverifyCloudServed(ctx context.Context, instanceID uuid.UUID, lastError string) error
 	// CloudServedDomains are the domains this instance has Cloud serve, across workspaces.
-	CloudServedDomains(ctx context.Context) (map[string]bool, error)
+	CloudServedDomains(ctx context.Context) (map[string]uuid.UUID, error)
 	// CloudServedElsewhere reports another workspace on this instance having the domain served by Cloud.
 	CloudServedElsewhere(ctx context.Context, orgID uuid.UUID, domain string) (bool, error)
 	// Due are rows whose last check is older than their state allows.
@@ -123,7 +123,8 @@ func upsertRedirect(ctx context.Context, q queryRower, d *models.DomainRedirect,
 		    reach_hint = CASE WHEN domain_redirects.served_by = EXCLUDED.served_by THEN domain_redirects.reach_hint ELSE '' END,
 		    reach_detail = CASE WHEN domain_redirects.served_by = EXCLUDED.served_by THEN domain_redirects.reach_detail ELSE '' END,
 		    reach_proxy = CASE WHEN domain_redirects.served_by = EXCLUDED.served_by THEN domain_redirects.reach_proxy ELSE '' END,
-		    reach_checked_at = CASE WHEN domain_redirects.served_by = EXCLUDED.served_by THEN domain_redirects.reach_checked_at END
+		    reach_checked_at = CASE WHEN domain_redirects.served_by = EXCLUDED.served_by THEN domain_redirects.reach_checked_at END,
+		    cloud_link_instance_id = CASE WHEN EXCLUDED.served_by = 'cloud' AND domain_redirects.served_by = 'cloud' THEN domain_redirects.cloud_link_instance_id END
 		WHERE domain_redirects.linked_instance_id IS NOT DISTINCT FROM EXCLUDED.linked_instance_id
 		RETURNING ` + redirectColumns
 	if err := scanRedirect(q.QueryRow(ctx, query, d.ID, d.OrganizationID, strings.ToLower(d.Domain), d.TargetURL, d.IncludeWWW, d.VerifyToken, createdBy,
@@ -310,33 +311,36 @@ func (r *domainRedirectRepository) SetRemote(ctx context.Context, id uuid.UUID, 
 	return nil
 }
 
-func (r *domainRedirectRepository) UnverifyCloudServed(ctx context.Context, lastError string) error {
+func (r *domainRedirectRepository) UnverifyCloudServed(ctx context.Context, instanceID uuid.UUID, lastError string) error {
 	query := `UPDATE domain_redirects
 		SET verified = false, verified_at = NULL, last_error = $1, updated_at = now(),
-		    reach_status = NULL, reach_hint = '', reach_detail = '', reach_proxy = '', reach_checked_at = NULL
-		WHERE served_by = 'cloud'`
-	if _, err := r.DB.Exec(ctx, query, lastError); err != nil {
+		    reach_status = NULL, reach_hint = '', reach_detail = '', reach_proxy = '', reach_checked_at = NULL, cloud_link_instance_id = NULL
+		WHERE served_by = 'cloud' AND cloud_link_instance_id = $2`
+	if _, err := r.DB.Exec(ctx, query, lastError, instanceID); err != nil {
 		db.CaptureError(err, query, nil, "exec")
 		return err
 	}
 	return nil
 }
 
-func (r *domainRedirectRepository) CloudServedDomains(ctx context.Context) (map[string]bool, error) {
-	query := `SELECT domain FROM domain_redirects WHERE served_by = 'cloud'`
+func (r *domainRedirectRepository) CloudServedDomains(ctx context.Context) (map[string]uuid.UUID, error) {
+	query := `SELECT domain, cloud_link_instance_id FROM domain_redirects WHERE served_by = 'cloud'`
 	rows, err := r.DB.Query(ctx, query)
 	if err != nil {
 		db.CaptureError(err, query, nil, "query")
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]bool{}
+	out := map[string]uuid.UUID{}
 	for rows.Next() {
 		var d string
-		if err := rows.Scan(&d); err != nil {
+		var id *uuid.UUID
+		if err := rows.Scan(&d, &id); err != nil {
 			return nil, err
 		}
-		out[d] = true
+		if id != nil {
+			out[d] = *id
+		}
 	}
 	return out, rows.Err()
 }

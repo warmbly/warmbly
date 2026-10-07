@@ -29,7 +29,11 @@ type stubLinkRepo struct {
 	unenrollErr error
 }
 
-func (r *stubLinkRepo) Get(context.Context) (*models.CloudLink, error) {
+func (r *stubLinkRepo) Get(context.Context, *uuid.UUID) (*models.CloudLink, error) {
+	return r.link, r.linkErr
+}
+
+func (r *stubLinkRepo) GetByInstance(context.Context, uuid.UUID) (*models.CloudLink, error) {
 	return r.link, r.linkErr
 }
 

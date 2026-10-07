@@ -569,7 +569,7 @@ func (s *service) batchCost(ctx context.Context, orgID uuid.UUID, panel string, 
 		c.usage = usage
 	case models.PlacementPanelCloud:
 		if s.Cloud != nil {
-			if panel, xerr := s.Cloud.PlacementPanel(ctx); xerr == nil && panel != nil {
+			if panel, xerr := s.Cloud.PlacementPanel(ctx, orgID); xerr == nil && panel != nil {
 				c.usage = panel.Usage
 			}
 		}

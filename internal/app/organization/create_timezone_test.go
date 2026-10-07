@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/app/dailythrottle"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -14,10 +15,11 @@ import (
 type createRepo struct {
 	repository.OrganizationRepository
 	created *models.Organization
+	owned   int
 }
 
 func (r *createRepo) GetUserOwnedOrganizationCount(context.Context, uuid.UUID) (int, error) {
-	return 0, nil
+	return r.owned, nil
 }
 
 func (r *createRepo) Create(_ context.Context, org *models.Organization) error {
@@ -54,5 +56,49 @@ func TestCreateStoresTheWorkspaceTimezone(t *testing.T) {
 
 	if _, xerr := svc.Create(context.Background(), uuid.New(), "Acme", "Mars/Olympus"); xerr == nil || xerr != errx.ErrTimezone {
 		t.Fatalf("an unknown zone was accepted: %v", xerr)
+	}
+}
+
+func TestWorkspaceLimitsApplyOnlyOnCloud(t *testing.T) {
+	for _, mode := range []string{"self_hosted", "cloud"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("DEPLOYMENT_MODE", mode)
+			repo := &createRepo{owned: 100}
+			svc := &organizationService{orgRepo: repo, userRepo: createUsers{}}
+			_, xerr := svc.Create(context.Background(), uuid.New(), "Acme", "UTC")
+			if mode == "self_hosted" && (xerr != nil || repo.created == nil) {
+				t.Fatalf("self-hosted cap was enforced: %v", xerr)
+			}
+			if mode == "cloud" && (xerr == nil || repo.created != nil) {
+				t.Fatalf("hosted cap was not enforced: %v", xerr)
+			}
+		})
+	}
+}
+
+type denyingWorkspaceThrottle struct{ calls int }
+
+func (d *denyingWorkspaceThrottle) CheckAndIncrement(_ context.Context, _ uuid.UUID, res dailythrottle.Resource, _ int) *errx.Error {
+	d.calls++
+	if res != dailythrottle.ResourceOrg {
+		panic("unexpected throttle resource")
+	}
+	return errx.New(errx.TooManyRequests, "daily workspace limit")
+}
+
+func TestWorkspaceDailyThrottleIsPreservedOnlyOnCloud(t *testing.T) {
+	for _, mode := range []string{"self_hosted", "cloud"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("DEPLOYMENT_MODE", mode)
+			repo, throttle := &createRepo{}, &denyingWorkspaceThrottle{}
+			svc := &organizationService{orgRepo: repo, userRepo: createUsers{}, throttle: throttle}
+			_, xerr := svc.Create(context.Background(), uuid.New(), "Acme", "UTC")
+			if mode == "self_hosted" && (xerr != nil || throttle.calls != 0 || repo.created == nil) {
+				t.Fatalf("self-host throttle ran: %v; calls %d", xerr, throttle.calls)
+			}
+			if mode == "cloud" && (xerr == nil || throttle.calls != 1 || repo.created != nil) {
+				t.Fatal("hosted daily limit was bypassed")
+			}
+		})
 	}
 }

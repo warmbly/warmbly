@@ -28,10 +28,11 @@ const OAuthReturnPath = "/cloud-oauth/done"
 const tokenCacheMax = 10 * time.Minute
 
 type oauthSession struct {
-	OrgID     uuid.UUID
-	UserID    uuid.UUID
-	Provider  models.InboxProvider
-	ExpiresAt time.Time
+	InstanceID uuid.UUID
+	OrgID      uuid.UUID
+	UserID     uuid.UUID
+	Provider   models.InboxProvider
+	ExpiresAt  time.Time
 }
 
 type cachedToken struct {
@@ -40,7 +41,7 @@ type cachedToken struct {
 }
 
 func (s *service) StartOAuth(ctx context.Context, orgID, userID uuid.UUID, provider models.InboxProvider) (*models.CloudLinkOAuthStart, *errx.Error) {
-	l, xerr := s.link(ctx)
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -53,7 +54,7 @@ func (s *service) StartOAuth(ctx context.Context, orgID, userID uuid.UUID, provi
 		return nil, xerr
 	}
 	s.mu.Lock()
-	s.sessions[res.Session] = oauthSession{OrgID: orgID, UserID: userID, Provider: provider, ExpiresAt: time.Now().Add(15 * time.Minute)}
+	s.sessions[res.Session] = oauthSession{InstanceID: l.InstanceID, OrgID: orgID, UserID: userID, Provider: provider, ExpiresAt: time.Now().Add(15 * time.Minute)}
 	for k, v := range s.sessions {
 		if time.Now().After(v.ExpiresAt) {
 			delete(s.sessions, k)
@@ -67,12 +68,15 @@ func (s *service) FinishOAuth(ctx context.Context, orgID, userID uuid.UUID, sess
 	s.mu.Lock()
 	sess, ok := s.sessions[session]
 	s.mu.Unlock()
-	if !ok || sess.OrgID != orgID || time.Now().After(sess.ExpiresAt) {
+	if !ok || sess.UserID != userID || sess.OrgID != orgID || time.Now().After(sess.ExpiresAt) {
 		return nil, ErrOAuthSession
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
+	}
+	if l.InstanceID != sess.InstanceID {
+		return nil, ErrOAuthSession
 	}
 	var state models.PoolLinkMailboxState
 	if xerr := s.clientFor(l).do(ctx, http.MethodPost, "/instance/oauth/finish", models.PoolLinkOAuthFinishRequest{Session: session}, &state); xerr != nil {
@@ -103,7 +107,7 @@ func (s *service) mirror(ctx context.Context, l *models.CloudLink, orgID, userID
 		}
 		return nil, xerr
 	}
-	if _, err := s.repo.Enroll(ctx, acc.ID, state.RemoteID, true); err != nil {
+	if _, err := s.repo.Enroll(ctx, acc.ID, state.RemoteID, l.InstanceID, true); err != nil {
 		if s.emailSvc != nil && acc.OrganizationID != nil {
 			_ = s.emailSvc.Delete(ctx, acc.OrganizationID.String(), acc.ID.String())
 		}
@@ -124,8 +128,8 @@ func (s *service) mirror(ctx context.Context, l *models.CloudLink, orgID, userID
 	return acc, nil
 }
 
-func (s *service) ListWorkspaceMailboxes(ctx context.Context) ([]models.PoolLinkWorkspaceMailbox, *errx.Error) {
-	l, xerr := s.link(ctx)
+func (s *service) ListWorkspaceMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.PoolLinkWorkspaceMailbox, *errx.Error) {
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -140,7 +144,7 @@ func (s *service) ListWorkspaceMailboxes(ctx context.Context) ([]models.PoolLink
 }
 
 func (s *service) Adopt(ctx context.Context, orgID, userID, cloudAccountID uuid.UUID) (*models.Email, *errx.Error) {
-	l, xerr := s.link(ctx)
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -168,7 +172,7 @@ func (s *service) AccessToken(ctx context.Context, accountID uuid.UUID) (*models
 	if m == nil || !m.Managed {
 		return nil, ErrNotManaged
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.mailboxLink(ctx, m)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -195,7 +199,7 @@ func (s *service) forgetToken(accountID uuid.UUID) {
 
 // removeManaged deletes the local mirror; the cloud keeps the mailbox in the workspace.
 func (s *service) removeManaged(ctx context.Context, orgID string, m *models.CloudLinkMailbox) *errx.Error {
-	if l, err := s.repo.Get(ctx); err == nil && l != nil {
+	if l, err := s.repo.GetByInstance(ctx, m.InstanceID); err == nil && l != nil {
 		if xerr := s.clientFor(l).do(ctx, http.MethodDelete, "/instance/mailboxes/"+m.RemoteID.String(), nil, nil); xerr != nil && xerr.Identifier != "pool_link_mailbox_not_found" {
 			return xerr
 		}
@@ -215,7 +219,7 @@ func (s *service) VerifyWarmupToken(ctx context.Context, accountID uuid.UUID, to
 	if err != nil || m == nil {
 		return false, err
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.mailboxLink(ctx, m)
 	if xerr != nil {
 		return false, xerr
 	}
@@ -240,7 +244,7 @@ func (s *service) IsCloudWarmupDelivery(ctx context.Context, accountID uuid.UUID
 	if err != nil || m == nil {
 		return false, err
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.mailboxLink(ctx, m)
 	if xerr != nil {
 		return false, xerr
 	}
@@ -265,7 +269,7 @@ func (s *service) IsCloudWarmupThreadReply(ctx context.Context, accountID uuid.U
 	if err != nil || m == nil {
 		return false, err
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.mailboxLink(ctx, m)
 	if xerr != nil {
 		return false, xerr
 	}

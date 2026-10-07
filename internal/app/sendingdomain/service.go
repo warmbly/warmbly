@@ -231,7 +231,7 @@ func (s *Service) SetRedirect(ctx context.Context, orgID, userID uuid.UUID, doma
 	}
 
 	if server == models.RedirectServedByInstance && existing != nil && existing.ServedBy == models.RedirectServedByCloud {
-		if xerr := s.releaseCloud(ctx, domain); xerr != nil {
+		if xerr := s.releaseCloud(ctx, orgID, domain); xerr != nil {
 			return nil, xerr
 		}
 	}
@@ -251,7 +251,7 @@ func (s *Service) SetRedirect(ctx context.Context, orgID, userID uuid.UUID, doma
 	if server != models.RedirectServedByCloud {
 		return s.check(ctx, r, true)
 	}
-	remote, xerr := s.cloud.PutRedirect(ctx, domain, models.DomainRedirectRequest{TargetURL: target, IncludeWWW: &www})
+	remote, xerr := s.cloud.PutRedirect(ctx, orgID, domain, models.DomainRedirectRequest{TargetURL: target, IncludeWWW: &www})
 	if xerr == nil {
 		return s.mirror(ctx, r, remote)
 	}
@@ -338,7 +338,7 @@ func (s *Service) DeleteRedirect(ctx context.Context, orgID uuid.UUID, domain st
 		return errx.ErrNotFound
 	}
 	if r.ServedBy == models.RedirectServedByCloud {
-		if xerr := s.releaseCloud(ctx, domain); xerr != nil {
+		if xerr := s.releaseCloud(ctx, orgID, domain); xerr != nil {
 			return xerr
 		}
 	}
