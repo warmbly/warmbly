@@ -91,6 +91,9 @@ func (r *notificationRepository) UpdatePreferences(ctx context.Context, userID u
 }
 
 func (r *notificationRepository) Create(ctx context.Context, n *models.Notification) (*models.Notification, error) {
+	if id := SendResultEffectEventID(ctx); id != uuid.Nil {
+		n.ID = uuid.NewSHA1(id, []byte(n.UserID.String()))
+	}
 	if n.ID == uuid.Nil {
 		n.ID = uuid.New()
 	}
@@ -120,6 +123,7 @@ func (r *notificationRepository) Create(ctx context.Context, n *models.Notificat
 			CASE WHEN $12 OR seen.v THEN now() END,
 			$13
 		FROM seen, candidate n WHERE `+notificationReplyVisibleSQL+`
+		ON CONFLICT(id) DO UPDATE SET id=EXCLUDED.id
 		RETURNING created_at, (SELECT v FROM seen)`,
 		n.ID, n.UserID, n.OrganizationID, n.Category, n.Title, n.Body, n.Link, meta,
 		groupKey, n.EmailState, n.EmailDueAt, n.PreRead, n.UniboxEmailID).Scan(&n.CreatedAt, &n.MessageSeen)

@@ -283,6 +283,12 @@ The `rsync` alternative works too and is sometimes simpler, as long as the stack
 
 ## Outbound calls
 
+### Diagnostic and managed-consent portability
+
+Warmup placement aggregates travel in a [workspace archive](/guides/workspace-export-import/). Raw `warmup_received` first-observation, authentication-header and provider-thread provenance is explicitly instance-local and is not exported. Imported task lineage, parent receipt/message handles, queue revisions and worker dispatch nonces/results reset, so historical metadata does not authorize a continuation or replay on another instance.
+
+Managed OAuth consent tables contain operation/reference hashes and restrictive history, not authorization codes, PKCE verifiers, raw session handles or credentials. History remains until organization deletion. Browser/PKCE state in Redis expires after ten minutes; encrypted provider credentials retain their normal Cloud mailbox lifetime. Import keeps restrictive history while clearing source-instance/session/remote/planned-account/activation handles. Disconnect does not erase that history, and downgrade refuses to discard it. Revoking instance access does not delete the independently Cloud-owned provider grant or mailbox; pause or delete that mailbox on Cloud separately. See [managed consent recovery](/guides/warmbly-cloud/).
+
 A self-hosted Warmbly makes no outbound call of its own except the one below, which is off with a single setting. The mail host lookup and company logos are listed too: both are off on a self-host unless you turn them on.
 
 | Call | When | Turn it off |
@@ -340,6 +346,10 @@ There are none. A self-hosted instance loads no analytics script and sends no us
 The hosted service at warmbly.com does measure its own marketing site, dashboard and admin panel, including session replay in the two apps, and the code for that ships in the same images you run. It is inert without a key: the installer never asks for one, the `.env` template does not mention it, and a build without one contains no analytics script for you to block. If you want to check, `grep posthog` the served assets of your own dashboard.
 
 If you do want product analytics on your own instance, the variables are on [configuration](/development/configuration/#product-analytics-and-session-replay) and they accept a self-hosted PostHog. The server-side `POSTHOG_KEY` carries the backend's error tracking and its product events; the browser-side `WARMBLY_POSTHOG_KEY` is what turns on the dashboard's and the admin panel's analytics, session replay and browser errors, and `WARMBLY_POSTHOG_ERROR_TRACKING` and `WARMBLY_POSTHOG_SESSION_REPLAY` switch those last two off separately. That is your decision to make, and nothing about it points at us.
+
+## Diagnostic evidence and sending restrictions
+
+Diagnostic participation, shared limits, durable recovery evidence and operator repair history are organization data. Raw MIME is never persisted by the bounded Gmail/Graph DKIM verifier. Minimal verifier/version/time results can attach to historical receipt evidence; source-worker/message authorization nonces are excluded from workspace moves. The SQL reconciliation outbox is source-instance-local and retained by full database backups, not organization archives. Drain it before moving a workspace; pending effects survive restart, delivered rows expire after seven days, and organization/task deletion cascades their removal. Repair audit history lasts with the organization. Rollback refuses pending effects, unknown sends and retained restrictive state. See [send safety](/development/send-safety/).
 
 ## See also
 

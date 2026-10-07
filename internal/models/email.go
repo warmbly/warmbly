@@ -74,9 +74,14 @@ type Email struct {
 	LastSyncedAt time.Time `json:"last_synced_at"`
 	LastID       *int64    `json:"last_id"`
 
-	CampaignLimit int    `json:"campaign_limit"`
-	MinWaitTime   int    `json:"min_wait_time"`
-	ReplyTo       string `json:"reply_to"`
+	CampaignLimit         int                    `json:"campaign_limit"`
+	TestMode              *TestParticipationMode `json:"test_mode"`
+	TestSendEnabled       bool                   `json:"test_send_enabled"`
+	TestReceiveEnabled    bool                   `json:"test_receive_enabled"`
+	SharedDailyLimit      *int                   `json:"shared_daily_limit"`
+	RollingRecipientLimit *int                   `json:"rolling_recipient_limit"`
+	MinWaitTime           int                    `json:"min_wait_time"`
+	ReplyTo               string                 `json:"reply_to"`
 
 	TrackingDomain           string     `json:"tracking_domain"`
 	TrackingDomainVerified   bool       `json:"tracking_domain_verified"`
@@ -540,6 +545,7 @@ type Oauth2SmtpImap struct {
 }
 
 type NewOauthAccount struct {
+	ID             uuid.UUID `json:"-"`
 	OrganizationID *uuid.UUID
 	// Allowance, when set, is enforced again inside the insert transaction
 	// under the organization's mailbox lock, so concurrent connects cannot
@@ -696,9 +702,15 @@ type UpdateEmail struct {
 
 	Status *string `json:"status"` // active, inactive, revoked
 
-	CampaignLimit *int    `json:"campaign_limit"`
-	MinWaitTime   *int    `json:"min_wait_time"`
-	ReplyTo       *string `json:"reply_to"`
+	CampaignLimit          *int                    `json:"campaign_limit"`
+	TestMode               *TestParticipationMode  `json:"test_mode"`
+	TestSendEnabled        *bool                   `json:"test_send_enabled"`
+	TestReceiveEnabled     *bool                   `json:"test_receive_enabled"`
+	SharedDailyLimit       *int                    `json:"shared_daily_limit"`
+	RollingRecipientLimit  *int                    `json:"rolling_recipient_limit"`
+	SendRecoveryResolution *SendRecoveryResolution `json:"send_recovery_resolution"`
+	MinWaitTime            *int                    `json:"min_wait_time"`
+	ReplyTo                *string                 `json:"reply_to"`
 
 	Warmup          *bool   `json:"warmup"`
 	WarmupBase      *int    `json:"warmup_base"`
@@ -733,6 +745,14 @@ type UpdateEmail struct {
 	RelayFolderMoves *bool `json:"relay_folder_moves"`
 
 	Tags []string `json:"tags"`
+}
+
+type SendRecoveryResolution struct {
+	HeldTaskID            uuid.UUID  `json:"held_task_id"`
+	HeldReason            string     `json:"held_reason"`
+	EvidenceType          string     `json:"evidence_type"`
+	EvidenceTaskID        *uuid.UUID `json:"evidence_task_id,omitempty"`
+	ConfirmationReference string     `json:"confirmation_reference,omitempty"`
 }
 
 // BulkEmailTags adds and removes tags across many mailboxes in one call (the

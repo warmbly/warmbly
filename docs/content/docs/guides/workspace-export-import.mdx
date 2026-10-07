@@ -5,6 +5,8 @@ description: "Move a whole workspace between Warmbly instances, including mailbo
 
 A workspace archive is a single file holding everything one workspace owns. It exists so you can move between instances: a self-hosted install to the cloud, the cloud back to self-hosted, or one self-host to another.
 
+Diagnostic participation, shared/rolling limits, restrictive send evidence and audited repair-resolution history travel with their registered mailbox/task/organization data. Source-worker executor handles reset; exact provider-message DKIM authorization/nonces are excluded. Portable minimal receipt proof remains historical evidence, never an execution grant. The reconciliation webhook/notification outbox is source-instance-local and excluded to prevent replay on import; drain pending effects before moving. Whole-instance database backups retain it. See [send-safety retention and rollback](/development/send-safety/#upgrade-rollback-and-portability).
+
 <Callout title="Moving a whole self-hosted instance is a different tool">
 This page moves **one workspace** between two running instances, re-sealing its secrets for the destination's keys. To move an entire self-hosted install (every workspace, its users, its platform admins) use `warmblyctl backup` and `warmblyctl restore`, which carry the database, the blob root and the encryption keys as one bundle. See [data control](/development/data-control/#backups). The two are not interchangeable: a bundle cannot be applied to a single workspace, and this archive cannot restore an instance.
 </Callout>
@@ -103,6 +105,9 @@ Some things belong to an instance rather than to a workspace, so they are not ap
 | Mailbox sync checkpoints | Replaying a checkpoint would make the destination skip everything that arrived between export and import, so it re-syncs from scratch |
 | Reply processing checkpoints | Claims that prevent a synchronized inbox message from being handled twice belong to the source process. They reset so the destination can safely classify its imported inbox state |
 | Pending warmup verification | Mail waiting for this instance's local or cloud warmup check is not exported. The destination re-syncs it from the provider and applies its own verification |
+| Raw warmup receipt provenance | `warmup_received` observations, first-folder/auth header provenance and provider thread handles are source-instance evidence and are explicitly excluded. Aggregated warmup placement history travels, but raw receipt provenance does not |
+| Warmup dispatch and continuation authority | Parent task/receipt/message handles, lineage authority, queue revisions, worker IDs, dispatch nonces and native result state reset. Imported historical diagnostic metadata and tokens do not authorize automatic continuation on the destination |
+| Provider-attempt history | Immutable attempted timestamps and recipient counts travel in the sending group, retaining restrictive daily/rolling evidence after a capacity refund. Historical attempt nonces never authorize a new executor command |
 | Warmup pool membership | Pools are shared across every workspace on an instance, so membership is re-earned rather than asserted by a file |
 | Domain authentication timings | The verdict travels (public DNS reads the same anywhere), but the destination re-checks before it can stop any sending, so a mailbox is never blocked on an observation the new instance never made |
 | Risk and review status | A workspace's abuse posture is one platform's verdict about a tenant on its own infrastructure, reached from evidence the destination never saw. An archive can neither carry a restriction nor clear one |

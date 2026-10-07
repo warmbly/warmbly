@@ -32,6 +32,9 @@ export const LANDED = [
     { key: "inbox", label: "Inbox", tone: "emerald", dot: "bg-emerald-500" },
     { key: "tabs", label: "Other tabs", tone: "violet", dot: "bg-violet-500" },
     { key: "spam", label: "Spam", tone: "rose", dot: "bg-rose-500" },
+    { key: "unknown", label: "Unknown", tone: "slate", dot: "bg-slate-400" },
+    { key: "archived", label: "Archive", tone: "slate", dot: "bg-slate-300" },
+    { key: "custom", label: "Custom folder", tone: "slate", dot: "bg-slate-500" },
 ] as const satisfies readonly { key: keyof PlacementCounts; label: string; tone: DitherTone; dot: string }[];
 
 export interface BandStyle {
@@ -47,7 +50,7 @@ export const BAND: Record<PlacementBand, BandStyle> = {
     fair: { label: "Watch", text: "text-amber-600", dot: "bg-amber-500", chip: "bg-amber-50 text-amber-700 border-amber-200", tone: "amber" },
     poor: { label: "Landing in spam", text: "text-rose-600", dot: "bg-rose-500", chip: "bg-rose-50 text-rose-700 border-rose-200", tone: "rose" },
     collecting: { label: "Collecting data", text: "text-slate-500", dot: "bg-slate-300", chip: "bg-slate-50 text-slate-600 border-slate-200", tone: "slate" },
-    none: { label: "No deliveries yet", text: "text-slate-400", dot: "bg-slate-200", chip: "bg-slate-50 text-slate-500 border-slate-200", tone: "slate" },
+    none: { label: "No classified receipts", text: "text-slate-400", dot: "bg-slate-200", chip: "bg-slate-50 text-slate-500 border-slate-200", tone: "slate" },
 };
 
 // Same thresholds as the backend bands, for per-day and per-provider rates.
@@ -92,6 +95,9 @@ export interface DayView {
     inbox: number;
     tabs: number;
     spam: number;
+    unknown?: number;
+    archived?: number;
+    custom?: number;
     rescued: number;
     delivered: number;
     /** Only meaningful unfiltered; a provider filter has no send-side split. */
@@ -110,6 +116,9 @@ export function viewDays(days: PlacementDay[], group: GroupFilter, minSample: nu
                 inbox: d.inbox,
                 tabs: d.tabs,
                 spam: d.spam,
+                unknown: d.unknown,
+                archived: d.archived,
+                custom: d.custom,
                 rescued: d.rescued,
                 delivered: d.delivered,
                 sent: d.sent,
@@ -121,7 +130,7 @@ export function viewDays(days: PlacementDay[], group: GroupFilter, minSample: nu
         const inbox = g?.inbox ?? 0;
         const tabs = g?.tabs ?? 0;
         const spam = g?.spam ?? 0;
-        return { date: d.date, inbox, tabs, spam, rescued: g?.rescued ?? 0, delivered: inbox + tabs + spam, sent: 0, unconfirmed: 0, rolling: null };
+        return { date: d.date, inbox, tabs, spam, unknown: g?.unknown, archived: g?.archived, custom: g?.custom, rescued: g?.rescued ?? 0, delivered: inbox + tabs + spam, sent: 0, unconfirmed: 0, rolling: null };
     });
     if (group === "all") return base;
     // Trailing rate inside the range, with the same floor the server applies.
@@ -158,11 +167,15 @@ export function totals(days: DayView[]) {
     };
 }
 
+export function observedCount(counts: { delivered: number; unknown?: number; archived?: number; custom?: number }) {
+    return counts.delivered + (counts.unknown ?? 0) + (counts.archived ?? 0) + (counts.custom ?? 0);
+}
+
 /** The other mail hosts left out of the major-provider rate, or null with none. */
 export function otherHostsNote(rate: PlacementRate, short = false): string | null {
     if (!rate.other_delivered || rate.other_inbox_rate == null) return null;
     if (short) return `Google, Microsoft, Yahoo · other hosts ${fmtPct(rate.other_inbox_rate)}`;
-    return `Other mail hosts: ${fmtPct(rate.other_inbox_rate)} inbox of ${fmtNum(rate.other_delivered)}, shown but not counted`;
+    return `Other mail hosts: ${fmtPct(rate.other_inbox_rate)} non-spam of ${fmtNum(rate.other_delivered)} classified receipts, shown but not counted`;
 }
 
 /** One line explaining a headline rate, for tooltips and captions. */
@@ -170,7 +183,7 @@ export function rateSentence(rate: PlacementRate): string {
     const ok = rate.inbox + rate.tabs;
     if (rate.delivered === 0) {
         if (rate.other_delivered) {
-            return `No warmup mail reached Google, Microsoft or Yahoo in the last ${rate.window_days} days, so there is no rate yet. Other mail hosts run their own filters and are not counted.`;
+            return `No classified warmup receipts at Google, Microsoft or Yahoo in the last ${rate.window_days} days. Other mail hosts are not counted in this rate.`;
         }
         return `No warmup deliveries in the last ${rate.window_days} days.`;
     }

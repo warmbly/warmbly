@@ -352,7 +352,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 		if err == nil {
 			err = errors.New("dial returned no connection")
 		}
-		return errx.ErrMailServerUnreachableAt("dial "+addr, dialCause(err))
+		return sendFailure(errx.ErrMailServerUnreachableAt("dial "+addr, dialCause(err)), err, "dial", "mailbox")
 	}
 	conn := dialed.Conn
 	defer conn.Close()
@@ -370,7 +370,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	if implicitTLS {
 		tlsConn := tls.Client(conn, tlsConf)
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			return errx.ErrMailServerUnreachableAt("dial "+addr, err)
+			return sendFailure(errx.ErrMailServerUnreachableAt("dial "+addr, err), err, "dial", "mailbox")
 		}
 		conn = tlsConn
 	}
@@ -378,7 +378,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	// Use the resolved host: c.Credentials is nil for OAuth2-configured clients.
 	client, err := smtp.NewClient(conn, host)
 	if err != nil {
-		return errx.ErrMailServerUnreachableAt("greeting", err)
+		return sendFailure(errx.ErrMailServerUnreachable, err, "greeting", "mailbox")
 	}
 	defer client.Quit()
 
@@ -386,7 +386,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	// alone, which relays read as a spam signal.
 	if name := ehloName(c.Email); name != "" {
 		if err := client.Hello(name); err != nil {
-			return errx.ErrMailServerUnreachableAt("ehlo", err)
+			return sendFailure(errx.ErrMailServerUnreachable, err, "ehlo", "mailbox")
 		}
 	}
 
@@ -399,10 +399,10 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 	if !implicitTLS && resolved != models.MailSecurityNone {
 		if ok, _ := client.Extension("STARTTLS"); ok {
 			if err := client.StartTLS(tlsConf); err != nil {
-				return errx.ErrMailServerUnreachableAt("starttls", err)
+				return sendFailure(errx.ErrMailServerUnreachable, err, "starttls", "mailbox")
 			}
 		} else if !netbind.InsecureTLS() && !c.plaintext {
-			return errx.ErrMailServerUnreachableAt("starttls", errNoSTARTTLS)
+			return sendFailure(errx.ErrMailServerUnreachableAt("starttls", errNoSTARTTLS), errNoSTARTTLS, "starttls", "mailbox")
 		}
 	}
 
@@ -435,9 +435,9 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 				// backend it cannot reach); only a 5xx means the credentials
 				// themselves are refused.
 				if !permanentReply(err) {
-					return errx.ErrMailServerUnreachableAt("auth", err)
+					return sendFailure(errx.ErrMailServerUnreachable, err, "auth", "mailbox")
 				}
-				return errx.ErrMailInvalidCredentials
+				return sendFailure(errx.ErrMailInvalidCredentials, err, "auth", "mailbox")
 			}
 		}
 	case models.AuthOAuth2:
@@ -446,7 +446,7 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 			var rErr *oauth2.RetrieveError
 			if errors.As(err, &rErr) {
 				if rErr.Response.StatusCode >= 500 {
-					return errx.ErrMailServerUnreachableAt("oauth2 token", err)
+					return sendFailure(errx.ErrMailServerUnreachable, err, "oauth2 token", "mailbox")
 				}
 			}
 			return errx.ErrMailAuthenticationFailed
@@ -454,7 +454,10 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 
 		auth := newOAuth2Auth(c.Email, tk.AccessToken)
 		if err := client.Auth(auth); err != nil {
-			return errx.ErrMailAuthenticationFailed
+			if !permanentReply(err) {
+				return sendFailure(errx.ErrMailServerUnreachable, err, "auth", "mailbox")
+			}
+			return sendFailure(errx.ErrMailAuthenticationFailed, err, "auth", "mailbox")
 		}
 	}
 
@@ -464,48 +467,52 @@ func (c *Client) sendRaw(ctx context.Context, from string, to []string, data []b
 		// reports an outage that is not happening.
 		if permanentReply(err) {
 			if isDomainAuthRejection(err) {
-				return errx.ErrMailDomainAuthRejected
+				return sendFailure(errx.ErrMailDomainAuthRejected, err, "mail from", "mailbox")
 			}
-			return errx.ErrMailSendRejected(err.Error())
+			return sendFailure(errx.ErrMailSendRejected("The SMTP server refused the sender"), err, "mail from", "mailbox")
 		}
-		return errx.ErrMailServerUnreachableAt("mail from", err)
+		return sendFailure(errx.ErrMailServerUnreachable, err, "mail from", "mailbox")
 	}
 	for _, r := range to {
 		if err := client.Rcpt(r); err != nil {
 			// A domain-authentication refusal is about OUR domain, not this
 			// recipient; suppressing the address would punish the wrong party.
-			if isDomainAuthRejection(err) {
-				return errx.ErrMailDomainAuthRejected
+			if permanentReply(err) && isDomainAuthRejection(err) {
+				return sendFailure(errx.ErrMailDomainAuthRejected, err, "rcpt to", "mailbox")
 			}
 			// A refused RCPT is a recipient problem (bad address, policy
 			// rejection), not a dead server; classifying it as unreachable
 			// hid rejections from bounce accounting. A 4xx is greylisting or
 			// a busy server, which is worth another attempt.
 			if !permanentReply(err) {
-				return errx.ErrMailServerUnreachableAt("rcpt to", err)
+				return sendFailure(errx.ErrMailServerUnreachable, err, "rcpt to", "recipient")
 			}
-			refused := errx.ErrMailRecipientRejected(err.Error())
+			refused := sendFailure(errx.ErrMailRecipientRejected("The SMTP server refused this recipient"), err, "rcpt to", "recipient")
 			refused.Recipient = r
 			return refused
 		}
 	}
 	w, err := client.Data()
 	if err != nil {
-		return errx.ErrMailServerUnreachableAt("data", err)
+		base := errx.ErrMailServerUnreachable
+		if permanentReply(err) {
+			base = errx.ErrMailSendRejected("The SMTP server refused the message")
+		}
+		return sendFailure(base, err, "data", "mailbox")
 	}
 	if _, err := w.Write(data); err != nil {
-		return errx.ErrMailServerUnreachableAt("message body", err)
+		return sendFailure(errx.ErrMailServerUnreachable, err, "message body", "mailbox")
 	}
 	if err := w.Close(); err != nil {
 		// The server's verdict on the whole message lands here, which is where
 		// Microsoft returns 5.7.515. Retrying it as an outage never succeeds.
-		if isDomainAuthRejection(err) {
-			return errx.ErrMailDomainAuthRejected
+		if permanentReply(err) && isDomainAuthRejection(err) {
+			return sendFailure(errx.ErrMailDomainAuthRejected, err, "message accept", "mailbox")
 		}
 		if permanentReply(err) {
-			return errx.ErrMailSendRejected(err.Error())
+			return sendFailure(errx.ErrMailSendRejected("The SMTP server refused the message"), err, "message accept", "mailbox")
 		}
-		return errx.ErrMailServerUnreachableAt("message accept", err)
+		return sendFailure(errx.ErrMailServerUnreachable, err, "message accept", "mailbox")
 	}
 
 	return nil

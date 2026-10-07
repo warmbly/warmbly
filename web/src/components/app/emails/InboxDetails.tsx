@@ -13,6 +13,7 @@ import { DashboardImage } from "@/components/ui/dashboard-image";
 // validation. Read data: /analytics/accounts/:id and /analytics/warmup?email_id=.
 
 import React, { useMemo, useState } from "react";
+import { diagnosticSendingAllowed, diagnosticWarmupActive } from "@/lib/diagnosticParticipation";
 import { AnimatePresence, motion } from "framer-motion";
 import AdvisorStrip from "@/components/app/advisor/AdvisorStrip";
 import {
@@ -257,18 +258,9 @@ function ColdRampNotice({ ramp }: { ramp: import("@/lib/api/models/app/analytics
                         Easing into cold sending: {ramp.ceiling} of {ramp.mailbox_cap} a day
                     </p>
                     <p className="text-[11.5px] text-sky-800/90 leading-relaxed mt-0.5">
-                        {ramp.held ? (
-                            <>
-                                The climb is paused after a recent spam placement. It resumes on its own, then adds 5 a
-                                day until it reaches {ramp.mailbox_cap}.
-                            </>
-                        ) : (
-                            <>
-                                Going straight from warmup to a full cold cap is the volume jump mailbox providers
-                                penalise, so this adds 5 a day instead. At this rate it reaches {ramp.mailbox_cap} in
-                                about {ramp.days_to_full_cap} {ramp.days_to_full_cap === 1 ? "day" : "days"}.
-                            </>
-                        )}
+                        {ramp.held ? "Recent negative feedback is holding the pacing policy. " : ""}
+                        Automated test history does not prove real-recipient readiness. This conservative policy
+                        requires recent human campaign replies before increasing volume. No full-speed date or safe volume is guaranteed.
                     </p>
                 </div>
             </div>
@@ -405,6 +397,7 @@ const EDITABLE: (keyof Inbox)[] = [
     "warmup_base", "warmup_max", "warmup_increase", "warmup_reply_rate",
     "warmup_tag", "warmup_start_time", "warmup_end_time", "warmup_days",
     "warmup_placement", "warmup_folder", "warmup_retention_days",
+    "test_mode", "test_send_enabled", "test_receive_enabled", "shared_daily_limit", "rolling_recipient_limit",
 ];
 
 function Detail({ mailbox, onClose, initialTab = "overview", canWarmup = true }: { mailbox: Inbox; onClose: () => void; initialTab?: string; canWarmup?: boolean }) {
@@ -1140,21 +1133,16 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
         refresh.mutate();
     };
 
-    // The verdict follows what the check can actually prove. SPF and DMARC are
-    // discoverable, so a miss there is a real miss; DKIM is not, so a domain
-    // with both of those in place is aligned as far as anyone can tell, and
-    // saying "needs attention" over an unverifiable DKIM is a false alarm. A
-    // lookup DNS did not answer proves nothing either way.
-    const unanswered = !!data?.lookup_error;
+    const unanswered = !!data?.lookup_error || !!data?.reserved || data?.domain === "";
     const verdict = !data
         ? null
         : unanswered
           ? { ok: false, tone: "text-slate-600", title: "DNS did not answer" }
           : data.all_aligned
-            ? { ok: true, tone: "text-emerald-700", title: "Authentication aligned" }
+            ? { ok: true, tone: "text-emerald-700", title: "SPF, DKIM and DMARC records found" }
             : data.spf_found && data.dmarc_found
-              ? { ok: true, tone: "text-emerald-700", title: "SPF and DMARC aligned, DKIM unverified" }
-              : { ok: false, tone: "text-amber-700", title: "Authentication needs attention" };
+              ? { ok: true, tone: "text-emerald-700", title: "SPF and DMARC records found, DKIM unverified" }
+              : { ok: false, tone: "text-amber-700", title: "DNS records need attention" };
     const discoverable = (found: boolean): AuthRecordState => (found ? "found" : unanswered ? "unverified" : "missing");
 
     return (
@@ -1162,7 +1150,7 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
             <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                     <Eyebrow>Domain authentication</Eyebrow>
-                    <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">Live SPF, DKIM &amp; DMARC check on the sending domain.</p>
+                    <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">DNS record discovery. Actual-message alignment and delivery TLS are separate, unverified checks.</p>
                 </div>
                 <button
                     onClick={run}
@@ -1194,6 +1182,11 @@ function AuthCheckPanel({ mailbox }: { mailbox: Inbox }) {
                                 <div className="min-w-0">
                                     <div className="text-[12px] font-medium">{verdict.title}</div>
                                     {data.summary && <div className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">{data.summary}</div>}
+                                    {data.readiness?.filter((c) => c.state !== "record-present").map((c) => (
+                                        <div key={c.component} className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+                                            {c.component.replaceAll("_", " ")}: {c.state}. {c.reason}
+                                        </div>
+                                    ))}
                                     {unanswered && (
                                         <div className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">
                                             Nothing is held against the domain for this. Try again in a minute.
@@ -1249,22 +1242,26 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
     // back into cache on success.
     const life = useWarmupLifecycle(mailbox.id);
     const confirm = useConfirm();
-    const off = !mailbox.warmup;
-    const paused = !!mailbox.warmup && !!mailbox.warmup_paused_at;
-    const active = !!mailbox.warmup && !mailbox.warmup_paused_at;
+    const off = !mailbox.warmup || mailbox.test_mode === "off";
+    const paused = !off && !!mailbox.warmup && (!!mailbox.warmup_paused_at || !diagnosticSendingAllowed(mailbox));
+    const active = diagnosticWarmupActive(mailbox);
     // When Warmbly Cloud warms this mailbox the local controls step aside.
     const pool = useCloudPool();
     const inCloud = pool.connected && pool.isEnrolled(mailbox.id);
 
-    const run = (action: "start" | "pause" | "resume" | "stop", verb: string) =>
-        life.mutate(action, {
+    const run = (action: "start" | "pause" | "resume" | "stop", verb: string) => {
+        const execute = () => life.mutate(action, {
             onSuccess: () => toast.success(`Warmup ${verb}`),
             onError: (e) => toast.error(buildError(e as unknown as AppError)),
         });
+        if (action === "start" || action === "resume") {
+            confirm.show("Authorize automated diagnostic sends and replies? Starting from Off also enables receiving diagnostic tests. Tests are disclosed automation, not organic engagement or a proven reputation boost. Provider policies still apply.", execute);
+        } else execute();
+    };
 
     const stopReset = () => {
         confirm.show(
-            "Stop warmup and reset ramp progress? Restarting begins from the base volume. Use Pause to keep progress.",
+            "Stop all pool participation, including receiving tests and campaign health checks? Pending work is rechecked by updated workers; accepted provider sends cannot be recalled. Ramp history and safety holds are kept.",
             async () => {
                 try {
                     await life.mutateAsync("stop");
@@ -1294,7 +1291,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                     </div>
                     <div className="min-w-0">
                         <div className="text-[12.5px] font-medium text-slate-900">{active ? "Warming up" : paused ? "Paused" : "Warmup off"}</div>
-                        <div className="text-[11px] text-slate-400 truncate">{active ? "Building sender reputation" : paused ? "Ramp progress kept — resume anytime" : "Not building reputation"}</div>
+                        <div className="text-[11px] text-slate-400 truncate">{active ? "Automated diagnostic traffic, not organic engagement" : paused && !off ? "Sending paused; receiving permission is separate" : "Sending and receiving diagnostic tests disabled"}</div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -1321,7 +1318,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                             <button
                                 onClick={stopReset}
                                 disabled={life.isPending}
-                                title="Stop warmup and reset ramp progress"
+                                title="Stop sending and receiving diagnostic tests"
                                 className="h-8 px-3 rounded-md border border-slate-200 hover:border-rose-200 text-[12px] font-medium text-slate-600 hover:text-rose-600 inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                             >
                                 Stop
@@ -1332,7 +1329,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                         <button
                             onClick={stopReset}
                             disabled={life.isPending}
-                            title="Stop warmup and reset ramp progress"
+                            title="Stop sending and receiving diagnostic tests"
                             className="h-8 px-3 rounded-md border border-slate-200 hover:border-rose-200 text-[12px] font-medium text-slate-600 hover:text-rose-600 inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                         >
                             Stop
@@ -1346,12 +1343,32 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
             {!inCloud && off && !canWarmup && (
                 <div className="px-5 py-4">
                     <div className="rounded-md border border-sky-100 bg-sky-50/70 px-3 py-2.5 text-[11.5px] text-sky-900/90 leading-relaxed">
-                        Warmup is available on paid plans. Upgrade to build and protect sender reputation automatically.
+                        Paid plans include disclosed diagnostic traffic and placement monitoring, not a guaranteed reputation benefit.
                     </div>
                 </div>
             )}
 
             {/* Live volume */}
+            {!inCloud && (
+                <div className="px-5 py-4 space-y-3 border-t border-slate-100">
+                    <Eyebrow>Diagnostic participation</Eyebrow>
+                    <select aria-label="Diagnostic participation mode" value={form.test_mode ?? "legacy"}
+                        onChange={(e) => update({ test_mode: e.target.value as Inbox["test_mode"], test_send_enabled: false, test_receive_enabled: false })}
+                        className="h-8 rounded border border-slate-200 text-sm">
+                        {(form.test_mode == null || form.test_mode === "legacy") && <option value="legacy" disabled>Legacy participation (unchanged until explicit action)</option>}
+                        <option value="diagnostic">Disclosed automated diagnostics</option>
+                        <option value="off">Off: no diagnostic sends or receipts</option>
+                    </select>
+                    {form.test_mode === "diagnostic" && <>
+                        <label className="flex items-center justify-between text-xs">Allow diagnostic sending and replies<Toggle value={!!form.test_send_enabled} onChange={(v) => update({ test_send_enabled: v })} /></label>
+                        <label className="flex items-center justify-between text-xs">Allow receiving diagnostic tests<Toggle value={!!form.test_receive_enabled} onChange={(v) => update({ test_receive_enabled: v })} /></label>
+                    </>}
+                    <p className="text-xs text-slate-500">Save to apply. Sending also requires an active schedule and sender role. Receive-only does not authorize replies. Diagnostic mode does not star, mark read or rescue spam. Off also stops placement tests, not legitimate campaign mail.</p>
+                    <label className="block text-xs">Shared daily send limit (all send types; 0 uses configured caps)<input type="number" min={0} value={form.shared_daily_limit ?? 0} onChange={(e) => update({ shared_daily_limit: Number(e.target.value) })} className="ml-2 w-20 rounded border border-slate-200" /></label>
+                    <label className="block text-xs">Recipients in rolling 24 hours (To/CC/BCC; 0 uses configured caps)<input type="number" min={0} value={form.rolling_recipient_limit ?? 0} onChange={(e) => update({ rolling_recipient_limit: Number(e.target.value) })} className="ml-2 w-20 rounded border border-slate-200" /></label>
+                </div>
+            )}
+
             {ws && active && (
                 <div className="px-5 py-4">
                     <Eyebrow>Today</Eyebrow>

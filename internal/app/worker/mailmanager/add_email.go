@@ -53,6 +53,7 @@ func (m *MailManager) AddWMail(
 		return nil
 	}
 	m.Emails[data.ID] = newMail
+	newMail.ExecutorID = m.ExecutorID
 
 	return nil
 }

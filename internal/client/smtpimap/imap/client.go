@@ -21,6 +21,7 @@ import (
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"golang.org/x/oauth2"
 )
 
@@ -30,6 +31,8 @@ import (
 // machine-reply/DSN markers the consumer's reply/bounce classifier reads.
 // The IMAP ENVELOPE carries none of these.
 var headerFetchFields = append([]string{config.WarmupVerifyHeader}, config.InboundClassificationHeaders...)
+
+var evidenceFetchFields = append(append([]string{}, headerFetchFields...), "Authentication-Results", "From", "Return-Path", "DKIM-Signature", "List-Unsubscribe", "List-Unsubscribe-Post")
 
 type Client struct {
 	Email       string
@@ -651,7 +654,7 @@ func (c *Client) FetchEnvelopes(ctx context.Context, uids []imap.UID) ([]*Fetche
 		RFC822Size:   true,
 		BodySection: []*imap.FetchItemBodySection{{
 			Specifier:    imap.PartSpecifierHeader,
-			HeaderFields: headerFetchFields,
+			HeaderFields: evidenceFetchFields,
 			Peek:         true,
 		}},
 	})
@@ -745,7 +748,10 @@ func parseHeaderFlags(lit io.Reader) []string {
 	if len(hdr) == 0 && err != nil {
 		return nil
 	}
-	var out []string
+	if len(hdr) == 0 {
+		return nil
+	}
+	out := []string{mailhdr.ReceivedEvidence(hdr, "imap_headers").Flag()}
 	for _, name := range headerFetchFields {
 		if v := strings.TrimSpace(hdr.Get(name)); v != "" {
 			out = append(out, name+":"+v)

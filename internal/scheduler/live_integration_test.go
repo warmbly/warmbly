@@ -1009,8 +1009,8 @@ func TestLiveGraduationStopsTheOvernightJumpToFullCap(t *testing.T) {
 	f := newLiveFixture(t, pool, "UTC")
 	f.graduateMailbox(t, 30, nil) // a month of warmup, first cold day
 
-	if got := f.dailyCapacity(t, handle); got != 20 {
-		t.Errorf("first cold day allows %d, want the graduation start of 20 rather than the 50 cap", got)
+	if got := f.dailyCapacity(t, handle); got != 5 {
+		t.Errorf("first cold day allows %d, want conservative start without reply evidence", got)
 	}
 }
 
@@ -1020,14 +1020,14 @@ func TestLiveGraduationClimbsToTheCap(t *testing.T) {
 
 	three := 3
 	f.graduateMailbox(t, 30, &three)
-	if got := f.dailyCapacity(t, handle); got != 35 {
-		t.Errorf("cold day 3 allows %d, want 20 + 3*5", got)
+	if got := f.dailyCapacity(t, handle); got != 5 {
+		t.Errorf("cold day 3 allows %d without actual recipient feedback", got)
 	}
 
 	long := 60
 	f.graduateMailbox(t, 30, &long)
-	if got := f.dailyCapacity(t, handle); got != 50 {
-		t.Errorf("a long-graduated mailbox allows %d, want the full 50 cap", got)
+	if got := f.dailyCapacity(t, handle); got != 5 {
+		t.Errorf("a long-graduated mailbox fabricated readiness: %d", got)
 	}
 }
 

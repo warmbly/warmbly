@@ -16,6 +16,7 @@ import (
 
 type MailManager struct {
 	sync.RWMutex
+	ExecutorID                uuid.UUID
 	Emails                    map[uuid.UUID]*wmail.WMail
 	OnEvent                   func(eventType models.JobEventType, key string, body any) error
 	cache                     *cache.Cache

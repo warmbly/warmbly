@@ -6,10 +6,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/warmbly/warmbly/internal/models"
 	"google.golang.org/api/gmail/v1"
 )
 
 func gh(n, v string) *gmail.MessagePartHeader { return &gmail.MessagePartHeader{Name: n, Value: v} }
+
+func TestPlacementDoesNotInferArchiveFromAbsentGmailLabels(t *testing.T) {
+	data := GmailMessageToEmailData(&gmail.Message{Id: "no-labels", Payload: &gmail.MessagePart{}})
+	if models.ClassifyPlacementLanding(data.Folder, data.Flags) != models.PlacementFolderUnknown || models.ClassifyWarmupLanding(data.Folder, data.Flags) != models.WarmupLandedUnknown {
+		t.Fatal("absent labels acquired an observed archive or inbox verdict")
+	}
+	data = GmailMessageToEmailData(&gmail.Message{Id: "inbox", LabelIds: []string{Inbox}, Payload: &gmail.MessagePart{}})
+	if models.ClassifyPlacementLanding(data.Folder, data.Flags) != models.PlacementFolderInbox {
+		t.Fatal("canonical inbox evidence lost")
+	}
+}
 
 func hasPrefix(flags []string, prefix string) bool {
 	for _, f := range flags {

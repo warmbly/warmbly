@@ -130,7 +130,13 @@ Your instance holds the mailbox to the cloud's verdict as well, exactly as it wo
 
 The same standing feeds the mailbox's health on the **Mailboxes** page, the **Warmup reputation** block in its drawer (marked **Warmbly Cloud**, with the reason and the end of any hold), a campaign's sending limits, the [Advisor](/guides/advisor/) and the dashboard's health summary. A change reaches your instance within five minutes and fires the same `warmup.health_changed`, `warmup.quarantined` and `warmup.blocked` [webhooks](/guides/webhooks/) a local transition does.
 
-If the cloud cannot be reached, the last standing it reported stays in force, and a quarantine or block still ends on its own date. Removing a mailbox from the cloud while it is quarantined or blocked does not lift the hold: when the mailbox rejoins your instance's own pool it keeps the same standing until that date (a block that requires review stays until an administrator lifts it), and from there [the standing follows the address](/guides/warmup/#pool-safety) as it does for any mailbox. Appeals go through the mailbox on Warmbly Cloud, where the verdict was reached.
+Cloud standing is observed evidence, not a permanent permission. Healthy, watch and throttled observations have a 15-minute freshness limit. Missing, unrecognized or stale observations stop new control-plane admission with `cloud_evidence_unavailable` until a recognized cloud observation arrives. This availability hold does not claim the provider blocked the mailbox. Existing enrollments start with unknown freshness after upgrading, then the next successful standing sync establishes it.
+
+An active quarantine or block remains in force even when the cloud cannot be reached. A bounded hold still ends on its own date; an unbounded block needs review. Removing a mailbox from the cloud does not lift an active hold. Restrictive cloud evidence is retained by workspace and address in the local reputation ledger, so leaving or changing pools, reconnecting, or [exporting and importing the workspace](/guides/workspace-export-import/) does not reset it. The cloud link itself is instance-local and does not travel with the archive. Fresh positive observations from a new link do not erase an unexpired restriction from the previous link. Appeals go through the mailbox on Warmbly Cloud, where the verdict was reached.
+
+Local and cloud warmup use the same active-mailbox, participant-role, workspace-standing and health checks. A recipient-only participant cannot originate diagnostic messages. Restricted or suspended workspaces cannot contribute candidates, and paying for Premium does not waive these rules. Spam placement slows participation; it is not by itself a reason to quarantine a mailbox.
+
+These checks apply before new commands are admitted. Updating the control plane cannot revoke a command an older worker has already accepted; cached provider credentials and already-running work keep their existing expiry and execution behavior.
 
 For mailboxes signed in through Warmbly Cloud the enforcement reaches sending too. Every access token the instance draws is checked on the cloud: a mailbox the cloud has **blocked**, one that is no longer active there, one that was removed from the workspace, or an instance whose link was revoked gets no token, and the instance stops sending and syncing from that mailbox as soon as its cached token expires.
 
@@ -160,7 +166,49 @@ See [serve it from Warmbly Cloud](/guides/sending-domains/#serve-it-from-warmbly
 
 ## Unlinking
 
-On your instance, **Settings > Warmbly Cloud > Disconnect** releases only mailboxes and redirects using the selected workspace's connection. SMTP/IMAP credentials are deleted on Cloud and local warmup takes over; Cloud-managed mirrors using that connection are removed. Mailboxes still using a legacy connection and other workspaces' links are unaffected. **Disconnect legacy link** is a separate, explicit action affecting all mailboxes and redirects still using the old link across all local workspaces. Disconnect a workspace's Cloud link before scheduling its deletion or deleting its owner account. On Warmbly Cloud, **Settings > Linked instances** lists the instances linked to a workspace and can unlink any of them from the other side.
+On your instance, **Settings > Warmbly Cloud > Disconnect** removes only the selected workspace link's enrollments and lets eligible local warmup take over after confirmed cleanup. Other workspace links and retained legacy links are unaffected. Instance-originated SMTP mailboxes and their credentials are deleted on the cloud. An OAuth mailbox belongs to the cloud workspace: unlinking removes that connection's access, not the workspace's mailbox or provider grant. Its native cloud warmup configuration also remains: pause or delete it separately on Warmbly Cloud if you want that participation or its stored credentials removed. Root redirects using the disconnected link stop at the same time. Removing a legacy instance-wide link remains a separate administrator action. On Warmbly Cloud, **Settings > Linked instances** lists the connections linked to a workspace and can unlink any of them from the other side.
+
+SMTP enrollment, mailbox removal and instance disconnect first record a durable local intent. While enrollment or removal is pending, the mailbox is not admitted to local warmup. The regular standing sync retries pending work after an outage or restart, using the same mailbox identity rather than creating another. Remote removal must be acknowledged, or confirmed already absent, before local enrollment is dropped. A failed local cleanup stays pending and is retried.
+
+Removal is an explicit opt-out. A late enrollment acknowledgment cannot reverse a pending removal. After removal finishes, a new explicit enrollment can create a fresh intent, but it does not reset reputation holds. Disconnect remains pending until remote revocation and local cleanup succeed, and no new enrollment is accepted during it.
+
+## Managed sign-in recovery and consent
+
+New Gmail/Outlook sign-ins and adoption of an existing cloud mailbox use managed consent protocol 1. Both sides record a stable operation before acting. The instance records the workspace and initiating user, rechecks their current mailbox-management permission, and binds completion to that workspace, user, linked cloud instance, provider and mailbox identity. Organization owners are allowed; another member needs an accepted membership with `manage_emails`. Restricted or suspended workspaces cannot complete a managed operation.
+
+Consent records survive backend restarts. Replaying a confirmed completion returns its existing mailbox rather than creating another. A lost cloud reply or failed local mirror write can be recovered by the regular standing sync. The original planned local mailbox ID and remote operation ID are reused. Adoption retries likewise reuse their original identity. Completion timestamps prove only that the recorded consent operation completed, not that authentication or inbox placement passed.
+
+A browser sign-in has a ten-minute consent window, and the browser that chose to continue must complete the callback. A repeated callback cannot exchange the same code again. If the provider exchange may have happened but there is no committed mailbox at its planned ID, the result is unknown. Warmbly does not retry the authorization code or report success. Remove the pending connection and start a new explicit sign-in. If the planned mailbox was committed, completion can recover without exchanging again while consent is still valid. Loss of Redis before provider exchange can require opening the consent flow again; durable consent is not a replacement for the provider's short-lived browser/PKCE state.
+
+Opt-out, instance revocation and expiry are restrictive. Pending local removal is recorded before calling the cloud. A remote deletion reserves a tombstone even if a delayed start has not arrived yet. Late callbacks and adoption replays cannot revive that operation. A genuinely new sign-in or enrollment needs a new explicit operation and does not erase reputation holds. A pending initial warmup activation is also durable: completion retries it after a restart, but a confirmed completion replay does not undo an explicit pause.
+
+Current local consent, enrollment, workspace standing and cloud observation freshness are checked before using even a cached brokered token. The cloud rechecks current instance and operation authority before minting another token. Previously issued provider tokens and commands already accepted by an older worker are not retroactively canceled by these checks.
+
+### Version compatibility and rollout
+
+The cloud advertises `managed_consent_protocol: 1` in its authenticated instance information response. New clients require that capability and use separate correlated endpoints; they do not silently send fields an old cloud could ignore. Correlated browser states also use a different prefix, so an old callback handler cannot exchange them as legacy one-shot operations.
+
+Upgrade and settle all cloud control-plane replicas first, then upgrade linked instances. No new configuration is required. An old cloud cannot provide the stronger managed-sign-in guarantee, and a new client refuses a new managed operation against it. Existing SMTP enrollment and existing mailbox IDs remain valid. Old one-shot endpoints remain available to old clients, with their original weaker recovery behavior. An old browser session whose local authority was never stored durably cannot be reconstructed after upgrading/restarting; start a new explicit sign-in instead. Mixed replicas can reject the new endpoints or browser state, so do not treat a partial rollout as completed recovery.
+
+The additive cloud routes below are beneath `/v1/pool-link`, use the linked instance's bearer token, and require `protocol: 1`. These are instance-scoped routes, not organization API-key routes. Existing routes without `-correlated` remain available.
+
+| Method and route | Purpose |
+| --- | --- |
+| `POST /instance/oauth/start-correlated` | Reserve the supplied session hash and stable remote operation ID, then open browser consent |
+| `POST /instance/oauth/finish-correlated` | Read/reconcile completion by remote operation ID without consuming its durable result |
+| `POST /instance/mailboxes/adopt-correlated` | Idempotently adopt a specified OAuth mailbox at a stable remote operation ID |
+
+`cloud_link_managed_protocol` means the cloud does not advertise the required recovery capability. `pool_link_oauth_unknown` means no provider-exchange result has been confirmed; it is not permission to resend the code. Existing `cloud_link_oauth_session` / `pool_link_oauth_session` errors cover missing, expired, revoked or mismatched consent. Permission or persistence failures do not report a successful connection.
+
+### Data, secrets and moving a workspace
+
+PostgreSQL retains managed consent history and revocation tombstones until the owning organization is deleted. There is no automatic history purge or configurable retention duration in this release. Records contain organization/user references, instance/operation/account IDs, provider, operation kind, state and timestamps; local records retain a SHA-256 session hash, not the raw browser handle. These durable operation tables contain no email bodies, authorization codes, PKCE verifiers, access tokens or refresh tokens.
+
+The schema downgrade refuses to discard any managed consent history, including completed, expired, imported and revoked records. An older release cannot represent these restrictions. Ordinary disconnect deliberately does not erase them, so it does not make such a downgrade safe.
+
+Redis still holds the short-lived browser session, PKCE verifier, browser binding and consent result, with a ten-minute TTL. The cloud's ordinary encrypted mailbox credential store holds provider credentials under its existing retention rules. The instance only caches brokered access tokens in memory for at most ten minutes; an already-issued worker token can remain valid until its provider expiry.
+
+Consent restrictions/history travel in a [workspace export](/guides/workspace-export-import/). Import resets source instance IDs, remote IDs, session hashes, planned account handles and queued activation handles; live cloud account references on the local consent record are reset too. This prevents an imported pending operation from resuming against the source instance, while retaining its restrictive state. Workspace links and legacy instance-wide links do not travel: reconnect and explicitly authorize any new managed operation after moving. Imported history is not a fresh consent or a positive provider verdict.
 
 ## Self-hosting notes
 

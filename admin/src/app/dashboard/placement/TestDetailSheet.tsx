@@ -185,7 +185,8 @@ function scoreTone(score: number): Tone {
 function SummaryGrid({ counts }: { counts: PlacementCounts }) {
     const tabs = counts.promotions + counts.other;
     const cells: { label: string; value: number; sub?: string; tone?: Tone }[] = [
-        { label: "Delivered", value: counts.delivered, sub: `of ${counts.total}` },
+        { label: "Resolved (legacy basis)", value: counts.delivered, sub: `includes timeouts, of ${counts.total}` },
+        { label: "Observed receipts", value: counts.observed_receipts ?? counts.inbox + counts.promotions + counts.other + counts.spam, sub: `${counts.unknown ?? 0} unknown, ${counts.archive ?? 0} archive, ${counts.custom ?? 0} custom` },
         { label: "Primary inbox", value: counts.inbox, sub: pct(counts.inbox_rate), tone: "success" },
         { label: "Gmail tabs", value: tabs, sub: pct(counts.tabs_rate), tone: "info" },
         { label: "Spam", value: counts.spam, sub: pct(counts.spam_rate), tone: counts.spam > 0 ? "danger" : undefined },
@@ -237,7 +238,7 @@ function FamiliesTable({ families }: { families: { family: string; label: string
                     <thead>
                         <tr className="border-b border-border">
                             <th className={cn(TH, "text-left")}>Provider</th>
-                            <th className={cn(TH, "text-right")}>Delivered</th>
+                            <th className={cn(TH, "text-right")}>Resolved (legacy)</th>
                             <th className={cn(TH, "text-right")}>Inbox</th>
                             <th className={cn(TH, "text-right")}>Tabs</th>
                             <th className={cn(TH, "text-right")}>Spam</th>

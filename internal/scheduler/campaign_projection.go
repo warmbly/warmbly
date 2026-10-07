@@ -208,7 +208,7 @@ func projectSenderDay(p *projectedSender, spans []span, midnight, rampStart time
 			start = *p.cold.ColdRampStartedAt
 		}
 		warmupDays := max(0, int(noon.Sub(*p.cold.WarmupStartedAt).Hours()/24))
-		if g := warmupramp.ColdCeiling(warmupDays, start, p.cold.Placements, noon, c); g < c {
+		if g := warmupramp.ColdCeiling(warmupDays, start, p.cold.Placements, noon, c, p.cold.ConfirmedReplies); g < c {
 			d.graduation = c - g
 			c = g
 		}
@@ -340,7 +340,8 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 				p.cap = r
 			}
 		}
-		p.cold, p.hasCold = pass.coldRamp[acct.ID]
+		p.cold = pass.coldRamp[acct.ID].WithKnownWarmup(acct.Warmup)
+		p.hasCold = p.cold.WarmupStartedAt != nil
 		h := s.healthFor(ctx, pass, acct.ID)
 		if h.known {
 			p.health = h.state
@@ -447,7 +448,7 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 	for i := projectionExactDays - 7; i < projectionExactDays; i++ {
 		out.SteadyCapacity = max(out.SteadyCapacity, poolExact[i])
 	}
-	if out.SteadyCapacity > 0 && firstFull >= 0 && poolExact[firstFull] < out.SteadyCapacity {
+	if fullCapacityEvidenceKnown(senders) && out.SteadyCapacity > 0 && firstFull >= 0 && poolExact[firstFull] < out.SteadyCapacity {
 		for i := firstFull; i < projectionExactDays; i++ {
 			if sendingExact[i] && poolExact[i] >= out.SteadyCapacity {
 				at := time.Date(startDay.Year(), startDay.Month(), startDay.Day()+i, 0, 0, 0, 0, loc)
@@ -563,6 +564,15 @@ func (s *schedulerService) ProjectCampaign(ctx context.Context, in CampaignProje
 		out.SendingDays = &n
 	}
 	return out, nil
+}
+
+func fullCapacityEvidenceKnown(senders []*projectedSender) bool {
+	for _, p := range senders {
+		if p.hasCold && p.cold.WarmupStartedAt != nil && coldCeilingFor(p.cold, p.cap) < p.cap {
+			return false
+		}
+	}
+	return true
 }
 
 type simDay struct{ first, followUps int }

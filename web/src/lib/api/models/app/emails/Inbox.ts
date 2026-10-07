@@ -28,6 +28,11 @@ export default interface Inbox {
     last_synced_at: Date;
     last_id?: number | null;
     campaign_limit: number;
+    test_mode?: "legacy" | "diagnostic" | "off" | null;
+    test_send_enabled?: boolean;
+    test_receive_enabled?: boolean;
+    shared_daily_limit?: number | null;
+    rolling_recipient_limit?: number | null;
     min_wait_time: number;
     reply_to: string;
     /** SMTP/IMAP only: file a copy of each sent message in the mailbox Sent folder. */

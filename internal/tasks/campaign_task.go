@@ -815,6 +815,10 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 	// It also binds the lead to this mailbox, in the same transaction, so every
 	// remaining step of this contact's sequence leaves from the address they
 	// are about to hear from (issue #401).
+	if err := s.sendAdmission(ctx, account); err != nil {
+		s.retryCampaignTickLater(ctx, taskRecord)
+		return errx.InternalError()
+	}
 	reserved, rerr := s.campaignProgressRepo.ReserveSend(ctx, campaign.ID, contact.ID, sequence.ID, taskID, account.ID, nextPair.IsNewLead)
 	if rerr != nil {
 		// The attempt could not be made durable, so it must not be made at all.
@@ -897,7 +901,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 		//     number of tries instead of being retried every minute for ever
 		switch {
 		case errors.Is(err, ErrSendDispatchUnknown):
-		case errors.Is(err, ErrWorkerOffline), errors.Is(err, ErrWorkerUnconfirmed):
+		case errors.Is(err, ErrWorkerOffline), errors.Is(err, ErrWorkerUnconfirmed) || errors.Is(err, repository.ErrSendAdmissionDenied):
 			if relErr := s.campaignProgressRepo.ReleaseSend(ctx, campaign.ID, contact.ID, sequence.ID, nextPair.IsNewLead); relErr != nil {
 				errs.CaptureException(relErr)
 				log.Error().Err(relErr).Str("campaign_id", campaign.ID.String()).Str("task_id", taskID.String()).Msg("Failed to release the reservation for a send that never left; the reclaimer will retry it")

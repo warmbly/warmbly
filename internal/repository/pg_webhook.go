@@ -489,6 +489,9 @@ func (r *webhookRepository) MatchingEndpoints(ctx context.Context, orgID uuid.UU
 }
 
 func (r *webhookRepository) EnqueueDelivery(ctx context.Context, delivery *models.WebhookDelivery) error {
+	if id := SendResultEffectEventID(ctx); id != uuid.Nil {
+		delivery.ID = uuid.NewSHA1(id, []byte(delivery.EndpointID.String()))
+	}
 	if delivery.ID == uuid.Nil {
 		delivery.ID = uuid.New()
 	}
@@ -505,7 +508,7 @@ func (r *webhookRepository) EnqueueDelivery(ctx context.Context, delivery *model
 		INSERT INTO webhook_deliveries (
 			id, endpoint_id, organization_id, event_type, event_id, payload,
 			status, attempt_count, max_attempts, next_attempt_at, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()) ON CONFLICT(id) DO NOTHING
 	`,
 		delivery.ID, delivery.EndpointID, delivery.OrganizationID,
 		delivery.EventType, delivery.EventID, json.RawMessage(delivery.Payload),

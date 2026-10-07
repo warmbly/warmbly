@@ -29,14 +29,18 @@ type TestView struct {
 type ResultView struct {
 	// Seed is the seed's address, masked on the shared panels so the panel
 	// cannot be listed and whitelisted.
-	Seed        string     `json:"seed"`
-	Family      string     `json:"family"`
-	FamilyLabel string     `json:"family_label"`
-	Folder      string     `json:"folder"`
-	ScheduledAt *time.Time `json:"scheduled_at"`
-	SentAt      *time.Time `json:"sent_at"`
-	DetectedAt  *time.Time `json:"detected_at"`
-	Error       string     `json:"error,omitempty"`
+	Seed            string                   `json:"seed"`
+	Family          string                   `json:"family"`
+	FamilyLabel     string                   `json:"family_label"`
+	Folder          string                   `json:"folder"`
+	ScheduledAt     *time.Time               `json:"scheduled_at"`
+	SentAt          *time.Time               `json:"sent_at"`
+	DetectedAt      *time.Time               `json:"detected_at"`
+	Error           string                   `json:"error,omitempty"`
+	FirstFolder     *string                  `json:"first_folder,omitempty"`
+	ObservedAt      *time.Time               `json:"observed_at,omitempty"`
+	LateObservation bool                     `json:"late_observation,omitempty"`
+	Evidence        *models.ReceivedEvidence `json:"evidence"`
 }
 
 // ContentCheck is the rules pass over the test's copy.
@@ -117,14 +121,18 @@ func resultViews(panel string, results []models.PlacementResult) []ResultView {
 			seed = maskAddress(seed)
 		}
 		out = append(out, ResultView{
-			Seed:        seed,
-			Family:      r.Family,
-			FamilyLabel: familyLabel(r.Family),
-			Folder:      r.Folder,
-			ScheduledAt: r.ScheduledAt,
-			SentAt:      r.SentAt,
-			DetectedAt:  r.DetectedAt,
-			Error:       r.Error,
+			Seed:            seed,
+			Family:          r.Family,
+			FamilyLabel:     familyLabel(r.Family),
+			Folder:          r.Folder,
+			ScheduledAt:     r.ScheduledAt,
+			SentAt:          r.SentAt,
+			DetectedAt:      r.DetectedAt,
+			Error:           r.Error,
+			FirstFolder:     r.FirstFolder,
+			ObservedAt:      r.ObservedAt,
+			LateObservation: r.Folder == models.PlacementFolderMissing && r.ObservedAt != nil,
+			Evidence:        r.Evidence,
 		})
 	}
 	return out

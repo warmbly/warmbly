@@ -172,8 +172,8 @@ func TestRemovalCheckedJudgesOnWhereTheMessageIs(t *testing.T) {
 		verified int
 	}{
 		{"moved to another folder", models.WarmupRemovalPresent, false, false, []string{"withdraw:deletion"}, 0},
-		{"in the trash", models.WarmupRemovalTrashed, false, false, []string{"deletion"}, 0},
-		{"gone for good", models.WarmupRemovalGone, false, false, []string{"deletion"}, 0},
+		{"in the trash", models.WarmupRemovalTrashed, false, false, nil, 0},
+		{"gone for good", models.WarmupRemovalGone, false, false, nil, 0},
 		{"a fresh search that cannot tell charges nothing", models.WarmupRemovalUnknown, false, false, nil, 0},
 		{"recheck: still in the mailbox", models.WarmupRemovalPresent, true, false, []string{"withdraw:deletion"}, 0},
 		{"recheck: in the trash confirms without a new strike", models.WarmupRemovalTrashed, true, false, nil, 1},
@@ -206,14 +206,13 @@ func TestRemovalCheckedJudgesOnWhereTheMessageIs(t *testing.T) {
 	}
 }
 
-// A strike the service could not record is redelivered, not acked.
-func TestRemovalCheckedRedeliversAFailedStrike(t *testing.T) {
+func TestRemovalCheckedDoesNotChargeRecipientWithdrawal(t *testing.T) {
 	s, svc := retentionService(nil)
 	svc.fail = true
 	if err := s.HandleWarmupRemovalChecked(context.Background(), &models.JobEventWarmupRemovalChecked{
 		UserID: uuid.New(), EmailID: uuid.New(), RFCMessageID: "<m@example.test>", Outcome: models.WarmupRemovalTrashed,
-	}); err == nil {
-		t.Fatal("a failed strike was acked")
+	}); err != nil || len(svc.strikes) != 0 {
+		t.Fatal("recipient withdrawal was penalized", err, svc.strikes)
 	}
 }
 
@@ -281,11 +280,8 @@ func TestRecheckTamperingSearchesEachOldStrike(t *testing.T) {
 	}
 }
 
-// Gmail reports Delete as gaining the TRASH label. That is the owner's act
-// and is judged on the same freshness rule. A spam label charges nobody on
-// sight: a move after arrival is held for attribution, and the label on mail
-// that arrived in spam is the filter's own and is not even held.
-func TestFlagsAddJudgesGmailTrashOnFreshness(t *testing.T) {
+// Recipient filing never earns a strike; later spam moves retain sender attribution.
+func TestFlagsAddPreservesSenderAttributionWithoutPenalizingRecipientFiling(t *testing.T) {
 	landedSpam := receivedAgo(time.Second)
 	landedSpam.LandedSpam = true
 	cases := []struct {
@@ -295,7 +291,7 @@ func TestFlagsAddJudgesGmailTrashOnFreshness(t *testing.T) {
 		want  []string
 		held  int
 	}{
-		{"trashed an hour after arrival", receivedAgo(time.Hour), []string{"TRASH"}, []string{"deletion"}, 0},
+		{"trashed an hour after arrival", receivedAgo(time.Hour), []string{"TRASH"}, nil, 0},
 		{"trashed a month after arrival", receivedAgo(30 * 24 * time.Hour), []string{"TRASH"}, nil, 0},
 		{"moved to spam a month after arrival is held", receivedAgo(30 * 24 * time.Hour), []string{"SPAM"}, nil, 1},
 		{"spam label on mail that arrived in spam", landedSpam, []string{"SPAM"}, nil, 0},

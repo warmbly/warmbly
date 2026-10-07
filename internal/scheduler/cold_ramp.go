@@ -11,19 +11,23 @@ import (
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
-// coldRampStates loads the pool's graduation inputs. Fails open to an empty
-// map: a lookup error must not cap a customer's sending.
+// Unknown feedback cannot erase a mailbox's known warmup history.
 func (s *schedulerService) coldRampStates(ctx context.Context, accounts []models.Email) map[uuid.UUID]repository.ColdRampState {
-	if s.warmupRepo == nil || len(accounts) == 0 {
-		return nil
-	}
+	states := make(map[uuid.UUID]repository.ColdRampState, len(accounts))
 	ids := make([]uuid.UUID, 0, len(accounts))
 	for _, a := range accounts {
 		ids = append(ids, a.ID)
+		states[a.ID] = repository.ColdRampState{WarmupStartedAt: a.Warmup}
 	}
-	states, err := s.warmupRepo.ColdRampStateForAccounts(ctx, ids, time.Now().Add(-warmupramp.LookbackWindow))
+	if s.warmupRepo == nil || len(accounts) == 0 {
+		return states
+	}
+	observed, err := s.warmupRepo.ColdRampStateForAccounts(ctx, ids, time.Now().Add(-warmupramp.LookbackWindow))
 	if err != nil {
-		return nil
+		return states
+	}
+	for _, a := range accounts {
+		states[a.ID] = observed[a.ID].WithKnownWarmup(a.Warmup)
 	}
 	return states
 }
@@ -47,5 +51,5 @@ func coldCeilingFor(state repository.ColdRampState, mailboxCap int) int {
 	if state.ColdRampStartedAt != nil {
 		rampStart = *state.ColdRampStartedAt
 	}
-	return warmupramp.ColdCeiling(warmupDays, rampStart, state.Placements, now, mailboxCap)
+	return warmupramp.ColdCeiling(warmupDays, rampStart, state.Placements, now, mailboxCap, state.ConfirmedReplies)
 }

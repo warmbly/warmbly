@@ -131,6 +131,7 @@ export interface PoolLinkMailboxError {
 }
 
 export interface PoolLinkMailboxState {
+    participation?: DiagnosticParticipation;
     remote_id: string;
     email_account_id: string;
     email: string;
@@ -149,6 +150,14 @@ export interface PoolLinkMailboxState {
     errors?: PoolLinkMailboxError[];
     auth_state: string;
     settings: PoolLinkWarmupSettings;
+}
+
+export interface DiagnosticParticipation {
+    mode: "legacy" | "diagnostic" | "off";
+    send: boolean;
+    receive: boolean;
+    shared_daily_limit?: number | null;
+    rolling_recipient_limit?: number | null;
 }
 
 export interface CloudLink {

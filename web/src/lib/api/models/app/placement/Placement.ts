@@ -9,7 +9,7 @@ export type PlacementTracking = "campaign" | "on" | "off" | "compare";
 export type PlacementPace = "spaced" | "quick";
 export type PlacementTestStatus = "running" | "completed" | "cancelled" | "failed";
 export type PlacementOrigin = "manual" | "monitor" | "admin" | "remote" | "batch";
-export type PlacementFolder = "pending" | "inbox" | "promotions" | "other" | "spam" | "missing" | "failed" | "cancelled";
+export type PlacementFolder = "pending" | "inbox" | "promotions" | "other" | "spam" | "missing" | "failed" | "cancelled" | "unknown" | "archive" | "custom";
 
 export interface PlacementPanelFamily {
     family: string;
@@ -60,6 +60,12 @@ export interface PlacementCounts {
     missing: number;
     failed: number;
     cancelled: number;
+	unknown?: number;
+	archive?: number;
+	custom?: number;
+	observed_receipts?: number;
+	classified_receipts?: number;
+	unresolved?: number;
     /** inbox + promotions + other + spam + missing. */
     delivered: number;
     inbox_rate: number | null;
@@ -118,6 +124,9 @@ export interface PlacementResult {
     scheduled_at: Date | null;
     sent_at: Date | null;
     detected_at: Date | null;
+    first_folder?: string;
+    observed_at?: Date;
+    late_observation?: boolean;
     error?: string;
 }
 

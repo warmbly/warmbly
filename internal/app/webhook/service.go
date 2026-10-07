@@ -229,6 +229,9 @@ func (s *service) throttled(ctx context.Context, orgID uuid.UUID, eventType mode
 
 func (s *service) Dispatch(ctx context.Context, orgID uuid.UUID, eventType models.WebhookEventType, data any) (uuid.UUID, error) {
 	eventID := uuid.New()
+	if durableID := repository.SendResultEffectEventID(ctx); durableID != uuid.Nil {
+		eventID = durableID
+	}
 
 	for _, sink := range s.recordSinks {
 		sink(ctx, orgID, eventType, data)
@@ -278,6 +281,7 @@ func (s *service) Dispatch(ctx context.Context, orgID uuid.UUID, eventType model
 		}
 		if err := s.repo.EnqueueDelivery(ctx, delivery); err != nil {
 			log.Warn().Err(err).Str("endpoint_id", endpoints[i].ID.String()).Msg("Failed to enqueue webhook delivery")
+			return eventID, err
 		}
 	}
 	return eventID, nil

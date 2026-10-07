@@ -6,17 +6,17 @@ import patchEmailLists from "./patchEmailLists";
 import { mailboxMutationKey } from "./useUpdateEmail";
 
 // The warmup fields each action leaves behind; ramp progress is the server's to keep.
-function applyWarmup(row: Inbox, action: WarmupAction): Inbox {
+export function applyWarmup(row: Inbox, action: WarmupAction): Inbox {
     const now = new Date();
     switch (action) {
         case "start":
-            return { ...row, warmup: row.warmup ?? now, warmup_paused_at: null };
+            return { ...row, warmup: row.warmup ?? now, warmup_paused_at: null, test_mode: "diagnostic", test_send_enabled: true, test_receive_enabled: row.test_mode == null || row.test_mode === "legacy" || row.test_mode === "off" ? true : row.test_receive_enabled };
         case "resume":
-            return { ...row, warmup_paused_at: null };
+            return { ...row, warmup: row.warmup ?? now, warmup_paused_at: null, test_mode: "diagnostic", test_send_enabled: true, test_receive_enabled: row.test_mode == null || row.test_mode === "legacy" || row.test_mode === "off" ? true : row.test_receive_enabled };
         case "pause":
-            return { ...row, warmup_paused_at: now };
+            return { ...row, warmup_paused_at: row.warmup ? row.warmup_paused_at ?? now : null, test_mode: "diagnostic", test_send_enabled: false, test_receive_enabled: row.test_mode == null || row.test_mode === "legacy" ? true : row.test_receive_enabled };
         case "stop":
-            return { ...row, warmup: null, warmup_paused_at: null };
+            return { ...row, warmup_paused_at: row.warmup ? row.warmup_paused_at ?? now : null, test_mode: "off", test_send_enabled: false, test_receive_enabled: false };
     }
 }
 

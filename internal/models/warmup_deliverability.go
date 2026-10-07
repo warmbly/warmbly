@@ -11,8 +11,11 @@ const (
 	WarmupLandedInbox = "inbox"
 	// WarmupLandedTabs is a Gmail category tab (Promotions, Updates, Social,
 	// Forums): delivered and outside spam, just not in Primary.
-	WarmupLandedTabs = "tabs"
-	WarmupLandedSpam = "spam"
+	WarmupLandedTabs    = "tabs"
+	WarmupLandedSpam    = "spam"
+	WarmupLandedUnknown = "unknown"
+	WarmupLandedArchive = "archive"
+	WarmupLandedCustom  = "custom"
 )
 
 // Recipient groups a placement is broken down by, in display order.
@@ -107,8 +110,23 @@ func WarmupRecipientGroupLabel(group string) string {
 // folder and provider flags. The folder matters on IMAP, where a server can
 // file mail into Junk without setting a junk keyword.
 func ClassifyWarmupLanding(folder string, flags []string) string {
+	folder = strings.ToLower(strings.TrimSpace(folder))
 	if folder == FolderSpam || HasSpamFlag(flags) {
 		return WarmupLandedSpam
+	}
+	for _, flag := range flags {
+		if flag == ObservationUnknownFolderFlag {
+			return WarmupLandedUnknown
+		}
+	}
+	if folder == FolderArchive {
+		return WarmupLandedArchive
+	}
+	if folder != FolderInbox {
+		if folder == "" || folder == FolderSent || folder == FolderTrash || folder == FolderDrafts {
+			return WarmupLandedUnknown
+		}
+		return WarmupLandedCustom
 	}
 	for _, f := range flags {
 		switch strings.ToUpper(f) {
@@ -142,11 +160,20 @@ func WarmupPlacementBand(delivered int, rate *float64) string {
 type WarmupPlacementCounts struct {
 	// Sent is warmup mail the mailbox sent; Delivered is what recipients
 	// verifiably received (inbox + tabs + spam).
-	Sent      int `json:"sent"`
-	Delivered int `json:"delivered"`
-	Inbox     int `json:"inbox"`
-	Tabs      int `json:"tabs"`
-	Spam      int `json:"spam"`
+	Sent             int                `json:"sent"`
+	Delivered        int                `json:"delivered"`
+	Inbox            int                `json:"inbox"`
+	Tabs             int                `json:"tabs"`
+	Spam             int                `json:"spam"`
+	Unknown          int                `json:"unknown"`
+	Archived         int                `json:"archived"`
+	Custom           int                `json:"custom"`
+	Instrumented     int                `json:"instrumented_receipts"`
+	Observed         int                `json:"observed_receipts"`
+	LegacyClassified int                `json:"legacy_uninstrumented_receipts"`
+	RescueRequested  int                `json:"rescue_requested"`
+	RescueConfirmed  *int               `json:"rescue_confirmed"`
+	NonSpamMetric    *ObservationMetric `json:"non_spam_metric"`
 	// Rescued is spam placements the recipient's mailbox was told to move
 	// back to the inbox; the move itself is not confirmed back.
 	Rescued int `json:"rescued"`
@@ -160,6 +187,10 @@ type WarmupPlacementCounts struct {
 // Finish derives Delivered and the rates from the counters.
 func (c *WarmupPlacementCounts) Finish() {
 	c.Delivered = c.Inbox + c.Tabs + c.Spam
+	c.Observed = c.Delivered + c.Unknown + c.Archived + c.Custom
+	c.LegacyClassified = max(0, c.Observed-c.Instrumented)
+	c.RescueRequested = c.Rescued
+	c.NonSpamMetric = NewObservationMetric("warmup_pool", "classified_observed_receipts", "percent", c.Inbox+c.Tabs, c.Delivered, c.Unknown+c.Archived+c.Custom)
 	c.InboxRate, c.SpamRate = nil, nil
 	if c.Delivered > 0 {
 		in := pct2(c.Inbox+c.Tabs, c.Delivered)
@@ -174,6 +205,10 @@ func (c *WarmupPlacementCounts) Add(o WarmupPlacementCounts) {
 	c.Inbox += o.Inbox
 	c.Tabs += o.Tabs
 	c.Spam += o.Spam
+	c.Unknown += o.Unknown
+	c.Archived += o.Archived
+	c.Custom += o.Custom
+	c.Instrumented += o.Instrumented
 	c.Rescued += o.Rescued
 	c.Unconfirmed += o.Unconfirmed
 }
@@ -194,8 +229,9 @@ type WarmupPlacementRate struct {
 	Tabs      int    `json:"tabs"`
 	Spam      int    `json:"spam"`
 	// InboxRate is nil until Delivered reaches MinSample.
-	InboxRate *float64 `json:"inbox_rate"`
-	Band      string   `json:"band"`
+	InboxRate *float64           `json:"inbox_rate"`
+	Band      string             `json:"band"`
+	Metric    *ObservationMetric `json:"metric"`
 	// OtherDelivered and OtherInboxRate are the other mail hosts left out of a
 	// major-scope rate, shown beside it and never judged; nil with none.
 	OtherDelivered int      `json:"other_delivered"`
@@ -218,6 +254,8 @@ func NewWarmupPlacementRate(inbox, tabs, spam int) WarmupPlacementRate {
 		r.InboxRate = &v
 	}
 	r.Band = WarmupPlacementBand(r.Delivered, r.InboxRate)
+	r.Metric = NewObservationMetric("warmup_pool_major_providers", "classified_observed_receipts", "percent", inbox+tabs, r.Delivered, 0)
+	r.Metric.WindowDays = r.WindowDays
 	return r
 }
 
@@ -257,11 +295,14 @@ func (w WarmupPlacementWindow) Rate() WarmupPlacementRate {
 
 // WarmupPlacementGroupCounts is one recipient group's share of a day.
 type WarmupPlacementGroupCounts struct {
-	Group   string `json:"group"`
-	Inbox   int    `json:"inbox"`
-	Tabs    int    `json:"tabs"`
-	Spam    int    `json:"spam"`
-	Rescued int    `json:"rescued"`
+	Group    string `json:"group"`
+	Inbox    int    `json:"inbox"`
+	Tabs     int    `json:"tabs"`
+	Spam     int    `json:"spam"`
+	Rescued  int    `json:"rescued"`
+	Unknown  int    `json:"unknown"`
+	Archived int    `json:"archived"`
+	Custom   int    `json:"custom"`
 }
 
 // WarmupPlacementDay is one UTC day of placement.

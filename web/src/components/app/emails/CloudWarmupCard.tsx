@@ -15,6 +15,10 @@ import { providerSupported } from "@/app/app/settings/warmbly-cloud/providers";
 import WarmupPartnerDiversity from "./WarmupPartnerDiversity";
 import WarmupSendFailureNote from "./WarmupSendFailureNote";
 import { cloudSendFailure, cloudWarmupPaused } from "@/lib/cloudWarmup";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { setCloudLinkParticipation } from "@/lib/api/client/app/cloudlink/cloudLink";
+import type { DiagnosticParticipation } from "@/lib/api/models/app/cloudlink/CloudLink";
+import { Toggle } from "@/components/app/campaigns/preferences/components/CampaignPreferenceBoolBox";
 
 export default function CloudWarmupCard({ mailboxId, email, provider }: { mailboxId: string; email: string; provider: string }) {
     const pool = useCloudPool();
@@ -22,7 +26,9 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
     const unenroll = useUnenrollCloudLinkMailbox();
     const lifecycle = useCloudLinkMailboxLifecycle();
     const confirm = useConfirm();
-    const busy = enroll.isPending || unenroll.isPending || lifecycle.isPending;
+    const qc = useQueryClient();
+    const participation = useMutation({ mutationFn: (p: DiagnosticParticipation) => setCloudLinkParticipation(mailboxId, p), onSuccess: () => qc.invalidateQueries({ queryKey: ["cloud-link"] }) });
+    const busy = enroll.isPending || unenroll.isPending || lifecycle.isPending || participation.isPending;
 
     if (!pool.manageable) return null;
 
@@ -63,7 +69,7 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
                     <button
                         type="button"
                         disabled={busy}
-                        onClick={() => void run(() => enroll.mutateAsync(mailboxId), `${email} is now warming in the pool`)}
+                        onClick={() => confirm.show("Authorize disclosed automated diagnostic sending and receiving in Warmbly Cloud? This is not organic engagement or proof of improved reputation.", () => void run(() => enroll.mutateAsync(mailboxId), `${email} enrolled for diagnostics`))}
                         className="shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-60"
                     >
                         {busy ? <Loader2Icon className="w-3 h-3 animate-spin" /> : <CloudIcon className="w-3 h-3" />}
@@ -74,7 +80,8 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
         );
     }
 
-    const paused = cloudWarmupPaused(cloud);
+    const p = cloud?.participation;
+    const paused = cloudWarmupPaused(cloud) || !!p && !p.send;
     const health = cloud?.health?.state;
     return (
         <div className="px-5 py-4">
@@ -85,7 +92,7 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
                     </span>
                     <div className="min-w-0 flex-1">
                         <div className="text-[12.5px] font-medium text-slate-900">
-                            {paused ? "Paused in Warmbly Cloud" : row.managed ? "Signed in through Warmbly Cloud" : "Warmed by Warmbly Cloud"}
+                            {p?.mode === "off" ? "Diagnostics off in Warmbly Cloud" : paused ? "Diagnostic sending paused in Cloud" : row.managed ? "Signed in through Warmbly Cloud" : "Automated diagnostics in Warmbly Cloud"}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">
                             {cloud
@@ -125,6 +132,16 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
                     </div>
                 </div>
                 {sendFailure && <WarmupSendFailureNote failure={sendFailure} cloud className="pl-10" />}
+                {p && <div className="mt-3 pl-10 space-y-2 text-xs">
+                    <label className="flex justify-between">Allow disclosed diagnostic sending<Toggle disabled={busy} value={p.send} onChange={(send) => {
+                        const apply = () => void run(() => participation.mutateAsync({ ...p, mode: "diagnostic", send }), "Diagnostic sending updated");
+                        if (send) confirm.show("Authorize automated diagnostic sends and replies? Provider policies and safety holds still apply.", apply); else apply();
+                    }} /></label>
+                    <label className="flex justify-between">Allow receiving diagnostic tests<Toggle disabled={busy} value={p.receive} onChange={(receive) => void run(() => participation.mutateAsync({ ...p, mode: "diagnostic", receive }), "Diagnostic receiving updated")} /></label>
+                    <button disabled={busy} onClick={() => void run(() => participation.mutateAsync({ ...p, mode: "off", send: false, receive: false }), "Cloud diagnostics stopped")}>Stop all diagnostic participation</button>
+                    <p className="text-slate-500">Receive-only does not authorize replies. Shared limits are managed on the cloud-owned mailbox. Accepted provider sends cannot be recalled.</p>
+                </div>}
+                {!p && <p className="mt-2 text-xs text-slate-500">Cloud participation controls require an updated Cloud. Legacy state is not proof of diagnostic consent.</p>}
                 {cloud?.warmup?.partner_limit && !sendFailure && (
                     <p className="mt-2 pl-10 text-[11.5px] text-slate-500 leading-relaxed">
                         {cloud.warmup.partner_limit.reachable === 0

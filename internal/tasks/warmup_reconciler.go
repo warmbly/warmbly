@@ -6,6 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+	"github.com/warmbly/warmbly/internal/repository"
+	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
 // warmupReconcileBatch caps how many mailboxes a single reconcile pass will
@@ -21,10 +23,26 @@ const warmupReconcileBatch = 500
 // campaign does not itself enqueue a task, so without this pass a freshly
 // enabled mailbox would never start warming.
 func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) (int, error) {
-	// Same lost-callback backstop as the campaign reconciler: a pending
-	// warmup task stranded past its slot blocks the candidate query below.
-	if n, err := s.taskRepo.CancelOverduePendingTasks(ctx, "warmup", overduePendingGrace); err == nil && n > 0 {
-		log.Info().Int64("cancelled", n).Msg("warmup reconcile: cancelled overdue pending tasks")
+	if lineage, ok := s.taskRepo.(repository.WarmupLineageRepository); ok {
+		pending, err := lineage.UnqueuedWarmupTasks(ctx, limit)
+		if err != nil {
+			return 0, err
+		}
+		for _, v := range pending {
+			handle, err := s.tasksClient.CreateTask(ctx, &proto.ProcessTask{TaskId: v.TaskID.String()}, v.At)
+			if err != nil {
+				return 0, err
+			}
+			acked, err := lineage.AckWarmupQueue(ctx, v, handle)
+			if err != nil {
+				return 0, err
+			}
+			if !acked {
+				_ = s.tasksClient.DeleteTask(ctx, handle)
+			} else if v.PreviousHandle != nil && *v.PreviousHandle != handle {
+				_ = s.tasksClient.DeleteTask(ctx, *v.PreviousHandle)
+			}
+		}
 	}
 
 	ids, err := s.emailRepo.ListWarmupScheduleCandidates(ctx, limit)

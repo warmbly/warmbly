@@ -43,7 +43,7 @@ export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailbox
     const report = q.data;
 
     const groups = useMemo<PlacementGroup[]>(
-        () => GROUP_ORDER.filter((g) => report?.providers.some((p) => p.group === g && p.delivered > 0)),
+        () => GROUP_ORDER.filter((g) => report?.providers.some((p) => p.group === g && (p.observed_receipts ?? p.delivered) > 0)),
         [report],
     );
     const activeGroup: GroupFilter = group !== "all" && !groups.includes(group) ? "all" : group;
@@ -77,7 +77,7 @@ export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailbox
 
     const rate = report.rate;
     const style = BAND[rate.band];
-    const everDelivered = report.summary.delivered > 0 || rate.delivered > 0;
+    const everDelivered = (report.summary.observed_receipts ?? report.summary.delivered) > 0 || rate.delivered > 0;
     const filtered = activeGroup !== "all";
     const otherNote = otherHostsNote(rate);
 
@@ -140,11 +140,11 @@ export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailbox
 
                     {/* Window counts, narrowed by the provider filter */}
                     <div className="grid grid-cols-3 divide-x divide-y divide-slate-200/60 [&>*:nth-child(-n+3)]:border-t-0">
-                        <Cell label="Delivered" value={fmtNum(t.delivered)} sub={filtered ? `at ${GROUP_LABEL[activeGroup]}` : `of ${fmtNum(t.sent)} sent`} />
-                        <Cell label="Inbox rate" value={fmtPct(t.inboxRate)} sub={`${fmtNum(t.inbox)} primary inbox`} tone={BAND[bandForRate(t.inboxRate)].text} />
-                        <Cell label="Spam" value={fmtNum(t.spam)} sub={t.spamRate != null ? `${fmtPct(t.spamRate)} of delivered` : "none delivered"} tone={t.spam > 0 ? "text-rose-600" : undefined} />
+                        <Cell label="Classified receipts" value={fmtNum(t.delivered)} sub={filtered ? `at ${GROUP_LABEL[activeGroup]}` : `of ${fmtNum(t.sent)} submissions`} />
+                        <Cell label="Non-spam share" value={fmtPct(t.inboxRate)} sub={`${fmtNum(t.inbox)} primary inbox`} tone={BAND[bandForRate(t.inboxRate)].text} />
+                        <Cell label="Spam" value={fmtNum(t.spam)} sub={t.spamRate != null ? `${fmtPct(t.spamRate)} of classified receipts` : "no classified receipts"} tone={t.spam > 0 ? "text-rose-600" : undefined} />
                         <Cell label="Other tabs" value={fmtNum(t.tabs)} sub="Promotions, Updates…" />
-                        <Cell label="Rescued" value={fmtNum(t.rescued)} sub={t.spam > 0 ? `rescue sent, of ${fmtNum(t.spam)} in spam` : "nothing to rescue"} />
+                        <Cell label="Rescue requests" value={fmtNum(t.rescued)} sub="movement is not confirmed" />
                         <Cell
                             label="Unconfirmed"
                             value={filtered ? "—" : fmtNum(t.unconfirmed)}
@@ -179,9 +179,10 @@ export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailbox
             <div className="px-5 py-4">
                 <Eyebrow>How this is measured</Eyebrow>
                 <ul className="mt-2 space-y-1.5 text-[11.5px] text-slate-500 leading-relaxed">
-                    <li>Each warmup email is found in the partner's mailbox and recorded where it arrived: the inbox, a Gmail category tab, or spam. Nothing is estimated.</li>
-                    <li>The inbox rate counts category tabs as inbox, over a trailing {rate.window_days} days, and appears once {rate.min_sample} deliveries are in. It is taken at Google, Microsoft and Yahoo only, the providers that filter on sender reputation. Below 90% is worth watching; below 80% means the mailbox needs attention.</li>
-                    <li>Rescued counts spam placements the partner's mailbox was told to move back to the inbox, which is the signal providers learn from; the move is requested, not confirmed back. Unconfirmed mail has not been seen in the partner's mailbox a day after it was sent.</li>
+                    <li>These are controlled partner observations, not real-recipient inbox probabilities or evidence that artificial activity improves reputation.</li>
+                    <li>The non-spam share includes inbox and category tabs among classified receipts, over {rate.window_days} days, shown after {rate.min_sample} observations. The headline combines Google, Microsoft and Yahoo families; inspect individual hosts to distinguish consumer and business providers.</li>
+                    <li>Rescue requests do not prove movement or reputation recovery. Unconfirmed means no receipt was reported a day after connector submission, not confirmed loss.</li>
+                    <li>Unclassified receipts: {report.summary.unknown == null ? "unavailable on this API version" : `${fmtNum(report.summary.unknown)} unknown, ${fmtNum(report.summary.archived)} archive, ${fmtNum(report.summary.custom)} custom folder`}. Historical classifications are retained, not reconstructed as new first observations.</li>
                     <li>
                         The mailbox's standing is judged at the same three providers. Other mail hosts run their own filters, so what lands in their
                         spam folders is shown in the breakdown and never counted in the rate or held against this mailbox. Spam at the major providers only slows sending down; it never removes the

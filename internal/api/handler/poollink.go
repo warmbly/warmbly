@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/api/middleware"
+	"github.com/warmbly/warmbly/internal/app/poollink"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -337,6 +338,10 @@ func (h *Handler) PoolLinkOAuthStart(c *gin.Context) {
 		errx.JSON(c, errx.InvalidBody(err))
 		return
 	}
+	if c.FullPath() == "/v1/pool-link/instance/oauth/start-correlated" && req.Protocol != models.ManagedConsentProtocol {
+		errx.JSON(c, poollink.ErrBadRequest)
+		return
+	}
 	res, xerr := h.PoolLinkService.StartOAuth(c.Request.Context(), inst, req)
 	if xerr != nil {
 		errx.JSON(c, xerr)
@@ -356,7 +361,17 @@ func (h *Handler) PoolLinkOAuthFinish(c *gin.Context) {
 		errx.JSON(c, errx.InvalidBody(err))
 		return
 	}
-	state, xerr := h.PoolLinkService.FinishOAuth(c.Request.Context(), inst, req.Session)
+	if c.FullPath() == "/v1/pool-link/instance/oauth/finish-correlated" && req.Protocol != models.ManagedConsentProtocol {
+		errx.JSON(c, poollink.ErrBadRequest)
+		return
+	}
+	var state *models.PoolLinkMailboxState
+	var xerr *errx.Error
+	if req.Protocol != 0 {
+		state, xerr = h.PoolLinkService.FinishManagedOAuth(c.Request.Context(), inst, req)
+	} else {
+		state, xerr = h.PoolLinkService.FinishOAuth(c.Request.Context(), inst, req.Session)
+	}
 	if xerr != nil {
 		errx.JSON(c, xerr)
 		return
@@ -406,6 +421,10 @@ func (h *Handler) PoolLinkAdopt(c *gin.Context) {
 	var req models.PoolLinkAdoptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errx.JSON(c, errx.InvalidBody(err))
+		return
+	}
+	if c.FullPath() == "/v1/pool-link/instance/mailboxes/adopt-correlated" && req.Protocol != models.ManagedConsentProtocol {
+		errx.JSON(c, poollink.ErrBadRequest)
 		return
 	}
 	state, xerr := h.PoolLinkService.Adopt(c.Request.Context(), inst, req)

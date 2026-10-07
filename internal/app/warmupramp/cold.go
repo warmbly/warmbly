@@ -10,26 +10,12 @@ const (
 	// ColdRampIncrement is how much a graduating mailbox may add per clean day.
 	ColdRampIncrement = 5
 
-	// Starting volumes by warmup maturity, following the documented cold
-	// posture: a recently connected mailbox belongs near 10-20/day.
-	coldStartUnproven = 5
-	coldStartWarmed   = 10
-	coldStartMature   = 20
-
-	coldWarmedDays = 7
-	coldMatureDays = 14
+	coldStart = 5
 )
 
-// ColdStart is the cold volume a mailbox graduates at, from how long it warmed.
-func ColdStart(warmupDays int) int {
-	switch {
-	case warmupDays >= coldMatureDays:
-		return coldStartMature
-	case warmupDays >= coldWarmedDays:
-		return coldStartWarmed
-	default:
-		return coldStartUnproven
-	}
+// ColdStart is conservative pacing, not a synthetic-age readiness verdict.
+func ColdStart(_ int) int {
+	return coldStart
 }
 
 // ColdCeiling is a graduating mailbox's cold cap for today: its starting volume
@@ -37,10 +23,14 @@ func ColdStart(warmupDays int) int {
 // the mailbox's own cap. Placements freeze the climb through the same Days()
 // union the warmup ramp uses. A zero rampStart means it has not sent cold mail
 // yet, so it gets its starting volume.
-func ColdCeiling(warmupDays int, rampStart time.Time, placements []time.Time, now time.Time, mailboxCap int) int {
+func ColdCeiling(warmupDays int, rampStart time.Time, placements []time.Time, now time.Time, mailboxCap int, confirmedReplies ...int) int {
 	ceiling := ColdStart(warmupDays)
+	replies := 0
+	if len(confirmedReplies) > 0 {
+		replies = max(0, confirmedReplies[0])
+	}
 	if !rampStart.IsZero() {
-		ceiling += Days(rampStart, placements, now, FreezeWindow) * ColdRampIncrement
+		ceiling += min(replies, Days(rampStart, placements, now, FreezeWindow)*ColdRampIncrement)
 	}
 	if ceiling > mailboxCap {
 		return mailboxCap
@@ -53,7 +43,7 @@ func ColdCeiling(warmupDays int, rampStart time.Time, placements []time.Time, no
 // before the two meet, and whether a placement is pausing the climb. One
 // builder, so the two surfaces cannot round differently. Nil when the
 // mailbox never warmed.
-func Notice(warmupStartedAt, coldRampStartedAt *time.Time, placements []time.Time, mailboxCap int, now time.Time) *models.ColdRampInfo {
+func Notice(warmupStartedAt, coldRampStartedAt *time.Time, placements []time.Time, mailboxCap int, now time.Time, confirmedReplies ...int) *models.ColdRampInfo {
 	if warmupStartedAt == nil {
 		return nil
 	}
@@ -65,11 +55,10 @@ func Notice(warmupStartedAt, coldRampStartedAt *time.Time, placements []time.Tim
 	if coldRampStartedAt != nil {
 		rampStart = *coldRampStartedAt
 	}
-	ceiling := ColdCeiling(warmupDays, rampStart, placements, now, mailboxCap)
-	left := max(0, mailboxCap-ceiling)
-	days := left / ColdRampIncrement
-	if left%ColdRampIncrement != 0 {
-		days++
+	ceiling := ColdCeiling(warmupDays, rampStart, placements, now, mailboxCap, confirmedReplies...)
+	days := 0
+	if ceiling < mailboxCap {
+		days = -1
 	}
 	return &models.ColdRampInfo{
 		Ceiling:       ceiling,

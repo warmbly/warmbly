@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,52 +19,58 @@ const (
 const AdminSettingsKeyWarmupGeneration = "warmup_generation"
 
 // WarmupConversation is a cached conversation thread used as warmup content.
-// Messages are ordered reply turns; Description is the opening body. Both may
-// contain {a|b|c} spintax, which is expanded at render time.
+// Messages are immutable ordered reply turns; Description is the opening body.
 type WarmupConversation struct {
-	ID             uuid.UUID  `json:"id"`
-	PoolType       string     `json:"pool_type"`
-	Segment        string     `json:"segment"`
-	Source         string     `json:"source"`
-	Theme          string     `json:"theme"`
-	Subject        string     `json:"subject"`
-	Description    string     `json:"description"`
-	Messages       []string   `json:"messages"`
-	Status         string     `json:"status"`
-	LintPassed     bool       `json:"lint_passed"`
-	ReplyEligible  bool       `json:"reply_eligible"`
-	UsageCount     int64      `json:"usage_count"`
-	GeneratedByJob *uuid.UUID `json:"generated_by_job_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID               uuid.UUID  `json:"id"`
+	PoolType         string     `json:"pool_type"`
+	Segment          string     `json:"segment"`
+	Source           string     `json:"source"`
+	Theme            string     `json:"theme"`
+	Subject          string     `json:"subject"`
+	Description      string     `json:"description"`
+	Messages         []string   `json:"messages"`
+	Status           string     `json:"status"`
+	LintPassed       bool       `json:"lint_passed"`
+	ReplyEligible    bool       `json:"reply_eligible"`
+	UsageCount       int64      `json:"usage_count"`
+	GeneratedByJob   *uuid.UUID `json:"generated_by_job_id,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	ScenarioVersion  *string    `json:"scenario_version,omitempty"`
+	RenderingVersion *string    `json:"rendering_version,omitempty"`
+	SemanticReview   string     `json:"semantic_review"`
 }
 
 // Warmup generation job modes. "sync" runs every model call inline (the
 // original behaviour); "batch" submits one OpenAI Batch API job and ingests its
 // results asynchronously when the batch completes.
 const (
-	WarmupGenerationModeSync  = "sync"
-	WarmupGenerationModeBatch = "batch"
+	WarmupGenerationModeSync   = "sync"
+	WarmupGenerationModeBatch  = "batch"
+	WarmupConversationActive   = "active"
+	WarmupConversationArchived = "archived"
 )
 
 // WarmupGenerationJob records one offline generation run for observability.
 // Batch runs additionally carry the OpenAI batch/file identifiers and the
 // last-observed batch status so the poller can reconcile them.
 type WarmupGenerationJob struct {
-	ID                uuid.UUID  `json:"id"`
-	RequestedBy       *uuid.UUID `json:"requested_by,omitempty"`
-	Trigger           string     `json:"trigger"` // "schedule"; older rows may be "manual"
-	Mode              string     `json:"mode"`    // "sync" | "batch"
-	PoolType          string     `json:"pool_type"`
-	Segment           string     `json:"segment"`
-	Theme             string     `json:"theme"`
-	Model             string     `json:"model"`
-	RequestedCount    int        `json:"requested_count"`
-	GeneratedCount    int        `json:"generated_count"`
-	LintRejectedCount int        `json:"lint_rejected_count"`
-	FailedCount       int        `json:"failed_count"`
-	Status            string     `json:"status"` // pending | running | completed | failed
-	Error             string     `json:"error"`
+	ContentVersion       *string    `json:"content_version,omitempty"`
+	MaxMessagesPerThread *int       `json:"max_messages_per_thread,omitempty"`
+	ID                   uuid.UUID  `json:"id"`
+	RequestedBy          *uuid.UUID `json:"requested_by,omitempty"`
+	Trigger              string     `json:"trigger"` // "schedule"; older rows may be "manual"
+	Mode                 string     `json:"mode"`    // "sync" | "batch"
+	PoolType             string     `json:"pool_type"`
+	Segment              string     `json:"segment"`
+	Theme                string     `json:"theme"`
+	Model                string     `json:"model"`
+	RequestedCount       int        `json:"requested_count"`
+	GeneratedCount       int        `json:"generated_count"`
+	LintRejectedCount    int        `json:"lint_rejected_count"`
+	FailedCount          int        `json:"failed_count"`
+	Status               string     `json:"status"` // pending | running | completed | failed
+	Error                string     `json:"error"`
 	// Batch-only fields. BatchStatus is the last status reported by OpenAI
 	// (validating | in_progress | finalizing | completed | failed | expired |
 	// cancelling | cancelled); empty for sync jobs.
@@ -107,6 +114,8 @@ type WarmupEngagementSettings struct {
 // AI thread bank and recipient engagement. Stored as JSON in
 // admin_settings under AdminSettingsKeyWarmupGeneration.
 type WarmupGenerationSettings struct {
+	// GenerationEnabled stops new jobs, independently of cached-content use.
+	GenerationEnabled bool `json:"generation_enabled"`
 	// Enabled is the master switch for using AI-generated content in the
 	// live send selection. When false the static library is used exclusively.
 	Enabled bool `json:"enabled"`
@@ -135,6 +144,7 @@ type WarmupGenerationSettings struct {
 // a single library config; "premium" is just its canonical bucket label.
 func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 	return WarmupGenerationSettings{
+		GenerationEnabled:    true,
 		Enabled:              true,
 		ScheduleEnabled:      true,
 		CadenceHours:         6,
@@ -164,25 +174,20 @@ func DefaultWarmupGenerationSettings() WarmupGenerationSettings {
 // Normalize clamps settings into safe ranges so a bad admin payload can't
 // produce nonsense (negative counts, percentages over 100, inverted dwell).
 func (s *WarmupGenerationSettings) Normalize() {
-	// Generation is an autopilot subsystem. Provider configuration is the
-	// operational kill switch; stored settings cannot accidentally leave the
-	// content bank in a manual-only mode.
-	s.Enabled = true
-	s.ScheduleEnabled = true
-	s.RefreshEnabled = true
-	s.CadenceHours = 6
-	s.RefreshPerRun = 25
-	s.DailyGenerationCap = 1000
-	s.AISelectionShare = 70
-	s.Model = "gpt-6-luna"
-	s.MaxMessagesPerThread = 5
+	s.CadenceHours = max(1, min(168, s.CadenceHours))
+	s.RefreshPerRun = max(0, min(25, s.RefreshPerRun))
+	s.DailyGenerationCap = max(0, s.DailyGenerationCap)
+	s.AISelectionShare = clampPct(s.AISelectionShare)
+	s.Model = strings.TrimSpace(s.Model)
+	if s.Model == "" {
+		s.Model = DefaultWarmupGenerationSettings().Model
+	}
+	s.MaxMessagesPerThread = max(1, min(5, s.MaxMessagesPerThread))
 	s.Engagement.SpamRescueRate = clampPct(s.Engagement.SpamRescueRate)
 	s.Engagement.MarkImportantRate = clampPct(s.Engagement.MarkImportantRate)
 	s.Engagement.MarkReadRate = clampPct(s.Engagement.MarkReadRate)
 	s.Engagement.StarRate = clampPct(s.Engagement.StarRate)
-	if s.Engagement.MinDwellSeconds < 0 {
-		s.Engagement.MinDwellSeconds = 0
-	}
+	s.Engagement.MinDwellSeconds = max(0, min(3600, s.Engagement.MinDwellSeconds))
 	if s.Engagement.MaxDwellSeconds < s.Engagement.MinDwellSeconds {
 		s.Engagement.MaxDwellSeconds = s.Engagement.MinDwellSeconds
 	}
@@ -207,13 +212,20 @@ func (s *WarmupGenerationSettings) collapsePools() {
 		}
 	}
 	chosen.PoolType = "premium"
-	chosen.Enabled = true
-	if chosen.TargetActiveThreads < 200 {
-		chosen.TargetActiveThreads = 200
+	chosen.TargetActiveThreads = max(1, min(5000, chosen.TargetActiveThreads))
+	segments := make([]string, 0, len(chosen.Segments))
+	seen := map[string]bool{}
+	for _, segment := range chosen.Segments {
+		segment = strings.TrimSpace(segment)
+		if !seen[segment] {
+			segments = append(segments, segment)
+			seen[segment] = true
+		}
 	}
-	// One large shared bank gives the strongest diversity and avoids turning
-	// arbitrary customer mailbox tags into unbounded generation queues.
-	chosen.Segments = []string{""}
+	if len(segments) == 0 {
+		segments = []string{""}
+	}
+	chosen.Segments = segments
 	s.Pools = []WarmupGenerationPoolConfig{chosen}
 }
 

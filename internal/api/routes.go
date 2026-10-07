@@ -208,6 +208,9 @@ func Run(
 
 		// Worker runtime config.
 		node.GET("/worker/config", h.InternalWorkerConfig)
+		node.POST("/worker/warmup-dispatch", h.InternalWarmupDispatch)
+		node.POST("/worker/warmup-actions", h.InternalWarmupActions)
+		node.POST("/worker/diagnostic-auth", h.InternalDiagnosticAuth)
 	}
 
 	// The role-agnostic node heartbeat. A node still sending INTERNAL_API_TOKEN
@@ -1657,10 +1660,14 @@ func Run(
 				poolLinkInstance.POST("/mailboxes", h.PoolLinkEnroll)
 				poolLinkInstance.GET("/mailboxes/:remoteId", h.PoolLinkGetMailbox)
 				poolLinkInstance.PATCH("/mailboxes/:remoteId", h.PoolLinkPatchMailbox)
+				poolLinkInstance.PATCH("/mailboxes/:remoteId/participation", h.PoolLinkPatchMailbox)
 				poolLinkInstance.DELETE("/mailboxes/:remoteId", h.PoolLinkUnenroll)
 				// Cloud-managed mailboxes: consent on this deployment's OAuth app, brokered tokens.
 				poolLinkInstance.POST("/oauth/start", h.PoolLinkOAuthStart)
 				poolLinkInstance.POST("/oauth/finish", h.PoolLinkOAuthFinish)
+				poolLinkInstance.POST("/oauth/start-correlated", h.PoolLinkOAuthStart)
+				poolLinkInstance.POST("/oauth/finish-correlated", h.PoolLinkOAuthFinish)
+				poolLinkInstance.POST("/mailboxes/adopt-correlated", h.PoolLinkAdopt)
 				poolLinkInstance.GET("/mailboxes/:remoteId/token", h.PoolLinkAccessToken)
 				poolLinkInstance.GET("/mailboxes/:remoteId/warmup-tokens/:token", h.PoolLinkVerifyWarmupToken)
 				poolLinkInstance.POST("/mailboxes/:remoteId/warmup-deliveries", h.PoolLinkVerifyWarmupDelivery)
@@ -1691,6 +1698,7 @@ func Run(
 				members.DELETE("/mailboxes/:id/enroll", h.CloudLinkUnenroll)
 				members.POST("/mailboxes/:id/pause", h.CloudLinkPause)
 				members.POST("/mailboxes/:id/resume", h.CloudLinkResume)
+				members.PATCH("/mailboxes/:id/participation", h.CloudLinkParticipation)
 				members.POST("/oauth/start", h.CloudLinkOAuthStart)
 				members.POST("/oauth/finish", h.CloudLinkOAuthFinish)
 				operator := cloudLink.Group("", m.AdminMiddleware(), middleware.RequireAdminPermission(models.AdminPermManageSettings))
@@ -1881,6 +1889,7 @@ func Run(
 		// unsafe content or cancel a stuck provider job, but generation volume and
 		// scheduling are not manually controlled.
 		adminRoutes.GET("/warmup-content/overview", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminWarmupContentOverview)
+		adminRoutes.PUT("/warmup-content/settings", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminPutWarmupContentSettings)
 		adminRoutes.GET("/warmup-content/conversations", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminListWarmupConversations)
 		adminRoutes.GET("/warmup-content/conversations/:id", middleware.RequireAdminPermission(models.AdminPermViewWarmupPool), h.AdminGetWarmupConversation)
 		adminRoutes.POST("/warmup-content/conversations/:id/archive", middleware.RequireAdminPermission(models.AdminPermManageSettings), h.AdminArchiveWarmupConversation)

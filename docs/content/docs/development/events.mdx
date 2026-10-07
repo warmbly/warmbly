@@ -14,6 +14,8 @@ The bus is an abstraction (`internal/infrastructure/eventbus/`) with two provide
 
 Message encoding is orthogonal to transport, selected by `CODEC_PROVIDER`:
 
+Shared send reservations and action/diagnostic authority are SQL/control-plane capabilities, not new queue command shapes. Existing JSON and Avro SEND_EMAIL payloads remain readable. Protocol `warmup_send_protocol=2` gates the new executor checks; protocol 1 is only the previous lineage capability. Upgrade all control-plane/result consumers, pause/drain accepted old work, then upgrade workers. Unknown sends retain reservations and do not become blind queue retries. Result reconciliation writes bounce webhooks/notifications to a durable outbox before commit; consumers drain leased rows with stable downstream IDs. External integration/realtime delivery is not exactly once. See [send safety and rollout](/development/send-safety/).
+
 - `json`: plain JSON, no external dependencies, and the default for the self-host stack.
 - `avro`: Avro with Confluent Schema Registry (`SCHEMA_REGISTRY_URL` plus optional key/secret), also behind the `kafka` build tag. The subject is the topic name plus `-value`, Confluent's default naming strategy, so `warmup-events` registers under `warmup-events-value`.
 

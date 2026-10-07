@@ -102,6 +102,9 @@ func (s *tasksService) HandlePlacementTask(task *proto.ProcessTask) *errx.Error 
 		errs.CaptureException(err)
 		return errx.InternalError()
 	}
+	if err := s.sendAdmission(ctx, account); err != nil {
+		return errx.InternalError()
+	}
 	if err := s.taskRepo.UpdateTaskStatusWithLock(ctx, taskID, "active"); err != nil {
 		errs.CaptureException(err)
 		return errx.InternalError()

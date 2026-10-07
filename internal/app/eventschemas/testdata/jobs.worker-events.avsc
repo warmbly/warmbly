@@ -1020,6 +1020,78 @@
                 {
                   "fields": [
                     {
+                      "default": null,
+                      "name": "failure",
+                      "type": [
+                        "null",
+                        {
+                          "fields": [
+                            {
+                              "default": "",
+                              "name": "provider",
+                              "type": "string"
+                            },
+                            {
+                              "default": "",
+                              "name": "protocol",
+                              "type": "string"
+                            },
+                            {
+                              "default": 0,
+                              "name": "status",
+                              "type": "int"
+                            },
+                            {
+                              "default": "",
+                              "name": "enhanced_status",
+                              "type": "string"
+                            },
+                            {
+                              "default": "",
+                              "name": "cause",
+                              "type": "string"
+                            },
+                            {
+                              "default": "",
+                              "name": "stage",
+                              "type": "string"
+                            },
+                            {
+                              "default": "",
+                              "name": "disposition",
+                              "type": "string"
+                            },
+                            {
+                              "default": "",
+                              "name": "scope",
+                              "type": "string"
+                            },
+                            {
+                              "default": 0,
+                              "name": "observed_at",
+                              "type": {
+                                "logicalType": "timestamp-millis",
+                                "type": "long"
+                              }
+                            },
+                            {
+                              "default": null,
+                              "name": "retry_at",
+                              "type": [
+                                "null",
+                                {
+                                  "logicalType": "timestamp-millis",
+                                  "type": "long"
+                                }
+                              ]
+                            }
+                          ],
+                          "name": "warmbly.events.SendFailure",
+                          "type": "record"
+                        }
+                      ]
+                    },
+                    {
                       "default": "",
                       "name": "code",
                       "type": "string"

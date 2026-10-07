@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -137,15 +136,19 @@ func TestLiveRepairedVerificationRestoresRouting(t *testing.T) {
 		t.Fatalf("%d sends went out while every lead was undeliverable", f.sender.count())
 	}
 
-	// The campaign reports what it skipped rather than claiming it sent everything.
+	// Verification refusal parks the campaign; it is not successful completion.
 	var reason string
 	if err := f.pool.QueryRow(context.Background(), `SELECT message FROM campaign_logs
-		WHERE campaign_id = $1 AND event_type = 'completed' ORDER BY created_at DESC LIMIT 1`,
+		WHERE campaign_id = $1 AND event_type = 'auto_paused' ORDER BY created_at DESC LIMIT 1`,
 		f.campaign).Scan(&reason); err != nil {
-		t.Fatalf("read completion log: %v", err)
+		t.Fatalf("read pause log: %v", err)
 	}
-	if !strings.Contains(reason, "2 lead(s) skipped") {
-		t.Fatalf("completion logged %q; it must say the leads were skipped, not that everything sent", reason)
+	if reason != UndeliverablePauseReason(2) {
+		t.Fatalf("pause logged %q; it must report the exact refused lead count", reason)
+	}
+	var status string
+	if err := f.pool.QueryRow(context.Background(), `SELECT status FROM campaigns WHERE id=$1`, f.campaign).Scan(&status); err != nil || status != "paused_undeliverable" {
+		t.Fatalf("refused leads claimed completion: %s, %v", status, err)
 	}
 
 	// The verifier is corrected and the contacts are re-checked.

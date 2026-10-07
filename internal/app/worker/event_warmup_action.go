@@ -27,6 +27,18 @@ import (
 // DelaySeconds=0. That makes the dwell survive a worker restart, which the old
 // in-process time.AfterFunc here could not.
 func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.WarmupEmailAction) error {
+	if gate, ok := w.SyncContextRepository.(repository.WarmupActionAdmission); ok {
+		worker, err := uuid.Parse(w.ID)
+		if err != nil {
+			return err
+		}
+		action.Actions, err = gate.PermittedWarmupActions(ctx, action.EmailID, worker, action.Actions)
+		if err != nil {
+			return err
+		}
+	} else if w.SyncContextRepository != nil {
+		return errors.New("warmup action authority unavailable")
+	}
 	log.Info().
 		Str("email_id", action.EmailID.String()).
 		Str("gmail_id", action.GmailID).

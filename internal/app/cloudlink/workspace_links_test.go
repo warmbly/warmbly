@@ -19,6 +19,53 @@ type workspaceLinkRepo struct {
 	mailboxes map[uuid.UUID]*models.CloudLinkMailbox
 }
 
+type workspaceConsentRepo struct {
+	*consentFaultRepo
+	workspace *models.CloudLink
+}
+
+func (r *workspaceConsentRepo) Get(_ context.Context, org *uuid.UUID) (*models.CloudLink, error) {
+	if org != nil {
+		return r.workspace, nil
+	}
+	return r.link, nil
+}
+
+func TestManagedCompletionUsesConsentedLegacyInstanceAlongsideNewWorkspaceLink(t *testing.T) {
+	f := newConsentFixture(t)
+	ctx := context.Background()
+	start, xerr := f.s.StartOAuth(ctx, f.org, f.user, models.InboxProviderGoogle)
+	if xerr != nil {
+		t.Fatal(xerr)
+	}
+	f.r.link.OrganizationID = nil
+	f.s.repo = &workspaceConsentRepo{consentFaultRepo: f.r, workspace: &models.CloudLink{
+		InstanceID: uuid.New(), OrganizationID: &f.org, CloudURL: "http://127.0.0.1:1",
+	}}
+	account, xerr := f.s.FinishOAuth(ctx, f.org, f.user, start.Session)
+	if xerr != nil || account == nil || f.r.mailbox == nil || f.r.mailbox.InstanceID != f.r.link.InstanceID {
+		t.Fatalf("completion lost its original instance: %+v, %v", account, xerr)
+	}
+	if f.finishes != 1 || f.emails.creates != 1 {
+		t.Fatal("legacy consent was not completed exactly once")
+	}
+	f.r.link = nil
+	if _, xerr := f.s.FinishOAuth(ctx, f.org, f.user, start.Session); xerr != ErrOAuthSession || f.finishes != 1 {
+		t.Fatalf("revoked source link reused the new workspace connection: %v", xerr)
+	}
+}
+
+func (r *workspaceLinkRepo) WithReconciliationLock(_ context.Context, fn func() error) error {
+	return fn()
+}
+func (r *workspaceLinkRepo) SetDisconnectPending(_ context.Context, id uuid.UUID) error {
+	r.links[id].DisconnectPending = true
+	return nil
+}
+func (r *workspaceLinkRepo) CarryStanding(context.Context, uuid.UUID, *models.WarmupHealthInfo) error {
+	return nil
+}
+
 func (r *workspaceLinkRepo) Get(_ context.Context, org *uuid.UUID) (*models.CloudLink, error) {
 	var legacy *models.CloudLink
 	for _, l := range r.links {
@@ -184,7 +231,7 @@ func TestDisconnectAffectsOnlyTheSelectedLink(t *testing.T) {
 	a, b, c := uuid.New(), uuid.New(), uuid.New()
 	repo := &workspaceLinkRepo{links: map[uuid.UUID]*models.CloudLink{legacy.InstanceID: legacy, scoped.InstanceID: scoped, otherLink.InstanceID: otherLink},
 		mailboxes: map[uuid.UUID]*models.CloudLinkMailbox{a: {EmailAccountID: a, InstanceID: legacy.InstanceID}, b: {EmailAccountID: b, InstanceID: scoped.InstanceID}, c: {EmailAccountID: c, InstanceID: otherLink.InstanceID}}}
-	svc := &service{repo: repo, sessions: map[string]oauthSession{"other": {InstanceID: otherLink.InstanceID}, "scoped": {InstanceID: scoped.InstanceID}},
+	svc := &service{repo: repo,
 		tokens: map[uuid.UUID]cachedToken{a: {}, b: {}, c: {}}}
 	var disconnected uuid.UUID
 	svc.OnDisconnect(func(_ context.Context, id uuid.UUID) { disconnected = id })
@@ -194,7 +241,7 @@ func TestDisconnectAffectsOnlyTheSelectedLink(t *testing.T) {
 	if len(repo.links) != 2 || repo.links[legacy.InstanceID] == nil || repo.links[otherLink.InstanceID] == nil || len(repo.mailboxes) != 2 || repo.mailboxes[b] != nil {
 		t.Fatalf("another connection was removed: %+v", repo)
 	}
-	if disconnected != scoped.InstanceID || len(svc.tokens) != 2 || len(svc.sessions) != 1 || svc.sessions["other"].InstanceID != otherLink.InstanceID {
+	if disconnected != scoped.InstanceID || len(svc.tokens) != 2 || legacy.DisconnectPending || otherLink.DisconnectPending {
 		t.Fatal("disconnect invalidated another workspace's state")
 	}
 	if xerr := svc.Disconnect(context.Background(), org, false); xerr != ErrLegacyLink {

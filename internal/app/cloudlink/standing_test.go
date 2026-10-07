@@ -26,6 +26,13 @@ func (r *standingRepo) GetByInstance(context.Context, uuid.UUID) (*models.CloudL
 	return r.link, nil
 }
 
+func (r *standingRepo) ListLinks(context.Context) ([]models.CloudLink, error) {
+	return []models.CloudLink{*r.link}, nil
+}
+
+func (r *standingRepo) WithReconciliationLock(_ context.Context, fn func() error) error { return fn() }
+func (r *standingRepo) InvalidateStanding(context.Context, uuid.UUID) error             { return nil }
+
 func (r *standingRepo) List(context.Context) ([]models.CloudLinkMailbox, error) {
 	return r.enrolled, nil
 }
@@ -118,10 +125,9 @@ func TestSyncStandingAnnouncesAHoldItStartsEnforcing(t *testing.T) {
 		t.Fatalf("first reading = %+v, %v", changes, xerr)
 	}
 
-	// What is already recorded is not written again.
+	// Equal readings renew freshness without repeating a transition.
 	repo.enrolled[0].Standing = &models.WarmupHealthInfo{State: "quarantined"}
-	repo.current[account] = ""
-	if changes, _ := svc.SyncStanding(context.Background()); len(changes) != 0 || repo.current[account] != "" {
-		t.Fatalf("an unchanged standing was rewritten: %+v", changes)
+	if changes, _ := svc.SyncStanding(context.Background()); len(changes) != 0 || repo.current[account] != models.WarmupHealthQuarantined {
+		t.Fatalf("an unchanged standing repeated a transition: %+v", changes)
 	}
 }

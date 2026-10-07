@@ -327,6 +327,7 @@ func main() {
 	var kmsForHandler kms.Provider
 	var emailMessageMapForHandler repository.EmailMessageMapRepository
 	var emailSyncStateRepository repository.EmailSyncStateRepository
+	var warmupDispatchRepository repository.WarmupDispatchRepository
 	var trackedLinkRepository repository.TrackedLinkRepository
 	var inboxTagRepository repository.InboxTagRepository
 	var typeSafeClient *typesafe.Client
@@ -706,6 +707,7 @@ func main() {
 		organizationRepository := repository.NewOrganizationRepository(primaryDB.Pool)
 		organizationRepoForHandler = organizationRepository
 		taskRepository := repository.NewTaskRepository(primaryDB.Pool)
+		warmupDispatchRepository = taskRepository.(repository.WarmupDispatchRepository)
 		apiKeyRepository := repository.NewAPIKeyRepository(primaryDB)
 		idempotencyService = idempotencyapp.NewService(primaryDB.Pool)
 		crmRepository := repository.NewCRMRepository(primaryDB.Pool)
@@ -1712,6 +1714,11 @@ func main() {
 			advancedService.WireBounceJudge(typeSafeClient)
 		}
 		emailSender := tasks.NewEmailSender(emailRepostory, eventsPublisher)
+		if aware, ok := emailSender.(interface {
+			WireSendAdmission(repository.OutboundAdmissionRepository)
+		}); ok {
+			aware.WireSendAdmission(taskRepository.(repository.OutboundAdmissionRepository))
+		}
 		// Never hand a send to a worker that stopped heartbeating: nothing
 		// would execute it and nothing would report it, so the step would
 		// look sent forever. The worker reconciler re-places the mailbox and
@@ -2433,6 +2440,7 @@ func main() {
 		KMS:                    kmsForHandler,
 		EmailMessageMap:        emailMessageMapForHandler,
 		EmailSyncState:         emailSyncStateRepository,
+		WarmupDispatch:         warmupDispatchRepository,
 		TrackedLinks:           trackedLinkRepository,
 		InboxTagRepo:           inboxTagRepository,
 		UnsubscribeTickets:     unsubscribeLinkRepository,

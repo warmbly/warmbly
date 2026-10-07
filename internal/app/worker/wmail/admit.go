@@ -149,6 +149,12 @@ func (w *WMail) endTick(stats *tickStats) {
 // events. mapKey is the id the provider reports on later remove/flag events
 // (RFC Message-ID for IMAP, provider message id for Gmail and Graph).
 func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data *models.EmailMessageStoreData, mapKey string) error {
+	w.verifyDiagnostic(ctx, msg, data)
+	evidence := models.EvidenceFromFlags(data.Flags)
+	if evidence.Source != "unavailable" {
+		evidence.ObservedAt = time.Now().UTC()
+		data.Flags = models.WithReceivedEvidence(data.Flags, evidence)
+	}
 	// Body first: a map entry without a body would make the message "known"
 	// on the next pass and never retried, while an orphaned body is harmless.
 	if err := w.StoreBody(ctx, data.ID, &emsg.EmailBlob{

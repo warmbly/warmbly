@@ -99,7 +99,7 @@ func unmarshalJSON[T any](b []byte, out *T) error {
 func (r *advancedOutreachRepository) GetOutreachSettings(ctx context.Context, organizationID uuid.UUID) (*models.AdvancedOutreachSettings, error) {
 	query := `SELECT settings FROM outreach_settings WHERE organization_id = $1`
 	var raw []byte
-	if err := r.db.QueryRow(ctx, query, organizationID).Scan(&raw); err != nil {
+	if err := resultDB(ctx, r.db).QueryRow(ctx, query, organizationID).Scan(&raw); err != nil {
 		if err == pgx.ErrNoRows {
 			def := models.DefaultAdvancedOutreachSettings()
 			return &def, nil
@@ -125,7 +125,7 @@ func (r *advancedOutreachRepository) UpsertOutreachSettings(ctx context.Context,
 		ON CONFLICT (organization_id)
 		DO UPDATE SET settings = EXCLUDED.settings, updated_by = EXCLUDED.updated_by, updated_at = NOW()
 	`
-	_, err = r.db.Exec(ctx, query, organizationID, raw, updatedBy)
+	_, err = resultDB(ctx, r.db).Exec(ctx, query, organizationID, raw, updatedBy)
 	return err
 }
 
@@ -133,7 +133,7 @@ func (r *advancedOutreachRepository) GetCampaignAdvancedSettings(ctx context.Con
 	query := `SELECT settings, updated_at FROM campaign_advanced_settings WHERE campaign_id = $1`
 	var raw []byte
 	var updatedAt time.Time
-	if err := r.db.QueryRow(ctx, query, campaignID).Scan(&raw, &updatedAt); err != nil {
+	if err := resultDB(ctx, r.db).QueryRow(ctx, query, campaignID).Scan(&raw, &updatedAt); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
@@ -161,7 +161,7 @@ func (r *advancedOutreachRepository) UpsertCampaignAdvancedSettings(ctx context.
 		ON CONFLICT (campaign_id)
 		DO UPDATE SET settings = EXCLUDED.settings, updated_at = NOW()
 	`
-	_, err = r.db.Exec(ctx, query, campaignID, raw)
+	_, err = resultDB(ctx, r.db).Exec(ctx, query, campaignID, raw)
 	return err
 }
 
@@ -202,7 +202,7 @@ func (r *advancedOutreachRepository) ListABVariants(ctx context.Context, campaig
 		WHERE campaign_id = $1
 		ORDER BY is_control DESC, created_at ASC
 	`
-	rows, err := r.db.Query(ctx, query, campaignID)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, campaignID)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ func (r *advancedOutreachRepository) CreateABVariant(ctx context.Context, campai
 	}
 	if req.SequenceID != nil {
 		var ok bool
-		if err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sequences WHERE id = $1 AND campaign_id = $2)`,
+		if err := resultDB(ctx, r.db).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sequences WHERE id = $1 AND campaign_id = $2)`,
 			*req.SequenceID, campaignID).Scan(&ok); err != nil {
 			return nil, err
 		}
@@ -250,7 +250,7 @@ func (r *advancedOutreachRepository) CreateABVariant(ctx context.Context, campai
 		RETURNING id, campaign_id, sequence_id, name, weight, subject, body_html, body_plain, is_control, is_active, metadata, created_at, updated_at
 	`
 	var out models.CampaignABVariant
-	if err := scanABVariant(r.db.QueryRow(ctx, query,
+	if err := scanABVariant(resultDB(ctx, r.db).QueryRow(ctx, query,
 		campaignID,
 		req.SequenceID,
 		req.Name,
@@ -330,7 +330,7 @@ func (r *advancedOutreachRepository) UpdateABVariant(ctx context.Context, campai
 	`, strings.Join(sets, ", "))
 
 	var out models.CampaignABVariant
-	if err := scanABVariant(r.db.QueryRow(ctx, query, args...), &out); err != nil {
+	if err := scanABVariant(resultDB(ctx, r.db).QueryRow(ctx, query, args...), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -338,7 +338,7 @@ func (r *advancedOutreachRepository) UpdateABVariant(ctx context.Context, campai
 
 func (r *advancedOutreachRepository) DeleteABVariant(ctx context.Context, campaignID, variantID uuid.UUID) error {
 	query := `DELETE FROM campaign_ab_variants WHERE campaign_id = $1 AND id = $2`
-	cmd, err := r.db.Exec(ctx, query, campaignID, variantID)
+	cmd, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, variantID)
 	if err != nil {
 		return err
 	}
@@ -356,7 +356,7 @@ func (r *advancedOutreachRepository) GetAssignedVariant(ctx context.Context, cam
 		WHERE a.campaign_id = $1 AND a.contact_id = $2
 	`
 	var out models.CampaignABVariant
-	if err := scanABVariant(r.db.QueryRow(ctx, query, campaignID, contactID), &out); err != nil {
+	if err := scanABVariant(resultDB(ctx, r.db).QueryRow(ctx, query, campaignID, contactID), &out); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
@@ -372,7 +372,7 @@ func (r *advancedOutreachRepository) AssignVariant(ctx context.Context, campaign
 		ON CONFLICT (campaign_id, contact_id)
 		DO UPDATE SET variant_id = EXCLUDED.variant_id, assigned_at = NOW()
 	`
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, variantID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, variantID)
 	return err
 }
 
@@ -391,7 +391,7 @@ func (r *advancedOutreachRepository) MarkVariantEvent(ctx context.Context, campa
 		return nil
 	}
 	query := fmt.Sprintf(`UPDATE campaign_ab_assignments SET %s WHERE campaign_id = $1 AND contact_id = $2`, setClause)
-	_, err := r.db.Exec(ctx, query, campaignID, contactID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID)
 	return err
 }
 
@@ -440,7 +440,7 @@ func (r *advancedOutreachRepository) IsRecipientSuppressed(ctx context.Context, 
 		ORDER BY (kind = 'email') DESC
 		LIMIT 1
 	`
-	out, err := scanSuppressedRecipient(r.db.QueryRow(ctx, query, organizationID, email))
+	out, err := scanSuppressedRecipient(resultDB(ctx, r.db).QueryRow(ctx, query, organizationID, email))
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
@@ -472,7 +472,7 @@ func (r *advancedOutreachRepository) UpsertSuppressedRecipient(ctx context.Conte
 			metadata = EXCLUDED.metadata,
 			updated_at = NOW()
 	`
-	_, err = r.db.Exec(ctx, query, entry.OrganizationID, strings.ToLower(strings.TrimSpace(entry.Email)), kind, entry.Reason, entry.Source, entry.CampaignID, entry.ExpiresAt, metadata)
+	_, err = resultDB(ctx, r.db).Exec(ctx, query, entry.OrganizationID, strings.ToLower(strings.TrimSpace(entry.Email)), kind, entry.Reason, entry.Source, entry.CampaignID, entry.ExpiresAt, metadata)
 	return err
 }
 
@@ -494,7 +494,7 @@ func (r *advancedOutreachRepository) UpsertSuppressedRecipients(ctx context.Cont
 	if len(entries) == 0 {
 		return nil
 	}
-	tx, err := r.db.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.db)
 	if err != nil {
 		return err
 	}
@@ -536,7 +536,7 @@ func (r *advancedOutreachRepository) ListSuppressedRecipients(ctx context.Contex
 		args = append(args, *beforeAt, *beforeID)
 		where += fmt.Sprintf(` AND (created_at, id) < ($%d, $%d)`, len(args)-1, len(args))
 	}
-	rows, err := r.db.Query(ctx, `SELECT `+suppressedRecipientColumns+` FROM suppressed_recipients WHERE `+where+` ORDER BY created_at DESC, id DESC LIMIT $2`, args...)
+	rows, err := resultDB(ctx, r.db).Query(ctx, `SELECT `+suppressedRecipientColumns+` FROM suppressed_recipients WHERE `+where+` ORDER BY created_at DESC, id DESC LIMIT $2`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -553,7 +553,7 @@ func (r *advancedOutreachRepository) ListSuppressedRecipients(ctx context.Contex
 }
 
 func (r *advancedOutreachRepository) GetSuppressedRecipient(ctx context.Context, organizationID, id uuid.UUID) (*models.SuppressedRecipient, error) {
-	out, err := scanSuppressedRecipient(r.db.QueryRow(ctx, `SELECT `+suppressedRecipientColumns+` FROM suppressed_recipients WHERE organization_id = $1 AND id = $2`, organizationID, id))
+	out, err := scanSuppressedRecipient(resultDB(ctx, r.db).QueryRow(ctx, `SELECT `+suppressedRecipientColumns+` FROM suppressed_recipients WHERE organization_id = $1 AND id = $2`, organizationID, id))
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
@@ -564,7 +564,7 @@ func (r *advancedOutreachRepository) GetSuppressedRecipient(ctx context.Context,
 }
 
 func (r *advancedOutreachRepository) DeleteSuppressedRecipient(ctx context.Context, organizationID, id uuid.UUID) (bool, error) {
-	tag, err := r.db.Exec(ctx, `DELETE FROM suppressed_recipients WHERE organization_id = $1 AND id = $2`, organizationID, id)
+	tag, err := resultDB(ctx, r.db).Exec(ctx, `DELETE FROM suppressed_recipients WHERE organization_id = $1 AND id = $2`, organizationID, id)
 	if err != nil {
 		return false, err
 	}
@@ -572,7 +572,7 @@ func (r *advancedOutreachRepository) DeleteSuppressedRecipient(ctx context.Conte
 }
 
 func (r *advancedOutreachRepository) DeleteSuppressionByEmail(ctx context.Context, organizationID uuid.UUID, email string, source models.DeliverabilityEventType) (bool, error) {
-	tag, err := r.db.Exec(ctx, `DELETE FROM suppressed_recipients WHERE organization_id = $1 AND kind = 'email' AND email = LOWER($2) AND source = $3`, organizationID, strings.TrimSpace(email), source)
+	tag, err := resultDB(ctx, r.db).Exec(ctx, `DELETE FROM suppressed_recipients WHERE organization_id = $1 AND kind = 'email' AND email = LOWER($2) AND source = $3`, organizationID, strings.TrimSpace(email), source)
 	if err != nil {
 		return false, err
 	}
@@ -583,7 +583,7 @@ func (r *advancedOutreachRepository) DeleteSuppressionByEmail(ctx context.Contex
 const replyOptOutCheckKey = "reply_optout_recheck"
 
 func (r *advancedOutreachRepository) ListUncheckedReplyOptOuts(ctx context.Context, afterID uuid.UUID, limit int) ([]models.SuppressedRecipient, error) {
-	rows, err := r.db.Query(ctx, `
+	rows, err := resultDB(ctx, r.db).Query(ctx, `
 		SELECT `+suppressedRecipientColumns+`
 		FROM suppressed_recipients
 		WHERE id > $1
@@ -610,7 +610,7 @@ func (r *advancedOutreachRepository) ListUncheckedReplyOptOuts(ctx context.Conte
 }
 
 func (r *advancedOutreachRepository) DeleteReplyOptOut(ctx context.Context, organizationID, id uuid.UUID, updatedAt time.Time) (bool, error) {
-	tag, err := r.db.Exec(ctx, `
+	tag, err := resultDB(ctx, r.db).Exec(ctx, `
 		DELETE FROM suppressed_recipients
 		WHERE organization_id = $1 AND id = $2
 		  AND metadata->>'via' = 'reply' AND updated_at = $3`, organizationID, id, updatedAt)
@@ -621,7 +621,7 @@ func (r *advancedOutreachRepository) DeleteReplyOptOut(ctx context.Context, orga
 }
 
 func (r *advancedOutreachRepository) MarkReplyOptOutChecked(ctx context.Context, id uuid.UUID, outcome string) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE suppressed_recipients
 		SET metadata = metadata || jsonb_build_object('`+replyOptOutCheckKey+`', $2::text)
 		WHERE id = $1`, id, outcome)
@@ -641,7 +641,7 @@ func (r *advancedOutreachRepository) CreateDeliverabilityEvent(ctx context.Conte
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
 		ON CONFLICT (organization_id, idempotency_key) DO NOTHING
 	`
-	_, err = r.db.Exec(ctx, query,
+	_, err = resultDB(ctx, r.db).Exec(ctx, query,
 		event.OrganizationID,
 		event.CampaignID,
 		event.TaskID,
@@ -676,7 +676,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		  AND created_at >= $2
 		  AND created_at <= $3
 	`
-	if err := r.db.QueryRow(ctx, queryEvents, organizationID, from, to).Scan(
+	if err := resultDB(ctx, r.db).QueryRow(ctx, queryEvents, organizationID, from, to).Scan(
 		&out.EventsTotal,
 		&out.BounceCount,
 		&out.ComplaintCount,
@@ -689,7 +689,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 	}
 
 	querySuppressed := `SELECT COUNT(*) FROM suppressed_recipients WHERE organization_id = $1 AND (expires_at IS NULL OR expires_at > NOW())`
-	if err := r.db.QueryRow(ctx, querySuppressed, organizationID).Scan(&out.SuppressedRecipients); err != nil {
+	if err := resultDB(ctx, r.db).QueryRow(ctx, querySuppressed, organizationID).Scan(&out.SuppressedRecipients); err != nil {
 		return nil, err
 	}
 
@@ -701,7 +701,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		WHERE ea.organization_id = $1
 		  AND d.status = 'pending'
 	`
-	if err := r.db.QueryRow(ctx, queryDLQ, organizationID).Scan(&out.DLQPending); err != nil {
+	if err := resultDB(ctx, r.db).QueryRow(ctx, queryDLQ, organizationID).Scan(&out.DLQPending); err != nil {
 		return nil, err
 	}
 
@@ -718,7 +718,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		  AND created_at >= $2
 		  AND created_at <= $3
 	`
-	if err := r.db.QueryRow(ctx, queryIntents, organizationID, from, to).Scan(
+	if err := resultDB(ctx, r.db).QueryRow(ctx, queryIntents, organizationID, from, to).Scan(
 		&out.IntentPositive,
 		&out.IntentNegative,
 		&out.IntentOOO,
@@ -737,7 +737,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		WHERE ea.organization_id = $1 AND t.task_type = 'campaign' AND t.status = 'completed'
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		  AND ` + taskDispatchedEmail
-	_ = r.db.QueryRow(ctx, sentQuery, organizationID, from, to).Scan(&out.EmailsSent)
+	_ = resultDB(ctx, r.db).QueryRow(ctx, sentQuery, organizationID, from, to).Scan(&out.EmailsSent)
 	out.BounceRate = models.Rate(out.BounceCount, out.EmailsSent)
 	out.ComplaintRate = models.Rate(out.ComplaintCount, out.EmailsSent)
 	out.OpenRate = models.Rate(out.OpenCount, out.EmailsSent)
@@ -759,7 +759,7 @@ func (r *advancedOutreachRepository) GetDeliverabilityDashboard(ctx context.Cont
 		  AND pr.folder IN ('inbox', 'promotions', 'other', 'spam', 'missing')
 		  AND pt.origin <> 'remote'
 		GROUP BY pr.provider, pr.folder`
-	if rows, perr := r.db.Query(ctx, placementQuery, organizationID, from, to); perr == nil {
+	if rows, perr := resultDB(ctx, r.db).Query(ctx, placementQuery, organizationID, from, to); perr == nil {
 		for rows.Next() {
 			var provider, folder string
 			var n int
@@ -832,7 +832,7 @@ func (r *advancedOutreachRepository) warmupPlacementByHost(ctx context.Context, 
 		JOIN email_accounts snd ON snd.id = p.sender_account_id
 		WHERE snd.organization_id = $1 AND p.date >= $2::date AND p.date <= $3::date
 		GROUP BY 1, 2`
-	rows, err := r.db.Query(ctx, query, orgID, from, to)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, orgID, from, to)
 	if err != nil {
 		return out
 	}
@@ -887,7 +887,7 @@ func (r *advancedOutreachRepository) deliverabilityTimeseries(ctx context.Contex
 		FROM deliverability_events
 		WHERE organization_id=$1 AND created_at >= $2 AND created_at <= $3
 		GROUP BY 1`
-	if rows, err := r.db.Query(ctx, evQ, orgID, from, to); err == nil {
+	if rows, err := resultDB(ctx, r.db).Query(ctx, evQ, orgID, from, to); err == nil {
 		for rows.Next() {
 			var d time.Time
 			var b, c, o, cl, rep, u int
@@ -904,7 +904,7 @@ func (r *advancedOutreachRepository) deliverabilityTimeseries(ctx context.Contex
 		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND t.status='completed'
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		GROUP BY 1`
-	if rows, err := r.db.Query(ctx, sentQ, orgID, from, to); err == nil {
+	if rows, err := resultDB(ctx, r.db).Query(ctx, sentQ, orgID, from, to); err == nil {
 		for rows.Next() {
 			var d time.Time
 			var s int
@@ -944,7 +944,7 @@ func (r *advancedOutreachRepository) deliverabilityByCampaign(ctx context.Contex
 		GROUP BY de.campaign_id, c.name
 		ORDER BY (COUNT(*) FILTER (WHERE de.event_type='bounce') + COUNT(*) FILTER (WHERE de.event_type='complaint')) DESC
 		LIMIT 20`
-	rows, err := r.db.Query(ctx, q, orgID, from, to)
+	rows, err := resultDB(ctx, r.db).Query(ctx, q, orgID, from, to)
 	if err != nil {
 		return out
 	}
@@ -971,7 +971,7 @@ func (r *advancedOutreachRepository) deliverabilityByCampaign(ctx context.Contex
 		WHERE c.organization_id=$1 AND ccp.sent_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3
 		  AND ` + progressIsEmailStep("ccp") + `
 		GROUP BY ccp.campaign_id`
-	if srows, serr := r.db.Query(ctx, sq, orgID, from, to); serr == nil {
+	if srows, serr := resultDB(ctx, r.db).Query(ctx, sq, orgID, from, to); serr == nil {
 		for srows.Next() {
 			var id uuid.UUID
 			var n int
@@ -1005,7 +1005,7 @@ func (r *advancedOutreachRepository) deliverabilityByMailbox(ctx context.Context
 		GROUP BY ea.id, ea.email
 		ORDER BY (COUNT(*) FILTER (WHERE de.event_type='bounce') + COUNT(*) FILTER (WHERE de.event_type='complaint')) DESC
 		LIMIT 50`
-	rows, err := r.db.Query(ctx, q, orgID, from, to)
+	rows, err := resultDB(ctx, r.db).Query(ctx, q, orgID, from, to)
 	if err != nil {
 		return out
 	}
@@ -1032,7 +1032,7 @@ func (r *advancedOutreachRepository) deliverabilityByMailbox(ctx context.Context
 		WHERE ea.organization_id=$1 AND t.task_type='campaign' AND t.status='completed'
 		  AND t.completed_at >= $2 AND t.completed_at <= $3
 		GROUP BY t.email_account_id`
-	if srows, serr := r.db.Query(ctx, sq, orgID, from, to); serr == nil {
+	if srows, serr := resultDB(ctx, r.db).Query(ctx, sq, orgID, from, to); serr == nil {
 		for srows.Next() {
 			var id uuid.UUID
 			var n int
@@ -1058,32 +1058,32 @@ const executionLockTTL = 5 * time.Minute
 func (r *advancedOutreachRepository) StartTaskExecution(ctx context.Context, taskID uuid.UUID, executionKey string, metadata map[string]interface{}) (bool, error) {
 	var existingStatus string
 	var lastSeenAt time.Time
-	err := r.db.QueryRow(ctx,
+	err := resultDB(ctx, r.db).QueryRow(ctx,
 		`SELECT status, last_seen_at FROM task_execution_keys WHERE task_id = $1 AND execution_key = $2`,
 		taskID, executionKey,
 	).Scan(&existingStatus, &lastSeenAt)
 	if err == nil {
 		switch existingStatus {
 		case "completed":
-			_, _ = r.db.Exec(ctx, `UPDATE task_execution_keys SET attempts = attempts + 1, last_seen_at = NOW() WHERE task_id = $1 AND execution_key = $2`, taskID, executionKey)
+			_, _ = resultDB(ctx, r.db).Exec(ctx, `UPDATE task_execution_keys SET attempts = attempts + 1, last_seen_at = NOW() WHERE task_id = $1 AND execution_key = $2`, taskID, executionKey)
 			return true, nil
 		case "in_progress":
 			// Check if the lock has expired (worker likely crashed)
 			if time.Since(lastSeenAt) > executionLockTTL {
 				// Expired lock - reclaim it
 				meta, _ := marshalJSON(metadata)
-				_, err := r.db.Exec(ctx, `
+				_, err := resultDB(ctx, r.db).Exec(ctx, `
 					UPDATE task_execution_keys
 					SET attempts = attempts + 1, last_seen_at = NOW(), status = 'in_progress', metadata = $3
 					WHERE task_id = $1 AND execution_key = $2
 				`, taskID, executionKey, meta)
 				return false, err
 			}
-			_, _ = r.db.Exec(ctx, `UPDATE task_execution_keys SET attempts = attempts + 1, last_seen_at = NOW() WHERE task_id = $1 AND execution_key = $2`, taskID, executionKey)
+			_, _ = resultDB(ctx, r.db).Exec(ctx, `UPDATE task_execution_keys SET attempts = attempts + 1, last_seen_at = NOW() WHERE task_id = $1 AND execution_key = $2`, taskID, executionKey)
 			return true, nil
 		default:
 			meta, _ := marshalJSON(metadata)
-			_, err := r.db.Exec(ctx, `
+			_, err := resultDB(ctx, r.db).Exec(ctx, `
 				UPDATE task_execution_keys
 				SET attempts = attempts + 1, last_seen_at = NOW(), status = 'in_progress', metadata = $3
 				WHERE task_id = $1 AND execution_key = $2
@@ -1096,7 +1096,7 @@ func (r *advancedOutreachRepository) StartTaskExecution(ctx context.Context, tas
 	}
 
 	meta, _ := marshalJSON(metadata)
-	_, err = r.db.Exec(ctx, `
+	_, err = resultDB(ctx, r.db).Exec(ctx, `
 		INSERT INTO task_execution_keys (task_id, execution_key, status, metadata, first_seen_at, last_seen_at, attempts)
 		VALUES ($1, $2, 'in_progress', $3, NOW(), NOW(), 1)
 	`, taskID, executionKey, meta)
@@ -1105,7 +1105,7 @@ func (r *advancedOutreachRepository) StartTaskExecution(ctx context.Context, tas
 
 func (r *advancedOutreachRepository) CompleteTaskExecution(ctx context.Context, taskID uuid.UUID, executionKey, status string, metadata map[string]interface{}) error {
 	meta, _ := marshalJSON(metadata)
-	_, err := r.db.Exec(ctx, `
+	_, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE task_execution_keys
 		SET status = $3, metadata = $4, last_seen_at = NOW()
 		WHERE task_id = $1 AND execution_key = $2
@@ -1128,7 +1128,7 @@ func (r *advancedOutreachRepository) CreateTaskDeadLetter(ctx context.Context, i
 	if item.Status == "" {
 		item.Status = "pending"
 	}
-	_, err = r.db.Exec(ctx, query, item.TaskID, item.TaskType, payload, item.LastError, item.Attempts, item.MaxAttempts, item.Status, item.NextRetryAt)
+	_, err = resultDB(ctx, r.db).Exec(ctx, query, item.TaskID, item.TaskType, payload, item.LastError, item.Attempts, item.MaxAttempts, item.Status, item.NextRetryAt)
 	return err
 }
 
@@ -1146,7 +1146,7 @@ func (r *advancedOutreachRepository) ListTaskDeadLetters(ctx context.Context, or
 		ORDER BY d.updated_at DESC
 		LIMIT $3
 	`
-	rows, err := r.db.Query(ctx, query, organizationID, status, limit)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, organizationID, status, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1193,7 +1193,7 @@ func (r *advancedOutreachRepository) GetTaskDeadLetter(ctx context.Context, id u
 	`
 	var d models.TaskDeadLetter
 	var payload []byte
-	if err := r.db.QueryRow(ctx, query, id, organizationID).Scan(
+	if err := resultDB(ctx, r.db).QueryRow(ctx, query, id, organizationID).Scan(
 		&d.ID,
 		&d.TaskID,
 		&d.TaskType,
@@ -1222,7 +1222,7 @@ func (r *advancedOutreachRepository) GetTaskDeadLetter(ctx context.Context, id u
 }
 
 func (r *advancedOutreachRepository) MarkTaskDeadLetterReplayed(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE task_dead_letters
 		SET status = 'replayed', replayed_at = NOW(), updated_at = NOW()
 		WHERE id = $1
@@ -1241,7 +1241,7 @@ func (r *advancedOutreachRepository) CreateReplyIntent(ctx context.Context, reco
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
 	`
-	_, err = r.db.Exec(ctx, query,
+	_, err = resultDB(ctx, r.db).Exec(ctx, query,
 		record.OrganizationID,
 		strings.ToLower(strings.TrimSpace(record.ContactEmail)),
 		record.CampaignID,
@@ -1267,7 +1267,7 @@ func (r *advancedOutreachRepository) CreatePreflightReport(ctx context.Context, 
 		INSERT INTO preflight_reports (organization_id, campaign_id, passed, score, checks, recommendations, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 	`
-	_, err = r.db.Exec(ctx, query, report.OrganizationID, report.CampaignID, report.Passed, report.Score, checks, recommendations)
+	_, err = resultDB(ctx, r.db).Exec(ctx, query, report.OrganizationID, report.CampaignID, report.Passed, report.Score, checks, recommendations)
 	return err
 }
 
@@ -1286,7 +1286,7 @@ func (r *advancedOutreachRepository) GetABVariantStats(ctx context.Context, camp
 		GROUP BY v.id, v.name
 		ORDER BY v.created_at
 	`
-	rows, err := r.db.Query(ctx, query, campaignID)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, campaignID)
 	if err != nil {
 		return nil, err
 	}
@@ -1323,7 +1323,7 @@ func (r *advancedOutreachRepository) ListRetryableDeadLetters(ctx context.Contex
 		ORDER BY next_retry_at ASC
 		LIMIT $1
 	`
-	rows, err := r.db.Query(ctx, query, limit)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1345,7 +1345,7 @@ func (r *advancedOutreachRepository) ListRetryableDeadLetters(ctx context.Contex
 }
 
 func (r *advancedOutreachRepository) IncrementDeadLetterAttempt(ctx context.Context, id uuid.UUID, nextRetryAt *time.Time) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE task_dead_letters
 		SET attempts = attempts + 1, next_retry_at = $2, updated_at = NOW()
 		WHERE id = $1

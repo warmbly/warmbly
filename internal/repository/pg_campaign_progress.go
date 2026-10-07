@@ -382,7 +382,7 @@ func NewCampaignProgressRepository(db *pgxpool.Pool) CampaignProgressRepository 
 // row, so two ticks that picked the same pair cannot both dispatch. A step
 // walked back after a worker failure has both cleared and is claimable again.
 func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID, contactID, sequenceID, taskID, senderID uuid.UUID, newLead bool) (bool, error) {
-	tx, err := r.db.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.db)
 	if err != nil {
 		return false, err
 	}
@@ -468,7 +468,7 @@ func (r *campaignProgressRepository) ReserveSend(ctx context.Context, campaignID
 // Guarded on sent_at IS NULL so a reservation that was stamped in the meantime
 // (the worker answered first) is never released.
 func (r *campaignProgressRepository) ReleaseSend(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID, newLead bool) error {
-	tx, err := r.db.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.db)
 	if err != nil {
 		return err
 	}
@@ -480,8 +480,9 @@ func (r *campaignProgressRepository) ReleaseSend(ctx context.Context, campaignID
 		SET dispatched_at = NULL, dispatch_task_id = NULL
 		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
 		  AND sent_at IS NULL AND dispatched_at IS NOT NULL
+		  AND ($4::uuid IS NULL OR dispatch_task_id = $4 OR dispatch_task_id IS NULL)
 		RETURNING true
-	`, campaignID, contactID, sequenceID).Scan(&released)
+	`, campaignID, contactID, sequenceID, resultTaskID(ctx)).Scan(&released)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -536,7 +537,7 @@ func (r *campaignProgressRepository) RecordEmailSent(ctx context.Context, campai
 		              failed_at = NULL, failure_reason = ''
 	`
 
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID)
 	return err
 }
 
@@ -545,12 +546,13 @@ func (r *campaignProgressRepository) RecordEmailSent(ctx context.Context, campai
 // somebody really reserved, and on sent_at so it never moves a stamp that is
 // already there.
 func (r *campaignProgressRepository) StampDispatchedSend(ctx context.Context, campaignID, contactID, sequenceID uuid.UUID) (bool, error) {
-	tag, err := r.db.Exec(ctx, `
+	tag, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE campaign_contact_progress
 		SET sent_at = NOW(), failed_at = NULL, failure_reason = ''
 		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
 		  AND sent_at IS NULL AND dispatched_at IS NOT NULL
-	`, campaignID, contactID, sequenceID)
+		  AND ($4::uuid IS NULL OR dispatch_task_id = $4 OR dispatch_task_id IS NULL)
+	`, campaignID, contactID, sequenceID, resultTaskID(ctx))
 	if err != nil {
 		return false, err
 	}
@@ -563,7 +565,7 @@ func (r *campaignProgressRepository) ListStuckDispatches(ctx context.Context, ol
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := r.db.Query(ctx, `
+	rows, err := resultDB(ctx, r.db).Query(ctx, `
 		SELECT campaign_id, contact_id, sequence_id, dispatch_task_id, dispatched_at
 		FROM campaign_contact_progress
 		WHERE sent_at IS NULL
@@ -619,6 +621,7 @@ func (r *campaignProgressRepository) WalkBackSend(ctx context.Context, campaignI
 			    failure_reason = $4
 			WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
 			  AND (sent_at IS NOT NULL OR dispatched_at IS NOT NULL)
+			  AND ($6::uuid IS NULL OR dispatch_task_id = $6 OR dispatch_task_id IS NULL)
 			RETURNING send_attempts
 		), unbound AS (
 			UPDATE campaign_leads cl
@@ -635,7 +638,7 @@ func (r *campaignProgressRepository) WalkBackSend(ctx context.Context, campaignI
 		SELECT send_attempts FROM walked
 	`
 	var attempts int
-	err := r.db.QueryRow(ctx, query, campaignID, contactID, sequenceID, reason, inc).Scan(&attempts)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, campaignID, contactID, sequenceID, reason, inc, resultTaskID(ctx)).Scan(&attempts)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, false, false, nil
@@ -651,7 +654,7 @@ func (r *campaignProgressRepository) WalkBackSend(ctx context.Context, campaignI
 // set of sends the contact actually received.
 func (r *campaignProgressRepository) LastSenderForLead(ctx context.Context, campaignID, contactID uuid.UUID) (*uuid.UUID, error) {
 	var id uuid.UUID
-	err := r.db.QueryRow(ctx, `
+	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT t.email_account_id
 		FROM campaign_tasks ct
 		JOIN tasks t ON t.id = ct.task_id
@@ -688,7 +691,7 @@ const threadParentScan = 50
 // The conversation's subject is read off the sends themselves where they
 // recorded it, and walked from the steps only for sends from before they did.
 func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, campaignID, contactID uuid.UUID) (*ThreadParent, error) {
-	rows, err := r.db.Query(ctx, `
+	rows, err := resultDB(ctx, r.db).Query(ctx, `
 		SELECT t.message_id, t.thread_id, t.email_account_id, ct.subject,
 		       s.id IS NOT NULL, COALESCE(s.subject, ''), COALESCE(s.thread_reply, true)
 		FROM campaign_tasks ct
@@ -759,7 +762,7 @@ func (r *campaignProgressRepository) ThreadParentForLead(ctx context.Context, ca
 // the contact.
 func (r *campaignProgressRepository) HasSentSteps(ctx context.Context, campaignID, contactID uuid.UUID) (bool, error) {
 	var has bool
-	err := r.db.QueryRow(ctx, `
+	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM campaign_contact_progress
 			WHERE campaign_id = $1 AND contact_id = $2 AND sent_at IS NOT NULL
@@ -783,7 +786,7 @@ func (r *campaignProgressRepository) RecordEmailOpened(ctx context.Context, camp
 		  AND (opened_at IS NULL OR (opened_machine = true AND $4 = false))
 	`
 
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, machine)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID, machine)
 	return err
 }
 
@@ -805,7 +808,7 @@ func (r *campaignProgressRepository) RecordEmailClicked(ctx context.Context, cam
 		  AND clicked_at IS NULL
 	`
 
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID)
 	return err
 }
 
@@ -839,7 +842,7 @@ func (r *campaignProgressRepository) UnrecordEmailClicked(ctx context.Context, c
 		  )
 	`
 
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID)
 	return err
 }
 
@@ -852,7 +855,7 @@ func (r *campaignProgressRepository) GetStepSentAt(ctx context.Context, campaign
 	`
 
 	var sentAt *time.Time
-	err := r.db.QueryRow(ctx, query, campaignID, contactID, sequenceID).Scan(&sentAt)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, campaignID, contactID, sequenceID).Scan(&sentAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -865,7 +868,7 @@ func (r *campaignProgressRepository) GetStepSentAt(ctx context.Context, campaign
 // IsInboundReplySource verifies direction from the row stored by the consumer.
 func (r *campaignProgressRepository) IsInboundReplySource(ctx context.Context, emailAccountID, messageID uuid.UUID) (bool, error) {
 	var inbound bool
-	err := r.db.QueryRow(ctx, `
+	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM unibox_emails
@@ -881,7 +884,7 @@ func (r *campaignProgressRepository) IsInboundReplySource(ctx context.Context, e
 // CampaignContactSentFromAccount proves a cross-mailbox reply arrived at a sender used for this lead.
 func (r *campaignProgressRepository) CampaignContactSentFromAccount(ctx context.Context, campaignID, contactID, emailAccountID uuid.UUID) (bool, error) {
 	var sent bool
-	err := r.db.QueryRow(ctx, `
+	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM campaign_tasks campaign_task
@@ -901,7 +904,7 @@ const incomingReplyClaimLease = "10 minutes"
 // ClaimIncomingReply leases one inbound message so duplicate events cannot repeat its effects.
 func (r *campaignProgressRepository) ClaimIncomingReply(ctx context.Context, emailAccountID, messageID uuid.UUID) (uuid.UUID, error) {
 	claimToken := uuid.New()
-	result, err := r.db.Exec(ctx, `
+	result, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE unibox_emails
 		SET campaign_reply_claimed_at = NOW(),
 		    campaign_reply_claim_token = $3
@@ -926,7 +929,7 @@ func (r *campaignProgressRepository) ClaimIncomingReply(ctx context.Context, ema
 
 // CompleteIncomingReply marks a claimed message as processed.
 func (r *campaignProgressRepository) CompleteIncomingReply(ctx context.Context, emailAccountID, messageID, claimToken uuid.UUID) error {
-	result, err := r.db.Exec(ctx, `
+	result, err := resultDB(ctx, r.db).Exec(ctx, `
 		UPDATE unibox_emails
 		SET campaign_reply_processed_at = NOW()
 		WHERE id = $1
@@ -961,7 +964,7 @@ func (r *campaignProgressRepository) RecordEmailReplied(ctx context.Context, cam
 		  )
 	`
 
-	result, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, messageID, emailAccountID)
+	result, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID, messageID, emailAccountID)
 	if err != nil {
 		return false, err
 	}
@@ -979,7 +982,7 @@ func (r *campaignProgressRepository) RecordEmailBounced(ctx context.Context, cam
 		  AND bounced_at IS NULL
 	`
 
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID)
 	return err
 }
 
@@ -994,7 +997,7 @@ func (r *campaignProgressRepository) RecordEmailComplained(ctx context.Context, 
 		  AND complained_at IS NULL
 	`
 
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID)
 	return err
 }
 
@@ -1012,7 +1015,7 @@ func (r *campaignProgressRepository) RecordReplyClassification(ctx context.Conte
 		              reply_confidence = EXCLUDED.reply_confidence,
 		              reply_source = EXCLUDED.reply_source
 	`
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, class, confidence, source)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID, class, confidence, source)
 	return err
 }
 
@@ -1024,7 +1027,7 @@ func (r *campaignProgressRepository) RecordAILabel(ctx context.Context, campaign
 		ON CONFLICT (campaign_id, contact_id, sequence_id)
 		DO UPDATE SET ai_label = EXCLUDED.ai_label
 	`
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, label)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID, label)
 	return err
 }
 
@@ -1036,7 +1039,7 @@ func (r *campaignProgressRepository) RecordReplyIntent(ctx context.Context, camp
 		ON CONFLICT (campaign_id, contact_id, sequence_id)
 		DO UPDATE SET reply_intent = EXCLUDED.reply_intent
 	`
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, intent)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID, intent)
 	return err
 }
 
@@ -1050,7 +1053,7 @@ func (r *campaignProgressRepository) GetResolvedAIVariables(ctx context.Context,
 		WHERE campaign_id = $1 AND contact_id = $2 AND sequence_id = $3
 	`
 	var raw []byte
-	err := r.db.QueryRow(ctx, query, campaignID, contactID, sequenceID).Scan(&raw)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, campaignID, contactID, sequenceID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return map[string]string{}, nil
 	}
@@ -1079,7 +1082,7 @@ func (r *campaignProgressRepository) SaveResolvedAIVariable(ctx context.Context,
 			COALESCE(campaign_contact_progress.ai_variables_resolved, '{}'::jsonb)
 			|| jsonb_build_object($4::text, $5::text)
 	`
-	_, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, varID, text)
+	_, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID, varID, text)
 	return err
 }
 
@@ -1094,7 +1097,7 @@ func (r *campaignProgressRepository) GetLatestReplyClass(ctx context.Context, co
 		LIMIT 1
 	`
 	var class string
-	err := r.db.QueryRow(ctx, query, contactID, campaignID).Scan(&class)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, contactID, campaignID).Scan(&class)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -1116,7 +1119,7 @@ func (r *campaignProgressRepository) ClaimInstantFire(ctx context.Context, campa
 		  AND sequence_id = $3
 		  AND NOT ($4 = ANY(instant_fired))
 	`
-	tag, err := r.db.Exec(ctx, query, campaignID, contactID, sequenceID, eventKind)
+	tag, err := resultDB(ctx, r.db).Exec(ctx, query, campaignID, contactID, sequenceID, eventKind)
 	if err != nil {
 		return false, err
 	}
@@ -1153,7 +1156,7 @@ func (r *campaignProgressRepository) GetCampaignProgress(ctx context.Context, ca
 	`
 
 	progress := &CampaignProgress{}
-	err := r.db.QueryRow(ctx, query, campaignID).Scan(
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, campaignID).Scan(
 		&progress.TotalContacts,
 		&progress.TotalSequences,
 		&progress.EmailsSent,
@@ -1185,7 +1188,7 @@ func (r *campaignProgressRepository) GetCampaignRollingRates(ctx context.Context
 		WHERE campaign_id = $1 AND ` + progressIsEmailStep("p") + `
 	`
 	out := &CampaignRollingRates{}
-	err := r.db.QueryRow(ctx, query, campaignID, since).Scan(&out.Sent, &out.Bounced, &out.Complained)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, campaignID, since).Scan(&out.Sent, &out.Bounced, &out.Complained)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &CampaignRollingRates{}, nil
 	}
@@ -1206,7 +1209,7 @@ func (r *campaignProgressRepository) GetContactProgress(ctx context.Context, cam
 		ORDER BY sent_at ASC
 	`
 
-	rows, err := r.db.Query(ctx, query, campaignID, contactID)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, campaignID, contactID)
 	if err != nil {
 		return nil, err
 	}
@@ -1247,7 +1250,7 @@ func (r *campaignProgressRepository) GetContactLastSequenceTime(ctx context.Cont
 	`
 
 	var lastTime *time.Time
-	err := r.db.QueryRow(ctx, query, contactID, campaignID).Scan(&lastTime)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, contactID, campaignID).Scan(&lastTime)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -1269,7 +1272,7 @@ func (r *campaignProgressRepository) CheckContactHasReplied(ctx context.Context,
 	`
 
 	var hasReplied bool
-	err := r.db.QueryRow(ctx, query, contactID, campaignID).Scan(&hasReplied)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, contactID, campaignID).Scan(&hasReplied)
 	return hasReplied, err
 }
 
@@ -1288,7 +1291,7 @@ func (r *campaignProgressRepository) CountEmailsSentTodayByOrganization(ctx cont
 	`
 
 	var count int
-	err := r.db.QueryRow(ctx, query, organizationID).Scan(&count)
+	err := resultDB(ctx, r.db).QueryRow(ctx, query, organizationID).Scan(&count)
 	return count, err
 }
 
@@ -1303,7 +1306,7 @@ func (r *campaignProgressRepository) GetLatestCampaignSequenceForContact(ctx con
 		LIMIT 1
 	`
 	out := &CampaignSequencePair{}
-	if err := r.db.QueryRow(ctx, query, contactID).Scan(&out.CampaignID, &out.SequenceID); err != nil {
+	if err := resultDB(ctx, r.db).QueryRow(ctx, query, contactID).Scan(&out.CampaignID, &out.SequenceID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -1556,7 +1559,7 @@ func (r *campaignProgressRepository) orderedCandidateIDs(ctx context.Context, or
 		JOIN contacts c ON c.id = cl.contact_id` + newLeadJoin + `
 		WHERE cl.campaign_id = $1
 		ORDER BY ` + orderExpr
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1576,7 +1579,7 @@ func (r *campaignProgressRepository) orderedCandidateIDs(ctx context.Context, or
 // already ordered candidate ids, returning the routing input keyed by contact.
 // A candidate a pre-send gate excludes is simply absent from the result.
 func (r *campaignProgressRepository) hydrateRoutedLeads(ctx context.Context, query string, campaignID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]routeInput, error) {
-	rows, err := r.db.Query(ctx, query, campaignID, config.CampaignSendMaxAttempts, ids)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, campaignID, config.CampaignSendMaxAttempts, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -1677,7 +1680,7 @@ func (r *campaignProgressRepository) RouteContact(ctx context.Context, campaignI
 	`
 	var in routeInput
 	var bounced, failed, suppressed, undeliverable bool
-	err = r.db.QueryRow(ctx, query, campaignID, config.CampaignSendMaxAttempts, contactID).Scan(
+	err = resultDB(ctx, r.db).QueryRow(ctx, query, campaignID, config.CampaignSendMaxAttempts, contactID).Scan(
 		&in.addedAt, &in.sender, &in.lastSeq, &in.sentAt, &in.openedAt, &in.clickedAt, &in.repliedAt, &in.replyClass, &in.aiLabel, &in.replyIntent, &in.sentIDs,
 		&in.pausedAt, &in.pausedUntil, &in.pauseReason, &in.pauseSource,
 		&in.hasReplied, &bounced, &failed, &suppressed, &undeliverable,
@@ -1828,7 +1831,7 @@ type routeResult struct {
 // position, and precomputes the reply-flow step set for route-aware
 // stop_on_reply. Returns nil when the campaign has no steps.
 func (r *campaignProgressRepository) loadRouter(ctx context.Context, campaignID uuid.UUID) (*campaignRouter, error) {
-	srows, err := r.db.Query(ctx, `SELECT id, conditions, wait_after, kind, action FROM sequences WHERE campaign_id = $1 ORDER BY position ASC, created_at ASC`, campaignID)
+	srows, err := resultDB(ctx, r.db).Query(ctx, `SELECT id, conditions, wait_after, kind, action FROM sequences WHERE campaign_id = $1 ORDER BY position ASC, created_at ASC`, campaignID)
 	if err != nil {
 		return nil, err
 	}
@@ -1871,7 +1874,7 @@ func (r *campaignProgressRepository) loadRouter(ctx context.Context, campaignID 
 	// reply branch's path (its actions AND any follow-up emails) runs to
 	// completion. Compute the reply-flow step set once and load the flag.
 	var entryDelayMinutes int
-	if serr := r.db.QueryRow(ctx,
+	if serr := resultDB(ctx, r.db).QueryRow(ctx,
 		`SELECT stop_on_reply, entry_delay_minutes, created_at FROM campaigns WHERE id = $1`,
 		campaignID).Scan(&cr.stopOnReply, &entryDelayMinutes, &cr.campaignCreatedAt); serr != nil {
 		return nil, serr
@@ -2226,7 +2229,7 @@ func (r *campaignProgressRepository) CountUndeliverableLeads(ctx context.Context
 		  AND c.subscribed IS NOT FALSE
 		  AND ` + undeliverableClause("$1") + `
 	`
-	rows, err := r.db.Query(ctx, query, campaignID, config.CampaignSendMaxAttempts)
+	rows, err := resultDB(ctx, r.db).Query(ctx, query, campaignID, config.CampaignSendMaxAttempts)
 	if err != nil {
 		return 0, err
 	}
@@ -2319,7 +2322,7 @@ func (r *campaignProgressRepository) HoldLead(ctx context.Context, campaignID, c
 		guard = crmHoldGuard("campaign_leads")
 	}
 	now := time.Now()
-	hold, err := scanHold(r.db.QueryRow(ctx, `
+	hold, err := scanHold(resultDB(ctx, r.db).QueryRow(ctx, `
 		UPDATE campaign_leads
 		SET paused_at = CASE WHEN `+liveHold("campaign_leads")+` THEN paused_at ELSE NOW() END,
 		    paused_until = $3,
@@ -2359,7 +2362,7 @@ func (r *campaignProgressRepository) HoldLeadEverywhere(ctx context.Context, con
 	} else if source == models.LeadHoldSourceCRM {
 		guard = crmHoldGuard("cl")
 	}
-	rows, err := r.db.Query(ctx, `
+	rows, err := resultDB(ctx, r.db).Query(ctx, `
 		UPDATE campaign_leads cl
 		SET paused_at = CASE WHEN `+liveHold("cl")+` THEN cl.paused_at ELSE NOW() END,
 		    paused_until = $2,
@@ -2396,7 +2399,7 @@ func (r *campaignProgressRepository) ResumeLead(ctx context.Context, campaignID,
 	// RETURNING sees the row AFTER the update, so whether there was a hold to
 	// lift is read from the pre-update snapshot the CTE holds.
 	var held bool
-	err := r.db.QueryRow(ctx, `
+	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		WITH prev AS (
 			SELECT paused_at FROM campaign_leads WHERE campaign_id = $1 AND contact_id = $2
 		), lifted AS (
@@ -2420,7 +2423,7 @@ func (r *campaignProgressRepository) ResumeLead(ctx context.Context, campaignID,
 // so the caller can answer 404 rather than 200 for a contact that was never in
 // the campaign.
 func (r *campaignProgressRepository) GetLeadHold(ctx context.Context, campaignID, contactID uuid.UUID) (*models.LeadHold, error) {
-	hold, err := scanHold(r.db.QueryRow(ctx,
+	hold, err := scanHold(resultDB(ctx, r.db).QueryRow(ctx,
 		`SELECT `+holdColumns+` FROM campaign_leads WHERE campaign_id = $1 AND contact_id = $2`,
 		campaignID, contactID), time.Now())
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -2435,7 +2438,7 @@ func (r *campaignProgressRepository) GetLeadHold(ctx context.Context, campaignID
 // that as "everything sent" and close the campaign (issue #470).
 func (r *campaignProgressRepository) CountHeldLeads(ctx context.Context, campaignID uuid.UUID) (int, error) {
 	var n int
-	err := r.db.QueryRow(ctx, `
+	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT COUNT(*) FROM campaign_leads cl
 		WHERE cl.campaign_id = $1 AND `+liveHold("cl")+`
 		  -- Reached in another lead's thread: nothing is left to wait for.
@@ -2542,7 +2545,7 @@ func (r *campaignProgressRepository) LeadSupply(ctx context.Context, campaignID 
 	if router == nil {
 		return out, nil
 	}
-	rows, err := r.db.Query(ctx, routedLeadsQuery("c.created_at ASC", ""), campaignID, config.CampaignSendMaxAttempts)
+	rows, err := resultDB(ctx, r.db).Query(ctx, routedLeadsQuery("c.created_at ASC", ""), campaignID, config.CampaignSendMaxAttempts)
 	if err != nil {
 		return nil, err
 	}

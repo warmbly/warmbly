@@ -39,27 +39,25 @@ func (s *service) recordStanding(ctx context.Context, accountID uuid.UUID, h *mo
 
 // carryStanding keeps a cloud quarantine or block in force on the local pool
 // row a mailbox rejoins when it leaves the cloud.
-func (s *service) carryStanding(ctx context.Context, m models.CloudLinkMailbox) {
+func (s *service) carryStanding(ctx context.Context, m models.CloudLinkMailbox) error {
 	h := m.Standing
 	if h == nil {
-		return
+		return nil
 	}
 	switch models.WarmupHealthState(h.State) {
 	case models.WarmupHealthBlocked:
 		// A block with no end requires review; it carries as one.
 		if h.BlockedUntil != nil && !h.BlockedUntil.After(time.Now()) {
-			return
+			return nil
 		}
 	case models.WarmupHealthQuarantined:
-		if h.BlockedUntil == nil || !h.BlockedUntil.After(time.Now()) {
-			return
+		if h.BlockedUntil != nil && !h.BlockedUntil.After(time.Now()) {
+			return nil
 		}
 	default:
-		return
+		return nil
 	}
-	if err := s.repo.CarryStanding(ctx, m.EmailAccountID, h); err != nil {
-		log.Warn().Err(err).Str("account_id", m.EmailAccountID.String()).Msg("cloud link: warmup standing could not be carried to the local pool")
-	}
+	return s.repo.CarryStanding(ctx, m.EmailAccountID, h)
 }
 
 func mailboxGroups(rows []models.CloudLinkMailbox) map[uuid.UUID][]models.CloudLinkMailbox {
@@ -71,19 +69,29 @@ func mailboxGroups(rows []models.CloudLinkMailbox) map[uuid.UUID][]models.CloudL
 }
 
 func (s *service) SyncStanding(ctx context.Context) ([]models.CloudLinkStandingChange, *errx.Error) {
+	if !reconciliationLocked(ctx) {
+		var changes []models.CloudLinkStandingChange
+		xerr := s.reconcileLocked(ctx, func(ctx context.Context) *errx.Error {
+			var xerr *errx.Error
+			changes, xerr = s.SyncStanding(ctx)
+			return xerr
+		})
+		return changes, xerr
+	}
+	links, err := s.repo.ListLinks(ctx)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
 	enrolled, err := s.repo.List(ctx)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
 	var changes []models.CloudLinkStandingChange
 	var lastError *errx.Error
-	for _, rows := range mailboxGroups(enrolled) {
-		l, xerr := s.mailboxLink(ctx, &rows[0])
-		if xerr != nil {
-			lastError = xerr
-			continue
-		}
-		part, xerr := s.syncStanding(ctx, l, rows)
+	groups := mailboxGroups(enrolled)
+	for i := range links {
+		l := &links[i]
+		part, xerr := s.reconcileLinkStanding(ctx, l, groups[l.InstanceID])
 		if xerr != nil {
 			lastError = xerr
 			continue
@@ -91,6 +99,31 @@ func (s *service) SyncStanding(ctx context.Context) ([]models.CloudLinkStandingC
 		changes = append(changes, part...)
 	}
 	return changes, lastError
+}
+
+func (s *service) reconcileLinkStanding(ctx context.Context, l *models.CloudLink, enrolled []models.CloudLinkMailbox) ([]models.CloudLinkStandingChange, *errx.Error) {
+	if l.DisconnectPending {
+		orgID := uuid.Nil
+		if l.OrganizationID != nil {
+			orgID = *l.OrganizationID
+		}
+		return nil, s.Disconnect(ctx, orgID, l.OrganizationID == nil)
+	}
+	if xerr := s.reconcileManagedConsents(ctx, l); xerr != nil {
+		return nil, xerr
+	}
+	if xerr := s.reconcileEnrollments(ctx, l, enrolled); xerr != nil {
+		return nil, xerr
+	}
+	rows, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	enrolled = mailboxGroups(rows)[l.InstanceID]
+	if len(enrolled) == 0 {
+		return nil, nil
+	}
+	return s.syncStanding(ctx, l, enrolled)
 }
 
 func (s *service) syncStanding(ctx context.Context, l *models.CloudLink, enrolled []models.CloudLinkMailbox) ([]models.CloudLinkStandingChange, *errx.Error) {
@@ -101,12 +134,15 @@ func (s *service) syncStanding(ctx context.Context, l *models.CloudLink, enrolle
 	var changes []models.CloudLinkStandingChange
 	for _, m := range enrolled {
 		h := byRemote[m.RemoteID]
-		if h == nil || sameStanding(m.Standing, h) {
+		if h == nil || !knownHealthState(h.State) {
+			if err := s.repo.InvalidateStanding(ctx, m.EmailAccountID); err != nil {
+				return changes, errx.InternalError()
+			}
 			continue
 		}
 		prev, ok := s.recordStanding(ctx, m.EmailAccountID, h, false)
 		if !ok {
-			continue
+			return changes, errx.InternalError()
 		}
 		// A first reading is measured against the unrestricted mailbox this
 		// instance saw until now, so a hold it starts enforcing is announced.

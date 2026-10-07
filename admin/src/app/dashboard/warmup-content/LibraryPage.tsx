@@ -154,6 +154,12 @@ export default function LibraryPage() {
                 csv: (c) => (c.lint_passed ? "pass" : "fail"),
             },
             {
+                id: "review",
+                header: "Semantic review",
+                cell: (c) => <StatusBadge tone={c.semantic_review === "passed" ? "success" : "neutral"}>{c.semantic_review ?? "legacy_unknown"}</StatusBadge>,
+                csv: (c) => c.semantic_review ?? "legacy_unknown",
+            },
+            {
                 id: "status",
                 header: "Status",
                 cell: (c) => (
@@ -188,7 +194,7 @@ export default function LibraryPage() {
                                 size="xs"
                                 variant="ghost"
                                 onClick={() => unarchive.mutate(c.id)}
-                                disabled={unarchive.isPending}
+                                disabled={unarchive.isPending || (c.semantic_review !== undefined && !["passed", "legacy_unknown"].includes(c.semantic_review))}
                             >
                                 <ArchiveRestore /> Restore
                             </Button>
@@ -363,6 +369,9 @@ function ConversationDialog({
                             <StatusBadge tone={c.lint_passed ? "success" : "danger"}>
                                 lint {c.lint_passed ? "pass" : "fail"}
                             </StatusBadge>
+                            <StatusBadge>review: {c.semantic_review ?? "legacy_unknown"}</StatusBadge>
+                            {c.scenario_version && <StatusBadge>scenario: {c.scenario_version}</StatusBadge>}
+                            {c.rendering_version && <StatusBadge>rendering: {c.rendering_version}</StatusBadge>}
                             {c.segment && <StatusBadge>segment: {c.segment}</StatusBadge>}
                             <StatusBadge>source: {c.source || "—"}</StatusBadge>
                             <span className="ml-1 text-xs tabular-nums text-muted-foreground">

@@ -125,6 +125,7 @@ func (s *JobsService) Start(ctx context.Context) {
 	// on a schedule instead. Free: no model call, just arithmetic over stored
 	// timestamps.
 	go s.sweepFollowUps(ctx)
+	go s.runSendResultEffects(ctx)
 
 	if err := s.Bus.Subscribe(ctx, []string{kafka.TopicWorkerEvents}, "consumer-group", s.receive); err != nil {
 		log.Error().Err(err).Msg("consumer: worker-events subscription ended")

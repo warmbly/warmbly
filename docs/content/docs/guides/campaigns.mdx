@@ -43,7 +43,7 @@ A draft's Overview tab shows what it still needs (leads, an email, senders), eac
 The estimate simulates the campaign day by day against the mailboxes that would send it. It uses the same rules as the scheduler:
 
 - each mailbox's own cap and the campaign's daily limit
-- the warmup graduation ceiling, which starts a freshly warmed mailbox low and adds 5 a day
+- conservative cold pacing, requiring recent real-recipient replies for bounded increases rather than synthetic age
 - the workspace's risk band and each mailbox's health band
 - mailboxes on hold or failing domain authentication, which send nothing
 - sending behaviour profiles
@@ -394,17 +394,11 @@ A **placement monitor** repeats that on a schedule while the campaign runs, ever
 
 ## Easing out of warmup
 
-A mailbox that has been warming does not jump straight to its full cold cap. Going from 40 warmup emails a day to 50 cold emails the next morning is the volume jump mailbox providers penalise, so Warmbly ramps into it.
+A diagnostic-history mailbox starts cold sending at a conservative ceiling of five/day. Synthetic traffic and elapsed age do not show that real recipients welcome outreach.
 
-The mailbox starts at a volume set by how long it warmed, then adds `5` a day until it reaches the cap you configured:
+Confirmed human replies to actual campaign recipients in the last seven days permit bounded increases: at most five per clean day, and never more than the confirmed reply count. Complaints clear positive progression. Without reply evidence, the ceiling stays five/day.
 
-| Warmed for | Starts cold at |
-|------------|----------------|
-| under a week | `5`/day |
-| one to two weeks | `10`/day |
-| two weeks or more | `20`/day |
-
-The ramp only ever **lowers** a cap, never raises one, so your configured limit and the campaign's daily limit still bind. A spam placement at Google, Microsoft or Yahoo pauses the climb for the same three days it pauses the warmup ramp, and the paused days are subtracted rather than made up. The mailbox drawer shows today's allowance and roughly when it reaches your cap.
+Configured campaign/mailbox caps, shared daily/rolling recipient limits and negative-feedback holds still bind. This is product pacing, not a universal provider-approved safe volume or proven reputation benefit. Missing evidence leaves full-cap dates unknown rather than projecting synthetic age into readiness. If the feedback lookup fails or omits a known warmed mailbox, its execution, projection and displayed explanation retain the conservative ceiling. A missing lookup does not mean the mailbox never warmed.
 
 <Callout type="info" title="Only for mailboxes that warmed">
 A mailbox that never used warmup is not gated. This exists to smooth the warmup-to-cold transition, not to cap senders who never opted into warmup.
@@ -430,15 +424,15 @@ Above `4%` projected bounce the launch is refused with the number and what to do
 Defaults are deliberately conservative, aiming at a low complaint rate rather than maximum throughput:
 
 - **Spacing over bursts**: the minimum gap and even distribution keep a natural cadence.
-- **Spread, don't concentrate**: volume splits across many mailboxes and worker IPs.
+- **Honor provider limits**: adding mailboxes or worker IPs is not a way to bypass provider restrictions.
 - **Ramp gradually**: raise volume only while performance stays healthy.
 - **Health gating**: a mailbox in deliverability trouble has its cold volume cut or paused automatically.
 - **Human timing**: mailboxes with [sending behavior](/guides/sending-behavior/) enabled keep randomized working hours, volume, and spacing in their own timezone.
 
-A practical band is `30` to `50`/day for warmed mailboxes, starting newer ones at `10` to `20`.
+Choose configured caps using provider policy, recipient permission and observed campaign outcomes. A configured cap is a maximum, not evidence that the volume is safe or that the mailbox is ready for it.
 
-<Callout type="warn" title="Keep warmup running">
-Warmbly limits a campaign mailbox to at most five warmup messages per day, so campaign traffic stays primary. Warmup cannot compensate for one repetitive template sent to a poorly targeted list: personalize, test meaningful A/B variants, and honor suppression and unsubscribe signals.
+<Callout type="warn" title="Diagnostics are optional">
+When enabled, Warmbly limits a campaign mailbox to at most five diagnostic warmup messages per day, so campaign traffic stays primary. Diagnostic participation is not a proven reputation benefit and cannot compensate for a repetitive template sent to a poorly targeted list: personalize, test meaningful A/B variants, and honor suppression and unsubscribe signals.
 </Callout>
 
 ## Related guides

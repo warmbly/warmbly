@@ -78,7 +78,7 @@ func newPartnerRoutingFixture(t *testing.T) *partnerRoutingFixture {
 	}
 	exec(`INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Pick', 'Test')`,
 		f.user, "pick-"+f.user.String()[:8]+"@test.local")
-	exec(`INSERT INTO organizations (id, name, slug, owner_user_id) VALUES ($1, 'Pick Test', $2, $3)`,
+	exec(`INSERT INTO organizations (id, name, slug, owner_user_id, risk_state) VALUES ($1, 'Pick Test', $2, $3, 'trusted')`,
 		f.org, "pick-"+f.org.String()[:8], f.user)
 	// Both partners are on custom domains, so only the detected host can tell
 	// them apart.
@@ -92,11 +92,11 @@ func newPartnerRoutingFixture(t *testing.T) *partnerRoutingFixture {
 		{f.atSmallHost, "shop.test", "hostinger"},
 	} {
 		exec(`INSERT INTO email_accounts (id, user_id, organization_id, email, name, signature_plain,
-		          signature_html, provider, status, campaign_limit, min_wait_time, timezone, mail_host)
-		      VALUES ($1, $2, $3, $4, 'Pick', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5)`,
+		          signature_html, provider, status, campaign_limit, min_wait_time, timezone, mail_host, test_mode, test_send_enabled, test_receive_enabled)
+		      VALUES ($1, $2, $3, $4, 'Pick', '', '', 'smtp_imap', 'active', 50, 600, 'UTC', $5, 'diagnostic', true, true)`,
 			m.id, f.user, f.org, "pick-"+m.id.String()[:8]+"@"+m.domain, m.host)
 	}
-	for _, id := range []uuid.UUID{f.atWorkspace, f.atSmallHost} {
+	for _, id := range []uuid.UUID{senderID, f.atWorkspace, f.atSmallHost} {
 		exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id, participant_role, health_state)
 		      VALUES ($1, $2, 'sender_receiver', 'healthy')`, freePoolID, id)
 	}

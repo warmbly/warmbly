@@ -88,8 +88,8 @@ func (r *fleetNodeRepository) UpsertOnHeartbeat(ctx context.Context, beat models
 		INSERT INTO fleet_nodes (
 			id, role, name, region, address, capacity_target, version, active, last_seen_at,
 			cpu_percent, memory_mb, goroutines, uptime_seconds, last_error,
-			cpu_scope, memory_scope, memory_used_mb, memory_limit_mb, resident_mb
-		) VALUES ($1, $2, $3, $4, $5, COALESCE(NULLIF($6, 0), 100), $7, TRUE, now(), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			cpu_scope, memory_scope, memory_used_mb, memory_limit_mb, resident_mb, warmup_send_protocol
+		) VALUES ($1, $2, $3, $4, $5, COALESCE(NULLIF($6, 0), 100), $7, TRUE, now(), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (id) DO UPDATE SET
 			-- Role is NOT updated. A node that re-registers under a different
 			-- role would keep its workers row and the mailboxes assigned to
@@ -112,6 +112,7 @@ func (r *fleetNodeRepository) UpsertOnHeartbeat(ctx context.Context, beat models
 			memory_used_mb = EXCLUDED.memory_used_mb,
 			memory_limit_mb = EXCLUDED.memory_limit_mb,
 			resident_mb    = EXCLUDED.resident_mb,
+			warmup_send_protocol = EXCLUDED.warmup_send_protocol,
 			last_error   = EXCLUDED.last_error,
 			updated_at   = now()
 	`
@@ -120,6 +121,7 @@ func (r *fleetNodeRepository) UpsertOnHeartbeat(ctx context.Context, beat models
 		beat.Usage.CPUPercent, beat.Usage.MemoryMB, beat.Usage.Goroutines, beat.Usage.UptimeSeconds,
 		beat.LastError,
 		beat.Usage.CPUScope, beat.Usage.MemoryScope, beat.Usage.MemoryUsedMB, beat.Usage.MemoryLimitMB, beat.Usage.ResidentMB,
+		beat.WarmupSendProtocol,
 	)
 	return err
 }

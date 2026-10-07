@@ -5,11 +5,11 @@ import (
 	"time"
 )
 
-func TestColdStartBandsOnWarmupMaturity(t *testing.T) {
+func TestColdStartDoesNotRewardSyntheticAge(t *testing.T) {
 	for _, tt := range []struct{ days, want int }{
-		{0, coldStartUnproven}, {6, coldStartUnproven},
-		{7, coldStartWarmed}, {13, coldStartWarmed},
-		{14, coldStartMature}, {90, coldStartMature},
+		{0, 5}, {6, 5},
+		{7, 5}, {13, 5},
+		{14, 5}, {90, 5},
 	} {
 		if got := ColdStart(tt.days); got != tt.want {
 			t.Errorf("ColdStart(%d) = %d, want %d", tt.days, got, tt.want)
@@ -23,20 +23,20 @@ func TestColdCeilingClimbsAndClamps(t *testing.T) {
 
 	// A mature mailbox on its first cold day: its starting volume, not the cap.
 	// This is the overnight 40 -> 50 jump the gate exists to stop.
-	if got := ColdCeiling(30, time.Time{}, nil, at(0), 50); got != 20 {
-		t.Errorf("first cold day = %d, want the 20 start", got)
+	if got := ColdCeiling(30, time.Time{}, nil, at(0), 50); got != 5 {
+		t.Errorf("first cold day = %d, want the conservative start", got)
 	}
-	if got := ColdCeiling(30, start, nil, at(0), 50); got != 20 {
-		t.Errorf("day 0 = %d, want 20", got)
+	if got := ColdCeiling(30, start, nil, at(0), 50); got != 5 {
+		t.Errorf("day 0 = %d, want 5", got)
 	}
-	if got := ColdCeiling(30, start, nil, at(2), 50); got != 30 {
-		t.Errorf("day 2 = %d, want 20 + 2*5", got)
+	if got := ColdCeiling(30, start, nil, at(2), 50, 100); got != 15 {
+		t.Errorf("day 2 with actual replies = %d, want 5 + 2*5", got)
 	}
 	// Clamped to the mailbox's own cap, never above it.
-	if got := ColdCeiling(30, start, nil, at(90), 50); got != 50 {
+	if got := ColdCeiling(30, start, nil, at(90), 50, 100); got != 50 {
 		t.Errorf("day 90 = %d, want the cap of 50", got)
 	}
-	if got := ColdCeiling(30, start, nil, at(90), 12); got != 12 {
+	if got := ColdCeiling(30, start, nil, at(90), 12, 100); got != 12 {
 		t.Errorf("a low mailbox cap must still bind: got %d, want 12", got)
 	}
 	// An unproven mailbox starts lower and takes longer to arrive.
@@ -50,8 +50,8 @@ func TestColdCeilingFreezesOnPlacement(t *testing.T) {
 	at := func(d float64) time.Time {
 		return start.Add(time.Duration(d * float64(24*time.Hour)))
 	}
-	clean := ColdCeiling(30, start, nil, at(6), 50)
-	held := ColdCeiling(30, start, []time.Time{at(4)}, at(6), 50)
+	clean := ColdCeiling(30, start, nil, at(6), 50, 100)
+	held := ColdCeiling(30, start, []time.Time{at(4)}, at(6), 50, 100)
 	if held >= clean {
 		t.Errorf("a placement did not hold the cold ramp: held %d vs clean %d", held, clean)
 	}
@@ -87,12 +87,26 @@ func TestColdHeldUntilMatchesWhatTheCeilingCounts(t *testing.T) {
 	if got := ColdHeldUntil(rampStart, after, now, freeze); got == nil {
 		t.Error("a placement during the ramp is not reported as holding it")
 	}
-	if ColdCeiling(30, rampStart, after, now, 50) >= ColdCeiling(30, rampStart, nil, now, 50) {
+	if ColdCeiling(30, rampStart, after, now, 50, 100) >= ColdCeiling(30, rampStart, nil, now, 50, 100) {
 		t.Error("a placement during the ramp did not lower the ceiling")
 	}
 
 	// An unanchored mailbox has no ramp to hold.
 	if got := ColdHeldUntil(time.Time{}, after, now, freeze); got != nil {
 		t.Errorf("an unanchored mailbox reported a hold: %v", got)
+	}
+}
+
+func TestColdReadinessRemainsUnknownWithoutFreshHumanReplies(t *testing.T) {
+	now := time.Now()
+	start := now.AddDate(0, 0, -90)
+	if got := ColdCeiling(90, start, nil, now, 50); got != 5 {
+		t.Fatal("age fabricated readiness", got)
+	}
+	if got := ColdCeiling(90, start, nil, now, 50, 2); got != 7 {
+		t.Fatal("ceiling exceeded actual reply evidence", got)
+	}
+	if info := Notice(&start, &start, nil, 50, now, 2); info == nil || info.DaysToFullCap != -1 {
+		t.Fatal("invented full-speed date", info)
 	}
 }

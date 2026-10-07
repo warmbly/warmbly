@@ -30,12 +30,7 @@ const (
 	spamMoveNoOwnerTrace = "no_owner_activity"
 )
 
-// attributeSpamMove decides who moved a received warmup email into spam. No
-// provider says, so the verdict rests on what the pool and the mailbox show:
-// the provider when other workspaces saw the same sender junked or the move
-// came straight after arrival with nobody there, the owner when they were
-// active in the mailbox around it or keep junking pool mail nobody else does,
-// and nobody otherwise. Only the owner is charged.
+// Attribution is inferred, not provider proof; recipient withdrawal is not tampering.
 func attributeSpamMove(m repository.WarmupSpamMove, ev repository.WarmupSpamMoveEvidence) (string, []string) {
 	quick := m.ObservedAt.Sub(m.ReceivedAt) < time.Duration(config.WarmupSpamMoveQuickMinutes)*time.Minute
 	switch {
@@ -113,11 +108,6 @@ func (s *JobsService) attributeOneSpamMove(ctx context.Context, m repository.War
 			return fmt.Errorf("record warmup spam complaint: %w", xerr)
 		}
 		s.markRiskBandFromWarmupHealth(ctx, m.SenderAccountID, hSender)
-		hOwner, xerr := s.WarmupService.RecordTampering(ctx, m.EmailAccountID, m.MessageID, "spam_flag")
-		if xerr != nil {
-			return fmt.Errorf("record warmup spam strike: %w", xerr)
-		}
-		s.markRiskBandFromWarmupHealth(ctx, m.EmailAccountID, hOwner)
 	} else {
 		// The provider junked the sender's mail, or may have: a placement
 		// reading against the sender, which only ever slows it down.

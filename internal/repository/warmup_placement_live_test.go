@@ -242,7 +242,7 @@ func TestLiveWarmupPlacementSweep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Daily: %v", err)
 	}
-	if len(rows) != 1 || rows[0].Group != "microsoft" || rows[0].Inbox != 3 || rows[0].Spam != 1 || rows[0].Tabs != 0 {
-		t.Fatalf("swept rows = %+v, want 3 inbox and 1 spam at microsoft", rows)
+	if len(rows) != 1 || rows[0].Group != "microsoft" || rows[0].Inbox != 0 || rows[0].Unknown != 3 || rows[0].Spam != 1 || rows[0].Tabs != 0 || rows[0].Instrumented != 0 {
+		t.Fatalf("swept rows = %+v, want 3 unknown and 1 legacy spam at microsoft", rows)
 	}
 }

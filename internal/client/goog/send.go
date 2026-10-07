@@ -77,6 +77,14 @@ func (c *Client) sendRaw(
 	}
 	if len(customHeaders) > 0 {
 		for k, v := range customHeaders[0] {
+			if strings.EqualFold(k, "References") {
+				for i := range hdrs {
+					if strings.EqualFold(hdrs[i].name, "References") {
+						hdrs = append(hdrs[:i], hdrs[i+1:]...)
+						break
+					}
+				}
+			}
 			hdrs = append(hdrs, header{k, v})
 		}
 	}

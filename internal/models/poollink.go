@@ -114,9 +114,10 @@ type PoolLinkPlan struct {
 
 // PoolLinkInstanceInfo is the instance-facing status document.
 type PoolLinkInstanceInfo struct {
-	Instance     PoolLinkInstance `json:"instance"`
-	Organization PoolLinkOrgInfo  `json:"organization"`
-	Plan         PoolLinkPlan     `json:"plan"`
+	ManagedConsentProtocol int              `json:"managed_consent_protocol,omitempty"`
+	Instance               PoolLinkInstance `json:"instance"`
+	Organization           PoolLinkOrgInfo  `json:"organization"`
+	Plan                   PoolLinkPlan     `json:"plan"`
 	// Redirects is nil from a Cloud that does not serve root redirects.
 	Redirects *PoolLinkRedirectOffer `json:"redirects,omitempty"`
 }
@@ -153,6 +154,9 @@ type PoolLinkEnrollRequest struct {
 
 // PoolLinkOAuthStartRequest asks the cloud for a Google or Microsoft consent URL on Warmbly's app.
 type PoolLinkOAuthStartRequest struct {
+	Protocol  int           `json:"protocol,omitempty"`
+	RemoteID  uuid.UUID     `json:"remote_id,omitempty"`
+	Session   string        `json:"session,omitempty"`
 	Provider  InboxProvider `json:"provider"`
 	ReturnURL string        `json:"return_url"`
 }
@@ -173,11 +177,14 @@ type PoolLinkOAuthConsent struct {
 
 // PoolLinkOAuthFinishRequest redeems a completed consent for its mailbox.
 type PoolLinkOAuthFinishRequest struct {
-	Session string `json:"session"`
+	Protocol int       `json:"protocol,omitempty"`
+	RemoteID uuid.UUID `json:"remote_id,omitempty"`
+	Session  string    `json:"session"`
 }
 
 // PoolLinkAdoptRequest links a mailbox already in the workspace to the instance.
 type PoolLinkAdoptRequest struct {
+	Protocol       int       `json:"protocol,omitempty"`
 	RemoteID       uuid.UUID `json:"remote_id"`
 	EmailAccountID uuid.UUID `json:"email_account_id"`
 }
@@ -214,23 +221,25 @@ type PoolLinkWarmupDeliveryQuery struct {
 
 // PoolLinkMailboxState is the per-mailbox view shown in both dashboards.
 type PoolLinkMailboxState struct {
-	RemoteID       uuid.UUID              `json:"remote_id"`
-	EmailAccountID uuid.UUID              `json:"email_account_id"`
-	Email          string                 `json:"email"`
-	Name           string                 `json:"name"`
-	Provider       string                 `json:"provider"`
-	Status         string                 `json:"status"`
-	EnrolledAt     time.Time              `json:"enrolled_at"`
-	Managed        bool                   `json:"managed"`
-	Warmup         *WarmupStatusInfo      `json:"warmup,omitempty"`
-	Health         *WarmupHealthInfo      `json:"health,omitempty"`
-	SentToday      int                    `json:"sent_today"`
-	Sent7d         int                    `json:"sent_7d"`
-	Replied7d      int                    `json:"replied_7d"`
-	SpamPlaced7d   int                    `json:"spam_placed_7d"`
-	Errors         []AccountError         `json:"errors,omitempty"`
-	AuthState      string                 `json:"auth_state"`
-	Settings       PoolLinkWarmupSettings `json:"settings"`
+	Participation      *DiagnosticParticipation `json:"participation,omitempty"`
+	ConsentCompletedAt *time.Time               `json:"consent_completed_at,omitempty"`
+	RemoteID           uuid.UUID                `json:"remote_id"`
+	EmailAccountID     uuid.UUID                `json:"email_account_id"`
+	Email              string                   `json:"email"`
+	Name               string                   `json:"name"`
+	Provider           string                   `json:"provider"`
+	Status             string                   `json:"status"`
+	EnrolledAt         time.Time                `json:"enrolled_at"`
+	Managed            bool                     `json:"managed"`
+	Warmup             *WarmupStatusInfo        `json:"warmup,omitempty"`
+	Health             *WarmupHealthInfo        `json:"health,omitempty"`
+	SentToday          int                      `json:"sent_today"`
+	Sent7d             int                      `json:"sent_7d"`
+	Replied7d          int                      `json:"replied_7d"`
+	SpamPlaced7d       int                      `json:"spam_placed_7d"`
+	Errors             []AccountError           `json:"errors,omitempty"`
+	AuthState          string                   `json:"auth_state"`
+	Settings           PoolLinkWarmupSettings   `json:"settings"`
 }
 
 // PoolLinkMailboxStanding is one enrolled mailbox's warmup standing, the
@@ -242,6 +251,7 @@ type PoolLinkMailboxStanding struct {
 
 // PoolLinkMailboxPatch updates a mailbox's ramp or lifecycle on the cloud.
 type PoolLinkMailboxPatch struct {
+	Participation *DiagnosticParticipation `json:"participation,omitempty"`
 	// Lifecycle is "pause", "resume" or empty.
 	Lifecycle string                   `json:"lifecycle,omitempty"`
 	Warmup    *PoolLinkWarmupSettings  `json:"warmup,omitempty"`
@@ -249,17 +259,31 @@ type PoolLinkMailboxPatch struct {
 	SMTPIMAP  *SmtpImap                `json:"smtp_imap,omitempty"`
 }
 
-// CloudLink belongs to a local workspace; a nil OrganizationID is a legacy instance-wide link.
+type DiagnosticParticipation struct {
+	Mode                  TestParticipationMode `json:"mode"`
+	Send                  bool                  `json:"send"`
+	Receive               bool                  `json:"receive"`
+	SharedDailyLimit      *int                  `json:"shared_daily_limit,omitempty"`
+	RollingRecipientLimit *int                  `json:"rolling_recipient_limit,omitempty"`
+}
+
+func (p DiagnosticParticipation) Valid() bool {
+	return (p.Mode == TestParticipationDiagnostic || p.Mode == TestParticipationOff && !p.Send && !p.Receive) &&
+		(p.SharedDailyLimit == nil || *p.SharedDailyLimit >= 0) && (p.RollingRecipientLimit == nil || *p.RollingRecipientLimit >= 0)
+}
+
+// CloudLink belongs to a workspace; a nil OrganizationID is a legacy instance-wide link.
 type CloudLink struct {
-	OrganizationID   *uuid.UUID `json:"organization_id,omitempty"`
-	CloudURL         string     `json:"cloud_url"`
-	InstanceID       uuid.UUID  `json:"instance_id"`
-	Token            string     `json:"-"`
-	OrganizationName string     `json:"organization_name"`
-	ConnectedBy      *uuid.UUID `json:"connected_by,omitempty"`
-	ConnectedAt      time.Time  `json:"connected_at"`
-	LastSyncedAt     *time.Time `json:"last_synced_at,omitempty"`
-	LastError        string     `json:"last_error,omitempty"`
+	OrganizationID    *uuid.UUID `json:"organization_id,omitempty"`
+	CloudURL          string     `json:"cloud_url"`
+	InstanceID        uuid.UUID  `json:"instance_id"`
+	Token             string     `json:"-"`
+	OrganizationName  string     `json:"organization_name"`
+	ConnectedBy       *uuid.UUID `json:"connected_by,omitempty"`
+	ConnectedAt       time.Time  `json:"connected_at"`
+	LastSyncedAt      *time.Time `json:"last_synced_at,omitempty"`
+	LastError         string     `json:"last_error,omitempty"`
+	DisconnectPending bool       `json:"disconnect_pending,omitempty"`
 }
 
 // CloudLinkMailbox marks a local mailbox as warmed by the cloud.
@@ -269,7 +293,9 @@ type CloudLinkMailbox struct {
 	RemoteID       uuid.UUID `json:"remote_id"`
 	EnrolledAt     time.Time `json:"enrolled_at"`
 	// Managed: no local credential; the worker sends with tokens brokered by the cloud.
-	Managed bool `json:"managed"`
+	Managed            bool       `json:"managed"`
+	EnrollmentState    string     `json:"enrollment_state,omitempty"`
+	StandingObservedAt *time.Time `json:"standing_observed_at,omitempty"`
 	// Standing is the warmup health the cloud last reported; nil until it has.
 	Standing *WarmupHealthInfo `json:"-"`
 }
@@ -304,16 +330,18 @@ type CloudLinkStatus struct {
 
 // CloudLinkMailboxRow merges a local mailbox with its cloud warmup state.
 type CloudLinkMailboxRow struct {
-	Legacy     bool                  `json:"legacy"`
-	ID         uuid.UUID             `json:"id"`
-	Email      string                `json:"email"`
-	Name       string                `json:"name"`
-	Provider   string                `json:"provider"`
-	Status     string                `json:"status"`
-	Enrolled   bool                  `json:"enrolled"`
-	EnrolledAt *time.Time            `json:"enrolled_at,omitempty"`
-	Managed    bool                  `json:"managed"`
-	Cloud      *PoolLinkMailboxState `json:"cloud,omitempty"`
+	Legacy             bool                  `json:"legacy"`
+	ID                 uuid.UUID             `json:"id"`
+	Email              string                `json:"email"`
+	Name               string                `json:"name"`
+	Provider           string                `json:"provider"`
+	Status             string                `json:"status"`
+	Enrolled           bool                  `json:"enrolled"`
+	EnrolledAt         *time.Time            `json:"enrolled_at,omitempty"`
+	Managed            bool                  `json:"managed"`
+	Cloud              *PoolLinkMailboxState `json:"cloud,omitempty"`
+	EnrollmentState    string                `json:"enrollment_state,omitempty"`
+	StandingObservedAt *time.Time            `json:"standing_observed_at,omitempty"`
 }
 
 // PoolLinkOffer is the warmup plan as an upgrade prompt sees it:

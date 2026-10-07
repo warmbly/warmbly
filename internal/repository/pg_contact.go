@@ -315,7 +315,7 @@ func (r *contactRepository) Add(ctx context.Context, userID string, orgID uuid.U
 		segmentIDs = append(segmentIDs, segs)
 	}
 
-	tx, err := r.DB.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.DB)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
@@ -621,7 +621,7 @@ func (r *contactRepository) GetByID(ctx context.Context, contactID uuid.UUID) (*
 	`
 
 	var contact models.Contact
-	err := r.DB.QueryRow(ctx, query, contactID).Scan(
+	err := resultDB(ctx, r.DB).QueryRow(ctx, query, contactID).Scan(
 		&contact.ID, &contact.FirstName, &contact.LastName, &contact.Email,
 		&contact.Company, &contact.Phone, &contact.CustomFields, &contact.Subscribed,
 		&contact.UpdatedAt, &contact.CreatedAt,
@@ -668,7 +668,7 @@ func (r *contactRepository) ListMailHostPending(ctx context.Context, limit int) 
 		ORDER BY esp_resolved_at NULLS FIRST
 		LIMIT $1
 	`
-	rows, err := r.DB.Query(ctx, query, limit, config.ContactMailHostRecheckDays)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, limit, config.ContactMailHostRecheckDays)
 	if err != nil {
 		db.CaptureError(err, query, []any{limit}, "query")
 		return nil, err
@@ -718,7 +718,7 @@ func (r *contactRepository) SetContactMailHosts(ctx context.Context, results []C
 		WHERE found AND organization_id IS NOT NULL
 	`
 	args := []any{ids, emails, hosts, esps, transient, config.ContactMailHostRecheckDays, config.ContactMailHostRetryMinutes}
-	rows, err := r.DB.Query(ctx, query, args...)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, args...)
 	if err != nil {
 		db.CaptureError(err, query, nil, "query")
 		return nil, err
@@ -739,7 +739,7 @@ func (r *contactRepository) SetContactMailHosts(ctx context.Context, results []C
 // contact. It is keyed only by contact id (the verifier runs in the control
 // plane, not in a user request) and is a no-op-safe single UPDATE.
 func (r *contactRepository) SetSubscribedByEmail(ctx context.Context, orgID uuid.UUID, email string, subscribed bool) error {
-	_, err := r.DB.Exec(ctx,
+	_, err := resultDB(ctx, r.DB).Exec(ctx,
 		`UPDATE contacts SET subscribed = $3, updated_at = NOW()
 		 WHERE organization_id = $1 AND LOWER(email) = LOWER($2) AND subscribed IS DISTINCT FROM $3`,
 		orgID, email, subscribed)
@@ -788,7 +788,7 @@ func (r *contactRepository) UpdateContactVerification(ctx context.Context, conta
 		  AND (verification_source <> 'manual' OR ($11::timestamptz IS NOT NULL AND verification_requested_at IS NOT NULL))
 	`
 	params := []any{contactID, status, res.Reason, res.IsCatchAll, checkedAt, source, provider, string(res.SubStatus), res.Confidence, string(checkStatus), requestedAt}
-	cmd, err := r.DB.Exec(ctx, query, params...)
+	cmd, err := resultDB(ctx, r.DB).Exec(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "exec")
 		return errx.InternalError()
@@ -891,7 +891,7 @@ func (r *contactRepository) ListVerificationCandidates(ctx context.Context, limi
 }
 
 func (r *contactRepository) scanVerificationCandidates(ctx context.Context, query string, params []any, out *[]VerificationCandidate) *errx.Error {
-	rows, err := r.DB.Query(ctx, query, params...)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "query")
 		return errx.InternalError()
@@ -933,7 +933,7 @@ func (r *contactRepository) SetContactsVerification(ctx context.Context, orgID u
 		WHERE organization_id = $1 AND id = ANY($2)
 	`
 	params := []any{orgID, ids, w.Status, w.SubStatus, w.Reason, w.Provider, w.Source}
-	cmd, err := r.DB.Exec(ctx, query, params...)
+	cmd, err := resultDB(ctx, r.DB).Exec(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "exec")
 		return 0, errx.InternalError()
@@ -955,7 +955,7 @@ func (r *contactRepository) RequestContactsVerification(ctx context.Context, org
 		WHERE organization_id = $1 AND id = ANY($2)
 	`
 	params := []any{orgID, ids}
-	cmd, err := r.DB.Exec(ctx, query, params...)
+	cmd, err := resultDB(ctx, r.DB).Exec(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "exec")
 		return 0, errx.InternalError()
@@ -975,7 +975,7 @@ func (r *contactRepository) UndeliverableLeadIDs(ctx context.Context, orgID, cam
 		  AND (c.verification_status = 'invalid' OR (c.verification_status = 'risky' AND NOT cp.risky_emails))
 	`
 	params := []any{campaignID, orgID}
-	rows, err := r.DB.Query(ctx, query, params...)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, params...)
 	if err != nil {
 		db.CaptureError(err, query, params, "query")
 		return nil, errx.InternalError()
@@ -1010,7 +1010,7 @@ func (r *contactRepository) VerificationCounts(ctx context.Context, orgID uuid.U
 		FROM contacts
 		WHERE organization_id = $1
 	`
-	if err := r.DB.QueryRow(ctx, query, orgID).Scan(&c.Valid, &c.Risky, &c.Invalid, &c.Unknown, &c.Pending); err != nil {
+	if err := resultDB(ctx, r.DB).QueryRow(ctx, query, orgID).Scan(&c.Valid, &c.Risky, &c.Invalid, &c.Unknown, &c.Pending); err != nil {
 		db.CaptureError(err, query, []any{orgID}, "queryrow")
 		return c, errx.InternalError()
 	}
@@ -1023,7 +1023,7 @@ const lookupContactColumns = `c.id, c.first_name, c.last_name, c.email, c.compan
 
 func (r *contactRepository) scanLookupContact(ctx context.Context, query string, args ...any) (*models.Contact, *errx.Error) {
 	var contact models.Contact
-	err := r.DB.QueryRow(ctx, query, args...).Scan(
+	err := resultDB(ctx, r.DB).QueryRow(ctx, query, args...).Scan(
 		&contact.ID, &contact.FirstName, &contact.LastName, &contact.Email,
 		&contact.Company, &contact.Phone, &contact.CustomFields, &contact.Subscribed,
 		&contact.UpdatedAt, &contact.CreatedAt,
@@ -1104,7 +1104,7 @@ func (r *contactRepository) GetByThreadAndOrganization(ctx context.Context, orga
 
 func (r *contactRepository) OwnerUserID(ctx context.Context, organizationID, contactID uuid.UUID) (*uuid.UUID, error) {
 	var userID uuid.UUID
-	err := r.DB.QueryRow(ctx,
+	err := resultDB(ctx, r.DB).QueryRow(ctx,
 		`SELECT user_id FROM contacts WHERE id = $1 AND organization_id = $2`,
 		contactID, organizationID,
 	).Scan(&userID)
@@ -1128,7 +1128,7 @@ func (r *contactRepository) GetByIDsAndOrganization(ctx context.Context, organiz
 		FROM contacts c
 		WHERE c.organization_id = $1 AND c.id = ANY($2)
 	`
-	rows, err := r.DB.Query(ctx, query, organizationID, ids)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, organizationID, ids)
 	if err != nil {
 		db.CaptureError(err, query, []any{organizationID, ids}, "query")
 		return nil, errx.InternalError()
@@ -1776,7 +1776,7 @@ func (r *contactRepository) Search(
 		// the WHERE, so passing it would leave Postgres a placeholder it cannot
 		// type.
 		var tmp int64
-		if err := r.DB.QueryRow(ctx, countQuery, fq.args...).Scan(&tmp); err != nil {
+		if err := resultDB(ctx, r.DB).QueryRow(ctx, countQuery, fq.args...).Scan(&tmp); err != nil {
 			db.CaptureError(err, "countQuery", args, "queryrow")
 			return nil, errx.InternalError()
 		}
@@ -1786,7 +1786,7 @@ func (r *contactRepository) Search(
 	// -----------------------------
 	// Execute query
 	// -----------------------------
-	rows, err := r.DB.Query(ctx, query, args...)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, args...)
 	if err != nil {
 		db.CaptureError(err, query, args, "query")
 		return nil, errx.InternalError()
@@ -2011,7 +2011,7 @@ func (r *contactRepository) SearchIDs(ctx context.Context, orgID string, filters
 	`, campaignCountJoin, whereSQL, spec.expr, direction, nulls, direction, argIndex)
 	args = append(args, max+1)
 
-	rows, err := r.DB.Query(ctx, query, args...)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, args...)
 	if err != nil {
 		db.CaptureError(err, query, args, "query")
 		return nil, errx.InternalError()
@@ -2052,7 +2052,7 @@ func (r *contactRepository) SearchCounts(ctx context.Context, orgID string) (*mo
 		) cl ON c.id = cl.contact_id
 		WHERE c.organization_id = $1
 	`
-	if err := r.DB.QueryRow(ctx, scalarQuery, orgID).Scan(
+	if err := resultDB(ctx, r.DB).QueryRow(ctx, scalarQuery, orgID).Scan(
 		&counts.Total, &counts.Subscribed, &counts.Unsubscribed,
 		&counts.InCampaign, &counts.NotContacted,
 	); err != nil {
@@ -2067,7 +2067,7 @@ func (r *contactRepository) SearchCounts(ctx context.Context, orgID string) (*mo
 		WHERE c.organization_id = $1
 		GROUP BY cc.category_id
 	`
-	rows, err := r.DB.Query(ctx, categoryQuery, orgID)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, categoryQuery, orgID)
 	if err != nil {
 		db.CaptureError(err, categoryQuery, []any{orgID}, "query")
 		return nil, errx.InternalError()
@@ -2097,7 +2097,7 @@ func (r *contactRepository) DistinctCustomFieldKeys(ctx context.Context, orgID u
 		ORDER BY count(*) DESC, key ASC
 		LIMIT 200
 	`
-	rows, err := r.DB.Query(ctx, query, orgID)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, orgID)
 	if err != nil {
 		db.CaptureError(err, query, []any{orgID}, "query")
 		return nil, err
@@ -2285,7 +2285,7 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 		WHERE cl.campaign_id = $1
 	`, done, live, undeliverableClause("$1"), held, progressIsEmailStep("p"))
 	out := &models.CampaignLeadCounts{}
-	if err := r.DB.QueryRow(ctx, query, campaignID, orgID, config.CampaignSendMaxAttempts).Scan(
+	if err := resultDB(ctx, r.DB).QueryRow(ctx, query, campaignID, orgID, config.CampaignSendMaxAttempts).Scan(
 		&out.Total, &out.Unsubscribed, &out.Bounced, &out.Replied, &out.Failed, &out.Completed, &out.Paused, &out.Processing, &out.Undeliverable, &out.Queued,
 		&out.Contacted, &out.Opened, &out.Clicked, &out.RepliedAny,
 		&out.Providers.Google, &out.Providers.Microsoft, &out.Providers.Other, &out.Providers.Undetected,
@@ -2300,7 +2300,7 @@ func (r *contactRepository) CampaignLeadCounts(ctx context.Context, orgID, campa
 }
 
 func (r *contactRepository) Update(ctx context.Context, userID, contactID string, orgID uuid.UUID, data *models.UpdateContact) (*models.Contact, *errx.Error) {
-	tx, err := r.DB.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.DB)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
@@ -2822,7 +2822,7 @@ func (r *contactRepository) Update(ctx context.Context, userID, contactID string
 }
 
 func (r *contactRepository) BulkUpdate(ctx context.Context, userID string, orgID uuid.UUID, data *models.BulkEditContactsData) ([]models.Contact, *errx.Error) {
-	tx, err := r.DB.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.DB)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
@@ -3211,7 +3211,7 @@ func (r *contactRepository) ResolveCategoryNames(ctx context.Context, orgID, use
 	// workspace-wide deliberately did not merge two members' identically named
 	// categories, so a title can resolve to more than one row. Without an order
 	// an import would file the same name under a different category run to run.
-	rows, err := r.DB.Query(ctx, `
+	rows, err := resultDB(ctx, r.DB).Query(ctx, `
 		SELECT id, LOWER(title) FROM categories
 		WHERE organization_id = $1 AND LOWER(title) = ANY($2::text[])
 		ORDER BY "position" ASC, created_at ASC, id ASC
@@ -3251,7 +3251,7 @@ func (r *contactRepository) ResolveCategoryNames(ctx context.Context, orgID, use
 	// Positions continue after whatever the workspace already has, so the new
 	// categories land at the end of the list instead of colliding.
 	var nextPos int32
-	if err := r.DB.QueryRow(ctx,
+	if err := resultDB(ctx, r.DB).QueryRow(ctx,
 		`SELECT COALESCE(MAX(position), -1) + 1 FROM categories WHERE organization_id = $1`,
 		orgID).Scan(&nextPos); err != nil {
 		db.CaptureError(err, "", nil, "ResolveCategoryNames position")
@@ -3259,7 +3259,7 @@ func (r *contactRepository) ResolveCategoryNames(ctx context.Context, orgID, use
 	}
 	for _, lower := range missing {
 		id := uuid.New()
-		if _, err := r.DB.Exec(ctx, `
+		if _, err := resultDB(ctx, r.DB).Exec(ctx, `
 			INSERT INTO categories (id, organization_id, user_id, title, color, position)
 			VALUES ($1, $2, $3, $4, $5, $6)
 		`, id, orgID, userID, seen[lower], defaultGroupColor(nextPos), nextPos); err != nil {
@@ -3289,7 +3289,7 @@ func (r *contactRepository) GetByEmailsAndUser(ctx context.Context, userID uuid.
 		return out, nil
 	}
 
-	rows, err := r.DB.Query(ctx, `
+	rows, err := resultDB(ctx, r.DB).Query(ctx, `
 		SELECT id, first_name, last_name, email, company, phone, custom_fields, subscribed, updated_at, created_at
 		FROM contacts
 		WHERE user_id = $1 AND LOWER(email) = ANY($2)
@@ -3335,7 +3335,7 @@ func (r *contactRepository) ImportLookup(ctx context.Context, orgID, userID uuid
 		FROM contacts
 		WHERE LOWER(email) = ANY($3::text[]) AND (organization_id = $1 OR user_id = $2)
 		ORDER BY LOWER(email), (organization_id = $1) DESC, (user_id = $2) DESC, created_at ASC, id ASC`
-	rows, err := r.DB.Query(ctx, query, orgID, userID, norm)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, orgID, userID, norm)
 	if err != nil {
 		db.CaptureError(err, query, nil, "ImportLookup query")
 		return nil, nil, errx.InternalError()
@@ -3423,7 +3423,7 @@ func (r *contactRepository) ImportUpdate(ctx context.Context, orgID uuid.UUID, r
 		)
 	}
 
-	tx, err := r.DB.Begin(ctx)
+	tx, err := beginResultTx(ctx, r.DB)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
 		return nil, errx.InternalError()
@@ -3527,7 +3527,7 @@ func (r *contactRepository) ExportAll(ctx context.Context, orgID string, filters
 func (r *contactRepository) GetContactCount(ctx context.Context, userID string) (int, *errx.Error) {
 	query := `SELECT COUNT(*) FROM contacts WHERE user_id = $1`
 	var count int
-	err := r.DB.QueryRow(ctx, query, userID).Scan(&count)
+	err := resultDB(ctx, r.DB).QueryRow(ctx, query, userID).Scan(&count)
 	if err != nil {
 		db.CaptureError(err, query, []any{userID}, "queryrow")
 		return 0, errx.InternalError()
@@ -3587,7 +3587,7 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 		WHERE c.id = $1 AND %s
 	`, campScope, catScope, rowScope)
 	mainArgs := []any{contactID, scopeArg}
-	err := r.DB.QueryRow(ctx, mainQuery, mainArgs...).Scan(
+	err := resultDB(ctx, r.DB).QueryRow(ctx, mainQuery, mainArgs...).Scan(
 		&detail.ID, &detail.FirstName, &detail.LastName, &detail.Email,
 		&detail.Company, &detail.Phone, &detail.CustomFields, &detail.Subscribed,
 		&detail.UpdatedAt, &detail.CreatedAt,
@@ -3643,7 +3643,7 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 		FROM campaign_contact_progress p
 		WHERE contact_id = $1
 	`
-	if err := r.DB.QueryRow(ctx, engQuery, contactID).Scan(
+	if err := resultDB(ctx, r.DB).QueryRow(ctx, engQuery, contactID).Scan(
 		&detail.Engagement.TotalSent, &detail.Engagement.TotalOpened,
 		&detail.Engagement.TotalClicked, &detail.Engagement.TotalReplied,
 		&detail.Engagement.TotalBounced,
@@ -3670,7 +3670,7 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 			ORDER BY MAX(o.opened_at) DESC
 			LIMIT 4
 		`
-		rrows, qerr := r.DB.Query(ctx, readsQuery, contactID, *orgID)
+		rrows, qerr := resultDB(ctx, r.DB).Query(ctx, readsQuery, contactID, *orgID)
 		if qerr != nil {
 			db.CaptureError(qerr, readsQuery, []any{contactID, *orgID}, "GetDetail reads on")
 			return nil, errx.InternalError()
@@ -3702,7 +3702,7 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 			  AND event_type = 'complaint'
 			  AND (contact_id = $2 OR LOWER(recipient_email) = LOWER($3))
 		`
-		if err := r.DB.QueryRow(ctx, complaintQuery, *orgID, contactID, detail.Email).Scan(
+		if err := resultDB(ctx, r.DB).QueryRow(ctx, complaintQuery, *orgID, contactID, detail.Email).Scan(
 			&detail.Engagement.TotalComplained,
 		); err != nil {
 			db.CaptureError(err, complaintQuery, []any{*orgID, contactID, detail.Email}, "GetDetail complaints")
@@ -3722,7 +3722,7 @@ func (r *contactRepository) GetDetail(ctx context.Context, userID uuid.UUID, org
 			LIMIT 1
 		`
 		var s models.ContactSuppression
-		err := r.DB.QueryRow(ctx, suppQuery, *orgID, detail.Email).Scan(
+		err := resultDB(ctx, r.DB).QueryRow(ctx, suppQuery, *orgID, detail.Email).Scan(
 			&s.ID, &s.Kind, &s.Value, &s.Reason, &s.Source, &s.ExpiresAt, &s.CreatedAt,
 		)
 		switch {
@@ -3794,7 +3794,7 @@ func (r *contactRepository) ListSentEmails(ctx context.Context, orgID, contactID
 		LIMIT $%d
 	`, cursorClause, len(args))
 
-	rows, err := r.DB.Query(ctx, query, args...)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, query, args...)
 	if err != nil {
 		db.CaptureError(err, query, args, "ListSentEmails")
 		return nil, errx.InternalError()
@@ -3884,7 +3884,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 	// joins (suppression, deliverability fallback, reply_intents) key
 	// off email rather than contact_id.
 	var contactEmail string
-	if err := r.DB.QueryRow(ctx,
+	if err := resultDB(ctx, r.DB).QueryRow(ctx,
 		`SELECT email FROM contacts WHERE id = $1 AND organization_id = $2`,
 		contactID, orgID,
 	).Scan(&contactEmail); err != nil {
@@ -3968,7 +3968,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 		models.TimelineSourceProgressReplied,
 		models.TimelineSourceProgressBounced,
 	)
-	prows, err := r.DB.Query(ctx, progressQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
+	prows, err := resultDB(ctx, r.DB).Query(ctx, progressQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, progressQuery, []any{contactID, orgID, after.At, afterSource, after.ID, fetch}, "ListTimeline progress")
 		return nil, errx.InternalError()
@@ -4051,7 +4051,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 		ORDER BY lc.clicked_at DESC, lc.id DESC
 		LIMIT $6
 	`
-	crows, err := r.DB.Query(ctx, clickQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
+	crows, err := resultDB(ctx, r.DB).Query(ctx, clickQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, clickQuery, []any{contactID, orgID, after.At, afterSource, after.ID, fetch}, "ListTimeline link clicks")
 		return nil, errx.InternalError()
@@ -4136,7 +4136,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 		ORDER BY o.opened_at DESC, o.id DESC
 		LIMIT $6
 	`
-	orows, err := r.DB.Query(ctx, openQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
+	orows, err := resultDB(ctx, r.DB).Query(ctx, openQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, openQuery, []any{contactID, orgID, after.At, afterSource, after.ID, fetch}, "ListTimeline opens")
 		return nil, errx.InternalError()
@@ -4206,7 +4206,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 			ORDER BY ri.created_at DESC, ri.id DESC
 			LIMIT $6
 		`
-	rrows, err := r.DB.Query(ctx, replyQuery, orgID, contactEmail, after.At, afterSource, after.ID, fetch)
+	rrows, err := resultDB(ctx, r.DB).Query(ctx, replyQuery, orgID, contactEmail, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, replyQuery, nil, "ListTimeline replies")
 		return nil, errx.InternalError()
@@ -4243,7 +4243,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 			ORDER BY de.created_at DESC, de.id DESC
 			LIMIT $7
 		`
-	drows, err := r.DB.Query(ctx, delivQuery, orgID, contactID, contactEmail, after.At, afterSource, after.ID, fetch)
+	drows, err := resultDB(ctx, r.DB).Query(ctx, delivQuery, orgID, contactID, contactEmail, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, delivQuery, nil, "ListTimeline deliv")
 		return nil, errx.InternalError()
@@ -4284,7 +4284,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 			ORDER BY created_at DESC, id DESC
 			LIMIT $6
 		`
-	srows, err := r.DB.Query(ctx, suppQuery, orgID, contactEmail, after.At, afterSource, after.ID, fetch)
+	srows, err := resultDB(ctx, r.DB).Query(ctx, suppQuery, orgID, contactEmail, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, suppQuery, nil, "ListTimeline suppression")
 		return nil, errx.InternalError()
@@ -4325,7 +4325,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 			ORDER BY created_at DESC, id DESC
 			LIMIT $6
 		`
-	nrows, err := r.DB.Query(ctx, notesQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
+	nrows, err := resultDB(ctx, r.DB).Query(ctx, notesQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, notesQuery, nil, "ListTimeline notes")
 		return nil, errx.InternalError()
@@ -4363,7 +4363,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 			ORDER BY created_at DESC, id DESC
 			LIMIT $6
 		`
-	mrows, err := r.DB.Query(ctx, meetingQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
+	mrows, err := resultDB(ctx, r.DB).Query(ctx, meetingQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, meetingQuery, nil, "ListTimeline meetings")
 		return nil, errx.InternalError()
@@ -4424,7 +4424,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 			ORDER BY created_at DESC, id DESC
 			LIMIT $6
 		`
-	lrows, err := r.DB.Query(ctx, lifeQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
+	lrows, err := resultDB(ctx, r.DB).Query(ctx, lifeQuery, contactID, orgID, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, lifeQuery, nil, "ListTimeline lifecycle")
 		return nil, errx.InternalError()
@@ -4493,7 +4493,7 @@ func (r *contactRepository) ListTimeline(ctx context.Context, orgID, contactID u
 			ORDER BY h.occurred_at DESC, h.id DESC
 			LIMIT $6
 		`
-	hrows, err := r.DB.Query(ctx, hitQuery, orgID, contactID, after.At, afterSource, after.ID, fetch)
+	hrows, err := resultDB(ctx, r.DB).Query(ctx, hitQuery, orgID, contactID, after.At, afterSource, after.ID, fetch)
 	if err != nil {
 		db.CaptureError(err, hitQuery, nil, "ListTimeline page hits")
 		return nil, errx.InternalError()

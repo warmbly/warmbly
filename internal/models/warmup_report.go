@@ -34,23 +34,31 @@ func (r PoolLinkWarmupReportRequest) Range() (time.Time, time.Time, error) {
 }
 
 type WarmupPlacementDayRow struct {
-	SenderID uuid.UUID `json:"sender_id"`
-	Email    string    `json:"email"`
-	Date     string    `json:"date"`
-	Group    string    `json:"group"`
-	Inbox    int       `json:"inbox"`
-	Tabs     int       `json:"tabs"`
-	Spam     int       `json:"spam"`
-	Rescued  int       `json:"rescued"`
+	SenderID     uuid.UUID `json:"sender_id"`
+	Email        string    `json:"email"`
+	Date         string    `json:"date"`
+	Group        string    `json:"group"`
+	Inbox        int       `json:"inbox"`
+	Tabs         int       `json:"tabs"`
+	Spam         int       `json:"spam"`
+	Rescued      int       `json:"rescued"`
+	Unknown      int       `json:"unknown"`
+	Archived     int       `json:"archived"`
+	Custom       int       `json:"custom"`
+	Instrumented int       `json:"instrumented_receipts"`
 }
 
 type WarmupPlacementHostRow struct {
-	Group   string `json:"group"`
-	Host    string `json:"host"`
-	Inbox   int    `json:"inbox"`
-	Tabs    int    `json:"tabs"`
-	Spam    int    `json:"spam"`
-	Rescued int    `json:"rescued"`
+	Group        string `json:"group"`
+	Host         string `json:"host"`
+	Inbox        int    `json:"inbox"`
+	Tabs         int    `json:"tabs"`
+	Spam         int    `json:"spam"`
+	Rescued      int    `json:"rescued"`
+	Unknown      int    `json:"unknown"`
+	Archived     int    `json:"archived"`
+	Custom       int    `json:"custom"`
+	Instrumented int    `json:"instrumented_receipts"`
 }
 
 type WarmupSenderDayCount struct {

@@ -5,26 +5,28 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/warmbly/warmbly/internal/events"
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/pkg/displayname"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // EmailMessage represents an email to be sent
 type EmailMessage struct {
-	From      string
-	To        []string
-	CC        []string
-	BCC       []string
-	Subject   string
-	BodyHTML  string
-	BodyPlain string
-	InReplyTo string
-	MessageID string
+	From          string
+	To            []string
+	CC            []string
+	BCC           []string
+	Subject       string
+	BodyHTML      string
+	BodyPlain     string
+	InReplyTo     string
+	References    []string
+	DispatchNonce string
+	MessageID     string
 	// ThreadID is the provider-side conversation handle. Gmail only appends to
 	// an existing thread when it is set on the outbound message; a matching
 	// Subject and In-Reply-To are not enough.
@@ -74,6 +76,7 @@ type emailSender struct {
 	emailRepo repository.EmailRepository
 	publisher events.Publisher
 	liveness  WorkerLiveness
+	admission repository.OutboundAdmissionRepository
 }
 
 // NewEmailSender creates a new email sender
@@ -89,6 +92,18 @@ func NewEmailSender(emailRepo repository.EmailRepository, publisher events.Publi
 func (s *emailSender) WireWorkerLiveness(l WorkerLiveness) {
 	s.liveness = l
 }
+
+func (s *emailSender) WarmupWorkerReady(ctx context.Context, account models.Email) (bool, error) {
+	capable, ok := s.liveness.(interface {
+		SupportsWarmupSendProtocol(context.Context, uuid.UUID) (bool, error)
+	})
+	if !ok || account.WorkerID == nil {
+		return false, errors.New("warmup worker capability unavailable")
+	}
+	return capable.SupportsWarmupSendProtocol(ctx, *account.WorkerID)
+}
+
+func (s *emailSender) WireSendAdmission(r repository.OutboundAdmissionRepository) { s.admission = r }
 
 // Send publishes an email to the worker service for sending
 func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessage, account models.Email) error {
@@ -128,6 +143,8 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 		CC:             msg.CC,
 		BCC:            msg.BCC,
 		InReplyTo:      msg.InReplyTo,
+		References:     msg.References,
+		DispatchNonce:  msg.DispatchNonce,
 		ThreadID:       msg.ThreadID,
 		Subject:        msg.Subject,
 		MessageID:      msg.MessageID,
@@ -148,9 +165,10 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 	// them, so sending warmup as an alias would break the pairing it is
 	// meant to prove.
 	if msg.IsWarmup {
-		// Warmup reaches other workspaces' inboxes, so a name unsafe to show gives way to the address's.
-		// Never empty: the worker reads empty as "use the cached name".
-		params.FromName = displayname.DisplayableOr(account.Name, displayname.FromEmail(account.Email))
+		params.FromName = account.Name
+		if strings.ContainsAny(params.FromName, "\r\n\x00") {
+			return errors.New("invalid sender identity")
+		}
 		if params.FromName == "" {
 			params.FromName = account.Email
 		}
@@ -160,6 +178,28 @@ func (s *emailSender) Send(ctx context.Context, taskID uuid.UUID, msg EmailMessa
 		// campaign and unibox mail points replies elsewhere.
 		params.ReplyTo = account.ReplyToHeader()
 	}
+
+	if s.admission == nil {
+		return repository.ErrSendAdmissionDenied
+	}
+	recipients := append(append(append([]string{}, msg.To...), msg.CC...), msg.BCC...)
+	nonce, err := s.admission.ReserveOutbound(ctx, repository.OutboundReservation{
+		TaskID: taskID, MailboxID: account.ID, OrganizationID: *account.OrganizationID, WorkerID: *workerID,
+		Provider: models.InboxProvider(account.Provider), Recipients: recipients,
+	})
+	if err != nil {
+		if msg.IsWarmup && msg.DispatchNonce != "" {
+			if r, ok := s.admission.(repository.WarmupDispatchRepository); ok {
+				if n, nerr := uuid.Parse(msg.DispatchNonce); nerr == nil {
+					if derr := r.DeferWarmupDispatch(ctx, taskID, account.ID, *workerID, n, time.Now().Add(5*time.Minute)); derr != nil {
+						return derr
+					}
+				}
+			}
+		}
+		return err
+	}
+	params.DispatchNonce = nonce.String()
 
 	// Publish send email event to worker
 	if err := s.publisher.PublishSendEmail(ctx, *workerID, params); err != nil {
@@ -196,6 +236,16 @@ type HeartbeatChecker interface {
 type workerLiveness struct {
 	repo      WorkerLiveness
 	heartbeat HeartbeatChecker
+}
+
+func (w *workerLiveness) SupportsWarmupSendProtocol(ctx context.Context, id uuid.UUID) (bool, error) {
+	repo, ok := w.repo.(interface {
+		SupportsWarmupSendProtocol(context.Context, uuid.UUID) (bool, error)
+	})
+	if !ok {
+		return false, errors.New("worker capability unavailable")
+	}
+	return repo.SupportsWarmupSendProtocol(ctx, id)
 }
 
 // NewWorkerLiveness builds the liveness check Send uses. heartbeat may be nil.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/jobrun"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -15,19 +16,7 @@ import (
 // mops up any overflow.
 const stuckSendBatch = 200
 
-// A campaign step is reserved before its SEND_EMAIL goes on the bus and is
-// resolved by the worker's answer: EMAIL_SENT stamps it, EMAIL_FAILED walks it
-// back. When neither ever arrives — the worker died mid-send, or the result was
-// lost — the reservation would hold the lead in flight forever, because routing
-// deliberately refuses to offer a step whose outcome is unknown.
-//
-// This sweep is what ends that state. After
-// config.CampaignSendReclaimAfterMinutes it treats the outcome as lost and
-// walks the step back through the same path a worker failure takes: the
-// attempt is counted, the day's counters are given back, the failure is written
-// to the campaign's activity log, and the lead is dropped once the retry cap is
-// spent. A worker that did answer with a Message-ID is believed instead, and
-// its step is stamped rather than retried.
+// Missing worker outcomes stay held; a confirmed Message-ID permits reconciliation.
 func (s *JobsService) StartStuckSendReclaimer(ctx context.Context, interval time.Duration) {
 	if s.TaskRepo == nil || s.CampaignProgressRepo == nil {
 		return
@@ -76,6 +65,22 @@ func (s *JobsService) reclaimStuckSend(ctx context.Context, d repository.StuckDi
 		if task, err = s.TaskRepo.GetTask(ctx, *d.TaskID); err != nil {
 			return "", err
 		}
+	}
+	if recovery, ok := s.TaskRepo.(repository.SendResultRecovery); ok {
+		if task == nil {
+			return "", nil
+		}
+		result := models.SendEmailResult{TaskID: task.ID, Success: task.MessageID != "", MessageID: task.MessageID}
+		err := recovery.ApplySendResult(ctx, result, func(ctx context.Context) error {
+			if result.Success {
+				return s.applyEmailSent(ctx, result)
+			}
+			return nil
+		})
+		if result.Success {
+			return "stamped", err
+		}
+		return "held", err
 	}
 	if task == nil {
 		// Nothing left to attribute the outcome to: the task was never

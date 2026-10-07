@@ -8,6 +8,8 @@ import (
 )
 
 func (w *WMail) SyncMail(ctx context.Context) *errx.MailError {
+	w.retryDiagnostics(ctx)
+	defer w.retryDiagnostics(ctx)
 	switch w.EmailType {
 	case models.InboxProviderGoogle:
 		return w.SyncGoogle(ctx)

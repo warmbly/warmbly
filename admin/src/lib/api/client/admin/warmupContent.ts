@@ -30,6 +30,10 @@ export interface WarmupSegmentStock {
 }
 
 export interface WarmupContentOverview {
+	/** Absent on an old backend: controls must remain unavailable. */
+	generation_enabled?: boolean;
+	effective_settings?: WarmupGenerationSettings;
+	provider_capability?: string;
     total_active: number;
     total_archived: number;
     by_pool: WarmupContentPoolBreakdown[];
@@ -44,10 +48,33 @@ export interface WarmupContentOverview {
     ai_selection_share: number;
     daily_generation_cap: number;
     generated_today: number;
+    reserved_today?: number;
     stock: WarmupSegmentStock[];
 }
 
+export interface WarmupGenerationSettings {
+    generation_enabled: boolean;
+    enabled: boolean;
+    schedule_enabled: boolean;
+    cadence_hours: number;
+    refresh_enabled: boolean;
+    refresh_per_run: number;
+    daily_generation_cap: number;
+    ai_selection_share: number;
+    model: string;
+    max_messages_per_thread: number;
+    pools: { pool_type: string; enabled: boolean; target_active_threads: number; segments: string[] }[];
+    engagement: { spam_rescue_rate: number; important_rate: number; read_rate: number; star_rate: number; min_dwell_seconds: number; max_dwell_seconds: number };
+}
+
+export function putWarmupGenerationSettings(settings: Partial<WarmupGenerationSettings>): Promise<{ data: WarmupGenerationSettings }> {
+    return Request({ method: "PUT", url: "/admin/warmup-content/settings", data: settings, authorization: true });
+}
+
 export interface WarmupConversationRow {
+	semantic_review?: string;
+	scenario_version?: string;
+	rendering_version?: string;
     id: string;
     pool_type: string;
     segment: string;
@@ -63,6 +90,9 @@ export interface WarmupConversationRow {
 }
 
 export interface WarmupConversationDetail {
+    semantic_review?: string;
+    scenario_version?: string;
+    rendering_version?: string;
     id: string;
     pool_type: string;
     segment: string;
@@ -113,6 +143,8 @@ const TERMINAL_JOB_STATUS: ReadonlySet<string> = new Set([
 ]);
 
 export interface WarmupGenerationJob {
+    content_version?: string;
+    max_messages_per_thread?: number;
     id: string;
     requested_by: string | null;
     trigger: string;

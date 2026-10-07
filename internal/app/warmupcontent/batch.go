@@ -3,6 +3,7 @@ package warmupcontent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/generation"
-	"github.com/warmbly/warmbly/internal/pkg/humanlint"
 	"github.com/warmbly/warmbly/internal/pkg/warmlint"
 )
 
@@ -49,7 +49,13 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 		req.Count = maxPerBatch
 	}
 
-	settings, _ := s.repo.GetGenerationSettings(ctx)
+	settings, err := s.repo.GetGenerationSettings(ctx)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if settings == nil || !settings.GenerationEnabled {
+		return uuid.Nil, ErrGenerationStopped
+	}
 	if req.Model == "" && settings != nil {
 		req.Model = settings.Model
 	}
@@ -60,6 +66,7 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 	if req.MaxMessages > 0 {
 		maxMessages = req.MaxMessages
 	}
+	maxMessages = max(1, min(5, maxMessages))
 
 	// Respect the daily generation cap (shared with the sync/scheduled paths) so
 	// a huge batch can't blow past the admin's budget for the day.
@@ -77,19 +84,28 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 	if window == "" {
 		window = "24h"
 	}
+	if window != "24h" {
+		return uuid.Nil, fmt.Errorf("batch completion window must be 24h")
+	}
+	if err := s.gen.CheckModel(ctx, req.Model); err != nil {
+		return uuid.Nil, err
+	}
 
+	version := generation.DiagnosticScenarioVersion
 	job := &models.WarmupGenerationJob{
-		ID:               uuid.New(),
-		RequestedBy:      req.RequestedBy,
-		Trigger:          req.Trigger,
-		Mode:             models.WarmupGenerationModeBatch,
-		PoolType:         req.PoolType,
-		Segment:          req.Segment,
-		Theme:            req.Theme,
-		Model:            req.Model,
-		RequestedCount:   req.Count,
-		Status:           "pending",
-		CompletionWindow: window,
+		ContentVersion:       &version,
+		MaxMessagesPerThread: &maxMessages,
+		ID:                   uuid.New(),
+		RequestedBy:          req.RequestedBy,
+		Trigger:              req.Trigger,
+		Mode:                 models.WarmupGenerationModeBatch,
+		PoolType:             req.PoolType,
+		Segment:              req.Segment,
+		Theme:                req.Theme,
+		Model:                req.Model,
+		RequestedCount:       req.Count,
+		Status:               "pending",
+		CompletionWindow:     window,
 	}
 
 	// custom_id → theme so results map back after the (unordered) batch returns.
@@ -115,13 +131,13 @@ func (s *service) GenerateBatch(ctx context.Context, req GenerateRequest) (uuid.
 	if err != nil {
 		now := time.Now()
 		job.Status = "failed"
-		job.Error = err.Error()
+		job.Error = "provider batch submission failed"
 		job.StartedAt = &now
 		job.FinishedAt = &now
 		if updateErr := s.repo.UpdateGenerationJob(ctx, job); updateErr != nil {
 			return uuid.Nil, updateErr
 		}
-		return uuid.Nil, err
+		return uuid.Nil, fmt.Errorf("provider batch submission failed")
 	}
 
 	now := time.Now()
@@ -172,7 +188,7 @@ func (s *service) PollBatches(ctx context.Context) error {
 func (s *service) pollBatchJob(ctx context.Context, job *models.WarmupGenerationJob) error {
 	state, err := s.gen.GetBatch(ctx, job.BatchID)
 	if err != nil {
-		return err
+		return fmt.Errorf("provider batch status unavailable")
 	}
 	job.BatchStatus = state.Status
 
@@ -231,9 +247,6 @@ func endedBatchOutcome(state generation.BatchState) batchOutcome {
 		return batchOutcome{ResultsFileID: results}
 	}
 	reason := fmt.Sprintf("batch %s", state.Status)
-	if state.FailureReason != "" {
-		reason += ": " + state.FailureReason
-	}
 	return batchOutcome{ResultsFileID: results, Error: reason}
 }
 
@@ -242,12 +255,7 @@ func endedBatchOutcome(state generation.BatchState) batchOutcome {
 func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJob, outputFileID string, counts generation.BatchCounts) error {
 	results, err := s.gen.FetchBatchResults(ctx, outputFileID)
 	if err != nil {
-		now := time.Now()
-		job.Status = "failed"
-		job.FinishedAt = &now
-		job.Error = err.Error()
-		_ = s.repo.UpdateGenerationJob(ctx, job)
-		return err
+		return fmt.Errorf("provider batch results unavailable")
 	}
 
 	// Reset the per-ingest counters; the output file is the source of truth.
@@ -255,14 +263,16 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 	job.LintRejectedCount = 0
 	job.FailedCount = 0
 
+	seen := make(map[string]bool, len(results))
 	for i := range results {
 		r := &results[i]
+		index, indexErr := strconv.Atoi(strings.TrimPrefix(r.CustomID, job.ID.String()+"-"))
+		if !strings.HasPrefix(r.CustomID, job.ID.String()+"-") || indexErr != nil || index < 0 || index >= job.RequestedCount || r.CustomID != fmt.Sprintf("%s-%d", job.ID, index) || seen[r.CustomID] {
+			continue
+		}
+		seen[r.CustomID] = true
 		if r.Err != "" || r.Conversation == nil {
 			job.FailedCount++
-			if r.Err != "" {
-				log.Debug().Str("job_id", job.ID.String()).Str("custom_id", r.CustomID).Str("err", r.Err).
-					Msg("warmup batch generation: result line failed")
-			}
 			continue
 		}
 
@@ -275,57 +285,95 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 			job.FailedCount++
 			continue
 		}
-
-		// Humanize before the gates (identical to the sync runJob path).
-		subject, description, messages = humanizeThread(subject, description, messages)
-
-		lintBody := description
-		if len(messages) > 0 {
-			lintBody += "\n\n" + strings.Join(messages, "\n")
+		recordID := batchConversationID(job.ID, r.CustomID)
+		prior, err := s.repo.GetConversation(ctx, recordID)
+		if err != nil {
+			return err
 		}
-		if humanlint.LooksRobotic(lintBody) {
+		if prior != nil {
+			if prior.SemanticReview == "passed" || prior.SemanticReview == "legacy_unreviewed" {
+				job.GeneratedCount++
+			}
+			if prior.SemanticReview == "rejected" {
+				job.LintRejectedCount++
+			}
+			if prior.SemanticReview == "unavailable" {
+				job.FailedCount++
+			}
+			continue
+		}
+		if job.ContentVersion == nil {
+			record := &models.WarmupConversation{ID: recordID, PoolType: job.PoolType, Segment: job.Segment, Source: models.WarmupContentSourceAI, Theme: theme, Subject: subject, Description: description, Messages: messages, Status: models.WarmupConversationArchived, SemanticReview: "legacy_unreviewed", GeneratedByJob: &job.ID}
+			if err := s.repo.InsertConversation(ctx, record); err != nil {
+				job.FailedCount++
+				return err
+			}
+			job.GeneratedCount++
+			continue
+		}
+		if *job.ContentVersion != generation.DiagnosticScenarioVersion {
+			job.FailedCount++
+			continue
+		}
+		if job.MaxMessagesPerThread != nil && len(messages) != *job.MaxMessagesPerThread {
 			job.LintRejectedCount++
 			continue
 		}
+
+		// Preserve canonical facts before reviewing the complete rendered thread.
+		subject, description, messages = preserveCanonicalThread(subject, description, messages)
+		rendered, err := generation.RenderDiagnostic(generation.Conversation{Subject: subject, Description: description, Messages: messages}, [2]string{"Mailbox A (diagnostic)", "Mailbox B (diagnostic)"})
+		if err != nil {
+			job.LintRejectedCount++
+			continue
+		}
+		lintBody := rendered.Description + "\n\n" + strings.Join(rendered.Messages, "\n")
 		if err := warmlint.Check(subject, lintBody, false); err != nil {
 			job.LintRejectedCount++
 			continue
 		}
-		// One TypeSafe call per generated thread, offline in the batch poller,
-		// so the daily generation cap already bounds its cost.
+		review, status := "unavailable", models.WarmupConversationArchived
 		if s.judge != nil {
-			if judgment, err := judgeThread(ctx, s.judge, subject, description, messages); err != nil {
-				// An outage must never empty the bank: the thread stays.
-				log.Debug().Err(err).Str("job_id", job.ID.String()).
-					Msg("warmup batch generation: thread judgment unavailable, accepting")
-			} else if reject, reason := judgment.Reject(); reject {
-				job.LintRejectedCount++
-				log.Debug().Str("job_id", job.ID.String()).Str("reason", reason).
-					Msg("warmup batch generation: thread rejected by judgment")
-				continue
+			if judgment, err := judgeThread(ctx, s.judge, rendered.Subject, rendered.Description, rendered.Messages); err != nil {
+				review = "unavailable"
+				job.FailedCount++
+			} else {
+				if reject, _ := judgment.Reject(); reject {
+					review = "rejected"
+					job.LintRejectedCount++
+				} else {
+					review, status = "passed", models.WarmupConversationActive
+				}
 			}
+		} else {
+			job.FailedCount++
 		}
+		scenarioVersion, renderingVersion := generation.DiagnosticScenarioVersion, generation.CanonicalRenderingVersion
 
 		record := &models.WarmupConversation{
-			ID:             uuid.New(),
-			PoolType:       job.PoolType,
-			Segment:        job.Segment,
-			Source:         models.WarmupContentSourceAI,
-			Theme:          theme,
-			Subject:        subject,
-			Description:    description,
-			Messages:       messages,
-			Status:         "active",
-			LintPassed:     true,
-			ReplyEligible:  true,
-			GeneratedByJob: &job.ID,
+			ID:               recordID,
+			PoolType:         job.PoolType,
+			Segment:          job.Segment,
+			Source:           models.WarmupContentSourceAI,
+			Theme:            theme,
+			Subject:          subject,
+			Description:      description,
+			Messages:         messages,
+			Status:           status,
+			LintPassed:       true,
+			ReplyEligible:    status == models.WarmupConversationActive,
+			GeneratedByJob:   &job.ID,
+			ScenarioVersion:  &scenarioVersion,
+			RenderingVersion: &renderingVersion,
+			SemanticReview:   review,
 		}
 		if err := s.repo.InsertConversation(ctx, record); err != nil {
 			job.FailedCount++
-			errs.CaptureException(err)
-			continue
+			return err
 		}
-		job.GeneratedCount++
+		if status == models.WarmupConversationActive {
+			job.GeneratedCount++
+		}
 	}
 
 	// The output file already contains one line per request (success or error),
@@ -334,7 +382,7 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 	// added on top (that would double-count); it's reconciled only if the output
 	// reported fewer lines than the batch's total, which shouldn't normally
 	// happen but guards against a truncated/partial download.
-	if missing := counts.Total - len(results); missing > 0 {
+	if missing := max(counts.Total, job.RequestedCount) - len(seen); missing > 0 {
 		job.FailedCount += missing
 	}
 
@@ -345,11 +393,6 @@ func (s *service) ingestBatch(ctx context.Context, job *models.WarmupGenerationJ
 		job.Status = "failed"
 		if job.Error == "" {
 			job.Error = fmt.Sprintf("all %d batch results failed", job.FailedCount)
-			// One line's reason is worth more than the count: when every
-			// request is refused it is the same reason for all of them.
-			if reason := firstResultError(results); reason != "" {
-				job.Error += ": " + reason
-			}
 		}
 	}
 	if err := s.repo.UpdateGenerationJob(ctx, job); err != nil {
@@ -411,7 +454,7 @@ func (s *service) CancelBatch(ctx context.Context, jobID uuid.UUID) error {
 	}
 
 	if err := s.gen.CancelBatch(ctx, job.BatchID); err != nil {
-		return err
+		return fmt.Errorf("provider batch cancellation failed")
 	}
 
 	// A conditional write: if the poller finished the job between the read
@@ -419,6 +462,10 @@ func (s *service) CancelBatch(ctx context.Context, jobID uuid.UUID) error {
 	// left to mark.
 	_, err = s.repo.MarkBatchCancelling(ctx, jobID, "cancelled by admin")
 	return err
+}
+
+func batchConversationID(jobID uuid.UUID, customID string) uuid.UUID {
+	return uuid.NewSHA1(jobID, []byte(customID))
 }
 
 // firstResultError returns the first non-empty per-line error in a batch's

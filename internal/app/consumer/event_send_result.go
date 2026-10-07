@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/mailhdr"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -32,6 +32,14 @@ var errSendResultEarly = errors.New("send result arrived before the task was sta
 // the delivered email would otherwise leave no sent_at for follow-up pacing to
 // read, so a reserved step is stamped here from the worker's own confirmation.
 func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEmailResult) error {
+	result.Success = true
+	if recovery, ok := s.TaskRepo.(repository.SendResultRecovery); ok {
+		return recovery.ApplySendResult(ctx, result, func(ctx context.Context) error { return s.applyEmailSent(ctx, result) })
+	}
+	return s.applyEmailSent(ctx, result)
+}
+
+func (s *JobsService) applyEmailSent(ctx context.Context, result models.SendEmailResult) error {
 	if s.TaskRepo == nil || result.TaskID == uuid.Nil {
 		return nil
 	}
@@ -50,7 +58,7 @@ func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEma
 	// keys on what the recipient actually received.
 	if result.MessageID != "" && result.MessageID != task.MessageID {
 		if err := s.TaskRepo.UpdateTaskMessageID(ctx, task.ID, result.MessageID); err != nil {
-			log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("could not record worker message id")
+			return err
 		}
 	}
 	// The provider-side conversation handle (Gmail only). Without it a
@@ -60,7 +68,7 @@ func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEma
 	// (issue #472).
 	if result.ThreadID != "" {
 		if err := s.TaskRepo.UpdateTaskThreadID(ctx, task.ID, result.ThreadID); err != nil {
-			log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("could not record worker thread id")
+			return err
 		}
 	}
 	switch task.TaskType {
@@ -87,7 +95,7 @@ func (s *JobsService) HandleEmailSent(ctx context.Context, result models.SendEma
 		// against when the verify header did not survive delivery.
 		if s.WarmupRepo != nil && result.MessageID != "" {
 			if err := s.WarmupRepo.RecordWarmupTokenDelivery(ctx, task.ID, result.MessageID); err != nil {
-				log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("could not record the delivered warmup message id")
+				return err
 			}
 		}
 	}
@@ -127,6 +135,17 @@ func (s *JobsService) repairCampaignSendStamp(ctx context.Context, task *reposit
 // that completed while the send was in flight is reopened. Once the retry cap
 // is spent the lead is marked failed and routing drops it.
 func (s *JobsService) HandleEmailFailed(ctx context.Context, result models.SendEmailResult) error {
+	result.Success = false
+	if recovery, ok := s.TaskRepo.(repository.SendResultRecovery); ok {
+		return recovery.ApplySendResult(ctx, result, func(ctx context.Context) error { return s.applyEmailFailed(ctx, result) })
+	}
+	if result.Error != nil && result.Error.Failure != nil && result.Error.Failure.Disposition == errx.SendAmbiguous {
+		return nil
+	}
+	return s.applyEmailFailed(ctx, result)
+}
+
+func (s *JobsService) applyEmailFailed(ctx context.Context, result models.SendEmailResult) error {
 	if s.TaskRepo == nil || result.TaskID == uuid.Nil {
 		return nil
 	}
@@ -247,7 +266,13 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 
 	// A refused copy that the retry will leave off costs the lead no attempt;
 	// one that could not be recorded is counted, so it cannot loop forever.
-	copyExcluded := copyRefused && s.recordRefusedCopy(ctx, task, ct, campaign, refused, reason)
+	copyExcluded := false
+	if copyRefused {
+		copyExcluded, err = s.recordRefusedCopy(ctx, task, ct, campaign, refused, reason)
+		if err != nil {
+			return err
+		}
+	}
 
 	attempts, exhausted, rolledBack := 0, false, false
 	if ct.ContactID != nil && ct.SequenceID != nil && s.CampaignProgressRepo != nil {
@@ -286,7 +311,11 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 	// suppression, guardrails, warmup health, webhooks) and the lead is
 	// dropped as bounced instead of being offered again.
 	if rolledBack && !copyRefused && code == string(errx.MailErrorCodeRecipientRejected) {
-		if s.recordSynchronousBounce(ctx, task, ct, campaign, recipient, reason) {
+		recorded, err := s.recordSynchronousBounce(ctx, task, ct, campaign, recipient, reason)
+		if err != nil {
+			return err
+		}
+		if recorded {
 			s.logCampaignSendFailure(ctx, campaignID, ct, recipient, reason, code, attempts, false, false, false)
 			s.publishCampaignUpdated(ctx, campaign, campaignID, "")
 			log.Info().Str("task_id", task.ID.String()).Str("campaign_id", campaignID.String()).Msg("campaign send refused at RCPT; recorded as bounce")
@@ -327,9 +356,9 @@ func (s *JobsService) failCampaignSend(ctx context.Context, task *repository.Tas
 // pipeline as a bounce. Returns false when the bounce could not be attributed
 // (no org, no recipient), in which case the caller falls back to the retry
 // path.
-func (s *JobsService) recordSynchronousBounce(ctx context.Context, task *repository.Task, ct *repository.CampaignTask, campaign *models.Campaign, recipient, reason string) bool {
+func (s *JobsService) recordSynchronousBounce(ctx context.Context, task *repository.Task, ct *repository.CampaignTask, campaign *models.Campaign, recipient, reason string) (bool, error) {
 	if s.AdvancedService == nil || campaign == nil || campaign.OrganizationID == nil || recipient == "" {
-		return false
+		return false, nil
 	}
 	taskID := task.ID
 	req := &models.IngestDeliverabilityEventRequest{
@@ -344,18 +373,18 @@ func (s *JobsService) recordSynchronousBounce(ctx context.Context, task *reposit
 	}
 	if xerr := s.AdvancedService.IngestDeliverabilityEvent(ctx, *campaign.OrganizationID, req); xerr != nil {
 		log.Warn().Str("task_id", taskID.String()).Str("error", xerr.Message).Msg("could not record refused recipient as a bounce")
-		return false
+		return false, xerr
 	}
-	return true
+	return true, nil
 }
 
 // recordRefusedCopy feeds a copied address the server refused at RCPT into
 // the bounce pipeline under its own name, and reports whether the next send
 // is sure to leave it off: a lead's copy through its bounced mark, a
 // campaign-wide one through the recorded bounce the send path reads.
-func (s *JobsService) recordRefusedCopy(ctx context.Context, task *repository.Task, ct *repository.CampaignTask, campaign *models.Campaign, refused, reason string) bool {
+func (s *JobsService) recordRefusedCopy(ctx context.Context, task *repository.Task, ct *repository.CampaignTask, campaign *models.Campaign, refused, reason string) (bool, error) {
 	if campaign == nil || campaign.OrganizationID == nil || ct.CampaignID == nil || ct.ContactID == nil {
-		return false
+		return false, nil
 	}
 	address := strings.ToLower(mailhdr.Bare(refused))
 	var owner *uuid.UUID
@@ -363,11 +392,12 @@ func (s *JobsService) recordRefusedCopy(ctx context.Context, task *repository.Ta
 		id, err := s.CampaignProgressRepo.MarkLeadCCBounced(ctx, *ct.CampaignID, *ct.ContactID, address)
 		if err != nil {
 			log.Warn().Err(err).Str("task_id", task.ID.String()).Msg("could not mark a refused copy bounced")
+			return false, err
 		}
 		owner = id
 	}
 	if s.AdvancedService == nil {
-		return owner != nil
+		return owner != nil, nil
 	}
 	taskID := task.ID
 	req := &models.IngestDeliverabilityEventRequest{
@@ -382,9 +412,9 @@ func (s *JobsService) recordRefusedCopy(ctx context.Context, task *repository.Ta
 	}
 	if xerr := s.AdvancedService.IngestDeliverabilityEvent(ctx, *campaign.OrganizationID, req); xerr != nil {
 		log.Warn().Str("task_id", taskID.String()).Str("error", xerr.Message).Msg("could not record a refused copy as a bounce")
-		return owner != nil
+		return false, xerr
 	}
-	return true
+	return true, nil
 }
 
 // refusedRecipient is the address the server refused, when the worker knew.
@@ -401,12 +431,14 @@ func (s *JobsService) publishCampaignUpdated(ctx context.Context, campaign *mode
 	if s.StreamingPublisher == nil || campaign == nil {
 		return
 	}
-	s.StreamingPublisher.PublishCampaignEvent(ctx, &pubsub.CampaignEvent{
-		BaseEvent:  pubsub.BaseEvent{EventType: pubsub.EventCampaignUpdated, UserID: campaign.UserID},
-		OrgID:      campaignOrgID(campaign),
-		CampaignID: campaignID.String(),
-		Name:       campaign.Name,
-		Status:     status,
+	repository.AfterSendResultCommit(ctx, func(ctx context.Context) {
+		s.StreamingPublisher.PublishCampaignEvent(ctx, &pubsub.CampaignEvent{
+			BaseEvent:  pubsub.BaseEvent{EventType: pubsub.EventCampaignUpdated, UserID: campaign.UserID},
+			OrgID:      campaignOrgID(campaign),
+			CampaignID: campaignID.String(),
+			Name:       campaign.Name,
+			Status:     status,
+		})
 	})
 }
 
@@ -468,13 +500,15 @@ func (s *JobsService) notifyUserSendFailed(ctx context.Context, task *repository
 	if s.StreamingPublisher == nil || s.EmailRepository == nil {
 		return
 	}
-	account, xerr := s.EmailRepository.GetByID(ctx, task.EmailAccountID)
-	if xerr != nil || account == nil {
-		return
-	}
-	s.StreamingPublisher.PublishEmailError(ctx, account.UserID, account.ID, task.ID,
-		"Email could not be sent",
-		fmt.Sprintf("%s could not send your email: %s", account.Email, reason))
+	accountID, taskID := task.EmailAccountID, task.ID
+	repository.AfterSendResultCommit(ctx, func(ctx context.Context) {
+		account, xerr := s.EmailRepository.GetByID(ctx, accountID)
+		if xerr != nil || account == nil {
+			return
+		}
+		s.StreamingPublisher.PublishEmailError(ctx, account.UserID, account.ID, taskID,
+			"Email could not be sent", fmt.Sprintf("%s could not send your email: %s", account.Email, reason))
+	})
 }
 
 // sendFailureReason picks the most useful human-readable reason and the

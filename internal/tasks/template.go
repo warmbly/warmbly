@@ -11,6 +11,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/unsublink"
 	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/pkg/generation"
 	"github.com/warmbly/warmbly/internal/pkg/mailhtml"
 	"github.com/warmbly/warmbly/internal/pkg/tmplfuncs"
 	"github.com/warmbly/warmbly/internal/pkg/warmpersona"
@@ -19,6 +20,8 @@ import (
 // Conversation represents a warmup conversation for AI generation
 type Conversation struct {
 	ID          uuid.UUID
+	Version     string
+	Subject     string
 	Theme       string
 	Description string
 	Messages    []string
@@ -332,8 +335,8 @@ func GenerateConversationReplyEmail(conversation Conversation, account models.Em
 	if turn < 1 || turn > len(conversation.Messages) {
 		return "", false
 	}
-	body := spinClean(conversation.Messages[turn-1])
-	if body == "" {
+	body := strings.TrimSpace(conversation.Messages[turn-1])
+	if body == "" || strings.ContainsAny(body, "<>{}\x00\r") {
 		return "", false
 	}
 
@@ -342,88 +345,109 @@ func GenerateConversationReplyEmail(conversation Conversation, account models.Em
 		signature = account.Email
 	}
 
-	persona := warmpersona.For(account.ID)
-	signoffs := []string{"Best regards,", "Best,", "Cheers,", "Thanks,", "Talk soon,", "All the best,", "Speak soon,", "Take care,"}
-	signoff := personaPick(persona, "signoff", signoffs)
-
-	return body + "\n\n" + signoff + "\n" + signature, true
+	rendered, err := generation.RenderCanonicalTurn(body, signature)
+	return rendered, err == nil
 }
 
 // GenerateConversationOpeningEmail renders an AI opening without consuming a
 // pre-generated reply turn.
 func GenerateConversationOpeningEmail(conversation Conversation, account models.Email) string {
-	return generateConversationOpeningEmail(conversation, account, false)
+	return generateConversationOpeningEmail(conversation, account)
 }
 
-// GenerateConversationEmail retains the reviewed static-library renderer.
+// GenerateConversationEmail renders an opening or the first ordered reply.
 func GenerateConversationEmail(conversation Conversation, account models.Email, isReply bool) string {
 	if isReply {
-		if body, ok := GenerateConversationReplyEmail(conversation, account, 1); ok {
-			return body
-		}
+		body, _ := GenerateConversationReplyEmail(conversation, account, 1)
+		return body
 	}
-	return generateConversationOpeningEmail(conversation, account, true)
+	return generateConversationOpeningEmail(conversation, account)
 }
 
-// generateConversationOpeningEmail renders a plaintext opening. Reviewed
-// static content can append one question; AI openings keep all ordered reply
-// turns unused for the later back-and-forth.
-func generateConversationOpeningEmail(conversation Conversation, account models.Email, includeQuestion bool) string {
+// Openings never consume a future reply or append a random question.
+func generateConversationOpeningEmail(conversation Conversation, account models.Email) string {
 	signature := account.Name
 	if signature == "" {
 		signature = account.Email
 	}
 
-	persona := warmpersona.For(account.ID)
+	description := strings.TrimSpace(conversation.Description)
+	if description == "" || strings.ContainsAny(description, "<>{}\x00\r") {
+		return ""
+	}
+	rendered, _ := generation.RenderCanonicalTurn(description, signature)
+	return rendered
+}
 
-	greetings := []string{"Hi,", "Hey,", "Hi there,", "Hello,", "Hey there,", "Morning,", "Hello there,"}
-	signoffs := []string{"Best regards,", "Best,", "Cheers,", "Thanks,", "Talk soon,", "All the best,", "Speak soon,", "Take care,"}
+// VettedDiagnosticConversations uses a separate immutable source-ID namespace.
+func VettedDiagnosticConversations() []Conversation {
+	return []Conversation{
+		{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-clock:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-clock", Subject: "Simulated diagnostic: fictional clock", Description: "Simulated diagnostic. In this fictional example, the clock reads 14:00, not 15:00. Which time does the example use?", Messages: []string{"The fictional example uses 14:00, not 15:00.", "Agreed. The example is closed; no real meeting was scheduled."}},
+		{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-count:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-count", Subject: "Simulated diagnostic: sample count", Description: "Simulated diagnostic. This hypothetical sample contains 3 blue cards and 2 green cards. How many cards are in the sample?", Messages: []string{"There are 5 cards in the hypothetical sample: 3 blue and 2 green.", "That matches the hypothetical sample. This scenario is complete; no physical cards were exchanged."}},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-document:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-document", Subject: "Simulated diagnostic: hypothetical draft review",
+			Description: "Simulated diagnostic. In this hypothetical draft, Section A lists assumptions and Section B lists unknowns. An erroneous summary says inbox placement passed, but the draft contains no measured delivery results. Which claim needs correction?",
+			Messages: []string{
+				"The hypothetical inbox-placement claim needs correction: neither assumptions nor unknowns establish a measured result. Should the summary instead distinguish Section A from Section B?",
+				"Yes. Section A lists assumptions; Section B lists unknowns. Neither section proves inbox placement. Can we close the fictional review with that distinction?",
+				"Agreed. The fictional summary distinguishes assumptions from unknowns and makes no placement claim. This review scenario is closed; no real document was reviewed or changed.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-summary:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-summary", Subject: "Simulated diagnostic: summary correction",
+			Description: "Simulated diagnostic. A fictional checklist has 12 items: 9 marked complete and 3 marked unknown, with none marked failed. A draft incorrectly calls all 12 complete. What should the corrected summary say?",
+			Messages: []string{
+				"The fictional checklist has 9 complete items and 3 unknown items, not 12 complete items. Does an unknown item count as failed or passed?",
+				"No. Unknown items are neither failed nor passed; the checklist has none marked failed. Should the corrected summary keep the 9 complete and 3 unknown counts separate?",
+				"Yes. The corrected hypothetical summary keeps 9 complete and 3 unknown items separate, with none marked failed. The example is closed; no actual provider check was performed.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-timezone:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-timezone", Subject: "Simulated diagnostic: fixed-offset date note",
+			Description: "Simulated diagnostic. On 2026-10-08 the fictional clock reads 09:00 UTC, or 11:00 at the fixed offset UTC+02:00. This is not a meeting invitation. Which local date and time belong in the hypothetical note?",
+			Messages: []string{
+				"The note should use 2026-10-08 at 11:00 with the fixed offset UTC+02:00, corresponding to 09:00 UTC. Should it keep the fixed offset rather than guess a regional timezone?",
+				"Yes. Keep 2026-10-08, 09:00 UTC and 11:00 at UTC+02:00 unchanged. The example specifies no regional timezone or meeting. Can we close without creating an appointment?",
+				"Agreed. The fictional date remains 2026-10-08, with 09:00 UTC equal to 11:00 at UTC+02:00. This example is closed; no appointment was created.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-plaintext:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-plaintext", Subject: "Simulated diagnostic: plaintext label review",
+			Description: "Simulated diagnostic. This constructed plaintext example uses written labels, not color or linked instructions. Its hypothetical items are Status: unknown and Next step: review. Can the labels be understood without opening a link?",
+			Messages: []string{
+				"Yes. Status: unknown and Next step: review are written in the example, without a link or color requirement. Does that alone prove how an email client displays a delivered message?",
+				"No. This is a locally constructed example, not a delivered-client accessibility test. Should the summary preserve the unknown status and that testing limit?",
+				"Yes. The example retains Status: unknown and Next step: review. This label-review scenario is closed; no delivered-client accessibility result is claimed.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-conditional:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-conditional", Subject: "Simulated diagnostic: conditional wording",
+			Description: "Simulated diagnostic. In a hypothetical plan, a draft may be updated only if a reviewer approves it. No approval exists, and no update is promised for 2026-10-09. What should the draft status say?",
+			Messages: []string{
+				"The hypothetical status is pending review: no approval exists and the update is conditional. Should the wording promise an update on 2026-10-09?",
+				"No. The approval condition has not been met, so no update is promised for 2026-10-09. Can we keep pending review instead of implying an approval?",
+				"Agreed. The hypothetical draft remains pending review, without approval or a promised update for 2026-10-09. This scenario is closed; no real draft was changed or commitment made.",
+			},
+		},
+		{
+			ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte("warmbly:diagnostic-summary-hu:v1")), Version: generation.DiagnosticScenarioVersion, Theme: "diagnostic-summary-hu", Subject: "Simulated diagnostic: magyar összefoglaló",
+			Description: "Simulated diagnostic. Ebben a kitalált jegyzetben 4 ellenőrzésből 3 eredménye ismeretlen, 1 pedig nincs elvégezve. Egyik sem igazolt siker. Hogyan őrizzük meg ezt a különbséget az összefoglalóban?",
+			Messages: []string{
+				"Az összefoglalóban 3 ismeretlen eredményt és 1 el nem végzett ellenőrzést írjunk; ne állítsunk sikert. Jelenthet-e az ismeretlen eredmény igazolt sikert?",
+				"Nem. Az ismeretlen nem igazolt siker, az el nem végzett ellenőrzés pedig továbbra sincs elvégezve. Maradjon ez kitalált példa, ne szolgáltatói mérés?",
+				"Igen. A kitalált példa lezárult: 3 eredmény ismeretlen, 1 ellenőrzés nincs elvégezve. Valós szolgáltatói tesztet nem végeztünk.",
+			},
+		},
+	}
+}
 
-	greeting := personaPick(persona, "greeting", greetings)
-	signoff := personaPick(persona, "signoff", signoffs)
-
-	pickMessage := func() string {
-		if len(conversation.Messages) == 0 {
-			return ""
+func ResolveDiagnosticConversation(id uuid.UUID) (Conversation, bool) {
+	for _, c := range VettedDiagnosticConversations() {
+		if c.ID == id {
+			return c, true
 		}
-		return spinClean(conversation.Messages[rand.Intn(len(conversation.Messages))])
 	}
-
-	description := spinClean(conversation.Description)
-	if description == "" {
-		description = "Just wanted to check in with a quick note."
-	}
-
-	openers := []string{
-		"Hope your week is going well.",
-		"Hope you're doing well.",
-		"Hope things are good on your end.",
-		"Hope you've had a good start to the week.",
-		"Hope all's well with you.",
-	}
-
-	var sb strings.Builder
-	sb.WriteString(greeting)
-	sb.WriteString("\n\n")
-	// ~60% include a short opener for a warmer, less terse message.
-	if rand.Float64() < 0.6 {
-		sb.WriteString(openers[rand.Intn(len(openers))])
-		sb.WriteString(" ")
-	}
-	sb.WriteString(description)
-
-	if includeQuestion {
-		if question := pickMessage(); question != "" {
-			sb.WriteString("\n\n")
-			sb.WriteString(question)
-		}
-	}
-
-	sb.WriteString("\n\n")
-	sb.WriteString(signoff)
-	sb.WriteString("\n")
-	sb.WriteString(signature)
-	return sb.String()
+	return Conversation{}, false
 }
 
 // ExtractPlainTextFromHTML derives the text/plain alternative that ships

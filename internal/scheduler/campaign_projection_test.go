@@ -21,6 +21,19 @@ func TestSimulateLeadsSingleStep(t *testing.T) {
 	}
 }
 
+func TestFullCapacityDateDoesNotProjectMissingFeedbackIntoReadiness(t *testing.T) {
+	warmed := time.Now().Add(-90 * 24 * time.Hour)
+	ramp := time.Now().Add(-30 * 24 * time.Hour)
+	p := &projectedSender{cap: 50, hasCold: true, cold: repository.ColdRampState{WarmupStartedAt: &warmed, ColdRampStartedAt: &ramp}}
+	if fullCapacityEvidenceKnown([]*projectedSender{p}) {
+		t.Fatal("synthetic age projected full-cap readiness")
+	}
+	p.cold.ConfirmedReplies = 100
+	if !fullCapacityEvidenceKnown([]*projectedSender{p}) {
+		t.Fatal("current already-full evidence lost")
+	}
+}
+
 func TestSimulateLeadsFollowUpsFirst(t *testing.T) {
 	// Two steps three days apart: day 3's capacity goes to day 0's follow-ups
 	// before any new contact.
@@ -67,27 +80,32 @@ func workday(loc *time.Location, day time.Time) (time.Time, []span) {
 	return mid, []span{{mid.Add(8 * time.Hour), mid.Add(18 * time.Hour)}}
 }
 
-func TestProjectSenderDayGraduationClimbs(t *testing.T) {
+func TestProjectSenderDayGraduationRequiresConfirmedReplies(t *testing.T) {
 	loc := time.UTC
 	start := time.Date(2026, 3, 2, 0, 0, 0, 0, loc)
 	warmed := start.AddDate(0, 0, -20)
-	p := &projectedSender{
-		acct: models.Email{CampaignLimit: 50, MinWaitTime: 60},
-		cap:  50, loc: loc, hasCold: true,
-		cold: repository.ColdRampState{WarmupStartedAt: &warmed},
-	}
-	mid, spans := workday(loc, start)
-	d0 := projectSenderDay(p, spans, mid, start, false)
-	if d0.sends != 20 || d0.graduation != 30 {
-		t.Fatalf("day 0: %+v, want 20 sends held back 30 by graduation", d0)
-	}
-	mid, spans = workday(loc, start.AddDate(0, 0, 2))
-	if d := projectSenderDay(p, spans, mid, start, false); d.sends != 30 {
-		t.Fatalf("day 2: %d sends, want 30", d.sends)
-	}
-	mid, spans = workday(loc, start.AddDate(0, 0, 10))
-	if d := projectSenderDay(p, spans, mid, start, false); d.sends != 50 || d.graduation != 0 {
-		t.Fatalf("day 10: %+v, want the full cap", d)
+	for _, tc := range []struct {
+		name    string
+		replies int
+		caps    [3]int
+	}{
+		{"synthetic age without replies", 0, [3]int{5, 5, 5}},
+		{"growth bounded by confirmed replies", 8, [3]int{5, 13, 13}},
+		{"confirmed replies permit time-bounded growth", 100, [3]int{5, 15, 50}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &projectedSender{
+				acct: models.Email{CampaignLimit: 50, MinWaitTime: 60},
+				cap:  50, loc: loc, hasCold: true,
+				cold: repository.ColdRampState{WarmupStartedAt: &warmed, ConfirmedReplies: tc.replies},
+			}
+			for i, day := range []int{0, 2, 10} {
+				mid, spans := workday(loc, start.AddDate(0, 0, day))
+				if d := projectSenderDay(p, spans, mid, start, false); d.sends != tc.caps[i] || d.graduation != 50-tc.caps[i] {
+					t.Fatalf("day %d: %+v, want %d sends and %d withheld", day, d, tc.caps[i], 50-tc.caps[i])
+				}
+			}
+		})
 	}
 }
 
