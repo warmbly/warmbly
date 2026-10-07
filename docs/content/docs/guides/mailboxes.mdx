@@ -9,6 +9,10 @@ A mailbox is a sender account you connect to Warmbly. Every warmup message and c
 
 New mailboxes default to diagnostic participation **off**. The organization-authorized mailbox PATCH exposes `test_mode` (`off`, `diagnostic`, `legacy`), separate `test_send_enabled` and `test_receive_enabled` flags, and optional positive `shared_daily_limit`/`rolling_recipient_limit`. These are API controls, not new dashboard switches. Diagnostic mode sends disclosed tests but does not manufacture reads, stars, importance or spam rescue. Existing upgraded mailboxes with NULL participation retain legacy behavior until explicitly changed. Set `test_mode=off` to stop future diagnostic send/receive admission; current protocol-2 workers also recheck queued sends/actions. Already accepted old-worker commands or a provider send underway cannot be recalled. A local Cloud alias unlink stops local authority, not an independently cloud-owned mailbox or provider grant: pause/remove that mailbox on Cloud separately. See [send safety, repair evidence and rollout](/development/send-safety/).
 
+## Filtering accounts
+
+Use the **Tags** dropdown above the mailbox list to show accounts with a particular tag. The selection is kept in the page URL, so refreshing the page or opening a bookmark keeps the filter. Choose **All accounts** to clear it. A tag that no longer exists in the current workspace falls back to **All accounts**.
+
 ## Connecting an account
 
 Open **Accounts** and choose **Add account**. Google and Microsoft each have one entry, and choosing it asks how to connect:
