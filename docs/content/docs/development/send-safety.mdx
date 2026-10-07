@@ -89,6 +89,25 @@ Rollback refuses unresolved reservations, explicit participation state, diagnost
 
 ## Verification and limits
 
-R1 stop/consent, R2 shared budgets, R3 recovery and transactional hooks, R5 bounded actual-message DKIM, R7 disclosed coherent content, and R11 calendar/pacing controls have separate deterministic and live PostgreSQL fixtures. Upgrade fixtures start at the released 265 schema and preserve legacy IDs/state. Mixed campaign/warmup/placement/manual contenders prove shared capacity and unknown reservation retention; worker fixtures exercise replay, envelope binding, current consent and old JSON/Avro readability. Provider MIME fixtures test mutation, forged headers, timeout and bounds without provider access.
+### Research coverage and external gates
+
+The twelve research proposals have different evidence requirements. Implemented controls and local fixtures are not substitutes for provider approval, native-language review or a real-recipient experiment.
+
+| Proposal | Implemented path and regression coverage | Remaining external verification |
+|---|---|---|
+| R1: consent and complete stop | Mailbox and Cloud participation, final action authority; `review_corrections_live_test.go` and lifecycle/Cloud UI-model fixtures | Drain old accepted commands; verify every deployed control plane and worker before relying on cancellation |
+| R2: shared admission | `send_admission.go`, immutable attempt ledger, mixed-lane concurrency and failed-attempt fixtures | Operators must reserve headroom for other mail clients and configure known applicable provider limits; their traffic is not automatically metered here |
+| R3: errors and recovery | Native provider classification, durable holds, transactional accounting and outbox; recovery and legacy JSON/Avro fixtures | Reconcile ambiguous native outcomes with real provider evidence; external notifications remain at least once |
+| R4: measurement provenance | Separate receipt/folder/authentication observations, unknown categories and placement denominators; observation-evidence upgrade fixtures | Real provider/dashboard coverage and missingness remain measured inputs, not inferred success |
+| R5: message authentication and unsubscribe | Authorized bounded Gmail/Graph/IMAP DKIM and exact-domain alignment; cryptographic/raw-MIME fixtures and existing scanner-safe unsubscribe | SPF, DMARC, receiving-hop TLS and delivered RFC 8058 signer coverage require actual evidence; provider enrollment and route remediation remain operator tasks |
+| R6: exact-parent lifecycle | Durable token/receipt ancestry, stable subject/References and one successor; `warmup_lineage_live_test.go` and dispatch fixtures | Canary the actual deployed queue/provider path; ambiguous legacy ancestry never becomes a reply grant |
+| R7: coherent content | Versioned vetted scenarios and final canonical rendering; `content_quality_test.go` and generation fixtures | Human and native-language quality benchmarks have not been run; prose never proves a real provider outcome |
+| R8: effective generation controls | Settings round-trip, effective settings and credential-independent stop; warmup-content control/batch and upgrade fixtures | Configured model visibility is not Batch/structured-output support; actual provider submission must confirm capability |
+| R9: trust and Cloud reconciliation | Current role/tier/standing gates, durable consent and restrictive history; managed-consent fault/import fixtures | Upgrade all Cloud replicas before correlated operations; local alias unlink is not global native-mailbox revocation |
+| R10: queue and diagnostic parity | SQL-bound callbacks, replay fencing, untouched first-folder evidence and seed isolation; lineage, worker and placement fixtures | Actual hosted/local queue fleets and fixed-panel coverage require rollout verification; missing reports remain unknown |
+| R11: legitimate response-adaptive pacing | Conservative cold ceiling uses fresh distinct campaign replies, with negative feedback and configured caps; cold-ramp/projection fixtures | Adequate real-recipient coverage, provider-stratified holdouts and a preregistered controlled evaluation are required before any efficacy claim |
+| R12: readiness and claims | DNS discovery is not authentication; operational health is not reputation; UI/docs explain diagnostic scope and unknowns | No guaranteed inbox or universal safe-volume claim; marketing benefits require replicated real-recipient evidence |
+
+Upgrade fixtures start at the released 265 schema and preserve legacy IDs/state. Mixed campaign/warmup/placement/manual contenders prove shared capacity and unknown reservation retention; worker fixtures exercise replay, envelope binding, current consent and old JSON/Avro readability. Provider MIME fixtures test mutation, forged headers, timeout and bounds without provider access.
 
 These checks establish local engineering behavior, not production efficacy, provider consent, real delivery, all-provider authentication, signed RFC 8058 headers or exactly-once external notification delivery. They perform no live sends, browser proof or production reads.

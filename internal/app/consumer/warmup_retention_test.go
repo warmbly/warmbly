@@ -280,11 +280,8 @@ func TestRecheckTamperingSearchesEachOldStrike(t *testing.T) {
 	}
 }
 
-// Gmail reports Delete as gaining the TRASH label. That is the owner's act
-// and is judged on the same freshness rule. A spam label charges nobody on
-// sight: a move after arrival is held for attribution, and the label on mail
-// that arrived in spam is the filter's own and is not even held.
-func TestFlagsAddJudgesGmailTrashOnFreshness(t *testing.T) {
+// Recipient filing never earns a strike; later spam moves retain sender attribution.
+func TestFlagsAddPreservesSenderAttributionWithoutPenalizingRecipientFiling(t *testing.T) {
 	landedSpam := receivedAgo(time.Second)
 	landedSpam.LandedSpam = true
 	cases := []struct {
@@ -294,7 +291,7 @@ func TestFlagsAddJudgesGmailTrashOnFreshness(t *testing.T) {
 		want  []string
 		held  int
 	}{
-		{"trashed an hour after arrival", receivedAgo(time.Hour), []string{"TRASH"}, []string{"deletion"}, 0},
+		{"trashed an hour after arrival", receivedAgo(time.Hour), []string{"TRASH"}, nil, 0},
 		{"trashed a month after arrival", receivedAgo(30 * 24 * time.Hour), []string{"TRASH"}, nil, 0},
 		{"moved to spam a month after arrival is held", receivedAgo(30 * 24 * time.Hour), []string{"SPAM"}, nil, 1},
 		{"spam label on mail that arrived in spam", landedSpam, []string{"SPAM"}, nil, 0},
