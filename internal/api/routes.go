@@ -1687,10 +1687,7 @@ func Run(
 			}
 
 			// Self-hosted side: Settings > Warmbly Cloud, registered on a self-host only.
-			// The link is one per instance, so linking, unlinking and the linked cloud
-			// workspace's mailboxes take the instance administrator (admin
-			// manage_settings, second factor). A workspace's own mailboxes ride the
-			// link under its manage_emails.
+			// Cloud connections are workspace-scoped; approving their credential sharing still requires an instance administrator.
 			if config.SelfHosted() {
 				cloudLink := jwtOnly.Group("/cloud-link")
 				cloudLink.Use(m.RateLimitMiddleware(models.RateLimitWrite), m.RequireOrganization())

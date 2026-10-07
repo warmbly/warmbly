@@ -75,7 +75,7 @@ export function allowedCallbackOrigins(): string[] {
 export default function useMailboxOAuth(options: MailboxOAuthOptions = {}) {
     const qc = useQueryClient();
     const pool = useCloudPool();
-    const viaCloud = pool.connected;
+    const viaCloud = pool.workspaceConnected;
     const gmailAvailable = useGmailOAuthConnect(viaCloud);
 
     const [busy, setBusy] = React.useState<MailboxOAuthProvider | null>(null);

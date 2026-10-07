@@ -18,8 +18,8 @@ import (
 
 var ErrManagedProtocol = errx.NewWithIdentifier(errx.Conflict, "cloud_link_managed_protocol", "Warmbly Cloud must support durable managed consent before connecting or adopting another mailbox. Existing mailboxes are unchanged.")
 
-func (s *service) managedLink(ctx context.Context) (*models.CloudLink, repository.CloudManagedConsentRepository, *errx.Error) {
-	l, xerr := s.link(ctx)
+func (s *service) managedLink(ctx context.Context, orgID uuid.UUID) (*models.CloudLink, repository.CloudManagedConsentRepository, *errx.Error) {
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, nil, xerr
 	}
@@ -41,7 +41,7 @@ func (s *service) startManagedOAuth(ctx context.Context, orgID, userID uuid.UUID
 	if provider != models.InboxProviderGoogle && provider != models.InboxProviderOutlook {
 		return nil, errx.ErrEmailOnboardProvider
 	}
-	l, r, xerr := s.managedLink(ctx)
+	l, r, xerr := s.managedLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -80,18 +80,21 @@ func (s *service) finishManagedOAuth(ctx context.Context, orgID, userID uuid.UUI
 	if err != nil {
 		return nil, errx.InternalError()
 	}
-	if c == nil || c.Kind != "oauth" || (c.State != "pending" && c.State != "unknown" && c.State != "active") || !time.Now().Before(c.ExpiresAt) {
+	if c == nil || c.InstanceID == nil || c.Kind != "oauth" || (c.State != "pending" && c.State != "unknown" && c.State != "active") || !time.Now().Before(c.ExpiresAt) {
 		return nil, ErrOAuthSession
 	}
-	l, xerr := s.link(ctx)
-	if xerr != nil {
-		return nil, xerr
+	l, err := s.repo.GetByInstance(ctx, *c.InstanceID)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	if l == nil {
+		return nil, ErrOAuthSession
 	}
 	return s.completeManagedConsent(ctx, l, r, c)
 }
 
 func (s *service) adoptManagedMailbox(ctx context.Context, orgID, userID, cloudAccountID uuid.UUID) (*models.Email, *errx.Error) {
-	l, r, xerr := s.managedLink(ctx)
+	l, r, xerr := s.managedLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -127,6 +130,7 @@ func (s *service) adoptManagedMailbox(ctx context.Context, orgID, userID, cloudA
 
 func (s *service) completeManagedConsent(ctx context.Context, l *models.CloudLink, r repository.CloudManagedConsentRepository, c *models.CloudManagedConsent) (*models.Email, *errx.Error) {
 	if c.InstanceID == nil || *c.InstanceID != l.InstanceID || c.RemoteID == nil || c.PlannedAccountID == nil || c.UserID == nil || l.DisconnectPending ||
+		(l.OrganizationID != nil && *l.OrganizationID != c.OrganizationID) ||
 		(c.State != "pending" && c.State != "unknown" && c.State != "active") {
 		return nil, ErrOAuthSession
 	}
@@ -185,7 +189,7 @@ func (s *service) completeManagedConsent(ctx context.Context, l *models.CloudLin
 	if err := r.SetManagedConsentState(ctx, c.OrganizationID, c.ID, c.State, &acc.ID); err != nil {
 		return nil, errx.InternalError()
 	}
-	if _, err := s.repo.Enroll(ctx, acc.ID, state.RemoteID, true); err != nil {
+	if _, err := s.repo.Enroll(ctx, acc.ID, state.RemoteID, l.InstanceID, true); err != nil {
 		return nil, errx.InternalError()
 	}
 	if state.Health == nil || !knownHealthState(state.Health.State) {

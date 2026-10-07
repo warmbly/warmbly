@@ -119,7 +119,7 @@ func TestLiveManagedLocalConsentRetainsActorAuthorityAndPortableRestriction(t *t
 	if _, err := f.pool.Exec(ctx, `INSERT INTO cloud_link (cloud_url,instance_id,token) VALUES ('https://cloud.test',$1,'fixture')`, instance); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = f.pool.Exec(ctx, `DELETE FROM cloud_link WHERE id = true`) })
+	t.Cleanup(func() { _, _ = f.pool.Exec(ctx, `DELETE FROM cloud_link WHERE instance_id = $1`, instance) })
 	r := NewCloudLinkRepository(f.pool, nil).(CloudManagedConsentRepository)
 	c := &models.CloudManagedConsent{ID: uuid.New(), OrganizationID: f.org, UserID: &f.user, InstanceID: &instance, RemoteID: &remote, PlannedAccountID: &planned, SessionHash: &hash, Kind: "oauth", Provider: models.InboxProviderGoogle, ExpiresAt: time.Now().Add(time.Minute)}
 	if err := r.CreateManagedConsent(ctx, c); err != nil {
@@ -176,7 +176,7 @@ func TestLiveManagedTokenUsesCurrentConsentAndObservedStanding(t *testing.T) {
 	if _, err := f.pool.Exec(ctx, `INSERT INTO cloud_link (cloud_url,instance_id,token) VALUES ('https://cloud.test',$1,'fixture')`, instance); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = f.pool.Exec(ctx, `DELETE FROM cloud_link`) })
+	t.Cleanup(func() { _, _ = f.pool.Exec(ctx, `DELETE FROM cloud_link WHERE instance_id = $1`, instance) })
 	if _, err := f.pool.Exec(ctx, `UPDATE email_accounts SET provider='gmail',auth_method='oauth' WHERE id=$1`, f.sender); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestLiveManagedTokenUsesCurrentConsentAndObservedStanding(t *testing.T) {
 	if err := r.SetManagedConsentState(ctx, f.org, c.ID, "active", &f.sender); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := base.Enroll(ctx, f.sender, remote, true); err != nil {
+	if _, err := base.Enroll(ctx, f.sender, remote, instance, true); err != nil {
 		t.Fatal(err)
 	}
 	assertAllowed := func(want bool) {

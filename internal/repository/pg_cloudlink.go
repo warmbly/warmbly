@@ -19,19 +19,23 @@ type CloudLinkRepository interface {
 	// handshake is one-time: a token that cannot be written is gone, and the
 	// link is left standing on the cloud with nobody holding it.
 	CanStore() error
-	Get(ctx context.Context) (*models.CloudLink, error)
+	Get(ctx context.Context, orgID *uuid.UUID) (*models.CloudLink, error)
+	GetByInstance(ctx context.Context, instanceID uuid.UUID) (*models.CloudLink, error)
+	GetForRedirect(ctx context.Context, orgID uuid.UUID, domain string) (*models.CloudLink, error)
+	BindRedirect(ctx context.Context, orgID uuid.UUID, domain string, instanceID uuid.UUID) error
+	ListLinks(ctx context.Context) ([]models.CloudLink, error)
 	Put(ctx context.Context, link *models.CloudLink) error
-	Delete(ctx context.Context) error
-	SetSyncResult(ctx context.Context, at time.Time, lastError string) error
+	Delete(ctx context.Context, instanceID uuid.UUID) error
+	SetSyncResult(ctx context.Context, instanceID uuid.UUID, at time.Time, lastError string) error
 	WithReconciliationLock(ctx context.Context, fn func() error) error
-	SetDisconnectPending(ctx context.Context) error
-	BeginEnrollment(ctx context.Context, accountID, remoteID uuid.UUID) error
+	SetDisconnectPending(ctx context.Context, instanceID uuid.UUID) error
+	BeginEnrollment(ctx context.Context, accountID, remoteID, instanceID uuid.UUID) error
 	BeginRemoval(ctx context.Context, accountID uuid.UUID) error
 	InvalidateStanding(ctx context.Context, accountID uuid.UUID) error
 
-	Enroll(ctx context.Context, accountID, remoteID uuid.UUID, managed bool) (*models.CloudLinkMailbox, error)
+	Enroll(ctx context.Context, accountID, remoteID, instanceID uuid.UUID, managed bool) (*models.CloudLinkMailbox, error)
 	Unenroll(ctx context.Context, accountID uuid.UUID) error
-	UnenrollAll(ctx context.Context) error
+	UnenrollAll(ctx context.Context, instanceID uuid.UUID) error
 	GetByAccount(ctx context.Context, accountID uuid.UUID) (*models.CloudLinkMailbox, error)
 	List(ctx context.Context) ([]models.CloudLinkMailbox, error)
 	ListForOrg(ctx context.Context, orgID uuid.UUID, accountID *uuid.UUID) ([]models.CloudLinkMailbox, error)
@@ -67,16 +71,15 @@ func (r *cloudLinkRepository) CanStore() error {
 	return nil
 }
 
-func (r *cloudLinkRepository) Get(ctx context.Context) (*models.CloudLink, error) {
-	query := `SELECT cloud_url, instance_id, token, organization_name, connected_by, connected_at, last_synced_at, last_error, disconnect_pending FROM cloud_link WHERE id = true`
+const cloudLinkColumns = `cloud_url, instance_id, token, organization_name, connected_by, connected_at, last_synced_at, last_error, organization_id, disconnect_pending`
+
+func (r *cloudLinkRepository) scanLink(row pgx.Row) (*models.CloudLink, error) {
 	var l models.CloudLink
 	var sealed string
-	err := r.db.QueryRow(ctx, query).Scan(&l.CloudURL, &l.InstanceID, &sealed, &l.OrganizationName, &l.ConnectedBy, &l.ConnectedAt, &l.LastSyncedAt, &l.LastError, &l.DisconnectPending)
-	if err != nil {
+	if err := row.Scan(&l.CloudURL, &l.InstanceID, &sealed, &l.OrganizationName, &l.ConnectedBy, &l.ConnectedAt, &l.LastSyncedAt, &l.LastError, &l.OrganizationID, &l.DisconnectPending); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		db.CaptureError(err, query, nil, "queryrow")
 		return nil, err
 	}
 	if r.encrypt == nil {
@@ -90,6 +93,48 @@ func (r *cloudLinkRepository) Get(ctx context.Context) (*models.CloudLink, error
 	return &l, nil
 }
 
+func (r *cloudLinkRepository) Get(ctx context.Context, orgID *uuid.UUID) (*models.CloudLink, error) {
+	query := `SELECT ` + cloudLinkColumns + ` FROM cloud_link
+ WHERE organization_id = $1 OR organization_id IS NULL
+ ORDER BY organization_id IS NULL LIMIT 1`
+	return r.scanLink(r.db.QueryRow(ctx, query, orgID))
+}
+
+func (r *cloudLinkRepository) GetByInstance(ctx context.Context, instanceID uuid.UUID) (*models.CloudLink, error) {
+	return r.scanLink(r.db.QueryRow(ctx, `SELECT `+cloudLinkColumns+` FROM cloud_link WHERE instance_id = $1`, instanceID))
+}
+
+func (r *cloudLinkRepository) ListLinks(ctx context.Context) ([]models.CloudLink, error) {
+	rows, err := r.db.Query(ctx, `SELECT `+cloudLinkColumns+` FROM cloud_link ORDER BY connected_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.CloudLink{}
+	for rows.Next() {
+		l, err := r.scanLink(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *l)
+	}
+	return out, rows.Err()
+}
+
+func (r *cloudLinkRepository) GetForRedirect(ctx context.Context, orgID uuid.UUID, domain string) (*models.CloudLink, error) {
+	query := `SELECT ` + cloudLinkColumns + ` FROM cloud_link WHERE instance_id = COALESCE(
+  (SELECT cloud_link_instance_id FROM domain_redirects WHERE organization_id = $1 AND domain = $2),
+  (SELECT instance_id FROM cloud_link WHERE organization_id = $1 LIMIT 1)
+ )`
+	return r.scanLink(r.db.QueryRow(ctx, query, orgID, domain))
+}
+
+func (r *cloudLinkRepository) BindRedirect(ctx context.Context, orgID uuid.UUID, domain string, instanceID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `UPDATE domain_redirects SET cloud_link_instance_id = $3
+ WHERE organization_id = $1 AND domain = $2 AND served_by = 'cloud' AND cloud_link_instance_id IS NULL`, orgID, domain, instanceID)
+	return err
+}
+
 func (r *cloudLinkRepository) Put(ctx context.Context, link *models.CloudLink) error {
 	if r.encrypt == nil {
 		return errNoLinkEncrypter
@@ -99,48 +144,45 @@ func (r *cloudLinkRepository) Put(ctx context.Context, link *models.CloudLink) e
 		return err
 	}
 	query := `
-		INSERT INTO cloud_link (id, cloud_url, instance_id, token, organization_name, connected_by, connected_at, last_error)
-		VALUES (true, $1, $2, $3, $4, $5, NOW(), '')
-		ON CONFLICT (id) DO UPDATE SET
-		  cloud_url = EXCLUDED.cloud_url, instance_id = EXCLUDED.instance_id, token = EXCLUDED.token,
-		  organization_name = EXCLUDED.organization_name, connected_by = EXCLUDED.connected_by,
-		  connected_at = NOW(), last_synced_at = NULL, last_error = ''
-		RETURNING connected_at
-	`
-	if err := r.db.QueryRow(ctx, query, link.CloudURL, link.InstanceID, sealed, link.OrganizationName, link.ConnectedBy).Scan(&link.ConnectedAt); err != nil {
+ INSERT INTO cloud_link (cloud_url, instance_id, token, organization_name, connected_by, organization_id)
+ VALUES ($1, $2, $3, $4, $5, $6)
+ RETURNING connected_at
+ `
+	if err := r.db.QueryRow(ctx, query, link.CloudURL, link.InstanceID, sealed, link.OrganizationName, link.ConnectedBy, link.OrganizationID).Scan(&link.ConnectedAt); err != nil {
 		db.CaptureError(err, query, nil, "queryrow")
 		return err
 	}
 	return nil
 }
 
-func (r *cloudLinkRepository) Delete(ctx context.Context) error {
-	if _, err := r.db.Exec(ctx, `DELETE FROM cloud_link WHERE id = true`); err != nil {
+func (r *cloudLinkRepository) Delete(ctx context.Context, instanceID uuid.UUID) error {
+	if _, err := r.db.Exec(ctx, `DELETE FROM cloud_link WHERE instance_id = $1`, instanceID); err != nil {
 		db.CaptureError(err, "delete cloud_link", nil, "exec")
 		return err
 	}
 	return nil
 }
 
-func (r *cloudLinkRepository) SetSyncResult(ctx context.Context, at time.Time, lastError string) error {
-	_, err := r.db.Exec(ctx, `UPDATE cloud_link SET last_synced_at = CASE WHEN $2 = '' THEN $1 ELSE last_synced_at END, last_error = $2 WHERE id = true`, at, lastError)
+func (r *cloudLinkRepository) SetSyncResult(ctx context.Context, instanceID uuid.UUID, at time.Time, lastError string) error {
+	_, err := r.db.Exec(ctx, `UPDATE cloud_link SET last_synced_at = CASE WHEN $2 = '' THEN $1 ELSE last_synced_at END, last_error = $2 WHERE instance_id = $3`, at, lastError, instanceID)
 	return err
 }
 
-func (r *cloudLinkRepository) Enroll(ctx context.Context, accountID, remoteID uuid.UUID, managed bool) (*models.CloudLinkMailbox, error) {
+func (r *cloudLinkRepository) Enroll(ctx context.Context, accountID, remoteID, instanceID uuid.UUID, managed bool) (*models.CloudLinkMailbox, error) {
 	query := `
-		INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, managed)
-		VALUES ($1, $2, $3)
+		INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, managed, instance_id)
+		SELECT ea.id, $2, $3, l.instance_id FROM email_accounts ea JOIN cloud_link l
+		  ON (l.organization_id = ea.organization_id OR l.organization_id IS NULL)
+		WHERE ea.id = $1 AND l.instance_id = $4 AND NOT l.disconnect_pending
 		ON CONFLICT (email_account_id) DO UPDATE SET remote_id = EXCLUDED.remote_id, managed = EXCLUDED.managed, enrollment_state = 'active'
-		WHERE cloud_link_mailboxes.enrollment_state <> 'pending_remove'
-		RETURNING email_account_id, remote_id, enrolled_at, managed
-	`
-	var m models.CloudLinkMailbox
-	if err := r.db.QueryRow(ctx, query, accountID, remoteID, managed).Scan(&m.EmailAccountID, &m.RemoteID, &m.EnrolledAt, &m.Managed); err != nil {
+		WHERE cloud_link_mailboxes.enrollment_state <> 'pending_remove' AND cloud_link_mailboxes.instance_id = EXCLUDED.instance_id
+		RETURNING ` + cloudLinkMailboxColumns
+	m, err := scanCloudLinkMailbox(r.db.QueryRow(ctx, query, accountID, remoteID, managed, instanceID))
+	if err != nil {
 		db.CaptureError(err, query, nil, "queryrow")
 		return nil, err
 	}
-	return &m, nil
+	return m, nil
 }
 
 func (r *cloudLinkRepository) Unenroll(ctx context.Context, accountID uuid.UUID) error {
@@ -151,8 +193,8 @@ func (r *cloudLinkRepository) Unenroll(ctx context.Context, accountID uuid.UUID)
 	return nil
 }
 
-func (r *cloudLinkRepository) UnenrollAll(ctx context.Context) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM cloud_link_mailboxes`)
+func (r *cloudLinkRepository) UnenrollAll(ctx context.Context, instanceID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM cloud_link_mailboxes WHERE instance_id = $1`, instanceID)
 	return err
 }
 
@@ -197,7 +239,7 @@ func (r *cloudLinkRepository) IsEnrolled(ctx context.Context, accountID uuid.UUI
 }
 
 const cloudLinkMailboxColumns = `email_account_id, remote_id, enrolled_at, managed,
-	health_state, health_pool_type, health_reason, health_score, blocked_until, health_evaluated_at,
+	health_state, health_pool_type, health_reason, health_score, blocked_until, health_evaluated_at, instance_id,
 	enrollment_state, standing_observed_at`
 
 func scanCloudLinkMailbox(row pgx.Row) (*models.CloudLinkMailbox, error) {
@@ -206,7 +248,7 @@ func scanCloudLinkMailbox(row pgx.Row) (*models.CloudLinkMailbox, error) {
 	var score float64
 	var blockedUntil, evaluatedAt *time.Time
 	if err := row.Scan(&m.EmailAccountID, &m.RemoteID, &m.EnrolledAt, &m.Managed,
-		&state, &poolType, &reason, &score, &blockedUntil, &evaluatedAt, &m.EnrollmentState, &m.StandingObservedAt); err != nil {
+		&state, &poolType, &reason, &score, &blockedUntil, &evaluatedAt, &m.InstanceID, &m.EnrollmentState, &m.StandingObservedAt); err != nil {
 		return nil, err
 	}
 	if state != nil {
@@ -308,12 +350,12 @@ func storeCloudHold(ctx context.Context, tx pgx.Tx, accountID uuid.UUID, h *mode
 		 cloud_blocked_until = NULL, cloud_health_reason = NULL, cloud_health_score = 0, cloud_source_account_id = NULL, cloud_source_instance_id = NULL
 		 FROM email_accounts ea WHERE ea.id = $1 AND l.organization_id = ea.organization_id
 		 AND l.email = lower(btrim(ea.email)) AND l.cloud_source_account_id = $1
-		 AND l.cloud_source_instance_id IS NOT DISTINCT FROM (SELECT instance_id FROM cloud_link WHERE id = true)`, accountID)
+		 AND l.cloud_source_instance_id IS NOT DISTINCT FROM (SELECT instance_id FROM cloud_link_mailboxes WHERE email_account_id = $1)`, accountID)
 		return err
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO warmup_reputation_ledger
 	 (organization_id, email, cloud_health_state, cloud_blocked_until, cloud_health_reason, cloud_health_score, cloud_source_account_id, cloud_source_instance_id, standing_until)
-	 SELECT organization_id, lower(btrim(email)), $2, $3, $4, $5, $1, (SELECT instance_id FROM cloud_link WHERE id = true), NOW() FROM email_accounts WHERE id = $1
+	 SELECT organization_id, lower(btrim(email)), $2, $3, $4, $5, $1, (SELECT instance_id FROM cloud_link_mailboxes WHERE email_account_id = $1), NOW() FROM email_accounts WHERE id = $1
 	 ON CONFLICT (organization_id, email) DO UPDATE SET
 	 cloud_health_state = EXCLUDED.cloud_health_state, cloud_blocked_until = EXCLUDED.cloud_blocked_until,
 	 cloud_health_reason = EXCLUDED.cloud_health_reason, cloud_health_score = EXCLUDED.cloud_health_score,

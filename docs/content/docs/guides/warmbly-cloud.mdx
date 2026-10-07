@@ -13,7 +13,7 @@ Only warmup moves to the cloud. Campaigns, contacts, the unibox, tracking and ev
 
 ## How it works
 
-Your instance keeps a single link to a Warmbly Cloud workspace. When you enroll a mailbox, the instance sends that mailbox's SMTP/IMAP credential to the cloud, sealed in transit and at rest with the same envelope encryption the hosted product uses for every customer mailbox. From then on:
+Each local workspace connects separately to a Warmbly Cloud workspace. A Cloud workspace can have only one active self-hosted connection, including any older instance-wide link. Different local workspaces need different Cloud workspaces, each with its own plan. Self-hosted workspace creation itself is unlimited; hosted creation limits and request-rate protection are unchanged. When you enroll a mailbox, the instance sends that mailbox's SMTP/IMAP credential to the cloud, sealed in transit and at rest with the same envelope encryption the hosted product uses for every customer mailbox. From then on:
 
 - Warmbly Cloud sends the mailbox's warmup mail, replies to partners, and rescues, opens and stars the warmup mail it receives, on Warmbly's own workers
 - the cloud reads only verified warmup mail from the mailbox. Everything else that arrives is dropped unread; no history is imported and nothing is stored
@@ -37,17 +37,27 @@ Existing enrollments work without reconnecting or re-enrolling. Deploy the repor
 
 Once a mailbox is unenrolled, the instance no longer requests its Cloud history. SMTP/IMAP unenrollment deletes the Cloud mailbox and its warmup history; a Cloud-managed mailbox's history stays in its Cloud workspace. The instance's earlier local history is unchanged.
 
-## Linking your instance
+## Linking a workspace
 
 The link is offered on a self-hosted instance as the last step of onboarding when you first sign in, as a banner on **Mailboxes** until you connect or dismiss it, under **Settings > Warmbly Cloud** at any time, and on **Sending domains** when a [root redirect](#root-redirects-served-by-warmbly-cloud) could be served from Cloud. Whichever you use, the steps are the same:
 
-1. Press **Connect to Warmbly Cloud**. The instance shows an eight character code.
+1. Select the local workspace you want to connect, then press **Connect to Warmbly Cloud**. The instance shows an eight character code.
 2. Press **Open Warmbly Cloud**, or go to `app.warmbly.com/connect`, sign in with your Warmbly account (create one if you do not have it, it is free), enter the code and pick the workspace to link to. The workspace needs the manage settings permission.
 3. Your instance notices the approval within a few seconds and moves on to mailbox selection. Switch on the mailboxes you want warmed.
 
 The whole flow takes about a minute. A code expires after 15 minutes if nobody approves it; start again from the instance.
 
-The link belongs to the whole instance, not to one workspace, so connecting and disconnecting it, and bringing in mailboxes from the cloud workspace, is an instance administrator's job: it needs a platform admin account with the manage settings admin permission (the [first owner](/development/first-run/) has it) signed in with two-factor authentication. Once the instance is linked, any member with the manage mailboxes permission sees the link and puts their own workspace's mailboxes on it: enrolling, pausing and resuming, and connecting Google and Microsoft mailboxes through Warmbly Cloud. The onboarding step that links the instance is shown only to an administrator who can complete it.
+The link belongs to the selected local workspace. Connecting and disconnecting it, and bringing in mailboxes from its Cloud workspace, still requires an instance administrator because credentials leave the server: it needs a platform admin account with the manage settings admin permission (the [first owner](/development/first-run/) has it) signed in with two-factor authentication. Once a workspace is linked, its members with the manage mailboxes permission can use that workspace's connection: enrolling, pausing and resuming, and connecting Google and Microsoft mailboxes through Warmbly Cloud. The onboarding step that links the instance is shown only to an administrator who can complete it.
+
+### Existing instance-wide connections
+
+Upgrading does not revoke an existing connection or move its mailboxes. The migration records which connection enrolled each mailbox, and existing warmup, brokered access tokens, warmup verification, analytics, standing synchronization, redirects and placement results keep using that original connection. Old placement results and Cloud-served redirects are backfilled to that connection too.
+
+A legacy connection cannot enroll more mailboxes, adopt Cloud mailboxes, start new Google or Microsoft sign-ins, or start new placement tests. New Cloud-served redirects also require a workspace-scoped connection; existing redirects stay manageable. **Settings > Warmbly Cloud** labels the old connection and offers **Connect this workspace**. Existing mailbox rows say **legacy connection**, even after the workspace establishes a new link.
+
+You can leave the old connection in place and connect each workspace to a separate, unused Cloud workspace, moving mailboxes at your own pace. No mailbox changes connection automatically. To reuse the old Cloud workspace, first disconnect its legacy link; that stops its remaining enrollments across **all** local workspaces. Workspace-scoped connections are not affected. Removing an SMTP/IMAP enrollment deletes its old Cloud mailbox and history; enrolling it again starts a new Cloud enrollment. Cloud-managed mailboxes remain on their original Cloud workspace, but disconnecting removes their local mirrors. Sign in again through the new connection to create new mirrors.
+
+Deploy the Cloud backend and migration **before** publishing the self-hosted upgrade. Old self-hosted clients keep using existing enrollments, but cannot establish new instance-wide connections or add enrollments to them. New self-hosted clients refuse to connect to older Cloud versions that do not advertise workspace-scoped support. No new environment variable is required.
 
 ## Google and Microsoft mailboxes: sign in through Warmbly Cloud
 
@@ -150,13 +160,13 @@ A [root redirect](/guides/sending-domains/#root-redirects) sends visitors to a s
 - Cloud proves the domain on its own terms: it lists its own ownership value for the `_warmbly` `TXT` record and its own addresses for the root, and serves nothing until it sees both.
 - Only the domain, the website and the `www` setting go to Cloud. Visitors to the domain reach Cloud, not your server; nothing about your mailboxes, contacts or mail is involved.
 - Cloud serves up to 200 redirects for one linked instance.
-- Unlinking stops every redirect Cloud served for the instance. Each one says so on your instance and can be moved back to it.
+- Unlinking stops redirects using that connection, not redirects using another workspace's connection or a retained legacy link. Each one says so on your instance and can be moved back to it.
 
 See [serve it from Warmbly Cloud](/guides/sending-domains/#serve-it-from-warmbly-cloud) for how it looks on the sending domains page.
 
 ## Unlinking
 
-On your instance, **Settings > Warmbly Cloud > Disconnect** removes the instance's enrollments and lets eligible local warmup take over after confirmed cleanup. Instance-originated SMTP mailboxes and their credentials are deleted on the cloud. An OAuth mailbox belongs to the cloud workspace: unlinking removes the instance's access, not that workspace's mailbox or provider grant. Its native cloud warmup configuration also remains: pause or delete it separately on Warmbly Cloud if you want that participation or its stored credentials removed. Root redirects Cloud served for the instance stop at the same time. On Warmbly Cloud, **Settings > Linked instances** lists the instances linked to a workspace and can unlink any of them from the other side.
+On your instance, **Settings > Warmbly Cloud > Disconnect** removes only the selected workspace link's enrollments and lets eligible local warmup take over after confirmed cleanup. Other workspace links and retained legacy links are unaffected. Instance-originated SMTP mailboxes and their credentials are deleted on the cloud. An OAuth mailbox belongs to the cloud workspace: unlinking removes that connection's access, not the workspace's mailbox or provider grant. Its native cloud warmup configuration also remains: pause or delete it separately on Warmbly Cloud if you want that participation or its stored credentials removed. Root redirects using the disconnected link stop at the same time. Removing a legacy instance-wide link remains a separate administrator action. On Warmbly Cloud, **Settings > Linked instances** lists the connections linked to a workspace and can unlink any of them from the other side.
 
 SMTP enrollment, mailbox removal and instance disconnect first record a durable local intent. While enrollment or removal is pending, the mailbox is not admitted to local warmup. The regular standing sync retries pending work after an outage or restart, using the same mailbox identity rather than creating another. Remote removal must be acknowledged, or confirmed already absent, before local enrollment is dropped. A failed local cleanup stays pending and is retried.
 
@@ -198,14 +208,14 @@ The schema downgrade refuses to discard any managed consent history, including c
 
 Redis still holds the short-lived browser session, PKCE verifier, browser binding and consent result, with a ten-minute TTL. The cloud's ordinary encrypted mailbox credential store holds provider credentials under its existing retention rules. The instance only caches brokered access tokens in memory for at most ten minutes; an already-issued worker token can remain valid until its provider expiry.
 
-Consent restrictions/history travel in a [workspace export](/guides/workspace-export-import/). Import resets source instance IDs, remote IDs, session hashes, planned account handles and queued activation handles; live cloud account references on the local consent record are reset too. This prevents an imported pending operation from resuming against the source instance, while retaining its restrictive state. The instance-wide link itself does not travel: reconnect and explicitly authorize any new managed operation after moving. Imported history is not a fresh consent or a positive provider verdict.
+Consent restrictions/history travel in a [workspace export](/guides/workspace-export-import/). Import resets source instance IDs, remote IDs, session hashes, planned account handles and queued activation handles; live cloud account references on the local consent record are reset too. This prevents an imported pending operation from resuming against the source instance, while retaining its restrictive state. Workspace links and legacy instance-wide links do not travel: reconnect and explicitly authorize any new managed operation after moving. Imported history is not a fresh consent or a positive provider verdict.
 
 ## Self-hosting notes
 
 - Traffic is outbound only: the instance calls `WARMBLY_CLOUD_URL` (default `https://api.warmbly.com`) over HTTPS, on port 443 or 8443, and only to a public address. Plain HTTP to `localhost` is accepted only when `APP_ENV` is `dev`. Nothing needs to reach the instance from the internet
 - The instance token is stored sealed with `CREDENTIALS_ENCRYPTION_KEY`. Rotating that key invalidates the stored token; reconnect afterwards
 - Brokered access tokens reach the worker through the backend's internal API (`/api/v1/internal/cloud-link/token/:id`), so workers keep needing only `ENCRYPTED_KEYS_BACKEND_URL` and `ENCRYPTED_KEYS_WORKER_TOKEN`. A worker that cannot reach the backend keeps sending from such mailboxes until its cached token expires, about an hour
-- The link and the enrollment list are properties of the instance, not of a workspace, so they are not part of a [workspace export](/guides/workspace-export-import/). Reconnect after moving a workspace to a new instance
+- Connections and enrollments are bound to this installation's encryption key, even when workspace-scoped, so they are not part of a [workspace export](/guides/workspace-export-import/). Reconnect after moving a workspace to a new instance
 - `INSTANCE_NAME` sets the name shown on the approval page; the hostname is used when unset. The name follows the workspace [naming rules](/api/error-codes/#name-refusals), so one that reads as a web address (a hostname, for example) shows as "Self-hosted instance"
 
 ## Related guides

@@ -105,11 +105,11 @@ func (r *consentFaultRepo) ManagedConsentAuthorized(context.Context, *models.Clo
 func (r *consentFaultRepo) CanBrokerManagedToken(context.Context, uuid.UUID) (bool, error) {
 	return r.allowed && len(r.consents) > 0 && r.consents[0].State == "active", nil
 }
-func (r *consentFaultRepo) Enroll(_ context.Context, account, remote uuid.UUID, managed bool) (*models.CloudLinkMailbox, error) {
+func (r *consentFaultRepo) Enroll(_ context.Context, account, remote, instance uuid.UUID, managed bool) (*models.CloudLinkMailbox, error) {
 	if r.confirmErr != nil {
 		return nil, r.confirmErr
 	}
-	r.mailbox = &models.CloudLinkMailbox{EmailAccountID: account, RemoteID: remote, Managed: managed, EnrollmentState: "active"}
+	r.mailbox = &models.CloudLinkMailbox{EmailAccountID: account, RemoteID: remote, InstanceID: instance, Managed: managed, EnrollmentState: "active"}
 	return r.mailbox, nil
 }
 func (r *consentFaultRepo) SetStanding(context.Context, uuid.UUID, *models.WarmupHealthInfo, bool) (models.WarmupHealthState, error) {
@@ -153,7 +153,7 @@ type consentFixture struct {
 func newConsentFixture(t *testing.T) *consentFixture {
 	t.Helper()
 	f := &consentFixture{org: uuid.New(), user: uuid.New(), cloud: uuid.New(), protocol: models.ManagedConsentProtocol}
-	r := &consentFaultRepo{enrollmentFaultRepo: &enrollmentFaultRepo{stubLinkRepo: &stubLinkRepo{link: &models.CloudLink{InstanceID: uuid.New()}}}, allowed: true}
+	r := &consentFaultRepo{enrollmentFaultRepo: &enrollmentFaultRepo{stubLinkRepo: &stubLinkRepo{link: &models.CloudLink{InstanceID: uuid.New(), OrganizationID: &f.org}}}, allowed: true}
 	f.r = r
 	f.emails = &consentAccounts{accounts: map[uuid.UUID]*models.Email{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {

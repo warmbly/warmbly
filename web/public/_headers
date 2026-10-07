@@ -26,6 +26,16 @@
   Referrer-Policy: no-referrer
   Cache-Control: no-store
 
+# Pages canonicalizes the .html asset to this extensionless URL.
+/mail-preview
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; style-src 'unsafe-inline'; img-src data: https: http:; font-src data: https:; media-src https:
+  ! X-Frame-Options
+  X-Frame-Options: SAMEORIGIN
+  ! Referrer-Policy
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store
+
 # config.js is the runtime configuration and must never outlive a change to it; same rule as the nginx image.
 /config.js
   Cache-Control: no-store

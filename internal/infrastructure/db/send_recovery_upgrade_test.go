@@ -60,6 +60,7 @@ func TestLiveSendRecoveryUpgradesReleased265WithoutInventingHistory(t *testing.T
 	}
 	defer conn.Close(context.Background())
 	user, org, mailbox, sentTask, unknownTask := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	instance := uuid.New()
 	for _, row := range []struct {
 		sql  string
 		args []any
@@ -68,6 +69,8 @@ func TestLiveSendRecoveryUpgradesReleased265WithoutInventingHistory(t *testing.T
 		{`INSERT INTO organizations (id,name,slug,owner_user_id) VALUES ($1,'Legacy',$2,$3)`, []any{org, org.String(), user}},
 		{`INSERT INTO email_accounts (id,user_id,organization_id,email,name,signature_plain,signature_html,provider,status,warmup_max,campaign_limit,send_lifecycle,send_lifecycle_reason) VALUES ($1,$2,$3,$4,'Legacy','','','smtp_imap','inactive',17,23,'resting','existing health hold')`, []any{mailbox, user, org, mailbox.String() + "@example.test"}},
 		{`INSERT INTO tasks (id,email_account_id,task_type,status,message_id) VALUES ($1,$3,'email','completed','<known@provider.test>'),($2,$3,'email','completed','')`, []any{sentTask, unknownTask, mailbox}},
+		{`INSERT INTO cloud_link (cloud_url,instance_id,token,organization_name,connected_by) VALUES ('https://cloud.example.test',$1,'sealed-fixture','Legacy',$2)`, []any{instance, user}},
+		{`INSERT INTO cloud_link_mailboxes (email_account_id,remote_id,health_state,health_reason) VALUES ($1,$1,'blocked','preexisting Cloud restriction')`, []any{mailbox}},
 	} {
 		if _, err := conn.Exec(ctx, row.sql, row.args...); err != nil {
 			t.Fatal(err)
@@ -117,6 +120,17 @@ func TestLiveSendRecoveryUpgradesReleased265WithoutInventingHistory(t *testing.T
 	}
 	assertLegacy := func() {
 		t.Helper()
+		var retained bool
+		if err := conn.QueryRow(ctx, `SELECT EXISTS (
+ SELECT 1 FROM cloud_link l JOIN cloud_link_mailboxes m ON m.instance_id = l.instance_id
+ JOIN email_accounts ea ON ea.id = m.email_account_id
+ JOIN warmup_reputation_ledger h ON h.organization_id = ea.organization_id AND h.email = lower(btrim(ea.email))
+ WHERE ea.id = $1 AND l.instance_id = $2 AND l.organization_id IS NULL AND l.token = 'sealed-fixture'
+ AND m.health_state = 'blocked' AND m.enrollment_state = 'active' AND m.standing_observed_at IS NULL
+ AND h.cloud_health_state = 'blocked' AND h.cloud_source_instance_id = $2
+ )`, mailbox, instance).Scan(&retained); err != nil || !retained {
+			t.Fatalf("upgrade lost legacy Cloud ownership, restriction, or fabricated fresh standing: %v, %v", retained, err)
+		}
 		var status, lifecycle, reason string
 		var warmupMax, campaignLimit int
 		var hold bool
@@ -149,7 +163,7 @@ func TestLiveSendRecoveryUpgradesReleased265WithoutInventingHistory(t *testing.T
 	if err := conn.QueryRow(ctx, `SELECT test_mode FROM email_accounts WHERE id=$1`, mailbox).Scan(&legacyMode); err != nil || legacyMode != nil {
 		t.Fatal("upgrade changed legacy consent", legacyMode, err)
 	}
-	admissionDown, err := migrationsFS.ReadFile("migrations/000272_shared_send_admission.down.sql")
+	admissionDown, err := migrationsFS.ReadFile("migrations/000273_shared_send_admission.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

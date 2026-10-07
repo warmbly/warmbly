@@ -104,6 +104,9 @@ func returnURLAllowed(raw, instanceURL string) bool {
 }
 
 func (s *service) StartOAuth(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkOAuthStartRequest) (*models.PoolLinkOAuthStartResponse, *errx.Error) {
+	if inst.RemoteOrganizationID == nil {
+		return nil, ErrLegacyLink
+	}
 	if req.Protocol != 0 {
 		if req.Protocol != models.ManagedConsentProtocol || req.RemoteID == uuid.Nil || len(req.Session) < 32 || len(req.Session) > 128 {
 			return nil, ErrBadRequest
@@ -401,6 +404,9 @@ func (s *service) connectBrokered(ctx context.Context, st brokerState, code stri
 	if inst == nil || inst.RevokedAt != nil {
 		return uuid.Nil, ErrInstanceRevoked
 	}
+	if inst.RemoteOrganizationID == nil {
+		return uuid.Nil, ErrLegacyLink
+	}
 	userID, xerr := s.ownerUserID(ctx, inst)
 	if xerr != nil {
 		return uuid.Nil, xerr
@@ -534,6 +540,9 @@ func (s *service) AccessToken(ctx context.Context, inst *models.PoolLinkInstance
 }
 
 func (s *service) ListWorkspaceMailboxes(ctx context.Context, inst *models.PoolLinkInstance) ([]models.PoolLinkWorkspaceMailbox, *errx.Error) {
+	if inst.RemoteOrganizationID == nil {
+		return nil, ErrLegacyLink
+	}
 	list, err := s.repo.ListAdoptableMailboxes(ctx, inst.OrganizationID)
 	if err != nil {
 		return nil, errx.InternalError()
@@ -543,6 +552,9 @@ func (s *service) ListWorkspaceMailboxes(ctx context.Context, inst *models.PoolL
 
 // Adopt links a mailbox that was connected directly on the workspace.
 func (s *service) Adopt(ctx context.Context, inst *models.PoolLinkInstance, req models.PoolLinkAdoptRequest) (*models.PoolLinkMailboxState, *errx.Error) {
+	if inst.RemoteOrganizationID == nil {
+		return nil, ErrLegacyLink
+	}
 	if req.Protocol != 0 {
 		if req.Protocol != models.ManagedConsentProtocol || req.RemoteID == uuid.Nil || req.EmailAccountID == uuid.Nil {
 			return nil, ErrBadRequest

@@ -22,8 +22,9 @@ import (
 const DefaultCloudURL = "https://api.warmbly.com"
 
 var (
-	ErrNotConnected    = errx.NewWithIdentifier(errx.Conflict, "cloud_link_not_connected", "This instance is not connected to Warmbly Cloud.")
-	ErrAlreadyLinked   = errx.NewWithIdentifier(errx.Conflict, "cloud_link_connected", "This instance is already connected. Disconnect first to link a different workspace.")
+	ErrLegacyLink      = errx.NewWithIdentifier(errx.Conflict, "cloud_link_workspace_required", "Connect this workspace separately to add Cloud mailboxes. Existing legacy enrollments continue working.")
+	ErrNotConnected    = errx.NewWithIdentifier(errx.Conflict, "cloud_link_not_connected", "This workspace is not connected to Warmbly Cloud.")
+	ErrAlreadyLinked   = errx.NewWithIdentifier(errx.Conflict, "cloud_link_connected", "This workspace is already connected. Disconnect first to link a different Cloud workspace.")
 	ErrNoPendingCode   = errx.NewWithIdentifier(errx.NotFound, "cloud_link_no_pending", "No connection in progress. Start again.")
 	ErrCodeExpired     = errx.NewWithIdentifier(errx.NotFound, "cloud_link_code_expired", "The code expired before it was approved. Start again.")
 	ErrOAuthMailbox    = errx.NewWithIdentifier(errx.Unprocessable, "cloud_link_oauth_mailbox", "Google and Microsoft sign-in mailboxes cannot be warmed by Warmbly Cloud yet, because their refresh grant is bound to this instance's own OAuth app. Connect the mailbox with SMTP/IMAP (an app password) to enroll it.")
@@ -81,6 +82,7 @@ func instanceName() string {
 
 // PendingConnect is an in-flight device-code handshake, held in memory.
 type PendingConnect struct {
+	OrganizationID  uuid.UUID `json:"organization_id"`
 	DeviceCode      string    `json:"-"`
 	UserCode        string    `json:"user_code"`
 	VerificationURL string    `json:"verification_url"`
@@ -98,10 +100,10 @@ type ConnectPollResult struct {
 }
 
 type Service interface {
-	Status(ctx context.Context) (*models.CloudLinkStatus, *errx.Error)
-	StartConnect(ctx context.Context, userID uuid.UUID, cloudURL string) (*PendingConnect, *errx.Error)
-	PollConnect(ctx context.Context, userID uuid.UUID) (*ConnectPollResult, *errx.Error)
-	Disconnect(ctx context.Context) *errx.Error
+	Status(ctx context.Context, orgID uuid.UUID) (*models.CloudLinkStatus, *errx.Error)
+	StartConnect(ctx context.Context, orgID, userID uuid.UUID, cloudURL string) (*PendingConnect, *errx.Error)
+	PollConnect(ctx context.Context, orgID, userID uuid.UUID) (*ConnectPollResult, *errx.Error)
+	Disconnect(ctx context.Context, orgID uuid.UUID, legacy bool) *errx.Error
 
 	ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.CloudLinkMailboxRow, *errx.Error)
 	WarmupStats(ctx context.Context, orgID uuid.UUID, id *uuid.UUID, from, to time.Time) ([]models.WarmupDailyStats, *errx.Error)
@@ -117,19 +119,20 @@ type Service interface {
 	SetParticipation(ctx context.Context, orgID, accountID uuid.UUID, participation models.DiagnosticParticipation) (*models.CloudLinkMailboxRow, *errx.Error)
 
 	// Root redirects Warmbly Cloud serves for this instance (redirects.go).
-	RedirectOffer(ctx context.Context) (*models.PoolLinkRedirectOffer, bool)
+	RedirectOffer(ctx context.Context, orgID uuid.UUID) (*models.PoolLinkRedirectOffer, bool)
+	ReleaseRedirect(ctx context.Context, instanceID uuid.UUID, domain string) *errx.Error
 	ListRedirects(ctx context.Context) ([]models.DomainRedirect, *errx.Error)
-	PutRedirect(ctx context.Context, domain string, in models.DomainRedirectRequest) (*models.DomainRedirect, *errx.Error)
-	GetRedirect(ctx context.Context, domain string) (*models.DomainRedirect, *errx.Error)
-	VerifyRedirect(ctx context.Context, domain string) (*models.DomainRedirect, *errx.Error)
-	DeleteRedirect(ctx context.Context, domain string) *errx.Error
+	PutRedirect(ctx context.Context, orgID uuid.UUID, domain string, in models.DomainRedirectRequest) (*models.DomainRedirect, *errx.Error)
+	GetRedirect(ctx context.Context, orgID uuid.UUID, domain string) (*models.DomainRedirect, *errx.Error)
+	VerifyRedirect(ctx context.Context, orgID uuid.UUID, domain string) (*models.DomainRedirect, *errx.Error)
+	DeleteRedirect(ctx context.Context, orgID uuid.UUID, domain string) *errx.Error
 	// OnDisconnect runs after the link ends, for state that only held while linked.
-	OnDisconnect(fn func(context.Context))
+	OnDisconnect(fn func(context.Context, uuid.UUID))
 
 	// Cloud-managed mailboxes: consent through the cloud, tokens brokered from it (managed.go).
 	StartOAuth(ctx context.Context, orgID, userID uuid.UUID, provider models.InboxProvider) (*models.CloudLinkOAuthStart, *errx.Error)
 	FinishOAuth(ctx context.Context, orgID, userID uuid.UUID, session string) (*models.Email, *errx.Error)
-	ListWorkspaceMailboxes(ctx context.Context) ([]models.PoolLinkWorkspaceMailbox, *errx.Error)
+	ListWorkspaceMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.PoolLinkWorkspaceMailbox, *errx.Error)
 	Adopt(ctx context.Context, orgID, userID, cloudAccountID uuid.UUID) (*models.Email, *errx.Error)
 	// AccessToken is the worker's credential for a managed mailbox, via the internal API.
 	AccessToken(ctx context.Context, accountID uuid.UUID) (*models.PoolLinkAccessToken, *errx.Error)
@@ -152,10 +155,10 @@ type Service interface {
 	// The placement seed panel the cloud lends a linked instance. The
 	// instance renders and sends every copy; the cloud only hands out seed
 	// addresses and reports where each copy landed.
-	PlacementPanel(ctx context.Context) (*models.PlacementCloudPanel, *errx.Error)
-	StartPlacement(ctx context.Context, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error)
-	ReportPlacementSends(ctx context.Context, testID uuid.UUID, sends []models.PlacementCloudSend) *errx.Error
-	PlacementVerdicts(ctx context.Context, testID uuid.UUID) (*models.PlacementCloudTest, *errx.Error)
+	PlacementPanel(ctx context.Context, orgID uuid.UUID) (*models.PlacementCloudPanel, *errx.Error)
+	StartPlacement(ctx context.Context, orgID uuid.UUID, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error)
+	ReportPlacementSends(ctx context.Context, instanceID, testID uuid.UUID, sends []models.PlacementCloudSend) *errx.Error
+	PlacementVerdicts(ctx context.Context, instanceID, testID uuid.UUID) (*models.PlacementCloudTest, *errx.Error)
 }
 
 type service struct {
@@ -163,22 +166,45 @@ type service struct {
 	emails   repository.EmailRepository
 	emailSvc email.EmailService
 
-	mu      sync.Mutex
-	pending *PendingConnect
-	tokens  map[uuid.UUID]cachedToken
-	offer   cachedOffer
+	mu        sync.Mutex
+	pending   map[uuid.UUID]*PendingConnect
+	tokens    map[uuid.UUID]cachedToken
+	offers    map[uuid.UUID]cachedOffer
+	connectMu sync.Mutex
 	// offerFetch lets one caller ask Cloud for the offer while the others wait for its answer.
 	offerFetch sync.Mutex
 
-	disconnected []func(context.Context)
+	disconnected []func(context.Context, uuid.UUID)
 }
 
 func NewService(repo repository.CloudLinkRepository, emails repository.EmailRepository, emailSvc email.EmailService) Service {
-	return &service{repo: repo, emails: emails, emailSvc: emailSvc, tokens: map[uuid.UUID]cachedToken{}}
+	return &service{pending: map[uuid.UUID]*PendingConnect{}, repo: repo, emails: emails, emailSvc: emailSvc, tokens: map[uuid.UUID]cachedToken{}}
 }
 
-func (s *service) link(ctx context.Context) (*models.CloudLink, *errx.Error) {
-	l, err := s.repo.Get(ctx)
+func (s *service) link(ctx context.Context, orgID uuid.UUID) (*models.CloudLink, *errx.Error) {
+	l, err := s.repo.Get(ctx, &orgID)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	if l == nil {
+		return nil, ErrNotConnected
+	}
+	return l, nil
+}
+
+func (s *service) newLink(ctx context.Context, orgID uuid.UUID) (*models.CloudLink, *errx.Error) {
+	l, xerr := s.link(ctx, orgID)
+	if xerr != nil {
+		return nil, xerr
+	}
+	if l.OrganizationID == nil {
+		return nil, ErrLegacyLink
+	}
+	return l, nil
+}
+
+func (s *service) mailboxLink(ctx context.Context, m *models.CloudLinkMailbox) (*models.CloudLink, *errx.Error) {
+	l, err := s.repo.GetByInstance(ctx, m.InstanceID)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
@@ -195,9 +221,9 @@ func (s *service) clientFor(l *models.CloudLink) *client {
 	return newClient(l.CloudURL, l.Token, instanceVersion())
 }
 
-func (s *service) Status(ctx context.Context) (*models.CloudLinkStatus, *errx.Error) {
+func (s *service) Status(ctx context.Context, orgID uuid.UUID) (*models.CloudLinkStatus, *errx.Error) {
 	st := &models.CloudLinkStatus{DefaultCloudURL: CloudURL()}
-	l, err := s.repo.Get(ctx)
+	l, err := s.repo.Get(ctx, &orgID)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
@@ -206,21 +232,30 @@ func (s *service) Status(ctx context.Context) (*models.CloudLinkStatus, *errx.Er
 	}
 	st.Connected = true
 	st.Link = l
+	legacy, err := s.repo.Get(ctx, nil)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	st.LegacyConnected = legacy != nil
 	var info models.PoolLinkInstanceInfo
 	if xerr := s.clientFor(l).do(ctx, http.MethodGet, "/instance", nil, &info); xerr != nil {
 		st.Error = xerr.Message
-		_ = s.repo.SetSyncResult(ctx, time.Now(), xerr.Message)
+		_ = s.repo.SetSyncResult(ctx, l.InstanceID, time.Now(), xerr.Message)
 		return st, nil
 	}
 	st.Reachable = true
 	st.Info = &info
-	s.rememberOffer(info.Redirects)
-	_ = s.repo.SetSyncResult(ctx, time.Now(), "")
+	s.rememberOffer(l.InstanceID, info.Redirects)
+	_ = s.repo.SetSyncResult(ctx, l.InstanceID, time.Now(), "")
 	return st, nil
 }
 
-func (s *service) StartConnect(ctx context.Context, userID uuid.UUID, cloudURL string) (*PendingConnect, *errx.Error) {
-	if l, err := s.repo.Get(ctx); err == nil && l != nil {
+func (s *service) StartConnect(ctx context.Context, orgID, userID uuid.UUID, cloudURL string) (*PendingConnect, *errx.Error) {
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
+	if l, err := s.repo.Get(ctx, &orgID); err != nil {
+		return nil, errx.InternalError()
+	} else if l != nil && l.OrganizationID != nil {
 		return nil, ErrAlreadyLinked
 	}
 	// The handshake is one-time: refuse it now rather than lose the token
@@ -238,13 +273,18 @@ func (s *service) StartConnect(ctx context.Context, userID uuid.UUID, cloudURL s
 	c := newClient(cloudURL, "", instanceVersion())
 	var res models.PoolLinkStartResponse
 	if xerr := c.do(ctx, http.MethodPost, "/codes", models.PoolLinkStartRequest{
-		InstanceName:    instanceName(),
-		InstanceURL:     config.AppBaseURL(),
-		InstanceVersion: instanceVersion(),
+		RemoteOrganizationID: orgID,
+		InstanceName:         instanceName(),
+		InstanceURL:          config.AppBaseURL(),
+		InstanceVersion:      instanceVersion(),
 	}, &res); xerr != nil {
 		return nil, xerr
 	}
+	if !res.WorkspaceScoped {
+		return nil, errx.NewWithIdentifier(errx.Conflict, "cloud_link_upgrade_required", "Upgrade Warmbly Cloud before connecting per workspace.")
+	}
 	p := &PendingConnect{
+		OrganizationID:  orgID,
 		DeviceCode:      res.DeviceCode,
 		UserCode:        res.UserCode,
 		VerificationURL: res.VerificationURL,
@@ -254,20 +294,28 @@ func (s *service) StartConnect(ctx context.Context, userID uuid.UUID, cloudURL s
 		StartedBy:       userID,
 	}
 	s.mu.Lock()
-	s.pending = p
+	if s.pending == nil {
+		s.pending = map[uuid.UUID]*PendingConnect{}
+	}
+	s.pending[orgID] = p
 	s.mu.Unlock()
 	return p, nil
 }
 
-func (s *service) PollConnect(ctx context.Context, userID uuid.UUID) (*ConnectPollResult, *errx.Error) {
+func (s *service) PollConnect(ctx context.Context, orgID, userID uuid.UUID) (*ConnectPollResult, *errx.Error) {
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
 	s.mu.Lock()
-	p := s.pending
+	p := s.pending[orgID]
 	s.mu.Unlock()
 	if p == nil {
 		// Another tab may have finished the handshake already.
-		if l, err := s.repo.Get(ctx); err == nil && l != nil {
+		if l, err := s.repo.Get(ctx, &orgID); err == nil && l != nil && l.OrganizationID != nil {
 			return &ConnectPollResult{Status: models.PoolLinkCodeApproved, Link: l}, nil
 		}
+		return nil, ErrNoPendingCode
+	}
+	if p.StartedBy != userID {
 		return nil, ErrNoPendingCode
 	}
 	if time.Now().After(p.ExpiresAt) {
@@ -289,10 +337,11 @@ func (s *service) PollConnect(ctx context.Context, userID uuid.UUID) (*ConnectPo
 		return nil, errx.InternalError()
 	}
 	l := &models.CloudLink{
-		CloudURL:    p.CloudURL,
-		InstanceID:  *res.InstanceID,
-		Token:       res.InstanceToken,
-		ConnectedBy: &userID,
+		OrganizationID: &orgID,
+		CloudURL:       p.CloudURL,
+		InstanceID:     *res.InstanceID,
+		Token:          res.InstanceToken,
+		ConnectedBy:    &userID,
 	}
 	if res.Organization != nil {
 		l.OrganizationName = res.Organization.Name
@@ -301,7 +350,7 @@ func (s *service) PollConnect(ctx context.Context, userID uuid.UUID) (*ConnectPo
 		return nil, errx.InternalError()
 	}
 	s.clearPending(p)
-	s.forgetOffer()
+	s.forgetOffer(l.InstanceID)
 	var info models.PoolLinkInstanceInfo
 	out := &ConnectPollResult{Status: models.PoolLinkCodeApproved, Link: l}
 	if xerr := s.clientFor(l).do(ctx, http.MethodGet, "/instance", nil, &info); xerr == nil {
@@ -312,8 +361,8 @@ func (s *service) PollConnect(ctx context.Context, userID uuid.UUID) (*ConnectPo
 
 func (s *service) clearPending(p *PendingConnect) {
 	s.mu.Lock()
-	if s.pending == p {
-		s.pending = nil
+	if s.pending[p.OrganizationID] == p {
+		delete(s.pending, p.OrganizationID)
 	}
 	s.mu.Unlock()
 }
@@ -327,15 +376,29 @@ func linkAlreadyGone(xerr *errx.Error) bool {
 	return false
 }
 
-func (s *service) Disconnect(ctx context.Context) *errx.Error {
+func (s *service) Disconnect(ctx context.Context, orgID uuid.UUID, legacy bool) *errx.Error {
 	if !reconciliationLocked(ctx) {
-		return s.reconcileLocked(ctx, s.Disconnect)
+		return s.reconcileLocked(ctx, func(ctx context.Context) *errx.Error { return s.Disconnect(ctx, orgID, legacy) })
 	}
-	l, xerr := s.link(ctx)
-	if xerr != nil {
-		return xerr
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
+	var l *models.CloudLink
+	var err error
+	if legacy {
+		l, err = s.repo.Get(ctx, nil)
+	} else {
+		l, err = s.repo.Get(ctx, &orgID)
 	}
-	if err := s.repo.SetDisconnectPending(ctx); err != nil {
+	if err != nil {
+		return errx.InternalError()
+	}
+	if l == nil {
+		return ErrNotConnected
+	}
+	if !legacy && l.OrganizationID == nil {
+		return ErrLegacyLink
+	}
+	if err := s.repo.SetDisconnectPending(ctx, l.InstanceID); err != nil {
 		return errx.InternalError()
 	}
 	if r, ok := s.repo.(repository.CloudManagedConsentRepository); ok {
@@ -362,6 +425,9 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 	}
 	var released []models.CloudLinkMailbox
 	for _, m := range rows {
+		if m.InstanceID != l.InstanceID {
+			continue
+		}
 		if !m.Managed {
 			if err := s.carryStanding(ctx, m); err != nil {
 				return errx.InternalError()
@@ -381,19 +447,26 @@ func (s *service) Disconnect(ctx context.Context) *errx.Error {
 			return errx.InternalError()
 		}
 	}
-	if err := s.repo.UnenrollAll(ctx); err != nil {
+	if err := s.repo.UnenrollAll(ctx, l.InstanceID); err != nil {
 		return errx.InternalError()
 	}
-	if err := s.repo.Delete(ctx); err != nil {
+	if err := s.repo.Delete(ctx, l.InstanceID); err != nil {
 		return errx.InternalError()
 	}
 	// The mailboxes the cloud was warming rejoin this instance's pool.
 	for _, m := range released {
 		s.syncLocalPool(ctx, m.EmailAccountID)
 	}
-	s.forgetOffer()
+	s.mu.Lock()
+	for _, m := range rows {
+		if m.InstanceID == l.InstanceID {
+			delete(s.tokens, m.EmailAccountID)
+		}
+	}
+	s.mu.Unlock()
+	s.forgetOffer(l.InstanceID)
 	for _, fn := range s.disconnected {
-		fn(ctx)
+		fn(ctx, l.InstanceID)
 	}
 	return nil
 }
@@ -412,7 +485,7 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 	if xerr != nil {
 		return nil, xerr
 	}
-	enrolled, err := s.repo.List(ctx)
+	enrolled, err := s.repo.ListForOrg(ctx, orgID, nil)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
@@ -423,8 +496,10 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 
 	// One round trip for every enrolled mailbox's cloud state.
 	cloudByRemote := map[uuid.UUID]*models.PoolLinkMailboxState{}
-	if len(enrolled) > 0 {
-		if l, err := s.repo.Get(ctx); err == nil && l != nil {
+	legacyInstances := map[uuid.UUID]bool{}
+	for instanceID := range mailboxGroups(enrolled) {
+		if l, err := s.repo.GetByInstance(ctx, instanceID); err == nil && l != nil {
+			legacyInstances[instanceID] = l.OrganizationID == nil
 			var states []models.PoolLinkMailboxState
 			if xerr := s.clientFor(l).do(ctx, http.MethodGet, "/instance/mailboxes", nil, &states); xerr == nil {
 				for i := range states {
@@ -442,6 +517,7 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 		if e, ok := byAccount[a.ID]; ok {
 			at := e.EnrolledAt
 			row.Enrolled = true
+			row.Legacy = legacyInstances[e.InstanceID]
 			row.EnrolledAt = &at
 			row.Managed = e.Managed
 			row.EnrollmentState = e.EnrollmentState
@@ -517,7 +593,7 @@ func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*mode
 		})
 		return row, xerr
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -556,14 +632,14 @@ func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*mode
 	}
 
 	var state models.PoolLinkMailboxState
-	if err := s.repo.BeginEnrollment(ctx, acc.ID, acc.ID); err != nil {
+	if err := s.repo.BeginEnrollment(ctx, acc.ID, acc.ID, l.InstanceID); err != nil {
 		return nil, errx.InternalError()
 	}
 	s.syncLocalPool(ctx, acc.ID)
 	if xerr := s.clientFor(l).do(ctx, http.MethodPost, "/instance/mailboxes", req, &state); xerr != nil {
 		return nil, xerr
 	}
-	if _, err := s.repo.Enroll(ctx, acc.ID, acc.ID, false); err != nil {
+	if _, err := s.repo.Enroll(ctx, acc.ID, acc.ID, l.InstanceID, false); err != nil {
 		// The durable intent remains unavailable locally until retry confirms enrollment.
 		return nil, errx.InternalError()
 	}
@@ -595,20 +671,12 @@ func (s *service) Unenroll(ctx context.Context, orgID, accountID uuid.UUID) *err
 	if _, xerr := s.ownedAccount(ctx, orgID, accountID); xerr != nil {
 		return xerr
 	}
-	if r, ok := s.repo.(repository.CloudManagedConsentRepository); ok {
-		l, err := s.repo.Get(ctx)
-		if err != nil {
-			return errx.InternalError()
-		}
-		if l != nil {
-			if err := r.RevokeManagedConsents(ctx, l.InstanceID, &accountID); err != nil {
-				return errx.InternalError()
-			}
-		}
-	}
 	m, err := s.repo.GetByAccount(ctx, accountID)
 	if err != nil {
 		return errx.InternalError()
+	}
+	if xerr := s.revokeAccountConsents(ctx, orgID, accountID, m); xerr != nil {
+		return xerr
 	}
 	if m == nil {
 		return nil
@@ -616,7 +684,7 @@ func (s *service) Unenroll(ctx context.Context, orgID, accountID uuid.UUID) *err
 	if m.Managed {
 		return s.removeManaged(ctx, orgID.String(), m)
 	}
-	l, err := s.repo.Get(ctx)
+	l, err := s.repo.GetByInstance(ctx, m.InstanceID)
 	if err != nil {
 		return errx.InternalError()
 	}
@@ -633,20 +701,12 @@ func (s *service) RevokeForDelete(ctx context.Context, orgID, accountID uuid.UUI
 	if _, xerr := s.ownedAccount(ctx, orgID, accountID); xerr != nil {
 		return xerr
 	}
-	if r, ok := s.repo.(repository.CloudManagedConsentRepository); ok {
-		l, err := s.repo.Get(ctx)
-		if err != nil {
-			return errx.InternalError()
-		}
-		if l != nil {
-			if err := r.RevokeManagedConsents(ctx, l.InstanceID, &accountID); err != nil {
-				return errx.InternalError()
-			}
-		}
-	}
 	m, err := s.repo.GetByAccount(ctx, accountID)
 	if err != nil {
 		return errx.InternalError()
+	}
+	if xerr := s.revokeAccountConsents(ctx, orgID, accountID, m); xerr != nil {
+		return xerr
 	}
 	if m == nil {
 		return nil
@@ -657,7 +717,7 @@ func (s *service) RevokeForDelete(ctx context.Context, orgID, accountID uuid.UUI
 	if err := s.carryStanding(ctx, *m); err != nil {
 		return errx.InternalError()
 	}
-	l, err := s.repo.Get(ctx)
+	l, err := s.repo.GetByInstance(ctx, m.InstanceID)
 	if err != nil {
 		log.Error().Err(err).Str("account_id", accountID.String()).Msg("cloud link: link unreadable, so the mailbox's enrollment cannot be revoked")
 		return errx.InternalError()
@@ -682,10 +742,6 @@ func (s *service) SetLifecycle(ctx context.Context, orgID, accountID uuid.UUID, 
 	if action != "pause" && action != "resume" {
 		return nil, errx.NewWithIdentifier(errx.BadRequest, "cloud_link_lifecycle", "Action must be pause or resume.")
 	}
-	l, xerr := s.link(ctx)
-	if xerr != nil {
-		return nil, xerr
-	}
 	if _, xerr := s.ownedAccount(ctx, orgID, accountID); xerr != nil {
 		return nil, xerr
 	}
@@ -699,6 +755,10 @@ func (s *service) SetLifecycle(ctx context.Context, orgID, accountID uuid.UUID, 
 	if m.EnrollmentState == "pending_remove" {
 		return nil, errx.ErrNotFound
 	}
+	l, xerr := s.mailboxLink(ctx, m)
+	if xerr != nil {
+		return nil, xerr
+	}
 	var state models.PoolLinkMailboxState
 	if xerr := s.clientFor(l).do(ctx, http.MethodPatch, "/instance/mailboxes/"+m.RemoteID.String(), models.PoolLinkMailboxPatch{Lifecycle: action}, &state); xerr != nil {
 		return nil, xerr
@@ -711,11 +771,7 @@ func (s *service) SetParticipation(ctx context.Context, orgID, accountID uuid.UU
 	if !participation.Valid() {
 		return nil, errx.ErrInvalid
 	}
-	l, xerr := s.link(ctx)
-	if xerr != nil {
-		return nil, xerr
-	}
-	if _, xerr = s.ownedAccount(ctx, orgID, accountID); xerr != nil {
+	if _, xerr := s.ownedAccount(ctx, orgID, accountID); xerr != nil {
 		return nil, xerr
 	}
 	m, err := s.repo.GetByAccount(ctx, accountID)
@@ -724,6 +780,10 @@ func (s *service) SetParticipation(ctx context.Context, orgID, accountID uuid.UU
 	}
 	if m == nil || m.EnrollmentState == "pending_remove" {
 		return nil, errx.ErrNotFound
+	}
+	l, xerr := s.mailboxLink(ctx, m)
+	if xerr != nil {
+		return nil, xerr
 	}
 	var state models.PoolLinkMailboxState
 	if xerr = s.clientFor(l).do(ctx, http.MethodPatch, "/instance/mailboxes/"+m.RemoteID.String()+"/participation", models.PoolLinkMailboxPatch{Participation: &participation}, &state); xerr != nil {

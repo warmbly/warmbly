@@ -17,6 +17,9 @@ export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect
 
     if (!pool.manageable || pool.loading) return null;
 
+    if (pool.connected && !pool.workspaceConnected) {
+        return <div className="px-3 py-2 text-[12.5px] text-slate-600">Existing Cloud mailboxes keep warming. <Link to="/app/settings/warmbly-cloud" className="font-medium text-sky-700 underline">Connect this workspace</Link> to add more.</div>;
+    }
     if (pool.connected) {
         const plan = pool.plan;
         const limit = plan?.mailbox_limit ?? null;

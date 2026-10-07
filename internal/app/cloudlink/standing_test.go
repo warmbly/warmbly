@@ -22,7 +22,13 @@ type standingRepo struct {
 	current  map[uuid.UUID]models.WarmupHealthState
 }
 
-func (r *standingRepo) Get(context.Context) (*models.CloudLink, error) { return r.link, nil }
+func (r *standingRepo) GetByInstance(context.Context, uuid.UUID) (*models.CloudLink, error) {
+	return r.link, nil
+}
+
+func (r *standingRepo) ListLinks(context.Context) ([]models.CloudLink, error) {
+	return []models.CloudLink{*r.link}, nil
+}
 
 func (r *standingRepo) WithReconciliationLock(_ context.Context, fn func() error) error { return fn() }
 func (r *standingRepo) InvalidateStanding(context.Context, uuid.UUID) error             { return nil }

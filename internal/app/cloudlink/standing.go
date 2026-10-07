@@ -60,6 +60,14 @@ func (s *service) carryStanding(ctx context.Context, m models.CloudLinkMailbox) 
 	return s.repo.CarryStanding(ctx, m.EmailAccountID, h)
 }
 
+func mailboxGroups(rows []models.CloudLinkMailbox) map[uuid.UUID][]models.CloudLinkMailbox {
+	groups := map[uuid.UUID][]models.CloudLinkMailbox{}
+	for _, m := range rows {
+		groups[m.InstanceID] = append(groups[m.InstanceID], m)
+	}
+	return groups
+}
+
 func (s *service) SyncStanding(ctx context.Context) ([]models.CloudLinkStandingChange, *errx.Error) {
 	if !reconciliationLocked(ctx) {
 		var changes []models.CloudLinkStandingChange
@@ -70,33 +78,55 @@ func (s *service) SyncStanding(ctx context.Context) ([]models.CloudLinkStandingC
 		})
 		return changes, xerr
 	}
-	l, err := s.repo.Get(ctx)
+	links, err := s.repo.ListLinks(ctx)
 	if err != nil {
 		return nil, errx.InternalError()
-	}
-	if l == nil {
-		return nil, nil
-	}
-	if l.DisconnectPending {
-		return nil, s.Disconnect(ctx)
-	}
-	if xerr := s.reconcileManagedConsents(ctx, l); xerr != nil {
-		return nil, xerr
 	}
 	enrolled, err := s.repo.List(ctx)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
-	if len(enrolled) == 0 {
-		return nil, nil
+	var changes []models.CloudLinkStandingChange
+	var lastError *errx.Error
+	groups := mailboxGroups(enrolled)
+	for i := range links {
+		l := &links[i]
+		part, xerr := s.reconcileLinkStanding(ctx, l, groups[l.InstanceID])
+		if xerr != nil {
+			lastError = xerr
+			continue
+		}
+		changes = append(changes, part...)
+	}
+	return changes, lastError
+}
+
+func (s *service) reconcileLinkStanding(ctx context.Context, l *models.CloudLink, enrolled []models.CloudLinkMailbox) ([]models.CloudLinkStandingChange, *errx.Error) {
+	if l.DisconnectPending {
+		orgID := uuid.Nil
+		if l.OrganizationID != nil {
+			orgID = *l.OrganizationID
+		}
+		return nil, s.Disconnect(ctx, orgID, l.OrganizationID == nil)
+	}
+	if xerr := s.reconcileManagedConsents(ctx, l); xerr != nil {
+		return nil, xerr
 	}
 	if xerr := s.reconcileEnrollments(ctx, l, enrolled); xerr != nil {
 		return nil, xerr
 	}
-	enrolled, err = s.repo.List(ctx)
+	rows, err := s.repo.List(ctx)
 	if err != nil {
 		return nil, errx.InternalError()
 	}
+	enrolled = mailboxGroups(rows)[l.InstanceID]
+	if len(enrolled) == 0 {
+		return nil, nil
+	}
+	return s.syncStanding(ctx, l, enrolled)
+}
+
+func (s *service) syncStanding(ctx context.Context, l *models.CloudLink, enrolled []models.CloudLinkMailbox) ([]models.CloudLinkStandingChange, *errx.Error) {
 	byRemote, xerr := s.fetchStanding(ctx, l)
 	if xerr != nil {
 		return nil, xerr

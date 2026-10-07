@@ -380,16 +380,17 @@ type TrackingDomainUse struct {
 
 // DomainRedirect sends a sending domain's root to the workspace's main website.
 type DomainRedirect struct {
-	ID            uuid.UUID   `json:"id"`
-	Domain        string      `json:"domain"`
-	TargetURL     string      `json:"target_url"`
-	IncludeWWW    bool        `json:"include_www"`
-	Verified      bool        `json:"verified"`
-	VerifiedAt    *time.Time  `json:"verified_at,omitempty"`
-	LastCheckedAt *time.Time  `json:"last_checked_at,omitempty"`
-	LastError     string      `json:"last_error,omitempty"`
-	CreatedAt     time.Time   `json:"created_at"`
-	Records       []DNSRecord `json:"records"`
+	CloudLinkInstanceID *uuid.UUID  `json:"-"`
+	ID                  uuid.UUID   `json:"id"`
+	Domain              string      `json:"domain"`
+	TargetURL           string      `json:"target_url"`
+	IncludeWWW          bool        `json:"include_www"`
+	Verified            bool        `json:"verified"`
+	VerifiedAt          *time.Time  `json:"verified_at,omitempty"`
+	LastCheckedAt       *time.Time  `json:"last_checked_at,omitempty"`
+	LastError           string      `json:"last_error,omitempty"`
+	CreatedAt           time.Time   `json:"created_at"`
+	Records             []DNSRecord `json:"records"`
 	// ServedBy is who answers visitors: this instance or Warmbly Cloud.
 	ServedBy RedirectServer `json:"served_by"`
 	// ServeHost is the tracking host that answers, which a proxy routes the domain to.

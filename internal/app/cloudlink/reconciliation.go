@@ -5,12 +5,41 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
 type reconciliationKey struct{}
+
+func (s *service) revokeAccountConsents(ctx context.Context, orgID, accountID uuid.UUID, m *models.CloudLinkMailbox) *errx.Error {
+	r, ok := s.repo.(repository.CloudManagedConsentRepository)
+	if !ok {
+		return nil
+	}
+	if m != nil {
+		if err := r.RevokeManagedConsents(ctx, m.InstanceID, &accountID); err != nil {
+			return errx.InternalError()
+		}
+		return nil
+	}
+	seen := map[uuid.UUID]bool{}
+	for _, org := range []*uuid.UUID{&orgID, nil} {
+		l, err := s.repo.Get(ctx, org)
+		if err != nil {
+			return errx.InternalError()
+		}
+		if l != nil && !seen[l.InstanceID] {
+			if err := r.RevokeManagedConsents(ctx, l.InstanceID, &accountID); err != nil {
+				return errx.InternalError()
+			}
+			seen[l.InstanceID] = true
+		}
+	}
+	return nil
+}
 
 func reconciliationLocked(ctx context.Context) bool { return ctx.Value(reconciliationKey{}) != nil }
 

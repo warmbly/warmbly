@@ -29,12 +29,16 @@ type stubLinkRepo struct {
 	unenrollErr error
 }
 
-func (r *stubLinkRepo) Get(context.Context) (*models.CloudLink, error) {
+func (r *stubLinkRepo) Get(context.Context, *uuid.UUID) (*models.CloudLink, error) {
+	return r.link, r.linkErr
+}
+
+func (r *stubLinkRepo) GetByInstance(context.Context, uuid.UUID) (*models.CloudLink, error) {
 	return r.link, r.linkErr
 }
 
 func (r *stubLinkRepo) WithReconciliationLock(_ context.Context, fn func() error) error { return fn() }
-func (r *stubLinkRepo) SetDisconnectPending(context.Context) error {
+func (r *stubLinkRepo) SetDisconnectPending(context.Context, uuid.UUID) error {
 	r.link.DisconnectPending = true
 	return nil
 }

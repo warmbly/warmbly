@@ -39,6 +39,9 @@ func (s *service) RemotePanel(ctx context.Context, inst *models.PoolLinkInstance
 // RemoteStart opens one test per requested variant against the same seeds,
 // charged to the linked workspace's allowance.
 func (s *service) RemoteStart(ctx context.Context, inst *models.PoolLinkInstance, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error) {
+	if inst.RemoteOrganizationID == nil {
+		return nil, placementErr(errx.Conflict, "pool_link_workspace_required", "Connect per workspace to start placement tests. Existing legacy results keep working.")
+	}
 	if req.Tests < 1 || req.Tests > 2 {
 		return nil, errx.New(errx.BadRequest, "tests must be 1 or 2")
 	}
@@ -171,9 +174,11 @@ func (s *service) syncCloud(ctx context.Context) map[uuid.UUID]bool {
 		errs.CaptureException(err)
 		return touched
 	}
-	byTest := map[uuid.UUID][]int{}
+	type remoteKey struct{ instanceID, testID uuid.UUID }
+	byTest := map[remoteKey][]int{}
 	for i, r := range reports {
-		byTest[r.RemoteTestID] = append(byTest[r.RemoteTestID], i)
+		key := remoteKey{instanceID: r.InstanceID, testID: r.RemoteTestID}
+		byTest[key] = append(byTest[key], i)
 	}
 	for remoteTest, idx := range byTest {
 		sends := make([]models.PlacementCloudSend, 0, len(idx))
@@ -187,7 +192,7 @@ func (s *service) syncCloud(ctx context.Context) map[uuid.UUID]bool {
 			sends = append(sends, snd)
 			ids = append(ids, r.ResultID)
 		}
-		if xerr := s.Cloud.ReportPlacementSends(ctx, remoteTest, sends); xerr != nil {
+		if xerr := s.Cloud.ReportPlacementSends(ctx, remoteTest.instanceID, remoteTest.testID, sends); xerr != nil {
 			continue
 		}
 		if err := s.Repo.MarkRemoteReported(ctx, ids); err != nil {
@@ -201,10 +206,10 @@ func (s *service) syncCloud(ctx context.Context) map[uuid.UUID]bool {
 		return touched
 	}
 	for _, t := range open {
-		if t.RemoteTestID == nil {
+		if t.RemoteTestID == nil || t.RemoteInstanceID == nil {
 			continue
 		}
-		answer, xerr := s.Cloud.PlacementVerdicts(ctx, *t.RemoteTestID)
+		answer, xerr := s.Cloud.PlacementVerdicts(ctx, *t.RemoteInstanceID, *t.RemoteTestID)
 		if xerr != nil || answer == nil {
 			continue
 		}

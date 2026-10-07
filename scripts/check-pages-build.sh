@@ -61,7 +61,7 @@ for app in web admin; do
     [ -f "$app/public/404.html" ] || fail "web needs a 404.html to disable Pages' implicit SPA fallback for assets"
     grep -qE '^/app/\*[[:space:]]+/[[:space:]]+200' "$app/public/_redirects" \
       || fail "web has no dashboard deep-link rewrite"
-    if grep -qE '^/\*[[:space:]]+/index\.html' "$app/public/_redirects"; then
+    if grep -qE '^/\*[[:space:]]+/([[:space:]]|index\.html)' "$app/public/_redirects"; then
       fail "web rewrites missing assets to HTML"
     fi
   else

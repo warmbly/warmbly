@@ -141,6 +141,16 @@ A password must be 8 to 128 characters. There is no composition rule, but it is 
 }
 ```
 
+#### Cloud connection refusals
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `cloud_link_workspace_required` | 409 | The selected workspace only has a legacy instance-wide connection. Existing enrollments keep working; connect the workspace separately before adding mailboxes or placement tests |
+| `pool_link_workspace_required` | 409 | Cloud refused a new connection or enrollment without local workspace scope. Upgrade the self-hosted instance and connect per workspace; existing legacy enrollments keep working |
+| `pool_link_workspace_connected` | 409 | The Cloud workspace already has an active self-hosted connection, including a legacy link. Use another Cloud workspace and plan, or disconnect the existing link first |
+| `cloud_link_upgrade_required` | 409 | This Cloud deployment does not support workspace-scoped connections. Upgrade Cloud first |
+| `organization_cloud_connected` | 409 | Disconnect the workspace's Cloud connection before deleting it or scheduling deletion of it or its owner account |
+
 #### Name refusals
 
 | `code` | Status | Meaning |

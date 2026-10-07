@@ -191,7 +191,7 @@ var Tables = []Table{
 		Owner: scopeOrg,
 		// DNS points at the source (or at Cloud for it) until moved, so the destination serves it itself once its own check passes.
 		ResetOnImport: []string{"verified", "verified_at", "last_checked_at", "last_error", "served_by", "remote_host", "remote_records",
-			"linked_instance_id", "reach_status", "reach_hint", "reach_detail", "reach_proxy", "reach_checked_at"},
+			"linked_instance_id", "cloud_link_instance_id", "reach_status", "reach_hint", "reach_detail", "reach_proxy", "reach_checked_at"},
 		Note: "Sending domains whose root redirects to the workspace's website. The destination lists its own TXT value, derived from its secret and the new workspace, and verifies once it is published. A redirect Warmbly Cloud served for the source arrives served by the destination.",
 	},
 	{
@@ -1020,7 +1020,7 @@ var ExcludedTables = map[string]string{
 	"cli_auth_codes":                "In-flight `warmbly auth login` handshakes, valid for minutes. The API key an approval mints does travel, with the api_keys rows.",
 	"pool_link_instances":           "Self-hosted instances linked to this workspace's pool allowance. The token hash only authenticates against this instance, and the enrolled mailboxes are mirrors of mailboxes that live elsewhere.",
 	"pool_link_mailboxes":           "Which mailbox rows are warmup-only mirrors for a linked instance. They follow pool_link_instances, which does not travel.",
-	"cloud_link":                    "This instance's own link to Warmbly Cloud: an instance property, not workspace data, and its token would be wrong on any other instance.",
+	"cloud_link":                    "Workspace connections to Warmbly Cloud and legacy instance links: their encrypted tokens only work on this installation and do not travel.",
 	"cloud_link_mailboxes":          "Which local mailboxes Warmbly Cloud warms for this instance. The enrollment belongs to the link, which does not travel.",
 	"warmup_conversations":          "The instance's shared warmup content library, not workspace data.",
 	"copy_judgments":                "A cache of copy judgments keyed by the hash of the words judged. The destination re-reads a step the first time its Advisor runs.",

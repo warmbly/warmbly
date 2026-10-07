@@ -14,6 +14,7 @@ import (
 func TestLiveCloudReconciliationLockPreservesCommittedIntentWithASingleConnectionPool(t *testing.T) {
 	f := newPoolLinkFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	instance := liveCloudLink(t, f)
 	defer cancel()
 	cfg := f.pool.Config()
 	cfg.MaxConns = 1
@@ -29,7 +30,7 @@ func TestLiveCloudReconciliationLockPreservesCommittedIntentWithASingleConnectio
 	go func() {
 		firstDone <- r.WithReconciliationLock(ctx, func() error {
 			defer close(entered)
-			if err := r.BeginEnrollment(ctx, f.sender, f.sender); err != nil {
+			if err := r.BeginEnrollment(ctx, f.sender, f.sender, instance); err != nil {
 				return err
 			}
 			entered <- struct{}{}
@@ -75,7 +76,7 @@ func TestLiveCloudStandingFreshnessIsBoundedWithoutInventingAProviderBlock(t *te
 	f := newPoolLinkFixture(t)
 	ctx := context.Background()
 	links := NewCloudLinkRepository(f.pool, nil)
-	if _, err := links.Enroll(ctx, f.sender, f.sender, false); err != nil {
+	if _, err := links.Enroll(ctx, f.sender, f.sender, liveCloudLink(t, f), false); err != nil {
 		t.Fatal(err)
 	}
 	assertState := func(want models.WarmupHealthState, reason string) {
@@ -120,13 +121,15 @@ func TestLiveCloudPositiveObservationCannotClearAHoldFromAnotherLink(t *testing.
 	f := newPoolLinkFixture(t)
 	ctx := context.Background()
 	oldLink, newLink := uuid.New(), uuid.New()
-	if _, err := f.pool.Exec(ctx, `INSERT INTO cloud_link (id, cloud_url, instance_id, token, organization_name, connected_by)
-	 VALUES (true, 'https://cloud.example.invalid', $1, 'fixture-sealed', 'Fixture', $2)`, oldLink, f.user); err != nil {
+	if _, err := f.pool.Exec(ctx, `INSERT INTO cloud_link (cloud_url, instance_id, token, organization_name, connected_by)
+	 VALUES ('https://cloud.example.invalid', $1, 'fixture-sealed', 'Fixture', $2)`, oldLink, f.user); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = f.pool.Exec(ctx, `DELETE FROM cloud_link WHERE id = true`) })
+	t.Cleanup(func() {
+		_, _ = f.pool.Exec(ctx, `DELETE FROM cloud_link WHERE instance_id IN ($1, $2)`, oldLink, newLink)
+	})
 	r := NewCloudLinkRepository(f.pool, nil)
-	if _, err := r.Enroll(ctx, f.sender, f.sender, false); err != nil {
+	if _, err := r.Enroll(ctx, f.sender, f.sender, oldLink, false); err != nil {
 		t.Fatal(err)
 	}
 	assertState := func(want models.WarmupHealthState) {
@@ -145,7 +148,17 @@ func TestLiveCloudPositiveObservationCannotClearAHoldFromAnotherLink(t *testing.
 	if _, err := r.SetStanding(ctx, f.sender, &models.WarmupHealthInfo{State: "blocked"}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.pool.Exec(ctx, `UPDATE cloud_link SET instance_id = $1 WHERE id = true`, newLink); err != nil {
+	if err := r.Unenroll(ctx, f.sender); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Delete(ctx, oldLink); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO cloud_link (cloud_url, instance_id, token, organization_id)
+	 VALUES ('https://cloud.example.invalid', $1, 'fixture-sealed', $2)`, newLink, f.org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Enroll(ctx, f.sender, f.sender, newLink, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.SetStanding(ctx, f.sender, &models.WarmupHealthInfo{State: "healthy"}, false); err != nil {
@@ -165,7 +178,7 @@ func TestLiveCloudHoldSurvivesUnlinkLocalHealthReviewAndMembershipChange(t *test
 	if err := f.warmup.MoveToPool(ctx, models.WarmupPoolFreeID, f.sender, "sender_receiver"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := links.Enroll(ctx, f.sender, f.sender, false); err != nil {
+	if _, err := links.Enroll(ctx, f.sender, f.sender, liveCloudLink(t, f), false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := links.SetStanding(ctx, f.sender, &models.WarmupHealthInfo{State: "blocked", Reason: "cloud_review"}, false); err != nil {
@@ -202,16 +215,17 @@ func TestLiveCloudEnrollmentIntentDoesNotReverseAnExplicitOptOut(t *testing.T) {
 	f := newPoolLinkFixture(t)
 	ctx := context.Background()
 	links := NewCloudLinkRepository(f.pool, nil)
-	if err := links.BeginEnrollment(ctx, f.sender, f.sender); err != nil {
+	instance := liveCloudLink(t, f)
+	if err := links.BeginEnrollment(ctx, f.sender, f.sender, instance); err != nil {
 		t.Fatal(err)
 	}
 	if err := links.BeginRemoval(ctx, f.sender); err != nil {
 		t.Fatal(err)
 	}
-	if err := links.BeginEnrollment(ctx, f.sender, f.sender); err == nil {
+	if err := links.BeginEnrollment(ctx, f.sender, f.sender, instance); err == nil {
 		t.Fatal("re-enrollment reversed pending opt-out")
 	}
-	if _, err := links.Enroll(ctx, f.sender, f.sender, false); err == nil {
+	if _, err := links.Enroll(ctx, f.sender, f.sender, instance, false); err == nil {
 		t.Fatal("late acknowledgment reversed pending opt-out")
 	}
 	m, err := links.GetByAccount(ctx, f.sender)
@@ -224,7 +238,7 @@ func TestLiveCloudEnrollmentIntentDoesNotReverseAnExplicitOptOut(t *testing.T) {
 	if enrolled, err := links.IsEnrolled(ctx, f.sender); err != nil || enrolled {
 		t.Fatalf("completed opt-out stayed enrolled: %v, %v", enrolled, err)
 	}
-	if err := links.BeginEnrollment(ctx, f.sender, f.sender); err != nil {
+	if err := links.BeginEnrollment(ctx, f.sender, f.sender, instance); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -242,7 +256,7 @@ func TestLiveCloudLinkStandingGatesTheInstance(t *testing.T) {
 	handle, _ := liveContactDB(t)
 	lifecycle := NewSendLifecycleRepository(handle)
 
-	if _, err := links.Enroll(ctx, f.sender, f.sender, false); err != nil {
+	if _, err := links.Enroll(ctx, f.sender, f.sender, liveCloudLink(t, f), false); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 	until := time.Now().Add(72 * time.Hour).UTC().Truncate(time.Second)
@@ -392,7 +406,7 @@ func TestLiveCloudLinkStandingEdgeCases(t *testing.T) {
 	if err := f.warmup.MoveToPool(ctx, models.WarmupPoolFreeID, f.sender, "sender_receiver"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := links.Enroll(ctx, f.sender, f.sender, false); err != nil {
+	if _, err := links.Enroll(ctx, f.sender, f.sender, liveCloudLink(t, f), false); err != nil {
 		t.Fatalf("Enroll: %v", err)
 	}
 
@@ -451,7 +465,7 @@ func TestLiveCloudLinkStandingExpiredHoldDoesNotMaskALiveOne(t *testing.T) {
 	if _, err := f.pool.Exec(ctx, `UPDATE warmup_pool_participants SET health_state = 'quarantined', blocked_until = $2 WHERE email_account_id = $1`, f.sender, past); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := links.Enroll(ctx, f.sender, f.sender, false); err != nil {
+	if _, err := links.Enroll(ctx, f.sender, f.sender, liveCloudLink(t, f), false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := links.SetStanding(ctx, f.sender, &models.WarmupHealthInfo{State: "throttled"}, true); err != nil {
@@ -471,4 +485,70 @@ func TestLiveCloudLinkStandingExpiredHoldDoesNotMaskALiveOne(t *testing.T) {
 	if state, _, _ := f.warmup.GetHealthState(ctx, f.sender); state != models.WarmupHealthWatch {
 		t.Fatalf("an ended throttle masked the live watch: %s", state)
 	}
+}
+
+func TestLiveCloudWorkspaceDisconnectDoesNotHoldOrBrokerAnotherWorkspace(t *testing.T) {
+	f, other := newPoolLinkFixture(t), newPoolLinkFixture(t)
+	ctx := context.Background()
+	a, b := liveCloudLink(t, f), liveCloudLink(t, other)
+	links := NewCloudLinkRepository(f.pool, nil)
+	for _, row := range []struct{ account, instance uuid.UUID }{{f.sender, a}, {other.sender, b}} {
+		if _, err := links.Enroll(ctx, row.account, row.account, row.instance, true); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := links.SetStanding(ctx, row.account, &models.WarmupHealthInfo{State: "healthy"}, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := links.SetDisconnectPending(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		account uuid.UUID
+		state   models.WarmupHealthState
+		allowed bool
+	}{{f.sender, models.WarmupHealthBlocked, false}, {other.sender, models.WarmupHealthHealthy, true}} {
+		state, _, err := f.warmup.GetHealthState(ctx, row.account)
+		if err != nil || state != row.state {
+			t.Fatalf("workspace standing = %s, %v; want %s", state, err, row.state)
+		}
+		allowed, err := links.(CloudManagedConsentRepository).CanBrokerManagedToken(ctx, row.account)
+		if err != nil || allowed != row.allowed {
+			t.Fatalf("workspace token authority = %v, %v; want %v", allowed, err, row.allowed)
+		}
+	}
+	if err := links.BeginEnrollment(ctx, other.sender, other.sender, a); err == nil {
+		t.Fatal("enrollment moved a mailbox to another workspace's instance")
+	}
+	if _, err := links.Enroll(ctx, other.sender, other.sender, a, true); err == nil {
+		t.Fatal("confirmation moved a mailbox to another workspace's instance")
+	}
+	if err := links.BeginEnrollment(ctx, f.recipient, f.recipient, b); err == nil {
+		t.Fatal("new enrollment used another workspace's instance")
+	}
+	if _, err := links.Enroll(ctx, f.recipient, f.recipient, b, true); err == nil {
+		t.Fatal("new confirmation used another workspace's instance")
+	}
+	if m, err := links.GetByAccount(ctx, f.recipient); err != nil || m != nil {
+		t.Fatalf("foreign workspace enrollment persisted: %+v, %v", m, err)
+	}
+	c := &models.CloudManagedConsent{OrganizationID: f.org, UserID: &f.user, InstanceID: &b}
+	allowed, err := links.(CloudManagedConsentRepository).ManagedConsentAuthorized(ctx, c)
+	if err != nil || allowed {
+		t.Fatalf("foreign workspace instance authorized = %v, %v", allowed, err)
+	}
+}
+
+func liveCloudLink(t *testing.T, f *poolLinkFixture) uuid.UUID {
+	t.Helper()
+	var existing uuid.UUID
+	if err := f.pool.QueryRow(context.Background(), `SELECT instance_id FROM cloud_link WHERE organization_id = $1`, f.org).Scan(&existing); err == nil {
+		return existing
+	}
+	id := uuid.New()
+	if _, err := f.pool.Exec(context.Background(), `INSERT INTO cloud_link (cloud_url, instance_id, token, organization_id) VALUES ('https://example.test', $1, 'fixture', $2)`, id, f.org); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = f.pool.Exec(context.Background(), `DELETE FROM cloud_link WHERE instance_id = $1`, id) })
+	return id
 }

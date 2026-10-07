@@ -35,9 +35,51 @@ for (const path of [...roots.filter((root) => root !== '/'), '/auth/login/confir
   assert.equal(rule?.target, '/', `Pages does not serve SPA route ${path}`);
   assert.equal(rule?.code, '200');
 }
-for (const path of ['/assets/missing.js', '/assets/layout-aTnJVElG.js', '/config.js', '/favicon.ico', '/mail-preview.html', '/missing-resource']) {
+for (const path of ['/assets/missing.js', '/assets/layout-aTnJVElG.js', '/config.js', '/favicon.ico', '/mail-preview.html', '/mail-preview', '/missing-resource']) {
   assert.equal(match(path), undefined, `${path} must not rewrite to HTML`);
 }
 assert.match(read('../public/404.html'), /<!doctype html>/i);
 assert.doesNotMatch(read('../public/_headers'), /Cache-Control:.*immutable/);
+
+const headerRules = [];
+for (const line of read('../public/_headers').split('\n')) {
+  if (!line.trim() || line.trim().startsWith('#')) continue;
+  if (line.startsWith('/')) {
+    headerRules.push({ source: line.trim(), headers: [] });
+  } else {
+    headerRules.at(-1).headers.push(line.trim());
+  }
+}
+const headersFor = (path) => {
+  const headers = new Map();
+  for (const { source, headers: lines } of headerRules) {
+    if (!(source.endsWith('*') ? path.startsWith(source.slice(0, -1)) : path === source)) continue;
+    for (const line of lines) {
+      if (line.startsWith('! ')) {
+        headers.delete(line.slice(2).toLowerCase());
+      } else {
+        const colon = line.indexOf(':');
+        const name = line.slice(0, colon).toLowerCase();
+        const value = line.slice(colon + 1).trim();
+        headers.set(name, headers.has(name) ? `${headers.get(name)}, ${value}` : value);
+      }
+    }
+  }
+  return headers;
+};
+const previewHeaders = headersFor('/mail-preview.html');
+// Pages redirects .html assets to extensionless URLs; both must carry the same isolated policy.
+assert.deepEqual(headersFor('/mail-preview'), previewHeaders, 'Pages canonical preview URL must retain the .html preview headers');
+assert.equal(previewHeaders.get('x-frame-options'), 'SAMEORIGIN');
+assert.equal(previewHeaders.get('referrer-policy'), 'no-referrer');
+assert.equal(previewHeaders.get('cache-control'), 'no-store');
+assert.match(previewHeaders.get('content-security-policy'), /(?:^|; )script-src 'none';/);
+assert.match(previewHeaders.get('content-security-policy'), /(?:^|; )frame-ancestors 'self';/);
+assert.match(previewHeaders.get('content-security-policy'), /(?:^|; )img-src data: https: http:;/);
+assert.ok(!previewHeaders.get('content-security-policy').includes(','), 'preview must have one policy, not an intersection with the dashboard policy');
+for (const path of ['/', '/app/unibox/inbox', '/mail-preview-other', '/mail-preview/other', '/assets/missing.js']) {
+  const headers = headersFor(path);
+  assert.equal(headers.get('x-frame-options'), 'DENY', `${path} must retain dashboard clickjacking protection`);
+  assert.match(headers.get('content-security-policy'), /(?:^|; )frame-ancestors 'none'$/, `${path} must not use the preview policy`);
+}
 console.log('Pages SPA deep links and missing-asset separation passed');

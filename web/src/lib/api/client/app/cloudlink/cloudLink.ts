@@ -29,8 +29,8 @@ export async function pollCloudLinkConnect(): Promise<CloudLinkPollResult> {
     return await Request<CloudLinkPollResult>({ method: "POST", url: "/cloud-link/connect/poll", authorization: true });
 }
 
-export async function disconnectCloudLink(): Promise<void> {
-    await Request<void>({ method: "DELETE", url: "/cloud-link", authorization: true });
+export async function disconnectCloudLink(legacy = false): Promise<void> {
+    await Request<void>({ method: "DELETE", url: "/cloud-link", params: legacy ? { legacy: true } : undefined, authorization: true });
 }
 
 export async function listCloudLinkMailboxes(): Promise<CloudLinkMailboxRow[]> {

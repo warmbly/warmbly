@@ -20,7 +20,7 @@ func warmupStandingRankSQL(col string) string {
 // Columns: health_state, blocked_until, last_health_score,
 // last_health_reason, last_health_evaluated_at.
 func warmupStandingSQL(accountExpr string) string {
-	unknown := `(clm.enrollment_state <> 'active' OR EXISTS (SELECT 1 FROM cloud_link WHERE disconnect_pending)
+	unknown := `(clm.enrollment_state <> 'active' OR EXISTS (SELECT 1 FROM cloud_link WHERE instance_id = clm.instance_id AND disconnect_pending)
 	 OR clm.health_state IS NULL OR clm.health_state NOT IN ('healthy', 'watch', 'throttled', 'quarantined', 'blocked') OR clm.standing_observed_at IS NULL
 	 OR clm.standing_observed_at <= NOW() - INTERVAL '15 minutes' OR clm.standing_observed_at > NOW())
 	 AND NOT (COALESCE(clm.health_state IN ('quarantined', 'blocked'), false)

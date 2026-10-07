@@ -49,7 +49,7 @@ func TestLiveReleased265AttemptUpgradePreservesLegacyConsentAndFailedAttempts(t 
 	exec(`INSERT INTO users(id,email,first_name,last_name)VALUES($1,'upgrade@example.test','Upgrade','Fixture')`, user)
 	exec(`INSERT INTO organizations(id,name,slug,owner_user_id)VALUES($1,'Upgrade','upgrade-fixture',$2)`, org, user)
 	exec(`INSERT INTO email_accounts(id,user_id,organization_id,email,name,signature_plain,signature_html,provider,status,campaign_limit,min_wait_time,timezone,warmup)VALUES($1,$2,$3,'legacy@example.test','Legacy','','','smtp_imap','active',50,600,'UTC',NOW()-INTERVAL '40 days')`, mailbox, user, org)
-	if err = m.Migrate(272); err != nil {
+	if err = m.Migrate(273); err != nil {
 		t.Fatal(err)
 	}
 	var legacy bool
@@ -77,7 +77,7 @@ func TestLiveReleased265AttemptUpgradePreservesLegacyConsentAndFailedAttempts(t 
 		t.Fatal("repeat startup", err)
 	}
 	assertLedger()
-	down, err := os.ReadFile("../infrastructure/db/migrations/000273_outbound_attempt_evidence.down.sql")
+	down, err := os.ReadFile("../infrastructure/db/migrations/000274_outbound_attempt_evidence.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestLiveReleased265AttemptUpgradePreservesLegacyConsentAndFailedAttempts(t 
 	}
 	assertLedger()
 	version, dirty, err := m.Version()
-	if err != nil || dirty || version != 273 {
+	if err != nil || dirty || version != 274 {
 		t.Fatal("final migration state", version, dirty, err)
 	}
 }

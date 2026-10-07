@@ -54,11 +54,11 @@ func NewPoolLinkRepository(db *pgxpool.Pool) PoolLinkRepository {
 	return &poolLinkRepository{db: db}
 }
 
-const poolLinkCodeColumns = `id, user_code, instance_name, instance_url, instance_version, status, organization_id, instance_id, expires_at, created_at`
+const poolLinkCodeColumns = `id, user_code, instance_name, instance_url, instance_version, status, organization_id, instance_id, expires_at, created_at, remote_organization_id`
 
 func scanPoolLinkCode(row pgx.Row) (*models.PoolLinkCode, error) {
 	var c models.PoolLinkCode
-	if err := row.Scan(&c.ID, &c.UserCode, &c.InstanceName, &c.InstanceURL, &c.InstanceVersion, &c.Status, &c.OrganizationID, &c.InstanceID, &c.ExpiresAt, &c.CreatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.UserCode, &c.InstanceName, &c.InstanceURL, &c.InstanceVersion, &c.Status, &c.OrganizationID, &c.InstanceID, &c.ExpiresAt, &c.CreatedAt, &c.RemoteOrganizationID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -69,10 +69,10 @@ func scanPoolLinkCode(row pgx.Row) (*models.PoolLinkCode, error) {
 
 func (r *poolLinkRepository) CreateCode(ctx context.Context, deviceCodeHash, userCode string, req models.PoolLinkStartRequest, expiresAt time.Time) (*models.PoolLinkCode, error) {
 	query := `
-		INSERT INTO pool_link_codes (device_code_hash, user_code, instance_name, instance_url, instance_version, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO pool_link_codes (device_code_hash, user_code, instance_name, instance_url, instance_version, expires_at, remote_organization_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + poolLinkCodeColumns
-	c, err := scanPoolLinkCode(r.db.QueryRow(ctx, query, deviceCodeHash, userCode, req.InstanceName, req.InstanceURL, req.InstanceVersion, expiresAt))
+	c, err := scanPoolLinkCode(r.db.QueryRow(ctx, query, deviceCodeHash, userCode, req.InstanceName, req.InstanceURL, req.InstanceVersion, expiresAt, req.RemoteOrganizationID))
 	if err != nil {
 		db.CaptureError(err, query, nil, "queryrow")
 		return nil, err
@@ -127,9 +127,9 @@ func (r *poolLinkRepository) ClaimCode(ctx context.Context, deviceCodeHash strin
 			SET status = 'claimed', instance_token = NULL
 			FROM picked
 			WHERE p.id = picked.id
-			RETURNING p.id, p.user_code, p.instance_name, p.instance_url, p.instance_version, p.status, p.organization_id, p.instance_id, p.expires_at, p.created_at, picked.instance_token AS token
+			RETURNING p.id, p.user_code, p.instance_name, p.instance_url, p.instance_version, p.status, p.organization_id, p.instance_id, p.expires_at, p.created_at, p.remote_organization_id, picked.instance_token AS token
 		)
-		SELECT id, user_code, instance_name, instance_url, instance_version, status, organization_id, instance_id, expires_at, created_at, COALESCE(token, '') FROM claimed
+		SELECT id, user_code, instance_name, instance_url, instance_version, status, organization_id, instance_id, expires_at, created_at, remote_organization_id, COALESCE(token, '') FROM claimed
 		UNION ALL
 		SELECT ` + poolLinkCodeColumns + `, '' FROM pool_link_codes
 		WHERE device_code_hash = $1 AND expires_at > NOW() AND NOT EXISTS (SELECT 1 FROM claimed)
@@ -137,7 +137,7 @@ func (r *poolLinkRepository) ClaimCode(ctx context.Context, deviceCodeHash strin
 	`
 	var c models.PoolLinkCode
 	var token string
-	err := r.db.QueryRow(ctx, query, deviceCodeHash).Scan(&c.ID, &c.UserCode, &c.InstanceName, &c.InstanceURL, &c.InstanceVersion, &c.Status, &c.OrganizationID, &c.InstanceID, &c.ExpiresAt, &c.CreatedAt, &token)
+	err := r.db.QueryRow(ctx, query, deviceCodeHash).Scan(&c.ID, &c.UserCode, &c.InstanceName, &c.InstanceURL, &c.InstanceVersion, &c.Status, &c.OrganizationID, &c.InstanceID, &c.ExpiresAt, &c.CreatedAt, &c.RemoteOrganizationID, &token)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, "", nil
@@ -169,11 +169,11 @@ func (r *poolLinkRepository) DeleteExpiredCodes(ctx context.Context) error {
 	return err
 }
 
-const poolLinkInstanceColumns = `id, organization_id, name, url, version, created_by, created_at, last_seen_at, revoked_at`
+const poolLinkInstanceColumns = `id, organization_id, name, url, version, created_by, created_at, last_seen_at, revoked_at, remote_organization_id`
 
 func scanPoolLinkInstance(row pgx.Row) (*models.PoolLinkInstance, error) {
 	var i models.PoolLinkInstance
-	if err := row.Scan(&i.ID, &i.OrganizationID, &i.Name, &i.URL, &i.Version, &i.CreatedBy, &i.CreatedAt, &i.LastSeenAt, &i.RevokedAt); err != nil {
+	if err := row.Scan(&i.ID, &i.OrganizationID, &i.Name, &i.URL, &i.Version, &i.CreatedBy, &i.CreatedAt, &i.LastSeenAt, &i.RevokedAt, &i.RemoteOrganizationID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -182,17 +182,31 @@ func scanPoolLinkInstance(row pgx.Row) (*models.PoolLinkInstance, error) {
 	return &i, nil
 }
 
+var ErrCloudWorkspaceLinked = errors.New("cloud workspace already has an active link")
+
 func (r *poolLinkRepository) CreateInstance(ctx context.Context, inst *models.PoolLinkInstance, tokenHash string) error {
-	query := `
-		INSERT INTO pool_link_instances (id, organization_id, name, url, version, token_hash, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING created_at
-	`
-	if err := r.db.QueryRow(ctx, query, inst.ID, inst.OrganizationID, inst.Name, inst.URL, inst.Version, tokenHash, inst.CreatedBy).Scan(&inst.CreatedAt); err != nil {
-		db.CaptureError(err, query, nil, "queryrow")
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
 		return err
 	}
-	return nil
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Serialize approvals per Cloud workspace, including checks against legacy links.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, inst.OrganizationID.String()); err != nil {
+		return err
+	}
+	var linked bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pool_link_instances WHERE organization_id = $1 AND revoked_at IS NULL)`, inst.OrganizationID).Scan(&linked); err != nil {
+		return err
+	}
+	if linked {
+		return ErrCloudWorkspaceLinked
+	}
+	query := `INSERT INTO pool_link_instances (id, organization_id, name, url, version, token_hash, created_by, remote_organization_id)
+ VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at`
+	if err := tx.QueryRow(ctx, query, inst.ID, inst.OrganizationID, inst.Name, inst.URL, inst.Version, tokenHash, inst.CreatedBy, inst.RemoteOrganizationID).Scan(&inst.CreatedAt); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *poolLinkRepository) GetInstanceByTokenHash(ctx context.Context, tokenHash string) (*models.PoolLinkInstance, error) {
@@ -219,7 +233,7 @@ func (r *poolLinkRepository) GetInstance(ctx context.Context, id uuid.UUID) (*mo
 
 func (r *poolLinkRepository) ListInstances(ctx context.Context, orgID uuid.UUID) ([]models.PoolLinkInstance, error) {
 	query := `
-		SELECT i.id, i.organization_id, i.name, i.url, i.version, i.created_by, i.created_at, i.last_seen_at, i.revoked_at,
+		SELECT i.id, i.organization_id, i.name, i.url, i.version, i.created_by, i.created_at, i.last_seen_at, i.revoked_at, i.remote_organization_id,
 		       (SELECT COUNT(*) FROM pool_link_mailboxes m WHERE m.instance_id = i.id)
 		FROM pool_link_instances i
 		WHERE i.organization_id = $1 AND i.revoked_at IS NULL
@@ -234,7 +248,7 @@ func (r *poolLinkRepository) ListInstances(ctx context.Context, orgID uuid.UUID)
 	out := []models.PoolLinkInstance{}
 	for rows.Next() {
 		var i models.PoolLinkInstance
-		if err := rows.Scan(&i.ID, &i.OrganizationID, &i.Name, &i.URL, &i.Version, &i.CreatedBy, &i.CreatedAt, &i.LastSeenAt, &i.RevokedAt, &i.MailboxCount); err != nil {
+		if err := rows.Scan(&i.ID, &i.OrganizationID, &i.Name, &i.URL, &i.Version, &i.CreatedBy, &i.CreatedAt, &i.LastSeenAt, &i.RevokedAt, &i.RemoteOrganizationID, &i.MailboxCount); err != nil {
 			return nil, err
 		}
 		out = append(out, i)

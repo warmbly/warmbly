@@ -88,6 +88,7 @@ type PlacementBundle struct {
 // PlacementRemoteReport is a delivered cloud probe the instance still has to
 // tell the cloud about.
 type PlacementRemoteReport struct {
+	InstanceID   uuid.UUID
 	ResultID     uuid.UUID
 	RemoteTestID uuid.UUID
 	RemoteSeedID uuid.UUID
@@ -1016,7 +1017,7 @@ func (r *placementRepository) ListRemoteReports(ctx context.Context, limit int) 
 		limit = 200
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT pr.id, pt.remote_test_id, pr.remote_seed_id, pr.message_id, pr.sent_at, pr.folder, pr.error
+		SELECT pr.id, pt.remote_test_id, pt.remote_instance_id, pr.remote_seed_id, pr.message_id, pr.sent_at, pr.folder, pr.error
 		FROM placement_results pr
 		JOIN placement_tests pt ON pt.id = pr.test_id
 		WHERE pt.remote_test_id IS NOT NULL
@@ -1033,7 +1034,7 @@ func (r *placementRepository) ListRemoteReports(ctx context.Context, limit int) 
 	var out []PlacementRemoteReport
 	for rows.Next() {
 		var rep PlacementRemoteReport
-		if err := rows.Scan(&rep.ResultID, &rep.RemoteTestID, &rep.RemoteSeedID, &rep.MessageID, &rep.SentAt, &rep.Folder, &rep.Error); err != nil {
+		if err := rows.Scan(&rep.ResultID, &rep.RemoteTestID, &rep.InstanceID, &rep.RemoteSeedID, &rep.MessageID, &rep.SentAt, &rep.Folder, &rep.Error); err != nil {
 			return nil, err
 		}
 		out = append(out, rep)

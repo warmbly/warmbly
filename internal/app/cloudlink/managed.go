@@ -56,8 +56,8 @@ func (s *service) FinishOAuth(ctx context.Context, orgID, userID uuid.UUID, sess
 	return s.finishManagedOAuth(ctx, orgID, userID, session)
 }
 
-func (s *service) ListWorkspaceMailboxes(ctx context.Context) ([]models.PoolLinkWorkspaceMailbox, *errx.Error) {
-	l, xerr := s.link(ctx)
+func (s *service) ListWorkspaceMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.PoolLinkWorkspaceMailbox, *errx.Error) {
+	l, xerr := s.newLink(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -109,7 +109,7 @@ func (s *service) AccessToken(ctx context.Context, accountID uuid.UUID) (*models
 	if m == nil || !m.Managed {
 		return nil, ErrNotManaged
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.mailboxLink(ctx, m)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -139,7 +139,7 @@ func (s *service) removeManaged(ctx context.Context, orgID string, m *models.Clo
 	if err := s.repo.BeginRemoval(ctx, m.EmailAccountID); err != nil {
 		return errx.InternalError()
 	}
-	l, err := s.repo.Get(ctx)
+	l, err := s.repo.GetByInstance(ctx, m.InstanceID)
 	if err != nil {
 		return errx.InternalError()
 	}
@@ -174,7 +174,7 @@ func (s *service) VerifyWarmupToken(ctx context.Context, accountID uuid.UUID, to
 	if err != nil || m == nil {
 		return false, err
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.mailboxLink(ctx, m)
 	if xerr != nil {
 		return false, xerr
 	}
@@ -199,7 +199,7 @@ func (s *service) IsCloudWarmupDelivery(ctx context.Context, accountID uuid.UUID
 	if err != nil || m == nil {
 		return false, err
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.mailboxLink(ctx, m)
 	if xerr != nil {
 		return false, xerr
 	}
@@ -224,7 +224,7 @@ func (s *service) IsCloudWarmupThreadReply(ctx context.Context, accountID uuid.U
 	if err != nil || m == nil {
 		return false, err
 	}
-	l, xerr := s.link(ctx)
+	l, xerr := s.mailboxLink(ctx, m)
 	if xerr != nil {
 		return false, xerr
 	}

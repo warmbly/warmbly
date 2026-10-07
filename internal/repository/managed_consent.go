@@ -46,7 +46,7 @@ func scanManagedConsent(row pgx.Row) (*models.CloudManagedConsent, error) {
 
 func (r *cloudLinkRepository) ManagedConsentAuthorized(ctx context.Context, c *models.CloudManagedConsent) (bool, error) {
 	var allowed bool
-	err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM organizations o JOIN cloud_link l ON l.id = true
+	err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM organizations o JOIN cloud_link l ON (l.organization_id = o.id OR l.organization_id IS NULL)
  WHERE o.id = $1 AND o.risk_state IN ('trusted', 'watch') AND l.instance_id = $2 AND NOT l.disconnect_pending
  AND (o.owner_user_id = $3 OR EXISTS (SELECT 1 FROM organization_members m
  WHERE m.organization_id = o.id AND m.user_id = $3 AND m.accepted_at IS NOT NULL AND (m.permissions::integer & $4) <> 0)))`,
@@ -102,7 +102,8 @@ func (r *cloudLinkRepository) CanBrokerManagedToken(ctx context.Context, account
 	var allowed bool
 	err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM email_accounts ea
  JOIN organizations o ON o.id = ea.organization_id JOIN cloud_link_mailboxes clm ON clm.email_account_id = ea.id
- JOIN cloud_link l ON l.id = true LEFT JOIN LATERAL (`+warmupStandingSQL("ea.id")+`) standing ON true
+ JOIN cloud_link l ON l.instance_id = clm.instance_id AND (l.organization_id = o.id OR l.organization_id IS NULL)
+ LEFT JOIN LATERAL (`+warmupStandingSQL("ea.id")+`) standing ON true
  WHERE ea.id = $1 AND ea.status = 'active' AND o.risk_state IN ('trusted','watch')
  AND clm.managed AND clm.enrollment_state = 'active' AND NOT l.disconnect_pending
  AND clm.standing_observed_at > NOW() - INTERVAL '15 minutes'
@@ -119,7 +120,7 @@ func (r *cloudLinkRepository) SetManagedConsentState(ctx context.Context, orgID,
  AND (consent_state IN ('pending','unknown') OR consent_state = $3 OR $3 IN ('pending_remove','revoked','expired'))
  AND ($3 <> 'active' OR (cloud_account_id IS NOT NULL AND planned_account_id=$4 AND EXISTS (SELECT 1 FROM email_accounts a
  WHERE a.id=$4 AND a.organization_id=cloud_managed_consents.organization_id AND a.provider=cloud_managed_consents.provider AND a.status='active' AND a.auth_method='oauth')))
- AND ($3 <> 'active' OR EXISTS (SELECT 1 FROM organizations o JOIN cloud_link l ON l.id = true
+ AND ($3 <> 'active' OR EXISTS (SELECT 1 FROM organizations o JOIN cloud_link l ON (l.organization_id = o.id OR l.organization_id IS NULL)
  WHERE o.id = cloud_managed_consents.organization_id AND o.risk_state IN ('trusted','watch')
  AND l.instance_id = cloud_managed_consents.instance_id AND NOT l.disconnect_pending
  AND (o.owner_user_id = cloud_managed_consents.user_id OR EXISTS (SELECT 1 FROM organization_members m

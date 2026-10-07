@@ -111,7 +111,7 @@ INSERT INTO public.warmup_reputation_ledger
      cloud_health_score, cloud_source_account_id, cloud_source_instance_id, standing_until)
 SELECT DISTINCT ON (ea.organization_id, lower(btrim(ea.email)))
     ea.organization_id, lower(btrim(ea.email)), clm.health_state, clm.blocked_until,
-    clm.health_reason, clm.health_score, ea.id, (SELECT instance_id FROM public.cloud_link WHERE id = true), now()
+    clm.health_reason, clm.health_score, ea.id, clm.instance_id, now()
 FROM public.cloud_link_mailboxes clm JOIN public.email_accounts ea ON ea.id = clm.email_account_id
 WHERE ea.organization_id IS NOT NULL AND clm.health_state IN ('quarantined', 'blocked')
     AND (clm.blocked_until IS NULL OR clm.blocked_until > now())

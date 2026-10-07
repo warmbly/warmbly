@@ -20,18 +20,18 @@ type enrollmentFaultRepo struct {
 	confirmErr error
 }
 
-func (r *enrollmentFaultRepo) BeginEnrollment(_ context.Context, account, remote uuid.UUID) error {
+func (r *enrollmentFaultRepo) BeginEnrollment(_ context.Context, account, remote, instance uuid.UUID) error {
 	if r.beginErr != nil {
 		return r.beginErr
 	}
 	if r.mailbox != nil && r.mailbox.EnrollmentState == "pending_remove" {
 		return errors.New("removal pending")
 	}
-	r.mailbox = &models.CloudLinkMailbox{EmailAccountID: account, RemoteID: remote, EnrollmentState: "pending_enroll"}
+	r.mailbox = &models.CloudLinkMailbox{EmailAccountID: account, RemoteID: remote, InstanceID: instance, EnrollmentState: "pending_enroll"}
 	return nil
 }
 
-func (r *enrollmentFaultRepo) Enroll(_ context.Context, _, _ uuid.UUID, _ bool) (*models.CloudLinkMailbox, error) {
+func (r *enrollmentFaultRepo) Enroll(_ context.Context, _, _, _ uuid.UUID, _ bool) (*models.CloudLinkMailbox, error) {
 	if r.confirmErr != nil {
 		return nil, r.confirmErr
 	}
@@ -54,8 +54,18 @@ func (r *enrollmentFaultRepo) Unenroll(ctx context.Context, account uuid.UUID) e
 	return nil
 }
 
-func (r *enrollmentFaultRepo) InvalidateStanding(context.Context, uuid.UUID) error    { return nil }
-func (r *enrollmentFaultRepo) SetSyncResult(context.Context, time.Time, string) error { return nil }
+func (r *enrollmentFaultRepo) InvalidateStanding(context.Context, uuid.UUID) error { return nil }
+func (r *enrollmentFaultRepo) SetSyncResult(context.Context, uuid.UUID, time.Time, string) error {
+	return nil
+}
+
+func (r *enrollmentFaultRepo) ListLinks(context.Context) ([]models.CloudLink, error) {
+	return []models.CloudLink{*r.link}, nil
+}
+
+func (r *enrollmentFaultRepo) ListForOrg(ctx context.Context, _ uuid.UUID, _ *uuid.UUID) ([]models.CloudLinkMailbox, error) {
+	return r.List(ctx)
+}
 
 type enrollmentEmails struct{ stubEmails }
 
@@ -91,7 +101,7 @@ func TestEnrollmentRecordsIntentBeforeRemoteAndRetriesAmbiguousConfirmation(t *t
 				}
 			}))
 			t.Cleanup(srv.Close)
-			r := &enrollmentFaultRepo{stubLinkRepo: &stubLinkRepo{link: &models.CloudLink{CloudURL: srv.URL}}}
+			r := &enrollmentFaultRepo{stubLinkRepo: &stubLinkRepo{link: &models.CloudLink{CloudURL: srv.URL, OrganizationID: &org}}}
 			if failure == "local_confirmation" {
 				r.confirmErr = errors.New("write unavailable")
 			}

@@ -93,6 +93,8 @@ Anyone in the archive without an account on the destination has their rows reass
 
 ### What deliberately does not import
 
+Cloud connections and mailbox enrollments never travel, including workspace-scoped connections and retained legacy links. Connect the destination workspace separately to its own Cloud workspace. Cloud-served redirects arrive served locally with their source connection association cleared.
+
 Some things belong to an instance rather than to a workspace, so they are not applied even when the archive contains them:
 
 | Not imported | Why |

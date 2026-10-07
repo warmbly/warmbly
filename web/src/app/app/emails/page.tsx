@@ -467,7 +467,7 @@ export default function AddressesPage() {
                             canWarmup={canWarmup}
                             onAdd={() => p?.setAddEmail(true)}
                             onConnectCloud={cloud.manageable && !cloud.connected ? () => setCloudDialog(true) : undefined}
-                            cloudConnected={cloud.connected}
+                            cloudConnected={cloud.workspaceConnected}
                         />
                     )}
                 </div>
@@ -539,7 +539,7 @@ export default function AddressesPage() {
                                     findings={advisor.get(box.id)}
                                     canWarmup={canWarmup}
                                     cloud={cloud.connected ? cloud.rowFor(box.id) : undefined}
-                                    cloudConnected={cloud.connected}
+                                    cloudConnected={cloud.workspaceConnected}
                                     retiring={retiringDomain.has(box.id)}
                                     onRetiring={() => openMigration(retiringDomain.get(box.id) ?? null)}
                                     checked={selected.includes(box.id)}

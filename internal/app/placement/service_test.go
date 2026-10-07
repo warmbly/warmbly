@@ -20,6 +20,13 @@ import (
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
+func TestLegacyCloudLinkCannotStartNewPlacementTests(t *testing.T) {
+	svc := &service{}
+	if _, xerr := svc.RemoteStart(context.Background(), &models.PoolLinkInstance{ID: uuid.New()}, models.PlacementCloudStartRequest{Tests: 1}); xerr == nil || xerr.Identifier != "pool_link_workspace_required" {
+		t.Fatalf("legacy placement = %v", xerr)
+	}
+}
+
 // Each fake embeds the interface it stands in for, so a call the test does
 // not expect panics instead of passing silently.
 
