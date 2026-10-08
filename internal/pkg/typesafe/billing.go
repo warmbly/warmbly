@@ -82,12 +82,6 @@ func (g *billingGate) acquire(ctx context.Context) (billingPermit, error) {
 	if err := ctx.Err(); err != nil {
 		return billingPermit{}, err
 	}
-	g.mu.Lock()
-	remaining := g.until.Sub(g.now())
-	g.mu.Unlock()
-	if remaining > 0 {
-		return billingPermit{}, &BillingCooldownError{RetryAfter: remaining}
-	}
 	if g.shared != nil {
 		owner := uuid.NewString()
 		sctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)

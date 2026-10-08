@@ -76,6 +76,31 @@ func TestLiveSharedBillingGate(t *testing.T) {
 	}
 }
 
+func TestLiveSharedRecoveryOverridesLocalPause(t *testing.T) {
+	r := liveBillingRedis(t)
+	key := uuid.NewString()
+	a, b := NewClient(key, WithBillingRedis(r)), NewClient(key, WithBillingRedis(r))
+	ctx := context.Background()
+	t.Cleanup(func() { _ = r.Del(ctx, a.billing.key).Err() })
+	localNow := time.Now()
+	a.billing.now = func() time.Time { return localNow }
+	a.billing.finish(ctx, billingPermit{shared: true}, &APIError{Status: 402})
+	if err := r.HSet(ctx, a.billing.key, "until", 1).Err(); err != nil {
+		t.Fatal(err)
+	}
+	probe, err := b.billing.acquire(ctx)
+	if err != nil || probe.owner == "" {
+		t.Fatal("another process did not obtain the recovery probe", err)
+	}
+	b.billing.finish(ctx, probe, nil)
+	if !a.billing.until.After(localNow) {
+		t.Fatal("precondition: the triggering process has no stale local pause")
+	}
+	if _, err := a.billing.acquire(ctx); err != nil {
+		t.Fatal("local state hid a successful shared recovery", err)
+	}
+}
+
 func TestLiveSharedBillingLeaseAndCancelledPublication(t *testing.T) {
 	r := liveBillingRedis(t)
 	g := newBillingGate(uuid.NewString())
