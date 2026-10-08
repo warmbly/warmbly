@@ -101,8 +101,11 @@ func TestLiveWorkspaceLinksPreserveLegacyEnrollmentOwnership(t *testing.T) {
 	if err != nil || got == nil || got.InstanceID != legacy.InstanceID {
 		t.Fatalf("legacy fallback = %v, %v", got, err)
 	}
-	if got, err := repo.GetForRedirect(ctx, other, "unused.test"); err != nil || got != nil {
-		t.Fatalf("new redirect used legacy link = %v, %v", got, err)
+	if got, err := repo.GetForRedirect(ctx, other, "unused.test"); err != nil || got == nil || got.InstanceID != legacy.InstanceID {
+		t.Fatalf("existing server connection unavailable for redirect = %v, %v", got, err)
+	}
+	if got, err := repo.GetForRedirect(ctx, f.org, "unused.test"); err != nil || got == nil || got.InstanceID != scoped.InstanceID {
+		t.Fatalf("workspace redirect used another connection = %v, %v", got, err)
 	}
 	if err := NewOrganizationRepository(f.pool).Delete(ctx, f.org); !errors.Is(err, ErrOrganizationCloudLinked) {
 		t.Fatalf("linked workspace deletion = %v", err)

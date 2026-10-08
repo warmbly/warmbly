@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	ErrLegacyLink        = errx.NewWithIdentifier(errx.Conflict, "pool_link_workspace_required", "Reconnect per workspace to add mailboxes. Existing legacy enrollments continue working.")
+	ErrLegacyLink        = errx.NewWithIdentifier(errx.Conflict, "pool_link_workspace_required", "Update this self-hosted instance before creating a new connection. Existing connections continue working.")
 	ErrWorkspaceLinked   = errx.NewWithIdentifier(errx.Conflict, "pool_link_workspace_connected", "This Cloud workspace already has an active connection. Use a separate Cloud workspace and subscription, or disconnect the existing link first.")
 	ErrCodeNotFound      = errx.NewWithIdentifier(errx.NotFound, "pool_link_code_not_found", "That code is unknown or has expired. Start the connection again from your instance.")
 	ErrCodeNotPending    = errx.NewWithIdentifier(errx.Conflict, "pool_link_code_used", "That code has already been used.")
@@ -448,10 +448,6 @@ func (s *service) Enroll(ctx context.Context, inst *models.PoolLinkInstance, req
 	} else if existing != nil {
 		// Re-enrolling refreshes the credential and ramp, nothing else.
 		return s.PatchMailbox(ctx, inst, req.RemoteID, models.PoolLinkMailboxPatch{Warmup: &req.Warmup, OAuth: req.OAuth, SMTPIMAP: req.SMTPIMAP})
-	}
-
-	if inst.RemoteOrganizationID == nil {
-		return nil, ErrLegacyLink
 	}
 
 	plan, xerr := s.Plan(ctx, inst.OrganizationID)

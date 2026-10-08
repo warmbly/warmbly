@@ -171,24 +171,73 @@ func TestWarmupReportsUseEachMailboxesOriginalLink(t *testing.T) {
 	}
 }
 
-func TestWorkspaceResolutionDoesNotGrantNewAccessOnLegacyLinks(t *testing.T) {
+func TestWorkspaceResolutionKeepsExistingConnectionsUsable(t *testing.T) {
 	org, other := uuid.New(), uuid.New()
 	legacy := &models.CloudLink{InstanceID: uuid.New()}
 	scoped := &models.CloudLink{InstanceID: uuid.New(), OrganizationID: &org}
 	repo := &workspaceLinkRepo{links: map[uuid.UUID]*models.CloudLink{legacy.InstanceID: legacy, scoped.InstanceID: scoped}}
 	svc := &service{repo: repo}
-	if got, xerr := svc.newLink(context.Background(), org); xerr != nil || got != scoped {
+	if got, xerr := svc.link(context.Background(), org); xerr != nil || got != scoped {
 		t.Fatalf("workspace link = %v, %v", got, xerr)
 	}
-	if _, xerr := svc.newLink(context.Background(), other); xerr != ErrLegacyLink {
-		t.Fatalf("legacy granted new access: %v", xerr)
-	}
-	if _, xerr := svc.StartOAuth(context.Background(), other, uuid.New(), models.InboxProviderGoogle); xerr != ErrLegacyLink {
-		t.Fatalf("legacy OAuth = %v", xerr)
+	if got, xerr := svc.link(context.Background(), other); xerr != nil || got != legacy {
+		t.Fatalf("existing server connection = %v, %v", got, xerr)
 	}
 	svc.emails = stubEmails{account: &models.Email{ID: uuid.New(), OrganizationID: &other}}
-	if _, xerr := svc.Enroll(context.Background(), other, uuid.New()); xerr != ErrLegacyLink {
-		t.Fatalf("legacy enrollment = %v", xerr)
+	if _, xerr := svc.Enroll(context.Background(), org, uuid.New()); xerr == nil {
+		t.Fatal("another workspace's mailbox was accepted")
+	}
+}
+
+func TestExistingServerConnectionCanStartManagedOAuth(t *testing.T) {
+	f := newConsentFixture(t)
+	f.r.link.OrganizationID = nil
+	start, xerr := f.s.StartOAuth(context.Background(), f.org, f.user, models.InboxProviderGoogle)
+	if xerr != nil || start == nil || f.starts != 1 {
+		t.Fatalf("OAuth on existing connection = %+v, %v", start, xerr)
+	}
+	account, xerr := f.s.FinishOAuth(context.Background(), f.org, f.user, start.Session)
+	if xerr != nil || account == nil || f.r.mailbox.InstanceID != f.r.link.InstanceID {
+		t.Fatalf("managed enrollment on existing connection = %+v, %v", account, xerr)
+	}
+}
+
+func TestExistingConnectionsPreventAdditionalConnectionRequests(t *testing.T) {
+	org, user := uuid.New(), uuid.New()
+	for _, scope := range []*uuid.UUID{nil, &org} {
+		l := &models.CloudLink{InstanceID: uuid.New(), OrganizationID: scope}
+		s := &service{repo: &workspaceLinkRepo{links: map[uuid.UUID]*models.CloudLink{l.InstanceID: l}}}
+		if _, xerr := s.StartConnect(context.Background(), org, user, "https://cloud.test"); xerr != ErrAlreadyLinked {
+			t.Fatalf("existing connection allowed another handshake (scope=%v): %v", scope, xerr)
+		}
+		if got, xerr := s.PollConnect(context.Background(), org, user); xerr != nil || got.Link != l || got.Status != models.PoolLinkCodeApproved {
+			t.Fatalf("existing connection not recognized after polling: %+v, %v", got, xerr)
+		}
+	}
+}
+
+func TestExistingServerConnectionCanStartPlacementTests(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	org := uuid.New()
+	posts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer original" {
+			t.Error("placement changed connection")
+		}
+		if r.Method == http.MethodPost {
+			posts++
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	l := &models.CloudLink{InstanceID: uuid.New(), CloudURL: srv.URL, Token: "original"}
+	s := &service{repo: &workspaceLinkRepo{links: map[uuid.UUID]*models.CloudLink{l.InstanceID: l}}}
+	if _, xerr := s.PlacementPanel(context.Background(), org); xerr != nil {
+		t.Fatal(xerr)
+	}
+	result, xerr := s.StartPlacement(context.Background(), org, models.PlacementCloudStartRequest{Tests: 1})
+	if xerr != nil || result == nil || result.InstanceID != l.InstanceID || posts != 1 {
+		t.Fatalf("placement on existing connection = %+v, %v", result, xerr)
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 var ErrManagedProtocol = errx.NewWithIdentifier(errx.Conflict, "cloud_link_managed_protocol", "Warmbly Cloud must support durable managed consent before connecting or adopting another mailbox. Existing mailboxes are unchanged.")
 
 func (s *service) managedLink(ctx context.Context, orgID uuid.UUID) (*models.CloudLink, repository.CloudManagedConsentRepository, *errx.Error) {
-	l, xerr := s.newLink(ctx, orgID)
+	l, xerr := s.link(ctx, orgID)
 	if xerr != nil {
 		return nil, nil, xerr
 	}

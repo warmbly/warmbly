@@ -57,7 +57,7 @@ func (s *service) FinishOAuth(ctx context.Context, orgID, userID uuid.UUID, sess
 }
 
 func (s *service) ListWorkspaceMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.PoolLinkWorkspaceMailbox, *errx.Error) {
-	l, xerr := s.newLink(ctx, orgID)
+	l, xerr := s.link(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}

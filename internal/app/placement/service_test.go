@@ -20,13 +20,6 @@ import (
 	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
-func TestLegacyCloudLinkCannotStartNewPlacementTests(t *testing.T) {
-	svc := &service{}
-	if _, xerr := svc.RemoteStart(context.Background(), &models.PoolLinkInstance{ID: uuid.New()}, models.PlacementCloudStartRequest{Tests: 1}); xerr == nil || xerr.Identifier != "pool_link_workspace_required" {
-		t.Fatalf("legacy placement = %v", xerr)
-	}
-}
-
 // Each fake embeds the interface it stands in for, so a call the test does
 // not expect panics instead of passing silently.
 
@@ -166,6 +159,25 @@ func newHarness(t *testing.T) *harness {
 
 func (h *harness) input() CreateInput {
 	return CreateInput{OrgID: h.org, SenderAccountID: h.sender, Subject: "Quick question", BodyPlain: "Hi there"}
+}
+
+func TestExistingServerConnectionCanStartPlacementWithinWorkspaceQuota(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("DEPLOYMENT_MODE", "cloud")
+	h.svc.Gate = fakeGate{paid: false}
+	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: h.org}
+	result, xerr := h.svc.RemoteStart(context.Background(), inst, models.PlacementCloudStartRequest{Tests: 1})
+	if xerr != nil || result == nil || len(result.TestIDs) != 1 || len(h.repo.created) != 1 {
+		t.Fatalf("placement on existing connection = %+v, %v", result, xerr)
+	}
+	created := h.repo.created[0]
+	if created.OrganizationID == nil || *created.OrganizationID != h.org || created.RemoteInstanceID == nil || *created.RemoteInstanceID != inst.ID {
+		t.Fatalf("placement lost original connection ownership: %+v", created)
+	}
+	h.repo.metered = config.PlacementTestsPerMonthTrialDefault
+	if _, xerr := h.svc.RemoteStart(context.Background(), inst, models.PlacementCloudStartRequest{Tests: 1}); xerr == nil || xerr.Identifier != "placement_quota_exceeded" {
+		t.Fatalf("existing connection bypassed quota: %v", xerr)
+	}
 }
 
 func TestCreateTestsPicksAcrossFamiliesAndSkipsTheSendersDomain(t *testing.T) {
