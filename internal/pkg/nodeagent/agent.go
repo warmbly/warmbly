@@ -99,7 +99,9 @@ func (a *Agent) Run(ctx context.Context) {
 	}
 
 	interval := DefaultInterval
-	if reply := a.beat(ctx, true, false); reply != nil {
+	bootPending := true
+	if reply := a.beat(ctx, bootPending, false); reply != nil {
+		bootPending = false
 		interval = paceFrom(reply.LivenessSeconds)
 	}
 
@@ -116,7 +118,8 @@ func (a *Agent) Run(ctx context.Context) {
 			cancel()
 			return
 		case <-ticker.C:
-			if reply := a.beat(ctx, false, false); reply != nil {
+			if reply := a.beat(ctx, bootPending, false); reply != nil {
+				bootPending = false
 				if next := paceFrom(reply.LivenessSeconds); next != interval {
 					interval = next
 					ticker.Reset(interval)
@@ -186,12 +189,12 @@ func (a *Agent) beat(ctx context.Context, booted, stopping bool) *models.NodeHea
 		return nil
 	}
 
-	var reply models.NodeHeartbeatReply
-	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
+	var reply *models.NodeHeartbeatReply
+	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil || reply == nil {
 		return nil
 	}
 	a.applyTarget(reply.DesiredVersion)
-	return &reply
+	return reply
 }
 
 // applyTarget records the version the control plane wants. Writing a file the

@@ -131,7 +131,7 @@ export default function CloudWarmupCard({ mailboxId, email, provider }: { mailbo
                         </button>
                     </div>
                 </div>
-                {sendFailure && <WarmupSendFailureNote failure={sendFailure} cloud className="pl-10" />}
+                {sendFailure && <WarmupSendFailureNote failure={sendFailure} provider={provider} cloud className="pl-10" />}
                 {p && <div className="mt-3 pl-10 space-y-2 text-xs">
                     <label className="flex justify-between">Allow disclosed diagnostic sending<Toggle disabled={busy} value={p.send} onChange={(send) => {
                         const apply = () => void run(() => participation.mutateAsync({ ...p, mode: "diagnostic", send }), "Diagnostic sending updated");

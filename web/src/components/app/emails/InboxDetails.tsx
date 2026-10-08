@@ -1398,7 +1398,7 @@ function WarmupTab({ form, update, status, mailbox, canWarmup = true }: { form: 
                             never writes to the same partner twice in a day. It sends more as partners free up.
                         </p>
                     )}
-                    {ws.send_failure && <WarmupSendFailureNote failure={ws.send_failure} />}
+                    {ws.send_failure && <WarmupSendFailureNote failure={ws.send_failure} provider={mailbox.provider} />}
                 </div>
             )}
 
