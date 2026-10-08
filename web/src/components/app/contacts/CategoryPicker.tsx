@@ -40,6 +40,7 @@ interface Props {
     // Disable inline category creation. Useful in contexts where the
     // user shouldn't be inventing tags (e.g. legacy import flows).
     allowCreate?: boolean;
+    showMissing?: boolean;
 }
 
 export default function CategoryPicker({
@@ -48,6 +49,7 @@ export default function CategoryPicker({
     placeholder = "Click to add labels…",
     className,
     allowCreate = true,
+    showMissing = false,
 }: Props) {
     const { user } = useUserProfile();
     const categories = user.categories ?? [];
@@ -61,9 +63,7 @@ export default function CategoryPicker({
     // ~270px: 33px search input + 56 max-h list (224px) + borders.
     const placement = useFlipPlacement(triggerRef, open, 270);
 
-    // Map id → category for chip rendering. We don't render orphaned
-    // ids — if the underlying category was deleted, the chip just
-    // disappears on next render, which is the right behaviour.
+    // Browse filters retain removable chips while workspace metadata is unavailable.
     const byId = React.useMemo(() => {
         const m = new Map<string, Category>();
         for (const c of categories) m.set(c.id, c);
@@ -71,8 +71,8 @@ export default function CategoryPicker({
     }, [categories]);
 
     const selectedChips = value
-        .map((id) => byId.get(id))
-        .filter((c): c is Category => !!c);
+        .map((id) => byId.get(id) ?? (showMissing ? { id, title: "Selected label", color: "#64748b" } : undefined))
+        .filter((c) => c !== undefined);
 
     const filtered = React.useMemo(() => {
         const q = query.trim().toLowerCase();

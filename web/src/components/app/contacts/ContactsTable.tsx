@@ -60,6 +60,7 @@ import toast from "react-hot-toast/headless";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import FilterBar from "./filters/FilterBar";
+import useContactBrowseState, { contactBrowseName } from "./filters/useContactBrowseState";
 import { hasNarrowingFilters, isCompleteCustomFilter, scopeSearch } from "./filters/helpers";
 import ContactEdit from "./ContactEdit";
 import type { ContactSlideTab } from "./contact-edit/tabs";
@@ -243,16 +244,19 @@ export default function ContactsTable({
     const viewName: ColumnViewName = current_campaign ? "campaign_leads" : "contacts";
     const view = useContactView(viewName);
 
-    const [searchProps, setSearchProps] = React.useState<SearchContacts>(() => {
-        const category = params.get("category");
-        // The browser's copy of the saved sort seeds the first request, so the
-        // list does not load in one order and then reload in another.
-        const cached = readCachedView(view.scope, viewName)?.sort;
-        return {
-            ...scopeSearch({ campaignId: current_campaign?.id, segmentId: segment?.id }),
-            category_ids: category && !segment && !current_campaign ? [category] : undefined,
-            ...(cached ? { sort_by: cached.by as SearchContactsSortBy, reverse: cached.reverse } : {}),
-        };
+    const browseName = contactBrowseName(current_campaign?.id, segment?.id);
+    const category = !segment && !current_campaign ? params.get("category") ?? undefined : undefined;
+    const [searchProps, setSearchProps] = useContactBrowseState({
+        campaignId: current_campaign?.id, segmentId: segment?.id, category,
+        initialSort: () => {
+            const cached = readCachedView(view.scope, viewName)?.sort;
+            return { sort_by: (cached?.by ?? "created_at") as SearchContactsSortBy, reverse: cached?.reverse ?? false };
+        },
+        clearCategoryIntent: () => setParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete("category");
+            return next;
+        }, { replace: true }),
     });
 
     // The saved sort applies once the server's copy is in hand, and only when
@@ -262,7 +266,7 @@ export default function ContactsTable({
     React.useEffect(() => {
         if (!view.loaded) return;
         const saved = view.savedSort;
-        const sig = saved ? `${saved.by}:${saved.reverse}` : "default";
+        const sig = `${view.scope.userId}:${view.scope.orgId}:${viewName}:${saved ? `${saved.by}:${saved.reverse}` : "default"}`;
         if (appliedSortRef.current === sig) return;
         appliedSortRef.current = sig;
         setSearchProps((prev) => ({
@@ -270,10 +274,10 @@ export default function ContactsTable({
             sort_by: (saved?.by ?? "created_at") as SearchContactsSortBy,
             reverse: saved?.reverse ?? false,
         }));
-    }, [view.loaded, view.savedSort]);
+    }, [view.loaded, view.savedSort, view.scope.userId, view.scope.orgId, viewName, setSearchProps]);
     const sortState: ViewSortState = { by: searchProps.sort_by, reverse: searchProps.reverse };
     function changeSort(next: ViewSortState) {
-        appliedSortRef.current = `${next.by}:${next.reverse}`;
+        appliedSortRef.current = `${view.scope.userId}:${view.scope.orgId}:${viewName}:${next.by}:${next.reverse}`;
         setSearchProps((s) => ({ ...s, sort_by: next.by, reverse: next.reverse }));
         view.setSort({ by: next.by, reverse: next.reverse });
     }
@@ -875,6 +879,7 @@ export default function ContactsTable({
                     reenrolling={reenrolling}
                 />
                 <FilterBar
+                    browseName={browseName}
                     filters={searchProps}
                     setFilters={setSearchProps}
                     activeCampaign={current_campaign}
@@ -1131,6 +1136,7 @@ export default function ContactsTable({
             </SectionBar>
 
             <FilterBar
+                browseName={browseName}
                 filters={searchProps}
                 setFilters={setSearchProps}
                 hideSegments={!!segment}

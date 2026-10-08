@@ -3,6 +3,8 @@
 // change applied on the spot. Pills open a popover under themselves.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { contactExtrasSchema, contactGeneralExtrasSchema } from "@/lib/browse-contacts-campaigns";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckIcon, ChevronDownIcon, LayersIcon, Loader2Icon, PlusIcon, XIcon } from "lucide-react";
 
@@ -90,6 +92,7 @@ function fromIso(s: string): Date | undefined {
 }
 
 export default function FilterBar({
+    browseName,
     filters,
     setFilters,
     activeCampaign,
@@ -99,6 +102,7 @@ export default function FilterBar({
     loading,
     onSaveAsSegment,
 }: {
+    browseName: string;
     filters: SearchContacts;
     setFilters: Setter;
     activeCampaign?: MiniCampaign;
@@ -116,7 +120,7 @@ export default function FilterBar({
     const campaignCtx = !!activeCampaign;
 
     // Pills added from the menu stay visible while empty so the user can fill them.
-    const [extras, setExtras] = React.useState<ExtraKey[]>([]);
+    const [extras, setExtras] = useBrowseState<ExtraKey[]>(`${browseName}:extra-filters`, [], campaignCtx ? contactExtrasSchema : contactGeneralExtrasSchema);
     const [openKey, setOpenKey] = React.useState<string | null>(null);
 
     const shown = (k: ExtraKey) => {
@@ -177,8 +181,10 @@ export default function FilterBar({
         setOpenKey(null);
     }
 
+    const previousReset = React.useRef(resetToken);
     React.useEffect(() => {
-        if (resetToken === undefined) return;
+        if (previousReset.current === resetToken) return;
+        previousReset.current = resetToken;
         setExtras([]);
         setOpenKey(null);
     }, [resetToken]);
@@ -868,7 +874,7 @@ function Bound({ label, value, onChange }: { label: string; value?: number; onCh
                 {set && <CheckIcon className="w-2 h-2 text-white" />}
             </button>
             <span className="text-[12px] text-slate-700 w-16">{label}</span>
-            <NumberInput value={value ?? 0} onChange={(v) => onChange(Math.max(0, v))} min={0} disabled={!set} suffix="campaigns" className="flex-1" />
+            <NumberInput value={value ?? 0} onChange={(v) => onChange(Math.max(0, Math.floor(v)))} min={0} disabled={!set} suffix="campaigns" className="flex-1" />
         </div>
     );
 }

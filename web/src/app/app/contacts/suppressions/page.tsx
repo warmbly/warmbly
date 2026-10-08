@@ -4,6 +4,9 @@
 // entry the recipient made themselves is confirmed with a stronger warning.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseText } from "@/lib/browse-contacts-campaigns";
+import useBrowseDebouncedValue from "@/components/app/contacts/filters/useBrowseDebouncedValue";
 import { GlobeIcon, MailIcon, MoreHorizontalIcon, PlusIcon, XIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 
@@ -22,13 +25,9 @@ import AddSuppressionsDialog from "@/components/app/contacts/AddSuppressionsDial
 export default function SuppressionsPage() {
     const write = useWriteGuard("MANAGE_CONTACTS");
     const guarded = (fn: () => void) => () => write.guard(fn)({});
-    const [query, setQuery] = React.useState("");
-    const [debounced, setDebounced] = React.useState("");
+    const [query, setQuery] = useBrowseState("contacts:suppressions:query", "", browseText);
+    const debounced = useBrowseDebouncedValue(query.trim(), "contacts:suppressions");
     const [adding, setAdding] = React.useState(false);
-    React.useEffect(() => {
-        const t = setTimeout(() => setDebounced(query.trim()), 200);
-        return () => clearTimeout(t);
-    }, [query]);
 
     const list = useSuppressions(debounced);
 
