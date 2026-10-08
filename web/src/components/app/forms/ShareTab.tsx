@@ -2,6 +2,10 @@
 // and per-contact personalized links on the right.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseSearchSchema } from "@/lib/browse-other-lists";
+import { UserContext } from "@/hooks/context/user";
+import { useAppStore } from "@/stores/useAppStore";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 
@@ -91,7 +95,7 @@ function ContactLinkRow({ form, contact }: { form: Form; contact: Contact }) {
 }
 
 function PersonalizedLinksCard({ form }: { form: Form }) {
-    const [query, setQuery] = React.useState("");
+    const [query, setQuery] = useBrowseState(`forms.${form.id}.share.contact-search`, "", browseSearchSchema);
     const debouncedQuery = useDebouncedValue(query);
     const active = debouncedQuery.trim().length >= 2;
 
@@ -148,6 +152,8 @@ function PersonalizedLinksCard({ form }: { form: Form }) {
 }
 
 export default function ShareTab({ form, baseUrl }: { form: Form; baseUrl: string }) {
+    const userID = React.useContext(UserContext)?.user.id;
+    const organizationID = useAppStore((state) => state.currentOrganization?.id ?? "personal");
     const pageUrl = form.share_url || (baseUrl ? `${baseUrl}/f/${form.public_id}` : "");
     // The embed loads its iframe from its own origin, so the snippet has to
     // come from the same host as the page: an organization on a verified
@@ -215,7 +221,7 @@ export default function ShareTab({ form, baseUrl }: { form: Form; baseUrl: strin
                     description="Each contact gets their own link. Opening it prefills the form and ties the submission and every page view back to that contact and the campaign that sent it."
                 >
                     <div className="col-span-full">
-                        <PersonalizedLinksCard form={form} />
+                        <PersonalizedLinksCard key={`${userID}:${organizationID}:${form.id}`} form={form} />
                     </div>
                 </Section>
 

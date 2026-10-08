@@ -9,6 +9,8 @@
 // from the marketing site's pricing.astro.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { billingIntervalSchema } from "@/lib/browse-other-lists";
 import {
     ArrowUpRightIcon,
     CheckIcon,
@@ -88,7 +90,7 @@ export default function BillingSettingsPage() {
     const [codeInput, setCodeInput] = React.useState("");
     const [applied, setApplied] = React.useState<DiscountPreview | null>(null);
     const [billingInterval, setBillingInterval] =
-        React.useState<BillingInterval>("annual");
+        useBrowseState<BillingInterval>("settings.billing.interval", "annual", billingIntervalSchema);
     const [salesOpen, setSalesOpen] = React.useState(false);
 
     // ?pool=1 is where a linked instance's "Premium" button lands (and what

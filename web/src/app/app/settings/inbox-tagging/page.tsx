@@ -6,7 +6,8 @@
 // from, and what it did, so a person can judge the reversible actions that
 // run from day one and decide when to trust the suppression.
 
-import { useState } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseFlagSchema } from "@/lib/browse-other-lists";
 import { Link } from "@tanstack/react-router";
 import { CheckIcon, FilterIcon, InfoIcon, SparklesIcon } from "lucide-react";
 
@@ -175,7 +176,7 @@ function Row({ r }: { r: InboxTagRow }) {
 
 export default function InboxTaggingPage() {
     const canView = usePermission("VIEW_ANALYTICS");
-    const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
+    const [needsReviewOnly, setNeedsReviewOnly] = useBrowseState("settings.inbox-tagging.needs-review", false, browseFlagSchema);
     const q = useInboxTagReview(needsReviewOnly);
     const d = q.data?.pages[0];
 

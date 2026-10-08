@@ -4,6 +4,8 @@
 // row opens the builder.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseSearchSchema, formsSortSchema, formsStatusSchema } from "@/lib/browse-other-lists";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, ClipboardListIcon, LinkIcon, Loader2Icon, MoreHorizontalIcon, PlusIcon, XIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
@@ -86,10 +88,10 @@ function FormsList() {
     const categories = React.useMemo(() => user?.categories ?? [], [user?.categories]);
     const categoryById = React.useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
 
-    const [query, setQuery] = React.useState("");
-    const [status, setStatusFilter] = React.useState<StatusFilter>("all");
-    const [category, setCategory] = React.useState("");
-    const [sort, setSort] = React.useState<{ key: SortKey; dir: 1 | -1 }>({ key: "created", dir: -1 });
+    const [query, setQuery] = useBrowseState("forms.list.query", "", browseSearchSchema);
+    const [status, setStatusFilter] = useBrowseState<StatusFilter>("forms.list.status", "all", formsStatusSchema);
+    const [category, setCategory] = useBrowseState("forms.list.category", "", browseSearchSchema);
+    const [sort, setSort] = useBrowseState<{ key: SortKey; dir: 1 | -1 }>("forms.list.sort", { key: "created", dir: -1 }, formsSortSchema);
     const [selected, setSelected] = React.useState<string[]>([]);
     const [bulkBusy, setBulkBusy] = React.useState(false);
 
@@ -277,12 +279,13 @@ function FormsList() {
                             </button>
                         ))}
                     </div>
-                    {categories.length > 0 && (
+                    {(categories.length > 0 || category) && (
                         <SelectMenu
                             value={category}
                             onChange={setCategory}
                             options={[
                                 { value: "", label: "All labels" },
+                                ...(category && !categoryById.has(category) ? [{ value: category, label: "Unavailable label" }] : []),
                                 ...categories.map((c) => ({ value: c.id, label: c.title })),
                             ]}
                             aria-label="Filter by label"

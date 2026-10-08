@@ -4,6 +4,8 @@
 // pages are appended on demand.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseSearchSchema, submissionsStatusSchema } from "@/lib/browse-other-lists";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckIcon, Loader2Icon, Trash2Icon, XIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
@@ -83,8 +85,8 @@ export default function SubmissionsTab({ form }: { form: Form }) {
     const [loadingMore, setLoadingMore] = React.useState(false);
     const [selected, setSelected] = React.useState<FormSubmission | null>(null);
 
-    const [query, setQuery] = React.useState("");
-    const [status, setStatus] = React.useState<StatusFilter>("all");
+    const [query, setQuery] = useBrowseState(`forms.${form.id}.submissions.query`, "", browseSearchSchema);
+    const [status, setStatus] = useBrowseState<StatusFilter>(`forms.${form.id}.submissions.status`, "all", submissionsStatusSchema);
     const [checked, setChecked] = React.useState<string[]>([]);
     const [bulkBusy, setBulkBusy] = React.useState(false);
 
@@ -242,7 +244,7 @@ export default function SubmissionsTab({ form }: { form: Form }) {
         { value: "all", label: "All" },
         { value: "completed", label: "Completed" },
         { value: "in_progress", label: "In progress" },
-        ...(form.triage_enabled || counts.junk > 0 ? [{ value: "junk" as const, label: "Junk" }] : []),
+        ...(form.triage_enabled || counts.junk > 0 || status === "junk" ? [{ value: "junk" as const, label: "Junk" }] : []),
     ];
 
     return (

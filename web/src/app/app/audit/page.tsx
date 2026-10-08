@@ -12,6 +12,8 @@
 // changes payload, and filters in the topbar.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { auditActionSchema, auditDateSchema, auditEntitySchema, browseSearchSchema } from "@/lib/browse-other-lists";
 import {
     AlertCircleIcon,
     ChevronDownIcon,
@@ -45,22 +47,8 @@ import {
 import type AuditLog from "@/lib/api/models/app/audit/AuditLog";
 import type { AuditAction, AuditEntityType } from "@/lib/api/models/app/audit/AuditLog";
 
-const ACTIONS: AuditAction[] = [
-    "create", "update", "delete",
-    "invite", "remove", "transfer",
-    "start", "stop", "pause", "resume", "send",
-    "connect", "disconnect", "rotate", "revoke",
-    "duplicate", "export", "import", "api_call",
-];
-
-const ENTITY_TYPES: AuditEntityType[] = [
-    "campaign", "campaign_lead", "contact", "email_account", "step", "template", "email_image",
-    "api_key", "webhook", "integration", "warmup_routing_rule",
-    "organization", "organization_member", "invitation",
-    "folder", "tag", "category", "subscription", "settings",
-    "crm_pipeline", "crm_stage", "crm_deal", "crm_task", "crm_note",
-    "unibox", "user",
-];
+const ACTIONS = auditActionSchema.options;
+const ENTITY_TYPES = auditEntitySchema.options;
 
 const ACTION_TONE: Record<string, { dot: string; text: string }> = {
     create:     { dot: "bg-emerald-500", text: "text-emerald-700" },
@@ -86,10 +74,10 @@ const ACTION_TONE: Record<string, { dot: string; text: string }> = {
 
 export default function AuditPage() {
     const access = useFeatureAccess();
-    const [action, setAction] = React.useState<AuditAction | undefined>();
-    const [entityType, setEntityType] = React.useState<AuditEntityType | undefined>();
-    const [date, setDate] = React.useState<string>("");
-    const [search, setSearch] = React.useState("");
+    const [action, setAction] = useBrowseState<AuditAction | undefined>("audit.list.action", undefined, auditActionSchema.optional());
+    const [entityType, setEntityType] = useBrowseState<AuditEntityType | undefined>("audit.list.entity-type", undefined, auditEntitySchema.optional());
+    const [date, setDate] = useBrowseState("audit.list.date", "", auditDateSchema);
+    const [search, setSearch] = useBrowseState("audit.list.search", "", browseSearchSchema);
     const [cursors, setCursors] = React.useState<string[]>([]);
 
     const params = React.useMemo(
