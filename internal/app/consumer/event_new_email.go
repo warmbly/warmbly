@@ -245,12 +245,7 @@ func (s *JobsService) handleWarmupEmail(ctx context.Context, e *models.JobEventN
 		return token.SenderAccountID == e.Message.EmailID, nil
 	}
 
-	if token.ConsumedAt == nil && token.ExpiresAt.After(time.Now()) {
-		if err := s.acceptWarmupEmail(ctx, e, token); err != nil {
-			return false, err
-		}
-	}
-	return true, nil
+	return s.processWarmupReceipt(ctx, e, token)
 }
 
 // handleUnmarkedWarmupEmail verifies warmup mail that arrived without its
@@ -279,7 +274,24 @@ func (s *JobsService) handleUnmarkedWarmupEmail(ctx context.Context, e *models.J
 		Str("token", token.Token.String()).
 		Str("email_account_id", e.Message.EmailID.String()).
 		Msg("verified warmup mail that arrived without its verify header")
-	return true, s.acceptWarmupEmail(ctx, e, token)
+	return s.processWarmupReceipt(ctx, e, token)
+}
+
+func warmupReceiptProof(message *models.EmailMessageStoreData) repository.WarmupReceiptProof {
+	marker, _ := uuid.Parse(warmupTokenFromMessage(message))
+	return repository.WarmupReceiptProof{Token: marker, SenderAddress: firstSenderAddress(message.FromAddr), MessageID: message.MessageID}
+}
+
+func (s *JobsService) processWarmupReceipt(ctx context.Context, e *models.JobEventNewEmail, token *models.WarmupToken) (bool, error) {
+	if processor, ok := s.WarmupRepo.(repository.WarmupReceiptProcessor); ok {
+		return processor.ProcessWarmupReceipt(ctx, token.Token, e.Message.EmailID, warmupReceiptProof(e.Message), func(current *models.WarmupToken) error {
+			return s.acceptWarmupEmail(ctx, e, current)
+		})
+	}
+	if token.ConsumedAt == nil && token.ExpiresAt.After(time.Now()) {
+		return true, s.acceptWarmupEmail(ctx, e, token)
+	}
+	return true, nil
 }
 
 const cloudWarmupCheckTimeout = 5 * time.Second
@@ -497,7 +509,7 @@ func (s *JobsService) acceptWarmupEmail(ctx context.Context, e *models.JobEventN
 		}
 	}
 	if lineage, ok := s.TaskRepo.(repository.WarmupLineageRepository); ok {
-		if err := lineage.RecordVerifiedWarmupParent(ctx, token.TaskID, e.Message.EmailID, e.Message.ID, e.Message.ThreadID); err != nil {
+		if err := lineage.RecordVerifiedWarmupParent(ctx, token.TaskID, e.Message.EmailID, e.Message.ID, e.Message.ThreadID, warmupReceiptProof(e.Message)); err != nil {
 			return err
 		}
 	}

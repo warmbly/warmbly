@@ -49,6 +49,7 @@ func TestLiveWarmupAnalyticsAreOrganizationScoped(t *testing.T) {
 			arg   uuid.UUID
 		}{
 			{`DELETE FROM warmup_received WHERE email_account_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)`, orgID},
+			{`DELETE FROM cloud_link WHERE organization_id = $1`, orgID},
 			{`DELETE FROM email_accounts WHERE organization_id = $1`, orgID},
 			{`DELETE FROM organizations WHERE id = $1`, orgID},
 			{`DELETE FROM users WHERE id = $1`, userID},
@@ -65,8 +66,10 @@ func TestLiveWarmupAnalyticsAreOrganizationScoped(t *testing.T) {
 		instanceID, otherInstanceID, orgID, uuid.NewString(), uuid.NewString())
 	exec(`INSERT INTO pool_link_mailboxes (instance_id, remote_id, email_account_id) VALUES ($1, $3, $5), ($2, $4, $6)`,
 		instanceID, otherInstanceID, remoteID, otherRemoteID, accountID, secondAccountID)
-	exec(`INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, managed) VALUES ($1, $3, true), ($2, $4, false)`,
-		accountID, secondAccountID, remoteID, otherRemoteID)
+	cloudInstanceID := uuid.New()
+	exec(`INSERT INTO cloud_link(instance_id,organization_id,cloud_url,token) VALUES($1,$2,'https://cloud.test','fixture')`, cloudInstanceID, orgID)
+	exec(`INSERT INTO cloud_link_mailboxes (email_account_id, remote_id, managed, instance_id) VALUES ($1, $3, true, $5), ($2, $4, false, $5)`,
+		accountID, secondAccountID, remoteID, otherRemoteID, cloudInstanceID)
 	t.Cleanup(func() {
 		if _, err := pool.Exec(context.Background(), `DELETE FROM pool_link_instances WHERE id = ANY($1::uuid[])`, []uuid.UUID{instanceID, otherInstanceID}); err != nil {
 			t.Errorf("instance cleanup: %v", err)

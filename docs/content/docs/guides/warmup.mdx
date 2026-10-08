@@ -21,6 +21,8 @@ Diagnostics carry task/sender/recipient-bound application tokens and disclose au
 
 Providers may strip headers or replace identifiers. Exact authorized lineage and send-result identifiers correlate diagnostics; missing or ambiguous lineage stays closed. Tokens identify application-owned traffic, not cryptographic authentication.
 
+When an SMTP relay rewrites a Message-ID, a valid recipient-bound verification token, the expected sender address and a confirmed send can authorize one received copy. Replies and message-specific DKIM verification use that copy's received identifier. Headerless arrivals still require an exact confirmed identifier for new diagnostic lineage; a matching subject or mailbox pair alone does not authorize a reply. Arrivals held before send confirmation or during a verification outage are retained and retried automatically while their token remains valid.
+
 New mailboxes default off. Independent send/receive controls and shared daily/rolling limits are on the Warmup tab. Start/resume enables diagnostic sending, Pause preserves separately authorized receiving, and Stop disables both while retaining ramp history and holds. Recipient-only cannot reply. Existing NULL stays legacy until explicit action; unrelated edits do not relabel it. New controls cannot re-enable legacy synthetic behavior. Cloud controls require updated Cloud replicas. See [send safety](/development/send-safety/).
 
 ### Where the content comes from

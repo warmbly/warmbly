@@ -29,7 +29,7 @@ func (r *taskRepository) DiagnosticAuth(ctx context.Context, req models.Diagnost
 	defer tx.Rollback(ctx)
 	grant := &models.DiagnosticAuthGrant{}
 	var task uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT wt.task_id,sender.email,ea.email,wt.sent_message_id
+	err = tx.QueryRow(ctx, `SELECT wt.task_id,sender.email,ea.email,$4::text
  FROM warmup_tokens wt JOIN warmup_tasks w ON w.task_id=wt.task_id
  JOIN email_accounts sender ON sender.id=wt.sender_account_id
  JOIN email_accounts ea ON ea.id=wt.recipient_account_id
@@ -37,7 +37,11 @@ func (r *taskRepository) DiagnosticAuth(ctx context.Context, req models.Diagnost
  JOIN warmup_pools wp ON wp.id=wpp.pool_id JOIN fleet_nodes n ON n.id=ea.worker_id
  WHERE wt.token=$1 AND ea.id=$2 AND ea.worker_id=$3 AND n.role='worker' AND n.active AND n.warmup_send_protocol>=2 AND n.last_seen_at>NOW()-INTERVAL '10 minutes'
  AND w.lineage_version=1 AND w.scenario_version='diagnostic-v1' AND w.rendering_version='canonical-v1'
- AND wt.expires_at>NOW() AND wt.sent_message_id<>'' AND btrim(wt.sent_message_id,'<>')=$4
+ AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL AND wt.sent_message_id<>''
+ AND EXISTS(SELECT 1 FROM tasks sent WHERE sent.id=wt.task_id AND sent.status='completed' AND sent.email_account_id=wt.sender_account_id)
+ AND (btrim(wt.sent_message_id,'<>')=$4 OR EXISTS(SELECT 1 FROM warmup_received wr
+      WHERE wr.task_id=wt.task_id AND wr.email_account_id=ea.id AND wr.sender_account_id=wt.sender_account_id
+      AND wr.retired_at IS NULL AND btrim(wr.message_id,'<>')=$4))
  AND sender.status='active' AND (sender.test_mode IS NULL OR sender.test_mode='legacy' OR sender.test_mode='diagnostic' AND sender.test_send_enabled)
  AND NOT EXISTS(SELECT 1 FROM cloud_link_mailboxes clm WHERE clm.email_account_id=ea.id)
  AND `+partnerEligibleSQL, req.Token, req.MailboxID, req.WorkerID, strings.Trim(req.MessageID, "<> \t")).Scan(&task, &grant.From, &grant.To, &grant.MessageID)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -309,7 +310,9 @@ type WarmupRepository interface {
 }
 
 type warmupRepository struct {
-	db *pgxpool.Pool
+	db           *pgxpool.Pool
+	receiptOnce  sync.Once
+	receiptSlots chan struct{}
 }
 
 // NewWarmupRepository creates a new warmup repository
@@ -1655,9 +1658,71 @@ func (r *warmupRepository) FindWarmupToken(ctx context.Context, tokenID uuid.UUI
 	return scanWarmupToken(resultDB(ctx, r.db).QueryRow(ctx, query, tokenID))
 }
 
+// WarmupReceiptProcessor serializes recipient engagement across delivery retries.
+type WarmupReceiptProcessor interface {
+	ProcessWarmupReceipt(context.Context, uuid.UUID, uuid.UUID, WarmupReceiptProof, func(*models.WarmupToken) error) (bool, error)
+}
+
+var ErrWarmupReceiptBusy = errors.New("warmup receipt is already being processed")
+
+func (r *warmupRepository) ProcessWarmupReceipt(ctx context.Context, tokenID, recipient uuid.UUID, proof WarmupReceiptProof, accept func(*models.WarmupToken) error) (bool, error) {
+	if r.db.Config().MaxConns < 2 {
+		return false, errors.New("warmup receipt processing requires at least two database connections")
+	}
+	// Leave capacity for acceptance's repository calls while the receipt lock is held.
+	r.receiptOnce.Do(func() { r.receiptSlots = make(chan struct{}, r.db.Config().MaxConns/2) })
+	select {
+	case r.receiptSlots <- struct{}{}:
+		defer func() { <-r.receiptSlots }()
+	default:
+		return false, ErrWarmupReceiptBusy
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	// The lock spans acceptance, including consumption, but not the callback's writes.
+	var locked bool
+	if err = tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtext('warmup_receipt_' || $1::text))`, tokenID).Scan(&locked); err != nil {
+		return false, err
+	}
+	if !locked {
+		return false, ErrWarmupReceiptBusy
+	}
+	token, err := scanWarmupToken(tx.QueryRow(ctx, `SELECT `+warmupTokenColumns+` FROM warmup_tokens wt
+		WHERE wt.token=$1 AND wt.recipient_account_id=$2
+		AND EXISTS(SELECT 1 FROM email_accounts sender WHERE sender.id=wt.sender_account_id AND lower(sender.email)=lower($3))`,
+		tokenID, recipient, strings.TrimSpace(proof.SenderAddress)))
+	if err != nil || token == nil {
+		return false, err
+	}
+	if token.ConsumedAt != nil || !token.ExpiresAt.After(time.Now()) {
+		return true, nil
+	}
+	var lineage, awaitingSend, retired bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1),
+		EXISTS(SELECT 1 FROM warmup_tasks w JOIN tasks sent ON sent.id=w.task_id
+		WHERE w.task_id=$1 AND w.lineage_version=1 AND (sent.status<>'completed' OR $2='')),
+		EXISTS(SELECT 1 FROM warmup_tokens WHERE token=$3 AND sent_retired_at IS NOT NULL)`, token.TaskID, token.SentMessageID, token.Token).Scan(&lineage, &awaitingSend, &retired); err != nil {
+		return false, err
+	}
+	if retired {
+		return true, nil
+	}
+	if awaitingSend {
+		return false, ErrWarmupDeliveryPending
+	}
+	if lineage && (strings.Trim(proof.MessageID, "<> \t") == "" ||
+		proof.Token != token.Token && strings.Trim(token.SentMessageID, "<> \t") != strings.Trim(proof.MessageID, "<> \t")) {
+		return false, nil
+	}
+	return true, accept(token)
+}
+
 // ConsumeWarmupToken marks a warmup token as consumed
 func (r *warmupRepository) ConsumeWarmupToken(ctx context.Context, tokenID uuid.UUID) error {
-	query := `UPDATE warmup_tokens SET consumed_at = NOW() WHERE token = $1`
+	query := `UPDATE warmup_tokens SET consumed_at = NOW() WHERE token = $1 AND consumed_at IS NULL`
 	_, err := resultDB(ctx, r.db).Exec(ctx, query, tokenID)
 	return err
 }
