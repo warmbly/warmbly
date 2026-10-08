@@ -91,6 +91,7 @@ func newWarmupFixture(t *testing.T, handle *db.DB) *warmupFixture {
 			{`DELETE FROM warmup_received WHERE sender_account_id = $1`, f.sender},
 			{`DELETE FROM warmup_tokens WHERE sender_account_id = $1`, f.sender},
 			{`DELETE FROM tasks WHERE email_account_id = $1`, f.sender},
+			{`DELETE FROM tasks WHERE email_account_id = $1`, f.partner},
 			{`DELETE FROM email_accounts WHERE id = $1`, f.sender},
 			{`DELETE FROM email_accounts WHERE id = $1`, f.partner},
 			{`DELETE FROM organizations WHERE id = $1`, f.senderOrg},
@@ -160,6 +161,162 @@ func liveWarmupService(t *testing.T) (*JobsService, *db.DB) {
 		UniboxRepository: repository.NewUniboxRepository(handle),
 		EmailRepository:  repository.NewEmailRepostory(handle, nil),
 	}, handle
+}
+
+func TestLiveWarmupLineageRelayReceiptRecoveryAndConcurrentReplay(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := t.Context()
+	f := newWarmupFixture(t, handle)
+	token := f.mintToken(t, s.WarmupRepo)
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := handle.Exec(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`INSERT INTO warmup_tasks(task_id,lineage_version,subject,max_turns)VALUES($1,1,$2,3)`, f.task, f.subject)
+	exec(`UPDATE warmup_tokens SET conversation_id=$2 WHERE token=$1`, token, uuid.New())
+	exec(`UPDATE email_accounts SET warmup=NOW(),warmup_reply_rate=100,warmup_days=127 WHERE id=$1`, f.partner)
+	e := f.arrival("<relay-received@mailjet.com>", []string{config.WarmupVerifyHeader + ":" + token.String()})
+	e.Message.ThreadID = "recipient-provider-thread"
+	if err := s.HandleNewEmail(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	var pending, receipts int
+	if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_pending_emails WHERE id=$1`, e.Message.ID).Scan(&pending); err != nil || pending != 1 {
+		t.Fatalf("unstamped arrival not retained: %d %v", pending, err)
+	}
+	if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM warmup_received WHERE sender_account_id=$1`, f.sender).Scan(&receipts); err != nil || receipts != 0 {
+		t.Fatalf("unconfirmed send created receipt evidence: %d %v", receipts, err)
+	}
+	if err := s.WarmupRepo.RecordWarmupTokenDelivery(ctx, f.task, f.sentMsgID); err != nil {
+		t.Fatal(err)
+	}
+	exec(`UPDATE unibox_pending_emails SET retry_at=NOW() WHERE id=$1`, e.Message.ID)
+	if err := s.retryPendingWarmupVerification(ctx); err != nil {
+		t.Fatal("existing queued relay arrival did not recover", err)
+	}
+	var parent string
+	if err := handle.QueryRow(ctx, `SELECT parent_message_id FROM warmup_tasks WHERE parent_task_id=$1`, f.task).Scan(&parent); err != nil || parent != e.Message.MessageID {
+		t.Fatalf("reply parent=%q err=%v", parent, err)
+	}
+	stored, err := s.WarmupRepo.FindWarmupToken(ctx, token)
+	if err != nil || stored == nil || stored.ConsumedAt == nil {
+		t.Fatal("recovered token not consumed", stored, err)
+	}
+	consumed := *stored.ConsumedAt
+	var wg sync.WaitGroup
+	for range 12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			duplicate := f.arrival("<repeated-marker@smtp-pulse.com>", slices.Clone(e.Message.Flags))
+			if err := s.HandleNewEmail(ctx, duplicate); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	exec(`UPDATE unibox_pending_emails SET retry_at=NOW() WHERE email_account_id=$1`, f.partner)
+	if err := s.retryPendingWarmupVerification(ctx); err != nil {
+		t.Fatal("concurrent redeliveries did not drain", err)
+	}
+	if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM warmup_received WHERE sender_account_id=$1`, f.sender).Scan(&receipts); err != nil || receipts != 1 {
+		t.Fatalf("replay created additional receipt evidence: %d %v", receipts, err)
+	}
+	stored, err = s.WarmupRepo.FindWarmupToken(ctx, token)
+	if err != nil || !stored.ConsumedAt.Equal(consumed) {
+		t.Fatal("replay changed consumption timestamp", stored, err)
+	}
+	if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM unibox_pending_emails WHERE email_account_id=$1`, f.partner).Scan(&pending); err != nil || pending != 0 {
+		t.Fatalf("recovered arrival still pending: %d %v", pending, err)
+	}
+}
+
+func TestLiveWarmupLineageConcurrentInitialRelayArrivalsEngageOnce(t *testing.T) {
+	s, handle := liveWarmupService(t)
+	ctx := t.Context()
+	f := newWarmupFixture(t, handle)
+	token := f.mintToken(t, s.WarmupRepo)
+	if _, err := handle.Exec(ctx, `INSERT INTO warmup_tasks(task_id,lineage_version,subject,max_turns)VALUES($1,1,$2,1)`, f.task, f.subject); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WarmupRepo.RecordWarmupTokenDelivery(ctx, f.task, f.sentMsgID); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			e := f.arrival("<"+uuid.NewString()+"@mailjet.com>", []string{config.WarmupVerifyHeader + ":" + token.String()})
+			if err := s.HandleNewEmail(ctx, e); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if _, err := handle.Exec(ctx, `UPDATE unibox_pending_emails SET retry_at=NOW() WHERE email_account_id=$1`, f.partner); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.retryPendingWarmupVerification(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var receipts int
+	if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM warmup_received WHERE sender_account_id=$1`, f.sender).Scan(&receipts); err != nil || receipts != 1 {
+		t.Fatalf("concurrent token claim created %d receipts: %v", receipts, err)
+	}
+}
+
+func TestLiveWarmupLineageConsumerReceiptGuards(t *testing.T) {
+	for _, name := range []string{"exact headerless", "headerless rewrite", "forwarded marker", "foreign mailbox", "expired", "retired"} {
+		t.Run(name, func(t *testing.T) {
+			s, handle := liveWarmupService(t)
+			ctx := t.Context()
+			f := newWarmupFixture(t, handle)
+			token := f.mintToken(t, s.WarmupRepo)
+			if _, err := handle.Exec(ctx, `INSERT INTO warmup_tasks(task_id,lineage_version,subject,max_turns)VALUES($1,1,$2,1)`, f.task, f.subject); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.WarmupRepo.RecordWarmupTokenDelivery(ctx, f.task, f.sentMsgID); err != nil {
+				t.Fatal(err)
+			}
+			e := f.arrival("<relay@mailjet.com>", []string{config.WarmupVerifyHeader + ":" + token.String()})
+			switch name {
+			case "exact headerless":
+				e.Message.MessageID, e.Message.Flags = f.sentMsgID, nil
+			case "headerless rewrite":
+				e.Message.Flags = nil
+			case "forwarded marker":
+				e.Message.FromAddr = []string{"forwarder@example.test"}
+			case "foreign mailbox":
+				e.Message.EmailID, e.UserID = f.sender, f.senderUser
+			case "expired":
+				if _, err := handle.Exec(ctx, `UPDATE warmup_tokens SET expires_at=NOW()-INTERVAL '1 second' WHERE token=$1`, token); err != nil {
+					t.Fatal(err)
+				}
+			case "retired":
+				if _, err := handle.Exec(ctx, `UPDATE warmup_tokens SET sent_retired_at=NOW() WHERE token=$1`, token); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.HandleNewEmail(ctx, e); err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			if name == "exact headerless" {
+				want = 1
+			}
+			var receipts int
+			if err := handle.QueryRow(ctx, `SELECT COUNT(*) FROM warmup_received WHERE sender_account_id=$1`, f.sender).Scan(&receipts); err != nil || receipts != want {
+				t.Fatalf("receipt evidence=%d want=%d err=%v", receipts, want, err)
+			}
+			stored, err := s.WarmupRepo.FindWarmupToken(ctx, token)
+			if err != nil || stored == nil || (stored.ConsumedAt != nil) != (want == 1) {
+				t.Fatalf("unexpected token consumption: %+v %v", stored, err)
+			}
+		})
+	}
 }
 
 // The regression: a warmup email that arrives with no verify header must still

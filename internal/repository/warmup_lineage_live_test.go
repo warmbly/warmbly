@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"os"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 )
@@ -52,14 +54,14 @@ func TestLiveLineageBindsOnlyExactVerifiedParentAndOneConcurrentSuccessor(t *tes
 	exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,subject,content_source,conversation_id,conversation_turn)VALUES($1,$2,$3,$4,'Pinned diagnostic','static',$5,0)`, uuid.New(), f.task, f.sender, f.recipient, uuid.New())
 	receipt := uuid.New()
 	exec(`INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id)VALUES($1,$2,$3,'parent@example.test')`, f.recipient, receipt, f.sender)
-	if err := r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, "receiving-mailbox-thread"); err == nil {
+	if err := r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, "receiving-mailbox-thread", WarmupReceiptProof{SenderAddress: f.senderTo}); err == nil {
 		t.Fatal("unstamped header claim became send authority")
 	}
 	exec(`UPDATE warmup_tokens SET sent_message_id='<parent@example.test>' WHERE task_id=$1`, f.task)
-	if err := r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, "receiving-mailbox-thread"); err != nil {
+	if err := r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, "receiving-mailbox-thread", WarmupReceiptProof{SenderAddress: f.senderTo}); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, "receiving-mailbox-thread"); err != nil {
+	if err := r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, "receiving-mailbox-thread", WarmupReceiptProof{SenderAddress: f.senderTo}); err != nil {
 		t.Fatal(err)
 	}
 	var won atomic.Int32
@@ -114,7 +116,7 @@ func TestLiveLineageBindsOnlyExactVerifiedParentAndOneConcurrentSuccessor(t *tes
 			t.Fatalf("unsafe parent continued: %+v %v", got, err)
 		}
 	}
-	if err := r.RecordVerifiedWarmupParent(ctx, uuid.New(), f.recipient, receipt, "foreign"); err == nil {
+	if err := r.RecordVerifiedWarmupParent(ctx, uuid.New(), f.recipient, receipt, "foreign", WarmupReceiptProof{SenderAddress: f.senderTo}); err == nil {
 		var bound uuid.UUID
 		if err := f.pool.QueryRow(ctx, `SELECT task_id FROM warmup_received WHERE internal_id=$1 AND email_account_id=$2`, receipt, f.recipient).Scan(&bound); err != nil || bound != f.task {
 			t.Fatal("legacy or foreign task claimed receipt")
@@ -185,6 +187,121 @@ func TestLiveLineageQueueRevisionsRejectStaleAcknowledgements(t *testing.T) {
 	var status string
 	if err := f.pool.QueryRow(ctx, `SELECT status FROM tasks WHERE id=$1`, f.task).Scan(&status); err != nil || status != "pending" {
 		t.Fatal("unpublished task was lost")
+	}
+}
+
+func TestLiveLineageRelayRewriteRequiresExplicitReceiptAuthority(t *testing.T) {
+	for _, name := range []string{"marked rewrite", "exact headerless", "headerless rewrite", "wrong token", "wrong sender", "foreign recipient", "unstamped", "unfinished", "expired", "consumed", "retired"} {
+		t.Run(name, func(t *testing.T) {
+			f, r := lineageFixture(t)
+			ctx := t.Context()
+			exec := func(query string, args ...any) {
+				t.Helper()
+				if _, err := f.pool.Exec(ctx, query, args...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			token, receipt := uuid.New(), uuid.New()
+			exec(`INSERT INTO warmup_tasks(task_id,lineage_version,subject,max_turns,scenario_version,rendering_version)VALUES($1,1,'Pinned',3,'static-v1','canonical-v1')`, f.task)
+			exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,sent_message_id,conversation_id)VALUES($1,$2,$3,$4,'<sent@example.test>',$5)`, token, f.task, f.sender, f.recipient, uuid.New())
+			proof := WarmupReceiptProof{Token: token, SenderAddress: f.senderTo}
+			recipient, messageID := f.recipient, "received@mailjet.com"
+			switch name {
+			case "exact headerless":
+				proof.Token, messageID = uuid.Nil, "sent@example.test"
+			case "headerless rewrite":
+				proof.Token = uuid.Nil
+			case "wrong token":
+				proof.Token = uuid.New()
+			case "wrong sender":
+				proof.SenderAddress = "forwarder@example.test"
+			case "foreign recipient":
+				recipient = f.sender
+			case "unstamped":
+				exec(`UPDATE warmup_tokens SET sent_message_id='' WHERE token=$1`, token)
+			case "unfinished":
+				exec(`UPDATE tasks SET status='active' WHERE id=$1`, f.task)
+			case "expired":
+				exec(`UPDATE warmup_tokens SET expires_at=NOW()-INTERVAL '1 second' WHERE token=$1`, token)
+			case "consumed":
+				exec(`UPDATE warmup_tokens SET consumed_at=NOW() WHERE token=$1`, token)
+			case "retired":
+				exec(`UPDATE warmup_tokens SET sent_retired_at=NOW() WHERE token=$1`, token)
+			}
+			exec(`INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id)VALUES($1,$2,$3,$4)`, recipient, receipt, f.sender, messageID)
+			err := r.RecordVerifiedWarmupParent(ctx, f.task, recipient, receipt, "recipient-thread", proof)
+			allowed := name == "marked rewrite" || name == "exact headerless"
+			if (err == nil) != allowed {
+				t.Fatalf("allowed=%v err=%v", allowed, err)
+			}
+			if !allowed {
+				return
+			}
+			if err := r.RecordVerifiedWarmupParent(ctx, f.task, recipient, receipt, "recipient-thread", proof); err != nil {
+				t.Fatal("retry of bound receipt failed", err)
+			}
+			duplicate := uuid.New()
+			exec(`INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id)VALUES($1,$2,$3,'replayed@smtp-pulse.com')`, recipient, duplicate, f.sender)
+			if err := r.RecordVerifiedWarmupParent(ctx, f.task, recipient, duplicate, "", proof); err == nil {
+				t.Fatal("repeated marker authorized another receipt")
+			}
+			ok, err := r.BindWarmupSuccessor(ctx, f.task, recipient, receipt, time.Now().Add(time.Hour))
+			if err != nil || !ok {
+				t.Fatalf("successor bound=%v err=%v", ok, err)
+			}
+			var successor uuid.UUID
+			if err := f.pool.QueryRow(ctx, `SELECT task_id FROM warmup_tasks WHERE parent_task_id=$1`, f.task).Scan(&successor); err != nil {
+				t.Fatal(err)
+			}
+			parent, err := r.ExactWarmupParent(ctx, successor)
+			if err != nil || parent == nil || parent.MessageID != messageID || parent.ThreadID == nil || *parent.ThreadID != "recipient-thread" {
+				t.Fatalf("reply did not retain actual received ID and thread: %+v %v", parent, err)
+			}
+		})
+	}
+}
+
+func TestLiveWarmupReceiptSerializationLeavesSmallPoolCapacity(t *testing.T) {
+	f, _ := lineageFixture(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	cfg, err := pgxpool.ParseConfig(os.Getenv("WARMBLY_TEST_DB"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.MaxConns, cfg.MinConns = 2, 0
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	r := NewWarmupRepository(pool).(*warmupRepository)
+	var wg sync.WaitGroup
+	var accepted atomic.Int32
+	for range 16 {
+		token := uuid.New()
+		if _, err := f.pool.Exec(ctx, `INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id)VALUES($1,$2,$3,$4)`, token, f.task, f.sender, f.recipient); err != nil {
+			t.Fatal(err)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := r.ProcessWarmupReceipt(ctx, token, f.recipient, WarmupReceiptProof{SenderAddress: f.senderTo}, func(current *models.WarmupToken) error {
+				var value int
+				if err := pool.QueryRow(ctx, `SELECT 1`).Scan(&value); err != nil {
+					return err
+				}
+				accepted.Add(1)
+				return r.ConsumeWarmupToken(ctx, current.Token)
+			})
+			if err != nil && !errors.Is(err, ErrWarmupReceiptBusy) {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if accepted.Load() == 0 {
+		t.Fatal("receipt lock exhausted capacity for the acceptance callback")
 	}
 }
 

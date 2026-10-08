@@ -93,7 +93,7 @@ func TestLiveDiagnosticAuthBindsWorkerContextAndRetainsOnlyMinimalProof(t *testi
 	}
 	receipt := uuid.New()
 	exec(`INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id,evidence)VALUES($1,$2,$3,'probe@example.test','{"spf":"unknown","dkim":"unknown","dmarc":"unknown","tls":"unknown","alignment":"unknown","trust":"unverified_headers"}')`, f.recipient, receipt, f.sender)
-	if err = r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, ""); err != nil {
+	if err = r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, "", WarmupReceiptProof{SenderAddress: f.senderTo}); err != nil {
 		t.Fatal(err)
 	}
 	var evidence models.ReceivedEvidence
@@ -106,5 +106,49 @@ func TestLiveDiagnosticAuthBindsWorkerContextAndRetainsOnlyMinimalProof(t *testi
 	}
 	if evidence.DKIM != "pass" || evidence.Alignment != "pass" || evidence.DKIMVerification == nil || evidence.SPF != "unknown" || evidence.DMARC != "unknown" || evidence.TLS != "unknown" {
 		t.Fatal("late exact receipt lost crypto proof or fabricated other auth", evidence)
+	}
+}
+
+func TestLiveDiagnosticAuthRelayRewriteUsesOnlyBoundReceivedID(t *testing.T) {
+	f, r := lineageFixture(t)
+	ctx := t.Context()
+	worker, token, receipt := uuid.New(), uuid.New(), uuid.New()
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := f.pool.Exec(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`INSERT INTO fleet_nodes(id,role,active,last_seen_at,warmup_send_protocol)VALUES($1,'worker',true,NOW(),2)`, worker)
+	exec(`INSERT INTO workers(id)VALUES($1)`, worker)
+	t.Cleanup(func() { _, _ = f.pool.Exec(context.Background(), `DELETE FROM fleet_nodes WHERE id=$1`, worker) })
+	exec(`UPDATE email_accounts SET worker_id=$1,provider=$3 WHERE id=$2`, worker, f.recipient, models.InboxProviderGoogle)
+	exec(`INSERT INTO warmup_pool_participants(pool_id,email_account_id)SELECT id,$1 FROM warmup_pools WHERE pool_type='free'`, f.recipient)
+	exec(`INSERT INTO warmup_tasks(task_id,lineage_version,subject,scenario_version,rendering_version,max_turns)VALUES($1,1,'Diagnostic','diagnostic-v1','canonical-v1',1)`, f.task)
+	exec(`INSERT INTO warmup_tokens(token,task_id,sender_account_id,recipient_account_id,sent_message_id)VALUES($1,$2,$3,$4,'<sent@example.test>')`, token, f.task, f.sender, f.recipient)
+	exec(`INSERT INTO warmup_received(email_account_id,internal_id,sender_account_id,message_id)VALUES($1,$2,$3,'received@mailjet.com')`, f.recipient, receipt, f.sender)
+	request := models.DiagnosticAuthRequest{Token: token, MailboxID: f.recipient, WorkerID: worker, MessageID: "<received@mailjet.com>"}
+	if grant, err := r.DiagnosticAuth(ctx, request); err == nil || grant != nil {
+		t.Fatal("unbound rewritten ID authorized raw retrieval", grant, err)
+	}
+	if err := r.RecordVerifiedWarmupParent(ctx, f.task, f.recipient, receipt, "", WarmupReceiptProof{Token: token, SenderAddress: f.senderTo}); err != nil {
+		t.Fatal(err)
+	}
+	grant, err := r.DiagnosticAuth(ctx, request)
+	if err != nil || grant == nil || grant.MessageID != "received@mailjet.com" {
+		t.Fatalf("rewritten grant=%+v err=%v", grant, err)
+	}
+	request.Nonce = grant.Nonce
+	request.Result = &models.DiagnosticDKIMResult{DKIM: "pass", SigningDomain: "test.local", Alignment: "pass", Verifier: models.DiagnosticDKIMVerifier, ObservedAt: time.Now()}
+	if _, err := r.DiagnosticAuth(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	var dkim string
+	if err := f.pool.QueryRow(ctx, `SELECT evidence->>'dkim' FROM warmup_received WHERE email_account_id=$1 AND internal_id=$2`, f.recipient, receipt).Scan(&dkim); err != nil || dkim != "pass" {
+		t.Fatalf("received-ID proof not attached: %q %v", dkim, err)
+	}
+	request.Result, request.MessageID = nil, "unrelated@smtp-pulse.com"
+	if grant, err := r.DiagnosticAuth(ctx, request); err == nil || grant != nil {
+		t.Fatal("bound rewrite authorized a different ID", grant, err)
 	}
 }

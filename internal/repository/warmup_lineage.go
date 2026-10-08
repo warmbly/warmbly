@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,7 +13,7 @@ import (
 
 // WarmupLineageRepository keeps receipt authority separate from pair selection.
 type WarmupLineageRepository interface {
-	RecordVerifiedWarmupParent(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string) error
+	RecordVerifiedWarmupParent(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, WarmupReceiptProof) error
 	BindWarmupSuccessor(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, time.Time) (bool, error)
 	ExactWarmupParent(context.Context, uuid.UUID) (*WarmupReplyCandidate, error)
 	WarmupExecutionContext(context.Context, uuid.UUID) (uuid.UUID, *WarmupReplyCandidate, error)
@@ -39,24 +40,45 @@ type WarmupQueueRevision struct {
 	PreviousHandle *string
 }
 
-func (r *taskRepository) RecordVerifiedWarmupParent(ctx context.Context, parent, recipient, internalID uuid.UUID, threadID string) error {
-	tag, err := r.db.Exec(ctx, `UPDATE warmup_received wr SET task_id=$1, provider_thread_id=NULLIF($4,'')
+type WarmupReceiptProof struct {
+	Token         uuid.UUID
+	SenderAddress string
+	MessageID     string
+}
+
+func (r *taskRepository) RecordVerifiedWarmupParent(ctx context.Context, parent, recipient, internalID uuid.UUID, threadID string, proof WarmupReceiptProof) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('warmup_parent_' || $1::text))`, parent); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE warmup_received wr SET task_id=$1, provider_thread_id=NULLIF($4,'')
         WHERE wr.email_account_id=$2 AND wr.internal_id=$3 AND wr.task_id IS NULL
-        AND EXISTS (SELECT 1 FROM warmup_tokens wt JOIN warmup_tasks original ON original.task_id=wt.task_id WHERE wt.task_id=$1
+        AND wr.message_id<>''
+        AND NOT EXISTS(SELECT 1 FROM warmup_received prior WHERE prior.task_id=$1)
+        AND EXISTS (SELECT 1 FROM warmup_tokens wt JOIN warmup_tasks original ON original.task_id=wt.task_id
+                    JOIN tasks sent ON sent.id=wt.task_id JOIN email_accounts sender ON sender.id=wt.sender_account_id WHERE wt.task_id=$1
                     AND original.lineage_version=1 AND wt.recipient_account_id=$2 AND wt.sender_account_id=wr.sender_account_id
-                    AND wt.sent_message_id<>'' AND btrim(wt.sent_message_id,'<>')=btrim(wr.message_id,'<>'))`, parent, recipient, internalID, threadID)
+                    AND sent.status='completed' AND sent.email_account_id=wt.sender_account_id
+                    AND wt.expires_at>NOW() AND wt.consumed_at IS NULL AND wt.sent_retired_at IS NULL
+                    AND lower(sender.email)=lower($6) AND wt.sent_message_id<>''
+                    AND (btrim(wt.sent_message_id,'<>')=btrim(wr.message_id,'<>') OR wt.token=$5))`,
+		parent, recipient, internalID, threadID, proof.Token, strings.TrimSpace(proof.SenderAddress))
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		var same bool
-		err = r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_received WHERE email_account_id=$2 AND internal_id=$3 AND task_id=$1)`, parent, recipient, internalID).Scan(&same)
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM warmup_received WHERE email_account_id=$2 AND internal_id=$3 AND task_id=$1)`, parent, recipient, internalID).Scan(&same)
 		if err != nil {
 			return err
 		}
 		if !same {
 			var legacy bool
-			if err := r.db.QueryRow(ctx, `SELECT NOT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1)`, parent).Scan(&legacy); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT NOT EXISTS(SELECT 1 FROM warmup_tasks WHERE task_id=$1 AND lineage_version=1)`, parent).Scan(&legacy); err != nil {
 				return err
 			}
 			if legacy {
@@ -65,7 +87,10 @@ func (r *taskRepository) RecordVerifiedWarmupParent(ctx context.Context, parent,
 			return errors.New("verified warmup receipt context unavailable")
 		}
 	}
-	return attachDiagnosticAuth(ctx, r.db, parent, recipient)
+	if err := attachDiagnosticAuth(ctx, tx, parent, recipient); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *taskRepository) BindWarmupSuccessor(ctx context.Context, parent, recipient, internalID uuid.UUID, at time.Time) (bool, error) {
@@ -110,7 +135,7 @@ func (r *taskRepository) BindWarmupSuccessor(ctx context.Context, parent, recipi
         AND original.lineage_version=1 AND original.subject<>'' AND wt.conversation_id IS NOT NULL
         AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL
         AND wt.conversation_turn+1<original.max_turns AND wr.message_id<>''
-        AND wt.sent_message_id<>'' AND btrim(wt.sent_message_id,'<>')=btrim(wr.message_id,'<>')
+        AND wt.sent_message_id<>'' AND wr.sender_account_id=wt.sender_account_id
         AND NOT EXISTS(SELECT 1 FROM warmup_tasks prior WHERE prior.parent_task_id=$2)`, id, parent, internalID, recipient)
 	if err != nil {
 		return false, err
@@ -137,7 +162,7 @@ func (r *taskRepository) ExactWarmupParent(ctx context.Context, successor uuid.U
         AND wr.created_at>NOW()-INTERVAL '7 days' AND original.lineage_version=1
         AND wt.expires_at>NOW() AND wt.sent_retired_at IS NULL
         AND wt.conversation_turn+1<original.max_turns
-        AND wt.sent_message_id<>'' AND btrim(wt.sent_message_id,'<>')=btrim(wr.message_id,'<>')`, successor).Scan(&c.MessageID, &c.Subject, &c.ThreadID, &c.ConversationTheme, &c.ContentSource, &c.ConversationID, &c.ConversationTurn, &c.References, &c.ScenarioVersion, &c.RenderingVersion, &c.MaxTurns)
+        AND wt.sent_message_id<>'' AND wr.sender_account_id=wt.sender_account_id`, successor).Scan(&c.MessageID, &c.Subject, &c.ThreadID, &c.ConversationTheme, &c.ContentSource, &c.ConversationID, &c.ConversationTurn, &c.References, &c.ScenarioVersion, &c.RenderingVersion, &c.MaxTurns)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
