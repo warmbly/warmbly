@@ -1384,28 +1384,15 @@ func candidateSuffixFor(poolType string) string {
 	return freeCandidateSuffix
 }
 
-// borrowQualitySQL ranks a borrowed free mailbox: a Google or Microsoft
-// mailbox first, then a seasoned member, then one actively sending (the tail
-// adds 1 for that), so each outranks everything after it.
-const borrowQualitySQL = `
-		       (CASE WHEN ea.provider IN ('gmail', 'outlook') OR ea.mail_host IN ('gmail', 'google_workspace', 'outlook', 'microsoft365') THEN 4 ELSE 0 END
-		        + CASE WHEN wpp.joined_at <= NOW() - make_interval(days => $5) THEN 2 ELSE 0 END) AS quality`
-
-// WarmupPartnerCandidates is everyone the sender may be paired with right now.
-// Its own tier always; a premium tier with too few partners outside the
-// sender's workspace adds the best proven free mailboxes; a proven free
-// mailbox adds the paying mailboxes that wrote to it recently. Every set is
-// already filtered by the inbound cap, so the scheduler and the selector
-// agree on who can still receive today.
+// WarmupPartnerCandidates includes qualified cross-tier partners, already inbound-capped.
 func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType string, senderID uuid.UUID) ([]models.WarmupPartnerCandidate, error) {
 	eligible, err := r.IsPoolEligible(ctx, senderID, poolType, true)
 	if err != nil || !eligible {
 		return nil, err
 	}
 	var senderOrg *uuid.UUID
-	var senderMax int
-	err = resultDB(ctx, r.db).QueryRow(ctx, `SELECT organization_id, warmup_max FROM email_accounts WHERE id = $1`, senderID).
-		Scan(&senderOrg, &senderMax)
+	err = resultDB(ctx, r.db).QueryRow(ctx, `SELECT organization_id FROM email_accounts WHERE id = $1`, senderID).
+		Scan(&senderOrg)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
@@ -1419,29 +1406,24 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 		WHERE wp.pool_type = $1
 		  AND wpp.email_account_id <> $2
 		  AND `+partnerEligibleSQL,
-		suffix, "", poolType, models.WarmupPartnerOwnTier, poolType, senderID)
+		suffix, poolType, models.WarmupPartnerOwnTier, poolType, senderID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Siblings do not count: mail between one workspace's own mailboxes
-	// builds nothing, so a customer with many mailboxes must still borrow.
-	floor := max(config.WarmupPoolTierFallbackFloor, senderMax)
-	if borrowFrom, ok := models.WarmupPoolBorrowsFrom(poolType); ok && outsideWorkspace(own, senderOrg) < floor {
-		// Best first, random within a rank, so the borrowing spreads. Drawn
-		// after the cap, so a capped mailbox never uses up a slot.
+	if borrowFrom, ok := models.WarmupPoolBorrowsFrom(poolType); ok {
 		borrowed, err := r.queryPartnerCandidates(ctx, `
-			SELECT wpp.email_account_id AS id, ea.email, ea.organization_id, ea.provider::text AS provider, ea.mail_host,`+borrowQualitySQL+`
+			SELECT wpp.email_account_id AS id, ea.email, ea.organization_id, ea.provider::text AS provider, ea.mail_host
 			FROM warmup_pool_participants wpp
 			JOIN warmup_pools wp ON wpp.pool_id = wp.id
 			JOIN email_accounts ea ON ea.id = wpp.email_account_id
 			JOIN organizations o ON o.id = ea.organization_id
 			WHERE wp.pool_type = $1
-			  AND ea.organization_id IS DISTINCT FROM $4
+			  AND ea.organization_id IS DISTINCT FROM $3
 			  AND `+partnerEligibleSQL+`
 			  AND `+partnerProvenSQL,
-			suffix, ` ORDER BY cand.quality + (COALESCE(sent.week, 0) > 0)::int DESC, random() LIMIT $3`,
-			borrowFrom, models.WarmupPartnerBorrowed, borrowFrom, config.WarmupPoolFallbackMinAgeDays, floor, senderOrg, config.WarmupPoolBorrowSeasonedDays)
+			suffix,
+			borrowFrom, models.WarmupPartnerBorrowed, borrowFrom, config.WarmupPoolFallbackMinAgeDays, senderOrg)
 		if err != nil {
 			return nil, err
 		}
@@ -1476,7 +1458,7 @@ func (r *warmupRepository) WarmupPartnerCandidates(ctx context.Context, poolType
 			        AND ea.status = 'active'
 			        AND `+partnerProvenSQL+`
 			  )`,
-			suffix, "", returnTo, models.WarmupPartnerReturn, returnTo, config.WarmupPoolFallbackMinAgeDays, senderID, config.WarmupPoolReturnVisitDays, poolType)
+			suffix, returnTo, models.WarmupPartnerReturn, returnTo, config.WarmupPoolFallbackMinAgeDays, senderID, config.WarmupPoolReturnVisitDays, poolType)
 		if err != nil {
 			return nil, err
 		}
@@ -1492,27 +1474,13 @@ func (r *warmupRepository) WarmupExecutionCandidates(ctx context.Context, pool s
 	return r.WarmupPartnerCandidates(context.WithValue(ctx, warmupExecutionExclusion{}, task), pool, sender)
 }
 
-// outsideWorkspace counts the candidates that belong to another workspace.
-// An unknown owner on either side counts as outside, as the selector does.
-func outsideWorkspace(cands []models.WarmupPartnerCandidate, org *uuid.UUID) int {
-	n := 0
-	for _, c := range cands {
-		if org == nil || c.OrganizationID == nil || *c.OrganizationID != *org {
-			n++
-		}
-	}
-	return n
-}
-
-// queryPartnerCandidates runs one candidate set through the reciprocity and
-// cap wrapper. tail is appended after the cap, so an ORDER BY or LIMIT there
-// samples only mailboxes that can still receive.
-func (r *warmupRepository) queryPartnerCandidates(ctx context.Context, candidateSQL, suffix, tail string, poolType string, origin models.WarmupPartnerOrigin, args ...any) ([]models.WarmupPartnerCandidate, error) {
+// queryPartnerCandidates applies the same counts and recipient cap to each cohort.
+func (r *warmupRepository) queryPartnerCandidates(ctx context.Context, candidateSQL, suffix, poolType string, origin models.WarmupPartnerOrigin, args ...any) ([]models.WarmupPartnerCandidate, error) {
 	if task, ok := ctx.Value(warmupExecutionExclusion{}).(uuid.UUID); ok && task != uuid.Nil {
 		args = append(args, task)
 		suffix = strings.Replace(suffix, "AND wt.recipient_account_id IN (SELECT id FROM cand)", "AND wt.task_id <> $"+strconv.Itoa(len(args))+" AND wt.recipient_account_id IN (SELECT id FROM cand)", 1)
 	}
-	rows, err := resultDB(ctx, r.db).Query(ctx, partnerCandidateSelectPrefix+candidateSQL+suffix+tail, args...)
+	rows, err := resultDB(ctx, r.db).Query(ctx, partnerCandidateSelectPrefix+candidateSQL+suffix, args...)
 	if err != nil {
 		return nil, err
 	}

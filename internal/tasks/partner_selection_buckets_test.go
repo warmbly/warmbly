@@ -92,7 +92,7 @@ func premiumSelectorWithRules(gate *rejectingGate, rules []models.WarmupRoutingR
 	return s, Email{ID: uuid.New(), Email: "sender@paid.test", OrganizationID: &org, WarmupPoolType: "premium"}
 }
 
-// borrowedFree is a proven free mailbox filling in a thin premium tier.
+// borrowedFree is a qualified free recipient available to a premium sender.
 func borrowedFree(email string) models.WarmupPartnerCandidate {
 	return models.WarmupPartnerCandidate{ID: uuid.New(), Email: email, PoolType: "free", Origin: models.WarmupPartnerBorrowed}
 }
@@ -126,10 +126,9 @@ func excludeDomain(domain string) []models.WarmupRoutingRule {
 	}}
 }
 
-func TestSelectWarmupPartnerDrawsOwnTierBeforeBorrowed(t *testing.T) {
+func TestSelectWarmupPartnerDoesNotPreferBillingTier(t *testing.T) {
 	own := models.WarmupPartnerCandidate{ID: uuid.New(), Email: "own@paid.test"}
 	gate := &rejectingGate{poolOf: map[uuid.UUID]string{own.ID: "premium"}}
-	// Many borrowed candidates, so losing the preference is a near-certain failure, not a coin flip.
 	cands := []models.WarmupPartnerCandidate{}
 	for i := 0; i < 8; i++ {
 		free := borrowedFree("free@trial.test")
@@ -138,20 +137,27 @@ func TestSelectWarmupPartnerDrawsOwnTierBeforeBorrowed(t *testing.T) {
 	}
 	s, sender := premiumSelector(gate, append(cands, own)...)
 
-	partner, err := s.selectWarmupPartner(context.Background(), sender)
-	if err != nil {
-		t.Fatal(err)
+	ownHits := 0
+	for range 200 {
+		partner, err := s.selectWarmupPartner(context.Background(), sender)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if partner.ID == own.ID {
+			ownHits++
+		}
 	}
-	if partner.ID != own.ID {
-		t.Fatalf("drew %s, want the own-tier partner %s", partner.ID, own.ID)
+	if ownHits == 0 || ownHits > 60 {
+		t.Fatalf("paid recipient drawn %d/200; tier should not override weighting", ownHits)
 	}
-	if len(gate.asked) != 1 || gate.asked[0] != (gateCall{own.ID, "premium"}) {
-		t.Fatalf("gated %v, want the own-tier partner once in premium", gate.asked)
+	for _, asked := range gate.asked {
+		if asked.pool != gate.poolOf[asked.id] {
+			t.Fatalf("gate used wrong pool: %+v", asked)
+		}
 	}
 }
 
-// A stale own-tier row (an expired block the gate re-blocks) must not hide a
-// healthy borrowed partner: the draw falls through to the next bucket.
+// A stale paid receiver must not hide a healthy qualified free partner.
 func TestSelectWarmupPartnerFallsThroughWhenOwnTierFailsTheGate(t *testing.T) {
 	stale := models.WarmupPartnerCandidate{ID: uuid.New(), Email: "stale@paid.test"}
 	free := borrowedFree("free@trial.test")
@@ -168,9 +174,31 @@ func TestSelectWarmupPartnerFallsThroughWhenOwnTierFailsTheGate(t *testing.T) {
 	if partner.ID != free.ID {
 		t.Fatalf("drew %s, want the borrowed partner %s", partner.ID, free.ID)
 	}
-	want := []gateCall{{stale.ID, "premium"}, {free.ID, "free"}}
-	if len(gate.asked) != 2 || gate.asked[0] != want[0] || gate.asked[1] != want[1] {
-		t.Fatalf("gated %v, want %v (each pinned to the pool it was drawn from)", gate.asked, want)
+	for _, asked := range gate.asked {
+		if asked.pool != gate.poolOf[asked.id] {
+			t.Fatalf("gate used wrong pool: %+v", asked)
+		}
+	}
+}
+
+func TestSelectWarmupPartnerQualitySignalsOutweighReceiverBilling(t *testing.T) {
+	paid := models.WarmupPartnerCandidate{ID: uuid.New(), Email: "paid@paid.test", MailHost: "hostinger", PoolType: "premium", Received7d: 10, Junked7d: 10}
+	free := borrowedFree("proven@free.test")
+	free.MailHost, free.Sent7d = "hostinger", 10
+	gate := &rejectingGate{poolOf: map[uuid.UUID]string{paid.ID: "premium", free.ID: "free"}}
+	s, sender := premiumSelector(gate, paid, free)
+	hits := 0
+	for range 200 {
+		partner, err := s.selectWarmupPartner(context.Background(), sender)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if partner.ID == free.ID {
+			hits++
+		}
+	}
+	if hits < 160 {
+		t.Fatalf("healthy owed free inbox drawn %d/200; billing hid recipient quality", hits)
 	}
 }
 

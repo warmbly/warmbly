@@ -465,17 +465,15 @@ func borrowedCount(cands []models.WarmupPartnerCandidate) int {
 	return n
 }
 
-// Mail between one workspace's own mailboxes builds nothing, so a customer
-// with more mailboxes than the floor still borrows outside partners.
-func TestLiveWarmupPartnerCandidatesSiblingsDoNotSatisfyTheFloor(t *testing.T) {
+func TestLiveWarmupPartnerCandidatesManySiblingsStillAllowProvenOutsidePartners(t *testing.T) {
 	f := newPartnerOrgFixture(t)
 	ctx := context.Background()
 	repo := &warmupRepository{db: f.pool}
-	for i := 0; i < config.WarmupPoolTierFallbackFloor; i++ {
+	for range 25 {
 		f.addMember(t, f.org, premiumPoolID, "smtp_imap", 0)
 	}
 	free := f.addMember(t, f.other, models.WarmupPoolFreeID, "smtp_imap", config.WarmupPoolFallbackMinAgeDays)
-	f.exec(`UPDATE email_accounts SET warmup_max = $2 WHERE id = $1`, f.sender, config.WarmupPoolTierFallbackFloor)
+	f.exec(`UPDATE email_accounts SET warmup_max = 25 WHERE id = $1`, f.sender)
 
 	cands, err := repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
 	if err != nil {
@@ -487,27 +485,25 @@ func TestLiveWarmupPartnerCandidatesSiblingsDoNotSatisfyTheFloor(t *testing.T) {
 	}
 }
 
-// A sender ramping above the floor needs that many partners, so its warmup
-// max raises the floor.
-func TestLiveWarmupPartnerCandidatesFloorFollowsTheWarmupMax(t *testing.T) {
+func TestLiveWarmupPartnerCandidatesPremiumAccessDoesNotDependOnPoolSizeOrWarmupMax(t *testing.T) {
 	f := newPartnerOrgFixture(t)
 	ctx := context.Background()
 	repo := &warmupRepository{db: f.pool}
-	for i := 0; i < config.WarmupPoolTierFallbackFloor; i++ {
+	for range 25 {
 		f.addMember(t, f.other, premiumPoolID, "smtp_imap", 0)
 	}
 	free := f.addMember(t, f.other, models.WarmupPoolFreeID, "smtp_imap", config.WarmupPoolFallbackMinAgeDays)
 
-	f.exec(`UPDATE email_accounts SET warmup_max = $2 WHERE id = $1`, f.sender, config.WarmupPoolTierFallbackFloor)
+	f.exec(`UPDATE email_accounts SET warmup_max = 25 WHERE id = $1`, f.sender)
 	cands, err := repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
 	if err != nil {
 		t.Fatalf("WarmupPartnerCandidates: %v", err)
 	}
-	if n := borrowedCount(cands); n != 0 {
-		t.Fatalf("a sender with enough outside partners for its max borrowed %d", n)
+	if n := borrowedCount(cands); n != 1 {
+		t.Fatalf("a large premium pool hid qualified free recipients: borrowed %d, want 1", n)
 	}
 
-	f.exec(`UPDATE email_accounts SET warmup_max = $2 WHERE id = $1`, f.sender, config.WarmupPoolTierFallbackFloor+10)
+	f.exec(`UPDATE email_accounts SET warmup_max = 35 WHERE id = $1`, f.sender)
 	cands, err = repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
 	if err != nil {
 		t.Fatalf("WarmupPartnerCandidates: %v", err)
@@ -517,24 +513,23 @@ func TestLiveWarmupPartnerCandidatesFloorFollowsTheWarmupMax(t *testing.T) {
 	}
 }
 
-// When more free mailboxes qualify than are borrowed, the best go first.
-func TestLiveWarmupPartnerCandidatesBorrowTheBestFirst(t *testing.T) {
+func TestLiveWarmupPartnerCandidatesIncludeAllQualifiedHostsWithoutSampling(t *testing.T) {
 	f := newPartnerOrgFixture(t)
 	ctx := context.Background()
 	repo := &warmupRepository{db: f.pool}
-	for i := 0; i < config.WarmupPoolTierFallbackFloor+15; i++ {
+	for range 40 {
 		f.addMember(t, f.other, models.WarmupPoolFreeID, "smtp_imap", config.WarmupPoolFallbackMinAgeDays)
 	}
-	best := f.addMember(t, f.other, models.WarmupPoolFreeID, "gmail", config.WarmupPoolBorrowSeasonedDays)
-	f.exec(`UPDATE email_accounts SET warmup_max = $2 WHERE id = $1`, f.sender, config.WarmupPoolTierFallbackFloor)
+	best := f.addMember(t, f.other, models.WarmupPoolFreeID, "gmail", 14)
+	f.exec(`UPDATE email_accounts SET warmup_max = 25 WHERE id = $1`, f.sender)
 
 	for i := 0; i < 10; i++ {
 		cands, err := repo.WarmupPartnerCandidates(ctx, "premium", f.sender)
 		if err != nil {
 			t.Fatalf("WarmupPartnerCandidates: %v", err)
 		}
-		if n := borrowedCount(cands); n != config.WarmupPoolTierFallbackFloor {
-			t.Fatalf("borrowed %d, want %d", n, config.WarmupPoolTierFallbackFloor)
+		if n := borrowedCount(cands); n != 41 {
+			t.Fatalf("borrowed %d, want all 41 qualified recipients", n)
 		}
 		if _, ok := candidateByID(cands, best); !ok {
 			t.Fatal("a seasoned Google mailbox was left out of the borrow for newer SMTP ones")
