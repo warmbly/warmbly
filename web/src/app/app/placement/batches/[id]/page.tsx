@@ -4,6 +4,8 @@
 // provider losing reputation. Live through the child tests' events.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { batchTab, batchSenderSort, batchSenderStatus, browseString, browseBoolean } from "@/lib/browse-accounts-analytics";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { ArrowLeftIcon, ArrowUpRightIcon, AtSignIcon, Grid3x3Icon, Loader2Icon, MailIcon, ServerIcon, SquareIcon } from "lucide-react";
@@ -90,7 +92,7 @@ export default function PlacementBatchPage() {
                     body={err?.status === 404 ? "It may belong to another workspace." : err ? buildError(err) : undefined}
                 />
             ) : (
-                <Detail batch={q.data} />
+                <Detail key={q.data.id} batch={q.data} />
             )}
         </div>
     );
@@ -100,7 +102,7 @@ function Detail({ batch }: { batch: PlacementBatchDetail }) {
     const confirm = useConfirm();
     const cancel = useCancelPlacementBatch();
     const campaign = useCampaign(batch.campaign_id ?? "");
-    const [tab, setTab] = React.useState<Tab>("mailboxes");
+    const [tab, setTab] = useBrowseState<Tab>(`placement.batch.${batch.id}.tab`, "mailboxes", batchTab);
     const open = batchOpen(batch.status);
     const p = batch.progress;
 
@@ -289,9 +291,9 @@ const STATUS_ORDER: PlacementBatchSenderStatus[] = ["running", "queued", "deferr
 
 function SendersTab({ batch }: { batch: PlacementBatchDetail }) {
     const navigate = useNavigate();
-    const [sort, setSort] = React.useState<PlacementBatchSenderSort>("worst");
-    const [status, setStatus] = React.useState<PlacementBatchSenderStatus | "">("");
-    const [q, setQ] = React.useState("");
+    const [sort, setSort] = useBrowseState<PlacementBatchSenderSort>(`placement.batch.${batch.id}.senders.sort`, "worst", batchSenderSort);
+    const [status, setStatus] = useBrowseState<PlacementBatchSenderStatus | "">(`placement.batch.${batch.id}.senders.status`, "", batchSenderStatus);
+    const [q, setQ] = useBrowseState(`placement.batch.${batch.id}.senders.search`, "", browseString);
     const debounced = useDebouncedValue(q.trim(), 300);
     const list = usePlacementBatchSenders(batch.id, { sort, status, q: debounced });
     const p = batch.progress;
@@ -481,7 +483,7 @@ function GroupTable({ groups, label, empty }: { groups: PlacementBatchGroup[]; l
 
 // Sending domain by recipient provider: the inbox rate in each cell.
 function Matrix({ batch }: { batch: PlacementBatchDetail }) {
-    const [all, setAll] = React.useState(false);
+    const [all, setAll] = useBrowseState(`placement.batch.${batch.id}.matrix.showAll`, false, browseBoolean);
     const cols = batch.recipients;
     if (cols.length === 0 || batch.matrix.length === 0) {
         return <p className="px-5 py-6 text-[12px] text-slate-400">No copy has a verdict yet.</p>;

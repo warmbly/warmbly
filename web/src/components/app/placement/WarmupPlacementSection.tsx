@@ -1,6 +1,8 @@
 // Workspace warmup placement on the deliverability page: inbox vs spam over
 // time, per recipient provider, and every mailbox ranked worst first.
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseBoolean, placementGroupFilter } from "@/lib/browse-accounts-analytics";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import { EmptyBlock, SectionBar, Stat, StatStrip } from "@/components/layout/Page";
@@ -25,9 +27,9 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
     const { from, to } = useMemo(() => utcWindow(days), [days]);
     const q = useWarmupPlacement(undefined, from, to);
     const report = q.data;
-    const [group, setGroup] = useState<GroupFilter>("all");
-    const [attentionOnly, setAttentionOnly] = useState(false);
-    const [showAll, setShowAll] = useState(false);
+    const [group, setGroup] = useBrowseState<GroupFilter>("deliverability.placement.group", "all", placementGroupFilter);
+    const [attentionOnly, setAttentionOnly] = useBrowseState("deliverability.placement.attentionOnly", false, browseBoolean);
+    const [showAll, setShowAll] = useBrowseState("deliverability.placement.showAll", false, browseBoolean);
     const navigate = useNavigate();
 
     const groups = useMemo<PlacementGroup[]>(
@@ -121,7 +123,7 @@ export default function WarmupPlacementSection({ days }: { days: number }) {
             </div>
 
             <SectionBar label="Warmup placement by provider" count={report.providers.length || undefined} />
-            <ProviderBreakdown providers={report.providers} />
+            <ProviderBreakdown providers={report.providers} browseScope="deliverability.placement" />
             <p className="px-5 py-3 text-[11.5px] text-slate-500 leading-relaxed border-t border-slate-200/60">
                 Warmup partner selection reads these numbers per mail host: a mailbox landing in spam at one host is sent
                 fewer partners there while the rate stays high, and more again once it recovers. It is never cut off

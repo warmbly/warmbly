@@ -1,7 +1,9 @@
 // A mailbox's warmup deliverability: where its warmup mail landed, day by day
 // and per recipient provider, and the trailing inbox rate behind the list's
 // percentage. Live: WARMUP_PLACEMENT events refresh the query.
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { placementRange, placementGroupFilter } from "@/lib/browse-accounts-analytics";
 import { InboxIcon } from "lucide-react";
 import { DitherRing } from "@/components/ui/dither";
 import { Loading } from "@/components/loader";
@@ -35,8 +37,8 @@ const POOL_STATE_LABEL: Record<string, string> = {
 };
 
 export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailboxId: string; poolHealth?: WarmupHealthInfo }) {
-    const [range, setRange] = useState<RangeKey>("30d");
-    const [group, setGroup] = useState<GroupFilter>("all");
+    const [range, setRange] = useBrowseState<RangeKey>(`emails.mailbox.${mailboxId}.placement.range`, "30d", placementRange);
+    const [group, setGroup] = useBrowseState<GroupFilter>(`emails.mailbox.${mailboxId}.placement.group`, "all", placementGroupFilter);
     const days = RANGES.find((r) => r.key === range)?.days ?? 30;
     const { from, to } = useMemo(() => utcWindow(days), [days]);
     const q = useWarmupPlacement(mailboxId, from, to);
@@ -171,7 +173,7 @@ export default function MailboxPlacementTab({ mailboxId, poolHealth }: { mailbox
                         <div className="px-5 pt-4 pb-2">
                             <Eyebrow>By recipient provider</Eyebrow>
                         </div>
-                        <ProviderBreakdown providers={report.providers} />
+                        <ProviderBreakdown providers={report.providers} browseScope={`emails.mailbox.${mailboxId}.placement`} />
                     </div>
                 </>
             )}

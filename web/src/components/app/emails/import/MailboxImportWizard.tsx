@@ -350,6 +350,7 @@ export default function MailboxImportWizard({
                 )}
                 {step === "run" && importId && (
                     <RunStep
+                        key={importId}
                         importId={importId}
                         onDone={onDone}
                         onAllowance={onAllowance}
