@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { clearTokens } from "./auth";
 import { useAppStore } from "@/stores/useAppStore";
 import { resetBoot } from "./boot";
+import { clearBrowseState } from "./browseState";
 
 // clearClientSession drops everything the signed-in person left in this
 // browser: tokens, drafts, the persisted workspace selection, and the fetched
@@ -15,6 +16,7 @@ import { resetBoot } from "./boot";
 // queryClient is optional: some callers run outside the provider.
 export function clearClientSession(queryClient?: QueryClient) {
     clearTokens();
+    clearBrowseState();
     queryClient?.clear();
     resetBoot();
 
