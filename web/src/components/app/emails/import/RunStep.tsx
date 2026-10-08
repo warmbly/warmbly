@@ -4,6 +4,8 @@
 // cause (optionally with a new password), a per-row fix, and Sign in for rows
 // that connect with Google or Microsoft sign-in.
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { importFilter } from "@/lib/browse-accounts-analytics";
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast/headless";
@@ -122,7 +124,7 @@ export default function RunStep({
     const [granted, setGranted] = React.useState<DomainGrant | null>(null);
     const consent = useMicrosoftAdminConsent(setGranted);
 
-    const [filter, setFilter] = React.useState<Filter>({ status: "", cause: "" });
+    const [filter, setFilter] = useBrowseState<Filter>(`emails.import.${importId}.results.filter`, { status: "", cause: "" }, importFilter);
     const [cursors, setCursors] = React.useState<string[]>([""]);
     const [fixing, setFixing] = React.useState<number | null>(null);
     const applyFilter = (f: Filter) => {

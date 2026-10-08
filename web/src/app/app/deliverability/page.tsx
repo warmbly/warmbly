@@ -4,7 +4,9 @@
 // is keyed under ["analytics", ...] which useRealtimeEvents already invalidates.
 // The visible sections and the time window are user-customizable and persisted.
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { deliverabilityView, deliverabilityHiddenMetrics } from "@/lib/browse-accounts-analytics";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangleIcon, ArrowUpRightIcon, CheckIcon, RefreshCcwIcon, SlidersHorizontalIcon } from "lucide-react";
 import { EmptyBlock, Page, PageBody, PageTopbar, SectionBar, Stat, StatStrip } from "@/components/layout/Page";
@@ -88,7 +90,7 @@ function num(v: number | undefined): string {
     return (v ?? 0).toLocaleString();
 }
 
-// View preferences (window + hidden sections), persisted per browser.
+// Legacy browser preferences seed the scoped session preference once.
 const VIEW_KEY = "warmbly:deliverability-view";
 
 interface ViewPrefs {
@@ -103,7 +105,7 @@ function loadView(): ViewPrefs {
             const v = JSON.parse(raw) as Partial<ViewPrefs>;
             return {
                 range: v.range === "30d" || v.range === "90d" ? v.range : "7d",
-                hidden: Array.isArray(v.hidden) ? v.hidden.filter((k): k is SectionKey => SECTIONS.some((s) => s.key === k)) : [],
+                hidden: Array.isArray(v.hidden) ? [...new Set(v.hidden.filter((k): k is SectionKey => SECTIONS.some((s) => s.key === k)))] : [],
             };
         }
     } catch {
@@ -121,10 +123,10 @@ function BandChip({ band }: { band: DeliverabilityBand }) {
 }
 
 export default function DeliverabilityPage() {
-    const [view, setView] = useState<ViewPrefs>(loadView);
+    const [view, setView] = useBrowseState<ViewPrefs>("deliverability.view", loadView, deliverabilityView);
     // Legend toggles: every metric charts together; "sent" starts hidden so
     // it doesn't dwarf the failure signals this page exists to surface.
-    const [hiddenMetrics, setHiddenMetrics] = useState<Metric[]>(["sent"]);
+    const [hiddenMetrics, setHiddenMetrics] = useBrowseState<Metric[]>("deliverability.hiddenMetrics", ["sent"], deliverabilityHiddenMetrics);
     const toggleMetric = (k: Metric) =>
         setHiddenMetrics((cur) => {
             if (cur.includes(k)) return cur.filter((x) => x !== k);
@@ -137,11 +139,6 @@ export default function DeliverabilityPage() {
 
     const updateView = (next: ViewPrefs) => {
         setView(next);
-        try {
-            localStorage.setItem(VIEW_KEY, JSON.stringify(next));
-        } catch {
-            // Persisting is best-effort; the in-memory view still applies.
-        }
     };
     const show = (k: SectionKey) => !view.hidden.includes(k);
     const toggleSection = (k: SectionKey) =>

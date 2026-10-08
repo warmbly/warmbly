@@ -2,6 +2,8 @@
 // the tracking host its mailboxes use, whether its root redirects to the
 // company website, and the inbox vendor that holds it. A row opens the drawer.
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseString, domainFilter, domainTab } from "@/lib/browse-accounts-analytics";
 import { Link } from "@tanstack/react-router";
 import { useSearchParams } from "@/hooks/useSearchParams";
 import { AnimatePresence, motion } from "framer-motion";
@@ -69,10 +71,18 @@ export default function SendingDomainsPage() {
     const canView = usePermission("MANAGE_EMAILS");
     const profile = useUserProfile();
     const list = useSendingDomains(canView);
-    const [query, setQuery] = React.useState("");
-    const [filter, setFilter] = React.useState<Filter>("all");
+    const [query, setQuery] = useBrowseState("emails.domains.search", "", browseString);
+    const [filter, setFilter] = useBrowseState<Filter>("emails.domains.filter", "all", domainFilter);
     const [open, setOpen] = React.useState("");
-    const [tab, setTab] = React.useState<DomainTab>("overview");
+    const [tabIntent, setTabIntent] = React.useState<DomainTab | undefined>();
+    const [tab, setTab] = useBrowseState<DomainTab>(`emails.domain.${open}.tab`, "overview", domainTab,
+        tabIntent === undefined ? undefined : { initialOverride: tabIntent });
+    React.useEffect(() => {
+        if (tabIntent !== undefined) {
+            setTab(tabIntent);
+            setTabIntent(undefined);
+        }
+    }, [tabIntent, setTab]);
     const [searchParams, setSearchParams] = useSearchParams();
     const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
     const [bulk, setBulk] = React.useState<BulkSetupIntent | null>(null);
@@ -139,7 +149,9 @@ export default function SendingDomainsPage() {
         const d = searchParams.get("domain");
         if (!d) return;
         const t = searchParams.get("tab");
-        setTab(t === "redirect" || t === "tracking" ? t : "overview");
+        const nextTab = t === "redirect" || t === "tracking" ? t : "overview";
+        setTabIntent(nextTab);
+        if (open === d.toLowerCase()) setTab(nextTab);
         setOpen(d.toLowerCase());
         setSearchParams(
             (prev) => {
@@ -150,10 +162,11 @@ export default function SendingDomainsPage() {
             },
             { replace: true },
         );
-    }, [searchParams, setSearchParams]);
+    }, [searchParams, setSearchParams, open, setTab]);
 
-    const openDomain = (d: string, t: DomainTab = "overview") => {
-        setTab(t);
+    const openDomain = (d: string, t?: DomainTab) => {
+        setTabIntent(t);
+        if (open === d && t !== undefined) setTab(t);
         setOpen(d);
     };
     const addMailboxes = () => profile.setAddEmail(true);

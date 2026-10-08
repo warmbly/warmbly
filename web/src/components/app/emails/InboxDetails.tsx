@@ -13,6 +13,8 @@ import { DashboardImage } from "@/components/ui/dashboard-image";
 // validation. Read data: /analytics/accounts/:id and /analytics/warmup?email_id=.
 
 import React, { useMemo, useState } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { mailboxTab, type MailboxTab } from "@/lib/browse-accounts-analytics";
 import { diagnosticSendingAllowed, diagnosticWarmupActive } from "@/lib/diagnosticParticipation";
 import { AnimatePresence, motion } from "framer-motion";
 import AdvisorStrip from "@/components/app/advisor/AdvisorStrip";
@@ -333,7 +335,7 @@ function statusTone(status: string) {
 
 /* ── tabs ─────────────────────── */
 
-const TABS: { key: string; label: string; icon: LucideIcon }[] = [
+const TABS: { key: MailboxTab; label: string; icon: LucideIcon }[] = [
     { key: "overview", label: "Overview", icon: GaugeIcon },
     { key: "deliverability", label: "Deliverability", icon: MailCheckIcon },
     { key: "analytics", label: "Analytics", icon: BarChart3Icon },
@@ -350,13 +352,17 @@ export default function InboxDetails({
     emails,
     view,
     setView,
-    initialTab = "overview",
+    initialTab,
+    tabIntentKey,
+    onTabIntentConsumed,
     canWarmup = true,
 }: {
     emails: Inbox[] | null;
     view: string;
     setView: React.Dispatch<React.SetStateAction<string>>;
-    initialTab?: string;
+    initialTab?: MailboxTab;
+    tabIntentKey?: number;
+    onTabIntentConsumed?: () => void;
     canWarmup?: boolean;
 }) {
     const mailbox = emails?.find((e) => e.id === view) ?? null;
@@ -381,7 +387,7 @@ export default function InboxDetails({
                         transition={{ type: "spring", damping: 32, stiffness: 320 }}
                         className="fixed right-0 top-0 z-50 h-full w-full sm:w-[640px] xl:w-[720px] bg-white border-l border-slate-200 shadow-[0_0_60px_-12px_rgba(15,23,42,0.3)] flex flex-col"
                     >
-                        <Detail key={mailbox.id} mailbox={mailbox} onClose={close} initialTab={initialTab} canWarmup={canWarmup} />
+                        <Detail key={mailbox.id} mailbox={mailbox} onClose={close} initialTab={initialTab} tabIntentKey={tabIntentKey} onTabIntentConsumed={onTabIntentConsumed} canWarmup={canWarmup} />
                     </motion.aside>
                 </>
             )}
@@ -400,8 +406,15 @@ const EDITABLE: (keyof Inbox)[] = [
     "test_mode", "test_send_enabled", "test_receive_enabled", "shared_daily_limit", "rolling_recipient_limit",
 ];
 
-function Detail({ mailbox, onClose, initialTab = "overview", canWarmup = true }: { mailbox: Inbox; onClose: () => void; initialTab?: string; canWarmup?: boolean }) {
-    const [tab, setTab] = useState(initialTab);
+function Detail({ mailbox, onClose, initialTab, tabIntentKey, onTabIntentConsumed, canWarmup = true }: { mailbox: Inbox; onClose: () => void; initialTab?: MailboxTab; tabIntentKey?: number; onTabIntentConsumed?: () => void; canWarmup?: boolean }) {
+    const [tab, setTab] = useBrowseState<MailboxTab>(`emails.mailbox.${mailbox.id}.tab`, "overview", mailboxTab,
+        initialTab === undefined ? undefined : { initialOverride: initialTab });
+    React.useEffect(() => {
+        if (initialTab !== undefined) {
+            setTab(initialTab);
+            onTabIntentConsumed?.();
+        }
+    }, [initialTab, tabIntentKey, onTabIntentConsumed, setTab]);
     const [form, setForm] = useState<Inbox>(mailbox);
     const update = (patch: Partial<Inbox>) => setForm((f) => ({ ...f, ...patch }));
 

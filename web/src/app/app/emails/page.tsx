@@ -1,5 +1,7 @@
 import { RiFireLine, RiMoreLine } from "@remixicon/react";
 import React, { useEffect, useMemo, useRef } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseString, mailboxSort, mailboxTab, type MailboxTab } from "@/lib/browse-accounts-analytics";
 import { useSearchParams } from "@/hooks/useSearchParams";
 import useMailboxTagFilter from "@/hooks/useMailboxTagFilter";
 import groupMailboxes from "@/lib/groupMailboxes";
@@ -130,13 +132,15 @@ export default function AddressesPage() {
     const confirm = useConfirm();
     const canView = usePermission("MANAGE_EMAILS");
 
-    const [query, setQuery] = React.useState<string>("");
+    const [query, setQuery] = useBrowseState("emails.search", "", browseString);
     const organizationID = useAppStore((state) => state.currentOrganization?.id ?? "personal");
     const [tag, setTag] = useMailboxTagFilter(`${p.user.id}:${organizationID}`, p.user.tags);
     const emailsData = useEmails({ query, tag });
     const [selected, setSelected] = React.useState<string[]>([]);
     const [view, setView] = React.useState<string>("");
-    const [viewTab, setViewTab] = React.useState<string>("overview");
+    const [viewTab, setViewTab] = React.useState<MailboxTab | undefined>();
+    const [tabIntentKey, setTabIntentKey] = React.useState(0);
+    const consumeTabIntent = React.useCallback(() => setViewTab(undefined), []);
     const [removing, setRemoving] = React.useState(false);
     const [bulkStart, setBulkStart] = React.useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
@@ -302,8 +306,10 @@ export default function AddressesPage() {
         return out;
     }, [selected, boxStatusById]);
 
-    const openDetail = (id: string, tab: string = "overview") => {
-        setViewTab(tab);
+    const openDetail = (id: string, tab?: string) => {
+        const parsed = mailboxTab.safeParse(tab);
+        setViewTab(tab === undefined ? undefined : parsed.success ? parsed.data : "overview");
+        setTabIntentKey((key) => key + 1);
         setView(id);
     };
 
@@ -360,7 +366,7 @@ export default function AddressesPage() {
     }
 
     // Every mailbox page is loaded, so the headers sort in the browser.
-    const [sort, setSort] = React.useState<MailboxSort | null>(null);
+    const [sort, setSort] = useBrowseState<MailboxSort | null>("emails.sort", null, mailboxSort);
     const sortBy = (col: MailboxColumn) =>
         setSort((cur) =>
             cur?.by === col.id ? { by: col.id, reverse: !cur.reverse } : { by: col.id, reverse: !!col.sortAsc },
@@ -647,7 +653,7 @@ export default function AddressesPage() {
                 )}
             </PageBody>
 
-            <InboxDetails emails={emailsData.emails} view={view} setView={setView} initialTab={viewTab} canWarmup={canWarmup} />
+            <InboxDetails emails={emailsData.emails} view={view} setView={setView} initialTab={viewTab} tabIntentKey={tabIntentKey} onTabIntentConsumed={consumeTabIntent} canWarmup={canWarmup} />
 
             <SigninMigrationDialog
                 open={migrationOpen}

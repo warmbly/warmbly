@@ -165,6 +165,7 @@ export default function SigninMigrationDialog({
                                 >
                                     {run ? (
                                         <RunStep
+                                            key={run.importId}
                                             importId={run.importId}
                                             onDone={onClose}
                                             onImportAnother={() => setRun(null)}
