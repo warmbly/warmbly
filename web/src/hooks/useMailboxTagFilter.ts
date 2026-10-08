@@ -10,7 +10,8 @@ export default function useMailboxTagFilter(owner: string, validTags: readonly {
     }, [key]);
     const [memory, setMemory] = useState(() => ({ key, value: read() }));
     const remembered = memory.key === key ? memory.value : read();
-    const selected = params.has("tag") ? urlTag : remembered;
+    const restoringOwner = memory.key !== key;
+    const selected = !restoringOwner && params.has("tag") ? urlTag : remembered;
     const tag = validTags === undefined || validTags.some((candidate) => candidate.id === selected) ? selected : "";
     const remember = useCallback((value: string) => {
         setMemory({ key, value });
@@ -18,9 +19,13 @@ export default function useMailboxTagFilter(owner: string, validTags: readonly {
     }, [key]);
 
     useEffect(() => {
+        if (restoringOwner && tag !== urlTag) {
+            setURLTag(tag);
+            return;
+        }
         remember(tag);
         if (tag !== urlTag) setURLTag(tag);
-    }, [tag, urlTag, remember, setURLTag]);
+    }, [restoringOwner, tag, urlTag, remember, setURLTag]);
 
     const setTag = useCallback((value: string) => {
         remember(value);

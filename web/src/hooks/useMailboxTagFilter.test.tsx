@@ -1,13 +1,20 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from "@tanstack/react-router";
+import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider, type AnyRouter } from "@tanstack/react-router";
+import { createContext, useContext } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseSearch, stringifySearch } from "@/lib/routerSearch";
 import useMailboxTagFilter from "./useMailboxTagFilter";
 
 let workspace = "workspace";
 let tags: readonly { id: string }[] | undefined;
+const FilterConfig = createContext({ workspace, tags });
+
+function TestRouter({ router }: { router: AnyRouter }) {
+    return <FilterConfig.Provider value={{ workspace, tags }}><RouterProvider router={router} /></FilterConfig.Provider>;
+}
 
 function Filters() {
+    const { workspace, tags } = useContext(FilterConfig);
     const [tag, setTag] = useMailboxTagFilter(`user:${workspace}`, tags);
     return <><output aria-label="Tag">{tag || "All accounts"}</output>
         <button onClick={() => setTag("sending")}>Sending</button>
@@ -20,7 +27,7 @@ async function open(href = "/app/emails") {
     const tasks = createRoute({ getParentRoute: () => root, path: "/app/tasks", component: () => <div>Tasks</div> });
     const router = createRouter({ routeTree: root.addChildren([emails, tasks]), history: createMemoryHistory({ initialEntries: [href] }), parseSearch, stringifySearch });
     await act(() => router.load());
-    return { router, ...render(<RouterProvider router={router} />) };
+    return { router, ...render(<TestRouter router={router} />) };
 }
 
 describe("remembered mailbox tag", () => {
@@ -35,7 +42,7 @@ describe("remembered mailbox tag", () => {
         const page = await open();
         expect(screen.getByLabelText("Tag")).toHaveTextContent("sending");
         tags = [{ id: "sending" }];
-        page.rerender(<RouterProvider router={page.router} />);
+        page.rerender(<TestRouter router={page.router} />);
         expect(screen.getByLabelText("Tag")).toHaveTextContent("sending");
         page.unmount();
         workspace = "another-workspace";
@@ -56,6 +63,18 @@ describe("remembered mailbox tag", () => {
         page.unmount();
         await open(href);
         expect(screen.getByLabelText("Tag")).toHaveTextContent("sending");
+    });
+    it("restores the new workspace's remembered filter instead of saving the previous URL tag", async () => {
+        sessionStorage.setItem("warmbly:mailbox-tag:user:another-workspace", "receiving");
+        const page = await open("/app/emails?tag=sending&tab=settings");
+        workspace = "another-workspace";
+        tags = [{ id: "receiving" }];
+        page.rerender(<TestRouter router={page.router} />);
+        await waitFor(() => expect(page.router.state.location.searchStr).toContain("tag=receiving"));
+        expect(screen.getByLabelText("Tag")).toHaveTextContent("receiving");
+        expect(page.router.state.location.searchStr).toContain("tab=settings");
+        expect(sessionStorage.getItem("warmbly:mailbox-tag:user:another-workspace")).toBe("receiving");
+        expect(sessionStorage.getItem("warmbly:mailbox-tag:user:workspace")).toBe("sending");
     });
     it("keeps All accounts after clearing and falls back for deleted or other-workspace tags", async () => {
         sessionStorage.setItem("warmbly:mailbox-tag:other:workspace", "sending");
