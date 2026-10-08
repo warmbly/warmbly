@@ -330,7 +330,7 @@ func (s *Service) askJev(ctx context.Context, cols []models.MailboxImportColumn,
 	}
 	askCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
-	resp, err := s.asker.Ask(askCtx, state, questions)
+	resp, err := s.asker.Ask(typesafe.WithUsage(askCtx, "mailbox_import_mapping", ""), state, questions)
 	if err != nil || resp == nil {
 		return
 	}

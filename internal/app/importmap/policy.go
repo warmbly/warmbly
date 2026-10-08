@@ -125,7 +125,7 @@ func Infer(
 
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	resp, err := asker.Ask(ctx, st, questions)
+	resp, err := asker.Ask(typesafe.WithUsage(ctx, "contact_import", ""), st, questions)
 	if err != nil || resp == nil {
 		return mapping, nil
 	}

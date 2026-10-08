@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/warmbly/warmbly/internal/app/copyjudge"
+	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -38,17 +39,23 @@ func (s *service) judgeCopy(ctx context.Context, snapshot *repository.AdvisorSna
 		return nil
 	}
 	verdicts := make(map[uuid.UUID]copyjudge.Verdict, len(steps))
+	byContent := make(map[string]copyjudge.Verdict, len(steps))
 	fresh := 0
 	capped := false
 	for _, sc := range steps {
 		body := copyjudge.Body(sc.step.BodyPlain, sc.step.BodyHTML)
 		hash := copyjudge.ContentHash(sc.step.Subject, body)
+		if verdict, ok := byContent[hash]; ok {
+			verdicts[sc.step.ID] = verdict
+			continue
+		}
 
 		cached, err := s.judgeCache.Get(ctx, snapshot.OrganizationID, hash)
 		if err != nil {
 			log.Printf("advisor: copy judgment cache read for org %s: %v", snapshot.OrganizationID, err)
 		}
 		if cached != nil {
+			byContent[hash] = *cached
 			verdicts[sc.step.ID] = *cached
 			continue
 		}
@@ -61,7 +68,7 @@ func (s *service) judgeCopy(ctx context.Context, snapshot *repository.AdvisorSna
 		// Bounded per call, and the first failure ends the run's judging:
 		// Evaluate runs inside the refresh request, and a judge that is down
 		// must not be asked forty times.
-		jctx, cancel := context.WithTimeout(ctx, copyJudgeTimeout)
+		jctx, cancel := context.WithTimeout(typesafe.WithUsage(ctx, "copy_judgment", snapshot.OrganizationID.String()), copyJudgeTimeout)
 		v, err := copyjudge.Judge(jctx, s.judge, sc.step.Subject, body)
 		cancel()
 		if err != nil {
@@ -75,6 +82,7 @@ func (s *service) judgeCopy(ctx context.Context, snapshot *repository.AdvisorSna
 			log.Printf("advisor: copy judgment cache write for org %s: %v", snapshot.OrganizationID, err)
 		}
 		verdicts[sc.step.ID] = *v
+		byContent[hash] = *v
 	}
 	if capped {
 		log.Printf("advisor: copy judgment cap of %d reached for org %s; the rest are judged next run", maxCopyJudgmentsPerRun, snapshot.OrganizationID)

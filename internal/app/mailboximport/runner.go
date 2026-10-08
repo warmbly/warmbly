@@ -152,6 +152,7 @@ func (s *Service) completeFinished(ctx context.Context) {
 
 // process connects, updates or parks one row, and records the outcome.
 func (s *Service) process(ctx context.Context, w repository.ImportWorkRow) {
+	ctx = typesafe.WithUsage(ctx, "mailbox_import_errors", w.OrgID.String())
 	rowCtx, cancel := context.WithTimeout(ctx, time.Duration(config.MailboxImportLeaseSeconds-10)*time.Second)
 	defer cancel()
 
@@ -644,7 +645,7 @@ func (s *Service) refineCause(ctx context.Context, fallback, host, detail string
 	}
 	askCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	resp, err := s.asker.Ask(askCtx, map[string]string{"server_reply": detail, "mail_host": host}, map[string]typesafe.Question{
+	resp, err := s.asker.Ask(typesafe.WithUsage(askCtx, "mailbox_import_errors", ""), map[string]string{"server_reply": detail, "mail_host": host}, map[string]typesafe.Question{
 		"cause": typesafe.Choice("A mail server refused an app's sign-in with state.server_reply. Which of these is the reason?", criteria),
 	})
 	out := fallback

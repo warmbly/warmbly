@@ -963,6 +963,27 @@ func TestJudgeCopyReadsTheCacheBeforeAsking(t *testing.T) {
 	}
 }
 
+type unavailableJudgeCache struct{ memoryJudgeCache }
+
+func (m *unavailableJudgeCache) Put(context.Context, uuid.UUID, string, *copyjudge.Verdict) error {
+	return errors.New("cache unavailable")
+}
+
+func TestJudgeCopyReusesIdenticalCopyWhenCacheWriteFails(t *testing.T) {
+	judge := &recordingJudge{}
+	s := NewService(nil, nil, nil, nil, nil, nil, WithCopyJudge(judge, &unavailableJudgeCache{})).(*service)
+	snap, _ := judgedSnapshot(nil)
+	for i := 0; i < 50; i++ {
+		step := snap.Steps[0]
+		step.ID = uuid.New()
+		snap.Steps = append(snap.Steps, step)
+	}
+	s.judgeCopy(context.Background(), snap)
+	if judge.calls != 1 || len(snap.CopyJudgments) != 51 {
+		t.Fatalf("identical copy cost %d calls and produced %d verdicts", judge.calls, len(snap.CopyJudgments))
+	}
+}
+
 func TestJudgeCopyCapsFreshJudgmentsAndSurvivesErrors(t *testing.T) {
 	judge := &recordingJudge{}
 	cache := &memoryJudgeCache{}

@@ -15,6 +15,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/replyclassify"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/pkg/dsn"
+	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
@@ -192,6 +193,7 @@ func (s *Service) Classify(ctx context.Context, m Message) (Decision, error) {
 
 	// 3. Check deterministic subject, sender, and any supplied header signals
 	// before spending a model call.
+	ctx = typesafe.WithUsage(ctx, "inbox_tagging", m.OrganizationID.String())
 	ws := s.workspace(ctx, m.OrganizationID)
 	facts := Facts{DeterministicKind: DeterministicKind(m, ws.languages)}
 

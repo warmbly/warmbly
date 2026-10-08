@@ -81,7 +81,7 @@ func Classify(ctx context.Context, asker typesafe.Asker, reason string) (*Verdic
 	questions := map[string]typesafe.Question{
 		questionCause: typesafe.Choice("Why did the receiving server refuse this email?", causeCriteria),
 	}
-	resp, err := asker.Ask(ctx, state, questions)
+	resp, err := asker.Ask(typesafe.WithUsage(ctx, "bounce_classification", ""), state, questions)
 	if err != nil {
 		return nil, err
 	}

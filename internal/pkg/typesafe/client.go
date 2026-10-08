@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Package typesafe is the one client for the TypeSafe API, shared by every
@@ -130,17 +132,25 @@ type Client struct {
 	maxAttempts int
 	// sleep is the delay function, swapped in tests so a backoff assertion
 	// does not cost wall-clock seconds.
-	sleep func(context.Context, time.Duration) error
+	sleep   func(context.Context, time.Duration) error
+	billing *billingGate
 }
 
-func NewClient(apiKey string) *Client {
-	return &Client{
+type Option func(*Client)
+
+func NewClient(apiKey string, options ...Option) *Client {
+	c := &Client{
 		endpoint:    defaultEndpoint,
 		apiKey:      apiKey,
 		http:        &http.Client{Timeout: 30 * time.Second},
 		maxAttempts: 4,
 		sleep:       sleepCtx,
+		billing:     newBillingGate(apiKey),
 	}
+	for _, option := range options {
+		option(c)
+	}
+	return c
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) error {
@@ -248,20 +258,41 @@ func (c *Client) Ask(ctx context.Context, state any, questions map[string]Questi
 	if err != nil {
 		return nil, fmt.Errorf("typesafe: encode request: %w", err)
 	}
+	permit, err := c.billing.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var outcome error
+	defer func() { c.billing.finish(ctx, permit, outcome) }()
 
 	var lastErr error
 	for attempt := 0; attempt < c.maxAttempts; attempt++ {
 		if attempt > 0 {
 			wait := backoff(attempt, lastErr)
 			if err := c.sleep(ctx, wait); err != nil {
+				outcome = err
 				return nil, err
 			}
 		}
 
 		resp, err := c.once(ctx, payload)
+		entry := log.Info().Str("event", "typesafe_usage").Str("feature", featureFrom(ctx)).Int("questions", len(questions)).Int("attempt", attempt+1)
+		if scope, ok := ctx.Value(organizationKey{}).(string); ok && scope != "" {
+			entry.Str("organization_id", scope)
+		}
 		if err == nil {
+			outcome = nil
+			entry.Int("status", http.StatusOK).Str("model", resp.Model).Int("input_tokens", resp.Usage.InputTokens).Msg("TypeSafe request completed")
 			return resp, nil
 		}
+		var status *APIError
+		if asAPIError(err, &status) {
+			entry.Int("status", status.Status)
+		} else {
+			entry.Int("status", 0)
+		}
+		entry.Msg("TypeSafe request failed")
+		outcome = err
 		lastErr = err
 
 		var apiErr *APIError
