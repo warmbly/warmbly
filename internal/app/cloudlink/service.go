@@ -148,6 +148,8 @@ type Service interface {
 	// enrolled mailbox, so this instance's send gates hold the same verdict,
 	// and returns the transitions it saw.
 	SyncStanding(ctx context.Context) ([]models.CloudLinkStandingChange, *errx.Error)
+	// OnStandingChange registers mailbox-list transitions; SyncStanding returns its own.
+	OnStandingChange(func(context.Context, models.CloudLinkStandingChange))
 	// IsCloudWarmupThreadReply asks by ancestry: whether what a tokenless
 	// message answers is a turn of one of the cloud's warmup conversations.
 	IsCloudWarmupThreadReply(ctx context.Context, accountID uuid.UUID, messageID string, inReplyTo []string) (bool, error)
@@ -174,7 +176,12 @@ type service struct {
 	// offerFetch lets one caller ask Cloud for the offer while the others wait for its answer.
 	offerFetch sync.Mutex
 
-	disconnected []func(context.Context, uuid.UUID)
+	disconnected    []func(context.Context, uuid.UUID)
+	standingChanged func(context.Context, models.CloudLinkStandingChange)
+}
+
+func (s *service) OnStandingChange(fn func(context.Context, models.CloudLinkStandingChange)) {
+	s.standingChanged = fn
 }
 
 func NewService(repo repository.CloudLinkRepository, emails repository.EmailRepository, emailSvc email.EmailService) Service {
@@ -470,6 +477,15 @@ func (s *service) CheckEnrollment(ctx context.Context, accountID uuid.UUID) (boo
 }
 
 func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.CloudLinkMailboxRow, *errx.Error) {
+	if !reconciliationLocked(ctx) {
+		var rows []models.CloudLinkMailboxRow
+		xerr := s.reconcileLocked(ctx, func(ctx context.Context) *errx.Error {
+			var xerr *errx.Error
+			rows, xerr = s.ListMailboxes(ctx, orgID)
+			return xerr
+		})
+		return rows, xerr
+	}
 	accounts, xerr := s.emails.GetAllActiveInScope(ctx, repository.NewAccountScope(&orgID))
 	if xerr != nil {
 		return nil, xerr
@@ -484,15 +500,45 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 	}
 
 	// One round trip for every enrolled mailbox's cloud state.
-	cloudByRemote := map[uuid.UUID]*models.PoolLinkMailboxState{}
+	cloudByAccount := map[uuid.UUID]*models.PoolLinkMailboxState{}
 	legacyInstances := map[uuid.UUID]bool{}
-	for instanceID := range mailboxGroups(enrolled) {
+	for instanceID, group := range mailboxGroups(enrolled) {
 		if l, err := s.repo.GetByInstance(ctx, instanceID); err == nil && l != nil {
 			legacyInstances[instanceID] = l.OrganizationID == nil
+			if l.DisconnectPending {
+				continue
+			}
 			var states []models.PoolLinkMailboxState
 			if xerr := s.clientFor(l).do(ctx, http.MethodGet, "/instance/mailboxes", nil, &states); xerr == nil {
+				byRemote := map[uuid.UUID]*models.PoolLinkMailboxState{}
 				for i := range states {
-					cloudByRemote[states[i].RemoteID] = &states[i]
+					byRemote[states[i].RemoteID] = &states[i]
+				}
+				for _, e := range group {
+					state := byRemote[e.RemoteID]
+					cloudByAccount[e.EmailAccountID] = state
+					if state == nil || state.Health == nil || !knownHealthState(state.Health.State) {
+						if err := s.repo.InvalidateStanding(ctx, e.EmailAccountID); err != nil {
+							return nil, errx.InternalError()
+						}
+						e.StandingObservedAt = nil
+					} else {
+						previous, ok := s.recordStanding(ctx, e.EmailAccountID, state.Health, false)
+						if !ok {
+							return nil, errx.InternalError()
+						}
+						if previous == "" {
+							previous = models.WarmupHealthHealthy
+						}
+						if s.standingChanged != nil && previous != models.WarmupHealthState(state.Health.State) {
+							s.standingChanged(ctx, models.CloudLinkStandingChange{
+								EmailAccountID: e.EmailAccountID, Previous: previous, Current: models.WarmupHealthState(state.Health.State), Reason: state.Health.Reason,
+							})
+						}
+						observed := time.Now()
+						e.Standing, e.StandingObservedAt = state.Health, &observed
+					}
+					byAccount[e.EmailAccountID] = e
 				}
 			}
 		}
@@ -511,7 +557,7 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 			row.Managed = e.Managed
 			row.EnrollmentState = e.EnrollmentState
 			row.StandingObservedAt = e.StandingObservedAt
-			row.Cloud = cloudByRemote[e.RemoteID]
+			row.Cloud = cloudByAccount[a.ID]
 			// The recorded standing covers a mailbox the cloud holds out of its pool.
 			if row.Cloud != nil {
 				row.Cloud.Health = e.EffectiveStanding(time.Now())

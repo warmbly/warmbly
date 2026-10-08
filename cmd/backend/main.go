@@ -1295,6 +1295,16 @@ func main() {
 		cloudLinkRepository := repository.NewCloudLinkRepository(primaryDB.Pool, credEncrypter)
 		emailService.WireCloudLink(cloudLinkRepository)
 		cloudLinkService = cloudlink.NewService(cloudLinkRepository, emailRepostory, emailService)
+		cloudLinkService.OnStandingChange(func(ctx context.Context, change models.CloudLinkStandingChange) {
+			state, _, err := warmupRepository.GetHealthState(ctx, change.EmailAccountID)
+			if err == nil {
+				err = workerRepository.SetEmailAccountRiskBand(ctx, change.EmailAccountID, models.RiskBandFromHealth(state))
+			}
+			if err != nil {
+				log.Printf("cloud standing refresh: risk band update failed: %v", err)
+			}
+			warmupService.PublishHealthTransition(ctx, change.EmailAccountID, change.Previous, change.Current, change.Reason)
+		})
 		if reports, ok := analyticsService.(analytics.CloudWarmupReportsAware); ok {
 			reports.WireCloudWarmupReports(cloudLinkService)
 		}

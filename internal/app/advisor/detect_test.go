@@ -765,6 +765,29 @@ func TestWarmupPoolFindingExplainsItselfWithTheBandsReason(t *testing.T) {
 	}
 }
 
+func TestUnavailableCloudStandingDoesNotInventAReputationBan(t *testing.T) {
+	m := healthyMailbox()
+	m.PoolHealth, m.PoolHealthReason = "blocked", "cloud_evidence_unavailable"
+	byKey := findingsByKey(Detect(snapshotOf(m), defaults()))
+	if _, ok := byKey["warmup_pool_blocked"]; ok {
+		t.Fatal("unavailable Cloud evidence was described as lost pool standing")
+	}
+	f, ok := byKey["cloud_standing_unavailable"]
+	if !ok || !strings.Contains(f.Remedy, "cloud_standing_sync") || len(f.Steps) == 0 || f.Action != nil {
+		t.Fatalf("availability finding does not offer a safe status refresh: %+v", f)
+	}
+	settings := defaults()
+	settings.MutedDetectors = []string{"cloud_standing_unavailable"}
+	if _, ok := findingsByKey(Detect(snapshotOf(m), settings))["cloud_standing_unavailable"]; ok {
+		t.Fatal("Cloud availability detector ignored its own mute setting")
+	}
+	m.PoolHealthReason = "complaints"
+	byKey = findingsByKey(Detect(snapshotOf(m), defaults()))
+	if _, ok := byKey["warmup_pool_blocked"]; !ok {
+		t.Fatal("a real Cloud block stopped being reported")
+	}
+}
+
 // judgedSnapshot is one active campaign with one email step, plus the verdict
 // the copy judge would have attached to it.
 func judgedSnapshot(v *copyjudge.Verdict) (*repository.AdvisorSnapshot, uuid.UUID) {

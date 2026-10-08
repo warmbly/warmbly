@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/warmbly/warmbly/internal/infrastructure/db"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -88,6 +89,15 @@ func TestLiveCloudStandingFreshnessIsBoundedWithoutInventingAProviderBlock(t *te
 		h, err := f.warmup.GetCloudStanding(ctx, f.sender)
 		if reason != "" && (err != nil || h == nil || h.Reason != reason) {
 			t.Fatalf("cloud diagnostics = %+v, %v", h, err)
+		}
+		snap, err := NewAdvisorRepository(&db.DB{Pool: f.pool}).LoadSnapshot(ctx, f.org, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range snap.Mailboxes {
+			if m.ID == f.sender && (m.PoolHealth != string(want) || m.PoolHealthReason != reason) {
+				t.Fatalf("advisor standing = %s (%s), want %s (%s)", m.PoolHealth, m.PoolHealthReason, want, reason)
+			}
 		}
 	}
 	assertState(models.WarmupHealthBlocked, "cloud_evidence_unavailable")
