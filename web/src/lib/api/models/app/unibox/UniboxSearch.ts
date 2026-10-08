@@ -80,6 +80,7 @@ export interface UniboxSearchParams {
   automated?: boolean;
   since?: Date; // From date
   until?: Date; // To date
+  datePreset?: "today" | "week" | "month" | "custom";
   sortBy?: "newest" | "oldest";
   cursor?: string;
   limit?: number;

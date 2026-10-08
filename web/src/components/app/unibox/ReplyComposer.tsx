@@ -619,7 +619,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                 divider column. */}
             <div className="shrink-0 bg-white">
                 <HeaderRow label="To">
-                    <ContactRecipientField value={to} onChange={setTo} placeholder="name@example.com" />
+                    <ContactRecipientField browseKey="reply.to" value={to} onChange={setTo} placeholder="name@example.com" />
                     {(!showCc || !showBcc) && (
                         <div className="ml-auto flex items-center gap-0.5 shrink-0 self-start pt-px">
                             {!showCc && (
@@ -652,7 +652,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                             setShowCc(false);
                         }}
                     >
-                        <ContactRecipientField value={cc} onChange={setCc} placeholder="Add Cc recipients" />
+                        <ContactRecipientField browseKey="reply.cc" value={cc} onChange={setCc} placeholder="Add Cc recipients" />
                     </HeaderRow>
                 )}
                 {showBcc && (
@@ -663,13 +663,14 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                             setShowBcc(false);
                         }}
                     >
-                        <ContactRecipientField value={bcc} onChange={setBcc} placeholder="Add Bcc recipients" />
+                        <ContactRecipientField browseKey="reply.bcc" value={bcc} onChange={setBcc} placeholder="Add Bcc recipients" />
                     </HeaderRow>
                 )}
 
                 <HeaderRow label="From">
                     {accountId ? (
                         <MailboxPicker
+                            browseKey="reply"
                             value={accountId}
                             autoTag={null}
                             allowAuto={false}
@@ -1031,6 +1032,7 @@ export function ReplyComposer({ threadId, replyTo, mode, seed, onClose }: ReplyC
                     </PopoverMenuTrigger>
                     <PopoverMenuContent minWidth={340} className="max-w-[92vw]">
                         <TemplatePickerContent
+                            browseKey="reply"
                             query={templatesQuery}
                             onPick={applyTemplate}
                             onClose={() => setTemplateOpen(false)}

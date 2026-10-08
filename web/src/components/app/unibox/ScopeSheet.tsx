@@ -57,7 +57,7 @@ export function ScopeSheet({ open, setOpen, scope, onChange }: ScopeSheetProps) 
                             </button>
                         </div>
                         <div className="flex-1 min-h-0">
-                            <ScopeRail scope={scope} onChange={pick} />
+                            <ScopeRail browseKey="mobile" scope={scope} onChange={pick} />
                         </div>
                     </motion.aside>
                 </motion.div>
