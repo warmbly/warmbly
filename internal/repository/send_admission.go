@@ -263,21 +263,22 @@ func (r *taskRepository) InspectOutbound(ctx context.Context, task, mailbox, wor
 	var nonce *uuid.UUID
 	var started *time.Time
 	var released bool
+	var cancelled bool
 	var raw []byte
 	var org *uuid.UUID
 	var recipients []string
-	err := r.db.QueryRow(ctx, `SELECT t.send_executor_nonce,t.send_executor_started_at,t.send_executor_result,t.send_released_at IS NOT NULL,ea.organization_id,t.send_recipients FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE t.id=$1 AND t.email_account_id=$2 AND (t.send_executor_nonce IS NULL OR t.send_executor_worker=$3)`, task, mailbox, worker).Scan(&nonce, &started, &raw, &released, &org, &recipients)
+	err := r.db.QueryRow(ctx, `SELECT t.send_executor_nonce,t.send_executor_started_at,t.send_executor_result,t.send_released_at IS NOT NULL,t.status='cancelled',ea.organization_id,t.send_recipients FROM tasks t JOIN email_accounts ea ON ea.id=t.email_account_id WHERE t.id=$1 AND t.email_account_id=$2 AND (t.send_executor_nonce IS NULL OR t.send_executor_worker=$3)`, task, mailbox, worker).Scan(&nonce, &started, &raw, &released, &cancelled, &org, &recipients)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return &WarmupDispatchState{State: "denied"}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	if cancelled || released {
+		return &WarmupDispatchState{State: "denied"}, nil
+	}
 	if nonce == nil {
 		return &WarmupDispatchState{State: "legacy"}, nil
-	}
-	if released {
-		return &WarmupDispatchState{State: "denied"}, nil
 	}
 	if len(raw) > 0 {
 		var result models.SendEmailResult

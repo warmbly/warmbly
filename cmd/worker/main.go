@@ -169,8 +169,10 @@ func main() {
 		log.Println("WARNING: BOX_GOOGLE_CLIENT_ID/SECRET not set; Gmail mailbox token refresh will fail on expiry")
 	}
 
+	agent := newNodeAgent(workerID, bindIP)
 	// WorkerService
 	workerService := &worker.WorkerService{
+		OnMailboxMissing:          agent.RequestReload,
 		ID:                        workerID.String(),
 		CipherService:             cipherService,
 		Bus:                       bus,
@@ -202,7 +204,7 @@ func main() {
 	heartbeatDone := make(chan struct{})
 	go func() {
 		defer close(heartbeatDone)
-		newNodeAgent(workerID, bindIP).Run(ctx)
+		agent.Run(ctx)
 	}()
 
 	// Graceful shutdown

@@ -78,3 +78,44 @@ func TestRunRetriesBootUntilAcknowledged(t *testing.T) {
 		})
 	}
 }
+
+func TestRunRetriesRequestedReloadAndKeepsRequestsMadeDuringHeartbeat(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var a *Agent
+		var beats []models.NodeHeartbeat
+		client := &http.Client{Transport: heartbeatTransport(func(r *http.Request) (*http.Response, error) {
+			var beat models.NodeHeartbeat
+			if err := json.NewDecoder(r.Body).Decode(&beat); err != nil {
+				return nil, err
+			}
+			beats = append(beats, beat)
+			if len(beats) == 3 {
+				return nil, errors.New("lost reload acknowledgement")
+			}
+			if len(beats) == 4 {
+				a.RequestReload()
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"liveness_seconds":120}`)), Header: make(http.Header)}, nil
+		})}
+		a = New(Config{NodeID: uuid.New(), Role: models.NodeRoleWorker, BaseURL: "https://backend.test", Token: "fixture", Address: "1.1.1.1", HTTPClient: client})
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go a.Run(ctx)
+		synctest.Wait()
+		for i := 1; i < 6; i++ {
+			if i == 2 {
+				a.RequestReload()
+				a.RequestReload()
+			}
+			time.Sleep(40 * time.Second)
+			synctest.Wait()
+		}
+		for i, want := range []bool{true, false, true, true, true, false} {
+			if len(beats) <= i || beats[i].Booted != want {
+				t.Fatalf("heartbeat %d: expected reload=%t, beats=%+v", i+1, want, beats)
+			}
+		}
+		cancel()
+		synctest.Wait()
+	})
+}

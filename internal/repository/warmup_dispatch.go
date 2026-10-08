@@ -76,8 +76,12 @@ func (r *taskRepository) InspectWarmupDispatch(ctx context.Context, task, mailbo
 	var started *time.Time
 	var result []byte
 	var assigned *uuid.UUID
-	err := r.db.QueryRow(ctx, `SELECT w.dispatch_nonce,w.dispatch_started_at,w.dispatch_result,w.dispatch_worker_id
-        FROM warmup_tasks w JOIN tasks t ON t.id=w.task_id WHERE t.id=$1 AND t.email_account_id=$2`, task, mailbox).Scan(&nonce, &started, &result, &assigned)
+	var cancelled bool
+	err := r.db.QueryRow(ctx, `SELECT w.dispatch_nonce,w.dispatch_started_at,w.dispatch_result,w.dispatch_worker_id,t.status='cancelled'
+        FROM warmup_tasks w JOIN tasks t ON t.id=w.task_id WHERE t.id=$1 AND t.email_account_id=$2`, task, mailbox).Scan(&nonce, &started, &result, &assigned, &cancelled)
+	if err == nil && cancelled {
+		return &WarmupDispatchState{State: "denied"}, nil
+	}
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && nonce == nil {
 		return &WarmupDispatchState{State: "legacy"}, nil
 	}
