@@ -12,6 +12,10 @@
 // the whole set via /meetings/summary, not a reduce over the loaded page.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { UserContext } from "@/hooks/context/user";
+import { useAppStore } from "@/stores/useAppStore";
+import { crmBrowseSearchSchema, meetingBrowseTimeframeSchema } from "@/lib/browse-crm";
 import {
     CalendarClockIcon,
     CalendarPlusIcon,
@@ -137,9 +141,15 @@ function downloadICS(m: MeetingBooking) {
 }
 
 export default function MeetingsPage() {
-    const [timeframe, setTimeframe] = React.useState<Timeframe>("upcoming");
-    const [searchRaw, setSearchRaw] = React.useState("");
-    const [search, setSearch] = React.useState("");
+    const userId = React.useContext(UserContext)?.user.id;
+    const workspaceId = useAppStore((state) => state.currentOrganization?.id ?? "personal");
+    return <MeetingsBrowser key={`${userId}:${workspaceId}`} />;
+}
+
+function MeetingsBrowser() {
+    const [timeframe, setTimeframe] = useBrowseState("crm.meetings.timeframe", "upcoming", meetingBrowseTimeframeSchema);
+    const [searchRaw, setSearchRaw] = useBrowseState("crm.meetings.search", "", crmBrowseSearchSchema);
+    const [search, setSearch] = React.useState(() => searchRaw.trim());
     const [creating, setCreating] = React.useState(false);
 
     React.useEffect(() => {

@@ -8,6 +8,8 @@
 // pipeline. Cards click-open into the same dialog for editing.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { crmBrowseSearchSchema, dealBoardPipelineSchema, dealBrowseViewSchema } from "@/lib/browse-crm";
 import {
     CircleDollarSignIcon,
     LayoutGridIcon,
@@ -40,7 +42,7 @@ import {
     PopoverMenuContent,
     PopoverMenuItem,
 } from "@/components/ui/popover-menu";
-import usePipelines from "@/lib/api/hooks/app/crm/pipelines/usePipelines";
+import useBrowsePipelines from "@/components/app/crm/useBrowsePipelines";
 import useSearchDeals from "@/lib/api/hooks/app/crm/deals/useSearchDeals";
 import useDealsSummary from "@/lib/api/hooks/app/crm/deals/useDealsSummary";
 import { EMPTY_DEAL_SEARCH } from "@/lib/api/models/app/crm/SearchDeals";
@@ -84,7 +86,7 @@ const STATUS_LABEL = {
 } as const;
 
 export default function DealsPage() {
-    const pipelines = usePipelines();
+    const pipelines = useBrowsePipelines();
     const { isExternal, crm } = useCrmProvider();
     const { data: members } = useMembers();
     const crmCtx = React.useMemo(() => {
@@ -96,21 +98,24 @@ export default function DealsPage() {
     // (a fresh `?? []` each render would re-fire them every time).
     const list = React.useMemo(() => pipelines.data ?? [], [pipelines.data]);
 
-    const [pipelineId, setPipelineId] = React.useState<string | undefined>(undefined);
+    const [pipelineId, setPipelineId] = useBrowseState("crm.deals.board.pipeline", undefined, dealBoardPipelineSchema);
     React.useEffect(() => {
-        if (!pipelineId && list.length > 0) setPipelineId(list[0].id);
-    }, [list, pipelineId]);
+        if (!pipelines.isSuccess || pipelines.isPlaceholderData) return;
+        if (!list.some((pipeline) => pipeline.id === pipelineId) && pipelineId !== list[0]?.id) {
+            setPipelineId(list[0]?.id);
+        }
+    }, [list, pipelineId, pipelines.isSuccess, pipelines.isPlaceholderData, setPipelineId]);
 
     const currentPipeline = list.find((p) => p.id === pipelineId);
     const stages = [...(currentPipeline?.stages ?? [])].sort((a, b) => a.position - b.position);
     const updateDeal = useUpdateDeal();
 
-    const [search, setSearch] = React.useState("");
+    const [search, setSearch] = useBrowseState("crm.deals.board.search", "", crmBrowseSearchSchema);
     const [newOpen, setNewOpen] = React.useState(false);
     const [editing, setEditing] = React.useState<Deal | null>(null);
     // Table = the cross-pipeline, server-driven "see everything" view (default).
     // Board = the focused single-pipeline kanban for moving deals through stages.
-    const [view, setView] = React.useState<"table" | "board">("table");
+    const [view, setView] = useBrowseState("crm.deals.view", "table", dealBrowseViewSchema);
 
     // When editing a deal opened from the cross-pipeline table, scope the stage
     // picker to that deal's OWN pipeline, not whichever pipeline the board has

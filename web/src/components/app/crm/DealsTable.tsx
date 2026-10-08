@@ -14,6 +14,8 @@
 // "N of M loaded" footer) so the CRM finally reuses the contacts toolkit.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { dealBrowseFiltersSchema } from "@/lib/browse-crm";
 import {
     CalendarIcon,
     CircleDollarSignIcon,
@@ -76,7 +78,7 @@ export default function DealsTable({
     pipelines: Pipeline[];
     onOpenDeal: (deal: Deal) => void;
 }) {
-    const [filters, setFilters] = React.useState<SearchDeals>(EMPTY_DEAL_SEARCH);
+    const [filters, setFilters] = useBrowseState<SearchDeals>("crm.deals.table.filters", EMPTY_DEAL_SEARCH, dealBrowseFiltersSchema);
 
     const search = useSearchDeals({ filters, limit: 50 });
     const summary = useDealsSummary(filters);
@@ -416,6 +418,11 @@ function PipelineFacet({
                 </button>
             </PopoverMenuTrigger>
             <PopoverMenuContent minWidth={200} className="max-h-64 overflow-y-auto">
+                {selected.filter((id) => !pipelines.some((p) => p.id === id)).map((id) => (
+                    <PopoverMenuItem key={id} onSelect={() => toggle(id)} selected closeOnSelect={false}>
+                        Selected pipeline {id.slice(0, 6)}
+                    </PopoverMenuItem>
+                ))}
                 {pipelines.length === 0 ? (
                     <div className="px-2 py-1.5 text-[11.5px] text-slate-400">No pipelines yet</div>
                 ) : (
@@ -478,8 +485,11 @@ function FilterPopover({
 }) {
     const [open, setOpen] = React.useState(false);
 
-    const setNum = (key: "min_value" | "max_value", v: string) =>
-        onChange((f) => ({ ...f, [key]: v.trim() === "" ? undefined : Number(v) }));
+    const setNum = (key: "min_value" | "max_value", v: string) => {
+        const value = v.trim() === "" ? undefined : Number(v);
+        if (value !== undefined && !Number.isFinite(value)) return;
+        onChange((f) => ({ ...f, [key]: value }));
+    };
     const setDate = (key: "close_after" | "close_before", v: string) =>
         onChange((f) => ({ ...f, [key]: v ? new Date(v).toISOString() : undefined }));
 
