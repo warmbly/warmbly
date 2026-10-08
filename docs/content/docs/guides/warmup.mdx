@@ -25,6 +25,14 @@ When an SMTP relay rewrites a Message-ID, a valid recipient-bound verification t
 
 New mailboxes default off. Independent send/receive controls and shared daily/rolling limits are on the Warmup tab. Start/resume enables diagnostic sending, Pause preserves separately authorized receiving, and Stop disables both while retaining ramp history and holds. Recipient-only cannot reply. Existing NULL stays legacy until explicit action; unrelated edits do not relabel it. New controls cannot re-enable legacy synthetic behavior. Cloud controls require updated Cloud replicas. See [send safety](/development/send-safety/).
 
+### When a send fails
+
+The Warmup tab shows a recent failed send when no later send is confirmed delivered. "The sending worker has not loaded this mailbox yet" means no send was attempted. It is not proof of a deliverability hold, a refused sign-in or an IP allowlist problem. Active mailboxes are reloaded automatically; after a worker restarts, it keeps reporting its restart until the backend acknowledges the request to reload its mailboxes.
+
+Follow a provider-specific error when one is shown. Google and Microsoft sign-ins use their native APIs, not SMTP settings. Reconnect those mailboxes only for a reported sign-in or permission error. SMTP host, port, password and IP allowlist checks apply to SMTP mailboxes when the error reports a mail-server connection problem. Warmbly Cloud makes those connections from its own network, not your self-hosted instance's address.
+
+Recovery does not bypass paused participation, provider limits or deliverability holds. If the warning persists, give support the mailbox address and the failure time so it can be matched to the worker's loading and sending records.
+
 ### Where the content comes from
 
 Message generation stays off the live sending path. When an AI provider is configured, a background batch builds complete conversation plans (a subject, an opening, and five alternating reply turns), each validated against a strict schema, checked for robotic language, and passed through a safety lint before entering the active bank. When the operator has also configured TypeSafe (`TYPESAFE_API_KEY`), each thread is judged for pitches and generated-sounding filler before entering the bank, and the thread text is sent to TypeSafe for that.

@@ -99,7 +99,9 @@ func (a *Agent) Run(ctx context.Context) {
 	}
 
 	interval := DefaultInterval
-	if reply := a.beat(ctx, true, false); reply != nil {
+	bootPending := true
+	if reply := a.beat(ctx, bootPending, false); reply != nil {
+		bootPending = false
 		interval = paceFrom(reply.LivenessSeconds)
 	}
 
@@ -116,7 +118,8 @@ func (a *Agent) Run(ctx context.Context) {
 			cancel()
 			return
 		case <-ticker.C:
-			if reply := a.beat(ctx, false, false); reply != nil {
+			if reply := a.beat(ctx, bootPending, false); reply != nil {
+				bootPending = false
 				if next := paceFrom(reply.LivenessSeconds); next != interval {
 					interval = next
 					ticker.Reset(interval)
