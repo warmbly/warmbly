@@ -70,7 +70,8 @@ type Agent struct {
 
 	// lastErr is reported on the next beat and then cleared, so the dashboard
 	// shows what went wrong without it sticking forever.
-	lastErr atomic.Pointer[string]
+	lastErr        atomic.Pointer[string]
+	reloadRequests atomic.Uint64
 }
 
 func New(cfg Config) *Agent {
@@ -84,6 +85,11 @@ func New(cfg Config) *Agent {
 // goroutine; the newest message wins.
 func (a *Agent) ReportError(msg string) {
 	a.lastErr.Store(&msg)
+}
+
+// RequestReload coalesces missing-mailbox recovery into the next acknowledged heartbeat.
+func (a *Agent) RequestReload() {
+	a.reloadRequests.Add(1)
 }
 
 // Run beats until ctx is cancelled, then sends one farewell beat so the node
@@ -100,6 +106,7 @@ func (a *Agent) Run(ctx context.Context) {
 
 	interval := DefaultInterval
 	bootPending := true
+	acknowledgedReload := a.reloadRequests.Load()
 	if reply := a.beat(ctx, bootPending, false); reply != nil {
 		bootPending = false
 		interval = paceFrom(reply.LivenessSeconds)
@@ -118,8 +125,10 @@ func (a *Agent) Run(ctx context.Context) {
 			cancel()
 			return
 		case <-ticker.C:
-			if reply := a.beat(ctx, bootPending, false); reply != nil {
+			reload := a.reloadRequests.Load()
+			if reply := a.beat(ctx, bootPending || reload != acknowledgedReload, false); reply != nil {
 				bootPending = false
+				acknowledgedReload = reload
 				if next := paceFrom(reply.LivenessSeconds); next != interval {
 					interval = next
 					ticker.Reset(interval)

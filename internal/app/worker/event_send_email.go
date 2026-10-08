@@ -65,6 +65,9 @@ func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.Se
 	mail, exists := w.loadedMailbox(ctx, sendEmail.EmailID)
 
 	if !exists {
+		if w.OnMailboxMissing != nil {
+			w.OnMailboxMissing()
+		}
 		// The mailbox is not loaded here: it is still being added (its
 		// ADD_EMAIL is queued behind this send), or this worker restarted and
 		// the reconciler has not re-shipped it yet. Leave the send for
