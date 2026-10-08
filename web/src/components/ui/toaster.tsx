@@ -33,7 +33,7 @@ function ToastCard({ t, offset, updateHeight }: { t: Toast; offset: number; upda
                 transition={{ duration: 0.25, ease: "easeOut" }}
             >
                 {t.type === "custom" ? resolveValue(t.message, t) : (
-                    <div className={`flex items-center gap-2 rounded-lg bg-white px-2.5 py-2 text-[#363636] shadow-[0_3px_10px_rgb(0_0_0/0.1),0_3px_3px_rgb(0_0_0/0.05)] ${t.className ?? ""}`} style={{ maxWidth: TOAST_MAX_WIDTH, ...t.style }}>
+                    <div className={`flex items-center gap-2 rounded-lg bg-white px-2.5 py-2 text-slate-800 shadow-[0_3px_10px_rgb(0_0_0/0.1),0_3px_3px_rgb(0_0_0/0.05)] ${t.className ?? ""}`} style={{ maxWidth: TOAST_MAX_WIDTH, ...t.style }}>
                         {icon && <span className="shrink-0">{icon}</span>}
                         <div {...t.ariaProps} className="min-w-0 flex-1 px-1.5 py-0.5 text-[12.5px] leading-[1.5] break-words">{resolveValue(t.message, t)}</div>
                         {t.type === "error" && (
