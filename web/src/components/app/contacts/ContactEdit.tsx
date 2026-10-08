@@ -17,6 +17,8 @@
 //   - Details   → identity / categories / campaigns / custom fields
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { contactTabSchema } from "@/lib/browse-contacts-campaigns";
 import { AnimatePresence, motion } from "framer-motion";
 import { CalendarPlusIcon, CheckIcon, CopyIcon, Loader2Icon, MailIcon, XIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
@@ -105,7 +107,8 @@ function ContactEditPanel({
     // teammate editing the same person sees the live-viewer pill up top.
     usePresenceResource(`contact:${contact.id}`, "editing");
 
-    const [tab, setTab] = React.useState<ContactSlideTab>(initialTab ?? "overview");
+    const [tab, setTab] = useBrowseState<ContactSlideTab>(`contacts:${contact.id}:panel:tab`, "overview", contactTabSchema,
+        initialTab ? { initialOverride: initialTab } : undefined);
 
     const [firstName, setFirstName] = React.useState(contact.first_name);
     const [lastName, setLastName] = React.useState(contact.last_name);

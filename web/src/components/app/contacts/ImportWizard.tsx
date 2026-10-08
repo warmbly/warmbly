@@ -480,6 +480,7 @@ export default function ImportWizard({ open, onClose, lockedCampaign, lockedSegm
                                     )}
                                     {!resuming && step === "map" && draft?.preview && (
                                         <MapStep
+                                            importId={draft.id}
                                             preview={draft.preview}
                                             mapping={mapping}
                                             setMapping={setMapping}

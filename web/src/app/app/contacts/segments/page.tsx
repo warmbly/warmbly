@@ -2,6 +2,8 @@
 // with its live member count; clicking opens the segment's contact list.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseText } from "@/lib/browse-contacts-campaigns";
 import { useNavigate } from "@tanstack/react-router";
 import { MoreHorizontalIcon, PlusIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
@@ -60,7 +62,7 @@ function SegmentsList() {
         }
     }
 
-    const [query, setQuery] = React.useState("");
+    const [query, setQuery] = useBrowseState("contacts:segments:query", "", browseText);
     const [editorOpen, setEditorOpen] = React.useState(false);
     const [editing, setEditing] = React.useState<Segment | null>(null);
     const [campaignFor, setCampaignFor] = React.useState<Segment | null>(null);

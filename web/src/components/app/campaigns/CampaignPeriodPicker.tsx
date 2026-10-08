@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CalendarIcon } from "lucide-react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { PopoverMenu, PopoverMenuContent, PopoverMenuTrigger } from "@/components/ui/popover-menu";
-import { COHORT_TIP, PRESETS, formatWindow, savePreset, type CampaignPeriod, type DayWindow } from "@/lib/campaignPeriod";
+import { COHORT_TIP, PRESETS, formatWindow, type CampaignPeriod, type DayWindow } from "@/lib/campaignPeriod";
 
 export default function CampaignPeriodPicker({
     value,
@@ -42,7 +42,6 @@ export default function CampaignPeriodPicker({
                     key={p.key}
                     type="button"
                     onClick={() => {
-                        savePreset(p.key);
                         onChange({ key: p.key });
                     }}
                     className={tab(value.key === p.key)}

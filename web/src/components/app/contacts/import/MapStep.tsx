@@ -3,6 +3,8 @@
 // contacts the mapping makes.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseText, browseBoolean, importViewSchema } from "@/lib/browse-contacts-campaigns";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     AlertTriangleIcon,
@@ -53,12 +55,14 @@ import TargetIcon from "./TargetIcon";
 type View = "columns" | "preview";
 
 export default function MapStep({
+    importId,
     preview: detected,
     mapping,
     setMapping,
     hasHeader,
     setHasHeader,
 }: {
+    importId: string;
     preview: ImportPreview;
     mapping: ImportColumnMapping[];
     setMapping: React.Dispatch<React.SetStateAction<ImportColumnMapping[]>>;
@@ -67,9 +71,9 @@ export default function MapStep({
 }) {
     // The header choice moves the first row between header and data for real.
     const preview = React.useMemo(() => derivePreview(detected, hasHeader), [detected, hasHeader]);
-    const [view, setView] = React.useState<View>("columns");
-    const [query, setQuery] = React.useState("");
-    const [unmappedOnly, setUnmappedOnly] = React.useState(false);
+    const [view, setView] = useBrowseState<View>(`contacts:imports:${importId}:mapping:view`, "columns", importViewSchema);
+    const [query, setQuery] = useBrowseState(`contacts:imports:${importId}:mapping:query`, "", browseText);
+    const [unmappedOnly, setUnmappedOnly] = useBrowseState(`contacts:imports:${importId}:mapping:unmapped-only`, false, browseBoolean);
     const { data: existingKeys = [] } = useCustomFieldKeys();
 
     function getMapping(idx: number): ImportColumnMapping {
