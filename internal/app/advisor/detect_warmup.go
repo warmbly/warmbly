@@ -37,6 +37,12 @@ func warmupDetectors() []Detector {
 			Run:      detectWarmupReplyRateLow,
 		},
 		{
+			Key:      "cloud_standing_unavailable",
+			Category: models.AdvisorCategoryWarmup,
+			About:    "A Cloud-linked mailbox with missing or stale status evidence. New sends are held until a recognized Cloud observation arrives; this is an availability hold, not a reputation ban or a provider authentication failure.",
+			Run:      detectCloudStandingUnavailable,
+		},
+		{
 			Key:      "warmup_pool_blocked",
 			Category: models.AdvisorCategoryWarmup,
 			About:    "A mailbox quarantined or blocked from the shared warmup pool for its spam placement, complaint or bounce rate, or for tampering with warmup mail it received. Pool standing is the platform's own read on whether a mailbox is safe to keep in shared reputation surfaces.",
@@ -214,9 +220,31 @@ func detectWarmupReplyRateLow(s *repository.AdvisorSnapshot) []Finding {
 	return out
 }
 
+func detectCloudStandingUnavailable(s *repository.AdvisorSnapshot) []Finding {
+	out := []Finding{}
+	for _, m := range s.Mailboxes {
+		if m.PoolHealthReason == "cloud_evidence_unavailable" {
+			out = append(out, Finding{
+				Key: "cloud_standing_unavailable", GroupTitle: "{count} mailboxes need a fresh Cloud pool status",
+				Category: models.AdvisorCategoryWarmup, Severity: models.AdvisorHigh, Surface: models.AdvisorSurfaceMailboxes,
+				EntityType: "email_account", EntityID: ref(m.ID), EntityLabel: m.Email, Impact: 70,
+				Title:    fmt.Sprintf("Cloud pool status for %s is unavailable", m.Email),
+				Detail:   "This instance has no current, recognized Cloud pool status for this mailbox. New sending is held until the status is refreshed. This is not evidence of spam, rejected credentials, or a Cloud pool ban; Cloud warmup may still be running independently.",
+				Remedy:   "Open Settings > Warmbly Cloud to refresh the mailbox status. If Cloud cannot be reached, check the connection and the consumer's cloud_standing_sync job. Keep the backend and consumer on the same release. Do not disconnect or re-enroll the mailbox.",
+				Steps:    []string{"Open Settings > Warmbly Cloud and reload the mailbox list to obtain a current status.", "If the status stays unavailable, check Cloud connectivity and the consumer's cloud_standing_sync job. Do not disconnect or re-enroll the mailbox."},
+				Evidence: map[string]any{"mailbox": m.Email, "pool_state": m.PoolHealth, "pool_health_reason": m.PoolHealthReason},
+			})
+		}
+	}
+	return out
+}
+
 func detectWarmupPoolBlocked(s *repository.AdvisorSnapshot) []Finding {
 	out := []Finding{}
 	for _, m := range s.Mailboxes {
+		if m.PoolHealthReason == "cloud_evidence_unavailable" {
+			continue
+		}
 		bad := m.PoolBlocked ||
 			m.PoolHealth == "quarantined" || m.PoolHealth == "blocked" || m.PoolHealth == "throttled"
 		if !bad {

@@ -34,6 +34,17 @@ func (s *service) recordStanding(ctx context.Context, accountID uuid.UUID, h *mo
 		log.Warn().Err(err).Str("account_id", accountID.String()).Msg("cloud link: warmup standing could not be recorded")
 		return "", false
 	}
+	if !initial && s.standingChanged != nil {
+		previous := prev
+		if previous == "" {
+			previous = models.WarmupHealthHealthy
+		}
+		if previous != models.WarmupHealthState(h.State) {
+			s.standingChanged(ctx, models.CloudLinkStandingChange{
+				EmailAccountID: accountID, Previous: previous, Current: models.WarmupHealthState(h.State), Reason: h.Reason,
+			})
+		}
+	}
 	return prev, true
 }
 
