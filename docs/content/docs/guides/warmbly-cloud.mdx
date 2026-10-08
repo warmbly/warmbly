@@ -13,7 +13,7 @@ Only warmup moves to the cloud. Campaigns, contacts, the unibox, tracking and ev
 
 ## How it works
 
-Each local workspace connects separately to a Warmbly Cloud workspace. A Cloud workspace can have only one active self-hosted connection, including any older instance-wide link. Different local workspaces need different Cloud workspaces, each with its own plan. Self-hosted workspace creation itself is unlimited; hosted creation limits and request-rate protection are unchanged. When you enroll a mailbox, the instance sends that mailbox's SMTP/IMAP credential to the cloud, sealed in transit and at rest with the same envelope encryption the hosted product uses for every customer mailbox. From then on:
+New connections link one local workspace to one Warmbly Cloud workspace. A Cloud workspace can have only one active self-hosted connection, including any older instance-wide link. New connections for different local workspaces need different Cloud workspaces, each with its own plan. Existing server-wide connections keep serving their local workspaces without reconnecting or buying another plan. Self-hosted workspace creation itself is unlimited; hosted creation limits and request-rate protection are unchanged. When you enroll a mailbox, the instance sends that mailbox's SMTP/IMAP credential to the cloud, sealed in transit and at rest with the same envelope encryption the hosted product uses for every customer mailbox. From then on:
 
 - Warmbly Cloud sends the mailbox's warmup mail, replies to partners, and rescues, opens and stars the warmup mail it receives, on Warmbly's own workers
 - the cloud reads only verified warmup mail from the mailbox. Everything else that arrives is dropped unread; no history is imported and nothing is stored
