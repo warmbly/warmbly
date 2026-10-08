@@ -241,6 +241,14 @@ Only messages stored as a notification by a verdict that never asked the action 
 
 One call contains every question for a message and currently uses about 1,300 input tokens on the recorded fixture set. A notification recognised offline costs one smaller call, for the action check and any of your questions asked of notifications, and nothing when neither is on. An away message recognised offline costs one small call when its return date is checked, and nothing otherwise. TypeSafe evaluates the questions in parallel, but each question still contributes tokens, so check its current pricing before a large backfill. Output tokens are not billed.
 
+The same configured API key also serves reply classification, campaign-copy checks, generated warmup-content review, form triage, bounce classification and import helpers. These all count against the key's TypeSafe account, not just inbox tagging. Self-hosts use their own key and billing account when configured; there is no shared hosted key supplied by default.
+
+Operators can filter backend and consumer logs by `event=typesafe_usage`. Each request attempt records its feature, question count and HTTP status (zero when no usable API response was received). Successful responses also record the model and input tokens, with the workspace identifier when available. Sum `input_tokens` on successful responses to compare features; failed attempts have no reported token usage. Logs contain no message content, question text, credentials or API keys. Saved inbox and copy verdicts alone are not an account-wide billing ledger: some features do not persist usage, and the TypeSafe console remains the authority for the balance and charges.
+
+If TypeSafe returns a billing error (HTTP 402), paid judgments pause for five minutes. The next eligible request after that interval becomes a single recovery probe; a successful probe resumes requests, and a failed probe pauses them again. Backend and consumer coordinate this through their existing Redis connection for the same API key. If Redis is unavailable, each process retains its own bounded pause. This prevents repeated failing requests, but does not replenish credits or lower the price of successful judgments.
+
+Incoming mail is still saved during the pause. Offline rules and already stored verdicts remain available; unavailable model answers are not invented. After restoring credits, a plain backfill can classify skipped historical mail, and `--recheck-notifications` can check notifications filed without an action answer. Recovery probes happen on demand, not by sending paid synthetic health checks.
+
 A message with no Message-ID is skipped. A database claim prevents two concurrent deliveries of the same Message-ID from making duplicate calls, and an abandoned claim becomes eligible for retry after 15 minutes.
 
 ## Related guides

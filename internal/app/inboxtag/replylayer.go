@@ -66,7 +66,7 @@ func ReplyClassifier(asker typesafe.Asker, repo repository.InboxTagRepository) r
 		if !HasContent(state) {
 			return replyclassify.Result{}, false
 		}
-		resp, err := asker.Ask(ctx, state, map[string]Question{
+		resp, err := asker.Ask(typesafe.WithUsage(ctx, "reply_classification", in.OrganizationID.String()), state, map[string]Question{
 			"sentiment": typesafe.Choice("How does this reply to a cold sales email read?", sentimentCriteria),
 		})
 		if err != nil {

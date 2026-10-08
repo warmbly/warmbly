@@ -228,7 +228,7 @@ func (s *Service) prepare(ctx context.Context, orgID uuid.UUID, in Input, given 
 			}
 		}
 	}
-	sug := s.suggest(ctx, headers, body, given, saved)
+	sug := s.suggest(typesafe.WithUsage(ctx, "mailbox_import_mapping", orgID.String()), headers, body, given, saved)
 
 	emails, domains := emailsAndDomains(body, sug.mapping)
 	existing, xerr := s.mailboxes.FindManyInOrganization(ctx, orgID, emails)

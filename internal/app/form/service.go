@@ -407,7 +407,7 @@ func (s *service) Submit(ctx context.Context, publicID string, answers map[strin
 	// and everything below runs as if the form had it off.
 	if f.TriageEnabled && s.triage != nil {
 		tctx, cancel := context.WithTimeout(ctx, triageTimeout)
-		if verdict, confidence, ok := triage(tctx, s.triage, f.Fields, data); ok {
+		if verdict, confidence, ok := triage(typesafe.WithUsage(tctx, "form_triage", f.OrganizationID.String()), s.triage, f.Fields, data); ok {
 			sub.Triage = verdict
 			sub.TriageConfidence = confidence
 		}

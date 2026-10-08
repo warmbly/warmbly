@@ -203,7 +203,7 @@ func Judge(ctx context.Context, asker typesafe.Asker, subject, body string) (*Ve
 		return nil, ErrNoContent
 	}
 
-	resp, err := asker.Ask(ctx, st, Questions())
+	resp, err := asker.Ask(typesafe.WithUsage(ctx, "copy_judgment", ""), st, Questions())
 	if err != nil {
 		return nil, err
 	}

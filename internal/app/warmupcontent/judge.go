@@ -87,7 +87,7 @@ func judgeThread(ctx context.Context, asker typesafe.Asker, subject, description
 		return nil, fmt.Errorf("warmup judge: complete rendered thread exceeds review limit")
 	}
 	state := boundThreadState(subject, description, messages, judgeStateLimit)
-	resp, err := asker.Ask(ctx, state, judgeQuestions())
+	resp, err := asker.Ask(typesafe.WithUsage(ctx, "warmup_content", ""), state, judgeQuestions())
 	if err != nil {
 		return nil, err
 	}

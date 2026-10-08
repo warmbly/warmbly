@@ -69,7 +69,7 @@ func triage(ctx context.Context, asker typesafe.Asker, fields []models.FormField
 	if runes < triageMinRunes {
 		return "", 0, false
 	}
-	resp, err := asker.Ask(ctx, state, triageQuestions)
+	resp, err := asker.Ask(typesafe.WithUsage(ctx, "form_triage", ""), state, triageQuestions)
 	if err != nil || resp == nil {
 		return "", 0, false
 	}

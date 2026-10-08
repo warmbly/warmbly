@@ -19,6 +19,7 @@ import (
 	"github.com/warmbly/warmbly/internal/pkg/emailverify"
 	"github.com/warmbly/warmbly/internal/pkg/listquality"
 	"github.com/warmbly/warmbly/internal/pkg/spreadsheet"
+	"github.com/warmbly/warmbly/internal/pkg/typesafe"
 	"github.com/warmbly/warmbly/internal/repository"
 	"github.com/warmbly/warmbly/internal/utils"
 )
@@ -123,7 +124,7 @@ func (s *contactService) SuggestImportMapping(ctx context.Context, orgID uuid.UU
 	if s.columnJudge == nil {
 		return suggested, nil
 	}
-	return importmap.Infer(ctx, s.columnJudge, suggested, headers, shapes, keys)
+	return importmap.Infer(typesafe.WithUsage(ctx, "contact_import", orgID.String()), s.columnJudge, suggested, headers, shapes, keys)
 }
 
 // existingCustomFieldKeys is the workspace's custom-field keys for the

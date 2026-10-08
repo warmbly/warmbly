@@ -1901,7 +1901,7 @@ func (s *service) IngestDeliverabilityEvent(ctx context.Context, organizationID 
 	if eventType == models.DeliverabilityEventBounce && s.bounceJudge != nil &&
 		strings.TrimSpace(req.Reason) != "" && !emailverify.NamesRecipient(req.Reason) {
 		// Bounded: a bounce storm must not queue behind a rate-limited judge.
-		jctx, cancel := context.WithTimeout(ctx, bounceJudgeTimeout)
+		jctx, cancel := context.WithTimeout(typesafe.WithUsage(ctx, "bounce_classification", organizationID.String()), bounceJudgeTimeout)
 		v, vErr := bounceclass.Classify(jctx, s.bounceJudge, req.Reason)
 		cancel()
 		switch {
