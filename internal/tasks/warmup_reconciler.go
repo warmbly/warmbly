@@ -28,9 +28,8 @@ func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) 
 	}); ok {
 		recovered, err := recovery.RecoverUnstartedWarmupDispatches(ctx, time.Now().Add(-10*time.Minute), limit)
 		if err != nil {
-			return 0, err
-		}
-		if recovered > 0 {
+			log.Warn().Err(err).Msg("warmup reconcile failed to retire unstarted dispatches")
+		} else if recovered > 0 {
 			log.Info().Int("recovered", recovered).Msg("warmup reconcile retired unstarted dispatches")
 		}
 	}
