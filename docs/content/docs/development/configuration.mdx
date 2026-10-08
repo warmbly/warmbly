@@ -582,11 +582,26 @@ Application permissions reach every mailbox in a consenting organization. We rec
 | `HUBSPOT_OAUTH_CLIENT_ID`, `HUBSPOT_OAUTH_CLIENT_SECRET` | Your HubSpot app. Needed on the backend and on every consumer: the consumer runs the [HubSpot mode](/guides/hubspot/) pull and sync queue and refreshes the token as it goes. The secret also verifies HubSpot's webhook signatures | unset |
 | `PIPEDRIVE_OAUTH_CLIENT_ID`, `PIPEDRIVE_OAUTH_CLIENT_SECRET` | Your Pipedrive app (see [Pipedrive self-hosting](/guides/pipedrive/#self-hosting)). Needed on the backend and on every consumer: the consumer runs the [Pipedrive mode](/guides/pipedrive/) pull and sync queue and refreshes the token as it goes. The secret also derives the password Pipedrive presents on each webhook delivery, and verifies the Warmbly panel's signed calls | unset |
 | `SALESFORCE_OAUTH_CLIENT_ID`, `SALESFORCE_OAUTH_CLIENT_SECRET` | Your Salesforce app (see [Salesforce self-hosting](/guides/salesforce/#self-hosting)). Needed on the backend, which runs the sync, and on every consumer, which runs Salesforce automation actions and refreshes the token for them | unset |
+| `GOOGLE_SHEETS_OAUTH_CLIENT_ID`, `GOOGLE_SHEETS_OAUTH_CLIENT_SECRET` | Google Web application client for [contact sync sources](/guides/contacts-crm/). Both are required on the backend. Separate settings from Google dashboard login and Gmail mailbox OAuth | unset |
 | `INTEGRATIONS_OAUTH_REDIRECT_URL` | Shared redirect URI for those flows | `BACKEND_PUBLIC_URL` (else `API_PUBLIC_URL`) plus `/integrations/oauth/callback` |
 | `SLACK_OAUTH_CLIENT_ID`, `SLACK_OAUTH_CLIENT_SECRET` | The instance's own [Slack app](/development/slack-app/). Unset, the dashboard reports Slack as not set up and no workspace can connect it | unset |
 | `SLACK_SIGNING_SECRET` | Verifies every request Slack sends to the events and interactivity URLs. Without it Slack still posts notifications and inbox conversations, but the assistant and buttons are off, and those URLs answer `503` `slack_not_configured` | unset |
 
 The three Slack values come from the Slack app's **Basic Information** page. Set them on the backend and the consumer and restart both; the shipped `docker-compose.yml` passes all three to both. The request URLs are built on `BACKEND_PUBLIC_URL` when it is set, otherwise on `API_PUBLIC_URL`. See [Slack app](/development/slack-app/) for creating the app from its manifest.
+
+### Google Sheets app
+
+Google Sheets connects from **Contacts > Sync sources**, not the integrations catalog. The on-demand sync reads the selected tab and imports contacts only when you run it.
+
+1. In your [Google Cloud project](https://console.cloud.google.com/), [enable the Google Sheets API](https://developers.google.com/workspace/sheets/api/quickstart/go#enable_the_api).
+2. Configure the project's Google Auth Platform branding and audience. For an external app in Testing, add the Google accounts that will connect as test users. For a public launch, follow [Google's sensitive-scope verification requirements](https://developers.google.com/workspace/sheets/api/scopes).
+3. Create an OAuth client of type **Web application**, or reuse an existing Web application client in that project. Add the exact backend callback to its **Authorized redirect URIs**: `INTEGRATIONS_OAUTH_REDIRECT_URL` when set, otherwise `BACKEND_PUBLIC_URL` (else `API_PUBLIC_URL`) plus `/integrations/oauth/callback`. For example, `https://api.example.com/integrations/oauth/callback`. It is not the dashboard URL, the Google login callback, or the Gmail mailbox callback.
+4. The current client requests `https://www.googleapis.com/auth/spreadsheets` and `https://www.googleapis.com/auth/userinfo.email`. Include these scopes in the consent configuration. The Sheets scope is sensitive and grants read/write access, even though contact sync does not write back. It is not the restricted Gmail scope; an existing Google login or Gmail approval does not automatically approve Sheets access.
+5. Set the client's ID and secret as `GOOGLE_SHEETS_OAUTH_CLIENT_ID` and `GOOGLE_SHEETS_OAUTH_CLIENT_SECRET` in the backend's process environment, then restart or redeploy the backend. For containers, explicitly pass both variables into the service; adding them to a Compose `.env` alone does not forward them. Do not put the secret in dashboard build variables. Changing these settings requires a restart, not a database migration.
+
+Neither `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` nor `BOX_GOOGLE_CLIENT_ID` / `BOX_GOOGLE_CLIENT_SECRET` is used as a fallback. If either Sheets credential is missing, **Connect with Google** returns `501` with an OAuth-not-configured message before contacting Google. On Warmbly Cloud, the service operator configures the client once for all workspaces; workspace members only authorize their own Google account.
+
+After setup, [connect a sync source](/guides/contacts-crm/): authorize an account that can access the spreadsheet, paste its ID, select a tab, map the columns (including email), and save. Run **Sync now** whenever you want to import new rows. The first row should contain column headers, with one contact per subsequent row.
 
 ### HubSpot app
 
