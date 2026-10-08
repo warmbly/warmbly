@@ -63,6 +63,13 @@ export class PasskeyAutofillUnavailable extends Error {
     }
 }
 
+export class PasskeyAlreadyRegistered extends Error {
+    constructor() {
+        super("This device already has a passkey for your account.");
+        this.name = "PasskeyAlreadyRegistered";
+    }
+}
+
 function autofillUnavailable(e: unknown): boolean {
     if (!(e instanceof Error) && !(e instanceof DOMException)) return false;
     return e.name === "NotSupportedError"
@@ -70,7 +77,7 @@ function autofillUnavailable(e: unknown): boolean {
         || (e instanceof WebAuthnError && e.cause !== e && autofillUnavailable(e.cause));
 }
 
-function mapError(e: unknown): Error {
+function mapError(e: unknown, ceremony: "authentication" | "registration"): Error {
     if (e instanceof PasskeyCancelled) return e;
     if (e instanceof WebAuthnError) {
         switch (e.code) {
@@ -78,9 +85,9 @@ function mapError(e: unknown): Error {
             case "ERROR_CEREMONY_ABORTED":
                 return new PasskeyCancelled("aborted");
             case "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY":
-                return e.cause && e.cause !== e ? mapError(e.cause) : e;
+                return e.cause && e.cause !== e ? mapError(e.cause, ceremony) : e;
             case "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED":
-                return new Error("This device already has a passkey for your account.");
+                return new PasskeyAlreadyRegistered();
             case "ERROR_AUTHENTICATOR_MISSING_DISCOVERABLE_CREDENTIAL_SUPPORT":
             case "ERROR_AUTHENTICATOR_MISSING_USER_VERIFICATION_SUPPORT":
                 return new Error("This device can't create a passkey that meets our requirements.");
@@ -94,9 +101,9 @@ function mapError(e: unknown): Error {
                 return new PasskeyCancelled("aborted");
             case "NotAllowedError":
                 return new PasskeyCancelled("not-allowed");
-            // Another WebAuthn request is still pending, so this one never started.
+            // Registration means a duplicate credential; authentication means a pending request.
             case "InvalidStateError":
-                return new PasskeyCancelled("aborted");
+                return ceremony === "registration" ? new PasskeyAlreadyRegistered() : new PasskeyCancelled("aborted");
             default:
                 return e;
         }
@@ -253,7 +260,7 @@ export async function finishPasskeyLogin(
         return await passkeyLoginFinish({ session: challenge.session, credential });
     } catch (e) {
         if (opts?.conditional && autofillUnavailable(e)) throw new PasskeyAutofillUnavailable(e);
-        throw mapError(e);
+        throw mapError(e, "authentication");
     } finally {
         if (timeout) clearTimeout(timeout);
     }
@@ -271,7 +278,7 @@ export async function registerPasskey(name?: string): Promise<Passkey> {
         const credential = await startRegistration({ optionsJSON: options.publicKey });
         return await passkeyRegisterFinish({ name, credential });
     } catch (e) {
-        throw mapError(e);
+        throw mapError(e, "registration");
     }
 }
 

@@ -189,6 +189,15 @@ function isSdkRequestTimeout(type: unknown, value: unknown): boolean {
     return type === "AbortError" && typeof value === "string" && value.startsWith("PostHog request timed out");
 }
 
+// Keep the known raw refusal quiet too, without hiding unrelated InvalidStateErrors.
+function isPasskeyAlreadyRegistered(type: unknown, value: unknown): boolean {
+    if (type === "PasskeyAlreadyRegistered") return true;
+    if (type !== "DOMException" && type !== "InvalidStateError") return false;
+    return value === "The authenticator was previously registered"
+        || value === "The authenticator was previously registered: InvalidStateError"
+        || value === "InvalidStateError: The authenticator was previously registered";
+}
+
 // An exception whose message is an object's default toString, with no stack and
 // no real Error behind it, carries nothing: no name, no cause, no place. They
 // arrive from extensions and from handlers that concatenate a DOM Event into a
@@ -212,6 +221,11 @@ const DEFAULT_OBJECT_STRING = /\[object [A-Z][A-Za-z]*\]/;
 
 export function isNoise(properties: Properties): boolean {
     const exceptionList = properties.$exception_list;
+    if (Array.isArray(exceptionList) && exceptionList.length > 0 && exceptionList.every((exception) => {
+        if (!exception || typeof exception !== "object") return false;
+        const entry = exception as Record<string, unknown>;
+        return isPasskeyAlreadyRegistered(entry.type ?? entry.$exception_type, entry.value ?? entry.$exception_value);
+    })) return true;
     if (Array.isArray(exceptionList) && exceptionList.some((exception) => {
         if (!exception || typeof exception !== "object") return false;
         const entry = exception as Record<string, unknown>;
@@ -230,6 +244,8 @@ export function isNoise(properties: Properties): boolean {
     const message = properties.$exception_message;
     if (typeof message === "string" && NOISE.includes(message.trim())) return true;
     if (isSdkRequestTimeout(type, message)) return true;
+    const hasExceptionList = Array.isArray(exceptionList) && exceptionList.length > 0;
+    if (!hasExceptionList && isPasskeyAlreadyRegistered(type, message)) return true;
 
     // Keep accepting flattened payloads while cached SDK chunks are still in
     // browsers during a rolling release.
@@ -238,6 +254,8 @@ export function isNoise(properties: Properties): boolean {
     const values = properties.$exception_values;
     if (!Array.isArray(values)) return false;
     if (Array.isArray(types) && types.some((t, i) => isSdkRequestTimeout(t, values[i]))) return true;
+    if (!hasExceptionList && Array.isArray(types) && types.length > 0 && types.length === values.length
+        && types.every((t, i) => isPasskeyAlreadyRegistered(t, values[i]))) return true;
     return values.some((v) => typeof v === "string" && NOISE.includes(v.trim()));
 }
 
