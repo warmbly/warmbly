@@ -148,6 +148,7 @@ type Service interface {
 	// enrolled mailbox, so this instance's send gates hold the same verdict,
 	// and returns the transitions it saw.
 	SyncStanding(ctx context.Context) ([]models.CloudLinkStandingChange, *errx.Error)
+	// OnStandingChange registers mailbox-list transitions; SyncStanding returns its own.
 	OnStandingChange(func(context.Context, models.CloudLinkStandingChange))
 	// IsCloudWarmupThreadReply asks by ancestry: whether what a tokenless
 	// message answers is a turn of one of the cloud's warmup conversations.
@@ -522,8 +523,17 @@ func (s *service) ListMailboxes(ctx context.Context, orgID uuid.UUID) ([]models.
 						}
 						e.StandingObservedAt = nil
 					} else {
-						if _, ok := s.recordStanding(ctx, e.EmailAccountID, state.Health, false); !ok {
+						previous, ok := s.recordStanding(ctx, e.EmailAccountID, state.Health, false)
+						if !ok {
 							return nil, errx.InternalError()
+						}
+						if previous == "" {
+							previous = models.WarmupHealthHealthy
+						}
+						if s.standingChanged != nil && previous != models.WarmupHealthState(state.Health.State) {
+							s.standingChanged(ctx, models.CloudLinkStandingChange{
+								EmailAccountID: e.EmailAccountID, Previous: previous, Current: models.WarmupHealthState(state.Health.State), Reason: state.Health.Reason,
+							})
 						}
 						observed := time.Now()
 						e.Standing, e.StandingObservedAt = state.Health, &observed

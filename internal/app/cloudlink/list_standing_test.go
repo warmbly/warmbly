@@ -59,6 +59,28 @@ func TestMailboxListingCannotRefreshStandingFromAnotherLink(t *testing.T) {
 	}
 }
 
+func TestStandingSyncReturnsTransitionsWithoutTheMailboxListCallback(t *testing.T) {
+	account, instance := uuid.New(), uuid.New()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_ = json.NewEncoder(w).Encode([]models.PoolLinkMailboxStanding{{RemoteID: account, Health: &models.WarmupHealthInfo{State: "quarantined", Reason: "complaints"}}})
+	}))
+	defer srv.Close()
+	l := &models.CloudLink{InstanceID: instance, CloudURL: srv.URL, Token: "owning"}
+	m := &models.CloudLinkMailbox{EmailAccountID: account, RemoteID: account, InstanceID: instance, EnrollmentState: "active", Standing: &models.WarmupHealthInfo{State: "healthy"}}
+	r := &listedStandingRepo{workspaceLinkRepo: &workspaceLinkRepo{links: map[uuid.UUID]*models.CloudLink{instance: l}, mailboxes: map[uuid.UUID]*models.CloudLinkMailbox{account: m}}}
+	s := &service{repo: r}
+	var callbacks int
+	s.OnStandingChange(func(context.Context, models.CloudLinkStandingChange) { callbacks++ })
+	changes, xerr := s.SyncStanding(context.Background())
+	if xerr != nil || len(changes) != 1 || callbacks != 0 || changes[0].Current != models.WarmupHealthQuarantined {
+		t.Fatalf("sync must leave publication to its caller: %+v, callbacks=%d, %v", changes, callbacks, xerr)
+	}
+	changes, xerr = s.SyncStanding(context.Background())
+	if xerr != nil || len(changes) != 0 || callbacks != 0 {
+		t.Fatal("unchanged sync repeated transition")
+	}
+}
+
 func (r *listedStandingRepo) WithReconciliationLock(_ context.Context, fn func() error) error {
 	r.locked = true
 	defer func() { r.locked = false }()
