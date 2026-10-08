@@ -15,7 +15,7 @@ New mailboxes default to diagnostic participation **off**. The organization-auth
 
 Use the **Tags** dropdown above the mailbox list to show accounts with a particular tag. The selection is kept in the page URL and remembered for your user and workspace in the browser tab, so refreshing, opening a bookmark, or visiting another page and returning keeps the filter. Choose **All accounts** to clear it. A tag that no longer exists in the current workspace falls back to **All accounts**.
 
-Without an explicit column sort, **All accounts** groups the loaded mailboxes by workspace tag order, then by email address, with untagged accounts last. A mailbox with several tags belongs to its first tag in that order and appears only once. Selecting a column sort takes priority over grouping.
+Without an explicit column sort, **All accounts** groups the loaded mailboxes by their complete set of tags. Mailboxes with **Tag A + Tag B** stay together even when those tags were assigned in a different order, separately from mailboxes with only **Tag A**. Groups follow the workspace's tag order, with untagged mailboxes last; mailboxes within a group are ordered by email address. Each mailbox appears only once. Selecting a column sort takes priority over grouping.
 
 ## Connecting an account
 
