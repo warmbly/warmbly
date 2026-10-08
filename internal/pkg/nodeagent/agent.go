@@ -189,12 +189,12 @@ func (a *Agent) beat(ctx context.Context, booted, stopping bool) *models.NodeHea
 		return nil
 	}
 
-	var reply models.NodeHeartbeatReply
-	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
+	var reply *models.NodeHeartbeatReply
+	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil || reply == nil {
 		return nil
 	}
 	a.applyTarget(reply.DesiredVersion)
-	return &reply
+	return reply
 }
 
 // applyTarget records the version the control plane wants. Writing a file the

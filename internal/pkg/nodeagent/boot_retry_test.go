@@ -40,6 +40,8 @@ func TestRunRetriesBootUntilAcknowledged(t *testing.T) {
 						status = http.StatusServiceUnavailable
 					case 3:
 						body = "incomplete reply"
+					case 4:
+						body = "null"
 					}
 					return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 				})}
@@ -48,10 +50,10 @@ func TestRunRetriesBootUntilAcknowledged(t *testing.T) {
 				defer cancel()
 				done := make(chan struct{})
 				go func() { a.Run(ctx); close(done) }()
-				for i := range 5 {
+				for i := range 6 {
 					if i > 0 {
 						interval := DefaultInterval
-						if i == 4 {
+						if i == 5 {
 							interval = 40 * time.Second
 						}
 						time.Sleep(interval)
@@ -59,7 +61,7 @@ func TestRunRetriesBootUntilAcknowledged(t *testing.T) {
 					synctest.Wait()
 					select {
 					case beat := <-received:
-						if beat.Booted != (i < 4) || beat.Stopping {
+						if beat.Booted != (i < 5) || beat.Stopping {
 							t.Fatalf("heartbeat %d: Booted=%t Stopping=%t", i+1, beat.Booted, beat.Stopping)
 						}
 					default:
