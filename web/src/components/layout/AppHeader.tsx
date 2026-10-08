@@ -12,7 +12,7 @@
 // AppShell, not here.
 
 import { useRef } from "react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { ChevronRight, Menu, Search } from "lucide-react";
 import { Logo } from "@/components/svg";
 import AgentMark from "@/components/app/agent/AgentMark";
@@ -32,73 +32,15 @@ import { CreditsMeter } from "./CreditsMeter";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { hrefTarget } from "@/lib/routerSearch";
-
-// Pretty labels for path segments. Anything missing falls back to the
-// raw segment with its first letter capitalised.
-const labelMap: Record<string, string> = {
-    app: "Home",
-    emails: "Accounts",
-    domains: "Sending domains",
-    unibox: "Inbox",
-    contacts: "Contacts",
-    segments: "Segments",
-    labels: "Labels",
-    campaigns: "Campaigns",
-    analytics: "Analytics",
-    crm: "CRM",
-    pipelines: "Pipelines",
-    deals: "Deals",
-    tasks: "Tasks",
-    templates: "Templates",
-    "api-keys": "API Keys",
-    settings: "Settings",
-    billing: "Billing",
-    team: "Team",
-    admin: "Admin",
-    workers: "Workers",
-    credentials: "Credentials",
-    audit: "Audit",
-    slack: "Slack",
-    link: "Link account",
-    leads: "Leads",
-    preferences: "Preferences",
-    schedule: "Schedule",
-    steps: "Steps",
-};
-
-// Crumb prefixes that are not pages of their own, sent to the page that lists them.
-const crumbTargets: Record<string, string> = {
-    "/app/placement/batches": "/app/placement?tab=batches",
-};
-
-function pretty(segment: string): string {
-    return labelMap[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
-}
+import { useHeaderBreadcrumbs } from "@/hooks/useHeaderBreadcrumbs";
 
 export function AppHeader({ onMenu }: { onMenu?: () => void }) {
-    const pathname = useLocation({ select: (l) => l.pathname });
+    const crumbs = useHeaderBreadcrumbs();
     const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
     // The logo zone spans the sidebar column, so it has to collapse with it or
     // the breadcrumb stops lining up with the content panel below.
     const isMobile = useIsMobile();
     const navCollapsed = useAppStore((s) => s.navCollapsed) && !isMobile;
-
-    // Path under /app — first segment is the section ("emails", "admin", ...),
-    // subsequent ones are subpages. Don't show UUID-looking segments verbatim
-    // because nobody wants "Campaigns > 47a3-..." in their chrome.
-    const segments = pathname
-        .split("/")
-        .filter(Boolean)
-        .filter((s) => s !== "app");
-    // Each crumb links to its own path prefix so "Campaigns > Leads" gets you
-    // back to the list; hidden UUID segments still count toward the prefix.
-    const crumbs = segments
-        .map((seg, i) => ({ seg, to: `/app/${segments.slice(0, i + 1).join("/")}` }))
-        .filter(({ seg }) => !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(seg));
-    // A crumb whose prefix is the page itself is a label; every other one is a
-    // link (so "Campaigns" stays clickable on /campaigns/<id>, where the hidden
-    // id is the real last segment).
-    const currentPath = `/app/${segments.join("/")}`;
 
     return (
         <div className="h-14 flex items-center shrink-0">
@@ -145,38 +87,46 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                 section crumbs are redundant with each page's own title on a
                 phone, so they only show on >=md. */}
             <div className="flex items-center gap-1.5 min-w-0 flex-1 pr-2 md:pr-4">
-                <Crumb>
+                <div className="min-w-0 md:shrink-0 max-w-32 lg:max-w-48">
                     <OrgSwitcher />
-                </Crumb>
-                {crumbs.map(({ seg, to }) => (
-                    <div key={to} className="hidden md:flex items-center gap-2 min-w-0">
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                        {to === currentPath ? (
-                            <span className="text-[13px] font-medium text-slate-900 truncate">
-                                {pretty(seg)}
-                            </span>
-                        ) : (
-                            <Link
-                                {...hrefTarget(crumbTargets[to] ?? to)}
-                                className="text-[13px] text-slate-500 hover:text-slate-900 truncate transition-colors"
-                            >
-                                {pretty(seg)}
-                            </Link>
-                        )}
-                    </div>
-                ))}
+                </div>
+                <nav aria-label="Breadcrumb" className="hidden md:block min-w-0">
+                    <ol className="flex items-center gap-2 min-w-0">
+                        {crumbs.map(({ label, to, current }, index) => (
+                            <li key={to} className="flex items-center gap-2 min-w-0">
+                                <ChevronRight aria-hidden="true" className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                                {current ? (
+                                    <span aria-current="page" title={label} className="text-[13px] font-medium text-slate-900 truncate">
+                                        {label}
+                                    </span>
+                                ) : (
+                                    <Link
+                                        {...hrefTarget(to)}
+                                        title={label}
+                                        className={cn(
+                                            "text-[13px] hover:text-slate-900 truncate transition-colors",
+                                            index === crumbs.length - 1 ? "font-medium text-slate-900" : "text-slate-500",
+                                        )}
+                                    >
+                                        {label}
+                                    </Link>
+                                )}
+                            </li>
+                        ))}
+                    </ol>
+                </nav>
             </div>
 
-            <div className="flex items-center gap-2 px-2 sm:px-4 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 shrink-0">
                 {/* Outside the sm-only group on purpose: once the dialog is
                     dismissed this pill is the only way back to it, and a phone
                     is exactly where someone dismisses it fastest. */}
                 <BetaPill />
                 <div className="hidden sm:flex items-center gap-2">
-                    <PlanPill />
+                    <div className="hidden lg:contents"><PlanPill /></div>
                     <VersionPill />
-                    <CreditsMeter />
-                    <div className="h-4 w-px bg-slate-200/80" />
+                    <div className="hidden lg:contents"><CreditsMeter /></div>
+                    <div className="hidden lg:block h-4 w-px bg-slate-200/80" />
                 </div>
                 <OutboxIndicator />
                 <PresenceAvatars />
@@ -184,22 +134,20 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                 <NotificationBell />
                 <AssistantButton />
                 <button
+                    type="button"
+                    aria-label="Search"
                     onClick={() => setCommandPaletteOpen(true)}
                     className="flex items-center gap-2 px-2 h-7 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 transition-colors text-[12.5px]"
                 >
                     <Search className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Search</span>
-                    <kbd className="hidden md:inline-flex h-4 items-center px-1 rounded border border-slate-300/70 bg-white/60 font-mono text-[10px] text-slate-500 ml-0.5">
+                    <span className="hidden xl:inline">Search</span>
+                    <kbd className="hidden xl:inline-flex h-4 items-center px-1 rounded border border-slate-300/70 bg-white/60 font-mono text-[10px] text-slate-500 ml-0.5">
                         ⌘K
                     </kbd>
                 </button>
             </div>
         </div>
     );
-}
-
-function Crumb({ children }: { children: React.ReactNode }) {
-    return <div className="flex items-center gap-2 min-w-0">{children}</div>;
 }
 
 // Remie's toggle. Working, waiting on an approval and finishing all show on the
