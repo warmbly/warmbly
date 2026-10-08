@@ -6,6 +6,8 @@
 // sent when explicitly selected, and throttled drops surface as an info strip.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseSearchSchema, webhookStatusSchema, webhookTabSchema } from "@/lib/browse-other-lists";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast/headless";
 import { AnimatePresence, motion } from "framer-motion";
@@ -611,7 +613,7 @@ function EndpointDrawer({
     catalog: WebhookEventDescriptor[];
     onClose: () => void;
 }) {
-    const [tab, setTab] = React.useState("overview");
+    const [tab, setTab] = useBrowseState<string>(`settings.webhooks.${endpoint.id}.tab`, "overview", webhookTabSchema);
     return (
         <AnimatePresence>
             <motion.div
@@ -786,8 +788,8 @@ function OverviewTab({ endpoint }: { endpoint: WebhookEndpoint }) {
 const DELIVERY_STATUSES: WebhookDeliveryStatus[] = ["pending", "in_flight", "delivered", "failed", "abandoned"];
 
 function DeliveriesTab({ endpoint, catalog }: { endpoint: WebhookEndpoint; catalog: WebhookEventDescriptor[] }) {
-    const [status, setStatus] = React.useState<WebhookDeliveryStatus | "">("");
-    const [eventType, setEventType] = React.useState("");
+    const [status, setStatus] = useBrowseState<WebhookDeliveryStatus | "">(`settings.webhooks.${endpoint.id}.deliveries.status`, "", webhookStatusSchema);
+    const [eventType, setEventType] = useBrowseState(`settings.webhooks.${endpoint.id}.deliveries.event-type`, "", browseSearchSchema);
 
     // Live first page from the hook; extra pages are appended locally as the
     // user loads more (and the live page replaces the head on invalidation).
@@ -846,6 +848,7 @@ function DeliveriesTab({ endpoint, catalog }: { endpoint: WebhookEndpoint; catal
                     className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 max-w-[180px]"
                 >
                     <option value="">All events</option>
+                    {eventType && !catalog.some((d) => d.type === eventType) && <option value={eventType}>{eventType} (unavailable)</option>}
                     {catalog.map((d) => (
                         <option key={d.type} value={d.type}>{d.type}</option>
                     ))}
