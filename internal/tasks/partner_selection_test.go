@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -8,6 +9,63 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+func TestPickWeightedPartnerBalancesHostsBeforePlacementAndRules(t *testing.T) {
+	gmail := uuid.New()
+	candidates := []uuid.UUID{gmail}
+	sig := partnerSignals{
+		domainsByID:  map[uuid.UUID]string{gmail: "gmail.com"},
+		domainCounts: map[string]int{"gmail.com": 99},
+		hostsByID:    map[uuid.UUID]string{gmail: "gmail"},
+	}
+	for i := 0; i < 30; i++ {
+		id := uuid.New()
+		candidates = append(candidates, id)
+		sig.domainsByID[id] = fmt.Sprintf("workspace-%d.test", i)
+		sig.hostsByID[id] = "google_workspace"
+	}
+	for _, tc := range []struct {
+		name       string
+		spam, rule float64
+		min, max   int
+	}{
+		{"balanced", 0, 1, 1700, 2300},
+		{"spam still downweights", .5, 1, 700, 1300},
+		{"routing still multiplies", 0, 2, 2400, 3000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sig.ruleWeight = map[uuid.UUID]float64{gmail: tc.rule}
+			sig.placementByHost = map[string]repository.HostPlacementStat{"gmail": {Delivered: 100, Spam: int(tc.spam * 100)}}
+			hits := 0
+			for range 4000 {
+				if pickWeightedPartner(candidates, sig) == gmail {
+					hits++
+				}
+			}
+			if hits < tc.min || hits > tc.max {
+				t.Fatalf("Gmail hits %d/4000, want %d..%d", hits, tc.min, tc.max)
+			}
+		})
+	}
+}
+
+func TestPickWeightedPartnerRetainsDomainDiversityWithinAHost(t *testing.T) {
+	a, b := uuid.New(), uuid.New()
+	sig := partnerSignals{
+		domainsByID:  map[uuid.UUID]string{a: "old.test", b: "fresh.test"},
+		domainCounts: map[string]int{"old.test": 99},
+		hostsByID:    map[uuid.UUID]string{a: "google_workspace", b: "google_workspace"},
+	}
+	hits := 0
+	for range 1000 {
+		if pickWeightedPartner([]uuid.UUID{a, b}, sig) == b {
+			hits++
+		}
+	}
+	if hits < 900 {
+		t.Fatalf("fresh domain drawn %d/1000", hits)
+	}
+}
 
 func TestPickWeightedPartner_FallsBackToUniformWithoutDomains(t *testing.T) {
 	a := uuid.New()

@@ -595,7 +595,7 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 	}
 
 	// Rank outside workspaces first while retaining siblings as a self-host fallback.
-	var buckets [8][]uuid.UUID
+	var buckets [4][]uuid.UUID
 	foreign, own := 0, 0
 	for _, c := range candidates {
 		if _, usedToday := todayPartnerSet[c.ID]; usedToday {
@@ -603,18 +603,12 @@ func (s *tasksService) selectWarmupPartner(ctx context.Context, account Email) (
 		}
 		rank := 0
 		if sameOrganization(account.OrganizationID, c.OrganizationID) {
-			rank += 4
+			rank += 2
 			own++
 		} else {
 			foreign++
 		}
 		if _, recentlyUsed := recentPartnerSet[c.ID]; recentlyUsed || partnerCounts[c.ID] >= partnerMaxSharedWindow {
-			rank += 2
-		}
-		// A borrowed partner fills in after the sender's own tier. A return
-		// visit does not: it ranks with the own tier, or a free mailbox with a
-		// hundred fresh siblings would never pay a paying inbox back.
-		if c.Borrowed() {
 			rank++
 		}
 		buckets[rank] = append(buckets[rank], c.ID)
@@ -770,7 +764,7 @@ func (sig partnerSignals) hostPenalty(partnerID uuid.UUID) float64 {
 }
 
 // pickWeightedPartner picks a partner ID using a composite weight:
-//   - inverse-frequency on the partner's recipient domain (diversity)
+//   - balanced host coverage with inverse-frequency domains within each host
 //   - this sender's recent junk rate at the partner's mail host (feedback)
 //   - how far behind the partner is on what it sent (reciprocity)
 //   - how much a small-host partner's own filter junks (recipient quality)
@@ -782,16 +776,26 @@ func pickWeightedPartner(candidates []uuid.UUID, sig partnerSignals) uuid.UUID {
 	if len(candidates) == 1 {
 		return candidates[0]
 	}
-	if len(sig.domainsByID) == 0 && len(sig.ruleWeight) == 0 && len(sig.placementByHost) == 0 && len(sig.starvation) == 0 && len(sig.filterJunk) == 0 {
+	if len(sig.hostsByID) == 0 && len(sig.domainsByID) == 0 && len(sig.ruleWeight) == 0 && len(sig.placementByHost) == 0 && len(sig.starvation) == 0 && len(sig.filterJunk) == 0 {
 		return candidates[rand.Intn(len(candidates))]
 	}
 
 	weights := make([]float64, len(candidates))
+	hostTotals := make(map[string]float64)
+	// Normalize only the coverage base; quality and customer rules still change host share.
+	for _, id := range candidates {
+		if host := sig.hostsByID[id]; host != "" {
+			hostTotals[host] += 1.0 / float64(1+sig.domainCounts[sig.domainsByID[id]])
+		}
+	}
 	var total float64
 	for i, id := range candidates {
 		domain := sig.domainsByID[id]
 		// Diversity base weight.
 		w := 1.0 / float64(1+sig.domainCounts[domain])
+		if hostTotal := hostTotals[sig.hostsByID[id]]; hostTotal > 0 {
+			w /= hostTotal
+		}
 
 		// Per-host placement feedback.
 		w *= sig.hostPenalty(id)

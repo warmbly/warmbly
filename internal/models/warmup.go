@@ -176,8 +176,7 @@ type WarmupPartnerOrigin string
 const (
 	// WarmupPartnerOwnTier is a member of the sender's own pool.
 	WarmupPartnerOwnTier WarmupPartnerOrigin = "own"
-	// WarmupPartnerBorrowed is a proven free mailbox filling in a thin premium
-	// tier. Drawn after the sender's own tier.
+	// WarmupPartnerBorrowed is a proven free mailbox available to a premium sender.
 	WarmupPartnerBorrowed WarmupPartnerOrigin = "borrowed"
 	// WarmupPartnerReturn is a paying mailbox that wrote to this free sender
 	// recently. Drawn alongside the sender's own tier: returning the visit is
