@@ -21,6 +21,7 @@ import {
   sanitizeUniboxRailOrder,
 } from "@/stores/slices/uiSlice";
 import { ScopeRail, type UniboxScope } from "./ScopeRail";
+import { UserContext } from "@/hooks/context/user";
 
 const overview = vi.hoisted(() => ({
   data: {
@@ -79,12 +80,49 @@ function mountRail(scope: UniboxScope = { kind: "all" }) {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
+  overview.data.mailboxes = [{ id: "m1", email: "me@example.com", name: "Me", unread: 2, total: 5 }];
   useAppStore.setState({
     uniboxRailFolded: {},
     uniboxRailHidden: [],
     uniboxRailOrder: {},
     uniboxRailSectionOrder: [],
     uniboxRailFavorites: [],
+  });
+});
+
+describe("ScopeRail browsing persistence", () => {
+  function Owner({ children }: { children: React.ReactNode }) {
+    return <UserContext.Provider value={{ user: { id: "user" } } as React.ComponentProps<typeof UserContext.Provider>["value"]}>{children}</UserContext.Provider>;
+  }
+  function directory() {
+    overview.data.mailboxes = Array.from({ length: 10 }, (_, index) => ({ id: `m${index}`, email: `mail${index}@example.com`, name: `Mailbox ${index}`, unread: 0, total: 0 }));
+  }
+  it("restores search and Show all across remount and keeps active search visible for smaller directories", () => {
+    directory();
+    const mount = () => render(<Owner><ScopeRail scope={{ kind: "all" }} onChange={() => {}} /></Owner>);
+    const rail = mount();
+    fireEvent.click(screen.getByRole("button", { name: /Show all/ }));
+    fireEvent.change(screen.getByPlaceholderText("Filter mailboxes"), { target: { value: "Mailbox" } });
+    rail.unmount();
+    const refreshed = mount();
+    expect(screen.getByPlaceholderText("Filter mailboxes")).toHaveValue("Mailbox");
+    expect(screen.getByRole("button", { name: "Show less" })).toBeTruthy();
+    overview.data.mailboxes = overview.data.mailboxes.slice(0, 2);
+    refreshed.rerender(<Owner><ScopeRail scope={{ kind: "all" }} onChange={() => {}} /></Owner>);
+    expect(screen.getByPlaceholderText("Filter mailboxes")).toHaveValue("Mailbox");
+  });
+  it("desktop and mobile instances cannot overwrite each other's restored filters", () => {
+    directory();
+    const rail = render(<Owner><div><ScopeRail scope={{ kind: "all" }} onChange={() => {}} /><ScopeRail browseKey="mobile" scope={{ kind: "all" }} onChange={() => {}} /></div></Owner>);
+    const fields = screen.getAllByPlaceholderText("Filter mailboxes");
+    fireEvent.change(fields[0], { target: { value: "mail1" } });
+    fireEvent.change(fields[1], { target: { value: "mail2" } });
+    rail.unmount();
+    render(<Owner><div><ScopeRail scope={{ kind: "all" }} onChange={() => {}} /><ScopeRail browseKey="mobile" scope={{ kind: "all" }} onChange={() => {}} /></div></Owner>);
+    const restored = screen.getAllByPlaceholderText("Filter mailboxes");
+    expect(restored[0]).toHaveValue("mail1");
+    expect(restored[1]).toHaveValue("mail2");
   });
 });
 

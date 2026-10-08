@@ -18,7 +18,7 @@ import { SelectionBar } from "./SelectionBar";
 import { useConversationActions } from "@/hooks/useConversationActions";
 import useUniboxSearch from "@/lib/api/hooks/app/unibox/useUniboxSearch";
 import { useShortcutActions } from "@/hooks/useShortcutActions";
-import useDebouncedValue from "@/hooks/useDebouncedValue";
+import useInboxDebouncedValue from "./useInboxDebouncedValue";
 import { useScrollMemory } from "@/hooks/useScrollMemory";
 import { useAppStore } from "@/stores";
 import ComposeButton from "@/components/app/unibox/compose/ComposeButton";
@@ -108,14 +108,17 @@ export function ConversationList({
   // Debounced into the query, immediate in the box: the search text is part of
   // the query key, so a raw binding fires a request and parks a cached page per
   // keystroke.
-  const debouncedSearch = useDebouncedValue(search);
+  const debouncedSearch = useInboxDebouncedValue(search, scopeKey);
+  const debouncedFrom = useInboxDebouncedValue(params.from, scopeKey);
   const merged: UniboxSearchParams = React.useMemo(() => {
-    const next: UniboxSearchParams = { ...params };
+    const next: UniboxSearchParams = { ...params, from: debouncedFrom?.trim() || undefined };
     if (debouncedSearch.trim()) next.query = debouncedSearch.trim();
     return next;
-  }, [params, debouncedSearch]);
+  }, [params, debouncedSearch, debouncedFrom]);
 
-  const q = useUniboxSearch(merged, scopeKey);
+  const emptyScope = params.accountIds?.length === 0 || params.categoryIds?.length === 0;
+  const result = useUniboxSearch(merged, scopeKey, !emptyScope);
+  const q = emptyScope ? { ...result, emails: [], isPending: false, isFetching: false, hasNextPage: false } : result;
   const emails = q.emails;
   const totalShown = emails.length;
   const activeFilters = countUserFilters(params, baseParams);

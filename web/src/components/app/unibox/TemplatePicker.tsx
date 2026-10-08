@@ -4,6 +4,8 @@
 // and error states. The host mounts it inside its own PopoverMenu.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { inboxSearchSchema } from "@/lib/browse-inbox";
 import { Link } from "@tanstack/react-router";
 import { FileTextIcon, SearchIcon, SettingsIcon, XIcon } from "lucide-react";
 import type useTemplates from "@/lib/api/hooks/app/templates/useTemplates";
@@ -22,18 +24,20 @@ function templateMeta(t: Template): TemplateMeta {
 }
 
 export default function TemplatePickerContent({
+    browseKey = "compose",
     query,
     onPick,
     onClose,
 }: {
+    browseKey?: string;
     query: ReturnType<typeof useTemplates>;
     onPick: (t: Template) => void;
     onClose: () => void;
 }) {
-    const [search, setSearch] = React.useState("");
+    const [search, setSearch] = useBrowseState(`unibox.templates.${browseKey}.search`, "", inboxSearchSchema);
     const all = React.useMemo(() => query.data ?? [], [query.data]);
     const meta = React.useMemo(() => new Map(all.map((t) => [t.id, templateMeta(t)])), [all]);
-    const showSearch = all.length > 5;
+    const showSearch = all.length > 5 || !!search;
     const filtered = React.useMemo(() => {
         const q = search.trim().toLowerCase();
         if (!q) return all;

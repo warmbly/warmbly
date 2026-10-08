@@ -597,6 +597,7 @@ function ComposeWindowInner({
                 <div className="shrink-0">
                     <ComposeRow label="To">
                         <ContactRecipientField
+                            browseKey="compose.to"
                             value={to}
                             onChange={setTo}
                             placeholder="Search contacts or type an email"
@@ -633,7 +634,7 @@ function ComposeWindowInner({
                                 setShowCc(false);
                             }}
                         >
-                            <ContactRecipientField value={cc} onChange={setCc} placeholder="Add Cc recipients" />
+                            <ContactRecipientField browseKey="compose.cc" value={cc} onChange={setCc} placeholder="Add Cc recipients" />
                         </ComposeRow>
                     )}
                     {showBcc && (
@@ -644,7 +645,7 @@ function ComposeWindowInner({
                                 setShowBcc(false);
                             }}
                         >
-                            <ContactRecipientField value={bcc} onChange={setBcc} placeholder="Add Bcc recipients" />
+                            <ContactRecipientField browseKey="compose.bcc" value={bcc} onChange={setBcc} placeholder="Add Bcc recipients" />
                         </ComposeRow>
                     )}
 
