@@ -124,7 +124,8 @@ func (r *cloudLinkRepository) ListLinks(ctx context.Context) ([]models.CloudLink
 func (r *cloudLinkRepository) GetForRedirect(ctx context.Context, orgID uuid.UUID, domain string) (*models.CloudLink, error) {
 	query := `SELECT ` + cloudLinkColumns + ` FROM cloud_link WHERE instance_id = COALESCE(
   (SELECT cloud_link_instance_id FROM domain_redirects WHERE organization_id = $1 AND domain = $2),
-  (SELECT instance_id FROM cloud_link WHERE organization_id = $1 LIMIT 1)
+  (SELECT instance_id FROM cloud_link WHERE organization_id = $1 OR organization_id IS NULL
+   ORDER BY organization_id IS NULL LIMIT 1)
  )`
 	return r.scanLink(r.db.QueryRow(ctx, query, orgID, domain))
 }

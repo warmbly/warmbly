@@ -11,7 +11,7 @@ import (
 )
 
 func (s *service) PlacementPanel(ctx context.Context, orgID uuid.UUID) (*models.PlacementCloudPanel, *errx.Error) {
-	l, xerr := s.newLink(ctx, orgID)
+	l, xerr := s.link(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -23,7 +23,7 @@ func (s *service) PlacementPanel(ctx context.Context, orgID uuid.UUID) (*models.
 }
 
 func (s *service) StartPlacement(ctx context.Context, orgID uuid.UUID, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error) {
-	l, xerr := s.newLink(ctx, orgID)
+	l, xerr := s.link(ctx, orgID)
 	if xerr != nil {
 		return nil, xerr
 	}

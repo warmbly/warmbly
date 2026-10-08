@@ -75,7 +75,7 @@ function SelfHostedCloud() {
     }
     const st = status.data;
     const plan = st.info?.plan;
-    const legacy = st.connected && !st.link?.organization_id;
+    const serverWide = st.connected && !st.link?.organization_id;
 
     return (
         <SectionShell
@@ -94,30 +94,11 @@ function SelfHostedCloud() {
                 ) : undefined
             }
         >
-            {legacy && (
-                <Section eyebrow="Legacy connection" description="Existing enrolled mailboxes keep working on the old instance-wide connection. New mailboxes need a separate connection for this workspace, using a Cloud workspace with no active link. The old Cloud workspace stays occupied until the legacy link is disconnected.">
-                    <button type="button" onClick={() => setFlow(true)} className="h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium">
-                        Connect this workspace
-                    </button>
-                </Section>
-            )}
-            {st.legacy_connected && !legacy && (
-                <Section eyebrow="Legacy instance link" description="Some existing mailboxes may still use the old instance-wide connection. Keep it until those mailboxes have moved. Disconnecting it affects all local workspaces, not this workspace's new connection.">
-                    <button type="button" className="h-7 px-2.5 rounded-md text-[12px] text-rose-600 hover:bg-rose-50" onClick={() => confirm.show("Disconnect the legacy instance link across all workspaces? Existing mailboxes still using it will stop using Cloud, and its managed mailbox mirrors will be removed.", async () => {
-                        try {
-                            await disconnect.mutateAsync(true);
-                            toast.success("Legacy link disconnected");
-                        } catch (e) {
-                            toast.error(buildError(e as AppError));
-                        }
-                    })}>Disconnect legacy link</button>
-                </Section>
-            )}
             <AnimatePresence mode="wait" initial={false}>
                 {showFlow ? (
                     <motion.div key="flow" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                         <ConnectFlow
-                            status={legacy ? { ...st, connected: false } : st}
+                            status={st}
                             onFinished={() => {
                                 setFlow(false);
                                 void status.refetch();
@@ -146,7 +127,7 @@ function SelfHostedCloud() {
                             />
                         </Section>
                         {plan && (
-                            <Section eyebrow="Plan" description="Billed on Warmbly Cloud. Each connected local workspace needs its own Cloud workspace and plan.">
+                            <Section eyebrow="Plan" description="Billed on the connected Warmbly Cloud workspace. Existing connections keep their plan and mailbox history.">
                                 <PlanCard plan={plan} />
                             </Section>
                         )}
@@ -154,20 +135,20 @@ function SelfHostedCloud() {
                             eyebrow="Mailboxes"
                             description="Enrolled mailboxes are warmed by Warmbly Cloud; their local warmup stops. Campaigns keep sending from this server."
                         >
-                            <MailboxTable allowEnrollment={!legacy} />
+                            <MailboxTable />
                         </Section>
                         <Section eyebrow="Disconnect">
                             <Row
                                 danger
-                                label={legacy ? "Disconnect legacy instance link" : "Disconnect this workspace from Warmbly Cloud"}
-                                description={legacy ? "Stops all mailboxes still using this legacy link across every local workspace. Workspace-scoped connections are not affected." : "Stops only mailboxes and redirects using this connection. Older legacy enrollments and other workspaces are not affected. Managed mailbox mirrors using this link are removed."}
+                                label={serverWide ? "Disconnect this server from Warmbly Cloud" : "Disconnect this workspace from Warmbly Cloud"}
+                                description={serverWide ? "Stops mailboxes and redirects using this connection across all local workspaces. Other connections are not affected. Managed mailbox mirrors using this connection are removed." : "Stops only mailboxes and redirects using this connection. Other connections and workspaces are not affected. Managed mailbox mirrors using this connection are removed."}
                             >
                                 <button
                                     type="button"
                                     onClick={() =>
-                                        confirm.show(legacy ? "Disconnect the legacy instance link? All mailboxes still using it, across all workspaces, will stop warming on Cloud." : "Disconnect this workspace from Warmbly Cloud? Mailboxes and redirects using this connection will stop using Cloud.", async () => {
+                                        confirm.show(serverWide ? "Disconnect this server from Warmbly Cloud? Mailboxes and redirects using this connection across all local workspaces will stop using Cloud. Its managed mailbox mirrors will be removed." : "Disconnect this workspace from Warmbly Cloud? Mailboxes and redirects using this connection will stop using Cloud. Its managed mailbox mirrors will be removed.", async () => {
                                             try {
-                                                await disconnect.mutateAsync(legacy);
+                                                await disconnect.mutateAsync(serverWide);
                                                 setFlow(null);
                                                 toast.success("Disconnected");
                                             } catch (e) {
@@ -180,6 +161,18 @@ function SelfHostedCloud() {
                                     Disconnect
                                 </button>
                             </Row>
+                            {st.legacy_connected && !serverWide && (
+                                <Row danger label="Disconnect the shared server connection" description="Some mailboxes or redirects may use this other connection. Disconnecting it affects all local workspaces using it, not this workspace's connection.">
+                                    <button type="button" className="h-7 px-2.5 rounded-md text-[12px] text-rose-600 hover:bg-rose-50" onClick={() => confirm.show("Disconnect the shared server connection? Mailboxes and redirects using it across all local workspaces will stop using Cloud, and its managed mailbox mirrors will be removed. This workspace's connection is not affected.", async () => {
+                                        try {
+                                            await disconnect.mutateAsync(true);
+                                            toast.success("Disconnected");
+                                        } catch (e) {
+                                            toast.error(buildError(e as AppError));
+                                        }
+                                    })}>Disconnect shared connection</button>
+                                </Row>
+                            )}
                         </Section>
                     </motion.div>
                 )}

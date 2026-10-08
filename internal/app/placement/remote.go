@@ -39,9 +39,6 @@ func (s *service) RemotePanel(ctx context.Context, inst *models.PoolLinkInstance
 // RemoteStart opens one test per requested variant against the same seeds,
 // charged to the linked workspace's allowance.
 func (s *service) RemoteStart(ctx context.Context, inst *models.PoolLinkInstance, req models.PlacementCloudStartRequest) (*models.PlacementCloudStart, *errx.Error) {
-	if inst.RemoteOrganizationID == nil {
-		return nil, placementErr(errx.Conflict, "pool_link_workspace_required", "Connect per workspace to start placement tests. Existing legacy results keep working.")
-	}
 	if req.Tests < 1 || req.Tests > 2 {
 		return nil, errx.New(errx.BadRequest, "tests must be 1 or 2")
 	}

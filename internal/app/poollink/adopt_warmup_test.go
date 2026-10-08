@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/email"
+	"github.com/warmbly/warmbly/internal/app/feature"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
@@ -32,6 +33,48 @@ func (r *adoptLinkRepo) GetMailboxByRemote(context.Context, uuid.UUID, uuid.UUID
 type adoptAccounts struct {
 	repository.EmailRepository
 	acc *models.Email
+}
+
+type existingConnectionAccounts struct {
+	managedOpsEmails
+	createdOrg uuid.UUID
+}
+
+func (r *existingConnectionAccounts) NewSMTPIMAPAccount(_ context.Context, _ string, req models.NewSMTPIMAPAccount) (*models.Email, *errx.Error) {
+	r.createdOrg = *req.OrganizationID
+	a := &models.Email{ID: uuid.New(), OrganizationID: req.OrganizationID, Email: req.Email, Provider: "smtp_imap", Status: "active"}
+	r.accounts[a.ID] = a
+	return a, nil
+}
+
+type freeConnectionGate struct{ feature.FeatureGateService }
+
+func (freeConnectionGate) HasPremiumWarmup(context.Context, uuid.UUID) (bool, *errx.Error) {
+	return false, nil
+}
+
+func TestExistingServerConnectionEnrollsWithinItsCloudWorkspaceAllowance(t *testing.T) {
+	t.Setenv("BILLING_PROVIDER", "stripe")
+	org, owner := uuid.New(), uuid.New()
+	r := &adoptLinkRepo{}
+	accounts := &existingConnectionAccounts{managedOpsEmails: managedOpsEmails{accounts: map[uuid.UUID]*models.Email{}}}
+	emails := &adoptEmails{org: org}
+	s := &service{repo: r, emails: accounts, emailSvc: emails, gate: freeConnectionGate{}}
+	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: org, CreatedBy: &owner}
+	tls := &models.Service{Host: "mail.example.test", Port: 993, Security: models.MailSecurityTLS}
+	req := models.PoolLinkEnrollRequest{RemoteID: uuid.New(), Email: "sender@example.test", Provider: models.InboxProviderSMTPIMAP, SMTPIMAP: &models.SmtpImap{SMTP: tls, IMAP: tls}}
+	got, xerr := s.Enroll(context.Background(), inst, req)
+	if xerr != nil || got == nil || r.enrolled.InstanceID != inst.ID || accounts.createdOrg != org || !emails.started {
+		t.Fatalf("enrollment on existing connection = %+v, %v", got, xerr)
+	}
+	for len(accounts.accounts) < models.FreeWorkspaceMailboxLimit {
+		accounts.accounts[uuid.New()] = &models.Email{}
+	}
+	r.enrolled = nil
+	req.RemoteID = uuid.New()
+	if _, xerr := s.Enroll(context.Background(), inst, req); xerr != ErrMailboxLimit {
+		t.Fatalf("existing connection bypassed allowance: %v", xerr)
+	}
 }
 
 func (r adoptAccounts) GetByID(context.Context, uuid.UUID) (*models.Email, *errx.Error) {
@@ -76,35 +119,30 @@ func TestApprovalExplainsThatCloudWorkspaceIsAlreadyConnected(t *testing.T) {
 	}
 }
 
-func TestLegacyInstancesCannotAddCloudMailboxes(t *testing.T) {
+func TestNewConnectionsStillRequireWorkspaceScope(t *testing.T) {
 	s := &service{repo: conflictApprovalRepo{}}
-	inst := &models.PoolLinkInstance{ID: uuid.New()}
 	if _, xerr := s.StartCode(context.Background(), models.PoolLinkStartRequest{InstanceName: "Legacy"}); xerr != ErrLegacyLink {
 		t.Fatalf("legacy device handshake = %v", xerr)
-	}
-	if _, xerr := s.Adopt(context.Background(), inst, models.PoolLinkAdoptRequest{}); xerr != ErrLegacyLink {
-		t.Fatalf("legacy adoption = %v", xerr)
-	}
-	if _, xerr := s.Enroll(context.Background(), inst, models.PoolLinkEnrollRequest{RemoteID: uuid.New(), Email: "user@example.com"}); xerr != ErrLegacyLink {
-		t.Fatalf("legacy enrollment = %v", xerr)
-	}
-	if _, xerr := s.StartOAuth(context.Background(), inst, models.PoolLinkOAuthStartRequest{}); xerr != ErrLegacyLink {
-		t.Fatalf("legacy OAuth = %v", xerr)
 	}
 }
 
 // Adopting a workspace mailbox into a linked instance must start its warmup on the cloud.
-func TestAdoptStartsWarmupInTheInstanceWorkspace(t *testing.T) {
+func TestExistingServerConnectionAdoptsAndStartsWarmupInItsCloudWorkspace(t *testing.T) {
 	org, owner := uuid.New(), uuid.New()
 	acc := &models.Email{ID: uuid.New(), OrganizationID: &org, Status: "active", Provider: string(models.InboxProviderGoogle)}
 	emails := &adoptEmails{org: org}
 	s := &service{repo: &adoptLinkRepo{}, emails: adoptAccounts{acc: acc}, emailSvc: emails}
-	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: org, RemoteOrganizationID: &org, CreatedBy: &owner}
+	inst := &models.PoolLinkInstance{ID: uuid.New(), OrganizationID: org, CreatedBy: &owner}
 
 	if _, xerr := s.Adopt(context.Background(), inst, models.PoolLinkAdoptRequest{RemoteID: uuid.New(), EmailAccountID: acc.ID}); xerr != nil {
 		t.Fatalf("Adopt: %v", xerr)
 	}
 	if !emails.started {
 		t.Fatal("warmup was not started in the workspace; the mailbox would sit enrolled and never warm")
+	}
+	other := uuid.New()
+	acc.OrganizationID = &other
+	if _, xerr := s.Adopt(context.Background(), inst, models.PoolLinkAdoptRequest{RemoteID: uuid.New(), EmailAccountID: acc.ID}); xerr != ErrNotAdoptable {
+		t.Fatalf("another workspace's mailbox was accepted: %v", xerr)
 	}
 }

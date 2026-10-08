@@ -77,6 +77,50 @@ func (e enrollmentEmails) GetAllActiveInScope(context.Context, repository.Accoun
 	return []models.Email{*e.account}, nil
 }
 
+type existingEnrollmentRepo struct {
+	*enrollmentFaultRepo
+	workspace *models.CloudLink
+}
+
+func (r *existingEnrollmentRepo) Get(_ context.Context, org *uuid.UUID) (*models.CloudLink, error) {
+	if org != nil && r.workspace != nil {
+		return r.workspace, nil
+	}
+	return r.link, nil
+}
+
+func TestExistingServerConnectionEnrollsAndRefreshesWithoutMovingMailboxes(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	org, account, instance := uuid.New(), uuid.New(), uuid.New()
+	posts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer original" {
+			t.Error("mailbox used a different connection")
+		}
+		if r.Method == http.MethodPost {
+			posts++
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	r := &existingEnrollmentRepo{enrollmentFaultRepo: &enrollmentFaultRepo{stubLinkRepo: &stubLinkRepo{
+		link: &models.CloudLink{InstanceID: instance, CloudURL: srv.URL, Token: "original"},
+	}}}
+	s := NewService(r, enrollmentEmails{stubEmails{account: &models.Email{
+		ID: account, OrganizationID: &org, Status: "active", Provider: "smtp_imap",
+	}}}, nil).(*service)
+	if _, xerr := s.Enroll(context.Background(), org, account); xerr != nil {
+		t.Fatal(xerr)
+	}
+	r.workspace = &models.CloudLink{InstanceID: uuid.New(), OrganizationID: &org, CloudURL: "http://127.0.0.1:1"}
+	if xerr := s.RefreshCredentials(context.Background(), org, account); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if posts != 2 || r.mailbox == nil || r.mailbox.InstanceID != instance {
+		t.Fatalf("enrollment moved or was not refreshed: %+v, posts=%d", r.mailbox, posts)
+	}
+}
+
 func TestEnrollmentRecordsIntentBeforeRemoteAndRetriesAmbiguousConfirmation(t *testing.T) {
 	for _, failure := range []string{"lost_ack", "local_confirmation", "intent_write"} {
 		t.Run(failure, func(t *testing.T) {

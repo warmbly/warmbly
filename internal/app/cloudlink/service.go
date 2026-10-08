@@ -22,7 +22,7 @@ import (
 const DefaultCloudURL = "https://api.warmbly.com"
 
 var (
-	ErrLegacyLink      = errx.NewWithIdentifier(errx.Conflict, "cloud_link_workspace_required", "Connect this workspace separately to add Cloud mailboxes. Existing legacy enrollments continue working.")
+	ErrLegacyLink      = errx.NewWithIdentifier(errx.Conflict, "cloud_link_workspace_required", "This connection is shared across this server's workspaces. Confirm disconnecting the server-wide connection.")
 	ErrNotConnected    = errx.NewWithIdentifier(errx.Conflict, "cloud_link_not_connected", "This workspace is not connected to Warmbly Cloud.")
 	ErrAlreadyLinked   = errx.NewWithIdentifier(errx.Conflict, "cloud_link_connected", "This workspace is already connected. Disconnect first to link a different Cloud workspace.")
 	ErrNoPendingCode   = errx.NewWithIdentifier(errx.NotFound, "cloud_link_no_pending", "No connection in progress. Start again.")
@@ -192,17 +192,6 @@ func (s *service) link(ctx context.Context, orgID uuid.UUID) (*models.CloudLink,
 	return l, nil
 }
 
-func (s *service) newLink(ctx context.Context, orgID uuid.UUID) (*models.CloudLink, *errx.Error) {
-	l, xerr := s.link(ctx, orgID)
-	if xerr != nil {
-		return nil, xerr
-	}
-	if l.OrganizationID == nil {
-		return nil, ErrLegacyLink
-	}
-	return l, nil
-}
-
 func (s *service) mailboxLink(ctx context.Context, m *models.CloudLinkMailbox) (*models.CloudLink, *errx.Error) {
 	l, err := s.repo.GetByInstance(ctx, m.InstanceID)
 	if err != nil {
@@ -255,7 +244,7 @@ func (s *service) StartConnect(ctx context.Context, orgID, userID uuid.UUID, clo
 	defer s.connectMu.Unlock()
 	if l, err := s.repo.Get(ctx, &orgID); err != nil {
 		return nil, errx.InternalError()
-	} else if l != nil && l.OrganizationID != nil {
+	} else if l != nil {
 		return nil, ErrAlreadyLinked
 	}
 	// The handshake is one-time: refuse it now rather than lose the token
@@ -310,7 +299,7 @@ func (s *service) PollConnect(ctx context.Context, orgID, userID uuid.UUID) (*Co
 	s.mu.Unlock()
 	if p == nil {
 		// Another tab may have finished the handshake already.
-		if l, err := s.repo.Get(ctx, &orgID); err == nil && l != nil && l.OrganizationID != nil {
+		if l, err := s.repo.Get(ctx, &orgID); err == nil && l != nil {
 			return &ConnectPollResult{Status: models.PoolLinkCodeApproved, Link: l}, nil
 		}
 		return nil, ErrNoPendingCode
@@ -593,19 +582,28 @@ func (s *service) Enroll(ctx context.Context, orgID, accountID uuid.UUID) (*mode
 		})
 		return row, xerr
 	}
-	l, xerr := s.newLink(ctx, orgID)
-	if xerr != nil {
-		return nil, xerr
-	}
-	if l.DisconnectPending {
-		return nil, ErrAlreadyLinked
-	}
 	acc, xerr := s.ownedAccount(ctx, orgID, accountID)
 	if xerr != nil {
 		return nil, xerr
 	}
 	if acc.Status != "active" {
 		return nil, ErrMailboxInactive
+	}
+	m, err := s.repo.GetByAccount(ctx, accountID)
+	if err != nil {
+		return nil, errx.InternalError()
+	}
+	var l *models.CloudLink
+	if m != nil {
+		l, xerr = s.mailboxLink(ctx, m)
+	} else {
+		l, xerr = s.link(ctx, orgID)
+	}
+	if xerr != nil {
+		return nil, xerr
+	}
+	if l.DisconnectPending {
+		return nil, ErrAlreadyLinked
 	}
 	req := models.PoolLinkEnrollRequest{
 		RemoteID: acc.ID,
