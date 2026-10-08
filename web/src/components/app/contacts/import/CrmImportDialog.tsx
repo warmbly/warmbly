@@ -21,7 +21,9 @@ import { Toggle } from "@/components/app/campaigns/preferences/components/Campai
 import { type CrmInfo, CrmMark } from "@/components/app/crm/crmProviders";
 import { crmErrorMessage } from "@/components/app/crm/crmModeUtils";
 import useCrmProvider from "@/hooks/useCrmProvider";
-import useDebouncedValue from "@/hooks/useDebouncedValue";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseText } from "@/lib/browse-contacts-campaigns";
+import useBrowseDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { useCrmLists, useImportCrmList, usePreviewCrmImport } from "@/lib/api/hooks/app/crm/provider/useCrmLists";
 import useCrmMetadata from "@/lib/api/hooks/app/crm/provider/useCrmMetadata";
 import { getContactImport } from "@/lib/api/client/app/contacts/contactImports";
@@ -330,8 +332,9 @@ function ListStep({
     onPick: (l: CRMList) => void;
 }) {
     const { crm } = useCrmProvider();
-    const [q, setQ] = React.useState("");
-    const query = useDebouncedValue(q.trim(), 300);
+    const browseName = `contacts:crm-import:${crm.id}:lists`;
+    const [q, setQ] = useBrowseState(`${browseName}:query`, "", browseText);
+    const query = useBrowseDebouncedValue(q.trim(), browseName, 300);
     // Each "Load more" adds the next page's cursor; every page is its own query.
     const [cursors, setCursors] = React.useState<(string | undefined)[]>([undefined]);
     React.useEffect(() => setCursors([undefined]), [query]);

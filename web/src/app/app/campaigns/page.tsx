@@ -1,6 +1,8 @@
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
 import { useUserProfile } from "@/hooks/context/user";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseText, campaignStatusSchema, campaignSortSchema } from "@/lib/browse-contacts-campaigns";
 import useCampaigns from "@/lib/api/hooks/app/campaigns/useCampaigns";
 import useStartCampaign from "@/lib/api/hooks/app/campaigns/useStartCampaign";
 import useStopCampaign from "@/lib/api/hooks/app/campaigns/useStopCampaign";
@@ -245,10 +247,10 @@ export default function CampaignsPage() {
     const canView = usePermission("VIEW_CAMPAIGNS");
     const startCampaign = useStartCampaign();
     const stopCampaign = useStopCampaign();
-    const [folder, setFolder] = useState<string>("");
-    const [query, setQuery] = useState<string>("");
-    const [status, setStatus] = useState<StatusFilter>("all");
-    const [sort, setSort] = useState<SortMode>("newest");
+    const [folder, setFolder] = useBrowseState("campaigns:list:folder", "", browseText);
+    const [query, setQuery] = useBrowseState("campaigns:list:query", "", browseText);
+    const [status, setStatus] = useBrowseState<StatusFilter>("campaigns:list:status", "all", campaignStatusSchema);
+    const [sort, setSort] = useBrowseState<SortMode>("campaigns:list:sort", "newest", campaignSortSchema);
     const [newOpen, setNewOpen] = useState<boolean>(false);
     // A draft clicked in the list reopens in the new-campaign flow, for a
     // member who may edit it; anyone else gets the campaign page.
@@ -395,7 +397,7 @@ export default function CampaignsPage() {
                     <PopoverMenuTrigger asChild>
                         <SelectButton
                             icon={<FolderIcon className="w-3.5 h-3.5" />}
-                            label={activeFolder?.title ?? "All folders"}
+                            label={activeFolder?.title ?? (folder ? "Selected folder" : "All folders")}
                         />
                     </PopoverMenuTrigger>
                     <PopoverMenuContent minWidth={200}>

@@ -3,6 +3,8 @@
 // span several, checkbox rows and paging. The caller owns the selection so the
 // wizard's floating bar can act on it.
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseString, importPickFilter } from "@/lib/browse-accounts-analytics";
 import { ChevronLeftIcon, ChevronRightIcon, LayersIcon, MailIcon, RefreshCwIcon } from "lucide-react";
 import { SearchInput } from "@/components/ui/field";
 import { CheckSquare } from "@/components/ui/check-square";
@@ -45,6 +47,7 @@ export function ProviderBadge({ provider }: { provider?: PickItem["provider"] })
 }
 
 export default function PickTable({
+    browseScope,
     items,
     loading,
     fetching,
@@ -57,6 +60,7 @@ export default function PickTable({
     loadingSteps,
     groupLabel = "Workspace",
 }: {
+    browseScope: string;
     items: PickItem[] | undefined;
     /** Whose mailboxes are being listed, and what is happening while they are. */
     loadingLogo?: string;
@@ -71,9 +75,9 @@ export default function PickTable({
     /** What PickItem.group names, for the switcher shown when rows span several. */
     groupLabel?: string;
 }) {
-    const [query, setQuery] = React.useState("");
-    const [filter, setFilter] = React.useState<Filter>("all");
-    const [group, setGroup] = React.useState<string | null>(null);
+    const [query, setQuery] = useBrowseState(`${browseScope}.search`, "", browseString);
+    const [filter, setFilter] = useBrowseState<Filter>(`${browseScope}.filter`, "all", importPickFilter);
+    const [group, setGroup] = useBrowseState<string | null>(`${browseScope}.group`, null, browseString.nullable());
     const [page, setPage] = React.useState(0);
 
     const all = React.useMemo(() => items ?? [], [items]);
@@ -199,7 +203,7 @@ export default function PickTable({
                             ["connected", "Connected"],
                         ] as const
                     )
-                        .filter(([key]) => key !== "moving" || counts.moving > 0)
+                        .filter(([key]) => key !== "moving" || counts.moving > 0 || filter === "moving")
                         .map(([key, label]) => (
                             <button
                                 key={key}

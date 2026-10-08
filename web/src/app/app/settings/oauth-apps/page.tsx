@@ -5,6 +5,8 @@
 // (consent + token exchange) lives on the standalone /oauth/authorize page + API.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseSearchSchema, oauthAppsTabSchema, webhookStatusSchema } from "@/lib/browse-other-lists";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast/headless";
 import { AnimatePresence, motion } from "framer-motion";
@@ -415,8 +417,8 @@ const APP_DELIVERY_STATUSES: WebhookDeliveryStatus[] = ["pending", "in_flight", 
 
 // AppWebhookDeliveries — the cross-org delivery log (read-only, no redeliver).
 function AppWebhookDeliveries({ app, catalog }: { app: OAuthApplication; catalog: WebhookEventDescriptor[] }) {
-    const [status, setStatus] = React.useState<WebhookDeliveryStatus | "">("");
-    const [eventType, setEventType] = React.useState("");
+    const [status, setStatus] = useBrowseState<WebhookDeliveryStatus | "">(`settings.oauth-apps.${app.id}.deliveries.status`, "", webhookStatusSchema);
+    const [eventType, setEventType] = useBrowseState(`settings.oauth-apps.${app.id}.deliveries.event-type`, "", browseSearchSchema);
 
     const first = useOAuthAppWebhookDeliveries(app.id, { status, eventType, limit: 25 });
     const [extra, setExtra] = React.useState<WebhookDelivery[]>([]);
@@ -467,6 +469,7 @@ function AppWebhookDeliveries({ app, catalog }: { app: OAuthApplication; catalog
                     className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 max-w-[180px]"
                 >
                     <option value="">All events</option>
+                    {eventType && !catalog.some((d) => d.type === eventType) && <option value={eventType}>{eventType} (unavailable)</option>}
                     {catalog.map((d) => (
                         <option key={d.type} value={d.type}>{d.type}</option>
                     ))}
@@ -810,7 +813,7 @@ function AuthorizedTab() {
 export default function OAuthAppsPage() {
     const canManage = usePermission("MANAGE_API_KEYS");
     const apps = useOAuthApps();
-    const [tab, setTab] = React.useState<"apps" | "authorized">("apps");
+    const [tab, setTab] = useBrowseState("settings.oauth-apps.tab", "apps", oauthAppsTabSchema);
     const [createOpen, setCreateOpen] = React.useState(false);
 
     if (!canManage) return <NoAccess feature="OAuth apps" permissionLabel="Manage API keys" />;

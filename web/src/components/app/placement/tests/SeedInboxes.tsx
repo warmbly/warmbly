@@ -3,6 +3,8 @@
 // allowance, and a seed never warms up or sends campaign mail.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseString } from "@/lib/browse-accounts-analytics";
 import { InboxIcon, Loader2Icon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 import { Link } from "@tanstack/react-router";
@@ -26,7 +28,7 @@ const STATUS_LABEL: Record<string, string> = {
 export default function SeedInboxes() {
     const seeds = usePlacementSeeds();
     const canManage = usePermission("MANAGE_EMAILS");
-    const [q, setQ] = React.useState("");
+    const [q, setQ] = useBrowseState("placement.seeds.search", "", browseString);
     const rows = seeds.data ?? [];
     const needle = q.trim().toLowerCase();
     const shown = needle ? rows.filter((r) => r.email.toLowerCase().includes(needle) || r.label.toLowerCase().includes(needle)) : rows;

@@ -44,7 +44,7 @@ export default function FilterMenu({
 
     useClickOutside(open, () => setOpen(false), [ref, panelRef]);
 
-    const active = options.find((o) => o.id === value) ?? null;
+    const active = options.find((o) => o.id === value) ?? (value ? { id: value, label: "Unavailable filter" } : null);
 
     const toggle = () => {
         const el = ref.current;

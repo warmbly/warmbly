@@ -3,6 +3,8 @@ title: Webhooks
 description: Receive real-time HTTP callbacks when things happen in your Warmbly workspace.
 ---
 
+Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
+
 Webhooks let external systems react to Warmbly activity without polling the API. When an event fires (a reply lands, a campaign completes, a meeting is booked), Warmbly sends a signed HTTP POST to every matching endpoint your workspace has registered. From there you can update your CRM, trigger a Slack message, or hand off to any other tool.
 
 If you prefer an in-product alternative that works behind a firewall (no public URL required), the [automations](/guides/automations/) Fire Event step publishes custom events to the realtime socket instead.

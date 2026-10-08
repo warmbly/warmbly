@@ -73,7 +73,7 @@ defmodule RealtimeWeb.UserSocket do
   defp present?(value), do: is_binary(value) and value != ""
 
   defp authenticate(token, socket, connect_info) do
-    ip = get_ip(connect_info)
+    ip = client_ip(token, connect_info)
 
     with {:ok, user_id, auth_type} <- Auth.verify_token(token, ip: ip),
          limits <- Subscription.get_limits(user_id),
@@ -163,6 +163,22 @@ defmodule RealtimeWeb.UserSocket do
     case RateLimiter.check(user_id, :ws_connect, limit) do
       {:ok, _remaining} -> :ok
       {:error, :rate_limited, retry_after_ms} -> {:error, :rate_limited, retry_after_ms}
+    end
+  end
+
+  def client_ip(ticket, connect_info) do
+    proof =
+      connect_info
+      |> Map.get(:x_headers, [])
+      |> Enum.find_value(fn
+        {"x-warmbly-proxy-proof", value} -> value
+        _ -> nil
+      end)
+
+    with {:ok, ip} <- Auth.proxy_ip(proof, ticket) do
+      ip
+    else
+      _ -> get_ip(connect_info)
     end
   end
 

@@ -6,6 +6,9 @@
 // raw addresses, so recipients outside the CRM work too.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { inboxCategorySchema, inboxContactSortSchema, inboxNullableIdSchema, inboxSearchSchema } from "@/lib/browse-inbox";
+import useInboxDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -25,7 +28,6 @@ import { useUserProfile } from "@/hooks/context/user";
 import useClickOutside from "@/hooks/useClickOutside";
 import useDebouncedValue from "@/hooks/useDebouncedValue";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
-import type { SearchContactsSortBy } from "@/lib/api/models/app/contacts/search-contacts.types";
 import { cn } from "@/lib/utils";
 
 interface CategoryRef {
@@ -44,7 +46,7 @@ function contactName(c: Contact): string {
 }
 
 // Sort options for the browse panel, mapped onto search sort_by keys.
-const BROWSE_SORTS: { key: SearchContactsSortBy; label: string }[] = [
+const BROWSE_SORTS: { key: "updated_at" | "first_name" | "email"; label: string }[] = [
     { key: "updated_at", label: "Recent" },
     { key: "first_name", label: "Name" },
     { key: "email", label: "Email" },
@@ -54,6 +56,7 @@ const BROWSE_PANEL_WIDTH = 400;
 const BROWSE_PANEL_HEIGHT = 380;
 
 interface ContactRecipientFieldProps {
+    browseKey: string;
     value: string[];
     onChange: (next: string[]) => void;
     placeholder: string;
@@ -61,6 +64,7 @@ interface ContactRecipientFieldProps {
 }
 
 export default function ContactRecipientField({
+    browseKey,
     value,
     onChange,
     placeholder,
@@ -69,7 +73,7 @@ export default function ContactRecipientField({
     const [input, setInput] = React.useState("");
     const [focused, setFocused] = React.useState(false);
     const [highlight, setHighlight] = React.useState(0);
-    const [catFilter, setCatFilter] = React.useState<CategoryRef | null>(null);
+    const [savedCatFilter, setCatFilter] = useBrowseState<CategoryRef | null>(`unibox.recipients.${browseKey}.autocomplete-category`, null, inboxCategorySchema);
     const inputRef = React.useRef<HTMLInputElement>(null);
     const blurTimer = React.useRef<number | null>(null);
 
@@ -77,9 +81,9 @@ export default function ContactRecipientField({
     // category filter, sort, and multi-select, separate from the
     // type-ahead suggestions.
     const [browseOpen, setBrowseOpen] = React.useState(false);
-    const [browseQuery, setBrowseQuery] = React.useState("");
-    const [browseCat, setBrowseCat] = React.useState<string | null>(null);
-    const [browseSort, setBrowseSort] = React.useState<SearchContactsSortBy>("updated_at");
+    const [browseQuery, setBrowseQuery] = useBrowseState(`unibox.recipients.${browseKey}.search`, "", inboxSearchSchema);
+    const [browseCat, setBrowseCat] = useBrowseState<string | null>(`unibox.recipients.${browseKey}.category`, null, inboxNullableIdSchema);
+    const [browseSort, setBrowseSort] = useBrowseState(`unibox.recipients.${browseKey}.sort`, "updated_at", inboxContactSortSchema);
     const [browsePicked, setBrowsePicked] = React.useState<string[]>([]);
     // Viewport anchor for the portaled panel (the compose window clips
     // overflow, so the panel can't render inside it — same as MailboxPicker).
@@ -120,6 +124,7 @@ export default function ContactRecipientField({
         () => user.categories ?? [],
         [user.categories],
     );
+    const catFilter = savedCatFilter ? allCategories.find((category) => category.id === savedCatFilter.id) ?? savedCatFilter : null;
 
     const query = input.trim();
     // Only hit the API once typing pauses; keepPrevious holds the last
@@ -162,7 +167,7 @@ export default function ContactRecipientField({
         (query.length > 0 || !!catFilter) &&
         (suggestions.length > 0 || matchedCats.length > 0 || searching);
 
-    const debouncedBrowseQuery = useDebouncedValue(browseQuery.trim(), 300);
+    const debouncedBrowseQuery = useInboxDebouncedValue(browseQuery.trim(), browseKey);
     const browseSearch = useSearchContacts({
         options: {
             query: debouncedBrowseQuery,
@@ -349,8 +354,6 @@ export default function ContactRecipientField({
                 type="button"
                 onClick={() => {
                     if (!browseOpen) {
-                        setBrowseQuery("");
-                        setBrowseCat(null);
                         setBrowsePicked([]);
                     }
                     setBrowseOpen((o) => !o);
@@ -499,7 +502,7 @@ export default function ContactRecipientField({
                                     className="flex-1 min-w-0 bg-transparent text-[11.5px] text-slate-900 placeholder:text-slate-400 outline-none"
                                 />
                             </div>
-                            {allCategories.length > 0 && (
+                            {(allCategories.length > 0 || browseCat) && (
                                 <FilterMenu
                                     icon={TagIcon}
                                     allLabel="All labels"
@@ -519,7 +522,8 @@ export default function ContactRecipientField({
                                 options={BROWSE_SORTS.map((s) => ({ id: s.key, label: s.label }))}
                                 value={browseSort}
                                 onChange={(id) => {
-                                    if (id) setBrowseSort(id as SearchContactsSortBy);
+                                    const parsed = inboxContactSortSchema.safeParse(id);
+                                    if (parsed.success) setBrowseSort(parsed.data);
                                 }}
                             />
                         </div>

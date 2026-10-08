@@ -8,6 +8,9 @@
 // search itself, so a whole category is one request.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseText, browseIds } from "@/lib/browse-contacts-campaigns";
+import useBrowseDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     AlertCircleIcon,
@@ -65,18 +68,15 @@ export default function AddFromContactsDialog({ open, onClose, campaign: campaig
     );
     const targetName = target.kind === "campaign" ? target.campaign.name : target.segment.name;
 
-    const [query, setQuery] = React.useState("");
-    const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
+    const browseName = `contacts:add-from:${target.kind}:${target.kind === "campaign" ? target.campaign.id : target.segment.id}`;
+    const [query, setQuery] = useBrowseState(`${browseName}:query`, "", browseText);
+    const [categoryIds, setCategoryIds] = useBrowseState<string[]>(`${browseName}:labels`, [], browseIds);
     // Ticked rows, or the search itself minus what was unticked after it; the
     // same two shapes the contacts table uses (./selection).
     const [rowSel, setRowSel] = React.useState<RowSelection>(rowSelection.emptySelection);
 
     // Debounce the query so a fast typist does not fire a search per keystroke.
-    const [debounced, setDebounced] = React.useState("");
-    React.useEffect(() => {
-        const t = setTimeout(() => setDebounced(query.trim()), 200);
-        return () => clearTimeout(t);
-    }, [query]);
+    const debounced = useBrowseDebouncedValue(query.trim(), browseName, 200);
 
     const options = React.useMemo<SearchContacts>(
         () => ({
@@ -95,9 +95,6 @@ export default function AddFromContactsDialog({ open, onClose, campaign: campaig
 
     React.useEffect(() => {
         if (!open) {
-            setQuery("");
-            setDebounced("");
-            setCategoryIds([]);
             setRowSel(rowSelection.emptySelection);
         }
     }, [open]);
@@ -232,6 +229,7 @@ export default function AddFromContactsDialog({ open, onClose, campaign: campaig
                             />
                             <div className="flex-1 min-w-0">
                                 <CategoryPicker
+                                    showMissing
                                     value={categoryIds}
                                     onChange={setCategoryIds}
                                     placeholder="Filter by label…"

@@ -17,6 +17,8 @@
 // the audit spine's contact invalidation keeps them live.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { activityFiltersSchema } from "@/lib/browse-contacts-campaigns";
 import { AnimatePresence, motion } from "framer-motion";
 import { DatePicker } from "@/components/ui/DatePicker";
 import {
@@ -132,10 +134,12 @@ export default function ActivityTab({ contactId, contactName }: { contactId: str
         fetchNextPage,
     } = useContactTimeline(contactId);
 
-    const [type, setType] = React.useState<FilterId>("all");
-    const [query, setQuery] = React.useState("");
-    const [from, setFrom] = React.useState("");
-    const [to, setTo] = React.useState("");
+    const [{ type, query, from, to }, setBrowse] = useBrowseState(`contacts:${contactId}:activity:filters`,
+        { type: "all" as FilterId, query: "", from: "", to: "" }, activityFiltersSchema);
+    const setType = (type: FilterId) => setBrowse((s) => ({ ...s, type }));
+    const setQuery = (query: string) => setBrowse((s) => ({ ...s, query }));
+    const setFrom = (from: string) => setBrowse((s) => ({ ...s, from }));
+    const setTo = (to: string) => setBrowse((s) => ({ ...s, to }));
 
     const visible = React.useMemo(
         () => applyFilters(events, { type, query, from, to }),

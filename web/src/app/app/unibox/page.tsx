@@ -40,6 +40,7 @@ import useUniboxOverview from "@/lib/api/hooks/app/unibox/useUniboxOverview";
 import { cn } from "@/lib/utils";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 import { useUniboxRailSync } from "@/hooks/useUniboxRailSync";
+import useInboxBrowseState from "./useInboxBrowseState";
 
 function startOfToday(): Date {
   const d = new Date();
@@ -281,7 +282,7 @@ export default function UniboxPage() {
   }, [setSelectedThreadId, setSelectedAccountId]);
 
   // ── Scope → server search params ───────────────────────────────
-  // Derived synchronously (initial state + render-phase reset), NOT in
+  // Derived synchronously with restored user overrides, NOT in
   // an effect: an effect runs after paint, so on a reload of a scoped
   // URL the list would fire and render the default "all" query first,
   // then flash to the scoped one.
@@ -372,41 +373,9 @@ export default function UniboxPage() {
     },
     [scope, tagAccountIds, viewCategoriesData],
   );
-  const [params, setParams] = React.useState<UniboxSearchParams>(() =>
-    paramsForScope("newest"),
-  );
-  // What the scope alone would query. The list compares against it to tell
-  // a user-added filter from the scope's own parameters.
-  const baseParams = React.useMemo(
-    () => paramsForScope(params.sortBy),
-    [paramsForScope, params.sortBy],
-  );
-  // Reset filters when the scope changes (or a tag scope re-resolves as
-  // the mailbox directory loads), keeping only the sort. Setting state
-  // during render re-renders before commit, so the stale params never
-  // reach the query.
-  const tagIdsKey = tagAccountIds?.join(",") ?? "";
-  const viewIdsKey =
-    scope.kind === "view" ? (viewCategoriesData ?? []).map((c) => c.id).join(",") : "";
-  const [prevReset, setPrevReset] = React.useState({ scope, tagIdsKey, viewIdsKey });
-  if (prevReset.scope !== scope || prevReset.tagIdsKey !== tagIdsKey || prevReset.viewIdsKey !== viewIdsKey) {
-    setPrevReset({ scope, tagIdsKey, viewIdsKey });
-    setParams((prev) => paramsForScope(prev.sortBy));
-  }
-
-  // ── Search text ────────────────────────────────────────────────
-  // Owned here, not in the list, because "Search all mail" changes scope and
-  // has to keep what was typed. A scope change the reader made themselves
-  // still clears it: a query typed for one view silently filtering the next is
-  // what the list used to guard against.
-  const [search, setSearch] = React.useState("");
-  const keepSearch = React.useRef(false);
-  const [searchScope, setSearchScope] = React.useState(scope);
-  if (searchScope !== scope) {
-    setSearchScope(scope);
-    if (keepSearch.current) keepSearch.current = false;
-    else setSearch("");
-  }
+  const scopeBase = React.useMemo(() => paramsForScope("newest"), [paramsForScope]);
+  const { params, baseParams, setParams, search, setSearch, keepSearch } =
+    useInboxBrowseState(scopeKey(scope), scopeBase, storeEmails);
 
   // ── Scope label for header chip ────────────────────────────────
   const overviewData = overview.data;

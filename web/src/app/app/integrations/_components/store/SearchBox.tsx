@@ -3,6 +3,8 @@
 // type, arrow keys move, and Enter opens the highlighted one or every result.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseSearchSchema } from "@/lib/browse-other-lists";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRightIcon, CornerDownLeftIcon } from "lucide-react";
 
@@ -26,6 +28,7 @@ export default function SearchBox({
     onOpenCategory,
     onSearchAll,
     filter,
+    browseKey,
     placeholder = "Search apps",
 }: {
     items: StoreItem[];
@@ -34,9 +37,10 @@ export default function SearchBox({
     onSearchAll: (q: string) => void;
     /** On a browse page: the live query and its setter, instead of suggestions. */
     filter?: { value: string; onChange: (q: string) => void };
+    browseKey: string;
     placeholder?: string;
 }) {
-    const [draft, setDraft] = React.useState("");
+    const [draft, setDraft] = useBrowseState(`integrations.store.${browseKey}.search`, "", browseSearchSchema);
     const value = filter ? filter.value : draft;
     const setValue = filter ? filter.onChange : setDraft;
     const [open, setOpen] = React.useState(false);

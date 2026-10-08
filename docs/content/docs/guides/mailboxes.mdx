@@ -3,6 +3,8 @@ title: Mailboxes
 description: "Connect sender accounts, providers, and how they are assigned to workers."
 ---
 
+Browsing filters, searches and view choices are [remembered in your browser tab](/guides/browsing/) across refreshes and navigation, separately for each user and workspace.
+
 A mailbox is a sender account you connect to Warmbly. Every warmup message and campaign email goes out through one you own.
 
 ### Diagnostic participation and stopping
@@ -11,7 +13,9 @@ New mailboxes default to diagnostic participation **off**. The organization-auth
 
 ## Filtering accounts
 
-Use the **Tags** dropdown above the mailbox list to show accounts with a particular tag. The selection is kept in the page URL, so refreshing the page or opening a bookmark keeps the filter. Choose **All accounts** to clear it. A tag that no longer exists in the current workspace falls back to **All accounts**.
+Use the **Tags** dropdown above the mailbox list to show accounts with a particular tag. The selection is kept in the page URL and remembered for your user and workspace in the browser tab, so refreshing, opening a bookmark, or visiting another page and returning keeps the filter. Choose **All accounts** to clear it. A tag that no longer exists in the current workspace falls back to **All accounts**.
+
+Without an explicit column sort, **All accounts** groups the loaded mailboxes by workspace tag order, then by email address, with untagged accounts last. A mailbox with several tags belongs to its first tag in that order and appears only once. Selecting a column sort takes priority over grouping.
 
 ## Connecting an account
 

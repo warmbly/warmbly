@@ -381,6 +381,7 @@ function Dialog({
 
                             {n > 1 && (
                                 <PerDomainList
+                                    browseScope="emails.domains.bulkSetup.list"
                                     rows={listRows}
                                     onChange={(d, patch) => setEach((prev) => ({ ...prev, [d]: { ...prev[d], ...patch } }))}
                                     onReset={(d) =>

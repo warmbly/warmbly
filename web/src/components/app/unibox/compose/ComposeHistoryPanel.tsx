@@ -5,6 +5,8 @@
 // of the inbox.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { inboxHistoryTabSchema, inboxSearchSchema } from "@/lib/browse-inbox";
 import { useNavigate } from "@tanstack/react-router";
 import {
     ArrowUpRightIcon,
@@ -51,8 +53,9 @@ export default function ComposeHistoryPanel({
 }: ComposeHistoryPanelProps) {
     const navigate = useNavigate();
     const accounts = useAppStore((s) => s.emails);
-    const [tab, setTab] = React.useState<HistoryTab>("all");
-    const [search, setSearch] = React.useState("");
+    const identity = encodeURIComponent(bareEmail(address).trim().toLowerCase());
+    const [tab, setTab] = useBrowseState<HistoryTab>(`unibox.history.${identity}.tab`, "all", inboxHistoryTabSchema);
+    const [search, setSearch] = useBrowseState(`unibox.history.${identity}.search`, "", inboxSearchSchema);
 
     const q = useUniboxSearch(
         {

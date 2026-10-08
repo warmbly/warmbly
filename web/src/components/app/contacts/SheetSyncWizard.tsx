@@ -324,6 +324,7 @@ export default function SheetSyncWizard({ open, onClose, lockedCampaign, lockedS
                             )}
                             {step === "map" && preview && (
                                 <MapStep
+                                    importId={`sheet:${connectionId}:${sheetId}:${tabTitle}`}
                                     preview={preview}
                                     mapping={mapping}
                                     setMapping={setMapping}

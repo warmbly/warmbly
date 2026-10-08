@@ -2,6 +2,8 @@
 // listing each domain with its own tracking host and redirect website, filled
 // from the shared value until someone types over it.
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseString, browseBoolean, domainListLimit } from "@/lib/browse-accounts-analytics";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDownIcon, RotateCcwIcon } from "lucide-react";
 import { SearchInput, TextInput } from "@/components/ui/field";
@@ -51,19 +53,21 @@ function Tick({ checked, onToggle, label, disabled }: { checked: boolean; onTogg
 }
 
 export function PerDomainList({
+    browseScope,
     rows,
     onChange,
     onReset,
     defaultOpen = false,
 }: {
+    browseScope: string;
     rows: PerDomainRow[];
     onChange: (domain: string, patch: DomainOverride) => void;
     onReset: (domain: string) => void;
     defaultOpen?: boolean;
 }) {
-    const [open, setOpen] = React.useState(defaultOpen);
-    const [query, setQuery] = React.useState("");
-    const [limit, setLimit] = React.useState(20);
+    const [open, setOpen] = useBrowseState(`${browseScope}.expanded`, defaultOpen, browseBoolean);
+    const [query, setQuery] = useBrowseState(`${browseScope}.search`, "", browseString);
+    const [limit, setLimit] = useBrowseState(`${browseScope}.limit`, 20, domainListLimit);
     const changed = rows.filter((r) => r.custom).length;
     const problems = rows.filter((r) => (r.track && r.hostProblem) || (r.redirect && r.urlProblem)).length;
     const q = query.trim().toLowerCase();

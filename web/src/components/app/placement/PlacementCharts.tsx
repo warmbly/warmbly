@@ -2,6 +2,8 @@
 // deliverability page: the rate badge, daily landing columns, the rolling
 // inbox-rate trend, the provider breakdown and the filter controls.
 import React, { useState } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { placementGroup } from "@/lib/browse-accounts-analytics";
 import { ChevronRightIcon } from "lucide-react";
 import { DitherColumns, DitherStack, type DitherTone } from "@/components/ui/dither";
 import { EmptyChart } from "@/components/ui/charts";
@@ -298,8 +300,8 @@ export function RateSpark({ values, width = 96, height = 22 }: { values: (number
 
 // One row per recipient group; expanding it lists the hosts inside
 // (Gmail vs Google Workspace, Outlook.com vs Microsoft 365).
-export function ProviderBreakdown({ providers }: { providers: PlacementProvider[] }) {
-    const [open, setOpen] = useState<PlacementGroup | null>(null);
+export function ProviderBreakdown({ providers, browseScope }: { providers: PlacementProvider[]; browseScope: string }) {
+    const [open, setOpen] = useBrowseState<PlacementGroup | null>(`${browseScope}.providerExpanded`, null, placementGroup.nullable());
     if (providers.length === 0) {
         return <p className="px-5 py-6 text-[12px] text-slate-400 text-center">No deliveries at any provider in this window.</p>;
     }

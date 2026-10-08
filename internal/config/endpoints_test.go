@@ -2,6 +2,19 @@ package config
 
 import "testing"
 
+func TestNormalizeWebsocketURLWithPathsAndQueries(t *testing.T) {
+	for input, want := range map[string]string{
+		"https://realtime.test/socket?tenant=old":                  "wss://realtime.test/socket/websocket?tenant=old",
+		"http://localhost:4000/proxy/socket/websocket/?tenant=old": "ws://localhost:4000/proxy/socket/websocket?tenant=old",
+		"wss://realtime.test?tenant=old":                           "wss://realtime.test/socket/websocket?tenant=old",
+		"file:///etc/passwd":                                       "", "wss://user:password@realtime.test": "", "://bad": "",
+	} {
+		if got := NormalizeWebsocketURL(input); got != want {
+			t.Errorf("NormalizeWebsocketURL(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestNormalizeWebsocketURLPreservesLegacyConfiguration(t *testing.T) {
 	for _, input := range []string{"", " wss://realtime.test/ ", "wss://realtime.test/socket", "wss://realtime.test/socket/websocket/"} {
 		want := "wss://realtime.test/socket/websocket"

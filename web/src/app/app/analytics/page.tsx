@@ -1,6 +1,8 @@
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { analyticsRange, analyticsHiddenMetrics } from "@/lib/browse-accounts-analytics";
 import { Link } from "@tanstack/react-router";
 import {
     ActivityIcon,
@@ -60,9 +62,9 @@ function num(v: number | undefined): string {
 
 export default function AnalyticsPage() {
     const canView = usePermission("VIEW_ANALYTICS");
-    const [range, setRange] = useState<Range>("7d");
+    const [range, setRange] = useBrowseState<Range>("analytics.range", "7d", analyticsRange);
     // Legend toggles: every metric charts together; hidden ones drop out.
-    const [hiddenMetrics, setHiddenMetrics] = useState<Metric[]>([]);
+    const [hiddenMetrics, setHiddenMetrics] = useBrowseState<Metric[]>("analytics.hiddenMetrics", [], analyticsHiddenMetrics);
     const dash = useDashboard(range);
     const d = dash.data;
     const os = d?.overall_stats;

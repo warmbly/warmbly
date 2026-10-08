@@ -6,6 +6,8 @@
 "use client";
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { slackTabSchema } from "@/lib/browse-other-lists";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
     AlertTriangleIcon,
@@ -81,7 +83,7 @@ export default function ConnectionDetail({
 
     const [busy, setBusy] = React.useState(false);
     const confirm = useConfirm();
-    const [slackTab, setSlackTab] = React.useState<SlackTab>("overview");
+    const [slackTab, setSlackTab] = useBrowseState<SlackTab>(`integrations.${connection.id}.slack.tab`, "overview", slackTabSchema);
 
     const conn = detail.data?.connection ?? connection;
     const runs = detail.data?.runs ?? [];

@@ -115,23 +115,35 @@ func WebsocketURL() string {
 }
 
 func NormalizeWebsocketURL(value string) string {
-	v := strings.TrimRight(strings.TrimSpace(value), "/")
+	v := strings.TrimSpace(value)
 	if v == "" {
 		return ""
 	}
-	// The variable is written three ways in the wild: a bare host, the Phoenix
-	// socket mount (".../socket"), and the full transport endpoint. Clients
-	// dial what this returns, so all three normalise to the last one. Matching
-	// on a "/socket" substring instead of the suffix left ".../socket"
-	// untouched, which is not a websocket endpoint.
-	switch {
-	case strings.HasSuffix(v, "/socket/websocket"):
-	case strings.HasSuffix(v, "/socket"):
-		v += "/websocket"
-	default:
-		v += "/socket/websocket"
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" || u.User != nil {
+		return ""
 	}
-	return v
+	switch u.Scheme {
+	case "https":
+		u.Scheme = "wss"
+	case "http":
+		u.Scheme = "ws"
+	case "ws", "wss":
+	default:
+		return ""
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	// Normalize the path, not the query string on a legacy reverse-proxy URL.
+	switch {
+	case strings.HasSuffix(u.Path, "/socket/websocket"):
+	case strings.HasSuffix(u.Path, "/socket"):
+		u.Path += "/websocket"
+	default:
+		u.Path += "/socket/websocket"
+	}
+	u.RawPath = ""
+	u.Fragment = ""
+	return u.String()
 }
 
 func GetPasswordResetURL(sessionToken, origin string) string {

@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/popover-menu";
 import { useAppStore } from "@/stores";
 import { useUserProfile } from "@/hooks/context/user";
-import useDebouncedValue from "@/hooks/useDebouncedValue";
 import { cn } from "@/lib/utils";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 
@@ -106,7 +105,7 @@ export function userFilters(
   if (!sameDay(params.until, base.until)) out.until = params.until;
   if ((params.from ?? "") !== (base.from ?? "")) out.from = params.from;
   if (!sameIds(params.categoryIds, base.categoryIds)) out.categoryIds = params.categoryIds;
-  if (!sameIds(params.accountIds, base.accountIds)) {
+  if (!sameIds(params.accountIds, base.accountIds) || params.tagId !== base.tagId) {
     out.accountIds = params.accountIds;
     out.tagId = params.tagId;
   }
@@ -123,7 +122,7 @@ export function countUserFilters(
   if (u.since || u.until) n++;
   if (u.from) n++;
   if (u.categoryIds && u.categoryIds.length > 0) n++;
-  if (u.accountIds && u.accountIds.length > 0) n++;
+  if (u.tagId || (u.accountIds && u.accountIds.length > 0)) n++;
   return n;
 }
 
@@ -196,19 +195,7 @@ function FilterPanel({
   const canLabels = !base.categoryIds;
   const canMailboxes = !base.accountIds && accounts.length > 1;
 
-  // The sender box commits on a pause, not on every keystroke: the value is
-  // part of the query key, so a raw binding would fire a request per letter.
-  const [from, setFrom] = React.useState(params.from ?? "");
-  const debouncedFrom = useDebouncedValue(from, 300);
-  React.useEffect(() => {
-    const next = debouncedFrom.trim() || undefined;
-    setParams((s) => (s.from === next ? s : { ...s, from: next }));
-  }, [debouncedFrom, setParams]);
-  React.useEffect(() => {
-    setFrom(params.from ?? "");
-  }, [params.from]);
-
-  const preset = presetOf(params.since, params.until);
+  const preset = params.datePreset ?? presetOf(params.since, params.until);
   const [customOpen, setCustomOpen] = React.useState(preset === "custom");
   const showCustom = customOpen || preset === "custom";
 
@@ -218,7 +205,7 @@ function FilterPanel({
       return;
     }
     setCustomOpen(false);
-    setParams((s) => ({ ...s, since: sinceForPreset(p), until: undefined }));
+    setParams((s) => ({ ...s, since: sinceForPreset(p), until: undefined, datePreset: p === "any" ? undefined : p }));
   };
 
   const selectedCategories = new Set(params.categoryIds ?? []);
@@ -248,7 +235,6 @@ function FilterPanel({
 
   const clear = () => {
     setCustomOpen(false);
-    setFrom("");
     setParams((s) => ({ ...base, sortBy: s.sortBy }));
   };
 
@@ -300,14 +286,14 @@ function FilterPanel({
                 <div className="flex items-center gap-1.5">
                   <DatePicker
                     value={toIso(params.since)}
-                    onChange={(v) => setParams((s) => ({ ...s, since: fromIso(v) }))}
+                    onChange={(v) => setParams((s) => ({ ...s, since: fromIso(v), datePreset: "custom" }))}
                     placeholder="From"
                     className="flex-1 min-w-0"
                   />
                   <span className="text-slate-300">to</span>
                   <DatePicker
                     value={toIso(params.until)}
-                    onChange={(v) => setParams((s) => ({ ...s, until: fromIso(v) }))}
+                    onChange={(v) => setParams((s) => ({ ...s, until: fromIso(v), datePreset: "custom" }))}
                     placeholder="Until"
                     className="flex-1 min-w-0"
                   />
@@ -319,8 +305,8 @@ function FilterPanel({
 
         <Row label="From">
           <TextInput
-            value={from}
-            onChange={setFrom}
+            value={params.from ?? ""}
+            onChange={(from) => setParams((s) => ({ ...s, from: from || undefined }))}
             placeholder="Name or address"
             className="w-full"
           />
@@ -429,7 +415,7 @@ export function UniboxFilterChips({
     });
   }
   if (u.since || u.until) {
-    const p = presetOf(u.since, u.until);
+    const p = params.datePreset ?? presetOf(u.since, u.until);
     const label =
       p === "today"
         ? "Today"
@@ -445,7 +431,7 @@ export function UniboxFilterChips({
     chips.push({
       key: "date",
       label,
-      remove: () => setParams((s) => ({ ...s, since: base.since, until: base.until })),
+      remove: () => setParams((s) => ({ ...s, since: base.since, until: base.until, datePreset: undefined })),
     });
   }
   if (u.from) {
@@ -457,21 +443,22 @@ export function UniboxFilterChips({
   }
   if (u.categoryIds && u.categoryIds.length > 0) {
     const titles = u.categoryIds
-      .map((id) => (user.categories ?? []).find((c) => c.id === id)?.title)
-      .filter((t): t is string => !!t);
+      .map((id) => (user.categories ?? []).find((c) => c.id === id)?.title ?? "Unavailable label");
     chips.push({
       key: "labels",
       label: titles.length <= 2 ? titles.join(", ") : `${titles.slice(0, 2).join(", ")} +${titles.length - 2}`,
       remove: () => setParams((s) => ({ ...s, categoryIds: base.categoryIds })),
     });
   }
-  if (u.accountIds && u.accountIds.length > 0) {
+  if (u.tagId || (u.accountIds && u.accountIds.length > 0)) {
     const tag = u.tagId ? (user.tags ?? []).find((t) => t.id === u.tagId) : undefined;
     const label = tag
       ? `Tag ${tag.title}`
-      : u.accountIds.length === 1
+      : u.tagId
+        ? "Unavailable tag"
+      : u.accountIds?.length === 1
         ? (accounts.find((a) => a.id === u.accountIds![0])?.email ?? "1 mailbox")
-        : `${u.accountIds.length} mailboxes`;
+        : `${u.accountIds?.length ?? 0} mailboxes`;
     chips.push({
       key: "accounts",
       label,

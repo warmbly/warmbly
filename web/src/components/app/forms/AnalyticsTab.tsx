@@ -4,6 +4,8 @@
 // spine.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { formAnalyticsRangeSchema } from "@/lib/browse-other-lists";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
 
@@ -33,7 +35,7 @@ function flagEmoji(code: string): string {
 
 export default function AnalyticsTab({ form }: { form: Form }) {
     const navigate = useNavigate();
-    const [range, setRange] = React.useState<FormStatsRange>("30d");
+    const [range, setRange] = useBrowseState<FormStatsRange>(`forms.${form.id}.analytics.range`, "30d", formAnalyticsRangeSchema);
     const stats = useFormStats(form.id, range);
     const totalPages = React.useMemo(() => splitPages(form.fields).length, [form.fields]);
 

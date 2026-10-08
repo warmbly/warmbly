@@ -20,6 +20,8 @@
 // priority, status), which preserves the TaskTypePicker + themed selectors.
 
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { taskBrowseFiltersSchema, taskBrowseViewSchema } from "@/lib/browse-crm";
 import {
     AlertTriangleIcon,
     ArrowUpDownIcon,
@@ -181,8 +183,8 @@ function isOverdue(t: CRMTask): boolean {
 }
 
 export default function TasksPage() {
-    const [filters, setFilters] = React.useState<SearchTasks>(EMPTY_TASK_SEARCH);
-    const [view, setView] = React.useState<"flat" | "grouped">("flat");
+    const [filters, setFilters] = useBrowseState<SearchTasks>("crm.tasks.filters", EMPTY_TASK_SEARCH, taskBrowseFiltersSchema);
+    const [view, setView] = useBrowseState("crm.tasks.view", "flat", taskBrowseViewSchema);
     const [newOpen, setNewOpen] = React.useState(false);
     const [editing, setEditing] = React.useState<CRMTask | null>(null);
 
@@ -1354,6 +1356,11 @@ function AssigneeFacet({
                 </button>
             </PopoverMenuTrigger>
             <PopoverMenuContent minWidth={220} className="max-h-64 overflow-y-auto">
+                {selected.filter((id) => !members.some((m) => m.user_id === id)).map((id) => (
+                    <PopoverMenuItem key={id} onSelect={() => toggle(id)} selected closeOnSelect={false}>
+                        {memberLabel(undefined, id)}
+                    </PopoverMenuItem>
+                ))}
                 {members.length === 0 ? (
                     <div className="px-2 py-1.5 text-[11.5px] text-slate-400">No members</div>
                 ) : (
@@ -1416,6 +1423,11 @@ function TeamFacet({
                 </button>
             </PopoverMenuTrigger>
             <PopoverMenuContent minWidth={220} className="max-h-64 overflow-y-auto">
+                {selected.filter((id) => !teams.some((t) => t.id === id)).map((id) => (
+                    <PopoverMenuItem key={id} onSelect={() => toggle(id)} selected closeOnSelect={false}>
+                        {teamLabel(undefined, id)}
+                    </PopoverMenuItem>
+                ))}
                 {teams.length === 0 ? (
                     <Link
                         to="/app/settings/teams"
@@ -1481,6 +1493,11 @@ function TypeFacet({
                 </button>
             </PopoverMenuTrigger>
             <PopoverMenuContent minWidth={200} className="max-h-64 overflow-y-auto">
+                {selected.filter((name) => !types.some((t) => t.name === name)).map((name) => (
+                    <PopoverMenuItem key={name} onSelect={() => toggle(name)} selected closeOnSelect={false}>
+                        {name}
+                    </PopoverMenuItem>
+                ))}
                 {types.length === 0 ? (
                     <div className="px-2 py-1.5 text-[11.5px] text-slate-400">No types yet</div>
                 ) : (

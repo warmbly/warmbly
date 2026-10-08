@@ -11,6 +11,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type Contact from "@/lib/api/models/app/contacts/Contact";
+import { UserContext } from "@/hooks/context/user";
+import { useAppStore } from "@/stores/useAppStore";
+import type { ContactSlideTab } from "./contact-edit/tabs";
 
 const requested: { url?: string; data?: unknown }[] = [];
 vi.mock("@/lib/api/client/Request", () => ({
@@ -115,14 +118,41 @@ function Panel({ contacts }: { contacts: Contact[] }) {
     );
 }
 
+function BrowsePanel({ initialTab, active = "contact-1" }: { initialTab?: ContactSlideTab; active?: string }) {
+    const client = React.useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), []);
+    const value = { user: { id: "member" } } as React.ComponentProps<typeof UserContext.Provider>["value"];
+    return <UserContext.Provider value={value}>
+        <QueryClientProvider client={client}>
+            <ContactEdit contacts={[contact(), contact({ id: "contact-2" })]} active={active} setActive={() => {}} initialTab={initialTab} />
+        </QueryClientProvider>
+    </UserContext.Provider>;
+}
+
 function clickBackdrop(container: HTMLElement) {
     fireEvent.mouseDown(container.querySelector(".fixed.inset-0") as Element);
 }
 
 describe("the contact 360 panel", () => {
     beforeEach(() => {
+        sessionStorage.clear();
         confirmShow.mockClear();
         requested.length = 0;
+    });
+
+    it("restores the contact tab, isolates other contacts, and lets explicit navigation beat the saved tab", () => {
+        useAppStore.setState({ currentOrganization: { id: "workspace", name: "Workspace", role: "owner" } });
+        const page = render(<BrowsePanel />);
+        fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+        expect(screen.getByText("activity")).toBeInTheDocument();
+        page.unmount();
+        const refreshed = render(<BrowsePanel />);
+        expect(screen.getByText("activity")).toBeInTheDocument();
+        refreshed.rerender(<BrowsePanel active="contact-2" />);
+        expect(screen.getByText("overview")).toBeInTheDocument();
+        refreshed.unmount();
+        render(<BrowsePanel initialTab="details" />);
+        expect(screen.getByRole("button", { name: "rename" })).toBeInTheDocument();
+        expect(screen.queryByText("activity")).not.toBeInTheDocument();
     });
 
     it("closes without asking when the contact was re-subscribed elsewhere", () => {

@@ -1,5 +1,6 @@
 import setToken from "./helper/setToken";
 import type Token from "./api/models/auth/Token";
+import { clearBrowseState, resumeBrowseState } from "./browseState";
 
 export function isStrongPassword(password: string): boolean {
   const minLength = 8;
@@ -51,6 +52,7 @@ export const saveTokens = (data: Record<string, unknown>) => {
       refresh_token_expires_at: toDate(refreshExp),
     };
     setToken(token);
+    resumeBrowseState();
   }
 }
 
@@ -73,6 +75,7 @@ const SESSION_SCOPED_KEYS = [
 // content those tokens were used to fetch. Called from logout and from every
 // path that discovers the session is gone, so neither leaves the other behind.
 export const clearTokens = () => {
+  clearBrowseState();
   TOKENS.forEach((k) => localStorage.removeItem(k));
   SESSION_SCOPED_KEYS.forEach((k) => {
     localStorage.removeItem(k);

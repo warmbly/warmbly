@@ -337,6 +337,14 @@ A worker's command topic is named after the node id issued when it joined, so th
 
 Migrations are embedded in the backend binary and applied on boot. There is no separate migration step, and a standalone `/app/migrate` binary ships in the image for the cases where you want one.
 
+## Realtime upgrade compatibility
+
+Existing `WEBSOCKET_URL` values ending at the host, `/socket`, or `/socket/websocket` remain supported, including custom path prefixes, ports and query parameters. HTTP(S) forms are converted to WS(S). Both discovery and ticket responses use the same normalization.
+
+The dashboard can connect through `/v1/realtime/socket/websocket` on the API origin. No new environment variable, CSP allowlist entry or data migration is required. The API forwards only to the configured realtime gateway and keeps the browser Origin intact. Legacy Docker installs advertising a loopback gateway can fall back to the existing `realtime` service on the same port when the API container cannot reach its own loopback address.
+
+Upgrade the backend, realtime and dashboard images together to the same release; the realtime update preserves per-client IP limits for API-proxied connections. Existing direct clients and older dashboard/backend combinations retain the direct URL. A custom reverse proxy should allow WebSocket upgrades on the API route as well as the direct realtime route; direct connections remain a retry fallback. Keep `CHECK_ORIGIN_HOSTS` and the shared `AUTH_SECRET`/`JWT_SECRET` consistent. A retry label does not prove recovery: **Live** means the socket is open, while **Reconnecting** means it is still retrying.
+
 ## Cache
 
 | Variable | What it does | Default | Restart needed |

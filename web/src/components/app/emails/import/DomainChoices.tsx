@@ -171,10 +171,12 @@ export function AllDomainsChoice({
 
 /** The shared choice with each domain's own values in a dropdown under it. */
 export function DomainChoicesPanel({
+    browseScope = "emails.import.file.domainChoices",
     infos,
     picks,
     setPicks,
 }: {
+    browseScope?: string;
     infos: DomainInfo[];
     picks: DomainPicks;
     setPicks: React.Dispatch<React.SetStateAction<DomainPicks>>;
@@ -226,6 +228,7 @@ export function DomainChoicesPanel({
             <AllDomainsChoice infos={infos} picks={picks} setPicks={setPicks} />
             {usable.length > 1 && (
                 <PerDomainList
+                    browseScope={browseScope}
                     rows={rows}
                     onChange={(d, patch) => setPicks((prev) => ({ ...prev, each: { ...prev.each, [d]: { ...prev.each[d], ...patch } } }))}
                     onReset={(d) =>
@@ -243,11 +246,13 @@ export function DomainChoicesPanel({
 
 /** The picked mailboxes' domains with their choices, for the vendor and grant wizards. */
 export function DomainChoicesSection({
+    browseScope,
     infos,
     picks,
     setPicks,
     capped = 0,
 }: {
+    browseScope: string;
     infos: DomainInfo[];
     picks: DomainPicks;
     setPicks: React.Dispatch<React.SetStateAction<DomainPicks>>;
@@ -258,7 +263,7 @@ export function DomainChoicesSection({
     return (
         <div>
             <SectionLabel className="mb-1.5">Domains</SectionLabel>
-            <DomainChoicesPanel infos={infos} picks={picks} setPicks={setPicks} />
+            <DomainChoicesPanel infos={infos} picks={picks} setPicks={setPicks} browseScope={browseScope} />
             {capped > 0 && (
                 <p className="mt-1 text-[11px] text-slate-500">
                     {plural(capped, "more domain is", "more domains are")} not listed. Set them up on the Sending domains page after the

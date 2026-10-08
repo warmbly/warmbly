@@ -314,6 +314,8 @@ export default function SourceImportWizard(props: SourceImportWizardProps) {
                             </button>
                         )}
                         <PickTable
+                            key={`${source}:${sourceKey}`}
+                            browseScope={`emails.import.${source}.${sourceKey}.pick`}
                             items={items}
                             loading={itemsLoading}
                             loadingLogo={itemsLoadingLogo}
@@ -373,6 +375,7 @@ export default function SourceImportWizard(props: SourceImportWizardProps) {
                         )}
 
                         <DomainChoicesSection
+                            browseScope={`emails.import.${source}.${sourceKey}.domainChoices`}
                             infos={domainInfos}
                             picks={domainPicks}
                             setPicks={setDomainPicks}
@@ -384,6 +387,7 @@ export default function SourceImportWizard(props: SourceImportWizardProps) {
                 )}
                 {current === "run" && importId && (
                     <RunStep
+                        key={importId}
                         importId={importId}
                         onDone={onDone}
                         onAllowance={onAllowance}

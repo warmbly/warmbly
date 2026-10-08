@@ -20,6 +20,8 @@
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
 import React from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { browseSearchSchema } from "@/lib/browse-other-lists";
 import {
     ActivityIcon,
     AlertCircleIcon,
@@ -62,7 +64,7 @@ export default function APIKeysPage() {
 
     const [createOpen, setCreateOpen] = React.useState(false);
     const [selected, setSelected] = React.useState<APIKey | null>(null);
-    const [search, setSearch] = React.useState("");
+    const [search, setSearch] = useBrowseState("api-keys.list.search", "", browseSearchSchema);
 
     const all = keys.data?.data ?? [];
     const filtered = search.trim()

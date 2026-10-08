@@ -409,6 +409,7 @@ function IntegrationsStore({ route, routeKey }: { route: Route; routeKey: string
     const browsing = route.kind === "all" || route.kind === "connected" || route.kind === "community" || route.kind === "category";
     const search = (
         <SearchBox
+            browseKey={routeKey || "home"}
             items={allItems}
             onOpenItem={openItem}
             onOpenCategory={(c) => go(`${STORE_BASE}/category/${c}`)}

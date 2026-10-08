@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import useBrowseState from "@/hooks/useBrowseState";
+import { campaignPeriodSchema, hiddenMetricsSchema } from "@/lib/browse-contacts-campaigns";
 import {
     MailCheckIcon,
     MousePointerClickIcon,
@@ -51,7 +53,7 @@ export default function CampaignOverview() {
 
     // One period drives every figure on the page: summary, steps, engagement
     // and the chart all read the same sends.
-    const [period, setPeriod] = useState<CampaignPeriod>(loadCampaignPeriod);
+    const [period, setPeriod] = useBrowseState<CampaignPeriod>(`campaigns:${id}:analytics:period`, loadCampaignPeriod, campaignPeriodSchema);
     // A preset ends today, so a page left open rolls over at UTC midnight.
     const [today, setToday] = useState(utcToday);
     useEffect(() => {
@@ -74,7 +76,7 @@ export default function CampaignOverview() {
     }, [asked, analytics.isPlaceholderData, analytics.data?.date_range]);
 
     // Legend toggles: every metric charts together; hidden ones drop out.
-    const [hiddenMetrics, setHiddenMetrics] = useState<Metric[]>([]);
+    const [hiddenMetrics, setHiddenMetrics] = useBrowseState<Metric[]>(`campaigns:${id}:analytics:hidden-metrics`, [], hiddenMetricsSchema);
     const toggleMetric = (k: Metric) =>
         setHiddenMetrics((cur) => {
             if (cur.includes(k)) return cur.filter((x) => x !== k);

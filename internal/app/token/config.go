@@ -30,13 +30,14 @@ const (
 // each token is separately bound to a nonce in Redis or a row in `sessions`;
 // the realtime service checks neither, and had nothing else to go on.
 const (
-	PurposeAccess        = "access"
-	PurposeRefresh       = "refresh"
-	PurposeWebSocket     = "ws"
-	PurposeLoginCode     = "login"
-	PurposeRegistration  = "registration"
-	PurposePasswordReset = "reset"
-	PurposeTwoFAPending  = "2fa"
+	PurposeAccess         = "access"
+	PurposeRefresh        = "refresh"
+	PurposeWebSocket      = "ws"
+	PurposeWebSocketProxy = "ws_proxy"
+	PurposeLoginCode      = "login"
+	PurposeRegistration   = "registration"
+	PurposePasswordReset  = "reset"
+	PurposeTwoFAPending   = "2fa"
 	// PurposeSSOLink is a federated sign-in parked on an existing password
 	// account until that password is presented; it opens nothing else.
 	PurposeSSOLink = "sso_link"

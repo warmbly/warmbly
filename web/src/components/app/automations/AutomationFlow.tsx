@@ -8,6 +8,7 @@
 "use client";
 
 import React from "react";
+import useAutomationPanel from "./useAutomationPanel";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     AlertTriangleIcon,
@@ -133,7 +134,7 @@ export default function AutomationFlow({
     const { graph, trigger } = doc;
     const [selectedId, setSelectedId] = React.useState<string | null>(null);
     const [picker, setPicker] = React.useState<{ at: InsertPoint; anchor: DOMRect } | null>(null);
-    const [panel, setPanel] = React.useState<"test" | "history" | null>(null);
+    const { panel, closePanel, showTest, toggleHistory, toggleTest } = useAutomationPanel(automation.id);
     const [testResult, setTestResult] = React.useState<DryRunResponse | null>(null);
     const [remoteUpdate, setRemoteUpdate] = React.useState<Automation | null>(null);
 
@@ -275,8 +276,8 @@ export default function AutomationFlow({
     // ── Editing ──────────────────────────────────────────────────────────────
     const select = React.useCallback((id: string | null) => {
         setSelectedId(id);
-        if (id) setPanel(null);
-    }, []);
+        if (id) closePanel();
+    }, [closePanel]);
 
     // Each switch's last non-empty case name per row (see renameCases).
     const caseMemory = React.useRef(new Map<string, string[]>());
@@ -397,7 +398,7 @@ export default function AutomationFlow({
         try {
             const res = await test.mutateAsync({ id: automation.id, data, skipNodeIds });
             setTestResult(res);
-            setPanel("test");
+            showTest();
             setSelectedId(null);
         } catch {
             toast.error("Could not run the test");
@@ -452,12 +453,12 @@ export default function AutomationFlow({
                 removeStep(selectedId);
             } else if (e.key === "Escape" && (selectedId || panel)) {
                 setSelectedId(null);
-                setPanel(null);
+                closePanel();
             }
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [canEdit, dirty, undo, redo, removeStep, selectedId, panel]);
+    }, [canEdit, dirty, undo, redo, removeStep, selectedId, panel, closePanel]);
 
     // ── Live collaboration: cursors and selections ───────────────────────────
     const hasPeers = useResourceViewers(resource).length > 0;
@@ -602,7 +603,7 @@ export default function AutomationFlow({
                         type="button"
                         onClick={() => {
                             setSelectedId(null);
-                            setPanel((p) => (p === "history" ? null : "history"));
+                            toggleHistory();
                         }}
                         aria-label="Run history"
                         className={cn(
@@ -617,7 +618,7 @@ export default function AutomationFlow({
                         type="button"
                         onClick={() => {
                             setSelectedId(null);
-                            setPanel((p) => (p === "test" ? null : "test"));
+                            toggleTest();
                         }}
                         aria-label="Test"
                         className={cn(
@@ -726,7 +727,7 @@ export default function AutomationFlow({
                                 testResult={testResult}
                                 testing={test.isPending}
                                 onRun={runTest}
-                                onClose={() => setPanel(null)}
+                                onClose={closePanel}
                             />
                         </FlowPanel>
                     )}
