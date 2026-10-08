@@ -23,7 +23,7 @@ import { crmErrorMessage } from "@/components/app/crm/crmModeUtils";
 import useCrmProvider from "@/hooks/useCrmProvider";
 import useBrowseState from "@/hooks/useBrowseState";
 import { browseText } from "@/lib/browse-contacts-campaigns";
-import useBrowseDebouncedValue from "../filters/useBrowseDebouncedValue";
+import useBrowseDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { useCrmLists, useImportCrmList, usePreviewCrmImport } from "@/lib/api/hooks/app/crm/provider/useCrmLists";
 import useCrmMetadata from "@/lib/api/hooks/app/crm/provider/useCrmMetadata";
 import { getContactImport } from "@/lib/api/client/app/contacts/contactImports";

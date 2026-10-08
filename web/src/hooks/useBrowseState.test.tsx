@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { UserContext } from "./context/user";
 import { useAppStore } from "@/stores/useAppStore";
-import { BROWSE_STORAGE_PREFIX, clearBrowseState } from "@/lib/browseState";
+import { BROWSE_STORAGE_PREFIX, clearBrowseState, resumeBrowseState } from "@/lib/browseState";
+import { clearClientSession } from "@/lib/session";
+import { saveTokens } from "@/lib/auth";
 import useBrowseState from "./useBrowseState";
 
 let userID = "user";
@@ -19,6 +21,7 @@ function Owner({ children }: { children: ReactNode }) {
 
 describe("workspace-scoped browse state", () => {
     beforeEach(() => {
+        resumeBrowseState();
         vi.restoreAllMocks();
         sessionStorage.clear();
         userID = "user";
@@ -53,6 +56,14 @@ describe("workspace-scoped browse state", () => {
         expect(page.result.current[0].query).toBe("linked");
         act(() => page.result.current[1](defaults));
         expect(page.result.current[0]).toEqual(defaults);
+    });
+
+    it("does not carry a previous workspace's navigation intent into the destination", () => {
+        const intent = { ...defaults, query: "linked in old workspace" };
+        sessionStorage.setItem(key("tasks", "user", "another"), JSON.stringify({ value: { ...defaults, query: "remembered in destination" } }));
+        const page = renderHook(() => useBrowseState("tasks", defaults, schema, { initialOverride: intent }), { wrapper: Owner });
+        act(() => useAppStore.setState({ currentOrganization: { id: "another", name: "Another", role: "owner" } }));
+        expect(page.result.current[0].query).toBe("remembered in destination");
     });
 
     it("isolates pages, workspaces and users while the view stays mounted", () => {
@@ -119,5 +130,22 @@ describe("workspace-scoped browse state", () => {
         expect(sessionStorage.getItem(key())).toBeNull();
         expect(sessionStorage.getItem("warmbly:mailbox-tag:user:workspace")).toBeNull();
         expect(sessionStorage.getItem("other-feature")).toBe("preserve");
+    });
+
+    it("prevents mounted or queued old-session setters from undoing logout cleanup, even after login", () => {
+        const page = renderHook(() => useBrowseState("tasks", defaults, schema), { wrapper: Owner });
+        act(() => page.result.current[1]({ ...defaults, query: "private" }));
+        act(() => clearClientSession());
+        act(() => page.result.current[1]({ ...defaults, query: "queued after logout" }));
+        expect([...Array(sessionStorage.length)].map((_, index) => sessionStorage.key(index))).not.toContain(key("tasks", "user", "personal"));
+        expect(sessionStorage.getItem(key())).toBeNull();
+        act(() => saveTokens({ access_token: "test-access", access_token_expires_at: "2026-10-09T00:00:00Z", refresh_token: "test-refresh", refresh_token_expires_at: "2026-10-10T00:00:00Z" }));
+        act(() => page.result.current[1]({ ...defaults, query: "stale session after login" }));
+        expect(sessionStorage.getItem(key("tasks", "user", "personal"))).toBeNull();
+        page.unmount();
+        userID = "next";
+        const next = renderHook(() => useBrowseState("tasks", defaults, schema), { wrapper: Owner });
+        act(() => next.result.current[1]({ ...defaults, query: "next person's preference" }));
+        expect(JSON.parse(sessionStorage.getItem(key("tasks", "next", "personal"))!).value.query).toBe("next person's preference");
     });
 });

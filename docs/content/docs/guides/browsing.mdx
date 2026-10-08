@@ -1,0 +1,33 @@
+---
+title: Browsing and filters
+description: Keep your filters, searches, sorting and view choices when refreshing or returning to a browsing view.
+---
+
+Warmbly remembers browsing controls in your current browser tab. Refreshing a page, leaving for another page and returning restores your last choices instead of silently resetting the list.
+
+## What is remembered
+
+- Accounts, domains and campaigns: search, filters and sorting. Accounts also remembers the selected tag, and detail panels remember their last tab for each account or domain.
+- Contacts, segments and campaign leads: search and filter conditions, with separate choices for each list or resource. Existing saved column layouts and sorting continue to apply.
+- CRM: task filters and flat or grouped view, deal-table filters, board pipeline and search, and meeting timeframe and search.
+- Inbox: search, user-added filters, sorting and relevant rail, history and nested browsing controls. The current inbox scope still comes from its navigation or URL.
+- Analytics, deliverability and placement: reporting ranges, visible metrics, provider filters and relevant result views.
+- Forms, templates, API keys, audit and settings history: the searches, filters, sorting and view tabs available on those lists.
+
+Resource-specific controls stay separate. For example, one contact's activity filters do not become another contact's filters, and changing a campaign's lead filters does not change the main Contacts list.
+
+## URLs and resets
+
+An explicit URL or navigation action still takes priority over a remembered choice. Opening a link to a particular label or detail tab shows that destination. Changing workspace restores the destination workspace's choices rather than saving the previous workspace's filters over them.
+
+Using **Clear**, **All accounts**, or another reset control remembers that reset too. Inbox scope changes keep their existing reset behavior: moving between scopes clears the previous scope's extra filters and search, while **Search all mail** intentionally carries your search into the broader scope.
+
+Relative inbox date presets remain relative to the current day. Custom dates stay as the selected dates. Filters whose referenced label or other item is unavailable remain removable where the list supports them; they are not silently cleared just because its directory is still loading.
+
+## Where preferences live
+
+These browsing preferences are stored locally for the signed-in user, workspace and browser tab. They do not require new self-host settings, database changes or a data migration, and they do not travel in a workspace export. Closing the tab ends its saved browsing session. Logging out or expiring the session clears these browsing preferences.
+
+Refreshing reloads current data, starting from the first result page. It does not restore bulk row selection, loaded result pages or an open editor/dialog. This preference storage does not change the app's existing draft-saving behavior.
+
+If browser storage is blocked or full, the browsing controls still work, but their choices may not survive refresh. Invalid or outdated saved values fall back safely to the view's defaults.

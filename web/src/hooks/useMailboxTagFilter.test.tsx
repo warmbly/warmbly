@@ -4,6 +4,8 @@ import { createContext, useContext } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseSearch, stringifySearch } from "@/lib/routerSearch";
 import useMailboxTagFilter from "./useMailboxTagFilter";
+import { resumeBrowseState } from "@/lib/browseState";
+import { clearClientSession } from "@/lib/session";
 
 let workspace = "workspace";
 let tags: readonly { id: string }[] | undefined;
@@ -32,6 +34,7 @@ async function open(href = "/app/emails") {
 
 describe("remembered mailbox tag", () => {
     beforeEach(() => {
+        resumeBrowseState();
         sessionStorage.clear();
         workspace = "workspace";
         tags = [{ id: "sending" }];
@@ -87,5 +90,17 @@ describe("remembered mailbox tag", () => {
         page.unmount();
         await open("/app/emails?tag=deleted");
         await waitFor(() => expect(screen.getByLabelText("Tag")).toHaveTextContent("All accounts"));
+    });
+
+    it("does not recreate mailbox tag storage when a still-mounted page observes logout", async () => {
+        const page = await open("/app/emails?tag=sending");
+        act(() => clearClientSession());
+        workspace = "personal";
+        page.rerender(<TestRouter router={page.router} />);
+        await waitFor(() => expect(page.router.state.location.searchStr).toBe(""));
+        fireEvent.click(screen.getByRole("button", { name: "Sending" }));
+        await waitFor(() => expect(screen.getByLabelText("Tag")).toHaveTextContent("sending"));
+        expect(sessionStorage.getItem("warmbly:mailbox-tag:user:workspace")).toBeNull();
+        expect(sessionStorage.getItem("warmbly:mailbox-tag:user:personal")).toBeNull();
     });
 });

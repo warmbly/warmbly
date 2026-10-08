@@ -2,7 +2,7 @@ import { useContext, useEffect, useState } from "react";
 import { UserContext } from "@/hooks/context/user";
 import { useAppStore } from "@/stores/useAppStore";
 
-export default function useInboxDebouncedValue<T>(value: T, resource: string, delay = 300): T {
+export default function useBrowseDebouncedValue<T>(value: T, resource: string, delay = 300): T {
   const user = useContext(UserContext)?.user.id;
   const workspace = useAppStore((state) => state.currentOrganization?.id);
   const identity = JSON.stringify([user, workspace, resource]);

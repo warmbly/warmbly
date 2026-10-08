@@ -18,7 +18,7 @@ import { SelectionBar } from "./SelectionBar";
 import { useConversationActions } from "@/hooks/useConversationActions";
 import useUniboxSearch from "@/lib/api/hooks/app/unibox/useUniboxSearch";
 import { useShortcutActions } from "@/hooks/useShortcutActions";
-import useInboxDebouncedValue from "./useInboxDebouncedValue";
+import useInboxDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { useScrollMemory } from "@/hooks/useScrollMemory";
 import { useAppStore } from "@/stores";
 import ComposeButton from "@/components/app/unibox/compose/ComposeButton";

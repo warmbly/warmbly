@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { browseSessionGeneration, canPersistBrowseState } from "@/lib/browseState";
 import { useSearchParam, useSearchParams } from "./useSearchParams";
 
 export default function useMailboxTagFilter(owner: string, validTags: readonly { id: string }[] | undefined) {
+    const generation = useRef(browseSessionGeneration());
     const key = `warmbly:mailbox-tag:${owner}`;
     const [params] = useSearchParams();
     const [urlTag, setURLTag] = useSearchParam("tag");
@@ -15,6 +17,7 @@ export default function useMailboxTagFilter(owner: string, validTags: readonly {
     const tag = validTags === undefined || validTags.some((candidate) => candidate.id === selected) ? selected : "";
     const remember = useCallback((value: string) => {
         setMemory({ key, value });
+        if (!canPersistBrowseState(generation.current)) return;
         try { sessionStorage.setItem(key, value); } catch { /* Storage may be disabled. */ }
     }, [key]);
 

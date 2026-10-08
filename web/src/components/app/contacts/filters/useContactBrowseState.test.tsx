@@ -6,7 +6,7 @@ import { useAppStore } from "@/stores/useAppStore";
 import { BROWSE_STORAGE_PREFIX } from "@/lib/browseState";
 import type SearchContacts from "@/lib/api/models/app/contacts/SearchContacts";
 import useContactBrowseState from "./useContactBrowseState";
-import useBrowseDebouncedValue from "./useBrowseDebouncedValue";
+import useBrowseDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { scopeSearch } from "./helpers";
 
 let userId = "member";

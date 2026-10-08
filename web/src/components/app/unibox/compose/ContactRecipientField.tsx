@@ -8,7 +8,7 @@
 import React from "react";
 import useBrowseState from "@/hooks/useBrowseState";
 import { inboxCategorySchema, inboxContactSortSchema, inboxNullableIdSchema, inboxSearchSchema } from "@/lib/browse-inbox";
-import useInboxDebouncedValue from "../useInboxDebouncedValue";
+import useInboxDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {

@@ -6,7 +6,7 @@
 import React from "react";
 import useBrowseState from "@/hooks/useBrowseState";
 import { browseText } from "@/lib/browse-contacts-campaigns";
-import useBrowseDebouncedValue from "@/components/app/contacts/filters/useBrowseDebouncedValue";
+import useBrowseDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { GlobeIcon, MailIcon, MoreHorizontalIcon, PlusIcon, XIcon } from "lucide-react";
 import toast from "react-hot-toast/headless";
 
@@ -26,7 +26,7 @@ export default function SuppressionsPage() {
     const write = useWriteGuard("MANAGE_CONTACTS");
     const guarded = (fn: () => void) => () => write.guard(fn)({});
     const [query, setQuery] = useBrowseState("contacts:suppressions:query", "", browseText);
-    const debounced = useBrowseDebouncedValue(query.trim(), "contacts:suppressions");
+    const debounced = useBrowseDebouncedValue(query.trim(), "contacts:suppressions", 200);
     const [adding, setAdding] = React.useState(false);
 
     const list = useSuppressions(debounced);

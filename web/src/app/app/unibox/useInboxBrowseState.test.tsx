@@ -7,7 +7,7 @@ import { BROWSE_STORAGE_PREFIX } from "@/lib/browseState";
 import { inboxListSchema, inboxPresetDate } from "@/lib/browse-inbox";
 import type { UniboxSearchParams } from "@/lib/api/models/app/unibox/UniboxSearch";
 import useInboxBrowseState from "./useInboxBrowseState";
-import useInboxDebouncedValue from "@/components/app/unibox/useInboxDebouncedValue";
+import useInboxDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 
 function Owner({ children }: { children: ReactNode }) {
   return <UserContext.Provider value={{ user: { id: "user" } } as ComponentProps<typeof UserContext.Provider>["value"]}>{children}</UserContext.Provider>;

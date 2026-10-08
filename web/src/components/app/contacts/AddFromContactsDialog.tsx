@@ -10,7 +10,7 @@
 import React from "react";
 import useBrowseState from "@/hooks/useBrowseState";
 import { browseText, browseIds } from "@/lib/browse-contacts-campaigns";
-import useBrowseDebouncedValue from "./filters/useBrowseDebouncedValue";
+import useBrowseDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     AlertCircleIcon,
@@ -76,7 +76,7 @@ export default function AddFromContactsDialog({ open, onClose, campaign: campaig
     const [rowSel, setRowSel] = React.useState<RowSelection>(rowSelection.emptySelection);
 
     // Debounce the query so a fast typist does not fire a search per keystroke.
-    const debounced = useBrowseDebouncedValue(query.trim(), browseName);
+    const debounced = useBrowseDebouncedValue(query.trim(), browseName, 200);
 
     const options = React.useMemo<SearchContacts>(
         () => ({

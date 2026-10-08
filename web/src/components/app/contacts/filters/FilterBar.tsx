@@ -187,7 +187,7 @@ export default function FilterBar({
         previousReset.current = resetToken;
         setExtras([]);
         setOpenKey(null);
-    }, [resetToken]);
+    }, [resetToken, setExtras]);
 
     const active = countActiveFilters(filters, campaignCtx);
     function clearAll() {
