@@ -626,7 +626,7 @@ export default function SocketProvider({
         }
 
         try {
-            const urlData = await getSocket();
+            const urlData = await getSocket(reconnectAttemptRef.current % 2 === 0);
             // Phoenix vsn=1.0.0 — our sendRaw / joinChannel paths emit the
             // V1 object format ({topic, event, payload, ref}), not the
             // V2 array format. Sending vsn=2.0.0 made the realtime server
@@ -640,6 +640,7 @@ export default function SocketProvider({
 
             wsRef.current.onopen = (ev) => {
                 setIsConnected(true);
+                reconnectAttemptRef.current = 0;
                 setReconnectAttempt(0);
                 startHeartbeat();
                 rejoinChannels();
@@ -684,7 +685,8 @@ export default function SocketProvider({
                     // ±25% jitter so clients don't reconnect in lockstep after an outage.
                     const delay = Math.round(base * (0.75 + Math.random() * 0.5));
                     reconnectTimerRef.current = setTimeout(() => {
-                        setReconnectAttempt((a) => a + 1);
+                        reconnectAttemptRef.current += 1;
+                        setReconnectAttempt(reconnectAttemptRef.current);
                         connect();
                     }, delay);
                 }
@@ -742,7 +744,8 @@ export default function SocketProvider({
                 const base = RECONNECT_SCHEDULE[Math.min(attempt, RECONNECT_SCHEDULE.length - 1)];
                 const delay = Math.round(base * (0.75 + Math.random() * 0.5));
                 reconnectTimerRef.current = setTimeout(() => {
-                    setReconnectAttempt((a) => a + 1);
+                    reconnectAttemptRef.current += 1;
+                    setReconnectAttempt(reconnectAttemptRef.current);
                     connect();
                 }, delay);
             }

@@ -1,6 +1,9 @@
 import { RiFireLine, RiMoreLine } from "@remixicon/react";
 import React, { useEffect, useMemo, useRef } from "react";
-import { useSearchParam, useSearchParams } from "@/hooks/useSearchParams";
+import { useSearchParams } from "@/hooks/useSearchParams";
+import useMailboxTagFilter from "@/hooks/useMailboxTagFilter";
+import groupMailboxes from "@/lib/groupMailboxes";
+import { useAppStore } from "@/stores/useAppStore";
 import toast from "react-hot-toast/headless";
 import { useQueryClient } from "@tanstack/react-query";
 import useEmails from "@/lib/api/hooks/app/emails/useEmails";
@@ -128,8 +131,8 @@ export default function AddressesPage() {
     const canView = usePermission("MANAGE_EMAILS");
 
     const [query, setQuery] = React.useState<string>("");
-    const [selectedTag, setTag] = useSearchParam("tag");
-    const tag = p.user.tags.some((t) => t.id === selectedTag) ? selectedTag : "";
+    const organizationID = useAppStore((state) => state.currentOrganization?.id ?? "personal");
+    const [tag, setTag] = useMailboxTagFilter(`${p.user.id}:${organizationID}`, p.user.tags);
     const emailsData = useEmails({ query, tag });
     const [selected, setSelected] = React.useState<string[]>([]);
     const [view, setView] = React.useState<string>("");
@@ -365,7 +368,7 @@ export default function AddressesPage() {
     const sortedEmails = useMemo(() => {
         const list = emailsData.emails ?? [];
         const col = sort && MAILBOX_COLUMNS.find((c) => c.id === sort.by);
-        if (!sort || !col?.sortValue) return list;
+        if (!sort || !col?.sortValue) return tag ? list : groupMailboxes(list, p.user.tags);
         const value = col.sortValue;
         const dir = sort.reverse ? 1 : -1;
         return [...list].sort((a, b) => {
@@ -374,7 +377,7 @@ export default function AddressesPage() {
             if (x === y) return 0;
             return (x > y ? 1 : -1) * dir;
         });
-    }, [emailsData.emails, sort, statusById]);
+    }, [emailsData.emails, sort, statusById, tag, p.user.tags]);
 
     if (!canView) {
         return <NoAccess feature="email accounts" permissionLabel="Manage mailboxes" />;

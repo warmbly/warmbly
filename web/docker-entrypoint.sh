@@ -79,7 +79,7 @@ if [ -f "$CSP_DIR/csp-template.txt" ]; then
             :
         else
             realtime=""
-            printf 'Realtime CSP discovery unavailable; using explicit CSP origins. Restart the dashboard after the backend is ready, or set WARMBLY_CSP_CONNECT_ORIGINS for offline deployments.\n' >&2
+        printf 'Realtime CSP discovery unavailable; the dashboard can use the API-origin socket route. Explicit CSP origins are needed only for direct gateway connections.\n' >&2
         fi
     fi
     if [ -n "$realtime" ]; then

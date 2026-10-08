@@ -21,6 +21,7 @@ func TestTokenPurposeIsEnforced(t *testing.T) {
 		PurposeAccess,
 		PurposeRefresh,
 		PurposeWebSocket,
+		PurposeWebSocketProxy,
 		PurposeLoginCode,
 		PurposeRegistration,
 		PurposePasswordReset,

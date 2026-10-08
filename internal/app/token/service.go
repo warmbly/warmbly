@@ -19,6 +19,7 @@ type TokenService interface {
 	// constants). Every verifier requires the purpose it expects, so a token
 	// minted for one flow cannot be spent on another.
 	GenerateTokenFor(purpose string, userID, sessionID uuid.UUID, email, nonce string, issuedAt, expiresAt time.Time) (string, error)
+	GenerateWebsocketProxyProof(ticket *TokenClaims, clientIP string) (string, error)
 	VerifyToken(tokenStr string) (*TokenClaims, *errx.Error)
 	// VerifyTokenFor also requires the token to have been minted for this
 	// purpose, so one flow's token cannot be spent on another.

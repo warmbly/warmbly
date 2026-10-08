@@ -23,7 +23,8 @@ type TokenClaims struct {
 	// Purpose names what this token may be spent on. See the Purpose*
 	// constants: one signing key issues all of them, so this is what keeps a
 	// password-reset token from being accepted as a session.
-	Purpose string `json:"purpose,omitempty"`
+	Purpose  string `json:"purpose,omitempty"`
+	ClientIP string `json:"client_ip,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -69,6 +70,19 @@ func (s *tokenService) VerifyToken(tokenStr string) (*TokenClaims, *errx.Error) 
 	}
 
 	return claims, nil
+}
+
+// The proof is bound to one ticket and is never accepted as a socket credential.
+func (s *tokenService) GenerateWebsocketProxyProof(ticket *TokenClaims, clientIP string) (string, error) {
+	now := time.Now()
+	claims := TokenClaims{
+		UserID: ticket.UserID, SessionID: ticket.SessionID, Nonce: ticket.Nonce,
+		Purpose: PurposeWebSocketProxy, ClientIP: clientIP,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(30 * time.Second)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.AuthSecret))
 }
 
 func (s *tokenService) GenerateSession(ctx context.Context, userID uuid.UUID, email, ipaddr, userAgent, authProvider string) (*models.Token, *errx.Error) {

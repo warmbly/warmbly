@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import SocketProvider from './SocketProvider'
 import { useChannel, useChannelEvent } from './context/socket'
 import { installFakeSocket, freezeJitter, type SocketEnv } from './socketTestHarness'
+import getSocket from '@/lib/api/client/app/socket/getSocket'
 
 vi.mock('@/lib/api/client/app/socket/getSocket', () => ({
     default: vi.fn(async () => ({ url: 'ws://localhost:4000/socket/websocket?token=test' })),
@@ -35,6 +36,7 @@ function Panel({ topic = TOPIC, onEvent }: { topic?: string; onEvent?: () => voi
 }
 
 beforeEach(() => {
+    vi.mocked(getSocket).mockClear()
     vi.useFakeTimers()
     freezeJitter(0)
     env = installFakeSocket()
@@ -43,6 +45,19 @@ beforeEach(() => {
 afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+})
+
+it('retries the direct gateway if an existing API proxy cannot upgrade WebSockets', async () => {
+    await mount(<Panel />)
+    expect(getSocket).toHaveBeenLastCalledWith(true)
+    await act(async () => {
+        const socket = env.instances[0]
+        socket.readyState = 3
+        socket.onclose?.({ wasClean: false })
+    })
+    await tick(1000)
+    expect(getSocket).toHaveBeenLastCalledWith(false)
+    expect(env.instances).toHaveLength(2)
 })
 
 describe('channel subscription lifecycle', () => {

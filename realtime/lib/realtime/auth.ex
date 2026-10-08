@@ -79,6 +79,43 @@ defmodule Realtime.Auth do
       {:error, :verification_error}
   end
 
+  # Only the backend's ticket-bound proof can replace the socket peer address.
+  def proxy_ip(proof, ticket) when is_binary(proof) and is_binary(ticket) do
+    secret = Application.get_env(:realtime, :jwt_secret)
+    now = System.system_time(:second)
+
+    with {true, %JOSE.JWT{fields: claims}, _} <-
+           JOSE.JWT.verify_strict(jwk(secret), ["HS256"], proof),
+         {true, %JOSE.JWT{fields: credential}, _} <-
+           JOSE.JWT.verify_strict(jwk(secret), ["HS256"], ticket),
+         {:ok, user_id} <- validate_claims(credential),
+         %{
+           "purpose" => "ws_proxy",
+           "sub" => ^user_id,
+           "exp" => exp,
+           "iat" => iat,
+           "sid" => sid,
+           "nonce" => nonce,
+           "client_ip" => ip
+         } <- claims,
+         true <-
+           is_integer(exp) and is_integer(iat) and exp > now and iat <= now + 5 and
+             exp - iat <= 30,
+         true <-
+           is_binary(sid) and is_binary(nonce) and sid == credential["sid"] and
+             nonce == credential["nonce"],
+         true <- is_binary(ip),
+         {:ok, address} <- :inet.parse_address(String.to_charlist(ip)) do
+      {:ok, address |> :inet.ntoa() |> to_string()}
+    else
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  def proxy_ip(_, _), do: :error
+
   @doc """
   Verify an API key.
   """

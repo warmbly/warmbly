@@ -128,10 +128,7 @@ func (h *Handler) AuthConfig(c *gin.Context) {
 	providers := h.AuthService.FederatedProviders()
 
 	registration := h.AuthService.RegistrationMode(c.Request.Context())
-	websocketURL := config.NormalizeWebsocketURL(h.WebsocketURI)
-	if websocketURL == "" {
-		websocketURL = config.WebsocketURL()
-	}
+	websocketURL := h.websocketEndpoint()
 
 	c.JSON(http.StatusOK, DeploymentAuthConfig{
 		Captcha:           config.CaptchaProvider() != "none",
