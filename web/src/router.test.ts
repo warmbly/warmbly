@@ -7,7 +7,8 @@ type Guard = (context: { location: { href: string; searchStr: string } }) => voi
 type Redirect = { options: { to: string; search: Record<string, string> } };
 
 function routeRedirect(path: "/" | "/oauth" | "/onboarding", href: string): Redirect {
-    const beforeLoad = router.routesByPath[path].options.beforeLoad as Guard;
+    const route = router.routesByPath[path];
+    const beforeLoad = (route.options.beforeLoad ?? route.parentRoute?.options.beforeLoad) as Guard;
     try {
         beforeLoad({ location: { href, searchStr: new URL(href, window.location.origin).search } });
     } catch (error) {
