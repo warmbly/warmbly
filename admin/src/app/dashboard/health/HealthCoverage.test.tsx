@@ -74,7 +74,15 @@ describe("configuration and service coverage", () => {
         state.services.data!.data = [{ name: "postgres", ok: true, latency_ms: 5 }];
         state.services.data!.checked_at = new Date(Date.now() - 300_000).toISOString();
         expect(render("services")).toContain("Current service coverage unknown");
-        expect(render("services")).toContain("Cached probe");
+        expect(render("services")).toContain("Cached: passed");
+        expect(render("services")).not.toContain("Probe passed");
+    });
+
+    it("retains a cached failure even when the earlier probe supplied no error details", () => {
+        state.services.data!.data = [{ name: "postgres", ok: true, latency_ms: 5 }, { name: "redis", ok: false, latency_ms: 20 }];
+        state.services.isError = true;
+        expect(render("services")).toContain("Cached: passed");
+        expect(render("services")).toContain("Cached: failed");
         expect(render("services")).not.toContain("Probe passed");
     });
 });

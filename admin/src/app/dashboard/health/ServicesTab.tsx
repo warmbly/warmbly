@@ -162,8 +162,8 @@ function ComponentRow({ component: c, cached }: { component: SystemComponentStat
                     <span className="text-xs text-muted-foreground tabular-nums" title="Latency">
                         {c.latency_ms} ms
                     </span>
-                    <StatusBadge tone={cached ? "neutral" : c.ok ? "success" : "danger"} className="w-[5.75rem] justify-center">
-                        {cached ? "Cached probe" : c.ok ? "Probe passed" : "Probe failed"}
+                    <StatusBadge tone={cached ? "neutral" : c.ok ? "success" : "danger"} className="min-w-[5.75rem] justify-center">
+                        {cached ? c.ok ? "Cached: passed" : "Cached: failed" : c.ok ? "Probe passed" : "Probe failed"}
                     </StatusBadge>
                 </div>
             </div>

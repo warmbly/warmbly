@@ -9,7 +9,7 @@ import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import AddressesPage from "./page";
 
 const { tags, rows, statusState } = vi.hoisted(() => ({
-    statusState: { data: [] as AccountStatus[], observations: [] as { status: AccountStatus; observedAt: number }[], isLoading: false, isFetching: false, isError: false, cloudLoading: false, cloudUnavailable: false },
+    statusState: { data: [] as AccountStatus[], observations: [] as { status: AccountStatus; observedAt: number; current: boolean }[], isLoading: false, isFetching: false, isError: false, cloudLoading: false, cloudUnavailable: false, emailsLoading: false },
     tags: [
         { id: "sending", title: "Sending account", color: "#0088cc", position: 0 },
         { id: "serveblink", title: "Serveblink.com", color: "#008800", position: 1 },
@@ -30,7 +30,7 @@ vi.mock("@/hooks/context/user", async (original) => ({
 vi.mock("@/hooks/context/confirm", () => ({ useConfirm: () => ({ show: vi.fn() }) }));
 vi.mock("@/hooks/usePermission", () => ({ usePermission: () => true }));
 vi.mock("@/lib/api/hooks/app/emails/useEmails", () => ({
-    default: ({ tag }: { tag: string }) => ({ emails: tag ? rows.filter((row) => row.tags.includes(tag)) : rows }),
+    default: ({ tag }: { tag: string }) => ({ emails: statusState.emailsLoading ? [] : tag ? rows.filter((row) => row.tags.includes(tag)) : rows, isLoading: statusState.emailsLoading, isPending: statusState.emailsLoading }),
 }));
 vi.mock("@/lib/api/hooks/app/analytics/useAccountStatuses", () => ({ default: () => statusState }));
 vi.mock("@/lib/api/hooks/app/subscription/useFeatureStatus", () => ({ default: () => ({ data: { can_use_warmup: true } }) }));
@@ -142,13 +142,22 @@ describe("mailbox status while account and Cloud checks settle", () => {
         sessionStorage.clear();
         vi.spyOn(window, "scrollTo").mockImplementation(() => {});
         statusState.data = [];
+        statusState.observations = [];
         statusState.isLoading = false;
         statusState.isFetching = false;
         statusState.isError = false;
         statusState.cloudLoading = false;
         statusState.cloudUnavailable = false;
+        statusState.emailsLoading = false;
     });
     afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+    it("keeps summary measurements pending until the mailbox inventory loads", async () => {
+        statusState.emailsLoading = true;
+        await renderPage();
+        expect(screen.getAllByText("Checking…").length).toBeGreaterThanOrEqual(4);
+        expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
+    });
 
     it("does not show Idle or Healthy while Cloud and account status are loading, then shows the real error", async () => {
         statusState.cloudLoading = true;
@@ -195,7 +204,7 @@ describe("mailbox status while account and Cloud checks settle", () => {
     it("retains a recently observed error as historical evidence while refreshing, then clears it on a fresh result", async () => {
         statusState.data = rows.map(measuredStatus);
         statusState.data[0] = { ...measuredStatus(rows[0]), health: { status: "error", score: 40 }, errors: [{ id: "error-1", error_code: "PROVIDER_UNAVAILABLE", severity: "critical", title: "Provider unavailable", message: "Provider refused the last attempt", created_at: new Date("2026-10-09T00:00:00Z") }] };
-        statusState.observations = statusState.data.map((status) => ({ status, observedAt: Date.now() }));
+        statusState.observations = statusState.data.map((status) => ({ status, observedAt: Date.now(), current: true }));
         await renderPage();
         expect(screen.getByText("Issue 40")).toBeInTheDocument();
         statusState.isFetching = true;
@@ -212,7 +221,7 @@ describe("mailbox status while account and Cloud checks settle", () => {
         expect(screen.getAllByText("Last reported issue").length).toBeGreaterThan(0);
 
         statusState.data = rows.map(measuredStatus);
-        statusState.observations = statusState.data.map((status) => ({ status, observedAt: Date.now() }));
+        statusState.observations = statusState.data.map((status) => ({ status, observedAt: Date.now(), current: true }));
         statusState.cloudLoading = false;
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         await waitFor(() => expect(screen.queryAllByText("Last reported issue")).toHaveLength(0));
@@ -223,7 +232,7 @@ describe("mailbox status while account and Cloud checks settle", () => {
         statusState.data = rows.map(measuredStatus);
         statusState.data[0] = { ...measuredStatus(rows[0]), health: { status: "error", score: 40 }, errors: [{ id: "error-1", error_code: "PROVIDER_UNAVAILABLE", severity: "critical", title: "Provider unavailable", message: "Provider refused the last attempt", created_at: new Date("2026-10-09T00:00:00Z") }] };
         const observedAt = Date.now();
-        statusState.observations = statusState.data.map((status) => ({ status, observedAt }));
+        statusState.observations = statusState.data.map((status) => ({ status, observedAt, current: true }));
         await renderPage();
         statusState.isFetching = true;
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
@@ -232,5 +241,21 @@ describe("mailbox status while account and Cloud checks settle", () => {
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         expect(screen.queryAllByText("Last reported issue")).toHaveLength(0);
         clock.mockRestore();
+    });
+
+    it("does not resurrect a recovered mailbox's old issue when another mailbox is missing", async () => {
+        statusState.data = rows.map(measuredStatus);
+        statusState.data[0] = { ...measuredStatus(rows[0]), health: { status: "error", score: 40 }, errors: [{ id: "error-1", error_code: "PROVIDER_UNAVAILABLE", severity: "critical", title: "Provider unavailable", message: "Provider refused the last attempt", created_at: new Date("2026-10-09T00:00:00Z") }] };
+        statusState.observations = statusState.data.map((status) => ({ status, observedAt: Date.now(), current: true }));
+        await renderPage();
+        statusState.data = [measuredStatus(rows[0])];
+        statusState.observations = statusState.data.map((status) => ({ status, observedAt: Date.now(), current: true }));
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        await waitFor(() => expect(screen.getByText("Healthy 100")).toBeInTheDocument());
+        statusState.isFetching = true;
+        statusState.observations = statusState.observations.map((observation) => ({ ...observation, current: false }));
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        expect(screen.queryAllByText("Last reported issue")).toHaveLength(0);
+        expect(screen.queryByText("Last observed: Issue 40")).not.toBeInTheDocument();
     });
 });

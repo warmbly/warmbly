@@ -170,7 +170,7 @@ export default function AddressesPage() {
     // Self-hosted instances can hand warmup to the Warmbly pool; the banner,
     // row badges and menu items below key off this.
     const cloud = useCloudPool();
-    const { connected: cloudConnected, rowFor: cloudRowFor } = cloud;
+    const { connected: cloudConnected, rowFor: cloudRowFor, unavailable: cloudUnavailable } = cloud;
     const [cloudDialog, setCloudDialog] = React.useState(false);
     const authConfigLoading = useAuthConfig().isLoading;
 
@@ -201,7 +201,7 @@ export default function AddressesPage() {
         for (const s of accountStatuses) m.set(s.id, s);
         return m;
     }, [accountStatuses]);
-    const statusChecking = cloudChecking || statuses.isLoading || statuses.isFetching;
+    const statusChecking = emailsData.isLoading || cloudChecking || statuses.isLoading || statuses.isFetching;
     const cloudStandingUnavailable = cloud.connected && (emailsData.emails ?? []).some((box) => {
         const row = cloud.rowFor(box.id);
         return row?.enrolled && !row.cloud?.health;
@@ -213,24 +213,29 @@ export default function AddressesPage() {
             const next = new Map(previous);
             const now = Date.now();
             for (const [id, issue] of next) if (now - issue.observedAt > LAST_REPORTED_ISSUE_MS) next.delete(id);
-            for (const { status, observedAt } of statuses.observations ?? []) {
+            for (const { status, observedAt, current } of statuses.observations ?? []) {
                 if (!observedAt || now - observedAt > LAST_REPORTED_ISSUE_MS || observedAt < (next.get(status.id)?.observedAt ?? 0)) continue;
                 if (status.errors?.length || (status.health && status.health.status !== "healthy")) {
                     next.set(status.id, { status, observedAt });
-                } else if (!statusChecking && !statusUnavailable) {
-                    next.delete(status.id);
+                } else if (current && !cloudChecking && !cloudUnavailable) {
+                    const linked = cloudConnected ? cloudRowFor(status.id) : undefined;
+                    if (!linked?.enrolled || linked.cloud?.health) next.delete(status.id);
                 }
             }
             return next.size === previous.size && [...next].every(([id, value]) => previous.get(id)?.status === value.status && previous.get(id)?.observedAt === value.observedAt) ? previous : next;
         });
-    }, [statuses.observations, statusChecking, statusUnavailable]);
+    }, [statuses.observations, cloudChecking, cloudUnavailable, cloudConnected, cloudRowFor]);
     useEffect(() => {
-        const interval = setInterval(() => setLastReportedIssues((previous) => {
-            const next = new Map([...previous].filter(([, issue]) => Date.now() - issue.observedAt <= LAST_REPORTED_ISSUE_MS));
+        let expiresAt = Infinity;
+        for (const issue of lastReportedIssues.values()) expiresAt = Math.min(expiresAt, issue.observedAt + LAST_REPORTED_ISSUE_MS);
+        if (!Number.isFinite(expiresAt)) return;
+        const timeout = setTimeout(() => setLastReportedIssues((previous) => {
+            const now = Date.now();
+            const next = new Map([...previous].filter(([, issue]) => now - issue.observedAt <= LAST_REPORTED_ISSUE_MS));
             return next.size === previous.size ? previous : next;
-        }), 30_000);
-        return () => clearInterval(interval);
-    }, []);
+        }), Math.max(0, expiresAt - Date.now()) + 1);
+        return () => clearTimeout(timeout);
+    }, [lastReportedIssues]);
     // Proactively notify the user when a mailbox's health drops.
     const prevHealth = useRef<Map<string, string>>(new Map());
     useEffect(() => {
@@ -454,7 +459,7 @@ export default function AddressesPage() {
             </PageTopbar>
 
             <StatStrip cols={4}>
-                <Stat label="Total" value={<AnimatedNumber value={stats.total} />} sub="connected" />
+                <Stat label="Total" value={emailsData.isLoading ? "Checking…" : <AnimatedNumber value={stats.total} />} sub="connected" />
                 <Stat label="Healthy" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.healthy} />} sub="no reported health issues" accent={!statusChecking && !statusUnavailable && stats.healthy > 0} />
                 <Stat label="Warming" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.warming} />} sub="ramping up" />
                 <Stat label="Needs attention" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.issues} />} sub="paused or failing" last />

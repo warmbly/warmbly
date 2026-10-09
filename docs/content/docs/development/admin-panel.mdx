@@ -9,6 +9,8 @@ The admin panel is the operator's view of an instance: every worker, user, organ
 
 The panel runs on `:5174` in the default stack (`http://localhost:5174` on a stock install, or the host you proxied to it). Sign in with the same account as the dashboard. The first owner holds every admin bit from the moment they claim the instance, and `warmblyctl user create --admin` creates a further account that already holds them. A page the account has no bit for says which bit it needs instead of rendering.
 
+A completed admin sign-in discards previously cached operator data and permissions before storing the new session. An unsuccessful sign-in or a pending email-code/second-factor step does not replace the session.
+
 <Callout type="warn" title="Two-factor authentication is required">
 Every admin route refuses a session that did not present a second factor. Turn on 2FA or add a passkey under **Settings > Security** in the dashboard, then sign in again; the panel says so rather than failing silently.
 
