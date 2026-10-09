@@ -203,7 +203,7 @@ func (p *publisher) PublishSendEmail(ctx context.Context, workerID uuid.UUID, pa
 	}
 
 	workerTopic := kafka.GetWorkerTopic(workerID.String())
-	return p.publish(workerTopic, params.TaskID.String(), workerEvent)
+	return p.publish(workerTopic, params.EmailID.String(), workerEvent)
 }
 
 // StoreEmailBody stores email body in S3 and returns the S3 key. It is the

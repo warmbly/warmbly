@@ -106,9 +106,12 @@ func (b *KafkaBus) Publish(ctx context.Context, topic, key string, payload []byt
 
 // Subscribe creates a fresh consumer in the given group, subscribes to all
 // topics, and blocks reading messages until ctx is cancelled or a fatal error
-// occurs. Handler errors are logged but do not abort the loop; the message's
-// offset is still stored, to match the existing kafka.Consumer.Consume behaviour.
+// occurs. Failed handlers never store offsets; exhausted retries reopen for replay.
 func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string, handler Handler) error {
+	return b.SubscribeKeyed(ctx, topics, group, 1, nil, handler)
+}
+
+func (b *KafkaBus) SubscribeKeyed(ctx context.Context, topics []string, group string, lanes int, key KeyResolver, handler Handler) error {
 	if len(topics) == 0 {
 		return errors.New("eventbus kafka: at least one topic required")
 	}
@@ -118,6 +121,15 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 	if handler == nil {
 		return errors.New("eventbus kafka: handler required")
 	}
+	if lanes < 1 || lanes > 64 || (lanes > 1 && key == nil) {
+		return errors.New("eventbus kafka: keyed subscription requires 1-64 lanes and a key resolver")
+	}
+	return retrySubscription(ctx, func(ctx context.Context) error {
+		return b.subscribeOnce(ctx, topics, group, lanes, key, handler)
+	})
+}
+
+func (b *KafkaBus) subscribeOnce(ctx context.Context, topics []string, group string, lanes int, key KeyResolver, handler Handler) error {
 
 	// Subscribing to a topic that does not exist yet returns no messages and
 	// no error, so a worker would sit silent rather than fail.
@@ -153,8 +165,22 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 	}
 	b.consumers = append(b.consumers, cons)
 	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		for i, c := range b.consumers {
+			if c == cons {
+				b.consumers = append(b.consumers[:i], b.consumers[i+1:]...)
+				break
+			}
+		}
+		b.mu.Unlock()
+		cons.Close()
+	}()
 
-	err = cons.Consume(ctx, func(msg *ckf.Message) error {
+	resolve := func(msg *ckf.Message) (string, error) {
+		return resolveKey(ctx, key, kafkaEnvelope(msg))
+	}
+	err = cons.ConsumeConcurrent(ctx, lanes, resolve, func(msg *ckf.Message) error {
 		topic := ""
 		if msg.TopicPartition.Topic != nil {
 			topic = *msg.TopicPartition.Topic
@@ -163,10 +189,11 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 		hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), handlerTimeout())
 		defer cancel()
 		if err := invokeHandler(hctx, handler, Message{
-			Topic:   topic,
-			Key:     string(msg.Key),
-			Payload: msg.Value,
-			Attempt: 1,
+			Topic:      topic,
+			Key:        string(msg.Key),
+			Payload:    msg.Value,
+			Attempt:    1,
+			Redelivers: true,
 		}); err != nil {
 			log.Error().Err(err).Str("topic", topic).Msg("eventbus kafka handler error")
 			return err
@@ -177,6 +204,14 @@ func (b *KafkaBus) Subscribe(ctx context.Context, topics []string, group string,
 		return ErrBusClosed
 	}
 	return err
+}
+
+func kafkaEnvelope(msg *ckf.Message) Message {
+	topic := ""
+	if msg.TopicPartition.Topic != nil {
+		topic = *msg.TopicPartition.Topic
+	}
+	return Message{Topic: topic, Key: string(msg.Key), Payload: msg.Value, Attempt: 1, Redelivers: true}
 }
 
 // Close flushes the producer and closes every consumer that was opened via

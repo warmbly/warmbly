@@ -4,10 +4,54 @@ package eventbus
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 )
+
+func TestKafkaSubscriptionReopensAfterFailureOrUnexpectedExit(t *testing.T) {
+	for _, failure := range []error{errors.New("offset assignment lost"), nil} {
+		ctx, cancel := context.WithCancel(t.Context())
+		calls := 0
+		err := retrySubscription(ctx, func(context.Context) error {
+			calls++
+			if calls == 2 {
+				cancel()
+			}
+			return failure
+		})
+		cancel()
+		if !errors.Is(err, context.Canceled) || calls != 2 {
+			t.Fatalf("err=%v calls=%d", err, calls)
+		}
+	}
+	calls := 0
+	err := retrySubscription(t.Context(), func(context.Context) error { calls++; return ErrBusClosed })
+	if !errors.Is(err, ErrBusClosed) || calls != 1 {
+		t.Fatal("closed bus reopened")
+	}
+}
+
+func TestKafkaSubscriptionRetiresClientsBeforeReopening(t *testing.T) {
+	b := &KafkaBus{bootstrap: "127.0.0.1:1"}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for i := 0; i < 3; i++ {
+		if err := b.subscribeOnce(ctx, []string{"sync-test"}, "sync-test", 1, nil, func(context.Context, Message) error { return nil }); !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+		b.mu.Lock()
+		retained := len(b.consumers)
+		b.mu.Unlock()
+		if retained != 0 {
+			t.Fatalf("exited subscription retained %d clients", retained)
+		}
+	}
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // TestKafkaBus_InterfaceSatisfaction is a compile-time check that KafkaBus
 // satisfies the EventBus interface and that the constructors enforce their

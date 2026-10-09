@@ -436,6 +436,7 @@ Keep the copies private. GeoLite2 may not be redistributed, which is also why no
 | `WORKER_BIND_IP` | Source address to bind outbound connections to, and the seed for a derived `WORKER_ID` | unset | yes |
 | `WORKER_PUBLIC_IP` | Public IPv4 reported by the worker, never replaced by the backend-observed address, which may be a reverse proxy. Otherwise the node discovers HTTPS egress IPv4 using `api.ipify.org` every ten minutes. Set this explicitly when mail and HTTPS have different egress routes | detected | yes |
 | `WARMBLY_WORKER_CAPACITY` | Assigned-mailbox planning target for this worker. This guides placement and is not a mailbox-provider send limit | `100` | yes |
+| `WORKER_COMMAND_CONCURRENCY` | Kafka worker command lanes, from `1` to `64`. Commands are grouped by the mailbox in the payload, including older task-keyed sends. Each mailbox stays in order; independent lanes run concurrently. NATS remains serial. Invalid values use the default | `8` | yes |
 | `WARMBLY_NODE_REGION` | Free-form label for where this node egresses from, e.g. `eu-central`. Placement prefers a worker near where a mailbox's provider expects sign-ins; unset scores neutral. Written by the join script from `--region` | unset | yes |
 | `ENCRYPTED_KEYS_BACKEND_URL` | Backend base the worker fetches organization keys from | unset | yes |
 | `ENCRYPTED_KEYS_WORKER_TOKEN` | The worker's copy of `INTERNAL_API_TOKEN` | unset | yes |

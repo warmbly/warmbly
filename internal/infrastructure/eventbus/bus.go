@@ -72,6 +72,52 @@ type EventBus interface {
 // the message; returning an error leaves it for redelivery.
 type Handler func(ctx context.Context, msg Message) error
 
+type KeyResolver func(ctx context.Context, msg Message) (string, error)
+
+func resolveKey(ctx context.Context, key KeyResolver, msg Message) (value string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("eventbus: key resolver panic on topic %s: %v", msg.Topic, r)
+		}
+	}()
+	return key(ctx, msg)
+}
+
+// KeyedSubscriber preserves resolved-key order while handling independent keys concurrently.
+type KeyedSubscriber interface {
+	SubscribeKeyed(context.Context, []string, string, int, KeyResolver, Handler) error
+}
+
+func SubscribeKeyed(ctx context.Context, bus EventBus, topics []string, group string, lanes int, key KeyResolver, handler Handler) error {
+	if keyed, ok := bus.(KeyedSubscriber); ok {
+		return keyed.SubscribeKeyed(ctx, topics, group, lanes, key, handler)
+	}
+	return bus.Subscribe(ctx, topics, group, handler)
+}
+
+func retrySubscription(ctx context.Context, subscribe func(context.Context) error) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := subscribe(ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(err, ErrBusClosed) {
+			return err
+		}
+		log.Warn().Msg("eventbus subscription interrupted; reopening for replay")
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
 // Message is the broker-neutral envelope passed to a Handler. Payload bytes
 // are owned by the bus and must not be retained past the handler call.
 //
@@ -87,9 +133,7 @@ type Message struct {
 	// handler that retries by returning an error can read it to know when the
 	// broker is about to stop redelivering and give up cleanly instead.
 	Attempt int
-	// Redelivers is true when a handler error leaves the message for another
-	// delivery (NATS). Kafka commits regardless, so a handler must not count
-	// on a retry there and should finish what it can on this delivery.
+	// Redelivers is true when a handler error leaves the message for retry.
 	Redelivers bool
 }
 

@@ -26,10 +26,18 @@ func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) 
 	if recovery, ok := s.taskRepo.(interface {
 		RecoverUnstartedWarmupDispatches(context.Context, time.Time, int) (int, error)
 	}); ok {
-		recovered, err := recovery.RecoverUnstartedWarmupDispatches(ctx, time.Now().Add(-10*time.Minute), limit)
-		if err != nil {
-			log.Warn().Err(err).Msg("warmup reconcile failed to retire unstarted dispatches")
-		} else if recovered > 0 {
+		recovered := 0
+		for batch := 0; batch < 10 && ctx.Err() == nil; batch++ {
+			n, err := recovery.RecoverUnstartedWarmupDispatches(ctx, time.Now().Add(-10*time.Minute), limit)
+			recovered += n
+			if err != nil {
+				return 0, err
+			}
+			if n < limit || limit <= 0 {
+				break
+			}
+		}
+		if recovered > 0 {
 			log.Info().Int("recovered", recovered).Msg("warmup reconcile retired unstarted dispatches")
 		}
 	}
@@ -95,6 +103,9 @@ func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) 
 // context is cancelled. Mirrors the other background sweeps (warmup health,
 // dead-worker) and is started from the backend, which owns Cloud Tasks.
 func (s *tasksService) StartWarmupReconciler(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Minute
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
