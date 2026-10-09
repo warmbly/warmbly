@@ -658,8 +658,8 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 			fresh = append(fresh, f)
 			continue
 		}
-		if backfill {
-			// The backfill only cares about what it has not stored.
+		if backfill && recovery == nil {
+			// Initial history skips known maps; generation recovery also reconciles them.
 			continue
 		}
 		internalID, perr := uuid.Parse(internal.ID)

@@ -7,11 +7,135 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/app/cipher"
+	"github.com/warmbly/warmbly/internal/config"
 	"github.com/warmbly/warmbly/internal/infrastructure/encryptedkeys"
 	"github.com/warmbly/warmbly/internal/infrastructure/kms"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+func TestLiveSyncTruthRemovalWaitsForArrivalAndLostStageAcknowledgement(t *testing.T) {
+	for _, lostAck := range []bool{false, true} {
+		for _, kind := range []string{"ordinary", "confirmed warmup", "unconfirmed warmup"} {
+			name := kind + "/before ingestion"
+			if lostAck {
+				name = kind + "/lost stage acknowledgement"
+			}
+			t.Run(name, func(t *testing.T) {
+				s, d := liveWarmupService(t)
+				f := newWarmupFixture(t, d)
+				ctx := t.Context()
+				key, err := kms.NewLocal(make([]byte, 32))
+				if err != nil {
+					t.Fatal(err)
+				}
+				r := repository.NewDurableEmailMessageMapRepository(d, cipher.NewService(key, nil, encryptedkeys.NewPostgres(d)))
+				s.ArrivalOutbox = r
+				s.InitEvents()
+				e := f.arrival("<"+uuid.NewString()+"@test.local>", nil)
+				e.Message.Subject = "ordinary customer question"
+				var token uuid.UUID
+				if kind != "ordinary" {
+					token = f.mintToken(t, s.WarmupRepo)
+					if _, err := d.Exec(ctx, `INSERT INTO warmup_tasks(task_id,lineage_version,subject,max_turns) VALUES($1,1,$2,3)`, f.task, f.subject); err != nil {
+						t.Fatal(err)
+					}
+					e = f.arrival(f.sentMsgID, []string{config.WarmupVerifyHeader + ":" + token.String()})
+					if kind == "confirmed warmup" {
+						if err := s.HandleEmailSent(ctx, models.SendEmailResult{TaskID: f.task, Success: true, MessageID: f.sentMsgID}); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				mapping := repository.EmailMessageData{UserID: e.UserID.String(), EmailID: e.Message.EmailID.String(), ID: e.Message.ID.String(), MessageID: e.Message.MessageID}
+				if err := r.AdmitArrival(ctx, mapping, &repository.PendingArrival{Arrival: e}); err != nil {
+					t.Fatal(err)
+				}
+				if lostAck {
+					lost := errors.New("arrival handled but stage acknowledgement lost")
+					if err := r.DeliverArrivals(ctx, func(ctx context.Context, kind models.JobEventType, body any) error {
+						if err := s.deliverArrivalEvent(ctx, kind, body); err != nil {
+							return err
+						}
+						return lost
+					}); !errors.Is(err, lost) {
+						t.Fatalf("stage loss fixture: %v", err)
+					}
+				}
+				remove := &models.JobEventRemoveEmail{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID}
+				if err := s.HandleRemoveEmail(ctx, remove); !errors.Is(err, ErrSyncArrivalPending) {
+					t.Fatalf("removal overtook pending original arrival: %v", err)
+				}
+				var visible int
+				if err := d.QueryRow(ctx, `SELECT count(*) FROM unibox_emails WHERE id=$1`, e.Message.ID).Scan(&visible); err != nil {
+					t.Fatal(err)
+				}
+				if lostAck && kind == "ordinary" && visible != 1 {
+					t.Fatal("blocked removal deleted already-ingested mail")
+				}
+				if _, err := d.Exec(ctx, `UPDATE sync_arrival_outbox SET retry_at=now() WHERE id=$1`, e.Message.ID); err != nil {
+					t.Fatal(err)
+				}
+				fresh, _ := liveWarmupService(t)
+				fresh.ArrivalOutbox = r
+				fresh.InitEvents()
+				if err := r.DeliverArrivals(ctx, fresh.deliverArrivalEvent); err != nil {
+					t.Fatal(err)
+				}
+				if pending, err := r.HasPendingArrival(ctx, e.UserID, e.Message.EmailID, e.Message.ID); err != nil || pending {
+					t.Fatalf("arrival did not finish: %v %v", pending, err)
+				}
+				unowned := *remove
+				unowned.UserID = f.senderUser
+				if err := fresh.HandleRemoveEmail(ctx, &unowned); err != nil {
+					t.Fatalf("unowned removal: %v", err)
+				}
+				if kind == "ordinary" {
+					if _, err := fresh.UniboxRepository.GetForSync(ctx, e.UserID, e.Message.EmailID, e.Message.ID); err != nil {
+						t.Fatalf("unowned removal deleted owned row: %v", err)
+					}
+				}
+				if err := fresh.HandleRemoveEmail(ctx, remove); err != nil {
+					t.Fatal(err)
+				}
+				if err := r.DeliverArrivals(ctx, fresh.deliverArrivalEvent); err != nil {
+					t.Fatal(err)
+				}
+				if err := fresh.HandleRemoveEmail(ctx, remove); err != nil {
+					t.Fatalf("removal retry: %v", err)
+				}
+				// Recovery updates to a retained map must not resurrect hidden or deleted mail.
+				if err := fresh.HandleUpdateEmail(ctx, &models.JobEventEmailUpdate{UserID: e.UserID, EmailID: e.Message.EmailID, ID: e.Message.ID, UID: 42, Mailbox: 9, ModSeq: 100, Flags: []string{models.FlagSeen}}); err != nil {
+					t.Fatal(err)
+				}
+				for _, table := range []string{"unibox_emails", "unibox_pending_emails", "sync_arrival_outbox"} {
+					var rows int
+					if err := d.QueryRow(ctx, "SELECT count(*) FROM "+table+" WHERE id=$1", e.Message.ID).Scan(&rows); err != nil || rows != 0 {
+						t.Fatalf("%s retained or recreated mail: %d %v", table, rows, err)
+					}
+				}
+				known, err := r.Get(ctx, e.UserID, e.Message.EmailID, e.Message.MessageID)
+				if err != nil || known == nil || known.ID != e.Message.ID.String() {
+					t.Fatalf("original mapping lost: %+v %v", known, err)
+				}
+				if kind != "ordinary" {
+					var receipts int
+					want := 0
+					if kind == "confirmed warmup" {
+						want = 1
+					}
+					if err := d.QueryRow(ctx, `SELECT count(*) FROM warmup_received WHERE sender_account_id=$1 AND email_account_id=$2`, f.sender, f.partner).Scan(&receipts); err != nil || receipts != want {
+						t.Fatalf("warmup authority changed: %d want=%d err=%v", receipts, want, err)
+					}
+					stored, err := fresh.WarmupRepo.FindWarmupToken(ctx, token)
+					if err != nil || stored == nil || (stored.ConsumedAt != nil) != (want == 1) {
+						t.Fatalf("warmup token authority changed: %+v %v", stored, err)
+					}
+				}
+			})
+		}
+	}
+}
 
 type failSyncArrivalCreate struct {
 	repository.UniboxRepository

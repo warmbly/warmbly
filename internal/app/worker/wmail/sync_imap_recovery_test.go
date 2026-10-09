@@ -1,8 +1,10 @@
 package wmail
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,6 +16,85 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
+
+type knownRecoveryConn struct {
+	*fakeImapConn
+	message models.EmailMessageData
+}
+
+func (c *knownRecoveryConn) FetchEnvelopes(_ context.Context, _ []goimap.UID) ([]*imap.Fetched, *errx.MailError) {
+	c.fetches++
+	message := c.message
+	message.Flags = append([]string{}, c.message.Flags...)
+	return []*imap.Fetched{{Email: &message}}, nil
+}
+
+func TestImapRecoveryReconcilesKnownMetadataBeforeCheckpoint(t *testing.T) {
+	for _, newFolder := range []bool{false, true} {
+		for _, relayFailure := range []bool{false, true} {
+			t.Run(fmt.Sprintf("new folder=%t relay failure=%t", newFolder, relayFailure), func(t *testing.T) {
+				box := models.Mailbox{Name: "Archive", UIDValidity: 9, UIDNext: 43, HighestModSeq: 100}
+				conn := &knownRecoveryConn{fakeImapConn: &fakeImapConn{folders: []models.Mailbox{box}, all: []goimap.UID{42}, bodyErr: errx.ErrMailServerUnreachable}, message: models.EmailMessageData{UID: 42, MessageID: "<same@fake.test>", ModSeq: 100, Flags: []string{models.FlagSeen}}}
+				w, events := newIMAPTestMail(conn, &fixedBudget{allow: 0}, &models.Mailbox{Name: box.Name, UIDValidity: 8, UIDNext: 200, HighestModSeq: 100})
+				if newFolder {
+					w.SmtpImapData.Mailboxes = nil
+				}
+				id := uuid.NewString()
+				maps := &recoveryMessageMap{data: map[string]repository.EmailMessageData{conn.message.MessageID: {ID: id, MessageID: conn.message.MessageID}}}
+				w.EmailMessageMapRepository = maps
+				w.tracker.state.BackfillSynced = 23
+				w.tracker.setFolder(box.Name, models.SyncFolderCursor{UID: 200, Done: true})
+				oldSuccess := time.Now().Add(-time.Hour)
+				w.tracker.state.LastSyncedAt = &oldSuccess
+				if relayFailure {
+					emit := w.onEvent
+					w.onEvent = func(kind models.JobEventType, body any) error {
+						if kind == models.JobEventTypeEmailUpdate {
+							return errors.New("known metadata relay unavailable")
+						}
+						return emit(kind, body)
+					}
+				}
+				if err := w.Sync(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				if relayFailure {
+					cur := w.tracker.folder(box.Name)
+					if cur.Done || cur.UID != 0 || !w.tracker.state.LastSyncedAt.Equal(oldSuccess) || len(mailboxEvents(*events, models.JobEventTypeEmailUpdate)) != 0 {
+						t.Fatal("failed metadata relay completed recovery or refreshed success")
+					}
+					w, events = imapReload(t, w, conn, &fixedBudget{allow: 0})
+					if err := w.Sync(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				updates := mailboxEvents(*events, models.JobEventTypeEmailUpdate)
+				if len(updates) != 1 {
+					t.Fatalf("recovery known updates=%d", len(updates))
+				}
+				update := updates[0].body.(*models.JobEventEmailUpdate)
+				if update.ID.String() != id || update.UID != 42 || update.Mailbox != 9 || update.ModSeq != 100 || update.FolderPath != box.Name || !models.SeenFromFlags(update.Flags) {
+					t.Fatalf("stale recovery metadata: %+v", update)
+				}
+				cur := w.tracker.folder(box.Name)
+				if !cur.Done || cur.UID != 42 || imapRecoveryCursor(cur).Synced != 0 || w.tracker.state.BackfillSynced != 23 || w.tracker.state.BackfillStatus != models.SyncBackfillComplete {
+					t.Fatal("known reconciliation reset or consumed global history")
+				}
+				if len(mailboxEvents(*events, models.JobEventTypeNewEmail)) != 0 || len(maps.data) != 1 || maps.data[conn.message.MessageID].ID != id {
+					t.Fatal("known recovery reimported a mapped message")
+				}
+				searches := conn.searches
+				again, later := imapReload(t, w, conn, &fixedBudget{allow: 0})
+				if err := again.Sync(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				if conn.searches != searches || len(mailboxEvents(*later, models.JobEventTypeEmailUpdate)) != 0 || len(mailboxEvents(*later, models.JobEventTypeNewEmail)) != 0 {
+					t.Fatal("unchanged HIGHESTMODSEQ repeated completed recovery")
+				}
+			})
+		}
+	}
+}
 
 func imapReload(t *testing.T, w *WMail, conn ImapConn, budget syncBudget) (*WMail, *[]captured) {
 	t.Helper()

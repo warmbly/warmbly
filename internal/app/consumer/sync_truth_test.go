@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/infrastructure/pubsub"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -38,6 +39,91 @@ func TestSyncTruthProgressRelaysDoNotResolveTransportWarnings(t *testing.T) {
 				t.Fatalf("state publication/recovery outcome: saved=%v resolved=%d", repo.put != nil, errRepo.calls)
 			}
 		})
+	}
+}
+
+type removeSyncInbox struct {
+	repository.UniboxRepository
+	deletes int
+	err     error
+}
+
+func (r *removeSyncInbox) Delete(context.Context, uuid.UUID, uuid.UUID) error {
+	r.deletes++
+	return r.err
+}
+
+type removeSyncBus struct{ deleted int }
+
+type removeSyncWarmup struct {
+	repository.WarmupRepository
+	lookups int
+}
+
+func (r *removeSyncWarmup) GetWarmupReceived(_ context.Context, mailbox, id uuid.UUID) (*repository.WarmupReceived, error) {
+	r.lookups++
+	return &repository.WarmupReceived{EmailAccountID: mailbox, InternalID: id, MessageID: "<warmup@fake.test>", CreatedAt: time.Now()}, nil
+}
+
+func (b *removeSyncBus) Publish(_ context.Context, _ string, data any, _ map[string]string) error {
+	if event, ok := data.(*pubsub.EmailInboxEvent); ok && event.EventType == pubsub.EventEmailDeleted {
+		b.deleted++
+	}
+	return nil
+}
+
+func TestSyncTruthRemovalWaitsForScopedPendingArrivals(t *testing.T) {
+	user, mailbox, id := uuid.New(), uuid.New(), uuid.New()
+	lookupErr := errors.New("pending marker unavailable")
+	for _, tc := range []struct {
+		name                    string
+		owner, account, message uuid.UUID
+		pending                 bool
+		err, want               error
+	}{
+		{"pending", user, mailbox, id, true, nil, ErrSyncArrivalPending},
+		{"marker error", user, mailbox, id, false, lookupErr, lookupErr},
+		{"finished or legacy", user, mailbox, id, false, nil, nil},
+		{"other user", uuid.New(), mailbox, id, true, nil, nil},
+		{"other mailbox", user, uuid.New(), id, true, nil, nil},
+		{"other message", user, mailbox, uuid.New(), true, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inbox, bus := &removeSyncInbox{}, &removeSyncBus{}
+			s := &JobsService{UniboxRepository: inbox, ArrivalOutbox: &syncTruthOutbox{user: user, mailbox: mailbox, id: id, pending: tc.pending, err: tc.err}, EmailRepository: newEmailAccountRepo{}, StreamingPublisher: pubsub.NewStreamingPublisher(bus)}
+			err := s.HandleRemoveEmail(t.Context(), &models.JobEventRemoveEmail{UserID: tc.owner, EmailID: tc.account, ID: tc.message})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("removal error=%v want=%v", err, tc.want)
+			}
+			want := 1
+			if tc.want != nil {
+				want = 0
+			}
+			if inbox.deletes != want || bus.deleted != want {
+				t.Fatalf("deletes=%d notifications=%d want=%d", inbox.deletes, bus.deleted, want)
+			}
+		})
+	}
+}
+
+func TestSyncTruthRemovalDeleteFailureRetriesBeforeNotification(t *testing.T) {
+	failure := errors.New("unibox delete unavailable")
+	inbox, bus := &removeSyncInbox{err: failure}, &removeSyncBus{}
+	warmup := &removeSyncWarmup{}
+	s := &JobsService{UniboxRepository: inbox, WarmupRepo: warmup, EmailRepository: newEmailAccountRepo{}, StreamingPublisher: pubsub.NewStreamingPublisher(bus)}
+	e := &models.JobEventRemoveEmail{UserID: uuid.New(), EmailID: uuid.New(), ID: uuid.New()}
+	if err := s.HandleRemoveEmail(t.Context(), e); !errors.Is(err, failure) {
+		t.Fatalf("delete failure acknowledged: %v", err)
+	}
+	if bus.deleted != 0 {
+		t.Fatal("failed deletion published success")
+	}
+	inbox.err = nil
+	if err := s.HandleRemoveEmail(t.Context(), e); err != nil {
+		t.Fatal(err)
+	}
+	if inbox.deletes != 2 || bus.deleted != 1 || warmup.lookups != 2 {
+		t.Fatalf("deletes=%d notifications=%d", inbox.deletes, bus.deleted)
 	}
 }
 
