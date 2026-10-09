@@ -89,9 +89,9 @@ export default function CloudPathsPanel({ mailboxCount, onAdd }: { mailboxCount:
 
     return (
         <div>
-            <div className="flex items-center gap-2.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-700">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-700">
                 <CloudIcon className="w-4 h-4 shrink-0 text-sky-600" />
-                <span className="min-w-0 flex-1 leading-snug">
+                <span className="min-w-0 flex-1 basis-56 leading-snug">
                     <span className="font-medium">
                         {free ? `${used} of ${allowance} free mailboxes used. ` : ""}
                         {warming === undefined
