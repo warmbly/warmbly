@@ -2,15 +2,21 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
 const unstartedWarmupDispatch = `t.task_type='warmup' AND t.status='completed'
-	AND t.send_result_state='unknown' AND t.send_result_applied_at IS NULL
-	AND t.send_result_evidence IS NULL AND t.send_released_at IS NULL
+	AND t.send_result_state='unknown'
+	AND ((t.send_result_applied_at IS NULL AND t.send_result_evidence IS NULL AND t.send_released_at IS NULL)
+	 OR (t.send_executor_nonce IS NULL AND t.send_reserved_at IS NULL AND w.dispatch_nonce IS NOT NULL
+	     AND t.send_result_applied_at<t.completed_at AND t.send_released_at<t.completed_at
+	     AND t.send_result_evidence->>'protocol'='internal' AND t.send_result_evidence->>'stage'='prepare'
+	     AND t.send_result_evidence->>'disposition'='retry' AND t.send_result_evidence->>'scope'='mailbox'))
 	AND COALESCE(t.send_reserved_at,t.completed_at)<$1
 	AND (t.send_executor_nonce IS NOT NULL OR w.dispatch_nonce IS NOT NULL)
 	AND t.send_executor_started_at IS NULL AND t.send_executor_result IS NULL
@@ -63,6 +69,15 @@ func (r *taskRepository) retireUnstartedWarmupDispatch(ctx context.Context, task
 	if err = lockSend(ctx, tx, task, mailbox); err != nil {
 		return false, err
 	}
+	var stalePreparation bool
+	err = tx.QueryRow(ctx, `SELECT t.send_result_applied_at IS NOT NULL FROM tasks t JOIN warmup_tasks w ON w.task_id=t.id
+		WHERE t.id=$2 AND t.email_account_id=$3 AND `+unstartedWarmupDispatch, before, task, mailbox).Scan(&stalePreparation)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
 	tag, err := tx.Exec(ctx, `UPDATE tasks t SET status='cancelled',updated_at=NOW(),send_result_state='failed',send_result_applied_at=NOW(),send_released_at=NOW()
 		FROM warmup_tasks w WHERE w.task_id=t.id AND t.id=$2 AND t.email_account_id=$3 AND `+unstartedWarmupDispatch, before, task, mailbox)
 	if err != nil {
@@ -79,6 +94,12 @@ func (r *taskRepository) retireUnstartedWarmupDispatch(ctx context.Context, task
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM warmup_tokens WHERE task_id=$1`, task); err != nil {
 		return false, err
+	}
+	if stalePreparation {
+		if _, err = tx.Exec(ctx, `UPDATE email_accounts SET send_recovery_reason='unknown'
+			WHERE id=$1 AND send_recovery_task_id=$2 AND send_recovery_reason='conflict'`, mailbox, task); err != nil {
+			return false, err
+		}
 	}
 	if err = persistSendHold(ctx, tx, mailbox, models.SendEmailResult{TaskID: task}, "failed"); err != nil {
 		return false, err
