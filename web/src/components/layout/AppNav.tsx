@@ -91,7 +91,7 @@ interface NavItem {
     requires?: "inbox" | "advanced" | "subscription";
     /** Role gate — when set, sidebar hides the row entirely for non-matching roles. */
     rolesAllowed?: "manage";
-    /** Shown to a member restricted to selected resources; every other row is hidden from them. */
+    /** Open to a member restricted to selected resources; every other row is locked for them. */
     scoped?: boolean;
     /** Permission gate — when the member lacks it, the row shows a lock and a
      *  click pops an access dialog instead of navigating to an empty page. */
@@ -258,8 +258,6 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
     const active = isNavItemActive(pathname, item);
     const badge = item.badgeStoreKey === "unseenCount" ? unseen : undefined;
 
-    if (restricted && !item.scoped) return null;
-
     // Role-gated items disappear from the sidebar for users that
     // can't access them, instead of showing a lock — these are
     // administrative tools, not premium features to tease.
@@ -268,7 +266,9 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
     // Permission-gated items the member lacks: render a locked row that pops
     // an access dialog on click, so the feature is visibly unavailable (a
     // lock) rather than a blank/empty page that reads as "no data".
-    const accessDenied = !!item.permission && !hasItemPermission;
+    // A restricted member reaches only the scoped rows, whatever their role holds.
+    const outOfScope = restricted && !item.scoped;
+    const accessDenied = outOfScope || (!!item.permission && !hasItemPermission);
     if (accessDenied) {
         return (
             <>
@@ -295,6 +295,7 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
                     onClose={() => setDeniedOpen(false)}
                     feature={item.title}
                     permissionLabel={item.permissionLabel ?? "the required"}
+                    reason={outOfScope ? "scope" : "permission"}
                 />
             </>
         );
@@ -771,14 +772,11 @@ function Section({
     const toggleNavSection = useAppStore((s) => s.toggleNavSection);
     const org = useAppStore((s) => s.currentOrganization);
     const access = useFeatureAccess();
-    const restricted = useAccessRestricted();
     const reduceMotion = useReducedMotion();
 
     // Folded, a section keeps only the row you are on, in the rail and the
     // full sidebar alike, so where you are never folds away with the rest.
-    const permitted = section.items.filter(
-        (item) => (item.rolesAllowed !== "manage" || access.canManage) && (!restricted || item.scoped),
-    );
+    const permitted = section.items.filter((item) => item.rolesAllowed !== "manage" || access.canManage);
     const shown = folded ? permitted.filter((item) => isNavItemActive(pathname, item)) : permitted;
     const hiddenSurfaces = folded
         ? permitted.flatMap((item) =>
@@ -790,9 +788,6 @@ function Section({
                 : [],
         )
         : [];
-
-    // A section holding nothing this member may open is not drawn at all.
-    if (permitted.length === 0) return null;
 
     // In the rail a folded section with nothing left to show goes, divider and all.
     const gone = collapsed && shown.length === 0;

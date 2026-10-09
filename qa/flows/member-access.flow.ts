@@ -56,7 +56,12 @@ test.describe("member access scope", () => {
       await expect(page.getByRole("link", { name: /Q1 Outreach/ })).toHaveCount(0);
       await expect(page.getByRole("link", { name: "Contacts" })).toHaveCount(0);
       await proof.chapter("Restricted teammate", "Only the granted campaigns and mailboxes, and only the pages that can be narrowed to them");
-      await proof.shot("restricted-campaigns", { caption: "The sidebar keeps Inbox, Campaigns and Analytics; the list holds only the granted campaigns" });
+      await proof.shot("restricted-campaigns", { caption: "Inbox, Campaigns and Analytics stay open, every other page is locked; the list holds only the granted campaigns" });
+
+      await page.getByRole("complementary").getByRole("button", { name: "Contacts", exact: true }).click();
+      await expect(page.getByText("Your access to this workspace is limited to selected campaigns and mailboxes")).toBeVisible();
+      await proof.shot("restricted-locked", { caption: "A locked page says the access scope is why, and who can change it" });
+      await page.getByRole("button", { name: "Got it" }).click();
 
       await page.getByRole("link", { name: /RevOps outreach - July/ }).first().click();
       const main = page.getByRole("main");
