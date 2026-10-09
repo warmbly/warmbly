@@ -1,0 +1,54 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import { WINDOW, EYEBROW } from '../../../lib/scene';
+
+/**
+ * A finished inbox placement test (web/src/app/app/placement/[id]/page.tsx):
+ * the folder breakdown across the seed inboxes, then the rate per provider.
+ */
+const cells = [
+  { label: 'Inbox', n: 17, rate: '85%', tone: 'text-emerald-600', dot: 'bg-emerald-500' },
+  { label: 'Gmail tabs', n: 2, rate: '10%', tone: 'text-violet-600', dot: 'bg-violet-500' },
+  { label: 'Spam', n: 1, rate: '5%', tone: 'text-rose-600', dot: 'bg-rose-500' },
+];
+const families = [
+  { name: 'Google', inbox: 80, tabs: 20, spam: 0 },
+  { name: 'Microsoft', inbox: 86, tabs: 0, spam: 14 },
+  { name: 'Yahoo', inbox: 100, tabs: 0, spam: 0 },
+];
+---
+<ScaledStage w={460} h={345} photo="lake-mist">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="px-4 pt-3.5 pb-3 border-b border-slate-200 pr-10">
+      <div class="flex items-center gap-2">
+        <span class="truncate text-[15px] font-semibold text-slate-900">Quick question about Acme</span>
+        <span class="inline-flex h-5 shrink-0 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 text-[10.5px] font-medium text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span>Completed</span>
+      </div>
+      <div class="mt-1 text-[11px] text-slate-500">From <span class="text-slate-800">alex@northwind.dev</span> · 20 seed inboxes</div>
+    </div>
+    <div class="grid grid-cols-3 border-b border-slate-200 pr-6">
+      {cells.map((c, i) => (
+        <div class={`px-4 py-3 ${i < 2 ? 'border-r border-slate-200' : ''}`}>
+          <div class="flex items-center gap-1.5"><span class={`size-1.5 rounded-full ${c.dot}`}></span><span class={EYEBROW}>{c.label}</span></div>
+          <div class="mt-1.5 flex items-baseline gap-1.5"><span class="text-[22px] font-light leading-none tabular-nums text-slate-900">{c.n}</span><span class={`font-mono text-[11px] ${c.tone}`}>{c.rate}</span></div>
+        </div>
+      ))}
+    </div>
+    <div class="h-9 px-4 border-b border-slate-200/60 flex items-center"><span class={EYEBROW}>By provider</span></div>
+    <div class="divide-y divide-slate-200/60">
+      {families.map((f, i) => (
+        <div class="flex h-10 items-center gap-3 px-4 pr-10">
+          <span class="w-[72px] text-[12.5px] font-medium text-slate-900">{f.name}</span>
+          <div class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+            <div class="enter-grow-x flex h-full w-full" style={`--d:${300 + i * 150}ms`}>
+              <div class="bg-emerald-500" style={`width:${f.inbox}%`}></div>
+              <div class="bg-violet-500" style={`width:${f.tabs}%`}></div>
+              <div class="bg-rose-500" style={`width:${f.spam}%`}></div>
+            </div>
+          </div>
+          <span class={`w-10 text-right font-mono text-[11.5px] tabular-nums ${f.inbox >= 90 ? 'text-emerald-600' : 'text-amber-600'}`}>{f.inbox}%</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
