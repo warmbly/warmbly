@@ -1942,7 +1942,7 @@ func main() {
 		// warming or backing a live campaign (the health-check lane). This is
 		// the bootstrap — enabling warmup or starting a campaign doesn't itself
 		// enqueue the first warmup task.
-		go tasksService.StartWarmupReconciler(ctx, 10*time.Minute)
+		go tasksService.StartWarmupReconciler(ctx, time.Minute)
 		go jobs.NewWarmupOperationsJob(warmupRepository, taskRepository, cache, opsNotifier).Start(ctx)
 
 		// Tracking-domain sweep: re-resolve every custom tracking domain hourly,

@@ -4,10 +4,84 @@ package eventbus
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 )
+
+func TestKafkaHandlerCountsIndependentRetriesUntilPreparationCanResolve(t *testing.T) {
+	first, other := &ckf.Message{}, &ckf.Message{}
+	var seen []int
+	deliver := kafkaHandler(t.Context(), func(_ context.Context, msg Message) error {
+		seen = append(seen, msg.Attempt)
+		if !msg.Redelivers {
+			t.Fatal("retry delivery was not marked")
+		}
+		if msg.Attempt < 5 {
+			return errors.New("mailbox not loaded")
+		}
+		return nil
+	})
+	for attempt := 1; attempt <= 5; attempt++ {
+		err := deliver(first)
+		if (err == nil) != (attempt == 5) || seen[len(seen)-1] != attempt {
+			t.Fatalf("attempt=%d seen=%v err=%v", attempt, seen, err)
+		}
+		if attempt == 3 {
+			if err := deliver(other); err == nil || seen[len(seen)-1] != 1 {
+				t.Fatal("another mailbox inherited retry state")
+			}
+		}
+	}
+	if err := deliver(first); err == nil || seen[len(seen)-1] != 1 {
+		t.Fatal("successful delivery retained retry state")
+	}
+}
+
+func TestKafkaSubscriptionReopensAfterFailureOrUnexpectedExit(t *testing.T) {
+	for _, failure := range []error{errors.New("offset assignment lost"), nil} {
+		ctx, cancel := context.WithCancel(t.Context())
+		calls := 0
+		err := retrySubscription(ctx, func(context.Context) error {
+			calls++
+			if calls == 2 {
+				cancel()
+			}
+			return failure
+		})
+		cancel()
+		if !errors.Is(err, context.Canceled) || calls != 2 {
+			t.Fatalf("err=%v calls=%d", err, calls)
+		}
+	}
+	calls := 0
+	err := retrySubscription(t.Context(), func(context.Context) error { calls++; return ErrBusClosed })
+	if !errors.Is(err, ErrBusClosed) || calls != 1 {
+		t.Fatal("closed bus reopened")
+	}
+}
+
+func TestKafkaSubscriptionRetiresClientsBeforeReopening(t *testing.T) {
+	b := &KafkaBus{bootstrap: "127.0.0.1:1"}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for i := 0; i < 3; i++ {
+		if err := b.subscribeOnce(ctx, []string{"sync-test"}, "sync-test", 1, nil, func(context.Context, Message) error { return nil }); !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+		b.mu.Lock()
+		retained := len(b.consumers)
+		b.mu.Unlock()
+		if retained != 0 {
+			t.Fatalf("exited subscription retained %d clients", retained)
+		}
+	}
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // TestKafkaBus_InterfaceSatisfaction is a compile-time check that KafkaBus
 // satisfies the EventBus interface and that the constructors enforce their

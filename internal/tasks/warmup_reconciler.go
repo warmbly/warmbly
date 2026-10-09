@@ -23,13 +23,35 @@ const warmupReconcileBatch = 500
 // campaign does not itself enqueue a task, so without this pass a freshly
 // enabled mailbox would never start warming.
 func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) (int, error) {
+	var recoverBatch func(context.Context, time.Time, int) (int, int, error)
 	if recovery, ok := s.taskRepo.(interface {
+		RecoverUnstartedWarmupDispatchBatch(context.Context, time.Time, int) (int, int, error)
+	}); ok {
+		recoverBatch = recovery.RecoverUnstartedWarmupDispatchBatch
+	} else if recovery, ok := s.taskRepo.(interface {
 		RecoverUnstartedWarmupDispatches(context.Context, time.Time, int) (int, error)
 	}); ok {
-		recovered, err := recovery.RecoverUnstartedWarmupDispatches(ctx, time.Now().Add(-10*time.Minute), limit)
-		if err != nil {
-			log.Warn().Err(err).Msg("warmup reconcile failed to retire unstarted dispatches")
-		} else if recovered > 0 {
+		recoverBatch = func(ctx context.Context, before time.Time, limit int) (int, int, error) {
+			n, err := recovery.RecoverUnstartedWarmupDispatches(ctx, before, limit)
+			return n, n, err
+		}
+	}
+	if recoverBatch != nil {
+		recovered := 0
+		for batch := 0; batch < 10 && ctx.Err() == nil; batch++ {
+			n, selected, err := recoverBatch(ctx, time.Now().Add(-10*time.Minute), limit)
+			recovered += n
+			if err != nil {
+				if recovered > 0 {
+					log.Info().Int("recovered", recovered).Msg("warmup reconcile retired unstarted dispatches before failing")
+				}
+				return 0, err
+			}
+			if selected < limit || limit <= 0 {
+				break
+			}
+		}
+		if recovered > 0 {
 			log.Info().Int("recovered", recovered).Msg("warmup reconcile retired unstarted dispatches")
 		}
 	}
@@ -95,6 +117,9 @@ func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) 
 // context is cancelled. Mirrors the other background sweeps (warmup health,
 // dead-worker) and is started from the backend, which owns Cloud Tasks.
 func (s *tasksService) StartWarmupReconciler(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Minute
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 

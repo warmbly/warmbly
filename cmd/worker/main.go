@@ -218,7 +218,12 @@ func main() {
 	}()
 
 	log.Printf("Worker %s started, listening on topic %s", workerID, workerTopic)
-	if err := bus.Subscribe(ctx, []string{workerTopic}, "worker-"+workerID.String(), workerService.Receive); err != nil {
+	lanes := worker.CommandConcurrency()
+	if _, ok := bus.(eventbus.KeyedSubscriber); !ok {
+		lanes = 1
+	}
+	log.Printf("Worker command concurrency: %d ordered mailbox lanes", lanes)
+	if err := eventbus.SubscribeKeyed(ctx, bus, []string{workerTopic}, "worker-"+workerID.String(), lanes, workerService.ResolveCommandKey, workerService.Receive); err != nil {
 		log.Println("event bus subscribe ended:", err)
 	}
 

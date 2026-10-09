@@ -3,6 +3,8 @@
 package kafka
 
 import (
+	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -17,10 +19,11 @@ type producerClient interface {
 }
 
 type Producer struct {
-	p      producerClient
-	Avrov2 *Avrov2
-	mu     sync.Mutex
-	closed bool
+	p             producerClient
+	Avrov2        *Avrov2
+	mu            sync.Mutex
+	closed        bool
+	eventsDrained <-chan struct{}
 }
 
 type ProducerConfig struct {
@@ -31,6 +34,7 @@ func NewProducer(servers string) *ProducerConfig {
 	return &ProducerConfig{
 		config: map[string]ckf.ConfigValue{
 			"bootstrap.servers": servers,
+			"acks":              "all",
 		},
 	}
 }
@@ -57,8 +61,24 @@ func (conf *ProducerConfig) Connect() (*Producer, error) {
 		return nil, err
 	}
 
+	eventsDrained := make(chan struct{})
+	go func() {
+		defer close(eventsDrained)
+		for event := range p.Events() {
+			switch event := event.(type) {
+			case *ckf.Message:
+				if event != nil && event.TopicPartition.Error != nil {
+					log.Warn().Err(event.TopicPartition.Error).Msg("kafka background delivery failed")
+				}
+			case ckf.Error:
+				log.Debug().Str("code", event.Code().String()).Msg("kafka producer event")
+			}
+		}
+	}()
+
 	return &Producer{
-		p: p,
+		p:             p,
+		eventsDrained: eventsDrained,
 	}, nil
 }
 
@@ -74,11 +94,14 @@ func (pr *Producer) Close() {
 	}
 	pr.closed = true
 	pr.mu.Unlock()
-	undelivered := pr.p.Flush(30_000) // 30 seconds
-	if undelivered > 0 {
-		log.Warn().Int("count", undelivered).Msg("messages not delivered during shutdown")
+	outstanding := pr.p.Flush(30_000) // 30 seconds
+	if outstanding > 0 {
+		log.Warn().Int("count", outstanding).Msg("kafka producer has unflushed events during shutdown")
 	}
 	pr.p.Close()
+	if pr.eventsDrained != nil {
+		<-pr.eventsDrained
+	}
 }
 
 func (pr *Producer) Produce(topic string, key, value []byte) error {
@@ -93,4 +116,37 @@ func (pr *Producer) Produce(topic string, key, value []byte) error {
 		Value:          value,
 		Timestamp:      time.Now(),
 	}, nil)
+}
+
+// ProduceConfirmed waits for broker delivery, not merely local queue admission.
+func (pr *Producer) ProduceConfirmed(ctx context.Context, topic string, key, value []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report := make(chan ckf.Event, 1)
+	pr.mu.Lock()
+	if pr.closed {
+		pr.mu.Unlock()
+		return ErrClientClosed
+	}
+	err := pr.p.Produce(&ckf.Message{
+		TopicPartition: ckf.TopicPartition{Topic: &topic, Partition: ckf.PartitionAny},
+		Key:            key,
+		Value:          value,
+		Timestamp:      time.Now(),
+	}, report)
+	pr.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case event := <-report:
+		msg, ok := event.(*ckf.Message)
+		if !ok || msg == nil {
+			return fmt.Errorf("kafka: unexpected delivery report %T", event)
+		}
+		return msg.TopicPartition.Error
+	}
 }

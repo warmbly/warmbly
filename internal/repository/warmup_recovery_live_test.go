@@ -173,6 +173,30 @@ func TestLiveWarmupFilingRequiresAcknowledgement(t *testing.T) {
 	if claimed, err := repo.ClaimFilings(ctx, 100); err != nil || len(claimed) != 0 {
 		t.Fatalf("lease did not prevent duplicate dispatch: %+v %v", claimed, err)
 	}
+	for _, backoff := range []struct {
+		age   time.Duration
+		delay time.Duration
+	}{{10 * time.Minute, 5 * time.Minute}, {25 * time.Minute, 15 * time.Minute}, {2 * time.Hour, 30 * time.Minute}} {
+		if _, err := pool.Exec(ctx, `UPDATE warmup_pending_filings SET created_at=$2,next_attempt_at=NOW()-INTERVAL '1 second' WHERE id=$1`, id, time.Now().Add(-backoff.age)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.EnqueueFiling(ctx, action); err != nil {
+			t.Fatal(err)
+		}
+		if claimed, err := repo.ClaimFilings(ctx, 100); err != nil || len(claimed) != 1 || claimed[0].FilingID != id.String() {
+			t.Fatalf("durable retry was lost: %+v %v", claimed, err)
+		}
+		var next time.Time
+		if err := pool.QueryRow(ctx, `SELECT next_attempt_at FROM warmup_pending_filings WHERE id=$1`, id).Scan(&next); err != nil {
+			t.Fatal(err)
+		}
+		if delay := time.Until(next); delay < backoff.delay-time.Minute || delay > backoff.delay+time.Minute {
+			t.Fatalf("age=%v delay=%v want=%v", backoff.age, delay, backoff.delay)
+		}
+		if claimed, err := repo.ClaimFilings(ctx, 100); err != nil || len(claimed) != 0 {
+			t.Fatalf("old filing flooded the retry loop: %+v %v", claimed, err)
+		}
+	}
 	var waiting bool
 	if err := pool.QueryRow(ctx, `SELECT next_attempt_at < NOW() - INTERVAL '30 minutes' FROM warmup_pending_filings WHERE id = $1`, waitingID).Scan(&waiting); err != nil || !waiting {
 		t.Fatalf("unassigned backlog was leased instead of remaining pending: %v %v", waiting, err)
