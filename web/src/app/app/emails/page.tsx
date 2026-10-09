@@ -169,6 +169,7 @@ export default function AddressesPage() {
     // Self-hosted instances can hand warmup to the Warmbly pool; the banner,
     // row badges and menu items below key off this.
     const cloud = useCloudPool();
+    const { connected: cloudConnected, rowFor: cloudRowFor } = cloud;
     const [cloudDialog, setCloudDialog] = React.useState(false);
     const authConfigLoading = useAuthConfig().isLoading;
 
@@ -359,7 +360,7 @@ export default function AddressesPage() {
                 s.issues++;
                 continue;
             }
-            const linked = cloud.connected ? cloud.rowFor(e.id) : undefined;
+            const linked = cloudConnected ? cloudRowFor(e.id) : undefined;
             if (linked?.enrolled ? linked.cloud?.warmup?.enabled && !cloudWarmupPaused(linked.cloud) : diagnosticWarmupActive(e)) {
                 s.warming++;
             } else {
@@ -367,7 +368,7 @@ export default function AddressesPage() {
             }
         }
         return s;
-    }, [emailsData.emails, statusById, cloud.connected, cloud.rowFor]);
+    }, [emailsData.emails, statusById, cloudConnected, cloudRowFor]);
 
     // Mailboxes actively warming (enabled and not paused). Warmup pairs mailboxes
     // with each other, so too few starves it; the notice below warns on that.
