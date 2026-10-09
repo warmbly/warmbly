@@ -200,6 +200,12 @@ func (s *tasksService) HandleEmailTask(task *proto.ProcessTask) *errx.Error {
 	}
 
 	if err := s.sendAdmission(ctx, account); err != nil {
+		if errors.Is(err, repository.ErrSendAdmissionDenied) {
+			if err := lineage.RescheduleWarmupTask(ctx, taskID, time.Now().Add(5*time.Minute)); err != nil {
+				return errx.InternalError()
+			}
+			return nil
+		}
 		return errx.InternalError()
 	}
 	capable, ok := s.emailSender.(interface {

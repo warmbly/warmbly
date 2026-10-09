@@ -51,6 +51,8 @@ export interface WarmupStatusInfo {
 export interface WarmupSendFailure {
     message: string;
     at: string;
+    kind?: "mailbox_loading";
+    first_failure_at?: string;
 }
 
 // A target held below the ramp because a mailbox never writes to the same

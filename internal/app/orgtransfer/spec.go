@@ -769,7 +769,7 @@ var Tables = []Table{
 		Scope: `email_account_id IN ` + orgMailboxes + ` AND task_type <> 'placement'`,
 		Owner: `email_account_id IN ` + orgMailboxes,
 		// The handle belongs to the source instance's queue.
-		ResetOnImport: []string{"cloud_task_name", "send_executor_nonce", "send_executor_worker", "send_executor_started_at", "send_executor_result"},
+		ResetOnImport: []string{"cloud_task_name", "send_executor_nonce", "send_executor_worker", "send_executor_started_at", "send_executor_result", "dispatch_retry_at", "dispatch_failure_since", "dispatch_failure_at"},
 	},
 	{
 		Name: "outbound_attempts", Group: models.OrgDataGroupSending,

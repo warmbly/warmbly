@@ -1,9 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WarmupSendFailureNote from "./WarmupSendFailureNote";
 
-const failure = { message: "The sending worker has not loaded this mailbox yet.", at: "2026-10-08T08:00:00Z" };
-afterEach(cleanup);
+const failure = { message: "A temporary provider error occurred.", at: "2026-10-08T08:00:00Z" };
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-09T05:35:00Z")); });
 
 describe("WarmupSendFailureNote", () => {
     it.each(["gmail", "outlook"])("does not blame SMTP settings for a %s sign-in", (provider) => {
@@ -35,6 +36,43 @@ describe("WarmupSendFailureNote", () => {
     it("preserves the actual provider failure rather than hiding it", () => {
         render(<WarmupSendFailureNote failure={{ ...failure, message: "Microsoft rejected the expired sign-in." }} provider="outlook" cloud />);
         expect(screen.getByText("Microsoft rejected the expired sign-in.")).toBeInTheDocument();
-        expect(screen.getByText(/None has been delivered since/)).toBeInTheDocument();
+        expect(screen.getByText(/No later successful warmup send has been confirmed/)).toBeInTheDocument();
+    });
+
+    const loading = { message: "The sending worker has not loaded this mailbox yet.", at: "2026-10-09T05:30:00Z", kind: "mailbox_loading" as const, first_failure_at: "2026-10-09T03:00:00Z" };
+
+    it("shows only a fresh persistent loading incident without blaming credentials", () => {
+        vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-09T05:35:00Z"));
+        render(<WarmupSendFailureNote failure={loading} provider="smtp_imap" cloud />);
+        expect(screen.getByText(/repeatedly been unable to load/)).toBeInTheDocument();
+        expect(screen.getByText(/does not mean your credentials are wrong/)).toBeInTheDocument();
+        expect(screen.queryByText(/password|IP allowlist/)).not.toBeInTheDocument();
+    });
+
+    it.each([
+        { ...loading, first_failure_at: "2026-10-09T05:30:00Z" },
+        { ...loading, first_failure_at: undefined },
+        { ...loading, at: "2026-10-09T04:35:00Z" },
+        { ...loading, at: "2026-10-09T06:00:00Z" },
+        { ...loading, at: "invalid" },
+    ])("hides transient, stale, legacy or invalid loading evidence: %j", (value) => {
+        vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-09T05:35:00Z"));
+        const { container } = render(<WarmupSendFailureNote failure={value} />);
+        expect(container).toBeEmptyDOMElement();
+    });
+
+    it("expires a loading warning even if the open page never receives another send", () => {
+        vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-09T05:35:00Z"));
+        const { container, rerender } = render(<WarmupSendFailureNote failure={loading} />);
+        act(() => vi.advanceTimersByTime(55 * 60 * 1000));
+        expect(container).toBeEmptyDOMElement();
+        rerender(<WarmupSendFailureNote failure={{ ...loading, at: "2026-10-09T06:25:00Z" }} />);
+        expect(screen.getByText(/repeatedly been unable to load/)).toBeInTheDocument();
+    });
+
+    it("expires an old provider failure without waiting for a new send", () => {
+        const { container } = render(<WarmupSendFailureNote failure={failure} />);
+        act(() => vi.advanceTimersByTime(3 * 60 * 60 * 1000));
+        expect(container).toBeEmptyDOMElement();
     });
 });

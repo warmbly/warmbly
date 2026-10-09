@@ -15,7 +15,10 @@ import (
 // repository.TaskRepository satisfies it.
 type DueTaskLister interface {
 	ListDuePendingTaskIDs(ctx context.Context, limit int) ([]uuid.UUID, error)
+	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error
 }
+
+const dispatchRetryDelay = 5 * time.Minute
 
 // Local is the no-cloud Scheduler. Task rows already exist in Postgres (the
 // caller inserts them before CreateTask), and Run polls for due rows and fires
@@ -54,7 +57,7 @@ func (l *Local) DeleteTask(_ context.Context, _ string) error { return nil }
 // status, and the per-type handlers short-circuit on a non-pending status, so a
 // row re-selected before handle finished is a no-op. The in-flight guard keeps
 // a single node from re-dispatching a task it is already handling.
-func (l *Local) Run(ctx context.Context, handle func(taskID string)) {
+func (l *Local) Run(ctx context.Context, handle func(taskID string) error) {
 	ticker := time.NewTicker(l.interval)
 	defer ticker.Stop()
 	log.Info().Dur("interval", l.interval).Int("batch", l.batch).Msg("tasksched: local dispatcher started")
@@ -68,7 +71,7 @@ func (l *Local) Run(ctx context.Context, handle func(taskID string)) {
 	}
 }
 
-func (l *Local) tick(ctx context.Context, handle func(taskID string)) {
+func (l *Local) tick(ctx context.Context, handle func(taskID string) error) {
 	ids, err := l.repo.ListDuePendingTaskIDs(ctx, l.batch)
 	if err != nil {
 		log.Error().Err(err).Msg("tasksched: list due tasks")
@@ -81,7 +84,13 @@ func (l *Local) tick(ctx context.Context, handle func(taskID string)) {
 		}
 		go func(taskID string) {
 			defer l.inflight.Delete(taskID)
-			handle(taskID)
+			err := handle(taskID)
+			if ctx.Err() != nil {
+				return
+			}
+			if saveErr := l.repo.RecordDispatchAttempt(ctx, id, err != nil, time.Now().Add(dispatchRetryDelay)); saveErr != nil {
+				log.Error().Err(saveErr).Msg("tasksched: record dispatch retry")
+			}
 		}(key)
 	}
 }

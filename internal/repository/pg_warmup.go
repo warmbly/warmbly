@@ -198,6 +198,7 @@ type WarmupRepository interface {
 	FailWarmupSend(ctx context.Context, accountID, taskID uuid.UUID, date time.Time, title, message string) error
 	// LastWarmupSendFailure is the newest warmup send the worker could not deliver since `since`, when no later send was confirmed delivered.
 	LastWarmupSendFailure(ctx context.Context, accountID uuid.UUID, since time.Time) (*models.WarmupSendFailure, error)
+	ListMailboxLoadingIncidents(ctx context.Context, now time.Time) ([]MailboxLoadingIncident, error)
 	GetWarmupStatistics(ctx context.Context, accountID uuid.UUID, from, to time.Time) ([]WarmupStatistic, error)
 	GetOrCreateDailyStats(ctx context.Context, accountID uuid.UUID, date time.Time, targetVolume int) (*WarmupStatistic, error)
 
@@ -1139,33 +1140,24 @@ func (r *warmupRepository) FailWarmupSend(ctx context.Context, accountID, taskID
 }
 
 func (r *warmupRepository) LastWarmupSendFailure(ctx context.Context, accountID uuid.UUID, since time.Time) (*models.WarmupSendFailure, error) {
-	// Only failures the worker answered with (status failed); a dead-lettered
-	// dispatch is the platform's own problem and says nothing about the server.
 	f := &models.WarmupSendFailure{}
+	var first time.Time
 	err := resultDB(ctx, r.db).QueryRow(ctx, `
-		SELECT tf.message, t.updated_at
-		FROM tasks t
-		JOIN task_failures tf ON tf.task_id = t.id
-		WHERE t.email_account_id = $1
-		  AND t.task_type = 'warmup'
-		  AND t.status = 'failed'
-		  AND t.updated_at >= $2
-		  AND NOT EXISTS (
-		      SELECT 1 FROM tasks c
-		      JOIN warmup_tokens wt ON wt.task_id = c.id AND wt.sent_message_id <> ''
-		      WHERE c.email_account_id = $1
-		        AND c.task_type = 'warmup'
-		        AND c.status = 'completed'
-		        AND c.completed_at > t.updated_at
-		  )
-		ORDER BY t.updated_at DESC
-		LIMIT 1
-	`, accountID, since).Scan(&f.Message, &f.At)
+		SELECT message, at, first_at FROM (`+warmupSendFailuresSQL+`) f
+		WHERE (message LIKE $2 AND first_at <= $3 AND at > $3
+		       AND status = 'active' AND warming AND sending)
+		   OR (message NOT LIKE $2 AND at >= $4)
+	`, accountID, mailboxLoadingPattern, time.Now().Add(-models.WarmupLoadingGracePeriod), since).
+		Scan(&f.Message, &f.At, &first)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if strings.HasPrefix(f.Message, models.MailboxNotLoadedPrefix) {
+		f.Kind = models.WarmupFailureLoading
+		f.FirstFailureAt = &first
 	}
 	return f, nil
 }
