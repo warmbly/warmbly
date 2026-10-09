@@ -6,11 +6,13 @@ import {
     MousePointerClickIcon,
     ReplyIcon,
     SendIcon,
+    ThumbsUpIcon,
     TriangleAlertIcon,
+    UserCheckIcon,
 } from "lucide-react";
 import { useCampaign } from "@/hooks/context/campaign";
 import useCampaignAnalytics from "@/lib/api/hooks/app/analytics/useCampaignAnalytics";
-import type { CampaignEngagementBreakdown, EngagementBucket } from "@/lib/api/models/app/analytics/CampaignAnalytics";
+import type { CampaignEngagementBreakdown, CampaignSummary, EngagementBucket } from "@/lib/api/models/app/analytics/CampaignAnalytics";
 import useCampaignDailyStats from "@/lib/api/hooks/app/analytics/useCampaignDailyStats";
 import { SectionBar, Stat, StatStrip } from "@/components/layout/Page";
 import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
@@ -31,13 +33,14 @@ const AUTO_CLICKS_TIP = "Auto-clicks: links followed by a security gateway scann
 
 const pctFmt = (v: number) => `${v.toFixed(1)}%`;
 
-type Metric = "sent" | "opens" | "clicks" | "replies";
+type Metric = "sent" | "opens" | "clicks" | "replies" | "positive_replies";
 
 const METRICS: { key: Metric; label: string; tone: DitherTone }[] = [
     { key: "sent", label: "Sent", tone: "sky" },
     { key: "opens", label: "Opens", tone: "emerald" },
     { key: "clicks", label: "Clicks", tone: "violet" },
     { key: "replies", label: "Replies", tone: "amber" },
+    { key: "positive_replies", label: "Positive", tone: "lime" },
 ];
 
 function pct(v: number | undefined): string {
@@ -118,7 +121,11 @@ export default function CampaignOverview() {
             { label: "Sent", value: shared ? num(shared.emails_sent) : "—", sub: "emails" },
             { label: "Open rate", value: pct(shared?.open_rate) },
             { label: "Reply rate", value: pct(shared?.reply_rate) },
-            { label: "Bounce rate", value: pct(shared?.bounce_rate) },
+            {
+                label: "Positive rate",
+                value: pct(shared?.positive_reply_rate),
+                sub: shared ? `${num(shared.positive_replies)} positive` : undefined,
+            },
         ],
         daily: loading ? [] : dailyStats.map((d) => ({ label: d.date, value: d.sent })),
     };
@@ -141,6 +148,8 @@ export default function CampaignOverview() {
         { label: "Opens", value: summary?.unique_opens, icon: MailCheckIcon, dot: "bg-emerald-500", note: summary?.machine_opens ? `${summary.machine_opens} auto, not counted` : undefined, noteTitle: AUTO_OPENS_TIP },
         { label: "Clicks", value: summary?.unique_clicks, icon: MousePointerClickIcon, dot: "bg-violet-500", note: summary?.machine_clicks ? `${summary.machine_clicks} auto` : undefined, noteTitle: AUTO_CLICKS_TIP },
         { label: "Replies", value: summary?.replies, icon: ReplyIcon, dot: "bg-amber-500" },
+        { label: "Positive replies", value: summary?.positive_replies, icon: ThumbsUpIcon, dot: "bg-lime-500" },
+        { label: "Interested leads", value: summary?.interested_leads, icon: UserCheckIcon, dot: "bg-lime-500" },
         { label: "Bounces", value: summary?.bounces, icon: TriangleAlertIcon, dot: "bg-rose-500" },
     ];
 
@@ -182,7 +191,7 @@ export default function CampaignOverview() {
                                 filename={`warmbly-${campaign.id}.png`}
                             />
                         </SectionBar>
-                        <StatStrip cols={5}>
+                        <StatStrip cols={6}>
                             <Stat
                                 label="Sent"
                                 value={loading ? "—" : <AnimatedNumber value={summary?.emails_sent ?? 0} />}
@@ -202,7 +211,12 @@ export default function CampaignOverview() {
                             <Stat
                                 label="Reply rate"
                                 value={loading ? "—" : <AnimatedNumber value={summary?.reply_rate ?? 0} format={pctFmt} />}
-                                sub="incl. positive"
+                                sub="human replies"
+                            />
+                            <Stat
+                                label="Positive rate"
+                                value={loading ? "—" : <AnimatedNumber value={summary?.positive_reply_rate ?? 0} format={pctFmt} />}
+                                sub={loading ? undefined : `${num(summary?.interested_leads)} interested`}
                             />
                             <Stat
                                 label="Bounce rate"
@@ -283,7 +297,7 @@ export default function CampaignOverview() {
                             <div className="px-5 py-10 text-center">
                                 <p className="text-[12.5px] text-slate-700 font-medium mb-1">No step data yet</p>
                                 <p className="text-[11.5px] text-slate-400 max-w-[34ch] mx-auto leading-relaxed">
-                                    Once steps start sending, per-step opens, clicks, and replies show up here.
+                                    Once steps start sending, per-step opens, clicks, replies and positive replies show up here.
                                 </p>
                             </div>
                         ) : (
@@ -295,6 +309,7 @@ export default function CampaignOverview() {
                                     <span className="w-16 text-right">Opens</span>
                                     <span className="w-16 text-right hidden md:block">Clicks</span>
                                     <span className="w-16 text-right">Replies</span>
+                                    <span className="w-16 text-right">Positive</span>
                                     <span className="w-16 text-right hidden md:block">Bounces</span>
                                 </div>
                                 {sequences.map((s) => (
@@ -337,6 +352,13 @@ export default function CampaignOverview() {
                                             tone="text-amber-600"
                                         />
                                         <StepMetric
+                                            label="Positive replies"
+                                            count={s.positive_replies ?? 0}
+                                            rate={s.positive_reply_rate}
+                                            sent={s.emails_sent ?? 0}
+                                            tone="text-lime-600"
+                                        />
+                                        <StepMetric
                                             label="Bounces"
                                             count={s.bounces ?? 0}
                                             rate={s.bounce_rate}
@@ -377,6 +399,8 @@ export default function CampaignOverview() {
                             ))}
                         </div>
                     </div>
+
+                    <ReplyQuality summary={summary} loading={loading} className="lg:hidden" />
                 </div>
 
                 {/* Live panel */}
@@ -405,6 +429,8 @@ export default function CampaignOverview() {
                             ))}
                         </div>
                     </div>
+
+                    <ReplyQuality summary={summary} loading={loading} className="hidden lg:block" />
                 </aside>
             </div>
         </div>
@@ -459,6 +485,82 @@ function StepMetric({
                 {share}
             </span>
         </span>
+    );
+}
+
+// What the replies said, by the classifier's verdict. The human rows add up
+// to the reply count; automated answers are listed apart and never counted.
+function ReplyQuality({
+    summary,
+    loading,
+    className,
+}: {
+    summary: CampaignSummary | undefined;
+    loading: boolean;
+    className: string;
+}) {
+    const b = summary?.reply_breakdown;
+    const replies = summary?.replies ?? 0;
+    const human = [
+        { label: "Positive", value: b?.positive, dot: "bg-lime-500" },
+        { label: "Neutral", value: b?.neutral, dot: "bg-slate-400" },
+        { label: "Negative", value: b?.negative, dot: "bg-rose-500" },
+        { label: "Asked to stop", value: b?.unsubscribe, dot: "bg-amber-500" },
+        { label: "Unclassified", value: b?.unclassified, dot: "bg-slate-200" },
+    ];
+    const automated = [
+        { label: "Out of office", value: b?.out_of_office },
+        { label: "Auto-reply", value: b?.auto_reply },
+    ];
+    return (
+        <div className={`rounded-md border border-slate-200 overflow-hidden bg-white ${className}`}>
+            <SectionBar label="Reply quality" />
+            {!loading && replies > 0 && (
+                <div className="px-5 pt-3">
+                    <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100">
+                        {human.map((r) =>
+                            r.value ? (
+                                <span
+                                    key={r.label}
+                                    className={r.dot}
+                                    style={{ width: `${(r.value / replies) * 100}%` }}
+                                    title={`${r.label}: ${r.value}`}
+                                />
+                            ) : null,
+                        )}
+                    </div>
+                </div>
+            )}
+            <div className="divide-y divide-slate-200/60">
+                {human.map((r) => (
+                    <div key={r.label} className="h-9 px-5 flex items-center gap-2">
+                        <span className={`size-1.5 rounded-full ${r.dot}`} />
+                        <span className="text-[12px] text-slate-700">{r.label}</span>
+                        <span className="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">
+                            {loading ? "—" : <AnimatedNumber value={r.value ?? 0} />}
+                        </span>
+                        <span className="w-12 text-right font-mono text-[10px] text-slate-400 tabular-nums">
+                            {loading || replies === 0 ? "—" : `${(((r.value ?? 0) / replies) * 100).toFixed(0)}%`}
+                        </span>
+                    </div>
+                ))}
+                {automated.map((r) => (
+                    <div
+                        key={r.label}
+                        className="h-9 px-5 flex items-center gap-2"
+                        title="Automated answers never count as a reply"
+                    >
+                        <span className="size-1.5 rounded-full border border-slate-300" />
+                        <span className="text-[12px] text-slate-500">{r.label}</span>
+                        <span className="text-[9.5px] text-slate-400 font-mono">not counted</span>
+                        <span className="ml-auto font-mono text-[11px] text-slate-400 tabular-nums">
+                            {loading ? "—" : <AnimatedNumber value={r.value ?? 0} />}
+                        </span>
+                        <span className="w-12" />
+                    </div>
+                ))}
+            </div>
+        </div>
     );
 }
 

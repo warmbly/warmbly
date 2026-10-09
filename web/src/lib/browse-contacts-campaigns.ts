@@ -40,5 +40,5 @@ export const campaignPeriodSchema = z.union([
     z.object({ key: z.enum(["7d", "30d", "90d", "all"]) }),
     z.object({ key: z.literal("custom"), from: daySchema, to: daySchema }).refine(({ from, to }) => from <= to),
 ]);
-export const hiddenMetricsSchema = z.array(z.enum(["sent", "opens", "clicks", "replies"])).max(3).refine(unique);
+export const hiddenMetricsSchema = z.array(z.enum(["sent", "opens", "clicks", "replies", "positive_replies"])).max(4).refine(unique);
 export const importViewSchema = z.enum(["columns", "preview"]);

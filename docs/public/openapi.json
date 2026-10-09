@@ -37032,13 +37032,49 @@
             "type": "integer"
           },
           "replies": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Human replies, one per step a contact answered. Automated replies are never counted."
+          },
+          "positive_replies": {
+            "type": "integer",
+            "description": "Subset of replies the reply classifier judged positive."
+          },
+          "interested_leads": {
+            "type": "integer",
+            "description": "Distinct contacts with at least one positive reply."
           },
           "bounces": {
             "type": "integer"
           },
           "unsubscribes": {
             "type": "integer"
+          },
+          "reply_breakdown": {
+            "type": "object",
+            "description": "Replies by classification. positive, neutral, negative, unsubscribe and unclassified add up to replies; out_of_office and auto_reply are automated answers and not part of replies.",
+            "properties": {
+              "positive": {
+                "type": "integer"
+              },
+              "neutral": {
+                "type": "integer"
+              },
+              "negative": {
+                "type": "integer"
+              },
+              "unsubscribe": {
+                "type": "integer"
+              },
+              "unclassified": {
+                "type": "integer"
+              },
+              "out_of_office": {
+                "type": "integer"
+              },
+              "auto_reply": {
+                "type": "integer"
+              }
+            }
           },
           "open_rate": {
             "type": "number"
@@ -37048,6 +37084,10 @@
           },
           "reply_rate": {
             "type": "number"
+          },
+          "positive_reply_rate": {
+            "type": "number",
+            "description": "positive_replies as a percentage of emails_sent."
           },
           "bounce_rate": {
             "type": "number"
@@ -37088,6 +37128,10 @@
           "replies": {
             "type": "integer"
           },
+          "positive_replies": {
+            "type": "integer",
+            "description": "Subset of replies the reply classifier judged positive."
+          },
           "bounces": {
             "type": "integer"
           },
@@ -37105,6 +37149,11 @@
             "type": "number",
             "format": "double",
             "description": "Replies as a percentage of this step's own emails_sent. 0 while the step has sent nothing."
+          },
+          "positive_reply_rate": {
+            "type": "number",
+            "format": "double",
+            "description": "Positive replies as a percentage of this step's own emails_sent. 0 while the step has sent nothing."
           },
           "bounce_rate": {
             "type": "number",
@@ -37145,6 +37194,9 @@
             "type": "integer"
           },
           "replies": {
+            "type": "integer"
+          },
+          "positive_replies": {
             "type": "integer"
           }
         }

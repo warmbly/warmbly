@@ -395,8 +395,11 @@ struct CampaignDetailView: View {
             LazyVGrid(columns: Self.statColumns, alignment: .leading, spacing: 16) {
                 miniStat("Open rate", rate(summary?.openRate), tone: .sky)
                 miniStat("Reply rate", rate(summary?.replyRate), tone: .emerald)
+                miniStat("Positive rate", rate(summary?.positiveReplyRate), tone: .emerald)
                 miniStat("Bounce rate", rate(summary?.bounceRate), tone: bounce >= 5 ? .rose : (bounce >= 2 ? .amber : nil))
                 miniStat("Clicks", WFormat.compact(summary?.uniqueClicks ?? 0))
+                miniStat("Interested", WFormat.compact(summary?.interestedLeads ?? 0))
+                miniStat("Positive", WFormat.compact(summary?.positiveReplies ?? 0))
                 miniStat("Unsubs", WFormat.compact(summary?.unsubscribes ?? 0))
                 miniStat("In queue", WFormat.compact(summary?.emailsPending ?? 0))
             }

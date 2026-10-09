@@ -155,6 +155,13 @@ const (
 	machineClicksCount = `COUNT(CASE WHEN ccp.clicked_at IS NULL AND mc.machine_only THEN 1 END) as machine_clicks`
 )
 
+// A positive reply is a human reply (automated ones never stamp replied_at)
+// classified positive, counted per progress row so every view adds up.
+const (
+	positiveReply      = `ccp.replied_at IS NOT NULL AND ccp.reply_class = 'positive'`
+	positiveReplyCount = `COUNT(CASE WHEN ` + positiveReply + ` THEN 1 END) as positive_replies`
+)
+
 // sentWithin keeps the progress rows whose send falls on period's UTC days,
 // To included, numbering its two params from next; nil keeps every row. An
 // open, click, reply or bounce belongs to its send's day, not its own.
@@ -197,6 +204,14 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, cam
 			COUNT(CASE WHEN ccp.clicked_at IS NOT NULL THEN 1 END) as unique_clicks,
 			` + machineClicksCount + `,
 			COUNT(CASE WHEN ccp.replied_at IS NOT NULL THEN 1 END) as replies,
+			` + positiveReplyCount + `,
+			COUNT(DISTINCT CASE WHEN ` + positiveReply + ` THEN ccp.contact_id END) as interested_leads,
+			COUNT(CASE WHEN ccp.replied_at IS NOT NULL AND ccp.reply_class = 'neutral' THEN 1 END) as neutral_replies,
+			COUNT(CASE WHEN ccp.replied_at IS NOT NULL AND ccp.reply_class = 'negative' THEN 1 END) as negative_replies,
+			COUNT(CASE WHEN ccp.replied_at IS NOT NULL AND ccp.reply_class = 'unsubscribe' THEN 1 END) as unsubscribe_replies,
+			COUNT(CASE WHEN ccp.replied_at IS NOT NULL AND ccp.reply_class NOT IN ('positive', 'neutral', 'negative', 'unsubscribe') THEN 1 END) as unclassified_replies,
+			COUNT(CASE WHEN ccp.replied_at IS NULL AND ccp.reply_class = 'out_of_office' THEN 1 END) as out_of_office_replies,
+			COUNT(CASE WHEN ccp.replied_at IS NULL AND ccp.reply_class = 'auto_reply' THEN 1 END) as auto_replies,
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL THEN 1 END) as bounces
 		FROM campaigns c
 		CROSS JOIN campaign_plan cp
@@ -220,6 +235,14 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, cam
 		&summary.UniqueClicks,
 		&summary.MachineClicks,
 		&summary.Replies,
+		&summary.PositiveReplies,
+		&summary.InterestedLeads,
+		&summary.ReplyBreakdown.Neutral,
+		&summary.ReplyBreakdown.Negative,
+		&summary.ReplyBreakdown.Unsubscribe,
+		&summary.ReplyBreakdown.Unclassified,
+		&summary.ReplyBreakdown.OutOfOffice,
+		&summary.ReplyBreakdown.AutoReply,
 		&summary.Bounces,
 	)
 	if err != nil {
@@ -227,11 +250,14 @@ func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, cam
 		return nil, errx.InternalError()
 	}
 
+	summary.ReplyBreakdown.Positive = summary.PositiveReplies
+
 	// Calculate rates
 	if summary.EmailsSent > 0 {
 		summary.OpenRate = float64(summary.UniqueOpens) / float64(summary.EmailsSent) * 100
 		summary.ClickRate = float64(summary.UniqueClicks) / float64(summary.EmailsSent) * 100
 		summary.ReplyRate = float64(summary.Replies) / float64(summary.EmailsSent) * 100
+		summary.PositiveReplyRate = models.Rate(summary.PositiveReplies, summary.EmailsSent)
 		summary.BounceRate = float64(summary.Bounces) / float64(summary.EmailsSent) * 100
 	}
 
@@ -247,7 +273,8 @@ func (r *analyticsRepository) GetCampaignDailyStats(ctx context.Context, campaig
 			COUNT(*) as sent,
 			COUNT(CASE WHEN ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine THEN 1 END) as opens,
 			COUNT(CASE WHEN ccp.clicked_at IS NOT NULL THEN 1 END) as clicks,
-			COUNT(CASE WHEN ccp.replied_at IS NOT NULL THEN 1 END) as replies
+			COUNT(CASE WHEN ccp.replied_at IS NOT NULL THEN 1 END) as replies,
+			` + positiveReplyCount + `
 		FROM campaign_contact_progress ccp
 		JOIN sequences s ON s.id = ccp.sequence_id AND s.kind = 'email'
 		WHERE ccp.campaign_id = $1
@@ -268,7 +295,7 @@ func (r *analyticsRepository) GetCampaignDailyStats(ctx context.Context, campaig
 	stats := make([]models.CampaignDailyStats, 0)
 	for rows.Next() {
 		var s models.CampaignDailyStats
-		if err := rows.Scan(&s.Date, &s.Sent, &s.Opens, &s.Clicks, &s.Replies); err != nil {
+		if err := rows.Scan(&s.Date, &s.Sent, &s.Opens, &s.Clicks, &s.Replies, &s.PositiveReplies); err != nil {
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
@@ -387,6 +414,7 @@ func (r *analyticsRepository) GetSequenceStats(ctx context.Context, campaignID u
 			COUNT(CASE WHEN ccp.clicked_at IS NOT NULL THEN 1 END) as clicks,
 			` + machineClicksCount + `,
 			COUNT(CASE WHEN ccp.replied_at IS NOT NULL THEN 1 END) as replies,
+			` + positiveReplyCount + `,
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL THEN 1 END) as bounces
 		FROM sequences s
 		LEFT JOIN campaign_contact_progress ccp ON ccp.sequence_id = s.id AND ccp.campaign_id = $1` + cohort + machineClicksJoin + `
@@ -407,7 +435,7 @@ func (r *analyticsRepository) GetSequenceStats(ctx context.Context, campaignID u
 	stats := make([]models.SequenceStats, 0)
 	for rows.Next() {
 		var s models.SequenceStats
-		if err := rows.Scan(&s.SequenceID, &s.Name, &s.Position, &s.EmailsSent, &s.Opens, &s.MachineOpens, &s.Clicks, &s.MachineClicks, &s.Replies, &s.Bounces); err != nil {
+		if err := rows.Scan(&s.SequenceID, &s.Name, &s.Position, &s.EmailsSent, &s.Opens, &s.MachineOpens, &s.Clicks, &s.MachineClicks, &s.Replies, &s.PositiveReplies, &s.Bounces); err != nil {
 			db.CaptureError(err, "", nil, "scan")
 			return nil, errx.InternalError()
 		}
@@ -416,6 +444,7 @@ func (r *analyticsRepository) GetSequenceStats(ctx context.Context, campaignID u
 		s.OpenRate = models.Rate(s.Opens, s.EmailsSent)
 		s.ClickRate = models.Rate(s.Clicks, s.EmailsSent)
 		s.ReplyRate = models.Rate(s.Replies, s.EmailsSent)
+		s.PositiveReplyRate = models.Rate(s.PositiveReplies, s.EmailsSent)
 		s.BounceRate = models.Rate(s.Bounces, s.EmailsSent)
 		stats = append(stats, s)
 	}

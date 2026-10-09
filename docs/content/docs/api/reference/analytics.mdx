@@ -317,7 +317,7 @@ Returns a single campaign's performance summary plus per-sequence-step stats, fo
 
 Leave out both `from` and `to` for the campaign's whole history. Supplying only one of them, a date in another format, or a `from` after `to` returns `400` with code `bad_request`.
 
-A period is a send cohort: it selects the emails sent on its days, from the start of `from` to the end of `to` in UTC, and counts every open, click, reply and bounce those emails earned, whenever it arrived. An email sent on September 5 that is replied to on September 10 counts in a September 1 to 7 period; a reply that arrives on September 3 to an email sent in August does not. That keeps each rate's numerator and denominator the same emails. The period scopes `emails_sent`, the open, click, reply and bounce counts and rates, every row in `steps` and every bucket in `engagement` (an open or click counts when the email it answers was sent in the period). `total_contacts` and `emails_pending` describe the campaign as it stands now and are the same whatever the period.
+A period is a send cohort: it selects the emails sent on its days, from the start of `from` to the end of `to` in UTC, and counts every open, click, reply and bounce those emails earned, whenever it arrived. An email sent on September 5 that is replied to on September 10 counts in a September 1 to 7 period; a reply that arrives on September 3 to an email sent in August does not. That keeps each rate's numerator and denominator the same emails. The period scopes `emails_sent`, the open, click, reply, positive reply and bounce counts and rates, `interested_leads`, `reply_breakdown`, every row in `steps` and every bucket in `engagement` (an open or click counts when the email it answers was sent in the period). `total_contacts` and `emails_pending` describe the campaign as it stands now and are the same whatever the period.
 
 `date_range` is the period the figures cover, as midnight UTC on its first and last day: the `from` and `to` you sent, or for the whole history the day of the campaign's first send (its creation day before anything is sent) through today.
 
@@ -338,11 +338,23 @@ A period is a send cohort: it selects the emails sent on its days, from the star
     "unique_clicks": 99,
     "machine_clicks": 4,
     "replies": 41,
+    "positive_replies": 12,
+    "interested_leads": 11,
     "bounces": 5,
     "unsubscribes": 3,
+    "reply_breakdown": {
+      "positive": 12,
+      "neutral": 9,
+      "negative": 14,
+      "unsubscribe": 4,
+      "unclassified": 2,
+      "out_of_office": 17,
+      "auto_reply": 6
+    },
     "open_rate": 50.0,
     "click_rate": 12.07,
     "reply_rate": 5.0,
+    "positive_reply_rate": 1.46,
     "bounce_rate": 0.61
   },
   "steps": [
@@ -356,10 +368,12 @@ A period is a send cohort: it selects the emails sent on its days, from the star
       "clicks": 61,
       "machine_clicks": 2,
       "replies": 28,
+      "positive_replies": 8,
       "bounces": 3,
       "open_rate": 52.0,
       "click_rate": 12.2,
       "reply_rate": 5.6,
+      "positive_reply_rate": 1.6,
       "bounce_rate": 0.6
     }
   ],
@@ -376,15 +390,19 @@ A period is a send cohort: it selects the emails sent on its days, from the star
 
 `unique_opens`, `opens`, `total_opens` and every open rate count a person's opens only. `machine_opens` is the separate count of steps whose only open came from an automated fetcher (UA-less clients, known scanner networks, and opens inside the instance's automated-open window, which starts when the step is dispatched to a worker); it is not part of the open counts. Apple Mail Privacy Protection's relay (a user agent of just `Mozilla/5.0`) and the stripped WebKit signature Mail on a Mac and the new Outlook for Windows share are counted as a prefetch only inside that window; by themselves they do not prove automation. A person's later open on a machine-opened step moves it from `machine_opens` into the open count. `machine_clicks` counts the contacts whose only clicks on a step were automated (a security gateway walking the links); those are not part of `unique_clicks` or `total_clicks`, which only ever count a person's click.
 
+`replies` counts human replies, one per step a contact answered; out-of-office notices and autoresponders are never part of it. `positive_replies` is the subset the [reply classifier](/guides/inbox-tagging/) judged positive, and `positive_reply_rate` is that count as a percentage of `emails_sent`, the same denominator as `reply_rate`. `interested_leads` counts distinct contacts with at least one positive reply, so a lead who answered two steps positively counts once. A step's classification is its latest reply's: a lead who answered positively and later wrote back to say no is counted under `negative`.
+
+`reply_breakdown` splits the same replies by classification. `positive`, `neutral`, `negative`, `unsubscribe` (a reply asking to stop) and `unclassified` (a reply the classifier could not place, or one received before replies were classified) add up to `replies`. `out_of_office` and `auto_reply` count the automated answers, which are not replies and are listed only so the split is complete. The steps and daily series count positive replies the same way, so they add up to the summary for the same period.
+
 `steps` lists the campaign's email steps in sequence order, the order the steps list returns them. `position` is the step's 1-based number among those email steps, the `N` the canvas shows as `Email N`. It is not the step's own `position` field: action steps are not counted and a deleted step leaves no gap. Match a row to its step by `step_id`.
 
-Each entry in `steps` carries that step's own rates: `open_rate`, `click_rate`, `reply_rate` and `bounce_rate` are percentages of that step's `emails_sent`, not of the campaign's, so a follow-up that reached a tenth of the contacts still compares against the first touch. They are `0` while the step has sent nothing. `machine_opens` and `machine_clicks` follow the same rules as their summary counterparts, scoped to the step.
+Each entry in `steps` carries that step's own rates: `open_rate`, `click_rate`, `reply_rate`, `positive_reply_rate` and `bounce_rate` are percentages of that step's `emails_sent`, not of the campaign's, so a follow-up that reached a tenth of the contacts still compares against the first touch. They are `0` while the step has sent nothing. `machine_opens` and `machine_clicks` follow the same rules as their summary counterparts, scoped to the step.
 
 ## Get campaign daily stats
 
 `GET /analytics/campaigns/:id/daily`
 
-Returns per-day send, open, click, and reply counts for one campaign over a date range. The campaign must belong to the caller. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
+Returns per-day send, open, click, reply and positive reply counts for one campaign over a date range. The campaign must belong to the caller. Auth: **Scope** `READ_ANALYTICS` · **Org permission** `view_analytics`.
 
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
@@ -392,7 +410,7 @@ Returns per-day send, open, click, and reply counts for one campaign over a date
 | `from` | query | string | Required. First day (`YYYY-MM-DD`, UTC). |
 | `to` | query | string | Required. Last day (`YYYY-MM-DD`, UTC), included. |
 
-Each row is one UTC day with at least one send, and its opens, clicks and replies are those earned by that day's sends, whenever they arrived. The rows for a period add up to the [campaign analytics](#get-campaign-analytics) for the same `from` and `to`.
+Each row is one UTC day with at least one send, and its opens, clicks, replies and positive replies are those earned by that day's sends, whenever they arrived. The rows for a period add up to the [campaign analytics](#get-campaign-analytics) for the same `from` and `to`.
 
 ### Response
 
@@ -401,8 +419,8 @@ The series is returned under a `data` envelope.
 ```json
 {
   "data": [
-    { "date": "2026-06-05", "sent": 120, "opens": 61, "clicks": 14, "replies": 6 },
-    { "date": "2026-06-06", "sent": 110, "opens": 58, "clicks": 12, "replies": 5 }
+    { "date": "2026-06-05", "sent": 120, "opens": 61, "clicks": 14, "replies": 6, "positive_replies": 2 },
+    { "date": "2026-06-06", "sent": 110, "opens": 58, "clicks": 12, "replies": 5, "positive_replies": 1 }
   ]
 }
 ```

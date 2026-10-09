@@ -535,11 +535,15 @@ struct CampaignAnalyticsSummary: Codable, Sendable {
     var machineOpens: Int?
     var uniqueClicks: Int?
     var replies: Int?
+    var positiveReplies: Int?
+    var interestedLeads: Int?
     var bounces: Int?
     var unsubscribes: Int?
+    var replyBreakdown: CampaignReplyBreakdown?
     var openRate: Double?
     var clickRate: Double?
     var replyRate: Double?
+    var positiveReplyRate: Double?
     var bounceRate: Double?
 
     enum CodingKeys: String, CodingKey {
@@ -550,10 +554,32 @@ struct CampaignAnalyticsSummary: Codable, Sendable {
         case machineOpens = "machine_opens"
         case uniqueClicks = "unique_clicks"
         case replies, bounces, unsubscribes
+        case positiveReplies = "positive_replies"
+        case interestedLeads = "interested_leads"
+        case replyBreakdown = "reply_breakdown"
         case openRate = "open_rate"
         case clickRate = "click_rate"
         case replyRate = "reply_rate"
+        case positiveReplyRate = "positive_reply_rate"
         case bounceRate = "bounce_rate"
+    }
+}
+
+/// Replies by classification; the human classes plus unclassified add up to
+/// `replies`, and the automated ones are not part of it.
+struct CampaignReplyBreakdown: Codable, Sendable {
+    var positive: Int?
+    var neutral: Int?
+    var negative: Int?
+    var unsubscribe: Int?
+    var unclassified: Int?
+    var outOfOffice: Int?
+    var autoReply: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case positive, neutral, negative, unsubscribe, unclassified
+        case outOfOffice = "out_of_office"
+        case autoReply = "auto_reply"
     }
 }
 
@@ -565,7 +591,10 @@ struct CampaignAnalyticsStep: Codable, Identifiable, Sendable {
     var opens: Int?
     var clicks: Int?
     var replies: Int?
+    var positiveReplies: Int?
     var bounces: Int?
+    var replyRate: Double?
+    var positiveReplyRate: Double?
 
     var id: String { stepID ?? String(position ?? 0) }
 
@@ -573,6 +602,9 @@ struct CampaignAnalyticsStep: Codable, Identifiable, Sendable {
         case stepID = "step_id"
         case name, position, opens, clicks, replies, bounces
         case emailsSent = "emails_sent"
+        case positiveReplies = "positive_replies"
+        case replyRate = "reply_rate"
+        case positiveReplyRate = "positive_reply_rate"
     }
 }
 
@@ -582,9 +614,11 @@ struct CampaignDailyStat: Codable, Hashable, Sendable {
     var opens: Int?
     var clicks: Int?
     var replies: Int?
+    var positiveReplies: Int?
 
     enum CodingKeys: String, CodingKey {
         case date, sent, opens, clicks, replies
+        case positiveReplies = "positive_replies"
     }
 }
 
