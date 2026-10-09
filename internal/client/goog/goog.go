@@ -47,6 +47,7 @@ type Client struct {
 }
 
 func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Config) *errx.MailError {
+	ctx = stoken.BoundedContext(ctx)
 	ts := cfg.TokenSource(ctx, token)
 	ts = oauth2.ReuseTokenSource(token, ts)
 	// Only wrap when there is somewhere to persist to. stoken calls onUpdate on
@@ -63,7 +64,7 @@ func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Confi
 // InitWithSource builds the client on a caller-owned token source (brokered
 // tokens from Warmbly Cloud); nothing is persisted from it.
 func (c *Client) InitWithSource(ctx context.Context, ts oauth2.TokenSource) *errx.MailError {
-	httpClient := oauth2.NewClient(ctx, ts)
+	httpClient := stoken.HTTPClient(ctx, ts)
 	c.rawClient = httpClient
 	var err error
 	c.srv, err = gmail.NewService(ctx, option.WithHTTPClient(httpClient))

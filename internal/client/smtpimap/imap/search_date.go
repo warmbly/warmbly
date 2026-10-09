@@ -22,6 +22,7 @@ type selection struct {
 	name        string
 	uidValidity uint32
 	count       uint32
+	modSeq      uint64
 }
 
 // dateScan is the INTERNALDATE read of one folder for one window. UIDs below

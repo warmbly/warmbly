@@ -67,10 +67,19 @@ func TestLiveMonitoringReadOnlySnapshotAndPrivacy(t *testing.T) {
 	requireSchemaVersion(t, pool, 277)
 	f := newWarmupUsageFixture(t, pool)
 	f.exec(`UPDATE email_accounts SET signature_plain='private-monitoring-content',email='private-monitoring@example.test' WHERE id=$1`, f.account)
+	var arrivalsPresent bool
+	if err := pool.QueryRow(t.Context(), "SELECT to_regclass('public.sync_arrival_outbox') IS NOT NULL").Scan(&arrivalsPresent); err != nil {
+		t.Fatal(err)
+	}
+	if arrivalsPresent {
+		id := uuid.New()
+		f.exec(`INSERT INTO email_message_map(user_id,email_id,message_id,id) VALUES($1,$2,$3,$4)`, f.user, f.account, "private-monitoring-message", id)
+		f.exec(`INSERT INTO sync_arrival_outbox(user_id,email_id,organization_id,message_id,id,payload) VALUES($1,$2,$3,$4,$5,$6)`, f.user, f.account, f.org, "private-monitoring-message", id, "private-monitoring-payload")
+	}
 	r := NewMonitoringRepository(monitoringReadOnlyPool(t, pool))
 	out := monitoring.New(r.Sources()).Snapshot(t.Context(), models.AdminPermViewAnalytics|models.AdminPermViewUsers|models.AdminPermViewWorkers|models.AdminPermViewCampaigns|models.AdminPermViewOrganizations|models.AdminPermManageSettings)
 	for _, source := range out.Sources {
-		if source.ID == "arrivals" {
+		if source.ID == "arrivals" && !arrivalsPresent {
 			if source.Reason != "schema_absent" || source.Availability != models.MonitoringUnavailable {
 				t.Fatal(source)
 			}
@@ -78,6 +87,17 @@ func TestLiveMonitoringReadOnlySnapshotAndPrivacy(t *testing.T) {
 		}
 		if source.Availability != models.MonitoringFresh {
 			t.Fatalf("source %s unavailable: %+v", source.ID, source)
+		}
+		if source.ID == "arrivals" {
+			for _, metric := range source.Metrics {
+				if metric.Availability != models.MonitoringFresh || metric.Count == nil {
+					t.Fatalf("arrival evidence is not measured: %+v", metric)
+				}
+			}
+			pending := measuredMonitoring(t, source, "arrival_pending")
+			if pending.Count == nil || *pending.Count < 1 {
+				t.Fatalf("pending arrival fixture was not measured: %+v", pending)
+			}
 		}
 		if source.ID == "worker_samples" {
 			for _, m := range source.Metrics {
@@ -96,7 +116,7 @@ func TestLiveMonitoringReadOnlySnapshotAndPrivacy(t *testing.T) {
 			t.Fatalf("private evidence %q leaked", private)
 		}
 	}
-	if out.Coverage == "complete" {
+	if !arrivalsPresent && out.Coverage == "complete" {
 		t.Fatal("absent optional arrival source became all-clear")
 	}
 }

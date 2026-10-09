@@ -39,6 +39,7 @@ type UniboxRepository interface {
 	UpdateEntry(ctx context.Context, userID, emailID, id uuid.UUID, e *UpdateUniboxEntry) error
 	GetIncoming(ctx context.Context, userID uuid.UUID, limit int, cursor string) (*models.MailSearchResult, error)
 	GetByID(ctx context.Context, userID, id uuid.UUID) (*models.EmailMessageStoreData, error)
+	GetForSync(ctx context.Context, userID, emailID, id uuid.UUID) (*models.EmailMessageStoreData, error)
 	// GetByIDForOrg is the org-scoped read for the unibox detail view: any
 	// member with unibox access can open a message in the org-wide list. It
 	// returns the row plus the mailbox OWNER's user_id, which the S3 body key
@@ -457,14 +458,35 @@ func (r *uniboxRepository) GetIncoming(ctx context.Context, userID uuid.UUID, li
 var ErrEmailNotFound = errors.New("email not found")
 
 func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*models.EmailMessageStoreData, error) {
+	e, err := r.getMessage(ctx, userID, uuid.Nil, id)
+	if err != nil {
+		return nil, err
+	}
+	if !e.Seen {
+		_ = r.MarkSeen(ctx, userID, id, true)
+		e.Seen = true
+	}
+	return e, nil
+}
+
+// GetForSync reads provider state without treating background work as a user view.
+func (r *uniboxRepository) GetForSync(ctx context.Context, userID, emailID, id uuid.UUID) (*models.EmailMessageStoreData, error) {
+	if emailID == uuid.Nil {
+		return nil, ErrEmailNotFound
+	}
+	return r.getMessage(ctx, userID, emailID, id)
+}
+
+func (r *uniboxRepository) getMessage(ctx context.Context, userID, emailID, id uuid.UUID) (*models.EmailMessageStoreData, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM unibox_emails
 		WHERE user_id = $1 AND id = $2
+		  AND ($3::uuid = '00000000-0000-0000-0000-000000000000' OR email_id = $3)
 	`, strings.Join(mailFieldsFull, ", "))
 
 	var e models.EmailMessageStoreData
-	err := r.db.QueryRow(ctx, query, userID, id).Scan(
+	err := r.db.QueryRow(ctx, query, userID, id, emailID).Scan(
 		&e.ID, &e.EmailID, &e.Mailbox, &e.FolderPath, &e.ThreadID, &e.MessageID,
 		&e.GmailID, &e.ParentID, &e.UID, &e.ModSeq,
 		&e.Flags, &e.BCC, &e.CC, &e.FromAddr, &e.InReplyTo, &e.ReplyTo,
@@ -476,12 +498,6 @@ func (r *uniboxRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*
 			return nil, ErrEmailNotFound
 		}
 		return nil, err
-	}
-
-	// Auto-mark as seen
-	if !e.Seen {
-		_ = r.MarkSeen(ctx, userID, id, true)
-		e.Seen = true
 	}
 
 	return &e, nil

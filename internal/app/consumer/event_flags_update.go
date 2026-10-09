@@ -38,7 +38,7 @@ func (s *JobsService) HandleFlagsAdd(ctx context.Context, e *models.JobEventFlag
 		}
 	}
 
-	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.EmailID, e.ID, func(message *models.EmailMessageStoreData) {
 		for _, flag := range e.Flags {
 			if !slices.Contains(message.Flags, flag) {
 				message.Flags = append(message.Flags, flag)
@@ -155,7 +155,7 @@ func warmupTokenFromFlags(flags []string) string {
 }
 
 func (s *JobsService) HandleFlagsRemove(ctx context.Context, e *models.JobEventFlags) error {
-	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.EmailID, e.ID, func(message *models.EmailMessageStoreData) {
 		message.Flags = slices.DeleteFunc(message.Flags, func(flag string) bool { return slices.Contains(e.Flags, flag) })
 		if models.SeenFromFlags(e.Flags) {
 			message.Seen = false

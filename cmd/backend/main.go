@@ -1140,6 +1140,7 @@ func main() {
 		}
 
 		cipherService = cipher.NewService(kms, cache, encryptedKeys)
+		emailMessageMapForHandler = repository.NewDurableEmailMessageMapRepository(primaryDB, cipherService)
 
 		// Third-party integrations: OAuth connect flows + encrypted token
 		// storage (sealed with the connecting user's DEK) + event-driven actions.

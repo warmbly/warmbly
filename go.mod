@@ -20,7 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.67.7
 	github.com/aws/smithy-go v1.28.1
 	github.com/confluentinc/confluent-kafka-go/v2 v2.12.0
-	github.com/emersion/go-imap/v2 v2.0.0-beta.5
+	github.com/emersion/go-imap/v2 v2.0.0-beta.7
 	github.com/emersion/go-message v0.18.1
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/getsentry/sentry-go v0.36.2

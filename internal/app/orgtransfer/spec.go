@@ -756,7 +756,8 @@ var Tables = []Table{
 	},
 	{
 		Name: "email_message_map", Group: models.OrgDataGroupInbox,
-		Scope: `email_id IN ` + orgMailboxes,
+		Scope: `email_id IN ` + orgMailboxes + ` AND NOT EXISTS (SELECT 1 FROM sync_arrival_outbox o WHERE o.user_id=email_message_map.user_id AND o.email_id=email_message_map.email_id AND o.message_id=email_message_map.message_id AND o.stage=0)`,
+		Owner: `email_id IN ` + orgMailboxes,
 		Note:  "Maps provider message ids to internal ones, so replies still thread after the move.",
 	},
 	{
@@ -1005,6 +1006,7 @@ var Tables = []Table{
 // with the reason. Kept as data so the docs page and the coverage test both
 // read from one list instead of restating it.
 var ExcludedTables = map[string]string{
+	"sync_arrival_outbox":           "Encrypted, org-key-owned arrival delivery queue bound to this instance's provider handles and body storage. Pending maps are excluded too so destination sync retries them; no queue secrets or blob references travel. Full instance backups retain queue, org keys and bodies together.",
 	"send_result_effects":           "Source-instance reconciliation delivery queue. Pending webhook and notification effects must drain on the source; imports must not replay customer notifications. Full instance backups retain the durable outbox.",
 	"warmup_received":               "Raw receiving-mailbox observations and provider thread handles are source-instance evidence, not portable send authority. Aggregated warmup placement history travels; imported threads cannot continue without new verified observations.",
 	"diagnostic_auth_verifications": "Bounded DKIM observations and grants bind source-instance workers, provider messages and cross-workspace diagnostic parents. They cannot authorize imported mail; destination verification starts unknown. Full instance database backups retain them.",

@@ -10,6 +10,7 @@ import (
 	"github.com/warmbly/warmbly/internal/client/msgraph"
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // graphBackfillPage is $top for one backfill listing. Messages come back
@@ -25,11 +26,37 @@ func (w *WMail) SyncGraph(ctx context.Context) *errx.MailError {
 	w.beginTick()
 	stats := &tickStats{}
 	w.graphTick = stats
+	complete := false
+	defer func() { w.endTick(ctx, stats, complete) }()
 	if !w.retryUnmap(ctx) {
 		return nil
 	}
+	w.tracker.startBackfill(time.Now(), w.gov.Policy().BackfillDays)
+	w.GraphData.Client.OnRecoveryStart = w.graphRecoveryStart
+	w.GraphData.Client.OnRecoveryCheckpoint = w.graphRecoveryCheckpoint
+	w.GraphData.Client.OnRecoveryBaseline = w.graphRecoveryBaseline
+	w.GraphData.Client.PendingRecoveryLink = w.graphPendingRecoveryLink
+	w.GraphData.Client.Recovering = w.graphRecovering
+	if w.SyncContext != nil && w.GraphData.Client.ImmutableIDMode() {
+		done, err := w.graphUpgradeIDs(ctx)
+		if errors.Is(err, repository.ErrSyncContextUnsupported) {
+			w.GraphData.Client.SetImmutableIDMode(false)
+			w.CaptureError(err)
+			done, err = true, nil
+		}
+		if err != nil {
+			return w.graphSyncError(err)
+		}
+		if !done {
+			return nil
+		}
+		if w.GraphData.Client.ImmutableIDMode() {
+			w.GraphData.Client.OnFolderReconcile = w.graphReconcileFolder
+		}
+	}
 
-	if err := w.GraphData.Client.Sync(ctx); err != nil {
+	caughtUp, err := w.GraphData.Client.SyncPass(ctx)
+	if err != nil {
 		var mailErr *errx.MailError
 		if errors.As(err, &mailErr) {
 			return mailErr
@@ -42,7 +69,7 @@ func (w *WMail) SyncGraph(ctx context.Context) *errx.MailError {
 			return merr
 		}
 	}
-	w.endTick(stats)
+	complete = caughtUp
 	return nil
 }
 
@@ -58,19 +85,29 @@ func (w *WMail) onGraphMessageSeen(ctx context.Context, folder, providerID strin
 	if stats.aborted {
 		return false, msgraph.ErrStop
 	}
-	known, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, providerID)
+	known, err := w.graphMessageMap(ctx, providerID)
 	if err != nil {
 		w.controlPlaneError(err, stats)
 		return false, msgraph.ErrStop
 	}
 	if known != nil {
-		return true, w.onGraphFlagsChange(ctx, providerID, seen)
-	}
-	if w.observeLive(ctx, []string{providerID}, stats) {
-		return false, msgraph.ErrStop
+		if !w.GraphData.Client.ImmutableIDMode() {
+			if err := w.onGraphFlagsChange(ctx, providerID, seen); err != nil {
+				return false, err
+			}
+			id, err := uuid.Parse(known.ID)
+			if err != nil {
+				return false, err
+			}
+			return true, w.emitFolder(id, (&msgraph.GraphMessage{}).ToEmailData(folder).Folder)
+		}
+		return true, w.graphReconcileMessage(ctx, known.ID, providerID, folder)
 	}
 
 	lane, cached := w.laneCache.get(providerID)
+	if (msgraph.IsRecovery(ctx) && lane == LaneLive) || (!msgraph.IsRecovery(ctx) && lane == LaneBackfill) {
+		cached = false
+	}
 	var msg *models.EmailMessageData
 	if !cached {
 		full, err := w.GraphData.Client.FetchMessage(ctx, folder, providerID)
@@ -81,8 +118,34 @@ func (w *WMail) onGraphMessageSeen(ctx context.Context, folder, providerID strin
 			return true, nil // gone between the delta item and now
 		}
 		msg = full.ToEmailData(folder)
-		lane = w.laneOf(ctx, providerID, msg, false)
+		lane = w.laneFor(ctx, msg, false)
+		if msgraph.IsRecovery(ctx) && lane != LanePriority {
+			recovery, err := w.graphRecovery(folder)
+			if err != nil {
+				return false, err
+			}
+			if (!msg.InternalDate.IsZero() && msg.InternalDate.Before(recovery.Since)) || recovery.Count >= w.gov.Policy().BackfillMessages {
+				return true, nil
+			}
+			lane = LaneBackfill
+		}
 	}
+	if lane == LaneBackfill && w.tracker.state.BackfillStatus != models.SyncBackfillComplete && w.tracker.state.BackfillSynced >= w.gov.Policy().BackfillMessages {
+		return true, nil
+	}
+	if lane == LaneBackfill && msgraph.IsRecovery(ctx) {
+		recovery, err := w.graphRecovery(folder)
+		if err != nil {
+			return false, err
+		}
+		if recovery.Count >= w.gov.Policy().BackfillMessages {
+			return true, nil
+		}
+	}
+	if lane == LaneLive && w.observeLive(ctx, []string{providerID}, stats) {
+		return false, msgraph.ErrStop
+	}
+	w.laneCache.put(providerID, lane)
 	if !w.admit(ctx, lane, stats) {
 		return false, nil
 	}
@@ -100,6 +163,18 @@ func (w *WMail) onGraphMessageSeen(ctx context.Context, folder, providerID strin
 	if err := w.graphStore(ctx, msg); err != nil {
 		w.controlPlaneError(err, stats)
 		return false, msgraph.ErrStop
+	}
+	if lane == LaneBackfill {
+		if w.tracker.state.BackfillStatus != models.SyncBackfillComplete {
+			w.tracker.state.BackfillSynced++
+			w.tracker.mark()
+		}
+		recovery, err := w.graphRecovery(folder)
+		if err != nil {
+			return false, err
+		}
+		recovery.Count++
+		w.setGraphRecovery(folder, recovery)
 	}
 	return true, nil
 }
@@ -186,6 +261,7 @@ func (w *WMail) graphBackfill(ctx context.Context, stats *tickStats) *errx.MailE
 					return mailErr
 				}
 				w.CaptureError(err)
+				stats.aborted = true
 				return nil
 			}
 			for _, full := range msgs {

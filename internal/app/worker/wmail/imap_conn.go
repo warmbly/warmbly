@@ -40,7 +40,7 @@ type ImapConn interface {
 	FetchFlags(ctx context.Context, uidFrom uint32) (map[uint32]imap.FlagState, *errx.MailError)
 	SearchSince(since time.Time) ([]goimap.UID, *errx.MailError)
 	FetchEnvelopes(ctx context.Context, uids []goimap.UID) ([]*imap.Fetched, *errx.MailError)
-	FetchBody(f *imap.Fetched)
+	FetchBody(f *imap.Fetched) *errx.MailError
 
 	// Send path.
 	AppendToSent(ctx context.Context, raw []byte, sentAt time.Time) error

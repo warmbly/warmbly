@@ -11,7 +11,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -55,7 +57,9 @@ type Client struct {
 	// DeltaLinks holds the opaque per-folder delta cursor (well-known folder
 	// name -> deltaLink URL). Seeded from persisted state on init and advanced
 	// as sync runs; OnDelta persists each new value off the disposable worker.
-	DeltaLinks map[string]string
+	DeltaLinks   map[string]string
+	ImmutableIDs bool
+	idMu         sync.RWMutex
 
 	// folderIDs caches resolved folder ids (e.g. the created "Warmbly" folder)
 	// so we don't re-list on every warmup action.
@@ -66,10 +70,16 @@ type Client struct {
 	// read state: the caller dedupes, hydrates (FetchMessage) and stores as
 	// budget allows, and returns false for a message it left on the server,
 	// which pins the folder cursor before that page.
-	OnMessageSeen   func(ctx context.Context, folder, providerID string, seen bool) (stored bool, err error)
-	OnMessageRemove func(ctx context.Context, providerID string) error
-	OnDelta         func(ctx context.Context, folder, deltaLink string) error
-	OnTokenRefresh  func(ctx context.Context, token *oauth2.Token) error
+	OnMessageSeen        func(ctx context.Context, folder, providerID string, seen bool) (stored bool, err error)
+	OnMessageRemove      func(ctx context.Context, providerID string) error
+	OnDelta              func(ctx context.Context, folder, deltaLink string) error
+	OnTokenRefresh       func(ctx context.Context, token *oauth2.Token) error
+	OnFolderReconcile    func(ctx context.Context, folder string) (bool, error)
+	OnRecoveryStart      func(ctx context.Context, folder string) error
+	OnRecoveryCheckpoint func(ctx context.Context, folder, link string) error
+	OnRecoveryBaseline   func(ctx context.Context, folder, link string) error
+	PendingRecoveryLink  func(folder string) (string, error)
+	Recovering           func(folder string) bool
 }
 
 // Init builds the auto-refreshing OAuth2 HTTP client. It mirrors goog.Client.Init:
@@ -77,6 +87,7 @@ type Client struct {
 // cfg and persists the new token via OnTokenRefresh (the worker relays it back to
 // the control plane, which owns the encrypted credential store).
 func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Config) *errx.MailError {
+	ctx = stoken.BoundedContext(ctx)
 	ts := cfg.TokenSource(ctx, token)
 	ts = oauth2.ReuseTokenSource(token, ts)
 	// Same guard as goog.Init: a nil OnTokenRefresh would panic per request.
@@ -91,7 +102,7 @@ func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Confi
 // InitWithSource builds the client on a caller-owned token source (brokered
 // tokens from Warmbly Cloud); nothing is persisted from it.
 func (c *Client) InitWithSource(ctx context.Context, ts oauth2.TokenSource) *errx.MailError {
-	c.hc = oauth2.NewClient(ctx, ts)
+	c.hc = stoken.HTTPClient(ctx, ts)
 	if c.DeltaLinks == nil {
 		c.DeltaLinks = map[string]string{}
 	}
@@ -120,6 +131,9 @@ func (c *Client) do(ctx context.Context, method, url, contentType string, body [
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	if c.ImmutableIDMode() {
+		req.Header.Set("Prefer", `IdType="ImmutableId", odata.maxpagesize=50`)
+	}
 	return c.hc.Do(req)
 }
 
@@ -147,9 +161,16 @@ func (c *Client) doJSON(ctx context.Context, method, url string, in, out any) er
 		return HandleError(resp)
 	}
 	if out != nil {
-		return json.NewDecoder(resp.Body).Decode(out)
+		err := json.NewDecoder(resp.Body).Decode(out)
+		var networkError net.Error
+		if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return transportError(err)
+		}
+		return err
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return transportError(err)
+	}
 	return nil
 }
 

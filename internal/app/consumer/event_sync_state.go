@@ -34,12 +34,11 @@ func (s *JobsService) HandleSyncState(ctx context.Context, e *models.JobEventSyn
 		return err
 	}
 
-	// A relayed state means a pass completed: the worker reached the server,
-	// listed its folders and finished the tick. That is the only signal we
-	// get that an outage is over, and without it a five-minute blip left a
-	// red "needs attention" on the mailbox for good, because nothing but a
-	// credential reconnect ever resolved an error row.
-	s.resolveTransientMailErrors(ctx, e.EmailID, e.State.LastSyncedAt)
+	// Progress relays are not recovery evidence; require a newer successful check.
+	if e.State.LastSyncedAt != nil && e.State.Deferred == 0 && e.State.BackfillCursor.GoogleRecovery == nil &&
+		(prev == nil || prev.LastSyncedAt == nil || e.State.LastSyncedAt.After(*prev.LastSyncedAt)) {
+		s.resolveTransientMailErrors(ctx, e.EmailID, e.State.LastSyncedAt)
+	}
 
 	if s.StreamingPublisher == nil {
 		return nil

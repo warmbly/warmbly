@@ -2,8 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/models"
 )
 
 // EmailMessageMapRepository maps a provider messageId to the internal email
@@ -18,6 +21,34 @@ type EmailMessageMapRepository interface {
 	Add(ctx context.Context, data EmailMessageData) error
 	Get(ctx context.Context, userID, emailID uuid.UUID, messageID string) (*EmailMessageData, error)
 	Del(ctx context.Context, userID, emailID uuid.UUID, messageID string, id uuid.UUID) error
+}
+
+var ErrArrivalOutboxUnsupported = errors.New("durable arrival admission unavailable; upgrade backend and consumer first")
+var ErrArrivalAdmissionUnconfirmed = errors.New("existing provider mapping has no verifiable pending admission")
+
+// ArrivalAdmission is an optional internal protocol, separate from legacy map writes.
+type ArrivalAdmission interface {
+	AdmitArrival(context.Context, EmailMessageData, *PendingArrival) error
+}
+
+type PendingArrival struct {
+	Arrival   *models.JobEventNewEmail         `json:"arrival"`
+	Bounce    *models.JobEventInboundBounce    `json:"bounce,omitempty"`
+	Complaint *models.JobEventInboundComplaint `json:"complaint,omitempty"`
+}
+
+type ArrivalOutbox interface {
+	HasPendingArrival(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (bool, error)
+	DeliverArrivals(context.Context, func(context.Context, models.JobEventType, any) error) error
+}
+
+type ArrivalBacklog struct {
+	Pending int
+	Oldest  *time.Time
+}
+
+type ArrivalBacklogRepository interface {
+	ArrivalBacklog(context.Context) (ArrivalBacklog, error)
 }
 
 // EmailMessageData is one (user, mailbox, providerMessageID) -> internal

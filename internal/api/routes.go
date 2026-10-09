@@ -191,6 +191,7 @@ func Run(
 		// Worker mailbox-sync messageId -> internal email map.
 		node.GET("/email-message-map", h.InternalGetEmailMessageMap)
 		node.PUT("/email-message-map", h.InternalPutEmailMessageMap)
+		node.POST("/email-message-map/arrival", h.InternalAdmitEmailArrival)
 		node.DELETE("/email-message-map", h.InternalDeleteEmailMessageMap)
 
 		// Sync governor priority lane: "is this new message a reply to

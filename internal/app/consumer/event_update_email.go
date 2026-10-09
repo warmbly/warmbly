@@ -13,7 +13,7 @@ import (
 )
 
 func (s *JobsService) HandleUpdateEmail(ctx context.Context, e *models.JobEventEmailUpdate) error {
-	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.EmailID, e.ID, func(message *models.EmailMessageStoreData) {
 		token := warmupTokenFromMessage(message)
 		message.Flags = append([]string{}, e.Flags...)
 		if token != "" {
@@ -98,7 +98,7 @@ func (s *JobsService) HandleFolderUpdate(ctx context.Context, e *models.JobEvent
 	if e.Relayed {
 		return s.applyRelayedFolder(ctx, e)
 	}
-	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.ID, func(message *models.EmailMessageStoreData) {
+	email, err := s.emailForSyncUpdate(ctx, e.UserID, e.EmailID, e.ID, func(message *models.EmailMessageStoreData) {
 		// A pending row is not visible yet, so nothing has filed it locally.
 		message.Folder = e.Folder
 	})
@@ -144,16 +144,33 @@ func (s *JobsService) applyRelayedFolder(ctx context.Context, e *models.JobEvent
 }
 
 // emailForSyncUpdate rechecks visible mail if verification won the pending-row lock.
-func (s *JobsService) emailForSyncUpdate(ctx context.Context, userID, id uuid.UUID, updatePending func(*models.EmailMessageStoreData)) (*models.EmailMessageStoreData, error) {
-	message, err := s.UniboxRepository.GetByID(ctx, userID, id)
+var ErrSyncArrivalPending = errors.New("sync arrival pending delivery")
+
+func (s *JobsService) emailForSyncUpdate(ctx context.Context, userID, emailID, id uuid.UUID, updatePending func(*models.EmailMessageStoreData)) (*models.EmailMessageStoreData, error) {
+	message, err := s.UniboxRepository.GetForSync(ctx, userID, emailID, id)
 	if !errors.Is(err, repository.ErrEmailNotFound) {
 		return message, err
 	}
-	updated, err := s.UniboxRepository.UpdatePendingEmail(ctx, userID, id, updatePending)
+	updated, err := s.UniboxRepository.UpdatePendingEmail(ctx, userID, id, func(message *models.EmailMessageStoreData) {
+		if message.EmailID == emailID {
+			updatePending(message)
+		}
+	})
 	if err != nil || updated {
 		return nil, err
 	}
-	message, err = s.UniboxRepository.GetByID(ctx, userID, id)
+	message, err = s.UniboxRepository.GetForSync(ctx, userID, emailID, id)
+	if errors.Is(err, repository.ErrEmailNotFound) && s.ArrivalOutbox != nil {
+		pending, lookupErr := s.ArrivalOutbox.HasPendingArrival(ctx, userID, emailID, id)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if pending {
+			return nil, ErrSyncArrivalPending
+		}
+		// Delivery may have finished between the visible-row read and the marker read.
+		message, err = s.UniboxRepository.GetForSync(ctx, userID, emailID, id)
+	}
 	if errors.Is(err, repository.ErrEmailNotFound) {
 		return nil, nil
 	}

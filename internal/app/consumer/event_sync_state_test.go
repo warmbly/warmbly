@@ -14,11 +14,12 @@ import (
 // stubSyncStateRepo accepts what the worker relays.
 type stubSyncStateRepo struct {
 	repository.EmailSyncStateRepository
-	put *models.SyncState
+	put   *models.SyncState
+	saved *models.SyncState
 }
 
 func (s *stubSyncStateRepo) Get(context.Context, uuid.UUID) (*models.SyncState, error) {
-	return nil, nil
+	return s.saved, nil
 }
 
 func (s *stubSyncStateRepo) Put(_ context.Context, _, _ uuid.UUID, st *models.SyncState) error {

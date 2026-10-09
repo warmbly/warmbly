@@ -41,6 +41,7 @@ type JobsService struct {
 	EmailHistoryIDRepository    repository.EmailHistoryIDRepository
 	EmailGraphDeltaRepository   repository.EmailGraphDeltaRepository
 	EmailSyncStateRepository    repository.EmailSyncStateRepository
+	ArrivalOutbox               repository.ArrivalOutbox
 	EmailAccountErrorRepository repository.EmailAccountErrorRepository
 	WarmupRepo                  repository.WarmupRepository
 	// PoolLinkRepo marks warmup-only mailboxes of linked instances; nil when unused.
@@ -126,6 +127,7 @@ func (s *JobsService) Start(ctx context.Context) {
 	// timestamps.
 	go s.sweepFollowUps(ctx)
 	go s.runSendResultEffects(ctx)
+	go s.runArrivalOutbox(ctx)
 
 	if err := s.Bus.Subscribe(ctx, []string{kafka.TopicWorkerEvents}, "consumer-group", s.receive); err != nil {
 		log.Error().Err(err).Msg("consumer: worker-events subscription ended")
