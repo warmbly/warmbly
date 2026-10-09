@@ -193,7 +193,7 @@ func (cons *Consumer) handleWithRetry(ctx context.Context, msg *ckf.Message, han
 	backoff := 100 * time.Millisecond
 	limit := cons.retryLimit
 	if limit <= 0 {
-		limit = 4
+		limit = 6
 	}
 	for attempt := 1; ; attempt++ {
 		err := handler(msg)

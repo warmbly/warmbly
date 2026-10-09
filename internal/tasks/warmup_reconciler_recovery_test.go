@@ -35,6 +35,29 @@ func (r *reconcileRecoveryRepo) RecoverUnstartedWarmupDispatches(_ context.Conte
 
 type reconcileEmptyEmailRepo struct{ repository.EmailRepository }
 
+type concurrentlyRetiredRecoveryRepo struct {
+	reconcileRecoveryRepo
+}
+
+func (r *concurrentlyRetiredRecoveryRepo) RecoverUnstartedWarmupDispatchBatch(_ context.Context, before time.Time, _ int) (int, int, error) {
+	if d := time.Since(before); d < 9*time.Minute || d > 11*time.Minute {
+		return 0, 0, errors.New("changed the safety window")
+	}
+	r.calls++
+	if r.calls == 1 {
+		return 0, 500, nil
+	}
+	return 50, 50, nil
+}
+
+func TestWarmupRecoveryDoesNotStopWhenOtherReconcilerRetiredSelectedBatch(t *testing.T) {
+	r := &concurrentlyRetiredRecoveryRepo{}
+	s := &tasksService{taskRepo: r, emailRepo: &reconcileEmptyEmailRepo{}}
+	if _, err := s.ReconcileWarmupSchedules(t.Context(), 500); err != nil || r.calls != 2 {
+		t.Fatalf("concurrent retirements cut recovery short: calls=%d err=%v", r.calls, err)
+	}
+}
+
 func (*reconcileEmptyEmailRepo) ListWarmupScheduleCandidates(context.Context, int) ([]uuid.UUID, error) {
 	return nil, nil
 }

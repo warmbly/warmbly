@@ -27,10 +27,15 @@ const unstartedWarmupDispatch = `t.task_type='warmup' AND t.status='completed'
 
 // Only nonce-gated commands that never began execution can be safely retired.
 func (r *taskRepository) RecoverUnstartedWarmupDispatches(ctx context.Context, before time.Time, limit int) (int, error) {
+	recovered, _, err := r.RecoverUnstartedWarmupDispatchBatch(ctx, before, limit)
+	return recovered, err
+}
+
+func (r *taskRepository) RecoverUnstartedWarmupDispatchBatch(ctx context.Context, before time.Time, limit int) (recovered, selected int, err error) {
 	rows, err := r.db.Query(ctx, `SELECT t.id,t.email_account_id FROM tasks t JOIN warmup_tasks w ON w.task_id=t.id
 		WHERE `+unstartedWarmupDispatch+` ORDER BY COALESCE(t.send_reserved_at,t.completed_at),t.id LIMIT $2`, before, limit)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	type candidate struct{ task, mailbox uuid.UUID }
 	var candidates []candidate
@@ -38,26 +43,26 @@ func (r *taskRepository) RecoverUnstartedWarmupDispatches(ctx context.Context, b
 		var c candidate
 		if err = rows.Scan(&c.task, &c.mailbox); err != nil {
 			rows.Close()
-			return 0, err
+			return 0, 0, err
 		}
 		candidates = append(candidates, c)
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	recovered := 0
+	selected = len(candidates)
 	for _, c := range candidates {
 		ok, err := r.retireUnstartedWarmupDispatch(ctx, c.task, c.mailbox, before)
 		if err != nil {
-			return recovered, err
+			return recovered, selected, err
 		}
 		if ok {
 			recovered++
 		}
 	}
-	return recovered, nil
+	return recovered, selected, nil
 }
 
 func (r *taskRepository) retireUnstartedWarmupDispatch(ctx context.Context, task, mailbox uuid.UUID, before time.Time) (bool, error) {

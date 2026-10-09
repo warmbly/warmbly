@@ -344,10 +344,7 @@ func (w *WorkerService) sendEmailSuccess(taskID uuid.UUID, messageID, providerMs
 	}
 }
 
-// sendNotLoadedRedeliveries is how many bus deliveries a send may burn waiting
-// for a transient condition (mailbox not loaded yet, object storage blip)
-// before the worker reports it failed. Each redelivery is a second apart, and
-// the bus stops redelivering at ten, so this stays well inside that.
+// Report unattempted sends before either broker's retry budget expires.
 const sendNotLoadedRedeliveries = 5
 
 // failSend reports a send the worker could not attempt. A retryable condition
@@ -360,8 +357,7 @@ func (w *WorkerService) failSend(ctx context.Context, sendEmail models.SendEmail
 	if d := deliveryOf(ctx); retryable && d.redelivers && d.attempt < sendNotLoadedRedeliveries {
 		return errors.New(reason)
 	}
-	w.sendEmailFailure(sendEmail.TaskID, sendEmail.EmailID, nil, reason)
-	return nil
+	return w.sendEmailFailure(sendEmail.TaskID, sendEmail.EmailID, nil, reason)
 }
 
 // sendEmailError reports a failed send attempt. The per-task result is always
@@ -416,7 +412,7 @@ func (w *WorkerService) sendEmailError(taskID uuid.UUID, emailID uuid.UUID, mail
 }
 
 // sendEmailFailure sends a generic failure result (for non-MailError cases)
-func (w *WorkerService) sendEmailFailure(taskID uuid.UUID, emailID uuid.UUID, mail *wmail.WMail, errorMsg string) {
+func (w *WorkerService) sendEmailFailure(taskID uuid.UUID, emailID uuid.UUID, mail *wmail.WMail, errorMsg string) error {
 	now := time.Now().UTC()
 	result := models.SendEmailResult{
 		TaskID:         taskID,
@@ -430,5 +426,7 @@ func (w *WorkerService) sendEmailFailure(taskID uuid.UUID, emailID uuid.UUID, ma
 
 	if err := w.Produce(models.JobEventTypeEmailFailed, taskID.String(), result); err != nil {
 		log.Error().Err(err).Str("task_id", taskID.String()).Msg("Failed to produce email failure event")
+		return err
 	}
+	return nil
 }

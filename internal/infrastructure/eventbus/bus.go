@@ -129,7 +129,7 @@ type Message struct {
 	Key     string
 	Payload []byte
 	// Attempt is the 1-based delivery count of this message (NATS reports it
-	// from the consumer's redelivery metadata; Kafka always reports 1). A
+	// from redelivery metadata; Kafka counts retries within a subscription). A
 	// handler that retries by returning an error can read it to know when the
 	// broker is about to stop redelivering and give up cleanly instead.
 	Attempt int

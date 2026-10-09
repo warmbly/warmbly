@@ -180,30 +180,36 @@ func (b *KafkaBus) subscribeOnce(ctx context.Context, topics []string, group str
 	resolve := func(msg *ckf.Message) (string, error) {
 		return resolveKey(ctx, key, kafkaEnvelope(msg))
 	}
-	err = cons.ConsumeConcurrent(ctx, lanes, resolve, func(msg *ckf.Message) error {
-		topic := ""
-		if msg.TopicPartition.Topic != nil {
-			topic = *msg.TopicPartition.Topic
-		}
-		// A message already being handled finishes after a shutdown signal; only reading the next one stops.
-		hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), handlerTimeout())
-		defer cancel()
-		if err := invokeHandler(hctx, handler, Message{
-			Topic:      topic,
-			Key:        string(msg.Key),
-			Payload:    msg.Value,
-			Attempt:    1,
-			Redelivers: true,
-		}); err != nil {
-			log.Error().Err(err).Str("topic", topic).Msg("eventbus kafka handler error")
-			return err
-		}
-		return nil
-	})
+	deliver := kafkaHandler(ctx, handler)
+	err = cons.ConsumeConcurrent(ctx, lanes, resolve, deliver)
 	if errors.Is(err, kafka.ErrClientClosed) {
 		return ErrBusClosed
 	}
 	return err
+}
+
+func kafkaHandler(ctx context.Context, handler Handler) func(*ckf.Message) error {
+	var mu sync.Mutex
+	attempts := map[*ckf.Message]int{}
+	return func(msg *ckf.Message) error {
+		mu.Lock()
+		attempts[msg]++
+		attempt := attempts[msg]
+		mu.Unlock()
+		envelope := kafkaEnvelope(msg)
+		envelope.Attempt = attempt
+		// A message already being handled finishes after a shutdown signal; only reading the next one stops.
+		hctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), handlerTimeout())
+		defer cancel()
+		if err := invokeHandler(hctx, handler, envelope); err != nil {
+			log.Error().Err(err).Str("topic", envelope.Topic).Msg("eventbus kafka handler error")
+			return err
+		}
+		mu.Lock()
+		delete(attempts, msg)
+		mu.Unlock()
+		return nil
+	}
 }
 
 func kafkaEnvelope(msg *ckf.Message) Message {
