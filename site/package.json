@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "node scripts/check-observability.mjs",
+    "test": "node scripts/check-observability.mjs && node scripts/check-acquisition.mjs",
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",

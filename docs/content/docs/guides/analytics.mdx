@@ -9,6 +9,16 @@ Analytics rolls every send, open, click, reply, bounce, and complaint into rates
 
 Campaign analytics are shared across the workspace. With **View analytics**, you can see the overview, daily and hourly statistics, step performance and comparisons for campaigns created by any member of the selected workspace. The campaign author does not need to grant separate access.
 
+## Signup source attribution (platform admins)
+
+This is separate from email and campaign analytics. The marketing site carries the original landing path, external referrer host and any `utm_source`, `utm_medium`, `utm_campaign`, `utm_term` and `utm_content` tags through its page links into the dashboard. App redirects and switching between sign-in and registration keep those fields available at signup.
+
+The new workspace records acquisition once. In the admin panel, **Organizations → Channel** shows the campaign source when supplied, the saved referrer host and landing path. If a saved table layout hides Channel, enable it under **Columns**. The acquisition filters accept an exact referrer host, such as `www.google.com` or `www.reddit.com`. **Overview → Acquisition** summarizes signup channels, referrers and paid conversions.
+
+Sources come from campaign tags or the browser's referrer, not guesses. Warmbly's own domains are not external sources. Browsers, search engines and apps can withhold referrers; absent source information is shown as **Unknown**, even when the landing page is known. Full referrer URLs, search queries and landing-page query strings are not stored. Acquisition values are limited in length and email-shaped values are redacted by the backend.
+
+The marketing site stays cookieless, with no persistent PostHog identity. Attribution travels in URLs, not cookies or browser storage. It survives linked navigation but cannot reliably reconnect a later unrelated visit, another device or a URL whose attribution parameters were removed. It is not a complete anonymous browsing history. Existing saved acquisition remains unchanged, and missing historical sources are not backfilled. No new configuration or database migration is required.
+
 ## What is counted
 
 | Metric | Counts | Feeds |

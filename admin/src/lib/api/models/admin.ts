@@ -753,6 +753,7 @@ export interface AdminOrgListItem {
     utm_medium?: string | null;
     utm_campaign?: string | null;
     landing_path?: string | null;
+    referrer_host?: string | null;
     plan_name?: string | null;
     plan_public?: boolean | null;
     is_enterprise: boolean;
@@ -904,6 +905,7 @@ export interface AdminOrgSearch {
     utm_campaign?: string;
     has_acquisition?: boolean;
     no_acquisition?: boolean;
+    referrer_host?: string;
     // Subscription state
     subscription_status?: string;
     cancel_at_period_end?: boolean;

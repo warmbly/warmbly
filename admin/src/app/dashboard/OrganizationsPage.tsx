@@ -133,22 +133,18 @@ const columns: Column<AdminOrgListItem>[] = [
     {
         id: "channel",
         header: "Channel",
-        // Where the workspace came from, recorded once at signup. Hidden by
-        // default: most signups are direct and the column would read empty.
-        defaultHidden: true,
-        // "direct" means no acquisition data at all, which is the same thing
-        // the "No acquisition data" filter selects. A row with only a landing
-        // path is not direct, so it shows the path rather than falling through.
         cell: (o) =>
-            o.utm_source || o.utm_medium || o.utm_campaign || o.landing_path ? (
-                <div className="flex flex-col leading-tight" title={[o.utm_campaign, o.landing_path].filter(Boolean).join(" · ")}>
-                    <span className="text-foreground">{o.utm_source || o.landing_path || "—"}</span>
+            o.utm_source || o.utm_medium || o.utm_campaign || o.landing_path || o.referrer_host ? (
+                <div className="flex flex-col leading-tight" title={[o.referrer_host, o.utm_campaign, o.landing_path].filter(Boolean).join(" · ")}>
+                    <span className="text-foreground">{o.utm_source || o.referrer_host || "Unknown"}</span>
                     {o.utm_medium && <span className="mt-0.5 text-xs text-muted-foreground">{o.utm_medium}</span>}
+                    {o.utm_source && o.referrer_host && <span className="mt-0.5 text-xs text-muted-foreground">{o.referrer_host}</span>}
+                    {o.landing_path && <span className="mt-0.5 text-xs text-muted-foreground">{o.landing_path}</span>}
                 </div>
             ) : (
-                <span className="text-muted-foreground">direct</span>
+                <span className="text-muted-foreground">Unknown</span>
             ),
-        csv: (o) => [o.utm_source, o.utm_medium, o.utm_campaign, o.landing_path].filter(Boolean).join(" | "),
+        csv: (o) => [o.utm_source, o.utm_medium, o.utm_campaign, o.referrer_host, o.landing_path].filter(Boolean).join(" | "),
     },
     {
         id: "posture",
@@ -238,10 +234,10 @@ export default function OrganizationsPage() {
     const [ownerBanned, setOwnerBanned] = useState(false);
     const [hasActiveCampaigns, setHasActiveCampaigns] = useState(false);
     const [hasEmailAccounts, setHasEmailAccounts] = useState(false);
-    // Acquisition channel. utmSource/utmMedium match exactly; the two toggles
-    // split "arrived through a tagged link" from "came in directly".
+    // Acquisition filters match the values recorded at signup exactly.
     const [utmSource, setUtmSource] = useState("");
     const [utmMedium, setUtmMedium] = useState("");
+    const [referrerHost, setReferrerHost] = useState("");
     const [hasAcquisition, setHasAcquisition] = useState(false);
     const [noAcquisition, setNoAcquisition] = useState(false);
     // Count ranges
@@ -264,7 +260,7 @@ export default function OrganizationsPage() {
     const filterKey = JSON.stringify({
         query, status, visibility, subStatus, enterprise, managedPlan, hasOverrides, risk, cancelAtPeriodEnd,
         hasActiveSubscription, noSubscription, ownerBanned, hasActiveCampaigns, hasEmailAccounts,
-        utmSource, utmMedium, hasAcquisition, noAcquisition,
+        utmSource, utmMedium, referrerHost, hasAcquisition, noAcquisition,
         memMin, memMax, mbMin, mbMax, campMin, campMax, created, trialEnd, periodEnd, updated, sort,
     });
 
@@ -293,6 +289,7 @@ export default function OrganizationsPage() {
                 has_email_accounts: hasEmailAccounts || undefined,
                 utm_source: utmSource.trim() || undefined,
                 utm_medium: utmMedium.trim() || undefined,
+                referrer_host: referrerHost.trim().toLowerCase() || undefined,
                 has_acquisition: hasAcquisition || undefined,
                 no_acquisition: noAcquisition || undefined,
                 member_count_min: memMin,
@@ -331,6 +328,7 @@ export default function OrganizationsPage() {
         (risk ? 1 : 0) +
         (utmSource ? 1 : 0) +
         (utmMedium ? 1 : 0) +
+        (referrerHost ? 1 : 0) +
         bools.filter(Boolean).length +
         ranges.filter(([a, b]) => a !== undefined || b !== undefined).length +
         [created, trialEnd, periodEnd, updated].filter(rangeActive).length +
@@ -352,6 +350,7 @@ export default function OrganizationsPage() {
         setHasEmailAccounts(false);
         setUtmSource("");
         setUtmMedium("");
+        setReferrerHost("");
         setHasAcquisition(false);
         setNoAcquisition(false);
         setMemMin(undefined);
@@ -437,6 +436,9 @@ export default function OrganizationsPage() {
                             <div className="mt-2">
                                 <SearchFilter value={utmMedium} onChange={setUtmMedium} placeholder="utm_medium…" />
                             </div>
+                            <div className="mt-2">
+                                <SearchFilter value={referrerHost} onChange={setReferrerHost} placeholder="Referrer host, e.g. www.google.com…" />
+                            </div>
                             <div className="mt-2 flex flex-col gap-2">
                                 {/* Mutually exclusive: the backend resolves both-at-once
                                     by ignoring one, which would leave a filter switched
@@ -449,7 +451,7 @@ export default function OrganizationsPage() {
                                 <ToggleFilter
                                     checked={noAcquisition}
                                     onChange={(v) => { setNoAcquisition(v); if (v) setHasAcquisition(false); }}
-                                    label="No acquisition data (direct)"
+                                    label="No acquisition data (unknown source)"
                                 />
                             </div>
                         </FilterGroup>
