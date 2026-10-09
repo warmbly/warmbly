@@ -1,0 +1,134 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../campaigns/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * Settings > Sending > Send-time optimization (settings/sending/page.tsx):
+ * the switch, contact timezones, the fallback, weekends and the delivery
+ * hours grid. Over it, one contact's day: the campaign window, the mailbox
+ * workday and her own hours, and the stretch where all three agree.
+ */
+const nav = [
+  { group: 'Account', items: ['Profile', 'Notifications', 'Security'] },
+  { group: 'Workspace', items: ['Members', 'Teams', 'Workspace', 'Sending', 'Website tracking', 'Inbox tagging'] },
+];
+const rows = [
+  { label: 'Use the recipient’s local hours', desc: 'On. Sends aim for the hours below.' },
+  { label: 'Read each contact’s timezone', desc: 'Uses the contact’s timezone field, then the country its email domain points at.' },
+];
+const picked = [9, 10, 11, 14, 15, 16];
+const fmtHour = (h: number) => (h === 0 ? '12am' : h === 12 ? '12pm' : h < 12 ? `${h}am` : `${h - 12}pm`);
+const toggle = '<span class="relative block h-4 w-7 rounded-full bg-slate-900"><span class="absolute top-0.5 left-0.5 size-3 translate-x-3 rounded-full bg-white"></span></span>';
+
+// One contact's day on a London axis, 06:00 to 22:00. She is in New York, so
+// her 9am to noon is 14:00 to 17:00 here and her afternoon hours fall at 19:00.
+const A0 = 6 * 60, A1 = 22 * 60, AW = 270;
+const ax = (m: number) => ((m - A0) / (A1 - A0)) * AW;
+const span = (a: number, b: number) => `left:${ax(a)}px; width:${ax(b) - ax(a)}px`;
+const lanes = [
+  { k: 'Campaign window', sub: '08:00 to 18:00', parts: [[8 * 60, 18 * 60]], c: 'bg-slate-300' },
+  { k: 'Mailbox workday', sub: '09:14 to 17:41', parts: [[9 * 60 + 14, 12 * 60 + 32], [13 * 60 + 19, 17 * 60 + 41]], c: 'bg-sky-300' },
+  { k: 'Dana’s hours', sub: 'America/New_York', parts: [[14 * 60, 17 * 60], [19 * 60, 22 * 60]], c: 'bg-violet-300' },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-sky">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[740px] h-[560px] flex`}>
+    <div class="w-[176px] shrink-0 border-r border-slate-200/70 px-2.5 py-3">
+      {nav.map((g, gi) => (
+        <div class={gi ? 'mt-3' : ''}>
+          <div class={`px-2 mb-1 ${EYEBROW}`}>{g.group}</div>
+          {g.items.map((it) => (
+            <div class={`h-8 px-2.5 rounded-md flex items-center gap-2.5 text-[12.5px] ${it === 'Sending' ? 'bg-slate-200/70 font-medium text-slate-900' : 'text-slate-600'}`}>
+              <Glyph name={it === 'Sending' ? 'send' : it === 'Security' ? 'shieldCheck' : it === 'Notifications' ? 'info' : it === 'Website tracking' ? 'globe' : it === 'Inbox tagging' ? 'tag' : 'user'} size={14} class={it === 'Sending' ? 'text-slate-900' : 'text-slate-400'} />{it}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+
+    <div class="min-w-0 flex-1">
+      <div class="px-8 pt-6 pb-4 border-b border-slate-200/70">
+        <h2 class="text-[16px] font-semibold tracking-tight text-slate-900">Sending</h2>
+        <p class="mt-0.5 text-[12.5px] leading-relaxed text-slate-500">When campaign mail goes out, measured in your recipient’s day.</p>
+      </div>
+      <section class="px-8 py-5">
+        <header class="mb-3">
+          <h3 class="text-[12.5px] font-semibold tracking-tight text-slate-900">Send-time optimization</h3>
+          <p class="mt-1 text-[11.5px] leading-relaxed text-slate-500">Hold each campaign email until it lands inside the hours you pick, in the recipient’s own timezone. It only ever delays a send.</p>
+        </header>
+        <div class="space-y-3">
+          {rows.map((r) => (
+            <div class="flex items-center gap-4">
+              <div class="min-w-0 flex-1">
+                <div class="text-[12.5px] font-medium leading-tight text-slate-900">{r.label}</div>
+                <div class="mt-0.5 text-[11.5px] leading-tight text-slate-500">{r.desc}</div>
+              </div>
+              <Fragment set:html={toggle} />
+            </div>
+          ))}
+          <div class="flex items-center gap-4">
+            <div class="min-w-0 flex-1">
+              <div class="text-[12.5px] font-medium leading-tight text-slate-900">Fallback timezone</div>
+              <div class="mt-0.5 text-[11.5px] leading-tight text-slate-500">Used when a contact’s timezone cannot be worked out.</div>
+            </div>
+            <span class="h-7 px-2 rounded-md border border-slate-200 bg-white inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700">America/New_York<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="min-w-0 flex-1">
+              <div class="text-[12.5px] font-medium leading-tight text-slate-900">Skip weekends</div>
+              <div class="mt-0.5 text-[11.5px] leading-tight text-slate-500">Push a send that would land on Saturday or Sunday to the next weekday.</div>
+            </div>
+            <Fragment set:html={toggle} />
+          </div>
+          <div class="flex items-start gap-4">
+            <div class="min-w-0 flex-1 text-[12.5px] font-medium leading-tight text-slate-900">Delivery hours</div>
+            <div class="w-[300px]">
+              <div class="grid grid-cols-6 gap-1">
+                {Array.from({ length: 24 }, (_, h) => (
+                  <span class={`h-7 rounded-md border text-[11.5px] flex items-center justify-center ${picked.includes(h) ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-white text-slate-500 border-slate-200'}`}>{fmtHour(h)}</span>
+                ))}
+              </div>
+              <p class="mt-2 inline-flex items-start gap-1.5 text-[11.5px] leading-relaxed text-slate-500"><Glyph name="clock" size={13} class="mt-px text-slate-400" />Mail arrives around 9am-11am, 2pm-4pm for each recipient.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- One contact's day: the three calendars and where they overlap. -->
+  <div class={`${FLOAT} left-[16px] top-[336px] w-[402px] overflow-hidden`}>
+    <div class="px-4 py-2.5 border-b border-slate-200/70 flex items-center gap-2">
+      <span class="size-6 shrink-0 rounded-full bg-violet-100 text-violet-700 text-[9.5px] font-semibold flex items-center justify-center">DW</span>
+      <span class="min-w-0 flex-1 truncate text-[12px] text-slate-900">dana@orbit.app <span class="text-slate-400">· America/New_York</span></span>
+      <span class="font-mono text-[10px] text-slate-400">London time</span>
+    </div>
+    <div class="px-4 pt-3 pb-2 space-y-2">
+      {lanes.map((l) => (
+        <div class="flex items-center gap-3">
+          <div class="w-[96px] shrink-0">
+            <div class="text-[11.5px] font-medium leading-tight text-slate-800">{l.k}</div>
+            <div class="text-[10px] leading-tight text-slate-400">{l.sub}</div>
+          </div>
+          <div class="relative h-5 rounded bg-slate-50 ring-1 ring-inset ring-slate-200" style={`width:${AW}px`}>
+            {l.parts.map(([a, b]) => <span class={`enter-grow-x absolute inset-y-1 rounded-sm ${l.c}`} style={span(a, b)}></span>)}
+          </div>
+        </div>
+      ))}
+      <div class="flex items-center gap-3 border-t border-slate-200/70 pt-2">
+        <div class="w-[96px] shrink-0">
+          <div class="text-[11.5px] font-semibold leading-tight text-slate-900">Can send</div>
+          <div class="text-[10px] leading-tight text-sky-700">14:00 to 17:00</div>
+        </div>
+        <div class="relative h-5 rounded bg-slate-50 ring-1 ring-inset ring-slate-300" style={`width:${AW}px`}>
+          <span class="enter-grow-x absolute inset-y-1 rounded-sm bg-sky-600" style={span(14 * 60, 17 * 60)}></span>
+        </div>
+      </div>
+      <div class="relative h-4 font-mono text-[9.5px] text-slate-400" style={`margin-left:108px; width:${AW}px`}>
+        {[6, 10, 14, 18, 22].map((h) => <span class="absolute -translate-x-1/2" style={`left:${ax(h * 60)}px`}>{String(h).padStart(2, '0')}:00</span>)}
+      </div>
+    </div>
+  </div>
+</ScaledStage>

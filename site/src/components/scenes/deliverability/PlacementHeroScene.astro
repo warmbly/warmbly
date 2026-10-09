@@ -1,0 +1,221 @@
+---
+import HeroStage from '../warmup/HeroStage.astro';
+import AppShellMock from '../../AppShellMock.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../warmup/Ico.astro';
+import { FLOAT, EYEBROW, SECTIONBAR } from '../../../lib/scene';
+
+/**
+ * A finished placement test (web/src/app/app/placement/[id]/page.tsx) inside
+ * the app shell: the folder breakdown, the result per provider family and
+ * every seed's verdict, which arrive one by one the first time the scene is
+ * seen. The notification the test sends when it finishes floats over the nav.
+ */
+type Folder = 'inbox' | 'promotions' | 'spam' | 'missing';
+const FOLDER: Record<Folder, { label: string; chip: string; dot: string }> = {
+  inbox: { label: 'Inbox', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  promotions: { label: 'Promotions', chip: 'bg-violet-50 text-violet-700 border-violet-200', dot: 'bg-violet-500' },
+  spam: { label: 'Spam', chip: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500' },
+  missing: { label: 'Not observed by timeout', chip: 'bg-slate-100 text-slate-700 border-slate-200', dot: 'bg-slate-500' },
+};
+// 20 copies: 16 inbox, 2 Promotions, 1 spam, 1 never arrived.
+const families = [
+  { name: 'Gmail', inbox: 3, tabs: 1, spam: 0, missing: 0 },
+  { name: 'Google Workspace', inbox: 3, tabs: 1, spam: 0, missing: 0 },
+  { name: 'Outlook.com', inbox: 2, tabs: 0, spam: 1, missing: 0 },
+  { name: 'Microsoft 365', inbox: 3, tabs: 0, spam: 0, missing: 0 },
+  { name: 'Yahoo Mail', inbox: 2, tabs: 0, spam: 0, missing: 1 },
+  { name: 'iCloud', inbox: 3, tabs: 0, spam: 0, missing: 0 },
+];
+const seeds: { seed: string; family: string; seen: string; folder: Folder }[] = [
+  { seed: 'a***@gmail.com', family: 'Gmail', seen: 'seen Oct 8, 2:16 PM', folder: 'inbox' },
+  { seed: 'm***@outlook.com', family: 'Outlook.com', seen: 'seen Oct 8, 2:17 PM', folder: 'inbox' },
+  { seed: 'r***@lumenhq.com', family: 'Google Workspace', seen: 'seen Oct 8, 2:18 PM', folder: 'inbox' },
+  { seed: 't***@yahoo.com', family: 'Yahoo Mail', seen: 'seen Oct 8, 2:19 PM', folder: 'inbox' },
+  { seed: 'k***@contoso-group.com', family: 'Microsoft 365', seen: 'seen Oct 8, 2:20 PM', folder: 'inbox' },
+  { seed: 'e***@icloud.com', family: 'iCloud', seen: 'seen Oct 8, 2:22 PM', folder: 'inbox' },
+  { seed: 's***@gmail.com', family: 'Gmail', seen: 'seen Oct 8, 2:23 PM', folder: 'promotions' },
+  { seed: 'd***@hotmail.com', family: 'Outlook.com', seen: 'seen Oct 8, 2:24 PM', folder: 'spam' },
+  { seed: 'p***@fieldworks.io', family: 'Google Workspace', seen: 'seen Oct 8, 2:25 PM', folder: 'inbox' },
+  { seed: 'l***@yahoo.com', family: 'Yahoo Mail', seen: 'sent Oct 8, 2:26 PM', folder: 'missing' },
+  { seed: 'b***@northpeak.co', family: 'Microsoft 365', seen: 'seen Oct 8, 2:28 PM', folder: 'inbox' },
+  { seed: 'n***@me.com', family: 'iCloud', seen: 'seen Oct 8, 2:29 PM', folder: 'inbox' },
+];
+const cells = [
+  { label: 'Inbox', rate: '80%', tone: 'text-emerald-600', dot: 'bg-emerald-500', sub: '16 copies' },
+  { label: 'Gmail tabs', rate: '10%', tone: 'text-violet-600', dot: 'bg-violet-500', sub: '2 copies, 2 Promotions, 0 other tabs' },
+  { label: 'Spam', rate: '5%', tone: 'text-rose-600', dot: 'bg-rose-500', sub: '1 copy' },
+  { label: 'Not observed', rate: '5%', tone: 'text-slate-600', dot: 'bg-slate-500', sub: '1 copy, Not seen within 2 hours' },
+];
+const pct = (n: number, d: number) => `${Math.round((n / d) * 100)}%`;
+const rateTone = (r: number) => (r >= 0.8 ? 'text-emerald-600' : r >= 0.6 ? 'text-amber-600' : 'text-rose-600');
+const bar = (f: { inbox: number; tabs: number; spam: number; missing: number }) => {
+  const t = f.inbox + f.tabs + f.spam + f.missing;
+  return [
+    { w: f.inbox / t, c: 'ph-em' },
+    { w: f.tabs / t, c: 'ph-vi' },
+    { w: f.spam / t, c: 'ph-ro' },
+    { w: f.missing / t, c: 'ph-sl' },
+  ].filter((s) => s.w > 0);
+};
+---
+<HeroStage w={1240} h={780} photo="paint-blue">
+  <div class="absolute left-[48px] top-[48px] w-[1192px] h-[732px] overflow-hidden rounded-tl-[12px] ring-1 ring-slate-900/[0.08] shadow-[0_50px_100px_-40px_rgba(15,23,42,0.55)]">
+    <div class="w-[1386px] origin-top-left" style="transform:scale(0.86)">
+      <AppShellMock crumb="Placement tests" sub="Quick question about Brightline">
+        <div class="flex flex-col bg-white">
+          <div class="px-5 pt-4">
+            <span class="inline-flex items-center gap-1 h-6 -ml-1.5 px-1.5 mb-1 rounded-md text-[11.5px] text-slate-500"><Ico name="arrowLeft" size={12} />Placement tests</span>
+          </div>
+          <div class="px-5 pb-4 flex items-start gap-3 border-b border-slate-200">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <div class="text-[18px] font-semibold text-slate-900">Quick question about Brightline</div>
+                <span class="inline-flex items-center gap-1.5 h-5 px-1.5 rounded-md border text-[10.5px] font-medium bg-emerald-50 text-emerald-700 border-emerald-200"><span class="size-1.5 rounded-full bg-emerald-500"></span>Completed</span>
+                <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded-md bg-slate-100 text-[10.5px] font-medium text-slate-600"><Ico name="eyeOff" size={12} />Untracked</span>
+              </div>
+              <div class="mt-1.5 flex items-center gap-x-3 text-[11.5px] text-slate-500">
+                <span>From <span class="text-slate-800">alex@northwind.dev</span></span>
+                <span>Shared panel</span>
+                <span>Started Oct 8, 2:14 PM</span>
+                <span>Finished Oct 8, 2:41 PM</span>
+                <span class="inline-flex items-center gap-0.5 text-sky-700">Q4 outbound<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 7h10v10" /><path d="M7 17 17 7" /></svg></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Folder breakdown -->
+          <div class="border-b border-slate-200">
+            <div class="grid grid-cols-4">
+              {cells.map((c, i) => (
+                <div class={`px-5 py-4 ${i < 3 ? 'border-r border-slate-200' : ''}`}>
+                  <div class="flex items-center gap-2"><span class={`size-1.5 rounded-full ${c.dot}`}></span><span class={EYEBROW}>{c.label}</span></div>
+                  <div class={`mt-2 text-[26px] font-light leading-none tabular-nums ${c.tone}`}>{c.rate}</div>
+                  <div class="mt-1.5 truncate font-mono text-[10.5px] text-slate-400">{c.sub}</div>
+                </div>
+              ))}
+            </div>
+            <div class="px-5 pb-4 pt-1">
+              <div class="flex h-2 overflow-hidden">
+                <div class="enter-grow-x ph-em" style="width:80%; --d:200ms"></div>
+                <div class="ph-vi" style="width:10%"></div>
+                <div class="ph-ro" style="width:5%"></div>
+                <div class="ph-sl" style="width:5%"></div>
+              </div>
+              <p class="mt-2 text-[11px] text-slate-500">20 of 20 copies were sent and classified. Rates are shares of the copies that were sent.</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-[1.12fr_1fr]">
+            <!-- By provider, then the content check -->
+            <section class="min-w-0 border-r border-slate-200">
+              <div class={SECTIONBAR}>
+                <span class={EYEBROW}>By provider</span>
+                <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">6</span>
+                <span class="ml-auto flex items-center gap-3 text-[11px] text-slate-500">
+                  {(['inbox', 'promotions', 'spam', 'missing'] as Folder[]).map((f) => (
+                    <span class="inline-flex items-center gap-1.5"><span class={`size-1.5 rounded-full ${FOLDER[f].dot}`}></span>{f === 'missing' ? 'Not observed' : FOLDER[f].label}</span>
+                  ))}
+                </span>
+              </div>
+              <table class="w-full text-left">
+                <thead>
+                  <tr class="h-8 border-b border-slate-200/60 text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                    <th class="px-5 font-medium">Provider</th>
+                    <th class="px-3 font-medium w-[30%]"></th>
+                    <th class="px-3 font-medium text-right">Inbox</th>
+                    <th class="px-3 font-medium text-right">Tabs</th>
+                    <th class="px-3 font-medium text-right">Spam</th>
+                    <th class="px-3 font-medium text-right">Missing</th>
+                    <th class="px-5 font-medium text-right">Copies</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200/60">
+                  {families.map((f, i) => {
+                    const t = f.inbox + f.tabs + f.spam + f.missing;
+                    return (
+                      <tr class="h-10">
+                        <td class="px-5 text-[12.5px] font-medium text-slate-900 whitespace-nowrap">{f.name}</td>
+                        <td class="px-3">
+                          <div class="flex h-1.5 overflow-hidden">
+                            {bar(f).map((s, j) => <div class={`${j === 0 ? 'enter-grow-x ' : ''}${s.c}`} style={`width:${s.w * 100}%; --d:${300 + i * 80}ms`}></div>)}
+                          </div>
+                        </td>
+                        <td class={`px-3 text-right font-mono text-[11.5px] tabular-nums ${rateTone(f.inbox / t)}`}>{pct(f.inbox, t)}</td>
+                        <td class="px-3 text-right font-mono text-[11.5px] tabular-nums text-violet-600">{pct(f.tabs, t)}</td>
+                        <td class="px-3 text-right font-mono text-[11.5px] tabular-nums text-rose-600">{pct(f.spam, t)}</td>
+                        <td class="px-3 text-right font-mono text-[11.5px] tabular-nums text-slate-500">{pct(f.missing, t)}</td>
+                        <td class="px-5 text-right font-mono text-[11px] tabular-nums text-slate-400">{t}/{t}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div class={`${SECTIONBAR} border-t border-slate-200`}><span class={EYEBROW}>Content check</span></div>
+              <div class="px-5 py-3">
+                <div class="flex items-baseline gap-2">
+                  <span class="text-[22px] font-light tabular-nums text-emerald-600">88</span>
+                  <span class="text-[11px] text-slate-400">out of 100</span>
+                  <span class="text-[11.5px] font-medium text-emerald-600">Looks good</span>
+                </div>
+                <p class="mt-1 text-[11.5px] text-slate-500">Nothing in the copy stands out to a spam filter.</p>
+                <p class="mt-2 text-[11px] leading-relaxed text-slate-400">The same rules the step editor checks, run on the copy that was tested. Placement also depends on the sender's reputation, which no content check sees.</p>
+              </div>
+            </section>
+
+            <!-- Every seed's verdict, arriving one by one -->
+            <section class="min-w-0">
+              <div class={SECTIONBAR}>
+                <span class={EYEBROW}>Seed inboxes</span>
+                <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">20</span>
+              </div>
+              <p class="px-5 pt-3 text-[11px] text-slate-400">Addresses on a shared panel are partly hidden.</p>
+              <ul class="divide-y divide-slate-200/60">
+                {seeds.map((s, i) => (
+                  <li class="enter-fade px-5 py-2 flex min-h-11 items-center gap-3" style={`--d:${500 + i * 140}ms`}>
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate font-mono text-[12.5px] text-slate-800">{s.seed}</div>
+                      <div class="truncate text-[11px] text-slate-400">{s.family}, {s.seen}</div>
+                    </div>
+                    <span class={`inline-flex items-center gap-1.5 h-5 px-1.5 rounded-md border text-[10.5px] font-medium whitespace-nowrap ${FOLDER[s.folder].chip}`}>
+                      <span class={`size-1.5 rounded-full ${FOLDER[s.folder].dot}`}></span>{FOLDER[s.folder].label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
+        </div>
+      </AppShellMock>
+    </div>
+  </div>
+
+  <!-- The notification the finished test sends. -->
+  <div class={`${FLOAT} left-[22px] top-[440px] w-[246px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-3.5 py-2.5">
+      <span class="inline-flex size-6 items-center justify-center rounded-md bg-sky-50 text-sky-600"><Ico name="bell" size={13} /></span>
+      <span class="text-[12px] font-medium text-slate-900">Placement test finished</span>
+      <span class="ml-auto text-[10.5px] text-slate-400">now</span>
+    </div>
+    <div class="px-3.5 py-3">
+      <div class="truncate text-[11.5px] text-slate-500">Quick question about Brightline</div>
+      <div class="mt-2 flex items-baseline gap-2">
+        <span class="text-[34px] font-light leading-none tracking-[-0.02em] text-emerald-600 tabular-nums">80%</span>
+        <span class="text-[11.5px] text-slate-500">reached the inbox</span>
+      </div>
+      <div class="mt-3 flex h-1.5 overflow-hidden rounded-full">
+        <div class="ph-em" style="width:80%"></div><div class="ph-vi" style="width:10%"></div><div class="ph-ro" style="width:5%"></div><div class="ph-sl" style="width:5%"></div>
+      </div>
+      <p class="mt-2.5 text-[11.5px] leading-relaxed text-slate-600">16 of 20 copies reached the inbox, 2 a Gmail tab, 1 spam and 1 never arrived.</p>
+    </div>
+  </div>
+</HeroStage>
+
+<style>
+  /* The app's dithered share bars: dots over a lighter wash of the same tone. */
+  .ph-em, .ph-vi, .ph-ro, .ph-sl { height: 100%; background-size: 2px 2px; }
+  .ph-em { background-color: rgb(16 185 129 / 0.6); background-image: radial-gradient(circle, rgb(16 185 129) 0.8px, transparent 1px); }
+  .ph-vi { background-color: rgb(139 92 246 / 0.6); background-image: radial-gradient(circle, rgb(139 92 246) 0.8px, transparent 1px); }
+  .ph-ro { background-color: rgb(244 63 94 / 0.6); background-image: radial-gradient(circle, rgb(244 63 94) 0.8px, transparent 1px); }
+  .ph-sl { background-color: rgb(100 116 139 / 0.5); background-image: radial-gradient(circle, rgb(100 116 139) 0.8px, transparent 1px); }
+</style>

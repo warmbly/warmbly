@@ -1,0 +1,131 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, SECTIONBAR } from '../../../lib/scene';
+
+/**
+ * Who one premium mailbox can write to today, laid out the way the partner
+ * draw in internal/repository/pg_warmup.go reads it: its own tier, proven
+ * free mailboxes from other workspaces, each inbox's daily receive cap and
+ * how far behind it is on what it sent. The card shows the other direction:
+ * which paying inboxes a free mailbox may write back to.
+ */
+type Row = {
+  addr: string; host: string; mark: 'google' | 'microsoft' | 'imap' | 'yahoo';
+  pool: 'premium' | 'free'; origin: string; got: number; cap: number;
+  owed?: number; weight?: string; out?: string; note?: string;
+};
+const rows: Row[] = [
+  { addr: 'lena@sprucebio.com', host: 'Google Workspace', mark: 'google', pool: 'premium', origin: 'Own tier', got: 12, cap: 36, owed: 14, weight: '2.6' },
+  { addr: 'dana@helio.gen', host: 'Google Workspace', mark: 'google', pool: 'premium', origin: 'Own tier', got: 18, cap: 52, owed: 9, weight: '1.9' },
+  { addr: 'kai@orbitlabs.io', host: 'Microsoft 365', mark: 'microsoft', pool: 'free', origin: 'Borrowed', got: 9, cap: 30, owed: 6, weight: '1.6', note: 'In the pool 41 days, healthy' },
+  { addr: 'max@quarry.co', host: 'Microsoft 365', mark: 'microsoft', pool: 'premium', origin: 'Own tier', got: 31, cap: 60, owed: 0, weight: '1.0' },
+  { addr: 'ines@verdant.co', host: 'Yahoo Mail', mark: 'yahoo', pool: 'free', origin: 'Borrowed', got: 14, cap: 28, owed: 0, weight: '1.0', note: 'In the pool 12 days, healthy' },
+  { addr: 'ravi@stratech.io', host: 'Microsoft 365', mark: 'microsoft', pool: 'premium', origin: 'Own tier', got: 60, cap: 60, out: 'Full for today' },
+  { addr: 'tom@fernway.io', host: 'Google Workspace', mark: 'google', pool: 'free', origin: 'Not offered', got: 0, cap: 24, out: 'On watch' },
+];
+const th = 'px-3 py-2 text-left text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400';
+---
+<ScaledStage w={760} h={570} photo="lake-mist">
+  <div class={`${WINDOW} left-[24px] top-[128px] w-[736px] h-[460px]`}>
+    <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3">
+      <span class={EYEBROW}>Warmup partners</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">alex@northwind.dev</span>
+      <span class="inline-flex h-5 items-center rounded-full border border-sky-200 bg-sky-50 px-2 text-[10px] font-semibold uppercase tracking-wide text-sky-700">Premium pool</span>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Candidates</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">7</span>
+      <span class="text-[11.5px] text-slate-500">· 5 offered today · drawn by weight</span>
+    </div>
+    <table class="w-full table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class={`${th} pl-5`}>Partner</th>
+          <th class={`${th} w-[128px]`}>Pool</th>
+          <th class={`${th} w-[150px]`}>Received today</th>
+          <th class={`${th} w-[92px]`}>Owed</th>
+          <th class={`${th} w-[76px] pr-5 text-right`}>Weight</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => {
+          const off = !!r.out;
+          const pct = Math.round((r.got / r.cap) * 100);
+          return (
+            <tr class={`h-[46px] border-b border-slate-200/60 ${off ? 'bg-slate-50/70' : ''}`}>
+              <td class="pl-5 pr-3">
+                <div class={`flex items-center gap-2.5 min-w-0 ${off ? 'opacity-55' : ''}`}>
+                  <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark={r.mark} size={13} /></span>
+                  <div class="min-w-0">
+                    <div class="truncate text-[12.5px] font-medium leading-tight text-slate-900">{r.addr}</div>
+                    <div class="mt-0.5 truncate text-[11px] leading-tight text-slate-400">{r.note ?? r.host}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="px-3">
+                <span class={`inline-flex h-5 items-center gap-1 rounded border px-1.5 text-[10px] font-medium ${r.pool === 'premium' ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600'}`}>
+                  <span class={`size-1.5 rounded-full ${r.pool === 'premium' ? 'bg-sky-500' : 'bg-slate-400'}`}></span>
+                  {r.pool === 'premium' ? 'Premium' : 'Free'}
+                </span>
+                <span class={`ml-1 text-[10.5px] ${r.origin === 'Borrowed' ? 'text-violet-600' : 'text-slate-400'}`}>{r.origin === 'Not offered' ? '' : r.origin}</span>
+              </td>
+              <td class="px-3">
+                <div class="flex items-center gap-2">
+                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <div class={`enter-grow-x h-full rounded-full ${pct >= 100 ? 'bg-rose-400' : 'bg-sky-400'}`} style={`width:${pct}%; --d:${300 + i * 60}ms`}></div>
+                  </div>
+                  <span class="w-11 text-right font-mono text-[11px] tabular-nums text-slate-500">{r.got}/{r.cap}</span>
+                </div>
+              </td>
+              <td class="px-3">
+                {off ? (
+                  <span class={`text-[11px] font-medium ${r.out === 'On watch' ? 'text-amber-600' : 'text-rose-600'}`}>{r.out}</span>
+                ) : r.owed ? (
+                  <span class="font-mono text-[11.5px] tabular-nums text-emerald-600">+{r.owed} behind</span>
+                ) : (
+                  <span class="font-mono text-[11.5px] text-slate-400">even</span>
+                )}
+              </td>
+              <td class="pr-5 text-right">
+                {off ? <span class="text-slate-300">—</span> : (
+                  <span class={`inline-flex h-5 items-center rounded px-1.5 font-mono text-[11px] tabular-nums ${Number(r.weight) > 1 ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500'}`}>×{r.weight}</span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- The other direction: a free mailbox only writes back to paying inboxes that wrote first. -->
+  <div class={`${FLOAT} left-[392px] top-[22px] w-[344px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark="microsoft" size={13} /></span>
+      <div class="min-w-0">
+        <div class="truncate text-[12.5px] font-medium text-slate-900">kai@orbitlabs.io</div>
+        <div class="text-[10.5px] text-slate-400">Free pool · may write back to</div>
+      </div>
+    </div>
+    <div class="px-4 py-2">
+      <div class="flex h-8 items-center gap-2 text-[12px]">
+        <span class="pk-ok inline-flex size-4 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Glyph name="check" size={10} /></span>
+        <span class="text-slate-900">alex@northwind.dev</span>
+        <span class="ml-auto font-mono text-[10.5px] text-slate-400">wrote 2 days ago</span>
+      </div>
+      <div class="flex h-8 items-center gap-2 text-[12px]">
+        <span class="inline-flex size-4 items-center justify-center rounded-full bg-slate-100 text-slate-400"><Ico name="minus" size={10} /></span>
+        <span class="text-slate-400">sam@northwind.io</span>
+        <span class="ml-auto font-mono text-[10.5px] text-slate-400">no mail in 14 days</span>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .pk-ok { animation: pk-ok 4s ease-in-out infinite; }
+  @keyframes pk-ok { 0%, 100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); } 50% { box-shadow: 0 0 0 4px rgb(16 185 129 / 0.15); } }
+</style>

@@ -1,0 +1,226 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB, ACTION_GHOST, ACTION_PRIMARY } from '../../../lib/scene';
+
+/**
+ * A campaign's Leads tab (ContactsTable in its campaign_leads view, columns
+ * from contacts/columns.tsx): linked segments, the status strip with its
+ * filter chips, and each lead's progress, engagement, current step and the
+ * one mailbox that sends their whole sequence. A held lead's panel floats
+ * over the list.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'barChart' },
+  { label: 'Leads', icon: 'users', active: true },
+  { label: 'Steps', icon: 'listChecks' },
+  { label: 'Schedule', icon: 'calendar' },
+  { label: 'Settings', icon: 'settings2' },
+] as const;
+
+type Status = 'active' | 'completed' | 'replied' | 'pending' | 'bounced' | 'paused' | 'unsubscribed';
+const META: Record<Status, { label: string; text: string; icon?: string }> = {
+  pending: { label: 'Queued', text: 'text-slate-500', icon: 'clock' },
+  active: { label: 'Processing', text: 'text-sky-700' },
+  completed: { label: 'Done', text: 'text-indigo-700', icon: 'check' },
+  replied: { label: 'Replied', text: 'text-emerald-700', icon: 'cornerUpLeft' },
+  bounced: { label: 'Bounced', text: 'text-rose-600', icon: 'triangleAlert' },
+  paused: { label: 'Paused', text: 'text-violet-600', icon: 'pause' },
+  unsubscribed: { label: 'Unsubscribed', text: 'text-slate-400', icon: 'x' },
+};
+type Lead = {
+  name: string; email: string; company: string; status: Status; init: string; tint: string;
+  o?: number | 'auto'; c?: number; r?: number; step?: string; sender?: string; last: string; sent: boolean;
+};
+const leads: Lead[] = [
+  { name: 'Jenna Carter', email: 'jenna@acme.io', company: 'Acme', status: 'replied', init: 'JC', tint: 'bg-emerald-100 text-emerald-700', o: 2, c: 1, r: 1, step: 'Follow-up', sender: 'alex@northwind.dev', last: '4m ago', sent: true },
+  { name: 'Ravi Shah', email: 'ravi@stratech.com', company: 'Stratech', status: 'active', init: 'RS', tint: 'bg-sky-100 text-sky-700', o: 1, step: 'Quick question', sender: 'sam@northwind.io', last: '12m ago', sent: true },
+  { name: 'Lina Park', email: 'lina@helio.so', company: 'Helio', status: 'paused', init: 'LP', tint: 'bg-violet-100 text-violet-700', o: 1, step: 'Follow-up', sender: 'ops@northwind.co', last: '2h ago', sent: true },
+  { name: 'Tom Weber', email: 'tom@kraftwerk.de', company: 'Kraftwerk', status: 'active', init: 'TW', tint: 'bg-amber-100 text-amber-700', o: 'auto', step: 'Quick question', sender: 'mia@northwind.dev', last: '38m ago', sent: true },
+  { name: 'Aman Patel', email: 'aman@ledgerly.com', company: 'Ledgerly', status: 'completed', init: 'AP', tint: 'bg-indigo-100 text-indigo-700', o: 3, c: 1, step: 'Last note', sender: 'alex@northwind.dev', last: 'Sep 3', sent: true },
+  { name: 'Sofia Rossi', email: 'sofia@verde.it', company: 'Verde', status: 'pending', init: 'SR', tint: 'bg-slate-100 text-slate-600', last: 'Sep 9', sent: false },
+  { name: 'Noah Brooks', email: 'noah@quanta.dev', company: 'Quanta', status: 'bounced', init: 'NB', tint: 'bg-rose-100 text-rose-700', step: 'Quick question', sender: 'sam@northwind.io', last: 'Sep 8', sent: true },
+  { name: 'Karim Salah', email: 'karim@fieldnote.co', company: 'Fieldnote', status: 'unsubscribed', init: 'KS', tint: 'bg-slate-100 text-slate-500', o: 1, step: 'Follow-up', sender: 'ops@northwind.co', last: 'Sep 8', sent: true },
+  { name: 'Maya Lopez', email: 'maya@brightline.io', company: 'Brightline', status: 'pending', init: 'ML', tint: 'bg-slate-100 text-slate-600', last: 'Sep 9', sent: false },
+];
+const chips = [
+  { dot: 'bg-sky-500', label: 'Processing', n: '412', loader: true },
+  { dot: 'bg-indigo-500', label: 'Done', n: '96' },
+  { dot: 'bg-emerald-500', label: 'Replied', n: '61' },
+  { dot: 'bg-slate-300', label: 'Queued', n: '640' },
+  { dot: 'bg-rose-400', label: 'Bounced', n: '9' },
+  { dot: 'bg-violet-400', label: 'Paused', n: '14' },
+  { dot: 'bg-slate-300', label: 'Unsub', n: '52' },
+];
+const eng = [
+  { icon: 'mailOpen', label: 'Opened', n: '380' },
+  { icon: 'pointer', label: 'Clicked', n: '72' },
+  { icon: 'cornerUpLeft', label: 'Replied', n: '61' },
+] as const;
+// The status bar's shares of the 1,284 leads.
+const bar = [
+  ['bg-sky-500', 412], ['bg-indigo-500', 96], ['bg-emerald-500', 61], ['bg-slate-300', 640],
+  ['bg-rose-400', 9], ['bg-violet-400', 14], ['bg-slate-200', 52],
+] as const;
+const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
+const muted = (s: Status) => s === 'replied' || s === 'bounced' || s === 'unsubscribed';
+---
+<ScaledStage w={1240} h={620} photo="frost-blue">
+  <div class={`${WINDOW} left-[48px] top-[44px] w-[1220px] h-[600px]`}>
+    <div class="px-5 pt-3.5 pb-2.5 flex items-center gap-2">
+      <span class="inline-flex items-center gap-1 text-[11.5px] text-slate-500"><Ico name="arrowLeft" size={12} />Campaigns</span>
+      <span class="text-slate-300">/</span>
+      <span class="text-[15px] font-semibold text-slate-900">Series A founders, Q3</span>
+      <span class="inline-flex items-center h-5 px-2 rounded-md border text-[10px] uppercase tracking-[0.12em] font-medium bg-emerald-50 text-emerald-700 border-emerald-200">running</span>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Ico name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute left-1.5 right-1.5 -bottom-px h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <!-- Toolbar -->
+    <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-1.5">
+      <div class="h-7 w-56 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5">
+        <Glyph name="search" size={13} class="text-slate-400" /><span class="text-[12.5px] text-slate-400">Search leads…</span>
+      </div>
+      <span class={ACTION_GHOST}><Glyph name="filter" size={12} class="text-slate-400" />Filters</span>
+      <div class="ml-auto pr-12 flex items-center gap-1.5">
+        <span class={ACTION_GHOST}><Ico name="users" size={12} />From contacts</span>
+        <span class={ACTION_GHOST}><Ico name="upload" size={12} />Import</span>
+        <span class={ACTION_GHOST}><Glyph name="layers" size={12} />Segments (2)</span>
+        <span class={ACTION_GHOST}><Ico name="download" size={12} />Export</span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Add lead</span>
+      </div>
+    </div>
+
+    <!-- Linked segments -->
+    <div class="px-5 h-9 border-b border-slate-200/60 flex items-center gap-2">
+      <span class={EYEBROW}>Linked segments</span>
+      {[['Series A, EU', '742/742'], ['Founders hiring sales', '542/542']].map(([n, c]) => (
+        <span class="inline-flex h-6 items-center gap-1.5 rounded-md border border-slate-200 bg-white pl-2 pr-1 text-[11.5px] text-slate-700">
+          <Glyph name="layers" size={11} class="text-slate-400" />{n}<span class="font-mono text-[10.5px] text-slate-400 tabular-nums">{c}</span>
+          <span class="ml-0.5 inline-flex size-4 items-center justify-center text-slate-400"><Ico name="arrowRight" size={11} /></span>
+        </span>
+      ))}
+    </div>
+
+    <!-- Status strip -->
+    <div class="px-5 py-2.5 border-b border-slate-200/60 flex items-center gap-4">
+      <div class="w-[200px] shrink-0 flex h-1.5 overflow-hidden rounded-full bg-slate-100">
+        {bar.map(([c, n]) => <div class={c} style={`width:${(n / 1284) * 100}%`}></div>)}
+      </div>
+      <div class="flex items-center gap-2 text-[11px]">
+        {chips.map((s) => (
+          <span class="inline-flex items-center gap-1.5 h-6 px-1.5 -mx-0.5 rounded-md text-slate-500">
+            {s.loader ? <span class="campaign-grid text-sky-600"></span> : <span class={`size-1.5 rounded-full ${s.dot}`}></span>}
+            {s.label}<span class="font-mono tabular-nums text-slate-900">{s.n}</span>
+          </span>
+        ))}
+        <span class="h-4 w-px bg-slate-200 mx-0.5"></span>
+        {eng.map((e) => (
+          <span class="inline-flex items-center gap-1.5 h-6 px-1.5 -mx-0.5 rounded-md text-slate-500"><Ico name={e.icon} size={12} class="text-slate-400" />{e.label}<span class="font-mono tabular-nums text-slate-900">{e.n}</span></span>
+        ))}
+      </div>
+      <div class="ml-auto pr-12 flex items-center gap-2 text-[10.5px] text-slate-400 tabular-nums">
+        <span class="inline-flex items-center gap-1 font-medium text-emerald-600">
+          <span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping"></span><span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span></span>Live
+        </span>
+        1,284 leads
+      </div>
+    </div>
+
+    <table class="w-full table-fixed text-left">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class="pl-5 pr-2 py-2 w-11"><span class="block size-3.5 rounded-[4px] border border-slate-300"></span></th>
+          <th class={th}>Name</th>
+          <th class={`${th} w-[120px]`}>Company</th>
+          <th class={`${th} w-[128px]`}>Progress</th>
+          <th class={`${th} w-[76px]`}>Opened</th>
+          <th class={`${th} w-[76px]`}>Clicked</th>
+          <th class={`${th} w-[76px]`}>Replied</th>
+          <th class={`${th} w-[132px]`}>Current step</th>
+          <th class={`${th} w-[168px]`}><span class="inline-flex items-center gap-1">Sender<Glyph name="info" size={11} /></span></th>
+          <th class={`${th} w-[150px]`}>Last activity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {leads.map((l) => {
+          const m = META[l.status];
+          const dim = muted(l.status);
+          const engCell = (v: number | 'auto' | undefined, icon: string) =>
+            typeof v === 'number' && v > 0
+              ? <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 tabular-nums"><Ico name={icon as never} size={12} />{v}</span>
+              : v === 'auto'
+                ? <span class="text-[10.5px] text-slate-400">auto</span>
+                : l.sent ? <span class="text-slate-300">—</span> : null;
+          return (
+            <tr class={`h-11 border-b border-slate-200/60 ${l.status === 'active' ? 'bg-sky-50/40' : dim ? 'bg-slate-50/40' : ''} ${l.status === 'paused' ? 'ld-hover' : ''}`}>
+              <td class="pl-5 pr-2"><span class="block size-3.5 rounded-[4px] border border-slate-300 bg-white"></span></td>
+              <td class="px-3">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class={`size-6 shrink-0 rounded-full text-[9.5px] font-semibold flex items-center justify-center ${l.tint}`}>{l.init}</span>
+                  <div class="min-w-0">
+                    <div class={`truncate text-[12.5px] font-medium leading-tight ${dim ? 'text-slate-400' : 'text-slate-900'}`}>{l.name}</div>
+                    <div class="truncate font-mono text-[10.5px] leading-tight text-slate-400 flex items-center gap-1"><Glyph name="mail" size={10} />{l.email}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="px-3 truncate text-[12px] text-slate-600">{l.company}</td>
+              <td class="px-3">
+                <span class={`inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] ${m.text}`}>
+                  {m.icon ? <Ico name={m.icon as never} size={12} /> : <span class="campaign-grid text-sky-600"></span>}{m.label}
+                </span>
+              </td>
+              <td class="px-3">{engCell(l.o, 'mailOpen')}</td>
+              <td class="px-3">{engCell(l.c, 'pointer')}</td>
+              <td class="px-3">{engCell(l.r, 'cornerUpLeft')}</td>
+              <td class="px-3">
+                {l.step
+                  ? <span class={`inline-flex items-center h-5 px-1.5 rounded text-[11px] font-medium max-w-full ${dim ? 'bg-slate-100 text-slate-400' : 'bg-sky-100 text-sky-700'}`}><span class="truncate">{l.step}</span></span>
+                  : <span class="text-[11px] text-slate-300">Not started</span>}
+              </td>
+              <td class="px-3">
+                {l.sender ? <span class="block truncate text-[11.5px] text-slate-600">{l.sender}</span> : <span class="text-[11px] text-slate-300">Not assigned</span>}
+              </td>
+              <td class="px-3 text-[11.5px] text-slate-500 tabular-nums">{l.last}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- The held lead, opened: an out-of-office hold with its return date. -->
+  <div class={`${FLOAT} left-[866px] top-[398px] w-[340px] overflow-hidden`}>
+    <div class="px-4 py-3 border-b border-slate-200/70 flex items-center gap-2.5">
+      <span class="size-8 shrink-0 rounded-full bg-violet-100 text-violet-700 text-[11px] font-semibold flex items-center justify-center">LP</span>
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-[12.5px] font-medium text-slate-900">Lina Park</div>
+        <div class="truncate text-[10.5px] text-slate-400">Series A founders, Q3 · via ops@northwind.co</div>
+      </div>
+      <span class="inline-flex items-center gap-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-violet-600"><Glyph name="pause" size={11} />Paused</span>
+    </div>
+    <div class="px-4 py-3 space-y-2">
+      <div class="text-[12.5px] text-slate-800">Out of office · until Sep 15, 9:00 AM</div>
+      <div class="rounded-md bg-slate-50 px-2.5 py-2 text-[11.5px] leading-relaxed text-slate-500">
+        <span class="text-slate-400">Automatic reply:</span> “I’m away and back on 14 September.”
+      </div>
+      <div class="text-[11px] leading-relaxed text-slate-400">Her next step keeps its wait, counted from the day she is back.</div>
+    </div>
+    <div class="px-4 py-2.5 border-t border-slate-200/70 flex items-center gap-1.5">
+      <span class={ACTION_PRIMARY}><Glyph name="play" size={11} />Resume now</span>
+      <span class={ACTION_GHOST}>Stop</span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The held lead's row reads as hovered while its panel is open. */
+  .ld-hover { background: rgb(245 243 255 / 0.7); }
+</style>

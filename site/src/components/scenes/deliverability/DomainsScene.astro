@@ -1,0 +1,141 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../warmup/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * Sending domains (web/src/app/app/emails/domains/page.tsx): authentication,
+ * tracking host and website redirect for every domain the workspace sends
+ * from. A failing domain is open in the drawer, with the DMARC record the
+ * Advisor hands over to paste at the registrar.
+ */
+type Tone = 'emerald' | 'amber' | 'rose' | 'slate';
+const PILL: Record<Tone, { pill: string; dot: string }> = {
+  emerald: { pill: 'bg-emerald-50 text-emerald-700 ring-emerald-200/70', dot: 'bg-emerald-500' },
+  amber: { pill: 'bg-amber-50 text-amber-700 ring-amber-200/70', dot: 'bg-amber-500' },
+  rose: { pill: 'bg-rose-50 text-rose-700 ring-rose-200/70', dot: 'bg-rose-500' },
+  slate: { pill: 'bg-slate-50 text-slate-500 ring-slate-200', dot: 'bg-slate-300' },
+};
+type Pill = [Tone, string];
+const domains: { d: string; mark: 'google' | 'microsoft' | 'imap'; n: number; auth: Pill; track: Pill; redirect: Pill; open?: boolean }[] = [
+  { d: 'northwind.dev', mark: 'google', n: 5, auth: ['emerald', 'Authenticated'], track: ['emerald', 'link.northwind.dev'], redirect: ['emerald', 'northwind.com'] },
+  { d: 'northwind.io', mark: 'microsoft', n: 3, auth: ['emerald', 'Authenticated'], track: ['emerald', 'link.northwind.io'], redirect: ['emerald', 'northwind.com'] },
+  { d: 'brightco.io', mark: 'google', n: 2, auth: ['rose', 'Auth failing'], track: ['amber', 'Waiting for DNS'], redirect: ['slate', 'None'], open: true },
+  { d: 'helio.gen', mark: 'microsoft', n: 2, auth: ['emerald', 'Authenticated'], track: ['emerald', 'link.helio.gen'], redirect: ['emerald', 'helio.com'] },
+  { d: 'acme.co', mark: 'google', n: 4, auth: ['emerald', 'Authenticated'], track: ['amber', '2 of 4 mailboxes'], redirect: ['emerald', 'acme.com'] },
+  { d: 'northwind.co', mark: 'imap', n: 1, auth: ['slate', 'Not checked'], track: ['slate', 'Shared host'], redirect: ['slate', 'None'] },
+];
+const stats = [
+  { label: 'Domains', value: '6', sub: 'sending mail' },
+  { label: 'Mailboxes', value: '17', sub: 'across 6 domains' },
+  { label: 'Authenticated', value: '4', of: 6, tone: 'bg-emerald-500' },
+  { label: 'Tracking verified', value: '3', of: 6, tone: 'bg-sky-500' },
+];
+const grid = 'grid grid-cols-[14px_minmax(0,1.5fr)_64px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_14px] items-center gap-x-3';
+const auth = [
+  { k: 'SPF', state: 'Found', on: true, what: 'Lists the servers allowed to send for the domain.' },
+  { k: 'DKIM', state: 'Not confirmed', on: false, what: 'Signs each message so it cannot be altered on the way.' },
+  { k: 'DMARC', state: 'Not found', on: false, missing: true, what: 'Tells receivers what to do with mail that fails the other two.' },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-cream">
+  <div class={`${WINDOW} left-[30px] top-[30px] w-[740px] h-[560px]`}>
+    <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3">
+      <span class="inline-flex items-center gap-1 h-6 -ml-1.5 px-1.5 rounded-md text-[11.5px] text-slate-500"><Ico name="arrowLeft" size={12} />Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class={EYEBROW}>Sending domains</span>
+      <span class="truncate text-[12.5px] text-slate-600">Authentication, tracking and redirects</span>
+    </div>
+    <div class="grid grid-cols-4 gap-2.5 border-b border-slate-200 px-5 py-4">
+      {stats.map((s) => (
+        <div class="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+          <div class={`${EYEBROW} truncate`}>{s.label}</div>
+          <div class="mt-1 flex items-baseline gap-1">
+            <span class="text-[22px] font-light leading-none tabular-nums text-slate-900">{s.value}</span>
+            {s.of && <span class="text-[11px] text-slate-400 tabular-nums">of {s.of}</span>}
+          </div>
+          {s.of
+            ? <div class="mt-2 h-1 overflow-hidden rounded-full bg-slate-100"><div class={`enter-grow-x h-full rounded-full ${s.tone}`} style={`width:${(Number(s.value) / s.of) * 100}%; --d:300ms`}></div></div>
+            : <div class="mt-1.5 truncate text-[10.5px] text-slate-400">{s.sub}</div>}
+        </div>
+      ))}
+    </div>
+    <div class="flex items-center gap-1 border-b border-slate-200 px-3">
+      {[['All', '6', true], ['Needs attention', '3', false], ['Vendor managed', '0', false]].map(([l, n, a]) => (
+        <span class={`relative inline-flex h-10 items-center gap-1.5 px-2.5 text-[12.5px] ${a ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          {l}
+          <span class={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10.5px] tabular-nums ${a ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-500'}`}>{n}</span>
+          {a && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+    <div class={`${grid} h-8 border-b border-slate-200/60 bg-slate-50/40 px-5`}>
+      <span class="block size-3.5 rounded-[4px] border border-slate-300 bg-white"></span>
+      {['Domain', 'Mailboxes', 'Authentication', 'Tracking', 'Redirect'].map((h, i) => <span class={`text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400 ${i === 1 ? 'text-right' : ''}`}>{h}</span>)}
+      <span></span>
+    </div>
+    {domains.map((d) => (
+      <div class={`${grid} border-b border-slate-200/60 px-5 py-2.5 ${d.open ? 'bg-sky-50/50' : ''}`}>
+        <span class="block size-3.5 rounded-[4px] border border-slate-300 bg-white"></span>
+        <div class="flex min-w-0 items-center gap-2.5">
+          <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white"><Glyph mark={d.mark} size={13} /></span>
+          <span class="truncate text-[12.5px] font-medium text-slate-900">{d.d}</span>
+        </div>
+        <span class="text-right text-[12px] tabular-nums text-slate-700">{d.n}</span>
+        {[d.auth, d.track, d.redirect].map(([t, label]) => (
+          <span class="flex min-w-0">
+            <span class={`inline-flex h-5 min-w-0 max-w-full items-center gap-1.5 rounded-full px-2 text-[10.5px] font-medium whitespace-nowrap ring-1 ring-inset ${PILL[t].pill}`}><span class={`size-1.5 shrink-0 rounded-full ${PILL[t].dot}`}></span><span class="truncate">{label}</span></span>
+          </span>
+        ))}
+        <Ico name="chevronRight" size={14} class="text-slate-300" />
+      </div>
+    ))}
+  </div>
+
+  <!-- brightco.io in the drawer, and the record that fixes it. -->
+  <div class={`${FLOAT} left-[440px] top-[196px] w-[302px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg bg-sky-50 text-sky-600"><Glyph name="globe" size={14} /></span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium text-slate-900">brightco.io</div>
+        <div class="text-[10.5px] text-slate-400">2 mailboxes · Google Workspace</div>
+      </div>
+      <span class="ml-auto inline-flex h-5 items-center gap-1.5 rounded-full bg-rose-50 px-2 text-[10.5px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200/70"><span class="size-1.5 rounded-full bg-rose-500"></span>Auth failing</span>
+    </div>
+    <div class="px-4 py-3">
+      <div class={EYEBROW}>Authentication</div>
+      <div class="mt-2 divide-y divide-slate-100 rounded-md border border-slate-200">
+        {auth.map((a) => (
+          <div class="flex items-start gap-2.5 px-3 py-2">
+            <span class={`mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full ${a.on ? 'bg-emerald-50 text-emerald-600' : a.missing ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
+              {a.on ? <Glyph name="check" size={10} /> : <Ico name="minus" size={10} />}
+            </span>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2"><span class="text-[12.5px] font-medium text-slate-900">{a.k}</span><span class={`text-[11px] ${a.missing ? 'text-rose-600' : 'text-slate-500'}`}>{a.state}</span></div>
+              <p class="text-[11px] leading-snug text-slate-500">{a.what}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div class={`${EYEBROW} mt-3`}>Paste this</div>
+      <div class="mt-1.5 space-y-1">
+        {[['DMARC record type', 'TXT'], ['DMARC host', '_dmarc.brightco.io'], ['DMARC value', 'v=DMARC1; p=none; rua=mailto:dmarc@brightco.io']].map(([k, v], i) => (
+          <div class="dm-row flex items-center gap-2 rounded-md border border-slate-200/70 bg-white/50 px-2.5 py-1.5" style={`--i:${i}`}>
+            <span class="w-[92px] shrink-0 truncate text-[10px] uppercase tracking-[0.08em] text-slate-400">{k}</span>
+            <code class="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-800">{v}</code>
+            <Ico name="copy" size={12} class="text-slate-400" />
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .dm-row { animation: dm-row 9s ease-out infinite; animation-delay: calc(var(--i) * 0.25s); animation-fill-mode: both; }
+  @keyframes dm-row {
+    0%, 6% { opacity: 0; transform: translateY(4px); }
+    12%, 100% { opacity: 1; transform: none; }
+  }
+</style>
