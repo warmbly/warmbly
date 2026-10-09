@@ -1,0 +1,152 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic, { type IcName } from '../inbox/Ic.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * The contact import wizard (ImportWizard.tsx) on its Map columns step
+ * (import/MapStep.tsx): how full each column is, a few of its values, and
+ * where it goes. Beside it, the Review step's one line (import/ReviewStep.tsx)
+ * and the import running on the server.
+ */
+type Col = { name: string; fill: number; samples: string[]; to: string; ic: IcName | 'mail' | 'user' | 'tag' | 'shield'; note?: { t: string; tone: 'emerald' | 'sky' }; email?: boolean; ignore?: boolean };
+const cols: Col[] = [
+  { name: 'Email', fill: 100, samples: ['dana@acme.com', 'raj@helio.gen', 'li@quarry.co'], to: 'Email', ic: 'mail', email: true },
+  { name: 'First Name', fill: 98, samples: ['Dana', 'Raj', 'Li'], to: 'First name', ic: 'user' },
+  { name: 'Last Name', fill: 97, samples: ['Reyes', 'Mehta', 'Wong'], to: 'Last name', ic: 'user' },
+  { name: 'Company', fill: 91, samples: ['Acme', 'Helio', 'Quarry'], to: 'Company', ic: 'user' },
+  { name: 'Job Title', fill: 84, samples: ['Head of Growth', 'CTO', 'Founder'], to: 'title', ic: 'fileText', note: { t: 'Fills your existing field', tone: 'emerald' } },
+  { name: 'Industry', fill: 72, samples: ['SaaS', 'Biotech', 'Logistics'], to: 'industry', ic: 'fileText', note: { t: 'Creates a new field', tone: 'sky' } },
+  { name: 'Email Status', fill: 100, samples: ['valid', 'valid', 'catch-all'], to: 'Verification status', ic: 'shield', note: { t: 'Verification results recognised; these leads skip the built-in check', tone: 'emerald' } },
+  { name: 'Mobile', fill: 38, samples: ['+1 415 555 0142', '+44 20 7946 0958'], to: 'Phone', ic: 'user' },
+  { name: 'Notes', fill: 12, samples: ['met at SaaStr'], to: "Don't import", ic: 'ban', ignore: true },
+];
+const steps: { l: string; ic: IcName; state: 'done' | 'active' | 'todo' }[] = [
+  { l: 'Upload', ic: 'uploadCloud', state: 'done' },
+  { l: 'Map columns', ic: 'columns3', state: 'active' },
+  { l: 'Review', ic: 'listChecks', state: 'todo' },
+  { l: 'Import', ic: 'rocket', state: 'todo' },
+];
+const fillTone = (f: number) => (f >= 90 ? 'bg-emerald-500' : f >= 50 ? 'bg-sky-500' : 'bg-amber-400');
+const th = 'text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400';
+---
+<ScaledStage w={1240} h={660} photo="paint-aqua">
+  <div class={`${WINDOW} left-[48px] top-[44px] w-[830px] h-[616px]`}>
+    <header class="flex h-12 items-center gap-2.5 border-b border-slate-200 px-4">
+      <span class="flex size-5 items-center justify-center rounded bg-slate-100 text-slate-600"><Ic name="uploadCloud" size={12} /></span>
+      <span class={th}>Import</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] font-medium text-slate-900">Contacts</span>
+      <span class="inline-flex h-5 items-center gap-1 rounded bg-sky-50 px-1.5 text-[10px] font-medium text-sky-700">→ <Ic name="megaphone" size={10} />Q3 outreach</span>
+      <span class="ml-auto inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="x" size={14} /></span>
+    </header>
+    <nav class="flex h-10 items-center gap-1 border-b border-slate-200 px-4">
+      {steps.map((s, i) => (
+        <>
+          {i > 0 && <span class={`h-px w-8 ${i <= 1 ? 'bg-sky-300' : 'bg-slate-200'}`}></span>}
+          <span class={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] ${s.state === 'active' ? 'bg-slate-100 font-medium text-slate-900' : s.state === 'done' ? 'text-slate-600' : 'text-slate-400'}`}>
+            <span class={`flex size-4 items-center justify-center rounded-full ${s.state === 'done' ? 'bg-sky-600 text-white' : s.state === 'active' ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-500'}`}>
+              {s.state === 'done' ? <Glyph name="check" size={10} /> : <Ic name={s.ic} size={10} />}
+            </span>
+            {s.l}
+          </span>
+        </>
+      ))}
+    </nav>
+    <div class="space-y-3 px-5 py-4">
+      <div class="flex items-center gap-3">
+        <div class="flex min-w-0 flex-1 items-center gap-2.5">
+          <div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-700"><Ic name="fileSpreadsheet" size={16} /></div>
+          <div class="min-w-0">
+            <p class="truncate text-[12.5px] font-medium text-slate-900">q3-leads-export.csv</p>
+            <p class="text-[11px] text-slate-500">CSV · 1,248 rows · 14 columns · 9 mapped</p>
+          </div>
+        </div>
+        <span class="inline-flex h-6 items-center gap-1 rounded-md bg-sky-50 px-2 text-[11px] font-medium text-sky-700"><Ic name="history" size={12} />Mapping remembered</span>
+        <span class="inline-flex items-center gap-1.5 text-[11.5px] text-slate-700">
+          <span class="inline-flex size-3.5 items-center justify-center rounded-[4px] bg-slate-900"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>
+          First row is header
+        </span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="inline-flex items-center rounded-md border border-slate-200 bg-slate-50/60 p-0.5">
+          <span class="inline-flex h-6 items-center gap-1.5 rounded bg-white px-2 text-[11.5px] font-medium text-slate-900 shadow-sm"><Ic name="columns3" size={12} />Columns</span>
+          <span class="inline-flex h-6 items-center gap-1.5 rounded px-2 text-[11.5px] text-slate-500"><Ic name="eye" size={12} />Preview contacts</span>
+        </div>
+        <span class="flex h-7 w-48 items-center gap-1.5 rounded-md border border-slate-200 px-2 text-[12px] text-slate-400"><Glyph name="search" size={12} />Find a column…</span>
+        <span class="inline-flex items-center gap-1.5 text-[11.5px] text-slate-600"><span class="size-3.5 rounded-[4px] border border-slate-300"></span>Unmapped only</span>
+        <span class="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 text-[11.5px] font-medium text-slate-700"><Glyph name="braces" size={12} />Keep 3 more as custom fields</span>
+      </div>
+      <div class="overflow-hidden rounded-md border border-slate-200">
+        <div class="grid h-8 grid-cols-[1.1fr_1.3fr_1.1fr] items-center gap-3 border-b border-slate-200 bg-slate-50/60 px-3">
+          <span class={th}>Column in file</span><span class={th}>Values</span><span class={th}>Imports as</span>
+        </div>
+        {cols.map((c, i) => (
+          <div class={`grid grid-cols-[1.1fr_1.3fr_1.1fr] gap-x-3 border-b border-slate-100 px-3 py-2.5 ${c.ignore ? 'bg-white' : 'bg-sky-50/20'}`}>
+            <div class="flex min-w-0 items-start gap-2">
+              <span class="mt-0.5 w-5 shrink-0 text-right font-mono text-[10.5px] text-slate-400">{i + 1}</span>
+              <div class="min-w-0 flex-1">
+                <p class={`truncate text-[12.5px] font-medium ${c.ignore ? 'text-slate-500' : 'text-slate-900'}`}>{c.name}</p>
+                <div class="mt-1 flex items-center gap-1.5">
+                  <div class="h-1 w-16 overflow-hidden rounded-full bg-slate-100"><div class={`enter-grow-x h-full rounded-full ${fillTone(c.fill)}`} style={`width:${Math.max(2, c.fill)}%;--d:${i * 70}ms`}></div></div>
+                  <span class="text-[10.5px] tabular-nums text-slate-400">{c.fill}% filled</span>
+                </div>
+              </div>
+            </div>
+            <div class="flex min-w-0 flex-wrap items-start gap-1 pt-0.5">
+              {c.samples.map((s) => <span class="h-5 max-w-[160px] truncate rounded bg-slate-100 px-1.5 font-mono text-[11px] leading-5 text-slate-600">{s}</span>)}
+            </div>
+            <div class="min-w-0">
+              <span class={`flex h-7 w-full items-center gap-1.5 rounded-md border px-2 text-[12px] ${c.email ? 'border-sky-200 bg-sky-50/40 text-slate-900' : c.ignore ? 'border-slate-200 bg-white text-slate-500' : 'border-slate-200 bg-white text-slate-900'}`}>
+                <span class="text-slate-400">
+                  {c.ic === 'mail' ? <Glyph name="mail" size={12} /> : c.ic === 'user' ? <Glyph name="user" size={12} /> : c.ic === 'shield' ? <Glyph name="shieldCheck" size={12} /> : c.ic === 'fileText' ? <Glyph name="braces" size={12} /> : <Ic name={c.ic as IcName} size={12} />}
+                </span>
+                <span class={`truncate ${c.ic === 'fileText' ? 'font-mono text-[11.5px]' : ''}`}>{c.to}</span>
+                <Glyph name="chevronDown" size={12} class="ml-auto text-slate-400" />
+              </span>
+              {c.note && <p class={`mt-1 inline-flex items-center gap-1 text-[10.5px] ${c.note.tone === 'emerald' ? 'text-emerald-700' : 'text-sky-700'}`}>{c.note.tone === 'emerald' ? <Glyph name="check" size={11} /> : <Glyph name="plus" size={11} />}<span class="truncate">{c.note.t}</span></p>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- Review: the whole file checked, said in one line. -->
+  <div class={`${FLOAT} left-[856px] top-[120px] w-[350px] overflow-hidden`}>
+    <div class="flex items-start gap-3 px-4 py-4">
+      <div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Ic name="userPlus" size={18} /></div>
+      <div class="min-w-0 flex-1">
+        <p class="text-[15px] font-semibold leading-tight text-slate-900">1,102 new contacts will be added</p>
+        <p class="mt-1 text-[12px] leading-[1.45] text-slate-500">118 are already in your contacts and will be updated · 19 repeated rows are merged</p>
+        <p class="mt-1.5 inline-flex items-center gap-1 text-[12px] text-amber-700"><Ic name="triangleAlert" size={12} />9 rows can't be imported<Glyph name="chevronDown" size={12} /></p>
+      </div>
+    </div>
+    <div class="flex items-center border-t border-slate-200 px-3 py-2">
+      <span class="text-[11px] text-slate-400">Review</span>
+      <span class="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-[12px] font-medium text-white"><Ic name="rocket" size={12} />Import 1,102 new · update 118</span>
+    </div>
+  </div>
+
+  <!-- Import: running on the server, with progress, rate and time left. -->
+  <div class={`${FLOAT} left-[896px] top-[338px] w-[310px] px-4 py-3.5`}>
+    <div class="flex items-center gap-2">
+      <Ic name="loader" size={13} class="im-spin text-sky-600" />
+      <span class="text-[12.5px] font-medium text-slate-900">Importing</span>
+      <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-500">q3-leads-export.csv</span>
+    </div>
+    <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"><div class="im-bar h-full w-[58%] rounded-full bg-sky-500"></div></div>
+    <div class="mt-2 flex items-center justify-between font-mono text-[10.5px] tabular-nums text-slate-400">
+      <span>724 of 1,220</span><span>about 20s left</span>
+    </div>
+    <p class="mt-2.5 border-t border-slate-100 pt-2.5 text-[11px] leading-[1.45] text-slate-500">You can close the window. It keeps running, and everyone in the workspace sees it finish.</p>
+  </div>
+</ScaledStage>
+
+<style>
+  .im-spin { animation: im-spin 0.9s linear infinite; }
+  @keyframes im-spin { to { transform: rotate(360deg); } }
+  .im-bar { transform-origin: left; animation: im-bar 8s cubic-bezier(0.3, 0.6, 0.4, 1) infinite; }
+  @keyframes im-bar { 0% { transform: scaleX(0.05); } 85%, 100% { transform: scaleX(1.72); } }
+</style>

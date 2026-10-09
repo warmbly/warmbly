@@ -1,0 +1,105 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+
+/**
+ * Per mailbox: the Accounts table with the one mailbox whose bounces pulled
+ * it out of the pool, and its drawer's Overview health block (InboxDetails
+ * OverviewTab), score and the reason the warmup band gave.
+ */
+type Row = { addr: string; mark: 'google' | 'microsoft' | 'imap'; sent: string; inbox: string; health: string; bad?: boolean };
+const rows: Row[] = [
+  { addr: 'alex@northwind.dev', mark: 'google', sent: '23/50', inbox: '98%', health: 'Healthy 96' },
+  { addr: 'ml@helio.gen', mark: 'imap', sent: '0/50', inbox: '91%', health: 'Issues 50', bad: true },
+  { addr: 'sam@northwind.io', mark: 'microsoft', sent: '31/50', inbox: '95%', health: 'Healthy 93' },
+  { addr: 'leo@northwind.dev', mark: 'google', sent: '27/50', inbox: '97%', health: 'Healthy 94' },
+  { addr: 'mia@northwind.dev', mark: 'google', sent: '18/50', inbox: '96%', health: 'Healthy 91' },
+  { addr: 'ops@northwind.co', mark: 'imap', sent: '12/50', inbox: '92%', health: 'Healthy 88' },
+];
+const stats = [
+  { label: 'Total', value: '8', sub: 'connected' },
+  { label: 'Healthy', value: '7', sub: 'sending now' },
+  { label: 'Needs attention', value: '1', sub: 'paused or failing', last: true },
+];
+const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
+---
+<ScaledStage w={680} h={510} photo="frost-blue">
+  <div class={`${WINDOW} left-[32px] top-[32px] right-0 h-[478px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">8 mailboxes</span>
+    </div>
+    <div class="grid grid-cols-3 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class={EYEBROW}>{s.label}</div>
+          <div class={`${STAT_VALUE} ${s.last ? 'text-rose-600' : ''}`}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+    <table class="w-full table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class={`${th} pl-5`}>Mailbox</th>
+          <th class={`${th} w-[92px]`}>Sent today</th>
+          <th class={`${th} w-[72px]`}>Inbox</th>
+          <th class={`${th} w-[128px]`}>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr class={`h-11 border-b border-slate-200/60 ${r.bad ? 'mb-bad' : ''}`}>
+            <td class="pl-5 pr-3">
+              <span class="flex items-center gap-2.5 min-w-0">
+                <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark={r.mark} size={r.mark === 'imap' ? 12 : 13} /></span>
+                <span class="truncate text-[12.5px] font-medium text-slate-900">{r.addr}</span>
+              </span>
+            </td>
+            <td class={`px-3 font-mono text-[12px] tabular-nums ${r.bad ? 'text-slate-400' : 'text-sky-700'}`}>{r.sent}</td>
+            <td class="px-3 font-mono text-[11.5px] tabular-nums text-emerald-600">{r.inbox}</td>
+            <td class="px-3">
+              <span class={`inline-flex items-center gap-1.5 text-[11px] font-medium ${r.bad ? 'text-rose-700' : 'text-emerald-700'}`}>
+                <span class={`size-1.5 rounded-full ${r.bad ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                <span class="uppercase tracking-[0.08em]">{r.health}</span>
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- That mailbox's drawer: the score and the reason, on its Overview tab. -->
+  <div class={`${FLOAT} left-[250px] top-[318px] w-[400px] overflow-hidden`}>
+    <div class="h-12 px-4 flex items-center gap-3 border-b border-slate-200">
+      <div class="relative size-7 shrink-0 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center text-[10.5px] font-semibold">ML
+        <span class="absolute -right-1 -bottom-1 inline-flex size-3.5 items-center justify-center rounded border border-slate-200 bg-white ring-2 ring-white"><Glyph mark="imap" size={9} /></span>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-[12.5px] font-medium text-slate-900">ml@helio.gen</div>
+        <div class="truncate text-[10.5px] text-slate-400">SMTP / IMAP</div>
+      </div>
+      <span class="relative h-12 inline-flex items-center gap-1.5 px-1 text-[12px] font-medium text-slate-900"><Glyph name="gauge" size={13} />Overview<span class="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-sky-600"></span></span>
+    </div>
+    <div class="px-4 py-3">
+      <div class="flex items-center justify-between">
+        <span class={EYEBROW}>Health</span>
+        <span class="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600"><Ico name="alertCircle" size={13} />error</span>
+      </div>
+      <div class="mt-2 flex items-end gap-2">
+        <span class="text-[28px] font-light leading-none tabular-nums text-slate-900">50</span>
+        <span class="mb-0.5 text-[12px] text-slate-400">/ 100</span>
+      </div>
+      <div class="mt-2 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden"><div class="enter-grow-x h-full w-1/2 rounded-full bg-rose-500" style="--d:250ms"></div></div>
+      <div class="mt-2.5 flex items-start gap-1.5 text-[11.5px] leading-snug text-slate-500"><span class="text-amber-500">•</span>Warmup quarantined: mailbox temporarily removed from the pool (bounce rate 6.4% exceeded quarantine threshold)</div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .mb-bad { background: rgb(255 241 242 / 0.7); }
+</style>

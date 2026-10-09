@@ -1,0 +1,185 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from './Ic.astro';
+import Rail from './Rail.astro';
+import Row, { type Conv } from './Row.astro';
+import { L } from './labels';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * The whole unibox (web/src/app/app/unibox): scope rail, conversation list and
+ * the open thread with the reply composer. A new reply lands on top and gets
+ * its label a beat later; a teammate is replying to another thread.
+ */
+const incoming: Conv = { who: 'Maya Lopez', time: 'now', subject: 'Re: Quick question about Brightline', preview: 'Could you send pricing for 20 seats? We are on Microsoft 365.', mailbox: 'mia@northwind.dev', labels: [L.pricing], unread: true };
+const convs: Conv[] = [
+  { who: 'Jenna Carter', count: 3, time: '4m', subject: 'Re: Quick question about Acme', preview: 'Thursday 10am ET works for me, can you send an invite?', mailbox: 'alex@northwind.dev', labels: [L.meeting], open: true },
+  { who: 'Ravi Shah', count: 2, time: '18m', subject: 'Re: Following up', preview: 'What would this cost for a team of 20? We use Outlook.', mailbox: 'sam@northwind.io', labels: [L.pricing, L.question], presence: 'replying' },
+  { who: 'Google Workspace', time: '41m', subject: 'Payment declined for northwind.co', preview: 'We could not charge your card for the Business Starter plan.', mailbox: 'ops@northwind.co', labels: [L.actionRequired, L.notification], unread: true },
+  { who: 'Lena Fischer', time: '1h', subject: 'Re: Quick question about Helio', preview: 'Good timing actually, tell me more about the ramp.', mailbox: 'alex@northwind.dev', labels: [L.interested], unread: true },
+  { who: 'Aman Patel', count: 2, time: '2h', subject: 'Re: Following up', preview: 'Circle back in Q3, we are in the middle of a migration.', mailbox: 'sam@northwind.io', labels: [L.notNow] },
+  { who: 'Tom Becker', time: '3h', subject: 'Re: Quick question about Quarry', preview: 'I do not handle this, try maria@quarry.co instead.', mailbox: 'ops@northwind.co', labels: [L.wrongPerson] },
+  { who: 'Karim Salah', time: '4h', subject: 'Re: Following up', preview: 'Please take me off your list.', mailbox: 'alex@northwind.dev', labels: [L.unsubscribe] },
+];
+const icon = 'size-7 rounded-md inline-flex items-center justify-center text-slate-500';
+---
+<ScaledStage w={1240} h={720} photo="sheer-sky">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[1200px] h-[672px] flex`}>
+    <Rail active="inbox" />
+
+    <!-- Conversation list (ConversationList.tsx) -->
+    <div class="flex w-[360px] shrink-0 flex-col">
+      <div class="flex h-11 shrink-0 items-center gap-1.5 pl-3 pr-2">
+        <span class="text-[13.5px] font-semibold text-slate-900">Inbox</span>
+        <span class="text-[11.5px] tabular-nums text-slate-400">48</span>
+        <span class="flex-1"></span>
+        <span class="inline-flex h-7 items-center rounded-md px-2 text-[11.5px] text-slate-500">Select</span>
+        <span class={icon}><Glyph name="listFilter" size={16} /></span>
+        <span class="inline-flex h-7 items-center gap-1.5 rounded-md pl-2 pr-1.5 text-[12px] font-medium text-sky-700">
+          <Glyph name="penLine" size={14} />Compose
+          <kbd class="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded border border-sky-200 bg-white px-1 font-mono text-[10px] leading-none text-sky-600">N</kbd>
+        </span>
+      </div>
+      <div class="shrink-0 border-b border-slate-200 px-3 pb-2">
+        <div class="flex h-8 items-center gap-2 rounded-md bg-slate-100/80 px-2.5 text-[12.5px] text-slate-400">
+          <Glyph name="search" size={14} /><span class="flex-1">Search all mail</span>
+          <kbd class="inline-flex h-4 items-center rounded border border-slate-200 bg-white px-1 font-mono text-[10px] text-slate-400">/</kbd>
+        </div>
+      </div>
+      <div class="flex h-7 shrink-0 items-center px-4 text-[10.5px] font-medium uppercase tracking-[0.12em] text-slate-400">Today</div>
+      <div class="relative flex-1 overflow-hidden">
+        <div class="hx-list divide-y divide-slate-100">
+          <Row c={incoming} class="hx-new" chipClass="hx-chip" />
+          {convs.map((c) => <Row c={c} />)}
+        </div>
+      </div>
+    </div>
+
+    <div class="flex w-1.5 shrink-0 items-stretch justify-center"><span class="w-px bg-slate-200"></span></div>
+
+    <!-- Thread (ThreadView.tsx + MessageBubble.tsx) -->
+    <div class="relative flex min-w-0 flex-1 flex-col">
+      <div class="flex min-h-12 shrink-0 items-center gap-3 border-b border-slate-200 px-5 py-2">
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[13.5px] font-semibold leading-5 text-slate-900">Re: Quick question about Acme</div>
+          <div class="flex items-center gap-1.5 text-[11px] leading-4 text-slate-400">
+            <span>3 messages</span><span class="text-slate-300">·</span><span>alex@northwind.dev</span>
+            <span class="ml-1 inline-flex h-4 items-center gap-1 rounded px-1 text-[10px] font-medium" style={`color:${L.meeting.c};background-color:${L.meeting.c}1f;border:1px solid ${L.meeting.c}40;`}><span class="size-1.5 rounded-full" style={`background-color:${L.meeting.c}`}></span>Meeting</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-0.5 pr-2">
+          <span class={icon}><Glyph name="tag" size={15} /></span>
+          <span class={icon}><Glyph name="moon" size={15} /></span>
+          <span class={icon}><Glyph name="mailCheck" size={15} /></span>
+          <span class={icon}><Glyph name="archive" size={15} /></span>
+          <span class={icon}><Ic name="trash" size={15} /></span>
+          <span class="mx-1 h-4 w-px bg-slate-200"></span>
+          <span class={icon}><Glyph name="user" size={15} /></span>
+        </div>
+      </div>
+
+      <div class="divide-y divide-slate-100">
+        <article class="flex items-start gap-3 px-5 py-2.5">
+          <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">AK</span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[12.5px] font-semibold text-slate-900">Alex Kim</div>
+            <div class="truncate text-[12px] text-slate-500">Hi Jenna, saw Acme just opened a Berlin office and thought this might be useful…</div>
+          </div>
+          <span class="text-[11px] tabular-nums text-slate-400">Mon 9:12</span>
+        </article>
+        <article class="flex items-start gap-3 px-5 py-2.5">
+          <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">AK</span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[12.5px] font-semibold text-slate-900">Alex Kim</div>
+            <div class="truncate text-[12px] text-slate-500">Bumping this up in case it got buried. Happy to send a two-minute walkthrough…</div>
+          </div>
+          <span class="text-[11px] tabular-nums text-slate-400">Wed 9:40</span>
+        </article>
+        <article class="px-5 py-4">
+          <div class="flex items-start gap-3">
+            <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">JC</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Jenna Carter</span><span class="text-[11px] text-slate-400">jenna@acme.io</span></div>
+              <div class="mt-0.5 text-[11px] text-slate-400">to alex@northwind.dev</div>
+            </div>
+            <span class="text-[11px] tabular-nums text-slate-400">4m</span>
+          </div>
+          <div class="mt-3 space-y-2 pl-10 text-[13px] leading-[1.6] text-slate-800">
+            <p>Hi Alex, thanks for the nudge. The Berlin team is exactly where this would help.</p>
+            <p>Thursday 10am ET works for me. Can you send over an invite and loop in Priya from ops?</p>
+          </div>
+        </article>
+      </div>
+
+      <!-- ReplyComposer.tsx, docked to the foot of the thread -->
+      <div class="absolute inset-x-0 bottom-0 flex flex-col border-t border-slate-200 bg-white shadow-[0_-6px_24px_-12px_rgba(15,23,42,0.10)]">
+        <div class="flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-100/80 pl-3.5 pr-1.5">
+          <Ic name="cornerUp" size={14} class="text-slate-500" />
+          <span class="min-w-0 flex-1 truncate text-[11.5px] text-slate-500"><span class="font-semibold text-slate-800">Reply</span> to Jenna Carter<span class="text-slate-400"> · Re: Quick question about Acme</span></span>
+        </div>
+        <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-[7px]">
+          <span class="w-9 shrink-0 text-[11px] text-slate-400">To</span>
+          <span class="inline-flex h-5 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 pl-1.5 pr-1.5 text-[11px] font-medium text-sky-800"><span class="font-mono">jenna@acme.io</span></span>
+          <span class="inline-flex h-5 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 pl-1.5 pr-1.5 text-[11px] font-medium text-sky-800"><span class="font-mono">priya@acme.io</span></span>
+          <span class="ml-auto flex items-center gap-0.5 pr-2 text-[11px] text-slate-400"><span class="px-1">Cc</span><span class="px-1">Bcc</span></span>
+        </div>
+        <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-[7px]">
+          <span class="w-9 shrink-0 text-[11px] text-slate-400">From</span>
+          <span class="text-[12.5px] text-slate-800">Alex Kim</span>
+          <span class="font-mono text-[10.5px] text-slate-400">alex@northwind.dev</span>
+        </div>
+        <div class="min-h-[86px] px-4 py-3 text-[13px] leading-[1.6] text-slate-800">
+          Perfect, I just sent an invite for Thursday at 10am ET and added Priya.<span class="hx-caret ml-px inline-block h-[15px] w-px translate-y-[3px] bg-sky-600"></span>
+        </div>
+        <div class="flex items-center gap-1.5 border-t border-slate-200/60 px-3 py-2">
+          <span class="inline-flex h-7 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-[12px] font-medium text-white"><Glyph name="send" size={12} />Send</span>
+          <span class="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[12px] text-slate-700"><Glyph name="clock" size={12} />Schedule<Glyph name="chevronDown" size={12} class="text-slate-400" /></span>
+          <span class="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[12px] text-slate-700"><Glyph name="pause" size={12} />Pause follow-ups<Glyph name="chevronDown" size={12} class="text-slate-400" /></span>
+          <span class="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[12px] text-slate-700"><Ic name="fileText" size={12} />Template<Glyph name="chevronDown" size={12} class="text-slate-400" /></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Presence: a teammate is already answering another thread (ResourceViewers). -->
+  <div class={`${FLOAT} left-[896px] top-[362px] w-[300px] px-4 py-3.5`}>
+    <div class="flex items-center gap-3">
+      <span class="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[12px] font-semibold text-amber-700 ring-2 ring-white">
+        ML
+        <span class="absolute -bottom-0.5 -right-0.5 flex size-3">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60"></span>
+          <span class="relative inline-flex size-3 rounded-full border-2 border-white bg-amber-500"></span>
+        </span>
+      </span>
+      <div class="min-w-0">
+        <div class="text-[13px] font-medium text-slate-900">Marcus Lee is replying</div>
+        <div class="truncate text-[11.5px] text-slate-500">to Ravi Shah · Re: Following up</div>
+      </div>
+    </div>
+    <div class="mt-3 flex items-center gap-1.5 border-t border-slate-100 pt-2.5 text-[11px] text-slate-500">
+      <span class="inline-flex h-5 items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 pl-1 pr-2 text-[10px] font-medium text-amber-700">
+        <span class="flex size-3.5 items-center justify-center rounded-full bg-amber-100 text-[6.5px] font-semibold ring-1 ring-white">ML</span>Marcus Lee is replying
+      </span>
+      <span class="truncate">shows on the thread for everyone</span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style is:global>
+  /* A 10s loop: a new reply slides in on top (rows are 77px) and is labelled
+     a moment later. The list fades across the seam so the restart never jumps. */
+  .hx-list { animation: hx-list 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes hx-list {
+    0% { transform: translateY(-77px); opacity: 0; }
+    4%, 28% { transform: translateY(-77px); opacity: 1; }
+    35%, 92% { transform: none; opacity: 1; }
+    97%, 100% { transform: none; opacity: 0; }
+  }
+  .hx-new { animation: hx-new 10s ease-out infinite; }
+  @keyframes hx-new { 0%, 30% { background: rgb(240 249 255 / 0); } 36%, 72% { background: rgb(240 249 255); } 90%, 100% { background: rgb(240 249 255 / 0); } }
+  .hx-chip { animation: hx-chip 10s ease-out infinite; }
+  @keyframes hx-chip { 0%, 44% { opacity: 0; transform: scale(0.85); } 49%, 100% { opacity: 1; transform: none; } }
+  .hx-caret { animation: hx-caret 1.1s steps(1) infinite; }
+  @keyframes hx-caret { 50% { opacity: 0; } }
+</style>

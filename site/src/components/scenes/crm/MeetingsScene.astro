@@ -1,0 +1,124 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from '../inbox/Ic.astro';
+import Mark from './Mark.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, ACTION_GHOST, STAT, STAT_VALUE } from '../../../lib/scene';
+
+/**
+ * CRM > Meetings (crm/meetings/page.tsx): the four counts, the timeframe
+ * tabs and the rows with their source and status. A Calendly booking arrives
+ * at the top through the inbound webhook, on a loop.
+ */
+type M = { date: string; time: string; who: string; email: string; event: string; where: string; source: string; status: keyof typeof STATUS; cls?: string };
+const STATUS = {
+  booked: { l: 'Booked', c: 'bg-sky-50 text-sky-700 border-sky-200' },
+  rescheduled: { l: 'Rescheduled', c: 'bg-amber-50 text-amber-700 border-amber-200' },
+  canceled: { l: 'Canceled', c: 'bg-slate-100 text-slate-500 border-slate-200' },
+  completed: { l: 'Completed', c: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  no_show: { l: 'No-show', c: 'bg-red-50 text-red-700 border-red-200' },
+};
+const rows: M[] = [
+  { date: 'Oct 14, 2026', time: '3:30 PM · in 4 days', who: 'Chen Wei', email: 'chen@tidewater.io', event: 'Discovery call', where: 'Zoom', source: 'Calendly', status: 'booked', cls: 'mt-new' },
+  { date: 'Oct 10, 2026', time: '11:00 AM · today', who: 'Priya Nair', email: 'priya@sprucebio.com', event: 'Demo', where: 'Google Meet', source: 'Cal.com', status: 'rescheduled' },
+  { date: 'Oct 10, 2026', time: '4:00 PM · today', who: 'Rowan Hale', email: 'rowan@stratech.io', event: 'Pricing review', where: 'Phone', source: 'Manual', status: 'booked' },
+  { date: 'Oct 16, 2026', time: '10:00 AM · in 6 days', who: 'Jenna Carter', email: 'jenna@acme.io', event: 'Intro call', where: 'Google Meet', source: 'Cal.com', status: 'booked' },
+  { date: 'Oct 21, 2026', time: '9:30 AM', who: 'Lena Fischer', email: 'lena@helio.gen', event: 'Intro call', where: 'Zoom', source: 'Calendly', status: 'canceled' },
+];
+const stats = [
+  { label: 'Upcoming', value: '6', accent: true },
+  { label: 'Today', value: '2' },
+  { label: 'Total booked', value: '41' },
+  { label: 'Canceled', value: '3', last: true },
+];
+const col = 'text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium';
+---
+<ScaledStage w={680} h={510} photo="sheer-blue">
+  <div class={`${WINDOW} left-[34px] top-[34px] w-[720px] h-[476px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Meetings / Calls</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="min-w-0 truncate text-[12.5px] text-slate-600">Calls you schedule, and calls prospects book with you</span>
+      <div class="ml-auto flex shrink-0 items-center gap-1.5 pr-[60px]">
+        <span class={ACTION_GHOST}><Glyph name="calendar" size={12} />Calendars</span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />New meeting</span>
+      </div>
+    </div>
+    <div class="grid grid-cols-4 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class="flex items-center gap-2"><span class={EYEBROW}>{s.label}</span>{s.accent && <span class="size-1.5 rounded-full bg-sky-500"></span>}</div>
+          <div class={STAT_VALUE}>{s.value}</div>
+        </div>
+      ))}
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Meetings</span>
+      <span class="font-mono text-[10.5px] text-slate-400">5 of 41</span>
+      <div class="ml-2 flex items-center gap-0.5 rounded-md border border-slate-200 p-0.5">
+        <span class="h-6 rounded bg-sky-600 px-2.5 text-[11.5px] font-medium leading-6 text-white">Upcoming</span>
+        <span class="h-6 rounded px-2.5 text-[11.5px] font-medium leading-6 text-slate-500">Past</span>
+        <span class="h-6 rounded px-2.5 text-[11.5px] font-medium leading-6 text-slate-500">All</span>
+      </div>
+      <span class="flex h-7 w-[200px] items-center gap-1.5 rounded-md border border-slate-200 px-2 text-[12px] text-slate-400"><Glyph name="search" size={12} />Search name, email, or event…</span>
+    </div>
+    <div class="flex h-8 items-center gap-3 border-b border-slate-200 bg-slate-50/60 px-5">
+      <span class={`${col} w-[118px]`}>When</span>
+      <span class={`${col} w-[140px]`}>Contact</span>
+      <span class={`${col} w-[118px]`}>Meeting</span>
+      <span class={`${col} w-[70px]`}>Source</span>
+      <span class={`${col} w-[90px]`}>Status</span>
+      <span class={`${col} w-[80px] text-right`}>Actions</span>
+    </div>
+    {rows.map((m) => (
+      <div class={`flex min-h-11 items-center gap-3 border-b border-slate-200/60 px-5 py-1.5 ${m.cls ?? ''}`}>
+        <div class="w-[118px] shrink-0">
+          <div class="flex items-center gap-1.5 text-[12.5px] text-slate-800"><Ic name="calendarClock" size={14} class="text-slate-400" /><span class="truncate">{m.date}</span></div>
+          <div class="truncate pl-5 text-[11px] text-slate-400">{m.time}</div>
+        </div>
+        <div class="w-[140px] min-w-0 shrink-0">
+          <div class="truncate text-[12.5px] font-medium text-slate-900">{m.who}</div>
+          <div class="truncate text-[11px] text-slate-400">{m.email}</div>
+        </div>
+        <div class="w-[118px] min-w-0 shrink-0">
+          <div class="truncate text-[12.5px] text-slate-700">{m.event}</div>
+          <div class="truncate text-[11px] text-slate-400">{m.where}</div>
+        </div>
+        <div class="w-[70px] shrink-0 text-[11.5px] text-slate-500">{m.source}</div>
+        <div class="w-[90px] shrink-0"><span class={`inline-flex h-5 items-center rounded border px-2 text-[10.5px] font-medium ${STATUS[m.status].c}`}>{STATUS[m.status].l}</span></div>
+        <div class="flex w-[80px] shrink-0 items-center justify-end gap-1 text-slate-400">
+          {m.status !== 'canceled' && <><Ic name="calendarPlus" size={14} /><Ic name="video" size={14} /></>}
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <!-- The Cal.com connection: an inbound webhook URL, no OAuth. -->
+  <div class={`${FLOAT} left-[356px] top-[322px] w-[304px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg border border-slate-200 bg-white"><Mark name="cal_com" size={16} /></span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium text-slate-900">Cal.com</div>
+        <div class="text-[10.5px] text-slate-400">Inbound URL</div>
+      </div>
+      <span class="ml-auto inline-flex h-5 items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Connected</span>
+    </div>
+    <div class="space-y-2 px-4 py-3">
+      <div class="flex h-7 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 font-mono text-[11px] text-slate-500"><span class="truncate">••••••••••••••••••••••••••••</span><span class="ml-auto shrink-0 font-sans text-[11px] font-medium text-slate-700">Rotate URL</span></div>
+      <div class="flex flex-wrap gap-1">
+        {['BOOKING_CREATED', 'BOOKING_RESCHEDULED', 'BOOKING_CANCELLED'].map((e) => <span class="inline-flex h-5 items-center rounded bg-slate-100 px-1.5 font-mono text-[10px] text-slate-600">{e}</span>)}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .mt-new { animation: mt-new 9s ease-out infinite; }
+  @keyframes mt-new {
+    0%, 8% { opacity: 0; transform: translateY(-6px); background: rgb(240 249 255 / 0); }
+    14% { opacity: 1; transform: none; background: rgb(240 249 255); }
+    60% { background: rgb(240 249 255); }
+    80%, 94% { opacity: 1; background: rgb(240 249 255 / 0); }
+    100% { opacity: 0; }
+  }
+</style>

@@ -1,0 +1,23 @@
+---
+import Ico from '../analytics/Ico.astro';
+
+/** The automation builder's header (AutomationFlow): back, name, Active, history, test, save. */
+interface Props { name: string; mode?: 'history' | 'test' }
+const { name, mode } = Astro.props;
+const btn = 'h-7 px-2.5 rounded-md border text-[12px] inline-flex items-center gap-1.5';
+const on = 'border-sky-300 bg-sky-50 text-sky-700';
+const off = 'border-slate-200 text-slate-700';
+---
+<div class="h-12 px-3 flex items-center gap-2 border-b border-slate-200 bg-white">
+  <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Ico name="arrowLeft" size={16} /></span>
+  <span class="h-7 px-2 rounded-md text-[13px] font-medium text-slate-900 inline-flex items-center truncate">{name}</span>
+  <span class="inline-flex h-7 items-center gap-2">
+    <span class="relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full bg-sky-600"><span class="inline-block size-3.5 translate-x-[16px] rounded-full bg-white shadow-sm"></span></span>
+    <span class="text-[12px] font-medium text-slate-700">Active</span>
+  </span>
+  <div class="ml-auto flex items-center gap-1.5">
+    <span class={`${btn} ${mode === 'history' ? on : off}`}><Ico name="history" size={14} />History</span>
+    <span class={`${btn} ${mode === 'test' ? on : off}`}><Ico name="play" size={14} />Test</span>
+    <span class="h-7 px-3 rounded-md bg-slate-100 text-slate-400 text-[12px] font-medium inline-flex items-center gap-1.5"><Ico name="check" size={14} class="text-slate-300" />Saved</span>
+  </div>
+</div>

@@ -1,0 +1,85 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, EYEBROW } from '../../../lib/scene';
+
+/**
+ * Claude Code connected to the Warmbly MCP server (docs/content/docs/api/mcp.mdx):
+ * the one add command, then a question answered with two read-only tools.
+ * The consent screen (web/src/app/oauth/authorize/page.tsx) is what the
+ * browser shows when the client signs in.
+ */
+const scopes = ['Read campaigns', 'Read analytics', 'Read contacts', 'Read unibox'];
+---
+<ScaledStage w={680} h={510} photo="sheer-peach">
+  <div class={`${WINDOW} left-[30px] top-[36px] w-[452px] h-[500px] bg-[#16181d]!`}>
+    <div class="h-10 px-4 border-b border-white/10 flex items-center gap-2 text-[12px] text-white/50">
+      <span class="size-2.5 rounded-full bg-white/15"></span><span class="size-2.5 rounded-full bg-white/15"></span><span class="size-2.5 rounded-full bg-white/15"></span>
+      <span class="ml-2">claude · ~/acme</span>
+    </div>
+    <div class="px-4 py-3 font-mono text-[10.5px] leading-[18px] text-white/80">
+      <div><span class="text-white/40">$ </span>claude mcp add --transport http warmbly \</div>
+      <div class="pl-4">https://api.warmbly.com/v1/mcp</div>
+      <div class="mt-3 rounded-md border border-[#d97757]/50 px-3 py-2">
+        <div><span class="text-[#d97757]">✻</span> <span class="text-white">Welcome to Claude Code</span></div>
+        <div class="text-white/40">/mcp · warmbly <span class="text-emerald-400">✔ connected</span></div>
+      </div>
+
+      <div class="mt-3 enter-fade" style="--d:300ms"><span class="text-white/40">&gt; </span><span class="text-white">Which campaign got the most replies this week?</span></div>
+
+      <div class="mt-3 enter-fade" style="--d:900ms">
+        <div><span class="mcp-dot text-emerald-400">⏺</span> <span class="text-white">warmbly - list_campaigns</span> <span class="text-white/40">(MCP)</span></div>
+        <div class="pl-3 whitespace-pre text-white/45">⎿  Q3 outbound, Agencies, EU, Founders list</div>
+      </div>
+      <div class="mt-2 enter-fade" style="--d:1500ms">
+        <div><span class="mcp-dot text-emerald-400">⏺</span> <span class="text-white">warmbly - get_dashboard_analytics</span> <span class="text-white/40">(MCP)</span></div>
+        <div class="pl-3 text-white/40">last 7 days, by campaign</div>
+        <div class="pl-3 whitespace-pre text-white/45">⎿  Q3 outbound    612 sent · 41 replies</div>
+        <div class="pl-3 whitespace-pre text-white/45">   Agencies, EU   480 sent · 22 replies</div>
+        <div class="pl-3 whitespace-pre text-white/45">   Founders list  paused</div>
+      </div>
+      <div class="mt-3 enter-fade" style="--d:2200ms">
+        <div><span class="text-white">⏺</span> <span class="text-white">Q3 outbound, with 41 replies from 612</span></div>
+        <div class="pl-3 text-white">emails this week (6.7%). Agencies, EU is next</div>
+        <div class="pl-3 text-white">with 22. Want me to draft replies to the</div>
+        <div class="pl-3 text-white">unanswered ones?</div>
+      </div>
+      <div class="mt-3 rounded-md border border-white/15 px-3 py-1.5 text-white/40">&gt; <span class="mcp-caret inline-block h-[12px] w-[6px] translate-y-[2px] bg-white/70"></span></div>
+    </div>
+  </div>
+
+  <!-- What the browser asks when Claude Code signs in over OAuth. -->
+  <div class="enter-fade absolute left-[404px] top-[96px] w-[250px]" style="--d:600ms">
+    <div class="float-layer overflow-hidden rounded-[10px] bg-white ring-1 ring-slate-900/[0.07] shadow-[0_24px_60px_-26px_rgba(15,23,42,0.5)]">
+      <div class="flex flex-col items-center gap-1 border-b border-slate-100 px-4 pt-4 pb-3">
+        <span class="flex size-9 items-center justify-center rounded-xl bg-sky-50 text-[14px] font-semibold text-sky-700 ring-1 ring-sky-100">C</span>
+        <div class="mt-1 flex items-center gap-1.5">
+          <span class="text-[12.5px] font-semibold text-slate-900">Claude Code</span>
+          <span class="inline-flex items-center rounded-md bg-amber-50 px-1 py-px text-[9px] font-medium text-amber-700 ring-1 ring-amber-200">Unverified app</span>
+        </div>
+        <p class="text-center text-[10.5px] text-slate-500">wants to access the <span class="font-medium text-slate-700">Acme</span> workspace</p>
+      </div>
+      <div class="mx-4 mt-3 rounded-lg bg-amber-50 px-2.5 py-2 ring-1 ring-amber-200">
+        <p class="text-[10.5px] font-medium text-amber-900">Not affiliated with Warmbly</p>
+        <p class="text-[10px] leading-snug text-amber-800">Approve only if you started this connection yourself.</p>
+      </div>
+      <div class="px-4 py-3">
+        <div class={`mb-1.5 ${EYEBROW}`}>It will be able to</div>
+        {scopes.map((s) => (
+          <div class="flex items-center gap-1.5 py-[2px] text-[11px] text-slate-700"><Glyph name="check" size={11} class="text-emerald-500" />{s}</div>
+        ))}
+      </div>
+      <div class="flex items-center gap-1.5 border-t border-slate-100 px-4 py-2.5">
+        <span class="h-7 flex-1 rounded-lg border border-slate-200 inline-flex items-center justify-center text-[11px] font-medium text-slate-600">Deny</span>
+        <span class="h-7 flex-1 rounded-lg bg-sky-600 inline-flex items-center justify-center text-[11px] font-medium text-white">Authorize</span>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .mcp-caret { animation: mcp-blink 1s step-end infinite; }
+  @keyframes mcp-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  .mcp-dot { animation: mcp-pulse 2.4s ease-in-out infinite; }
+  @keyframes mcp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+</style>

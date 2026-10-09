@@ -1,0 +1,68 @@
+---
+/**
+ * One conversation row, as ConversationItem.tsx draws it: the gutter (unread
+ * dot or tick box), sender and count, a presence ping, the time, the subject
+ * with up to two label chips, and the preview over the owning mailbox.
+ */
+import Chip from './Chip.astro';
+import type { Label } from './labels';
+
+export type Conv = {
+  who: string;
+  count?: number;
+  time: string;
+  subject: string;
+  preview: string;
+  mailbox?: string;
+  labels?: Label[];
+  unread?: boolean;
+  open?: boolean;
+  ticked?: boolean;
+  presence?: 'replying' | 'viewing';
+};
+
+interface Props {
+  c: Conv;
+  /** Select mode: every row shows its box. */
+  selecting?: boolean;
+  class?: string;
+  /** Extra class on the first label chip, for a label that arrives late. */
+  chipClass?: string;
+}
+const { c, selecting = false, class: className = '', chipClass = '' } = Astro.props;
+const bg = c.ticked ? 'bg-sky-100/60' : c.open ? 'bg-sky-50' : '';
+---
+<div class={`relative flex items-start gap-2 py-2.5 pl-3 pr-4 ${bg} ${className}`}>
+  <span class="flex h-[18px] w-4 shrink-0 items-center justify-center">
+    {selecting ? (
+      <span class={`row-box relative inline-flex size-3.5 items-center justify-center rounded-[4px] border ${c.ticked ? 'border-sky-600 bg-sky-600' : 'border-slate-300 bg-white'}`}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" class={c.ticked ? 'row-mark' : 'row-mark opacity-0'}><path d="M20 6 9 17l-5-5" /></svg>
+      </span>
+    ) : c.unread && <span class="block size-2 rounded-full bg-sky-500"></span>}
+  </span>
+  <div class="min-w-0 flex-1">
+    <div class="flex h-[18px] min-w-0 items-center gap-2">
+      <span class={`min-w-0 truncate text-[12.5px] ${c.unread ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>{c.who}</span>
+      {c.count && <span class="shrink-0 text-[11px] tabular-nums text-slate-400">{c.count}</span>}
+      {c.presence && (
+        <span class="relative flex size-2 shrink-0">
+          <span class={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${c.presence === 'replying' ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
+          <span class={`relative inline-flex size-2 rounded-full ${c.presence === 'replying' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+        </span>
+      )}
+      <span class={`ml-auto shrink-0 text-[11px] tabular-nums ${c.unread ? 'font-medium text-sky-700' : 'text-slate-400'}`}>{c.time}</span>
+    </div>
+    <div class="mt-0.5 flex min-w-0 items-center gap-1.5">
+      <span class={`min-w-0 truncate text-[12.5px] ${c.unread ? 'font-medium text-slate-900' : 'text-slate-600'}`}>{c.subject}</span>
+      {c.labels && c.labels.length > 0 && (
+        <span class="ml-auto inline-flex shrink-0 items-center gap-1">
+          {c.labels.slice(0, 2).map((l, i) => <Chip label={l} class={i === 0 ? chipClass : ''} />)}
+        </span>
+      )}
+    </div>
+    <div class="mt-0.5 flex min-w-0 items-center gap-2">
+      <span class="min-w-0 truncate text-[11.5px] text-slate-400">{c.preview}</span>
+      {c.mailbox && <span class="ml-auto max-w-[40%] shrink-0 truncate text-[10.5px] text-slate-300">{c.mailbox}</span>}
+    </div>
+  </div>
+</div>

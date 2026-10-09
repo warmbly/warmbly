@@ -1,0 +1,169 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Logo from '../../Logo.astro';
+import BrandMark from '../../page/BrandMark.astro';
+import Ico from '../analytics/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, ACTION_GHOST } from '../../../lib/scene';
+
+/**
+ * The Integrations directory on Discover (web/src/app/app/integrations):
+ * the store rail with its views and categories, Recommended for the gaps in
+ * what is connected, and Popular, where connected apps read Manage. Over it,
+ * the connect dialog for Slack waits for the sign-in, then turns into its
+ * connected screen, and Slack's card flips to Manage, on a loop.
+ */
+type App = { mark: string; name: string; tagline: string; category: string; connected?: boolean; live?: boolean };
+const recommended: App[] = [
+  { mark: 'slack', name: 'Slack', tagline: 'Real-time alerts for positive replies, bounces, and deliverability.', category: 'Notifications', live: true },
+  { mark: 'calendly', name: 'Calendly', tagline: 'Booked, rescheduled, and canceled calls land on the contact, live.', category: 'Meetings' },
+  { mark: 'millionverifier', name: 'MillionVerifier', tagline: 'Pay-as-you-go address verification for every contact you import.', category: 'Verification' },
+];
+const popular: App[] = [
+  { mark: 'hubspot', name: 'HubSpot', tagline: 'Run your CRM on HubSpot: deals, tasks, owners and every email, in sync both ways.', category: 'CRM', connected: true },
+  { mark: 'salesforce', name: 'Salesforce', tagline: 'Two-way sync with Leads, Contacts and the activity timeline.', category: 'CRM' },
+  { mark: 'pipedrive', name: 'Pipedrive', tagline: 'Run your CRM on Pipedrive: persons, deals and activities, two-way.', category: 'CRM' },
+  { mark: 'close', name: 'Close', tagline: 'Leads, contacts, and inbox activity for Close.', category: 'CRM' },
+  { mark: 'zapier', name: 'Zapier', tagline: 'Triggers and actions across 8,000+ apps.', category: 'Automation', connected: true },
+  { mark: 'discord', name: 'Discord', tagline: 'Webhook-based notifications to a server channel.', category: 'Notifications' },
+];
+const nav = [
+  { items: [
+    { icon: 'compass', label: 'Discover', active: true },
+    { icon: 'layoutGrid', label: 'All apps', count: 13 },
+    { icon: 'plug', label: 'Connected', count: 2 },
+  ] },
+  { label: 'Categories', items: [
+    { icon: 'briefcase', label: 'CRM', count: 4 },
+    { icon: 'bell', label: 'Notifications', count: 2 },
+    { icon: 'workflow', label: 'Automation', count: 3 },
+    { icon: 'calendarDays', label: 'Meetings', count: 2 },
+    { icon: 'shieldCheck', label: 'Verification', count: 2 },
+  ] },
+  { label: 'Developers', items: [
+    { icon: 'users', label: 'Community apps' },
+    { icon: 'wrench', label: 'Build your own' },
+  ] },
+];
+const btn = 'h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5 shrink-0';
+---
+<ScaledStage w={1240} h={700} photo="frost-blue">
+  <div class={`${WINDOW} left-[56px] top-[52px] right-0 h-[648px] flex flex-col`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Integrations</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Connect the tools your team already uses</span>
+      <span class={`ml-auto ${ACTION_GHOST}`}><Ico name="blocks" size={13} />Publish an app</span>
+    </div>
+    <div class="flex flex-1 min-h-0">
+      <aside class="w-[236px] shrink-0 border-r border-slate-200/70 px-2.5 py-3">
+        <div class="h-7 pl-2 rounded-md border border-slate-200 bg-white flex items-center gap-1.5 text-[12.5px] text-slate-400"><Ico name="search" size={13} />Search apps<span class="ml-auto mr-1.5 rounded border border-slate-200 px-1 font-mono text-[10px] text-slate-400">/</span></div>
+        {nav.map((g) => (
+          <div class="mb-1 mt-3">
+            {g.label && <div class="px-2 mb-1 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{g.label}</div>}
+            {g.items.map((it: { icon: string; label: string; count?: number; active?: boolean }) => (
+              <div class={`relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[12.5px] ${it.active ? 'bg-slate-200/70 font-medium text-slate-900' : 'text-slate-600'}`}>
+                <Ico name={it.icon} size={14} class={it.active ? 'text-slate-700' : 'text-slate-400'} />
+                <span class="flex-1">{it.label}</span>
+                {it.count && <span class="text-[11px] tabular-nums text-slate-400">{it.count}</span>}
+              </div>
+            ))}
+          </div>
+        ))}
+      </aside>
+
+      <div class="flex-1 min-w-0 px-8 py-6 space-y-8 bg-white">
+        {[{ title: 'Recommended for you', desc: 'For the gaps in what this workspace has connected.', apps: recommended }, { title: 'Popular', desc: 'Most used by workspaces on this instance.', apps: popular, all: true }].map((sec) => (
+          <section class="flex flex-col gap-3">
+            <div class="flex items-end gap-3">
+              <div class="flex-1">
+                <h2 class="text-[13px] font-semibold text-slate-900">{sec.title}</h2>
+                <p class="text-[12px] text-slate-500">{sec.desc}</p>
+              </div>
+              {sec.all && <span class="inline-flex items-center gap-0.5 text-[12px] text-slate-500">See all<Ico name="chevronRight" size={14} /></span>}
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+              {sec.apps.map((a) => (
+                <div class="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4">
+                  <div class="flex items-center gap-3">
+                    <BrandMark name={a.mark} size={40} />
+                    <div class="min-w-0">
+                      <div class="truncate text-[13px] font-semibold text-slate-900">{a.name}</div>
+                      <span class="inline-flex items-center gap-1 text-[11.5px] text-slate-400">Warmbly<Ico name="badgeCheck" size={12} class="text-sky-600" /></span>
+                    </div>
+                  </div>
+                  <p class="min-h-[2.4rem] text-[12.5px] leading-relaxed text-slate-500 line-clamp-2">{a.tagline}</p>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-[11.5px] text-slate-400">{a.category}</span>
+                    {a.live ? (
+                      <span class="relative inline-flex h-7 w-[84px] justify-end">
+                        <span class={`ih-connect absolute right-0 ${btn}`}>Connect</span>
+                        <span class={`ih-manage absolute right-0 ${btn}`}><span class="size-1.5 rounded-full bg-emerald-500"></span>Manage</span>
+                      </span>
+                    ) : a.connected ? (
+                      <span class={btn}><span class="size-1.5 rounded-full bg-emerald-500"></span>Manage</span>
+                    ) : (
+                      <span class={btn}>Connect</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- ConnectDialog for Slack: waiting for the sign-in, then connected. -->
+  <div class={`${FLOAT} left-[792px] top-[318px] w-[420px] overflow-hidden`}>
+    <span class="absolute right-3 top-3 inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Ico name="x" size={14} /></span>
+    <div class="flex flex-col items-center px-6 pt-7 pb-4 text-center">
+      <div class="flex items-center">
+        <span class="inline-flex size-12 items-center justify-center rounded-lg border border-slate-200 bg-white"><Logo class="w-6 h-6 text-slate-900" /></span>
+        <span class="relative flex h-6 w-14 items-center justify-center">
+          <span class="ih-line absolute inset-x-1.5 top-1/2 border-t border-dashed"></span>
+          <span class="ih-dot absolute top-1/2 -mt-[3px] size-1.5 rounded-full bg-sky-500"></span>
+          <span class="ih-check relative inline-flex size-5 items-center justify-center rounded-full bg-emerald-500 text-white"><Ico name="check" size={12} stroke={3} /></span>
+        </span>
+        <BrandMark name="slack" size={48} />
+      </div>
+      <div class="relative mt-4 h-[46px] w-full">
+        <div class="ih-wait absolute inset-0">
+          <div class="text-[15px] font-semibold text-slate-900">Waiting for Slack</div>
+          <div class="mt-1 text-[12.5px] text-slate-500">Finish in the Slack window that opened. This updates by itself.</div>
+        </div>
+        <div class="ih-done absolute inset-0">
+          <div class="text-[15px] font-semibold text-slate-900">Slack is connected</div>
+          <div class="mt-1 text-[12.5px] text-slate-500">Connected to Northwind.</div>
+        </div>
+      </div>
+    </div>
+    <div class="relative h-[70px] px-6">
+      <div class="ih-wait absolute inset-x-6 top-0 flex items-center justify-center gap-2 py-3 text-[12px] text-slate-500"><span class="ih-spin size-3.5 rounded-full border-[1.5px] border-slate-200 border-t-sky-600"></span>Waiting for you to approve in Slack</div>
+      <p class="ih-done absolute inset-x-6 top-0 rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-left text-[12px] leading-relaxed text-slate-600">Mention @Warmbly in any channel or message it to ask about your outreach. Pick where notifications and inbox replies go in setup.</p>
+    </div>
+    <div class="mt-3 flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-3">
+      <span class="relative h-8 px-3 rounded-md border border-slate-200 text-[12.5px] text-slate-700 inline-flex items-center"><span class="ih-wait-t">Cancel</span><span class="ih-done-t absolute inset-0 flex items-center justify-center">Done</span></span>
+      <span class="ih-done-b h-8 px-3 rounded-md bg-sky-600 text-white text-[12.5px] font-medium inline-flex items-center">Set up Slack</span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* One 10s loop: waiting for the sign-in, then connected. Base styles are the
+     connected end state, which is what reduced motion shows. */
+  .ih-line { border-color: rgb(110 231 183); animation: ih-line 10s linear infinite; }
+  @keyframes ih-line { 0%, 44% { border-color: rgb(203 213 225); } 46%, 100% { border-color: rgb(110 231 183); } }
+  .ih-dot { opacity: 0; left: 10%; animation: ih-dot 1.1s ease-in-out infinite alternate, ih-wait 10s linear infinite; }
+  @keyframes ih-dot { from { left: 10%; } to { left: 82%; } }
+  .ih-check { animation: ih-check 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes ih-check { 0%, 44% { opacity: 0; transform: scale(0.4); } 48%, 100% { opacity: 1; transform: none; } }
+  .ih-wait, .ih-wait-t { opacity: 0; animation: ih-wait 10s linear infinite; }
+  .ih-done, .ih-done-t, .ih-done-b { animation: ih-done 10s linear infinite; }
+  @keyframes ih-wait { 0%, 44% { opacity: 1; } 46%, 100% { opacity: 0; } }
+  @keyframes ih-done { 0%, 44% { opacity: 0; } 47%, 100% { opacity: 1; } }
+  .ih-spin { animation: ih-spin 0.8s linear infinite; }
+  @keyframes ih-spin { to { transform: rotate(360deg); } }
+  .ih-connect { opacity: 0; animation: ih-wait 10s linear infinite; }
+  .ih-manage { animation: ih-done 10s linear infinite; }
+</style>

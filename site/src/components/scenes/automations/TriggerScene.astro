@@ -1,0 +1,79 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../analytics/Ico.astro';
+import Step from './Step.astro';
+import BuilderBar from './BuilderBar.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * Picking a trigger: the canvas with the trigger selected and its side panel
+ * open (AutomationFlow's step panel), the "When this happens" menu listing
+ * every trigger. The card over the canvas is the event a reply carries, as
+ * the Test panel seeds it (sampleEventData).
+ */
+const triggers = [
+  'Prospect replies', 'Contact created', 'Form submitted', 'Meeting booked', 'Meeting rescheduled', 'Meeting canceled',
+  'Email bounces', 'Contact unsubscribes', 'Warmup health changes', 'Spam complaint', 'Inbound webhook', 'Launched by a campaign step',
+];
+const sample: [string, string, string?][] = [
+  ['contact_email', '"jenna@acme.io"'],
+  ['company', '"Acme"'],
+  ['campaign_name', '"Q4 outbound"'],
+  ['intent', '"positive"', 'k'],
+  ['confidence', '0.92', 'k'],
+  ['subject', '"Re: Quick question about Acme"'],
+  ['snippet', '"Thursday 10am ET works for me."'],
+];
+---
+<ScaledStage w={760} h={570} photo="paint-teal">
+  <div class={`${WINDOW} left-[40px] top-[40px] right-0 h-[530px] flex flex-col`}>
+    <BuilderBar name="Reply to revenue" />
+    <div class="flex flex-1 min-h-0">
+      <div class="relative flex-1 min-w-0 overflow-hidden bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 20px 20px;">
+        <svg class="absolute inset-0" width="320" height="480" fill="none">
+          <path d="M160 96 L160 140" stroke="#cbd5e1" stroke-width="1.25" />
+          <path d="M160 196 L160 214 Q160 224 150 224 L60 224 Q50 224 50 234 L50 270" stroke="#cbd5e1" stroke-width="1.25" />
+          <path d="M160 196 L160 214 Q160 224 170 224 L260 224 Q270 224 270 234 L270 270" stroke="#cbd5e1" stroke-width="1.25" />
+        </svg>
+        <Step x={28} y={40} icon="zap" tone="sky" kicker="Trigger" title="Prospect replies" summary="Starts this automation" selected />
+        <Step x={28} y={140} icon="gitBranch" tone="amber" kicker="If / else" title="intent is Positive" summary="Checks the event" />
+        <span class="absolute left-[50px] top-[244px] -translate-x-1/2 rounded-full bg-emerald-50 px-2 text-[11px] font-medium leading-[18px] text-emerald-700 ring-1 ring-inset ring-emerald-200/80">Yes</span>
+        <span class="absolute left-[270px] top-[244px] -translate-x-1/2 rounded-full bg-white px-2 text-[11px] font-medium leading-[18px] text-slate-500 ring-1 ring-inset ring-slate-200">No</span>
+      </div>
+
+      <!-- FlowPanel: the trigger's own settings. -->
+      <aside class="w-[400px] shrink-0 border-l border-slate-200 bg-white">
+        <div class="h-14 px-3 flex items-center gap-2.5 border-b border-slate-200">
+          <span class="inline-flex size-7 items-center justify-center rounded-md bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-100"><Ico name="zap" size={14} /></span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Trigger</div>
+            <div class="truncate text-[13px] font-semibold text-slate-900">Prospect replies</div>
+          </div>
+          <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Ico name="x" size={16} /></span>
+        </div>
+        <div class="p-3">
+          <div class="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">When this happens</div>
+          <div class="h-7 px-2.5 rounded-md border border-sky-400 ring-2 ring-sky-100 bg-white text-[12.5px] text-slate-900 flex items-center">Prospect replies<Ico name="chevronDown" size={13} class="ml-auto text-slate-400" /></div>
+          <div class="relative z-10 mt-1 rounded-md border border-slate-200 bg-white p-1 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.25)]">
+            {triggers.map((t, i) => (
+              <div class={`h-[28px] px-2 rounded flex items-center text-[12.5px] ${i === 0 ? 'bg-slate-100 text-slate-900' : 'text-slate-700'}`}>
+                {t}{i === 0 && <Ico name="check" size={13} class="ml-auto text-sky-600" />}
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- What a reply carries into the flow. -->
+  <div class={`${FLOAT} left-[22px] top-[300px] w-[318px] overflow-hidden`}>
+    <div class="h-10 px-3 flex items-center gap-2 border-b border-slate-200">
+      <span class="text-[11px] font-medium text-slate-600">Sample event data</span>
+      <span class="ml-auto text-[10.5px] text-slate-400">Prospect replies</span>
+    </div>
+    <pre class="px-3 py-2.5 font-mono text-[11px] leading-[1.6] text-slate-700">{'{'}
+{sample.map(([k, v, hl], i) => <span class={hl ? 'block -mx-3 px-3 bg-amber-50/80' : 'block'}>  <span class="text-sky-700">"{k}"</span>: <span class={v.startsWith('"') ? 'text-emerald-700' : 'text-violet-700'}>{v}</span>{i < sample.length - 1 ? ',' : ''}</span>)}{'}'}</pre>
+    <div class="border-t border-slate-100 px-3 py-2 text-[10.5px] text-slate-400">Conditions branch on these fields, and every text field can insert them.</div>
+  </div>
+</ScaledStage>

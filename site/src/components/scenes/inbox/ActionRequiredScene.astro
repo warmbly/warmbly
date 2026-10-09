@@ -1,0 +1,72 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from './Ic.astro';
+import Rail from './Rail.astro';
+import Row, { type Conv } from './Row.astro';
+import { L } from './labels';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * The Inbox with a failed payment kept among the replies, labelled Action
+ * required, and the notification it raises for the members who run mailboxes
+ * (notifyActionRequired in internal/app/consumer/event_new_email.go).
+ */
+const convs: Conv[] = [
+  { who: 'Jenna Carter', count: 3, time: '4m', subject: 'Re: Quick question about Acme', preview: 'Thursday 10am ET works for me.', mailbox: 'alex@northwind.dev', labels: [L.meeting] },
+  { who: 'Google Workspace', time: '41m', subject: 'Payment declined for northwind.co', preview: 'We could not charge your card for the Business Starter plan.', mailbox: 'ops@northwind.co', labels: [L.actionRequired, L.notification], unread: true, open: true },
+  { who: 'Lena Fischer', time: '1h', subject: 'Re: Quick question about Helio', preview: 'Good timing actually, tell me more.', mailbox: 'alex@northwind.dev', labels: [L.interested], unread: true },
+  { who: 'Aman Patel', count: 2, time: '2h', subject: 'Re: Following up', preview: 'Circle back in Q3, we are mid-migration.', mailbox: 'sam@northwind.io', labels: [L.notNow] },
+  { who: 'Tom Becker', time: '3h', subject: 'Re: Quick question about Quarry', preview: 'I do not handle this, try maria@quarry.co.', mailbox: 'ops@northwind.co', labels: [L.wrongPerson] },
+];
+---
+<ScaledStage w={680} h={510} photo="sheer-peach">
+  <div class={`${WINDOW} left-[34px] top-[34px] w-[660px] h-[476px] flex`}>
+    <Rail active="inbox" sections={['mail', 'views']} />
+    <div class="flex min-w-0 flex-1 flex-col">
+      <div class="flex h-11 shrink-0 items-center gap-1.5 pl-3 pr-2">
+        <span class="text-[13.5px] font-semibold text-slate-900">Inbox</span>
+        <span class="text-[11.5px] tabular-nums text-slate-400">48</span>
+        <span class="flex-1"></span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="listFilter" size={16} /></span>
+      </div>
+      <div class="shrink-0 border-b border-slate-200 px-3 pb-2">
+        <div class="flex h-8 items-center gap-2 rounded-md bg-slate-100/80 px-2.5 text-[12.5px] text-slate-400"><Glyph name="search" size={14} />Search all mail</div>
+      </div>
+      <div class="flex h-7 items-center px-4 text-[10.5px] font-medium uppercase tracking-[0.12em] text-slate-400">Today</div>
+      <div class="divide-y divide-slate-100">
+        {convs.map((c) => <Row c={c} />)}
+      </div>
+    </div>
+  </div>
+
+  <!-- The notification, for members who manage mailboxes and use the inbox. -->
+  <div class={`ar-note ${FLOAT} left-[330px] top-[332px] w-[318px] overflow-hidden`}>
+    <div class="flex h-9 items-center gap-2 border-b border-slate-200 px-3.5">
+      <Ic name="bell" size={13} class="text-slate-400" />
+      <span class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Notifications</span>
+      <span class="ml-auto text-[10.5px] text-slate-400">Mark all read</span>
+    </div>
+    <div class="flex items-start gap-2.5 px-3.5 py-3">
+      <span class="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600"><Ic name="triangleAlert" size={14} /></span>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2">
+          <span class="truncate text-[12.5px] font-medium text-slate-900">Action required in ops@northwind.co</span>
+          <span class="ml-auto size-1.5 shrink-0 rounded-full bg-sky-500"></span>
+        </div>
+        <p class="mt-0.5 text-[11.5px] leading-[1.45] text-slate-500">An automated message in this mailbox says something needs someone to act. Open it in the inbox.</p>
+        <div class="mt-1.5 text-[10.5px] text-slate-400">41m · Inbox</div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The notification arrives, waits to be read, then makes way for the next pass. */
+  .ar-note { animation: ar-note 9s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes ar-note {
+    0%, 6% { opacity: 0; transform: translateY(12px); }
+    12%, 88% { opacity: 1; transform: none; }
+    95%, 100% { opacity: 0; transform: translateY(12px); }
+  }
+</style>

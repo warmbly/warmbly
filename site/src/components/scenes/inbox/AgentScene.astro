@@ -1,0 +1,145 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from './Ic.astro';
+import Rail from './Rail.astro';
+import Row, { type Conv } from './Row.astro';
+import { L } from './labels';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * The Agent drafts view with a held draft open (AgentDraftCard.tsx) and the
+ * workspace switch that turns the agent on (settings/workspace). A new draft
+ * lands on a loop: the row slides in and the rail count moves from 4 to 5.
+ */
+const incoming: Conv = { who: 'Chen Wei', time: 'now', subject: 'Re: A thought on Tidewater', preview: 'Can we do Tuesday afternoon instead?', mailbox: 'sam@northwind.io', labels: [L.meeting], unread: true };
+const convs: Conv[] = [
+  { who: 'Ravi Shah', count: 2, time: '18m', subject: 'Re: Following up', preview: 'What would this cost for a team of 20? We use Outlook.', mailbox: 'sam@northwind.io', labels: [L.pricing, L.question], open: true },
+  { who: 'Lena Fischer', time: '1h', subject: 'Re: Quick question about Helio', preview: 'Good timing actually, tell me more about the ramp.', mailbox: 'alex@northwind.dev', labels: [L.interested] },
+  { who: 'Maya Lopez', time: '2h', subject: 'Re: Quick question about Brightline', preview: 'Does it work if we already use Apollo for lists?', mailbox: 'mia@northwind.dev', labels: [L.question] },
+  { who: 'Priya Nair', time: 'Mon', subject: 'Re: Quick question about Spruce', preview: 'Yes, happy to see a demo next week.', mailbox: 'ops@northwind.co', labels: [L.interested] },
+];
+const icon = 'size-7 rounded-md inline-flex items-center justify-center text-slate-500';
+const draft = [
+  'Hi Ravi,',
+  'Happy to put the numbers together for a team of 20. Outlook and Microsoft 365 mailboxes connect directly, so nothing changes for the people sending.',
+  'Would a short call on Thursday work to go through it?',
+];
+---
+<ScaledStage w={1240} h={640} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[1200px] h-[592px] flex`}>
+    <Rail active="agent" sections={['mail', 'views', 'mailboxes']} counts={{ agent: 5 }} liveKey="agent" liveClass="ag-count" />
+
+    <div class="flex w-[360px] shrink-0 flex-col">
+      <div class="flex h-11 shrink-0 items-center gap-1.5 pl-3 pr-2">
+        <span class="text-[13.5px] font-semibold text-slate-900">Agent drafts</span>
+        <span class="text-[11.5px] tabular-nums text-slate-400">5</span>
+        <span class="flex-1"></span>
+        <span class="inline-flex h-7 items-center rounded-md px-2 text-[11.5px] text-slate-500">Select</span>
+        <span class={icon}><Glyph name="listFilter" size={16} /></span>
+      </div>
+      <div class="shrink-0 border-b border-slate-200 px-3 pb-2">
+        <div class="flex h-8 items-center gap-2 rounded-md bg-slate-100/80 px-2.5 text-[12.5px] text-slate-400"><Glyph name="search" size={14} />Search Agent drafts</div>
+      </div>
+      <div class="flex h-7 items-center px-4 text-[10.5px] font-medium uppercase tracking-[0.12em] text-slate-400">Today</div>
+      <div class="relative flex-1 overflow-hidden">
+        <div class="ag-list divide-y divide-slate-100">
+          <Row c={incoming} class="ag-new" />
+          {convs.map((c) => <Row c={c} />)}
+        </div>
+      </div>
+    </div>
+
+    <div class="flex w-1.5 shrink-0 items-stretch justify-center"><span class="w-px bg-slate-200"></span></div>
+
+    <div class="relative flex min-w-0 flex-1 flex-col">
+      <div class="flex min-h-12 shrink-0 items-center gap-3 border-b border-slate-200 px-5 py-2">
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[13.5px] font-semibold leading-5 text-slate-900">Re: Following up</div>
+          <div class="flex items-center gap-1.5 text-[11px] leading-4 text-slate-400">
+            <span>2 messages</span><span class="text-slate-300">·</span><span>sam@northwind.io</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-0.5 pr-2">
+          <span class={icon}><Glyph name="tag" size={15} /></span>
+          <span class={icon}><Glyph name="moon" size={15} /></span>
+          <span class={icon}><Glyph name="archive" size={15} /></span>
+          <span class="mx-1 h-4 w-px bg-slate-200"></span>
+          <span class={icon}><Glyph name="user" size={15} /></span>
+        </div>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <article class="flex items-start gap-3 px-5 py-2.5">
+          <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">SO</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Sam Ortiz</span><span class="inline-flex h-4 items-center rounded bg-sky-50 px-1 text-[9.5px] font-medium uppercase tracking-[0.08em] text-sky-700">Outgoing</span></div>
+            <div class="truncate text-[12px] text-slate-500">Hi Ravi, noticed Stratech is hiring three SDRs this quarter, so I wanted to ask…</div>
+          </div>
+          <span class="text-[11px] tabular-nums text-slate-400">Tue</span>
+        </article>
+        <article class="px-5 py-4">
+          <div class="flex items-start gap-3">
+            <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">RS</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Ravi Shah</span><span class="text-[11px] text-slate-400">ravi@stratech.io</span></div>
+              <div class="mt-0.5 text-[11px] text-slate-400">to sam@northwind.io</div>
+            </div>
+            <span class="text-[11px] tabular-nums text-slate-400">18m</span>
+          </div>
+          <div class="mt-3 pl-10 text-[13px] leading-[1.6] text-slate-800">Interesting. What would this cost for a team of 20? We are on Outlook, so it would need to work with that.</div>
+        </article>
+      </div>
+
+      <!-- AgentDraftCard.tsx: the agent's reply, held for a person to decide. -->
+      <div class="absolute inset-x-0 bottom-0 border-t border-slate-200 bg-gradient-to-b from-violet-50/70 to-white px-3 py-2.5">
+        <div class="flex items-center gap-1.5">
+          <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600 ring-1 ring-violet-200/70"><Glyph name="sparkles" size={12} /></span>
+          <span class="text-[12.5px] font-semibold text-slate-800">AI reply draft</span>
+          <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">question</span>
+          <span class="ml-auto text-[10.5px] text-slate-400">Review before sending</span>
+        </div>
+        <p class="mt-1 truncate text-[11px] text-slate-500">Reply to <span class="font-medium text-slate-700">ravi@stratech.io</span></p>
+        <div class="mt-2 w-full space-y-2 rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-900">
+          {draft.map((p) => <p>{p}</p>)}
+          <p>Sam</p>
+        </div>
+        <div class="mt-2 flex items-center gap-1.5">
+          <span class="ag-approve inline-flex h-7 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-[12px] font-medium text-white"><Glyph name="send" size={12} />Approve &amp; send</span>
+          <span class="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 px-2 text-[12px] text-slate-600"><Ic name="trash" size={12} />Discard</span>
+          <span class="ml-auto text-[10.5px] text-slate-400">Edit the text above before sending.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings, Workspace: the one switch, off until someone turns it on. -->
+  <div class={`${FLOAT} left-[22px] top-[452px] w-[340px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Inbox agent</div>
+      <p class="mt-1 text-[11.5px] leading-[1.5] text-slate-500">On an inbound human reply, draft a suggested reply in your voice and hold it in the unibox for review. It never sends on its own. Paid feature; each handled reply costs 5 AI credits.</p>
+    </div>
+    <div class="flex items-center gap-3 px-4 py-3">
+      <div class="min-w-0 flex-1">
+        <div class="text-[12.5px] font-medium text-slate-900">Draft replies for me</div>
+        <div class="mt-0.5 text-[11px] leading-[1.45] text-slate-500">You approve-and-send, edit, or discard it.</div>
+      </div>
+      <span class="relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full bg-sky-600"><span class="absolute left-[16px] size-[14px] rounded-full bg-white shadow-sm"></span></span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style is:global>
+  /* A 10s loop: a new draft lands, so the row slides in on top and the rail
+     count moves on. The list fades across the seam. */
+  .ag-list { animation: ag-list 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes ag-list {
+    0% { transform: translateY(-77px); opacity: 0; }
+    4%, 30% { transform: translateY(-77px); opacity: 1; }
+    37%, 92% { transform: none; opacity: 1; }
+    97%, 100% { transform: none; opacity: 0; }
+  }
+  .ag-new { animation: ag-new 10s ease-out infinite; }
+  @keyframes ag-new { 0%, 32% { background: rgb(245 243 255 / 0); } 38%, 72% { background: rgb(245 243 255); } 90%, 100% { background: rgb(245 243 255 / 0); } }
+  .ag-count { display: inline-block; animation: ag-count 10s ease-out infinite; }
+  @keyframes ag-count { 0%, 34% { transform: none; } 37% { transform: scale(1.35); } 42%, 100% { transform: none; } }
+</style>
