@@ -69,15 +69,45 @@ struct DashboardAnalytics: Codable, Sendable {
     var topCampaigns: [AnalyticsTopCampaign]?
     var accountHealth: AnalyticsAccountHealthCounts?
     var dailyTrend: [AnalyticsTrendPoint]?
+    /// The campaign filter the campaign sections were computed for; nil
+    /// when they cover the whole workspace.
+    var scope: AnalyticsDashboardScope?
 
     enum CodingKeys: String, CodingKey {
-        case period
+        case period, scope
         case overallStats = "overall_stats"
         case recentActivity = "recent_activity"
         case topCampaigns = "top_campaigns"
         case accountHealth = "account_health"
         case dailyTrend = "daily_trend"
     }
+}
+
+/// Campaigns and folders the overview is narrowed to; the server unions
+/// them and counts each campaign once. Empty means every campaign.
+struct AnalyticsCampaignFilter: Equatable, Sendable {
+    var campaigns: Set<String> = []
+    var folders: Set<String> = []
+
+    var isEmpty: Bool { campaigns.isEmpty && folders.isEmpty }
+}
+
+/// The requested campaigns and folders that belong to the workspace, and
+/// how many distinct campaigns they cover together.
+struct AnalyticsDashboardScope: Codable, Sendable {
+    var campaigns: [AnalyticsScopeItem]?
+    var folders: [AnalyticsScopeItem]?
+    var campaignCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case campaigns, folders
+        case campaignCount = "campaign_count"
+    }
+}
+
+struct AnalyticsScopeItem: Codable, Sendable {
+    var id: String
+    var name: String?
 }
 
 struct AnalyticsOverallStats: Codable, Sendable {

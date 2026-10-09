@@ -6,6 +6,8 @@ import Foundation
 @Observable
 final class AnalyticsStore {
     var period: AnalyticsPeriod = .week
+    /// Narrows the overview's campaign sections; mailbox health stays workspace-wide.
+    var campaignFilter = AnalyticsCampaignFilter()
 
     private(set) var dashboard: DashboardAnalytics?
     private(set) var deliverability: DeliverabilitySummary?
@@ -40,15 +42,57 @@ final class AnalyticsStore {
         isLoading = false
     }
 
+    /// Reloads only the overview, for a filter change.
+    func reloadDashboard(_ api: APIClient) async {
+        await loadDashboard(api)
+    }
+
+    /// "All campaigns", a folder or campaign name, or a count.
+    func scopeLabel(folderName: (String) -> String?) -> String {
+        let filter = campaignFilter
+        if filter.isEmpty { return "All campaigns" }
+        let scope = dashboard?.scope
+        let count = scope?.campaignCount
+        let total = count.map { " · \($0) campaign\($0 == 1 ? "" : "s")" } ?? ""
+        if filter.campaigns.isEmpty, filter.folders.count == 1, let id = filter.folders.first {
+            let name = scope?.folders?.first { $0.id == id }?.name ?? folderName(id)
+            return (name ?? "1 folder") + total
+        }
+        if filter.folders.isEmpty, filter.campaigns.count == 1, let id = filter.campaigns.first {
+            return scope?.campaigns?.first { $0.id == id }?.name ?? "1 campaign"
+        }
+        if filter.folders.isEmpty {
+            let n = count ?? filter.campaigns.count
+            return "\(n) campaign\(n == 1 ? "" : "s")"
+        }
+        var parts = ["\(filter.folders.count) folder\(filter.folders.count == 1 ? "" : "s")"]
+        if !filter.campaigns.isEmpty {
+            parts.append("\(filter.campaigns.count) campaign\(filter.campaigns.count == 1 ? "" : "s")")
+        }
+        return parts.joined(separator: " + ") + total
+    }
+
     private func loadDashboard(_ api: APIClient) async {
+        let filter = campaignFilter
+        var query: [String: String?] = ["period": period.rawValue]
+        if !filter.campaigns.isEmpty { query["campaign_ids"] = filter.campaigns.sorted().joined(separator: ",") }
+        if !filter.folders.isEmpty { query["folder_ids"] = filter.folders.sorted().joined(separator: ",") }
         do {
-            let result: DashboardAnalytics = try await api.get(
-                "analytics/dashboard",
-                query: ["period": period.rawValue]
-            )
+            let result: DashboardAnalytics = try await api.get("analytics/dashboard", query: query)
+            // A newer filter is already on its way; this answer describes the old one.
+            guard filter == campaignFilter else { return }
             dashboard = result
             dashboardError = nil
+            // Drop selections the server no longer recognises (deleted, or another workspace's).
+            if let scope = result.scope {
+                let campaigns = Set((scope.campaigns ?? []).map(\.id)).intersection(filter.campaigns)
+                let folders = Set((scope.folders ?? []).map(\.id)).intersection(filter.folders)
+                if campaigns != filter.campaigns || folders != filter.folders {
+                    campaignFilter = AnalyticsCampaignFilter(campaigns: campaigns, folders: folders)
+                }
+            }
         } catch {
+            guard filter == campaignFilter else { return }
             dashboardError = error.localizedDescription
         }
     }

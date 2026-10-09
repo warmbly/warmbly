@@ -64,6 +64,9 @@ type EmailTask struct {
 	// appended after the body and signature when the send goes out.
 	ForwardedHTML  string
 	ForwardedPlain string
+	// ForwardThreadID is the Unibox conversation a forward was sent from. Its
+	// sent copy is filed there; ThreadID stays nil so it goes out as no reply.
+	ForwardThreadID *string
 }
 
 // TaskFailure represents a task failure record
@@ -280,8 +283,8 @@ func (r *taskRepository) CreateWarmupTask(ctx context.Context, warmupTask *Warmu
 // CreateEmailTask creates email-specific task data
 func (r *taskRepository) CreateEmailTask(ctx context.Context, emailTask *EmailTask) error {
 	query := `
-		INSERT INTO email_tasks (task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted, tracked, forwarded_html, forwarded_plain)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		INSERT INTO email_tasks (task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted, tracked, forwarded_html, forwarded_plain, forward_thread_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 
 	sendMode := emailTask.SendMode
@@ -305,6 +308,7 @@ func (r *taskRepository) CreateEmailTask(ctx context.Context, emailTask *EmailTa
 		emailTask.Tracked,
 		emailTask.ForwardedHTML,
 		emailTask.ForwardedPlain,
+		emailTask.ForwardThreadID,
 	)
 
 	return err
@@ -651,8 +655,8 @@ func (r *taskRepository) CreateEmailTaskFull(ctx context.Context, task *Task, em
 	}
 
 	etQuery := `
-		INSERT INTO email_tasks (task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted, tracked, forwarded_html, forwarded_plain)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		INSERT INTO email_tasks (task_id, to_addrs, cc, bcc, in_reply_to, subject, body, body_html, body_plain, thread_id, send_mode, encrypted, tracked, forwarded_html, forwarded_plain, forward_thread_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 	_, err = tx.Exec(ctx, etQuery,
 		emailTask.TaskID,
@@ -670,6 +674,7 @@ func (r *taskRepository) CreateEmailTaskFull(ctx context.Context, task *Task, em
 		emailTask.Tracked,
 		emailTask.ForwardedHTML,
 		emailTask.ForwardedPlain,
+		emailTask.ForwardThreadID,
 	)
 	if err != nil {
 		return err
@@ -1193,7 +1198,7 @@ func (r *taskRepository) ListScheduledInOrg(ctx context.Context, orgID uuid.UUID
 			-- A forward with no note previews the message it forwards.
 			CASE WHEN btrim(et.body_plain) = '' THEN et.forwarded_plain ELSE et.body_plain END,
 			et.body_html,
-			et.thread_id
+			COALESCE(et.thread_id, et.forward_thread_id)
 		FROM tasks t
 		INNER JOIN email_tasks et ON et.task_id = t.id
 		INNER JOIN email_accounts ea ON ea.id = t.email_account_id
@@ -1265,14 +1270,14 @@ func (r *taskRepository) ListScheduledInOrgByThread(ctx context.Context, orgID u
 			-- A forward with no note previews the message it forwards.
 			CASE WHEN btrim(et.body_plain) = '' THEN et.forwarded_plain ELSE et.body_plain END,
 			et.body_html,
-			et.thread_id
+			COALESCE(et.thread_id, et.forward_thread_id)
 		FROM tasks t
 		INNER JOIN email_tasks et ON et.task_id = t.id
 		INNER JOIN email_accounts ea ON ea.id = t.email_account_id
 		WHERE ea.organization_id = $1
 		  AND t.task_type = 'email'
 		  AND t.status = 'pending'
-		  AND et.thread_id = $2
+		  AND (et.thread_id = $2 OR et.forward_thread_id = $2)
 		  AND (COALESCE(cardinality($4::uuid[]), 0) = 0 OR ea.id = ANY($4::uuid[]))
 		ORDER BY t.scheduled_at ASC NULLS LAST, t.created_at ASC
 		LIMIT $3
@@ -1364,7 +1369,8 @@ func (r *taskRepository) CancelScheduledInOrg(ctx context.Context, taskID, orgID
 // ProviderThreadForMailbox returns the provider thread the mailbox holds for a
 // unibox conversation: the conversation's own id when the mailbox has a message
 // in it (synced, or sent and not yet synced back), else the thread its latest
-// earlier reply into the conversation landed in, else "".
+// earlier reply into the conversation landed in, else "". A forward filed into
+// the conversation is not in its provider thread, so it does not count.
 func (r *taskRepository) ProviderThreadForMailbox(ctx context.Context, emailAccountID uuid.UUID, threadID string) (string, error) {
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
@@ -1373,7 +1379,7 @@ func (r *taskRepository) ProviderThreadForMailbox(ctx context.Context, emailAcco
 	var handle string
 	err := r.db.QueryRow(ctx, `
 		SELECT CASE
-			WHEN EXISTS (SELECT 1 FROM unibox_emails WHERE email_id = $1 AND thread_id = $2)
+			WHEN EXISTS (SELECT 1 FROM unibox_emails WHERE email_id = $1 AND thread_id = $2 AND NOT filed_forward)
 			  OR EXISTS (SELECT 1 FROM tasks WHERE email_account_id = $1 AND status = 'completed' AND thread_id = $2)
 			THEN $2
 			ELSE COALESCE((

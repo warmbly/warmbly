@@ -56,3 +56,44 @@ func TestOptionalDayRange(t *testing.T) {
 		})
 	}
 }
+
+// GET /analytics/dashboard takes campaign_ids and folder_ids as comma lists
+// or repeated keys, deduplicated, refusing a malformed id (issue #869).
+func TestUUIDListQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	a, b := "0b8f6a52-6f0e-4c3e-9a51-0d3f1b0f6a01", "0b8f6a52-6f0e-4c3e-9a51-0d3f1b0f6a02"
+	for _, tc := range []struct {
+		query   string
+		want    int
+		wantErr bool
+	}{
+		{query: "", want: 0},
+		{query: "campaign_ids=" + a, want: 1},
+		{query: "campaign_ids=" + a + "," + b, want: 2},
+		{query: "campaign_ids=" + a + "&campaign_ids=" + b, want: 2},
+		{query: "campaign_ids=" + a + ",%20" + a + ",", want: 1},
+		{query: "campaign_ids=" + a + ",nope", wantErr: true},
+		{query: "campaign_ids=" + a + "," + b + "," + a, want: 2},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/analytics/dashboard?"+tc.query, nil)
+			ids, xerr := uuidListQuery(c, "campaign_ids", 2)
+			if tc.wantErr {
+				if xerr == nil {
+					t.Fatalf("ids = %v, want a 400", ids)
+				}
+				return
+			}
+			if xerr != nil || len(ids) != tc.want {
+				t.Fatalf("ids = %v, err = %v; want %d ids", ids, xerr, tc.want)
+			}
+		})
+	}
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/analytics/dashboard?campaign_ids="+a+","+b, nil)
+	if ids, xerr := uuidListQuery(c, "campaign_ids", 1); xerr == nil {
+		t.Fatalf("ids = %v past the limit, want a 400", ids)
+	}
+}

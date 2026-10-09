@@ -56,11 +56,14 @@ type EmailMessage struct { // used for sending to the user
 type ForwardedMessage struct {
 	// EmailID is the mailbox the message belongs to.
 	EmailID uuid.UUID
-	From    []string
-	To      []string
-	CC      []string
-	Subject string
-	Date    time.Time
+	// ThreadID is the Unibox conversation the message is in, where the forward
+	// is filed once sent.
+	ThreadID string
+	From     []string
+	To       []string
+	CC       []string
+	Subject  string
+	Date     time.Time
 	// BodyHTML is the stored HTML, unsanitized; empty when the message has none.
 	BodyHTML string
 	// BodyPlain is the preview snippet when the full body is not stored.

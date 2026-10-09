@@ -32,7 +32,7 @@ Seven rules govern the counts:
 
 ## Workspace dashboard
 
-Live, scoped by `7d`, `30d`, or `90d` tabs.
+Live, scoped by `7d`, `30d`, or `90d` tabs, and by default covering every campaign in the workspace.
 
 | Section | Shows |
 |---------|-------|
@@ -44,6 +44,16 @@ Live, scoped by `7d`, `30d`, or `90d` tabs.
 | Recent activity | A live feed of individual opens, clicks, replies, and bounces. A reply names the mailbox that sent the email it answers, even when it landed in a [shared reply inbox](/guides/mailboxes/#a-shared-reply-inbox) |
 
 Sending totals, trends, comparisons, and top-campaign rates count email steps only. Completed wait and action steps move a sequence forward but never inflate the number of messages sent.
+
+### Filtering by campaign or folder
+
+The **All campaigns** menu next to the period tabs narrows the dashboard to the campaigns you pick. Choose one campaign, several, one or more [campaign folders](/guides/campaigns/), or a mix. The figures add the selected campaigns together, and a campaign picked directly and through a folder, or sitting in two picked folders, is counted once. A folder stands for the campaigns in it right now, so moving a campaign in or out of the folder changes what the dashboard counts the next time it loads. The period tabs keep working on top of the filter, and the selection is remembered in your browser tab like the period.
+
+| Follows the filter | Stays workspace-wide |
+| --- | --- |
+| Headline rates, Email performance chart, Breakdown, Top campaigns, Recent activity | Account health and Direct mail, marked **Workspace-wide** and **Not filtered by campaign** while a filter is on, because neither is campaign data |
+
+A campaign or folder that is deleted while selected drops out of the filter on its own. The mobile app's Analytics overview has the same menu under its period picker; there the filter changes the overview's campaign figures and leaves the Deliverability, Warmup and Accounts sections as they are. Through the API, pass `campaign_ids` and `folder_ids` to [`GET /analytics/dashboard`](/api/reference/analytics/#get-dashboard-analytics).
 
 ## Direct mail
 

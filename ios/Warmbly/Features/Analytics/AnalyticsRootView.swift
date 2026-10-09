@@ -95,6 +95,7 @@ struct AnalyticsRootView: View {
     @State private var metric: AnalyticsTrendMetric = .sent
     @State private var sidebarOpen = false
     @State private var sidebarDrag: CGFloat = 0
+    @State private var filterOpen = false
 
     private static let sidebarWidth: CGFloat = 300
 
@@ -162,6 +163,14 @@ struct AnalyticsRootView: View {
         .onChange(of: store.period) {
             Task { await store.load(env.api) }
         }
+        .onChange(of: store.campaignFilter) {
+            Task { await store.reloadDashboard(env.api) }
+        }
+        .sheet(isPresented: $filterOpen) {
+            AnalyticsCampaignFilterSheet(initial: store.campaignFilter) { picked in
+                store.campaignFilter = picked
+            }
+        }
         .sensoryFeedback(.selection, trigger: scope)
         .sensoryFeedback(.selection, trigger: store.period)
         .sensoryFeedback(.selection, trigger: metric)
@@ -196,6 +205,7 @@ struct AnalyticsRootView: View {
         VStack(alignment: .leading, spacing: 14) {
             topRow
             periodPicker
+            campaignFilterChip
             heroStats
         }
         .padding(.horizontal, 16)
@@ -263,6 +273,57 @@ struct AnalyticsRootView: View {
                 .buttonStyle(TapScaleStyle())
                 .accessibilityLabel("Last \(period.days) days")
                 .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var scopeLabel: String {
+        store.scopeLabel { id in env.session.user?.folders?.first { $0.id == id }?.name }
+    }
+
+    /// Opens the campaign filter; the overview's campaign numbers follow it.
+    private var campaignFilterChip: some View {
+        let scoped = !store.campaignFilter.isEmpty
+        return HStack(spacing: 7) {
+            Button {
+                filterOpen = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "megaphone.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(scopeLabel)
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.white.opacity(scoped ? 0.26 : 0.12), in: Capsule())
+            }
+            .buttonStyle(TapScaleStyle())
+            .accessibilityLabel("Campaign filter: \(scopeLabel)")
+            // Deliverability, warmup and accounts are not campaign data, so the filter skips them.
+            if scoped, scope != .overview {
+                Text("Headline numbers only")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+            }
+            if scoped {
+                Button {
+                    withAnimation(.snappy) { store.campaignFilter = AnalyticsCampaignFilter() }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(TapScaleStyle())
+                .accessibilityLabel("Show all campaigns")
             }
         }
         .padding(.horizontal, 4)
@@ -478,7 +539,9 @@ struct AnalyticsRootView: View {
 
     private var activeRow: some View {
         let stats = store.dashboard?.overallStats
-        return Text("\(stats?.activeCampaigns ?? 0) active campaigns · \(stats?.activeAccounts ?? 0) sending accounts")
+        // Sending accounts are never narrowed by the campaign filter; say so when it is on.
+        let accounts = store.campaignFilter.isEmpty ? "sending accounts" : "sending accounts in workspace"
+        return Text("\(stats?.activeCampaigns ?? 0) active campaigns · \(stats?.activeAccounts ?? 0) \(accounts)")
             .font(.footnote.weight(.medium))
             .monospacedDigit()
             .foregroundStyle(.secondary)

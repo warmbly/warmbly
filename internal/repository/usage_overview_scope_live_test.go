@@ -93,21 +93,21 @@ func TestLiveUsageOverviewCountsTheSelectedOrganization(t *testing.T) {
 	}
 
 	from, to := time.Now().Add(-24*time.Hour), time.Now().Add(24*time.Hour)
-	overall, xerr := repo.GetDashboardOverallStats(ctx, orgID, from, to)
+	overall, xerr := repo.GetDashboardOverallStats(ctx, orgID, from, to, nil)
 	if xerr != nil {
 		t.Fatalf("GetDashboardOverallStats: %v", xerr)
 	}
 	if overall.TotalEmailsSent != 1 {
 		t.Fatalf("dashboard total sent = %d, want the one email step", overall.TotalEmailsSent)
 	}
-	daily, xerr := repo.GetDashboardDailyTrend(ctx, orgID, from, to)
+	daily, xerr := repo.GetDashboardDailyTrend(ctx, orgID, from, to, nil)
 	if xerr != nil {
 		t.Fatalf("GetDashboardDailyTrend: %v", xerr)
 	}
 	if len(daily) != 1 || daily[0].Sent != 1 {
 		t.Fatalf("dashboard daily trend = %+v, want one email sent", daily)
 	}
-	top, xerr := repo.GetTopCampaigns(ctx, orgID, from, to, 10, "emails_sent")
+	top, xerr := repo.GetTopCampaigns(ctx, orgID, from, to, 10, "emails_sent", nil)
 	if xerr != nil {
 		t.Fatalf("GetTopCampaigns: %v", xerr)
 	}

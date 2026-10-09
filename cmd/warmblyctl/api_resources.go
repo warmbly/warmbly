@@ -141,7 +141,7 @@ var apiSpecs = []apiSpec{
 	{name: "inbox cancel-scheduled", summary: "Cancel a scheduled send", method: "DELETE", path: "/unibox/scheduled/{id}"},
 
 	// Analytics and audit.
-	{name: "analytics dashboard", summary: "The dashboard numbers", method: "GET", path: "/analytics/dashboard"},
+	{name: "analytics dashboard", summary: "The dashboard numbers, optionally for chosen campaigns and folders", method: "GET", path: "/analytics/dashboard", query: []string{"period", "campaign_ids", "folder_ids"}},
 	{name: "analytics deliverability", summary: "Bounces, complaints and placement", method: "GET", path: "/analytics/deliverability"},
 	{name: "analytics warmup", summary: "Warmup analytics", method: "GET", path: "/analytics/warmup"},
 	{name: "analytics accounts", summary: "Per-mailbox analytics", method: "GET", path: "/analytics/accounts"},

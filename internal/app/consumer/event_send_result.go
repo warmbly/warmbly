@@ -72,6 +72,8 @@ func (s *JobsService) applyEmailSent(ctx context.Context, result models.SendEmai
 		}
 	}
 	switch task.TaskType {
+	case "email":
+		return s.fileSentForward(ctx, task.ID)
 	case "campaign":
 		s.repairCampaignSendStamp(ctx, task)
 		// Anchor the graduation ramp on the mailbox's first CONFIRMED cold
@@ -98,6 +100,22 @@ func (s *JobsService) applyEmailSent(ctx context.Context, result models.SendEmai
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// fileSentForward files a forward's sent copy that Sent sync stored before its
+// Message-ID was known; a copy stored after is filed by the insert itself.
+func (s *JobsService) fileSentForward(ctx context.Context, taskID uuid.UUID) error {
+	if s.UniboxRepository == nil {
+		return nil
+	}
+	filed, err := s.UniboxRepository.FileSentForward(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	for i := range filed {
+		s.publishEmailUpdated(ctx, filed[i].UserID, &filed[i].Message)
 	}
 	return nil
 }

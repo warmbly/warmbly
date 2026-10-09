@@ -192,6 +192,42 @@ func TestSendEmailStoresTheForwardedMessage(t *testing.T) {
 	}
 }
 
+// A forward is filed into the forwarded message's conversation in Unibox but
+// goes out as a new conversation: no provider thread, even when one is named.
+func TestSendEmailFilesAForwardWithoutThreadingIt(t *testing.T) {
+	orgID := uuid.New()
+	tasks := &fakeSendTaskRepo{}
+	svc := &emailSendService{
+		taskRepo:  tasks,
+		emailRepo: &fakeSendEmailRepo{account: &models.Email{OrganizationID: &orgID}},
+	}
+
+	fwd := forwardedFixture()
+	fwd.ThreadID = "conversation-1"
+	if _, xerr := svc.SendEmail(context.Background(), uuid.New(), orgID, uuid.New(), &SendEmailRequest{
+		To: []string{"team@example.com"}, Subject: "Fwd: Pricing details", ThreadID: "conversation-1", Forward: fwd,
+	}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	et := tasks.stored
+	if et.ThreadID != nil {
+		t.Fatalf("forward carries thread %q, want none on the wire", *et.ThreadID)
+	}
+	if et.ForwardThreadID == nil || *et.ForwardThreadID != "conversation-1" {
+		t.Fatalf("forward filed into %v, want conversation-1", et.ForwardThreadID)
+	}
+
+	// A reply keeps its thread and is filed nowhere else.
+	if _, xerr := svc.SendEmail(context.Background(), uuid.New(), orgID, uuid.New(), &SendEmailRequest{
+		To: []string{"them@example.com"}, Subject: "Re: x", BodyPlain: "Thanks", ThreadID: "conversation-1",
+	}); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if et := tasks.stored; et.ThreadID == nil || *et.ThreadID != "conversation-1" || et.ForwardThreadID != nil {
+		t.Fatalf("reply: thread %v forward thread %v", et.ThreadID, et.ForwardThreadID)
+	}
+}
+
 type fakeTicketRepo struct {
 	repository.TrackedLinkRepository
 	links map[uuid.UUID]string

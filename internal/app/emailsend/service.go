@@ -282,8 +282,14 @@ func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, account
 		ScheduledAt:    &scheduledAt,
 	}
 
-	var threadID *string
-	if req.ThreadID != "" {
+	// A forward starts a new conversation on the wire and is only filed into the
+	// one it was forwarded from inside Unibox.
+	var threadID, forwardThreadID *string
+	if req.Forward != nil {
+		if req.Forward.ThreadID != "" {
+			forwardThreadID = &req.Forward.ThreadID
+		}
+	} else if req.ThreadID != "" {
 		threadID = &req.ThreadID
 	}
 
@@ -303,21 +309,22 @@ func (s *emailSendService) SendEmail(ctx context.Context, userID, orgID, account
 	bodyHTML, tracked := s.applyDirectTracking(ctx, account, taskID, bodyHTML, bodyHTML != "" || forwardedHTML != "")
 
 	emailTask := &repository.EmailTask{
-		TaskID:         taskID,
-		To:             req.To,
-		CC:             req.CC,
-		BCC:            req.BCC,
-		InReplyTo:      req.InReplyTo,
-		Subject:        req.Subject,
-		Body:           bodyPlain,
-		BodyHTML:       bodyHTML,
-		BodyPlain:      bodyPlain,
-		ThreadID:       threadID,
-		SendMode:       sendMode,
-		Encrypted:      false,
-		Tracked:        tracked,
-		ForwardedHTML:  forwardedHTML,
-		ForwardedPlain: forwardedPlain,
+		TaskID:          taskID,
+		To:              req.To,
+		CC:              req.CC,
+		BCC:             req.BCC,
+		InReplyTo:       req.InReplyTo,
+		Subject:         req.Subject,
+		Body:            bodyPlain,
+		BodyHTML:        bodyHTML,
+		BodyPlain:       bodyPlain,
+		ThreadID:        threadID,
+		SendMode:        sendMode,
+		Encrypted:       false,
+		Tracked:         tracked,
+		ForwardedHTML:   forwardedHTML,
+		ForwardedPlain:  forwardedPlain,
+		ForwardThreadID: forwardThreadID,
 	}
 
 	if err := s.taskRepo.CreateEmailTaskFull(ctx, task, emailTask); err != nil {

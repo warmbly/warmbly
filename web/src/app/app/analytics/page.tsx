@@ -1,8 +1,9 @@
 import { NoAccess } from "@/components/layout/NoAccess";
 import { usePermission } from "@/hooks/usePermission";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import useBrowseState from "@/hooks/useBrowseState";
-import { analyticsRange, analyticsHiddenMetrics } from "@/lib/browse-accounts-analytics";
+import { useUserProfile } from "@/hooks/context/user";
+import { analyticsRange, analyticsHiddenMetrics, analyticsCampaignFilter } from "@/lib/browse-accounts-analytics";
 import { Link } from "@tanstack/react-router";
 import {
     ActivityIcon,
@@ -29,13 +30,16 @@ import { MultiTrend, type TrendSeries } from "@/components/ui/charts";
 import { TONE_DOT } from "@/components/ui/tones";
 import type { DitherTone } from "@/components/ui/dither";
 import AnalyticsShareButton from "@/components/app/analytics/AnalyticsShareButton";
+import CampaignScopePicker from "@/components/app/analytics/CampaignScopePicker";
+import { ALL_CAMPAIGNS, isScoped, scopeLabel } from "@/components/app/analytics/campaignScope";
 import useDashboard from "@/lib/api/hooks/app/analytics/useDashboard";
 import DirectMailSection from "@/components/app/analytics/DirectMailSection";
 import OriginBadge from "@/components/app/engagement/OriginBadge";
-import type { RecentActivityItem } from "@/lib/api/models/app/analytics/DashboardOverview";
+import type { DashboardCampaignFilter, RecentActivityItem } from "@/lib/api/models/app/analytics/DashboardOverview";
 
 const AUTO_OPENS_TIP = "Auto-opens: pixel fetches from privacy proxies (e.g. Apple Mail) or within seconds of sending, not a person reading. Logged as delivery proof, not counted as opens";
 const AUTO_CLICKS_TIP = "Auto-clicks: links followed by a security gateway scanning the email, not a person; not counted as clicks";
+const UNFILTERED_TIP = "Not campaign data, so the campaign filter does not apply";
 
 type Range = "7d" | "30d" | "90d";
 type Metric = "sent" | "opens" | "clicks" | "replies";
@@ -65,9 +69,24 @@ export default function AnalyticsPage() {
     const [range, setRange] = useBrowseState<Range>("analytics.range", "7d", analyticsRange);
     // Legend toggles: every metric charts together; hidden ones drop out.
     const [hiddenMetrics, setHiddenMetrics] = useBrowseState<Metric[]>("analytics.hiddenMetrics", [], analyticsHiddenMetrics);
-    const dash = useDashboard(range);
+    const [filter, setFilter] = useBrowseState<DashboardCampaignFilter>("analytics.campaigns", ALL_CAMPAIGNS, analyticsCampaignFilter);
+    const dash = useDashboard(range, filter);
     const d = dash.data;
     const os = d?.overall_stats;
+    const scoped = isScoped(filter);
+    const { user } = useUserProfile();
+    const label = scopeLabel(filter, d?.scope, (id) => user.folders?.find((f) => f.id === id)?.title, () => undefined);
+
+    // Drop selections the server no longer recognises (deleted, or moved out of the workspace).
+    const echoed = dash.isPlaceholderData ? undefined : d?.scope;
+    useEffect(() => {
+        if (!echoed) return;
+        const campaigns = filter.campaigns.filter((id) => echoed.campaigns.some((c) => c.id === id));
+        const folders = filter.folders.filter((id) => echoed.folders.some((f) => f.id === id));
+        if (campaigns.length !== filter.campaigns.length || folders.length !== filter.folders.length) {
+            setFilter({ campaigns, folders });
+        }
+    }, [echoed, filter, setFilter]);
 
     const toggleMetric = (k: Metric) =>
         setHiddenMetrics((cur) => {
@@ -97,7 +116,7 @@ export default function AnalyticsPage() {
     ];
 
     const shareData = {
-        title: "Workspace performance",
+        title: scoped ? label : "Workspace performance",
         subtitle: RANGE_LABEL[range],
         metrics: [
             { label: "Sent", value: num(os?.total_emails_sent), sub: "emails" },
@@ -112,7 +131,11 @@ export default function AnalyticsPage() {
 
     return (
         <Page>
-            <PageTopbar eyebrow="Analytics" subtitle="Deliverability across the workspace">
+            <PageTopbar eyebrow="Analytics" subtitle={scoped ? "Selected campaigns" : "Deliverability across the workspace"}>
+                {dash.isPlaceholderData && dash.isFetching && (
+                    <Loader2Icon className="w-3.5 h-3.5 text-slate-400 animate-spin" aria-label="Updating" />
+                )}
+                <CampaignScopePicker value={filter} onChange={setFilter} scope={d?.scope} />
                 <RangeTabs value={range} onChange={setRange} />
                 <AnalyticsShareButton data={shareData} filename={`warmbly-analytics-${range}.png`} />
             </PageTopbar>
@@ -161,7 +184,7 @@ export default function AnalyticsPage() {
                                         labels={trend.labels}
                                         series={trend.series}
                                         height={280}
-                                        emptyLabel="No sends in this window yet"
+                                        emptyLabel={scoped ? "No sends from these campaigns in this window" : "No sends in this window yet"}
                                     />
                                 )}
                             </div>
@@ -190,7 +213,9 @@ export default function AnalyticsPage() {
                             </div>
                             {d?.account_health && (
                                 <>
-                                    <SectionBar label="Account health" />
+                                    <SectionBar label="Account health">
+                                        {scoped && <WorkspaceWide />}
+                                    </SectionBar>
                                     <div className="px-4 py-3 grid grid-cols-3 gap-2 text-center">
                                         <HealthCell n={d.account_health.healthy_accounts} label="Healthy" tone="text-emerald-600" />
                                         <HealthCell n={d.account_health.warning_accounts} label="At risk" tone="text-amber-600" />
@@ -221,7 +246,11 @@ export default function AnalyticsPage() {
                             ))}
                         </div>
                     ) : (d?.top_campaigns?.length ?? 0) === 0 ? (
-                        <EmptyBlock title="No campaign sends yet" body="Once a campaign starts sending, your best performers show up here." />
+                        scoped ? (
+                            <EmptyBlock title="No sends in this window" body="None of the selected campaigns sent in this period. Try a longer period or another selection." />
+                        ) : (
+                            <EmptyBlock title="No campaign sends yet" body="Once a campaign starts sending, your best performers show up here." />
+                        )
                     ) : (
                         <div className="divide-y divide-slate-200/60">
                             {d!.top_campaigns.map((c) => {
@@ -247,7 +276,7 @@ export default function AnalyticsPage() {
                         </div>
                     )}
 
-                    <DirectMailSection period={range} />
+                    <DirectMailSection period={range} unfiltered={scoped} />
 
                     <SectionBar label="Recent activity" />
                     <PageBody>
@@ -261,7 +290,12 @@ export default function AnalyticsPage() {
                                 ))}
                             </div>
                         ) : (d?.recent_activity?.length ?? 0) === 0 ? (
-                            <EmptyBlock title="Nothing yet" body="Opens, clicks, replies and bounces will stream in here as your campaigns send." />
+                            <EmptyBlock
+                                title="Nothing yet"
+                                body={scoped
+                                    ? "Opens, clicks, replies and bounces from the selected campaigns will stream in here."
+                                    : "Opens, clicks, replies and bounces will stream in here as your campaigns send."}
+                            />
                         ) : (
                             <div className="divide-y divide-slate-200/60">
                                 {d!.recent_activity.map((a, i) => (
@@ -273,6 +307,15 @@ export default function AnalyticsPage() {
                 </>
             )}
         </Page>
+    );
+}
+
+// Marks a section the campaign filter does not narrow, so it never reads as filtered.
+function WorkspaceWide() {
+    return (
+        <span className="text-[10.5px] text-slate-400" title={UNFILTERED_TIP}>
+            Workspace-wide
+        </span>
     );
 }
 

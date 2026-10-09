@@ -385,6 +385,39 @@ type DashboardAnalytics struct {
 	// the scheduler's clamps; the sidebar meter's denominator. Absent when
 	// it could not be computed.
 	CapacityToday *WorkspaceSendCapacity `json:"capacity_today,omitempty"`
+	// Scope is the campaign filter the campaign-derived sections were
+	// computed for; absent when they cover the whole workspace.
+	Scope *DashboardScope `json:"scope,omitempty"`
+}
+
+// DashboardFilter is the campaign filter a dashboard request asked for.
+type DashboardFilter struct {
+	CampaignIDs []uuid.UUID
+	FolderIDs   []uuid.UUID
+}
+
+// Empty reports a filter that leaves the dashboard workspace-wide.
+func (f DashboardFilter) Empty() bool {
+	return len(f.CampaignIDs) == 0 && len(f.FolderIDs) == 0
+}
+
+// CampaignScope narrows campaign analytics to a resolved set of campaigns.
+// A nil scope is the whole workspace; an empty set matches nothing.
+type CampaignScope struct {
+	CampaignIDs []uuid.UUID
+}
+
+// DashboardScope echoes a resolved filter: the workspace's requested campaigns and folders, and the distinct campaigns they cover.
+type DashboardScope struct {
+	Campaigns     []DashboardScopeItem `json:"campaigns"`
+	Folders       []DashboardScopeItem `json:"folders"`
+	CampaignCount int                  `json:"campaign_count"`
+}
+
+// DashboardScopeItem names one campaign or folder in a DashboardScope.
+type DashboardScopeItem struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
 }
 
 // DashboardOverallStats contains aggregate statistics for the dashboard
@@ -404,7 +437,8 @@ type DashboardOverallStats struct {
 	ReplyRate       float64 `json:"reply_rate"`
 	BounceRate      float64 `json:"bounce_rate"`
 	ActiveCampaigns int     `json:"active_campaigns"`
-	ActiveAccounts  int     `json:"active_accounts"`
+	// ActiveAccounts is workspace-wide; a campaign filter does not narrow it.
+	ActiveAccounts int `json:"active_accounts"`
 }
 
 // RecentActivityItem represents a single activity event
