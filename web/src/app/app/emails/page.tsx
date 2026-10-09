@@ -565,7 +565,7 @@ export default function AddressesPage() {
                                         key={box.id}
                                         box={box}
                                         tags={p?.user.tags ?? []}
-                                        status={(cloud.unavailable || cloudStandingUnavailable) && cloud.connected && statusById.get(box.id)?.health?.status === "healthy" && !statusById.get(box.id)?.errors?.length ? undefined : statusById.get(box.id)}
+                                        status={(cloud.unavailable || cloudStandingUnavailable) && statusById.get(box.id)?.health?.status === "healthy" && !statusById.get(box.id)?.errors?.length ? undefined : statusById.get(box.id)}
                                         statusPending={statusChecking && !statusUnavailable}
                                         cloudStatusPending={cloudChecking || cloud.unavailable || cloudStandingUnavailable}
                                         findings={advisor.get(box.id)}
@@ -1075,7 +1075,7 @@ function MailboxRow({
                 )}
             </td>
             <td className={`px-3 overflow-hidden font-mono text-[12px] tabular-nums ${warmupTone} ${colShow("warmup")}`}>
-                {cloudStatusPending && !inCloud ? <span className="text-slate-500">{statusPending ? "Checking…" : "Unavailable"}</span> : warmupCell}
+                {cloudStatusPending ? <span className="text-slate-500">{statusPending ? "Checking…" : "Unavailable"}</span> : warmupCell}
             </td>
             <td className={`px-3 ${colShow("inbox")}`}>
                 <button

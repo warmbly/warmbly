@@ -179,4 +179,15 @@ describe("mailbox status while account and Cloud checks settle", () => {
         fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
         expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
     });
+
+    it("does not assume local-only health when the Cloud connection lookup failed", async () => {
+        statusState.cloudUnavailable = true;
+        statusState.data = rows.map(measuredStatus);
+        statusState.data[0] = { ...measuredStatus(rows[0]), health: { status: "error", score: 40 }, errors: [{ id: "error-1", error_code: "PROVIDER_UNAVAILABLE", severity: "critical", title: "Provider unavailable", message: "Provider refused the last attempt", created_at: new Date("2026-10-09T00:00:00Z") }] };
+        await renderPage();
+        expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
+        const sara = screen.getAllByRole("row").find((row) => row.textContent?.includes(rows[0].email));
+        expect(within(sara!).getByText("Issue 40")).toBeInTheDocument();
+        expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    });
 });
