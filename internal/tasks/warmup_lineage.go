@@ -104,7 +104,7 @@ func (s *tasksService) sendAdmission(ctx context.Context, account *Email) error 
 		return err
 	}
 	if admission == nil || !admission.Allowed {
-		return errors.New("mailbox send held")
+		return repository.ErrSendAdmissionDenied
 	}
 	return nil
 }

@@ -133,6 +133,8 @@ type TaskRepository interface {
 	// oldest first, capped at limit. Drives the in-process (TASKS_PROVIDER=local)
 	// dispatcher, which fires each due task by id.
 	ListDuePendingTaskIDs(ctx context.Context, limit int) ([]uuid.UUID, error)
+	RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error
+	ListOverdueWarmupDispatches(ctx context.Context, now time.Time) ([]MailboxLoadingIncident, error)
 
 	// Update operations
 	UpdateTaskStatus(ctx context.Context, taskID uuid.UUID, status string) error
@@ -864,8 +866,8 @@ func (r *taskRepository) ListDuePendingTaskIDs(ctx context.Context, limit int) (
 		SELECT id
 		FROM tasks
 		WHERE status = 'pending'
-		  AND scheduled_at <= NOW()
-		ORDER BY scheduled_at ASC
+		  AND GREATEST(scheduled_at, COALESCE(dispatch_retry_at, scheduled_at)) <= NOW()
+		ORDER BY GREATEST(scheduled_at, COALESCE(dispatch_retry_at, scheduled_at)), id
 		LIMIT $1
 	`
 	rows, err := r.db.Query(ctx, query, limit)
@@ -883,6 +885,19 @@ func (r *taskRepository) ListDuePendingTaskIDs(ctx context.Context, limit int) (
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// Retry metadata never changes the send's reservation, outcome, or intended schedule.
+func (r *taskRepository) RecordDispatchAttempt(ctx context.Context, taskID uuid.UUID, failed bool, retryAt time.Time) error {
+	if failed {
+		_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_retry_at=$2,
+		    dispatch_failure_since=COALESCE(dispatch_failure_since,NOW()),dispatch_failure_at=NOW()
+		    WHERE id=$1 AND status='pending'`, taskID, retryAt)
+		return err
+	}
+	_, err := r.db.Exec(ctx, `UPDATE tasks SET dispatch_retry_at=NULL,
+	    dispatch_failure_since=NULL,dispatch_failure_at=NULL WHERE id=$1`, taskID)
+	return err
 }
 
 // UpdateTaskScheduledAt updates the scheduled time and cloud task name

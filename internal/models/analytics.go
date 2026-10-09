@@ -326,8 +326,10 @@ type WarmupStatusInfo struct {
 
 // WarmupSendFailure is why a warmup send failed: the server's answer when it gave one.
 type WarmupSendFailure struct {
-	Message string    `json:"message"`
-	At      time.Time `json:"at"`
+	Message        string     `json:"message"`
+	At             time.Time  `json:"at"`
+	Kind           string     `json:"kind,omitempty"`
+	FirstFailureAt *time.Time `json:"first_failure_at,omitempty"`
 }
 
 // WarmupPartnerLimit explains a target held below the ramp because a mailbox

@@ -27,7 +27,13 @@ New mailboxes default off. Independent send/receive controls and shared daily/ro
 
 ### When a send fails
 
-The Warmup tab shows a recent failed send when no later send is confirmed delivered. "The sending worker has not loaded this mailbox yet" means no send was attempted. It is not proof of a deliverability hold, a refused sign-in or an IP allowlist problem. Active mailboxes are reloaded automatically; after a worker restarts, it keeps reporting its restart until the backend acknowledges the request to reload its mailboxes.
+The Warmup tab shows provider failures from the last 24 hours with their reported time when no later warmup send has been confirmed. The message expires even on an already-open page without another send. A lack of confirmed delivery is not proof that the mailbox is still failing. Provider and sign-in errors appear immediately; worker-loading hiccups do not.
+
+A worker-loading warning appears only for an active, sending-enabled mailbox after repeated loading failures span at least an hour and the latest failure is less than an hour old. It expires when that evidence becomes stale, including on an already-open page, and is hidden when participation is paused or stopped. One historical failed attempt is never displayed indefinitely as an active loading problem. A later provider-confirmed warmup send clears it; synchronization or a dispatched task alone does not prove delivery.
+
+"The sending worker has not loaded this mailbox yet" means that attempt did not send. It is not proof of a deliverability hold, a refused sign-in or an IP allowlist problem. Active mailboxes are reloaded automatically; after a worker restarts, it keeps reporting its restart until the backend acknowledges the request to reload its mailboxes.
+
+Persistent loading failures and pending warmup tasks at least an hour past their intended schedule are checked every five minutes and reported to configured operator channels and error tracking. The latter is a dispatch problem, not evidence of rejected credentials. The local dispatcher persists a five-minute retry delay after internal failures so an old failing batch cannot indefinitely block newer tasks. Backoff does not alter the intended send time, clear a safety hold, or bypass provider limits.
 
 A missing mailbox also requests another reload through the worker heartbeat. Existing warmup sends stuck before execution recover automatically: after ten minutes, the scheduler retires a nonce-protected command only when neither worker execution nor a delivery receipt exists, refunds its reserved count, and resumes the mailbox's normal schedule. Delayed copies of the retired command cannot send. Customers do not need to disconnect or re-add their mailboxes. Actually started sends with missing outcomes, conflicting outcomes, provider cooldowns, authentication failures and other safety holds are not cleared by this repair.
 

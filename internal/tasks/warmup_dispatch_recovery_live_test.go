@@ -12,12 +12,40 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/repository"
+	"github.com/warmbly/warmbly/internal/tasks/proto"
 )
 
 type warmupRecoveryRepository interface {
 	repository.OutboundAdmissionRepository
 	repository.WarmupDispatchRepository
 	RecoverUnstartedWarmupDispatches(context.Context, time.Time, int) (int, error)
+}
+
+func TestLiveWarmupSafetyHoldReschedulesInsteadOfBlockingTheDispatcher(t *testing.T) {
+	f := newWarmupRecoveryFixture(t)
+	f.svc.taskRepo = repository.NewTaskRepository(f.pool)
+	f.svc.warmupHealth = nil
+	pending := uuid.New()
+	f.exec(t, `INSERT INTO tasks(id,email_account_id,task_type,status,message_id,scheduled_at)
+	    VALUES($1,$2,'warmup','pending','',NOW()-INTERVAL '2 hours')`, pending, f.sender.ID)
+	f.exec(t, `INSERT INTO warmup_tasks(task_id) VALUES($1)`, pending)
+	if xerr := f.svc.HandleEmailTask(&proto.ProcessTask{TaskId: pending.String()}); xerr != nil {
+		t.Fatalf("expected a safe reschedule, not a dispatcher error: %v", xerr)
+	}
+	var scheduled time.Time
+	var status string
+	var held bool
+	if err := f.pool.QueryRow(t.Context(), `SELECT t.status,t.scheduled_at,e.send_recovery_hold
+	    FROM tasks t JOIN email_accounts e ON e.id=t.email_account_id WHERE t.id=$1`, pending).Scan(&status, &scheduled, &held); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || !scheduled.After(time.Now().Add(4*time.Minute)) || !held {
+		t.Fatalf("status=%s scheduled=%v held=%v", status, scheduled, held)
+	}
+	var uncertain string
+	if err := f.pool.QueryRow(t.Context(), `SELECT send_result_state FROM tasks WHERE id=$1`, f.task).Scan(&uncertain); err != nil || uncertain != "unknown" {
+		t.Fatalf("uncertain send protection changed: state=%s err=%v", uncertain, err)
+	}
 }
 
 type warmupRecoveryFixture struct {

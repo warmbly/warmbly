@@ -65,6 +65,8 @@ A chat webhook URL is a bearer credential: anyone holding it can post to that ch
 | Workspace created | A new organization is created |
 | User registered | A new account finishes signing up |
 | Worker went offline | A worker stops heartbeating; the alert reports complete, partial, or failed recovery with moved and paused mailbox counts |
+| Persistent warmup loading failures | Repeated loading failures span at least an hour, the latest failure is under an hour old, and no later warmup send is confirmed |
+| Warmup dispatch is overdue | Active, sending-enabled mailboxes have pending warmup tasks at least an hour past their intended schedule; this is not a provider-error diagnosis |
 | Warmup ban appealed | A blocked mailbox asks to rejoin the warmup pool |
 | Workspace risk escalated | Risk scoring moves a workspace into a different posture |
 | Admin signed in | An account holding platform admin access starts a new session, in the admin panel or the dashboard. The alert names the account, sign-in method, whether a second factor was presented, the device (flagged when it is new), the location and the IP address. Sent only to channels that tick it |
@@ -75,6 +77,12 @@ A self-hosted instance is offered the subset that means something without billin
 Sign-in alerts are not deduplicated: every admin sign-in is reported, because an unexpected one is exactly what the alert exists to catch. A session re-issued after a password change is not a sign-in and is not reported.
 
 Worker and risk alerts are deduplicated: a worker that stays down does not re-alert for six hours, and a risk alert only fires on an actual change of posture.
+
+Warmup operations are checked every five minutes. Loading and overdue-dispatch alerts cover every active participating mailbox and aggregate affected mailbox, workspace and worker counts. Failures on the same worker share an alert. At least ten affected mailboxes across multiple worker assignments are reported as fleet-wide impact; unassigned mailboxes have a separate group. Each category and group has a shared Redis cooldown of six hours across backend replicas. Recovery stops further loading alerts when a later provider-confirmed send exists; stale loading observations do not keep an incident active forever. Overdue alerts stop once no matching pending task remains.
+
+The event keys are `warmup.worker_loading` and `warmup.dispatch_overdue`. Existing catch-all channels receive them automatically. Channels restricted to selected events must opt into the new events. If no destination is configured, there is no administrator message to deliver; configure one under **Instance > Configuration > Notifications**. Delivery remains best effort, like other operator alerts.
+
+The same deduplicated signals go through the central error reporter to configured PostHog/Sentry destinations, or local logs when neither is configured. Error tracking includes the category and aggregate counts/delay only, never mailbox addresses, credentials, message content or worker/workspace IDs. Operator destinations can include the affected worker ID for investigation. A Redis outage is recorded as a monitor failure rather than producing an undeduplicated alert on every retry. See [Configuration](/development/configuration/) for reporter settings.
 
 ## Delivery behaviour
 

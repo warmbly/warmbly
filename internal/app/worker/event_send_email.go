@@ -18,7 +18,7 @@ import (
 )
 
 // errMailboxNotLoaded is what an owner reads when the worker never connected the mailbox.
-const errMailboxNotLoaded = "The sending worker has not loaded this mailbox yet, so nothing was sent. Active mailboxes are reloaded automatically."
+const errMailboxNotLoaded = models.MailboxNotLoadedPrefix + ", so nothing was sent. Active mailboxes are reloaded automatically."
 
 func (w *WorkerService) HandleSendEmail(ctx context.Context, sendEmail models.SendEmail) error {
 	workerID, workerIDErr := uuid.Parse(w.ID)

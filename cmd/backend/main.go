@@ -1926,10 +1926,12 @@ func main() {
 		// that fires due tasks by id. Started here, once tasksService exists to
 		// handle them. Under gcloud this stays nil (the webhook drives dispatch).
 		if localTasks != nil {
-			go localTasks.Run(ctx, func(taskID string) {
+			go localTasks.Run(ctx, func(taskID string) error {
 				if xerr := tasksService.HandleTask(&proto.ProcessTask{TaskId: taskID}); xerr != nil {
 					log.Printf("local task dispatch failed for %s: %v", taskID, xerr)
+					return xerr
 				}
+				return nil
 			})
 		}
 
@@ -1938,6 +1940,7 @@ func main() {
 		// the bootstrap — enabling warmup or starting a campaign doesn't itself
 		// enqueue the first warmup task.
 		go tasksService.StartWarmupReconciler(ctx, 10*time.Minute)
+		go jobs.NewWarmupOperationsJob(warmupRepository, taskRepository, cache, opsNotifier).Start(ctx)
 
 		// Tracking-domain sweep: re-resolve every custom tracking domain hourly,
 		// re-checking each at most daily. Verification used to happen once on
