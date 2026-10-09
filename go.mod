@@ -2,12 +2,8 @@ module github.com/warmbly/warmbly
 
 go 1.26.0
 
-// Pinned so every build, local and CI, uses a toolchain carrying the
-// standard-library security fixes. The net/http, crypto/tls, net/url,
-// encoding/xml, encoding/asn1 and net advisories govulncheck reports against
-// earlier toolchains are fixed in go1.26.6; the Docker builder images track the
-// matching 1.26 line. Raise both together.
-toolchain go1.26.8
+// Keep the pinned toolchain and 1.26 builder images on patched security releases.
+toolchain go1.26.9
 
 require (
 	cloud.google.com/go/cloudtasks v1.13.7
@@ -57,7 +53,7 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/mod v0.41.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0
