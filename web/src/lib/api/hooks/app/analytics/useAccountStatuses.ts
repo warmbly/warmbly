@@ -34,6 +34,7 @@ export default function useAccountStatuses(emailIds: string[], options?: { enabl
         // stable across renders until a chunk actually updates.
         combine: (results) => ({
             data: results.flatMap((r) => (r.data ?? []) as AccountStatus[]),
+            observations: results.flatMap((r) => (r.data ?? []).map((status) => ({ status, observedAt: r.dataUpdatedAt }))),
             isLoading: results.some((r) => r.isLoading),
             isFetching: results.some((r) => r.isFetching),
             isError: results.some((r) => r.isError),

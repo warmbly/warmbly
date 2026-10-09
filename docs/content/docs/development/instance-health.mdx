@@ -84,7 +84,7 @@ The backend collects with an eight-second overall timeout, three seconds per sou
 
 The Overview and Operations tab share the same frontend query cache, scoped to admin identity and permission mask. Monitoring polls at most once per minute while mounted in a visible tab, does not refetch on focus or retry automatically, and offers a refresh control that respects `refresh_after`. Service probes poll every 15 seconds while their tab is mounted; passed probes establish reachability at that time only. Failed or stale probes remain explicit and raw component connection errors are withheld. The existing platform mail card is shown only with `manage_settings`, which its inspection and send-test endpoints require.
 
-This is observation-only tooling. It does not subscribe to brokers, create streams/groups, reconnect mailboxes, move assignments or offsets, reclaim tasks, replay results, clear holds, notify customers or deploy changes. Investigation links open existing admin pages; actions there retain their existing confirmations and permissions.
+This is observation-only tooling. It does not subscribe to brokers, create streams/groups, reconnect mailboxes, move assignments or offsets, reclaim tasks, replay results, clear holds, notify customers or deploy changes. Investigation links open existing admin pages when those pages cover the measured population; actions there retain their existing confirmations and permissions. Aggregate dispatch and send measurements have no direct link because the existing campaign-only detail tabs exclude some counted pending or warmup tasks. Keep the count and its evidence time in view while investigating through authorized backend diagnostics.
 
 ### Monitoring permissions
 
