@@ -18,7 +18,9 @@ var errHistoryIncomplete = errors.New("goog: history pass incomplete")
 
 var ErrHistoryExpired = errors.New("goog: history expired; resynchronization required")
 
-var ErrRecoveryPageExpired = errors.New("goog: recovery page token expired")
+var ErrPageTokenExpired = errors.New("goog: messages.list page token expired")
+
+var ErrRecoveryPageExpired = ErrPageTokenExpired
 
 // historyPagesPerPass bounds one walk. A mailbox that has fallen far behind
 // (or is held by fair use, so the checkpoint cannot advance) is caught up
@@ -202,8 +204,8 @@ func (c *Client) listMessages(ctx context.Context, q, pageToken string, max int6
 	resp, err := call.Do()
 	if err != nil {
 		var apiErr *googleapi.Error
-		if includeSpamTrash && pageToken != "" && errors.As(err, &apiErr) && apiErr.Code == 400 && strings.Contains(strings.ReplaceAll(strings.ToLower(apiErr.Message), " ", ""), "invalidpagetoken") {
-			return nil, "", ErrRecoveryPageExpired
+		if pageToken != "" && errors.As(err, &apiErr) && apiErr.Code == 400 && strings.Contains(strings.ReplaceAll(strings.ToLower(apiErr.Message), " ", ""), "invalidpagetoken") {
+			return nil, "", ErrPageTokenExpired
 		}
 		return nil, "", fmt.Errorf("gmail messages.list: %w", HandleError(err))
 	}
