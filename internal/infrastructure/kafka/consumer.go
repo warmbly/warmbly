@@ -128,14 +128,31 @@ func (cons *Consumer) Consume(ctx context.Context, handler func(msg *ckf.Message
 					}
 					// Log transient Kafka errors and retry after a brief delay
 					log.Warn().Str("code", fmt.Sprintf("%d", kafkaErr.Code())).Err(kafkaErr).Msg("kafka consumer error")
-					time.Sleep(time.Second)
+					if err := consumerBackoff(ctx, time.Second); err != nil {
+						return err
+					}
 					continue
 				}
 				return fmt.Errorf("error reading message: %w", err)
 			}
 
-			if err := handler(msg); err != nil {
-				log.Error().Err(err).Msg("kafka message handler error")
+			backoff := 100 * time.Millisecond
+			for {
+				if err := handler(msg); err == nil {
+					break
+				} else {
+					log.Error().Err(err).Msg("kafka message handler error; retrying before advancing offsets")
+				}
+				if err := consumerBackoff(ctx, backoff); err != nil {
+					return err
+				}
+				cons.mu.Lock()
+				closed := cons.closed
+				cons.mu.Unlock()
+				if closed {
+					return ErrClientClosed
+				}
+				backoff = min(2*backoff, 5*time.Second)
 			}
 
 			// Needs enable.auto.offset.store=false; the background commit sends it.
@@ -143,8 +160,19 @@ func (cons *Consumer) Consume(ctx context.Context, handler func(msg *ckf.Message
 				if errors.Is(err, ErrClientClosed) {
 					return err
 				}
-				log.Warn().Err(err).Msg("kafka: storing a handled offset failed")
+				return fmt.Errorf("kafka: storing a handled offset failed: %w", err)
 			}
 		}
+	}
+}
+
+func consumerBackoff(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }

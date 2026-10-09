@@ -93,6 +93,34 @@ func (r *httpEmailMessageMapRepository) Add(ctx context.Context, data EmailMessa
 	}
 }
 
+func (r *httpEmailMessageMapRepository) AdmitArrival(ctx context.Context, data EmailMessageData, pending *PendingArrival) error {
+	body, err := json.Marshal(struct {
+		Map     emailMessageMapPayload `json:"map"`
+		Pending *PendingArrival        `json:"pending"`
+	}{emailMessageMapPayload(data), pending})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.endpoint()+"/arrival", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	r.authed(req)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("arrival admission: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		return ErrArrivalOutboxUnsupported
+	}
+	if resp.StatusCode != http.StatusNoContent || resp.Header.Get("X-Warmbly-Arrival-Durable") != "1" {
+		return fmt.Errorf("arrival admission not confirmed: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func (r *httpEmailMessageMapRepository) Get(ctx context.Context, userID, emailID uuid.UUID, messageID string) (*EmailMessageData, error) {
 	q := url.Values{}
 	q.Set("user_id", userID.String())
