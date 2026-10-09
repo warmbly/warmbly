@@ -224,7 +224,7 @@ function TodayCard({ mailboxId, enabled }: { mailboxId: string; enabled: boolean
                     <b className="text-slate-900 tabular-nums">{p.sent_today}</b> of{" "}
                     <b className="text-slate-900 tabular-nums">{p.daily_limit}</b> sent
                 </span>
-                <span className="text-slate-400 tabular-nums">{p.remaining_today} left</span>
+                <span className="text-slate-400 tabular-nums">{p.remaining_today} left in plan</span>
             </div>
             <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                 <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${used}%` }} />
@@ -309,7 +309,7 @@ export default function SendingBehaviorTab({ mailboxId, timezone }: { mailboxId:
                         </div>
                         <div className="min-w-0">
                             <div className="text-[12.5px] font-medium text-slate-900">
-                                {form.enabled ? "Sending like a person" : "Fixed schedule"}
+                                {form.enabled ? "Variable sending plan" : "Fixed schedule"}
                             </div>
                             <div className="text-[11px] text-slate-400">
                                 {form.enabled
@@ -326,9 +326,9 @@ export default function SendingBehaviorTab({ mailboxId, timezone }: { mailboxId:
                 {!form.enabled && (
                     <div className="px-5 py-3">
                         <p className="text-[11.5px] text-slate-500 leading-relaxed">
-                            This mailbox is on its fixed schedule, so nothing below applies. Turn on &quot;Sending like
-                            a person&quot; to use these hours, volumes and spacing in place of the mailbox&apos;s own
-                            daily cap and minimum gap.
+                            This mailbox uses its fixed cap and minimum gap. Enable the variable sending plan to choose
+                            a daily target from your range, with varied hours and spacing. Campaign and mailbox maximums
+                            still apply, so this never raises either ceiling.
                         </p>
                     </div>
                 )}
@@ -422,8 +422,8 @@ export default function SendingBehaviorTab({ mailboxId, timezone }: { mailboxId:
                     <div className="px-5 py-5 space-y-5">
                         <Eyebrow>Volume and spacing</Eyebrow>
                         <FieldShell
-                            label="Cold emails per day"
-                            hint="Rolled once a day inside this range. It can only lower the mailbox's daily cap, never raise it."
+                            label="Daily cold-email target range"
+                            hint="New-mailbox default: 28–32/day, about 30. Chosen once per local day and kept stable across retries. Mailbox and campaign maximums can lower it. Saved range changes apply from the next local day."
                         >
                             <PairField
                                 min={form.daily_limit_min}

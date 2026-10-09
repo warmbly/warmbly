@@ -2317,7 +2317,7 @@ function SettingsTab({ form, update, mailbox, onDisconnected }: { form: Inbox; u
 
             <div className="px-5 py-5 space-y-5">
                 <Eyebrow>Sending limits</Eyebrow>
-                <FieldShell label="Daily campaign cap" hint="Max cold-campaign emails per day, up to 5,000. Default 50; raise only with good reputation.">
+                <FieldShell label="Maximum cold emails per day" hint="Shared ceiling across all campaigns, not a daily target. Default 50; the Sending tab plans 28–32/day for new mailboxes. Both are configurable, and the lower limit wins.">
                     <NumField value={form.campaign_limit} onChange={(v) => update({ campaign_limit: v })} suffix="emails / day" max={5000} />
                     {form.campaign_limit > 100 && (
                         <p className="text-[11px] text-amber-600 mt-1 leading-relaxed">

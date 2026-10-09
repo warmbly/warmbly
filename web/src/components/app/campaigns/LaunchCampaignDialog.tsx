@@ -248,8 +248,8 @@ export default function LaunchCampaignDialog({
                                     <div className="px-5 grid grid-cols-2 gap-2">
                                         <SummaryChip
                                             icon={<GaugeIcon className="w-4 h-4" />}
-                                            label="Daily cap"
-                                            value={`${c.daily_limit}/mailbox`}
+                                            label="Campaign maximum"
+                                            value={c.daily_limit > 0 ? `${c.daily_limit}/mailbox/day` : "Mailbox limits only"}
                                         />
                                         <SummaryChip
                                             icon={<CalendarClockIcon className="w-4 h-4" />}

@@ -20,10 +20,14 @@ var ErrSendAdmissionDenied = errors.New("current send authority or capacity unav
 
 var ErrCampaignDailyLimit = fmt.Errorf("%w: campaign daily limit reached for this mailbox", ErrSendAdmissionDenied)
 
+var ErrMailboxSendingPlan = fmt.Errorf("%w: mailbox's current sending plan has no capacity", ErrSendAdmissionDenied)
+
 func SendAdmissionCode(err error) string {
 	switch {
 	case errors.Is(err, ErrCampaignDailyLimit):
 		return "CAMPAIGN_DAILY_LIMIT_REACHED"
+	case errors.Is(err, ErrMailboxSendingPlan):
+		return "MAILBOX_SENDING_PLAN_DENIED"
 	case errors.Is(err, ErrSendAdmissionDenied):
 		return "SEND_ADMISSION_DENIED"
 	default:
@@ -206,6 +210,9 @@ func (r *taskRepository) ReserveOutbound(ctx context.Context, in OutboundReserva
 		if err = checkCampaignReservation(ctx, tx, in.TaskID); err != nil {
 			return uuid.Nil, err
 		}
+		if err = checkMailboxSendingPlan(ctx, tx, in.TaskID, in.MailboxID); err != nil {
+			return uuid.Nil, err
+		}
 	}
 	if lane == "warmup" && warmupNonce == nil {
 		return uuid.Nil, ErrSendAdmissionDenied
@@ -243,6 +250,30 @@ func checkSendRecipients(ctx context.Context, tx pgx.Tx, org uuid.UUID, recipien
 	}
 	if denied {
 		return ErrSendAdmissionDenied
+	}
+	return nil
+}
+
+func checkMailboxSendingPlan(ctx context.Context, tx pgx.Tx, task, mailbox uuid.UUID) error {
+	var allowed bool
+	err := tx.QueryRow(ctx, `SELECT NOT COALESCE(b.enabled,false) OR (p.email_account_id IS NOT NULL
+	 AND p.is_working_day
+	 AND EXTRACT(EPOCH FROM (NOW() AT TIME ZONE p.timezone)::time)/60>=p.work_start_minute
+	 AND EXTRACT(EPOCH FROM (NOW() AT TIME ZONE p.timezone)::time)/60<p.work_end_minute
+	 AND (p.lunch_start_minute IS NULL OR EXTRACT(EPOCH FROM (NOW() AT TIME ZONE p.timezone)::time)/60<p.lunch_start_minute
+	 OR EXTRACT(EPOCH FROM (NOW() AT TIME ZONE p.timezone)::time)/60>=p.lunch_end_minute)
+	 AND (SELECT COUNT(*)<p.daily_limit AND COUNT(*) FILTER(WHERE t.completed_at>=date_trunc('hour',NOW() AT TIME ZONE p.timezone) AT TIME ZONE p.timezone)<p.hourly_limit
+	 FROM tasks t WHERE t.email_account_id=ea.id AND t.id<>$2 AND t.task_type IN ('campaign','placement') AND t.status='completed'
+	 AND (t.completed_at AT TIME ZONE p.timezone)::date=p.plan_date AND `+taskDispatchedEmail+`))
+	 FROM email_accounts ea JOIN organizations o ON o.id=ea.organization_id
+	 LEFT JOIN email_account_behavior b ON b.email_account_id=ea.id
+	 LEFT JOIN email_account_daily_plan p ON p.email_account_id=ea.id AND p.plan_date=(NOW() AT TIME ZONE COALESCE(NULLIF(ea.timezone,''),NULLIF(o.timezone,''),'UTC'))::date
+	 WHERE ea.id=$1`, mailbox, task).Scan(&allowed)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrMailboxSendingPlan
 	}
 	return nil
 }
@@ -344,6 +375,9 @@ func (r *taskRepository) BeginOutbound(ctx context.Context, task, mailbox, worke
 	}
 	if err == nil && lane == "campaign" {
 		err = checkCampaignReservation(ctx, tx, task)
+	}
+	if err == nil && lane == "campaign" {
+		err = checkMailboxSendingPlan(ctx, tx, task, mailbox)
 	}
 	if err != nil {
 		if !errors.Is(err, ErrSendAdmissionDenied) {

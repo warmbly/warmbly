@@ -16,6 +16,7 @@ func TestCampaignDispatchFailureCode(t *testing.T) {
 		code string
 	}{
 		{repository.ErrCampaignDailyLimit, "CAMPAIGN_DAILY_LIMIT_REACHED"},
+		{repository.ErrMailboxSendingPlan, "MAILBOX_SENDING_PLAN_DENIED"},
 		{repository.ErrSendAdmissionDenied, "SEND_ADMISSION_DENIED"},
 		{ErrWorkerOffline, "WORKER_UNAVAILABLE"},
 		{ErrWorkerUnconfirmed, "WORKER_UNAVAILABLE"},
@@ -31,7 +32,7 @@ func TestCampaignDispatchFailureCode(t *testing.T) {
 }
 
 func TestLiveCampaignAdmissionFailureReleasesReservationWithoutAnAttempt(t *testing.T) {
-	for _, denied := range []error{repository.ErrCampaignDailyLimit, repository.ErrSendAdmissionDenied} {
+	for _, denied := range []error{repository.ErrCampaignDailyLimit, repository.ErrMailboxSendingPlan, repository.ErrSendAdmissionDenied} {
 		t.Run(denied.Error(), func(t *testing.T) {
 			f := newSendFixture(t)
 			f.sender.fail = fmt.Errorf("dispatch: %w", denied)

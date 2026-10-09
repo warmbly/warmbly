@@ -11,9 +11,9 @@ Everything here is per mailbox and lives in its own timezone, so a London mailbo
 
 ## Turn it on
 
-**Mailboxes** > pick a mailbox > **Sending** > **Sending like a person**.
+**Mailboxes** > pick a mailbox > **Sending** > **Variable sending plan**.
 
-It is off by default. A mailbox that has not opted in keeps its fixed daily cap and minimum gap exactly as before, so switching this on is the only thing that changes its behavior.
+Newly connected mailboxes start with this enabled and a configurable daily target range of `28` to `32`, about `30` per local working day. Existing mailboxes keep their saved profile, including fixed schedules, and existing daily plans are not changed by an upgrade. You can disable the plan to use the mailbox's fixed cap and minimum gap instead.
 
 While it is off, the rest of the tab is greyed out and read-only, because none of it applies. Turn the switch on to edit the ranges.
 
@@ -25,7 +25,7 @@ While it is off, the rest of the tab is greyed out and read-only, because none o
 | Workday start | `09:03` to `09:27` | The mailbox opens at a different minute each day |
 | Workday finish | `17:18` to `17:56` | Nothing is scheduled after the day's rolled finish |
 | Lunch break | starts `12:00`-`13:30`, lasts `30`-`60` min | A quiet gap in the middle of the day |
-| Cold emails per day | `30` to `45` | The day's cold-send target |
+| Cold emails per day | `28` to `32` | The day's cold-send target, about `30` |
 | Cold emails per hour | `5` to `9` | Stops the whole day landing in one burst |
 | Delay between emails | `90` to `420` seconds | Drawn fresh for every send |
 
@@ -39,7 +39,7 @@ The roll happens once per mailbox per local day, and the result is stored. That 
 
 The **Sending** tab shows today's rolled workday at the top: the hours, the break, the spacing band, the hourly ceiling, and how much of the day's target is already spent. That is the answer to "why is nothing sending right now".
 
-Only emails that actually went out count against the day's target. A campaign wakes itself up far more often than it sends, and most of those wake-ups find nothing to do: every mailbox is mid-gap, the workday has not opened yet, or no contact is due. Those are not sends. They do not show up in the count, they do not spend the plan, and neither does the run the campaign has queued next.
+Emails reserved for dispatch count once against the day's target; a cancelled reservation gives its capacity back. A campaign wakes itself up far more often than it sends, and most of those wake-ups find nothing to do: every mailbox is mid-gap, the workday has not opened yet, or no contact is due. Those are not sends. They do not show up in the count, they do not spend the plan, and neither does the run the campaign has queued next.
 
 Editing the ranges does not change today. Today keeps the workday it already started, and the new ranges take effect on the next roll.
 
@@ -47,7 +47,7 @@ Editing the ranges does not change today. Today keeps the workday it already sta
 
 Sending behavior can only ever **lower** volume or **delay** a send. It can never raise a mailbox above its own daily cap or bring a send forward.
 
-- The day's rolled target is applied as a minimum against the mailbox's daily cap and the campaign's daily limit. If the mailbox is capped at `50` and the day rolls `38`, the day is `38`.
+- The day's rolled target is applied as a minimum against the mailbox's daily cap and the campaign's daily limit. If the mailbox and campaign are capped at `50` and the day rolls `31`, the day is at most `31`. Setting a ceiling of `30` clips any higher roll to `30`; raise the ceiling if you want the whole configured range available. More capacity does not guarantee more sends: leads, windows, warmup graduation and other safety controls still apply.
 - The delay range replaces the mailbox's fixed minimum gap while behavior is on.
 - A campaign's own sending windows still apply. A send has to satisfy both calendars: the campaign's window in the campaign timezone, and the mailbox's workday in the mailbox timezone.
 - Warmup follows the same working days, hours, and break, so warmup mail is not arriving at 03:00 from a mailbox whose campaign mail keeps office hours. Warmup is **not** charged against the cold daily or hourly ceilings; it has its own ramp.

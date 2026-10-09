@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Loading } from "@/components/loader";
 import { useCampaign } from "@/hooks/context/campaign";
 import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
+import { isValidCampaignDailyLimit } from "@/lib/api/models/app/campaigns/Campaign";
 import {
     DeliverabilitySection,
     GeneralSection,
@@ -296,7 +297,7 @@ export default function CampaignPreferences() {
     }, [explicitAccounts, savedAccounts]);
 
     const validationError = (): string | null => {
-        if (newData.daily_limit < DAILY_MIN || newData.daily_limit > DAILY_MAX) {
+        if (!isValidCampaignDailyLimit(newData.daily_limit, campaign.daily_limit)) {
             return `Daily limit must be between ${DAILY_MIN} and ${DAILY_MAX}.`;
         }
         if (newData.ramp_enabled && newData.ramp_start > newData.ramp_ceiling) {
@@ -369,6 +370,7 @@ export default function CampaignPreferences() {
                 return (
                     <SendingAccountsSection
                         newCampaign={newData}
+                        savedDailyLimit={campaign.daily_limit}
                         setNewCampaign={setNewData}
                         explicitAccounts={explicitAccounts}
                         setExplicitAccounts={setExplicitAccounts}

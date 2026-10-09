@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -187,6 +188,37 @@ func TestLiveCampaignAdmissionUsesUTCBudget(t *testing.T) {
 	request, _ := f.request(t, f.sender)
 	if _, err := r.ReserveOutbound(t.Context(), request); !errors.Is(err, ErrCampaignDailyLimit) {
 		t.Fatalf("admission differs from scheduler in non-UTC session: %v", err)
+	}
+}
+
+func TestLiveCampaignAdmissionPlacementUTCBudget(t *testing.T) {
+	f := newCampaignAdmissionFixture(t, 50)
+	config := f.pool.Config()
+	config.MaxConns = 1
+	zone := "Etc/GMT+12"
+	if time.Now().UTC().Hour() >= 12 {
+		zone = "Etc/GMT-14"
+	}
+	config.ConnConfig.RuntimeParams["timezone"] = zone
+	pool, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	r := &taskRepository{db: pool}
+	f.exec(t, `WITH day AS (SELECT date_trunc('day',NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS start)
+	 INSERT INTO tasks(id,task_type,email_account_id,status,message_id,completed_at,scheduled_at)
+	 SELECT gen_random_uuid(),'placement'::task_type,$1::uuid,'completed'::task_status,'',start-INTERVAL '1 minute',start-INTERVAL '1 minute' FROM day
+	 UNION ALL SELECT gen_random_uuid(),'placement',$1,'completed','',start+INTERVAL '1 minute',start+INTERVAL '1 minute' FROM day
+	 UNION ALL SELECT gen_random_uuid(),'placement',$1,'pending','',NULL,start+INTERVAL '1 hour' FROM day
+	 UNION ALL SELECT gen_random_uuid(),'placement',$1,'pending','',NULL,start+INTERVAL '25 hours' FROM day`, f.sender)
+	count, err := r.CountCampaignEmailsSentToday(t.Context(), f.sender)
+	if err != nil || count != 2 {
+		t.Fatalf("scalar UTC placement count: %d %v", count, err)
+	}
+	counts, err := r.CountCampaignEmailsSentTodayByAccounts(t.Context(), []uuid.UUID{f.sender})
+	if err != nil || counts[f.sender] != 2 {
+		t.Fatalf("batched UTC placement count: %v %v", counts, err)
 	}
 }
 

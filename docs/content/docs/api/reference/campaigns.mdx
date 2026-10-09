@@ -122,7 +122,7 @@ Project an audience against a sender pool before a campaign exists. The campaign
 | --- | --- | --- | --- |
 | `segment_ids` | string[] | yes | Segments making up the audience (at most 20). A contact in several of them is counted once. Send `[]` to project the pool alone: its mailboxes and capacity, with no finish date. |
 | `email_tag_ids` | string[] | no | Mailbox tags that resolve the pool. Omit or send `[]` for every active mailbox in the workspace. |
-| `daily_limit` | integer | no | Daily campaign send cap per mailbox, from `3` to `5000` (defaults to `50`). |
+| `daily_limit` | integer | no | Configurable campaign ceiling per mailbox, from `3` to `5000` (defaults to `50`), not a daily target. New mailboxes separately plan `28` to `32` per local working day by default; the lower limit wins. |
 | `days` | integer (0-127) | no | Weekday bitmask of sending days, bit 0 = Monday. Defaults to weekdays. |
 | `timezone` | string | no | IANA timezone the days and window are read in. Omit or send `""` to use the workspace timezone (UTC when none is set). |
 | `start_date` | string (RFC 3339) | no | When sending begins. Omit for now. |

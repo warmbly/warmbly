@@ -1,4 +1,8 @@
 
+export function isValidCampaignDailyLimit(value: number, savedValue?: number): boolean {
+    return Number.isInteger(value) && ((value >= 3 && value <= 5000) || (value <= 0 && value === savedValue));
+}
+
 export default interface Campaign {
     id: string;
 
@@ -126,4 +130,3 @@ export interface CampaignSenderInput {
     weight?: number;
     enabled?: boolean;
 }
-

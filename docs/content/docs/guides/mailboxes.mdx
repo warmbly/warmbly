@@ -244,7 +244,7 @@ Set these on the mailbox's **Settings** tab. They apply to the next scheduled se
 | Daily campaign cap | `50`/day | `0` to `5000` |
 | Minimum gap between sends | `600s` (10 minutes) | A hard floor, with jitter added on top |
 
-The default of `50` is deliberately conservative. `30` to `50`/day is the normal safe band; a fresh mailbox should start at `10` to `20` and ramp. Raise the cap only for a mailbox with proven reputation and low complaint and bounce rates.
+The `50` default is a safety ceiling, not a daily target. Newly connected mailboxes use a configurable [variable sending plan](/guides/sending-behavior/) with a target range of `28` to `32` per local working day, about `30`. Existing mailboxes keep their settings. Tune or disable the plan in the **Sending** tab; raise the separate ceiling only with proven reputation and low complaint and bounce rates. A fresh mailbox should start lower and ramp; randomized volume does not replace warmup or guarantee deliverability.
 
 The range goes up to `5000` so a high-capacity mailbox (a warmed Google Workspace account allows `2000`/day, Microsoft 365 more) is not artificially blocked, and the dashboard shows a warning on anything above `100`. A high cap only raises the ceiling: the campaign's own daily limit, the ramp, sending behaviour, and your workspace's daily send limit all still apply, and the smallest one wins. The minimum gap is a throughput bound of its own: at the default `600s` a mailbox tops out around `144` sends in a `24`-hour window, so a cap above that only takes effect together with a shorter gap.
 

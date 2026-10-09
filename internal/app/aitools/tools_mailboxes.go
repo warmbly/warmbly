@@ -38,7 +38,7 @@ func (d Deps) registerMailboxTools(r *Registry) {
 			"name":                  strProp("Display name."),
 			"reply_to":              strProp("Reply-to address."),
 			"status":                enumProp("Mailbox status. inactive switches the mailbox off entirely: no sending, warmup or sync. To stop only cold sending, use set_mailbox_send_hold.", "active", "inactive"),
-			"campaign_limit":        intProp("Max cold-campaign emails per day for this mailbox, 0 to 5000. Default 50; 30-50/day is the safe cold-outreach band."),
+			"campaign_limit":        intProp("Cold-email safety ceiling across all campaigns, 0 to 5000, default 50. Separate from the configurable daily sending-plan target (new mailboxes: 28-32/day, about 30). The lower limit wins."),
 			"min_wait_time":         intProp("Minimum seconds between sends."),
 			"warmup":                boolProp("Enable or disable warmup."),
 			"warmup_base":           intProp("Warmup starting emails/day."),

@@ -536,10 +536,10 @@ export function ScheduleStep({
                     )}
                     <div className="mt-4 flex items-start justify-between gap-5">
                         <div className="min-w-0">
-                            <p className="text-[12.5px] text-slate-900 font-medium">Daily limit per mailbox</p>
+                            <p className="text-[12.5px] text-slate-900 font-medium">Maximum per mailbox per day</p>
                             <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                                Stay near 50 until the mailboxes have proven their reputation. Warmup graduation and health bands
-                                can lower it further.
+                                A ceiling for this campaign, not a daily target. New mailboxes plan 28–32/day by default;
+                                change that range in the mailbox&apos;s Sending tab. Ramp-up, health and shared capacity can lower it.
                             </p>
                         </div>
                         <NumberInput
@@ -693,7 +693,7 @@ export function ReviewStep({
             value: e
                 ? e.mailboxes === 0
                     ? "No active mailbox"
-                    : `${plural(e.mailboxes, "mailbox", "mailboxes")}, up to ${draft.dailyLimit}/day each${e.held > 0 ? ` (${e.held} held)` : ""}`
+                    : `${plural(e.mailboxes, "mailbox", "mailboxes")}, maximum ${draft.dailyLimit}/day each; actual volume follows each mailbox's sending plan${e.held > 0 ? ` (${e.held} held)` : ""}`
                 : "…",
             warn: !!e && (e.mailboxes === 0 || e.held > 0),
         },

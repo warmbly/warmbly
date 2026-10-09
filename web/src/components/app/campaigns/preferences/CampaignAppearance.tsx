@@ -5,6 +5,7 @@
 // On-theme: slate/sky, rounded-md, 12.5px base.
 
 import type Campaign from "@/lib/api/models/app/campaigns/Campaign";
+import { isValidCampaignDailyLimit } from "@/lib/api/models/app/campaigns/Campaign";
 import { Label, NumberInput, TextInput } from "@/components/ui/field";
 import SenderSelector from "./SenderSelector";
 import { SettingRow, Toggle } from "./components/CampaignPreferenceBoolBox";
@@ -60,16 +61,19 @@ export function GeneralSection({
 /** Sending accounts — the unified tag/mailbox picker + per-mailbox daily cap. */
 export function SendingAccountsSection({
     newCampaign,
+    savedDailyLimit,
     setNewCampaign,
     explicitAccounts,
     setExplicitAccounts,
 }: {
     newCampaign: Campaign;
+    savedDailyLimit?: number;
     setNewCampaign: SetCampaign;
     explicitAccounts: string[];
     setExplicitAccounts: React.Dispatch<React.SetStateAction<string[]>>;
 }) {
-    const dailyInvalid = newCampaign.daily_limit < DAILY_MIN || newCampaign.daily_limit > DAILY_MAX;
+    const dailyInvalid = !isValidCampaignDailyLimit(newCampaign.daily_limit, savedDailyLimit);
+    const dailyLegacy = !dailyInvalid && newCampaign.daily_limit <= 0;
     const dailyHigh = !dailyInvalid && newCampaign.daily_limit > 100;
     return (
         <div className="space-y-4">
@@ -87,7 +91,7 @@ export function SendingAccountsSection({
                 </p>
             </div>
             <div>
-                <Label>Daily limit per mailbox</Label>
+                <Label>Maximum per mailbox per day</Label>
                 <NumberInput
                     value={newCampaign.daily_limit}
                     min={DAILY_MIN}
@@ -99,9 +103,11 @@ export function SendingAccountsSection({
                 <p className={`text-[11px] mt-1.5 ${dailyInvalid ? "text-rose-500" : dailyHigh ? "text-amber-600" : "text-slate-400"}`}>
                     {dailyInvalid
                         ? `Must be between ${DAILY_MIN} and ${DAILY_MAX}.`
-                        : dailyHigh
-                          ? "Well above the 30–50/day safe cold-outreach band. Every mailbox in the pool needs the reputation and provider capacity to carry this."
-                          : `${DAILY_MIN}–${DAILY_MAX}. Default 50 — stay conservative until reputation is proven.`}
+                        : dailyLegacy
+                          ? "Saved without a campaign-specific cap. Mailbox and sending-plan limits still apply. Enter 3–5000 to set a maximum."
+                          : dailyHigh
+                            ? "Well above the 30–50/day safe cold-outreach band. Every mailbox in the pool needs the reputation and provider capacity to carry this."
+                            : `Configurable ${DAILY_MIN}–${DAILY_MAX}. This campaign's ceiling, not a daily target. New mailboxes plan 28–32/day; tune the range in each mailbox's Sending tab.`}
                 </p>
             </div>
         </div>
