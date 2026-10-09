@@ -76,7 +76,15 @@ func TestRecoveryPageExpiryIsNarrow(t *testing.T) {
 		{"other invalid input", "old", "Invalid query", 400, true, false},
 		{"first page invalid input", "", "Invalid pageToken", 400, true, false},
 		{"transient", "old", "Invalid pageToken", 429, true, false},
-		{"ordinary backfill", "old", "Invalid pageToken", 400, false, false},
+		{"ordinary backfill", "old", "Invalid pageToken", 400, false, true},
+		{"ordinary spaced token", "old", "Invalid page token", 400, false, true},
+		{"ordinary other invalid input", "old", "Invalid query", 400, false, false},
+		{"ordinary invalid page size", "old", "Invalid page size", 400, false, false},
+		{"ordinary first page", "", "Invalid pageToken", 400, false, false},
+		{"ordinary quota", "old", "Invalid pageToken", 429, false, false},
+		{"ordinary auth", "old", "Invalid pageToken", 401, false, false},
+		{"ordinary forbidden", "old", "Invalid pageToken", 403, false, false},
+		{"ordinary transport", "old", "Invalid pageToken", 503, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -89,7 +97,7 @@ func TestRecoveryPageExpiryIsNarrow(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, _, err = (&Client{srv: svc}).listMessages(t.Context(), "after:2026/09/01", tc.token, 50, tc.recovery)
-			if err == nil || errors.Is(err, ErrRecoveryPageExpired) != tc.expired {
+			if err == nil || errors.Is(err, ErrPageTokenExpired) != tc.expired || errors.Is(err, ErrRecoveryPageExpired) != tc.expired {
 				t.Fatalf("err=%v; want expired=%t", err, tc.expired)
 			}
 		})

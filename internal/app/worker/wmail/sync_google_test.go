@@ -2,9 +2,12 @@ package wmail
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/warmbly/warmbly/internal/client/goog"
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 	"golang.org/x/oauth2"
 )
 
@@ -152,5 +156,204 @@ func TestGoogleBackfillRetriesAfterATransientFailure(t *testing.T) {
 	}
 	if g.listCalls != 1 {
 		t.Errorf("listed %d times, want the one call that succeeded", g.listCalls)
+	}
+}
+
+type googleBackfillBudget struct {
+	fixedBudget
+	policy models.SyncPolicy
+	lanes  []SyncLane
+}
+
+func (b *googleBackfillBudget) Policy() models.SyncPolicy { return normalizePolicy(b.policy) }
+
+func (b *googleBackfillBudget) Admit(ctx context.Context, lane SyncLane) Admission {
+	b.lanes = append(b.lanes, lane)
+	return b.fixedBudget.Admit(ctx, lane)
+}
+
+func TestGoogleBackfillExpiredPageResumesAfterReloadWithinWindowAndBudgets(t *testing.T) {
+	var tokens, gets []string
+	since := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	started := since.Add(30 * 24 * time.Hour)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/messages") {
+			token := r.URL.Query().Get("pageToken")
+			tokens = append(tokens, token)
+			if q := r.URL.Query().Get("q"); q != fmt.Sprintf("after:%d -in:trash -in:spam -in:chats", since.Unix()) {
+				t.Errorf("import window changed: q=%q", q)
+			}
+			if r.URL.Query().Get("includeSpamTrash") != "false" || r.URL.Query().Get("maxResults") != "100" {
+				t.Errorf("import listing changed: %s", r.URL)
+			}
+			switch token {
+			case "expired":
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"code":400,"message":"Invalid page token"}}`))
+			case "":
+				_, _ = w.Write([]byte(`{"messages":[{"id":"known"},{"id":"new-1"},{"id":"new-2"}],"nextPageToken":"page-2"}`))
+			case "page-2":
+				_, _ = w.Write([]byte(`{"messages":[{"id":"new-3"},{"id":"over-cap"}]}`))
+			default:
+				t.Errorf("unexpected token %q", token)
+			}
+			return
+		}
+		id := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		gets = append(gets, id)
+		_, _ = fmt.Fprintf(w, `{"id":%q,"threadId":"t-%s","payload":{"headers":[{"name":"Message-Id","value":"<%s@gmail.test>"}]}}`, id, id, id)
+	}))
+	t.Cleanup(srv.Close)
+	var events []captured
+	w := newGoogleTestMail(t, srv, &events)
+	budget := &googleBackfillBudget{fixedBudget: fixedBudget{allow: 1}, policy: models.SyncPolicy{BackfillDays: 2, BackfillMessages: 4}}
+	w.gov = budget
+	mapping := &recoveryMessageMap{data: map[string]repository.EmailMessageData{"known": {ID: uuid.NewString(), MessageID: "known"}}}
+	w.EmailMessageMapRepository = mapping
+	w.tracker.state = models.SyncState{
+		BackfillStatus: models.SyncBackfillRunning, BackfillSynced: 1,
+		BackfillSince: &since, BackfillStartedAt: &started,
+		BackfillCursor: models.SyncCursor{PageToken: "expired", Folders: map[string]models.SyncFolderCursor{}},
+		Deferred:       5, LastSyncedAt: &started,
+	}
+	reload := func(state models.SyncState) {
+		t.Helper()
+		encoded, err := json.Marshal(state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var seed models.SyncState
+		if err := json.Unmarshal(encoded, &seed); err != nil {
+			t.Fatal(err)
+		}
+		id, userID := w.ID, w.UserID
+		w = newGoogleTestMail(t, srv, &events)
+		w.ID, w.UserID = id, userID
+		w.gov, w.EmailMessageMapRepository = budget, mapping
+		w.tracker = newSyncTracker(&seed, func(models.SyncState) error { return nil })
+	}
+	reload(w.tracker.state)
+	want := w.tracker.state
+	want.BackfillCursor.PageToken = ""
+	if err := w.googleBackfill(t.Context(), &tickStats{}); err != nil {
+		t.Fatalf("expired continuation must reset for retry: %v", err)
+	}
+	if !reflect.DeepEqual(w.tracker.state, want) || !w.tracker.dirty || budget.admitted != 0 || len(events) != 0 || !slices.Equal(tokens, []string{"expired"}) {
+		t.Fatalf("reset changed more than the continuation: state=%+v tokens=%v budget=%+v", w.tracker.state, tokens, budget)
+	}
+	var relayed models.SyncState
+	w.tracker.emit = func(state models.SyncState) error { relayed = state; return nil }
+	w.tracker.flush(time.Now())
+	reload(relayed)
+	if err := w.googleBackfill(t.Context(), &tickStats{}); err != nil {
+		t.Fatal(err)
+	}
+	if w.tracker.state.BackfillSynced != 2 || w.tracker.state.BackfillCursor.PageToken != "" || w.tracker.state.BackfillStatus != models.SyncBackfillRunning {
+		t.Fatalf("pacing must pin the restarted page: %+v", w.tracker.state)
+	}
+	reload(w.tracker.state)
+	if err := w.googleBackfill(t.Context(), &tickStats{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(newEmails(events)) != 1 || budget.admitted != 1 {
+		t.Fatal("reload bypassed the admission budget or duplicated an arrival")
+	}
+	budget.allow = 3
+	if err := w.googleBackfill(t.Context(), &tickStats{}); err != nil {
+		t.Fatal(err)
+	}
+	if w.tracker.state.BackfillStatus != models.SyncBackfillComplete || w.tracker.state.BackfillSynced != 4 || !w.tracker.state.BackfillSince.Equal(since) || !w.tracker.state.BackfillStartedAt.Equal(started) {
+		t.Fatalf("import changed the fixed window or count: %+v", w.tracker.state)
+	}
+	if !slices.Equal(gets, []string{"new-1", "new-2", "new-3"}) || len(newEmails(events)) != 3 || len(mapping.data) != 4 || budget.admitted != 3 || budget.observed != 0 {
+		t.Fatalf("known mail or capped mail was imported: gets=%v arrivals=%d budget=%+v", gets, len(newEmails(events)), budget)
+	}
+	for _, lane := range budget.lanes {
+		if lane != LaneBackfill {
+			t.Fatalf("import charged %s instead of backfill", lane)
+		}
+	}
+	reload(w.tracker.state)
+	if err := w.googleBackfill(t.Context(), &tickStats{}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(tokens, []string{"expired", "", "", "", "page-2"}) || len(newEmails(events)) != 3 {
+		t.Fatalf("completed reload repeated the import: tokens=%v arrivals=%d", tokens, len(newEmails(events)))
+	}
+}
+
+func TestGoogleBackfillRetainsContinuationOnOtherProviderErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, message string
+		code          int
+	}{
+		{"invalid query", "Invalid query", 400},
+		{"quota", "Invalid page token", 429},
+		{"auth", "Invalid page token", 401},
+		{"forbidden", "Invalid page token", 403},
+		{"unavailable", "Invalid page token", 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Query().Get("pageToken") != "keep" {
+					t.Error("provider error reset the continuation")
+				}
+				w.WriteHeader(tc.code)
+				_, _ = fmt.Fprintf(w, `{"error":{"code":%d,"message":%q}}`, tc.code, tc.message)
+			}))
+			t.Cleanup(srv.Close)
+			var events []captured
+			w := newGoogleTestMail(t, srv, &events)
+			w.tracker.startBackfill(time.Now(), 30)
+			w.tracker.state.BackfillCursor.PageToken = "keep"
+			w.tracker.state.BackfillSynced = 7
+			want := w.tracker.state
+			for range 2 {
+				stats := &tickStats{}
+				if err := w.googleBackfill(t.Context(), stats); err == nil || !stats.aborted {
+					t.Fatalf("provider error was swallowed: err=%v aborted=%t", err, stats.aborted)
+				}
+				if !reflect.DeepEqual(w.tracker.state, want) || len(events) != 0 {
+					t.Fatalf("provider failure changed import progress: %+v", w.tracker.state)
+				}
+			}
+			if calls != 2 {
+				t.Fatalf("requests=%d, want one per attempt", calls)
+			}
+		})
+	}
+}
+
+func TestGoogleBackfillCompletedOrCappedImportDoesNotRestartExpiredPage(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status models.SyncBackfillStatus
+		synced int
+	}{
+		{"completed below cap", models.SyncBackfillComplete, 1},
+		{"running at cap", models.SyncBackfillRunning, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+				t.Error("completed or capped import must not re-list an expired page")
+			}))
+			t.Cleanup(srv.Close)
+			var events []captured
+			w := newGoogleTestMail(t, srv, &events)
+			w.gov = &googleBackfillBudget{fixedBudget: fixedBudget{allow: 10}, policy: models.SyncPolicy{BackfillMessages: 4}}
+			w.tracker.startBackfill(time.Now(), 30)
+			w.tracker.state.BackfillStatus = tc.status
+			w.tracker.state.BackfillSynced = tc.synced
+			w.tracker.state.BackfillCursor.PageToken = "expired"
+			if err := w.googleBackfill(t.Context(), &tickStats{}); err != nil {
+				t.Fatal(err)
+			}
+			if w.tracker.state.BackfillStatus != models.SyncBackfillComplete || w.tracker.state.BackfillSynced != tc.synced || w.tracker.state.BackfillCursor.PageToken != "expired" || len(events) != 0 {
+				t.Fatalf("completed import changed: %+v", w.tracker.state)
+			}
+		})
 	}
 }

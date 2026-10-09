@@ -339,6 +339,11 @@ func (w *WMail) googleBackfill(ctx context.Context, stats *tickStats) *errx.Mail
 			return nil
 		}
 		ids, next, err := w.GoogleData.Client.ListMessages(ctx, q, st.BackfillCursor.PageToken, googleBackfillPage)
+		if errors.Is(err, goog.ErrPageTokenExpired) {
+			st.BackfillCursor.PageToken = ""
+			w.tracker.mark()
+			return nil
+		}
 		if err != nil {
 			stats.aborted = true
 			var errMail *errx.MailError
