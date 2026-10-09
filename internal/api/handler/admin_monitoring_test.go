@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -38,11 +37,16 @@ func TestMonitoringAdminHandlerPermissionsAndWireCompatibility(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &snapshot); err != nil {
 				t.Fatal(err)
 			}
-			if w.Code != http.StatusOK || snapshot.Version != "1" || snapshot.Sources == nil || w.Header().Get("Cache-Control") != "no-store" {
+			if w.Code != http.StatusOK || snapshot.Version != "1" || len(snapshot.Sources) != 1 || w.Header().Get("Cache-Control") != "no-store" {
 				t.Fatal(w.Body.String())
 			}
-			if !permissions.HasPermission(models.AdminPermViewUsers) && (strings.Contains(w.Body.String(), "42") || len(snapshot.Sources[0].Metrics) != 0 || snapshot.Sources[0].Reason != "permission_denied") {
-				t.Fatal("permission leak", w.Body.String())
+			source := snapshot.Sources[0]
+			if !permissions.HasPermission(models.AdminPermViewUsers) {
+				if len(source.Metrics) != 0 || source.Reason != "permission_denied" || source.Availability != models.MonitoringUnavailable || source.Coverage != "unavailable" || source.ObservedAt != nil || source.MeasuredScopes != nil || source.ExpectedScopes != nil {
+					t.Fatal("permission leak", w.Body.String())
+				}
+			} else if len(source.Metrics) != 1 || source.Metrics[0].Count == nil || *source.Metrics[0].Count != n {
+				t.Fatal("authorized measurement missing", w.Body.String())
 			}
 		})
 	}
@@ -52,7 +56,11 @@ func TestMonitoringAdminHandlerPermissionsAndWireCompatibility(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/admin/instance/monitoring", nil)
 	c.Set(middleware.AdminPermissionsKey, models.AdminPermViewAnalytics)
 	h.AdminInstanceMonitoring(c)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"coverage":"unavailable"`) {
+	var snapshot models.MonitoringSnapshot
+	if err := json.Unmarshal(w.Body.Bytes(), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || snapshot.Version != "1" || snapshot.Coverage != "unavailable" || len(snapshot.Sources) != 0 {
 		t.Fatal(w.Body.String())
 	}
 }

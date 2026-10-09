@@ -58,9 +58,11 @@ export interface InstanceHealthSummary {
 }
 
 export interface InstanceHealthResult {
-    // Only non-ok checks are returned, so an empty list means all clear.
+    // Only findings are returned; absent findings do not prove check coverage.
     checks: InstanceCheck[];
     summary: InstanceHealthSummary;
+    execution_coverage?: string;
+    operational_monitoring_path?: string;
 }
 
 export function getInstanceHealth(): Promise<InstanceHealthResult> {
