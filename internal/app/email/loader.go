@@ -19,7 +19,7 @@ import (
 
 // WireGraphDelta attaches the Graph delta-cursor repository so the reconciler can
 // seed a Graph mailbox's saved per-folder cursors when (re)loading it. Optional;
-// when unset, Graph mailboxes prime from empty on load.
+// when unset, Graph mailboxes recover from empty on load.
 func (s *emailService) WireGraphDelta(repo repository.EmailGraphDeltaRepository) {
 	s.graphDelta = repo
 }
@@ -352,6 +352,13 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 		// Only SMTP/IMAP acts on this; Gmail and Graph file their own copy.
 		SaveToSent: &saveToSent,
 	}
+	if provider == models.InboxProviderOutlook {
+		links, err := s.deltaLinksFor(ctx, userID, acc.ID)
+		if err != nil {
+			return nil, err
+		}
+		out.Graph = &models.AddWorkerEmailGraphData{DeltaLinks: links}
+	}
 
 	// A mailbox under an administrator's grant has no stored credential
 	// either; the worker draws tokens the control plane mints per use.
@@ -368,7 +375,7 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 		case models.InboxProviderGoogle:
 			out.Google = &models.AddWorkerEmailGoogleData{LastHistoryID: s.lastHistoryFor(ctx, userID, acc.ID, acc.LastID)}
 		case models.InboxProviderOutlook:
-			out.Graph = &models.AddWorkerEmailGraphData{DeltaLinks: s.deltaLinksFor(ctx, userID, acc.ID), User: d.Subject}
+			out.Graph.User = d.Subject
 		default:
 			return nil, nil
 		}
@@ -383,7 +390,7 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 			case models.InboxProviderGoogle:
 				out.Google = &models.AddWorkerEmailGoogleData{LastHistoryID: s.lastHistoryFor(ctx, userID, acc.ID, acc.LastID)}
 			case models.InboxProviderOutlook:
-				out.Graph = &models.AddWorkerEmailGraphData{DeltaLinks: s.deltaLinksFor(ctx, userID, acc.ID)}
+				// The checkpoint was loaded before selecting the token owner.
 			default:
 				return nil, nil
 			}
@@ -406,10 +413,7 @@ func (s *emailService) buildAddWorkerEmail(ctx context.Context, acc *models.Emai
 		if cerr != nil {
 			return nil, cerr
 		}
-		out.Graph = &models.AddWorkerEmailGraphData{
-			Token:      oauthToken(creds),
-			DeltaLinks: s.deltaLinksFor(ctx, userID, acc.ID),
-		}
+		out.Graph.Token = oauthToken(creds)
 	case models.InboxProviderSMTPIMAP:
 		creds, cerr := s.emailRepository.GetSMTPCredentials(ctx, acc.ID)
 		if cerr != nil {
@@ -498,11 +502,11 @@ func (s *emailService) syncDataFor(ctx context.Context, emailID uuid.UUID) (*mod
 		}
 	}
 	if s.syncState != nil {
-		if saved, err := s.syncState.Get(ctx, emailID); err == nil {
-			data.State = saved
-		} else {
-			log.Warn().Err(err).Str("email_id", emailID.String()).Msg("sync state lookup failed; worker starts fresh")
+		saved, err := s.syncState.Get(ctx, emailID)
+		if err != nil {
+			return nil, fmt.Errorf("sync state lookup: %w", err)
 		}
+		data.State = saved
 	}
 	return data, nil
 }
@@ -522,15 +526,15 @@ func (s *emailService) mailboxesFor(ctx context.Context, userID, emailID uuid.UU
 	return saved
 }
 
-func (s *emailService) deltaLinksFor(ctx context.Context, userID, emailID uuid.UUID) map[string]string {
+func (s *emailService) deltaLinksFor(ctx context.Context, userID, emailID uuid.UUID) (map[string]string, error) {
 	if s.graphDelta == nil {
-		return nil
+		return nil, nil
 	}
 	links, err := s.graphDelta.Get(ctx, userID, emailID)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("graph checkpoint lookup: %w", err)
 	}
-	return links
+	return links, nil
 }
 
 func oauthToken(c *repository.OAuthCredentials) *oauth2.Token {

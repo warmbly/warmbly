@@ -251,9 +251,10 @@ func NewWMail(
 				FirstName: data.FirstName,
 				LastName:  data.LastName,
 
-				User:       data.Graph.User,
-				Cache:      mail.Cache,
-				DeltaLinks: cloneStringMap(deltaLinks),
+				User:         data.Graph.User,
+				Cache:        mail.Cache,
+				DeltaLinks:   cloneStringMap(deltaLinks),
+				ImmutableIDs: mail.SyncContext != nil,
 
 				OnMessageSeen:   mail.onGraphMessageSeen,
 				OnMessageRemove: mail.onGraphMessageRemove,

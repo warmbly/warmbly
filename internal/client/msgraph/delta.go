@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/models"
 )
 
@@ -21,6 +22,13 @@ var ErrStop = errors.New("msgraph: stop")
 
 var errDeltaIncomplete = errors.New("msgraph: delta pass incomplete")
 
+type recoveryContextKey struct{}
+
+func IsRecovery(ctx context.Context) bool {
+	recovery, _ := ctx.Value(recoveryContextKey{}).(bool)
+	return recovery
+}
+
 // deltaSelect keeps delta pages light: we only need the id, read state, and the
 // @removed marker to decide add/update vs remove. Full envelope + body + headers
 // are hydrated per admitted message via FetchMessage.
@@ -29,7 +37,7 @@ const deltaSelect = "id,isRead"
 // msgSelect is the property set fetched for each new message: enough to build a
 // complete EmailMessageData (envelope, threading, body) plus internetMessageHeaders
 // so the warmup verification token survives into sync.
-const msgSelect = "id,internetMessageId,conversationId,subject,bodyPreview,isRead," +
+const msgSelect = "id,parentFolderId,internetMessageId,conversationId,subject,bodyPreview,isRead," +
 	"receivedDateTime,from,sender,toRecipients,ccRecipients,bccRecipients,replyTo,body,internetMessageHeaders"
 
 // deltaPagesPerPass bounds one folder's walk per tick, like Gmail's
@@ -54,7 +62,7 @@ type listPage struct {
 // for placement, sent so a conversation shows both sides (as the Gmail and
 // IMAP paths already do), and drafts so the Drafts scope is populated on
 // Outlook the way it is on the other two providers.
-var TrackedFolders = []string{FolderInbox, FolderJunk, FolderSent, FolderDrafts}
+var TrackedFolders = []string{FolderInbox, FolderJunk, FolderSent, FolderDrafts, FolderArchive}
 
 // BackfillFolders are the folders the initial import walks. Junk is followed
 // live for placement signals but its history is not worth importing, and would
@@ -73,6 +81,7 @@ func (c *Client) Sync(ctx context.Context) error {
 // SyncPass reports catch-up only when every tracked folder reaches an unpinned delta link.
 func (c *Client) SyncPass(ctx context.Context) (bool, error) {
 	complete := true
+	var firstErr error
 	for _, folder := range TrackedFolders {
 		if err := c.syncFolder(ctx, folder); err != nil {
 			if errors.Is(err, ErrStop) {
@@ -82,37 +91,52 @@ func (c *Client) SyncPass(ctx context.Context) (bool, error) {
 				complete = false
 				continue
 			}
-			return false, err
+			var mailErr *errx.MailError
+			if folder == FolderArchive && errors.As(err, &mailErr) && mailErr.Code == errx.MailErrorCodeNotFound {
+				continue
+			}
+			if errors.As(err, &mailErr) && (mailErr.Type == errx.MailErrorCritical || mailErr.Code == errx.MailErrorCodeSendingTooFast) {
+				return false, err
+			}
+			complete = false
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
-	return complete, nil
+	return complete, firstErr
+}
+
+func (c *Client) initialDelta(folder string) string {
+	q := url.Values{}
+	q.Set("$select", deltaSelect)
+	// Do not filter the stream: a fixed date filter would eventually hide new moves of older mail.
+	return c.root() + "/mailFolders/" + folder + "/messages/delta?" + q.Encode()
 }
 
 func (c *Client) syncFolder(ctx context.Context, folder string) error {
-	next := c.DeltaLinks[folder]
-
-	// First run for this folder: there is no cursor yet. We page to the end
-	// purely to capture a deltaLink representing "now" and do NOT import the
-	// mailbox's existing history; the backfill does that under its budget.
-	// The walk is uncapped and nothing is persisted before the deltaLink: a
-	// saved intermediate nextLink would make the next pass treat the rest of
-	// the priming walk as live mail.
-	if next == "" {
-		next = c.root() + "/mailFolders/" + folder + "/messages/delta?$select=" + url.QueryEscape(deltaSelect)
-		for {
-			var pg deltaPage
-			if err := c.doJSON(ctx, "GET", next, nil, &pg); err != nil {
+	if c.PendingRecoveryLink != nil {
+		link, err := c.PendingRecoveryLink(folder)
+		if err != nil {
+			return err
+		}
+		if link != "" {
+			if err := c.finishDelta(ctx, folder, link, true); err != nil {
 				return err
 			}
-			switch {
-			case pg.NextLink != "":
-				next = pg.NextLink
-			case pg.DeltaLink != "":
-				return c.saveCursor(ctx, folder, pg.DeltaLink)
-			default:
-				return errDeltaIncomplete
+			// The captured baseline may be old; catch up its changes on the next pass.
+			return errDeltaIncomplete
+		}
+	}
+	next := c.DeltaLinks[folder]
+
+	if next == "" {
+		if c.OnRecoveryStart != nil {
+			if err := c.OnRecoveryStart(ctx, folder); err != nil {
+				return err
 			}
 		}
+		next = c.initialDelta(folder)
 	}
 
 	// The persisted cursor only moves past a page once everything on it was
@@ -120,15 +144,28 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 	// while the walk continues, so admitted messages further on still land
 	// and the deferred ones are re-offered next tick from the pinned link.
 	pinned := false
+	reset := false
 	for page := 0; page < deltaPagesPerPass; page++ {
 		var pg deltaPage
 		if err := c.doJSON(ctx, "GET", next, nil, &pg); err != nil {
+			if !reset && deltaExpired(err) {
+				if c.OnRecoveryStart != nil {
+					if err := c.OnRecoveryStart(ctx, folder); err != nil {
+						return err
+					}
+				}
+				reset = true
+				next = c.initialDelta(folder)
+				continue
+			}
 			return err
 		}
 
+		recovering := next == c.initialDelta(folder) || reset || (c.Recovering != nil && c.Recovering(folder))
+		pageCtx := context.WithValue(ctx, recoveryContextKey{}, recovering)
 		complete := true
 		for i := range pg.Value {
-			stored, err := c.applyDelta(ctx, folder, &pg.Value[i])
+			stored, err := c.applyDelta(pageCtx, folder, &pg.Value[i])
 			if err != nil {
 				return err
 			}
@@ -150,7 +187,12 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 			next = pg.NextLink
 		case pg.DeltaLink != "":
 			if !pinned {
-				return c.saveCursor(ctx, folder, pg.DeltaLink)
+				if recovering && c.OnRecoveryBaseline != nil {
+					if err := c.OnRecoveryBaseline(ctx, folder, pg.DeltaLink); err != nil {
+						return err
+					}
+				}
+				return c.finishDelta(ctx, folder, pg.DeltaLink, recovering)
 			}
 			return errDeltaIncomplete
 		default:
@@ -158,6 +200,24 @@ func (c *Client) syncFolder(ctx context.Context, folder string) error {
 		}
 	}
 	return errDeltaIncomplete
+}
+
+func (c *Client) finishDelta(ctx context.Context, folder, link string, recovering bool) error {
+	if recovering && c.OnFolderReconcile != nil {
+		complete, err := c.OnFolderReconcile(ctx, folder)
+		if err != nil {
+			return err
+		}
+		if !complete {
+			return errDeltaIncomplete
+		}
+	}
+	if recovering && c.OnRecoveryCheckpoint != nil {
+		if err := c.OnRecoveryCheckpoint(ctx, folder, link); err != nil {
+			return err
+		}
+	}
+	return c.saveCursor(ctx, folder, link)
 }
 
 func (c *Client) saveCursor(ctx context.Context, folder, link string) error {

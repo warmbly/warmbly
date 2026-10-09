@@ -10,12 +10,15 @@ import (
 // onGraphMessageRemove emits REMOVE_EMAIL for a message deleted or moved out of a
 // tracked folder. providerID is the Graph message id.
 func (w *WMail) onGraphMessageRemove(ctx context.Context, providerID string) error {
-	internalMessage, err := w.EmailMessageMapRepository.Get(ctx, w.UserID, w.ID, providerID)
+	internalMessage, err := w.graphMessageMap(ctx, providerID)
 	if err != nil {
 		return err
 	}
 	if internalMessage == nil {
 		return nil
+	}
+	if w.GraphData.Client.ImmutableIDMode() {
+		return w.graphReconcileMessage(ctx, internalMessage.ID, providerID, "")
 	}
 
 	internalID, err := uuid.Parse(internalMessage.ID)
@@ -64,6 +67,11 @@ func (w *WMail) onGraphFlagsChange(ctx context.Context, providerID string, seen 
 // durable persistence (the worker is disposable and must not be the source of
 // truth for the cursor).
 func (w *WMail) onGraphDelta(_ context.Context, folder, deltaLink string) error {
+	if w.graphRecovering(folder) {
+		if err := w.tracker.emit(w.tracker.state); err != nil {
+			return err
+		}
+	}
 	return w.onEvent(models.JobEventTypeGraphDeltaUpdate, &models.JobEventGraphDeltaUpdate{
 		UserID:    w.UserID,
 		EmailID:   w.ID,
