@@ -1,0 +1,109 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import Glyph from './Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../lib/scene';
+
+/**
+ * A campaign email step being edited: A/B variants, the subject, the body
+ * with template variables, and the AI assistant rewriting a paragraph on a
+ * loop.
+ */
+const chip = 'rounded bg-sky-50 px-1 py-px font-mono text-[11.5px] text-sky-700';
+---
+<ScaledStage w={680} h={510} photo="lake-mist">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[480px]`}>
+    <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+      <span class="text-[12.5px] font-medium text-slate-700">Edit “Quick question”</span>
+      <span class="flex items-center gap-1 pr-10 text-slate-400">
+        <span class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-slate-500">Email 1 of 2</span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md"><Glyph name="x" size={16} /></span>
+      </span>
+    </div>
+
+    <div class="px-5 pt-4">
+      <div class="flex items-center gap-1 text-[12px]">
+        <span class="inline-flex h-7 items-center gap-1.5 rounded-md bg-slate-100 px-2.5 font-medium text-slate-900">Variant A <span class="font-mono text-[11px] text-slate-400">52%</span></span>
+        <span class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-slate-500 hover:bg-slate-50">Variant B <span class="font-mono text-[11px] text-slate-400">48%</span></span>
+        <span class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-slate-400"><Glyph name="plus" size={12} />Variant</span>
+      </div>
+
+      <div class="mt-4">
+        <div class={EYEBROW}>Subject</div>
+        <div class="mt-1.5 flex h-9 items-center rounded-md border border-slate-200 px-3 text-[13px] text-slate-800">Quick question about&nbsp;<span class={chip}>{'{{.Company}}'}</span></div>
+      </div>
+
+      <div class="mt-4 rounded-md border border-slate-200">
+        <div class="flex h-9 items-center gap-0.5 border-b border-slate-200 px-1.5 text-slate-500">
+          <span class="inline-flex size-7 items-center justify-center rounded"><Glyph name="bold" size={14} /></span>
+          <span class="inline-flex size-7 items-center justify-center rounded"><Glyph name="italic" size={14} /></span>
+          <span class="inline-flex size-7 items-center justify-center rounded"><Glyph name="link" size={14} /></span>
+          <span class="mx-1 h-4 w-px bg-slate-200"></span>
+          <span class="inline-flex h-7 items-center gap-1.5 rounded px-2 text-[12px]"><Glyph name="braces" size={13} />Variables</span>
+          <span class="ml-auto mr-10 inline-flex h-7 items-center gap-1.5 rounded px-2 text-[12px] font-medium text-sky-700 bg-sky-50"><Glyph name="sparkles" size={13} />Write with AI</span>
+        </div>
+        <div class="space-y-3 px-4 py-3.5 text-[13px] leading-[1.65] text-slate-700">
+          <p>Hi <span class={chip}>{'{{.FirstName}}'}</span>,</p>
+          <div class="relative">
+            <p class="wr-old">I wanted to reach out because we help companies like yours improve their outbound email results and grow their pipeline faster.</p>
+            <p class="wr-new absolute inset-0 rounded"><span class="wr-mark">Saw <span class={chip}>{'{{.Company}}'}</span> just opened a Berlin office. Teams growing that fast usually find outbound is the first thing to break.</span></p>
+          </div>
+          <p>Worth a 15 minute call next week to compare notes?</p>
+          <p class="text-slate-500">Alex</p>
+        </div>
+      </div>
+
+      <div class="mt-3 flex items-center gap-3 text-[11.5px]">
+        <span class="text-slate-500">Content score</span>
+        <div class="h-1.5 w-28 rounded-full bg-slate-100"><div class="wr-score h-full rounded-full bg-emerald-500"></div></div>
+        <span class="font-mono tabular-nums text-emerald-600"><span class="wr-s1">71</span><span class="wr-s2">92</span></span>
+        <span class="text-slate-400">· no spam words · 46 words</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- The AI prompt at the caret. -->
+  <div class={`${FLOAT} left-[322px] top-[292px] w-[330px] overflow-hidden`}>
+    <div class="flex items-center gap-2 px-3 py-2.5">
+      <Glyph name="sparkles" size={14} class="text-sky-500" />
+      <span class="flex-1 truncate text-[12.5px] text-slate-800">Mention their new office, keep it short</span>
+      <span class="font-mono text-[10.5px] text-slate-300">⌘J</span>
+    </div>
+    <div class="flex items-center gap-2 border-t border-slate-100 px-3 py-2 text-[11.5px]">
+      <span class="relative h-4 flex-1">
+        <span class="wr-idle absolute inset-0 text-slate-400">Shorten · Friendlier · Fix grammar</span>
+        <span class="wr-busy absolute inset-0 text-sky-600"><span class="text-shimmer">Writing at the caret…</span></span>
+        <span class="wr-done absolute inset-0 inline-flex items-center gap-1 text-emerald-600"><Glyph name="check" size={12} />Rewritten · undo with ⌘Z</span>
+      </span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 12s loop: write, swap the paragraph, hold, then fade back for the next
+     pass. Base styles are the finished state, which is what reduced motion shows. */
+  .wr-old, .wr-idle, .wr-busy, .wr-s1 { opacity: 0; }
+  .wr-score { width: 92%; }
+  .wr-s1, .wr-s2 { display: inline-block; }
+  .wr-s1 { width: 0; overflow: visible; }
+
+  .wr-idle { animation: wr-idle 12s linear infinite; }
+  .wr-busy { animation: wr-busy 12s linear infinite; }
+  .wr-done { animation: wr-done 12s linear infinite; }
+  @keyframes wr-idle { 0%, 24% { opacity: 1; } 27%, 93% { opacity: 0; } 97%, 100% { opacity: 1; } }
+  @keyframes wr-busy { 0%, 26% { opacity: 0; } 29%, 43% { opacity: 1; } 46%, 100% { opacity: 0; } }
+  @keyframes wr-done { 0%, 46% { opacity: 0; } 50%, 88% { opacity: 1; } 92%, 100% { opacity: 0; } }
+
+  .wr-old { animation: wr-old 12s ease infinite; }
+  .wr-new { animation: wr-new 12s ease infinite; }
+  @keyframes wr-old { 0%, 43% { opacity: 1; } 47%, 92% { opacity: 0; } 98%, 100% { opacity: 1; } }
+  @keyframes wr-new { 0%, 45% { opacity: 0; transform: translateY(3px); } 50%, 89% { opacity: 1; transform: none; } 94%, 100% { opacity: 0; transform: none; } }
+  .wr-mark { border-radius: 3px; animation: wr-mark 12s ease infinite; }
+  @keyframes wr-mark { 0%, 47% { background: rgb(224 242 254 / 0); } 51%, 66% { background: rgb(224 242 254); } 80%, 100% { background: rgb(224 242 254 / 0); } }
+
+  .wr-score { animation: wr-score 12s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes wr-score { 0%, 47% { width: 71%; } 55%, 90% { width: 92%; } 98%, 100% { width: 71%; } }
+  .wr-s1 { animation: wr-s1 12s linear infinite; }
+  .wr-s2 { animation: wr-s2 12s linear infinite; }
+  @keyframes wr-s1 { 0%, 50% { opacity: 1; } 51%, 95% { opacity: 0; } 96%, 100% { opacity: 1; } }
+  @keyframes wr-s2 { 0%, 50% { opacity: 0; } 51%, 95% { opacity: 1; } 96%, 100% { opacity: 0; } }
+</style>

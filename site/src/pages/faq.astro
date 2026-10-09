@@ -1,138 +1,173 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import TopicFigure from '../components/scenes/faq/TopicFigure.astro';
 
+// Product answers follow CLAUDE.md and the docs; residency, SOC 2, DPA and
+// billing answers are the company's own statements.
 const groups = [
   {
-    id: 'warmup',
-    title: 'Warmup',
+    id: 'warmup', title: 'Warmup',
     items: [
-      ['How long does warmup take?', 'Plan on 3–6 weeks for a brand-new mailbox to reach a stable warmed state. We ramp +1 / day from a 10 / day start with a 40 / day ceiling.'],
-      ['Do free and premium pools mix?', 'Only on proven terms. Paid mailboxes are served from the premium pool first; a thin tier borrows the other tier\'s mailboxes that have been healthy members for at least three days. Dedicated workers still participate in the premium pool by default.'],
-      ['Is self-hosting free?', 'Yes, the whole platform is Apache 2.0 and free to run, with unlimited mailboxes. When Warmbly Cloud launches, link your instance and we run warmup for up to 10 mailboxes at no cost, or unlimited for $15 a month.'],
-      ['What gets a mailbox quarantined?', 'Complaint rate over 0.10%, spam-folder placement over 20% on a sufficient sample, a bounce rate over 5%, or tampering with received warmup mail.'],
-      ['Can I keep warming after I start cold sending?', 'Yes, and you should. Warmup should keep running even after campaigns begin.'],
+      ['How long does warmup take?', 'Most new mailboxes need three to six weeks. Warmup starts at 10 emails a day and adds one a day up to 40, and inbox placement usually settles over the same stretch.'],
+      ['Should warmup keep running once I start sending campaigns?', 'Yes. Warmup runs alongside cold sending, so a dip in reputation shows up and gets corrected before your campaigns feel it.'],
+      ['What takes a mailbox out of the warmup pool?', 'A complaint rate of 0.10% or more, a bounce rate of 5% or more, or deleting and junking warmup mail it received. Landing in spam alone only slows warmup down until placement recovers.'],
+      ['Do the free and premium pools mix?', 'Only on proven terms. A paying mailbox can borrow free mailboxes that have been healthy members for at least three days, and a free mailbox only writes back to a paying inbox that wrote to it first.'],
+      ['Is self-hosting free?', 'Yes. Warmbly is Apache 2.0 and free to run, with unlimited mailboxes. When Warmbly Cloud launches, link your instance and we warm up to 10 mailboxes for free, or unlimited for $15 a month.'],
     ],
   },
   {
-    id: 'sending',
-    title: 'Sending',
+    id: 'sending', title: 'Sending',
     items: [
-      ['What is the per-mailbox cap?', 'Default 50 cold emails / day with a 10-minute minimum gap. You can lower it. You can raise it, but anything above 50 / day requires positive reputation signals.'],
-      ['How do you spread sending across IPs?', 'One worker per machine, each with its own IP. We distribute mailboxes across workers and assign campaign leads round-robin across the chosen sender pool, with each lead keeping the mailbox that sent its first email.'],
-      ['Do you offer dedicated IPs?', 'Business and Enterprise run your sending on a worker machine allocated to your organisation alone, so your reputation is not shared with other customers. We do not sell or manage IPs as a product, and we do not let you bring your own.'],
-      ['What providers do you support?', 'Google Workspace / Gmail, Microsoft 365 / Outlook, and any SMTP / IMAP provider. iCloud and Zoho are first-class too.'],
+      ['How many cold emails can one mailbox send?', '50 a day by default, with a pause of 90 to 420 seconds before each send, drawn fresh every time. You can change it per mailbox up to 5,000, and the dashboard warns you past 100. Start a new mailbox at 10 to 20 a day and grow from there.'],
+      ['Do you rotate IP addresses?', 'No, on purpose. Your mailbox provider delivers your email from its own servers, so recipients never see Warmbly’s address. What providers do notice is where your mailbox signs in from, so Warmbly keeps that stable.'],
+      ['Can my sending be kept apart from other customers?', 'On Business and Enterprise, your mailboxes sign in to their providers from an address no other customer uses.'],
+      ['Which mailboxes can I connect?', 'Google Workspace and Gmail, Microsoft 365 and Outlook, and any mailbox with IMAP and SMTP, which covers iCloud, Zoho and most hosts.'],
     ],
   },
   {
-    id: 'inbox',
-    title: 'Inbox & replies',
+    id: 'inbox', title: 'Inbox and replies',
     items: [
-      ['How accurate is reply detection?', 'Reply detection survives quoted text, signatures, "sent from" footers, and forwarded threads. OOO and unsubscribe replies are classified separately.'],
-      ['Can I unify several mailboxes in one view?', 'Yes, that is the whole point. Filters, search and assignment span every connected mailbox.'],
-      ['Are open and click trackers reliable?', 'Honestly: opens are noisy because of Apple Mail Privacy and image proxies. We surface opens but never use them for deliverability decisions.'],
+      ['How does Warmbly know someone replied?', 'Replies are matched to the email they answer by its thread headers, even when the person writes back from another address. Out-of-office notices and autoresponders are recognised from their headers and never count as replies.'],
+      ['Can I see every mailbox in one place?', 'Yes. Every connected mailbox feeds one inbox, and you can narrow it to a mailbox, a tag or a label at any time.'],
+      ['Are open rates reliable?', 'More than most. Warmbly counts people only: privacy proxies, link scanners and instant machine opens are kept as proof of delivery but never counted. Replies are still the better signal.'],
     ],
   },
   {
-    id: 'security',
-    title: 'Security',
+    id: 'security', title: 'Security and data',
     items: [
-      ['Where is data stored?', 'AWS regions. us-east-1 by default, eu-west-1 on Grow and Business. Custom residency on Enterprise.'],
-      ['How is mailbox auth stored?', 'Refresh tokens are envelope-encrypted with per-organization KMS-derived data keys. Decrypted keys are cached briefly in Redis, never persisted to disk.'],
-      ['Do you have SOC 2?', 'SOC 2 Type II audit is in progress. We can share the bridge letter once the report is issued.'],
-      ['Do you sign DPAs?', 'Yes. Email team@warmbly.com and we will turn it around within 48 hours.'],
+      ['Where is my data stored?', 'In AWS, in us-east-1 by default and eu-west-1 on Grow and Business. Enterprise can choose its own residency. A self-hosted instance stores everything on your own servers.'],
+      ['How are mailbox credentials stored?', 'Encrypted at rest with a dedicated credentials key, kept separate from the data key your workspace uses for message content and integration tokens. Plain keys are only ever held briefly in memory.'],
+      ['Do you have SOC 2?', 'A SOC 2 Type II audit is in progress. We can share a bridge letter once the report is issued.'],
+      ['Do you sign DPAs?', 'Yes. Email team@warmbly.com and we turn it around within 48 hours.'],
     ],
   },
   {
-    id: 'billing',
-    title: 'Billing',
+    id: 'billing', title: 'Billing',
     items: [
-      ['Do you charge per email?', 'No. Each plan includes a fixed daily send budget. Unused volume does not carry over.'],
-      ['What if I disconnect a mailbox mid-month?', 'Charges are prorated. Reconnecting in the same period does not double-bill you.'],
-      ['Refund policy?', 'Full refund within 14 days of a paid purchase if the platform did not work for you.'],
-      ['Startup discount?', '50% off Grow for one year for pre-seed and seed companies on YC, Antler, EF, Techstars or similar.'],
+      ['Do you charge per email?', 'No. Each plan includes a daily send budget. Unused volume doesn’t carry over.'],
+      ['What is your refund policy?', 'A full refund within 14 days of a paid purchase if Warmbly didn’t work for you.'],
+      ['Do you have startup pricing?', '50% off Grow for a year for pre-seed and seed companies from YC, Antler, EF, Techstars and similar programmes.'],
     ],
   },
-];
+] as const;
 
-// FAQPage schema from the groups above. Google deprecated the FAQ rich result,
-// but the type still feeds answer engines clean question and answer pairs, and
-// these answers carry the concrete numbers (50/day cap, 600s gap, warmup bands).
 const faqJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
-  mainEntity: groups.flatMap((g) =>
-    g.items.map(([q, a]) => ({
-      '@type': 'Question',
-      name: q,
-      acceptedAnswer: { '@type': 'Answer', text: a },
-    })),
-  ),
+  mainEntity: groups.flatMap((g) => g.items.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } }))),
 };
 ---
 <Layout
-  title="Frequently Asked Questions | Warmbly"
-  description="Answers to common questions about email warmup, cold email sending limits, deliverability, mailbox connections, security, and billing on Warmbly."
+  title="Cold Email and Warmup FAQ | Warmbly"
+  description="Answers about email warmup, cold email sending limits, deliverability, connecting mailboxes, security and billing on Warmbly."
   jsonLd={faqJsonLd}
 >
-  <!-- HERO with sticky-nav teaser -->
-  <section class="relative isolate overflow-hidden text-white" style="background: radial-gradient(ellipse 130% 140% at 72% 28%, #0284c7 0%, #0369a1 25%, #075985 50%, #0c4a6e 80%, #0a3d5c 100%);">
-    <div class="absolute top-0 right-0 w-[420px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
-      <Cloud variant={5} opacity={1} />
-    </div>
-
-    <div class="container-page relative pt-14 pb-12">
-      <div class="text-[11px] uppercase tracking-[0.18em] text-white/55 font-mono mb-3">FAQ</div>
-      <h1 class="text-[32px] md:text-[48px] font-semibold tracking-[-0.025em] leading-[1.06] text-white max-w-3xl">
-        Questions we hear the most.
-      </h1>
-      <div class="mt-8 flex flex-wrap gap-2">
+  <section class="container-page pt-14 md:pt-24 pb-12">
+    <div class="mx-auto max-w-3xl text-center">
+      <div class="text-[14px] text-slate-500">FAQ</div>
+      <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">Questions, answered.</h1>
+      <label class="relative mx-auto mt-10 flex h-14 max-w-xl items-center gap-3 rounded-full bg-white px-5 ring-1 ring-slate-200 transition-shadow focus-within:ring-2 focus-within:ring-slate-900">
+        <Icon name="search" size={17} class="shrink-0 text-slate-400" />
+        <input type="search" data-faq-search placeholder="Search warmup, limits, security…" class="h-full w-full bg-transparent text-[16px] text-slate-900 outline-none placeholder:text-slate-400" />
+        <span class="sr-only">Search the questions</span>
+      </label>
+      <nav class="mt-6 flex flex-wrap justify-center gap-2" aria-label="Topics">
         {groups.map((g) => (
-          <a href={`#${g.id}`} class="inline-flex items-center h-7 px-3 rounded-full bg-white/10 backdrop-blur ring-1 ring-white/20 text-[12px] text-white/90 hover:bg-white/20">
-            {g.title}
-          </a>
+          <a href={`#${g.id}`} class="rounded-full px-3.5 py-1.5 text-[14px] text-slate-600 ring-1 ring-slate-200 transition-colors hover:text-slate-900 hover:ring-slate-300">{g.title}</a>
         ))}
-      </div>
+      </nav>
     </div>
   </section>
 
-  <!-- GROUPS: sticky title left, accordion right -->
-  <section class="py-16 md:py-20">
-    <div class="container-page space-y-16 md:space-y-24">
+  <section class="container-page pb-20 md:pb-28">
+    <div class="mx-auto max-w-5xl">
       {groups.map((g) => (
-        <div id={g.id} class="grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20 scroll-mt-24">
-          <div class="lg:sticky lg:top-24 self-start">
-            <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">{g.title}</div>
-            <h2 class="text-[24px] md:text-[30px] font-semibold tracking-[-0.025em] text-heading leading-[1.1]">
-              {g.items.length} questions answered.
-            </h2>
+        <div id={g.id} class="scroll-mt-28 grid gap-6 border-t border-slate-200 pt-10 mt-10 first:mt-4 lg:grid-cols-[260px_1fr] lg:gap-12" data-faq-group>
+          <div class="lg:sticky lg:top-28 lg:self-start">
+            <h2 class="text-[22px] font-medium tracking-[-0.025em] text-slate-900">{g.title}</h2>
+            <div class="mt-4 hidden sm:block"><TopicFigure topic={g.id} /></div>
           </div>
-          <div class="divide-y divide-[color:var(--border)]">
+          <div class="divide-y divide-slate-200 border-b border-slate-200 lg:-mt-5">
             {g.items.map(([q, a]) => (
-              <details class="group py-5">
-                <summary class="flex items-start justify-between gap-4 cursor-pointer list-none">
-                  <span class="text-[15px] font-medium text-heading">{q}</span>
-                  <span class="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-[color:var(--surface-2)] text-foreground/60 group-open:rotate-45 transition-transform">
-                    <Icon name="plus" size={12} />
+              <details class="group" data-faq-item>
+                <summary class="flex cursor-pointer list-none items-start justify-between gap-6 py-5 text-[16.5px] font-medium text-slate-900 [&::-webkit-details-marker]:hidden">
+                  {q}
+                  <span class="mt-1 inline-flex size-5 shrink-0 items-center justify-center text-slate-400 transition-transform duration-300 group-open:rotate-45" aria-hidden="true">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
                   </span>
                 </summary>
-                <p class="mt-3 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
+                <p class="pb-5 pr-10 text-[15.5px] leading-[1.7] text-slate-600">{a}</p>
               </details>
             ))}
           </div>
         </div>
       ))}
+      <p class="mt-10 hidden text-center text-[15px] text-slate-500" data-faq-empty>Nothing matches that. Email <a class="font-medium text-slate-900 underline decoration-slate-300 underline-offset-4" href="mailto:team@warmbly.com">team@warmbly.com</a> and a person will answer.</p>
+
+      <!-- STILL STUCK: where the longer answers live, each as a small preview. -->
+      <div class="mt-20 grid gap-8 border-t border-slate-200 pt-12 lg:grid-cols-[260px_1fr] lg:gap-12">
+        <div>
+          <h2 class="text-[22px] font-medium tracking-[-0.025em] text-slate-900">Still stuck?</h2>
+          <p class="mt-3 text-[15px] leading-[1.6] text-slate-500">The docs go deeper than any answer here, and a person reads every message.</p>
+        </div>
+        <div class="grid gap-3 md:grid-cols-3">
+          <a href="https://docs.warmbly.com" class="group overflow-hidden rounded-[8px] bg-white ring-1 ring-slate-200 transition-shadow hover:ring-slate-300">
+            <div class="flex h-[132px] border-b border-slate-200 bg-slate-50/60" aria-hidden="true">
+              <div class="w-[84px] shrink-0 space-y-1.5 border-r border-slate-200 p-3">
+                <div class="text-[8.5px] uppercase tracking-[0.12em] text-slate-400">Sending</div>
+                {['Mailboxes', 'Warmup', 'Campaigns', 'Deliverability'].map((x, i) => <div class={`truncate rounded px-1 text-[10px] ${i === 0 ? 'bg-sky-50 font-medium text-sky-700' : 'text-slate-500'}`}>{x}</div>)}
+              </div>
+              <div class="min-w-0 flex-1 p-3">
+                <div class="text-[13px] font-semibold text-slate-900">Mailboxes</div>
+                <div class="mt-1 line-clamp-5 text-[10px] leading-[1.45] text-slate-500">A mailbox is a sender account you connect to Warmbly. Every warmup message and campaign email goes out through one you own.</div>
+              </div>
+            </div>
+            <div class="flex items-center justify-between px-4 py-3"><span class="text-[15px] font-medium text-slate-900">Read the docs</span><Icon name="arrowUpRight" size={13} class="text-slate-400 group-hover:text-slate-900" /></div>
+          </a>
+          <a href="https://dc.warmbly.com" class="group overflow-hidden rounded-[8px] bg-white ring-1 ring-slate-200 transition-shadow hover:ring-slate-300">
+            <div class="h-[132px] space-y-2.5 border-b border-slate-200 bg-[#f2f3f5] p-3" aria-hidden="true">
+              <div class="flex gap-2"><span class="size-6 shrink-0 rounded-full bg-violet-200"></span><div><div class="text-[10.5px] font-semibold text-slate-800">ines <span class="font-normal text-slate-400">today</span></div><div class="text-[10.5px] text-slate-600">Where do I change one mailbox’s daily cap?</div></div></div>
+              <div class="flex gap-2"><img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-6 shrink-0 rounded-full" /><div><div class="text-[10.5px] font-semibold text-slate-800">Warmbly team <span class="font-normal text-slate-400">today</span></div><div class="text-[10.5px] text-slate-600">In the mailbox’s Settings tab. It starts at 50 a day.</div></div></div>
+            </div>
+            <div class="flex items-center justify-between px-4 py-3"><span class="text-[15px] font-medium text-slate-900">Ask in Discord</span><Icon name="arrowUpRight" size={13} class="text-slate-400 group-hover:text-slate-900" /></div>
+          </a>
+          <a href="mailto:team@warmbly.com" class="group overflow-hidden rounded-[8px] bg-white ring-1 ring-slate-200 transition-shadow hover:ring-slate-300">
+            <div class="h-[132px] border-b border-slate-200 bg-slate-50/60 p-3 text-[10.5px]" aria-hidden="true">
+              <div class="flex gap-2 border-b border-slate-200 pb-1.5"><span class="w-6 text-slate-400">To</span><span class="rounded bg-white px-1 text-slate-700 ring-1 ring-slate-200">team@warmbly.com</span></div>
+              <div class="flex gap-2 border-b border-slate-200 py-1.5"><span class="w-6 text-slate-400">Re</span><span class="font-medium text-slate-800">A question about our plan</span></div>
+              <div class="pt-1.5 leading-[1.5] text-slate-500">Hi, we are moving four mailboxes over and wanted to check…</div>
+            </div>
+            <div class="flex items-center justify-between px-4 py-3"><span class="text-[15px] font-medium text-slate-900">Email the team</span><Icon name="arrowRight" size={13} class="text-slate-400 group-hover:text-slate-900" /></div>
+          </a>
+        </div>
+      </div>
     </div>
   </section>
 
-  <CTA
-    title="Still have a question?"
-    description="Real humans, real response times."
-    primaryLabel="Contact us"
-    primaryHref="/contact/"
-    secondaryLabel="See pricing"
-    secondaryHref="/pricing/"
-  />
+  <CTA photo="sheer-cream" title="Still have a question?" description="Email the team or ask in Discord. A person reads every message." primaryLabel="Email us" primaryHref="mailto:team@warmbly.com" secondaryLabel="Join the Discord" secondaryHref="https://dc.warmbly.com" />
 </Layout>
+
+<script>
+  // Narrow the list as you type, opening every question that matches.
+  const input = document.querySelector<HTMLInputElement>('[data-faq-search]');
+  const items = [...document.querySelectorAll<HTMLDetailsElement>('[data-faq-item]')];
+  const groups = [...document.querySelectorAll<HTMLElement>('[data-faq-group]')];
+  const empty = document.querySelector<HTMLElement>('[data-faq-empty]');
+  input?.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    items.forEach((d) => {
+      const hit = !q || (d.textContent ?? '').toLowerCase().includes(q);
+      d.hidden = !hit;
+      d.open = Boolean(q) && hit;
+    });
+    let any = false;
+    groups.forEach((g) => {
+      const shown = [...g.querySelectorAll<HTMLElement>('[data-faq-item]')].some((d) => !d.hidden);
+      g.hidden = !shown;
+      any ||= shown;
+    });
+    empty?.classList.toggle('hidden', any);
+  });
+</script>

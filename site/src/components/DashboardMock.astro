@@ -4,60 +4,94 @@
  *
  * Chrome (header, sidebar, LivePanel) lives in AppShellMock so the hero and
  * every feature window show the same dashboard. This file is only the
- * content panel — web/src/app/app/emails/page.tsx.
+ * content panel, web/src/app/app/emails/page.tsx: PageTopbar, StatStrip,
+ * SectionBar and the mailbox table with its Status, Sent today, Warmup,
+ * Inbox and Health columns and the row actions that show on hover.
  */
 import AppShellMock from './AppShellMock.astro';
+import { PROVIDER_MARKS } from '../lib/marks';
 
-// Warmup: current/target while warming (orange, with the dot-grid), else the
-// state word. Health: healthTone() gives "Healthy N", "At risk N" (pulse) or
-// "Issue N" (pulse).
-type Row = { email: string; warm?: [number, number]; warmState?: 'Off' | 'Paused'; health: 'healthy' | 'risk' | 'issue'; score: number };
+type Status = 'active' | 'sending' | 'warming' | 'resting';
+type Row = {
+  email: string; name: string; provider: 'google' | 'microsoft' | 'imap';
+  status: Status; sent?: number; warm: [number, number] | 'Paused' | 'Off';
+  inbox?: number; collecting?: string; health: 'healthy' | 'risk' | 'issue'; score: number;
+  tag?: { label: string; color: string };
+};
+const providerName = { google: 'Google Workspace', microsoft: 'Microsoft 365', imap: 'SMTP / IMAP' } as const;
+const sales = { label: 'Sales', color: '#6366f1' };
+const founders = { label: 'Founders', color: '#0ea5e9' };
 const rows: Row[] = [
-  { email: 'founder@acme.co',     warm: [22, 40], health: 'healthy', score: 96 },
-  { email: 'hello@acme.co',       warm: [18, 40], health: 'healthy', score: 94 },
-  { email: 'team@northwind.dev',  warm: [34, 40], health: 'healthy', score: 97 },
-  { email: 'ml@helio.gen',        warm: [12, 40], health: 'risk',    score: 71 },
-  { email: 'sales@brightco.io',   warm: [27, 40], health: 'healthy', score: 92 },
-  { email: 'maya@sunriselabs.io', warm: [25, 40], health: 'healthy', score: 95 },
-  { email: 'ops@coastline.io',    warm: [10, 40], health: 'healthy', score: 88 },
-  { email: 'growth@acme.co',      warm: [31, 40], health: 'healthy', score: 96 },
-  { email: 'jonas@helio.gen',     warmState: 'Off', health: 'healthy', score: 90 },
-  { email: 'partners@acme.co',    warm: [14, 40], health: 'healthy', score: 93 },
-  { email: 'ana@brightco.io',     warm: [26, 40], health: 'healthy', score: 95 },
-  { email: 'leo@northwind.dev',   warm: [33, 40], health: 'healthy', score: 98 },
-  { email: 'sofia@coastline.io',  warmState: 'Paused', health: 'healthy', score: 91 },
-  { email: 'dev@sunriselabs.io',  warm: [8, 40],  health: 'issue',   score: 42 },
-  { email: 'hello@brightco.io',   warm: [29, 40], health: 'healthy', score: 94 },
+  { email: 'founder@acme.co',     name: 'Maya Okonkwo', provider: 'google',    status: 'active',  sent: 23, warm: [33, 40], inbox: 98, health: 'healthy', score: 97, tag: founders },
+  { email: 'alex@northwind.dev',  name: 'Alex Kim',     provider: 'google',    status: 'active',  sent: 31, warm: [40, 40], inbox: 96, health: 'healthy', score: 96, tag: sales },
+  { email: 'sam@northwind.io',    name: 'Sam Ortiz',    provider: 'microsoft', status: 'active',  sent: 27, warm: [36, 40], inbox: 95, health: 'healthy', score: 93, tag: sales },
+  { email: 'ops@northwind.co',    name: 'Ops team',     provider: 'imap',      status: 'sending', sent: 12, warm: 'Off',    inbox: 92, health: 'healthy', score: 88 },
+  { email: 'mia@northwind.dev',   name: 'Mia Chen',     provider: 'google',    status: 'warming', warm: [14, 40], inbox: 97, health: 'healthy', score: 91 },
+  { email: 'hello@helio.gen',     name: 'Lena Fischer', provider: 'microsoft', status: 'active',  sent: 18, warm: [29, 40], inbox: 94, health: 'healthy', score: 92 },
+  { email: 'jon@northwind.dev',   name: 'Jon Reyes',    provider: 'google',    status: 'warming', warm: [11, 40], collecting: '7/20', health: 'healthy', score: 90 },
+  { email: 'sales@brightco.io',   name: 'Ana Silva',    provider: 'google',    status: 'active',  sent: 34, warm: [40, 40], inbox: 96, health: 'healthy', score: 95, tag: sales },
+  { email: 'ml@helio.gen',        name: 'Kai Brandt',   provider: 'microsoft', status: 'active',  sent: 9,  warm: [19, 40], inbox: 84, health: 'risk',    score: 71 },
+  { email: 'partners@acme.co',    name: 'Ravi Shah',    provider: 'google',    status: 'resting', sent: 0,  warm: [28, 40], inbox: 95, health: 'healthy', score: 94 },
+  { email: 'leo@northwind.dev',   name: 'Leo Park',     provider: 'google',    status: 'active',  sent: 21, warm: [31, 40], inbox: 98, health: 'healthy', score: 98 },
+  { email: 'team@coastline.io',   name: 'Sofia Ruiz',   provider: 'imap',      status: 'warming', warm: 'Paused', inbox: 90, health: 'healthy', score: 89 },
+  { email: 'dev@sunriselabs.io',  name: 'Noah Grant',   provider: 'microsoft', status: 'active',  sent: 6,  warm: [12, 40], inbox: 72, health: 'issue',   score: 42 },
+  { email: 'hello@brightco.io',   name: 'Ana Silva',    provider: 'google',    status: 'sending', sent: 16, warm: [40, 40], inbox: 95, health: 'healthy', score: 94 },
+  { email: 'growth@acme.co',      name: 'Maya Okonkwo', provider: 'google',    status: 'active',  sent: 25, warm: [34, 40], inbox: 97, health: 'healthy', score: 96, tag: founders },
 ];
 
-const healthTone = (h: Row['health'], score: number) => {
-  if (h === 'healthy') return { dot: 'bg-emerald-500', text: 'text-emerald-600', label: `Healthy ${score}`, pulse: false };
-  if (h === 'risk') return { dot: 'bg-amber-500', text: 'text-amber-600', label: `At risk ${score}`, pulse: true };
-  return { dot: 'bg-rose-500', text: 'text-rose-600', label: `Issue ${score}`, pulse: true };
+const icon = {
+  send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  mailCheck: '<path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m16 19 2 2 4-4"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
 };
+const svg = (d: string, cls: string, size = 12) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${cls}">${d}</svg>`;
+
+const statusTone: Record<Status, { text: string; icons: string; label: string; shimmer: boolean }> = {
+  active:  { text: 'text-sky-700',    icons: svg(icon.send, 'w-3 h-3 text-sky-600') + svg(icon.flame, 'w-3 h-3 text-orange-500'), label: 'Active',  shimmer: true },
+  sending: { text: 'text-sky-700',    icons: svg(icon.send, 'w-3 h-3 text-sky-600'), label: 'Sending', shimmer: true },
+  warming: { text: 'text-orange-600', icons: svg(icon.flame, 'w-3 h-3 text-orange-500'), label: 'Warming', shimmer: true },
+  resting: { text: 'text-violet-600', icons: svg(icon.moon, 'w-3 h-3 text-violet-500'), label: 'Resting', shimmer: false },
+};
+const inboxTone = (r: number) =>
+  r >= 90 ? { text: 'text-emerald-600', dot: 'bg-emerald-500' } : r >= 80 ? { text: 'text-amber-600', dot: 'bg-amber-500' } : { text: 'text-rose-600', dot: 'bg-rose-500' };
+const healthTone = (h: Row['health'], score: number) => {
+  if (h === 'healthy') return { dot: 'bg-emerald-500', text: 'text-emerald-700', label: `Healthy ${score}`, shimmer: false };
+  if (h === 'risk') return { dot: 'bg-amber-500', text: 'text-amber-600', label: `At risk ${score}`, shimmer: true };
+  return { dot: 'bg-rose-500', text: 'text-rose-600', label: `Issue ${score}`, shimmer: true };
+};
+const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] truncate';
+const infoTh = (label: string) => `<span class="inline-flex items-center gap-1">${label} <span class="text-slate-300">${svg(icon.info, 'w-3 h-3')}</span></span>`;
+const checkbox = '<span class="block size-3.5 rounded-[4px] border border-slate-300 bg-white"></span>';
+const action = 'size-6 flex items-center justify-center rounded hover:bg-slate-100 text-slate-400 transition-colors';
 ---
 <AppShellMock crumb="Accounts">
   <!-- One root, so the shell stretches this column and not each band. -->
   <div class="flex flex-col">
     <!-- PageTopbar -->
-    <div class="min-h-12 @md:h-12 px-5 py-1.5 @md:py-0 border-b border-slate-200 flex flex-wrap @md:flex-nowrap items-center gap-3 gap-y-1.5 shrink-0 bg-white sticky top-0 z-10">
+    <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3 shrink-0 bg-white">
       <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Accounts</span>
       <div class="h-4 w-px bg-slate-200"></div>
       <span class="text-[12.5px] text-slate-600 truncate">128 mailboxes</span>
-      <div class="ml-auto flex items-center gap-1.5 min-w-0 flex-wrap justify-end @md:flex-nowrap">
-        <button class="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors bg-sky-600 text-white">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-          Add account
-        </button>
+      <div class="ml-auto flex items-center gap-1.5">
+        <span class="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors border border-slate-200 hover:border-slate-300 text-slate-700 bg-white" set:html={svg(icon.globe, 'w-3 h-3') + 'Sending domains'}></span>
+        <span class="h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors bg-sky-600 hover:bg-sky-700 text-white" set:html={svg(icon.plus, 'w-3 h-3') + 'Add account'}></span>
       </div>
     </div>
 
     <!-- StatStrip -->
-    <div class="grid border-b border-slate-200 shrink-0 bg-white grid-cols-2 @md:grid-cols-4">
+    <div class="grid grid-cols-4 border-b border-slate-200 shrink-0 bg-white">
       {[
-        { label: 'Total',           value: '128', sub: 'connected',     accent: false, last: false },
-        { label: 'Healthy',         value: '98',  sub: 'sending now',   accent: true,  last: false },
-        { label: 'Warming',         value: '21',  sub: 'ramping up',    accent: false, last: false },
+        { label: 'Total',           value: '128', sub: 'connected',         accent: false, last: false },
+        { label: 'Healthy',         value: '98',  sub: 'sending now',       accent: true,  last: false },
+        { label: 'Warming',         value: '21',  sub: 'ramping up',        accent: false, last: false },
         { label: 'Needs attention', value: '9',   sub: 'paused or failing', accent: false, last: true  },
       ].map((s) => (
         <div class={`group px-5 py-4 transition-colors ${!s.last ? 'border-r border-slate-200' : ''}`}>
@@ -72,66 +106,122 @@ const healthTone = (h: Row['health'], score: number) => {
     </div>
 
     <!-- SectionBar -->
-    <div class="min-h-9 @md:h-9 px-5 py-1.5 @md:py-0 border-b border-slate-200/60 flex flex-wrap @md:flex-nowrap items-center gap-x-2.5 gap-y-1.5 shrink-0">
+    <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-x-2.5 shrink-0">
       <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Mailboxes</span>
       <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">128</span>
-      <div class="ml-auto flex items-center gap-1.5 flex-wrap justify-end min-w-0">
-        <div class="h-7 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5 min-w-0 w-56">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400 shrink-0"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+      <div class="ml-auto flex items-center gap-1.5">
+        <div class="h-7 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5 w-56">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-slate-400 shrink-0"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           <span class="flex-1 min-w-0 text-[12.5px] text-slate-400">Search by email&hellip;</span>
         </div>
-        <button class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium transition-colors">
-          <span class="text-slate-400 shrink-0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
+        <span class="h-7 px-2 rounded-md border border-slate-200 hover:border-slate-300 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium">
+          <span class="text-slate-400"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
           <span class="truncate max-w-[160px]">All accounts</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-slate-400 shrink-0"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-slate-400"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
       </div>
     </div>
 
-    <!-- Table -->
-    <table class="w-full text-left">
-      <thead class="sticky top-0 bg-white z-[1]">
+    <!-- Table: every column the page shows at this width. -->
+    <table class="w-full table-fixed text-left">
+      <thead class="bg-white">
         <tr class="border-b border-slate-200">
-          <th class="pl-5 pr-2 py-2 w-9"><input type="checkbox" class="w-3.5 h-3.5 rounded accent-sky-600" /></th>
-          <th class="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em]">Account</th>
-          <th class="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-24 text-right">Warmup</th>
-          <th class="px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] w-10 @md:w-32"><span class="hidden @md:inline">Health</span></th>
-          <th class="px-3 py-2 w-16"></th>
+          <th class="pl-5 pr-2 py-2 w-11" set:html={checkbox}></th>
+          <th class={th}>Mailbox</th>
+          <th class={`${th} w-32`}>Status</th>
+          <th class={`${th} w-32`} set:html={infoTh('Sent today')}></th>
+          <th class={`${th} w-28`} set:html={infoTh('Warmup')}></th>
+          <th class={`${th} w-24`} set:html={infoTh('Inbox')}></th>
+          <th class={`${th} w-32`} set:html={infoTh('Health')}></th>
+          <th class="px-3 py-2 w-[76px]"></th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => {
-          const t = healthTone(r.health, r.score);
+          const st = statusTone[r.status];
+          const h = healthTone(r.health, r.score);
+          const ib = r.inbox ? inboxTone(r.inbox) : null;
           return (
-            <tr class="border-b border-slate-200/60 hover:bg-slate-50/80 transition-colors group h-11 cursor-pointer">
-              <td class="pl-5 pr-2"><input type="checkbox" class="w-3.5 h-3.5 rounded accent-sky-600" /></td>
-              <td class="px-3 max-w-0 @md:max-w-none">
-                <div class="flex w-full min-w-0 items-center gap-2">
-                  <div class="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-                    <div class="w-6 h-6 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
-                      <span class="text-[9.5px] font-semibold text-sky-700">{r.email.slice(0, 2).toUpperCase()}</span>
+            <tr class="border-b border-slate-200/60 transition-colors group h-11 cursor-pointer hover:bg-slate-50/80">
+              <td class="pl-5 pr-2" set:html={checkbox}></td>
+              <td class="px-3 overflow-hidden">
+                <div class="flex w-full min-w-0 items-center gap-2.5">
+                  <span class="inline-flex items-center justify-center shrink-0 border border-slate-200 bg-white size-6 rounded-full">
+                    {r.provider === 'imap'
+                      ? <Fragment set:html={svg(icon.server, 'w-3.5 h-3.5 text-slate-400', 14)} />
+                      : <svg viewBox="0 0 48 48" class="w-4 h-4 rounded-[3px]" set:html={PROVIDER_MARKS[r.provider]} />}
+                  </span>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-1.5 min-w-0 leading-tight">
+                      <span class="text-[12.5px] font-medium text-slate-900 truncate">{r.email}</span>
+                      {r.tag && (
+                        <span class="inline-flex items-center gap-1 h-4 px-1.5 rounded-full text-[9.5px] font-medium shrink-0" style={`background-color:${r.tag.color}1a;color:${r.tag.color};`}>
+                          <span class="size-1.5 rounded-full" style={`background-color:${r.tag.color}`}></span>{r.tag.label}
+                        </span>
+                      )}
                     </div>
-                    <span class="text-[12.5px] font-medium text-slate-900 truncate">{r.email}</span>
+                    <div class="mt-0.5 flex items-center gap-1.5 min-w-0 overflow-hidden text-[11px] text-slate-400 leading-tight">
+                      <span class="truncate shrink-0 max-w-[60%] text-slate-500">{r.name}</span>
+                      <span class="text-slate-300">·</span>
+                      <span class="truncate">{providerName[r.provider]}</span>
+                    </div>
                   </div>
                 </div>
               </td>
-              {r.warm ? (
-                <td class="px-3 text-[12px] tabular-nums text-right font-mono text-orange-600">
-                  <span class="inline-flex items-center justify-end gap-1.5"><span class="campaign-grid shrink-0"></span><span>{r.warm[0]}/{r.warm[1]}</span></span>
-                </td>
-              ) : (
-                <td class={`px-3 text-[12px] tabular-nums text-right font-mono ${r.warmState === 'Paused' ? 'text-amber-600' : 'text-slate-400'}`}>{r.warmState}</td>
-              )}
-              <td class="px-3">
-                <span class={`inline-flex items-center gap-1.5 text-[11px] font-medium ${t.text}`}>
-                  <span class="relative flex w-1.5 h-1.5">
-                    {t.pulse && <span class={`absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping ${t.dot}`}></span>}
-                    <span class={`relative inline-flex w-1.5 h-1.5 rounded-full ${t.dot}`}></span>
-                  </span>
-                  <span class="uppercase tracking-[0.08em] hidden @md:inline">{t.label}</span>
+              <td class="px-3 overflow-hidden">
+                <span class={`inline-flex items-center gap-1.5 max-w-full text-[10.5px] font-medium uppercase tracking-[0.08em] ${st.text}`}>
+                  <span class="inline-flex items-center gap-0.5 shrink-0" set:html={st.icons}></span>
+                  <span class={`truncate ${st.shimmer ? 'text-shimmer' : ''}`}>{st.label}</span>
                 </span>
               </td>
-              <td class="px-3"></td>
+              <td class="px-3">
+                {r.sent == null
+                  ? <span class="text-slate-300">—</span>
+                  : (
+                    <span class={`inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums ${r.sent > 0 ? 'text-sky-700' : 'text-slate-500'}`}>
+                      <Fragment set:html={svg(icon.send, 'w-3 h-3 shrink-0 text-sky-500')} />
+                      <span>{r.sent}<span class="text-slate-400">/50</span></span>
+                    </span>
+                  )}
+              </td>
+              {Array.isArray(r.warm) ? (
+                <td class="px-3 overflow-hidden font-mono text-[12px] tabular-nums text-orange-600">
+                  <span class="inline-flex items-center gap-1.5"><span class="campaign-grid shrink-0"></span><span>{r.warm[0]}<span class="opacity-60">/{r.warm[1]}</span></span></span>
+                </td>
+              ) : r.warm === 'Paused' ? (
+                <td class="px-3 overflow-hidden font-mono text-[12px] tabular-nums text-amber-600">
+                  <span class="inline-flex items-center gap-1.5 font-sans text-[11.5px] font-medium" set:html={svg(icon.pause, 'w-3 h-3') + 'Paused'}></span>
+                </td>
+              ) : (
+                <td class="px-3 overflow-hidden font-mono text-[12px] tabular-nums text-slate-400">
+                  <span class="inline-flex items-center gap-1.5 font-sans text-[11.5px] font-medium" set:html={svg(icon.flame, 'w-3 h-3') + 'Off'}></span>
+                </td>
+              )}
+              <td class="px-3">
+                {ib ? (
+                  <span class="inline-flex items-center gap-1.5">
+                    <Fragment set:html={svg(icon.mailCheck, 'w-3 h-3 shrink-0 text-slate-400')} />
+                    <span class={`inline-flex items-center gap-1.5 font-mono text-[11.5px] font-medium tabular-nums ${ib.text}`}><span class={`size-1.5 rounded-full ${ib.dot}`}></span>{r.inbox}%</span>
+                  </span>
+                ) : (
+                  <span class="inline-flex items-center gap-1.5">
+                    <Fragment set:html={svg(icon.mailCheck, 'w-3 h-3 shrink-0 text-slate-400')} />
+                    <span class="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400"><span class="size-1.5 rounded-full bg-slate-300"></span>{r.collecting}</span>
+                  </span>
+                )}
+              </td>
+              <td class="px-3">
+                <span class={`inline-flex items-center gap-1.5 text-[11px] font-medium max-w-full ${h.text}`}>
+                  <span class={`inline-flex w-1.5 h-1.5 rounded-full shrink-0 ${h.dot}`}></span>
+                  <span class={`uppercase tracking-[0.08em] truncate ${h.shimmer ? 'text-shimmer' : ''}`}>{h.label}</span>
+                </span>
+              </td>
+              <td class="px-3">
+                <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span class={action} set:html={svg(icon.flame, `w-3.5 h-3.5 ${r.status === 'warming' || Array.isArray(r.warm) ? 'text-orange-500' : ''}`, 14)}></span>
+                  <span class={action} set:html={svg(icon.more, 'w-3.5 h-3.5', 14)}></span>
+                </div>
+              </td>
             </tr>
           );
         })}

@@ -1,6 +1,7 @@
 ---
 import Icon from './Icon.astro';
 import AutomationsDemo from './AutomationsDemo.astro';
+import StackStrip from './StackStrip.astro';
 
 /**
  * Landing-page centerpiece for Automations. Breaks the copy-beside-window
@@ -9,21 +10,27 @@ import AutomationsDemo from './AutomationsDemo.astro';
  * fragments), with the live demo window running a test end to end at
  * near-full container width.
  */
+// Every line follows docs/content/docs/guides/automations.mdx.
 const callouts = [
   {
     icon: 'gitBranch',
-    label: 'Branches like you think',
-    text: 'One IF chip routes on intent, confidence, source, or a random split. Yes goes right, no goes down, and the no path is still yours to wire.',
+    label: 'Branch on anything',
+    text: 'Split on reply intent, confidence, where a contact came from or any field the event carries. Yes goes one way, no goes the other.',
   },
   {
     icon: 'layers',
-    label: 'Acts across your stack',
-    text: 'Seven built-in actions plus Slack, Discord, HubSpot, Salesforce, Pipedrive, Close and HMAC-signed webhooks. No keys to paste for automation tools.',
+    label: 'Act inside Warmbly and out',
+    text: 'Open the deal, create a task, label the thread or enrol the contact in a campaign, then tell Slack and update your CRM.',
+  },
+  {
+    icon: 'spark',
+    label: 'Let AI decide',
+    text: 'Ask a yes or no question about the event, or add an AI step that reads the reply and acts, using only the actions you allow.',
   },
   {
     icon: 'flask',
-    label: 'Test before it is on',
-    text: 'Dry-run any automation against a sample event and read every node verdict, yes or no, before the switch ever flips.',
+    label: 'Test before it runs',
+    text: 'A dry run against sample data shows the exact path on the canvas, without sending anything or changing a record.',
   },
 ];
 ---
@@ -68,20 +75,23 @@ const callouts = [
     <div class="auto-float absolute top-[66%] right-[4%]" style="--drift:-8px; animation-duration:8.0s; animation-delay:-3s;">
       <div class="rotate-[-2deg] inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-white/95 ring-1 ring-slate-900/5 shadow-[0_10px_22px_-12px_rgba(2,32,71,0.4)]">
         <Icon name="lock" size={11} class="text-slate-400" />
-        <span class="font-mono text-[10.5px] font-semibold text-slate-600">X-Warmbly-Signature: sha256=…</span>
+        <span class="font-mono text-[10.5px] font-semibold text-slate-600">X-Warmbly-Signature: t=1746820392,v1=3f9c…</span>
       </div>
     </div>
   </div>
 
   <div class="container-page relative py-16 md:py-24">
     <div class="text-center max-w-3xl mx-auto">
-      <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-4">Automations</div>
-      <h2 class="text-[34px] md:text-[52px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
+      <div class="text-[14px] text-slate-500 mb-4">Automations</div>
+      <h2 class="text-[36px] md:text-[58px] font-medium tracking-[-0.045em] leading-[1.02] text-slate-900">
         When this happens, do that.
       </h2>
-      <p class="mt-5 text-[15.5px] md:text-[16.5px] text-foreground/70 leading-relaxed max-w-2xl mx-auto">
+      <p class="mt-5 text-[17px] md:text-[19px] text-slate-500 leading-[1.55] max-w-2xl mx-auto">
         Every reply, booked meeting, bounce and warmup dip is a trigger. Wire it to your stack on a canvas: branch on intent, post to Slack, open the deal, update the CRM. The one below is running its test right now. Press Test in the window to fire it again.
       </p>
+      <a href="/automations/" class="group mt-6 inline-flex items-center gap-1.5 text-[15px] font-medium text-slate-900 hover:text-slate-600">
+        Explore automations <Icon name="arrowRight" size={13} class="transition-transform group-hover:translate-x-0.5" />
+      </a>
     </div>
 
     <!-- The live demo window -->
@@ -90,28 +100,19 @@ const callouts = [
     </div>
 
     <!-- Callouts -->
-    <div class="mt-12 md:mt-16 grid sm:grid-cols-3 gap-8 lg:gap-12 max-w-5xl mx-auto">
+    <div class="mt-14 md:mt-16 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 max-w-6xl mx-auto">
       {callouts.map((c) => (
-        <div class="sm:border-l sm:border-[color:var(--border)] sm:pl-5">
-          <div class="flex items-center gap-2">
-            <Icon name={c.icon} size={14} class="text-[#0284c7]" />
-            <div class="text-[13.5px] font-semibold text-heading">{c.label}</div>
-          </div>
-          <p class="mt-2 text-[13px] text-foreground/65 leading-relaxed">{c.text}</p>
+        <div class="sm:border-l sm:border-slate-200 sm:pl-6">
+          <Icon name={c.icon} size={16} class="text-sky-600" />
+          <h3 class="mt-4 text-[16px] font-medium text-slate-900">{c.label}</h3>
+          <p class="mt-1.5 text-[14.5px] leading-[1.6] text-slate-500">{c.text}</p>
         </div>
       ))}
     </div>
 
-    <div class="mt-12 flex flex-wrap items-center justify-center gap-3">
-      <a href="/automations/" class="inline-flex h-10 px-5 items-center gap-2 rounded-[10px] text-[14px] font-medium bg-[color:var(--brand)] text-white hover:bg-[color:var(--brand-strong)] transition-colors shadow-[0_10px_24px_-10px_rgba(2,132,199,0.65)]">
-        Explore automations
-        <Icon name="arrowRight" size={13} />
-      </a>
-      <a href="https://app.warmbly.com/auth/register" class="inline-flex h-10 px-4 items-center gap-1.5 text-[13.5px] font-medium text-foreground/75 hover:text-foreground transition-colors">
-        or start free
-        <Icon name="arrowUpRight" size={12} />
-      </a>
-    </div>
+    <!-- The integrations the actions reach. -->
+    <StackStrip />
+
   </div>
 
   <style>

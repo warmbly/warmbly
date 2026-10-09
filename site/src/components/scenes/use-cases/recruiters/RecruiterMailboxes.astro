@@ -1,0 +1,99 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY } from '../../../../lib/scene';
+import { TH, CHECK, STATUS } from '../ui';
+
+/**
+ * The Accounts page filtered to the recruiting team: one mailbox per
+ * recruiter, each at about 30 a day. The card over it is one mailbox's
+ * sending limits from its drawer's Settings tab.
+ */
+const rows = [
+  { addr: 'dana@northwind.so', name: 'Dana Reyes', mark: 'google', sent: 27, inbox: 98, health: 97 },
+  { addr: 'li@northwind.so', name: 'Li Wei', mark: 'google', sent: 30, inbox: 97, health: 95 },
+  { addr: 'sam@northwind.so', name: 'Sam Okafor', mark: 'microsoft', sent: 24, inbox: 96, health: 94 },
+  { addr: 'oscar@northwind.so', name: 'Oscar Lind', mark: 'microsoft', sent: 29, inbox: 97, health: 96 },
+  { addr: 'nina@northwind.so', name: 'Nina Holm', mark: 'google', sent: 0, warming: true, health: 92 },
+] as const;
+---
+<ScaledStage w={760} h={570} photo="paint-blue">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">5 mailboxes</span>
+      <span class={`${ACTION_PRIMARY} ml-auto mr-10`}><Glyph name="plus" size={12} />Add account</span>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400">5</span>
+      <span class="ml-auto mr-10 h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium"><Glyph name="tag" size={12} class="text-slate-400" />Recruiters<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>
+    </div>
+    <table class="w-[720px] table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class="pl-5 pr-2 py-2 w-11"><span class={CHECK}></span></th>
+          <th class={TH}>Mailbox</th>
+          <th class={`${TH} w-[104px]`}>Status</th>
+          <th class={`${TH} w-[96px]`}>Sent today</th>
+          <th class={`${TH} w-[76px]`}>Inbox</th>
+          <th class={`${TH} w-[118px]`}>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr class="h-[50px] border-b border-slate-200/60">
+            <td class="pl-5 pr-2"><span class={CHECK}></span></td>
+            <td class="px-3">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark={r.mark} size={13} /></span>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5"><span class="truncate text-[12.5px] font-medium text-slate-900">{r.addr}</span><span class="inline-flex h-4 shrink-0 items-center gap-1 rounded-full px-1.5 text-[9.5px] font-medium" style="background-color:#f973161a;color:#f97316;"><span class="size-1.5 rounded-full bg-orange-500"></span>Recruiters</span></div>
+                  <div class="mt-0.5 truncate text-[11px] text-slate-400"><span class="text-slate-500">{r.name}</span> · {r.mark === 'google' ? 'Google Workspace' : 'Microsoft 365'}</div>
+                </div>
+              </div>
+            </td>
+            <td class="px-3">
+              {'warming' in r
+                ? <span class={`${STATUS} text-orange-600`}><Glyph name="flame" size={12} class="text-orange-500" /><span class="text-shimmer">Warming</span></span>
+                : <span class={`${STATUS} text-sky-700`}><Glyph name="send" size={12} class="text-sky-600" /><span class="text-shimmer">Active</span></span>}
+            </td>
+            <td class="px-3">
+              {'warming' in r ? <span class="text-slate-300">—</span> : (
+                <span class="inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums text-sky-700"><Glyph name="send" size={12} class="text-sky-500" /><span><span data-tick={`${r.sent},30,${2800 + r.sent * 50}`}>{r.sent}</span><span class="text-slate-400">/30</span></span></span>
+              )}
+            </td>
+            <td class="px-3">
+              {'inbox' in r
+                ? <span class="inline-flex items-center gap-1.5 font-mono text-[11.5px] font-medium tabular-nums text-emerald-600"><span class="size-1.5 rounded-full bg-emerald-500"></span>{r.inbox}%</span>
+                : <span class="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400"><span class="size-1.5 rounded-full bg-slate-300"></span>9/20</span>}
+            </td>
+            <td class="px-3"><span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span><span class="uppercase tracking-[0.08em]">Healthy {r.health}</span></span></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- One recruiter's limits, from the mailbox drawer. -->
+  <div class={`${FLOAT} left-[300px] top-[420px] w-[432px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-2.5">
+      <Glyph mark="google" size={13} />
+      <span class="text-[12.5px] font-medium text-slate-900">dana@northwind.so</span>
+      <span class="ml-auto text-[11px] text-slate-400">Settings</span>
+    </div>
+    <div class="grid grid-cols-2 gap-4 px-4 py-3">
+      <div>
+        <div class="text-[11.5px] font-medium text-slate-700">Maximum cold emails per day</div>
+        <div class="mt-1.5 flex items-center gap-2"><span class="h-7 w-14 rounded-md border border-sky-300 ring-2 ring-sky-100 px-2 flex items-center font-mono text-[12px] text-slate-900">30</span><span class="text-[11px] text-slate-500">emails / day</span></div>
+        <div class="mt-1.5 text-[10.5px] leading-snug text-slate-400">Shared ceiling across all campaigns. Default 50.</div>
+      </div>
+      <div>
+        <div class="text-[11.5px] font-medium text-slate-700">Minimum gap</div>
+        <div class="mt-1.5 flex items-center gap-2"><span class="h-7 w-14 rounded-md border border-slate-200 px-2 flex items-center font-mono text-[12px] text-slate-900">600</span><span class="text-[11px] text-slate-500">seconds</span></div>
+        <div class="mt-1.5 text-[10.5px] leading-snug text-slate-400">Smallest delay between two sends from this mailbox.</div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>

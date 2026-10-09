@@ -1,0 +1,60 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The campaign's Settings: Sending accounts by tag, and Inbox rotation as the
+ * OptionSelect draws it (preferences/CampaignEmails.tsx), Even spacing picked.
+ */
+const options = [
+  { label: 'Even spacing', hint: 'Recommended. Always picks the mailbox that has been idle longest.', on: true },
+  { label: 'Round-robin', hint: 'Cycles through your mailboxes in order (A, B, C, A).' },
+  { label: 'Weighted', hint: 'Sends more from your healthiest, higher-limit mailboxes.' },
+];
+const boxes = [
+  { mark: 'google', addr: 'alex@northwind.dev' },
+  { mark: 'microsoft', addr: 'sam@northwind.io' },
+  { mark: 'imap', addr: 'ops@northwind.co' },
+] as const;
+---
+<ScaledStage w={460} h={345} photo="lake-motion">
+  <div class={`${WINDOW} left-[24px] top-[24px] w-[460px] h-[340px]`}>
+    <div class="px-4 pt-3.5 pb-3 pr-10 border-b border-slate-200/60">
+      <div class="flex items-center gap-2">
+        <span class={EYEBROW}>Sending accounts</span>
+        <span class="ml-auto inline-flex h-5 items-center rounded bg-sky-50 px-1.5 text-[10.5px] font-medium text-sky-700">tag: outbound</span>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-1.5">
+        {boxes.map((b, i) => (
+          <span class="rt-chip inline-flex h-6 items-center gap-1.5 rounded-md border border-slate-200 bg-white pl-1.5 pr-2 text-[11.5px] text-slate-700" style={`--i:${i}`}><Glyph mark={b.mark} size={12} />{b.addr}</span>
+        ))}
+      </div>
+    </div>
+    <div class="px-4 pt-3 pr-10">
+      <p class="text-[12.5px] font-medium text-slate-900">Inbox rotation</p>
+      <p class="mt-0.5 text-[11px] leading-relaxed text-slate-500">Picks the mailbox for a lead’s first email. Every follow-up comes from the same address.</p>
+      <div class="mt-2.5 grid gap-1.5">
+        {options.map((o) => (
+          <div class={`flex items-start gap-2.5 rounded-md border px-3 py-2 ${o.on ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white'}`}>
+            <span class="min-w-0 flex-1">
+              <span class={`block text-[12px] font-medium leading-snug ${o.on ? 'text-sky-700' : 'text-slate-700'}`}>{o.label}</span>
+              <span class={`mt-0.5 block text-[11px] leading-snug ${o.on ? 'text-sky-600/80' : 'text-slate-400'}`}>{o.hint}</span>
+            </span>
+            <span class={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border ${o.on ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}><Glyph name="check" size={10} /></span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* Whichever mailbox has been idle longest takes the next new lead. */
+  .rt-chip { animation: rt-turn 6s linear infinite; animation-delay: calc(var(--i) * 2s); }
+  @keyframes rt-turn {
+    0%, 2% { border-color: #e2e8f0; background: #fff; }
+    6%, 26% { border-color: #7dd3fc; background: rgb(240 249 255); }
+    32%, 100% { border-color: #e2e8f0; background: #fff; }
+  }
+</style>

@@ -1,0 +1,166 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../../lib/scene';
+
+/**
+ * A/B on a step: the campaign's Steps canvas with the first email open in
+ * the side panel (StepEmailArms): the split bar with the Original as its own
+ * arm, and Variant B's editor carrying its stats and the Winner mark. The
+ * card over the canvas is the campaign's A/B analysis: the rule it ranks by,
+ * the minimum sample and how sure it is.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'gauge' },
+  { label: 'Steps', icon: 'layers', active: true },
+  { label: 'Contacts', icon: 'user' },
+  { label: 'Schedule', icon: 'calendar' },
+] as const;
+const cards = [
+  { y: 36, icon: 'login', tone: 'bg-violet-50 text-violet-600 ring-violet-100', title: 'Contact enters', sub: 'Start · first email right away' },
+  { y: 136, icon: 'mail', tone: 'bg-sky-50 text-sky-600 ring-sky-100', title: 'Quick question about {{company}}', sub: 'Email 1 · 2 variants', selected: true },
+  { y: 236, icon: 'mail', tone: 'bg-sky-50 text-sky-600 ring-sky-100', title: 'Following up', sub: 'Email 2 · same thread' },
+  { y: 336, icon: 'mail', tone: 'bg-sky-50 text-sky-600 ring-sky-100', title: 'Email 3', sub: 'Email 3 · same thread' },
+] as const;
+const arms = [
+  { name: 'Original', share: 50, sent: 821, open: 41.2, reply: 7.8, bounce: 1.1, color: 'bg-sky-500' },
+  { name: 'Variant B', share: 50, sent: 821, open: 44.3, reply: 10.6, bounce: 1.1, color: 'bg-violet-500', winner: true },
+];
+const ladder = [
+  { k: 'none', d: 'no data' },
+  { k: 'low', d: 'under 30' },
+  { k: 'medium', d: '30 sends' },
+  { k: 'high', d: '90 sends', on: true },
+];
+const field = 'h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-800 flex items-center';
+---
+<ScaledStage w={1240} h={560} photo="lake-mist">
+  <div class={`${WINDOW} left-[56px] top-[48px] right-0 h-[512px] flex flex-col`}>
+    <div class="px-5 pt-4 pb-3">
+      <div class="inline-flex items-center gap-1 text-[11.5px] text-slate-400"><Ico name="arrowLeft" size={12} />Campaigns</div>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="text-[17px] font-semibold text-slate-900">Q4 outbound: platform leads</span>
+        <span class="inline-flex h-5 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+      </div>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="flex flex-1 min-h-0">
+      <div class="relative w-[440px] shrink-0 bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 20px 20px;">
+        <svg class="absolute inset-0" width="440" height="420" fill="none">
+          {[92, 192, 292].map((y0) => <path d={`M220 ${y0} L220 ${y0 + 44}`} stroke="#cbd5e1" stroke-width="1.25" />)}
+        </svg>
+        {cards.map((c) => (
+          <div class={`absolute left-[90px] flex h-14 w-[260px] items-center gap-2.5 rounded-xl border bg-white pl-2.5 pr-4 ${'selected' in c ? 'border-sky-400 ring-2 ring-sky-100' : 'border-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.04)]'}`} style={`top:${c.y}px`}>
+            <span class={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${c.tone}`}><Glyph name={c.icon} size={16} /></span>
+            <div class="min-w-0">
+              <div class="truncate text-[13px] font-medium leading-5 text-slate-900">{c.title}</div>
+              <div class="truncate text-[11.5px] leading-4 text-slate-400">{c.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <!-- The step editor beside the canvas. -->
+      <div class="flex-1 min-w-0 border-l border-slate-200 bg-white">
+        <div class="h-14 px-4 flex items-center gap-2.5 border-b border-slate-200">
+          <span class="inline-flex size-7 items-center justify-center rounded-lg bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-100"><Glyph name="mail" size={14} /></span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Email 1</div>
+            <div class="truncate text-[13px] font-semibold text-slate-900">Quick question about {'{{company}}'}</div>
+          </div>
+          <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="x" size={16} /></span>
+        </div>
+        <div class="p-4">
+          <div class="rounded-md border border-slate-200 bg-white">
+            <div class="flex items-center gap-2 px-2 py-2 border-b border-slate-200">
+              <div class="relative flex h-8 flex-1 overflow-hidden rounded-md ring-1 ring-inset ring-slate-200">
+                {arms.map((a) => (
+                  <span class={`${a.color} flex h-full items-center justify-center text-white ${a.winner ? 'ring-2 ring-inset ring-white/70' : ''}`} style={`width:${a.share}%`}>
+                    <span class="px-1 text-[11px] font-medium tabular-nums">{a.name} <span class="opacity-80">{a.share}%</span></span>
+                  </span>
+                ))}
+                <span class="absolute inset-y-0 left-1/2 -ml-1.5 flex w-3 items-center justify-center"><span class="h-4 w-[3px] rounded-full bg-white/80 shadow ring-1 ring-slate-300"></span></span>
+              </div>
+              <span class="h-8 px-2 rounded-md text-[12px] font-medium text-slate-500 inline-flex items-center">Even</span>
+              <span class="h-8 px-2 rounded-md bg-sky-600 text-[12px] font-medium text-white inline-flex items-center gap-1"><Glyph name="plus" size={13} />Variant</span>
+            </div>
+
+            <div class="space-y-3 p-3 bg-amber-50/30">
+              <div class="flex items-end gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class={`${EYEBROW} mb-1.5`}>Variant name</div>
+                  <div class={field}>Variant B</div>
+                </div>
+                <span class="h-7 px-2 rounded-md bg-sky-50 text-sky-700 text-[11px] font-medium tabular-nums inline-flex items-center">50% of contacts</span>
+                <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="pause" size={14} /></span>
+                <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Ico name="trash" size={14} /></span>
+                <span class="h-7 px-3 rounded-md bg-sky-600 text-[12px] font-medium text-white inline-flex items-center opacity-40">Save</span>
+              </div>
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] tabular-nums">
+                <span class="inline-flex items-center gap-1 font-medium text-amber-700"><Ico name="trophy" size={12} />Winner</span>
+                <span><span class="text-slate-400">Sent </span><span class="font-medium text-slate-700" data-tick="821,833,2600">821</span></span>
+                <span><span class="text-slate-400">Open </span><span class="font-medium text-emerald-600">44.3%</span></span>
+                <span><span class="text-slate-400">Reply </span><span class="font-medium text-sky-600">10.6%</span></span>
+                <span><span class="text-slate-400">Bounce </span><span class="font-medium text-rose-600">1.1%</span></span>
+              </div>
+              <div>
+                <div class={`${EYEBROW} mb-1.5`}>Subject</div>
+                <div class={field}><span class="rounded bg-sky-50 px-1 font-mono text-[11.5px] text-sky-700">{'{{first_name}}'}</span><span class="ml-1">, a faster way to onboard at {'{{company}}'}?</span></div>
+              </div>
+              <div class="rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] leading-[1.65] text-slate-700">
+                Hi <span class="rounded bg-sky-50 px-1 font-mono text-[11.5px] text-sky-700">{'{{first_name}}'}</span>,<br />
+                Teams like yours usually spend the first two weeks wiring up accounts by hand. We cut that to an afternoon for Brightline last quarter.<br />
+                Worth a 15 minute look next week?
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The campaign's A/B analysis: the rule, the sample and the confidence. -->
+  <div class={`${FLOAT} left-[24px] top-[360px] w-[372px] overflow-hidden`}>
+    <div class="h-10 px-4 flex items-center gap-2 border-b border-slate-200">
+      <Glyph name="split" size={13} class="text-slate-500" />
+      <span class="text-[12.5px] font-medium text-slate-900">A/B analysis</span>
+      <span class="ml-auto text-[11px] text-slate-400">ranked by reply rate</span>
+    </div>
+    <div class="divide-y divide-slate-100">
+      {arms.map((a) => (
+        <div class="h-10 px-4 flex items-center gap-2.5 text-[12px]">
+          <span class={`size-2 rounded-sm ${a.color}`}></span>
+          <span class="text-slate-800">{a.name}</span>
+          {a.winner && <span class="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700"><Ico name="trophy" size={11} />Winner</span>}
+          <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-500">{a.sent} sent</span>
+          <span class="w-20 text-right font-mono text-[11.5px] tabular-nums text-sky-700">{a.reply.toFixed(1)}% reply</span>
+        </div>
+      ))}
+    </div>
+    <div class="px-4 py-3 border-t border-slate-200">
+      <div class="flex items-center justify-between">
+        <span class={EYEBROW}>Confidence</span>
+        <span class="text-[11px] text-slate-500">minimum sample 30 sends</span>
+      </div>
+      <div class="mt-2 grid grid-cols-4 gap-1.5">
+        {ladder.map((l, i) => (
+          <div>
+            <div class={`enter-grow-x h-1.5 rounded-full ${i === 0 ? 'bg-slate-200' : 'bg-emerald-500'}`} style={`--d:${200 + i * 160}ms`}></div>
+            <div class={`mt-1.5 text-[11px] capitalize ${l.on ? 'font-semibold text-emerald-700' : 'text-slate-500'}`}>{l.k}</div>
+            <div class="text-[10px] text-slate-400">{l.d}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+

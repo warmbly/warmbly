@@ -58,6 +58,7 @@ const navIcons: Record<string, string> = {
   Forms:       '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
   Analytics:   '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
   Deliverability: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  'Placement tests': '<path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m16 19 2 2 4-4"/>',
   Tasks:       '<path d="M21 10.656V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11.344"/><path d="m9 11 3 3L22 4"/>',
   Meetings:    '<path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h5"/><path d="M17.5 17.5 16 16.25V14"/><circle cx="16" cy="16" r="6"/>',
   Templates:   '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
@@ -103,6 +104,7 @@ const sidebarSections: { label: string; items: Row[] }[] = [
     { title: 'Forms' },
     { title: 'Analytics', stat: { total: 84320, live: 'period' } },
     { title: 'Deliverability' },
+    { title: 'Placement tests' },
   ]},
   { label: 'CRM', items: [
     { title: 'Pipelines', stat: { total: 3 } },
@@ -236,9 +238,9 @@ const online = [
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>
         <span class="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-semibold flex items-center justify-center">3</span>
       </span>
-      <!-- AssistantButton (AgentMark) -->
-      <span class="relative flex items-center justify-center size-7 rounded-md text-slate-500">
-        <svg viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4" aria-hidden="true"><path d="M9.5 4c.62 4.7 3.3 7.38 8 8-4.7.62-7.38 3.3-8 8-.62-4.7-3.3-7.38-8-8 4.7-.62 7.38-3.3 8-8Z"/><path d="M18.5 2c.31 2.35 1.65 3.69 4 4-2.35.31-3.69 1.65-4 4-.31-2.35-1.65-3.69-4-4 2.35-.31 3.69-1.65 4-4Z"/></svg>
+      <!-- AssistantButton: Remie's blob mark (AgentMark), idle. -->
+      <span class="group relative flex items-center justify-center size-7 rounded-md hover:bg-sky-50 transition-colors">
+        <span class="amo" style="width:20px;height:20px;font-size:20px;"><span class="amo-body"><span class="amo-swirl"></span></span><span class="amo-shine"></span></span>
       </span>
       <span class="flex items-center gap-2 px-2 h-7 rounded-md text-slate-500 text-[12.5px]">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -296,8 +298,9 @@ const online = [
         {sidebarSections.map((s, si) => (
           <div class={si === 0 ? '' : 'mt-4 pt-4 border-t border-slate-200/50'}>
             {s.label && (
-              <div class="px-4 mb-1.5">
-                <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
+              <div class="group/section mx-3 mb-1 flex h-6 w-[calc(100%-1.5rem)] items-center gap-1.5 rounded-md px-[9px] text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400 transition-colors hover:text-slate-700">
+                <span>{s.label}</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 opacity-0 transition-opacity group-hover/section:opacity-100"><path d="m6 9 6 6 6-6"/></svg>
               </div>
             )}
             <div class="space-y-px">
@@ -306,7 +309,7 @@ const online = [
                 const path = navIcons[it.title] ?? '<circle cx="12" cy="12" r="3"/>';
                 const st = it.stat;
                 return (
-                  <div class={`mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] ${isActive ? 'bg-slate-200/70 text-slate-900 font-medium' : 'text-slate-600'}`}>
+                  <div class={`group mx-3 flex w-[calc(100%-1.5rem)] items-center gap-2.5 px-[9px] h-7 rounded-md text-[12.5px] transition-colors ${isActive ? 'bg-slate-200/70 text-slate-900 font-medium' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/40'}`}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={isActive ? 2 : 1.6} class={isActive ? 'shrink-0 text-slate-700' : 'shrink-0 text-slate-400'} set:html={path}></svg>
                     <span class="truncate flex-1 min-w-0">{it.title}</span>
                     {it.badge && (
@@ -345,13 +348,13 @@ const online = [
       </nav>
 
       <div class="border-t border-slate-200/60 py-1 shrink-0">
-        <div class="mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-600">
+        <div class="mx-3 flex w-[calc(100%-1.5rem)] items-center gap-2.5 px-[9px] h-7 rounded-md text-[12.5px] text-slate-600">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="shrink-0 text-slate-400"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           <span>Settings</span>
         </div>
         <!-- The collapse control, below Settings, exactly as AppNav has it.
              Static here: the mock never collapses. -->
-        <div class="mx-2 flex items-center gap-2.5 px-2.5 h-7 rounded-md text-[12.5px] text-slate-500">
+        <div class="mx-3 flex w-[calc(100%-1.5rem)] items-center gap-2.5 px-[9px] h-7 rounded-md text-[12.5px] text-slate-600">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-slate-400"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>
           <span>Collapse</span>
         </div>

@@ -1,0 +1,153 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../about/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+import type { ChangelogEntry, ChangelogTag } from '../../../lib/changelog';
+
+/**
+ * The changelog hero, drawn from the same entries as the page: counts by
+ * kind, a week-by-week timeline of what merged, the latest rows, and the
+ * newest three as cards with a small picture of what kind of change it was.
+ */
+interface Props { entries: ChangelogEntry[] }
+const { entries } = Astro.props;
+
+const TONE: Record<ChangelogTag, { dot: string; label: string; chip: string; tile: string }> = {
+  shipped: { dot: 'bg-emerald-500', label: 'New', chip: 'border-emerald-100 bg-emerald-50 text-emerald-700', tile: 'bg-emerald-50 text-emerald-600' },
+  changed: { dot: 'bg-amber-500', label: 'Improved', chip: 'border-amber-100 bg-amber-50 text-amber-700', tile: 'bg-amber-50 text-amber-600' },
+  fixed: { dot: 'bg-sky-500', label: 'Fixed', chip: 'border-sky-100 bg-sky-50 text-sky-700', tile: 'bg-sky-50 text-sky-600' },
+};
+const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const ms = (d: string) => Date.parse(`${d}T00:00:00Z`);
+
+const count = (t: ChangelogTag) => entries.filter((e) => e.tag === t).length;
+const stats = [
+  { label: 'Entries', value: entries.length, sub: 'merged into main' },
+  { label: 'New', value: count('shipped'), sub: 'features', dot: 'bg-emerald-500' },
+  { label: 'Improved', value: count('changed'), sub: 'changes', dot: 'bg-amber-500' },
+  { label: 'Fixed', value: count('fixed'), sub: 'bugs', dot: 'bg-sky-500', last: true },
+];
+
+// Eight weeks ending on the newest entry, oldest on the left.
+const WEEKS = 8;
+const newest = entries.length ? ms(entries[0].date) : 0;
+const weeks = Array.from({ length: WEEKS }, (_, i) => {
+  const end = newest - (WEEKS - 1 - i) * 7 * 864e5;
+  return { label: entries.length ? day(new Date(end).toISOString().slice(0, 10)) : '', items: [] as ChangelogEntry[] };
+});
+for (const e of entries) {
+  const back = Math.floor((newest - ms(e.date)) / (7 * 864e5));
+  if (back >= 0 && back < WEEKS) weeks[WEEKS - 1 - back].items.push(e);
+}
+
+const rows = entries.slice(0, 9);
+const cards = entries.slice(0, 3);
+---
+<ScaledStage w={1240} h={620} photo="reeded-glass">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[720px] h-[600px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Changelog</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">warmbly/warmbly · main</span>
+      <span class={`ml-auto ${ACTION_GHOST}`}><Ico name="gitMerge" size={12} />Merged changes</span>
+    </div>
+
+    <div class="grid grid-cols-4 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class="flex items-center gap-2">
+            {s.dot && <span class={`size-1.5 rounded-full ${s.dot}`}></span>}
+            <span class={EYEBROW}>{s.label}</span>
+          </div>
+          <div class={STAT_VALUE}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>By week</span>
+      <span class="ml-auto flex items-center gap-3 text-[10px] text-slate-400">
+        <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-full bg-emerald-500"></span>New</span>
+        <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-full bg-amber-500"></span>Improved</span>
+        <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-full bg-sky-500"></span>Fixed</span>
+      </span>
+    </div>
+    <div class="px-5 pt-4 pb-2">
+      <div class="grid h-[96px] items-end gap-2" style={`grid-template-columns:repeat(${WEEKS},minmax(0,1fr))`}>
+        {weeks.map((w, wi) => (
+          <div class="flex flex-col-reverse items-center gap-[5px] h-full">
+            {w.items.slice(0, 6).map((e, i) => (
+              <span class={`enter-fade block size-[10px] rounded-full ${TONE[e.tag].dot}`} style={`--d:${200 + wi * 70 + i * 50}ms`}></span>
+            ))}
+            {w.items.length === 0 && <span class="block h-[2px] w-4 rounded bg-slate-200"></span>}
+          </div>
+        ))}
+      </div>
+      <div class="mt-2 h-px bg-slate-200/80"></div>
+      <div class="mt-1.5 grid font-mono text-[9.5px] text-slate-400" style={`grid-template-columns:repeat(${WEEKS},minmax(0,1fr))`}>
+        {weeks.map((w, i) => <span class="text-center">{i === WEEKS - 1 ? 'This week' : w.label}</span>)}
+      </div>
+    </div>
+
+    <div class={`${SECTIONBAR} border-t border-slate-200/60`}>
+      <span class={EYEBROW}>Latest</span>
+      <span class="font-mono text-[10.5px] tabular-nums text-slate-400">{entries.length}</span>
+    </div>
+    {rows.map((e, i) => (
+      <div class={`h-[38px] px-5 grid grid-cols-[56px_88px_1fr_52px] items-center gap-3 border-b border-slate-200/60 text-[12.5px] ${i === 0 ? 'bg-sky-50/50' : ''}`}>
+        <span class="font-mono text-[11px] text-slate-400">{day(e.date)}</span>
+        <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-500"><span class={`size-1.5 rounded-full ${TONE[e.tag].dot}`}></span>{TONE[e.tag].label}</span>
+        <span class="truncate text-slate-800">{e.title}</span>
+        <span class="text-right font-mono text-[11px] text-slate-400">#{e.number}</span>
+      </div>
+    ))}
+  </div>
+
+  <!-- The newest three, each with a picture of the kind of change. -->
+  {cards.map((e, i) => (
+    <div class={`${FLOAT} left-[700px] w-[480px] h-[164px] overflow-hidden`} style={`top:${48 + i * 182}px`}>
+      <div class="flex h-full">
+        <div class={`w-[112px] shrink-0 border-r border-slate-100 flex items-center justify-center ${e.tag === 'shipped' ? 'bg-emerald-50/50' : e.tag === 'changed' ? 'bg-amber-50/50' : 'bg-sky-50/50'}`}>
+          {e.tag === 'shipped' && (
+            <div class="w-[78px] rounded-md bg-white p-2 ring-1 ring-emerald-100">
+              <div class="flex items-center justify-between"><span class="h-1.5 w-7 rounded bg-slate-200"></span><span class="rounded-sm bg-emerald-500 px-1 text-[7.5px] font-semibold uppercase text-white">New</span></div>
+              <div class="mt-2 space-y-1.5"><span class="block h-1.5 w-full rounded bg-slate-100"></span><span class="block h-1.5 w-4/5 rounded bg-slate-100"></span><span class="enter-grow-x block h-1.5 w-3/5 rounded bg-emerald-300" style="--d:600ms"></span></div>
+            </div>
+          )}
+          {e.tag === 'changed' && (
+            <div class="flex h-[70px] items-end gap-2">
+              <span class="w-5 rounded-t bg-slate-200" style="height:40%"></span>
+              <span class="enter-grow-y w-5 rounded-t bg-amber-400" style="height:100%;--d:500ms"></span>
+            </div>
+          )}
+          {e.tag === 'fixed' && (
+            <div class="w-[80px] rounded-md bg-white py-1.5 font-mono text-[8px] leading-[14px] ring-1 ring-sky-100">
+              <div class="bg-rose-50 px-1.5 text-rose-500">- broken</div>
+              <div class="bg-emerald-50 px-1.5 text-emerald-600">+ fixed</div>
+              <div class="px-1.5 text-slate-300">  ok</div>
+            </div>
+          )}
+        </div>
+        <div class="min-w-0 flex-1 px-4 py-3.5">
+          <div class="flex items-center gap-2">
+            <span class={`inline-flex h-5 items-center rounded border px-1.5 text-[10px] font-medium ${TONE[e.tag].chip}`}>{TONE[e.tag].label}</span>
+            <span class="font-mono text-[10.5px] text-slate-400">{day(e.date)} · #{e.number}</span>
+            {i === 0 && <span class="ml-auto inline-flex items-center gap-1 text-[10px] text-[#8250df]"><Ico name="gitMerge" size={11} />Merged</span>}
+          </div>
+          <div class="mt-2 line-clamp-2 text-[14px] font-medium leading-[1.3] text-slate-900">{e.title}</div>
+          {e.bullets.length > 0 ? (
+            <ul class="mt-2 space-y-1">
+              {e.bullets.slice(0, 2).map((b) => (
+                <li class="flex items-start gap-1.5 text-[11.5px] leading-[1.35] text-slate-500"><Glyph name="check" size={11} class="mt-[2px] text-slate-300" /><span class="line-clamp-1">{b}</span></li>
+              ))}
+            </ul>
+          ) : (
+            <p class="mt-2 line-clamp-2 text-[11.5px] leading-[1.45] text-slate-500">{e.body}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  ))}
+</ScaledStage>

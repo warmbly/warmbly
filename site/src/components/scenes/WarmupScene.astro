@@ -1,0 +1,107 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import Glyph from './Glyph.astro';
+import MailboxDrawerHead from './MailboxDrawerHead.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../lib/scene';
+
+/**
+ * The mailbox drawer's Warmup tab: lifecycle, today's progress, pool
+ * standing and the daily volume chart, next to a feed of the warmup mail
+ * it is trading with other inboxes.
+ */
+// The default ramp: 10 a day, +1 a day, ceiling 40. Day 14 is today.
+const days = Array.from({ length: 14 }, (_, i) => ({ target: 10 + i, sent: i === 13 ? 18 : 10 + i - (i % 4 === 2 ? 1 : 0) }));
+const feed = [
+  { icon: 'send', tone: 'text-sky-600 bg-sky-50', text: 'Sent to dana@helio.gen', sub: 'Google Workspace' },
+  { icon: 'inbox', tone: 'text-emerald-600 bg-emerald-50', text: 'Landed in the inbox', sub: 'from ravi@stratech.io' },
+  { icon: 'reply', tone: 'text-violet-600 bg-violet-50', text: 'Replied to lena@sprucebio.com', sub: 'Thread of 3' },
+  { icon: 'send', tone: 'text-sky-600 bg-sky-50', text: 'Sent to max@quarry.co', sub: 'Microsoft 365' },
+  { icon: 'inbox', tone: 'text-emerald-600 bg-emerald-50', text: 'Landed in the inbox', sub: 'from kai@orbitlabs.io' },
+] as const;
+---
+<ScaledStage w={760} h={570} photo="paint-aqua">
+  <div class={`${WINDOW} left-[214px] top-[40px] w-[600px] h-[560px]`}>
+    <MailboxDrawerHead addr="alex@northwind.dev" initials="AK" provider="Google Workspace" mark="google" active="Warmup" />
+
+    <div class="divide-y divide-slate-200/60">
+      <div class="px-5 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <span class="inline-flex size-8 items-center justify-center rounded-lg bg-orange-50 text-orange-600"><Glyph name="flame" size={16} class="flame-flicker" /></span>
+          <div>
+            <div class="text-[12.5px] font-medium text-slate-900">Warming up</div>
+            <div class="text-[11px] text-slate-400">Day 14 of the ramp · premium pool</div>
+          </div>
+        </div>
+        <span class="h-8 px-3 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700"><Glyph name="pause" size={13} />Pause</span>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class={EYEBROW}>Today</div>
+        <div class="mt-2 text-[12.5px] text-slate-700">Sending <b class="font-semibold text-slate-900 tabular-nums">18</b> of <b class="font-semibold text-slate-900 tabular-nums">23</b> · day 14</div>
+        <div class="mt-2.5 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="enter-grow-x h-full w-[78%] rounded-full bg-orange-400" style="--d:500ms"></div></div>
+      </div>
+
+      <div class="px-5 py-4 flex items-center justify-between">
+        <div>
+          <div class={EYEBROW}>Warmup reputation</div>
+          <div class="mt-1 text-[10.5px] text-slate-400">Premium pool</div>
+        </div>
+        <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600"><Glyph name="shieldCheck" size={14} />Healthy</span>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between">
+          <span class={EYEBROW}>Daily volume</span>
+          <span class="flex items-center gap-3 text-[10px] text-slate-400">
+            <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-sky-500"></span>Sent</span>
+            <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-slate-200"></span>Target</span>
+          </span>
+        </div>
+        <div class="mt-4 flex h-[150px] items-end gap-[5px]">
+          {days.map((d, i) => (
+            <div class="relative flex-1 h-full flex items-end">
+              <div class="absolute inset-x-0 bottom-0 rounded-t-[2px] bg-slate-200" style={`height:${(d.target / 40) * 100}%`}></div>
+              <div class="enter-grow-y relative w-full rounded-t-[2px] border-t-[1.5px] border-sky-500 bg-gradient-to-b from-sky-500/90 to-sky-500/25" style={`height:${(d.sent / 40) * 100}%; --d:${200 + i * 45}ms`}></div>
+            </div>
+          ))}
+        </div>
+        <div class="mt-2 h-px bg-slate-200/80"></div>
+        <div class="mt-1.5 flex justify-between font-mono text-[9.5px] text-slate-400"><span>Day 1</span><span>Today</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The warmup mail this mailbox is trading, newest on top. -->
+  <div class={`${FLOAT} left-[28px] top-[150px] w-[262px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+      <span class={EYEBROW}>Warmup activity</span>
+      <span class="ml-auto inline-flex items-center gap-1.5 text-[10.5px] text-emerald-600"><span class="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Live</span>
+    </div>
+    <div class="h-[260px] overflow-hidden">
+      <div class="wu-feed">
+        {[...feed, ...feed].map((f) => (
+          <div class="flex h-[52px] items-center gap-2.5 border-b border-slate-100 px-4">
+            <span class={`inline-flex size-7 shrink-0 items-center justify-center rounded-md ${f.tone}`}><Glyph name={f.icon} size={13} /></span>
+            <div class="min-w-0">
+              <div class="truncate text-[12px] text-slate-800">{f.text}</div>
+              <div class="truncate text-[10.5px] text-slate-400">{f.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The feed steps down one row at a time, a new event on top. */
+  .wu-feed { animation: wu-feed 16s cubic-bezier(0.65, 0, 0.35, 1) infinite; transform: translateY(-260px); }
+  @keyframes wu-feed {
+    0%, 17% { transform: translateY(-260px); }
+    20%, 37% { transform: translateY(-208px); }
+    40%, 57% { transform: translateY(-156px); }
+    60%, 77% { transform: translateY(-104px); }
+    80%, 97% { transform: translateY(-52px); }
+    100% { transform: translateY(0); }
+  }
+</style>

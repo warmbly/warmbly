@@ -346,15 +346,22 @@ const websiteJsonLd = {
         }
       })();
     </script>
-    <!-- Phone diagnostics: ?noshell / ?noanim / ?nogl switch heavy subsystems off (global.css, GrainBackdrop). -->
+    <!-- Phone diagnostics: ?noshell / ?noanim switch heavy subsystems off (global.css). -->
     <script is:inline>
       var diagParams = new URLSearchParams(location.search);
-      document.documentElement.dataset.diag = ['noshell', 'noanim', 'nogl'].filter(function (f) { return diagParams.has(f); }).join(' ');
+      document.documentElement.dataset.diag = ['noshell', 'noanim'].filter(function (f) { return diagParams.has(f); }).join(' ');
     </script>
   </head>
   <body class="min-h-screen flex flex-col antialiased">
     {!bare && <Header />}
-    <main class="flex-1">
+    <main class="relative flex-1">
+      <!-- Faint guide lines down both sides of the content tie every section
+           of a page into one column. -->
+      {!bare && (
+        <div aria-hidden="true" class="pointer-events-none absolute inset-0 z-[5] hidden md:block">
+          <div class="container-page h-full"><div class="h-full border-x border-slate-900/[0.06] md:-mx-6"></div></div>
+        </div>
+      )}
       <slot />
     </main>
     {!bare && <Footer />}

@@ -1,0 +1,121 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import DrawerHead from './DrawerHead.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The drawer's Deliverability tab (MailboxPlacementTab.tsx) for a mailbox on
+ * watch: the inbox ring, its band, where warmup mail landed each day and the
+ * rate per recipient provider. Over it, an Accounts row for a mailbox that
+ * crossed into throttled, with the reason the pool wrote for it.
+ */
+// Inbox, other tabs, spam per day over the last 14 days.
+const days = [
+  [6, 0, 0], [7, 1, 0], [6, 0, 0], [7, 0, 0], [6, 1, 0], [7, 0, 0], [8, 0, 0],
+  [6, 0, 1], [6, 1, 1], [7, 0, 1], [5, 0, 2], [6, 1, 1], [6, 0, 1], [6, 1, 1],
+];
+const max = 9;
+const providers = [
+  { mark: 'google', name: 'Google', pct: 95, spam: '5%', n: 21 },
+  { mark: 'microsoft', name: 'Microsoft', pct: 74, spam: '26%', n: 19 },
+  { mark: 'yahoo', name: 'Yahoo & AOL', pct: 90, spam: '10%', n: 10 },
+] as const;
+const R = 36;
+const C = 2 * Math.PI * R;
+const tone = (p: number) => (p >= 90 ? 'text-emerald-600' : p >= 80 ? 'text-amber-600' : 'text-rose-600');
+---
+<ScaledStage w={760} h={570} photo="frost-blue">
+  <div class={`${WINDOW} left-[160px] top-[36px] w-[600px] h-[560px]`}>
+    <DrawerHead addr="lea@northwind.io" provider="Microsoft 365" mark="microsoft" active="Deliverability" />
+
+    <div class="flex items-center gap-4 border-b border-slate-200/60 px-5 py-4">
+      <div class="relative size-[84px] shrink-0">
+        <svg width="84" height="84" viewBox="0 0 84 84" class="-rotate-90">
+          <circle cx="42" cy="42" r={R} stroke="#f1f5f9" stroke-width="7" fill="none" />
+          <circle class="enter-draw" cx="42" cy="42" r={R} stroke="#f59e0b" stroke-width="7" fill="none" stroke-dasharray={C} stroke-dashoffset={C * 0.14} style={`--len:${C}; --d:150ms`} />
+        </svg>
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <span class="text-[19px] font-light leading-none text-slate-900">86%</span>
+          <span class="mt-1 text-[8.5px] uppercase tracking-[0.14em] text-slate-400">inbox</span>
+        </div>
+      </div>
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="inline-flex h-5 items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700"><span class="size-1.5 rounded-full bg-amber-500"></span>Watch</span>
+          <span class="inline-flex h-5 items-center rounded border border-orange-200 bg-orange-50 px-1.5 text-[10px] font-medium text-orange-700">Pool standing: watch</span>
+        </div>
+        <p class="mt-2 text-[12.5px] leading-snug text-slate-700">43 of 50 warmup emails at Google, Microsoft and Yahoo reached the inbox over the last 7 days.</p>
+        <p class="mt-1 font-mono text-[11px] tabular-nums text-slate-400">7 in spam · 3 in other tabs · 90%+ is healthy</p>
+      </div>
+    </div>
+
+    <div class="border-b border-slate-200/60 px-5 py-4">
+      <div class="flex items-center justify-between">
+        <span class={EYEBROW}>Where it landed each day</span>
+        <span class="flex items-center gap-3 text-[10px] text-slate-400">
+          <span class="inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-emerald-500"></span>Inbox</span>
+          <span class="inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-violet-500"></span>Other tabs</span>
+          <span class="inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-rose-500"></span>Spam</span>
+        </span>
+      </div>
+      <div class="mt-4 flex h-[92px] items-end gap-[7px]">
+        {days.map(([inbox, tabs, spam], i) => (
+          <div class="enter-grow-y flex flex-1 flex-col-reverse overflow-hidden rounded-t-[2px]" style={`height:${((inbox + tabs + spam) / max) * 100}%; --d:${250 + i * 40}ms`}>
+            <div class="pw-dot pw-em" style={`flex:${inbox}`}></div>
+            {tabs > 0 && <div class="pw-dot pw-vi" style={`flex:${tabs}`}></div>}
+            {spam > 0 && <div class="pw-dot pw-ro" style={`flex:${spam}`}></div>}
+          </div>
+        ))}
+      </div>
+      <div class="h-px bg-slate-200/80"></div>
+      <div class="mt-1.5 flex justify-between font-mono text-[9.5px] text-slate-400"><span>Sep 26</span><span>Oct 9</span></div>
+    </div>
+
+    <div class="px-5 pt-4">
+      <div class={EYEBROW}>By recipient provider</div>
+      <div class="mt-2">
+        {providers.map((p) => (
+          <div class="flex h-9 items-center gap-3 text-[12px]">
+            <Glyph mark={p.mark} size={14} />
+            <span class="w-[84px] font-medium text-slate-900">{p.name}</span>
+            <div class="flex h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+              <div class="enter-grow-x h-full bg-emerald-500" style={`width:${p.pct}%; --d:700ms`}></div>
+              <div class="h-full bg-rose-500" style={`width:${100 - p.pct}%`}></div>
+            </div>
+            <span class={`w-9 text-right font-mono text-[11px] tabular-nums ${tone(p.pct)}`}>{p.pct}%</span>
+            <span class="w-14 text-right font-mono text-[11px] tabular-nums text-rose-600">{p.spam} spam</span>
+            <span class="w-6 text-right font-mono text-[11px] tabular-nums text-slate-400">{p.n}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- Another mailbox past 20%: an Accounts row, and the reason the pool wrote. -->
+  <div class="enter-fade absolute left-[22px] top-[292px] w-[336px]" style="--d:1300ms">
+    <div class={`${FLOAT.replace('absolute ', '')} relative overflow-hidden`}>
+      <div class="flex h-12 items-center gap-2.5 border-b border-slate-100 px-4">
+        <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark="microsoft" size={13} /></span>
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[12.5px] font-medium leading-tight text-slate-900">dev@sunriselabs.io</div>
+          <div class="truncate text-[11px] leading-tight text-slate-400"><span class="text-slate-500">Noah Grant</span> · Microsoft 365</div>
+        </div>
+        <span class="inline-flex h-5 shrink-0 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">Throttled</span>
+      </div>
+      <div class="flex items-center gap-4 border-b border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+        <span class="inline-flex items-center gap-1.5">Warmup <span class="inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums text-orange-600"><span class="campaign-grid"></span>6<span class="opacity-60">/13</span></span></span>
+        <span class="inline-flex items-center gap-1.5">Inbox <span class="inline-flex items-center gap-1.5 font-mono text-[11.5px] font-medium text-rose-600"><span class="size-1.5 rounded-full bg-rose-500"></span>77%</span></span>
+        <span class="inline-flex items-center gap-1.5">Health <span class="font-medium uppercase tracking-[0.08em] text-amber-600">At risk 71</span></span>
+      </div>
+      <p class="px-4 py-3 text-[11.5px] leading-relaxed text-slate-500">23% of warmup mail delivered at Google, Microsoft and Yahoo landed in spam over 7 days (48 delivered). Warmup and cold sending run at half volume with wider spacing until it is below 15%, then return to normal on their own.</p>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .pw-dot { background-size: 2px 2px; }
+  .pw-em { background-color: rgb(16 185 129 / 0.55); background-image: radial-gradient(circle, rgb(16 185 129) 0.8px, transparent 1px); }
+  .pw-vi { background-color: rgb(139 92 246 / 0.55); background-image: radial-gradient(circle, rgb(139 92 246) 0.8px, transparent 1px); }
+  .pw-ro { background-color: rgb(244 63 94 / 0.6); background-image: radial-gradient(circle, rgb(244 63 94) 0.8px, transparent 1px); }
+</style>

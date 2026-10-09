@@ -9,9 +9,9 @@
  *   web-app-manifest-192x192.png
  *   web-app-manifest-512x512.png
  *
- * The 1920x1008 OG / Twitter card (public/og-image.jpg) is a top-left crop of
- * the 1920x1080 Figma "Social" frame export, not generated here. The crop is
- * to 1.91:1 (1200x630 x1.6), so the frame's top-left never gets cut.
+ * The 1920x1008 OG / Twitter card (public/og-image.jpg) is not generated here:
+ * it is the Figma "Social" frame's sky with the home page hero screen
+ * (DashboardMock) rendered over it at 1200x630 x1.6.
  *
  * Run with: node scripts/gen-icons.mjs
  */

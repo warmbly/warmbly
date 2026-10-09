@@ -1,0 +1,95 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY } from '../../../lib/scene';
+
+/**
+ * Accounts (web/src/app/app/emails/page.tsx) narrowed to one campaign's
+ * senders: each mailbox in its own timezone with its own rolled day, and the
+ * campaign's day as the sum of them (SendPlanCard's working, floating).
+ */
+type Row = { addr: string; mark: 'google' | 'microsoft' | 'imap'; tz: string; hours: string; plan: number; sent: number; warming?: boolean; closed?: boolean };
+const rows: Row[] = [
+  { addr: 'alex@northwind.dev', mark: 'google', tz: 'London', hours: '09:14–17:41', plan: 31, sent: 18 },
+  { addr: 'sam@northwind.io', mark: 'microsoft', tz: 'London', hours: '09:22–17:19', plan: 29, sent: 16 },
+  { addr: 'ops@northwind.co', mark: 'imap', tz: 'Berlin', hours: '09:08–17:30', plan: 30, sent: 21 },
+  { addr: 'lea@northwind.io', mark: 'microsoft', tz: 'New York', hours: '09:17–17:48', plan: 28, sent: 2 },
+  { addr: 'jon@northwind.dev', mark: 'google', tz: 'Denver', hours: '09:11–17:26', plan: 32, sent: 0, closed: true },
+  { addr: 'mia@northwind.dev', mark: 'google', tz: 'London', hours: '09:05–17:52', plan: 5, sent: 4, warming: true },
+];
+const total = rows.reduce((s, r) => s + r.plan, 0);
+const sentTotal = rows.reduce((s, r) => s + r.sent, 0);
+const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
+---
+<ScaledStage w={760} h={620} photo="lake-mist">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[740px] h-[600px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">tag: outbound</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-6">
+        <span class={ACTION_GHOST}><Glyph name="globe" size={12} />Sending domains</span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Add account</span>
+      </div>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">6</span>
+      <span class="ml-auto pr-6 inline-flex items-center gap-1.5 text-[11px] text-slate-400"><Glyph name="clock" size={12} />Each in its own workday</span>
+    </div>
+    <table class="w-full table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class={`${th} pl-5`}>Mailbox</th>
+          <th class={`${th} w-[150px]`}>Workday today</th>
+          <th class={`${th} w-[176px]`}>Sent today</th>
+          <th class="w-[24px]"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr class="h-[48px] border-b border-slate-200/60">
+            <td class="pl-5 pr-3">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark={r.mark} size={r.mark === 'imap' ? 12 : 13} /></span>
+                <div class="min-w-0">
+                  <div class="truncate text-[12.5px] font-medium leading-tight text-slate-900">{r.addr}</div>
+                  <div class="mt-0.5 text-[11px] leading-tight">
+                    {r.warming
+                      ? <span class="inline-flex items-center gap-1 text-orange-600"><Glyph name="flame" size={11} />Warming · 5 cold a day at most</span>
+                      : <span class="text-slate-400">Cap 50 · rolled {r.plan} today</span>}
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td class="px-3">
+              <div class="font-mono text-[11.5px] tabular-nums text-slate-700">{r.hours}</div>
+              <div class="text-[10.5px] text-slate-400">{r.tz}{r.closed ? ' · opens later' : ''}</div>
+            </td>
+            <td class="px-3">
+              <div class="flex items-center gap-2">
+                <div class="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden"><div class={`enter-grow-x h-full rounded-full ${r.warming ? 'bg-orange-400' : 'bg-sky-500'}`} style={`width:${(r.sent / r.plan) * 100}%; --d:${i * 90}ms`}></div></div>
+                <span class="w-[46px] text-right font-mono text-[11.5px] tabular-nums text-slate-900">{i === 0 ? <span data-tick="18,24,3400">18</span> : r.sent}<span class="text-slate-400">/{r.plan}</span></span>
+              </div>
+            </td>
+            <td></td>
+          </tr>
+        ))}      </tbody>
+    </table>
+  </div>
+
+  <!-- The campaign's day, worked out from those mailboxes. -->
+  <div class={`${FLOAT} left-[424px] top-[446px] w-[312px] overflow-hidden`}>
+    <div class="px-4 pt-3 pb-2 flex items-baseline gap-1.5 border-b border-slate-200/70">
+      <span class="text-[20px] font-semibold leading-none tabular-nums text-slate-900">{total}</span>
+      <span class="text-[11.5px] text-slate-600">today</span>
+      <span class="ml-auto text-[10.5px] text-slate-400">From your settings to today</span>
+    </div>
+    <div class="px-4 py-1.5 divide-y divide-slate-100 text-[12px]">
+      <div class="h-7 flex items-center"><span class="text-slate-700">Mailbox caps added up</span><span class="ml-auto font-mono text-[11.5px] tabular-nums text-slate-700">300</span></div>
+      <div class="h-7 flex items-center gap-2"><span class="text-slate-700">Sending behaviour plan</span><span class="text-[10.5px] text-slate-400">5 mailboxes</span><span class="ml-auto font-mono text-[11.5px] tabular-nums text-rose-600">−100</span></div>
+      <div class="h-7 flex items-center gap-2"><span class="text-slate-700">Easing out of warmup</span><span class="text-[10.5px] text-slate-400">1 mailbox</span><span class="ml-auto font-mono text-[11.5px] tabular-nums text-rose-600">−45</span></div>
+      <div class="h-7 flex items-center"><span class="font-medium text-slate-900">Today’s plan</span><span class="ml-auto font-mono text-[11.5px] font-medium tabular-nums text-slate-900">{total}</span></div>
+    </div>
+  </div>
+</ScaledStage>

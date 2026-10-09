@@ -1,0 +1,47 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Code from './Code.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * Evidence for "safety is per mailbox": the defaults every mailbox starts
+ * with (internal/config/constants.go) and the complaint and bounce lines the
+ * warmup pool acts on (internal/app/warmup/service.go), copied verbatim.
+ */
+const defaults = `
+  CampaignLimitDefault  = 50
+  MinWaitTimeDefault    = 600
+  WarmupBaseDefault     = 10
+  WarmupMaxDefault      = 40
+  WarmupIncreaseDefault = 1
+
+  // Net-new campaign send controls. The ramp mirrors the warmup ramp shape
+  // (start, +increment/day, ceiling) but is applied only via min() against
+  // the per-mailbox cold cap, so it can only lower effective volume.
+  CampaignSenderWeightDefault  = 1
+`;
+const bands = `
+  complaintRateWatchPct      = 0.03
+  complaintRateQuarantinePct = 0.10
+  complaintRateBlockPct      = 0.30
+`;
+const tab = 'h-9 px-3 inline-flex items-center gap-1.5 font-mono text-[10.5px] border-r border-slate-200';
+---
+<ScaledStage w={460} h={345} photo="paint-teal">
+  <div class={`${WINDOW} left-[24px] top-[24px] w-[460px] h-[340px]`}>
+    <div class="flex items-center bg-slate-50 border-b border-slate-200">
+      <span class={`${tab} bg-white text-slate-800 -mb-px`}><Glyph name="braces" size={11} class="text-sky-600" />constants.go</span>
+      <span class={`${tab} text-slate-400`}><Glyph name="braces" size={11} />service.go</span>
+    </div>
+    <div class="px-4 h-7 flex items-center font-mono text-[10px] text-slate-400">internal › config › constants.go</div>
+    <Code start={30} code={defaults} mark={[30, 31]} class="pt-1" size="text-[11px] leading-[20px]" />
+  </div>
+
+  <div class={`${FLOAT} left-[150px] top-[232px] w-[290px] overflow-hidden`}>
+    <div class="h-8 px-3 flex items-center gap-2 border-b border-slate-200 bg-slate-50/80">
+      <span class="font-mono text-[10px] text-slate-500">internal/app/warmup/service.go</span>
+    </div>
+    <div class="py-1.5"><Code start={45} code={bands} mark={[46]} size="text-[10.5px] leading-[18px]" /></div>
+  </div>
+</ScaledStage>

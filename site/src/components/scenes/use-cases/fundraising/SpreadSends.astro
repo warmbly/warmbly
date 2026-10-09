@@ -1,0 +1,55 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import { WINDOW, EYEBROW } from '../../../../lib/scene';
+
+/**
+ * The campaign's weekly sending windows (campaigns/schedule/WeekScheduleGrid)
+ * with the week's sends spread through them: no burst at 9am Tuesday.
+ */
+const ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const H = 200;
+// Window 9am to 5pm on weekdays, as a fraction of the day.
+const top = (9 / 24) * H, height = (8 / 24) * H;
+// Deterministic spread of sends inside each window.
+const sends = ABBR.slice(0, 5).map((_, d) => Array.from({ length: 6 }, (_, i) => ((i * 37 + d * 23) % 97) / 97));
+---
+<ScaledStage w={460} h={345} photo="lake-mist">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-12 px-4 flex items-center gap-2.5 border-b border-slate-200/70">
+      <div>
+        <div class={EYEBROW}>Weekly sending windows</div>
+        <div class="text-[12px] text-slate-700"><span class="font-medium text-slate-900">5</span> windows across <span class="font-medium text-slate-900">5</span> days</div>
+      </div>
+      <span class="ml-auto mr-6 font-mono text-[10.5px] text-slate-400">90 to 420 s apart</span>
+    </div>
+    <div class="px-4 py-3 pr-10">
+      <div class="flex pl-8">
+        {ABBR.map((d, i) => <div class={`flex-1 h-7 flex items-center justify-center rounded-t-md text-[11px] ${i < 5 ? 'text-sky-700 font-semibold bg-sky-50/60' : 'text-slate-400'}`}>{d}</div>)}
+      </div>
+      <div class="relative" style={`height:${H}px`}>
+        {[0, 6, 12, 18, 24].map((h) => (
+          <>
+            <span class="absolute left-0 w-7 -translate-y-1/2 text-right text-[9.5px] tabular-nums text-slate-400" style={`top:${(h / 24) * H}px`}>{h === 0 || h === 24 ? '12a' : h === 12 ? '12p' : h < 12 ? `${h}a` : `${h - 12}p`}</span>
+            <div class="absolute left-8 right-0 border-t border-slate-100" style={`top:${(h / 24) * H}px`}></div>
+          </>
+        ))}
+        <div class="absolute inset-y-0 left-8 right-0 flex gap-px">
+          {ABBR.map((_, d) => (
+            <div class={`relative flex-1 ${d < 5 ? 'bg-sky-50/30' : 'bg-slate-50/40'}`}>
+              {d < 5 && (
+                <div class="absolute inset-x-[3px] rounded-md border border-sky-400/60 bg-sky-500/15" style={`top:${top}px; height:${height}px`}>
+                  {sends[d].map((f, i) => <span class="ss-dot absolute left-1/2 size-[5px] -translate-x-1/2 rounded-full bg-sky-600" style={`top:${4 + f * (height - 12)}px; animation-delay:${(d * 6 + i) * 0.18}s`}></span>)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .ss-dot { animation: ss-dot 6s ease-out infinite both; }
+  @keyframes ss-dot { 0% { opacity: 0; transform: translateX(-50%) scale(0.4); } 6%, 90% { opacity: 1; transform: translateX(-50%) scale(1); } 100% { opacity: 0; } }
+</style>

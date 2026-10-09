@@ -1,0 +1,71 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import ShareCardMock from '../../ShareCardMock.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+
+/**
+ * Share image (AnalyticsShareButton): the preview dialog over the Analytics
+ * page, with the aspect presets, the branded card and Copy / Download PNG.
+ */
+const stats = [
+  { label: 'Total sent', value: '12,847', sub: 'in range' },
+  { label: 'Open rate', value: '34.2%', sub: 'after delivery' },
+  { label: 'Reply rate', value: '6.1%', sub: 'incl. positive' },
+];
+const bars = [38, 44, 41, 52, 49, 57, 54, 61, 58, 66, 63, 70, 68, 74];
+---
+<ScaledStage w={760} h={570} photo="sheer-blue">
+  <div class={`${WINDOW} left-[32px] top-[32px] right-0 h-[538px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Analytics</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Deliverability across the workspace</span>
+    </div>
+    <div class="grid grid-cols-3 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={STAT}>
+          <div class={EYEBROW}>{s.label}</div>
+          <div class={STAT_VALUE}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+    <div class="px-5 pt-6 flex items-end gap-2 h-[220px]">
+      {bars.map((b) => <span class="flex-1 rounded-t-sm bg-sky-200" style={`height:${b * 2.4}px`}></span>)}
+    </div>
+    <!-- The dialog's scrim covers the page. -->
+    <div class="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]"></div>
+  </div>
+
+  <div class={`${FLOAT} left-[268px] top-[30px] w-[452px] overflow-hidden`}>
+    <div class="h-12 px-4 border-b border-slate-200 flex items-center gap-2">
+      <span class={EYEBROW}>Share image</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Preview before download</span>
+      <span class="ml-auto inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Ico name="x" size={16} /></span>
+    </div>
+    <div class="px-4 pt-3 flex items-center gap-2">
+      <span class="text-[11px] font-medium text-slate-500">Aspect</span>
+      <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 p-0.5">
+        <span class="h-7 px-3 rounded bg-sky-600 text-white text-[12px] font-medium shadow-sm inline-flex items-center">1:1</span>
+        <span class="h-7 px-3 rounded text-slate-600 text-[12px] font-medium inline-flex items-center">3:2</span>
+        <span class="h-7 px-3 rounded text-slate-600 text-[12px] font-medium inline-flex items-center">16:9</span>
+      </span>
+    </div>
+    <div class="px-4 py-3 bg-slate-50/40 flex justify-center">
+      <div class="w-[338px] overflow-hidden rounded-md border border-slate-200 bg-white">
+        <ShareCardMock date="Oct 9, 2026" subtitle="Last 30 days" metrics={[
+          { label: 'Sent', value: '12,847', sub: 'emails' },
+          { label: 'Open rate', value: '34.2%' },
+          { label: 'Reply rate', value: '6.1%' },
+          { label: 'Bounce rate', value: '1.2%' },
+        ]} />
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+      <span class="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium inline-flex items-center gap-1.5"><Ico name="copy" size={13} />Copy</span>
+      <span class="h-8 px-3 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5"><Ico name="download" size={13} />Download PNG</span>
+    </div>
+  </div>
+</ScaledStage>

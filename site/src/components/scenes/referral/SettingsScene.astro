@@ -1,0 +1,181 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import AppShellMock from '../../AppShellMock.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../about/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR } from '../../../lib/scene';
+
+/**
+ * Settings > Refer & earn (web/src/app/app/settings/referral/page.tsx) in
+ * the app shell: the settings rail, the how-it-works note, the share link
+ * and code, the earnings cards, and the referrals table, where a qualified
+ * team turns rewarded and the credit lands on a loop.
+ */
+const rail = [
+  { label: 'Account', items: [['user', 'Profile'], ['bell', 'Notifications'], ['shield', 'Security']] },
+  { label: 'Workspace', items: [['users', 'Members'], ['users', 'Teams'], ['shieldCheck', 'Roles & access'], ['briefcase', 'Workspace'], ['send', 'Sending'], ['globe', 'Website tracking'], ['tag', 'Inbox tagging'], ['sparkles', 'AI skills'], ['creditCard', 'Billing'], ['gift', 'Refer & earn'], ['gauge', 'Limits']] },
+  { label: 'Developers', items: [['webhook', 'Webhooks']] },
+] as const;
+const glyphs = new Set(['user', 'shieldCheck', 'send', 'globe', 'tag', 'sparkles', 'gauge']);
+const shell = 'px-8 py-5';
+const h3 = 'text-[12.5px] font-semibold text-slate-900 tracking-tight';
+const desc = 'text-[11.5px] text-slate-500 leading-relaxed';
+const chip = 'h-7 w-[280px] px-2.5 rounded-md border border-slate-200 bg-slate-50 font-mono text-[12px] text-slate-700 flex items-center truncate';
+const copy = 'h-7 px-2.5 rounded-md bg-slate-900 text-white text-[12px] font-medium inline-flex items-center gap-1.5';
+const badge = 'inline-flex items-center text-[10px] uppercase tracking-[0.08em] font-semibold rounded-sm px-1.5 py-0.5 border';
+const referrals = [
+  { id: '7c1e…a04', status: 'rewarded', reward: '$89.00', date: 'Sep 12' },
+  { id: '3f9a…c21', status: 'live', reward: '$89.00', date: 'Oct 6' },
+  { id: 'b2d8…19e', status: 'rewarded', reward: '$29.00', date: 'Aug 28' },
+  { id: 'e45c…7b3', status: 'qualified', reward: '—', date: 'Oct 7' },
+  { id: '91aa…f62', status: 'pending', reward: '—', date: 'Oct 8' },
+];
+const tones = {
+  pending: 'bg-slate-100 text-slate-500 border-slate-200',
+  qualified: 'bg-sky-50 text-sky-700 border-sky-100',
+  rewarded: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+} as const;
+---
+<ScaledStage w={1240} h={700} photo="sheer-peach">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[1280px] h-[900px]`}>
+    <div class="w-[1280px] origin-top-left" style="transform:scale(0.9)">
+    <AppShellMock crumb="Settings" active="">
+      <div class="flex flex-col">
+        <div class={TOPBAR}>
+          <span class={EYEBROW}>Settings</span>
+          <span class="h-4 w-px bg-slate-200"></span>
+          <span class="text-[12.5px] text-slate-600">Invite teams and earn account credit.</span>
+        </div>
+        <div class="flex">
+          <nav class="w-[236px] shrink-0 border-r border-slate-200/70 px-2.5 py-3">
+            {rail.map((g, gi) => (
+              <div class="mb-1">
+                <div class={`px-2 ${gi === 0 ? 'mb-1' : 'mt-3 mb-1'}`}><span class={EYEBROW}>{g.label}</span></div>
+                {g.items.map(([icon, label]) => (
+                  <div class={`relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[12.5px] ${label === 'Refer & earn' ? 'bg-slate-200/70 font-medium text-slate-900' : 'text-slate-600'}`}>
+                    {glyphs.has(icon)
+                      ? <Glyph name={icon as 'send'} size={14} class={label === 'Refer & earn' ? 'text-slate-700' : 'text-slate-400'} />
+                      : <Ico name={icon as 'gift'} size={14} class={label === 'Refer & earn' ? 'text-slate-700' : 'text-slate-400'} />}
+                    {label}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </nav>
+
+          <div class="min-w-0 flex-1">
+            <div class="px-8 pt-7 pb-5 border-b border-slate-200/70">
+              <h2 class="text-[16px] font-semibold text-slate-900 tracking-tight">Refer &amp; earn</h2>
+              <p class="mt-0.5 text-[12.5px] text-slate-500">Invite other teams to Warmbly and earn account credit on your invoices.</p>
+            </div>
+            <div class="divide-y divide-slate-200/70">
+              <section class={shell}>
+                <h3 class={h3}>How it works</h3>
+                <p class={`${desc} mb-3`}>Share your link, they save, you earn.</p>
+                <div class="rounded-md border border-sky-100 bg-sky-50/60 p-4 flex items-start gap-3">
+                  <span class="size-9 rounded-md bg-white border border-sky-200 text-sky-700 flex items-center justify-center shrink-0"><Ico name="gift" size={16} /></span>
+                  <div>
+                    <div class="text-[13px] font-semibold text-slate-900">Give 10%, get a month of credit</div>
+                    <p class="mt-1 max-w-lg text-[12px] leading-relaxed text-slate-600">Anyone who signs up with your link gets <span class="font-medium text-slate-900">10% off</span> for their first <span class="font-medium text-slate-900">3 months</span>. Once they're a paying customer you earn account credit equal to one month of their plan, applied automatically to your invoices.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section class={shell}>
+                <h3 class={h3}>Your link</h3>
+                <p class={`${desc} mb-3`}>Share this link or code. New signups are attributed to you automatically.</p>
+                <div class="space-y-3">
+                  <div class="flex items-start gap-4">
+                    <div class="flex-1"><div class="text-[12.5px] font-medium text-slate-900">Share link</div><div class="mt-0.5 text-[11.5px] text-slate-500">A direct signup link with your code attached.</div></div>
+                    <div class="flex items-center gap-2"><div class={chip}>https://app.warmbly.com/auth/register?ref=NORTHWIND</div><span class={copy}><Ico name="copy" size={12} />Copy link</span></div>
+                  </div>
+                  <div class="flex items-start gap-4">
+                    <div class="flex-1"><div class="text-[12.5px] font-medium text-slate-900">Referral code</div><div class="mt-0.5 text-[11.5px] text-slate-500">For anyone entering a code manually at signup.</div></div>
+                    <div class="flex items-center gap-2"><div class={`${chip} uppercase`}>northwind</div><span class={copy}><Ico name="copy" size={12} />Copy code</span></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class={shell}>
+                <h3 class={h3}>Earnings</h3>
+                <p class={`${desc} mb-3`}>Credit you've earned. Balance is applied to your invoices automatically.</p>
+                <div class="grid grid-cols-4 gap-2">
+                  <div class="rounded-md border border-sky-200 bg-sky-50/60 p-3">
+                    <div class="text-[10px] uppercase tracking-[0.1em] font-medium text-slate-400">Available credit</div>
+                    <div class="relative mt-0.5 h-6 text-[16px] font-semibold tabular-nums text-sky-700"><span class="ref-a absolute">$118.00</span><span class="ref-b absolute">$207.00</span></div>
+                  </div>
+                  <div class="rounded-md border border-slate-200 bg-white p-3">
+                    <div class="text-[10px] uppercase tracking-[0.1em] font-medium text-slate-400">Lifetime earned</div>
+                    <div class="relative mt-0.5 h-6 text-[16px] font-semibold tabular-nums text-slate-900"><span class="ref-a absolute">$207.00</span><span class="ref-b absolute">$296.00</span></div>
+                  </div>
+                  <div class="rounded-md border border-slate-200 bg-white p-3">
+                    <div class="text-[10px] uppercase tracking-[0.1em] font-medium text-slate-400">Total referred</div>
+                    <div class="mt-0.5 h-6 text-[16px] font-semibold tabular-nums text-slate-900">7</div>
+                  </div>
+                  <div class="rounded-md border border-slate-200 bg-white p-3">
+                    <div class="text-[10px] uppercase tracking-[0.1em] font-medium text-slate-400">Rewarded</div>
+                    <div class="relative mt-0.5 h-6 text-[16px] font-semibold tabular-nums text-slate-900"><span class="ref-a absolute">2</span><span class="ref-b absolute">3</span></div>
+                  </div>
+                </div>
+                <div class="mt-3 flex items-center gap-4 text-[11.5px] text-slate-500">
+                  <span class="inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-slate-300"></span>Pending<span class="font-mono text-slate-700">3</span></span>
+                  <span class="inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-sky-500"></span>Qualified<span class="relative inline-block w-2 font-mono text-slate-700"><span class="ref-a absolute">2</span><span class="ref-b absolute">1</span>&nbsp;</span></span>
+                  <span class="inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-emerald-500"></span>Rewarded<span class="relative inline-block w-2 font-mono text-slate-700"><span class="ref-a absolute">2</span><span class="ref-b absolute">3</span>&nbsp;</span></span>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AppShellMock>
+    </div>
+  </div>
+
+  <!-- Your referrals: a team that upgraded is rewarded, and the credit lands. -->
+  <div class={`${FLOAT} left-[780px] top-[478px] w-[420px] overflow-hidden`}>
+    <div class="px-4 pt-3.5 pb-2">
+      <div class={h3}>Your referrals</div>
+      <div class={desc}>Teams that signed up with your link and where they are in the reward flow.</div>
+    </div>
+    <table class="w-full text-[12px]">
+      <thead>
+        <tr class="text-left text-[10.5px] uppercase tracking-[0.08em] text-slate-400 border-y border-slate-200">
+          <th class="font-medium px-4 py-2">Referred org</th>
+          <th class="font-medium px-3 py-2">Status</th>
+          <th class="font-medium px-3 py-2 text-right">Reward</th>
+          <th class="font-medium px-4 py-2 text-right">Date</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {referrals.map((r) => (
+          <tr class={`text-slate-700 ${r.status === 'live' ? 'ref-row' : ''}`}>
+            <td class="px-4 py-2"><span class="text-slate-500">Referred org</span> <span class="font-mono text-[11px] text-slate-400">{r.id}</span></td>
+            <td class="px-3 py-2">
+              {r.status === 'live' ? (
+                <span class="relative inline-block h-5 w-[78px]">
+                  <span class={`ref-a absolute left-0 top-0 ${badge} ${tones.qualified}`}>Qualified</span>
+                  <span class={`ref-b absolute left-0 top-0 ${badge} ${tones.rewarded}`}>Rewarded</span>
+                </span>
+              ) : <span class={`${badge} ${tones[r.status as keyof typeof tones]}`}>{r.status}</span>}
+            </td>
+            <td class="px-3 py-2 text-right font-mono tabular-nums">
+              {r.status === 'live' ? <span class="relative inline-block w-[52px]"><span class="ref-a absolute right-0">—</span><span class="ref-b absolute right-0">{r.reward}</span>&nbsp;</span> : r.reward}
+            </td>
+            <td class="px-4 py-2 text-right tabular-nums text-slate-500">{r.date}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 10s loop: the qualified team is rewarded at 45%, then the next pass starts
+     over. Base styles are the rewarded state, which is what reduced motion shows. */
+  .ref-a { opacity: 0; animation: ref-a 10s linear infinite; }
+  .ref-b { animation: ref-b 10s linear infinite; }
+  @keyframes ref-a { 0%, 44% { opacity: 1; } 47%, 100% { opacity: 0; } }
+  @keyframes ref-b { 0%, 44% { opacity: 0; } 47%, 100% { opacity: 1; } }
+  .ref-row { animation: ref-row 10s ease-out infinite; }
+  @keyframes ref-row { 0%, 44% { background: rgb(236 253 245 / 0); } 50%, 75% { background: rgb(236 253 245); } 95%, 100% { background: rgb(236 253 245 / 0); } }
+</style>

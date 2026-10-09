@@ -1,0 +1,72 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST } from '../../../../lib/scene';
+import { AVATAR } from '../ui';
+
+/**
+ * The workspace suppression list (contacts/suppressions/page.tsx) filling
+ * from candidates who opted out, whichever recruiter wrote to them. The card
+ * is the reply that put the newest one there, labelled Unsubscribe.
+ */
+const RED = 'text-red-700 bg-red-50 border-red-200';
+const SLATE = 'text-slate-600 bg-slate-100 border-slate-200';
+const rows = [
+  { who: 'ethan@stratech.io', reason: 'Replied asking to be removed · to sam@', src: 'Unsubscribed', tone: RED, when: 'Oct 9', fresh: true },
+  { who: 'rosa@brightline.co', reason: 'Clicked unsubscribe · to dana@', src: 'Unsubscribed', tone: RED, when: 'Oct 8' },
+  { who: 'kai@orbitlabs.io', reason: 'Mailbox does not exist · to li@', src: 'Bounced', tone: RED, when: 'Oct 6' },
+  { who: 'marta@kestrel.de', reason: 'Unsubscribe button in Gmail · to oscar@', src: 'Unsubscribed', tone: RED, when: 'Oct 3' },
+  { who: '@ourclient.com', reason: 'Never approach a client’s staff', src: 'Added by hand', tone: SLATE, when: 'Sep 12', domain: true },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Suppression list</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="truncate text-[12.5px] text-slate-600">Addresses and domains no campaign will email</span>
+      <span class={`${ACTION_GHOST} ml-auto mr-10 shrink-0`}><Glyph name="plus" size={12} />Add</span>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Entries</span>
+      <span class="font-mono text-[10.5px] text-slate-400">47</span>
+      <div class="ml-auto mr-10 h-7 w-52 pl-2 rounded-md border border-slate-200 flex items-center gap-1.5 text-[12.5px] text-slate-400"><Glyph name="search" size={13} />Search addresses or domains…</div>
+    </div>
+    {rows.map((r) => (
+      <div class={`h-[54px] px-5 pr-14 flex items-center gap-3 border-b border-slate-200/60 ${r.fresh ? 'oo-new' : ''}`}>
+        <Glyph name={r.domain ? 'globe' : 'mail'} size={14} class="text-slate-400" />
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[12.5px] font-medium text-slate-900">{r.who}</div>
+          <div class="truncate text-[11px] text-slate-500">{r.reason}</div>
+        </div>
+        <span class={`inline-flex h-5 shrink-0 items-center rounded border px-1.5 text-[10px] font-medium ${r.tone}`}>{r.src}</span>
+        <span class="w-12 shrink-0 text-right text-[11px] tabular-nums text-slate-400">{r.when}</span>
+      </div>
+    ))}
+  </div>
+
+  <!-- The reply that put Ethan on the list. -->
+  <div class={`${FLOAT} left-[436px] top-[404px] w-[300px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class={`${AVATAR} size-7 text-[10px]`}>EM</span>
+      <div class="min-w-0 flex-1">
+        <div class="text-[12.5px] font-semibold text-slate-900">Ethan Moore</div>
+        <div class="truncate text-[10.5px] text-slate-400">to sam@northwind.so</div>
+      </div>
+      <span class="inline-flex h-4 items-center gap-1 rounded-sm px-1.5 text-[10px] font-medium" style="color:#64748b;background-color:#64748b14;"><span class="size-1.5 rounded-full bg-slate-500"></span>Unsubscribe</span>
+    </div>
+    <div class="px-4 py-3 text-[12.5px] leading-[1.55] text-slate-700">Thanks, but I’m not looking. Please remove me from your list.</div>
+    <div class="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[11px] text-slate-500">
+      <Glyph name="check" size={12} class="text-emerald-600" />Suppressed for the whole workspace
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .oo-new { animation: oo-new 9s ease-out infinite; }
+  @keyframes oo-new {
+    0%, 8% { opacity: 0; transform: translateY(-6px); background: rgb(254 242 242); }
+    14% { opacity: 1; transform: none; background: rgb(254 242 242); }
+    55%, 100% { background: transparent; }
+  }
+</style>

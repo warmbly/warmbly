@@ -1,0 +1,127 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../../lib/scene';
+
+/**
+ * A campaign that stopped itself: the Settings tab's Auto-pause section
+ * (preferences/CampaignGuardrails) with the reason it tripped, and the live
+ * activity panel (TaskPreview) where the pause lands in the log.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'barChart' },
+  { label: 'Leads', icon: 'users' },
+  { label: 'Steps', icon: 'listChecks' },
+  { label: 'Schedule', icon: 'calendar' },
+  { label: 'Settings', icon: 'settings2', active: true },
+] as const;
+const num = (v: string, suffix: string, w: string) => ({ v, suffix, w });
+const rates = [
+  { label: 'Pause above bounce rate', ...num('5', '%', 'w-32') },
+  { label: 'Pause above complaint rate', ...num('0.1', '%', 'w-32') },
+  { label: 'Pause below reply rate', ...num('0', '%', 'w-32') },
+];
+const sample = [
+  { label: 'Only after', ...num('50', 'sends', 'w-36') },
+  { label: 'Measured over the last', ...num('7', 'days', 'w-36') },
+];
+const reason = 'Paused automatically: the bounce rate reached 5.4% across 312 sends, at or above the 5.0% limit set for this campaign.';
+const log = [
+  { dot: 'bg-slate-300', msg: 'Sent Follow-up to dana@orbit.app from sam@northwind.io', t: '14m ago' },
+  { dot: 'bg-amber-500', msg: 'Bounced: noah@quanta.dev, mailbox does not exist', t: '11m ago' },
+  { dot: 'bg-slate-300', msg: 'Sent Quick question to eli@marlow.co from alex@northwind.dev', t: '9m ago' },
+];
+---
+<ScaledStage w={680} h={560} photo="paint-blue">
+  <div class={`${WINDOW} left-[32px] top-[32px] w-[680px] h-[540px]`}>
+    <div class="px-5 pt-3.5 pb-2.5 flex items-center gap-2">
+      <span class="text-[15px] font-semibold text-slate-900">Series A founders, Q3</span>
+      <span class="inline-flex items-center h-5 px-2 rounded-md border text-[10px] uppercase tracking-[0.12em] font-medium bg-slate-100 text-slate-600 border-slate-200">auto-paused</span>
+      <span class="ml-auto mr-10 h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5"><Glyph name="play" size={12} />Start</span>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Ico name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute left-1.5 right-1.5 -bottom-px h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="px-5 py-4 pr-14 space-y-4">
+      <div class="rounded-md border border-amber-100 bg-amber-50/70 px-3 py-2.5 flex gap-2.5">
+        <Ico name="pauseCircle" size={16} class="text-amber-600 mt-0.5" />
+        <div class="min-w-0">
+          <p class="text-[11.5px] leading-relaxed text-amber-900/90">{reason}</p>
+          <p class="mt-1 text-[10.5px] text-amber-800/70">Sep 10, 2026, 3:15 PM</p>
+        </div>
+      </div>
+
+      <div class="flex items-start justify-between gap-5">
+        <div class="min-w-0">
+          <p class="text-[12.5px] font-medium text-slate-900">Auto-pause</p>
+          <p class="mt-0.5 text-[11px] leading-relaxed text-slate-500">Stop this campaign the moment its bounce, complaint, or reply rate leaves the band below. Checked every 15 minutes.</p>
+        </div>
+        <span class="relative mt-0.5 inline-flex h-[18px] w-8 shrink-0 items-center rounded-full bg-sky-600"><span class="inline-block size-3.5 translate-x-[15px] rounded-full bg-white shadow-sm"></span></span>
+      </div>
+
+      <div class="rounded-md border border-slate-200 bg-slate-50/40 p-3.5 space-y-4">
+        {[rates, sample].map((group) => (
+          <div class="flex items-end gap-4">
+            {group.map((f) => (
+              <div>
+                <div class={`${EYEBROW} mb-1.5`}>{f.label}</div>
+                <div class={`relative inline-flex h-7 items-center rounded-md border border-slate-200 bg-white ${f.w}`}>
+                  <span class="flex-1 px-2.5 text-[12.5px] tabular-nums text-slate-900">{f.v}</span>
+                  <span class="pr-2 text-[11px] text-slate-400">{f.suffix}</span>
+                  <span class="flex flex-col self-stretch border-l border-slate-200 text-slate-400">
+                    <span class="flex-1 px-1 flex items-center"><Ico name="chevronUp" size={11} /></span>
+                    <span class="flex-1 px-1 flex items-center border-t border-slate-200"><Glyph name="chevronDown" size={11} /></span>
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+        <p class="text-[11px] leading-relaxed text-slate-500">A rate of <b>0</b> turns that rule off. A window of <b>0</b> days measures the campaign’s whole history.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- The live panel, where the pause is logged. -->
+  <div class={`${FLOAT} left-[392px] top-[372px] w-[272px] overflow-hidden`}>
+    <div class="px-4 h-11 border-b border-slate-200 flex items-center gap-3">
+      <span class={EYEBROW}>Live activity</span>
+      <span class="inline-flex items-center px-1.5 h-5 rounded-md text-[10.5px] font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">Paused</span>
+      <span class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+        <span class="relative flex size-2"><span class="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span><span class="relative inline-flex size-2 rounded-full bg-emerald-500"></span></span>Connected
+      </span>
+    </div>
+    <div class="px-4 pt-2.5 pb-1 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Recent log</div>
+    <div class="divide-y divide-slate-200/60">
+      <div class="gr-new flex items-start gap-2.5 px-4 py-2 bg-rose-50/50">
+        <span class="size-1.5 mt-1.5 shrink-0 rounded-full bg-rose-500"></span>
+        <p class="flex-1 min-w-0 text-[12px] leading-snug text-slate-700">{reason}</p>
+        <span class="shrink-0 mt-0.5 font-mono text-[10.5px] tabular-nums text-slate-400">just now</span>
+      </div>
+      {log.slice(1, 2).map((l) => (
+        <div class="flex items-start gap-2.5 px-4 py-2">
+          <span class={`size-1.5 mt-1.5 shrink-0 rounded-full ${l.dot}`}></span>
+          <p class="flex-1 min-w-0 text-[12px] leading-snug text-slate-600">{l.msg}</p>
+          <span class="shrink-0 mt-0.5 font-mono text-[10.5px] tabular-nums text-slate-400">{l.t}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The pause lands at the top of the log on a loop; at rest it is there. */
+  .gr-new { animation: gr-new 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes gr-new {
+    0%, 30% { opacity: 0; transform: translateY(-6px); }
+    36%, 94% { opacity: 1; transform: none; }
+    100% { opacity: 0; }
+  }
+</style>

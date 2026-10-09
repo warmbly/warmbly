@@ -1,0 +1,120 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../analytics/Ico.astro';
+import Step from './Step.astro';
+import BuilderBar from './BuilderBar.astro';
+import { WINDOW } from '../../../lib/scene';
+
+/**
+ * Run history (InsightsPanel, mode "history") beside a flow whose Slack step
+ * has an error path: the newest run, where Slack refused the message and the
+ * error path opened a task instead, arrives on top on a loop. An older run,
+ * from before the error path existed, is marked errored and still created
+ * its deal.
+ */
+type Res = { ok: boolean; label: string; err?: string; preview?: [string, string][] };
+type Run = { ok: boolean; at: string; results: Res[]; isNew?: boolean };
+const runs: Run[] = [
+  { ok: true, at: '10/9/2026, 2:41:07 PM', isNew: true, results: [
+    { ok: false, label: 'Send a Slack message', err: 'slack chat.postMessage: channel_not_found' },
+    { ok: true, label: 'Create a task', preview: [['title', 'Slack alert failed: follow up with jenna@acme.io'], ['due_in_days', '1']] },
+  ] },
+  { ok: true, at: '10/9/2026, 1:12:44 PM', results: [
+    { ok: true, label: 'Send a Slack message', preview: [['channel', '#sales']] },
+    { ok: true, label: 'Create a deal', preview: [['name', 'Brightline (maya@brightline.io)'], ['stage', 'Qualified']] },
+  ] },
+  { ok: true, at: '10/9/2026, 11:03:20 AM', results: [
+    { ok: true, label: 'Add a label', preview: [['label', 'Not now']] },
+  ] },
+  { ok: false, at: '10/8/2026, 4:57:02 PM', results: [
+    { ok: false, label: 'Send a Slack message', err: 'slack chat.postMessage: not_in_channel' },
+    { ok: true, label: 'Create a deal', preview: [['name', 'Helio (lina@helio.dev)'], ['stage', 'Qualified']] },
+  ] },
+];
+const W = 230;
+const line = '#cbd5e1';
+---
+<ScaledStage w={1240} h={600} photo="paint-blue">
+  <div class={`${WINDOW} left-[56px] top-[48px] right-0 h-[552px] flex flex-col`}>
+    <BuilderBar name="Reply to revenue" mode="history" />
+    <div class="flex flex-1 min-h-0">
+      <div class="relative flex-1 min-w-0 overflow-hidden bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 20px 20px;">
+        <svg class="absolute inset-0 overflow-visible" width="784" height="500" fill="none">
+          <path d="M487 84 L487 120" stroke={line} stroke-width="1.25" />
+          <path d="M487 176 L487 182 Q487 190 479 190 L293 190 Q285 190 285 198 L285 236" stroke={line} stroke-width="1.25" />
+          <path d="M487 176 L487 182 Q487 190 495 190 L682 190 Q690 190 690 198 L690 236" stroke={line} stroke-width="1.25" />
+          <path d="M285 292 L285 298 Q285 306 277 306 L158 306 Q150 306 150 314 L150 352" stroke={line} stroke-width="1.25" />
+          <path d="M285 292 L285 298 Q285 306 293 306 L412 306 Q420 306 420 314 L420 352" stroke="#fda4af" stroke-width="1.25" stroke-dasharray="4 3" />
+          <path d="M150 408 L150 434" stroke={line} stroke-width="1.25" />
+          <path d="M420 408 L420 434" stroke={line} stroke-width="1.25" />
+          <path d="M690 292 L690 318" stroke={line} stroke-width="1.25" />
+        </svg>
+        <Step x={372} y={28} w={W} icon="zap" tone="sky" kicker="Trigger" title="Prospect replies" summary="Starts this automation" />
+        <Step x={372} y={120} w={W} icon="gitBranch" tone="amber" kicker="If / else" title="intent is Positive" summary="Checks the event" />
+        <span class="absolute left-[285px] top-[214px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-50 px-2 text-[11px] font-medium leading-[18px] text-emerald-700 ring-1 ring-inset ring-emerald-200/80">Yes</span>
+        <span class="absolute left-[690px] top-[214px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white px-2 text-[11px] font-medium leading-[18px] text-slate-500 ring-1 ring-inset ring-slate-200">No</span>
+        <Step x={170} y={236} w={W} brand="slack" kicker="Slack" title="Send a Slack message" summary="Northwind · #sales" />
+        <Step x={575} y={236} w={W} icon="tag" tone="emerald" kicker="Action" title="Add a label" summary="1 label" />
+        <span class="absolute left-[150px] top-[330px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white px-2 text-[11px] font-medium leading-[18px] text-slate-500 ring-1 ring-inset ring-slate-200">Then</span>
+        <span class="absolute left-[420px] top-[330px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-rose-50 px-2 text-[11px] font-medium leading-[18px] text-rose-700 ring-1 ring-inset ring-rose-200/80">On error</span>
+        <Step x={35} y={352} w={W} icon="briefcase" tone="sky" kicker="Action" title="Create a deal" summary="Sales · Qualified" />
+        <Step x={305} y={352} w={W} icon="squareCheck" tone="violet" kicker="Action" title="Create a task" summary="Slack alert failed: follow up" />
+        {[[150, 445], [420, 445], [690, 329]].map(([x, y]) => (
+          <span class="absolute flex size-[22px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400" style={`left:${x}px;top:${y}px`}><Ico name="plus" size={12} /></span>
+        ))}
+        <div class="absolute left-3 bottom-3 flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white/95 p-0.5 shadow-sm">
+          <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Ico name="minus" size={14} /></span>
+          <span class="inline-flex h-7 min-w-11 items-center justify-center px-1 text-[11.5px] tabular-nums text-slate-600">100%</span>
+          <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Ico name="plus" size={14} /></span>
+        </div>
+      </div>
+
+      <aside class="w-[400px] shrink-0 border-l border-slate-200 bg-white flex flex-col">
+        <div class="h-11 px-3 flex items-center border-b border-slate-200">
+          <span class="text-[12.5px] font-medium text-slate-900">Run history</span>
+          <span class="ml-auto inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Ico name="x" size={16} /></span>
+        </div>
+        <div class="relative flex-1 overflow-hidden">
+          <div class="hs-list space-y-2 p-3">
+            {runs.map((run) => (
+              <div class={`rounded-md border border-slate-200 p-2 space-y-1 ${run.isNew ? 'hs-new' : ''}`}>
+                <div class="flex items-center gap-1.5">
+                  <Ico name={run.ok ? 'checkCircle2' : 'xCircle'} size={14} class={run.ok ? 'text-emerald-500' : 'text-rose-500'} />
+                  <span class="text-[11.5px] font-medium text-slate-700">{run.ok ? 'Success' : 'Error'}</span>
+                  <span class="ml-auto whitespace-nowrap text-[10.5px] tabular-nums text-slate-400">{run.at}</span>
+                </div>
+                {run.results.map((r) => (
+                  <div class="pl-1">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      <Ico name={r.ok ? 'checkCircle2' : 'xCircle'} size={12} class={r.ok ? 'text-emerald-400' : 'text-rose-400'} />
+                      <span class="shrink-0 text-[11px] text-slate-500">{r.label}</span>
+                      {r.err && <span class="truncate text-[10.5px] text-rose-500">· {r.err}</span>}
+                    </div>
+                    {r.preview && (
+                      <div class="mt-0.5 space-y-0.5 pl-4">
+                        {r.preview.map(([k, v]) => <div class="truncate text-[10px] text-slate-400"><span class="text-slate-300">{k}:</span> <span class="font-mono">{v}</span></div>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 10s loop: the newest run lands on top of History (cards are about 94px with the gap). */
+  .hs-list { animation: hs-list 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes hs-list {
+    0% { transform: translateY(-110px); opacity: 0; }
+    5%, 30% { transform: translateY(-110px); opacity: 1; }
+    37%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .hs-new { animation: hs-new 10s ease-out infinite; }
+  @keyframes hs-new { 0%, 34% { background: rgb(255 241 242 / 0); } 40%, 70% { background: rgb(255 241 242 / 0.7); } 90%, 100% { background: rgb(255 241 242 / 0); } }
+</style>

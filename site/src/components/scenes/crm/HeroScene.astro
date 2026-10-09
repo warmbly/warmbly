@@ -1,0 +1,168 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import AppShellMock from '../../AppShellMock.astro';
+import Glyph from '../Glyph.astro';
+import Ic from '../inbox/Ic.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+
+/**
+ * The deals board (web/src/app/app/crm/deals) inside the app shell. A deal
+ * that just booked a call is carried from Qualified to Meeting booked on a
+ * loop, and its deal dialog sits open beside the board.
+ */
+type Deal = { name: string; contact: string; value: string; close?: string; won?: boolean };
+const cols: { name: string; color: string; open: string; slot?: 'rest' | 'drop'; deals: Deal[] }[] = [
+  { name: 'Qualified', color: '#0ea5e9', open: '$25,700 open', slot: 'rest', deals: [
+    { name: 'Northwind Freight', contact: 'ravi@northwindfreight.com', value: '$8,500', close: 'Jul 30' },
+    { name: 'Spruce Bio', contact: 'lena@sprucebio.com', value: '$6,200' },
+    { name: 'Lumen Health', contact: 'ops@lumenhealth.io', value: '$11,000', close: 'Aug 4' },
+  ] },
+  { name: 'Meeting booked', color: '#8b5cf6', open: '$72,500 open', slot: 'drop', deals: [
+    { name: 'Stratech', contact: 'rowan@stratech.io', value: '$45,000', close: 'Jul 15' },
+    { name: 'Tidewater Labs', contact: 'chen@tidewater.io', value: '$15,500', close: 'Jul 8' },
+  ] },
+  { name: 'Proposal', color: '#f59e0b', open: '$64,800 open', deals: [
+    { name: 'Helio', contact: 'founder@helio.gen', value: '$24,000', close: 'Jun 28' },
+    { name: 'Brightfold', contact: 'priya@brightfold.com', value: '$31,000', close: 'Jun 20' },
+    { name: 'Maple & Co', contact: 'sam@mapleco.com', value: '$9,800' },
+  ] },
+  { name: 'Won', color: '#10b981', open: '$60,400 won', deals: [
+    { name: 'Cobalt Group', contact: 'ceo@cobaltgroup.com', value: '$42,000', won: true },
+    { name: 'Quarry', contact: 'max@quarry.co', value: '$18,400', won: true },
+  ] },
+];
+const stats = [
+  { label: 'Open', value: '9', sub: 'open deals' },
+  { label: 'Pipeline value', value: '$163,000', sub: 'open · server total' },
+  { label: 'Won', value: '$60,400', sub: 'closed won' },
+  { label: 'Stages', value: '4', sub: 'on this pipeline', last: true },
+];
+const card = 'rounded-md bg-white border border-slate-200 px-2.5 py-2';
+const label = 'block mb-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium';
+const field = 'h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 flex items-center';
+---
+<ScaledStage w={1240} h={720} photo="reeded-glass">
+  <div class={`${WINDOW} left-[56px] top-[48px] w-[1280px] h-[900px]`}>
+    <div class="w-[1280px]">
+      <AppShellMock crumb="Deals" sub="Sales pipeline">
+        <div class="flex flex-col bg-white">
+          <div class={TOPBAR}>
+            <span class={EYEBROW}>Deals</span>
+            <span class="h-4 w-px bg-slate-200"></span>
+            <span class="text-[12.5px] text-slate-600">Sales pipeline</span>
+            <div class="ml-auto flex items-center gap-1.5">
+              <div class="inline-flex gap-0.5 rounded-md bg-slate-100 p-0.5">
+                <span class="inline-flex h-6 items-center gap-1.5 rounded px-2 text-[11px] font-medium text-slate-500"><Ic name="table" size={12} />Table</span>
+                <span class="inline-flex h-6 items-center gap-1.5 rounded bg-white px-2 text-[11px] font-medium text-slate-900 shadow-sm"><Ic name="layoutGrid" size={12} />Board</span>
+              </div>
+              <span class="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 text-[12px] text-slate-700">Sales pipeline<Glyph name="chevronDown" size={11} class="text-slate-400" /></span>
+              <span class="flex h-7 w-[180px] items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-400"><Glyph name="search" size={12} />Search deals…</span>
+              <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />New deal</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-4 border-b border-slate-200">
+            {stats.map((s) => (
+              <div class={s.last ? 'px-5 py-4' : STAT}>
+                <span class={EYEBROW}>{s.label}</span>
+                <div class={STAT_VALUE}>{s.value}</div>
+                <div class={STAT_SUB}>{s.sub}</div>
+              </div>
+            ))}
+          </div>
+          <div class={SECTIONBAR}><span class={EYEBROW}>4 stages</span></div>
+
+          <div class="relative px-5 py-5">
+            <div class="grid auto-cols-[280px] grid-flow-col gap-3">
+              {cols.map((c) => (
+                <div class="flex min-h-[420px] flex-col rounded-md border border-slate-200 bg-slate-50">
+                  <div class="flex h-9 shrink-0 items-center gap-2 border-b border-slate-200 px-3">
+                    <span class="size-1.5 shrink-0 rounded-full" style={`background-color:${c.color}`}></span>
+                    <span class="truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-700">{c.name}</span>
+                    <span class="ml-auto font-mono text-[10.5px] tabular-nums text-slate-400">{c.deals.length + (c.slot === 'drop' ? 1 : 0)}</span>
+                  </div>
+                  <div class="h-6 border-b border-slate-200/60 bg-white px-3 py-1"><span class="font-mono text-[10.5px] tabular-nums text-emerald-700">{c.open}</span></div>
+                  <div class="space-y-1.5 p-2">
+                    {c.slot === 'rest' && <div class="h-[74px]"></div>}
+                    {c.slot === 'drop' && <div class="dh-slot h-[74px] rounded-md border border-dashed border-violet-300 bg-violet-50/50"></div>}
+                    {c.deals.map((d) => (
+                      <div class={`${card} h-[74px]`}>
+                        <div class="mb-1 flex items-center gap-1.5">
+                          <span class="flex-1 truncate text-[12px] font-medium text-slate-900">{d.name}</span>
+                          {d.won && <span class="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-emerald-700">Won</span>}
+                        </div>
+                        <div class="mb-1.5 flex items-center gap-1 truncate text-[10.5px] text-slate-500"><Glyph name="user" size={10} />{d.contact}</div>
+                        <div class="flex items-center gap-2 text-[10.5px]">
+                          <span class="inline-flex items-center gap-1 font-mono tabular-nums text-emerald-600"><Glyph name="dollar" size={10} />{d.value}</span>
+                          {d.close && <span class="ml-auto inline-flex items-center gap-1 text-slate-400"><Glyph name="calendar" size={10} />{d.close}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <!-- The deal on the move, carried with a coloured ring as teammates see it. -->
+            <div class={`dh-drag ${card} absolute left-[29px] top-[89px] h-[74px] w-[262px]`}>
+              <div class="mb-1 flex items-center gap-1.5"><span class="flex-1 truncate text-[12px] font-medium text-slate-900">Acme</span></div>
+              <div class="mb-1.5 flex items-center gap-1 truncate text-[10.5px] text-slate-500"><Glyph name="user" size={10} />jenna@acme.io</div>
+              <div class="flex items-center gap-2 text-[10.5px]"><span class="inline-flex items-center gap-1 font-mono text-emerald-600"><Glyph name="dollar" size={10} />$12,000</span><span class="ml-auto inline-flex items-center gap-1 text-slate-400"><Glyph name="calendar" size={10} />Aug 29</span></div>
+            </div>
+          </div>
+        </div>
+      </AppShellMock>
+    </div>
+  </div>
+
+  <!-- The deal dialog a card click opens (480px in the app, drawn narrower here). -->
+  <div class={`${FLOAT} left-[930px] top-[262px] w-[292px] overflow-hidden`}>
+    <div class="flex h-12 items-center gap-2.5 border-b border-slate-200 px-4">
+      <span class="flex size-5 items-center justify-center rounded bg-slate-100 text-slate-600"><Ic name="trophy" size={12} /></span>
+      <span class={EYEBROW}>Edit</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] font-medium text-slate-900">Deal</span>
+      <span class="ml-auto inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="x" size={14} /></span>
+    </div>
+    <div class="space-y-3 px-4 py-4">
+      <div><span class={label}>Deal name</span><div class={`${field} border-sky-400 ring-2 ring-sky-100`}>Acme</div></div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><span class={label}>Stage</span><div class={`${field} gap-1.5 text-[12px] text-slate-700`}><span class="size-1.5 rounded-full bg-violet-500"></span><span class="truncate">Meeting booked</span></div></div>
+        <div><span class={label}>Status</span>
+          <div class="flex gap-0.5 rounded-md bg-slate-100 p-0.5">
+            <span class="flex h-6 flex-1 items-center justify-center rounded bg-white text-[11px] font-medium text-slate-900 shadow-sm">Open</span>
+            <span class="flex h-6 flex-1 items-center justify-center rounded text-[11px] font-medium text-slate-500">Won</span>
+            <span class="flex h-6 flex-1 items-center justify-center rounded text-[11px] font-medium text-slate-500">Lost</span>
+          </div>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <div class="col-span-2"><span class={label}>Value</span><div class={field}>12000</div></div>
+        <div><span class={label}>Currency</span><div class={field}>USD</div></div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div><span class={label}>Expected close</span><div class={`${field} gap-1.5 px-2 text-[12px]`}><Glyph name="calendar" size={12} class="text-slate-400" />Aug 29, 2026</div></div>
+        <div><span class={label}>Contact</span><div class={`${field} overflow-hidden bg-slate-50 text-slate-400`}>jenna@acme.io</div></div>
+      </div>
+    </div>
+    <div class="flex h-12 items-center gap-1.5 border-t border-slate-200 px-3">
+      <span class="ml-auto inline-flex h-7 items-center rounded-md px-2.5 text-[12px] text-slate-700">Cancel</span>
+      <span class="inline-flex h-7 items-center rounded-md bg-slate-900 px-3 text-[12px] font-medium text-white">Save deal</span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 12s loop: rests in Qualified, is carried across with a violet ring,
+     rests in Meeting booked, then fades home. Base is the landed state. */
+  .dh-drag { transform: translateX(292px); animation: dh-drag 12s cubic-bezier(0.5, 0, 0.2, 1) infinite; }
+  @keyframes dh-drag {
+    0%, 22% { transform: none; box-shadow: none; opacity: 1; }
+    28% { transform: translate(6px, -6px) rotate(-1.5deg); box-shadow: 0 0 0 2px #a78bfa, 0 18px 30px -12px rgba(15,23,42,0.35); }
+    46% { transform: translate(292px, -6px) rotate(1deg); box-shadow: 0 0 0 2px #a78bfa, 0 18px 30px -12px rgba(15,23,42,0.35); }
+    52%, 86% { transform: translateX(292px); box-shadow: none; opacity: 1; }
+    92% { transform: translateX(292px); opacity: 0; }
+    93% { transform: none; opacity: 0; }
+    100% { transform: none; opacity: 1; }
+  }
+  .dh-slot { opacity: 0; animation: dh-slot 12s ease infinite; }
+  @keyframes dh-slot { 0%, 24% { opacity: 0; } 30%, 50% { opacity: 1; } 54%, 100% { opacity: 0; } }
+</style>

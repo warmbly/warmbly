@@ -1,289 +1,120 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 import { getChangelog } from '../lib/changelog';
+import { GITHUB_PATH } from '../lib/marks';
+import Glyph from '../components/scenes/Glyph.astro';
+import ReleaseScene from '../components/scenes/changelog/ReleaseScene.astro';
 
-// Entries are pulled at build time from the real merged pull requests on
-// warmbly/warmbly. There are no tagged releases or a CHANGELOG.md, so merged
-// PRs into main are the source of truth, and PR granularity keeps it to one
-// entry per shippable change rather than one per commit. Curation rules and
-// the offline fallback live in src/lib/changelog.ts.
+// Entries come from merged pull requests on warmbly/warmbly at build time;
+// curation and the offline fallback live in src/lib/changelog.ts.
 const entries = await getChangelog();
 
-const tagStyle = (t) => {
-  if (t === 'shipped') return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700', accent: 'text-emerald-700' };
-  if (t === 'changed') return { dot: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-700',     accent: 'text-amber-700'   };
-  return { dot: 'bg-sky-500', chip: 'bg-sky-50 text-sky-700', accent: 'text-sky-700' };
-};
+const tone = {
+  shipped: { dot: 'bg-emerald-500', label: 'New', icon: 'sparkles', tile: 'bg-emerald-50 text-emerald-600' },
+  changed: { dot: 'bg-amber-500', label: 'Improved', icon: 'trendingUp', tile: 'bg-amber-50 text-amber-600' },
+  fixed: { dot: 'bg-sky-500', label: 'Fixed', icon: 'check', tile: 'bg-sky-50 text-sky-600' },
+} as const;
 
+// Group by month, newest first, keeping the entries' own order inside.
+const monthName = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const dayName = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const months: { name: string; items: typeof entries }[] = [];
+for (const e of entries) {
+  const name = monthName(e.date);
+  const last = months[months.length - 1];
+  if (last && last.name === name) last.items.push(e);
+  else months.push({ name, items: [e] });
+}
 const counts = {
-  total:   entries.length,
-  shipped: entries.filter(e => e.tag === 'shipped').length,
-  changed: entries.filter(e => e.tag === 'changed').length,
-  fixed:   entries.filter(e => e.tag === 'fixed').length,
+  all: entries.length,
+  shipped: entries.filter((e) => e.tag === 'shipped').length,
+  changed: entries.filter((e) => e.tag === 'changed').length,
+  fixed: entries.filter((e) => e.tag === 'fixed').length,
 };
-
-// Hoisted to avoid `<` / `<=` inside JSX expressions (Astro JSX parser is fragile).
-const recentEntries = entries.slice(0, 3);
-const recentCount   = recentEntries.length;
-const totalCount    = entries.length;
-const shippedCount  = counts.shipped;
-const changedCount  = counts.changed;
-const fixedCount    = counts.fixed;
 ---
 <Layout
-  title="Changelog & Product Updates | Warmbly"
-  description="Everything we shipped, changed, and fixed at Warmbly. The actual history of the platform, dated and tagged."
+  title="Changelog: What's New in Warmbly"
+  description="Everything new, improved and fixed in Warmbly, dated and linked to the change that shipped it. Built from the public repository, so nothing is rewritten or quietly removed."
 >
-  <!-- ============================================================
-       HERO · HeroAtmosphere, matches warmup / campaigns / pricing
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-20 md:pb-28 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Changelog
-        </span>
-        Everything we shipped, dated and tagged
-      </div>
-
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        The actual history<br/>of what we ship.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        New features, behavioural changes, and fixes, in the order they reached production. No marketing language, no rewrites of older entries, no quiet deletions.
-      </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">View the pull requests</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="https://github.com/warmbly/warmbly" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          Star on GitHub
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SHIPPED THIS MONTH · full-bleed band, container-width inside
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-y border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="flex flex-wrap items-end justify-between gap-6 mb-10 md:mb-12">
-        <div>
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Latest releases</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-            The latest production work.
-          </h2>
-          <p class="mt-3 text-[14.5px] md:text-[15px] text-foreground/70 leading-relaxed max-w-2xl">
-            The {recentCount} most recent merged pull requests. Each entry links straight to the PR it shipped in.
-          </p>
-        </div>
-        <div class="text-[11.5px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          <span class="text-heading font-semibold">{recentCount}</span> / {totalCount} total
-        </div>
-      </div>
-
-      <div class="space-y-4">
-        {recentEntries.map((e) => {
-          const t = tagStyle(e.tag);
-          return (
-            <article class="grid grid-cols-1 md:grid-cols-[140px_110px_1fr] gap-x-8 gap-y-3 bg-white ring-1 ring-[color:var(--border)] rounded-[14px] p-6 md:p-7 items-baseline hover:ring-[#0284c7]/40 transition-all">
-              <div class="text-[11.5px] font-mono uppercase tracking-[0.18em] text-muted-foreground md:pt-1">
-                {e.date}
-              </div>
-              <div class="md:pt-0.5">
-                <span class={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-[10.5px] font-semibold font-mono uppercase tracking-[0.1em] ${t.chip}`}>
-                  <span class={`w-1 h-1 rounded-full ${t.dot}`}></span>
-                  {e.tag}
-                </span>
-              </div>
-              <div>
-                <h3 class="text-[18px] md:text-[20px] font-semibold text-heading tracking-[-0.015em] leading-[1.2]">
-                  {e.title}
-                </h3>
-                <p class="mt-2.5 text-[14.5px] text-foreground/75 leading-relaxed max-w-3xl">{e.body}</p>
-                <a href={e.url} class="mt-3 inline-flex items-center gap-1 text-[11.5px] font-mono text-[#0369a1] hover:text-[#075985]">
-                  #{e.number}
-                  <Icon name="arrowUpRight" size={11} />
-                </a>
-              </div>
-            </article>
-          );
-        })}
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       ALL RELEASES · full-bleed on white, editorial list inside
-  ============================================================ -->
-  <section class="bg-white py-20 md:py-28">
-    <div class="container-page">
-      <div class="flex flex-wrap items-end justify-between gap-6 mb-10 md:mb-12">
-        <div>
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">All releases</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-            Every entry, in order.
-          </h2>
-          <p class="mt-3 text-[14.5px] md:text-[15px] text-foreground/70 leading-relaxed max-w-2xl">
-            New features, behavioural changes, and fixes, in the order they reached production. No marketing language, no quiet deletions.
-          </p>
-        </div>
-
-        <div class="flex flex-wrap gap-1.5">
-          <span class="inline-flex items-center gap-2 h-7 px-3 rounded-full text-[11.5px] font-mono bg-white ring-1 ring-[color:var(--border)] text-foreground/75">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            Shipped <span class="text-heading font-semibold">{shippedCount}</span>
-          </span>
-          <span class="inline-flex items-center gap-2 h-7 px-3 rounded-full text-[11.5px] font-mono bg-white ring-1 ring-[color:var(--border)] text-foreground/75">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-            Changed <span class="text-heading font-semibold">{changedCount}</span>
-          </span>
-          <span class="inline-flex items-center gap-2 h-7 px-3 rounded-full text-[11.5px] font-mono bg-white ring-1 ring-[color:var(--border)] text-foreground/75">
-            <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
-            Fixed <span class="text-heading font-semibold">{fixedCount}</span>
-          </span>
-        </div>
-      </div>
-
-      <!-- Editorial rows: date | tag | title + body. Hairlines only. -->
-      <div class="border-t border-[color:var(--border)]">
-        {entries.map((e) => {
-          const t = tagStyle(e.tag);
-          return (
-            <article class="grid grid-cols-1 md:grid-cols-[120px_90px_1fr] gap-x-6 gap-y-2 py-6 md:py-7 border-b border-[color:var(--border)] items-baseline">
-              <div class="text-[11.5px] font-mono uppercase tracking-[0.18em] text-muted-foreground md:pt-1">
-                {e.date}
-              </div>
-              <div class="md:pt-0.5">
-                <span class={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full text-[10.5px] font-semibold font-mono uppercase tracking-[0.1em] ${t.chip}`}>
-                  <span class={`w-1 h-1 rounded-full ${t.dot}`}></span>
-                  {e.tag}
-                </span>
-              </div>
-              <div>
-                <a href={e.url} class="group inline-flex items-baseline gap-1.5">
-                  <h3 class="text-[15.5px] md:text-[16.5px] font-semibold text-heading tracking-[-0.01em] group-hover:text-[#0369a1] transition-colors">
-                    {e.title}
-                  </h3>
-                  <span class="text-[11px] font-mono text-muted-foreground group-hover:text-[#0369a1] transition-colors">#{e.number}</span>
-                </a>
-                <p class="mt-1.5 text-[13.5px] text-foreground/70 leading-relaxed max-w-3xl line-clamp-2">{e.body}</p>
-              </div>
-            </article>
-          );
-        })}
-      </div>
-
-      <div class="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px] font-mono text-muted-foreground">
-        <span>Want the full detail?</span>
-        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="text-[#0369a1] hover:text-[#075985]">Merged pull requests on GitHub</a>
-        <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-        <span>Each entry links to the pull request that shipped it.</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SUBSCRIBE · editorial split with GitHub follow
-  ============================================================ -->
-  <section class="border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Follow along</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Follow every<br/>release as it ships.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          Every entry links to the pull request that shipped it. Watch or star the repository to hear about the next release, and open a discussion on what we build next. No email signup, no tracking pixels.
+  <section class="container-page pt-14 md:pt-24 pb-12 md:pb-16">
+    <div class="flex flex-wrap items-end justify-between gap-8">
+      <div class="max-w-3xl">
+        <div class="text-[14px] text-slate-500">Changelog</div>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">What’s new in Warmbly.</h1>
+        <p class="mt-6 max-w-2xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">
+          New features, improvements and fixes, in the order they reached production. Each one links to the change on GitHub, so nothing here is rewritten after the fact.
         </p>
       </div>
+      <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged" target="_blank" rel="noopener noreferrer" class="inline-flex h-11 items-center gap-2 rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={GITHUB_PATH} /></svg>
+        Every merged change
+      </a>
+    </div>
 
-      <div class="grid sm:grid-cols-2 gap-4">
-        <!-- Merged pull requests card -->
-        <a href="https://github.com/warmbly/warmbly/pulls?q=is%3Apr+is%3Amerged+base%3Amain" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
-          <div class="flex items-center justify-between mb-5">
-            <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-sky-50 text-[#0369a1] ring-1 ring-sky-100">
-              <Icon name="list" size={18} />
-            </div>
-            <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[#0369a1] transition-colors" />
-          </div>
-          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Merged pull requests</div>
-          <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">
-            The full record on main, in the order it reached production. Every changelog entry traces back to one of these.
-          </p>
-          <div class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-[#0369a1] bg-sky-50 px-2 py-1 rounded">
-            warmbly/warmbly · pulls
-          </div>
-        </a>
+    <div class="mt-12 md:mt-16"><ReleaseScene entries={entries} /></div>
 
-        <!-- GitHub card -->
-        <a href="https://github.com/warmbly/warmbly" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
-          <div class="flex items-center justify-between mb-5">
-            <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-foreground/5 text-foreground ring-1 ring-foreground/10">
-              <Icon name="code" size={18} />
-            </div>
-            <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[#0369a1] transition-colors" />
-          </div>
-          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Watch on GitHub</div>
-          <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">
-            Star the repository to get release notifications. Every changelog entry references a commit or migration.
-          </p>
-          <div class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-foreground/75 bg-foreground/5 px-2 py-1 rounded">
-            warmbly/warmbly
-          </div>
-        </a>
-
-        <!-- Discussions card -->
-        <a href="https://github.com/warmbly/warmbly/discussions" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
-          <div class="flex items-center justify-between mb-5">
-            <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-amber-50 text-amber-700 ring-1 ring-amber-100">
-              <Icon name="users" size={18} />
-            </div>
-            <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[#0369a1] transition-colors" />
-          </div>
-          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Discussions</div>
-          <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">
-            Request a feature, report a bug, or open an RFC. We read every thread and respond in the open.
-          </p>
-          <div class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-amber-700 bg-amber-50 px-2 py-1 rounded">
-            /discussions
-          </div>
-        </a>
-
-        <!-- Trust card -->
-        <a href="/trust/" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 hover:ring-[#0284c7]/40 hover:shadow-[0_18px_36px_-18px_rgba(2,132,199,0.3)] transition-all">
-          <div class="flex items-center justify-between mb-5">
-            <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-              <Icon name="shield" size={18} />
-            </div>
-            <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[#0369a1] transition-colors" />
-          </div>
-          <div class="text-[16px] font-semibold text-heading tracking-[-0.01em]">Trust center</div>
-          <p class="mt-1.5 text-[13px] text-foreground/65 leading-relaxed">
-            Encryption model, subprocessors, security posture, and SOC 2 progress. Reviewed alongside each release.
-          </p>
-          <div class="mt-4 inline-flex items-center gap-1.5 text-[11.5px] font-mono text-emerald-700 bg-emerald-50 px-2 py-1 rounded">
-            /trust
-          </div>
-        </a>
-      </div>
+    <div class="mt-16 md:mt-24 flex flex-wrap items-end justify-between gap-6">
+    <h2 class="text-[26px] md:text-[34px] font-medium tracking-[-0.035em] leading-[1.1]"><span class="text-slate-400">The full log.</span> <span class="text-slate-900">Every entry, by month.</span></h2>
+    <div class="flex flex-wrap items-center gap-2" data-filters role="group" aria-label="Filter entries">
+      {[
+        { id: 'all', label: 'All', n: counts.all },
+        { id: 'shipped', label: 'New', n: counts.shipped },
+        { id: 'changed', label: 'Improved', n: counts.changed },
+        { id: 'fixed', label: 'Fixed', n: counts.fixed },
+      ].map((f, i) => (
+        <button type="button" data-filter={f.id} aria-pressed={i === 0 ? 'true' : 'false'} class="inline-flex h-9 items-center gap-2 rounded-full px-4 text-[14px] text-slate-600 ring-1 ring-slate-200 transition-colors hover:text-slate-900 aria-pressed:bg-slate-900 aria-pressed:text-white aria-pressed:ring-slate-900">
+          {f.label}<span class="tabular-nums opacity-60">{f.n}</span>
+        </button>
+      ))}
+    </div>
     </div>
   </section>
 
-  <CTA
-    title="Ship faster. Tell the world."
-    description="Connect a mailbox, warm it up, and put your first campaign in the next changelog entry."
-    primaryLabel="Start free"
-    primaryHref="https://app.warmbly.com/auth/register"
-  />
+  <!-- TIMELINE: a month per block, the month label sticking as you scroll. -->
+  <section class="container-page border-t border-slate-900/[0.06] pb-20 md:pb-28">
+    {months.map((m) => (
+      <div class="month grid gap-6 border-b border-slate-100 py-12 md:grid-cols-[200px_1fr] md:gap-12" data-month>
+        <h2 class="text-[18px] font-medium tracking-[-0.02em] text-slate-900 md:sticky md:top-28 md:self-start">{m.name}</h2>
+        <ol class="space-y-10">
+          {m.items.map((e) => (
+            <li class="entry grid gap-3 sm:grid-cols-[90px_1fr] sm:gap-6" data-tag={e.tag}>
+              <div class="flex items-center gap-2 text-[13px] text-slate-400 sm:block">
+                <span class={`hidden sm:mb-3 sm:inline-flex size-8 items-center justify-center rounded-lg ${tone[e.tag].tile}`}><Glyph name={tone[e.tag].icon} size={15} /></span>
+                <div>{dayName(e.date)}</div>
+                <div class="inline-flex items-center gap-1.5 sm:mt-1.5"><span class={`size-1.5 rounded-full ${tone[e.tag].dot}`}></span>{tone[e.tag].label}</div>
+              </div>
+              <div>
+                <h3 class="text-[19px] font-medium tracking-[-0.015em] leading-snug text-slate-900">{e.title}</h3>
+                <p class="mt-2 max-w-2xl text-[15.5px] leading-[1.65] text-slate-500">{e.body}</p>
+                <a href={e.url} target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex items-center gap-1 font-mono text-[12.5px] text-slate-400 transition-colors hover:text-slate-900">
+                  #{e.number} <Icon name="arrowUpRight" size={11} />
+                </a>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    ))}
+  </section>
+
+  <CTA photo="reeded-glass" title="Try what just shipped." description="Start free on Warmbly Cloud, or pull the latest release and run it on your own server." secondaryLabel="Star on GitHub" secondaryHref="https://github.com/warmbly/warmbly" />
 </Layout>
+
+<script>
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-filter]')];
+  buttons.forEach((b) => b.addEventListener('click', () => {
+    const f = b.dataset.filter;
+    buttons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    document.querySelectorAll<HTMLElement>('[data-month]').forEach((m) => {
+      let shown = 0;
+      m.querySelectorAll<HTMLElement>('.entry').forEach((e) => {
+        const on = f === 'all' || e.dataset.tag === f;
+        e.hidden = !on;
+        if (on) shown++;
+      });
+      m.hidden = shown === 0;
+    });
+  }));
+</script>

@@ -1,749 +1,313 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import Rule from '../components/page/Rule.astro';
+import Faq from '../components/page/Faq.astro';
+import { GITHUB_PATH } from '../lib/marks';
+import ApiKeysScene from '../components/scenes/developers/ApiKeysScene.astro';
+import CliScene from '../components/scenes/developers/CliScene.astro';
+import McpScene from '../components/scenes/developers/McpScene.astro';
+import WebhookScene from '../components/scenes/developers/WebhookScene.astro';
+import RealtimeScene from '../components/scenes/developers/RealtimeScene.astro';
+import IdempotencyScene from '../components/scenes/developers/IdempotencyScene.astro';
+import ScopesScene from '../components/scenes/developers/ScopesScene.astro';
+import ErrorsScene from '../components/scenes/developers/ErrorsScene.astro';
+import { LANG_LOGOS } from '../components/scenes/developers/langLogos';
 
-// All numbers below are platform-level facts from the codebase:
-//   internal/api/handler/*, internal/app/ratelimit/service.go,
-//   internal/api/middleware/ratelimit.go, internal/app/consumer/*,
-//   internal/app/advanced/service.go.
+// Every snippet matches docs/content/docs/api: index, authentication, sdks,
+// cli, mcp, realtime, reference/contacts and reference/webhooks.
 
-// =========================================================================
-// Section 2 · tabbed client editor
-// =========================================================================
-type Client = { id: string; label: string };
-const clients: Client[] = [
-  { id: 'ts',   label: 'TypeScript' },
-  { id: 'py',   label: 'Python' },
-  { id: 'go',   label: 'Go' },
-  { id: 'curl', label: 'curl' },
-];
-
-// =========================================================================
-// Section 3 · event catalog, colored per surface
-// =========================================================================
-type EventGroup = {
-  surface: string;
-  blurb: string;
-  events: string[];
-  tone: string;
-  ring: string;     // tailwind ring color for the card border accent
-  eyebrow: string;  // tailwind classes for eyebrow text
-  pill: string;     // tailwind classes for the count pill
-  chip: string;     // tailwind classes for individual event chips
-};
-const eventGroups: EventGroup[] = [
+const samples = [
   {
-    surface: 'Replies',
-    blurb: 'Every inbound that lands on a sequenced thread, with the classifier verdict attached.',
-    events: ['reply.received', 'reply.classified'],
-    tone: 'emerald',
-    ring: 'ring-emerald-200',
-    eyebrow: 'text-emerald-700',
-    pill: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    chip: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
+    id: 'curl', label: 'curl', logo: null, status: '201 Created',
+    code: `curl -X POST "https://api.warmbly.com/v1/contacts" \\
+  -H "Authorization: Bearer $WARMBLY_API_KEY" \\
+  -H "Idempotency-Key: 7f3c9a2e-import-01" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "email": "dana@acme.com",
+    "first_name": "Dana",
+    "company": "Acme",
+    "campaigns": ["4c1d7a90-2f3b-4e8a-9d61-0b5e7f2c3a18"]
+  }'`,
+    out: `[
+  {
+    "id": "2c3d4e5f-6071-4b2c-9d3e-4f5a6b7c8d9e",
+    "email": "dana@acme.com",
+    "first_name": "Dana",
+    "company": "Acme",
+    "subscribed": true,
+    "campaigns": [{ "id": "4c1d7a90-…", "name": "Q3 outbound" }]
+  }
+]`,
   },
   {
-    surface: 'Deliverability',
-    blurb: 'Hard signals from mailbox providers and recipient action. Suppressed workspace-wide on first pass.',
-    events: ['bounce.hard', 'bounce.soft', 'complaint.received', 'unsubscribe.received'],
-    tone: 'rose',
-    ring: 'ring-rose-200',
-    eyebrow: 'text-rose-700',
-    pill: 'bg-rose-50 text-rose-700 ring-rose-200',
-    chip: 'bg-rose-50 text-rose-800 ring-rose-200',
+    id: 'js', label: 'JavaScript', logo: LANG_LOGOS.javascript.svg, status: '200 OK',
+    code: `import { Warmbly } from "warmbly";
+
+const warmbly = new Warmbly({ apiKey: process.env.WARMBLY_API_KEY });
+
+for await (const campaign of await warmbly.campaigns.list()) {
+  console.log(campaign.id, campaign.name);
+}`,
+    out: `4c1d7a90-2f3b-4e8a-9d61-0b5e7f2c3a18 Q3 outbound
+b9e2f6c1-7a43-4d0e-8c25-1f6a9b3d7e02 Agencies, EU
+0d5a3e8f-96b1-4c7a-a2e4-7b8c1d9f6a35 Founders list`,
   },
   {
-    surface: 'Mailboxes',
-    blurb: 'Lifecycle of each sender, from the first warmup pass through quarantine and back.',
-    events: ['mailbox.connected', 'mailbox.quarantined', 'mailbox.recovered'],
-    tone: 'amber',
-    ring: 'ring-amber-200',
-    eyebrow: 'text-amber-700',
-    pill: 'bg-amber-50 text-amber-700 ring-amber-200',
-    chip: 'bg-amber-50 text-amber-800 ring-amber-200',
+    id: 'py', label: 'Python', logo: LANG_LOGOS.python.svg, status: '200 OK',
+    code: `from warmbly import Warmbly
+
+client = Warmbly()  # reads WARMBLY_API_KEY
+
+for campaign in client.campaigns.list():
+    print(campaign.id, campaign.name)`,
+    out: `4c1d7a90-2f3b-4e8a-9d61-0b5e7f2c3a18 Q3 outbound
+b9e2f6c1-7a43-4d0e-8c25-1f6a9b3d7e02 Agencies, EU
+0d5a3e8f-96b1-4c7a-a2e4-7b8c1d9f6a35 Founders list`,
   },
   {
-    surface: 'Sequences',
-    blurb: 'Pipeline state the dashboard shows you, in the same shape the dashboard reads.',
-    events: ['sequence.started', 'sequence.completed', 'campaign.paused'],
-    tone: 'sky',
-    ring: 'ring-[color:var(--sky-2)]',
-    eyebrow: 'text-[#0369a1]',
-    pill: 'bg-[color:var(--sky-1)]/60 text-[#0369a1] ring-[color:var(--sky-2)]',
-    chip: 'bg-[color:var(--sky-1)]/60 text-[#0369a1] ring-[color:var(--sky-2)]',
-  },
-  {
-    surface: 'CRM',
-    blurb: 'Contacts, deals, pipeline stage changes mirrored to the integration on the same event.',
-    events: ['contact.created', 'deal.stage_changed'],
-    tone: 'violet',
-    ring: 'ring-violet-200',
-    eyebrow: 'text-violet-700',
-    pill: 'bg-violet-50 text-violet-700 ring-violet-200',
-    chip: 'bg-violet-50 text-violet-800 ring-violet-200',
+    id: 'go', label: 'Go', logo: LANG_LOGOS.go.svg, status: '200 OK',
+    code: `client, err := warmbly.New(warmbly.WithAPIKey(os.Getenv("WARMBLY_API_KEY")))
+if err != nil {
+    log.Fatal(err)
+}
+
+page, err := client.Campaigns.List(ctx, nil)
+for campaign, err := range page.All(ctx) {
+    fmt.Println(campaign.Name)
+}`,
+    out: `Q3 outbound
+Agencies, EU
+Founders list`,
   },
 ];
 
-// =========================================================================
-// Section 4 · webhook delivery as a branching flow
-// =========================================================================
-const retries = [
-  { n: '01', when: '+30s', hint: 'Most transient outages resolve here.' },
-  { n: '02', when: '+2m',  hint: 'Receivers that throttle briefly recover.' },
-  { n: '03', when: '+10m', hint: 'Covers a short rolling restart.' },
-  { n: '04', when: '+1h',  hint: 'Covers a maintenance window.' },
-  { n: '05', when: '+6h',  hint: 'Last attempt before dead-letter.' },
+const sdks = [
+  { name: 'JavaScript and TypeScript', logo: LANG_LOGOS.javascript.svg, pkg: 'npm install warmbly', runtime: 'Node 20+, Bun, Deno, browsers, edge', href: 'https://github.com/warmbly/warmbly-js',
+    code: `new Warmbly({ apiKey: "wmbly_..." });      // API key
+new Warmbly({ accessToken: "wmat_..." });  // OAuth token` },
+  { name: 'Python', logo: LANG_LOGOS.python.svg, pkg: 'pip install warmbly', runtime: 'Python 3.10+, sync and async', href: 'https://github.com/warmbly/warmbly-py',
+    code: `client = Warmbly()  # reads WARMBLY_API_KEY
+for key in client.api_keys.list():
+    print(key.name, key.status)` },
+  { name: 'Go', logo: LANG_LOGOS.go.svg, pkg: 'go get github.com/warmbly/warmbly-go', runtime: 'Go 1.23+', href: 'https://github.com/warmbly/warmbly-go',
+    code: `client, err := warmbly.New(
+    warmbly.WithAPIKey("wmbly_..."),
+)` },
 ];
 
-// =========================================================================
-// Section 5 · scope matrix
-// =========================================================================
-const scopeRows = [
-  { resource: 'Mailboxes', read: 'mailboxes:read', write: 'mailboxes:write', admin: '' },
-  { resource: 'Sequences', read: 'sequences:read', write: 'sequences:write', admin: '' },
-  { resource: 'Contacts',  read: 'contacts:read',  write: 'contacts:write',  admin: '' },
-  { resource: 'Events',    read: 'events:read',    write: '',                admin: '' },
-  { resource: 'CRM',       read: 'crm:read',       write: 'crm:write',       admin: '' },
-  { resource: 'Workspace', read: '',               write: '',                admin: 'admin:write' },
+const webhookFacts = [
+  ['Signed', 'An HMAC-SHA256 signature over the timestamp and the raw body, with your endpoint’s secret.'],
+  ['Retried', 'Up to 8 attempts with backoff from 30 seconds to an hour, then marked abandoned.'],
+  ['Replayable', 'Every attempt is in the delivery log, and a failed one can be sent again with its original event id.'],
+  ['HTTPS only', 'Private, loopback and link-local addresses are refused, and redirects are never followed.'],
 ];
 
-// =========================================================================
-// Section 6 · numbers
-// =========================================================================
-const numbers = [
-  { v: '600', u: '/ min',  l: 'default per-key limit',     note: 'per key, not per workspace' },
-  { v: '120', u: '/ min',  l: 'read-only key limit',       note: 'reads get their own lane' },
-  { v: '5',   u: 'tries',  l: 'webhook retry attempts',    note: 'backoff from 30s to 6h' },
-  { v: '10',  u: 's',      l: 'webhook delivery timeout',  note: 'then it counts as a miss' },
-  { v: '24',  u: 'h',      l: 'idempotency-key window',    note: 'same key, same result' },
-  { v: '256', u: 'KB',     l: 'event payload ceiling',     note: 'full body, never truncated' },
+const realtimeFacts = [
+  ['In order', 'Every event carries a sequence number, so you always know what came first.'],
+  ['Resumable', 'Reconnect with the last sequence you handled and the events you missed are replayed.'],
+  ['Narrowed by intent', 'Join with the event families you act on and the rest never reach you.'],
 ];
 
-// =========================================================================
-// FAQ
-// =========================================================================
 const faq: [string, string][] = [
-  ['How do I verify a webhook signature?',
-   'Compute HMAC-SHA256 of the raw request body using your endpoint secret. Compare the hex digest to the X-Warmbly-Signature header in constant time. Reject any request older than 5 minutes against X-Warmbly-Timestamp.'],
-  ['Are webhooks delivered exactly once?',
-   'No. We deliver at least once. Every event carries an idempotency_key. Persist it on first receipt and skip duplicates. Retries happen on any non-2xx response or a timeout above 10 seconds.'],
-  ['What happens after 5 retries?',
-   'The event lands in the dead-letter view in the dashboard. From there you can inspect the last failure, replay one event or a range, or rotate the endpoint secret without resetting delivery history.'],
-  ['Can a single key be scoped to one campaign or mailbox?',
-   'Yes. Each key carries a list of scopes and an optional resource filter, for example mailboxes:write limited to mbx_01HQX. Cross-resource calls return 403 with a scope_required error code.'],
-  ['Do you publish OpenAPI?',
-   'Yes, at docs.warmbly.com/openapi.json. It is OpenAPI 3.1, so you can import it into Postman or Insomnia, generate a typed client in your language, or build straight against it. There are no official SDKs yet, so plain HTTP is the path today.'],
+  ['How do I authenticate?', 'Create an API key under Settings and send it as a Bearer token on every request. Each key carries only the scopes you give it, and can be limited to certain IP addresses. Apps acting for other people use OAuth instead.'],
+  ['Are retries safe?', 'Yes. Send an Idempotency-Key header with any write, and Warmbly stores the response for 24 hours and replays it for a retry with the same key instead of doing the work twice.'],
+  ['How do I verify a webhook?', 'Every delivery carries an X-Warmbly-Signature header of the form t=<timestamp>,v1=<signature>. Compute an HMAC-SHA256 of the timestamp, a dot and the raw body with your endpoint’s secret, and compare. Webhook targets must be HTTPS.'],
+  ['What do errors look like?', 'Every error has a stable machine-readable code and a request_id, next to a human-readable message. Build your logic on the code and the HTTP status, and quote the request_id when you contact us.'],
+  ['Can an AI assistant send email through the MCP server?', 'No. Over MCP the assistant can read, organise and draft, but tools that send a message to a recipient are never exposed, and a client that signs in over OAuth is never given the scope that starts campaigns.'],
+  ['Is there an API for self-hosted instances?', 'The same one. A self-hosted instance serves the same API on its own domain, and the SDKs and CLI can point at any host.'],
 ];
+
+const h2 = 'text-[32px] md:text-[48px] font-medium tracking-[-0.045em] leading-[1.04] text-slate-900';
+const lead = 'text-[17px] md:text-[19px] leading-[1.55] text-slate-500';
+const title = 'mt-6 text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900';
+const body = 'mt-2 max-w-xl text-[16px] md:text-[17px] leading-[1.55] text-slate-500';
+const link = 'group mt-4 inline-flex items-center gap-2 text-[16px] text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]';
 ---
 <Layout
-  title="Developer API and Webhooks | Warmbly"
-  description="REST API with idempotency keys, scoped keys, HMAC-signed webhooks, and a dead-letter view. The same surface the dashboard runs on."
+  title="Cold Email API, Webhooks, SDKs and CLI | Warmbly"
+  description="The Warmbly REST API with scoped keys, idempotent writes and signed webhooks, plus official SDKs for JavaScript, Python and Go, a CLI and an MCP server for AI tools."
 >
-  <!-- ============================================================
-       HERO · stands alone
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-20 md:pb-28 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          API and webhooks
-        </span>
-        The same surface our dashboard runs on
+  <!-- HERO: the promise, then the API keys page beside a working request. -->
+  <section class="container-page pt-14 md:pt-24">
+    <div class="grid gap-8 lg:grid-cols-[1.15fr_1fr] lg:items-end lg:gap-16">
+      <div>
+        <div class="text-[14px] text-slate-500">Developers</div>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">
+          Everything in the dashboard is an API call.
+        </h1>
       </div>
-
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        REST in.<br/>Signed events out.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Scoped keys with per-minute limits. Idempotent writes. HMAC-signed webhooks with five retries and a dead-letter view. No hidden surface, no second-class API.
-      </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://app.warmbly.com/app/api-keys" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Get an API key</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="https://docs.warmbly.com" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          Read the docs
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 1 · quickstart: key → endpoint → first event
-  ============================================================ -->
-  <section class="bg-white border-t border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 1 &middot; Quickstart</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Key to first event in three steps.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          No OAuth dance, no app review queue. Create a key, point us at an endpoint, and the first signed event shows up the moment something happens in your workspace.
+      <div class="lg:pb-2">
+        <p class={lead}>
+          Add contacts, launch campaigns, read replies and react to events from your own code. Scoped keys, safe retries and signed webhooks come as standard, and the whole thing is open source.
         </p>
-      </div>
-
-      <div class="grid gap-4 lg:grid-cols-[1fr_auto_1fr_auto_1fr] lg:gap-3 items-stretch">
-        <!-- Step 1 · scoped key -->
-        <div class="rounded-xl border border-sky-200 bg-white shadow-sm overflow-hidden flex flex-col">
-          <div class="flex items-center gap-2 border-b border-sky-200/70 bg-gradient-to-r from-sky-50 to-white px-3.5 py-2.5">
-            <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><Icon name="key" size={13} /></span>
-            <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">Create a scoped key</span>
-            <span class="shrink-0 rounded bg-sky-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">Step 1</span>
-          </div>
-          <div class="p-3.5 flex-1 flex flex-col">
-            <div class="rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-[11.5px] font-semibold text-slate-700 truncate">wmbly_live_8f3kq2&hellip;</span>
-                <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-sky-200 text-[9.5px] text-sky-700 shrink-0">600 req/min</span>
-              </div>
-              <div class="mt-2 flex flex-wrap gap-1">
-                <span class="inline-flex items-center h-5 px-1.5 rounded bg-sky-50 ring-1 ring-sky-200 text-[10px] text-sky-800">events:read</span>
-                <span class="inline-flex items-center h-5 px-1.5 rounded bg-sky-50 ring-1 ring-sky-200 text-[10px] text-sky-800">mailboxes:write</span>
-              </div>
-            </div>
-            <p class="mt-3 text-[12.5px] text-slate-600 leading-relaxed">Pick scopes in the dashboard. The key can never do more than what you picked, and a cross-scope call returns 403 with the scope it was missing.</p>
-          </div>
-        </div>
-
-        <div class="hidden lg:flex items-center text-slate-300" aria-hidden="true"><Icon name="arrowRight" size={16} /></div>
-
-        <!-- Step 2 · endpoint -->
-        <div class="rounded-xl border border-violet-200 bg-white shadow-sm overflow-hidden flex flex-col">
-          <div class="flex items-center gap-2 border-b border-violet-200/70 bg-gradient-to-r from-violet-50 to-white px-3.5 py-2.5">
-            <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600 ring-1 ring-violet-200/70"><Icon name="webhook" size={13} /></span>
-            <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">Register your endpoint</span>
-            <span class="shrink-0 rounded bg-violet-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">Step 2</span>
-          </div>
-          <div class="p-3.5 flex-1 flex flex-col">
-            <div class="rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono">
-              <div class="flex items-center gap-1.5 min-w-0">
-                <span class="inline-flex items-center h-5 px-1.5 rounded bg-violet-50 ring-1 ring-violet-200 text-[9.5px] font-semibold text-violet-700 shrink-0">POST</span>
-                <span class="text-[11.5px] text-slate-700 truncate">api.acme.dev/hooks/warmbly</span>
-              </div>
-              <div class="mt-2 flex items-center justify-between gap-2">
-                <span class="text-[10.5px] text-slate-500 truncate">whsec_9d41kk&hellip;</span>
-                <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-violet-200 text-[9.5px] text-violet-700 shrink-0">HMAC-SHA256</span>
-              </div>
-            </div>
-            <p class="mt-3 text-[12.5px] text-slate-600 leading-relaxed">Paste a URL, get a signing secret. Subscribe to one surface or the whole stream, and rotate the secret any time without losing delivery history.</p>
-          </div>
-        </div>
-
-        <div class="hidden lg:flex items-center text-slate-300" aria-hidden="true"><Icon name="arrowRight" size={16} /></div>
-
-        <!-- Step 3 · first event -->
-        <div class="rounded-xl border border-emerald-200 bg-white shadow-sm overflow-hidden flex flex-col">
-          <div class="flex items-center gap-2 border-b border-emerald-200/70 bg-gradient-to-r from-emerald-50 to-white px-3.5 py-2.5">
-            <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-emerald-100 text-emerald-600 ring-1 ring-emerald-200/70"><Icon name="inbox" size={13} /></span>
-            <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">Catch the first event</span>
-            <span class="shrink-0 rounded bg-emerald-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">Step 3</span>
-          </div>
-          <div class="p-3.5 flex-1 flex flex-col">
-            <div class="rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono text-[11px] leading-[1.6] text-slate-600">
-              <div><span class="text-slate-400">type&nbsp;&nbsp;&nbsp;&nbsp;</span>reply.classified</div>
-              <div><span class="text-slate-400">verdict&nbsp;</span>positive</div>
-              <div class="mt-2 pt-2 border-t border-slate-200/70 flex items-center justify-between gap-2">
-                <span class="text-slate-400">your reply</span>
-                <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-emerald-50 ring-1 ring-emerald-200 text-[9.5px] text-emerald-700 shrink-0">
-                  <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
-                  200 OK &middot; 41ms
-                </span>
-              </div>
-            </div>
-            <p class="mt-3 text-[12.5px] text-slate-600 leading-relaxed">Verify the signature in constant time, return 2xx inside ten seconds, process async. That is the whole contract.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="mt-6 rounded-[12px] bg-[color:var(--surface-2)]/60 ring-1 ring-[color:var(--border)] px-5 py-3 flex flex-wrap items-center justify-between gap-2 text-[11.5px] font-mono text-muted-foreground">
-        <span>Keys and endpoints live in Settings &middot; every delivery is inspectable</span>
-        <span class="text-[#0369a1]">After step three it is just HTTP</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 2 · pick your client (tabbed editor)
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-2)]/60 border-y border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 2 &middot; Pick your client</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          One operation. Every client.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          A published OpenAPI 3.1 spec you can generate a typed client from, and plain HTTP from anywhere else. Same request shape, same idempotency semantics, same error codes.
-        </p>
-      </div>
-
-      <div class="rounded-[14px] overflow-hidden ring-1 ring-white/10 bg-[#0c1224] shadow-[0_30px_60px_-30px_rgba(2,32,71,0.35),0_8px_20px_-10px_rgba(15,23,42,0.1)]" data-tabs>
-        <div class="flex items-center gap-1 px-2 py-2 border-b border-white/10 overflow-x-auto" role="tablist">
-          <div class="flex items-center gap-1.5 shrink-0 pl-2 pr-3" aria-hidden="true">
-            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/60"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/60"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/60"></span>
-          </div>
-          {clients.map((c, i) => (
-            <button
-              type="button"
-              data-tab-button={c.id}
-              class={`tab-trigger relative inline-flex items-center h-8 px-3 rounded-md text-[12.5px] font-mono ${i === 0 ? 'is-active' : ''}`}
-              aria-selected={i === 0 ? 'true' : 'false'}
-            >{c.label}</button>
-          ))}
-          <span class="ml-auto pr-2 text-[10.5px] font-mono text-white/40 hidden md:inline">list campaigns &middot; opaque cursor pagination</span>
-        </div>
-
-        <!-- Tab panel stack · panels share one grid cell so the editor keeps
-             the height of its tallest panel and the swap never jumps -->
-        <div data-tabs-stack>
-        <!-- TypeScript -->
-        <pre data-tab-panel="ts" data-state="active" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8">// list-campaigns.ts — plain fetch, no SDK required</span>
-<span style="color:#7dd3fc">const</span> res <span style="color:#f472b6">=</span> <span style="color:#7dd3fc">await</span> <span style="color:#a78bfa">fetch</span>(
-  <span style="color:#fde68a">"https://api.warmbly.com/v1/campaigns?limit=20"</span>,
-  &#123; headers: &#123; Authorization: <span style="color:#fde68a">`Bearer $&#123;process.env.WARMBLY_KEY&#125;`</span> &#125; &#125;,
-);
-
-<span style="color:#7dd3fc">const</span> &#123; data, pagination &#125; <span style="color:#f472b6">=</span> <span style="color:#7dd3fc">await</span> res.<span style="color:#a78bfa">json</span>();
-console.<span style="color:#a78bfa">log</span>(data.length, pagination.next_cursor);</code></pre>
-
-        <!-- Python -->
-        <pre data-tab-panel="py" data-state="inactive" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8"># list_campaigns.py — plain requests, no SDK required</span>
-<span style="color:#7dd3fc">import</span> os, requests
-
-res <span style="color:#f472b6">=</span> requests.<span style="color:#a78bfa">get</span>(
-    <span style="color:#fde68a">"https://api.warmbly.com/v1/campaigns"</span>,
-    headers<span style="color:#f472b6">=</span>&#123;<span style="color:#fde68a">"Authorization"</span>: <span style="color:#fde68a">f"Bearer &#123;os.environ['WARMBLY_KEY']&#125;"</span>&#125;,
-    params<span style="color:#f472b6">=</span>&#123;<span style="color:#fde68a">"limit"</span>: <span style="color:#fde68a">20</span>&#125;,
-)
-
-body <span style="color:#f472b6">=</span> res.<span style="color:#a78bfa">json</span>()
-<span style="color:#a78bfa">print</span>(<span style="color:#a78bfa">len</span>(body[<span style="color:#fde68a">"data"</span>]), body[<span style="color:#fde68a">"pagination"</span>][<span style="color:#fde68a">"next_cursor"</span>])</code></pre>
-
-        <!-- Go -->
-        <pre data-tab-panel="go" data-state="inactive" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8">// main.go — net/http, no SDK required</span>
-req, _ <span style="color:#f472b6">:=</span> http.<span style="color:#a78bfa">NewRequest</span>(<span style="color:#fde68a">"GET"</span>,
-    <span style="color:#fde68a">"https://api.warmbly.com/v1/campaigns?limit=20"</span>, <span style="color:#a78bfa">nil</span>)
-req.Header.<span style="color:#a78bfa">Set</span>(<span style="color:#fde68a">"Authorization"</span>, <span style="color:#fde68a">"Bearer "</span><span style="color:#f472b6">+</span>os.<span style="color:#a78bfa">Getenv</span>(<span style="color:#fde68a">"WARMBLY_KEY"</span>))
-
-res, err <span style="color:#f472b6">:=</span> http.DefaultClient.<span style="color:#a78bfa">Do</span>(req)
-<span style="color:#7dd3fc">if</span> err <span style="color:#f472b6">!=</span> <span style="color:#a78bfa">nil</span> &#123; <span style="color:#a78bfa">log</span>.<span style="color:#a78bfa">Fatal</span>(err) &#125;
-<span style="color:#7dd3fc">defer</span> res.Body.<span style="color:#a78bfa">Close</span>() <span style="color:#94a3b8">// decode &#123; data, pagination &#125;</span></code></pre>
-
-        <!-- curl -->
-        <pre data-tab-panel="curl" data-state="inactive" class="tab-panel px-6 py-6 text-[12.5px] leading-[1.75] font-mono overflow-x-auto text-white/85"><code><span style="color:#94a3b8"># terminal</span>
-<span style="color:#94a3b8">$</span> curl <span style="color:#fde68a">https://api.warmbly.com/v1/campaigns?limit=20</span> \
-    -H <span style="color:#fde68a">"Authorization: Bearer $WARMBLY_KEY"</span>
-
-<span style="color:#94a3b8"># -> &#123; "data": [ ... ], "pagination": &#123; "next_cursor": "c1_…", "has_more": true &#125; &#125;</span></code></pre>
-        </div>
-      </div>
-
-      <script is:inline>
-        (function () {
-          document.querySelectorAll('[data-tabs]').forEach(function (root) {
-            var buttons = root.querySelectorAll('[data-tab-button]');
-            var panels  = root.querySelectorAll('[data-tab-panel]');
-            buttons.forEach(function (btn) {
-              btn.addEventListener('click', function () {
-                var id = btn.getAttribute('data-tab-button');
-                buttons.forEach(function (b) {
-                  var on = b === btn;
-                  b.classList.toggle('is-active', on);
-                  b.setAttribute('aria-selected', on ? 'true' : 'false');
-                });
-                panels.forEach(function (p) {
-                  p.setAttribute('data-state', p.getAttribute('data-tab-panel') === id ? 'active' : 'inactive');
-                });
-              });
-            });
-          });
-        })();
-      </script>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 3 · event catalog, colored per surface
-  ============================================================ -->
-  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 3 &middot; Event catalog</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Five surfaces, one firehose.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          Subscribe to the whole stream or pick the surfaces you care about. The same event the dashboard reads is the event you receive, in the same shape.
-        </p>
-      </div>
-
-      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
-        {eventGroups.map((g) => (
-          <div class={`rounded-[14px] bg-white ring-1 ${g.ring} overflow-hidden flex flex-col`}>
-            <div class="px-5 py-3 border-b border-[color:var(--border)] bg-[color:var(--surface-2)]/40 flex items-baseline justify-between">
-              <span class={`text-[11px] font-mono uppercase tracking-[0.18em] font-semibold ${g.eyebrow}`}>{g.surface}</span>
-              <span class={`inline-flex items-center h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] ring-1 ${g.pill}`}>{g.events.length} events</span>
-            </div>
-            <div class="p-5 flex-1">
-              <p class="text-[13px] text-foreground/70 leading-relaxed">{g.blurb}</p>
-              <div class="mt-4 flex flex-wrap gap-1.5">
-                {g.events.map((e) => (
-                  <code class={`inline-flex items-center h-6 px-2 rounded-md font-mono text-[11.5px] ring-1 ${g.chip}`}>{e}</code>
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden flex flex-col p-5 items-start justify-center">
-          <div class="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">Subscribe to all</div>
-          <code class="font-mono text-[12.5px] text-heading bg-[color:var(--surface-2)]/60 ring-1 ring-[color:var(--border)] px-2.5 py-1 rounded">events: ["*"]</code>
-          <p class="mt-3 text-[12.5px] text-foreground/65 leading-relaxed">
-            Or pick by surface, by type, or by a single sequence or mailbox. The dispatcher filters before the network hop.
-          </p>
+        <div class="mt-7 flex flex-wrap items-center gap-3">
+          <a href="https://docs.warmbly.com/api/" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">
+            Read the API docs <Icon name="arrowRight" size={14} />
+          </a>
+          <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer" class="inline-flex h-11 items-center gap-2 rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={GITHUB_PATH} /></svg>
+            View the source
+          </a>
         </div>
       </div>
     </div>
-  </section>
 
-  <!-- ============================================================
-       SECTION 4 · webhook delivery as a flow
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-2)]/60 border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="grid lg:grid-cols-[1fr_1.55fr] gap-12 lg:gap-16 items-start">
-        <div class="lg:sticky lg:top-24" style="align-self: start;">
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 4 &middot; Delivery</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-            Signed bodies. Replayable. Dead-letter visible.
-          </h2>
-          <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-            Every event is HMAC-signed with your endpoint secret and carries an idempotency key. A 2xx in ten seconds closes the delivery. Anything else, and we walk a five-step retry schedule before the event lands in a view you can replay from.
-          </p>
-          <ul class="mt-6 space-y-3 text-[14px] text-foreground/85">
-            <li class="flex items-start gap-3">
-              <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/70"><Icon name="lock" size={13} /></span>
-              <span><span class="font-medium text-heading">Signed with your secret.</span> Verify the signature in constant time before you trust the body.</span>
-            </li>
-            <li class="flex items-start gap-3">
-              <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 ring-1 ring-amber-200/70"><Icon name="clock" size={13} /></span>
-              <span><span class="font-medium text-heading">Ten seconds to ack.</span> Return 2xx fast and process async.</span>
-            </li>
-            <li class="flex items-start gap-3">
-              <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-rose-50 text-rose-600 ring-1 ring-rose-200/70"><Icon name="warning" size={13} /></span>
-              <span><span class="font-medium text-heading">Dead-letter is a screen.</span> Inspect, replay a range, rotate the secret without losing history.</span>
-            </li>
-          </ul>
-        </div>
+    <div class="mt-12 md:mt-16 grid gap-3 lg:grid-cols-[1.2fr_1fr]">
+      <ApiKeysScene />
 
-        <!-- Branching canvas -->
-        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="px-5 py-3.5 border-b border-[color:var(--border)] bg-[color:var(--surface-2)]/70 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-baseline gap-3">
-              <div class="text-[13px] font-semibold text-heading">POST /webhooks/yours</div>
-              <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 text-[10.5px] font-medium font-mono uppercase tracking-[0.08em]">
-                <span class="w-1 h-1 rounded-full bg-emerald-500"></span>
-                reply.classified
-              </span>
-            </div>
-            <span class="inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
-              <Icon name="webhook" size={11} /> at-least-once
-            </span>
-          </div>
-
-          <div class="p-4 sm:p-5">
-            <!-- Event fires card -->
-            <div class="rounded-xl border border-sky-200 bg-white shadow-sm">
-              <div class="flex items-center gap-2 rounded-t-xl border-b border-sky-200/70 bg-gradient-to-r from-sky-50 to-white px-3 py-2">
-                <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><Icon name="zap" size={13} /></span>
-                <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">Event fires on the consumer</span>
-                <span class="shrink-0 rounded bg-sky-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">Start</span>
-              </div>
-              <div class="px-3 py-2.5">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Payload</span>
-                  <span class="text-[10px] font-mono text-slate-400">signed t+ts.body</span>
-                </div>
-                <div class="mt-2 rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono text-[11px] leading-[1.6] text-slate-600">
-                  <div><span class="text-slate-400">id&nbsp;&nbsp;&nbsp;</span>evt_01HQX9F7P3A8KY2NJM4R6BWT0S</div>
-                  <div><span class="text-slate-400">type&nbsp;</span>reply.classified</div>
-                  <div><span class="text-slate-400">idem&nbsp;</span>reply:th_01HQX…</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Branches -->
-            <div class="ml-3.5 border-l-2 border-dashed border-slate-200 pl-4 sm:pl-5 pt-3 space-y-4">
-              <!-- 2xx branch -->
-              <div>
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-emerald-50 ring-1 ring-emerald-200 text-[11px] font-medium text-emerald-700">
-                    <Icon name="check" size={11} />
-                    2xx in under 10s
-                  </span>
-                  <span class="text-slate-300"><Icon name="arrowRight" size={12} /></span>
-                  <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-emerald-50 ring-1 ring-emerald-200 text-[10px] font-medium text-emerald-700">acknowledged</span>
-                </div>
-                <p class="mt-2 text-[12px] text-slate-500 leading-snug">Delivery closes. A duplicate retry from us is a no-op on your side.</p>
-              </div>
-
-              <!-- retry chain -->
-              <div>
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-amber-50 ring-1 ring-amber-200 text-[11px] font-medium text-amber-700">
-                    <Icon name="warning" size={11} />
-                    non-2xx or timeout
-                  </span>
-                  <span class="text-slate-300"><Icon name="arrowRight" size={12} /></span>
-                  <span class="text-[11px] font-medium text-slate-500">walk the retry schedule</span>
-                </div>
-
-                <div class="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/30 p-3 sm:p-4">
-                  <div class="divide-y divide-amber-200/40">
-                    {retries.map((r) => (
-                      <div class="grid grid-cols-[44px_72px_1fr] gap-3 py-2 items-center">
-                        <span class="font-mono text-[10.5px] text-amber-700 font-semibold">{r.n}</span>
-                        <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-amber-200 text-[10.5px] font-mono text-amber-800 w-fit">{r.when}</span>
-                        <span class="text-[12px] text-slate-600 leading-snug">{r.hint}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div class="mt-3 pt-3 border-t border-amber-200/60 flex items-center gap-2 text-[11px] font-mono">
-                    <span class="text-amber-700">After 5 failed attempts</span>
-                    <span class="text-slate-300"><Icon name="arrowRight" size={11} /></span>
-                    <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-rose-50 ring-1 ring-rose-200 text-rose-700">
-                      <span class="w-1 h-1 rounded-full bg-rose-500"></span>
-                      dead-letter view
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-2)]/60 flex flex-wrap items-center justify-between gap-2 text-[11.5px] font-mono text-muted-foreground">
-            <span>Signed payload, idempotent on event id</span>
-            <span class="text-[#0369a1]">Replay any range from the dashboard</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 5 · scope matrix
-  ============================================================ -->
-  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-16 items-start">
-        <div class="lg:sticky lg:top-24" style="align-self: start;">
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 5 &middot; Per-key scopes</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-            Scope down. Stay down.
-          </h2>
-          <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-            Six resources, two verbs, one admin scope. A cross-scope call returns 403 with <code class="font-mono text-[13px] text-[#0369a1]">scope_required</code> and the exact scope the call needs.
-          </p>
-          <ul class="mt-6 space-y-2.5 text-[13.5px] text-foreground/80">
-            <li class="flex items-start gap-3">
-              <span class="inline-flex items-center justify-center h-5 px-1.5 rounded font-mono text-[10px] font-semibold bg-sky-50 text-sky-700 ring-1 ring-sky-200 mt-0.5">read</span>
-              <span>List, inspect, subscribe.</span>
-            </li>
-            <li class="flex items-start gap-3">
-              <span class="inline-flex items-center justify-center h-5 px-1.5 rounded font-mono text-[10px] font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200 mt-0.5">write</span>
-              <span>Create, mutate, delete.</span>
-            </li>
-            <li class="flex items-start gap-3">
-              <span class="inline-flex items-center justify-center h-5 px-1.5 rounded font-mono text-[10px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200 mt-0.5">admin</span>
-              <span>Workspace, billing, members.</span>
-            </li>
-          </ul>
-        </div>
-
-        <div class="rounded-[14px] ring-1 ring-[color:var(--border)] overflow-hidden bg-white">
-          <table class="w-full border-collapse">
-            <thead>
-              <tr class="bg-[color:var(--surface-2)]/70 border-b border-[color:var(--border)]">
-                <th class="text-left px-5 py-3 text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground font-medium">Resource</th>
-                <th class="text-left px-5 py-3 text-[10.5px] uppercase tracking-[0.18em] font-mono text-sky-700 font-medium">Read</th>
-                <th class="text-left px-5 py-3 text-[10.5px] uppercase tracking-[0.18em] font-mono text-violet-700 font-medium">Write</th>
-                <th class="text-left px-5 py-3 text-[10.5px] uppercase tracking-[0.18em] font-mono text-amber-700 font-medium">Admin</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scopeRows.map((r) => (
-                <tr class="border-b border-[color:var(--border)] last:border-b-0 hover:bg-[color:var(--surface-2)]/30 transition-colors">
-                  <td class="px-5 py-4 text-[13.5px] font-semibold text-heading">{r.resource}</td>
-                  <td class="px-5 py-4">
-                    {r.read
-                      ? <code class="inline-flex items-center h-6 px-2 rounded-md bg-sky-50 ring-1 ring-sky-200 font-mono text-[11.5px] text-sky-800">{r.read}</code>
-                      : <span class="inline-block w-3 h-px bg-[color:var(--border-strong)]"></span>}
-                  </td>
-                  <td class="px-5 py-4">
-                    {r.write
-                      ? <code class="inline-flex items-center h-6 px-2 rounded-md bg-violet-50 ring-1 ring-violet-200 font-mono text-[11.5px] text-violet-800">{r.write}</code>
-                      : <span class="inline-block w-3 h-px bg-[color:var(--border-strong)]"></span>}
-                  </td>
-                  <td class="px-5 py-4">
-                    {r.admin
-                      ? <code class="inline-flex items-center h-6 px-2 rounded-md bg-amber-50 ring-1 ring-amber-200 font-mono text-[11.5px] text-amber-800">{r.admin}</code>
-                      : <span class="inline-block w-3 h-px bg-[color:var(--border-strong)]"></span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-2)]/60 flex flex-wrap items-center justify-between gap-2 text-[11.5px] font-mono text-muted-foreground">
-            <span>403 scope_required carries the exact scope the call needs</span>
-            <span class="text-[#0369a1]">Keys can also be pinned to one mailbox or sequence</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 6 · numbers
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-2)]/60 border-b border-[color:var(--border)] py-16 md:py-20">
-    <div class="container-page">
-      <div class="max-w-2xl mb-10">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 6 &middot; By the numbers</div>
-        <h2 class="text-[26px] md:text-[34px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          The whole rate policy, in one row.
-        </h2>
-      </div>
-
-      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
-        {numbers.map((n) => (
-          <div class="bg-white p-5 md:p-6">
-            <div class="flex items-baseline gap-1">
-              <span class="text-[28px] md:text-[34px] font-semibold tracking-[-0.025em] font-mono text-heading">{n.v}</span>
-              <span class="text-[12px] text-muted-foreground">{n.u}</span>
-            </div>
-            <div class="mt-2 text-[11.5px] uppercase tracking-[0.14em] font-mono text-foreground/70">{n.l}</div>
-            <div class="mt-3 pt-3 border-t border-[color:var(--border)] text-[11px] text-muted-foreground">{n.note}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       FAQ
-  ============================================================ -->
-  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Developer FAQ</div>
-        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          The questions we get a lot.
-        </h2>
-        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
-          Full API reference and the OpenAPI spec at <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="https://docs.warmbly.com">docs.warmbly.com</a>.
-        </p>
-      </div>
-
-      <div class="divide-y divide-[color:var(--border)]" data-faq>
-        {faq.map(([q, a]) => (
-          <div class="faq-row py-2">
-            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
-              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
-              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-              </span>
+      <div class="flex min-w-0 flex-col overflow-hidden rounded-[6px] bg-[#0b1020] ring-1 ring-slate-900/20" data-tabs>
+        <div class="flex items-center gap-1 overflow-x-auto border-b border-white/10 px-3 pt-3" role="tablist" aria-label="Code samples">
+          {samples.map((s, i) => (
+            <button type="button" role="tab" aria-selected={i === 0 ? 'true' : 'false'} data-tab={s.id} class="relative inline-flex h-9 shrink-0 items-center gap-2 rounded-t-md px-3 text-[13px] text-white/50 transition-colors hover:text-white aria-selected:text-white">
+              {s.logo ? <span class="inline-flex size-3.5 [&>svg]:size-3.5" aria-hidden="true" set:html={s.logo} /> : <Icon name="code" size={13} />}
+              {s.label}
+              <span class="tab-line absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-sky-400"></span>
             </button>
-            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
-              <div class="overflow-hidden">
-                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
+          ))}
+        </div>
+        {samples.map((s, i) => (
+          <div class={`flex min-h-0 flex-1 flex-col ${i ? 'hidden' : ''}`} role="tabpanel" data-panel={s.id}>
+            <pre class="flex-1 overflow-x-auto p-5 font-mono text-[12.5px] leading-[1.75] text-slate-200 sm:p-6 sm:text-[13px]"><code>{s.code}</code></pre>
+            <div class="border-t border-white/10 bg-white/[0.03]">
+              <div class="flex items-center justify-between px-5 pt-3 font-mono text-[11px] uppercase tracking-[0.14em] text-white/35 sm:px-6">
+                <span>{s.id === 'curl' ? 'Response' : 'Output'}</span>
+                <span class="normal-case tracking-normal text-emerald-400">{s.status}</span>
               </div>
+              <pre class="overflow-x-auto px-5 pb-5 pt-2 font-mono text-[12px] leading-[1.7] text-slate-400 sm:px-6"><code>{s.out}</code></pre>
             </div>
           </div>
         ))}
       </div>
-
-      <script is:inline>
-        (function () {
-          const faq = document.querySelector('[data-faq]');
-          if (!faq) return;
-          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-              const row   = btn.closest('.faq-row');
-              const panel = row.querySelector('.faq-panel');
-              const icon  = btn.querySelector('.faq-icon');
-              const open  = btn.getAttribute('aria-expanded') === 'true';
-              btn.setAttribute('aria-expanded', String(!open));
-              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
-              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
-            });
-          });
-        })();
-      </script>
     </div>
   </section>
 
-  <CTA
-    title="Wire Warmbly into your stack."
-    description="Create a key, paste a webhook URL, ship the integration before lunch."
-    primaryLabel="Get an API key"
-    primaryHref="https://app.warmbly.com/app/api-keys"
-    secondaryLabel="Read the docs"
-    secondaryHref="https://docs.warmbly.com"
-  />
+  <!-- WAYS IN: the terminal and the AI client, then the three SDKs. -->
+  <section class="container-page py-20 md:py-28">
+    <div class="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-end lg:gap-16">
+      <h2 class={h2}><span class="text-slate-400">Five ways in.</span> Pick the one that fits the job.</h2>
+      <p class={lead}>The REST API is underneath all of them. The CLI and the SDKs wrap it, the MCP server hands it to an AI client, and the realtime stream pushes its events to you as they happen.</p>
+    </div>
 
-  <style is:inline>
-    /* Tab triggers for the client editor in Section 2. State lives in one
-       class so the script never juggles utility names. */
-    .tab-trigger {
-      color: rgba(255, 255, 255, 0.55);
-      transition: color 180ms ease, background-color 180ms ease;
-    }
-    .tab-trigger:hover {
-      color: rgba(255, 255, 255, 0.92);
-      background: rgba(255, 255, 255, 0.06);
-    }
-    .tab-trigger.is-active {
-      color: #ffffff;
-      background: rgba(255, 255, 255, 0.10);
-    }
+    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 lg:grid-cols-6">
+      <article class="lg:col-span-3">
+        <CliScene />
+        <h3 class={title}>The warmbly CLI</h3>
+        <p class={body}>Sign in once through the browser, then run campaigns, contacts and the inbox from your terminal or CI. It prints a table to a person and JSON to a pipe, and asks before anything sends real mail.</p>
+        <code class="mt-4 inline-block rounded-md bg-slate-50 px-3 py-2 font-mono text-[12.5px] text-slate-700 ring-1 ring-slate-200">brew install warmbly/tap/warmbly</code>
+        <div><a href="https://docs.warmbly.com/api/cli/" class={link}>Read the CLI guide <Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></a></div>
+      </article>
+      <article class="lg:col-span-3">
+        <McpScene />
+        <h3 class={title}>An MCP server for AI clients</h3>
+        <p class={body}>Give Claude, Cursor or any MCP client your contacts, campaigns and inbox as tools. It signs in with OAuth, sees only the scopes your role allows, and drafts replies rather than sending them.</p>
+        <code class="mt-4 inline-block max-w-full truncate rounded-md bg-slate-50 px-3 py-2 font-mono text-[12.5px] text-slate-700 ring-1 ring-slate-200">claude mcp add --transport http warmbly https://api.warmbly.com/v1/mcp</code>
+        <div><a href="https://docs.warmbly.com/api/mcp/" class={link}>Connect an MCP client <Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></a></div>
+      </article>
+    </div>
 
-    /* Panel stack: every panel occupies the same grid cell, so the editor
-       holds the height of its tallest panel and the swap never jumps.
-       Outgoing panel fades down and hides; incoming one fades up after a
-       short beat so the two never read as a blur. */
-    [data-tabs-stack] {
-      display: grid;
-    }
-    [data-tabs-stack] > .tab-panel {
-      grid-area: 1 / 1;
-      min-width: 0;
-      transition: opacity 260ms cubic-bezier(0.22, 1, 0.36, 1) 70ms,
-                  transform 260ms cubic-bezier(0.22, 1, 0.36, 1) 70ms;
-    }
-    [data-tabs-stack] > .tab-panel[data-state="inactive"] {
-      opacity: 0;
-      transform: translateY(10px);
-      visibility: hidden;
-      pointer-events: none;
-      transition: opacity 160ms ease, transform 160ms ease,
-                  visibility 0s linear 160ms;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      [data-tabs-stack] > .tab-panel,
-      [data-tabs-stack] > .tab-panel[data-state="inactive"] {
-        transition: none;
-        transform: none;
-      }
-    }
-  </style>
+    <div class="mt-12 md:mt-16 grid gap-3 md:grid-cols-3">
+      {sdks.map((s) => (
+        <a href={s.href} target="_blank" rel="noopener noreferrer" class="group flex flex-col overflow-hidden rounded-[6px] bg-[#0b1020] ring-1 ring-slate-900/20 transition-transform hover:-translate-y-0.5">
+          <div class="flex items-center gap-2.5 border-b border-white/10 px-5 py-3.5">
+            <span class="inline-flex size-5 [&>svg]:size-5" aria-hidden="true" set:html={s.logo} />
+            <span class="text-[14px] font-medium text-white">{s.name}</span>
+            <Icon name="arrowUpRight" size={14} class="ml-auto text-white/30 transition-colors group-hover:text-white" />
+          </div>
+          <div class="px-5 pt-4 font-mono text-[12px] text-sky-300"><span class="text-white/35">$ </span>{s.pkg}</div>
+          <pre class="flex-1 overflow-x-auto px-5 pb-4 pt-3 font-mono text-[12px] leading-[1.7] text-slate-300"><code>{s.code}</code></pre>
+          <div class="border-t border-white/10 px-5 py-3 text-[12.5px] text-white/45">{s.runtime} · typed, auto-paginating, retries built in</div>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <!-- WEBHOOKS: copy beside an endpoint's delivery log. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-10 lg:grid-cols-[1fr_1.25fr] lg:gap-16">
+      <div>
+        <h2 class={h2}><span class="text-slate-400">Webhooks.</span> Every event, signed and logged.</h2>
+        <p class={`mt-5 ${lead}`}>Subscribe an HTTPS endpoint to replies, sends, bounces, new contacts, booked meetings and more. Each delivery is signed with your endpoint’s secret, and every attempt is kept so you can see what your server answered.</p>
+        <dl class="mt-8 divide-y divide-slate-200 border-y border-slate-200">
+          {webhookFacts.map(([k, v]) => (
+            <div class="grid gap-1 py-3.5 sm:grid-cols-[120px_1fr] sm:gap-6">
+              <dt class="text-[15px] font-medium text-slate-900">{k}</dt>
+              <dd class="text-[15px] leading-[1.55] text-slate-500">{v}</dd>
+            </div>
+          ))}
+        </dl>
+        <a href="https://docs.warmbly.com/api/reference/webhooks/" class={link}>Read the webhooks reference <Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></a>
+      </div>
+      <WebhookScene />
+    </div>
+  </section>
+
+  <!-- REALTIME: one wide live log. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid gap-6 lg:grid-cols-[1.15fr_1fr] lg:items-end lg:gap-16">
+      <h2 class={h2}><span class="text-slate-400">Realtime.</span> The stream the dashboard runs on.</h2>
+      <div>
+        <p class={lead}>Open one WebSocket with a key that has REALTIME_SUBSCRIBE and receive sends, opens, replies, audit entries and your own custom events as they happen, filtered by the same permissions as the dashboard.</p>
+        <a href="https://docs.warmbly.com/api/realtime/" class={link}>Read the realtime guide <Icon name="arrowRight" size={14} class="transition-transform group-hover:translate-x-0.5" /></a>
+      </div>
+    </div>
+    <div class="mt-12 md:mt-16">
+      <RealtimeScene />
+    </div>
+    <div class="mt-8 grid gap-6 md:grid-cols-3 md:gap-10">
+      {realtimeFacts.map(([k, v]) => (
+        <div class="border-t border-slate-200 pt-4">
+          <h3 class="text-[16px] font-medium text-slate-900">{k}</h3>
+          <p class="mt-1.5 text-[15px] leading-[1.55] text-slate-500">{v}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- SAFETY: retries, scopes and errors, each shown rather than told. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <h2 class={`max-w-4xl ${h2}`}><span class="text-slate-400">Built to be relied on.</span> Retries, permissions and errors you can plan around.</h2>
+    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 md:grid-cols-2 lg:grid-cols-3">
+      <article>
+        <IdempotencyScene />
+        <h3 class={title}>Safe retries</h3>
+        <p class={body}>Send an <code class="font-mono text-[14px] text-slate-900">Idempotency-Key</code> with any write. A retry within 24 hours gets the original response back instead of doing the work twice.</p>
+      </article>
+      <article>
+        <ScopesScene />
+        <h3 class={title}>Scoped keys</h3>
+        <p class={body}>A key can read and write contacts without being able to send a single email. Give each integration only what it needs, and limit it to your own IP addresses.</p>
+      </article>
+      <article class="md:col-span-2 lg:col-span-1">
+        <ErrorsScene />
+        <h3 class={title}>Errors with a code</h3>
+        <p class={body}>Every error carries a stable code for your logic and a request id for support, next to a message written for people.</p>
+      </article>
+    </div>
+  </section>
+
+  <Rule />
+  <Faq items={faq} title="The API, answered." />
+
+  <CTA photo="paint-teal" title="Build on Warmbly." description="Create an API key, send your first request, and get every event back as a signed webhook." primaryLabel="Get an API key" secondaryLabel="Read the docs" secondaryHref="https://docs.warmbly.com/api/" />
 </Layout>
+
+<style>
+  .tab-line { opacity: 0; transition: opacity 200ms; }
+  [aria-selected='true'] .tab-line { opacity: 1; }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-tabs]').forEach((root) => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[data-tab]')];
+    tabs.forEach((tab) => tab.addEventListener('click', () => {
+      tabs.forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
+      root.querySelectorAll<HTMLElement>('[data-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== tab.dataset.tab));
+    }));
+  });
+</script>

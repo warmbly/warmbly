@@ -1,0 +1,23 @@
+---
+/**
+ * A section heading in the site's two-tone style: a short grey lead, then the
+ * point in dark type, with an optional paragraph under it.
+ */
+interface Props {
+  /** The grey lead, e.g. "The ramp." */
+  lead?: string;
+  title: string;
+  text?: string;
+  /** h2 by default; h3 for a heading nested under another section. */
+  as?: 'h2' | 'h3';
+  class?: string;
+}
+const { lead, title, text, as: Tag = 'h2', class: className = '' } = Astro.props;
+---
+<div class={`max-w-3xl ${className}`}>
+  <Tag class="text-[30px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08]">
+    {lead && <span class="text-slate-400">{lead} </span>}<span class="text-slate-900">{title}</span>
+  </Tag>
+  {text && <p class="mt-4 max-w-2xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500">{text}</p>}
+  <slot />
+</div>

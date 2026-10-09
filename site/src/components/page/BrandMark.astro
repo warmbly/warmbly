@@ -1,0 +1,20 @@
+---
+import { BRAND_ICON } from '../../lib/brandIcons';
+import { RAW_BRAND_LOGOS } from '../../lib/brandLogos';
+
+/** A brand's own mark on a white tile, from the same glyphs the dashboard draws. */
+interface Props { name: string; size?: number; class?: string }
+const { name, size = 36, class: className = '' } = Astro.props;
+const raw = RAW_BRAND_LOGOS[name];
+const icon = BRAND_ICON[name];
+const glyph = Math.round(size * 0.55);
+---
+<span class={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white ring-1 ring-slate-200 ${className}`} style={`width:${size}px;height:${size}px`}>
+  {raw ? (
+    <svg viewBox={raw.viewBox} width={raw.fullBleed ? size : glyph} height={raw.fullBleed ? size : glyph} set:html={raw.inner} />
+  ) : icon ? (
+    <svg viewBox="0 0 24 24" width={glyph} height={glyph} fill={icon.hex}><path d={icon.path} /></svg>
+  ) : (
+    <span class="text-[12px] font-semibold text-slate-500">{name.slice(0, 1).toUpperCase()}</span>
+  )}
+</span>

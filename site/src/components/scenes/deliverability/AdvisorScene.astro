@@ -1,0 +1,148 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../warmup/Ico.astro';
+import { WINDOW, EYEBROW, TOPBAR } from '../../../lib/scene';
+
+/**
+ * The Advisor on the Accounts page (AdvisorSummaryBar + AdvisorCard): one
+ * summary line, expanded because something is critical, then a card per
+ * finding with its fix. The finding with a one-click fix is open in the fix
+ * drawer (AdvisorFixDrawer) on its "What changes" step. Titles, details and
+ * remedies are the detectors' own wording (internal/app/advisor).
+ */
+type Sev = 'critical' | 'high' | 'medium' | 'low';
+const CHIP: Record<Sev, string> = {
+  critical: 'bg-rose-500/10 text-rose-700 border-rose-500/20',
+  high: 'bg-orange-500/10 text-orange-700 border-orange-500/20',
+  medium: 'bg-amber-500/10 text-amber-700 border-amber-500/25',
+  low: 'bg-sky-500/10 text-sky-700 border-sky-500/20',
+};
+const DOT: Record<Sev, string> = { critical: 'bg-rose-500', high: 'bg-orange-500', medium: 'bg-amber-500', low: 'bg-sky-500' };
+const LABEL: Record<Sev, string> = { critical: 'Critical', high: 'Needs attention', medium: 'Worth fixing', low: 'Suggestion' };
+const cards: { sev: Sev; title: string; detail: string; action: string; auto?: boolean }[] = [
+  { sev: 'critical', title: 'sales@brightco.io is missing DMARC', detail: 'The sending domain for sales@brightco.io has no valid DMARC record. Google\'s bulk sender rules require SPF, DKIM, and DMARC to be aligned.', action: 'How to fix' },
+  { sev: 'high', title: 'lea@northwind.io is landing in spam 14% of the time', detail: 'Over the last 7 days 7 of 50 warmup messages from lea@northwind.io delivered at Google, Microsoft and Yahoo went to spam.', action: 'Fix' },
+  { sev: 'medium', title: 'ops@northwind.co has no verified tracking domain', detail: 'ops@northwind.co is sending cold campaigns without its own verified tracking domain, so open pixels and click links go out on a shared host.', action: 'How to fix' },
+  { sev: 'low', title: 'growth@acme.co is capped above the safe band', detail: 'growth@acme.co is capped at 80 cold emails a day, above the 50/day safe band.', action: 'Fix', auto: true },
+];
+---
+<ScaledStage w={1240} h={640} photo="sheer-blue">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[780px] h-[620px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">12 mailboxes</span>
+    </div>
+    <div class="px-5 py-3">
+      <section class="overflow-hidden rounded-md border border-rose-500/20 bg-rose-500/[0.06]">
+        <div class="flex items-center gap-2 px-2.5 py-2">
+          <Glyph name="sparkles" size={14} class="text-slate-400" />
+          <span class="min-w-0 flex-1 truncate text-[12.5px] text-slate-700"><span class="font-medium text-slate-900">4 mailboxes need urgent attention</span><span class="text-slate-500"> · each one is flagged on its row</span></span>
+          <span class="flex items-center gap-1">
+            {([['critical', 2], ['high', 1], ['medium', 1], ['low', 1]] as [Sev, number][]).map(([s, n]) => (
+              <span class="inline-flex items-center gap-1 rounded-full bg-slate-500/[0.08] px-1.5 py-0.5 text-[10px] tabular-nums text-slate-600"><span class={`size-1.5 rounded-full ${DOT[s]}`}></span>{n}</span>
+            ))}
+          </span>
+          <span class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11.5px] text-slate-500">Hide<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 15-6-6-6 6" /></svg></span>
+        </div>
+        <div class="space-y-1.5 border-t border-slate-200/60 px-2.5 py-2.5">
+          <!-- The critical one, open. -->
+          <div class="ad-card rounded-md border border-slate-200/80 bg-white/70" style="--i:0">
+            <div class="flex items-start gap-2 px-2.5 py-2">
+              <span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-rose-500"></span>
+              <span class="min-w-0 flex-1 truncate text-[12.5px] font-medium text-slate-900">sales@brightco.io is bouncing 6.2% of its sends</span>
+              <span class="inline-flex h-7 items-center rounded-md border border-slate-200 px-2 text-[12px] font-medium text-slate-600">How to fix</span>
+              <span class="inline-flex size-7 items-center justify-center text-slate-400"><Glyph name="more" size={14} /></span>
+              <span class="inline-flex size-7 items-center justify-center text-slate-400"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 15-6-6-6 6" /></svg></span>
+            </div>
+            <div class="space-y-2.5 border-t border-slate-200/60 px-2.5 py-2.5">
+              <p class="text-[12.5px] leading-relaxed text-slate-600">31 of 500 sends from sales@brightco.io bounced in the last 30 days. Amazon SES asks senders to stay under 5% and can pause sending at 10%; mailbox providers read a high bounce rate as a sender who does not know who they are mailing.</p>
+              <div class="rounded-md border border-slate-200/70 bg-white/50 px-2.5 py-2">
+                <p class={EYEBROW}>What to do</p>
+                <p class="mt-1 text-[12.5px] leading-relaxed text-slate-700">This is a list problem, not a mailbox problem. Verify the contacts in the campaigns this mailbox sends for before sending more, and remove the domains that bounce repeatedly.</p>
+              </div>
+              <div>
+                <p class={EYEBROW}>What we measured</p>
+                <div class="mt-1.5 flex flex-wrap gap-1.5">
+                  {[['Bounce rate', '6.2%'], ['Sends, 30 days', '500'], ['Bounces, 30 days', '31']].map(([k, v]) => (
+                    <span class="inline-flex items-baseline gap-1.5 rounded-md border border-slate-200/70 bg-white/60 px-1.5 py-0.5"><span class="text-[11px] text-slate-500">{k}</span><span class="text-[11.5px] font-medium text-slate-800">{v}</span></span>
+                  ))}
+                </div>
+              </div>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-1.5">
+                  <span class={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] ${CHIP.critical}`}>Critical</span>
+                  <span class="inline-flex items-center rounded-md border border-slate-200/70 bg-slate-500/[0.06] px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-slate-500">Deliverability</span>
+                </div>
+                <span class="flex items-center gap-0.5 text-slate-400"><span class="mr-1 text-[11px]">Useful?</span><span class="inline-flex size-6 items-center justify-center"><Ico name="thumbsUp" size={12} /></span><span class="inline-flex size-6 items-center justify-center"><Ico name="thumbsDown" size={12} /></span></span>
+              </div>
+            </div>
+          </div>
+          {cards.map((c, i) => (
+            <div class={`ad-card flex items-start gap-2 rounded-md border px-2.5 py-2 ${c.auto ? 'border-sky-300 bg-white ring-2 ring-sky-100' : 'border-slate-200/80 bg-white/70'}`} style={`--i:${i + 1}`}>
+              <span class={`mt-[7px] size-1.5 shrink-0 rounded-full ${DOT[c.sev]}`}></span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5">
+                  <span class="truncate text-[12.5px] font-medium text-slate-900">{c.title}</span>
+                  {c.auto && <span class="inline-flex shrink-0 items-center gap-1 rounded-md border border-sky-500/25 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"><Ico name="zap" size={10} />Auto</span>}
+                </div>
+                <p class="mt-0.5 truncate text-[11.5px] text-slate-500">{c.detail}</p>
+              </div>
+              <span class={`inline-flex h-7 items-center rounded-md px-2 text-[12px] font-medium ${c.action === 'Fix' ? 'bg-sky-600 text-white' : 'border border-slate-200 text-slate-600'}`}>{c.action}</span>
+              <span class="inline-flex size-7 items-center justify-center text-slate-400"><Glyph name="more" size={14} /></span>
+              <span class="inline-flex size-7 items-center justify-center text-slate-400"><Glyph name="chevronDown" size={14} /></span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- The cap finding, one step from applied. -->
+  <div class="ad-drawer float-layer absolute left-[770px] top-[150px] w-[430px] overflow-hidden rounded-md border border-white/60 bg-white/95 shadow-[0_24px_60px_-20px_rgba(15,23,42,0.45)] ring-1 ring-slate-900/[0.06]">
+    <div class="flex items-start gap-2 px-3 pt-2.5">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-1.5">
+          <span class={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] ${CHIP.low}`}>{LABEL.low}</span>
+          <span class="truncate text-[11px] text-slate-500">growth@acme.co</span>
+        </div>
+        <h2 class="mt-1 text-[13px] font-medium leading-snug text-slate-900">growth@acme.co is capped above the safe band</h2>
+      </div>
+      <span class="mt-0.5 inline-flex size-7 items-center justify-center text-slate-400"><Glyph name="x" size={14} /></span>
+    </div>
+    <div class="mt-2.5 flex items-center gap-1.5 border-b border-slate-200/70 px-3 pb-2">
+      {['Why', 'What changes', 'Done'].map((s, i) => (
+        <div class="min-w-0 flex-1">
+          <div class="h-0.5 overflow-hidden rounded-full bg-slate-100"><div class={`h-full rounded-full ${i <= 1 ? 'bg-sky-500' : ''} ${i === 1 ? 'enter-grow-x' : ''}`} style="--d:500ms"></div></div>
+          <span class={`mt-1 block text-[9.5px] uppercase tracking-[0.12em] ${i === 1 ? 'text-slate-600' : i === 0 ? 'text-slate-400' : 'text-slate-300'}`}>{s}</span>
+        </div>
+      ))}
+    </div>
+    <div class="space-y-3 px-3 py-3">
+      <div class="rounded-md border border-slate-200/70 bg-white/50 px-2.5 py-2">
+        <p class="text-[11px] text-slate-500">Daily cold cap</p>
+        <div class="mt-1 flex items-center gap-2 text-[12.5px]">
+          <span class="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-slate-500 line-through decoration-slate-300">80/day</span>
+          <Ico name="arrowRight" size={12} class="text-slate-400" />
+          <span class="ad-to rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700">50/day</span>
+        </div>
+      </div>
+      <p class="text-[12px] leading-relaxed text-slate-600">Bring the cap back to 50/day unless you have reviewed this mailbox's complaint and placement numbers specifically and decided to carry the risk.</p>
+      <p class="flex items-center gap-1.5 text-[11px] text-slate-400"><Ico name="undo" size={12} />Undo stays available after it is applied.</p>
+    </div>
+    <div class="flex items-center justify-between border-t border-slate-200/70 px-3 py-2.5">
+      <span class="inline-flex h-7 items-center gap-1 px-2 text-[12.5px] text-slate-500"><Ico name="arrowLeft" size={12} />Back</span>
+      <span class="inline-flex h-7 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-[12.5px] font-medium text-white"><Glyph name="check" size={14} />Set the cap to 50/day</span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* Findings settle in one after another when the scene first plays. */
+  .js-stage:not(.is-seen) .ad-card { opacity: 0; transform: translateY(-4px); }
+  .ad-card { transition: opacity 400ms ease calc(var(--i) * 90ms), transform 400ms ease calc(var(--i) * 90ms); }
+  .ad-to { animation: ad-to 5s ease-in-out infinite; }
+  @keyframes ad-to { 0%, 100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); } 50% { box-shadow: 0 0 0 4px rgb(16 185 129 / 0.15); } }
+  @media (prefers-reduced-motion: reduce) { .ad-card { transition: none; } }
+</style>

@@ -1,0 +1,298 @@
+---
+import HeroStage from './HeroStage.astro';
+import DrawerHead from './DrawerHead.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+
+/**
+ * The Accounts page (web/src/app/app/emails/page.tsx) with its Warmup column
+ * counting live, and the mailbox drawer (InboxDetails.tsx) open on the
+ * Warmup tab: lifecycle, today's progress, pool standing, ramp settings and
+ * warmup hours. Warmup activity streams in over the bottom of the list.
+ */
+type Status = 'active' | 'warming' | 'resting';
+type Row = {
+  addr: string; name: string; provider: string; mark: 'google' | 'microsoft' | 'imap';
+  status: Status; sent?: number; warm: [number, number] | 'Health-check' | 'Paused';
+  tick?: number; inbox?: number; collecting?: string; health: [string, number]; selected?: boolean;
+};
+const rows: Row[] = [
+  { addr: 'alex@northwind.dev', name: 'Alex Kim', provider: 'Google Workspace', mark: 'google', status: 'warming', warm: [19, 27], inbox: 97, health: ['healthy', 97], selected: true },
+  { addr: 'sam@northwind.io', name: 'Sam Ortiz', provider: 'Microsoft 365', mark: 'microsoft', status: 'active', sent: 31, warm: [4, 5], inbox: 95, health: ['healthy', 93] },
+  { addr: 'mia@northwind.dev', name: 'Mia Chen', provider: 'Google Workspace', mark: 'google', status: 'warming', warm: [14, 23], tick: 3100, inbox: 96, health: ['healthy', 96] },
+  { addr: 'ops@northwind.co', name: 'Ops team', provider: 'SMTP / IMAP', mark: 'imap', status: 'active', sent: 18, warm: 'Health-check', inbox: 92, health: ['healthy', 90] },
+  { addr: 'jon@northwind.dev', name: 'Jon Reyes', provider: 'Google Workspace', mark: 'google', status: 'warming', warm: [8, 12], tick: 4300, collecting: '7/20', health: ['healthy', 100] },
+  { addr: 'lea@northwind.io', name: 'Lea Novak', provider: 'Microsoft 365', mark: 'microsoft', status: 'warming', warm: [9, 18], tick: 5200, inbox: 86, health: ['risk', 78] },
+  { addr: 'hello@helio.gen', name: 'Lena Fischer', provider: 'Microsoft 365', mark: 'microsoft', status: 'active', sent: 22, warm: [5, 5], inbox: 94, health: ['healthy', 94] },
+  { addr: 'kai@northwind.dev', name: 'Kai Brandt', provider: 'Google Workspace', mark: 'google', status: 'warming', warm: [22, 31], tick: 2700, inbox: 98, health: ['healthy', 98] },
+  { addr: 'sales@brightco.io', name: 'Ana Silva', provider: 'Google Workspace', mark: 'google', status: 'active', sent: 27, warm: [3, 5], inbox: 96, health: ['healthy', 96] },
+  { addr: 'team@coastline.io', name: 'Sofia Ruiz', provider: 'SMTP / IMAP', mark: 'imap', status: 'resting', warm: 'Paused', inbox: 90, health: ['healthy', 90] },
+  { addr: 'growth@acme.co', name: 'Maya Okonkwo', provider: 'Google Workspace', mark: 'google', status: 'active', sent: 25, warm: [4, 5], inbox: 97, health: ['healthy', 96] },
+];
+const stats = [
+  { label: 'Total', value: '12', sub: 'connected' },
+  { label: 'Healthy', value: '10', sub: 'sending now', pulse: true },
+  { label: 'Warming', value: '6', sub: 'ramping up' },
+  { label: 'Needs attention', value: '1', sub: 'paused or failing', last: true },
+];
+const feed = [
+  { icon: 'send', tone: 'text-sky-600 bg-sky-50', text: 'Sent to dana@helio.gen', sub: 'Google Workspace · 2:41 PM' },
+  { icon: 'inbox', tone: 'text-emerald-600 bg-emerald-50', text: 'Arrived in the inbox', sub: 'from ravi@stratech.io · Microsoft 365' },
+  { icon: 'reply', tone: 'text-violet-600 bg-violet-50', text: 'Replied to lena@sprucebio.com', sub: 'Thread of 3 · 2:26 PM' },
+  { icon: 'send', tone: 'text-sky-600 bg-sky-50', text: 'Sent to max@quarry.co', sub: 'Microsoft 365 · 2:09 PM' },
+  { icon: 'inbox', tone: 'text-emerald-600 bg-emerald-50', text: 'Arrived in the inbox', sub: 'from kai@orbitlabs.io · Google Workspace' },
+] as const;
+const ramp = [
+  { label: 'Starting volume', value: '10', suffix: 'emails / day', hint: 'Emails per day when warmup begins.' },
+  { label: 'Daily increase', value: '1', suffix: '+ / day', hint: 'Added each day as reputation builds.' },
+  { label: 'Maximum volume', value: '40', suffix: 'emails / day', hint: 'The ceiling the ramp grows toward.' },
+  { label: 'Reply rate', value: '30', suffix: '%', hint: 'Share of warmup mail that gets a reply.' },
+];
+const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
+const healthTone = (h: string) => h === 'healthy'
+  ? { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Healthy' }
+  : { dot: 'bg-amber-500', text: 'text-amber-600', label: 'At risk' };
+---
+<HeroStage w={1240} h={720} photo="paint-teal">
+  <!-- Accounts -->
+  <div class={`${WINDOW} left-[40px] top-[44px] w-[820px] h-[700px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">12 mailboxes</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-[170px]">
+        <span class={ACTION_GHOST}><Glyph name="globe" size={12} />Sending domains</span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Add account</span>
+      </div>
+    </div>
+    <div class="grid grid-cols-4 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class="flex items-center gap-2">
+            <span class={EYEBROW}>{s.label}</span>
+            {s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
+          </div>
+          <div class={STAT_VALUE}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">12</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-[170px]">
+        <div class="h-7 w-48 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5">
+          <Glyph name="search" size={13} class="text-slate-400" />
+          <span class="text-[12.5px] text-slate-400">Search by email…</span>
+        </div>
+      </div>
+    </div>
+    <table class="w-full table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class="pl-5 pr-2 py-2 w-11"><span class="block size-3.5 rounded-[4px] border border-slate-300"></span></th>
+          <th class={th}>Mailbox</th>
+          <th class={`${th} w-[106px]`}>Status</th>
+          <th class={`${th} w-[92px]`}>Sent today</th>
+          <th class={`${th} w-[112px]`}>Warmup</th>
+          <th class={`${th} w-[84px]`}>Inbox</th>
+          <th class={`${th} w-[126px]`}>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => {
+          const h = healthTone(r.health[0]);
+          return (
+            <tr class={`h-11 border-b border-slate-200/60 ${r.selected ? 'bg-sky-50/70' : ''}`}>
+              <td class="pl-5 pr-2">
+                {r.selected
+                  ? <span class="flex size-3.5 items-center justify-center rounded-[4px] bg-sky-600 text-white"><Glyph name="check" size={10} /></span>
+                  : <span class="block size-3.5 rounded-[4px] border border-slate-300"></span>}
+              </td>
+              <td class="px-3">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white">
+                    <Glyph mark={r.mark} size={r.mark === 'imap' ? 13 : 14} />
+                  </span>
+                  <div class="min-w-0">
+                    <div class="truncate text-[12.5px] font-medium leading-tight text-slate-900">{r.addr}</div>
+                    <div class="mt-0.5 truncate text-[11px] leading-tight text-slate-400"><span class="text-slate-500">{r.name}</span> · {r.provider}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="px-3">
+                {r.status === 'active' && (
+                  <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700">
+                    <span class="inline-flex items-center gap-0.5"><Glyph name="send" size={12} class="text-sky-600" /><Glyph name="flame" size={12} class="text-orange-500" /></span>
+                    <span class="text-shimmer">Active</span>
+                  </span>
+                )}
+                {r.status === 'warming' && (
+                  <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-orange-600">
+                    <Glyph name="flame" size={12} class="text-orange-500 flame-flicker" /><span class="text-shimmer">Warming</span>
+                  </span>
+                )}
+                {r.status === 'resting' && (
+                  <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-violet-600">
+                    <Glyph name="moon" size={12} class="text-violet-500" />Resting
+                  </span>
+                )}
+              </td>
+              <td class="px-3">
+                {r.sent != null ? (
+                  <span class="inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums text-sky-700">
+                    <Glyph name="send" size={12} class="text-sky-500" />
+                    <span>{r.sent}<span class="text-slate-400">/50</span></span>
+                  </span>
+                ) : <span class="text-slate-300">—</span>}
+              </td>
+              <td class="px-3">
+                {Array.isArray(r.warm) ? (
+                  <span class="inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums text-orange-600">
+                    <span class="campaign-grid shrink-0"></span>
+                    <span>{r.tick ? <span data-tick={`${r.warm[0]},${r.warm[1] - 1},${r.tick}`}>{r.warm[0]}</span> : r.warm[0]}<span class="opacity-60">/{r.warm[1]}</span></span>
+                  </span>
+                ) : r.warm === 'Paused' ? (
+                  <span class="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-amber-600"><Glyph name="pause" size={12} />Paused</span>
+                ) : (
+                  <span class="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-sky-600"><Glyph name="activity" size={12} />Health-check</span>
+                )}
+              </td>
+              <td class="px-3">
+                {r.inbox ? (
+                  <span class={`inline-flex items-center gap-1.5 font-mono text-[11.5px] font-medium tabular-nums ${r.inbox >= 90 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    <span class={`size-1.5 rounded-full ${r.inbox >= 90 ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>{r.inbox}%
+                  </span>
+                ) : (
+                  <span class="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400"><span class="size-1.5 rounded-full bg-slate-300"></span>{r.collecting}</span>
+                )}
+              </td>
+              <td class="px-3">
+                <span class={`inline-flex items-center gap-1.5 text-[11px] font-medium ${h.text}`}>
+                  <span class={`size-1.5 rounded-full ${h.dot}`}></span>
+                  <span class="uppercase tracking-[0.08em]">{h.label} {r.health[1]}</span>
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- The drawer, open on the Warmup tab of the selected mailbox. -->
+  <div class="absolute left-[704px] top-[24px] w-[516px] h-[720px] overflow-hidden rounded-t-[12px] bg-white ring-1 ring-slate-900/[0.08] shadow-[-30px_40px_90px_-40px_rgba(15,23,42,0.6)]">
+    <DrawerHead addr="alex@northwind.dev" provider="Google Workspace" mark="google" active="Warmup" />
+    <div class="divide-y divide-slate-200/60">
+      <div class="px-5 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600"><Glyph name="flame" size={16} class="flame-flicker" /></span>
+          <div class="min-w-0">
+            <div class="text-[12.5px] font-medium text-slate-900">Warming up</div>
+            <div class="truncate text-[11px] text-slate-400">Day 18 of the ramp · plain-text exchanges with the pool</div>
+          </div>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <span class="h-8 px-3 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700"><Glyph name="pause" size={13} />Pause</span>
+          <span class="h-8 px-3 rounded-md border border-slate-200 inline-flex items-center text-[12px] font-medium text-slate-600">Stop</span>
+        </div>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class={EYEBROW}>Today</div>
+        <div class="mt-2 text-[12.5px] text-slate-700">Sending <b class="font-semibold text-slate-900 tabular-nums">19</b> of <b class="font-semibold text-slate-900 tabular-nums">27</b> · day 18</div>
+        <div class="mt-2.5 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="enter-grow-x h-full w-[70%] rounded-full bg-orange-400" style="--d:600ms"></div></div>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class={EYEBROW}>Warmup reputation</span>
+            <span class="text-[10.5px] text-slate-400">Premium pool</span>
+          </div>
+          <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600"><Glyph name="shieldCheck" size={14} />Healthy</span>
+        </div>
+        <div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-slate-500">
+          <span>Sent to <b class="text-slate-900 tabular-nums">41</b> partners</span>
+          <span><b class="text-slate-900 tabular-nums">33</b> domains</span>
+          <span><b class="text-slate-900 tabular-nums">26</b> workspaces</span>
+          <span>Received <b class="text-slate-900 tabular-nums">38</b> from <b class="text-slate-900 tabular-nums">35</b> partners</span>
+          <span class="text-slate-400">last 7 days</span>
+        </div>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class={EYEBROW}>Ramp configuration</div>
+        <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3.5">
+          {ramp.map((f) => (
+            <div>
+              <div class="mb-1 text-[12px] font-medium text-slate-700">{f.label}</div>
+              <div class="flex h-9 items-center rounded-md border border-slate-200 bg-white">
+                <span class="flex-1 px-2.5 text-right text-[12.5px] tabular-nums text-slate-900">{f.value}</span>
+                <span class="pr-2 text-[11px] text-slate-400 whitespace-nowrap">{f.suffix}</span>
+                <span class="flex self-stretch flex-col border-l border-slate-200 text-slate-400">
+                  <span class="flex flex-1 items-center px-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 15-6-6-6 6" /></svg></span>
+                  <span class="flex flex-1 items-center border-t border-slate-200 px-1"><Glyph name="chevronDown" size={12} /></span>
+                </span>
+              </div>
+              <p class="mt-1 text-[10.5px] leading-relaxed text-slate-400">{f.hint}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class={EYEBROW}>Sending window</div>
+        <div class="mt-3 flex items-center gap-2 text-[12.5px] text-slate-700">
+          <span class="h-8 px-2.5 rounded-md border border-slate-200 inline-flex items-center gap-1.5 tabular-nums"><Glyph name="clock" size={13} class="text-slate-400" />08:00</span>
+          <span class="text-[11.5px] text-slate-400">to</span>
+          <span class="h-8 px-2.5 rounded-md border border-slate-200 inline-flex items-center gap-1.5 tabular-nums"><Glyph name="clock" size={13} class="text-slate-400" />20:00</span>
+          <span class="ml-auto inline-flex gap-1">
+            {days.map((d, i) => (
+              <span class={`h-7 w-9 rounded-md inline-flex items-center justify-center text-[11px] font-medium ${i < 5 ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-200' : 'text-slate-400 ring-1 ring-slate-200'}`}>{d}</span>
+            ))}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Warmup traffic as it happens, newest on top. -->
+  <div class={`${FLOAT} left-[76px] top-[452px] w-[300px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+      <span class={EYEBROW}>Warmup activity</span>
+      <span class="ml-auto inline-flex items-center gap-1.5 text-[10.5px] text-emerald-600"><span class="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Live</span>
+    </div>
+    <div class="h-[208px] overflow-hidden">
+      <div class="wh-feed">
+        {[...feed, ...feed].map((f) => (
+          <div class="flex h-[52px] items-center gap-2.5 border-b border-slate-100 px-4">
+            <span class={`inline-flex size-7 shrink-0 items-center justify-center rounded-md ${f.tone}`}><Glyph name={f.icon} size={13} /></span>
+            <div class="min-w-0">
+              <div class="truncate text-[12px] text-slate-800">{f.text}</div>
+              <div class="truncate text-[10.5px] text-slate-400">{f.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5 border-t border-slate-100 px-4 py-2.5 text-[10.5px] text-slate-400">
+      <Ico name="eyeOff" size={12} />Never shown in your unibox
+    </div>
+  </div>
+</HeroStage>
+
+<style>
+  /* Rows are 52px; the feed steps down one at a time so a new event lands on top. */
+  .wh-feed { transform: translateY(-260px); animation: wh-feed 16s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+  @keyframes wh-feed {
+    0%, 17% { transform: translateY(-260px); }
+    20%, 37% { transform: translateY(-208px); }
+    40%, 57% { transform: translateY(-156px); }
+    60%, 77% { transform: translateY(-104px); }
+    80%, 97% { transform: translateY(-52px); }
+    100% { transform: translateY(0); }
+  }
+</style>

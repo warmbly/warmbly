@@ -1,0 +1,207 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../../lib/scene';
+import { TH, AVATAR, initials } from '../ui';
+
+/**
+ * The shared inbox as a sales team sees it: the scope rail with every rep's
+ * mailbox, a green pulse on the thread Priya is reading and amber on the one
+ * Marcus is answering, his name pill on that open thread. The card over it
+ * is the campaign's Leads tab with its Sender column, one rep per lead.
+ */
+type Conv = { who: string; subject: string; preview: string; time: string; mailbox: string; label: string; color: string; unread?: boolean; selected?: boolean; presence?: 'viewing' | 'replying'; by?: string };
+const convs: Conv[] = [
+  { who: 'Jenna Carter', subject: 'Re: Quick question about Carter & Co', preview: 'Can we do Thursday at 10am ET?', time: '3m', mailbox: 'marcus@acme.com', label: 'Meeting', color: '#8b5cf6', selected: true, presence: 'replying', by: 'Marcus' },
+  { who: 'Ravi Shah', subject: 'Re: Stratech and your Q4 rollout', preview: 'What does pricing look like for 40 seats?', time: '9m', mailbox: 'priya@acme.com', label: 'Pricing', color: '#0ea5e9', unread: true, presence: 'viewing', by: 'Priya' },
+  { who: 'Lena Fischer', subject: 'Re: Helio’s onboarding team', preview: 'Yes, send over a few times next week.', time: '22m', mailbox: 'dana@acme.com', label: 'Interested', color: '#10b981', unread: true },
+  { who: 'Aman Patel', subject: 'Automatic reply: Following up', preview: 'I am out of the office until the 14th.', time: '41m', mailbox: 'tom@acme.com', label: 'Out of office', color: '#f59e0b' },
+  { who: 'Kai Brandt', subject: 'Re: Quick question about Orbit', preview: 'Not a priority this quarter, sorry.', time: '1h', mailbox: 'dana@acme.com', label: 'Not now', color: '#64748b' },
+  { who: 'Noor Haddad', subject: 'Re: Quarry’s outbound team', preview: 'Who should I loop in from ops?', time: '2h', mailbox: 'priya@acme.com', label: 'Question', color: '#0ea5e9' },
+];
+const views = [
+  { t: 'Inbox', i: 'inbox', n: 24, active: true },
+  { t: 'Unread', i: 'mail', n: 7 },
+  { t: 'Awaiting reply', i: 'reply', n: 11 },
+  { t: 'Snoozed', i: 'moon', n: 2 },
+] as const;
+const pipeline = [
+  { t: 'Hot leads', i: 'flame', n: 6 },
+  { t: 'Needs a reply', i: 'clock', n: 3 },
+  { t: 'Declined', i: 'x', n: 9 },
+] as const;
+const reps = [
+  { addr: 'dana@acme.com', n: 5 },
+  { addr: 'marcus@acme.com', n: 3 },
+  { addr: 'priya@acme.com', n: 4 },
+  { addr: 'tom@acme.com', n: 2 },
+];
+const leads = [
+  { name: 'Jenna Carter', email: 'jenna@carter.co', status: 'replied', step: 'Email 1', sender: 'marcus@acme.com' },
+  { name: 'Ravi Shah', email: 'ravi@stratech.io', status: 'replied', step: 'Email 2', sender: 'priya@acme.com' },
+  { name: 'Mia Lopez', email: 'mia@brightline.co', status: 'processing', step: 'Email 2', sender: 'dana@acme.com' },
+  { name: 'Owen Park', email: 'owen@kestrel.io', status: 'processing', step: 'Email 1', sender: 'tom@acme.com' },
+  { name: 'Sara Ito', email: 'sara@quarry.co', status: 'queued', step: '', sender: '' },
+];
+const presenceTone = { viewing: { ping: 'bg-emerald-400', dot: 'bg-emerald-500' }, replying: { ping: 'bg-amber-400', dot: 'bg-amber-500' } };
+---
+<ScaledStage w={1240} h={720} photo="lake-motion">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[1240px] h-[700px] flex`}>
+    <!-- ScopeRail -->
+    <div class="w-[208px] shrink-0 border-r border-slate-200 bg-white py-3">
+      <div class="px-3 pb-2"><span class="h-8 w-full rounded-md bg-sky-600 text-white text-[12.5px] font-medium inline-flex items-center justify-center gap-1.5"><Glyph name="penLine" size={13} />Compose</span></div>
+      <div class="px-2 space-y-px">
+        {views.map((v) => (
+          <div class={`relative h-7 px-2 rounded-md flex items-center gap-2 text-[12.5px] ${'active' in v ? 'bg-slate-100 text-slate-900 font-medium' : 'text-slate-600'}`}>
+            {'active' in v && <span class="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-sky-600"></span>}
+            <Glyph name={v.i} size={15} class={'active' in v ? 'text-slate-800' : 'text-slate-400'} />
+            <span class="flex-1">{v.t}</span>
+            <span class={`text-[10.5px] tabular-nums ${'active' in v ? 'text-sky-700 font-medium' : 'text-slate-300'}`}>{v.n}</span>
+          </div>
+        ))}
+      </div>
+      <div class="mt-3 h-7 pl-4 pr-3 flex items-center text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">Views</div>
+      <div class="px-2 space-y-px">
+        {pipeline.map((v) => (
+          <div class="h-7 px-2 rounded-md flex items-center gap-2 text-[12.5px] text-slate-600">
+            <Glyph name={v.i} size={15} class="text-slate-400" /><span class="flex-1">{v.t}</span><span class="text-[10.5px] tabular-nums text-slate-300">{v.n}</span>
+          </div>
+        ))}
+      </div>
+      <div class="mt-3 h-7 pl-4 pr-3 flex items-center text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">Mailboxes</div>
+      <div class="px-2 space-y-px">
+        {reps.map((r) => (
+          <div class="h-7 px-2 rounded-md flex items-center gap-2 text-[12.5px] text-slate-600">
+            <Glyph mark="google" size={13} /><span class="flex-1 truncate">{r.addr}</span><span class="text-[10.5px] tabular-nums text-slate-500">{r.n}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- ConversationList -->
+    <div class="w-[340px] shrink-0 border-r border-slate-200 flex flex-col">
+      <div class="h-11 pl-3 pr-2 flex items-center gap-1.5">
+        <span class="text-[13.5px] font-semibold text-slate-900">Inbox</span>
+        <span class="text-[11.5px] tabular-nums text-slate-400">24</span>
+      </div>
+      <div class="px-3 pb-2 border-b border-slate-200">
+        <div class="h-8 px-2.5 rounded-md bg-slate-100/80 flex items-center gap-2 text-[12.5px] text-slate-400"><Glyph name="search" size={14} />Search all mail</div>
+      </div>
+      <div class="divide-y divide-slate-100">
+        {convs.map((c) => (
+          <div class={`flex items-start gap-2 pl-3 pr-4 py-2.5 ${c.selected ? 'bg-sky-50' : ''}`}>
+            <span class="w-2 shrink-0 flex h-[18px] items-center justify-center">{c.unread && <span class="block size-2 rounded-full bg-sky-500"></span>}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex h-[18px] items-center gap-2">
+                <span class={`truncate text-[12.5px] ${c.unread ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>{c.who}</span>
+                {c.presence && (
+                  <span class="shrink-0 relative flex size-2" title={`${c.by} is ${c.presence}`}>
+                    <span class={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${presenceTone[c.presence].ping}`}></span>
+                    <span class={`relative inline-flex size-2 rounded-full ${presenceTone[c.presence].dot}`}></span>
+                  </span>
+                )}
+                <span class={`ml-auto shrink-0 text-[11px] tabular-nums ${c.unread ? 'font-medium text-sky-700' : 'text-slate-400'}`}>{c.time}</span>
+              </div>
+              <div class={`mt-0.5 truncate text-[12.5px] ${c.unread ? 'font-medium text-slate-900' : 'text-slate-600'}`}>{c.subject}</div>
+              <div class="mt-0.5 flex h-4 items-center gap-2">
+                <span class="truncate text-[11.5px] text-slate-400">{c.preview}</span>
+                <span class="ml-auto inline-flex h-4 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] font-medium" style={`color:${c.color};background-color:${c.color}14;`}><span class="size-1.5 rounded-full" style={`background-color:${c.color}`}></span>{c.label}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- ThreadView -->
+    <div class="flex-1 min-w-0 flex flex-col">
+      <div class="min-h-12 px-5 py-2 border-b border-slate-200 flex items-center gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[13.5px] font-semibold leading-5 text-slate-900">Re: Quick question about Carter &amp; Co</div>
+          <div class="flex items-center gap-1.5 text-[11px] leading-4 text-slate-400">
+            <span>2 messages</span><span class="text-slate-300">·</span><span>marcus@acme.com</span>
+            <span class="ml-1.5 inline-flex items-center gap-1.5 h-5 pl-1 pr-2 rounded-full border text-[10px] font-medium whitespace-nowrap border-amber-200 bg-amber-50 text-amber-700">
+              <span class="flex size-3.5 items-center justify-center rounded-full ring-1 ring-white bg-amber-100 text-[6.5px] font-semibold text-amber-700">ML</span>
+              Marcus is replying
+              <span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60"></span><span class="relative inline-flex size-1.5 rounded-full bg-amber-500"></span></span>
+            </span>
+          </div>
+        </div>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="tag" size={15} /></span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="moon" size={15} /></span>
+        <span class="mr-12 inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="archive" size={15} /></span>
+      </div>
+      <article class="px-5 py-2.5 flex items-start gap-3 border-b border-slate-100">
+        <span class={`${AVATAR} size-7 text-[10.5px]`}>ML</span>
+        <div class="min-w-0 flex-1">
+          <div class="text-[12.5px] font-semibold text-slate-900">Marcus Lee</div>
+          <div class="truncate text-[12px] text-slate-500">Hi Jenna, noticed Carter &amp; Co just opened two new regional offices…</div>
+        </div>
+        <span class="mr-12 text-[11px] text-slate-400">Mon</span>
+      </article>
+      <article class="px-5 py-4 pr-16">
+        <div class="flex items-start gap-3">
+          <span class={`${AVATAR} size-7 text-[10.5px]`}>JC</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-baseline gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Jenna Carter</span><span class="text-[11px] text-slate-400">jenna@carter.co</span></div>
+            <div class="mt-0.5 text-[11px] text-slate-400">to marcus@acme.com</div>
+          </div>
+          <span class="text-[11px] text-slate-400">3m</span>
+        </div>
+        <div class="mt-3 pl-10 space-y-2.5 text-[13px] leading-[1.6] text-slate-800">
+          <p>Hi Marcus,</p>
+          <p>Timing is good, we are rolling out to both new offices next month. Can we do Thursday at 10am ET? I will bring our head of ops.</p>
+          <p>Jenna</p>
+        </div>
+      </article>
+      <div class="mx-5 mr-16 mt-1 h-10 rounded-lg ring-1 ring-slate-200 px-3.5 flex items-center gap-2 text-[12.5px] text-slate-400">
+        <Glyph name="reply" size={13} />Reply to Jenna…
+        <span class="ml-auto text-[11px]">Reply as marcus@acme.com</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- The campaign's Leads tab: who wrote to whom. -->
+  <div class={`${FLOAT} left-[640px] top-[398px] w-[560px] overflow-hidden`}>
+    <div class="h-10 px-4 border-b border-slate-200 flex items-center gap-2.5">
+      <span class={EYEBROW}>Leads</span>
+      <span class="font-mono text-[10.5px] text-slate-400">1,240</span>
+      <span class="text-[11.5px] text-slate-500">· Q4 mid-market ops</span>
+      <span class="ml-auto inline-flex items-center gap-1.5 text-[10.5px] text-slate-400"><span class="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Live</span>
+    </div>
+    <table class="w-full table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class={`${TH} pl-4`}>Name</th>
+          <th class={`${TH} w-[108px]`}>Progress</th>
+          <th class={`${TH} w-[84px]`}>Step</th>
+          <th class={`${TH} w-[144px]`}>Sender</th>
+        </tr>
+      </thead>
+      <tbody>
+        {leads.map((l) => (
+          <tr class={`h-10 border-b border-slate-200/60 ${l.status === 'processing' ? 'bg-sky-50/40' : l.status === 'replied' ? 'bg-slate-50/40' : ''}`}>
+            <td class="pl-4 pr-3">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class={`${AVATAR} size-6 text-[9px]`}>{initials(l.name)}</span>
+                <div class="min-w-0">
+                  <div class="truncate text-[12px] font-medium leading-tight text-slate-900">{l.name}</div>
+                  <div class="truncate font-mono text-[10px] leading-tight text-slate-400">{l.email}</div>
+                </div>
+              </div>
+            </td>
+            <td class="px-3">
+              {l.status === 'replied' && <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-emerald-700"><Glyph name="reply" size={12} />Replied</span>}
+              {l.status === 'processing' && <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700"><span class="campaign-grid"></span>Processing</span>}
+              {l.status === 'queued' && <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-500"><Glyph name="clock" size={12} />Queued</span>}
+            </td>
+            <td class="px-3">
+              {l.step ? <span class={`inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium ${l.status === 'replied' ? 'bg-slate-100 text-slate-400' : 'bg-sky-100 text-sky-700'}`}>{l.step}</span> : <span class="text-[11px] text-slate-300">Not started</span>}
+            </td>
+            <td class="px-3">{l.sender ? <span class="block truncate text-[11.5px] text-slate-600">{l.sender}</span> : <span class="text-[11px] text-slate-300">Not assigned</span>}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</ScaledStage>

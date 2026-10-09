@@ -1,0 +1,170 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * A warmup thread as a pool partner's own mail client shows it: plain text,
+ * labelled as a simulated diagnostic (the content bank in
+ * internal/tasks/template.go), filed in the Warmbly folder. The card shows
+ * what Warmbly checked when the copy arrived, one step at a time.
+ */
+const folders = [
+  { icon: 'inbox', name: 'Inbox', n: '24' },
+  { icon: 'star', name: 'Starred' },
+  { icon: 'send', name: 'Sent' },
+  { icon: 'file', name: 'Drafts', n: '2' },
+  { icon: 'archive', name: 'Archive' },
+  { icon: 'alert', name: 'Spam' },
+  { icon: 'folder', name: 'Warmbly', n: '6', active: true },
+] as const;
+const threads = [
+  { who: 'Alex Kim', n: 3, subject: 'Simulated diagnostic: fictional clock', preview: 'Agreed. The example is closed; no real meeting was scheduled.', time: '2:41 PM', active: true },
+  { who: 'Ravi Shah', n: 2, subject: 'Simulated diagnostic: sample count', preview: 'There are 5 cards in the hypothetical sample: 3 blue and 2 green.', time: '1:58 PM' },
+  { who: 'me, Lena', n: 2, subject: 'Simulated diagnostic: conditional wording', preview: 'The hypothetical status is pending review: no approval exists…', time: '11:20 AM' },
+  { who: 'Max Weber', n: 1, subject: 'Simulated diagnostic: summary correction', preview: 'A fictional checklist has 12 items: 9 marked complete and 3…', time: 'Oct 8' },
+  { who: 'me, Kai', n: 3, subject: 'Simulated diagnostic: plaintext label review', preview: 'Yes. Status: unknown and Next step: review are written in the…', time: 'Oct 8' },
+  { who: 'Sam Ortiz', n: 1, subject: 'Simulated diagnostic: fixed-offset date note', preview: 'On 2026-10-08 the fictional clock reads 09:00 UTC, or 11:00…', time: 'Oct 7' },
+] as const;
+const checks = [
+  { k: 'Token', v: 'Matched, now spent', icon: 'key' },
+  { k: 'Bound to', v: 'dana@helio.gen', icon: 'user' },
+  { k: 'Arrived in', v: 'Inbox', icon: 'inbox', chip: true },
+  { k: 'Mail host', v: 'Google Workspace', icon: 'server' },
+  { k: 'Then filed to', v: 'Warmbly folder', icon: 'folder' },
+] as const;
+---
+<ScaledStage w={1240} h={600} photo="sheer-peach">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[1220px] h-[600px]`}>
+    <!-- The partner's mail client. -->
+    <div class="h-12 px-4 flex items-center gap-3 border-b border-slate-200 bg-slate-50/60">
+      <span class="flex gap-1.5"><span class="size-2.5 rounded-full bg-slate-200"></span><span class="size-2.5 rounded-full bg-slate-200"></span><span class="size-2.5 rounded-full bg-slate-200"></span></span>
+      <span class="ml-3 text-[13px] font-semibold text-slate-800">Mail</span>
+      <div class="ml-24 h-8 w-[420px] rounded-md bg-white ring-1 ring-slate-200 flex items-center gap-2 px-2.5 text-[12.5px] text-slate-400"><Glyph name="search" size={14} />Search mail</div>
+      <span class="ml-auto mr-12 inline-flex items-center gap-2 text-[12px] text-slate-500">dana@helio.gen<span class="flex size-7 items-center justify-center rounded-full bg-violet-100 text-[10.5px] font-semibold text-violet-700">DH</span></span>
+    </div>
+    <div class="flex h-[552px]">
+      <div class="w-[196px] shrink-0 border-r border-slate-200 px-2 py-3">
+        <span class="mb-3 ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-3 text-[12px] font-medium text-white"><Glyph name="penLine" size={13} />Compose</span>
+        {folders.map((f) => (
+          <div class={`flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[12.5px] ${'active' in f && f.active ? 'bg-sky-50 font-medium text-sky-800' : 'text-slate-600'}`}>
+            {f.icon === 'star' || f.icon === 'file' || f.icon === 'folder' ? <Ico name={f.icon} size={14} class={'active' in f && f.active ? 'text-sky-600' : 'text-slate-400'} /> : <Glyph name={f.icon} size={14} class="text-slate-400" />}
+            {f.name}
+            {'n' in f && <span class="ml-auto font-mono text-[10.5px] text-slate-400">{f.n}</span>}
+          </div>
+        ))}
+      </div>
+
+      <div class="w-[340px] shrink-0 border-r border-slate-200">
+        <div class="flex h-10 items-center gap-2 border-b border-slate-200 px-4">
+          <span class="text-[13px] font-semibold text-slate-900">Warmbly</span>
+          <span class="text-[11px] text-slate-400">Warmup mail, in and out</span>
+        </div>
+        {threads.map((t) => (
+          <div class={`border-b border-slate-100 px-4 py-2.5 ${'active' in t && t.active ? 'bg-sky-50/70' : ''}`}>
+            <div class="flex items-center gap-2">
+              <span class="truncate text-[12.5px] font-medium text-slate-900">{t.who}</span>
+              {t.n > 1 && <span class="font-mono text-[10.5px] text-slate-400">{t.n}</span>}
+              <span class="ml-auto shrink-0 text-[11px] text-slate-400">{t.time}</span>
+            </div>
+            <div class="mt-0.5 truncate text-[12px] text-slate-700">{t.subject}</div>
+            <div class="mt-0.5 truncate text-[11.5px] text-slate-400">{t.preview}</div>
+          </div>
+        ))}
+      </div>
+
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 border-b border-slate-200 px-6 py-3.5">
+          <span class="text-[16px] font-semibold text-slate-900">Simulated diagnostic: fictional clock</span>
+          <span class="inline-flex h-5 items-center gap-1 rounded bg-slate-100 px-1.5 text-[10.5px] text-slate-600"><Ico name="folder" size={11} />Warmbly</span>
+        </div>
+        <div class="space-y-3 px-6 py-4">
+          <div class="rounded-lg border border-slate-200 px-4 py-3">
+            <div class="flex items-center gap-2.5">
+              <span class="flex size-7 items-center justify-center rounded-full bg-sky-100 text-[10.5px] font-semibold text-sky-700">AK</span>
+              <span class="text-[12.5px] font-semibold text-slate-900">Alex Kim</span>
+              <span class="text-[11.5px] text-slate-400">alex@northwind.dev</span>
+              <span class="ml-auto text-[11px] text-slate-400">10:12 AM</span>
+            </div>
+            <p class="mt-2.5 max-w-[560px] font-mono text-[12.5px] leading-[1.65] text-slate-700">Simulated diagnostic. In this fictional example, the clock reads 14:00, not 15:00. Which time does the example use?</p>
+          </div>
+          <div class="rounded-lg border border-slate-200 px-4 py-3">
+            <div class="flex items-center gap-2.5">
+              <span class="flex size-7 items-center justify-center rounded-full bg-violet-100 text-[10.5px] font-semibold text-violet-700">DH</span>
+              <span class="text-[12.5px] font-semibold text-slate-900">Dana Hart</span>
+              <span class="text-[11.5px] text-slate-400">to Alex</span>
+              <span class="ml-auto text-[11px] text-slate-400">12:47 PM</span>
+            </div>
+            <p class="mt-2.5 max-w-[560px] font-mono text-[12.5px] leading-[1.65] text-slate-700">The fictional example uses 14:00, not 15:00.</p>
+          </div>
+          <div class="cv-new rounded-lg border border-sky-200 bg-sky-50/30 px-4 py-3">
+            <div class="flex items-center gap-2.5">
+              <span class="flex size-7 items-center justify-center rounded-full bg-sky-100 text-[10.5px] font-semibold text-sky-700">AK</span>
+              <span class="text-[12.5px] font-semibold text-slate-900">Alex Kim</span>
+              <span class="text-[11.5px] text-slate-400">Re: Simulated diagnostic: fictional clock</span>
+              <span class="ml-auto text-[11px] text-slate-400">2:41 PM</span>
+            </div>
+            <p class="mt-2.5 max-w-[560px] font-mono text-[12.5px] leading-[1.65] text-slate-700">Agreed. The example is closed; no real meeting was scheduled.</p>
+            <div class="mt-3 flex items-center gap-3 text-[11px] text-slate-400">
+              <span class="inline-flex items-center gap-1"><Glyph name="mail" size={12} />text/plain</span>
+              <span class="inline-flex items-center gap-1"><Ico name="eyeOff" size={12} />no tracking pixel</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="h-8 px-3 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[12px] text-slate-600"><Glyph name="reply" size={13} />Reply</span>
+            <span class="h-8 px-3 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[12px] text-slate-600"><Ico name="arrowRight" size={13} />Forward</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- What Warmbly checked when the copy reached Dana's mailbox. -->
+  <div class={`${FLOAT} left-[78px] top-[330px] w-[330px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><Glyph name="shieldCheck" size={14} /></span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium text-slate-900">Delivery verified</div>
+        <div class="text-[10.5px] text-slate-400">alex@northwind.dev → dana@helio.gen</div>
+      </div>
+      <span class="cv-ok ml-auto inline-flex h-5 items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Counted</span>
+    </div>
+    <div class="px-4 py-2">
+      {checks.map((c, i) => (
+        <div class="flex h-8 items-center gap-2 text-[12px]" style={`--i:${i}`}>
+          <span class="w-[92px] shrink-0 text-slate-500">{c.k}</span>
+          <span class="cv-val inline-flex min-w-0 items-center gap-1.5 text-slate-900">
+            {'chip' in c
+              ? <span class="inline-flex h-5 items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 text-[10.5px] font-medium text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span>{c.v}</span>
+              : <span class="truncate">{c.v}</span>}
+          </span>
+          <span class="relative ml-auto inline-flex size-4 shrink-0 items-center justify-center">
+            <span class="cv-wait absolute size-3 rounded-full border-[1.5px] border-slate-200 border-t-sky-500"></span>
+            <span class="cv-pass absolute text-emerald-600"><Glyph name="check" size={13} /></span>
+          </span>
+        </div>
+      ))}
+    </div>
+    <div class="border-t border-slate-100 px-4 py-2.5 text-[10.5px] leading-relaxed text-slate-400">The same token in any other inbox counts for nothing.</div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* One 11s loop: the reply lands, then each check resolves in turn.
+     Base styles are the end state, which is what reduced motion shows. */
+  .cv-wait { opacity: 0; }
+  .cv-new { animation: cv-new 11s ease-out infinite; }
+  @keyframes cv-new {
+    0%, 3% { opacity: 0; transform: translateY(8px); }
+    8%, 95% { opacity: 1; transform: none; }
+    100% { opacity: 0; }
+  }
+  .cv-wait { animation: cv-spin 0.8s linear infinite, cv-wait 11s linear infinite; animation-delay: 0s, calc(var(--i) * 0.5s); }
+  .cv-pass, .cv-val { animation: cv-pass 11s linear infinite; animation-delay: calc(var(--i) * 0.5s); animation-fill-mode: both; }
+  .cv-ok { animation: cv-ok 11s linear infinite; animation-fill-mode: both; }
+  @keyframes cv-spin { to { transform: rotate(360deg); } }
+  @keyframes cv-wait { 0%, 12% { opacity: 1; } 15%, 100% { opacity: 0; } }
+  @keyframes cv-pass { 0%, 12% { opacity: 0; } 15%, 100% { opacity: 1; } }
+  @keyframes cv-ok { 0%, 36% { opacity: 0; } 40%, 100% { opacity: 1; } }
+</style>

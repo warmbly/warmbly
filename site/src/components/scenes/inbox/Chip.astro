@@ -1,0 +1,11 @@
+---
+/** LabelChip from ConversationItem.tsx: the dot carries the colour, the chip the name. */
+import type { Label } from './labels';
+
+interface Props { label: Label; class?: string }
+const { label, class: className = '' } = Astro.props;
+---
+<span class={`inline-flex h-4 max-w-[110px] shrink-0 items-center gap-1 overflow-hidden rounded-sm px-1.5 text-[10px] font-medium ${className}`} style={`color:${label.c};background-color:${label.c}14;`}>
+  <span class="block size-1.5 shrink-0 rounded-full" style={`background-color:${label.c};`}></span>
+  <span class="truncate">{label.t}</span>
+</span>

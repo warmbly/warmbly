@@ -1,0 +1,103 @@
+---
+/**
+ * The unibox scope rail (ScopeRail.tsx): Mail, the premade Views over the
+ * automatic labels, each mailbox and the workspace labels. One row shape for
+ * all of them: a quiet icon, the name, a bare count (sky when it is unread).
+ */
+import Glyph from '../Glyph.astro';
+import Ic from './Ic.astro';
+import { L } from './labels';
+
+type Section = 'mail' | 'views' | 'mailboxes' | 'labels';
+type R = { key: string; label: string; glyph?: string; ic?: string; dot?: string; count?: number; accent?: boolean };
+
+interface Props {
+  active: string;
+  sections?: Section[];
+  /** Every Mail row, or the ones a triager keeps on screen. */
+  fullMail?: boolean;
+  /** Per-row count overrides, by key. */
+  counts?: Record<string, number | undefined>;
+  /** A row whose count arrives live, with a class for its badge. */
+  liveKey?: string;
+  liveClass?: string;
+  class?: string;
+}
+const {
+  active, sections = ['mail', 'views', 'mailboxes', 'labels'], fullMail = false,
+  counts = {}, liveKey, liveClass = '', class: className = '',
+} = Astro.props;
+
+const mail: R[] = [
+  { key: 'inbox', label: 'Inbox', glyph: 'inbox', count: 12, accent: true },
+  { key: 'unread', label: 'Unread', glyph: 'mail', count: 9, accent: true },
+  { key: 'awaiting', label: 'Awaiting reply', glyph: 'reply', count: 14, accent: true },
+  { key: 'agent', label: 'Agent drafts', glyph: 'sparkles', count: 3, accent: true },
+  { key: 'snoozed', label: 'Snoozed', glyph: 'moon', count: 2 },
+  ...(fullMail ? [{ key: 'drafts', label: 'Drafts', ic: 'fileText', count: 1 }] : []),
+  { key: 'sent', label: 'Sent', glyph: 'send' },
+  { key: 'scheduled', label: 'Scheduled', glyph: 'clock', count: 1, accent: true },
+  ...(fullMail ? [
+    { key: 'archive', label: 'Archive', glyph: 'archive' },
+    { key: 'spam', label: 'Spam', ic: 'octagonAlert' },
+    { key: 'trash', label: 'Trash', ic: 'trash' },
+  ] : []),
+];
+const views: R[] = [
+  { key: 'action', label: 'Action required', ic: 'triangleAlert', count: 1, accent: true },
+  { key: 'hot', label: 'Hot leads', glyph: 'flame', count: 5, accent: true },
+  { key: 'needs', label: 'Needs a reply', ic: 'messageSquareReply', count: 3, accent: true },
+  { key: 'follow', label: 'Follow up', glyph: 'clock', count: 8, accent: true },
+  { key: 'declined', label: 'Declined', ic: 'ban' },
+  { key: 'automated', label: 'Automated', ic: 'bot', count: 6, accent: true },
+];
+const mailboxes: R[] = [
+  { key: 'mb1', label: 'alex@northwind.dev', ic: 'mailOpen', count: 5, accent: true },
+  { key: 'mb2', label: 'sam@northwind.io', ic: 'mailOpen', count: 4, accent: true },
+  { key: 'mb3', label: 'ops@northwind.co', ic: 'mailOpen', count: 3, accent: true },
+];
+const labels: R[] = [
+  { key: 'l-int', label: L.interested.t, dot: L.interested.c, count: 2, accent: true },
+  { key: 'l-meet', label: L.meeting.t, dot: L.meeting.c, count: 1, accent: true },
+  { key: 'l-price', label: L.pricing.t, dot: L.pricing.c, count: 2, accent: true },
+  { key: 'l-q', label: L.question.t, dot: L.question.c, count: 1, accent: true },
+];
+const groups: { id: Section; label: string; rows: R[]; total?: number }[] = [
+  { id: 'mail', label: 'Mail', rows: mail },
+  { id: 'views', label: 'Views', rows: views },
+  { id: 'mailboxes', label: 'Mailboxes', rows: mailboxes, total: 3 },
+  { id: 'labels', label: 'Labels', rows: labels, total: 19 },
+].filter((g) => sections.includes(g.id as Section)) as { id: Section; label: string; rows: R[]; total?: number }[];
+
+const countOf = (r: R) => (r.key in counts ? counts[r.key] : r.count);
+---
+<nav class={`w-[220px] shrink-0 border-r border-slate-200 bg-white py-3 ${className}`}>
+  {groups.map((g) => (
+    <div class="pb-2">
+      <div class="flex h-7 items-center gap-1.5 pl-4 pr-3">
+        <span class="text-[10.5px] font-medium uppercase tracking-[0.12em] text-slate-400">{g.label}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-300"><polyline points="6 9 12 15 18 9" /></svg>
+        {g.total !== undefined && <span class="ml-auto text-[10.5px] tabular-nums text-slate-300">{g.total}</span>}
+      </div>
+      <div class="space-y-px px-2">
+        {g.rows.map((r) => {
+          const on = r.key === active;
+          const n = countOf(r);
+          return (
+            <div class={`relative flex h-7 w-full items-center gap-2.5 rounded-md pl-2 pr-2 ${on ? 'bg-slate-100 text-slate-900' : 'text-slate-600'}`}>
+              <span class={`shrink-0 ${on ? 'text-slate-800' : 'text-slate-400'}`}>
+                {r.glyph && <Glyph name={r.glyph as any} size={15} />}
+                {r.ic && <Ic name={r.ic as any} size={15} />}
+                {r.dot && <span class="inline-flex h-[15px] w-[15px] items-center justify-center"><span class="block size-2 rounded-full" style={`background-color:${r.dot};`}></span></span>}
+              </span>
+              <span class={`min-w-0 flex-1 truncate text-[12.5px] ${on ? 'font-medium' : ''}`}>{r.label}</span>
+              {n !== undefined && (
+                <span class={`shrink-0 text-[11px] tabular-nums ${r.key === liveKey ? liveClass : ''} ${r.accent && !on ? 'font-semibold text-sky-700' : on ? 'text-slate-600' : 'text-slate-400'}`}>{n}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ))}
+</nav>

@@ -1,0 +1,113 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, SECTIONBAR } from '../../../../lib/scene';
+import { TH, AVATAR, initials } from '../ui';
+
+/**
+ * Launch week: the investor campaign's Leads tab. A partner replies on a
+ * loop, their row turns Replied and the follow-up they were due never
+ * goes out; the card is the reply itself.
+ */
+type Lead = { name: string; fund: string; status: 'processing' | 'replied' | 'done' | 'queued'; step: string; live?: boolean };
+const leads: Lead[] = [
+  { name: 'Hannah Ward', fund: 'Ridgeline Ventures', status: 'processing', step: 'Email 1', live: true },
+  { name: 'Anna Keller', fund: 'Hafen Capital', status: 'replied', step: 'Email 1' },
+  { name: 'Sam Patel', fund: 'Northgate Partners', status: 'processing', step: 'Email 2' },
+  { name: 'Li Zhang', fund: 'Harbour Capital', status: 'replied', step: 'Email 2' },
+  { name: 'Oliver Brandt', fund: 'Seedwell', status: 'done', step: 'Email 2' },
+  { name: 'Grace Kim', fund: 'Fieldstone VC', status: 'processing', step: 'Email 1' },
+  { name: 'Marco Ricci', fund: 'Lattice Fund', status: 'queued', step: '' },
+];
+---
+<ScaledStage w={680} h={600} photo="paint-blue">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[580px]`}>
+    <div class="px-5 pt-4 pb-3">
+      <div class="inline-flex items-center gap-1 text-[11.5px] text-slate-400"><span>←</span> Campaigns</div>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="text-[17px] font-semibold text-slate-900">Seed · dev-tools investors</span>
+        <span class="inline-flex h-5 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+      </div>
+    </div>
+    <div class="grid grid-cols-3 border-y border-slate-200 pr-6">
+      {[['Investors', '48', 'in the campaign'], ['Replied', '9', '18.8% so far'], ['Stopped by a reply', '9', 'no follow-up sent']].map(([k, v, s], i) => (
+        <div class={`px-5 py-3 ${i < 2 ? 'border-r border-slate-200' : ''}`}>
+          <div class={EYEBROW}>{k}</div>
+          <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900">{v}</div>
+          <div class="mt-1 font-mono text-[10px] text-slate-400">{s}</div>
+        </div>
+      ))}
+    </div>
+    <div class={SECTIONBAR}><span class={EYEBROW}>Leads</span><span class="font-mono text-[10.5px] text-slate-400">48</span><span class="ml-auto mr-6 inline-flex items-center gap-1.5 text-[10.5px] text-slate-400"><span class="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Live</span></div>
+    <table class="w-[644px] table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class={`${TH} pl-5`}>Name</th>
+          <th class={`${TH} w-[124px]`}>Progress</th>
+          <th class={`${TH} w-[104px]`}>Current step</th>
+        </tr>
+      </thead>
+      <tbody>
+        {leads.map((l) => {
+          const done = l.status === 'replied' || l.status === 'done';
+          return (
+            <tr class={`h-11 border-b border-slate-200/60 ${l.status === 'processing' ? 'bg-sky-50/40' : done ? 'bg-slate-50/40' : ''} ${l.live ? 'ic-live' : ''}`}>
+              <td class="pl-5 pr-3">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class={`${AVATAR} size-6 text-[9px]`}>{initials(l.name)}</span>
+                  <div class="min-w-0">
+                    <div class={`truncate text-[12.5px] font-medium leading-tight ${done ? 'text-slate-400' : 'text-slate-900'}`}>{l.name}</div>
+                    <div class="truncate text-[10.5px] leading-tight text-slate-400">{l.fund}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="px-3">
+                {l.live ? (
+                  <span class="relative block h-4">
+                    <span class="ic-a absolute inset-0 inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700"><span class="campaign-grid"></span>Processing</span>
+                    <span class="ic-b absolute inset-0 inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-emerald-700"><Glyph name="reply" size={12} />Replied</span>
+                  </span>
+                ) : l.status === 'replied' ? <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-emerald-700"><Glyph name="reply" size={12} />Replied</span>
+                  : l.status === 'done' ? <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-indigo-700"><Glyph name="check" size={12} />Done</span>
+                  : l.status === 'queued' ? <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-500"><Glyph name="clock" size={12} />Queued</span>
+                  : <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700"><span class="campaign-grid"></span>Processing</span>}
+              </td>
+              <td class="px-3">
+                {l.step ? <span class={`inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium ${done ? 'bg-slate-100 text-slate-400' : 'bg-sky-100 text-sky-700'}`}>{l.step}</span> : <span class="text-[11px] text-slate-300">Not started</span>}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- The reply that just stopped Hannah's sequence. -->
+  <div class={`ic-card ${FLOAT} left-[330px] top-[430px] w-[322px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class={`${AVATAR} size-7 text-[10px]`}>HW</span>
+      <div class="min-w-0 flex-1">
+        <div class="text-[12.5px] font-semibold text-slate-900">Hannah Ward</div>
+        <div class="truncate text-[10.5px] text-slate-400">Re: Ridgeline Ventures &lt;&gt; Atlas</div>
+      </div>
+      <span class="inline-flex h-4 items-center gap-1 rounded-sm px-1.5 text-[10px] font-medium" style="color:#10b981;background-color:#10b98114;"><span class="size-1.5 rounded-full bg-emerald-500"></span>Interested</span>
+    </div>
+    <div class="px-4 py-3 text-[12.5px] leading-[1.55] text-slate-700">Developer tools is right in our lane. Happy to take a look, send the deck over.</div>
+    <div class="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[11px] text-slate-500">
+      <Glyph name="flag" size={12} class="text-slate-400" />Stop on reply: Email 2 will not be sent
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* An 11s loop: the reply lands, the card rises, the row turns Replied.
+     Base styles are the final state, which is what reduced motion shows. */
+  .ic-a { opacity: 0; animation: ic-a 11s linear infinite; }
+  .ic-b { animation: ic-b 11s linear infinite; }
+  @keyframes ic-a { 0%, 40% { opacity: 1; } 43%, 95% { opacity: 0; } 100% { opacity: 1; } }
+  @keyframes ic-b { 0%, 40% { opacity: 0; transform: scale(0.9); } 44%, 95% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+  .ic-live { animation: ic-live 11s ease-out infinite; }
+  @keyframes ic-live { 0%, 40% { background: rgb(240 249 255 / 0.4); } 45%, 70% { background: rgb(236 253 245); } 100% { background: rgb(240 249 255 / 0.4); } }
+  .ic-card { animation: ic-card 11s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes ic-card { 0%, 30% { opacity: 0; translate: 0 12px; } 36%, 95% { opacity: 1; translate: 0 0; } 100% { opacity: 0; translate: 0 0; } }
+</style>

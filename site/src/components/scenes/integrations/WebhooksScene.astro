@@ -1,0 +1,101 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../analytics/Ico.astro';
+import { WINDOW, FLOAT, TAB } from '../../../lib/scene';
+
+/**
+ * A webhook endpoint (web/src/app/app/settings/webhooks): its drawer on the
+ * Deliveries tab, every attempt with its status, response code and attempt
+ * count, a failed one being retried. Under it, the headers each delivery
+ * carries, signed with the endpoint's secret. New deliveries arrive on top.
+ */
+type D = { ev: string; status: 'delivered' | 'failed' | 'abandoned' | 'in flight'; code?: number; tries: string; at: string; isNew?: boolean };
+const rows: D[] = [
+  { ev: 'campaign.reply_received', status: 'delivered', code: 200, tries: '1/8', at: 'just now', isNew: true },
+  { ev: 'meeting.booked', status: 'delivered', code: 200, tries: '1/8', at: '14m ago' },
+  { ev: 'campaign.email_bounced', status: 'failed', code: 503, tries: '3/8', at: '21m ago' },
+  { ev: 'contact.created', status: 'delivered', code: 200, tries: '1/8', at: '1h ago' },
+  { ev: 'campaign.unsubscribed', status: 'delivered', code: 200, tries: '2/8', at: '3h ago' },
+  { ev: 'campaign.reply_received', status: 'delivered', code: 200, tries: '1/8', at: '4h ago' },
+];
+const TONE = {
+  delivered: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  'in flight': 'bg-sky-50 text-sky-700 border-sky-100',
+  failed: 'bg-amber-50 text-amber-700 border-amber-100',
+  abandoned: 'bg-rose-50 text-rose-700 border-rose-100',
+};
+const tabs = [
+  { label: 'Overview', icon: 'gauge' },
+  { label: 'Deliveries', icon: 'activity', active: true },
+  { label: 'Settings', icon: 'settings' },
+];
+const select = 'h-7 px-2 rounded-md border border-slate-200 bg-white text-[12px] text-slate-700 inline-flex items-center gap-1.5';
+---
+<ScaledStage w={680} h={510} photo="reeded-glass">
+  <div class={`${WINDOW} left-[32px] top-[32px] right-0 h-[478px]`}>
+    <div class="h-14 px-5 flex items-center gap-3 border-b border-slate-200">
+      <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Ico name="activity" size={16} /></span>
+      <div class="min-w-0 flex-1">
+        <div class="truncate font-mono text-[13px] font-medium text-slate-900">https://hooks.acme.com/warmbly</div>
+        <div class="text-[10.5px] text-slate-400">Created 3 weeks ago</div>
+      </div>
+      <span class="inline-flex items-center gap-1 rounded-sm border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-emerald-700"><Ico name="shieldCheck" size={12} />Verified</span>
+      <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Ico name="x" size={16} /></span>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${t.active ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Ico name={t.icon} size={14} />{t.label}
+          {t.active && <span class="absolute -bottom-px left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+    <div class="space-y-3 p-4">
+      <div class="flex items-center gap-2">
+        <span class={select}>All statuses<Ico name="chevronDown" size={12} class="text-slate-400" /></span>
+        <span class={select}>All events<Ico name="chevronDown" size={12} class="text-slate-400" /></span>
+      </div>
+      <div class="relative h-[186px] overflow-hidden rounded-md border border-slate-200">
+        <div class="wh-list divide-y divide-slate-100">
+          {rows.map((d) => (
+            <div class={`flex h-[37px] items-center gap-2 px-2.5 ${d.isNew ? 'wh-new' : ''}`}>
+              <Ico name="chevronRight" size={14} class="text-slate-300" />
+              <code class="min-w-0 flex-1 truncate font-mono text-[11.5px] text-slate-700">{d.ev}</code>
+              <span class={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] ${TONE[d.status]}`}>{d.status}</span>
+              {d.code && <span class={`font-mono text-[11px] tabular-nums ${d.code < 300 ? 'text-emerald-600' : 'text-rose-600'}`}>{d.code}</span>}
+              <span class="w-7 text-right text-[10.5px] tabular-nums text-slate-400">{d.tries}</span>
+              <span class="w-14 text-right text-[10.5px] text-slate-400">{d.at}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- What the receiver gets: the event, its id, and the signature over the body. -->
+  <div class={`${FLOAT} left-[72px] top-[384px] w-[560px] overflow-hidden`}>
+    <div class="flex h-9 items-center gap-2 border-b border-slate-200 px-3.5">
+      <span class="rounded bg-sky-50 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-sky-700">POST</span>
+      <span class="font-mono text-[11.5px] text-slate-700">https://hooks.acme.com/warmbly</span>
+      <span class="ml-auto inline-flex items-center gap-1 text-[11px] text-emerald-600"><Ico name="lock" size={12} />HMAC-SHA256</span>
+    </div>
+    <div class="space-y-1 px-3.5 py-2.5 font-mono text-[11px] leading-[1.45]">
+      <div><span class="text-slate-400">X-Warmbly-Event:</span> <span class="text-slate-700">campaign.reply_received</span></div>
+      <div><span class="text-slate-400">X-Warmbly-Event-Id:</span> <span class="text-slate-700">7c1e4f0a-93b2-4d58-a1c6-2f0d8e5b3a91</span></div>
+      <div class="truncate"><span class="text-slate-400">X-Warmbly-Signature:</span> <span class="text-violet-700">t=1791560467,v1=4c1f9e0b2d7a63e85f1c09b4a7d2e6f3c8b1a5</span></div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* An 8s loop: a reply is delivered and its row lands on top of the log. */
+  .wh-list { animation: wh-list 8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes wh-list {
+    0% { transform: translateY(-38px); opacity: 0; }
+    5%, 30% { transform: translateY(-38px); opacity: 1; }
+    37%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .wh-new { animation: wh-new 8s ease-out infinite; }
+  @keyframes wh-new { 0%, 34% { background: rgb(236 253 245 / 0); } 40%, 70% { background: rgb(236 253 245); } 92%, 100% { background: rgb(236 253 245 / 0); } }
+</style>

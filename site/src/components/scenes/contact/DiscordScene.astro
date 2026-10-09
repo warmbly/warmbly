@@ -1,0 +1,97 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../about/Ico.astro';
+import { BRAND_ICON } from '../../../lib/brandIcons';
+
+/**
+ * The community on Discord (dc.warmbly.com), drawn in Discord's own dark
+ * theme: a self-hosting question answered in the open. The people are sample data.
+ */
+const WIN = 'absolute overflow-hidden rounded-tl-[12px] ring-1 ring-slate-900/[0.12] shadow-[0_40px_90px_-40px_rgba(15,23,42,0.6)]';
+const groups = [
+  { name: 'Information', channels: ['welcome', 'announcements'] },
+  { name: 'Community', channels: ['general', 'help', 'self-hosting', 'feature-ideas'] },
+];
+const messages = [
+  { who: 'ines', initial: 'I', color: '#c084fc', time: 'Today at 09:12', text: 'Installed with the one-liner on a fresh VPS. Where do I set the hostname afterwards?' },
+  { who: 'Warmbly team', initial: 'W', avatar: true, color: '#38bdf8', time: 'Today at 09:20', text: 'In the .env the installer wrote. Run it again and it adopts that file, so no secret is regenerated.' },
+  { who: 'ines', initial: 'I', color: '#c084fc', time: 'Today at 09:23', text: 'Perfect, that worked. Thanks!' },
+];
+const discord = BRAND_ICON.discord;
+---
+<ScaledStage w={680} h={460}>
+  <div class={`${WIN} left-[32px] top-[32px] w-[648px] h-[428px] flex bg-[#313338] text-left`}>
+    <!-- Server rail -->
+    <div class="w-[64px] shrink-0 bg-[#1e1f22] pt-3 flex flex-col items-center gap-2">
+      <span class="size-10 rounded-[14px] bg-[#313338] inline-flex items-center justify-center text-[#dbdee1]">
+        {discord && <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={discord.path} /></svg>}
+      </span>
+      <span class="h-[2px] w-7 rounded-full bg-white/10"></span>
+      <span class="relative">
+        <span class="absolute -left-[12px] top-1/2 h-9 w-1 -translate-y-1/2 rounded-r-full bg-white"></span>
+        <img src="/brand/social-avatar-256.webp" alt="" width="40" height="40" loading="lazy" class="size-10 rounded-[14px]" />
+      </span>
+      <span class="size-10 rounded-full bg-[#313338] inline-flex items-center justify-center text-[22px] font-light leading-none text-[#23a559]">+</span>
+    </div>
+
+    <!-- Channels -->
+    <div class="w-[176px] shrink-0 bg-[#2b2d31] flex flex-col">
+      <div class="h-12 px-4 flex items-center justify-between border-b border-black/25 text-[13.5px] font-semibold text-[#f2f3f5]">
+        Warmbly <Ico name="chevronRight" size={13} class="rotate-90 text-[#b5bac1]" />
+      </div>
+      <div class="px-2 pt-3">
+        {groups.map((g) => (
+          <div class="mb-3">
+            <div class="px-1.5 mb-1 text-[10.5px] font-semibold uppercase tracking-[0.02em] text-[#949ba4]">{g.name}</div>
+            {g.channels.map((c) => (
+              <div class={`h-[30px] px-2 rounded-[4px] flex items-center gap-1.5 text-[13px] ${c === 'self-hosting' ? 'bg-[#404249] text-white font-medium' : 'text-[#949ba4]'}`}>
+                <Ico name="hash" size={15} class={c === 'self-hosting' ? 'text-[#b5bac1]' : 'text-[#80848e]'} />{c}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- Chat -->
+    <div class="min-w-0 flex-1 flex flex-col">
+      <div class="h-12 shrink-0 px-4 flex items-center gap-2 border-b border-black/25">
+        <Ico name="hash" size={18} class="text-[#80848e]" />
+        <span class="text-[13.5px] font-semibold text-[#f2f3f5]">self-hosting</span>
+        <span class="h-5 w-px bg-white/10"></span>
+        <span class="truncate text-[12px] text-[#949ba4]">Running your own instance</span>
+      </div>
+      <div class="flex-1 min-h-0 px-4 pt-5 space-y-[18px]">
+        {messages.map((m, i) => (
+          <div class="enter-fade flex gap-3" style={`--d:${200 + i * 450}ms`}>
+            {m.avatar
+              ? <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-9 shrink-0 rounded-full" />
+              : <span class="size-9 shrink-0 rounded-full inline-flex items-center justify-center text-[14px] font-semibold text-[#1e1f22]" style={`background:${m.color}`}>{m.initial}</span>}
+            <div class="min-w-0">
+              <div class="flex items-baseline gap-2">
+                <span class="text-[13px] font-medium" style={`color:${m.color}`}>{m.who}</span>
+                <span class="text-[10.5px] text-[#949ba4]">{m.time}</span>
+              </div>
+              <div class="mt-0.5 text-[13px] leading-[1.45] text-[#dbdee1]">{m.text}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div class="shrink-0 px-4 pb-1.5">
+        <div class="h-11 rounded-lg bg-[#383a40] px-3 flex items-center gap-3 text-[13px] text-[#6d6f78]">
+          <span class="size-5 rounded-full bg-[#b5bac1] inline-flex items-center justify-center text-[15px] leading-none text-[#383a40]">+</span>
+          Message #self-hosting
+        </div>
+        <div class="h-6 flex items-center gap-1.5 text-[11px] text-[#b5bac1]">
+          <span class="flex gap-[3px]"><span class="dc-dot size-[5px] rounded-full bg-[#b5bac1]"></span><span class="dc-dot size-[5px] rounded-full bg-[#b5bac1]" style="animation-delay:.15s"></span><span class="dc-dot size-[5px] rounded-full bg-[#b5bac1]" style="animation-delay:.3s"></span></span>
+          <span><b class="font-semibold text-[#dbdee1]">marco</b> is typing…</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .dc-dot { animation: dc-dot 1.2s ease-in-out infinite; }
+  @keyframes dc-dot { 0%, 60%, 100% { opacity: 0.35; transform: none; } 30% { opacity: 1; transform: translateY(-2px); } }
+</style>

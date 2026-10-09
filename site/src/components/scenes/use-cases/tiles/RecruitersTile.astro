@@ -1,0 +1,27 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, EYEBROW, SECTIONBAR } from '../../../../lib/scene';
+
+/** Recruiters: a role's leads, each candidate hearing from one recruiter. */
+const rows = [
+  { name: 'Maya Chen', status: 'Replied', tone: 'text-emerald-700', icon: 'reply', sender: 'dana@' },
+  { name: 'Aisha Bello', status: 'Processing', tone: 'text-sky-700', sender: 'dana@' },
+  { name: 'Jonas Weber', status: 'Done', tone: 'text-indigo-700', icon: 'check', sender: 'li@' },
+  { name: 'Priya Das', status: 'Processing', tone: 'text-sky-700', sender: 'sam@' },
+  { name: 'Lucía Gómez', status: 'Queued', tone: 'text-slate-500', icon: 'clock', sender: '' },
+] as const;
+---
+<ScaledStage w={460} h={345} photo="sheer-peach">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-11 px-4 flex items-center border-b border-slate-200"><span class="text-[13px] font-semibold text-slate-900">Staff platform engineer</span></div>
+    <div class={SECTIONBAR}><span class={EYEBROW}>Leads</span><span class="font-mono text-[10.5px] text-slate-400">82</span></div>
+    {rows.map((r) => (
+      <div class="h-[46px] px-4 pr-10 flex items-center gap-3 border-b border-slate-200/60">
+        <span class="flex-1 text-[12.5px] font-medium text-slate-900">{r.name}</span>
+        <span class={`w-[104px] inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] ${r.tone}`}>{'icon' in r ? <Glyph name={r.icon} size={12} /> : <span class="campaign-grid"></span>}{r.status}</span>
+        <span class="w-14 text-[11.5px] text-slate-600">{r.sender ? `${r.sender}` : <span class="text-slate-300">—</span>}</span>
+      </div>
+    ))}
+  </div>
+</ScaledStage>

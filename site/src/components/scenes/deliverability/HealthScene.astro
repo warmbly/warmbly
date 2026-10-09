@@ -1,0 +1,80 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../warmup/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, SECTIONBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+
+/**
+ * Deliverability > Warmup inbox placement (WarmupPlacementSection.tsx): the
+ * workspace's numbers, then every mailbox ranked worst first with its daily
+ * rate, spam count and band. A mailbox on watch is open in a small card.
+ */
+type Band = 'good' | 'fair' | 'poor';
+const BAND: Record<Band, { label: string; chip: string; dot: string; text: string; stroke: string }> = {
+  good: { label: 'Healthy', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', text: 'text-emerald-600', stroke: '#10b981' },
+  fair: { label: 'Watch', chip: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500', text: 'text-amber-600', stroke: '#f59e0b' },
+  poor: { label: 'Landing in spam', chip: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500', text: 'text-rose-600', stroke: '#f43f5e' },
+};
+const rows: { email: string; rate: number; band: Band; obs: number; spam: number; spark: number[] }[] = [
+  { email: 'dev@sunriselabs.io', rate: 77, band: 'poor', obs: 48, spam: 11, spark: [94, 92, 90, 88, 85, 83, 80, 79, 77] },
+  { email: 'lea@northwind.io', rate: 86, band: 'fair', obs: 50, spam: 7, spark: [96, 95, 94, 92, 90, 89, 88, 87, 86] },
+  { email: 'ml@helio.gen', rate: 88.5, band: 'fair', obs: 61, spam: 7, spark: [84, 85, 85, 86, 87, 87, 88, 88, 88.5] },
+  { email: 'ops@northwind.co', rate: 92, band: 'good', obs: 74, spam: 6, spark: [90, 91, 90, 92, 91, 92, 93, 92, 92] },
+  { email: 'hello@helio.gen', rate: 94, band: 'good', obs: 88, spam: 5, spark: [93, 94, 93, 94, 95, 94, 94, 93, 94] },
+  { email: 'sam@northwind.io', rate: 95, band: 'good', obs: 92, spam: 5, spark: [95, 94, 96, 95, 95, 96, 95, 95, 95] },
+  { email: 'sales@brightco.io', rate: 96, band: 'good', obs: 101, spam: 4, spark: [97, 96, 96, 95, 96, 97, 96, 96, 96] },
+  { email: 'alex@northwind.dev', rate: 97, band: 'good', obs: 104, spam: 3, spark: [96, 97, 97, 98, 97, 97, 98, 97, 97] },
+];
+const sparkPath = (v: number[]) => v.map((y, i) => `${i ? 'L' : 'M'} ${(i / (v.length - 1)) * 64} ${18 - ((y - 70) / 30) * 16}`).join(' ');
+---
+<ScaledStage w={760} h={570} photo="lake-motion">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[724px] h-[540px]`}>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Warmup inbox placement</span>
+      <span class="ml-auto inline-flex rounded-md bg-slate-100 p-0.5 text-[11px] font-medium">
+        <span class="inline-flex h-6 items-center rounded bg-white px-2 text-slate-900 shadow-sm">All</span>
+        <span class="inline-flex h-6 items-center px-2 text-slate-500">Google</span>
+        <span class="inline-flex h-6 items-center px-2 text-slate-500">Microsoft</span>
+        <span class="inline-flex h-6 items-center px-2 text-slate-500">Yahoo</span>
+      </span>
+    </div>
+    <div class="grid grid-cols-3 border-b border-slate-200">
+      <div class={STAT}><div class={EYEBROW}>Non-spam share · 7 days</div><div class={`${STAT_VALUE} text-emerald-600`}>93.6%</div><div class={STAT_SUB}>Healthy</div></div>
+      <div class={STAT}><div class={EYEBROW}>Classified receipts</div><div class={STAT_VALUE}><span data-tick="1204,1240,2600">1204</span></div><div class={STAT_SUB}>of 1,262 submissions</div></div>
+      <div class="px-5 py-4"><div class={EYEBROW}>Spam</div><div class={`${STAT_VALUE} text-rose-600`}>77</div><div class={STAT_SUB}>6.4% · at the big three only</div></div>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Mailboxes by inbox rate</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">12</span>
+      <span class="ml-auto inline-flex h-6 items-center rounded border border-amber-200 bg-amber-50 px-2 text-[11px] font-medium text-amber-700">Below 90% only · 3</span>
+    </div>
+    {rows.map((m, i) => (
+      <div class="flex h-11 items-center gap-3 border-b border-slate-200/60 px-5">
+        <span class={`size-1.5 shrink-0 rounded-full ${BAND[m.band].dot}`}></span>
+        <span class="min-w-0 flex-1 truncate text-[12.5px] font-medium text-slate-900">{m.email}</span>
+        <svg width="64" height="20" viewBox="0 0 64 20" class="overflow-visible"><path class="enter-draw" d={sparkPath(m.spark)} fill="none" stroke={BAND[m.band].stroke} stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" style={`--d:${300 + i * 80}ms`} /></svg>
+        <span class="w-16 text-right font-mono text-[11px] tabular-nums text-slate-500">{m.obs} obs</span>
+        <span class={`w-14 text-right font-mono text-[11px] tabular-nums ${m.spam ? 'text-rose-600' : 'text-slate-400'}`}>{m.spam} spam</span>
+        <span class={`w-12 text-right font-mono text-[11.5px] font-medium tabular-nums ${BAND[m.band].text}`}>{m.rate}%</span>
+        <span class={`inline-flex h-5 w-[118px] shrink-0 items-center justify-center gap-1 rounded border px-1.5 text-[10px] font-medium ${BAND[m.band].chip}`}><span class={`size-1.5 rounded-full ${BAND[m.band].dot}`}></span>{BAND[m.band].label}</span>
+        <Ico name="chevronRight" size={14} class="text-slate-300" />
+      </div>
+    ))}
+  </div>
+
+  <!-- What the worst mailbox's band means for it right now. -->
+  <div class={`${FLOAT} left-[22px] top-[396px] w-[318px] p-4`}>
+    <div class="flex items-center gap-2">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600"><Glyph name="gauge" size={14} /></span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium text-slate-900">dev@sunriselabs.io is throttled</div>
+        <div class="text-[10.5px] text-slate-400">23% spam at Google, Microsoft and Yahoo</div>
+      </div>
+    </div>
+    <div class="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+      <div class="rounded-md bg-slate-50 px-2.5 py-2"><div class="text-slate-400">Warmup</div><div class="mt-0.5 font-medium text-slate-900">Half volume</div></div>
+      <div class="rounded-md bg-slate-50 px-2.5 py-2"><div class="text-slate-400">Cold sending</div><div class="mt-0.5 font-medium text-slate-900">Half volume</div></div>
+    </div>
+    <div class="mt-2.5 text-[11px] text-slate-500">Lifts on its own below 15%.</div>
+  </div>
+</ScaledStage>

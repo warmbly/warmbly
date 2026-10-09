@@ -1,359 +1,166 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import HeroAtmosphere from '../../components/HeroAtmosphere.astro';
 import Icon from '../../components/Icon.astro';
 import CTA from '../../components/CTA.astro';
+import SectionIntro from '../../components/page/SectionIntro.astro';
+import Rule from '../../components/page/Rule.astro';
+import Faq from '../../components/page/Faq.astro';
+import HeroAccounts from '../../components/scenes/use-cases/founders/HeroAccounts.astro';
+import SortedInbox from '../../components/scenes/use-cases/founders/SortedInbox.astro';
+import ConnectDialog from '../../components/scenes/use-cases/founders/ConnectDialog.astro';
+import WarmupRamp from '../../components/scenes/use-cases/founders/WarmupRamp.astro';
+import CampaignSenders from '../../components/scenes/use-cases/founders/CampaignSenders.astro';
+import WeekGrid from '../../components/scenes/use-cases/founders/WeekGrid.astro';
 
-// Numbers all come from the Warmbly codebase / CLAUDE.md:
-// 100/day cold cap, 600s minimum spacing, 10/day warmup start, 40/day ceiling,
-// +1/day ramp, 3-6 weeks to stable.
+// Defaults from internal/config/constants.go and the campaigns guide
+// (a mailbox still warming sends at most 5 cold emails a day).
 
-// Three concrete liabilities a founder hits running everything from one inbox.
-const liabilities = [
+const risks = [
+  { t: 'One inbox carries everything', b: 'Your investor threads, your data room links and your fiftieth cold pitch of the day share one reputation. One complaint costs you the inbox you run the company from.' },
+  { t: 'Replies wait for you', b: 'A warm reply that sits for a day is a deal cooling off. With every mailbox in one inbox, sorted by what each reply wants, the good ones stop slipping past.' },
+  { t: 'One mailbox hits a ceiling', b: 'A mailbox sends around 50 cold emails a day safely. Push everything through one and you run into the provider’s limits long before your goals.' },
+];
+
+// The six steps, grouped by the screen each one happens on.
+const groups = [
   {
-    eyebrow: 'Mixed traffic',
-    title: 'Transactional and cold from one inbox.',
-    body: 'Your data room link, your investor reply thread, and your 50th cold pitch of the day all sit on the same reputation. One spam complaint costs you the inbox you actually run the company from.',
-    icon: 'mail',
-    tag: 'Reputation poisoning',
+    when: 'One afternoon',
+    scene: 'connect',
+    steps: [
+      { n: 1, t: 'Send cold from a sub-domain', k: 'out.acme.com', b: 'Reputation follows the sub-domain, so a complaint on cold mail never touches founder@ on your main domain.' },
+      { n: 2, t: 'Open three cold mailboxes', k: 'hello@ · intro@ · team@', b: 'Three senders share the volume and the risk. founder@ stays on the main domain for real mail.' },
+    ],
   },
   {
-    eyebrow: 'No backup',
-    title: 'Nobody is watching the replies but you.',
-    body: 'A warm reply that sits unread for a day is a deal cooling off. With every mailbox in one inbox and replies sorted by intent, the ones worth answering stop slipping past you while you are heads-down building.',
-    icon: 'inbox',
-    tag: 'Missed warm reply',
+    when: 'Then three to six weeks',
+    scene: 'warmup',
+    steps: [
+      { n: 3, t: 'Publish SPF and DMARC', k: 'v=DMARC1; p=quarantine; …', b: 'Warmbly checks both on the sub-domain and spells out the record to add if one is missing.' },
+      { n: 4, t: 'Warm all four mailboxes', k: '10 a day, +1 a day, up to 40', b: 'Expect three to six weeks. While a mailbox is still warming it sends at most 5 cold emails a day.' },
+    ],
   },
   {
-    eyebrow: 'Single point',
-    title: 'Everything runs through one mailbox.',
-    body: 'A single mailbox sends around 50 cold emails a day safely, and 100 is the absolute ceiling even for a healthy sender. Push all your volume through one inbox and you hit a provider throttle long before you hit your goals.',
-    icon: 'shield',
-    tag: 'Provider throttle',
+    when: 'While it warms',
+    scene: 'campaign',
+    steps: [
+      { n: 5, t: 'Write in plain text', k: 'no HTML, no tracking image', b: 'A founder writing by hand doesn’t send a designed newsletter. Plain text reads as a person.' },
+      { n: 6, t: 'Judge by replies, not opens', k: 'reply rate per mailbox', b: 'Opens are muddied by privacy proxies. Replies, and each mailbox’s health, tell you what is working.' },
+    ],
   },
 ];
 
-// 6-step recipe. Written for a founder who has nobody else to set this up.
-const recipe = [
-  {
-    n: '01',
-    t: 'Pick a sub-domain for cold.',
-    k: 'out.acme.com',
-    b: 'Send cold from a sub-domain like out.acme.com or send.acme.com. SPF, DKIM and DMARC live on the root, but reputation lives on the sub. If outbound earns a complaint, your founder@ inbox is unaffected.',
-  },
-  {
-    n: '02',
-    t: 'Open 4 mailboxes, not 1.',
-    k: 'hello@ intro@ team@ + founder@ reserve',
-    b: 'Three on the sub-domain for cold, plus founder@ on the root for transactional. Four senders means four reputation surfaces and four times the safe daily ceiling once warmed.',
-  },
-  {
-    n: '03',
-    t: 'Set DMARC to p=quarantine.',
-    k: 'v=DMARC1; p=quarantine; pct=100; rua=mailto:...',
-    b: 'Anything weaker than quarantine on the cold sub-domain invites spoofing of your domain by other senders. Quarantine on the sub, leave the root on p=reject or whatever you already had.',
-  },
-  {
-    n: '04',
-    t: 'Premium warmup on all 4.',
-    k: '10 / day start, +1 / day, 40 / day ceiling',
-    b: 'Each mailbox enters the premium warmup pool with a verification token in every message. The mailbox starts at 10 / day, grows by 1 / day, and holds at 40 / day. About 3 to 6 weeks to a stable warmed state.',
-  },
-  {
-    n: '05',
-    t: 'Plain text only.',
-    k: 'no HTML, no tracking pixel',
-    b: 'A founder pitching by hand does not embed a tracking pixel or a 400-line MJML signature. Plain text avoids the promotional classifier entirely, and the reply rate signal is the one that actually matters.',
-  },
-  {
-    n: '06',
-    t: 'Watch reply rate, not opens.',
-    k: 'opens are noise; replies are signal',
-    b: 'Apple Mail Privacy makes opens uninformative. Pin the reply-rate widget and the per-mailbox health band. If a mailbox slips to Watch, lower its volume before the pool moves it to Quarantined.',
-  },
-];
-
-// Founder week calendar. 7 days, 4 mailboxes, 50 cold / day each on weekdays.
-// Weekend rows are blank by design.
-const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-// Each mailbox row, with a daily send count per day-of-week.
-// founder@ never sends cold. The three out.acme.com mailboxes send 50/day Mon-Fri.
-const founderWeek = [
-  { addr: 'founder@acme.com',   sends: [0, 0, 0, 0, 0, 0, 0], note: 'Reserve · transactional only' },
-  { addr: 'hello@out.acme.com', sends: [50, 50, 50, 50, 50, 0, 0], note: 'Cold sender' },
-  { addr: 'intro@out.acme.com', sends: [50, 50, 50, 50, 50, 0, 0], note: 'Cold sender' },
-  { addr: 'team@out.acme.com',  sends: [50, 50, 50, 50, 50, 0, 0], note: 'Cold sender' },
-];
-
-const dayTotals = weekDays.map((_, di) => founderWeek.reduce((s, m) => s + m.sends[di], 0));
-const weekTotal = dayTotals.reduce((a, b) => a + b, 0);
-
-// Color helper for the calendar cell. Avoid `<` in JSX expressions.
-const cellTone = (v: number) => {
-  if (v === 0)         return { bg: '#f8fafc', fg: '#cbd5e1' };
-  if (v <= 20)         return { bg: '#e0f2fe', fg: '#075985' };
-  if (v <= 40)         return { bg: '#7dd3fc', fg: '#0c4a6e' };
-  if (v <= 60)         return { bg: '#38bdf8', fg: '#0c4a6e' };
-  return                       { bg: '#0284c7', fg: '#ffffff' };
-};
-
-const faq = [
-  [
-    'Why a sub-domain instead of just adding mailboxes on the root?',
-    'A sub-domain like out.acme.com gives cold outreach its own reputation surface at Gmail and Microsoft. If a complaint lands, the root domain reputation (and the founder@ inbox) is unaffected. The setup is the same DNS records, just on the sub.',
-  ],
-  [
-    'Can I keep founder@ as a cold sender if I am careful?',
-    'Strongly discouraged. Once founder@ takes a reputation hit, your contracts, data room links, and investor threads start landing in promotions tabs or spam folders. The cost of that is much higher than the convenience of one extra mailbox. Reserve founder@ for transactional.',
-  ],
-  [
-    'How long until I can run a real campaign?',
-    'Plan on 3 to 6 weeks of warmup before a fresh sub-domain mailbox handles meaningful cold volume. The warmup ceiling of 40 / day is reached in about 30 business days at the +1 / day ramp, which is when the mailbox is also stable enough for cold sending.',
-  ],
+const faq: [string, string][] = [
+  ['Why a sub-domain instead of more mailboxes on my main domain?', 'A sub-domain like out.acme.com builds its own reputation at Gmail and Outlook. If cold mail draws a complaint, your main domain and the founder@ inbox are untouched. The setup is the same records, just on the sub-domain.'],
+  ['Can I use founder@ for cold email if I’m careful?', 'We wouldn’t. Once founder@ takes a reputation hit, your contracts, data room links and investor threads start landing in tabs or spam. Keep it for real mail.'],
+  ['How soon can I send a real campaign?', 'Plan on three to six weeks of warmup. Warmup reaches 40 a day after about a month, and until a mailbox is warmed it sends at most 5 cold emails a day, so starting early matters more than anything else.'],
+  ['How many emails a day will this setup send?', 'About 150 a weekday once all three cold mailboxes are warmed, at the default of 50 each. That fits the Starter plan.'],
 ];
 ---
 <Layout
-  title="Founder-Led Outreach | Warmbly"
-  description="Run cold outreach as a founder without burning the inbox you actually run the company from. Sub-domain, 4 mailboxes, plain text, and warmup the right way."
+  title="Cold Email for Founders: The Founder-Led Outreach Setup | Warmbly"
+  description="Run founder-led cold outreach without risking the inbox you run your company from: a sending sub-domain, three warmed mailboxes, plain text and about 150 emails a weekday."
 >
-  <!-- ============================================================
-       HERO · HeroAtmosphere, shared pattern
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-24 md:pb-32 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Founders
-        </span>
-        Cold outreach without burning founder@
-      </div>
-
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[68px] lg:text-[76px] font-semibold tracking-[-0.04em] leading-[1.02] text-white max-w-5xl mx-auto">
-        Cold outreach shouldn't cost you your main inbox.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        This is the setup a solo founder actually uses to send cold email at volume: a separate domain for outbound, a handful of mailboxes, plain text, and warmup that does real work. The inbox you send contracts and investor updates from never touches a campaign.
-      </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Start free</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="/pricing/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          See pricing
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       THREE LIABILITIES · 3-card row
-  ============================================================ -->
-  <section class="border-y border-[color:var(--border)] py-20 md:py-24">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">What goes wrong</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Three things go wrong when you send cold from your main inbox.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          Each one is a failure mode a solo founder runs into within the first few months of outbound, and each has a fix further down this page.
-        </p>
-      </div>
-
-      <div class="grid md:grid-cols-3 gap-4 lg:gap-5">
-        {liabilities.map((l, i) => (
-          <div class="relative rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden flex flex-col">
-            <div class="h-1.5 bg-rose-300/70"></div>
-            <div class="p-6 flex-1 flex flex-col">
-              <div class="flex items-center justify-between mb-4">
-                <div class="inline-flex items-center justify-center w-9 h-9 rounded-[10px] bg-rose-50 ring-1 ring-rose-100 text-rose-600">
-                  <Icon name={l.icon} size={16} />
-                </div>
-                <span class="text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground">#{String(i + 1).padStart(2, '0')} &middot; {l.eyebrow}</span>
-              </div>
-              <h3 class="text-[17px] font-semibold tracking-[-0.015em] text-heading leading-snug">{l.title}</h3>
-              <p class="mt-2 text-[13.5px] text-foreground/70 leading-relaxed flex-1">{l.body}</p>
-              <div class="mt-4 pt-4 border-t border-[color:var(--border)] flex items-center gap-2 text-[11px] font-mono">
-                <span class="w-1 h-1 rounded-full bg-rose-500"></span>
-                <span class="text-rose-700 uppercase tracking-[0.14em] font-semibold">{l.tag}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       THE RECIPE · 6 numbered steps with code cue
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">The recipe</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          The whole setup takes an afternoon.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          Most of it is DNS records and clicking connect. You will spend longer waiting for DNS to propagate than you will setting Warmbly up, and by the end of week one warmup is running and cold is ready to go.
-        </p>
-        <a href="https://docs.warmbly.com/learn/email-warmup/" class="mt-6 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[#0369a1] hover:text-[#075985]">
-          Read about warmup
-          <Icon name="arrowRight" size={12} />
-        </a>
-      </div>
-
-      <ol class="divide-y divide-[color:var(--border)] border-y border-[color:var(--border)] bg-white rounded-[12px] ring-1 ring-[color:var(--border)] overflow-hidden">
-        {recipe.map((s) => (
-          <li class="grid grid-cols-[56px_1fr] gap-4 py-5 px-5 items-baseline">
-            <span class="font-mono text-[12px] text-[#0284c7] font-semibold">{s.n}</span>
-            <div>
-              <div class="text-[15.5px] font-semibold text-heading">{s.t}</div>
-              <div class="mt-1.5 font-mono text-[12px] text-[#0369a1] bg-[color:var(--sky-1)]/70 px-2.5 py-1 rounded inline-block">{s.k}</div>
-              <p class="mt-2.5 text-[14px] text-foreground/70 leading-relaxed">{s.b}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       A FOUNDER WEEK · 7-day calendar across 4 mailboxes
-  ============================================================ -->
-  <section class="py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">A founder week</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          What a normal sending week looks like.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          150 cold emails a day across three out.acme.com mailboxes, weekends skipped, founder@ untouched. Each mailbox sits at 50 / day, well under the 100 / day per-mailbox cap, with a 600 second minimum gap between sends.
-        </p>
-      </div>
-
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <!-- Calendar header: day labels -->
-        <div class="grid grid-cols-[220px_repeat(7,1fr)] border-b border-[color:var(--border)]">
-          <div class="px-5 py-3 text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground bg-[color:var(--surface-1)]/60">Mailbox</div>
-          {weekDays.map((d, i) => (
-            <div class={`py-3 text-center text-[10.5px] uppercase tracking-[0.18em] font-mono ${i >= 5 ? 'text-muted-foreground/50' : 'text-muted-foreground'} bg-[color:var(--surface-1)]/60 border-l border-[color:var(--border)]`}>
-              {d}
-            </div>
-          ))}
+  <!-- HERO: the pitch beside the founder's own Accounts page. -->
+  <section class="container-page pt-14 md:pt-24 pb-20 md:pb-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-14">
+      <div>
+        <a href="/use-cases/" class="text-[14px] text-slate-500 hover:text-slate-900">Use cases · Founders</a>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[60px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">Cold email for founders, without risking founder@.</h1>
+        <p class="mt-6 max-w-xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">You are the best person to sell what you’re building, but your own inbox is too valuable to burn. This is the setup that keeps it safe and still sends about 150 emails a weekday.</p>
+        <div class="mt-9 flex flex-wrap items-center gap-3">
+          <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">Start free <Icon name="arrowRight" size={14} /></a>
+          <a href="#setup" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">See the setup</a>
         </div>
+        <dl class="mt-10 grid max-w-md grid-cols-3 gap-4 border-t border-slate-200 pt-6">
+          <div><dt class="text-[13px] text-slate-400">Mailboxes</dt><dd class="mt-1 text-[22px] font-medium tracking-[-0.03em] text-slate-900">3 + 1</dd></div>
+          <div><dt class="text-[13px] text-slate-400">Ready in</dt><dd class="mt-1 text-[22px] font-medium tracking-[-0.03em] text-slate-900">~a month</dd></div>
+          <div><dt class="text-[13px] text-slate-400">A weekday</dt><dd class="mt-1 text-[22px] font-medium tracking-[-0.03em] text-slate-900">~150</dd></div>
+        </dl>
+      </div>
+      <HeroAccounts />
+    </div>
+  </section>
 
-        <!-- Mailbox rows -->
-        {founderWeek.map((m) => (
-          <div class="grid grid-cols-[220px_repeat(7,1fr)] border-b border-[color:var(--border)] last:border-b-0">
-            <div class="px-5 py-4 border-r border-[color:var(--border)]">
-              <div class="font-mono text-[12.5px] text-heading truncate">{m.addr}</div>
-              <div class="text-[11px] text-foreground/55 mt-0.5">{m.note}</div>
-            </div>
-            {m.sends.map((v) => {
-              const t = cellTone(v);
-              return (
-                <div class="p-2 border-l border-[color:var(--border)] flex items-stretch">
-                  <div class="flex-1 rounded-[6px] flex items-center justify-center font-mono text-[12.5px] font-semibold" style={`background:${t.bg};color:${t.fg};min-height:44px;`}>
-                    {v === 0 ? '·' : v}
+  <!-- RISKS: the three ways one inbox fails, beside the inbox that fixes them. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[1fr_1.15fr] lg:gap-16">
+      <div>
+        <SectionIntro lead="Why not just use your inbox?" title="Three ways one inbox lets a founder down." />
+        <ol class="mt-10 space-y-7">
+          {risks.map((r, i) => (
+            <li class="grid grid-cols-[40px_1fr] gap-3">
+              <span class="pt-0.5 font-mono text-[13px] text-slate-400">{String(i + 1).padStart(2, '0')}</span>
+              <div>
+                <h3 class="text-[18px] font-medium text-slate-900">{r.t}</h3>
+                <p class="mt-1.5 text-[15.5px] leading-[1.6] text-slate-500">{r.b}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <SortedInbox />
+    </div>
+  </section>
+
+  <!-- SETUP: the six steps as a checklist, each pair beside the screen it happens on. -->
+  <Rule />
+  <section id="setup" class="container-page scroll-mt-28 py-20 md:py-28">
+    <div class="grid items-end gap-10 lg:grid-cols-[1fr_1fr] lg:gap-16">
+      <SectionIntro lead="The setup." title="Six steps, most of them done once." text="Do the first four in an afternoon, then let warmup run while you write the sequence." />
+      <div class="rounded-[6px] bg-slate-50 p-5 ring-1 ring-slate-200">
+        <div class="flex items-center justify-between text-[13px] text-slate-500"><span>Today</span><span>Week 3 to 6</span></div>
+        <div class="mt-3 flex h-9 overflow-hidden rounded-md text-[12.5px] font-medium">
+          <span class="flex w-[16%] items-center justify-center bg-slate-900 text-white">1 to 3</span>
+          <span class="flex flex-1 items-center gap-2 bg-orange-100 px-3 text-orange-800"><Icon name="flame" size={13} />4 · warmup runs on its own</span>
+          <span class="flex w-[22%] items-center justify-center bg-sky-100 text-sky-800">first send</span>
+        </div>
+        <div class="mt-3 flex items-center gap-2 text-[13px] text-slate-500"><span class="h-px w-6 bg-sky-400"></span>Steps 5 and 6 happen while the mailboxes warm.</div>
+      </div>
+    </div>
+
+    <div class="mt-16 space-y-20 md:mt-20 md:space-y-28">
+      {groups.map((g, gi) => (
+        <div class="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+          <div class={gi % 2 ? 'lg:order-2' : ''}>
+            <div class="text-[13px] font-medium uppercase tracking-[0.14em] text-slate-400">{g.when}</div>
+            <ol class="mt-6 space-y-8">
+              {g.steps.map((s) => (
+                <li class="grid grid-cols-[36px_1fr] gap-4">
+                  <span class="flex size-8 items-center justify-center rounded-full bg-slate-900 text-[13px] font-medium text-white">{s.n}</span>
+                  <div>
+                    <h3 class="text-[22px] md:text-[26px] font-medium tracking-[-0.03em] leading-[1.15] text-slate-900">{s.t}</h3>
+                    <code class="mt-3 inline-block rounded bg-slate-50 px-2 py-1 font-mono text-[12.5px] text-slate-600 ring-1 ring-slate-200">{s.k}</code>
+                    <p class="mt-3 max-w-lg text-[16px] leading-[1.6] text-slate-500">{s.b}</p>
                   </div>
-                </div>
-              );
-            })}
+                </li>
+              ))}
+            </ol>
           </div>
-        ))}
-
-        <!-- Daily totals row -->
-        <div class="grid grid-cols-[220px_repeat(7,1fr)] bg-[color:var(--surface-1)]/60 border-t border-[color:var(--border)]">
-          <div class="px-5 py-3 text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground border-r border-[color:var(--border)]">Daily total</div>
-          {dayTotals.map((v, i) => (
-            <div class={`py-3 text-center font-mono text-[13px] font-semibold border-l border-[color:var(--border)] ${i >= 5 ? 'text-foreground/30' : 'text-[#0369a1]'}`}>
-              {v === 0 ? 'off' : v}
-            </div>
-          ))}
+          <div class={gi % 2 ? 'lg:order-1' : ''}>
+            {g.scene === 'connect' && <ConnectDialog />}
+            {g.scene === 'warmup' && <WarmupRamp />}
+            {g.scene === 'campaign' && <CampaignSenders />}
+          </div>
         </div>
-      </div>
-
-      <!-- Legend + week total -->
-      <div class="mt-6 flex flex-wrap items-center justify-between gap-4 text-[11.5px] font-mono text-muted-foreground">
-        <div class="flex items-center gap-4 flex-wrap">
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:#e0f2fe"></span> 1–20</span>
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:#7dd3fc"></span> 21–40</span>
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:#38bdf8"></span> 41–60</span>
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:#0284c7"></span> 60+</span>
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:#f8fafc;border:1px solid #e6ebf2"></span> weekend / off</span>
-        </div>
-        <div>
-          Week total: <span class="text-[#0369a1] font-semibold">{weekTotal}</span> cold sends &middot; founder@ unused
-        </div>
-      </div>
+      ))}
     </div>
   </section>
 
-  <!-- ============================================================
-       FAQ · 3 questions, smooth grid-rows accordion
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-t border-[color:var(--border)] py-20 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Founder FAQ</div>
-        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          The questions founders actually ask.
-        </h2>
-        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
-          Still unsure? Read the <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="https://docs.warmbly.com/learn/cold-email-rules/">cold email rules guide</a>.
-        </p>
-      </div>
-      <div class="divide-y divide-[color:var(--border)]" data-faq>
-        {faq.map(([q, a]) => (
-          <div class="faq-row py-2">
-            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
-              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
-              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
-              </span>
-            </button>
-            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
-              <div class="overflow-hidden">
-                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <script is:inline>
-        (function () {
-          const faq = document.querySelector('[data-faq]');
-          if (!faq) return;
-          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-              const row   = btn.closest('.faq-row');
-              const panel = row.querySelector('.faq-panel');
-              const icon  = btn.querySelector('.faq-icon');
-              const open  = btn.getAttribute('aria-expanded') === 'true';
-              btn.setAttribute('aria-expanded', String(!open));
-              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
-              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
-            });
-          });
-        })();
-      </script>
+  <!-- WEEK: what a warmed week looks like, read off Analytics. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-end gap-8 lg:grid-cols-[1.4fr_1fr] lg:gap-16">
+      <SectionIntro lead="A week, once warmed." title="750 cold emails, and founder@ sends none of them." />
+      <p class="text-[16px] md:text-[18px] leading-[1.6] text-slate-500 lg:pb-2">Three mailboxes at the default of 50 a day, Monday to Friday. founder@ keeps warming in the background and carries only the mail you write yourself.</p>
+    </div>
+    <div class="mt-12 md:mt-14">
+      <WeekGrid />
     </div>
   </section>
 
-  <CTA
-    title="Set up the founder recipe today."
-    description="Connect your domain, add four mailboxes, and have warmup running before the day ends."
-    primaryLabel="Start free"
-    primaryHref="https://app.warmbly.com/auth/register"
-  />
+  <Rule />
+  <Faq items={faq} title="Founders, answered." />
+
+  <CTA photo="sheer-blue" title="Start the founder setup today." description="Connect your sub-domain, add the mailboxes and have warmup running before the day ends." />
 </Layout>

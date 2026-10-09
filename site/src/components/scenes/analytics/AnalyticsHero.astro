@@ -1,0 +1,217 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, EYEBROW, TOPBAR, SECTIONBAR, STAT, STAT_VALUE, STAT_SUB, ACTION_GHOST } from '../../../lib/scene';
+
+/**
+ * The whole Analytics page (web/src/app/app/analytics/page.tsx): topbar with
+ * the campaign filter, range tabs and Share image, the StatStrip, the
+ * MultiTrend chart with its hover readout, Breakdown and Account health,
+ * Top campaigns and the live Recent activity feed, where a new event lands
+ * on top on a loop.
+ */
+const N = 30;
+const wave = (base: number, amp: number, seed: number) =>
+  Array.from({ length: N }, (_, i) => Math.round(base + amp * (Math.sin(i * 0.55 + seed) * 0.6 + Math.sin(i * 1.7 + seed * 2) * 0.25) + i * base * 0.006));
+const series = [
+  { key: 'sent', label: 'Sent', dot: 'bg-sky-500', rgb: '14,165,233', values: wave(410, 60, 0.4) },
+  { key: 'opens', label: 'Opens', dot: 'bg-emerald-500', rgb: '16,185,129', values: wave(142, 24, 1.1) },
+  { key: 'clicks', label: 'Clicks', dot: 'bg-violet-500', rgb: '139,92,246', values: wave(34, 8, 2.2) },
+  { key: 'replies', label: 'Replies', dot: 'bg-amber-500', rgb: '245,158,11', values: wave(26, 6, 0.9) },
+];
+const CW = 844, CH = 220, TICK = 18;
+const PH = CH - TICK - 4, PT = 5, PB = 1, IH = PH - PT - PB;
+const max = Math.max(...series.flatMap((s) => s.values));
+const x = (i: number) => (i / (N - 1)) * CW;
+const y = (v: number) => PT + (1 - v / max) * IH;
+const mono = (vals: number[]) => {
+  const xs = vals.map((_, i) => x(i)), ys = vals.map(y), n = vals.length;
+  const d = xs.slice(1).map((_, i) => (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]));
+  const m = vals.map((_, i) => (i === 0 ? d[0] : i === n - 1 ? d[n - 2] : d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2));
+  let p = `M ${xs[0]} ${ys[0].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const dx = (xs[i + 1] - xs[i]) / 3;
+    p += ` C ${(xs[i] + dx).toFixed(1)} ${(ys[i] + m[i] * dx).toFixed(1)}, ${(xs[i + 1] - dx).toFixed(1)} ${(ys[i + 1] - m[i + 1] * dx).toFixed(1)}, ${xs[i + 1].toFixed(1)} ${ys[i + 1].toFixed(1)}`;
+  }
+  return p;
+};
+const curves = series.map((s) => ({ ...s, line: mono(s.values) }));
+const grid = [0.25, 0.5, 0.75].map((f) => ({ top: PT + (1 - f) * IH, label: String(Math.round(max * f)) }));
+const HOVER = 21;
+const hx = x(HOVER);
+
+const stats = [
+  { label: 'Total sent', value: '12,847', sub: 'in range', pulse: true },
+  { label: 'Open rate', value: '34.2%', sub: 'after delivery' },
+  { label: 'Reply rate', value: '6.1%', sub: 'incl. positive' },
+  { label: 'Bounce rate', value: '1.2%', sub: 'hard + soft', last: true },
+];
+const breakdown = [
+  { label: 'Sent', value: '12,847', dot: 'bg-slate-400' },
+  { label: 'Opens', value: '4,394', dot: 'bg-emerald-500', note: '612 auto, not counted' },
+  { label: 'Clicks', value: '1,021', dot: 'bg-violet-500', note: '38 auto' },
+  { label: 'Replies', value: '784', dot: 'bg-amber-500' },
+  { label: 'Bounces', value: '154', dot: 'bg-rose-500' },
+];
+const campaigns = [
+  { name: 'Q4 outbound: platform leads', dot: 'bg-emerald-500', sent: '4,210', open: '38.5%', reply: '7.4%' },
+  { name: 'Agencies: founder intro', dot: 'bg-emerald-500', sent: '3,642', open: '33.1%', reply: '6.2%' },
+];
+const feed = [
+  { tone: 'text-amber-600', verb: 'Reply from', who: 'maya@brightline.io', to: 'to alex@northwind.dev', campaign: 'Q4 outbound: platform leads', ts: 'Oct 9, 02:41 PM', isNew: true },
+  { tone: 'text-emerald-600', verb: 'Opened by', who: 'sarah.chen@techcorp.com', origin: { icon: 'smartphone', text: 'iPhone · Apple Mail app' }, campaign: 'Q4 outbound: platform leads', ts: 'Oct 9, 02:38 PM' },
+  { tone: 'text-violet-600', verb: 'Clicked by', who: 'mark.ross@helio.dev', origin: { icon: 'monitor', text: 'Mac · Chrome' }, campaign: 'Agencies: founder intro', ts: 'Oct 9, 02:31 PM' },
+  { tone: 'text-emerald-600', verb: 'Opened by', who: 'lena@stratech.io', origin: { icon: 'eyeOff', text: 'Gmail · device hidden' }, campaign: 'Win-back: former trials', ts: 'Oct 9, 02:27 PM' },
+  { tone: 'text-slate-500', verb: 'Sent to', who: 'omar@brightco.io', campaign: 'Agencies: founder intro', ts: 'Oct 9, 02:20 PM' },
+];
+---
+<ScaledStage w={1240} h={780} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[56px] top-[52px] right-0 h-[728px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Analytics</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Deliverability across the workspace</span>
+      <div class="ml-auto flex items-center gap-1.5">
+        <span class={ACTION_GHOST}><Ico name="megaphone" size={12} />All campaigns<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>
+        <span class="inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
+          <span class="h-7 px-2.5 rounded text-[12px] font-medium text-slate-500 inline-flex items-center">7d</span>
+          <span class="h-7 px-2.5 rounded text-[12px] font-medium bg-white text-slate-900 shadow-sm inline-flex items-center">30d</span>
+          <span class="h-7 px-2.5 rounded text-[12px] font-medium text-slate-500 inline-flex items-center">90d</span>
+        </span>
+        <span class={ACTION_GHOST}><Ico name="image" size={13} />Share image</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-4 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class="flex items-center gap-2">
+            <span class={EYEBROW}>{s.label}</span>
+            {s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
+          </div>
+          <div class={STAT_VALUE}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+
+    <div class="grid grid-cols-[1fr_300px] border-b border-slate-200">
+      <section class="border-r border-slate-200">
+        <div class={SECTIONBAR}>
+          <span class={EYEBROW}>Email performance</span>
+          <span class="ml-auto inline-flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
+            {series.map((m) => (
+              <span class="h-6 px-2 rounded text-[11px] font-medium bg-white text-slate-900 shadow-sm inline-flex items-center gap-1.5"><span class={`size-1.5 rounded-full ${m.dot}`}></span>{m.label}</span>
+            ))}
+          </span>
+        </div>
+        <div class="px-5 py-4">
+          <div class="relative" style={`width:${CW}px;height:${CH}px`}>
+            {grid.map((g) => (
+              <div class="absolute left-0 right-0" style={`top:${g.top}px`}>
+                <div class="h-px bg-slate-100"></div>
+                <span class="absolute right-0 -top-3.5 font-mono text-[9px] tabular-nums text-slate-300">{g.label}</span>
+              </div>
+            ))}
+            <svg class="absolute left-0 top-0 overflow-visible" width={CW} height={PH} viewBox={`0 0 ${CW} ${PH}`}>
+              <defs>
+                {curves.map((c) => (
+                  <linearGradient id={`ah-${c.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color={`rgb(${c.rgb})`} stop-opacity="0.3" />
+                    <stop offset="1" stop-color={`rgb(${c.rgb})`} stop-opacity="0.04" />
+                  </linearGradient>
+                ))}
+              </defs>
+              <g style="mix-blend-mode:multiply">
+                {curves.map((c, i) => <path class="enter-fade" d={`${c.line} L ${CW} ${PH} L 0 ${PH} Z`} fill={`url(#ah-${c.key})`} style={`--d:${900 + i * 120}ms`} />)}
+              </g>
+              {curves.map((c, i) => (
+                <path class="enter-draw" d={c.line} fill="none" stroke={`rgb(${c.rgb})`} stroke-width="1.5" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" style={`--d:${150 + i * 140}ms`} />
+              ))}
+            </svg>
+            <!-- The hover readout MultiTrend draws under the pointer. -->
+            <div class="enter-fade absolute inset-y-0 border-l border-dashed border-slate-300" style={`left:${hx}px;bottom:${TICK}px;--d:1500ms`}></div>
+            {curves.map((c) => (
+              <span class="enter-fade absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-sm" style={`left:${hx}px;top:${y(c.values[HOVER])}px;background:rgb(${c.rgb});--d:1500ms`}></span>
+            ))}
+            <div class="enter-fade absolute top-1 z-10 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10.5px] text-slate-600 shadow-sm" style={`left:${hx + 8}px;--d:1600ms`}>
+              <div class="font-medium text-slate-900 whitespace-nowrap">Sep 30</div>
+              {curves.map((c) => (
+                <div class="flex items-center gap-1.5 whitespace-nowrap"><span class="size-1.5 rounded-full" style={`background:rgb(${c.rgb})`}></span>{c.label}<span class="ml-auto pl-3 font-mono tabular-nums text-slate-700">{c.values[HOVER]}</span></div>
+              ))}
+            </div>
+            <div class="absolute left-0 right-0 h-px bg-slate-200/80" style={`bottom:${TICK}px`}></div>
+            <div class="absolute left-0 right-0 bottom-0 flex justify-between font-mono text-[9.5px] text-slate-400"><span>Sep 10</span><span>Oct 9</span></div>
+          </div>
+        </div>
+      </section>
+      <aside class="bg-slate-50/40">
+        <div class="h-9 px-5 border-b border-slate-200/60 flex items-center"><span class={EYEBROW}>Breakdown</span></div>
+        <div class="divide-y divide-slate-200/60">
+          {breakdown.map((q) => (
+            <div class="h-8 px-4 flex items-center gap-2">
+              <span class={`size-1.5 rounded-full ${q.dot}`}></span>
+              <span class="text-[12px] text-slate-700">{q.label}</span>
+              {q.note && <span class="text-[9.5px] text-slate-400 font-mono">{q.note}</span>}
+              <span class="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">{q.value}</span>
+            </div>
+          ))}
+        </div>
+        <div class="h-9 px-5 border-y border-slate-200/60 flex items-center"><span class={EYEBROW}>Account health</span></div>
+        <div class="px-4 py-3 grid grid-cols-3 gap-2 text-center">
+          <div><div class="font-mono text-[18px] leading-none tabular-nums text-emerald-600">11</div><div class="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">Healthy</div></div>
+          <div><div class="font-mono text-[18px] leading-none tabular-nums text-amber-600">1</div><div class="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">At risk</div></div>
+          <div><div class="font-mono text-[18px] leading-none tabular-nums text-rose-600">0</div><div class="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">Issues</div></div>
+        </div>
+      </aside>
+    </div>
+
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Top campaigns</span>
+      <span class="ml-auto inline-flex items-center gap-1 text-[11px] text-slate-500">All campaigns<Ico name="arrowUpRight" size={12} /></span>
+    </div>
+    <div class="divide-y divide-slate-200/60 border-b border-slate-200/60">
+      {campaigns.map((c) => (
+        <div class="h-11 px-5 flex items-center gap-3">
+          <span class={`size-1.5 rounded-full ${c.dot}`}></span>
+          <span class="text-[12.5px] font-medium text-slate-900">{c.name}</span>
+          <span class="ml-auto flex items-center gap-4 font-mono text-[11px] tabular-nums text-slate-500">
+            <span>{c.sent} sent</span><span class="text-emerald-600">{c.open} open</span><span class="text-amber-600">{c.reply} reply</span>
+          </span>
+        </div>
+      ))}
+    </div>
+
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Recent activity</span>
+      <span class="inline-flex items-center gap-1 text-[10.5px] font-medium text-emerald-600"><span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping"></span><span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span></span>Live</span>
+    </div>
+    <div class="relative overflow-hidden">
+      <div class="ah-feed divide-y divide-slate-200/60">
+        {feed.map((a) => (
+          <div class={`h-10 px-5 flex items-center gap-3 ${a.isNew ? 'ah-new' : ''}`}>
+            <Glyph name="activity" size={14} class={a.tone} />
+            <span class="text-[12.5px] text-slate-900 whitespace-nowrap"><span class={a.tone}>{a.verb}</span> {a.who}{a.to && <span class="text-slate-400"> {a.to}</span>}</span>
+            {a.origin && <span class="inline-flex items-center gap-1 text-[11.5px] text-slate-500 whitespace-nowrap"><Ico name={a.origin.icon} size={12} class="text-slate-400" />{a.origin.text}</span>}
+            <span class="text-[11.5px] text-slate-400 whitespace-nowrap">{a.campaign}</span>
+            <span class="ml-auto font-mono text-[10.5px] text-slate-400 tabular-nums">{a.ts}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 9s loop: a reply lands on top of the feed (rows are 41px), lit, then settles. */
+  .ah-feed { animation: ah-feed 9s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes ah-feed {
+    0% { transform: translateY(-41px); opacity: 0; }
+    4%, 34% { transform: translateY(-41px); opacity: 1; }
+    40%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .ah-new { animation: ah-new 9s ease-out infinite; }
+  @keyframes ah-new { 0%, 36% { background: rgb(255 251 235 / 0); } 42%, 70% { background: rgb(255 251 235); } 90%, 100% { background: rgb(255 251 235 / 0); } }
+</style>
