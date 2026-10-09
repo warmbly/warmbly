@@ -58,6 +58,13 @@ func (w *WorkerService) HandleMailboxIdentity(ctx context.Context, data models.E
 	if mail.GoogleData == nil || mail.GoogleData.Client == nil {
 		return reply(models.MailboxIdentityResult{Error: "provider has no send-as list"})
 	}
+	done, ok := mail.BeginExecution()
+	if !ok {
+		return reply(models.MailboxIdentityResult{Error: "mailbox is not loaded on this worker"})
+	}
+	defer done()
+	ctx, cancel = mail.ExecutionContext(ctx)
+	defer cancel()
 
 	rows, err := mail.GoogleData.Client.ListSendAs(ctx)
 	if err != nil {

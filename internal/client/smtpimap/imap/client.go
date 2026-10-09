@@ -35,6 +35,8 @@ var headerFetchFields = append([]string{config.WarmupVerifyHeader}, config.Inbou
 var evidenceFetchFields = append(append([]string{}, headerFetchFields...), "Authentication-Results", "From", "Return-Path", "DKIM-Signature", "List-Unsubscribe", "List-Unsubscribe-Post")
 
 type Client struct {
+	// Context optionally binds connections and setup to the installed mailbox lifetime.
+	Context     context.Context
 	Email       string
 	AuthType    models.AuthType
 	Credentials *models.Service
@@ -78,6 +80,12 @@ type Client struct {
 	// is swapped under the lifecycle write lock and read under the read lock
 	// like client itself.
 	conn *idleConn
+
+	setupMu      sync.Mutex
+	setupCancel  context.CancelFunc
+	transport    net.Conn
+	lifetimeStop func() bool
+	closed       atomic.Bool
 
 	// IdleTimeout bounds how long a command waits for the server to say
 	// anything before the session is declared dead. Zero means
@@ -130,6 +138,11 @@ func (c *Client) HasCondStore() bool {
 	return c.condStore.Load()
 }
 
+func (c *Client) selectedCondStore() bool {
+	sel := c.selection.Load()
+	return c.condStore.Load() && sel != nil && sel.modSeq > 0
+}
+
 // ensureConnected re-dials after the server has dropped the session. go-imap
 // parks a dead client in the Logout state and fails every later command with
 // net.ErrClosed; nothing re-dialed, so one drop (Gmail closes sessions after a
@@ -139,6 +152,9 @@ func (c *Client) HasCondStore() bool {
 func (c *Client) ensureConnected() *errx.MailError {
 	c.lifecycle.Lock()
 	defer c.lifecycle.Unlock()
+	if c.closed.Load() || c.Context != nil && c.Context.Err() != nil {
+		return errx.ErrMailServerUnreachable
+	}
 
 	// Only a session that got past auth is worth keeping: a failed Login
 	// leaves go-imap in NotAuthenticated, which is just as unusable as Logout.
@@ -160,6 +176,18 @@ func (c *Client) Connect() *errx.MailError {
 // connectLocked dials and authenticates a fresh session. lifecycle must be
 // held for writing.
 func (c *Client) connectLocked() *errx.MailError {
+	if c.closed.Load() || c.Context != nil && c.Context.Err() != nil {
+		return errx.ErrMailServerUnreachable
+	}
+	c.setupMu.Lock()
+	if c.lifetimeStop != nil {
+		c.lifetimeStop()
+	}
+	if c.transport != nil {
+		_ = c.transport.Close()
+		c.transport = nil
+	}
+	c.setupMu.Unlock()
 	var addr, host, security string
 	var port int
 	switch c.AuthType {
@@ -193,7 +221,26 @@ func (c *Client) connectLocked() *errx.MailError {
 	if resolved == models.MailSecurityNone && !models.CleartextMailAllowed(host) {
 		return errx.ErrMailInsecureRemoteHost
 	}
-	raw, err := netbind.Dialer(c.BindIP).DialContext(context.Background(), "tcp", addr)
+	lifetime := c.Context
+	if lifetime == nil {
+		lifetime = context.Background()
+	}
+	setupCtx, cancel := context.WithTimeout(lifetime, timeout)
+	c.setupMu.Lock()
+	if c.closed.Load() {
+		c.setupMu.Unlock()
+		cancel()
+		return errx.ErrMailServerUnreachable
+	}
+	c.setupCancel = cancel
+	c.setupMu.Unlock()
+	defer func() {
+		c.setupMu.Lock()
+		c.setupCancel = nil
+		c.setupMu.Unlock()
+		cancel()
+	}()
+	raw, err := netbind.Dialer(c.BindIP).DialContext(setupCtx, "tcp", addr)
 	if err != nil {
 		return errx.ErrMailServerUnreachable
 	}
@@ -201,7 +248,21 @@ func (c *Client) connectLocked() *errx.MailError {
 		_ = raw.Close()
 		return errx.ErrMailInsecureRemoteHost
 	}
+	c.setupMu.Lock()
+	if c.closed.Load() {
+		c.setupMu.Unlock()
+		_ = raw.Close()
+		return errx.ErrMailServerUnreachable
+	}
+	c.transport = raw
+	c.lifetimeStop = context.AfterFunc(lifetime, func() { _ = raw.Close() })
+	c.setupMu.Unlock()
 	conn := &idleConn{Conn: raw, timeout: timeout}
+	// Library greeting/STARTTLS waits precede client installation; close the pending socket too.
+	stopSetup := context.AfterFunc(setupCtx, func() { _ = raw.Close() })
+	defer stopSetup()
+	done := conn.arm()
+	defer done()
 
 	var client *imapclient.Client
 	switch {
@@ -216,9 +277,7 @@ func (c *Client) connectLocked() *errx.MailError {
 		}
 	default:
 		tconn := tls.Client(conn, tlsConf)
-		hctx, cancel := context.WithTimeout(context.Background(), timeout)
-		err = tconn.HandshakeContext(hctx)
-		cancel()
+		err = tconn.HandshakeContext(setupCtx)
 		if err != nil {
 			_ = tconn.Close()
 			return errx.ErrMailServerUnreachable
@@ -231,9 +290,6 @@ func (c *Client) connectLocked() *errx.MailError {
 	c.selected.Store(false)
 	c.selection.Store(nil)
 	c.condStore.Store(false)
-	done := conn.arm()
-	defer done()
-
 	var xerr *errx.MailError
 
 	switch c.AuthType {
@@ -254,17 +310,34 @@ func (c *Client) connectLocked() *errx.MailError {
 	// check must run post-auth. Without it (Outlook.com, Microsoft 365 over
 	// IMAP, Yahoo, many hosted servers) the sync loop keys on UIDNEXT instead.
 	c.condStore.Store(c.client.Caps().Has(imap.CapCondStore))
+	if !stopSetup() || setupCtx.Err() != nil {
+		_ = client.Close()
+		return errx.ErrMailServerUnreachable
+	}
 
 	return nil
 }
 
 func (c *Client) Close() error {
-	c.lifecycle.RLock()
-	defer c.lifecycle.RUnlock()
-	if c.client == nil {
+	if !c.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	return c.client.Close()
+	c.setupMu.Lock()
+	defer c.setupMu.Unlock()
+	if c.setupCancel != nil {
+		c.setupCancel()
+	}
+	if c.lifetimeStop != nil {
+		c.lifetimeStop()
+	}
+	if c.transport == nil {
+		return nil
+	}
+	err := c.transport.Close()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 func (c *Client) plainAuth() *errx.MailError {
@@ -312,7 +385,7 @@ func (c *Client) selectMailbox(mailbox string, opts *imap.SelectOptions) (*imap.
 	data, err := c.client.Select(mailbox, opts).Wait()
 	c.selected.Store(err == nil)
 	if err == nil {
-		c.selection.Store(&selection{name: mailbox, uidValidity: data.UIDValidity, count: data.NumMessages})
+		c.selection.Store(&selection{name: mailbox, uidValidity: data.UIDValidity, count: data.NumMessages, modSeq: data.HighestModSeq})
 	}
 	return data, err
 }
@@ -649,7 +722,7 @@ func (c *Client) FetchEnvelopes(ctx context.Context, uids []imap.UID) ([]*Fetche
 		// never advertised it for one is a malformed fetch-att, and a strict
 		// parser answers BAD and syncs nothing: issue #405, where IONOS said
 		// `BAD expected fetch-att instead of "MODSEQ BODY.P"` on every pass.
-		ModSeq:       c.condStore.Load(),
+		ModSeq:       c.selectedCondStore(),
 		InternalDate: true,
 		RFC822Size:   true,
 		BodySection: []*imap.FetchItemBodySection{{
@@ -720,9 +793,9 @@ func (c *Client) FetchEnvelopes(ctx context.Context, uids []imap.UID) ([]*Fetche
 // the FetchEnvelopes command that produced it is closed: a nested FETCH on
 // the same connection blocks until the outer one finishes, and the outer one
 // cannot finish while we wait, which deadlocks the sync on the first message.
-func (c *Client) FetchBody(f *Fetched) {
+func (c *Client) FetchBody(f *Fetched) *errx.MailError {
 	if f == nil || f.Email == nil {
-		return
+		return nil
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -730,10 +803,20 @@ func (c *Client) FetchBody(f *Fetched) {
 	defer c.lifecycle.RUnlock()
 	defer c.begin()()
 	if err := c.resumeSyncLocked(); err != nil {
-		log.Debug().Err(err).Uint32("uid", uint32(f.uid)).Msg("imap: could not re-open the folder to read a body")
-		return
+		return errx.ErrMailServerUnreachable
 	}
-	f.Email.BodyPlain, f.Email.BodyHTML = fetchTextParts(c.client, f.uid, f.body)
+	plain, html, err := fetchTextParts(c.client, f.uid, f.body)
+	if errors.Is(err, errBodyMessageGone) {
+		return errx.ErrMailResourceNotFound
+	}
+	if err != nil {
+		if mailErr := c.handleError(err); mailErr.Code != errx.MailErrorCodeNotFound {
+			return mailErr
+		}
+		return errx.ErrMailServerUnreachable
+	}
+	f.Email.BodyPlain, f.Email.BodyHTML = plain, html
+	return nil
 }
 
 // parseHeaderFlags reads a HEADER.FIELDS literal and renders the fetched

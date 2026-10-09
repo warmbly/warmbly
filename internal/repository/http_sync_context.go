@@ -54,6 +54,8 @@ type SyncContextRepository interface {
 	ListProviderMessages(ctx context.Context, userID, emailID uuid.UUID, after *uuid.UUID, limit int) ([]ProviderFolderMessage, error)
 }
 
+var ErrSyncContextUnsupported = errors.New("provider message enumeration unavailable; upgrade backend first")
+
 func (r *httpSyncContextRepository) ListProviderMessages(ctx context.Context, userID, emailID uuid.UUID, after *uuid.UUID, limit int) ([]ProviderFolderMessage, error) {
 	q := url.Values{}
 	q.Set("user_id", userID.String())
@@ -73,6 +75,9 @@ func (r *httpSyncContextRepository) ListProviderMessages(ctx context.Context, us
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		return nil, ErrSyncContextUnsupported
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("sync_context.http: provider messages: unexpected status %d", resp.StatusCode)
 	}

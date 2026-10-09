@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -85,6 +86,8 @@ func TestLiveEmailErrorDedupeKeepsOneUnresolvedRowPerCode(t *testing.T) {
 	if first == nil {
 		t.Fatal("the first occurrence of an error must be recorded")
 	}
+	exec(`UPDATE email_account_errors SET created_at=NOW()-interval '3 days' WHERE id=$1`, first.ID)
+	before := time.Now()
 
 	// The sync loop relaying the same refusal for the next hour.
 	for i := 0; i < 5; i++ {
@@ -98,6 +101,16 @@ func TestLiveEmailErrorDedupeKeepsOneUnresolvedRowPerCode(t *testing.T) {
 	}
 	if n := unresolved("IMAP_UNKNOWN"); n != 1 {
 		t.Errorf("unresolved IMAP_UNKNOWN rows = %d, want 1", n)
+	}
+	rows, xerr := repo.GetByAccountID(ctx, account, true)
+	if xerr != nil || len(rows) != 1 || rows[0].CreatedAt.Before(before) {
+		t.Fatalf("ongoing failure observation expired: %+v %v", rows, xerr)
+	}
+	if xerr := repo.ResolveByCodesBefore(ctx, account, []string{"IMAP_UNKNOWN"}, before, "stale success"); xerr != nil {
+		t.Fatal(xerr)
+	}
+	if n := unresolved("IMAP_UNKNOWN"); n != 1 {
+		t.Fatal("old success cleared a newly observed failure")
 	}
 
 	// A different failure is a different row: dedupe must not swallow it.

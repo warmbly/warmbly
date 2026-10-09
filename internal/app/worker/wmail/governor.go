@@ -304,10 +304,5 @@ func (w *WMail) escalate(mailErr *errx.MailError) {
 		ActionRequired: userInfo.ActionRequired,
 		Timestamp:      time.Now().Unix(),
 	})
-	if w.Cancel != nil {
-		w.Cancel()
-	}
-	if w.TerminateFunc != nil {
-		w.TerminateFunc()
-	}
+	w.Terminate()
 }

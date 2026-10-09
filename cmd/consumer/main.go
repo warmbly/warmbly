@@ -526,6 +526,7 @@ func main() {
 		EmailHistoryIDRepository:    emailHistoryIDRepo,
 		EmailGraphDeltaRepository:   emailGraphDeltaRepo,
 		EmailSyncStateRepository:    repository.NewEmailSyncStateRepository(primaryDB),
+		ArrivalOutbox:               repository.NewDurableEmailMessageMapRepository(primaryDB, cipherService),
 		EmailAccountErrorRepository: emailAccountErrorRepo,
 		WarmupRepo:                  warmupRepo,
 		PoolLinkRepo:                repository.NewPoolLinkRepository(primaryDB.Pool),

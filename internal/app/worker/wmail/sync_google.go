@@ -29,7 +29,8 @@ func (w *WMail) SyncGoogle(ctx context.Context) *errx.MailError {
 	stats := &tickStats{}
 	w.googleTick = stats
 	w.googleFolders = nil
-	defer w.endTick(stats)
+	complete := false
+	defer func() { w.endTick(ctx, stats, complete) }()
 	if !w.retryUnmap(ctx) {
 		return nil
 	}
@@ -40,7 +41,7 @@ func (w *WMail) SyncGoogle(ctx context.Context) *errx.MailError {
 		return nil
 	}
 
-	newHistoryID, err := w.GoogleData.Client.FetchHistory(ctx, w.GoogleData.LastHistoryID)
+	newHistoryID, caughtUp, err := w.GoogleData.Client.FetchHistoryPass(ctx, w.GoogleData.LastHistoryID)
 	if errors.Is(err, goog.ErrHistoryExpired) {
 		baseline, berr := w.GoogleData.Client.HistoryBaseline(ctx)
 		if berr != nil {
@@ -81,10 +82,11 @@ func (w *WMail) SyncGoogle(ctx context.Context) *errx.MailError {
 	if !stats.aborted {
 		// The pass's own work is done; only a refusal the owner has to act
 		// on is worth failing it for.
-		if merr := w.googleReconcileFolders(ctx, time.Now(), stats); merr != nil && merr.Type == errx.MailErrorCritical {
+		if merr := w.googleReconcileFolders(ctx, time.Now(), stats); merr != nil {
 			return merr
 		}
 	}
+	complete = caughtUp
 	return nil
 }
 
@@ -337,7 +339,13 @@ func (w *WMail) googleBackfill(ctx context.Context, stats *tickStats) *errx.Mail
 			return nil
 		}
 		ids, next, err := w.GoogleData.Client.ListMessages(ctx, q, st.BackfillCursor.PageToken, googleBackfillPage)
+		if errors.Is(err, goog.ErrPageTokenExpired) {
+			st.BackfillCursor.PageToken = ""
+			w.tracker.mark()
+			return nil
+		}
 		if err != nil {
+			stats.aborted = true
 			var errMail *errx.MailError
 			if errors.As(err, &errMail) {
 				return errMail
@@ -364,6 +372,7 @@ func (w *WMail) googleBackfill(ctx context.Context, stats *tickStats) *errx.Mail
 			}
 			msg, err := w.GoogleData.Client.GetMessage(ctx, id)
 			if err != nil {
+				stats.aborted = true
 				var errMail *errx.MailError
 				if errors.As(err, &errMail) {
 					return errMail
@@ -436,6 +445,7 @@ func (w *WMail) googleReconcileFolders(ctx context.Context, now time.Time, stats
 	for page := 0; page < config.GmailFolderReconcilePages; page++ {
 		ids, next, err := w.GoogleData.Client.ListLabelMessages(ctx, goog.Inbox, q, token, 500)
 		if err != nil {
+			stats.aborted = true
 			return w.googleReconcileError(err)
 		}
 		for _, id := range ids {
@@ -479,6 +489,7 @@ func (w *WMail) googleReconcileFolders(ctx context.Context, now time.Time, stats
 		labels, found, err := w.GoogleData.Client.MessageLabels(ctx, m.ProviderID)
 		if err != nil {
 			if gmailRetryable(err) {
+				stats.aborted = true
 				return w.googleReconcileError(err)
 			}
 			// One message Gmail refuses must not hold up every row after it.

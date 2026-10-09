@@ -208,6 +208,8 @@ At the volumes warmup runs, a few plaintext messages of a couple of kilobytes ea
 
 ### In the unibox
 
+Mailbox-sync recovery replays stored arrivals, not sends. Recognized warmup remains hidden, and replay does not create another warmup send or count sync progress as proof that a provider sent mail. Receipt verification and duplicate-send protections remain separate from the mailbox's live-sync status. See [mailbox sync recovery and its limits](/guides/mailboxes/#what-gets-synced).
+
 Warmup never appears in the unified inbox, in either direction. Warmbly recognizes it by its token, including for recipient-only mailboxes. A consumed or expired token still identifies warmup for filtering, but cannot trigger engagement again. When the header is missing, a recorded message identifier can identify older warmup during history sync; the sender-and-subject fallback stays limited to recent inbound sends so an ordinary conversation is not hidden just because it shares a subject. Existing verified warmup entries are removed from the unibox automatically in background batches, without deleting mail at the provider or changing warmup standing.
 
 Manual replies to verified diagnostic parents can stay hidden from the unibox and follow housekeeping. They do not authorize another automated turn or count as real campaign replies.

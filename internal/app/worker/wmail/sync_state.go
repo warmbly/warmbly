@@ -16,10 +16,11 @@ const syncStateHeartbeat = 10 * time.Minute
 // of the tick; the consumer persists it and the loader hands it back on the
 // next assignment.
 type syncTracker struct {
-	state    models.SyncState
-	dirty    bool
-	lastSent time.Time
-	emit     func(models.SyncState) error
+	state        models.SyncState
+	dirty        bool
+	lastSent     time.Time
+	emit         func(models.SyncState) error
+	tickComplete bool
 }
 
 func newSyncTracker(seed *models.SyncState, emit func(models.SyncState) error) *syncTracker {
@@ -85,6 +86,11 @@ func (t *syncTracker) setFoldersSkipped(cap, conflict int) {
 func (t *syncTracker) touch(now time.Time) {
 	stamp := now
 	t.state.LastSyncedAt = &stamp
+	t.flush(now)
+}
+
+// flush publishes safe progress without implying a successful provider check.
+func (t *syncTracker) flush(now time.Time) {
 	if !t.dirty && now.Sub(t.lastSent) < syncStateHeartbeat {
 		return
 	}

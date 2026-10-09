@@ -11,6 +11,29 @@ import (
 	"github.com/warmbly/warmbly/internal/repository"
 )
 
+func (h *Handler) InternalAdmitEmailArrival(c *gin.Context) {
+	var p struct {
+		Map     emailMessageMapPayload     `json:"map"`
+		Pending *repository.PendingArrival `json:"pending"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4<<20)).Decode(&p); err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	repo, ok := h.EmailMessageMap.(repository.ArrivalAdmission)
+	if !ok {
+		c.Status(http.StatusServiceUnavailable)
+		return
+	}
+	if err := repo.AdmitArrival(c.Request.Context(), repository.EmailMessageData(p.Map), p.Pending); err != nil {
+		// Do not expose message content or org encryption failures over the protocol.
+		c.Status(http.StatusServiceUnavailable)
+		return
+	}
+	c.Header("X-Warmbly-Arrival-Durable", "1")
+	c.Status(http.StatusNoContent)
+}
+
 // Internal email-message-map endpoints. Workers call these instead of touching
 // Postgres directly (per CLAUDE.md), mirroring the DEK endpoints. Auth via
 // middleware.NodeBrokerAuthMiddleware (the node token).

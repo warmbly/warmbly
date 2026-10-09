@@ -15,6 +15,7 @@ import (
 // the envelope, body, and headers.
 type GraphMessage struct {
 	ID                     string           `json:"id"`
+	ParentFolderID         string           `json:"parentFolderId"`
 	InternetMessageID      string           `json:"internetMessageId"`
 	ConversationID         string           `json:"conversationId"`
 	Subject                string           `json:"subject"`

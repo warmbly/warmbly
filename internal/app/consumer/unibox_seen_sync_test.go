@@ -21,6 +21,10 @@ func (r *seenSyncRepo) GetByID(context.Context, uuid.UUID, uuid.UUID) (*models.E
 	return r.stored, nil
 }
 
+func (r *seenSyncRepo) GetForSync(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (*models.EmailMessageStoreData, error) {
+	return r.stored, nil
+}
+
 func (r *seenSyncRepo) UpdateEntry(_ context.Context, _, _, _ uuid.UUID, e *repository.UpdateUniboxEntry) error {
 	r.updates = append(r.updates, *e)
 	return nil

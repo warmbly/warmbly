@@ -29,6 +29,13 @@ func (w *WorkerService) HandleMessageFolder(ctx context.Context, action models.M
 		log.Warn().Str("email_id", action.EmailID.String()).Msg("Mailbox not loaded; filing not relayed to the provider")
 		return nil
 	}
+	done, ok := mail.BeginExecution()
+	if !ok {
+		return nil
+	}
+	defer done()
+	ctx, cancel := mail.ExecutionContext(ctx)
+	defer cancel()
 
 	log.Info().
 		Str("email_id", action.EmailID.String()).

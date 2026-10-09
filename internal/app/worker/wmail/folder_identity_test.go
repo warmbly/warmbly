@@ -1,9 +1,16 @@
 package wmail
 
 import (
+	"context"
 	"testing"
 
+	goimap "github.com/emersion/go-imap/v2"
+	"github.com/google/uuid"
+	"github.com/warmbly/warmbly/internal/client/smtpimap/imap"
+	"github.com/warmbly/warmbly/internal/errx"
+
 	"github.com/warmbly/warmbly/internal/models"
+	"github.com/warmbly/warmbly/internal/repository"
 )
 
 // mailboxUpdates is every folder MAILBOX_UPDATE relayed, by name.
@@ -163,16 +170,30 @@ func TestSyncDoesNotGuessARenameWhenTwoFoldersCouldBeIt(t *testing.T) {
 	}
 }
 
-// A changed UIDVALIDITY is the server saying every UID we hold for the folder
-// is void. The folder is re-baselined rather than followed from a cursor that
-// now addresses nothing, and an unfinished import walks it again.
-func TestSyncRebaselinesAFolderWhoseUIDValidityChanged(t *testing.T) {
-	conn := &fakeImapConn{
-		folders: []models.Mailbox{{Name: "INBOX", UIDValidity: 900, HighestModSeq: 5}},
-		changed: uidRange(3),
+type folderIdentityRecoveryConn struct{ *fakeImapConn }
+
+func (c *folderIdentityRecoveryConn) FetchEnvelopes(ctx context.Context, uids []goimap.UID) ([]*imap.Fetched, *errx.MailError) {
+	fetched, err := c.fakeImapConn.FetchEnvelopes(ctx, uids)
+	for _, f := range fetched {
+		f.Email.ModSeq = 5
+		f.Email.Flags = []string{models.FlagSeen}
 	}
+	return fetched, err
+}
+
+// Voided UIDs require bounded generation recovery, even with completed history and unchanged MODSEQ.
+func TestSyncRebaselinesAFolderWhoseUIDValidityChanged(t *testing.T) {
+	conn := &folderIdentityRecoveryConn{fakeImapConn: &fakeImapConn{
+		folders: []models.Mailbox{{Name: "INBOX", UIDValidity: 900, UIDNext: 4, HighestModSeq: 5}},
+		changed: uidRange(3),
+		all:     uidRange(3),
+	}}
 	w, events := newIMAPTestMail(conn, &fixedBudget{allow: 10},
-		&models.Mailbox{Name: "INBOX", UIDValidity: 7, HighestModSeq: 100})
+		&models.Mailbox{Name: "INBOX", UIDValidity: 7, UIDNext: 501, HighestModSeq: 5})
+	knownID := uuid.NewString()
+	maps := &recoveryMessageMap{data: map[string]repository.EmailMessageData{"<2@fake.test>": {ID: knownID, MessageID: "<2@fake.test>"}}}
+	w.EmailMessageMapRepository = maps
+	w.tracker.state.BackfillSynced = 17
 	w.tracker.setFolder("INBOX", models.SyncFolderCursor{UID: 500, Done: true})
 	w.flagScan = map[string]*folderFlagScan{"INBOX": {}}
 
@@ -187,17 +208,39 @@ func TestSyncRebaselinesAFolderWhoseUIDValidityChanged(t *testing.T) {
 	if box.UIDValidity != 900 || box.HighestModSeq != 5 {
 		t.Errorf("relayed %+v, want the server's current cursor", box)
 	}
-	if hasEvent(*events, models.JobEventTypeNewEmail) {
-		t.Error("the folder was walked from a cursor its server had already voided")
+	arrivals := mailboxEvents(*events, models.JobEventTypeNewEmail)
+	if len(arrivals) != 2 || len(maps.data) != 3 || maps.data["<2@fake.test>"].ID != knownID {
+		t.Fatal("bounded recovery lost unseen mail or duplicated the known Message-ID")
 	}
-	if cur := w.tracker.folder("INBOX"); cur.UID != 0 || cur.Done {
-		t.Errorf("backfill floor = %+v, want it cleared so the folder is walked again", cur)
+	updates := mailboxEvents(*events, models.JobEventTypeEmailUpdate)
+	if len(updates) != 1 {
+		t.Fatalf("known recovery updates=%d", len(updates))
+	}
+	update := updates[0].body.(*models.JobEventEmailUpdate)
+	if update.ID.String() != knownID || update.UID != 2 || update.Mailbox != 900 || update.ModSeq != 5 || !models.SeenFromFlags(update.Flags) {
+		t.Fatalf("known message kept voided handles or stale read state: %+v", update)
+	}
+	cur := w.tracker.folder("INBOX")
+	recovery := imapRecoveryCursor(cur)
+	if !cur.Done || cur.UID != 1 || recovery == nil || recovery.Generation != 900 || recovery.Synced != 2 {
+		t.Fatalf("folder did not finish bounded replay from its new UIDs: %+v / %+v", cur, recovery)
+	}
+	if w.tracker.state.BackfillStatus != models.SyncBackfillComplete || w.tracker.state.BackfillSynced != 17 {
+		t.Fatal("generation recovery reopened completed global history")
 	}
 	if _, held := w.flagScan["INBOX"]; held {
 		t.Error("the flag snapshot survived; it describes UIDs that no longer mean anything")
 	}
 	if got := mailboxDeletes(*events); len(got) != 0 {
 		t.Errorf("retired %v; the folder is still there", got)
+	}
+	searches := conn.searches
+	next, later := imapReload(t, w, conn, &fixedBudget{allow: 10})
+	if err := next.Sync(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if conn.searches != searches || len(mailboxEvents(*later, models.JobEventTypeNewEmail)) != 0 || len(mailboxEvents(*later, models.JobEventTypeEmailUpdate)) != 0 || len(maps.data) != 3 {
+		t.Fatal("completed generation recovery repeated after reload")
 	}
 }
 

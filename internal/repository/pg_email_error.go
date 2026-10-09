@@ -81,8 +81,7 @@ func NewEmailAccountErrorRepository(database *db.DB) EmailAccountErrorRepository
 }
 
 // Create stores a new email account error
-// CreateOnce records the error unless the account already has an unresolved
-// one carrying the same code, and returns (nil, nil) when it declined.
+// CreateOnce refreshes unresolved transport observations without creating or notifying twice.
 //
 // A mail server that refuses the same command every pass is not a new problem
 // every pass. The sync loop retries about once a minute and reports what it
@@ -96,7 +95,14 @@ func NewEmailAccountErrorRepository(database *db.DB) EmailAccountErrorRepository
 // 000145), so resolved history is untouched and a problem that returns after
 // it was fixed is recorded again.
 func (r *emailAccountErrorRepository) CreateOnce(ctx context.Context, data *CreateEmailAccountError) (*EmailAccountError, *errx.Error) {
+	// Unresolved transport timestamps represent the latest failure observation.
 	query := `
+		WITH observed AS (
+			UPDATE email_account_errors SET created_at=NOW()
+			WHERE email_account_id=$1 AND user_id=$2 AND error_code=$3 AND resolved_at IS NULL
+			  AND error_code IN ('SERVER_UNREACHABLE','CONNECTION_LOST','RESOURCE_NOT_FOUND','IMAP_UNKNOWN')
+			RETURNING id
+		)
 		INSERT INTO email_account_errors (
 			email_account_id, user_id, error_code, severity, resolve_method,
 			title, message, user_message, action_required, task_id

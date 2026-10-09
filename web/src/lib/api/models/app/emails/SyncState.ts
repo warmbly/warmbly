@@ -12,6 +12,17 @@ export type SyncThrottleReason =
 
 export interface SyncState {
     backfill_status: SyncBackfillStatus;
+    backfill_cursor?: {
+        page_token?: string;
+        folders?: Record<string, { next?: string; uid?: number; done?: boolean }>;
+        google_recovery?: {
+            history_id: number;
+            since: Date | string;
+            page_token?: string;
+            messages_done: boolean;
+            stored_after?: string;
+        };
+    };
     backfill_synced: number;
     backfill_since?: Date;
     backfill_started_at?: Date;

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -20,8 +21,17 @@ import (
 // mailbox. A removal later than the window is housekeeping (see
 // warmupDeletionCounts) and is not held against anyone.
 //
-// It also drops the local unibox entry for the removed message (best-effort).
+// It drops the local unibox entry only after durable arrival replay is complete.
 func (s *JobsService) HandleRemoveEmail(ctx context.Context, e *models.JobEventRemoveEmail) error {
+	if s.ArrivalOutbox != nil {
+		pending, err := s.ArrivalOutbox.HasPendingArrival(ctx, e.UserID, e.EmailID, e.ID)
+		if err != nil {
+			return err
+		}
+		if pending {
+			return ErrSyncArrivalPending
+		}
+	}
 	var checkErr error
 	// A message the sync found in a folder the owner excluded is filed, not
 	// deleted: it is still in the mailbox, so nothing is held against anyone.
@@ -48,7 +58,9 @@ func (s *JobsService) HandleRemoveEmail(ctx context.Context, e *models.JobEventR
 	}
 
 	if s.UniboxRepository != nil {
-		_ = s.UniboxRepository.Delete(ctx, e.UserID, e.ID)
+		if err := s.UniboxRepository.Delete(ctx, e.UserID, e.ID); err != nil {
+			return errors.Join(checkErr, err)
+		}
 	}
 
 	s.publishInboxDeleted(ctx, e.UserID, e.EmailID, e.ID.String())

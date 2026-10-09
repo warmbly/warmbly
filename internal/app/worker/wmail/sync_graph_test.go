@@ -156,8 +156,7 @@ func newGraphTestMail(t *testing.T, srv *httptest.Server, events *[]captured, re
 		return nil
 	})
 
-	// Seeded cursors: a folder with no delta link is primed, not imported, so
-	// without these the live half of the pass would never run.
+	// Seeded cursors model a mailbox already following live deltas.
 	deltaLinks := map[string]string{}
 	for _, folder := range msgraph.TrackedFolders {
 		deltaLinks[folder] = "https://graph.microsoft.com/v1.0/me/mailFolders/" + folder + "/messages/delta?$deltatoken=seed"

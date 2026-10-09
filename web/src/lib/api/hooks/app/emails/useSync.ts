@@ -12,8 +12,8 @@ export default function useSync(id: string, enabled = true) {
         enabled: !!id && enabled,
         staleTime: 15_000,
         refetchInterval: (query) => {
-            const status = query.state.data?.state?.backfill_status;
-            return status === "running" || status === "pending" ? 20_000 : false;
+            const state = query.state.data?.state;
+            return state?.backfill_status === "running" || state?.backfill_status === "pending" || state?.backfill_cursor?.google_recovery ? 20_000 : 60_000;
         },
     });
 }

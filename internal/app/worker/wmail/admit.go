@@ -2,6 +2,7 @@ package wmail
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -133,15 +134,21 @@ func (w *WMail) laneOf(ctx context.Context, key string, msg *models.EmailMessage
 // beginTick releases an expired hold so the state reports "within budget"
 // before the pass looks at anything.
 func (w *WMail) beginTick() {
+	w.tracker.tickComplete = false
 	w.tracker.release(time.Now())
 }
 
-// endTick folds the pass into the relayed state. deferred is the number of
-// live messages still waiting on the server; it is reported as-is (not
-// accumulated) so a pass that admits everything zeroes it.
-func (w *WMail) endTick(stats *tickStats) {
-	w.tracker.setDeferred(stats.deferred)
-	w.tracker.touch(time.Now())
+// endTick retains unmeasured backlog until a complete pass confirms catch-up.
+func (w *WMail) endTick(ctx context.Context, stats *tickStats, complete bool) {
+	complete = complete && ctx.Err() == nil && !stats.aborted && stats.deferred == 0 && w.tracker.state.BackfillCursor.GoogleRecovery == nil
+	w.tracker.tickComplete = complete
+	if complete {
+		w.tracker.setDeferred(0)
+		w.tracker.touch(time.Now())
+		return
+	}
+	w.tracker.setDeferred(max(w.tracker.state.Deferred, stats.deferred))
+	w.tracker.flush(time.Now())
 }
 
 // storeNew is the shared tail of every provider's new-message path: record
@@ -164,14 +171,12 @@ func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data
 		return err
 	}
 
-	if err := w.EmailMessageMapRepository.Add(ctx, repository.EmailMessageData{
+	mapping := repository.EmailMessageData{
 		UserID:    w.UserID.String(),
 		EmailID:   w.ID.String(),
 		MessageID: mapKey,
 		ID:        data.ID.String(),
 		ThreadID:  data.ThreadID,
-	}); err != nil {
-		return err
 	}
 
 	// Both report the send they are about, if any. The id goes on the arrival
@@ -191,11 +196,22 @@ func (w *WMail) storeNew(ctx context.Context, msg *models.EmailMessageData, data
 	}
 
 	// The consumer decodes NEW_EMAIL as JobEventNewEmail{user_id, message}.
-	err := w.onEvent(models.JobEventTypeNewEmail, &models.JobEventNewEmail{
+	arrival := &models.JobEventNewEmail{
 		UserID:                  w.UserID,
 		Message:                 data,
 		ReportOriginalMessageID: reportAbout,
-	})
+	}
+	if durable, ok := w.EmailMessageMapRepository.(repository.ArrivalAdmission); ok {
+		err := durable.AdmitArrival(ctx, mapping, &repository.PendingArrival{Arrival: arrival, Bounce: bounce, Complaint: complaint})
+		if !errors.Is(err, repository.ErrArrivalOutboxUnsupported) {
+			return err
+		}
+		log.Warn().Str("email_id", w.ID.String()).Msg("sync: legacy arrival publication; upgrade backend and consumer before workers for crash durability")
+	}
+	if err := w.EmailMessageMapRepository.Add(ctx, mapping); err != nil {
+		return err
+	}
+	err := w.onEvent(models.JobEventTypeNewEmail, arrival)
 	if err != nil {
 		// The entry would mark a message that never reached the unibox as
 		// known, and every later pass would skip it; drop it so it is re-offered.

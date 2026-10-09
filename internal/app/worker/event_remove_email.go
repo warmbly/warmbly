@@ -22,7 +22,9 @@ func (w *WorkerService) HandleRemoveEmail(ctx context.Context, e *models.RemoveW
 
 	// A load still dialing drops the mailbox when it finishes.
 	if v, ok := w.loads.Load(id); ok {
-		v.(*mailboxLoad).removed.Store(true)
+		for load := v.(*mailboxLoad); load != nil; load = load.prev {
+			load.removed.Store(true)
+		}
 	}
 
 	mail := w.mailManager.Get(id)
