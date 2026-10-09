@@ -1,0 +1,185 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from './Ic.astro';
+import Row, { type Conv } from './Row.astro';
+import { L } from './labels';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * A triage pass from the keyboard (the list's j / x / e shortcuts and the
+ * SelectionBar.tsx it raises). On a 12s loop the cursor walks down, ticks
+ * three handled replies and archives them in one go. The base styles are the
+ * moment before the archive: three ticked, the bar up.
+ */
+const rows: { c: Conv; n?: 1 | 2 | 3 }[] = [
+  { c: { who: 'Jenna Carter', count: 3, time: '4m', subject: 'Re: Quick question about Acme', preview: 'Thursday 10am ET works for me.', labels: [L.meeting], open: true } },
+  { c: { who: 'Karim Salah', time: '22m', subject: 'Re: Following up', preview: 'Please take me off your list.', labels: [L.unsubscribe], ticked: true }, n: 1 },
+  { c: { who: 'Tom Becker', time: '1h', subject: 'Re: Quick question about Quarry', preview: 'I do not handle this, try maria@quarry.co.', labels: [L.wrongPerson], ticked: true }, n: 2 },
+  { c: { who: 'Lena Fischer', time: '1h', subject: 'Re: Quick question about Helio', preview: 'Good timing actually, tell me more.', labels: [L.interested], unread: true } },
+  { c: { who: 'Aman Patel', count: 2, time: '2h', subject: 'Re: Following up', preview: 'Circle back in Q3, we are mid-migration.', labels: [L.notNow], ticked: true }, n: 3 },
+  { c: { who: 'Chen Wei', time: '3h', subject: 'Re: A thought on Tidewater', preview: 'Can we do Tuesday afternoon instead?', labels: [L.meeting] } },
+  { c: { who: 'Priya Nair', time: 'Mon', subject: 'Re: Quick question about Spruce', preview: 'Yes, happy to see a demo next week.', labels: [L.interested] } },
+];
+const keys = [
+  { k: ['j', 'k'], d: 'Move down and up', cls: 'tr-key-j' },
+  { k: ['x'], d: 'Tick the row you are on', cls: 'tr-key-x' },
+  { k: ['e'], d: 'Archive the selection', cls: 'tr-key-e' },
+  { k: ['/'], d: 'Search this view', cls: '' },
+  { k: ['c'], d: 'Label the open thread', cls: '' },
+];
+const bar = 'h-7 px-2.5 rounded text-[12px] font-medium inline-flex items-center gap-1.5 text-slate-700';
+---
+<ScaledStage w={760} h={570} photo="lake-mist">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[730px] h-[526px] flex`}>
+    <div class="flex w-[400px] shrink-0 flex-col border-r border-slate-200">
+      <div class="flex h-11 shrink-0 items-center gap-1.5 pl-3 pr-2">
+        <span class="text-[13.5px] font-semibold text-slate-900">Inbox</span>
+        <span class="text-[11.5px] tabular-nums text-slate-400">48</span>
+        <span class="flex-1"></span>
+        <span class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[11.5px] text-slate-600">
+          <span class="inline-flex size-3.5 rounded-[4px] border border-slate-300 bg-white"></span>All
+        </span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="x" size={14} /></span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="listFilter" size={16} /></span>
+      </div>
+      <div class="shrink-0 border-b border-slate-200 px-3 pb-2">
+        <div class="flex h-8 items-center gap-2 rounded-md bg-slate-100/80 px-2.5 text-[12.5px] text-slate-400"><Glyph name="search" size={14} /><span class="flex-1">Search all mail</span><kbd class="inline-flex h-4 items-center rounded border border-slate-200 bg-white px-1 font-mono text-[10px]">/</kbd></div>
+      </div>
+      <div class="flex h-7 items-center px-4 text-[10.5px] font-medium uppercase tracking-[0.12em] text-slate-400">Today</div>
+      <div class="tr-list relative">
+        {rows.map((r) => (
+          <div class={`h-[77px] overflow-hidden border-b border-slate-100 ${r.n ? `tr-w tr-w${r.n}` : ''}`}>
+            <Row c={r.c} selecting class={r.n ? `tr-r tr-r${r.n}` : ''} />
+          </div>
+        ))}
+        <!-- Where the keyboard is: the row j and k land on. -->
+        <span class="tr-ring pointer-events-none absolute inset-x-1 top-0 h-[76px] rounded-md ring-2 ring-inset ring-sky-300/80" style="transform:translateY(308px)"></span>
+      </div>
+    </div>
+
+    <div class="flex min-w-0 flex-1 flex-col">
+      <div class="flex min-h-12 items-center gap-3 border-b border-slate-200 px-5 py-2">
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[13.5px] font-semibold leading-5 text-slate-900">Re: Quick question about Acme</div>
+          <div class="truncate text-[11px] leading-4 text-slate-400">3 messages · alex@northwind.dev</div>
+        </div>
+      </div>
+      <article class="px-5 py-4">
+        <div class="flex items-start gap-3">
+          <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">JC</span>
+          <div class="text-[12.5px] font-semibold text-slate-900">Jenna Carter</div>
+        </div>
+        <div class="mt-3 pl-10 text-[13px] leading-[1.6] text-slate-800">Thursday 10am ET works for me. Can you send over an invite?</div>
+      </article>
+    </div>
+  </div>
+
+  <!-- The shortcuts the list takes, pressed in step with the loop. -->
+  <div class={`${FLOAT} left-[476px] top-[118px] w-[244px] overflow-hidden`}>
+    <div class="flex h-9 items-center border-b border-slate-200 px-3.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Inbox shortcuts</div>
+    <ul class="px-3.5 py-1.5">
+      {keys.map((k) => (
+        <li class="flex h-9 items-center gap-3">
+          <span class="flex w-[56px] shrink-0 gap-1">
+            {k.k.map((c, i) => (
+              <kbd class={`inline-flex size-6 items-center justify-center rounded-md border border-b-[3px] border-slate-200 bg-white font-mono text-[12px] text-slate-900 ${i === 0 ? k.cls : ''}`}>{c}</kbd>
+            ))}
+          </span>
+          <span class="text-[12px] text-slate-600">{k.d}</span>
+        </li>
+      ))}
+    </ul>
+  </div>
+
+  <!-- SelectionBar: floating at the bottom centre while anything is ticked. -->
+  <div class="tr-bar float-layer absolute left-[52px] top-[496px] flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-[0_6px_20px_-4px_rgba(15,23,42,0.12),0_2px_4px_rgba(15,23,42,0.04)]">
+    <span class="inline-flex h-7 items-center gap-1.5 rounded bg-sky-50 px-2 text-[12px] font-medium text-sky-700">
+      <Glyph name="check" size={12} />
+      <span class="relative inline-flex w-[7px] justify-center tabular-nums">
+        <span class="tr-n1 absolute opacity-0">1</span><span class="tr-n2 absolute opacity-0">2</span><span class="tr-n3">3</span>
+      </span>
+      selected
+    </span>
+    <span class={bar}><Glyph name="mailCheck" size={12} />Mark read</span>
+    <span class={bar}><Ic name="mailOpen" size={12} />Mark unread</span>
+    <span class={bar}><Glyph name="moon" size={12} />Snooze</span>
+    <span class={`${bar} tr-arch`}><Glyph name="archive" size={12} />Archive</span>
+    <span class="h-7 px-2.5 rounded text-[12px] font-medium inline-flex items-center gap-1.5 text-red-600"><Ic name="trash" size={12} />Delete</span>
+    <span class="h-4 w-px bg-slate-200"></span>
+    <span class="inline-flex h-7 items-center rounded px-2.5 text-[12px] text-slate-500">Clear</span>
+  </div>
+</ScaledStage>
+
+<style is:global>
+  /* One 12s pass. j moves at 8, 20, 32 and 37%, x ticks at 13, 25 and 42%,
+     e archives at 52%; the list fades and resets across the seam. */
+  .tr-list { animation: tr-list 12s linear infinite; }
+  @keyframes tr-list { 0%, 90% { opacity: 1; } 93%, 97% { opacity: 0; } 100% { opacity: 1; } }
+
+  .tr-ring { animation: tr-ring 12s cubic-bezier(0.3, 0.7, 0.2, 1) infinite; }
+  @keyframes tr-ring {
+    0%, 7% { transform: translateY(0); opacity: 1; }
+    9%, 19% { transform: translateY(77px); }
+    21%, 31% { transform: translateY(154px); }
+    33%, 36% { transform: translateY(231px); }
+    38%, 51% { transform: translateY(308px); opacity: 1; }
+    54%, 100% { transform: translateY(308px); opacity: 0; }
+  }
+
+  .tr-r { animation: 12s linear infinite; }
+  .tr-r1 { animation-name: tr-bg1; } .tr-r2 { animation-name: tr-bg2; } .tr-r3 { animation-name: tr-bg3; }
+  @keyframes tr-bg1 { 0%, 12.9% { background-color: rgb(224 242 254 / 0); } 13%, 100% { background-color: rgb(224 242 254 / 0.6); } }
+  @keyframes tr-bg2 { 0%, 24.9% { background-color: rgb(224 242 254 / 0); } 25%, 100% { background-color: rgb(224 242 254 / 0.6); } }
+  @keyframes tr-bg3 { 0%, 41.9% { background-color: rgb(224 242 254 / 0); } 42%, 100% { background-color: rgb(224 242 254 / 0.6); } }
+
+  .tr-r .row-box { animation: 12s linear infinite; }
+  .tr-r1 .row-box { animation-name: tr-box1; } .tr-r2 .row-box { animation-name: tr-box2; } .tr-r3 .row-box { animation-name: tr-box3; }
+  @keyframes tr-box1 { 0%, 12.9% { background-color: #fff; border-color: #cbd5e1; } 13%, 100% { background-color: #0284c7; border-color: #0284c7; } }
+  @keyframes tr-box2 { 0%, 24.9% { background-color: #fff; border-color: #cbd5e1; } 25%, 100% { background-color: #0284c7; border-color: #0284c7; } }
+  @keyframes tr-box3 { 0%, 41.9% { background-color: #fff; border-color: #cbd5e1; } 42%, 100% { background-color: #0284c7; border-color: #0284c7; } }
+  .tr-r .row-mark { animation: 12s linear infinite; }
+  .tr-r1 .row-mark { animation-name: tr-mark1; } .tr-r2 .row-mark { animation-name: tr-mark2; } .tr-r3 .row-mark { animation-name: tr-mark3; }
+  @keyframes tr-mark1 { 0%, 12.9% { opacity: 0; } 13%, 100% { opacity: 1; } }
+  @keyframes tr-mark2 { 0%, 24.9% { opacity: 0; } 25%, 100% { opacity: 1; } }
+  @keyframes tr-mark3 { 0%, 41.9% { opacity: 0; } 42%, 100% { opacity: 1; } }
+
+  /* Archived: the three rows fold away together. */
+  .tr-w { animation: tr-fold 12s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+  @keyframes tr-fold {
+    0%, 52% { height: 77px; opacity: 1; }
+    54% { opacity: 0; }
+    58%, 95% { height: 0; opacity: 0; border-bottom-width: 0; }
+    96%, 100% { height: 77px; opacity: 1; border-bottom-width: 1px; }
+  }
+
+  .tr-bar { animation: tr-bar 12s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes tr-bar {
+    0%, 12.5% { opacity: 0; transform: translateY(14px) scale(0.97); }
+    14.5%, 52% { opacity: 1; transform: none; }
+    55%, 100% { opacity: 0; transform: translateY(10px) scale(0.97); }
+  }
+  .tr-n1, .tr-n2, .tr-n3 { animation: 12s steps(1) infinite; }
+  .tr-n1 { animation-name: tr-n1; } .tr-n2 { animation-name: tr-n2; } .tr-n3 { animation-name: tr-n3; }
+  @keyframes tr-n1 { 0%, 24.9% { opacity: 1; } 25%, 100% { opacity: 0; } }
+  @keyframes tr-n2 { 0%, 24.9% { opacity: 0; } 25%, 41.9% { opacity: 1; } 42%, 100% { opacity: 0; } }
+  @keyframes tr-n3 { 0%, 41.9% { opacity: 0; } 42%, 100% { opacity: 1; } }
+  .tr-arch { animation: tr-arch 12s linear infinite; }
+  @keyframes tr-arch { 0%, 50.5% { background-color: transparent; } 51%, 53% { background-color: #f1f5f9; } 54%, 100% { background-color: transparent; } }
+
+  /* Keycaps go down as they are pressed. */
+  .tr-key-j, .tr-key-x, .tr-key-e { animation: 12s linear infinite; }
+  .tr-key-j { animation-name: tr-key-j; } .tr-key-x { animation-name: tr-key-x; } .tr-key-e { animation-name: tr-key-e; }
+  @keyframes tr-key-j {
+    0%, 7.4%, 9.6%, 19.4%, 21.6%, 31.4%, 33.6%, 36.4%, 38.6%, 100% { transform: none; border-bottom-width: 3px; background: #fff; border-color: #e2e8f0; }
+    8%, 9%, 20%, 21%, 32%, 33%, 37%, 38% { transform: translateY(2px); border-bottom-width: 1px; background: #f0f9ff; border-color: #7dd3fc; }
+  }
+  @keyframes tr-key-x {
+    0%, 12.4%, 14.6%, 24.4%, 26.6%, 41.4%, 43.6%, 100% { transform: none; border-bottom-width: 3px; background: #fff; border-color: #e2e8f0; }
+    13%, 14%, 25%, 26%, 42%, 43% { transform: translateY(2px); border-bottom-width: 1px; background: #f0f9ff; border-color: #7dd3fc; }
+  }
+  @keyframes tr-key-e {
+    0%, 51.4%, 53.6%, 100% { transform: none; border-bottom-width: 3px; background: #fff; border-color: #e2e8f0; }
+    52%, 53% { transform: translateY(2px); border-bottom-width: 1px; background: #f0f9ff; border-color: #7dd3fc; }
+  }
+</style>

@@ -1,0 +1,179 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import {
+  WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY,
+  STAT, STAT_VALUE, STAT_SUB,
+} from '../../../../lib/scene';
+import { TH, CHECK, SEARCH, STATUS, tagStyle } from '../ui';
+
+/**
+ * The founder setup on the Accounts page: founder@ on the main domain warms
+ * but is in no campaign, three mailboxes on out.acme.com ramp up, and the
+ * sub-domain's SPF and DMARC are checked in the card over it.
+ */
+type Row = {
+  addr: string; name: string; tag: { label: string; color: string };
+  warm: [number, number]; inbox?: number; collecting?: string; day: number; founder?: boolean;
+};
+const real = { label: 'Real mail', color: '#64748b' };
+const cold = { label: 'Cold', color: '#0ea5e9' };
+const rows: Row[] = [
+  { addr: 'founder@acme.com', name: 'Maya Okonkwo', tag: real, warm: [26, 40], inbox: 99, day: 17, founder: true },
+  { addr: 'hello@out.acme.com', name: 'Maya Okonkwo', tag: cold, warm: [22, 40], collecting: '16/20', day: 13 },
+  { addr: 'intro@out.acme.com', name: 'Maya Okonkwo', tag: cold, warm: [22, 40], collecting: '15/20', day: 13 },
+  { addr: 'team@out.acme.com', name: 'Maya Okonkwo', tag: cold, warm: [21, 40], collecting: '12/20', day: 12 },
+];
+const stats = [
+  { label: 'Total', value: '4', sub: 'connected' },
+  { label: 'Healthy', value: '4', sub: 'all four', pulse: true },
+  { label: 'Warming', value: '4', sub: 'ramping up' },
+  { label: 'Cold today', value: '0', sub: 'founder@ never sends cold', last: true },
+];
+const checks = [
+  { k: 'SPF', v: 'include:_spf.google.com' },
+  { k: 'DMARC', v: 'p=quarantine' },
+];
+---
+<ScaledStage w={760} h={680} photo="sheer-blue">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[800px] h-[660px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">4 mailboxes</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-14">
+        <span class={ACTION_GHOST}><Glyph name="globe" size={12} />Sending domains</span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Add account</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-4 border-b border-slate-200 pr-10">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class="flex items-center gap-2">
+            <span class={EYEBROW}>{s.label}</span>
+            {s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
+          </div>
+          <div class={STAT_VALUE}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">4</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-14">
+        <div class={`${SEARCH} w-48`}><Glyph name="search" size={13} />Search by email…</div>
+      </div>
+    </div>
+
+    <table class="w-[760px] table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class="pl-5 pr-2 py-2 w-11"><span class={CHECK}></span></th>
+          <th class={TH}>Mailbox</th>
+          <th class={`${TH} w-[100px]`}>Status</th>
+          <th class={`${TH} w-[84px]`}>Sent today</th>
+          <th class={`${TH} w-[86px]`}>Warmup</th>
+          <th class={`${TH} w-[80px]`}>Inbox</th>
+          <th class={`${TH} w-[104px]`}>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr class={`h-[52px] border-b border-slate-200/60 ${r.founder ? 'bg-slate-50/70' : ''}`}>
+            <td class="pl-5 pr-2"><span class={CHECK}></span></td>
+            <td class="px-3">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark="google" size={14} /></span>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5 leading-tight">
+                    <span class="truncate text-[12.5px] font-medium text-slate-900">{r.addr}</span>
+                    <span class="inline-flex h-4 shrink-0 items-center gap-1 rounded-full px-1.5 text-[9.5px] font-medium" style={tagStyle(r.tag.color)}><span class="size-1.5 rounded-full" style={`background-color:${r.tag.color}`}></span>{r.tag.label}</span>
+                  </div>
+                  <div class="mt-0.5 truncate text-[11px] leading-tight text-slate-400">
+                    {r.founder ? <span>Main domain · in no campaign</span> : <span>Sub-domain · day {r.day} of warmup</span>}
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td class="px-3">
+              <span class={`${STATUS} text-orange-600`}><Glyph name="flame" size={12} class="text-orange-500 flame-flicker" /><span class="text-shimmer">Warming</span></span>
+            </td>
+            <td class="px-3"><span class="text-slate-300">—</span></td>
+            <td class="px-3 font-mono text-[12px] tabular-nums text-orange-600">
+              <span class="inline-flex items-center gap-1.5"><span class="campaign-grid"></span><span>{r.warm[0]}<span class="opacity-60">/{r.warm[1]}</span></span></span>
+            </td>
+            <td class="px-3">
+              {r.inbox ? (
+                <span class="inline-flex items-center gap-1.5 font-mono text-[11.5px] font-medium tabular-nums text-emerald-600"><span class="size-1.5 rounded-full bg-emerald-500"></span>{r.inbox}%</span>
+              ) : (
+                <span class="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400"><span class="size-1.5 rounded-full bg-slate-300"></span>{r.collecting}</span>
+              )}
+            </td>
+            <td class="px-3">
+              <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span><span class="uppercase tracking-[0.08em]">Healthy</span></span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+
+    <!-- What the three cold mailboxes are allowed while they warm. -->
+    <div class="mx-5 mt-5 w-[356px] rounded-lg border border-slate-200 px-4 py-3.5">
+      <div class="flex items-center justify-between">
+        <span class={EYEBROW}>Ramp · out.acme.com</span>
+        <span class="font-mono text-[10.5px] text-slate-400">10 a day, +1 a day, up to 40</span>
+      </div>
+      <div class="mt-3 flex items-end gap-[3px] h-[54px]">
+        {Array.from({ length: 31 }, (_, i) => {
+          const v = Math.min(40, 10 + i);
+          const past = i < 13;
+          return <span class={`enter-grow-y flex-1 rounded-t-[2px] ${past ? 'bg-orange-400' : i === 13 ? 'bg-orange-300 fh-today' : 'bg-slate-200'}`} style={`height:${(v / 40) * 100}%; --d:${150 + i * 25}ms`}></span>;
+        })}
+      </div>
+      <div class="mt-1.5 flex justify-between font-mono text-[9.5px] text-slate-400"><span>Day 1</span><span class="text-orange-600">Today · day 13</span><span>Day 31 · 40 a day</span></div>
+    </div>
+  </div>
+
+  <!-- The sub-domain's records, checked on a loop. -->
+  <div class={`${FLOAT} left-[428px] top-[468px] w-[308px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg bg-sky-50 text-sky-600"><Glyph name="globe" size={14} /></span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium text-slate-900">out.acme.com</div>
+        <div class="text-[10.5px] text-slate-400">Sending domain · 3 mailboxes</div>
+      </div>
+      <span class="fh-ok ml-auto inline-flex h-5 items-center gap-1.5 rounded-full bg-emerald-50 px-2 text-[10.5px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200/70"><span class="size-1.5 rounded-full bg-emerald-500"></span>Authenticated</span>
+    </div>
+    <div class="px-4 py-2">
+      {checks.map((c, i) => (
+        <div class="flex h-11 items-center justify-between gap-3" style={`--i:${i}`}>
+          <div class="min-w-0">
+            <div class="text-[12px] text-slate-700">{c.k}</div>
+            <div class="truncate font-mono text-[10px] text-slate-400">{c.v}</div>
+          </div>
+          <span class="relative inline-flex h-4 w-14 shrink-0 items-center justify-end">
+            <span class="fh-wait absolute right-0 size-3 rounded-full border-[1.5px] border-slate-200 border-t-sky-500"></span>
+            <span class="fh-pass absolute right-0 inline-flex items-center gap-1 text-[12px] font-medium text-emerald-600"><Glyph name="check" size={12} />Found</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 9s loop: both records are looked up, pass, and the domain reads Ready.
+     Base styles are the end state, which is what reduced motion shows. */
+  .fh-wait { opacity: 0; animation: fh-spin 0.8s linear infinite, fh-wait 9s linear infinite; animation-delay: 0s, calc(var(--i) * 0.6s); }
+  .fh-pass { animation: fh-pass 9s linear infinite both; animation-delay: calc(var(--i) * 0.6s); }
+  .fh-ok { animation: fh-ok 9s linear infinite both; }
+  @keyframes fh-spin { to { transform: rotate(360deg); } }
+  @keyframes fh-wait { 0%, 22% { opacity: 1; } 24%, 100% { opacity: 0; } }
+  @keyframes fh-pass { 0%, 22% { opacity: 0; transform: scale(0.8); } 26%, 100% { opacity: 1; transform: none; } }
+  @keyframes fh-ok { 0%, 40% { opacity: 0; } 44%, 100% { opacity: 1; } }
+  .fh-today { animation: fh-today 2.4s ease-in-out infinite; }
+  @keyframes fh-today { 50% { opacity: 0.45; } }
+</style>

@@ -80,11 +80,9 @@ func (h *Handler) placementBatchInput(c *gin.Context) (placement.BatchInput, boo
 		OnUnavailable:    req.OnUnavailable,
 		MaxCredits:       req.MaxCredits,
 	}
-	// A key limited to some mailboxes only ever tests from those.
-	if middleware.GetAuthType(c) == middleware.AuthTypeAPIKey {
-		if allowed := middleware.GetAPIKeyAllowedEmailAccounts(c); len(allowed) > 0 {
-			in.AllowedSenders = allowed
-		}
+	// A caller limited to some mailboxes only ever tests from those.
+	if allowed := middleware.AllowedEmailAccounts(c); len(allowed) > 0 {
+		in.AllowedSenders = allowed
 	}
 	if id, err := middleware.GetUserUUID(c); err == nil && id != uuid.Nil {
 		in.UserID = &id

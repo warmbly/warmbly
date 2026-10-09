@@ -15,11 +15,11 @@
     "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "^3.7.4",
     "@fontsource/inter": "^5.2.6",
-    "@paper-design/shaders": "^0.0.80",
     "@tailwindcss/vite": "^4.1.10",
     "astro": "^7.2.8",
     "motion": "^12.34.0",
     "reading-time": "^1.5.0",
+    "sharp": "0.35.5",
     "tailwindcss": "^4.1.10"
   }
 }

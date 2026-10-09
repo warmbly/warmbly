@@ -1,0 +1,106 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import DrawerHead from './DrawerHead.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The mailbox drawer's Analytics tab (AnalyticsTab in InboxDetails.tsx):
+ * exchange totals, then sent against target per day as the dashboard's
+ * dithered bars over solid target bars. Day 9 shows the ramp holding after
+ * a spam placement, with the notice the Warmup tab shows for it.
+ */
+// Default ramp (10, +1 a day). A spam landing on day 9 cuts the target by a
+// quarter for two days and pauses the increase for three, without catch-up.
+const DAYS = 25;
+const target = (d: number) => {
+  if (d === 9 || d === 10) return 13;
+  if (d === 11) return 17;
+  return d < 9 ? 10 + (d - 1) : 10 + (d - 1) - 3;
+};
+const series = Array.from({ length: DAYS }, (_, i) => {
+  const d = i + 1;
+  const t = target(d);
+  const sent = d === DAYS ? 22 : t - (d % 6 === 4 ? 1 : 0);
+  return { d, t, sent };
+});
+const totalSent = series.reduce((n, s) => n + s.sent, 0);
+const received = Math.round(totalSent * 0.94);
+const replies = Math.round(totalSent * 0.29);
+const max = 32;
+const H = 124;
+const stats = [
+  { label: 'Total sent', value: totalSent, sub: `${(totalSent / DAYS).toFixed(1)}/active day` },
+  { label: 'Received', value: received, sub: '94% of what it sent', accent: true },
+  { label: 'Replies', value: replies, sub: `${((replies / totalSent) * 100).toFixed(1)}% reply rate` },
+  { label: 'Target met', value: '98%', sub: 'of planned volume' },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-sky">
+  <div class={`${WINDOW} left-[120px] top-[40px] w-[640px] h-[560px]`}>
+    <DrawerHead addr="kai@northwind.dev" provider="Google Workspace" mark="google" active="Analytics" />
+
+    <div class="grid grid-cols-2 divide-x divide-y divide-slate-200/60 border-b border-slate-200/60">
+      {stats.map((s) => (
+        <div class="px-4 py-3.5">
+          <div class={EYEBROW}>{s.label}</div>
+          <div class={`mt-1 text-[24px] font-light leading-none tabular-nums ${s.accent ? 'text-sky-600' : 'text-slate-900'}`}>{s.value}</div>
+          <div class="mt-1.5 truncate font-mono text-[10.5px] text-slate-400">{s.sub}</div>
+        </div>
+      ))}
+      <div class="col-span-2 px-4 py-3.5">
+        <div class={EYEBROW}>Days active</div>
+        <div class="mt-1 text-[24px] font-light leading-none tabular-nums text-slate-900">{DAYS}</div>
+        <div class="mt-1.5 truncate font-mono text-[10.5px] text-slate-400">Sep 15 → Oct 9</div>
+      </div>
+    </div>
+
+    <div class="px-5 py-4">
+      <div class="mb-3 flex items-center justify-between">
+        <span class={EYEBROW}>Daily volume</span>
+        <span class="flex items-center gap-3 text-[10px] text-slate-400">
+          <span class="inline-flex items-center gap-1"><span class="size-2 rounded-sm bg-sky-500"></span>Sent</span>
+          <span class="inline-flex items-center gap-1"><span class="size-2 rounded-sm bg-slate-200"></span>Target</span>
+        </span>
+      </div>
+      <div class="flex items-end gap-[3px]" style={`height:${H}px`}>
+        {series.map((s, i) => (
+          <div class="relative h-full flex-1">
+            <div class="enter-grow-y absolute inset-x-0 bottom-0 bg-slate-100" style={`height:${(s.t / max) * 100}%; --d:${i * 30}ms`}></div>
+            <div
+              class={`enter-grow-y absolute inset-x-0 bottom-0 ${s.d === DAYS || s.d === 9 ? 'rp-hot' : 'rp-dith'}`}
+              style={`height:${(s.sent / max) * 100}%; --d:${200 + i * 30}ms`}
+            ></div>
+          </div>
+        ))}
+      </div>
+      <div class="h-px bg-slate-200/80"></div>
+      <div class="mt-1.5 flex justify-between font-mono text-[9.5px] text-slate-400"><span>Sep 15</span><span>Today</span></div>
+      <p class="mt-2 font-mono text-[11px] tabular-nums text-slate-500">Sep 23: 13 sent / 13 target · 12 received · 4 replies</p>
+    </div>
+  </div>
+
+  <!-- The hold behind the dip, as the Warmup tab words it. -->
+  <div class={`${FLOAT} left-[22px] top-[300px] w-[268px] p-3`}>
+    <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+      <Glyph name="alert" size={14} class="mt-px text-amber-600" />
+      <div class="min-w-0">
+        <p class="text-[12.5px] font-medium text-amber-900">Warmup volume held back</p>
+        <p class="mt-0.5 text-[11.5px] leading-relaxed text-amber-800/90">1 warmup email landed in spam in the last 48 hours out of 17 sent. Today's target is cut by a quarter and the daily increase is paused. It resumes on its own if nothing else lands in spam.</p>
+      </div>
+    </div>
+    <div class="mt-2 flex items-center gap-1.5 px-1 font-mono text-[10.5px] text-slate-400"><span class="size-1.5 rounded-full bg-amber-500"></span>Sep 23 · day 9 of the ramp</div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The dashboard's dithered bars: a solid cap, then dots thinning to the baseline. */
+  .rp-dith {
+    background:
+      linear-gradient(#0ea5e9, #0ea5e9) top / 100% 2px no-repeat,
+      radial-gradient(circle, rgb(14 165 233 / 0.95) 0.8px, transparent 1px) 0 0 / 2px 2px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 20%, rgb(0 0 0 / 0.35) 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 20%, rgb(0 0 0 / 0.35) 100%);
+  }
+  .rp-hot { background: #0ea5e9; }
+</style>

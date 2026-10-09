@@ -1,0 +1,40 @@
+---
+
+/**
+ * The message a Slack action posts (internal/app/integration/actions.go,
+ * slackPostMessage): the title as text, then one attachment in Warmbly's
+ * sky accent with the rendered template, Contact and Subject fields and a
+ * Warmbly footer.
+ */
+interface Props {
+  title: string;
+  text?: string;
+  contact?: string;
+  subject?: string;
+  time?: string;
+}
+const { title, text, contact, subject, time = '2:41 PM' } = Astro.props;
+---
+<div class="flex gap-2.5 px-4 py-3 font-[system-ui]">
+  <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-9 shrink-0 rounded-md" />
+  <div class="min-w-0 flex-1">
+    <div class="flex items-baseline gap-1.5">
+      <span class="text-[13.5px] font-bold text-slate-900">Warmbly</span>
+      <span class="rounded-sm bg-slate-100 px-1 text-[9.5px] font-semibold text-slate-500">APP</span>
+      <span class="text-[11.5px] text-slate-400">{time}</span>
+    </div>
+    <div class="text-[13.5px] text-slate-800">{title}</div>
+    <div class="mt-1.5 flex gap-2.5">
+      <span class="w-1 shrink-0 rounded-full bg-[#0EA5E9]"></span>
+      <div class="min-w-0 py-0.5">
+        <div class="text-[13.5px] font-bold text-slate-900">{title}</div>
+        {text && <div class="mt-0.5 text-[13px] leading-[1.45] text-slate-700">{text}</div>}
+        <div class="mt-1.5 grid grid-cols-2 gap-x-6 gap-y-1">
+          {contact && <div><div class="text-[12.5px] font-bold text-slate-900">Contact</div><div class="text-[12.5px] text-sky-700">{contact}</div></div>}
+          {subject && <div><div class="text-[12.5px] font-bold text-slate-900">Subject</div><div class="truncate text-[12.5px] text-slate-700">{subject}</div></div>}
+        </div>
+        <div class="mt-1.5 text-[11px] text-slate-400">Warmbly | Today at {time}</div>
+      </div>
+    </div>
+  </div>
+</div>

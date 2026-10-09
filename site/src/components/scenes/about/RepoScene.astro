@@ -1,0 +1,137 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import DashboardMock from '../../DashboardMock.astro';
+import Ico from './Ico.astro';
+import { WINDOW } from '../../../lib/scene';
+import { GITHUB_PATH } from '../../../lib/marks';
+
+/**
+ * The about hero: the warmbly/warmbly repository as GitHub shows it (real
+ * top-level folders, recent commit subjects, the language split by bytes),
+ * with the dashboard it builds running over its corner.
+ */
+const files: { name: string; dir?: boolean; msg: string; when: string }[] = [
+  { name: '.github', dir: true, msg: 'Gate CI on live warmup recovery after a release upgrade', when: '4 hours ago' },
+  { name: 'admin', dir: true, msg: 'Keep signup attribution through marketing redirects', when: '8 hours ago' },
+  { name: 'cmd', dir: true, msg: 'Alert persistent fleet stalls and retry blocked dispatches', when: '10 hours ago' },
+  { name: 'deploy', dir: true, msg: 'Share configurable backend CORS across dashboard origins', when: '4 days ago' },
+  { name: 'docs', dir: true, msg: 'Document deferred warmup command recovery', when: '4 hours ago' },
+  { name: 'forms', dir: true, msg: 'Patch production frontend dependencies', when: '3 days ago' },
+  { name: 'internal', dir: true, msg: 'Recover never-started warmup preparations', when: '4 hours ago' },
+  { name: 'ios', dir: true, msg: 'Add positive replies and a reply-class breakdown', when: '11 hours ago' },
+  { name: 'realtime', dir: true, msg: 'Restore self-host realtime connections on legacy gateway URLs', when: 'yesterday' },
+  { name: 'scripts', dir: true, msg: 'Allow unlimited self-hosted workspaces', when: '2 days ago' },
+  { name: 'site', dir: true, msg: 'Keep signup attribution through marketing redirects', when: '8 hours ago' },
+  { name: 'skills', dir: true, msg: 'Run one placement test across many mailboxes', when: 'last week' },
+  { name: 'tracking', dir: true, msg: 'Move to first-party Apple sign-in', when: '5 days ago' },
+  { name: 'web', dir: true, msg: 'Make the Accounts page readable on phones', when: '3 hours ago' },
+  { name: 'LICENSE', msg: 'Create LICENSE', when: '9 months ago' },
+  { name: 'Makefile', msg: 'Register bus schemas from the booting backend', when: 'last week' },
+  { name: 'README.md', msg: 'Add a one-command self-host installer', when: 'last month' },
+];
+// Share of source bytes by language, from `git ls-files`.
+const langs = [
+  { name: 'Go', pct: 52.2, color: '#00ADD8' },
+  { name: 'TypeScript', pct: 36.2, color: '#3178c6' },
+  { name: 'Swift', pct: 4.6, color: '#F05138' },
+  { name: 'Rust', pct: 0.7, color: '#dea584' },
+  { name: 'Elixir', pct: 0.5, color: '#6e4a7e' },
+  { name: 'Other', pct: 5.8, color: '#d0d7de' },
+];
+const tabs = [
+  { label: 'Code', icon: 'book', active: true },
+  { label: 'Issues', icon: 'circleDot' },
+  { label: 'Pull requests', icon: 'gitPullRequest' },
+  { label: 'Discussions', icon: 'message' },
+  { label: 'Actions', icon: 'playCircle' },
+] as const;
+const gh = 'h-7 px-2.5 rounded-md border border-[#d0d7de] bg-[#f6f8fa] inline-flex items-center gap-1.5 text-[12px] font-medium text-[#24292f]';
+---
+<ScaledStage w={1240} h={700} photo="lake-mist">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[900px] h-[700px]`}>
+    <!-- Repository header -->
+    <div class="h-12 px-5 flex items-center gap-2.5 bg-[#f6f8fa]">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="text-[#24292f]"><path d={GITHUB_PATH} /></svg>
+      <span class="text-[14px] text-[#0969da]">warmbly</span>
+      <span class="text-[14px] text-slate-400">/</span>
+      <span class="text-[14px] font-semibold text-[#0969da]">warmbly</span>
+      <span class="ml-1 inline-flex h-5 items-center rounded-full border border-[#d0d7de] px-2 text-[11px] font-medium text-[#57606a]">Public</span>
+      <div class="ml-auto flex items-center gap-1.5">
+        <span class={gh}><Ico name="eye" size={13} class="text-[#57606a]" />Watch</span>
+        <span class={gh}><Ico name="gitFork" size={13} class="text-[#57606a]" />Fork</span>
+        <span class={gh}><Ico name="star" size={13} class="text-[#57606a]" />Star</span>
+      </div>
+    </div>
+    <div class="h-10 px-4 flex items-end gap-1 bg-[#f6f8fa] border-b border-[#d0d7de]">
+      {tabs.map((t) => (
+        <span class={`relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] ${t.active ? 'font-semibold text-[#24292f]' : 'text-[#57606a]'}`}>
+          <Ico name={t.icon} size={14} class="text-[#57606a]" />{t.label}
+          {t.active && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-[#fd8c73]"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="grid grid-cols-[1fr_236px] gap-6 p-5">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <span class={gh}><Ico name="gitBranch" size={13} class="text-[#57606a]" />main<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
+          <span class="h-7 flex-1 rounded-md border border-[#d0d7de] px-2.5 inline-flex items-center gap-2 text-[12px] text-[#6e7781]"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Go to file</span>
+          <span class="h-7 px-3 rounded-md bg-[#1f883d] inline-flex items-center gap-1.5 text-[12px] font-semibold text-white">Code<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span>
+        </div>
+
+        <div class="mt-3 overflow-hidden rounded-md border border-[#d0d7de]">
+          <div class="h-11 px-3 flex items-center gap-2.5 bg-[#f6f8fa] border-b border-[#d0d7de]">
+            <span class="inline-flex size-5 items-center justify-center rounded-full bg-slate-900 text-[9px] font-bold text-white">W</span>
+            <span class="text-[12px] font-semibold text-[#24292f]">warmbly</span>
+            <span class="truncate text-[12px] text-[#57606a]">Merge pull request #896 from warmbly/confirmed-admin-send-counters</span>
+            <span class="ml-auto shrink-0 font-mono text-[11px] text-[#57606a]">4 hours ago</span>
+          </div>
+          {files.map((f, i) => (
+            <div class="enter-fade h-[33px] px-3 grid grid-cols-[150px_1fr_86px] items-center gap-3 border-b border-[#d8dee4] last:border-b-0 text-[12.5px]" style={`--d:${120 + i * 40}ms`}>
+              <span class="flex items-center gap-2 min-w-0">
+                <Ico name={f.dir ? 'folder' : 'file'} size={15} fill={f.dir} class={f.dir ? 'text-[#54aeff]' : 'text-[#57606a]'} />
+                <span class="truncate text-[#24292f]">{f.name}</span>
+              </span>
+              <span class="truncate text-[#57606a]">{f.msg}</span>
+              <span class="text-right text-[11.5px] text-[#57606a]">{f.when}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <aside class="min-w-0">
+        <div class="text-[14px] font-semibold text-[#24292f]">About</div>
+        <p class="mt-2 text-[13px] leading-[1.45] text-[#24292f]">The open-source agentic cold email and warmup platform.</p>
+        <div class="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[#0969da]"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>warmbly.com</div>
+
+        <div class="mt-4 pt-4 border-t border-[#d8dee4]">
+          <div class="text-[14px] font-semibold text-[#24292f]">Languages</div>
+          <div class="mt-2.5 flex h-2 overflow-hidden rounded-full bg-[#d0d7de]">
+            {langs.map((l, i) => <span class="enter-grow-x block h-full" style={`width:${l.pct}%;background:${l.color};--d:${300 + i * 60}ms`}></span>)}
+          </div>
+          <div class="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1">
+            {langs.map((l) => (
+              <span class="inline-flex items-center gap-1.5 text-[11.5px] text-[#24292f] whitespace-nowrap">
+                <span class="size-2 rounded-full" style={`background:${l.color}`}></span>
+                <span class="font-semibold">{l.name}</span><span class="text-[#57606a]">{l.pct}%</span>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-[#d8dee4] space-y-2 text-[12.5px] text-[#57606a]">
+          <div class="flex items-center gap-2"><Ico name="book" size={14} />Readme</div>
+          <div class="flex items-center gap-2"><Ico name="scale" size={14} />Apache-2.0 license</div>
+          <div class="flex items-center gap-2"><Ico name="activity" size={14} />Activity</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- What the repository builds: the dashboard, running. -->
+  <div class={`${WINDOW} left-[612px] top-[400px] w-[760px] h-[560px]`}>
+    <div class="w-[1280px] origin-top-left" style="transform:scale(0.58)">
+      <DashboardMock />
+    </div>
+  </div>
+</ScaledStage>

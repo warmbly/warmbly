@@ -1,0 +1,41 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * An error response in the shape every endpoint uses
+ * (docs/content/docs/api/error-codes.mdx): words for people, a code for the
+ * program and a request id for support.
+ */
+---
+<ScaledStage w={460} h={345} photo="paint-aqua">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px] bg-[#0b1020]!`}>
+    <div class="h-11 px-4 border-b border-white/10 flex items-center gap-2 font-mono text-[11px]">
+      <span class="text-white/50">GET</span>
+      <span class="text-white/80">/v1/campaigns/4c1d7a90-…</span>
+      <span class="ml-auto mr-6 inline-flex h-5 items-center rounded bg-rose-500/15 px-1.5 text-[10.5px] font-medium text-rose-300">404</span>
+    </div>
+    <pre class="px-4 py-3 font-mono text-[11px] leading-[1.75] text-slate-300">{'{'}
+  <span class="text-sky-300">"error"</span>: <span class="text-amber-200">"Not Found"</span>,
+  <span class="text-sky-300">"message"</span>: <span class="text-amber-200">"Resource not found."</span>,
+  <span class="er-hl text-sky-300">"code"</span>: <span class="er-hl text-emerald-300">"not_found"</span>,
+  <span class="text-sky-300">"request_id"</span>: <span class="text-violet-300">"4bbbd1b2-8f86-47dd-…"</span>
+{'}'}</pre>
+  </div>
+
+  <div class="enter-fade absolute left-[214px] top-[226px] w-[222px]" style="--d:900ms">
+    <div class={`${FLOAT} relative overflow-hidden`}>
+      <div class="flex items-center justify-between border-b border-slate-100 px-3.5 py-2">
+        <span class={EYEBROW}>code</span><span class="font-mono text-[11px] text-slate-700">branch on it</span>
+      </div>
+      <div class="flex items-center justify-between px-3.5 py-2">
+        <span class={EYEBROW}>request_id</span><span class="font-mono text-[11px] text-slate-700">quote it to us</span>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .er-hl { animation: er-hl 4s ease-in-out infinite; border-radius: 3px; }
+  @keyframes er-hl { 0%, 100% { background: transparent; } 40%, 60% { background: rgba(52, 211, 153, 0.12); } }
+</style>

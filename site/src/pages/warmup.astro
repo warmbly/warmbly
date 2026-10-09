@@ -1,634 +1,194 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 import WarmupPoolNotice from '../components/WarmupPoolNotice.astro';
 import PillarPosts from '../components/PillarPosts.astro';
+import SectionIntro from '../components/page/SectionIntro.astro';
+import Rule from '../components/page/Rule.astro';
+import Faq from '../components/page/Faq.astro';
+import WarmupHeroScene from '../components/scenes/warmup/WarmupHeroScene.astro';
+import RampScene from '../components/scenes/warmup/RampScene.astro';
+import ConversationScene from '../components/scenes/warmup/ConversationScene.astro';
+import PlacementWatchScene from '../components/scenes/warmup/PlacementWatchScene.astro';
+import PoolStandingScene from '../components/scenes/warmup/PoolStandingScene.astro';
+import PoolsScene from '../components/scenes/warmup/PoolsScene.astro';
 
-// All numbers below come from the Warmbly codebase / CLAUDE.md
-// (internal/scheduler/warmup_scheduler.go, internal/repository/pg_warmup.go,
-// internal/infrastructure/db/migrations/000156_seed_warmup_pools.up.sql).
+// Every number here is a product default from internal/config/constants.go,
+// docs/content/docs/guides/warmup.mdx and the warmup policy in CLAUDE.md.
+
+const mail = [
+  {
+    t: 'A token for one inbox',
+    b: 'Every warmup email carries a single-use token bound to the inbox it was sent to. It proves the copy arrived and records where it landed, then it is spent. Replayed or forwarded anywhere else, it counts for nothing.',
+  },
+  {
+    t: 'Out of your way',
+    b: 'By default, warmup mail in and out is filed into a folder called Warmbly, so it never buries your inbox or your Sent folder. It never shows up in the Warmbly unibox either.',
+  },
+  {
+    t: 'Cleaned up for you',
+    b: 'Warmup mail is deleted after 30 days by default. Set a shorter or longer window per mailbox, down to three days.',
+  },
+];
 
 const defaults = [
-  { k: 'Starting volume',     v: '10 / day',       why: 'Low enough to read as normal individual activity to any provider.' },
-  { k: 'Daily ramp',          v: '+1 / day',       why: 'Aggressive ramps trip volume-anomaly heuristics on the receiver.' },
-  { k: 'Volume ceiling',      v: '40 / day',       why: 'Maintains reputation without crowding the cold-campaign budget.' },
-  { k: 'Recent-partner gap',  v: '7 days',         why: 'Stops two mailboxes from forming a degenerate warmup pair.' },
-  { k: 'Token check',         v: 'single-use',     why: 'Every warmup message carries a token bound to its recipient, so nothing can be replayed or redirected.' },
-  { k: 'Re-entry probation',  v: '20 deliveries',  why: 'Enough fresh data to confirm health, not just dormancy.' },
+  { v: '10', k: 'emails on day one' },
+  { v: '+1', k: 'each day after' },
+  { v: '40', k: 'a day at most' },
+  { v: '30', k: 'days before warmup mail is deleted' },
 ];
 
-// Bands from CLAUDE.md "Recommended internal policy for shared paid pools".
-const bands = [
-  { name: 'Healthy',     tone: 'emerald', spam: '< 10%',  complaint: '< 0.03%', bounce: '< 1%',   action: 'Default state. Continue ramp.' },
-  { name: 'Watch',       tone: 'amber',   spam: '≥ 10%',  complaint: '≥ 0.03%', bounce: '—',      action: 'Lower volume, increase spacing.' },
-  { name: 'Quarantined', tone: 'rose',    spam: '≥ 20%',  complaint: '≥ 0.10%', bounce: '≥ 5%',   action: 'Removed from shared paid pool for 7 days.' },
-  { name: 'Blocked',     tone: 'rose',    spam: '≥ 40%',  complaint: '≥ 0.30%', bounce: '≥ 10%',  action: '30-day block. Review required for re-entry.' },
+const faq: [string, string][] = [
+  ['How long does warmup take?', 'Most new mailboxes need three to six weeks. At the default ramp a mailbox reaches 40 emails a day after about a month, and inbox placement usually settles over the same stretch.'],
+  ['Should warmup keep running once my campaigns start?', 'Yes. Warmup runs alongside cold sending at up to five messages a day, so a dip in reputation shows up in the warmup numbers and gets corrected before your campaigns feel it.'],
+  ['What gets a mailbox taken out of the pool?', 'High complaint or bounce rates: 0.10% complaints or 5% bounces pause it for 7 days, 0.30% or 10% for 30. Spam placement on its own never removes a mailbox; it only slows warmup down until placement recovers.'],
+  ['Do the free and premium pools mix?', 'Only on proven terms. A paying mailbox can also write to free mailboxes from other workspaces that have been healthy pool members for at least three days, and a free mailbox may only write back to a paying inbox that wrote to it in the last two weeks.'],
+  ['Which providers does placement count at?', 'Gmail, Outlook and Yahoo. They filter on sender reputation, which is what cold email is judged on. Smaller mail hosts run their own filters, so their spam folder is never held against you.'],
+  ['Can I warm up a self-hosted instance?', 'Yes, by linking it to Warmbly Cloud once it launches: up to 10 mailboxes free, or unlimited for $15 a month. Everything else stays on your own servers.'],
 ];
 
-const toneClass = (t: string) => {
-  if (t === 'emerald') return { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700' };
-  if (t === 'amber')   return { dot: 'bg-amber-500',   chip: 'bg-amber-50 text-amber-700' };
-  return { dot: 'bg-rose-500', chip: 'bg-rose-50 text-rose-700' };
-};
-
-// Pool model from migration 000010 + pg_warmup.go.
-const pools = [
-  { name: 'Free pool',     when: 'Free workspaces and linked self-hosted instances', features: ['Up to 10 linked mailboxes free', 'Same quarantine thresholds', 'Borrows proven paid mailboxes when thin'] },
-  { name: 'Premium pool',  when: 'Hosted plans and the $15 pool plan', features: ['Vetted mailboxes only', 'Served first, always', 'Recovery pool for cooldown senders'], featured: true },
-  { name: 'Dedicated',     when: 'Enterprise',           features: ['Isolated worker + IP', 'Still participates in premium pool', 'Per-mailbox reputation, not infrastructure shortcut'] },
-];
-
-const faq = [
-  ['How long does warmup take?', 'Plan on 3 to 6 weeks for a brand new mailbox to reach a stable warmed state. We ramp +1 / day from a 10 / day start with a 40 / day ceiling.'],
-  ['Do free and premium pools mix?', 'Only on proven terms. Paid mailboxes are always served from the premium pool first. When a tier runs thin, partner selection borrows the other tier\'s mailboxes that have been healthy members for at least three days, so nothing unproven ever reaches a paying mailbox. Dedicated workers still participate in the premium pool by default.'],
-  ['What triggers quarantine?', 'Complaint rate over 0.10%, spam-folder placement over 20% on at least 20 deliveries in 7 days, a bounce rate over 5%, or tampering with received warmup mail.'],
-  ['Can I keep warming after campaigns start?', 'Yes, and you should. Warmup runs in parallel with cold sending so any reputation dip is caught and offset before campaigns hit it.'],
-];
-
-// Pre-compute the calendar grid in the frontmatter so JSX stays simple.
-// 5 weeks * 7 days. Business days (Mon-Fri) get a warmup volume that
-// ramps from 10 by +1 each business day. Weekends are no-send.
-const calendar = [];
-let bizDay = 0;
-for (let wk = 0; wk < 5; wk++) {
-  const row = [];
-  for (let dow = 0; dow < 7; dow++) {
-    const calDay = wk * 7 + dow + 1;
-    const isWeekend = dow >= 5;
-    const visible = calDay <= 30;
-    let volume = 0;
-    if (visible && !isWeekend) {
-      bizDay += 1;
-      volume = Math.min(9 + bizDay, 40);
-    }
-    let bg = '#f1f5f9';
-    let textColor = '#94a3b8';
-    if (visible && !isWeekend) {
-      if (volume >= 40)      { bg = '#075985'; textColor = '#ffffff'; }
-      else if (volume >= 30) { bg = '#0284c7'; textColor = '#ffffff'; }
-      else if (volume >= 20) { bg = '#38bdf8'; textColor = '#0c4a6e'; }
-      else if (volume >= 15) { bg = '#7dd3fc'; textColor = '#0c4a6e'; }
-      else                   { bg = '#e0f2fe'; textColor = '#075985'; }
-    } else if (visible && isWeekend) {
-      bg = '#f8fafc';
-      textColor = '#cbd5e1';
-    }
-    row.push({ calDay, isWeekend, visible, volume, bg, textColor });
-  }
-  calendar.push(row);
-}
+const sceneTitle = 'mt-6 text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900';
+const sceneBody = 'mt-2 max-w-xl text-[16px] md:text-[17px] leading-[1.55] text-slate-500';
+const link = 'group mt-6 inline-flex items-center gap-2 text-[16px] md:text-[17px] text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]';
 ---
 <Layout
-  title="Email Warmup for Sender Reputation | Warmbly"
-  description="Reputation-safe warmup pools. Verification tokens, gradual ramps, and quarantine bands stricter than provider enforcement."
+  title="Email Warmup That Builds Sender Reputation | Warmbly"
+  description="Warm up new mailboxes with real email in a vetted pool: 10 a day, adding one a day up to 40, with inbox placement tracked at Gmail, Outlook and Yahoo."
 >
-  <!-- ============================================================
-       HERO — HeroAtmosphere, same as home and pricing
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-40 md:pb-52 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Warmup
-        </span>
-        Reputation-safe pools, hosted or self-hosted
+  <!-- HERO: the claim on the left, the how on the right, then the Accounts
+       page with a mailbox's Warmup tab open. -->
+  <section class="container-page pt-14 md:pt-24">
+    <div class="grid gap-8 lg:grid-cols-[1.35fr_1fr] lg:items-end lg:gap-16">
+      <div>
+        <div class="text-[14px] text-slate-500">Warmup</div>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">
+          Email warmup that builds real sender reputation.
+        </h1>
       </div>
-
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        Warmup that earns<br/>reputation.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Mailboxes ramp gradually inside a shared pool of real mailboxes. Verification tokens distinguish real warmup from forged traffic. Bands quarantine before mailbox providers act. Self-hosting? When Warmbly Cloud launches, link your instance and we run it for you.
-      </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Start warming</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="https://docs.warmbly.com/learn/email-warmup/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          How warmup works
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       THE RAMP · clean editorial inline section
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-20 items-start">
-        <div class="lg:sticky lg:top-24" style="align-self: start;">
-          <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">The ramp</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-            10 emails on day 1.<br/>40 emails on day 30.
-          </h2>
-          <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-            One additional warmup message each business day, until the mailbox reaches the 40 / day ceiling and holds. Aggressive ramps trip volume-anomaly heuristics on the receiver, so we keep it boring.
-          </p>
-        </div>
-
-        <div class="space-y-px">
-          {[
-            { stage: 'Day 1',     value: '10', unit: '/ day', note: 'First warmup send. Normal individual activity to any provider.' },
-            { stage: 'Each day',  value: '+1', unit: '/ day', note: 'Volume grows by one each business day. Weekends skipped.' },
-            { stage: 'Day 30',    value: '40', unit: '/ day', note: 'Ceiling reached. Mailbox holds at 40 / day indefinitely.',   featured: true },
-          ].map((r) => (
-            <div class={`grid grid-cols-[120px_auto_1fr] gap-6 items-baseline py-5 border-b border-[color:var(--border)] last:border-b-0 ${r.featured ? 'text-[#0369a1]' : 'text-foreground'}`}>
-              <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground">{r.stage}</div>
-              <div class="flex items-baseline gap-1.5">
-                <span class={`text-[44px] md:text-[56px] font-semibold tracking-[-0.035em] leading-none font-mono ${r.featured ? 'text-[#0369a1]' : 'text-heading'}`}>{r.value}</span>
-                <span class="text-[13px] text-foreground/55">{r.unit}</span>
-              </div>
-              <p class="text-[13.5px] text-foreground/65 leading-relaxed">{r.note}</p>
-            </div>
-          ))}
-
-          <div class="pt-6 flex flex-wrap items-center gap-x-6 gap-y-1 text-[11.5px] font-mono text-muted-foreground">
-            <span>~10m average gap between sends</span>
-            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-            <span>Business hours by recipient TZ</span>
-            <span class="w-1 h-1 rounded-full bg-[color:var(--border)]"></span>
-            <span>Plain text only</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       VERIFICATION TOKEN ANATOMY · unique technical detail
-  ============================================================ -->
-  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
-    <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Verification token</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Every warmup message carries proof it is real.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          The single largest threat to a shared warmup pool is a sender pretending to receive its own warmup. A signed HMAC token embedded in the body, validated on classification, makes that impossible.
+      <div class="lg:pb-2">
+        <p class="text-[17px] md:text-[19px] leading-[1.55] text-slate-500">
+          Warmbly warms each mailbox by trading a little real email with other inboxes, starting at 10 a day and adding one a day up to 40. It watches where that mail lands and slows a mailbox down the moment placement slips.
         </p>
-      </div>
-
-      <div class="grid lg:grid-cols-[1.2fr_1fr] gap-6">
-        <!-- Token anatomy code -->
-        <div class="rounded-[12px] overflow-hidden ring-1 ring-[color:var(--border)]">
-          <div class="px-5 py-3 bg-[#0c1224] border-b border-white/10 flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
-              <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
-              <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
-            </div>
-            <span class="text-[11px] font-mono text-white/55">warmup token · embedded in body</span>
-          </div>
-          <pre class="bg-[#0c1224] text-white/85 p-5 text-[12.5px] leading-[1.65] font-mono overflow-x-auto"><code><span style="color:#94a3b8"># Token format · plain text, base64url</span>
-<span style="color:#7dd3fc">wbly</span>:<span style="color:#fde68a">01HQX9F7P3A8KY2NJM4R6BWT0S</span>:<span style="color:#fde68a">1746820392</span>:<span style="color:#a78bfa">3f9c2a8b5e1d740a</span>
-   <span style="color:#64748b">└ pool id            └ ulid msg id</span>
-                                       <span style="color:#64748b">└ expires            └ hmac-sha256</span>
-
-<span style="color:#94a3b8"># Embedded as a normal-looking footer line:</span>
-<span style="color:#cbd5e1">Hey, just wanted to follow up on the project we discussed.</span>
-<span style="color:#cbd5e1">Let me know when you have a chance.</span>
-
-<span style="color:#cbd5e1">— Ben</span>
-<span style="color:#64748b">ref: wbly:01HQX9F7P3A8KY2NJM4R6BWT0S:1746820392:3f9c2a8b</span>
-
-<span style="color:#94a3b8"># Receiver classification → verify (HMAC + expiry + msg-id)</span>
-<span style="color:#7dd3fc">if</span> token.valid() &amp;&amp; <span style="color:#f472b6">!seen</span>(token.id) <span style="color:#7dd3fc">then</span> credit_signal
-<span style="color:#7dd3fc">else</span> increment_invalid_count(sender)</code></pre>
-        </div>
-
-        <!-- Token verification rules -->
-        <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="px-5 py-3 border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Validation rules</div>
-          <div class="divide-y divide-[color:var(--border)]">
-            {[
-              { rule: 'HMAC signature',       why: 'Tokens are signed with a per-pool key. Forged tokens fail verification.' },
-              { rule: 'Expiry window',        why: 'Tokens expire 48 hours after issue. Late replies do not count.' },
-              { rule: 'Single-use ID',        why: 'Each token ULID is recorded on first valid use. Replays count as invalid.' },
-              { rule: 'Pool membership',      why: 'Token pool ID must match the receiver\'s pool. Cross-pool tokens are rejected.' },
-              { rule: 'Sender / recipient',   why: 'Token sender and recipient mailbox IDs must match the message routing.' },
-            ].map((r) => (
-              <div class="px-5 py-3">
-                <div class="text-[13px] font-semibold text-heading">{r.rule}</div>
-                <p class="mt-1 text-[12.5px] text-foreground/65 leading-snug">{r.why}</p>
-              </div>
-            ))}
-          </div>
-          <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[11.5px] font-mono">
-            <span class="text-muted-foreground">≥ 20% spam placement →</span>
-            <span class="inline-flex items-center gap-1 text-rose-700"><span class="w-1 h-1 rounded-full bg-rose-500"></span> mailbox quarantine</span>
-          </div>
+        <div class="mt-8 flex flex-wrap items-center gap-3">
+          <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">
+            Start warming <Icon name="arrowRight" size={14} />
+          </a>
+          <a href="https://docs.warmbly.com/learn/email-warmup/" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">
+            How warmup works
+          </a>
         </div>
       </div>
     </div>
+    <div class="mt-12 md:mt-16">
+      <WarmupHeroScene />
+    </div>
   </section>
 
-  <!-- ============================================================
-       WHAT WARMUP DOES — editorial split, real product behavior
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">The daily loop</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          One loop. One mailbox. One day.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          Warmup is not a black box. Every step has a defined input and output, and every quarantine has a reason you can read.
+  <!-- THE RAMP: copy beside the drawer's Analytics tab. -->
+  <Rule class="mt-20 md:mt-28" />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+      <div>
+        <SectionIntro lead="The ramp." title="Ten a day, one more each day, never past forty." text="Each mailbox follows its own ramp, spread across the warmup hours you set for it. The real number can come in lower than the ramp: a mailbox never writes to the same partner twice in a day, and its target is capped by how many partners are free." />
+        <p class="mt-4 max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500">
+          If a warmup email lands in spam at Gmail, Outlook or Yahoo, the ramp stops climbing at once: today's target drops by a quarter for 48 hours and the daily increase pauses for three days, without catching up afterwards.
         </p>
-        <a href="https://docs.warmbly.com/learn/warmup-pools/" class="mt-6 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[#0369a1] hover:text-[#075985]">
-          Read about warmup pools
-          <Icon name="arrowRight" size={12} />
+        <a href="https://docs.warmbly.com/guides/warmup/" class={link}>
+          Read about the ramp
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform group-hover:translate-x-0.5"><polyline points="9 18 15 12 9 6" /></svg>
         </a>
       </div>
-
-      <ol class="divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
-        {[
-          { n: '01', t: 'Pool member selection',  k: 'partner = pool.draw(exclude_recent: 7d)',  b: 'A partner mailbox is drawn from the same pool the sender belongs to. Recent partners are excluded for 7 days to prevent degenerate pairs.' },
-          { n: '02', t: 'Token issue + embed',     k: 'token = hmac(pool_key, sender:recipient:ulid:exp)',  b: 'A signed token is generated for this pair and inlined as a `ref:` footer in the body. Receivers extract and validate it on classification.' },
-          { n: '03', t: 'Send through worker',     k: 'worker.send(msg, schedule: business_hours(recipient_tz))', b: 'The mailbox\'s assigned worker dispatches the message during the recipient\'s business hours, with spacing that matches human typing cadence.' },
-          { n: '04', t: 'Partner classification',  k: 'receiver.classify(msg) → {inbox|promotions|spam}',  b: 'The receiving mailbox classifies the message and reports the result back along with the token. Inbox arrivals are credited as positive placement signals.' },
-          { n: '05', t: 'Score update + band',     k: 'score = rolling_sum(placement, complaints, tokens)',  b: 'The per-mailbox rolling score is updated. If thresholds are crossed, the mailbox transitions to Watch, Quarantined, or Blocked.' },
-        ].map((s) => (
-          <li class="grid grid-cols-[44px_1fr] gap-4 py-5 items-baseline">
-            <span class="font-mono text-[12px] text-[#0284c7] font-semibold">{s.n}</span>
-            <div>
-              <div class="text-[15.5px] font-semibold text-heading">{s.t}</div>
-              <div class="mt-1 font-mono text-[12px] text-[#0369a1] bg-[color:var(--sky-1)]/60 px-2 py-1 rounded inline-block">{s.k}</div>
-              <p class="mt-2 text-[14px] text-foreground/70 leading-relaxed">{s.b}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
+      <RampScene />
     </div>
   </section>
 
-  <!-- ============================================================
-       WHAT WARMUP CHANGES · qualitative side-by-side
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
-    <div class="container-page">
-      <div class="max-w-2xl mb-10">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Why warmup matters</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          A fresh mailbox is suspicious by default.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          Gmail and Microsoft treat new senders cautiously. Without a behaviour history, a brand-new domain that immediately starts cold outreach looks like the worst-case sender. Warmup is the only way to build that history without a complaint event.
-        </p>
-      </div>
-
-      <div class="grid lg:grid-cols-2 gap-4">
-        <!-- Without warmup -->
-        <div class="rounded-[14px] bg-white ring-1 ring-rose-100 overflow-hidden">
-          <div class="px-6 py-3.5 bg-rose-50/60 border-b border-rose-100 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
-            <span class="text-[12px] uppercase tracking-[0.18em] font-mono text-rose-700 font-semibold">Without warmup</span>
-          </div>
-          <ul class="divide-y divide-[color:var(--border)]">
-            {[
-              'No sending history. Providers default to suspicion on first volume spike.',
-              'Inbox vs spam classification has no positive signal to lean on.',
-              'Any complaint or hard bounce moves reputation faster because the baseline is empty.',
-              'Engagement signals (replies, moves from spam) take longer to accrue.',
-              'First catastrophic event can hit within days of starting cold sends.',
-            ].map((b) => (
-              <li class="px-6 py-3 flex items-start gap-3">
-                <Icon name="warning" size={12} class="text-rose-500 mt-1 shrink-0" />
-                <span class="text-[13.5px] text-foreground/80 leading-snug">{b}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <!-- With warmup -->
-        <div class="rounded-[14px] bg-white ring-1 ring-emerald-100 overflow-hidden">
-          <div class="px-6 py-3.5 bg-emerald-50/60 border-b border-emerald-100 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span class="text-[12px] uppercase tracking-[0.18em] font-mono text-emerald-700 font-semibold">With Warmbly warmup</span>
-          </div>
-          <ul class="divide-y divide-[color:var(--border)]">
-            {[
-              'Gradual volume ramp matches what a real mailbox usage looks like.',
-              'Inbox arrivals at vetted partners build a positive placement signal.',
-              'Replies in the pool produce real engagement history at the receiver.',
-              'Verification tokens prove the activity is genuine, not self-replied noise.',
-              'Per-mailbox bands quarantine drift weeks before providers would act.',
-            ].map((b) => (
-              <li class="px-6 py-3 flex items-start gap-3">
-                <Icon name="check" size={12} class="text-emerald-600 mt-1 shrink-0" />
-                <span class="text-[13.5px] text-foreground/80 leading-snug">{b}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      <p class="mt-5 text-[12px] text-muted-foreground italic max-w-3xl">
-        Reputation is per-mailbox, per-IP, and per-domain. Warmup builds all three simultaneously. We do not publish placement-improvement percentages because the answer depends on your domain age, content quality, list hygiene, and DMARC posture more than anything we control.
+  <!-- WHAT WARMUP MAIL IS: a real thread in a partner's mailbox. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-end lg:gap-16">
+      <SectionIntro lead="What warmup mail is." title="Short plain-text threads that say what they are." />
+      <p class="max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500 lg:pb-1">
+        Each message is plain text with no tracking pixel and opens with "Simulated diagnostic", so nobody mistakes it for a real conversation. Partners write back on their own schedule, about three times in ten by default, and each thread closes after a few turns.
       </p>
     </div>
-  </section>
-
-  <!-- ============================================================
-       HEALTH BANDS · horizontal threshold gauge (unique)
-  ============================================================ -->
-  <section class="py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Health bands</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Bands that act before providers do.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          Spam placement on the X axis. Each band starts where the previous one ends. Warmbly's thresholds (in sky) sit well to the left of Google's and SES's published enforcement points (in rose) so we pull a mailbox out of the shared pool weeks before it would earn a public complaint.
-        </p>
-      </div>
-
-      <!-- The gauge -->
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-7 md:p-10">
-        <!-- Header -->
-        <div class="flex items-baseline justify-between mb-7">
-          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">Spam placement · 0% → 100%</div>
-          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">Per-mailbox rolling window</div>
+    <div class="mt-12">
+      <ConversationScene />
+    </div>
+    <div class="mt-12 grid gap-10 md:grid-cols-3 md:gap-8">
+      {mail.map((m) => (
+        <div class="md:border-l md:border-slate-200 md:pl-6 md:first:border-l-0 md:first:pl-0">
+          <h3 class="text-[19px] font-medium tracking-[-0.01em] text-slate-900">{m.t}</h3>
+          <p class="mt-2 text-[15px] leading-[1.6] text-slate-500">{m.b}</p>
         </div>
-
-        <!-- The gauge bar with 4 bands -->
-        <div class="relative h-12 rounded-[6px] overflow-hidden flex">
-          <div class="flex-[10] bg-emerald-100 relative">
-            <div class="absolute inset-0 flex items-center px-3">
-              <span class="text-[11px] font-mono font-semibold text-emerald-700">HEALTHY · 0–10%</span>
-            </div>
-          </div>
-          <div class="flex-[10] bg-amber-100 relative">
-            <div class="absolute inset-0 flex items-center px-3">
-              <span class="text-[11px] font-mono font-semibold text-amber-700">WATCH · 10–20%</span>
-            </div>
-          </div>
-          <div class="flex-[20] bg-rose-100 relative">
-            <div class="absolute inset-0 flex items-center px-3">
-              <span class="text-[11px] font-mono font-semibold text-rose-700">QUARANTINED · 20–40%</span>
-            </div>
-          </div>
-          <div class="flex-[60] relative" style="background: linear-gradient(90deg, #fda4af 0%, #9f1239 100%);">
-            <div class="absolute inset-0 flex items-center px-3">
-              <span class="text-[11px] font-mono font-semibold text-white">BLOCKED · 40%+</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tick marks below -->
-        <div class="relative mt-1.5 h-3">
-          {[0, 10, 20, 40, 80, 100].map((pct) => (
-            <div class="absolute" style={`left: ${pct}%; transform: translateX(-50%);`}>
-              <div class="w-px h-2 bg-[color:var(--border)] mx-auto"></div>
-              <div class="text-[10px] font-mono text-muted-foreground mt-1 text-center">{pct}%</div>
-            </div>
-          ))}
-          <!-- Google + SES enforcement markers -->
-          <div class="absolute" style="left: 80%; transform: translateX(-50%); top: 18px;">
-            <div class="text-[10px] font-mono text-rose-700 font-semibold uppercase tracking-[0.14em]">↑ providers act</div>
-          </div>
-        </div>
-
-        <!-- Band detail rows -->
-        <div class="mt-10 grid md:grid-cols-2 lg:grid-cols-4 gap-px bg-[color:var(--border)] rounded-[10px] overflow-hidden ring-1 ring-[color:var(--border)]">
-          {bands.map((b) => {
-            const t = toneClass(b.tone);
-            return (
-              <div class="bg-white p-5">
-                <div class="flex items-center gap-2">
-                  <span class={`w-2 h-2 rounded-full ${t.dot}`}></span>
-                  <span class="text-[13px] font-semibold text-heading">{b.name}</span>
-                </div>
-                <div class="mt-4 space-y-1.5 text-[11.5px] font-mono">
-                  <div class="flex justify-between"><span class="text-muted-foreground">Spam</span><span class="text-heading font-semibold">{b.spam}</span></div>
-                  <div class="flex justify-between"><span class="text-muted-foreground">Complaint</span><span class="text-heading font-semibold">{b.complaint}</span></div>
-                  <div class="flex justify-between"><span class="text-muted-foreground">Bounce</span><span class="text-heading font-semibold">{b.bounce}</span></div>
-                </div>
-                <p class="mt-4 pt-4 border-t border-[color:var(--border)] text-[12.5px] text-foreground/70 leading-snug">{b.action}</p>
-              </div>
-            );
-          })}
-        </div>
-
-        <p class="mt-5 text-[11.5px] text-muted-foreground italic">
-          Spam-placement band requires at least 20 warmup deliveries in the past 7 days. Complaint band requires at least 100 delivered messages in the past 30 days.
-        </p>
-      </div>
+      ))}
     </div>
   </section>
 
-  <!-- ============================================================
-       POOL ISOLATION · 4 stacked surfaces as block-diagram cards
-  ============================================================ -->
-  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Pool isolation</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Four pools. Zero crossover.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          Mailboxes never silently move between pools. A free-trial mailbox stays in the free pool. A quarantined paid mailbox drops into recovery, not back to premium. Dedicated infrastructure runs alongside without sharing IPs.
-        </p>
-      </div>
-
-      <!-- 4 isolation cards in a 2x2 grid with a clear visual ranking -->
-      <div class="grid md:grid-cols-2 gap-4 lg:gap-5">
-        <!-- Free pool -->
-        <div class="relative rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="h-1.5 bg-slate-300"></div>
-          <div class="p-6">
-            <div class="flex items-baseline justify-between mb-1">
-              <div class="text-[18px] font-semibold tracking-[-0.02em] text-heading">Free pool</div>
-              <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Free workspace</div>
-            </div>
-            <div class="text-[12px] font-mono text-muted-foreground mb-4">trial mailboxes only</div>
-            <ul class="space-y-2 text-[13px] text-foreground/75">
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-slate-500 mt-1 shrink-0"/><span>Recipients drawn exclusively from other free-plan mailboxes.</span></li>
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-slate-500 mt-1 shrink-0"/><span>Same auto-quarantine thresholds as premium.</span></li>
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-slate-500 mt-1 shrink-0"/><span>Cannot send to premium-pool mailboxes.</span></li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Premium pool · featured -->
-        <div class="relative rounded-[14px] bg-white overflow-hidden ring-2 ring-[#0284c7]/35 shadow-[0_20px_40px_-20px_rgba(2,132,199,0.3)]">
-          <div class="h-1.5 bg-[#0284c7]"></div>
-          <div class="absolute top-1.5 right-4 inline-flex items-center h-5 px-2 rounded-b text-[10px] font-semibold uppercase tracking-[0.14em] font-mono bg-[#0284c7] text-white">
-            Most paid plans
-          </div>
-          <div class="p-6">
-            <div class="flex items-baseline justify-between mb-1">
-              <div class="text-[18px] font-semibold tracking-[-0.02em] text-[#0369a1]">Premium pool</div>
-              <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-[#0284c7]">Starter · Grow · Business</div>
-            </div>
-            <div class="text-[12px] font-mono text-[#0284c7]/80 mb-4">vetted paid mailboxes only</div>
-            <ul class="space-y-2 text-[13px] text-foreground/85">
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-[#0284c7] mt-1 shrink-0"/><span>Stricter quarantine bands than free pool.</span></li>
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-[#0284c7] mt-1 shrink-0"/><span>Quarantined senders move to recovery, not back to premium.</span></li>
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-[#0284c7] mt-1 shrink-0"/><span>Recipients only drawn from other healthy premium mailboxes.</span></li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Recovery pool -->
-        <div class="relative rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="h-1.5 bg-amber-500"></div>
-          <div class="p-6">
-            <div class="flex items-baseline justify-between mb-1">
-              <div class="text-[18px] font-semibold tracking-[-0.02em] text-heading">Recovery pool</div>
-              <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Automatic</div>
-            </div>
-            <div class="text-[12px] font-mono text-muted-foreground mb-4">quarantined mailboxes serving cooldown</div>
-            <ul class="space-y-2 text-[13px] text-foreground/75">
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-amber-600 mt-1 shrink-0"/><span>7-day cooldown after quarantine trigger.</span></li>
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-amber-600 mt-1 shrink-0"/><span>Must pass 20-delivery probation to re-enter premium.</span></li>
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-amber-600 mt-1 shrink-0"/><span>Completely isolated from healthy premium senders.</span></li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Dedicated -->
-        <div class="relative rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="h-1.5 bg-foreground"></div>
-          <div class="p-6">
-            <div class="flex items-baseline justify-between mb-1">
-              <div class="text-[18px] font-semibold tracking-[-0.02em] text-heading">Dedicated</div>
-              <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-muted-foreground">Enterprise</div>
-            </div>
-            <div class="text-[12px] font-mono text-muted-foreground mb-4">isolated worker + IP per org</div>
-            <ul class="space-y-2 text-[13px] text-foreground/75">
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-foreground mt-1 shrink-0"/><span>One worker process and IP allocated to one organisation.</span></li>
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-foreground mt-1 shrink-0"/><span>Still participates in the premium pool for warmup recipients.</span></li>
-              <li class="flex items-start gap-2"><Icon name="check" size={12} class="text-foreground mt-1 shrink-0"/><span>Infrastructure isolation, not a reputation shortcut.</span></li>
-            </ul>
-          </div>
-        </div>
-      </div>
+  <!-- HEALTH: what slows a mailbox down, and what takes it out. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-end lg:gap-16">
+      <SectionIntro lead="Health." title="Landing in spam slows a mailbox down. Hurting other people takes it out." />
+      <p class="max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500 lg:pb-1">
+        Placement is judged at Gmail, Outlook and Yahoo once a mailbox has 20 verified deliveries in a week. Complaint and bounce lines sit below the ones Google and Amazon SES enforce, because a shared pool is only as good as its worst member.
+      </p>
+    </div>
+    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 lg:grid-cols-2">
+      <article>
+        <PlacementWatchScene />
+        <h3 class={sceneTitle}>Spam placement only ever slows a mailbox down</h3>
+        <p class={sceneBody}>At 10% spam a mailbox goes on watch and sends a little slower. At 20% warmup and cold sending both drop to half volume, and they return to normal on their own once placement recovers.</p>
+      </article>
+      <article>
+        <PoolStandingScene />
+        <h3 class={sceneTitle}>Complaints and bounces take it out of the pool</h3>
+        <p class={sceneBody}>Complaints at 0.10% or bounces at 5% take a mailbox out for 7 days and pause its cold sending; 0.30% or 10% take it out for 30. The standing follows the address, so reconnecting it does not reset anything.</p>
+      </article>
     </div>
   </section>
 
-  <!-- ============================================================
-       SELF-HOST NOTICE · the shared pool is a cloud feature
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-14 md:py-16">
-    <div class="container-page">
-      <div class="max-w-2xl mb-8">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Running this yourself</div>
-        <h2 class="text-[26px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          The pool needs scale. That is what the cloud provides.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          Warmbly is open source, so you can self-host all of it. The one part that does not travel is the shared warmup pool, because a pool only works once enough vetted mailboxes are in it.
+  <!-- POOLS: who a mailbox can write to, and why. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+      <div class="lg:order-2">
+        <SectionIntro lead="Pools." title="Free and premium mailboxes warm apart." text="Paid plans warm in the premium pool; free workspaces and linked self-hosted instances in the free one. A paying mailbox may also write to free mailboxes from other workspaces once they have been healthy members for three days. A free mailbox only writes back to a paying inbox that wrote to it in the last 14 days." />
+        <p class="mt-4 max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500">
+          Every draw favours the inbox that is owed the most mail, up to four times as often, and no inbox receives more than about twice what it sends in a day.
         </p>
+        <p class="mt-4 max-w-xl text-[14px] leading-[1.6] text-slate-400">On the Business plan your mailboxes also sign in to their providers from an address no other customer uses. They still warm in the premium pool and are judged mailbox by mailbox.</p>
       </div>
-      <WarmupPoolNotice class="max-w-3xl" />
-    </div>
-  </section>
-
-  <!-- ============================================================
-       DEFAULTS · clean 2-column spec sheet with big mono values
-  ============================================================ -->
-  <section class="py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Defaults</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          The numbers we ship with.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          Tuned for the median sender. Override per mailbox if you have a real reason. The right column is the reasoning we will defend in an incident review.
-        </p>
-      </div>
-
-      <!-- 2-column grid of spec rows with big mono values -->
-      <div class="grid md:grid-cols-2 gap-x-12 gap-y-px">
-        {defaults.map((d, i) => (
-          <div class="group grid grid-cols-[1fr_auto] gap-6 py-6 border-b border-[color:var(--border)] items-baseline transition-colors hover:bg-[color:var(--surface-1)]/40 -mx-3 px-3 rounded-[6px]">
-            <div>
-              <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground">
-                {String(i + 1).padStart(2, '0')} · {d.k}
-              </div>
-              <p class="mt-2 text-[13.5px] text-foreground/65 leading-relaxed max-w-md">{d.why}</p>
-            </div>
-            <div class="text-right">
-              <div class="text-[22px] md:text-[26px] font-semibold tracking-[-0.02em] text-heading font-mono whitespace-nowrap">{d.v}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div class="mt-8 text-[11.5px] font-mono text-muted-foreground">
-        Source: <span class="text-foreground/75">internal/scheduler/warmup_scheduler.go</span> · <span class="text-foreground/75">internal/repository/pg_warmup.go</span>
+      <div class="lg:order-1">
+        <PoolsScene />
       </div>
     </div>
+    <WarmupPoolNotice class="mt-14 max-w-3xl" />
   </section>
 
-  <!-- ============================================================
-       FAQ — split sticky title (pricing pattern)
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-t border-[color:var(--border)] py-20 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Warmup FAQ</div>
-        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          Four questions we get most.
-        </h2>
-        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
-          Want the full mental model? Read the <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="https://docs.warmbly.com/learn/email-warmup/">warmup guide</a>.
-        </p>
-      </div>
-      <div class="divide-y divide-[color:var(--border)]" data-faq>
-        {faq.map(([q, a]) => (
-          <div class="faq-row py-2">
-            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
-              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
-              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
-              </span>
-            </button>
-            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
-              <div class="overflow-hidden">
-                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <script is:inline>
-        (function () {
-          const faq = document.querySelector('[data-faq]');
-          if (!faq) return;
-          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-              const row   = btn.closest('.faq-row');
-              const panel = row.querySelector('.faq-panel');
-              const icon  = btn.querySelector('.faq-icon');
-              const open  = btn.getAttribute('aria-expanded') === 'true';
-              btn.setAttribute('aria-expanded', String(!open));
-              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
-              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
-            });
-          });
-        })();
-      </script>
+  <!-- DEFAULTS: four numbers in a row. -->
+  <Rule />
+  <section class="container-page py-16 md:py-20">
+    <div class="grid grid-cols-2 gap-y-10 md:grid-cols-4">
+      {defaults.map((d) => (
+        <div class="md:border-l md:border-slate-200 md:pl-6 md:first:border-l-0 md:first:pl-0">
+          <div class="text-[44px] md:text-[56px] font-medium tracking-[-0.05em] leading-none text-slate-900">{d.v}</div>
+          <div class="mt-2 text-[14.5px] text-slate-500">{d.k}</div>
+        </div>
+      ))}
     </div>
+    <p class="mt-10 text-[14px] text-slate-400">Every default can be changed per mailbox.</p>
   </section>
+
+  <Rule />
+  <Faq items={faq} title="Warmup, answered.">
+    <p class="mt-4 text-[16px] leading-[1.6] text-slate-500">
+      For the whole picture, read the <a class="font-medium text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900" href="https://docs.warmbly.com/learn/email-warmup/">warmup guide</a>.
+    </p>
+  </Faq>
 
   <PillarPosts
-    title="How warmup actually behaves"
+    title="More on warmup"
     items={[
       { kicker: 'Warmup', href: '/blog/how-email-warmup-actually-works/', title: 'How email warmup actually works, ramp curve and all' },
       { kicker: 'Policy', href: '/blog/quarantine-early/', title: 'Quarantine early: how we protect shared warmup pools' },
@@ -636,10 +196,8 @@ for (let wk = 0; wk < 5; wk++) {
     ]}
   />
 
-  <CTA
-    title="Connect a mailbox. Start warming today."
-    description="OAuth in 30 seconds. First warmup send in under a minute."
-    primaryLabel="Start free"
-    primaryHref="https://app.warmbly.com/auth/register"
+  <CTA photo="sheer-blue"
+    title="Connect a mailbox and start warming today."
+    description="Sign in with Google or Microsoft, or add any SMTP account, then switch warmup on from the mailbox's Warmup tab."
   />
 </Layout>

@@ -19,9 +19,9 @@ The data is split into groups. Every export includes **Workspace**; the rest are
 
 | Group | Contents |
 |-------|----------|
-| Workspace | The organization, members, roles, teams, mailboxes and their profile photos, mailbox tags, the column mappings saved by [mailbox imports](/guides/mailbox-import/), inbox vendor connections, [root redirects](/guides/sending-domains/#root-redirects), API keys, webhooks, and settings, including the website tracking site key. Always included |
+| Workspace | The organization, members with their [access scope](/guides/team-roles/#access-scope) and mailbox grants, roles, teams, mailboxes and their profile photos, mailbox tags, the column mappings saved by [mailbox imports](/guides/mailbox-import/), inbox vendor connections, [root redirects](/guides/sending-domains/#root-redirects), API keys, webhooks, and settings, including the website tracking site key. Always included |
 | Contacts | Contacts, labels, the column mappings saved by [contact imports](/guides/contacts-crm/#importing), segments with their manual overrides, forms with their images, submissions, personalized link tickets and funnel events, notes, activities, the suppression list, and each contact's [HubSpot](/guides/hubspot/) record id, owner, lifecycle stage, lead status and company |
-| Campaigns | Campaigns, folders, sequences, senders, linked segments, attachments, the email image library, per-campaign settings, each lead's step progress with its per-link clicks and per-event opens, the colleagues [copied on each lead](/guides/campaigns/#copying-colleagues-on-one-lead), [placement monitors](/guides/placement-tests/#campaign-placement-monitors), and the [unsubscribe links](/guides/unsubscribe/) already in recipients' inboxes |
+| Campaigns | Campaigns, folders, restricted members' campaign and folder grants, sequences, senders, linked segments, attachments, the email image library, per-campaign settings, each lead's step progress with its per-link clicks and per-event opens, the colleagues [copied on each lead](/guides/campaigns/#copying-colleagues-on-one-lead), [placement monitors](/guides/placement-tests/#campaign-placement-monitors), and the [unsubscribe links](/guides/unsubscribe/) already in recipients' inboxes |
 | CRM | Pipelines, deals, tasks, and meeting bookings |
 | Automations | Automations, connected integrations, lead sync sources, and the workspace's CRM mode: whether it runs on [HubSpot](/guides/hubspot/), its setup choices, the owner matches, and which Warmbly record is which HubSpot record |
 | Assistant | Remie sessions and messages (including conversations held in [Slack](/guides/slack/)), skills, MCP servers, and AI settings |
@@ -38,6 +38,8 @@ Inbox, send history, delivery events, and logs are the ones that grow without li
 The pending warmup-filing queue stays on its source instance. The destination resyncs mail and files recognized warmup messages using its own workers and the mailbox's placement setting.
 
 [Test workspace samples](/development/accounts-and-access/#adding-sample-data) move as ordinary contacts, campaigns and CRM records in their corresponding groups; reply templates are in **Assistant**. Their instance-wide admin audit marker does not travel, and import does not grant managed Test access.
+
+A restricted member stays restricted on the destination. Their campaign and folder grants travel with **Campaigns**, so an import without that group brings them in with no campaign access rather than more.
 
 <Callout type="info" title="Suppression always travels with contacts">
 The suppression list is part of the Contacts group and is never optional within it. An import that dropped it would start mailing people who already opted out.

@@ -1,0 +1,42 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, EYEBROW } from '../../../../lib/scene';
+
+/**
+ * The one shared surface: a client mailbox's standing in the warmup pool,
+ * held to the same health bands as every other member.
+ */
+const bands = [
+  { k: 'Spam placement', v: '3.1%', line: 'watch at 10%', w: 31, tone: 'bg-emerald-500' },
+  { k: 'Complaints', v: '0.00%', line: 'quarantine at 0.10%', w: 2, tone: 'bg-emerald-500' },
+  { k: 'Bounces', v: '0.4%', line: 'quarantine at 5%', w: 8, tone: 'bg-emerald-500' },
+];
+---
+<ScaledStage w={460} h={345} photo="lake-mist">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-12 px-5 flex items-center gap-3 border-b border-slate-200">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg bg-orange-50 text-orange-600"><Glyph name="flame" size={14} class="flame-flicker" /></span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium text-slate-900">lea@northwind.io</div>
+        <div class="text-[10.5px] text-slate-400">Warmup · premium pool</div>
+      </div>
+      <span class="ml-auto mr-6 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600"><Glyph name="shieldCheck" size={14} />Healthy</span>
+    </div>
+    <div class="px-5 py-3.5 pr-11">
+      <div class={EYEBROW}>Warmup reputation · last 7 days</div>
+      <div class="mt-3 space-y-3.5">
+        {bands.map((b, i) => (
+          <div>
+            <div class="flex items-baseline text-[12px]">
+              <span class="text-slate-700">{b.k}</span>
+              <span class="ml-auto font-mono tabular-nums text-slate-900">{b.v}</span>
+            </div>
+            <div class="mt-1.5 h-1.5 rounded-full bg-slate-100"><div class={`enter-grow-x h-full rounded-full ${b.tone}`} style={`width:${b.w}%; --d:${200 + i * 150}ms`}></div></div>
+            <div class="mt-1 font-mono text-[10px] text-slate-400">{b.line}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>

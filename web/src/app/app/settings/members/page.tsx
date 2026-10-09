@@ -1,4 +1,4 @@
-// Members — invitation flow + roster with inline role change.
+// Members: invitation flow and roster with inline role and access change.
 //
 // Restructured to the flat Section + Row shape so the page reads as
 // a single document, not a stack of cards. The role pill on each row
@@ -7,6 +7,7 @@
 // roles re-renders accordingly.
 
 import React from "react";
+import { AnimatePresence } from "framer-motion";
 import {
     CheckIcon,
     CopyIcon,
@@ -34,7 +35,12 @@ import { useAppStore } from "@/stores";
 import type { AppError } from "@/lib/api/client/normalizeError";
 import buildError from "@/lib/helper/buildError";
 import getInvitationLink from "@/lib/api/client/app/organizations/getInvitationLink";
+import { useSetMemberAccess } from "@/lib/api/hooks/app/organizations/useMemberAccess";
+import type MemberAccess from "@/lib/api/models/app/organizations/MemberAccess";
+import { WORKSPACE_ACCESS } from "@/lib/api/models/app/organizations/MemberAccess";
+import type OrganizationMember from "@/lib/api/models/app/organizations/OrganizationMember";
 import RoleMultiSelect, { RoleChips } from "../_components/RoleMultiSelect";
+import MemberAccessDialog, { AccessBadge } from "./MemberAccessDialog";
 import {
     RolePill,
     Section,
@@ -57,6 +63,8 @@ export default function MembersSettingsPage() {
     const removeMember = useRemoveMember();
     const cancelInvite = useCancelInvitation();
     const updateRole = useUpdateMemberRole();
+    const setAccess = useSetMemberAccess();
+    const [editingAccess, setEditingAccess] = React.useState<OrganizationMember | null>(null);
     const customRoles = useRoles();
     const { config: authConfig, ready: authConfigReady } = useAuthConfig();
     const currentUserId = useAppStore((s) => s.user?.id);
@@ -150,12 +158,12 @@ export default function MembersSettingsPage() {
                         pending={invite.isPending}
                         mailDelivers={!authConfigReady || authConfig.mail_delivers}
                         customRoles={customRoles.data ?? []}
-                        onSubmit={async (emails, roleIds) => {
+                        onSubmit={async (emails, roleIds, inviteAccess) => {
                             let ok = 0;
                             let failed = 0;
                             for (const e of emails) {
                                 try {
-                                    await invite.mutateAsync({ email: e, role_ids: roleIds });
+                                    await invite.mutateAsync({ email: e, role_ids: roleIds, access: inviteAccess });
                                     ok++;
                                 } catch {
                                     failed++;
@@ -168,6 +176,24 @@ export default function MembersSettingsPage() {
                     />
                 </Section>
             )}
+
+            <AnimatePresence>
+                {editingAccess && (
+                    <MemberAccessDialog
+                        title="Member access"
+                        subject={safeEmail(editingAccess.email) || editingAccess.user_id}
+                        initial={editingAccess.access}
+                        onClose={() => setEditingAccess(null)}
+                        onSave={async (next) => {
+                            await toast.promise(setAccess.mutateAsync({ userId: editingAccess.user_id, access: next }), {
+                                loading: "Saving…",
+                                success: "Access updated",
+                                error: (e: AppError) => buildError(e),
+                            });
+                        }}
+                    />
+                )}
+            </AnimatePresence>
 
             <Section
                 eyebrow="Members"
@@ -185,6 +211,7 @@ export default function MembersSettingsPage() {
                                 <tr className="border-b border-slate-200">
                                     <Th>Member</Th>
                                     <Th className="md:w-44">Role</Th>
+                                    <Th className="md:w-48">Access</Th>
                                     <Th className="w-40 hidden md:table-cell">Joined</Th>
                                     <th className="w-12 px-3 py-2"></th>
                                 </tr>
@@ -238,6 +265,12 @@ export default function MembersSettingsPage() {
                                                     <RoleChips roles={m.roles ?? []} />
                                                 )}
                                             </td>
+                                            <td className="px-3 max-w-[12rem]">
+                                                <AccessBadge
+                                                    access={isOwner ? null : m.access}
+                                                    onClick={access.canManage && !isOwner && !isSelf ? () => setEditingAccess(m) : undefined}
+                                                />
+                                            </td>
                                             <td className="px-3 font-mono text-[11px] text-slate-500 tabular-nums hidden md:table-cell">
                                                 {m.joined_at
                                                     ? new Date(m.joined_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -281,6 +314,7 @@ export default function MembersSettingsPage() {
                                 <tr className="border-b border-slate-200">
                                     <Th>Email</Th>
                                     <Th className="w-32">Role</Th>
+                                    <Th className="md:w-48">Access</Th>
                                     <Th className="w-40 hidden md:table-cell">Expires</Th>
                                     <th className="w-16 md:w-32 px-3 py-2"></th>
                                 </tr>
@@ -301,6 +335,9 @@ export default function MembersSettingsPage() {
                                         </td>
                                         <td className="px-3">
                                             {(inv.roles?.length ?? 0) > 0 ? <RoleChips roles={inv.roles!} /> : <RolePill role={inv.role} color={(customRoles.data ?? []).find((r) => r.id === inv.role_id)?.color} />}
+                                        </td>
+                                        <td className="px-3 max-w-[12rem]">
+                                            <AccessBadge access={inv.access} />
                                         </td>
                                         <td className="px-3 font-mono text-[11px] text-slate-500 tabular-nums hidden md:table-cell">
                                             {new Date(inv.expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -363,7 +400,7 @@ function InviteFlow({
     mailDelivers,
     customRoles,
 }: {
-    onSubmit: (emails: string[], roleIds: string[]) => Promise<void>;
+    onSubmit: (emails: string[], roleIds: string[], access: MemberAccess) => Promise<void>;
     pending: boolean;
     mailDelivers: boolean;
     customRoles: OrganizationRole[];
@@ -371,6 +408,8 @@ function InviteFlow({
     const [chips, setChips] = React.useState<{ email: string; valid: boolean }[]>([]);
     const [draft, setDraft] = React.useState("");
     const [roleIds, setRoleIds] = React.useState<string[]>([]);
+    const [inviteAccess, setInviteAccess] = React.useState<MemberAccess>(WORKSPACE_ACCESS);
+    const [editingAccess, setEditingAccess] = React.useState(false);
     // Default to the seeded Viewer (least privilege), else the first role.
     const defaultRole = customRoles.find((r) => r.name === "Viewer") ?? customRoles[0];
     const effectiveRoleIds = roleIds.length > 0 ? roleIds : defaultRole ? [defaultRole.id] : [];
@@ -436,7 +475,7 @@ function InviteFlow({
             toast.error("Create a role first (Settings → Roles & access)");
             return;
         }
-        await onSubmit(valid, effectiveRoleIds);
+        await onSubmit(valid, effectiveRoleIds, inviteAccess);
         setChips([]);
         setDraft("");
     }
@@ -534,6 +573,23 @@ function InviteFlow({
                         onChange={setRoleIds}
                     />
                 </div>
+
+                <div className="flex items-center gap-2">
+                    <Label className="!mb-0 w-16">Access</Label>
+                    <AccessBadge access={inviteAccess} onClick={() => setEditingAccess(true)} />
+                </div>
+                <AnimatePresence>
+                    {editingAccess && (
+                        <MemberAccessDialog
+                            title="Access for this invitation"
+                            subject="Applies to everyone invited with it, from the moment they join."
+                            initial={inviteAccess}
+                            saveLabel="Use this access"
+                            onClose={() => setEditingAccess(false)}
+                            onSave={async (next) => setInviteAccess(next)}
+                        />
+                    )}
+                </AnimatePresence>
 
                 <div className="flex items-center gap-2 pt-1">
                     <span className="text-[11px] text-slate-500">

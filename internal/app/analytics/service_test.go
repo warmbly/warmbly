@@ -72,7 +72,7 @@ func (s *dashboardAnalyticsRepoStub) ResolveDashboardScope(_ context.Context, _ 
 	return &models.DashboardScope{CampaignCount: len(s.resolved.CampaignIDs)}, s.resolved, nil
 }
 
-func (s *dashboardAnalyticsRepoStub) GetDashboardOverallStats(_ context.Context, _ uuid.UUID, from, to time.Time, scope *models.CampaignScope) (*models.DashboardOverallStats, *errx.Error) {
+func (s *dashboardAnalyticsRepoStub) GetDashboardOverallStats(_ context.Context, _ uuid.UUID, from, to time.Time, scope *models.CampaignScope, _ []uuid.UUID) (*models.DashboardOverallStats, *errx.Error) {
 	s.overallFrom, s.overallTo = from, to
 	s.record("overall", scope)
 	return &models.DashboardOverallStats{}, nil
@@ -88,7 +88,7 @@ func (s *dashboardAnalyticsRepoStub) GetTopCampaigns(_ context.Context, _ uuid.U
 	return []models.TopCampaignStats{}, nil
 }
 
-func (*dashboardAnalyticsRepoStub) GetAccountHealthSummary(context.Context, uuid.UUID) (*models.AccountHealthSummary, *errx.Error) {
+func (*dashboardAnalyticsRepoStub) GetAccountHealthSummary(context.Context, uuid.UUID, []uuid.UUID) (*models.AccountHealthSummary, *errx.Error) {
 	return &models.AccountHealthSummary{}, nil
 }
 
@@ -224,6 +224,38 @@ func TestDashboardFilterNarrowsEveryCampaignSectionToOneSet(t *testing.T) {
 			for _, section := range []string{"overall", "recent", "top", "trend"} {
 				if repo.scopes[section] != resolved {
 					t.Errorf("%s read %+v, want the resolved scope", section, repo.scopes[section])
+				}
+			}
+		})
+	}
+}
+
+// Issue #861: a restricted member's dashboard reads only their granted campaigns, with or without a filter.
+func TestDashboardHoldsARestrictedMemberToTheirCampaigns(t *testing.T) {
+	granted, other := uuid.New(), uuid.New()
+	for _, tc := range []struct {
+		name     string
+		resolved *models.CampaignScope
+		filter   models.DashboardFilter
+		want     []uuid.UUID
+	}{
+		{"no filter reads the grants", nil, models.DashboardFilter{}, []uuid.UUID{granted}},
+		{"a filter is narrowed to the grants", &models.CampaignScope{CampaignIDs: []uuid.UUID{granted, other}}, models.DashboardFilter{FolderIDs: []uuid.UUID{uuid.New()}}, []uuid.UUID{granted}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &dashboardAnalyticsRepoStub{resolved: tc.resolved}
+			if repo.resolved == nil {
+				repo.resolved = &models.CampaignScope{}
+			}
+			svc := &analyticsService{analyticsRepo: repo}
+			tc.filter.AllowedCampaigns = []uuid.UUID{granted}
+			if _, xerr := svc.GetDashboardAnalytics(context.Background(), uuid.New(), "7d", tc.filter); xerr != nil {
+				t.Fatalf("GetDashboardAnalytics: %v", xerr)
+			}
+			for _, section := range []string{"overall", "recent", "top", "trend"} {
+				got := repo.scopes[section]
+				if got == nil || len(got.CampaignIDs) != len(tc.want) || got.CampaignIDs[0] != tc.want[0] {
+					t.Errorf("%s read %+v, want only the granted campaign", section, got)
 				}
 			}
 		})

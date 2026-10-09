@@ -1,0 +1,43 @@
+---
+/**
+ * A numbered technical figure for the trust document: a fixed-size drawing on
+ * a dot grid, scaled as one picture to the column like ScaledStage, with a
+ * caption under it. It shares ScaledStage's stage classes, so its entrances
+ * and loops follow the same on-screen rules when one is on the page.
+ */
+interface Props {
+  w: number;
+  h: number;
+  n: number;
+  caption: string;
+}
+const { w, h, n, caption } = Astro.props;
+---
+<figure class="m-0">
+  <div class="stage-box tf-box relative w-full overflow-hidden rounded-[6px] bg-slate-50 ring-1 ring-slate-200" style={`aspect-ratio:${w}/${h};`}>
+    <div class="tf-grid absolute inset-0" aria-hidden="true"></div>
+    <div class="stage absolute left-0 top-0 origin-top-left" style={`width:${w}px;height:${h}px;transform:scale(var(--k,1));`} data-w={w} aria-hidden="true">
+      <slot />
+    </div>
+  </div>
+  <figcaption class="mt-3 max-w-2xl text-[13.5px] leading-[1.55] text-slate-500"><span class="font-medium text-slate-700">Figure {n}.</span> {caption}</figcaption>
+</figure>
+
+<style>
+  .tf-grid {
+    background-image: radial-gradient(circle, rgb(15 23 42 / 0.09) 1px, transparent 1.2px);
+    background-size: 18px 18px;
+  }
+</style>
+
+<script>
+  // Scale each figure to its column; ScaledStage does the same for its own boxes.
+  const boxes = [...document.querySelectorAll<HTMLElement>('.tf-box')];
+  const fit = (box: HTMLElement) => {
+    const stage = box.querySelector<HTMLElement>(':scope > .stage');
+    const w = Number(stage?.dataset.w) || 0;
+    if (stage && w) stage.style.setProperty('--k', String(box.clientWidth / w));
+  };
+  const ro = new ResizeObserver((entries) => entries.forEach((e) => fit(e.target as HTMLElement)));
+  boxes.forEach((b) => { fit(b); ro.observe(b); });
+</script>

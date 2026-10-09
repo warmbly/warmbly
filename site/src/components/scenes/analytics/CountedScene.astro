@@ -1,0 +1,157 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../../lib/scene';
+
+/**
+ * What counts: a campaign overview's Totals and Reply quality, where
+ * privacy-proxy opens and autoreplies are listed but kept out of the count,
+ * and a contact's Activity tab with an open the classifier caught. A fresh
+ * auto-open lands at the top of the contact's timeline on a loop.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'gauge', active: true },
+  { label: 'Steps', icon: 'layers' },
+  { label: 'Contacts', icon: 'user' },
+  { label: 'Schedule', icon: 'calendar' },
+] as const;
+const totals = [
+  { label: 'Sent', value: '4,210', dot: 'bg-slate-400' },
+  { label: 'Opens', value: '1,621', dot: 'bg-emerald-500', auto: '214', unit: 'auto, not counted' },
+  { label: 'Clicks', value: '388', dot: 'bg-violet-500', auto: '3', unit: 'auto' },
+  { label: 'Replies', value: '312', dot: 'bg-amber-500' },
+  { label: 'Bounces', value: '38', dot: 'bg-rose-500' },
+];
+const quality = [
+  { label: 'Positive', value: 118, dot: 'bg-lime-500' },
+  { label: 'Neutral', value: 96, dot: 'bg-slate-400' },
+  { label: 'Negative', value: 41, dot: 'bg-rose-500' },
+  { label: 'Asked to stop', value: 29, dot: 'bg-amber-500' },
+  { label: 'Unclassified', value: 28, dot: 'bg-slate-200' },
+];
+const replies = quality.reduce((n, q) => n + q.value, 0);
+---
+<ScaledStage w={760} h={570} photo="paint-aqua">
+  <div class={`${WINDOW} left-[40px] top-[40px] right-0 h-[530px]`}>
+    <div class="px-5 pt-4 pb-3">
+      <div class="inline-flex items-center gap-1 text-[11.5px] text-slate-400"><Ico name="arrowLeft" size={12} />Campaigns</div>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="text-[17px] font-semibold text-slate-900">Q4 outbound: platform leads</span>
+        <span class="inline-flex h-5 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+      </div>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 p-4 bg-slate-50/50 h-full">
+      <div class="self-start rounded-md border border-slate-200 bg-white overflow-hidden">
+        <div class="h-9 px-5 border-b border-slate-200/60 flex items-center"><span class={EYEBROW}>Totals</span></div>
+        <div class="divide-y divide-slate-200/60">
+          {totals.map((q) => (
+            <div class="h-8 px-5 flex items-center gap-2">
+              <span class={`size-1.5 rounded-full ${q.dot}`}></span>
+              <span class="text-[12px] text-slate-700">{q.label}</span>
+              {q.auto && <span class="text-[9.5px] text-slate-400 font-mono">{q.label === 'Opens' ? <span data-tick="214,226,2600">{q.auto}</span> : q.auto} {q.unit}</span>}
+              <span class="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">{q.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="self-start rounded-md border border-slate-200 bg-white overflow-hidden">
+        <div class="h-9 px-5 border-b border-slate-200/60 flex items-center"><span class={EYEBROW}>Reply quality</span></div>
+        <div class="px-5 pt-3">
+          <div class="flex h-1.5 rounded-full overflow-hidden bg-slate-100">
+            {quality.map((q, i) => <span class={`enter-grow-x ${q.dot}`} style={`width:${(q.value / replies) * 100}%;--d:${200 + i * 90}ms`}></span>)}
+          </div>
+        </div>
+        <div class="divide-y divide-slate-200/60">
+          {quality.map((q) => (
+            <div class="h-8 px-5 flex items-center gap-2">
+              <span class={`size-1.5 rounded-full ${q.dot}`}></span>
+              <span class="text-[12px] text-slate-700">{q.label}</span>
+              <span class="ml-auto font-mono text-[11px] text-slate-500 tabular-nums">{q.value}</span>
+              <span class="w-10 text-right font-mono text-[10px] text-slate-400 tabular-nums">{Math.round((q.value / replies) * 100)}%</span>
+            </div>
+          ))}
+          {[['Out of office', 46], ['Auto-reply', 12]].map(([l, v]) => (
+            <div class="h-8 px-5 flex items-center gap-2">
+              <span class="size-1.5 rounded-full border border-slate-300"></span>
+              <span class="text-[12px] text-slate-500">{l}</span>
+              <span class="text-[9.5px] text-slate-400 font-mono">not counted</span>
+              <span class="ml-auto font-mono text-[11px] text-slate-400 tabular-nums">{v}</span>
+              <span class="w-10"></span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The contact's own timeline: an open a privacy proxy made, under the one she did. -->
+  <div class={`${FLOAT} left-[18px] top-[372px] w-[360px] overflow-hidden`}>
+    <div class="h-10 px-3 flex items-center gap-2 border-b border-slate-200">
+      <span class="flex size-6 items-center justify-center rounded-full bg-sky-50 text-[10px] font-semibold text-sky-700">JC</span>
+      <span class="text-[12.5px] font-medium text-slate-900">Jenna Carter</span>
+      <span class="text-[11px] text-slate-400">jenna@acme.io</span>
+      <span class="relative ml-auto h-10 px-1 inline-flex items-center text-[12px] font-medium text-slate-900">Activity<span class="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-sky-600"></span></span>
+    </div>
+    <div class="relative h-[152px] overflow-hidden">
+      <div class="cs-feed">
+        <div class="cs-new border-b border-slate-100 px-3 py-2">
+          <div class="flex items-start gap-2.5">
+            <Ico name="mailOpen" size={14} class="mt-0.5 text-slate-400" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[12px] font-medium text-slate-900">Opened</span>
+                <span class="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-1 text-[9.5px] font-medium uppercase tracking-[0.1em] text-amber-700">auto</span>
+                <span class="truncate text-[11.5px] text-slate-600">· Following up on Acme</span>
+              </div>
+              <div class="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500">step Email 2 · <Ico name="eyeOff" size={11} class="text-slate-400" />Apple Mail · device hidden</div>
+            </div>
+            <span class="text-[10.5px] text-slate-400">now</span>
+          </div>
+          <div class="ml-6 mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-1.5 text-[11px] leading-snug">
+            <span class="pt-px text-[10px] font-medium uppercase tracking-[0.1em] text-slate-400">Classified as</span><span class="text-slate-700">Automated: fetched by a mail proxy or a client with no browser</span>
+          </div>
+        </div>
+        <div class="border-b border-slate-100 px-3 py-2 flex items-start gap-2.5">
+          <Ico name="mailOpen" size={14} class="mt-0.5 text-slate-400" />
+          <div class="min-w-0 flex-1">
+            <div class="flex items-baseline gap-1.5"><span class="text-[12px] font-medium text-slate-900">Opened</span><span class="truncate text-[11.5px] text-slate-600">· Quick question about Acme</span></div>
+            <div class="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500">step Email 1 · <Ico name="smartphone" size={11} class="text-slate-400" />iPhone · Apple Mail app · Austin, Texas</div>
+          </div>
+          <span class="text-[10.5px] text-slate-400">2d</span>
+        </div>
+        <div class="px-3 py-2 flex items-start gap-2.5">
+          <Ico name="mousePointerClick" size={14} class="mt-0.5 text-slate-400" />
+          <div class="min-w-0 flex-1">
+            <div class="flex items-baseline gap-1.5"><span class="text-[12px] font-medium text-slate-900">Clicked</span><span class="text-[11.5px] text-slate-700">northwind.dev/pricing</span></div>
+            <div class="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500">step Email 1 · <Ico name="monitor" size={11} class="text-slate-400" />Mac · Chrome</div>
+          </div>
+          <span class="text-[10.5px] text-slate-400">2d</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 10s loop: the proxy's open lands on top of the timeline, already marked auto. */
+  .cs-feed { animation: cs-feed 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes cs-feed {
+    0% { transform: translateY(-100px); opacity: 0; }
+    5%, 30% { transform: translateY(-100px); opacity: 1; }
+    37%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .cs-new { animation: cs-new 10s ease-out infinite; }
+  @keyframes cs-new { 0%, 34% { background: rgb(255 251 235 / 0); } 40%, 72% { background: rgb(255 251 235); } 92%, 100% { background: rgb(255 251 235 / 0); } }
+</style>

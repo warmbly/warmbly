@@ -1,0 +1,53 @@
+---
+import Glyph from '../Glyph.astro';
+import { TAB } from '../../../lib/scene';
+
+/**
+ * The mailbox drawer header and tab bar (web/src/components/app/emails/
+ * InboxDetails.tsx), with any tab active and the status chip the mailbox
+ * really carries.
+ */
+type TabName = 'Overview' | 'Deliverability' | 'Analytics' | 'Warmup' | 'Sending' | 'Settings';
+interface Props {
+  addr: string;
+  provider: string;
+  mark: 'google' | 'microsoft' | 'imap';
+  active: TabName;
+  status?: 'active' | 'paused';
+}
+const { addr, provider, mark, active, status = 'active' } = Astro.props;
+const initials = addr.slice(0, 2).toUpperCase();
+const tabs = [
+  { label: 'Overview', icon: 'gauge' },
+  { label: 'Deliverability', icon: 'mailCheck' },
+  { label: 'Analytics', icon: 'barChart' },
+  { label: 'Warmup', icon: 'flame' },
+  { label: 'Sending', icon: 'clock' },
+  { label: 'Settings', icon: 'settings' },
+] as const;
+const chip = status === 'active'
+  ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+  : 'border-amber-100 bg-amber-50 text-amber-700';
+---
+<div class="h-14 px-5 flex items-center gap-3 border-b border-slate-200">
+  <div class="relative size-8 shrink-0 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center text-[11px] font-semibold">
+    {initials}
+    <span class="absolute -right-1 -bottom-1 inline-flex size-4 items-center justify-center rounded border border-slate-200 bg-white ring-2 ring-white"><Glyph mark={mark} size={10} /></span>
+  </div>
+  <div class="min-w-0 flex-1">
+    <div class="truncate text-[13px] font-medium text-slate-900">{addr}</div>
+    <div class="truncate text-[10.5px] text-slate-400">{provider}</div>
+  </div>
+  <span class={`inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-[10px] font-semibold uppercase tracking-wide ${chip}`}>{status}</span>
+  <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="x" size={16} /></span>
+</div>
+<div class="border-b border-slate-200">
+  <div class="flex items-center gap-1 px-3 overflow-hidden">
+    {tabs.map((t) => (
+      <span class={`${TAB} shrink-0 ${t.label === active ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+        <Glyph name={t.icon} size={14} />{t.label}
+        {t.label === active && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+      </span>
+    ))}
+  </div>
+</div>

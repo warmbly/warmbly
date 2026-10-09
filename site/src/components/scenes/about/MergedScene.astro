@@ -1,0 +1,50 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+import type { ChangelogEntry } from '../../../lib/changelog';
+
+/**
+ * Evidence for "open by default": the latest merged pull requests (the same
+ * ones the changelog is built from) and the CI jobs every one of them passes
+ * (job names from .github/workflows/ci.yml).
+ */
+interface Props { entries: ChangelogEntry[] }
+const { entries } = Astro.props;
+const rows = entries.slice(0, 7);
+const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const checks = ['Go CI', 'Web CI', 'Migrations', 'Rust CI', 'Elixir CI'];
+---
+<ScaledStage w={460} h={345} photo="sheer-cream">
+  <div class={`${WINDOW} left-[24px] top-[24px] w-[460px] h-[340px]`}>
+    <div class="h-10 px-4 flex items-center gap-2 border-b border-[#d0d7de] bg-[#f6f8fa]">
+      <Ico name="gitPullRequest" size={13} class="text-[#57606a]" />
+      <span class="text-[12px] font-semibold text-[#24292f]">Pull requests</span>
+      <span class="ml-2 h-6 flex-1 rounded-md border border-[#d0d7de] bg-white px-2 inline-flex items-center font-mono text-[10.5px] text-[#57606a]">is:pr is:merged base:main</span>
+    </div>
+    {rows.map((e, i) => (
+      <div class="enter-fade h-[44px] px-4 flex items-center gap-2.5 border-b border-[#d8dee4]" style={`--d:${100 + i * 70}ms`}>
+        <Ico name="gitMerge" size={14} class="text-[#8250df]" />
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[12px] font-semibold text-[#24292f]">{e.title}</div>
+          <div class="truncate text-[10.5px] text-[#57606a]">#{e.number} merged {day(e.date)}</div>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <div class={`${FLOAT} left-[250px] top-[176px] w-[188px] overflow-hidden`}>
+    <div class="px-3 py-2.5 flex items-center gap-2 border-b border-slate-200">
+      <span class="inline-flex size-5 items-center justify-center rounded-full bg-emerald-500 text-white"><Glyph name="check" size={11} /></span>
+      <span class="text-[11.5px] font-semibold text-slate-900">All checks passed</span>
+    </div>
+    <div class="px-3 py-1.5">
+      {checks.map((c, i) => (
+        <div class="enter-fade flex h-6 items-center gap-2 text-[11px] text-slate-600" style={`--d:${700 + i * 120}ms`}>
+          <Glyph name="check" size={11} class="text-emerald-600" />{c}
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>

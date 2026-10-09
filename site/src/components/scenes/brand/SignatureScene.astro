@@ -1,0 +1,31 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW } from '../../../lib/scene';
+
+/** The PNG logo (public/brand/warmbly-logo.png) where a PNG belongs: an email footer. */
+---
+<ScaledStage w={460} h={345} photo="sheer-peach">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-11 px-4 flex items-center gap-2 border-b border-slate-200">
+      <span class="text-[12.5px] font-semibold text-slate-900">Re: Partnership</span>
+      <span class="ml-auto inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="archive" size={14} /></span>
+    </div>
+    <div class="px-5 py-4">
+      <div class="flex items-center gap-2.5">
+        <span class="flex size-7 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">TW</span>
+        <div>
+          <div class="text-[12.5px] font-semibold text-slate-900">The Warmbly team</div>
+          <div class="text-[10.5px] text-slate-400">team@warmbly.com</div>
+        </div>
+      </div>
+      <div class="mt-3 pl-[38px] text-[12.5px] leading-[1.6] text-slate-700">
+        Thanks for writing about us. The logo files and colours are on warmbly.com/brand, and we are happy to check a draft.
+      </div>
+      <div class="mt-4 ml-[38px] border-t border-slate-200 pt-3">
+        <img src="/brand/warmbly-logo.png" alt="" width="140" height="22" loading="lazy" class="h-[22px] w-auto" />
+        <div class="mt-2 text-[11px] leading-[1.5] text-slate-500">Mindroot Ltd · London<br />warmbly.com · docs.warmbly.com</div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>

@@ -1,0 +1,120 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import Glyph from './Glyph.astro';
+import { WINDOW } from '../../lib/scene';
+
+/**
+ * The unified inbox (ConversationList + ThreadView): replies from every
+ * mailbox, labelled on arrival. A new reply lands on top on a loop and gets
+ * its label a moment later; the open thread has a reply ready.
+ */
+type Conv = { who: string; subject: string; preview: string; time: string; mailbox: string; label: string; color: string; unread?: boolean; selected?: boolean };
+const incoming: Conv = { who: 'Maya Lopez', subject: 'Re: Quick question about Brightline', preview: 'Can you share pricing for 20 seats?', time: 'now', mailbox: 'mia@northwind.dev', label: 'Interested', color: '#10b981', unread: true };
+const convs: Conv[] = [
+  { who: 'Jenna Carter', subject: 'Re: Quick question about Acme', preview: 'Thursday 10am ET works for me.', time: '4m', mailbox: 'alex@northwind.dev', label: 'Interested', color: '#10b981', selected: true },
+  { who: 'Aman Patel', subject: 'Automatic reply: Following up', preview: 'I am out of the office until the 14th.', time: '22m', mailbox: 'sam@northwind.io', label: 'Out of office', color: '#f59e0b', unread: true },
+  { who: 'Lina Park', subject: 'Re: Quick question about Helio', preview: 'Does this work with Outlook too?', time: '1h', mailbox: 'ops@northwind.co', label: 'Question', color: '#0ea5e9' },
+  { who: 'Karim Salah', subject: 'Re: Following up', preview: 'Please take me off your list.', time: '2h', mailbox: 'alex@northwind.dev', label: 'Unsubscribe', color: '#64748b' },
+  { who: 'Ravi Shah', subject: 'Re: Quick question about Stratech', preview: 'Send me a few times next week.', time: '3h', mailbox: 'sam@northwind.io', label: 'Interested', color: '#10b981' },
+];
+---
+<ScaledStage w={680} h={510} photo="sheer-cream">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[480px] flex`}>
+    <div class="w-[300px] shrink-0 border-r border-slate-200 flex flex-col">
+      <div class="h-11 pl-3 pr-2 flex items-center gap-1.5">
+        <span class="text-[13.5px] font-semibold text-slate-900">Inbox</span>
+        <span class="text-[11.5px] tabular-nums text-slate-400">7</span>
+        <span class="ml-auto h-7 pl-2 pr-1.5 rounded-md text-[12px] font-medium text-sky-700 inline-flex items-center gap-1.5"><Glyph name="penLine" size={14} />Compose</span>
+      </div>
+      <div class="px-3 pb-2 border-b border-slate-200">
+        <div class="h-8 px-2.5 rounded-md bg-slate-100/80 flex items-center gap-2 text-[12.5px] text-slate-400"><Glyph name="search" size={14} />Search all mail</div>
+      </div>
+      <div class="px-4 h-7 flex items-center text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">Today</div>
+      <div class="relative flex-1 overflow-hidden">
+        <div class="ib-list divide-y divide-slate-100">
+          {[incoming, ...convs].map((c, i) => (
+            <div class={`flex items-start gap-2 pl-3 pr-4 py-2.5 transition-colors hover:bg-slate-50 ${c.selected ? 'bg-sky-50' : ''} ${i === 0 ? 'ib-new' : ''}`}>
+              <span class="w-2 shrink-0 flex h-[18px] items-center justify-center">{c.unread && <span class="block size-2 rounded-full bg-sky-500"></span>}</span>
+              <div class="min-w-0 flex-1">
+                <div class="flex h-[18px] items-center gap-2">
+                  <span class={`truncate text-[12.5px] ${c.unread ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>{c.who}</span>
+                  <span class={`ml-auto shrink-0 text-[11px] tabular-nums ${c.unread ? 'font-medium text-sky-700' : 'text-slate-400'}`}>{c.time}</span>
+                </div>
+                <div class="mt-0.5 flex h-[18px] items-center gap-1.5">
+                  <span class={`truncate text-[12.5px] ${c.unread ? 'font-medium text-slate-900' : 'text-slate-600'}`}>{c.subject}</span>
+                </div>
+                <div class="mt-0.5 flex h-4 items-center gap-2">
+                  <span class="truncate text-[11.5px] text-slate-400">{c.preview}</span>
+                  <span class={`ml-auto inline-flex h-4 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] font-medium ${i === 0 ? 'ib-label' : ''}`} style={`color:${c.color};background-color:${c.color}14;`}>
+                    <span class="size-1.5 rounded-full" style={`background-color:${c.color}`}></span>{c.label}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-1 min-w-0 flex flex-col">
+      <div class="min-h-12 px-5 py-2 border-b border-slate-200 flex items-center gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[13.5px] font-semibold leading-5 text-slate-900">Re: Quick question about Acme</div>
+          <div class="flex items-center gap-1.5 text-[11px] leading-4 text-slate-400">
+            <span>2 messages</span><span class="text-slate-300">·</span><span>alex@northwind.dev</span>
+            <span class="ml-1 inline-flex h-4 items-center gap-1 rounded px-1 text-[10px] font-medium text-emerald-600" style="background-color:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);"><span class="size-1.5 rounded-full bg-emerald-500"></span>Interested</span>
+          </div>
+        </div>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="tag" size={15} /></span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="moon" size={15} /></span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="archive" size={15} /></span>
+      </div>
+      <div class="divide-y divide-slate-100">
+        <article class="px-5 py-2.5 flex items-start gap-3">
+          <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">AK</span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[12.5px] font-semibold text-slate-900">Alex Kim</div>
+            <div class="truncate text-[12px] text-slate-500">Hi Jenna, saw Acme just opened a Berlin office…</div>
+          </div>
+          <span class="text-[11px] text-slate-400">Mon</span>
+        </article>
+        <article class="px-5 py-4">
+          <div class="flex items-start gap-3">
+            <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">JC</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Jenna Carter</span><span class="text-[11px] text-slate-400">jenna@acme.io</span></div>
+              <div class="mt-0.5 text-[11px] text-slate-400">to alex@northwind.dev</div>
+            </div>
+            <span class="text-[11px] text-slate-400">4m</span>
+          </div>
+          <div class="mt-3 pl-10 text-[13px] leading-[1.6] text-slate-800">Thanks for reaching out. Thursday 10am ET works for me, can you send over an invite?</div>
+        </article>
+      </div>
+      <div class="mx-5 mt-2 rounded-lg ring-1 ring-slate-200 focus-within:ring-sky-300">
+        <div class="px-3.5 pt-3 h-[64px] text-[13px] leading-[1.6] text-slate-800">
+          Perfect, I just sent an invite for Thursday at 10am ET.
+        </div>
+        <div class="flex items-center justify-between border-t border-slate-100 px-3 py-2">
+          <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-400"><Glyph name="reply" size={12} />Reply as alex@northwind.dev</span>
+          <span class="h-7 px-3 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5"><Glyph name="send" size={12} />Send</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 10s loop: a new reply slides in on top (rows are 77px), then is labelled.
+     The list fades across the seam so the restart never jumps. */
+  .ib-list { animation: ib-list 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes ib-list {
+    0% { transform: translateY(-77px); opacity: 0; }
+    4%, 30% { transform: translateY(-77px); opacity: 1; }
+    37%, 92% { transform: none; opacity: 1; }
+    97%, 100% { transform: none; opacity: 0; }
+  }
+  .ib-new { animation: ib-new 10s ease-out infinite; }
+  @keyframes ib-new { 0%, 32% { background: rgb(240 249 255 / 0); } 38%, 72% { background: rgb(240 249 255); } 90%, 100% { background: rgb(240 249 255 / 0); } }
+  .ib-label { animation: ib-label 10s ease-out infinite; }
+  @keyframes ib-label { 0%, 44% { opacity: 0; transform: scale(0.9); } 49%, 100% { opacity: 1; transform: none; } }
+</style>

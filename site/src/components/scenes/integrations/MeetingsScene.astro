@@ -1,0 +1,119 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import BrandMark from '../../page/BrandMark.astro';
+import Ico from '../analytics/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, ACTION_GHOST, ACTION_PRIMARY, STAT, STAT_VALUE } from '../../../lib/scene';
+
+/**
+ * The Meetings page (web/src/app/app/crm/meetings): counts, the Upcoming
+ * list with each call's source and status. A Calendly booking lands on top
+ * on a loop; the card under it is the same booking on the contact's
+ * timeline.
+ */
+type M = { day: string; time: string; who: string; email: string; event: string; where: string; source: string; status: 'Booked' | 'Rescheduled' | 'Canceled'; isNew?: boolean };
+const rows: M[] = [
+  { day: 'Today', time: '3:30 PM · in 2h', who: 'Jenna Carter', email: 'jenna@acme.io', event: 'Intro call · 30 min', where: 'Google Meet', source: 'Calendly', status: 'Booked', isNew: true },
+  { day: 'Tomorrow', time: '10:00 AM', who: 'Ravi Shah', email: 'ravi@stratech.io', event: 'Discovery call', where: 'Zoom', source: 'Cal.com', status: 'Rescheduled' },
+  { day: 'Mon, Oct 13', time: '11:00 AM', who: 'Maya Lopez', email: 'maya@brightline.io', event: 'Demo · 45 min', where: 'Google Meet', source: 'Calendly', status: 'Booked' },
+  { day: 'Tue, Oct 14', time: '4:00 PM', who: 'Lina Park', email: 'lina@helio.dev', event: 'Call', where: 'Phone', source: 'Manual', status: 'Booked' },
+];
+const STATUS = {
+  Booked: 'bg-sky-50 text-sky-700 border-sky-200',
+  Rescheduled: 'bg-amber-50 text-amber-700 border-amber-200',
+  Canceled: 'bg-slate-100 text-slate-500 border-slate-200',
+};
+const stats = [
+  { label: 'Upcoming', value: '6', accent: true },
+  { label: 'Today', value: '2' },
+  { label: 'Total booked', value: '48' },
+  { label: 'Canceled', value: '3', last: true },
+];
+const head = 'text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium';
+---
+<ScaledStage w={680} h={510} photo="sheer-sky">
+  <div class={`${WINDOW} left-[32px] top-[32px] w-[760px] h-[478px]`}>
+    <div class={`${TOPBAR} pr-[124px]`}>
+      <span class={EYEBROW}>Meetings / Calls</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="truncate text-[12.5px] text-slate-600">Calls you schedule, and calls prospects book with you</span>
+      <span class={`ml-auto ${ACTION_GHOST}`}><Ico name="cable" size={13} />Calendars</span>
+      <span class={ACTION_PRIMARY}><Ico name="plus" size={13} />New meeting</span>
+    </div>
+    <div class="grid grid-cols-4 border-b border-slate-200 pr-[112px]">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class="flex items-center gap-2"><span class={EYEBROW}>{s.label}</span>{s.accent && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}</div>
+          <div class={STAT_VALUE}>{s.value}</div>
+        </div>
+      ))}
+    </div>
+    <div class="h-9 px-5 pr-[124px] border-b border-slate-200/60 flex items-center gap-2.5">
+      <span class={EYEBROW}>Meetings</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">6 of 6</span>
+      <span class="ml-auto inline-flex items-center gap-0.5 rounded-md border border-slate-200 p-0.5 text-[11.5px]">
+        <span class="h-6 px-2 rounded bg-slate-100 font-medium text-slate-900 inline-flex items-center">Upcoming</span>
+        <span class="h-6 px-2 rounded text-slate-500 inline-flex items-center">Past</span>
+        <span class="h-6 px-2 rounded text-slate-500 inline-flex items-center">All</span>
+      </span>
+    </div>
+    <div class="h-8 px-5 flex items-center gap-3 border-b border-slate-200 bg-slate-50/60">
+      <span class={`${head} w-32`}>When</span>
+      <span class={`${head} flex-1`}>Contact</span>
+      <span class={`${head} flex-1`}>Meeting</span>
+      <span class={`${head} w-20`}>Source</span>
+      <span class={`${head} w-24`}>Status</span>
+      <span class={`${head} w-24 text-right`}>Actions</span>
+    </div>
+    <div class="relative overflow-hidden">
+      <div class="mt-list">
+        {rows.map((m) => (
+          <div class={`min-h-12 px-5 py-1.5 flex items-center gap-3 border-b border-slate-200/60 ${m.isNew ? 'mt-new' : ''}`}>
+            <div class="w-32">
+              <div class="flex items-center gap-1.5 text-[12.5px] text-slate-800"><Ico name="calendarClock" size={14} class="text-slate-400" />{m.day}</div>
+              <div class="pl-5 text-[11px] text-slate-400">{m.time}</div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="truncate text-[12.5px] font-medium text-slate-900">{m.who}</div>
+              <div class="truncate text-[11px] text-slate-400">{m.email}</div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="truncate text-[12.5px] text-slate-700">{m.event}</div>
+              <div class="truncate text-[11px] text-slate-400">{m.where}</div>
+            </div>
+            <span class="w-20 text-[11.5px] text-slate-500">{m.source}</span>
+            <span class="w-24"><span class={`inline-flex h-5 items-center rounded border px-2 text-[10.5px] font-medium ${STATUS[m.status]}`}>{m.status}</span></span>
+            <span class="w-24 flex items-center justify-end gap-1 text-slate-400">
+              <Ico name="calendarPlus" size={14} /><Ico name="video" size={14} /><Ico name="rotateCcw" size={14} /><Ico name="xCircle" size={14} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- The same booking on the contact's timeline. -->
+  <div class={`${FLOAT} left-[250px] top-[404px] w-[400px] overflow-hidden`}>
+    <div class="flex items-start gap-2.5 px-3.5 py-3">
+      <Ico name="calendarPlus" size={15} class="mt-0.5 text-slate-400" />
+      <div class="min-w-0 flex-1">
+        <div class="flex items-baseline gap-1.5"><span class="text-[12.5px] font-medium text-slate-900">Meeting booked</span><span class="truncate text-[11.5px] text-slate-600">· Intro call · 30 min</span></div>
+        <div class="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500"><span>Today, 3:30 PM</span><span class="text-slate-300">·</span><BrandMark name="calendly" size={14} class="ring-0" /><span>Calendly</span><span class="text-slate-300">·</span><span class="inline-flex items-center gap-1 font-medium text-sky-600"><Ico name="video" size={12} />Join</span></div>
+      </div>
+      <span class="text-[10.5px] text-slate-400">now</span>
+    </div>
+    <div class="border-t border-slate-100 bg-slate-50/60 px-3.5 py-2 text-[11px] text-slate-500">Matched to Jenna Carter by the contact id in her booking link</div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 10s loop: the booking webhook lands and the row slides in on top. */
+  .mt-list { animation: mt-list 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes mt-list {
+    0% { transform: translateY(-49px); opacity: 0; }
+    5%, 30% { transform: translateY(-49px); opacity: 1; }
+    37%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .mt-new { animation: mt-new 10s ease-out infinite; }
+  @keyframes mt-new { 0%, 34% { background: rgb(240 249 255 / 0); } 40%, 70% { background: rgb(240 249 255); } 92%, 100% { background: rgb(240 249 255 / 0); } }
+</style>

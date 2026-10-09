@@ -1,0 +1,28 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import { WINDOW } from '../../../../lib/scene';
+
+/** Sales teams: the shared inbox, a teammate reading one thread and replying to another. */
+const rows = [
+  { who: 'Jenna Carter', to: 'marcus@acme.com', label: 'Meeting', color: '#8b5cf6', presence: 'amber', ping: 'bg-amber-400', dot: 'bg-amber-500', by: 'Marcus is replying' },
+  { who: 'Ravi Shah', to: 'priya@acme.com', label: 'Pricing', color: '#0ea5e9', presence: 'emerald', ping: 'bg-emerald-400', dot: 'bg-emerald-500', by: 'Priya is viewing' },
+  { who: 'Lena Fischer', to: 'dana@acme.com', label: 'Interested', color: '#10b981' },
+  { who: 'Noor Haddad', to: 'tom@acme.com', label: 'Question', color: '#0ea5e9' },
+];
+---
+<ScaledStage w={460} h={345} photo="lake-motion">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-11 px-4 flex items-center gap-1.5 border-b border-slate-200"><span class="text-[13.5px] font-semibold text-slate-900">Inbox</span><span class="text-[11.5px] text-slate-400">24</span></div>
+    {rows.map((r) => (
+      <div class="px-4 pr-10 py-2.5 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="text-[12.5px] font-medium text-slate-900">{r.who}</span>
+          {r.presence && <span class="relative flex size-2"><span class={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${r.ping}`}></span><span class={`relative inline-flex size-2 rounded-full ${r.dot}`}></span></span>}
+          {r.by && <span class={`text-[10.5px] ${r.presence === 'amber' ? 'text-amber-700' : 'text-emerald-700'}`}>{r.by}</span>}
+          <span class="ml-auto inline-flex h-4 items-center gap-1 rounded-sm px-1.5 text-[10px] font-medium" style={`color:${r.color};background-color:${r.color}14;`}><span class="size-1.5 rounded-full" style={`background-color:${r.color}`}></span>{r.label}</span>
+        </div>
+        <div class="mt-0.5 font-mono text-[10.5px] text-slate-400">to {r.to}</div>
+      </div>
+    ))}
+  </div>
+</ScaledStage>

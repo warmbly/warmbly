@@ -48,6 +48,7 @@ import {
 import { cn, labelInk } from "@/lib/utils";
 import { nameFromAddr } from "@/lib/helper/emailAddress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useAccessRestricted } from "@/hooks/usePermission";
 
 function relative(d: Date): string {
   const diff = Date.now() - d.getTime();
@@ -101,11 +102,14 @@ export function ConversationItem({
   scope,
   selected = false,
   selecting = false,
-  onToggleSelect,
+  onToggleSelect: toggleSelect,
   selection,
   onSelectionDone,
   actions,
 }: ConversationItemProps) {
+  // A member restricted to selected resources reads the inbox and triages nothing.
+  const readOnly = useAccessRestricted();
+  const onToggleSelect = readOnly ? undefined : toggleSelect;
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
   const setSelectedThreadId = useAppStore((s) => s.setSelectedThreadId);
   const setSelectedAccountId = useAppStore((s) => s.setSelectedAccountId);
@@ -145,8 +149,9 @@ export function ConversationItem({
       role="button"
       tabIndex={0}
       onClick={open}
-      {...menu.longPressProps}
+      {...(readOnly ? {} : menu.longPressProps)}
       onContextMenu={(e) => {
+        if (readOnly) return;
         // React bubbles a right-click inside the portaled menu up to here;
         // that one should leave the menu where it is.
         if (!e.currentTarget.contains(e.target as Node)) {
@@ -312,15 +317,17 @@ export function ConversationItem({
         </div>
       </div>
 
-      <RowActions
-        threadId={threadId}
-        unread={unread}
-        scope={scope}
-        actions={actions}
-        menu={menu}
-        selection={selection}
-        onSelectionDone={onSelectionDone}
-      />
+      {!readOnly && (
+        <RowActions
+          threadId={threadId}
+          unread={unread}
+          scope={scope}
+          actions={actions}
+          menu={menu}
+          selection={selection}
+          onSelectionDone={onSelectionDone}
+        />
+      )}
     </div>
   );
 }

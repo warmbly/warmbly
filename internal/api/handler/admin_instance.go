@@ -9,6 +9,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/instanceconfig"
 	"github.com/warmbly/warmbly/internal/app/instancesettings"
 	"github.com/warmbly/warmbly/internal/errx"
+	"github.com/warmbly/warmbly/internal/models"
 	"github.com/warmbly/warmbly/internal/observability/errs"
 )
 
@@ -53,7 +54,17 @@ func (h *Handler) AdminInstanceHealth(c *gin.Context) {
 		Forwarded: c.GetHeader("X-Forwarded-For") != "",
 	})
 
-	c.JSON(http.StatusOK, gin.H{"checks": checks, "summary": summary})
+	c.JSON(http.StatusOK, gin.H{"checks": checks, "summary": summary, "execution_coverage": "unreported", "operational_monitoring_path": "/admin/instance/monitoring"})
+}
+
+func (h *Handler) AdminInstanceMonitoring(c *gin.Context) {
+	permissions := middleware.GetAdminPermissions(c)
+	if !permissions.HasPermission(models.AdminPermViewAnalytics) {
+		errx.JSON(c, errx.ErrForbidden)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, h.Monitoring.Snapshot(c.Request.Context(), permissions))
 }
 
 func (h *Handler) AdminDeleteExpiredInvitations(c *gin.Context) {

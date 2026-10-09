@@ -1,0 +1,47 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import Glyph from './Glyph.astro';
+import { WINDOW, FLOAT } from '../../lib/scene';
+import { GITHUB_PATH } from '../../lib/marks';
+
+/**
+ * The self-host installer (site/public/install.sh) running in a terminal,
+ * one line at a time as it scrolls into view, with the repository beside it.
+ */
+const lines = [
+  { t: 'Warmbly installer', c: 'text-slate-400' },
+  { t: '✓ Docker found', c: 'text-slate-700', ok: true },
+  { t: '? Hostname or IP  › outreach.northwind.dev', c: 'text-slate-700', ask: true },
+  { t: '? Schedule a backup?  › Yes', c: 'text-slate-700', ask: true },
+  { t: '✓ Images pulled', c: 'text-slate-700', ok: true },
+  { t: '✓ backend, worker and tracking healthy', c: 'text-slate-700', ok: true },
+  { t: 'Ready at https://outreach.northwind.dev', c: 'text-slate-900 font-medium' },
+];
+---
+<ScaledStage w={460} h={345} photo="frost-blue">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-10 px-4 border-b border-slate-200 flex items-center gap-2 text-[12px] text-slate-500">
+      <Glyph name="terminal" size={13} class="text-slate-400" />
+      install.sh
+    </div>
+    <div class="px-4 py-3 font-mono text-[11.5px] leading-[2]">
+      <div class="text-slate-800"><span class="text-slate-400">$</span> curl -fsSL https://warmbly.com/install.sh | sh</div>
+      {lines.map((l, i) => (
+        <div class={`enter-fade truncate ${l.c}`} style={`--d:${300 + i * 380}ms`}>
+          {l.ok ? <><span class="text-emerald-500">✓</span>{l.t.slice(1)}</>
+            : l.ask ? <><span class="text-sky-500">?</span>{l.t.slice(1, l.t.indexOf('›'))}<span class="text-sky-600">{l.t.slice(l.t.indexOf('›'))}</span></>
+            : l.t}
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div class={`${FLOAT} left-[236px] top-[236px] w-[200px] px-3.5 py-3`}>
+    <div class="flex items-center gap-2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="text-slate-900"><path d={GITHUB_PATH} /></svg>
+      <span class="text-[12.5px] font-medium text-slate-900">warmbly/warmbly</span>
+    </div>
+    <div class="mt-1 text-[11px] text-slate-500">Apache 2.0 · Go, Rust, Elixir, React</div>
+  </div>
+</ScaledStage>
+

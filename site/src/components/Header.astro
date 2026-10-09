@@ -1,6 +1,9 @@
 ---
 import Wordmark from './Wordmark.astro';
 import Icon from './Icon.astro';
+import Photo from './Photo.astro';
+import { GITHUB_PATH } from '../lib/marks';
+import { getRepoStars, REPO_URL } from '../lib/github';
 
 interface Props {
   /** Render as transparent over the sky hero, with light text. Becomes solid once scrolled past the hero. */
@@ -9,46 +12,51 @@ interface Props {
 const { onSky = false } = Astro.props;
 
 const path = Astro.url.pathname;
+const stars = await getRepoStars();
 
-// Featured product: rendered as a full-width row above the grid, with a
-// miniature trigger -> if -> action flow as its visual.
-const productFeatured = {
-  icon: 'zap',
+// Featured tile on the right of each dropdown, over a photo.
+type Featured = { href: string; title: string; desc: string; photo: string; cta: string };
+
+const productFeatured: Featured = {
   href: '/automations/',
   title: 'Automations',
-  desc: 'When a reply lands: open the deal, ping Slack, update the CRM. A visual builder for every Warmbly event.',
-  tag: 'Orchestration',
+  desc: 'When a reply lands, open the deal, post to Slack or update your CRM.',
+  photo: 'paint-teal',
+  cta: 'Explore automations',
+};
+const useCaseFeatured: Featured = {
+  href: 'https://docs.warmbly.com/learn/deliverability/',
+  title: 'The deliverability handbook',
+  desc: 'How warmup, inbox placement and sender reputation fit together.',
+  photo: 'sheer-peach',
+  cta: 'Read the handbook',
 };
 
-// Product mega-menu items (6 meaningful products)
 const products = [
-  { icon: 'flame',    href: '/warmup/',    title: 'Warmup',         desc: 'Reputation-safe pools and gradual ramps that earn placement, not just inflate it.', tag: 'Deliverability' },
-  { icon: 'webhook',  href: '/developers/', title: 'API & webhooks', desc: 'REST + HMAC-signed webhooks. Idempotency keys. Per-key scopes.',                     tag: 'Developers' },
-  { icon: 'inbox',    href: '/inbox/',     title: 'Unified inbox',  desc: 'Every reply, bounce, OOO and click across every connected mailbox, classified.',     tag: 'Triage' },
-  { icon: 'workflow', href: '/campaigns/', title: 'Campaigns',      desc: 'Multi-step sequences with branching, A/B variants and business-hour scheduling.',    tag: 'Outreach' },
-  { icon: 'chart',    href: '/analytics/', title: 'Analytics',      desc: 'Placement, complaints, bounces and warmup health, by mailbox and by worker.',        tag: 'Reporting' },
-  { icon: 'contact',  href: '/crm/',       title: 'CRM',            desc: 'Pipelines, deals, tasks and a contacts table built around cold-outbound workflow.',  tag: 'Workflow' },
+  { icon: 'flame',    href: '/warmup/',     title: 'Warmup',         desc: 'Build sender reputation before you send.' },
+  { icon: 'workflow', href: '/campaigns/',  title: 'Campaigns',      desc: 'Sequences with follow-ups and A/B tests.' },
+  { icon: 'inbox',    href: '/inbox/',      title: 'Unified inbox',  desc: 'Every reply from every mailbox in one place.' },
+  { icon: 'chart',    href: '/analytics/',  title: 'Analytics',      desc: 'Sends, replies, bounces and inbox placement.' },
+  { icon: 'contact',  href: '/crm/',        title: 'CRM',            desc: 'Turn interested replies into deals.' },
+  { icon: 'webhook',  href: '/developers/', title: 'API & webhooks', desc: 'Build on Warmbly with REST and webhooks.' },
 ];
 
-// Use cases mega-menu items
 const useCases = [
-  { icon: 'rocket',  href: '/use-cases/founders/',    title: 'Founders',    desc: 'Run intro sequences without burning founder@.',     tag: 'Solo + early' },
-  { icon: 'users',   href: '/use-cases/agencies/',    title: 'Agencies',    desc: 'Outbound for many clients on many domains.',       tag: 'Multi-tenant' },
-  { icon: 'chart',   href: '/use-cases/sales/',       title: 'Sales teams', desc: 'Distribute sends across reps, surface positives.', tag: 'Growth' },
-  { icon: 'contact', href: '/use-cases/recruiters/',  title: 'Recruiters',  desc: 'Candidate outreach from personal mailboxes.',      tag: 'Talent' },
-  { icon: 'star',    href: '/use-cases/fundraising/', title: 'Fundraising', desc: 'A focused VC sequence that lands in the inbox.',   tag: 'Founders' },
+  { icon: 'rocket',  href: '/use-cases/founders/',    title: 'Founders',    desc: 'Outreach without risking your own domain.' },
+  { icon: 'users',   href: '/use-cases/agencies/',    title: 'Agencies',    desc: 'Many clients and domains in one account.' },
+  { icon: 'chart',   href: '/use-cases/sales/',       title: 'Sales teams', desc: 'Spread sending across reps and mailboxes.' },
+  { icon: 'contact', href: '/use-cases/recruiters/',  title: 'Recruiters',  desc: 'Candidate outreach from personal mailboxes.' },
+  { icon: 'star',    href: '/use-cases/fundraising/', title: 'Fundraising', desc: 'A focused investor sequence that lands.' },
 ];
 
-type MegaItem = { icon: string; href: string; title: string; desc: string; tag: string };
+type MegaItem = { icon: string; href: string; title: string; desc: string };
 type NavItem = {
   label: string;
   href: string;
   match?: string;
   mega?: boolean;
-  megaTitle?: string;
-  megaTagline?: string;
   megaItems?: MegaItem[];
-  megaFeatured?: MegaItem;
+  megaFeatured?: Featured;
 };
 
 const nav: NavItem[] = [
@@ -57,8 +65,6 @@ const nav: NavItem[] = [
     href: '/warmup/',
     match: '/warmup|/developers|/inbox|/campaigns|/analytics|/crm|/automations',
     mega: true,
-    megaTitle: 'The cold-email platform.',
-    megaTagline: 'Seven systems designed to work together. Warmup that earns reputation, sending that respects it.',
     megaItems: products,
     megaFeatured: productFeatured,
   },
@@ -67,9 +73,8 @@ const nav: NavItem[] = [
     href: '/use-cases/founders/',
     match: '/use-cases',
     mega: true,
-    megaTitle: 'Who uses Warmbly.',
-    megaTagline: 'Founders, agencies, sales teams, recruiters, fundraising. Pick the closest one.',
     megaItems: useCases,
+    megaFeatured: useCaseFeatured,
   },
   { label: 'Deliverability',href: '/deliverability/',match: '/deliverability' },
   { label: 'Pricing',       href: '/pricing/',       match: '/pricing' },
@@ -88,24 +93,24 @@ function active(match?: string) {
   id="site-header"
   data-on-sky={onSky ? 'true' : 'false'}
   class={[
-    'sticky top-0 z-50 transition-colors duration-200',
-    onSky ? 'header-on-sky' : 'border-b border-border/70 bg-background/70 backdrop-blur-md supports-[backdrop-filter]:bg-background/55',
+    'sticky top-0 z-50 transition-[border-color,background-color] duration-200',
+    onSky ? 'header-on-sky' : 'site-header-solid border-b border-transparent bg-white/85 backdrop-blur-md',
   ].join(' ')}
 >
-  <div class="container-page flex h-14 items-center gap-6">
+  <div class="container-page flex h-16 items-center gap-6">
     <Wordmark size="md" />
 
-    <nav class="hidden lg:flex items-center gap-1 ml-2 relative">
+    <nav class="hidden lg:flex items-center gap-0.5 ml-4 relative">
       {nav.map((n) => (
         n.mega ? (
           <div class="mega-wrapper relative" data-mega>
             <a
               href={n.href}
               class={
-                'nav-link h-8 px-3 inline-flex items-center gap-1 rounded-md text-[13px] transition-colors ' +
+                'nav-link h-9 px-3 inline-flex items-center gap-1.5 text-[14px] transition-colors ' +
                 (active(n.match)
-                  ? (onSky ? 'is-active' : 'text-foreground bg-surface-2')
-                  : (onSky ? '' : 'text-muted-foreground hover:text-foreground hover:bg-surface-2/60'))
+                  ? (onSky ? 'is-active' : 'text-slate-900')
+                  : (onSky ? '' : 'text-slate-600 hover:text-slate-900'))
               }
             >
               {n.label}
@@ -114,123 +119,51 @@ function active(match?: string) {
               </svg>
             </a>
 
-            <!-- Mega-menu · full-bleed panel, container-width inner content -->
-            <div class="mega-panel pointer-events-none opacity-0 transition-opacity duration-200 ease-out" style="position: fixed; top: 56px; left: 0; right: 0;">
-              <!-- Full-bleed chrome: spans the entire viewport -->
-              <div class="bg-white border-b border-[color:var(--border)]" style="box-shadow: 0 40px 90px -30px rgba(2,32,71,0.3), 0 12px 36px -10px rgba(15,23,42,0.08);">
-                <!-- Body: container-width content -->
-                <div class="container-page">
-                  <div class="grid lg:grid-cols-[300px_1fr]">
-                    <!-- LEFT: clean white intro block -->
-                    <div class="py-10 pr-10 border-b lg:border-b-0 lg:border-r border-[color:var(--border)]">
-                      <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-foreground/55">{n.label}</div>
-                      <h3 class="mt-4 text-[32px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.02] text-heading">
-                        {n.megaTitle}
-                      </h3>
-                      <p class="mt-4 text-[14px] text-foreground/65 leading-relaxed max-w-xs">
-                        {n.megaTagline}
-                      </p>
-                      <a href="https://docs.warmbly.com/learn/deliverability/" class="mt-6 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[#0369a1] hover:text-[#075985]">
-                        Read the handbook
-                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                      </a>
-                    </div>
-
-                    <!-- RIGHT: featured row + 3-column product grid -->
-                    <div class="flex flex-col">
-                      {n.megaFeatured && (() => {
-                        const f = n.megaFeatured;
-                        const isCurrent = path === f.href || path.startsWith(f.href);
-                        return (
-                          <a
-                            href={f.href}
-                            aria-current={isCurrent ? 'page' : undefined}
-                            class={`mega-card group flex items-center gap-6 px-7 py-5 border-b border-[color:var(--border)] ${isCurrent ? 'bg-[color:var(--sky-1)]/60' : 'hover:bg-[color:var(--surface-1)]'}`}
-                            style="transition: background-color 140ms ease-out;"
-                          >
-                            <span class="min-w-0 shrink">
-                              <span class="block text-[10px] uppercase tracking-[0.22em] font-mono text-foreground/45 mb-2">{f.tag}</span>
-                              <span class={`text-[18px] font-semibold tracking-[-0.015em] flex items-center gap-2 ${isCurrent ? 'text-[#0369a1]' : 'text-heading group-hover:text-[#0369a1]'}`} style="transition: color 140ms ease-out;">
-                                {f.title}
-                                {isCurrent && <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7]"></span>}
+            <!-- Dropdown: a full-width panel under the header, a quiet grid of
+                 links on the left and a large photo tile on the right. -->
+            <div class="mega-panel pointer-events-none opacity-0 transition-[opacity,transform] duration-200 ease-out" style="position: fixed; top: 64px; left: 0; right: 0;">
+              <div class="border-b border-slate-200/80 bg-white shadow-[0_40px_80px_-40px_rgba(15,23,42,0.28)]">
+                <div class="container-page py-8">
+                  <div class="grid grid-cols-[1fr_360px] gap-10">
+                    <div>
+                      <div class="px-3 text-[13px] text-slate-400">{n.label}</div>
+                      <div class="mt-3 grid grid-cols-3 gap-1">
+                        {(n.megaItems ?? []).map((it) => {
+                          const isCurrent = path === it.href || path.startsWith(it.href);
+                          return (
+                            <a
+                              href={it.href}
+                              aria-current={isCurrent ? 'page' : undefined}
+                              class={`mega-card group flex items-start gap-3.5 rounded-xl p-3 transition-colors ${isCurrent ? 'bg-slate-50' : 'hover:bg-slate-50'}`}
+                            >
+                              <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors group-hover:border-slate-300 group-hover:text-slate-900">
+                                <Icon name={it.icon} size={16} />
                               </span>
-                              <span class="mt-1 block text-[13px] text-foreground/60 leading-relaxed">{f.desc}</span>
-                            </span>
-
-                            {/* miniature flow: trigger -> if -> actions, same node language as the app */}
-                            <span class="hidden xl:flex items-center gap-1.5 ml-auto shrink-0" aria-hidden="true">
-                              <span class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 bg-white shadow-sm text-[11px] font-medium text-slate-700 whitespace-nowrap">
-                                <Icon name="zap" size={11} class="text-sky-600" />
-                                Reply lands
+                              <span class="min-w-0 pt-0.5">
+                                <span class="flex items-center gap-1.5 text-[14.5px] font-medium text-slate-900">
+                                  {it.title}
+                                  {isCurrent && <span class="size-1.5 rounded-full bg-sky-500"></span>}
+                                </span>
+                                <span class="mt-1 block text-[13px] leading-snug text-slate-500">{it.desc}</span>
                               </span>
-                              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" class="text-slate-300 shrink-0"><path d="M0 5h10" stroke="currentColor" stroke-width="1.5"/><path d="m8 1.5 3.5 3.5L8 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                              <span class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-sky-200 bg-gradient-to-b from-sky-50 to-white shadow-sm whitespace-nowrap">
-                                <Icon name="gitBranch" size={11} class="text-sky-600" />
-                                <span class="text-[9px] font-semibold uppercase tracking-[0.12em] text-sky-500">if</span>
-                                <span class="text-[11px] font-medium text-sky-800">positive</span>
-                              </span>
-                              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" class="text-slate-300 shrink-0"><path d="M0 5h10" stroke="currentColor" stroke-width="1.5"/><path d="m8 1.5 3.5 3.5L8 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                              <span class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 bg-white shadow-sm text-[11px] font-medium text-slate-700 whitespace-nowrap">
-                                <span class="inline-flex size-4 items-center justify-center rounded bg-fuchsia-50 text-fuchsia-600 ring-1 ring-fuchsia-200 text-[8.5px] font-bold">S</span>
-                                #sales
-                              </span>
-                              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" class="text-slate-300 shrink-0"><path d="M0 5h10" stroke="currentColor" stroke-width="1.5"/><path d="m8 1.5 3.5 3.5L8 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                              <span class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 bg-white shadow-sm text-[11px] font-medium text-slate-700 whitespace-nowrap">
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-sky-600"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>
-                                Deal opened
-                              </span>
-                            </span>
-
-                            <span class="shrink-0 ml-auto xl:ml-0 inline-flex items-center gap-1 text-[11.5px] font-medium text-foreground/45 group-hover:text-[#0369a1]" style="transition: color 140ms ease-out;">
-                              Open
-                              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </span>
-                          </a>
-                        );
-                      })()}
-                      <div class="grid grid-cols-2 lg:grid-cols-3">
-                      {(n.megaItems ?? []).map((it, i) => {
-                        const isCurrent = path === it.href || path.startsWith(it.href);
-                        const colBreak = (i + 1) % 3 !== 0;
-                        const rowBreak = i < 3;
-                        return (
-                          <a
-                            href={it.href}
-                            aria-current={isCurrent ? 'page' : undefined}
-                            style={`--stagger: ${i * 35}ms; transition: background-color 140ms ease-out;`}
-                            class={`mega-card group flex flex-col p-7 ${colBreak ? 'lg:border-r border-[color:var(--border)]' : ''} ${rowBreak ? 'border-b border-[color:var(--border)]' : ''} ${isCurrent ? 'bg-[color:var(--sky-1)]/60' : 'hover:bg-[color:var(--surface-1)]'}`}
-                          >
-                            <div class="text-[10px] uppercase tracking-[0.22em] font-mono text-foreground/45 mb-3">{it.tag}</div>
-                            <div class={`text-[18px] font-semibold tracking-[-0.015em] flex items-center gap-2 ${isCurrent ? 'text-[#0369a1]' : 'text-heading group-hover:text-[#0369a1]'}`} style="transition: color 140ms ease-out;">
-                              {it.title}
-                              {isCurrent && <span class="w-1.5 h-1.5 rounded-full bg-[#0284c7]"></span>}
-                            </div>
-                            <p class="mt-2 text-[13px] text-foreground/60 leading-relaxed flex-1">{it.desc.split('.')[0]}.</p>
-                            <div class="mt-5 inline-flex items-center gap-1 text-[11.5px] font-medium text-foreground/45 group-hover:text-[#0369a1]" style="transition: color 140ms ease-out;">
-                              Open
-                              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3.5 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </div>
-                          </a>
-                        );
-                      })}
+                            </a>
+                          );
+                        })}
                       </div>
                     </div>
-                  </div>
-                </div>
-
-                <!-- Footer band: full-bleed, container-width content -->
-                <div class="border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60">
-                  <div class="container-page py-3 flex items-center justify-between text-[11.5px] font-mono">
-                    <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-foreground/65 hover:text-foreground transition-colors">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.8 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.9.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.5 4.6-1.5 7.8-5.8 7.8-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-                      github.com/warmbly/warmbly
-                    </a>
-                    <div class="flex items-center gap-5 text-foreground/55">
-                      <a href="/deliverability/" class="hover:text-foreground transition-colors">Deliverability</a>
-                      <a href="/integrations/" class="hover:text-foreground transition-colors">Integrations</a>
-                      <a href="https://docs.warmbly.com" class="hover:text-foreground transition-colors">Docs</a>
-                      <a href="/pricing/" class="hover:text-foreground transition-colors font-semibold text-[#0369a1]">See pricing →</a>
-                    </div>
+                    {n.megaFeatured && (
+                      <a href={n.megaFeatured.href} class="mega-card group relative flex min-h-[236px] flex-col overflow-hidden rounded-[6px]">
+                        <Photo name={n.megaFeatured.photo} sizes="360px" class="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]" />
+                        <span class="relative mt-auto m-3 rounded-lg bg-white/85 p-4 backdrop-blur-md ring-1 ring-white/60">
+                          <span class="block text-[14.5px] font-medium text-slate-900">{n.megaFeatured.title}</span>
+                          <span class="mt-1 block text-[13px] leading-snug text-slate-600">{n.megaFeatured.desc}</span>
+                          <span class="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-slate-900">
+                            {n.megaFeatured.cta}
+                            <Icon name="arrowRight" size={12} class="transition-transform group-hover:translate-x-0.5" />
+                          </span>
+                        </span>
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
@@ -240,10 +173,10 @@ function active(match?: string) {
           <a
             href={n.href}
             class={
-              'nav-link h-8 px-3 inline-flex items-center rounded-md text-[13px] transition-colors ' +
+              'nav-link h-9 px-3 inline-flex items-center text-[14px] transition-colors ' +
               (active(n.match)
-                ? (onSky ? 'is-active' : 'text-foreground bg-surface-2')
-                : (onSky ? '' : 'text-muted-foreground hover:text-foreground hover:bg-surface-2/60'))
+                ? (onSky ? 'is-active' : 'text-slate-900')
+                : (onSky ? '' : 'text-slate-600 hover:text-slate-900'))
             }
           >
             {n.label}
@@ -254,14 +187,29 @@ function active(match?: string) {
 
     <div class="ml-auto flex items-center gap-2">
       <a
+        href={REPO_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={stars ? `Warmbly on GitHub, ${stars} stars` : 'Warmbly on GitHub'}
+        class="group hidden md:inline-flex h-9 items-center gap-2 rounded-full pl-3 pr-3.5 text-[14px] text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={GITHUB_PATH} /></svg>
+        {stars ? (
+          <span class="inline-flex items-center gap-1 tabular-nums">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" class="text-slate-400 transition-colors group-hover:text-amber-500" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>
+            {stars}
+          </span>
+        ) : <span>GitHub</span>}
+      </a>
+      <a
         href="https://dc.warmbly.com"
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Join the Warmbly Discord"
         title="Discord"
         class={
-          'cta-ghost inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ' +
-          (onSky ? '' : 'text-muted-foreground hover:text-foreground hover:bg-surface-2')
+          'cta-ghost inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors ' +
+          (onSky ? '' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100')
         }
       >
         <Icon name="discord" size={16} />
@@ -269,8 +217,8 @@ function active(match?: string) {
       <a
         href="https://app.warmbly.com/auth/login"
         class={
-          'cta-ghost hidden sm:inline-flex h-8 px-3 items-center rounded-md text-[13px] transition-colors ' +
-          (onSky ? '' : 'text-muted-foreground hover:text-foreground hover:bg-surface-2')
+          'cta-ghost hidden sm:inline-flex h-9 px-4 items-center rounded-full text-[14px] transition-colors ' +
+          (onSky ? '' : 'border border-slate-200 text-slate-800 hover:border-slate-300 hover:bg-slate-50')
         }
       >
         Log in
@@ -278,8 +226,8 @@ function active(match?: string) {
       <a
         href="https://app.warmbly.com/auth/register"
         class={
-          'cta-primary inline-flex h-8 px-3.5 items-center rounded-md text-[13px] font-medium transition-colors ' +
-          (onSky ? '' : 'bg-foreground text-background hover:bg-foreground/85')
+          'cta-primary inline-flex h-9 px-4 items-center rounded-full text-[14px] font-medium transition-colors ' +
+          (onSky ? '' : 'bg-slate-900 text-white hover:bg-slate-800')
         }
       >
         Start free
@@ -287,8 +235,8 @@ function active(match?: string) {
       <button
         id="nav-toggle"
         class={
-          'lg:hidden inline-flex h-8 w-8 items-center justify-center rounded-md ' +
-          (onSky ? 'cta-ghost' : 'text-muted-foreground hover:text-foreground hover:bg-surface-2')
+          'lg:hidden inline-flex h-9 w-9 items-center justify-center rounded-full ' +
+          (onSky ? 'cta-ghost' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
         }
         aria-label="Open navigation"
         aria-expanded="false"
@@ -311,7 +259,7 @@ function active(match?: string) {
     class="mobile-menu fixed inset-0 z-[60] lg:hidden flex flex-col bg-white text-slate-900"
     aria-hidden="true"
   >
-    <div class="container-page flex h-14 items-center shrink-0 border-b border-slate-200/70">
+    <div class="container-page flex h-16 items-center shrink-0 border-b border-slate-200/70">
       <a href="/" class="inline-flex items-center gap-2.5 text-slate-900">
         <svg viewBox="0 0 746 764" class="w-6 h-6" fill="currentColor" aria-hidden="true"><path d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z"/></svg>
         <span class="font-extrabold tracking-tight text-[15.5px]">Warmbly</span>
@@ -352,6 +300,10 @@ function active(match?: string) {
     </nav>
 
     <div class="container-page py-5 shrink-0 flex flex-col gap-2.5 border-t border-slate-200/70">
+      <a href={REPO_URL} target="_blank" rel="noopener noreferrer" class="h-12 inline-flex items-center justify-center gap-2 rounded-[11px] border border-slate-200 text-slate-700 text-[15px] font-medium hover:bg-slate-50 transition-colors">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={GITHUB_PATH} /></svg>
+        Star on GitHub{stars && <span class="text-slate-400 tabular-nums">· {stars}</span>}
+      </a>
       <a href="https://dc.warmbly.com" target="_blank" rel="noopener noreferrer" class="h-12 inline-flex items-center justify-center gap-2 rounded-[11px] border border-slate-200 text-slate-700 text-[15px] font-medium hover:bg-slate-50 transition-colors">
         <Icon name="discord" size={17} class="text-[#5865F2]" />
         Join the Discord
@@ -363,8 +315,10 @@ function active(match?: string) {
 
 <style>
   /* Mega panel: only fade opacity to keep bounds stable while open */
+  .mega-panel { transform: translateY(-4px); }
   .mega-panel.open {
     opacity: 1;
+    transform: none;
     pointer-events: auto;
   }
   /* Invisible hover-bridge above the panel so cursor can travel
@@ -378,6 +332,7 @@ function active(match?: string) {
     height: 24px;
   }
   .mega-wrapper.open .mega-caret { transform: rotate(180deg); }
+  .site-header-solid.is-scrolled { border-bottom-color: rgb(226 232 240 / 0.8); }
 
   /* Full-screen mobile menu: animates open AND closed. Display is toggled by
      JS via .is-visible; .is-open drives the fade + slide so both run. */
@@ -583,6 +538,14 @@ function active(match?: string) {
         bag.forEach(function (entry) { entry.forceClose(); });
       });
     });
+
+    // The solid header shows its hairline only once the page has scrolled.
+    var solid = document.querySelector('#site-header.site-header-solid');
+    if (solid) {
+      var onScroll = function () { solid.classList.toggle('is-scrolled', window.scrollY > 4); };
+      onScroll();
+      window.addEventListener('scroll', onScroll, { passive: true });
+    }
 
     // If the header is rendered "on sky", flip it to solid once the hero's
     // bottom sentinel scrolls past the header.

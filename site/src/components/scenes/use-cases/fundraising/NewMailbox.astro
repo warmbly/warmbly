@@ -1,0 +1,44 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, EYEBROW } from '../../../../lib/scene';
+
+/**
+ * A mailbox connected the week of the raise: day 1 of the ramp, no inbox
+ * reading yet, and at most 5 cold emails a day until it has warmed.
+ */
+const days = Array.from({ length: 31 }, (_, i) => Math.min(40, 10 + i));
+---
+<ScaledStage w={460} h={345} photo="frost-blue">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-12 px-5 flex items-center gap-3 border-b border-slate-200">
+      <span class="inline-flex size-6 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark="google" size={13} /></span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium text-slate-900">jamie@atlas.dev</div>
+        <div class="text-[10.5px] text-slate-400">Connected today</div>
+      </div>
+      <span class="ml-auto mr-6 inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-orange-600"><Glyph name="flame" size={12} class="flame-flicker" />Warming</span>
+    </div>
+    <div class="px-5 py-3.5 pr-11">
+      <div class="flex items-center justify-between"><span class={EYEBROW}>Ramp</span><span class="font-mono text-[10.5px] text-orange-600">day 1 · 10 a day</span></div>
+      <div class="mt-3 flex h-[70px] items-end gap-[3px]">
+        {days.map((v, i) => <span class={`flex-1 rounded-t-[2px] ${i === 0 ? 'nm-today bg-orange-400' : 'border border-dashed border-slate-200'}`} style={`height:${(v / 40) * 100}%`}></span>)}
+      </div>
+      <div class="mt-3 grid grid-cols-2 gap-2.5">
+        <div class="rounded-md border border-slate-200 px-3 py-2">
+          <div class="text-[10.5px] text-slate-400">Inbox placement</div>
+          <div class="mt-0.5 inline-flex items-center gap-1.5 font-mono text-[12px] text-slate-400"><span class="size-1.5 rounded-full bg-slate-300"></span>0/20</div>
+        </div>
+        <div class="rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2">
+          <div class="text-[10.5px] text-amber-700">Cold sends while warming</div>
+          <div class="mt-0.5 font-mono text-[12px] text-amber-800">5 a day at most</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .nm-today { animation: nm-today 2.4s ease-in-out infinite; }
+  @keyframes nm-today { 50% { opacity: 0.5; } }
+</style>

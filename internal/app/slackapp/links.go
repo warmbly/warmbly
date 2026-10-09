@@ -273,7 +273,7 @@ const autoLinkMissTTL = 10 * time.Minute
 // Slack email in any workspace connected to the team, so a member whose
 // emails match never sees a link page. A miss is remembered for a while.
 func (s *Service) autoLink(ctx context.Context, a *actor) bool {
-	if a == nil || a.link != nil || a.unknown || s.users == nil {
+	if a == nil || a.link != nil || a.unknown || a.restricted || s.users == nil {
 		return false
 	}
 	missKey := "slack:autolink:miss:" + a.teamID + ":" + a.userID

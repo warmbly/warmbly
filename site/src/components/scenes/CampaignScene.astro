@@ -1,0 +1,143 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import Glyph from './Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../lib/scene';
+
+/**
+ * A campaign's Steps tab (CampaignFlow): contacts run down the sequence and
+ * split on whether they replied, while the card beside it spreads today's
+ * sends across the mailboxes, each under its own daily cap.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'gauge' },
+  { label: 'Steps', icon: 'layers', active: true },
+  { label: 'Contacts', icon: 'user' },
+  { label: 'Schedule', icon: 'calendar' },
+] as const;
+
+// Flow coordinates inside the canvas. Cards are 216x56.
+const CW = 216;
+const cards = [
+  { x: 132, y: 28, icon: 'login', tone: 'bg-violet-50 text-violet-600 ring-violet-100', title: 'Contact enters', sub: 'Start · first email right away' },
+  { x: 132, y: 128, icon: 'mail', tone: 'bg-sky-50 text-sky-600 ring-sky-100', title: 'Quick question', sub: 'Email 1 · 2 variants' },
+  { x: 260, y: 290, icon: 'mail', tone: 'bg-sky-50 text-sky-600 ring-sky-100', title: 'Following up', sub: 'Email 2 · same thread' },
+] as const;
+const lines = [
+  'M240 84 L240 128',
+  'M240 184 L240 214 Q240 222 232 222 L130 222 Q122 222 122 230 L122 262',
+  'M240 222 L360 222 Q368 222 368 230 L368 290',
+  'M368 346 L368 384',
+];
+// Paths a contact's dot follows: the reply branch, and the follow-up branch.
+const pathReplied = 'M240 56 L240 156 L240 222 L122 222 L122 274';
+const pathFollow = 'M240 56 L240 156 L240 222 L368 222 L368 318 L368 384';
+
+const mailboxes = [
+  { mark: 'google', addr: 'alex@northwind.dev', sent: 23 },
+  { mark: 'microsoft', addr: 'sam@northwind.io', sent: 31 },
+  { mark: 'imap', addr: 'ops@northwind.co', sent: 18 },
+  { mark: 'google', addr: 'mia@northwind.dev', sent: 9 },
+] as const;
+---
+<ScaledStage w={760} h={570} photo="sheer-blue">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[520px] h-[560px]`}>
+    <div class="px-5 pt-4 pb-3">
+      <div class="inline-flex items-center gap-1 text-[11.5px] text-slate-400"><span>←</span> Campaigns</div>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="text-[17px] font-semibold text-slate-900">Q1 outreach</span>
+        <span class="inline-flex h-5 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+        <span class="ml-auto h-7 px-2.5 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700"><Glyph name="pause" size={12} />Pause</span>
+      </div>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+    <div class="flex h-10 items-center gap-2 border-b border-slate-200 px-4">
+      <span class="text-[11.5px] text-slate-600">Stop on reply</span>
+      <span class="relative inline-flex h-5 w-9 items-center rounded-full bg-sky-600"><span class="inline-block size-4 translate-x-4 rounded-full bg-white shadow-sm"></span></span>
+      <span class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-400"><Glyph name="user" size={12} /><span data-tick="412,460,2300">412</span> contacts in flow</span>
+    </div>
+    <div class="relative h-[460px] bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 20px 20px;">
+      <svg class="absolute inset-0" width="520" height="460" fill="none">
+        {lines.map((d) => <path d={d} stroke="#cbd5e1" stroke-width="1.25" />)}
+      </svg>
+
+      <span class="absolute left-[122px] top-[240px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-50 px-2 text-[11px] font-medium leading-[18px] text-emerald-700 ring-1 ring-inset ring-emerald-200/80">Replied</span>
+      <span class="absolute left-[368px] top-[240px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white px-2 text-[11px] font-medium leading-[18px] text-slate-500 ring-1 ring-inset ring-slate-200">No reply</span>
+      <span class="absolute left-[380px] top-[268px] inline-flex items-center gap-1 text-[11px] text-slate-400"><Glyph name="clock" size={12} />Wait 3 days</span>
+      <span class="absolute left-[122px] top-[274px] -translate-x-1/2 inline-flex items-center gap-1 text-[11.5px] font-medium text-slate-400"><Glyph name="flag" size={12} />Stop</span>
+      <span class="absolute left-[368px] top-[396px] -translate-x-1/2 inline-flex items-center gap-1 text-[11.5px] font-medium text-slate-400"><Glyph name="flag" size={12} />End</span>
+
+      {cards.map((c) => (
+        <div class="absolute flex h-[56px] items-center gap-2.5 rounded-xl border border-slate-200/90 bg-white pl-2.5 pr-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-shadow hover:shadow-md" style={`left:${c.x}px; top:${c.y}px; width:${CW}px`}>
+          <span class={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${c.tone}`}><Glyph name={c.icon} size={16} /></span>
+          <div class="min-w-0">
+            <div class="truncate text-[13px] font-medium leading-5 text-slate-900">{c.title}</div>
+            <div class="truncate text-[11.5px] leading-4 text-slate-400">{c.sub}</div>
+          </div>
+        </div>
+      ))}
+
+      <!-- Contacts moving through: most wait for the follow-up, some reply and stop. -->
+      {[0, 1].map((k) => (
+        <span class="cf-dot cf-follow" style={`offset-path: path('${pathFollow}'); animation-delay: ${k * -4.5}s;`}></span>
+      ))}
+      <span class="cf-dot cf-reply" style={`offset-path: path('${pathReplied}'); animation-delay: -2.2s;`}></span>
+    </div>
+  </div>
+
+  <!-- Today's sends, spread across mailboxes under each one's cap. -->
+  <div class={`${FLOAT} left-[452px] top-[190px] w-[282px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class={EYEBROW}>Sending today</div>
+      <div class="mt-1 text-[11.5px] text-slate-500">Mon to Fri, 9:00 to 17:00 · spaced 90 to 420 s</div>
+    </div>
+    <div class="px-4 py-2">
+      {mailboxes.map((m, i) => (
+        <div class="cf-mb relative -mx-2 rounded-md px-2 py-2" style={`--i:${i}`}>
+          <div class="flex items-center gap-2 text-[12px]">
+            <Glyph mark={m.mark} size={13} />
+            <span class="truncate text-slate-700">{m.addr}</span>
+            <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-900"><span data-tick={`${m.sent},${m.sent + 8},${3000 + i * 700}`}>{m.sent}</span><span class="text-slate-400">/50</span></span>
+          </div>
+          <div class="mt-1.5 h-1 rounded-full bg-slate-100"><div class="h-full rounded-full bg-sky-500" style={`width:${(m.sent / 50) * 100}%`}></div></div>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .cf-dot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: #0ea5e9;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+    offset-rotate: 0deg;
+    opacity: 0;
+  }
+  .cf-follow { animation: cf-move 9s linear infinite; }
+  .cf-reply { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); animation: cf-move 9s linear infinite; }
+  @keyframes cf-move {
+    0% { offset-distance: 0%; opacity: 0; }
+    6% { opacity: 1; }
+    92% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+  /* The next send rotates through the mailboxes. */
+  .cf-mb { animation: cf-turn 6s linear infinite; animation-delay: calc(var(--i) * 1.5s); }
+  @keyframes cf-turn {
+    0%, 2% { background: transparent; }
+    5%, 20% { background: rgb(240 249 255); }
+    25%, 100% { background: transparent; }
+  }
+</style>

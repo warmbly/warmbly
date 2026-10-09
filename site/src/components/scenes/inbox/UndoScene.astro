@@ -1,0 +1,62 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from './Ic.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * Undo send (compose/OutboxIndicator.tsx): an instant reply waits before it
+ * leaves, counting down in the header pill, and every pending send can be
+ * cancelled back into the composer.
+ */
+const secs = Array.from({ length: 10 }, (_, i) => 30 - i);
+---
+<ScaledStage w={460} h={345} photo="paint-blue">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[440px] h-[319px]`}>
+    <div class="flex h-12 items-center gap-2 border-b border-slate-200 px-4">
+      <span class="text-[12.5px] text-slate-400">Northwind</span>
+      <span class="text-slate-300">/</span>
+      <span class="text-[12.5px] font-medium text-slate-900">Inbox</span>
+      <span class="ml-auto flex h-7 shrink-0 items-center gap-1 rounded-md border border-amber-200 bg-amber-50 pl-2 pr-1">
+        <span class="flex items-center gap-1.5 text-[12.5px] text-amber-800">
+          <Glyph name="send" size={14} />
+          <span class="font-medium tabular-nums">Sending in <span class="relative inline-block h-[18px] w-[15px] overflow-hidden align-top"><span class="un-strip absolute inset-x-0 top-0 flex flex-col">{secs.map((s) => <span class="block h-[18px] leading-[18px]">{s}</span>)}</span></span>s</span>
+        </span>
+        <span class="inline-flex h-5 items-center rounded border border-amber-200 bg-white/70 px-1.5 text-[10.5px] font-medium text-amber-900">Cancel</span>
+      </span>
+    </div>
+    <div class="flex min-h-12 items-center border-b border-slate-200 px-5 py-2">
+      <div class="min-w-0">
+        <div class="truncate text-[13.5px] font-semibold leading-5 text-slate-900">Re: Quick question about Acme</div>
+        <div class="text-[11px] leading-4 text-slate-400">3 messages · alex@northwind.dev</div>
+      </div>
+    </div>
+    <article class="px-5 py-3.5">
+      <div class="flex items-start gap-3">
+        <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-600">JC</span>
+        <div class="text-[12.5px] font-semibold text-slate-900">Jenna Carter</div>
+      </div>
+      <div class="mt-2 pl-10 text-[12.5px] leading-[1.6] text-slate-700">Thursday 10am ET works for me.</div>
+    </article>
+  </div>
+
+  <!-- The pill's list of pending sends, each with its own Cancel. -->
+  <div class={`${FLOAT} left-[150px] top-[176px] w-[290px] overflow-hidden`}>
+    <div class="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Pending sends</div>
+    <div class="flex items-center gap-2.5 px-3 py-2">
+      <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-700"><Ic name="cornerUp" size={13} /></span>
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-[12px] font-medium text-slate-900">Reply to Jenna Carter</div>
+        <div class="truncate text-[11px] text-slate-500">Perfect, I just sent an invite…</div>
+      </div>
+      <span class="inline-flex h-6 items-center rounded-md border border-slate-200 px-2 text-[11px] font-medium text-slate-700">Cancel</span>
+    </div>
+    <div class="border-t border-slate-100 px-3 py-2 text-[11px] text-slate-500">Cancel puts it back in the composer, as you left it.</div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* Ten seconds of the countdown, one step a second. */
+  .un-strip { transform: translateY(-108px); animation: un-strip 10s steps(10, jump-none) infinite; }
+  @keyframes un-strip { from { transform: translateY(0); } to { transform: translateY(-162px); } }
+</style>

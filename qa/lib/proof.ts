@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { ensureSession, type Account } from "./auth.ts";
 import { env, RUN_DIR } from "./env.ts";
 import { Recorder } from "./recorder.ts";
 
@@ -90,13 +91,16 @@ export type Seed = "rich" | "sandbox";
 // The seed each stack mode loads; a stack the harness did not start ("external") is trusted as is.
 const SEED_OF_MODE: Record<string, Seed | undefined> = { lite: "rich", full: "rich", sandbox: "sandbox" };
 
-export const test = base.extend<{ proof: Proof; signedIn: boolean; seed: Seed }>({
+export const test = base.extend<{ proof: Proof; signedIn: boolean; seed: Seed; account: Account | undefined }>({
   // `test.use({ signedIn: false })` for a flow that starts on the sign-in pages.
   signedIn: [true, { option: true }],
+  // `test.use({ account: { email, password } })` for a flow recorded as another seeded or fixture account.
+  account: [undefined, { option: true }],
   // `test.use({ seed: "sandbox" })` for a flow written against the Sunrise Labs sandbox data.
   seed: ["rich", { option: true }],
-  storageState: async ({ signedIn, storageState }, use) => {
-    await use(signedIn ? storageState : { cookies: [], origins: [] });
+  storageState: async ({ signedIn, account, storageState }, use) => {
+    if (!signedIn) return use({ cookies: [], origins: [] });
+    await use(account ? await ensureSession(account) : storageState);
   },
   proof: [
     async ({ page, signedIn, seed }, use, info) => {

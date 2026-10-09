@@ -16,16 +16,18 @@ type StorageState = {
 
 const TOKEN_KEYS = ["access_token", "access_token_expires_at", "refresh_token", "refresh_token_expires_at"] as const;
 
+export type Account = { email: string; password: string };
+
 // Reuses the saved session while it still works: every fresh login sends a code email, and those are budgeted.
-export async function ensureSession(): Promise<string> {
-  const file = authFile();
+export async function ensureSession(account: Account = { email: env.email, password: env.password }): Promise<string> {
+  const file = authFile(account.email);
   const saved = readTokens(file);
   if (saved && (await sessionWorks(saved))) {
     await finishOnboarding(saved.access_token);
     return file;
   }
 
-  const tokens = await login();
+  const tokens = await login(account);
   await finishOnboarding(tokens.access_token);
   mkdirSync(dirname(file), { recursive: true });
   const state: StorageState = {
@@ -92,31 +94,31 @@ async function finishOnboarding(token: string): Promise<void> {
   }, token);
 }
 
-async function login(): Promise<Tokens> {
+async function login(account: Account): Promise<Tokens> {
   const startedAt = Date.now();
   const start = await post<{ session?: string; code_required: boolean; token?: Tokens; two_fa_required?: boolean }>(
     "/auth/login",
-    { email: env.email, password: env.password, turnstile: env.turnstile },
+    { email: account.email, password: account.password, turnstile: env.turnstile },
   );
   if (start.token) return start.token;
-  if (start.two_fa_required) throw new Error(`${env.email} has 2FA enabled; use an account without it for QA`);
+  if (start.two_fa_required) throw new Error(`${account.email} has 2FA enabled; use an account without it for QA`);
   if (!start.session) throw new Error("login answered with neither a token nor a code session");
 
-  const code = await loginCode(startedAt);
+  const code = await loginCode(account.email, startedAt);
   const confirm = await post<Partial<Tokens> & { two_fa_required?: boolean }>("/auth/login/confirm", {
     session: start.session,
     code,
     turnstile: env.turnstile,
   });
-  if (confirm.two_fa_required) throw new Error(`${env.email} has 2FA enabled; use an account without it for QA`);
+  if (confirm.two_fa_required) throw new Error(`${account.email} has 2FA enabled; use an account without it for QA`);
   if (!confirm.access_token) throw new Error("login confirm returned no token");
   return confirm as Tokens;
 }
 
 type MailpitSummary = { ID: string; Created: string };
 
-async function loginCode(since: number): Promise<string> {
-  const query = encodeURIComponent(`to:"${env.email}" subject:"Your Login Code"`);
+async function loginCode(email: string, since: number): Promise<string> {
+  const query = encodeURIComponent(`to:"${email}" subject:"Your Login Code"`);
   for (let i = 0; i < 40; i++) {
     const res = await fetch(`${env.mailpitURL}/api/v1/search?query=${query}&limit=5`);
     if (res.ok) {
@@ -130,5 +132,5 @@ async function loginCode(since: number): Promise<string> {
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(`no login code for ${env.email} reached Mailpit at ${env.mailpitURL}`);
+  throw new Error(`no login code for ${email} reached Mailpit at ${env.mailpitURL}`);
 }

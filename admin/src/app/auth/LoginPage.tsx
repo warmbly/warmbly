@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion, type Transition } from "motion/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ function errorMessage(err: unknown): string {
 
 export default function LoginPage() {
     const nav = useNavigate();
+    const queryClient = useQueryClient();
     const loc = useLocation();
     const [phase, setPhase] = useState<"credentials" | "code" | "twofa">("credentials");
     const [pendingToken, setPendingToken] = useState("");
@@ -118,6 +120,7 @@ export default function LoginPage() {
                     return;
                 }
                 if (res.token) {
+                    queryClient.clear();
                     setToken(res.token);
                     const dest = (loc.state as { from?: string } | null)?.from ?? "/";
                     nav(dest, { replace: true });
@@ -166,6 +169,7 @@ export default function LoginPage() {
                 return;
             }
             if (!res.access_token) throw new Error("The server returned an unexpected sign-in response.");
+            queryClient.clear();
             setToken(res as LoginResponse);
             const dest = (loc.state as { from?: string } | null)?.from ?? "/";
             nav(dest, { replace: true });
@@ -188,6 +192,7 @@ export default function LoginPage() {
         setSubmitting(true);
         try {
             const tok = await verifyTwoFA({ pending_token: pendingToken, code: value });
+            queryClient.clear();
             setToken(tok);
             const dest = (loc.state as { from?: string } | null)?.from ?? "/";
             nav(dest, { replace: true });

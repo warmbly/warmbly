@@ -84,6 +84,7 @@ Where it applies:
 - **Creating or editing an API key** from the dashboard refuses a permission outside the member's role with `403` `api_key_permissions_exceed_caller`.
 - **Creating or editing an API key with an API key** keeps the result inside the calling key: no permission it lacks, and when the calling key is limited to some mailboxes or IP addresses, the new or edited key must be limited to a subset of them. The same `403` `api_key_permissions_exceed_caller` answers otherwise.
 - **An OAuth grant** carries only the requested scopes the approving member's role covers, re-checked against the member's current role on every request. See [OAuth scopes](/api/oauth/#scopes). `API_KEYS` is never granted to an OAuth app, and OAuth tokens cannot create, edit, revoke or delete API keys (`403` `oauth_token_not_allowed`).
+- **A member restricted to [selected resources](/guides/team-roles/#access-scope)** holds only `view_campaigns`, `view_analytics` and `access_unibox` from their roles, so a key or grant acting for them is limited to the read permissions those cover, and to the read routes and grants their scope allows ([which routes](/api/endpoints/)). A key's own mailbox allowlist still applies on top. Restricted members cannot create keys.
 
 ## Preset combinations
 

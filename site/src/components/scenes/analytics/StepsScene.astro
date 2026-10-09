@@ -1,0 +1,112 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, EYEBROW, TAB } from '../../../lib/scene';
+
+/**
+ * A campaign's Overview (web/src/app/app/campaigns/[id]/page.tsx): the
+ * Performance bar and its six-cell StatStrip, then Step performance, each
+ * count over that step's own rate. The step totals add up to the campaign's.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'gauge', active: true },
+  { label: 'Steps', icon: 'layers' },
+  { label: 'Contacts', icon: 'user' },
+  { label: 'Schedule', icon: 'calendar' },
+] as const;
+const stats = [
+  { label: 'Sent', value: '4,210', sub: 'emails', tick: '4210,4236,2400', pulse: true },
+  { label: 'Open rate', value: '38.5%', sub: 'after delivery' },
+  { label: 'Click rate', value: '9.2%', sub: 'of delivered' },
+  { label: 'Reply rate', value: '7.4%', sub: 'human replies' },
+  { label: 'Positive rate', value: '2.8%', sub: '112 interested' },
+  { label: 'Bounce rate', value: '0.9%', sub: 'hard + soft', last: true },
+];
+type Cell = [number, number];
+const steps: { n: number; name: string; sent: number; opens: Cell; clicks: Cell; replies: Cell; positive: Cell; bounces: Cell; auto?: boolean }[] = [
+  { n: 1, name: 'Quick question about {{company}}', sent: 1642, opens: [702, 42.8], clicks: [188, 11.4], replies: [151, 9.2], positive: [61, 3.7], bounces: [18, 1.1] },
+  { n: 2, name: 'Following up', sent: 1288, opens: [514, 39.9], clicks: [112, 8.7], replies: [92, 7.1], positive: [33, 2.6], bounces: [11, 0.9], auto: true },
+  { n: 3, name: 'Email 3', sent: 862, opens: [282, 32.7], clicks: [64, 7.4], replies: [51, 5.9], positive: [17, 2.0], bounces: [6, 0.7] },
+  { n: 4, name: 'Should I close the loop?', sent: 418, opens: [123, 29.4], clicks: [24, 5.7], replies: [18, 4.3], positive: [7, 1.7], bounces: [3, 0.7] },
+];
+const cols = [
+  { k: 'opens', label: 'Opens', tone: 'text-emerald-600' },
+  { k: 'clicks', label: 'Clicks', tone: 'text-violet-600' },
+  { k: 'replies', label: 'Replies', tone: 'text-amber-600' },
+  { k: 'positive', label: 'Positive', tone: 'text-lime-600' },
+  { k: 'bounces', label: 'Bounces', tone: 'text-rose-600' },
+] as const;
+---
+<ScaledStage w={760} h={570} photo="sheer-sky">
+  <div class={`${WINDOW} left-[40px] top-[40px] right-0 h-[530px] bg-slate-50`}>
+    <div class="bg-white border-b border-slate-200">
+      <div class="px-5 pt-4 pb-3">
+        <div class="inline-flex items-center gap-1 text-[11.5px] text-slate-400"><Ico name="arrowLeft" size={12} />Campaigns</div>
+        <div class="mt-1 flex items-center gap-2">
+          <span class="text-[17px] font-semibold text-slate-900">Q4 outbound: platform leads</span>
+          <span class="inline-flex h-5 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+        </div>
+      </div>
+      <div class="px-3 flex items-center gap-1">
+        {tabs.map((t) => (
+          <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+            <Glyph name={t.icon} size={14} />{t.label}
+            {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+          </span>
+        ))}
+      </div>
+    </div>
+
+    <div class="p-4 space-y-3">
+      <div class="rounded-md border border-slate-200 bg-white overflow-hidden">
+        <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-2.5">
+          <span class={EYEBROW}>Performance</span>
+          <span class="ml-auto inline-flex items-center gap-1 text-[10.5px] font-medium text-emerald-600"><span class="relative flex size-1.5"><span class="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping"></span><span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span></span>Live</span>
+          <span class="text-[10.5px] text-slate-400 tabular-nums">Sep 10 to Oct 9</span>
+          <span class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5"><Glyph name="calendar" size={12} class="text-slate-400" />30d<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>
+          <span class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5"><Ico name="image" size={12} />Share image</span>
+        </div>
+        <div class="grid grid-cols-6">
+          {stats.map((s) => (
+            <div class={`px-3 py-3.5 ${s.last ? '' : 'border-r border-slate-200'}`}>
+              <div class="flex items-center gap-1.5"><span class="truncate text-[9.5px] uppercase tracking-[0.08em] text-slate-400 font-medium">{s.label}</span>{s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}</div>
+              <div class="mt-2 text-[22px] font-light leading-none tabular-nums text-slate-900">{s.tick ? <span data-tick={s.tick}>{s.value}</span> : s.value}</div>
+              <div class="mt-1.5 truncate font-mono text-[10px] text-slate-400">{s.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div class="rounded-md border border-slate-200 bg-white overflow-hidden">
+        <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-2.5">
+          <span class={EYEBROW}>Step performance</span>
+          <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">4</span>
+          <span class="ml-auto text-[10px] text-slate-400">count and % of that step's sends</span>
+        </div>
+        <div class="divide-y divide-slate-200/60">
+          <div class="h-8 px-5 flex items-center gap-3 text-[10px] uppercase tracking-[0.12em] text-slate-400 font-medium">
+            <span class="flex-1 min-w-0">Step</span>
+            <span class="w-12 text-right">Sent</span>
+            {cols.map((c) => <span class="w-14 text-right">{c.label}</span>)}
+          </div>
+          {steps.map((s, i) => (
+            <div class="h-12 px-5 flex items-center gap-3 transition-colors hover:bg-slate-50/70">
+              <span class="flex items-center gap-2 flex-1 min-w-0">
+                <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">{s.n}</span>
+                <span class={`truncate text-[12.5px] ${s.name === 'Email 3' ? 'text-slate-500' : 'text-slate-900'}`}>{s.name}</span>
+              </span>
+              <span class="w-12 text-right font-mono text-[11.5px] tabular-nums text-slate-700">{s.sent.toLocaleString('en-US')}</span>
+              {cols.map((c) => (
+                <span class="w-14 text-right font-mono text-[11.5px] tabular-nums">
+                  <span class={`block leading-none ${c.tone}`}>{s[c.k][0].toLocaleString('en-US')}</span>
+                  <span class={`enter-fade mt-1 block text-[9.5px] leading-none text-slate-400 ${s.auto && c.k === 'opens' ? 'underline decoration-dotted decoration-slate-300 underline-offset-2' : ''}`} style={`--d:${300 + i * 120}ms`}>{s[c.k][1].toFixed(1)}%</span>
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>

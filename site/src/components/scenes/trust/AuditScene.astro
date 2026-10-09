@@ -1,0 +1,129 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, EYEBROW, TOPBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+
+/**
+ * The audit log (web/src/app/app/audit/page.tsx): who changed what in the
+ * workspace, from which address, one row opened to its changes. A new entry
+ * lands on top on a loop, as it does live through the AUDIT_CREATED event.
+ */
+type Entry = { when: string; who: string; email: string; action: string; entity: string; id: string; ip: string; open?: boolean };
+const tone: Record<string, string> = {
+  create: 'bg-emerald-500 text-emerald-700',
+  update: 'bg-sky-500 text-sky-700',
+  delete: 'bg-red-500 text-red-700',
+  revoke: 'bg-red-500 text-red-700',
+  invite: 'bg-emerald-500 text-emerald-700',
+  rotate: 'bg-amber-500 text-amber-700',
+};
+const incoming: Entry = { when: 'Oct 9, 02:14:07 PM', who: 'Jane Cooper', email: 'jane@acme.com', action: 'revoke', entity: 'api_key', id: '0p7e2c91', ip: '203.0.113.24' };
+const entries: Entry[] = [
+  { when: 'Oct 9, 02:09:51 PM', who: 'Sam Ortiz', email: 'sam@acme.com', action: 'update', entity: 'campaign', id: '4c1d7a90', ip: '198.51.100.7', open: true },
+  { when: 'Oct 9, 01:58:12 PM', who: 'Jane Cooper', email: 'jane@acme.com', action: 'rotate', entity: 'webhook', id: '9b3f0e1a', ip: '203.0.113.24' },
+  { when: 'Oct 9, 01:40:33 PM', who: 'Mia Chen', email: 'mia@acme.com', action: 'create', entity: 'contact', id: '2c3d4e5f', ip: '192.0.2.18' },
+  { when: 'Oct 9, 12:02:45 PM', who: 'Jane Cooper', email: 'jane@acme.com', action: 'invite', entity: 'invitation', id: 'e41a8c07', ip: '203.0.113.24' },
+  { when: 'Oct 9, 11:47:20 AM', who: 'Sam Ortiz', email: 'sam@acme.com', action: 'delete', entity: 'template', id: '7f20b3d9', ip: '198.51.100.7' },
+];
+const stats = [
+  { label: 'Total events', value: '50', sub: 'this page' },
+  { label: 'Creates', value: '14', sub: 'new objects' },
+  { label: 'Updates', value: '27', sub: 'edits' },
+  { label: 'Deletes', value: '9', sub: 'removed', last: true },
+];
+const th = 'px-3 py-2 text-left text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400';
+const pill = 'h-7 px-2.5 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[12px] text-slate-600';
+---
+<ScaledStage w={900} h={520} photo="paint-blue">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[900px] h-[500px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Audit log</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Mutating actions on this workspace</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-12">
+        <span class="h-7 px-2 rounded-md border border-slate-200 bg-white flex items-center gap-1.5"><Glyph name="search" size={12} class="text-slate-400" /><span class="w-[90px] text-[12px] text-slate-400">Search…</span></span>
+        <span class={pill}>Action<Glyph name="chevronDown" size={11} class="opacity-60" /></span>
+        <span class={pill}>Entity<Glyph name="chevronDown" size={11} class="opacity-60" /></span>
+        <span class={pill}><Glyph name="calendar" size={12} class="text-slate-400" />Any date</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-4 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class={EYEBROW}>{s.label}</div>
+          <div class={STAT_VALUE}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+
+    <div class="h-9 px-5 border-b border-slate-200/60 flex items-center"><span class={EYEBROW}>50 entries</span></div>
+
+    <table class="w-full table-fixed">
+      <thead class="border-b border-slate-200">
+        <tr>
+          <th class="w-7"></th>
+          <th class={`${th} w-[150px]`}>When</th>
+          <th class={`${th} w-[170px]`}>Who</th>
+          <th class={`${th} w-[110px]`}>Action</th>
+          <th class={th}>Entity</th>
+          <th class={`${th} w-[130px]`}>IP</th>
+          <th class="w-14"></th>
+        </tr>
+      </thead>
+    </table>
+    <div class="relative h-[300px] overflow-hidden">
+      <div class="au-list">
+        <table class="w-full table-fixed">
+          <tbody>
+            {[incoming, ...entries].map((e, i) => {
+              const [dot, text] = tone[e.action].split(' ');
+              return (
+                <>
+                  <tr class={`h-11 border-b border-slate-200/60 ${i === 0 ? 'au-new' : ''}`}>
+                    <td class="w-7 px-2 text-center text-slate-300"><Glyph name="chevronDown" size={12} class={`inline ${e.open ? '' : '-rotate-90'}`} /></td>
+                    <td class="w-[150px] px-3 font-mono text-[11px] tabular-nums text-slate-500 whitespace-nowrap">{e.when}</td>
+                    <td class="w-[170px] px-3">
+                      <div class="truncate text-[12px] font-medium leading-tight text-slate-900">{e.who}</div>
+                      <div class="truncate text-[10.5px] leading-tight text-slate-400">{e.email}</div>
+                    </td>
+                    <td class="w-[110px] px-3"><span class={`inline-flex items-center gap-1.5 text-[11px] font-medium ${text}`}><span class={`size-1.5 rounded-full ${dot}`}></span>{e.action}</span></td>
+                    <td class="px-3"><span class="text-[12px] font-medium text-slate-900">{e.entity}</span> <span class="font-mono text-[10.5px] text-slate-400">{e.id}…</span></td>
+                    <td class="w-[130px] px-3 font-mono text-[10.5px] text-slate-500">{e.ip}</td>
+                    <td class="w-14 px-3 text-right"><Glyph name="info" size={12} class="inline text-slate-300" /></td>
+                  </tr>
+                  {e.open && (
+                    <tr class="border-b border-slate-200/60 bg-slate-50/60">
+                      <td></td>
+                      <td colspan="6" class="px-3 py-2.5">
+                        <div class="mb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Changes</div>
+                        <pre class="w-[420px] rounded border border-slate-200 bg-white px-2 py-1.5 font-mono text-[11px] leading-[1.5] text-slate-700">{`{
+  "daily_limit": "50",
+  "status": "active"
+}`}</pre>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 10s loop: a new entry slides in on top (rows are 44px), live from the audit event. */
+  .au-list { animation: au-list 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes au-list {
+    0% { transform: translateY(-44px); opacity: 0; }
+    5%, 30% { transform: translateY(-44px); opacity: 1; }
+    38%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .au-new { animation: au-new 10s ease-out infinite; }
+  @keyframes au-new { 0%, 34% { background: rgb(240 249 255 / 0); } 40%, 70% { background: rgb(240 249 255); } 90%, 100% { background: rgb(240 249 255 / 0); } }
+</style>

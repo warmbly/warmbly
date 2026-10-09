@@ -1,0 +1,46 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The Warmup plan checkout (web/src/components/app/billing/WarmupPlanDialog.tsx):
+ * the yearly price and the free pool against the premium one, row by row.
+ */
+const rows = [
+  { label: 'Warmup pool', free: 'Free pool', premium: 'Premium pool' },
+  { label: 'Partner matching', free: 'After Premium', premium: 'First' },
+  { label: 'Mailboxes', free: '10', premium: 'No limit' },
+  { label: 'Spam-prone partners removed', free: 'Yes', premium: true },
+  { label: 'Replies and spam rescue', free: 'Yes', premium: true },
+];
+---
+<ScaledStage w={460} h={345} photo="sheer-sky">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-12 px-4 border-b border-slate-200 flex items-center gap-2.5">
+      <span class={EYEBROW}>Warmup plan</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] font-medium text-slate-900">Premium warmup pool</span>
+    </div>
+    <div class="px-4 pt-3.5 pr-10">
+      <div class="flex items-baseline gap-1.5">
+        <span class="text-[30px] font-semibold tracking-[-0.03em] tabular-nums text-slate-900">$12</span>
+        <span class="text-[12px] text-slate-500">/ mo</span>
+        <span class="ml-2 text-[11px] tabular-nums text-slate-400">billed $144 annually</span>
+        <span class="inline-flex h-4 items-center rounded-full border border-emerald-100 bg-emerald-50 px-1.5 text-[10px] font-semibold text-emerald-700">save $36 / yr</span>
+      </div>
+    </div>
+    <div class="mx-4 mt-3 mr-10 overflow-hidden rounded-md border border-slate-200">
+      <div class="grid grid-cols-[1.4fr_1fr_1fr] bg-slate-50/70 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">
+        <span></span><span>Free</span><span class="text-sky-700">Premium</span>
+      </div>
+      {rows.map((r, i) => (
+        <div class="enter-fade grid grid-cols-[1.4fr_1fr_1fr] items-center border-t border-slate-100 px-3 py-[7px] text-[11.5px]" style={`--d:${200 + i * 120}ms`}>
+          <span class="text-slate-600">{r.label}</span>
+          <span class="text-slate-500">{r.free}</span>
+          <span class="font-medium text-slate-900">{r.premium === true ? <Glyph name="check" size={13} class="text-emerald-600" /> : r.premium}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>

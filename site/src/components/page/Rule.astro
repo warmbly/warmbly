@@ -1,0 +1,6 @@
+---
+/** The hairline between two sections, running between the page guide lines. */
+interface Props { class?: string }
+const { class: className = '' } = Astro.props;
+---
+<div class={`container-page ${className}`} aria-hidden="true"><div class="h-px bg-slate-900/[0.06] md:-mx-6"></div></div>

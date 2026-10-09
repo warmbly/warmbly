@@ -231,6 +231,12 @@ var Tables = []Table{
 		Blobs: []BlobColumn{{Column: "avatar_url", Kind: BlobKindPublicURL}},
 	},
 	{
+		// Below organization_members and email_accounts, which it references.
+		Name: "organization_member_mailbox_access", Group: models.OrgDataGroupCore,
+		Scope: scopeOrg,
+		Note:  "The mailboxes a restricted member is granted. The member's scope travels on organization_members.",
+	},
+	{
 		Name: "email_accounts_smtp_imap", Group: models.OrgDataGroupCore,
 		Scope: `email_account_id IN ` + orgMailboxes,
 		Secrets: []SecretColumn{
@@ -415,6 +421,11 @@ var Tables = []Table{
 	{
 		Name: "campaign_folders", Group: models.OrgDataGroupCampaigns,
 		Scope: `campaign_id IN ` + orgCampaigns,
+	},
+	{
+		Name: "organization_member_campaign_access", Group: models.OrgDataGroupCampaigns,
+		Scope: scopeOrg,
+		Note:  "The campaign folders and campaigns a restricted member is granted. Left behind with the campaigns, a restricted member arrives with no campaign access.",
 	},
 	{
 		// The forms tables live below campaigns despite belonging to the

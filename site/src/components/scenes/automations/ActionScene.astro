@@ -1,0 +1,91 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../analytics/Ico.astro';
+import BrandMark from '../../page/BrandMark.astro';
+import Step from './Step.astro';
+import BuilderBar from './BuilderBar.astro';
+import SlackNotify from './SlackNotify.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * An action set up (ActionEditor): Run on the Slack connection, Send a Slack
+ * message, the channel, and a message template with the trigger's variable
+ * chips under it. Over the canvas, the card it posts to #sales.
+ */
+const vars = ['contact_email', 'contact_id', 'campaign_id', 'intent', 'confidence', 'subject', 'snippet'];
+const label = 'mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400';
+const select = 'h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-800 flex items-center gap-2';
+const chip = (v: string) => `{{.${v}}}`;
+---
+<ScaledStage w={760} h={570} photo="sheer-cream">
+  <div class={`${WINDOW} left-[40px] top-[40px] right-0 h-[530px] flex flex-col`}>
+    <BuilderBar name="Reply to revenue" />
+    <div class="flex flex-1 min-h-0">
+      <div class="relative flex-1 min-w-0 overflow-hidden bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 20px 20px;">
+        <svg class="absolute inset-0" width="320" height="480" fill="none">
+          <path d="M160 80 L160 112" stroke="#cbd5e1" stroke-width="1.25" />
+          <path d="M160 168 L160 214" stroke="#cbd5e1" stroke-width="1.25" />
+          <path d="M160 270 L160 300" stroke="#cbd5e1" stroke-width="1.25" />
+        </svg>
+        <Step x={28} y={24} icon="zap" tone="sky" kicker="Trigger" title="Prospect replies" summary="Starts this automation" />
+        <Step x={28} y={112} icon="gitBranch" tone="amber" kicker="If / else" title="intent is Positive" summary="Checks the event" />
+        <span class="absolute left-[160px] top-[191px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-50 px-2 text-[11px] font-medium leading-[18px] text-emerald-700 ring-1 ring-inset ring-emerald-200/80">Yes</span>
+        <Step x={28} y={214} brand="slack" kicker="Slack" title="Send a Slack message" summary="Northwind · #sales" selected />
+      </div>
+
+      <aside class="w-[400px] shrink-0 border-l border-slate-200 bg-white flex flex-col">
+        <div class="h-14 px-3 flex items-center gap-2.5 border-b border-slate-200">
+          <BrandMark name="slack" size={28} class="rounded-md" />
+          <div class="min-w-0 flex-1">
+            <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Slack</div>
+            <div class="truncate text-[13px] font-semibold text-slate-900">Send a Slack message</div>
+          </div>
+          <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Ico name="x" size={16} /></span>
+        </div>
+        <div class="flex-1 space-y-3 p-3">
+          <div>
+            <div class={label}>Run</div>
+            <div class={select}><Ico name="link2" size={14} class="text-slate-400" />Slack · Northwind<Ico name="chevronDown" size={13} class="ml-auto text-slate-400" /></div>
+          </div>
+          <div>
+            <div class={label}>Action</div>
+            <div class={select}><Ico name="send" size={14} class="text-slate-400" />Send a Slack message<Ico name="chevronDown" size={13} class="ml-auto text-slate-400" /></div>
+          </div>
+          <div>
+            <div class={label}>Channel</div>
+            <div class={select}>#sales</div>
+          </div>
+          <div>
+            <div class={label}>Message (optional)</div>
+            <div class="min-h-7 px-2.5 py-1 rounded-md border border-sky-400 ring-2 ring-sky-100 bg-white text-[12.5px] leading-[1.6] text-slate-800">
+              <span>New reply from {chip('contact_email')}: {chip('snippet')}</span><span class="ac-caret ml-px inline-block h-3.5 w-px translate-y-0.5 bg-slate-700"></span>
+            </div>
+            <div class="mt-1.5 flex flex-wrap gap-1">
+              {vars.map((v) => <span class="h-5 rounded border border-slate-200 bg-slate-50 px-1.5 font-mono text-[10.5px] text-slate-500 inline-flex items-center">{chip(v)}</span>)}
+            </div>
+          </div>
+          <p class="text-[11px] leading-relaxed text-slate-400">Values are full Go templates: <span class="font-mono text-slate-500">{'{{.variable}}'}</span> fields plus <span class="font-mono text-slate-500">{'{{if}}'}</span>, helpers, and pipelines, rendered against the trigger data when the automation runs.</p>
+        </div>
+        <div class="border-t border-slate-200 px-3 py-2"><span class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-rose-600"><Ico name="trash" size={14} />Delete step</span></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- What lands in #sales when a real reply comes in. -->
+  <div class={`${FLOAT} left-[20px] top-[376px] w-[340px] overflow-hidden`}>
+    <div class="h-9 px-4 flex items-center gap-1.5 border-b border-slate-200 text-[12.5px] font-bold text-slate-900"><Ico name="hash" size={13} class="text-slate-500" />sales</div>
+    <div class="ac-msg"><SlackNotify title="📨 New reply (positive)" text="New reply from jenna@acme.io: Thursday 10am ET works for me." contact="jenna@acme.io" subject="Re: Quick question about Acme" /></div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A reply comes in and the card lands in the channel, on a loop. */
+  .ac-msg { animation: ac-msg 9s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes ac-msg {
+    0%, 8% { opacity: 0; transform: translateY(10px); }
+    14%, 92% { opacity: 1; transform: none; }
+    98%, 100% { opacity: 0; transform: none; }
+  }
+  .ac-caret { animation: ac-caret 1s steps(1) infinite; }
+  @keyframes ac-caret { 50% { opacity: 0; } }
+</style>

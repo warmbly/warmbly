@@ -1,0 +1,76 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import MailboxDrawerHead from '../MailboxDrawerHead.astro';
+import Code from './Code.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * Beside the essay: a mailbox slowed down for spam placement, the reason the
+ * dashboard gives (the sentence evaluatePlacement writes), and the lines of
+ * internal/app/warmup/service.go that wrote it.
+ */
+// Warmup sent per day; the last four run at half volume.
+const days = [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 16, 16, 17, 17];
+const excerpt = `
+  rate := m.SpamPlacementRate
+  switch {
+  case rate >= spamPlacementThrottlePct,
+    prior == models.WarmupHealthThrottled && rate >= spamPlacementThrottlePct*spamPlacementExitFactor:
+    until := now.Add(warmupThrottleDuration)
+    return evaluationDecision{
+      State:        models.WarmupHealthThrottled,
+      BlockedUntil: &until,
+      Reason: fmt.Sprintf("%s Warmup and cold sending run at half volume with wider spacing until it is below %s, then return to normal on their own.",
+`;
+---
+<ScaledStage w={560} h={720} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[32px] top-[32px] w-[600px] h-[720px]`}>
+    <MailboxDrawerHead addr="ops@northwind.co" initials="OT" provider="SMTP / IMAP" mark="imap" active="Warmup" />
+
+    <div class="divide-y divide-slate-200/60">
+      <div class="px-5 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <span class="inline-flex size-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600"><Glyph name="gauge" size={16} /></span>
+          <div>
+            <div class="text-[12.5px] font-medium text-slate-900">Warming at half volume</div>
+            <div class="text-[11px] text-slate-400">Day 31 · premium pool</div>
+          </div>
+        </div>
+        <span class="inline-flex h-5 items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700"><span class="size-1.5 rounded-full bg-amber-500 animate-pulse"></span>Throttled</span>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class={EYEBROW}>Why</div>
+        <div class="mt-2 rounded-md border border-amber-200 bg-amber-50/60 px-3.5 py-3 text-[12.5px] leading-[1.6] text-slate-700">
+          22% of warmup mail delivered at Google, Microsoft and Yahoo landed in spam over 7 days (41 delivered). Warmup and cold sending run at half volume with wider spacing until it is below 15%, then return to normal on their own.
+        </div>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between">
+          <span class={EYEBROW}>Daily volume</span>
+          <span class="font-mono text-[10px] text-slate-400">half volume since Monday</span>
+        </div>
+        <div class="mt-4 flex h-[92px] items-end gap-[5px]">
+          {days.map((d, i) => (
+            <div class={`enter-grow-y flex-1 rounded-t-[2px] border-t-[1.5px] ${i >= 10 ? 'border-amber-500 bg-gradient-to-b from-amber-400/90 to-amber-400/25' : 'border-sky-500 bg-gradient-to-b from-sky-500/90 to-sky-500/25'}`} style={`height:${(d / 34) * 100}%; --d:${150 + i * 45}ms`}></div>
+          ))}
+        </div>
+        <div class="h-px bg-slate-200/80"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The rule behind the sentence, as it reads in the repository. -->
+  <div class={`${FLOAT} left-[22px] top-[476px] w-[516px] overflow-hidden`}>
+    <div class="h-9 px-3.5 flex items-center gap-2 border-b border-slate-200 bg-slate-50/80">
+      <Glyph name="braces" size={13} class="text-slate-400" />
+      <span class="font-mono text-[11px] text-slate-600">internal/app/warmup/service.go</span>
+      <span class="ml-auto font-mono text-[10.5px] text-slate-400">L923</span>
+    </div>
+    <div class="overflow-hidden py-2">
+      <Code start={923} code={excerpt} mark={[925]} />
+    </div>
+  </div>
+</ScaledStage>

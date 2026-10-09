@@ -19,7 +19,7 @@ import AgentMark from "@/components/app/agent/AgentMark";
 import RemieTip from "@/components/app/agent/RemieTip";
 import { useAppStore } from "@/stores";
 import { ConnectionIndicator } from "@/components/shared/ConnectionIndicator";
-import { usePermission } from "@/hooks/usePermission";
+import { useAccessRestricted, usePermission } from "@/hooks/usePermission";
 import ShortcutTooltip from "@/components/ui/shortcut-tooltip";
 import PresenceAvatars from "@/components/app/presence/PresenceAvatars";
 import OutboxIndicator from "@/components/app/unibox/compose/OutboxIndicator";
@@ -36,6 +36,7 @@ import { useHeaderBreadcrumbs } from "@/hooks/useHeaderBreadcrumbs";
 
 export function AppHeader({ onMenu }: { onMenu?: () => void }) {
     const crumbs = useHeaderBreadcrumbs();
+    const restricted = useAccessRestricted();
     const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
     // The logo zone spans the sidebar column, so it has to collapse with it or
     // the breadcrumb stops lining up with the content panel below.
@@ -125,7 +126,7 @@ export function AppHeader({ onMenu }: { onMenu?: () => void }) {
                 <div className="hidden sm:flex items-center gap-2">
                     <div className="hidden lg:contents"><PlanPill /></div>
                     <VersionPill />
-                    <div className="hidden lg:contents"><CreditsMeter /></div>
+                    {!restricted && <div className="hidden lg:contents"><CreditsMeter /></div>}
                     <div className="hidden lg:block h-4 w-px bg-slate-200/80" />
                 </div>
                 <OutboxIndicator />

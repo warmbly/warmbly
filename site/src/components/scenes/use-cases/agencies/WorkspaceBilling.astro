@@ -1,0 +1,105 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../../../lib/scene';
+
+/**
+ * Settings > Billing in one client workspace (billing/OverviewTab.tsx): its
+ * own subscription and usage. The card over it is the workspace picker,
+ * where every client shows its own plan.
+ */
+const tabs = ['Overview', 'Plans', 'AI & credits', 'Payment'];
+const meters = [
+  { k: 'Mailboxes', v: '8', of: 'unlimited', pct: 0 },
+  { k: 'Sends today', v: '412', of: '3,000', pct: 14, tick: '412,440,1800' },
+  { k: 'Team members', v: '5', of: 'unmetered', pct: 0, hint: 'Seats used on this workspace' },
+];
+const workspaces = [
+  { n: 'Northwind', plan: 'Grow', age: '7mo', on: true },
+  { n: 'Lumen Robotics', plan: 'Starter', age: '5mo' },
+  { n: 'Stratech', plan: 'Business', age: '1y' },
+  { n: 'Penna Health', plan: 'Grow', age: '3mo' },
+  { n: 'Vela Logistics', plan: 'Warmup', age: '9d' },
+];
+const ini = (s: string) => s.split(' ').map((p) => p[0]).join('').slice(0, 2);
+---
+<ScaledStage w={760} h={570} photo="reeded-glass">
+  <div class={`${WINDOW} left-[236px] top-[40px] w-[540px] h-[560px]`}>
+    <div class="px-6 pt-5 pb-3 flex items-start">
+      <div>
+        <div class="text-[16px] font-semibold tracking-tight text-slate-900">Billing</div>
+        <div class="mt-0.5 text-[12.5px] text-slate-500">Plan, payment and invoices for Northwind.</div>
+      </div>
+    </div>
+    <div class="px-4 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t, i) => (
+        <span class={`${TAB} ${i === 0 ? 'font-medium text-slate-900' : 'text-slate-500'}`}>{t}{i === 0 && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}</span>
+      ))}
+    </div>
+
+    <div class="px-6 py-4">
+      <div class="text-[12.5px] font-semibold text-slate-900">Subscription</div>
+      <div class="mt-2.5 rounded-lg border border-slate-200 overflow-hidden mr-6">
+        <div class="px-4 py-4 bg-gradient-to-b from-slate-50/60 to-white flex items-center gap-3">
+          <span class="size-10 rounded-lg border border-amber-100 bg-amber-50 text-amber-700 flex items-center justify-center"><Glyph name="trendingUp" size={16} /></span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <span class="text-[17px] font-semibold text-slate-900">Grow</span>
+              <span class="inline-flex items-center gap-1 text-[10px] rounded px-1.5 h-4 uppercase tracking-[0.1em] font-medium border bg-emerald-50 text-emerald-700 border-emerald-100"><Glyph name="check" size={9} />Active</span>
+            </div>
+            <div class="text-[12px] text-slate-500">Ideal for growing businesses scaling their outreach.</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 border-t border-slate-100">
+          {[['Price', '$89', 'per month'], ['Renews', 'Nov 3, 2026', 'in 25 days'], ['Daily sends', '3,000', 'across the workspace']].map(([k, v, s], i) => (
+            <div class={`px-4 py-3 ${i < 2 ? 'border-r border-slate-100' : ''}`}>
+              <div class="text-[10px] uppercase tracking-[0.12em] text-slate-400">{k}</div>
+              <div class="mt-1 text-[14px] font-semibold text-slate-900">{v}</div>
+              <div class="text-[10.5px] text-slate-400">{s}</div>
+            </div>
+          ))}
+        </div>
+        <div class="px-3 py-2.5 border-t border-slate-200 flex items-center gap-1.5">
+          <span class="h-7 px-2.5 rounded-md bg-slate-900 text-white text-[12px] font-medium inline-flex items-center">Change plan</span>
+          <span class="h-7 px-2.5 rounded-md border border-slate-200 text-slate-700 text-[12px] font-medium inline-flex items-center">Payment method</span>
+          <span class="h-7 px-2.5 rounded-md border border-slate-200 text-slate-700 text-[12px] font-medium inline-flex items-center">Invoices</span>
+        </div>
+      </div>
+
+      <div class="mt-5 text-[12.5px] font-semibold text-slate-900">Usage and limits</div>
+      <div class="mt-3 grid grid-cols-2 gap-x-6 gap-y-4 mr-6">
+        {meters.map((m) => (
+          <div>
+            <div class="flex items-baseline text-[12px]">
+              <span class="text-slate-700">{m.k}</span>
+              <span class="ml-auto font-mono text-[11.5px] tabular-nums text-slate-900">{m.tick ? <span data-tick={m.tick}>{m.v}</span> : m.v}<span class="text-slate-400"> / {m.of}</span></span>
+            </div>
+            <div class="mt-1.5 h-1 rounded-full bg-slate-100"><div class="enter-grow-x h-full rounded-full bg-sky-500" style={`width:${Math.max(m.pct, 1)}%`}></div></div>
+            {m.hint && <div class="mt-1 text-[10.5px] text-slate-400">{m.hint}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- Every client workspace, each on its own plan. -->
+  <div class={`${FLOAT} left-[24px] top-[120px] w-[250px] overflow-hidden`}>
+    <div class="h-10 px-4 border-b border-slate-200 flex items-center">
+      <span class={EYEBROW}>Select workspace</span>
+    </div>
+    <div class="p-2">
+      <div class="border border-slate-200 rounded-md overflow-hidden divide-y divide-slate-200/60">
+        {workspaces.map((w) => (
+          <div class={`px-3 py-2 flex items-center gap-2.5 ${w.on ? 'bg-sky-50/50' : ''}`}>
+            <span class="size-7 rounded bg-slate-900 text-white flex items-center justify-center text-[10px] font-semibold shrink-0">{ini(w.n)}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5"><span class="truncate text-[12.5px] font-medium text-slate-900">{w.n}</span>{w.on && <span class="text-[9.5px] uppercase tracking-[0.1em] text-sky-700 bg-sky-100 px-1 rounded-sm font-semibold">Current</span>}</div>
+              <div class="text-[11px] text-slate-500"><span class="uppercase tracking-[0.08em]">Owner</span><span class="text-slate-300"> · </span>{w.plan}</div>
+            </div>
+            <span class="text-[11px] text-slate-400">{w.age}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>

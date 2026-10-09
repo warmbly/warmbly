@@ -1,0 +1,122 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR } from '../../../lib/scene';
+
+/**
+ * Settings > Security (web/src/app/app/settings/security): the session list
+ * (SessionManager) with sign-out per device and for everything else, and the
+ * two-factor status (TwoFactorManager) over it. On a loop the other sessions
+ * are signed out and the confirmation appears.
+ */
+const rail = [
+  { group: 'Account', items: [['Profile', 'user'], ['Notifications', 'info'], ['Security', 'shieldCheck']] },
+  { group: 'Workspace', items: [['Members', 'user'], ['Roles & access', 'shieldCheck'], ['Workspace', 'layers'], ['Sending', 'send'], ['Billing', 'dollar']] },
+  { group: 'Developers', items: [['Webhooks', 'activity'], ['OAuth apps', 'layers']] },
+] as const;
+const monitor = '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>';
+const phone = '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>';
+const logout = '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>';
+const sessions = [
+  { device: 'Chrome on macOS', where: 'Berlin, Germany · Email · Active now', icon: monitor, current: true },
+  { device: 'Safari on iOS', where: 'Berlin, Germany · Passkey · Active 2h ago', icon: phone },
+  { device: 'Firefox on Windows', where: 'Lisbon, Portugal · Google · Active 3d ago', icon: monitor },
+  { device: 'Chrome on Linux', where: 'Unknown location · Email · Active 12d ago', icon: monitor },
+];
+---
+<ScaledStage w={900} h={520} photo="frost-blue">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[900px] h-[500px] flex flex-col`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Settings</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Password, 2FA, active sessions.</span>
+    </div>
+    <div class="flex min-h-0 flex-1">
+      <nav class="w-[184px] shrink-0 border-r border-slate-200/70 px-2.5 py-3">
+        {rail.map((g, gi) => (
+          <div>
+            <div class={`px-2 ${gi ? 'mt-3' : ''} mb-1 ${EYEBROW}`}>{g.group}</div>
+            {g.items.map(([label, icon]) => (
+              <div class={`flex h-7 items-center gap-2 rounded-md px-2 text-[12.5px] ${label === 'Security' ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-600'}`}>
+                <Glyph name={icon} size={13} class={label === 'Security' ? 'text-slate-700' : 'text-slate-400'} />{label}
+              </div>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      <div class="relative min-w-0 flex-1">
+        <div class="px-8 pt-6 pb-5 border-b border-slate-200/70">
+          <div class="text-[16px] font-semibold tracking-tight text-slate-900">Security</div>
+          <div class="mt-0.5 text-[12.5px] text-slate-500">Sign-in protection for your account.</div>
+        </div>
+        <section class="px-8 py-5 pr-[110px]">
+          <div class="text-[12.5px] font-semibold tracking-tight text-slate-900">Sessions</div>
+          <div class="mt-0.5 text-[11.5px] text-slate-500">Devices currently signed in to your account. Sign out any you don't recognize.</div>
+          <div class="mt-3 overflow-hidden rounded-md border border-slate-200 bg-white">
+            {sessions.map((s, i) => (
+              <div class={`${s.current ? '' : 'sec-other'} ${i ? 'border-t border-slate-200' : ''} overflow-hidden`}>
+                <div class="flex h-[52px] items-center gap-3 px-3">
+                  <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={s.icon} /></span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="truncate text-[12.5px] font-medium text-slate-900">{s.device}</span>
+                      {s.current && <span class="rounded-sm bg-sky-50 px-1 text-[10px] font-medium uppercase tracking-[0.08em] text-sky-700">This device</span>}
+                    </div>
+                    <div class="mt-0.5 truncate text-[11px] text-slate-500">{s.where}</div>
+                  </div>
+                  {!s.current && <span class="h-7 px-2.5 inline-flex items-center rounded-md text-[12px] text-slate-500">Sign out</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <span class="sec-btn mt-3 h-8 px-3 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-slate-700">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={logout} />Sign out other sessions
+          </span>
+        </section>
+
+        <div class="sec-toast absolute left-[32px] top-[228px] inline-flex h-9 items-center gap-2 rounded-full bg-slate-900 px-3.5 text-[12px] font-medium text-white shadow-[0_12px_30px_-10px_rgba(15,23,42,0.5)]">
+          <Glyph name="checkCircle" size={14} class="text-emerald-400" />Signed out everywhere else
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-factor status, from the top of the same page. -->
+  <div class={`${FLOAT} left-[560px] top-[70px] w-[316px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-2.5">
+      <div class="text-[12.5px] font-semibold text-slate-900">Two-factor authentication</div>
+    </div>
+    <div class="divide-y divide-slate-200">
+      <div class="flex items-center gap-3 px-3.5 py-2.5">
+        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><Glyph name="shieldCheck" size={16} /></span>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 text-[12.5px] font-medium text-slate-900">Authenticator app <span class="rounded-sm bg-emerald-50 px-1 text-[10px] font-medium uppercase tracking-[0.08em] text-emerald-700">On</span></div>
+          <div class="mt-0.5 text-[11px] text-slate-500">Time-based codes, 30-second interval.</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-3.5 py-2.5">
+        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-500"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></svg></span>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 text-[12.5px] font-medium text-slate-900">Recovery codes <span class="rounded-sm bg-slate-100 px-1 text-[10px] font-medium uppercase tracking-[0.08em] tabular-nums text-slate-500">8 of 10 left</span></div>
+          <div class="mt-0.5 text-[11px] text-slate-500">Each signs you in once if you lose your authenticator.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 10s loop: the other sessions are signed out, then the list refills.
+     Base styles show every session and no toast, the state reduced motion keeps. */
+  .sec-other { height: 53px; animation: sec-other 10s ease-in-out infinite; }
+  @keyframes sec-other {
+    0%, 38% { height: 53px; opacity: 1; }
+    46%, 86% { height: 0; opacity: 0; border-top-width: 0; }
+    94%, 100% { height: 53px; opacity: 1; }
+  }
+  .sec-btn { animation: sec-btn 10s ease-in-out infinite; }
+  @keyframes sec-btn { 0%, 30% { border-color: #e2e8f0; background: #fff; color: #334155; } 33%, 40% { border-color: #fca5a5; background: rgb(254 242 242); color: #b91c1c; } 44%, 88% { opacity: 0; } 94%, 100% { opacity: 1; } }
+  .sec-toast { opacity: 0; animation: sec-toast 10s ease-out infinite; }
+  @keyframes sec-toast { 0%, 44% { opacity: 0; transform: translateY(8px); } 48%, 80% { opacity: 1; transform: none; } 86%, 100% { opacity: 0; transform: translateY(8px); } }
+</style>

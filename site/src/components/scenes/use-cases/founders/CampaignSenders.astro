@@ -1,0 +1,120 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB, SECTIONBAR } from '../../../../lib/scene';
+import { TH } from '../ui';
+
+/**
+ * A founder's campaign once warmed: three senders on the sub-domain, read by
+ * replies per mailbox (opens are off because it sends plain text), with the
+ * campaign settings that make it so in the card over it.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'barChart', active: true },
+  { label: 'Leads', icon: 'user' },
+  { label: 'Steps', icon: 'layers' },
+  { label: 'Schedule', icon: 'calendar' },
+  { label: 'Settings', icon: 'settings' },
+] as const;
+const perf = [
+  { label: 'Sent', value: '1,284', sub: 'emails', tick: '1284,1299,2600' },
+  { label: 'Open rate', value: '—', sub: 'plain text, untracked' },
+  { label: 'Reply rate', value: '7.9%', sub: '101 replies' },
+  { label: 'Positive', value: '3.1%', sub: '40 interested', last: true },
+];
+const senders = [
+  { addr: 'hello@out.acme.com', sent: 431, replies: 36, health: 97 },
+  { addr: 'intro@out.acme.com', sent: 428, replies: 38, health: 96 },
+  { addr: 'team@out.acme.com', sent: 425, replies: 27, health: 94 },
+];
+const settings = [
+  { t: 'Plain text only', d: 'Send as simple text for the best deliverability (disables tracking).' },
+  { t: 'Stop on reply', d: 'Pause follow-ups for a contact once they respond.' },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-sky">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px]`}>
+    <div class="px-5 pt-4 pb-3">
+      <div class="inline-flex items-center gap-1 text-[11.5px] text-slate-400"><span>←</span> Campaigns</div>
+      <div class="mt-1 flex items-center gap-2 pr-10">
+        <span class="text-[17px] font-semibold text-slate-900">Seed founders</span>
+        <span class="inline-flex h-5 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+      </div>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="grid grid-cols-4 border-b border-slate-200 pr-10">
+      {perf.map((s) => (
+        <div class={`px-5 py-4 ${s.last ? '' : 'border-r border-slate-200'}`}>
+          <div class={EYEBROW}>{s.label}</div>
+          <div class={`mt-2 text-[24px] font-light leading-none tabular-nums ${s.value === '—' ? 'text-slate-300' : 'text-slate-900'}`}>{s.tick ? <span data-tick={s.tick}>{s.value}</span> : s.value}</div>
+          <div class="mt-1.5 truncate font-mono text-[10px] text-slate-400">{s.sub}</div>
+        </div>
+      ))}
+    </div>
+
+    <div class={SECTIONBAR}><span class={EYEBROW}>By mailbox</span><span class="font-mono text-[10.5px] text-slate-400">3</span></div>
+    <table class="w-[720px] table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class={`${TH} pl-5`}>Mailbox</th>
+          <th class={`${TH} w-[76px]`}>Sent</th>
+          <th class={`${TH} w-[76px]`}>Replies</th>
+          <th class={`${TH} w-[180px]`}>Reply rate</th>
+          <th class={`${TH} w-[110px]`}>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {senders.map((s, i) => {
+          const rate = (s.replies / s.sent) * 100;
+          return (
+            <tr class="h-10 border-b border-slate-200/60">
+              <td class="pl-5 pr-3">
+                <span class="flex items-center gap-2 text-[12.5px] font-medium text-slate-900"><Glyph mark="google" size={13} />{s.addr}</span>
+              </td>
+              <td class="px-3 font-mono text-[12px] tabular-nums text-slate-600">{s.sent}</td>
+              <td class="px-3 font-mono text-[12px] tabular-nums text-slate-900">{s.replies}</td>
+              <td class="px-3">
+                <span class="flex items-center gap-2">
+                  <span class="h-1.5 w-24 rounded-full bg-slate-100"><span class="enter-grow-x block h-full rounded-full bg-emerald-500" style={`width:${rate * 9}%; --d:${300 + i * 120}ms`}></span></span>
+                  <span class="font-mono text-[11.5px] tabular-nums text-emerald-700">{rate.toFixed(1)}%</span>
+                </span>
+              </td>
+              <td class="px-3"><span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span><span class="uppercase tracking-[0.08em]">Healthy {s.health}</span></span></td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- The settings that make it a founder's campaign. -->
+  <div class={`${FLOAT} left-[188px] top-[448px] w-[548px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-2.5 flex items-center gap-3">
+      <div class={`${EYEBROW} shrink-0`}>Senders</div>
+      <div class="flex flex-wrap gap-1">
+        {['hello@', 'intro@', 'team@'].map((m) => (
+          <span class="inline-flex h-5 items-center gap-1.5 rounded border border-slate-200 bg-slate-50 pl-1.5 pr-1.5 text-[11px] font-medium text-slate-700"><span class="size-2 rounded-full bg-emerald-500"></span>{m}out.acme.com</span>
+        ))}
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-5 px-4 py-1">
+      {settings.map((s) => (
+        <div class="flex items-center gap-3 py-2.5">
+          <div class="min-w-0 flex-1">
+            <div class="text-[12.5px] font-medium text-slate-900">{s.t}</div>
+            <div class="text-[11px] leading-snug text-slate-500">{s.d}</div>
+          </div>
+          <span class="relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full bg-sky-600"><span class="inline-block size-[14px] translate-x-[16px] rounded-full bg-white shadow-sm"></span></span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>

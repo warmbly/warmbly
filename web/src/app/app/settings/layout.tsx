@@ -34,7 +34,7 @@ import {
     TagsIcon,
 } from "lucide-react";
 import { UnsavedProvider, useUnsavedRegistry } from "@/hooks/context/unsaved";
-import { usePermission, type PermissionKey } from "@/hooks/usePermission";
+import { useAccessRestricted, usePermission, type PermissionKey } from "@/hooks/usePermission";
 import { Page, PageTopbar } from "@/components/layout/Page";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
 import useAuthConfig from "@/lib/api/hooks/auth/useAuthConfig";
@@ -51,6 +51,8 @@ interface SectionDef {
     /** What the entry is called on the hosted product, when that differs. */
     hostedLabel?: string;
     hostedDescription?: string;
+    /** Open to a member restricted to selected resources: their own account only. */
+    scoped?: boolean;
 }
 
 interface SectionGroup {
@@ -62,9 +64,9 @@ const GROUPS: SectionGroup[] = [
     {
         label: "Account",
         items: [
-            { path: "profile", label: "Profile", icon: UserIcon, description: "Personal information." },
-            { path: "notifications", label: "Notifications", icon: BellIcon, description: "What you get notified about." },
-            { path: "security", label: "Security", icon: ShieldIcon, description: "Password, 2FA, active sessions." },
+            { path: "profile", label: "Profile", icon: UserIcon, description: "Personal information.", scoped: true },
+            { path: "notifications", label: "Notifications", icon: BellIcon, description: "What you get notified about.", scoped: true },
+            { path: "security", label: "Security", icon: ShieldIcon, description: "Password, 2FA, active sessions.", scoped: true },
         ],
     },
     {
@@ -116,6 +118,7 @@ function SettingsLayoutInner() {
     const canManageApiKeys = usePermission("MANAGE_API_KEYS");
     const canManageSettings = usePermission("MANAGE_SETTINGS");
     const canViewAnalytics = usePermission("VIEW_ANALYTICS");
+    const restricted = useAccessRestricted();
     const navRef = React.useRef<HTMLElement>(null);
     const unsaved = useUnsavedRegistry();
     const [savingLeave, setSavingLeave] = React.useState(false);
@@ -175,6 +178,7 @@ function SettingsLayoutInner() {
         items: g.items
             .filter(
                 (s) =>
+                    (!restricted || s.scoped) &&
                     (!s.ownerOnly || access.isOwner) &&
                     (!s.billingOnly || access.billing) &&
                     (s.permission !== "MANAGE_API_KEYS" || canManageApiKeys) &&

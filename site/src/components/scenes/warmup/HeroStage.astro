@@ -1,0 +1,31 @@
+---
+/**
+ * A full-width hero scene: the same fixed-size, scaled-as-one-picture stage
+ * as ScaledStage, with the photo loaded first and at the page's full width.
+ * It carries ScaledStage's classes, so that component's script (on the same
+ * page) keeps it fitted, pauses it off screen and plays its `enter-*` pieces;
+ * the inline script only sets the scale before first paint.
+ */
+import Photo from '../../Photo.astro';
+
+interface Props {
+  w: number;
+  h: number;
+  photo: string;
+  class?: string;
+}
+const { w, h, photo, class: className = '' } = Astro.props;
+---
+<div class={`stage-box group/stage relative w-full overflow-hidden rounded-[6px] bg-slate-100 ${className}`} style={`aspect-ratio:${w}/${h};`}>
+  <Photo name={photo} priority sizes="(min-width: 1440px) 1360px, 100vw" class="absolute inset-0 h-full w-full object-cover select-none pointer-events-none" />
+  <div class="stage absolute left-0 top-0 origin-top-left" style={`width:${w}px;height:${h}px;transform:scale(var(--k,1));`} data-w={w} aria-hidden="true">
+    <slot />
+  </div>
+  <script is:inline>
+    (function () {
+      var box = document.currentScript.parentElement;
+      var stage = box.querySelector(':scope > .stage');
+      if (stage) stage.style.setProperty('--k', String(box.clientWidth / Number(stage.dataset.w)));
+    })();
+  </script>
+</div>

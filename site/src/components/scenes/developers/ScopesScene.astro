@@ -1,0 +1,63 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW } from '../../../lib/scene';
+
+/**
+ * The Create API key modal's permissions (CreateKeyModal + PermissionMatrix):
+ * presets on top, then each scope with its description from
+ * internal/models/api_permission.go. This key reads and writes contacts and
+ * never sends.
+ */
+const presets = [
+  { label: 'Read-only', sub: 'View everything' },
+  { label: 'Full access', sub: 'Read + write' },
+  { label: 'Custom', sub: 'Pick scopes', on: true },
+];
+const groups = [
+  { group: 'read', rows: [['READ_CONTACTS', 'View contact lists, segments, notes, and activities', true], ['READ_CAMPAIGNS', 'View campaigns and sequences', true]] },
+  { group: 'write', rows: [['WRITE_CONTACTS', 'Create and modify contacts, segments, notes, and activities', true], ['WRITE_CAMPAIGNS', 'Create and modify campaigns and sequences', false], ['SEND_CAMPAIGNS', 'Start and stop campaigns (sends real mail)', false]] },
+] as const;
+const label = 'text-[11px] uppercase tracking-[0.14em] text-slate-500 font-medium';
+---
+<ScaledStage w={460} h={345} photo="paint-blue">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-11 px-4 border-b border-slate-200 flex items-center gap-2">
+      <Glyph name="shieldCheck" size={14} class="text-slate-500" />
+      <span class="text-[12.5px] font-medium text-slate-900">Create API key</span>
+    </div>
+    <div class="px-4 py-3 pr-10">
+      <div class={`mb-1.5 ${label}`}>Permissions</div>
+      <div class="mb-2 grid grid-cols-3 gap-1.5">
+        {presets.map((p) => (
+          <div class={`rounded-md border px-2.5 py-1.5 ${'on' in p ? 'border-sky-400 bg-sky-50/60' : 'border-slate-200 bg-white'}`}>
+            <div class={`text-[11.5px] font-medium ${'on' in p ? 'text-sky-900' : 'text-slate-900'}`}>{p.label}</div>
+            <div class="text-[10.5px] text-slate-500">{p.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div class="divide-y divide-slate-200/60 overflow-hidden rounded-md border border-slate-200">
+        {groups.map((g) => (
+          <div>
+            <div class="bg-slate-50/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">{g.group}</div>
+            {g.rows.map(([name, desc, on]) => (
+              <div class="flex items-center gap-2 px-2.5 py-1.5">
+                {on
+                  ? <span class="flex size-3.5 shrink-0 items-center justify-center rounded border border-sky-600 bg-sky-600 text-white"><Glyph name="check" size={10} /></span>
+                  : <span class={`size-3.5 shrink-0 rounded border border-slate-300 bg-white ${name === 'SEND_CAMPAIGNS' ? 'sc-off' : ''}`}></span>}
+                <span class="font-mono text-[11px] text-slate-900">{name}</span>
+                <span class="truncate text-[10.5px] text-slate-500">{desc}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The one scope this key leaves off is the one that sends. */
+  .sc-off { animation: sc-off 3.2s ease-in-out infinite; }
+  @keyframes sc-off { 0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); } 50% { box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18); border-color: #fda4af; } }
+</style>

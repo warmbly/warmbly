@@ -10,6 +10,8 @@ export default interface Organization {
     role: string
     // Caller's effective permission bitmask in this org (custom-role aware).
     permissions?: number
+    // "restricted" reaches only the campaigns and mailboxes granted to the caller.
+    access_scope?: "workspace" | "restricted"
     created_at: Date
     // Org-wide team presence privacy (admin-controlled). When false, the
     // realtime service stops broadcasting that signal to teammates.

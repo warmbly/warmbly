@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowRight, ExternalLink, Info, XCircle, type LucideIcon } from "lucide-react";
-import { StatusBadge } from "@/components/ui/kit";
+import { Callout, StatusBadge } from "@/components/ui/kit";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { docsUrl } from "@/lib/docs";
@@ -140,15 +140,21 @@ function ExpiredInvitationsCleanup() {
 
 const OVERVIEW_LIMIT = 4;
 
-// Overview's problems strip. Silent when the instance is clean or when the
-// caller cannot read the endpoint, so it never becomes noise on the page.
 export function InstanceProblemsPanel() {
     const canRead = useAdminPerm(AdminPerm.ViewAnalytics);
     const healthQ = useInstanceHealth({ enabled: canRead });
     const checks = healthQ.data?.checks ?? [];
     const actionable = checks.filter((c) => c.severity === "error" || c.severity === "warning");
 
-    if (healthQ.isError || actionable.length === 0) return null;
+    if (!canRead) return null;
+    if (healthQ.isError || (healthQ.data && actionable.length === 0)) return (
+        <Callout className="mb-4" tone={healthQ.isError ? "warning" : "info"} title={healthQ.isError ? "Configuration findings unavailable" : "No configuration errors or warnings reported"}>
+            {healthQ.isError ? "Could not refresh findings. This is not an all-clear." : "Absent findings do not establish check coverage or operational health."}
+            {healthQ.isError && healthQ.data && ` Previous response listed ${actionable.length} errors or warnings; it is not a fresh verdict.`}
+            {" "}<Link to="/health" className="font-medium hover:underline">Setup and health</Link>
+        </Callout>
+    );
+    if (actionable.length === 0) return null;
 
     const errors = actionable.filter((c) => c.severity === "error").length;
     const shown = actionable.slice(0, OVERVIEW_LIMIT);

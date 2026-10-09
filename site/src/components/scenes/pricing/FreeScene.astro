@@ -1,0 +1,45 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, EYEBROW, TOPBAR } from '../../../lib/scene';
+
+/**
+ * A free workspace's Accounts page: mailboxes warming in the pool, counted
+ * against the free allowance of ten, with no sending column to fill.
+ */
+const rows = [
+  { addr: 'alex@northwind.dev', mark: 'google', warm: [18, 40] },
+  { addr: 'sam@northwind.io', mark: 'microsoft', warm: [14, 40] },
+  { addr: 'mia@northwind.dev', mark: 'google', warm: [12, 40] },
+  { addr: 'ops@northwind.co', mark: 'imap', warm: [11, 40] },
+  { addr: 'jon@northwind.dev', mark: 'google', warm: [10, 40] },
+] as const;
+---
+<ScaledStage w={460} h={345} photo="sheer-cream">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">5 mailboxes</span>
+      <span class="ml-auto mr-6 inline-flex h-5 items-center rounded border border-slate-200 bg-slate-100 px-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-slate-500">Free</span>
+    </div>
+    <div class="px-4 py-3 border-b border-slate-200/60 pr-10">
+      <div class="flex items-baseline justify-between">
+        <span class="text-[12px] font-medium text-slate-700">Mailboxes</span>
+        <span class="font-mono text-[11.5px] tabular-nums text-slate-700">5<span class="text-slate-400"> / 10</span></span>
+      </div>
+      <div class="mt-1.5 h-1 rounded-full bg-slate-100"><div class="enter-grow-x h-full w-1/2 rounded-full bg-sky-500" style="--d:300ms"></div></div>
+      <div class="mt-1 text-[10.5px] text-slate-400">Free workspace allowance</div>
+    </div>
+    <div class="divide-y divide-slate-200/60">
+      {rows.map((r) => (
+        <div class="flex h-10 items-center gap-2.5 px-4 pr-10">
+          <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark={r.mark} size={r.mark === 'imap' ? 12 : 13} /></span>
+          <span class="min-w-0 flex-1 truncate text-[12.5px] font-medium text-slate-900">{r.addr}</span>
+          <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-orange-600"><Glyph name="flame" size={12} class="text-orange-500 flame-flicker" /><span class="text-shimmer">Warming</span></span>
+          <span class="w-[64px] text-right font-mono text-[12px] tabular-nums text-orange-600">{r.warm[0]}<span class="opacity-60">/{r.warm[1]}</span></span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>

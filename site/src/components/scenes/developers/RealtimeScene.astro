@@ -1,0 +1,103 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The developer WebSocket (docs/content/docs/api/realtime.mdx) as a live log:
+ * `warmbly events tail` printing the org stream in seq order, with the join
+ * that narrows it by intent and the resume that replays a missed stretch.
+ */
+type Ev = { type: string; tone: string; detail: string };
+const events: Ev[] = [
+  { type: 'EMAIL_SENT', tone: 'text-sky-700 bg-sky-50', detail: 'campaign_id=4c1d7a90 contact_id=2c3d4e5f' },
+  { type: 'EMAIL_OPENED', tone: 'text-sky-700 bg-sky-50', detail: 'client=Gmail client_type=webmail machine=false' },
+  { type: 'AUDIT_CREATED', tone: 'text-slate-600 bg-slate-100', detail: 'action=update entity_type=campaign' },
+  { type: 'EMAIL_REPLIED', tone: 'text-emerald-700 bg-emerald-50', detail: 'thread_id=7b1e03c4 campaign_id=4c1d7a90' },
+  { type: 'EMAIL_SENT', tone: 'text-sky-700 bg-sky-50', detail: 'campaign_id=b9e2f6c1 contact_id=8f0a1d2e' },
+  { type: 'CUSTOM_EVENT', tone: 'text-violet-700 bg-violet-50', detail: 'name=lead.replied payload.intent=positive' },
+  { type: 'EMAIL_CLICKED', tone: 'text-sky-700 bg-sky-50', detail: 'campaign_id=4c1d7a90 device_type=desktop' },
+  { type: 'CAMPAIGN_COMPLETED', tone: 'text-amber-700 bg-amber-50', detail: 'campaign_id=0d5a3e8f' },
+];
+const rows = [...events, ...events, ...events].map((e, i) => ({
+  ...e,
+  seq: 4888 + (i % events.length),
+  time: `14:02:${String(11 + (i % events.length) * 3).padStart(2, '0')}`,
+}));
+const code = 'font-mono text-[11px] leading-[1.65] text-slate-700';
+---
+<ScaledStage w={1240} h={560} photo="lake-mist">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[1240px] h-[540px]`}>
+    <div class="h-12 px-5 border-b border-slate-200 flex items-center gap-3">
+      <Glyph name="terminal" size={14} class="text-slate-400" />
+      <span class="font-mono text-[12px] text-slate-800"><span class="text-slate-400">$ </span>warmbly events tail --intent EMAIL --intent CAMPAIGN --intent AUDIT --intent CUSTOM</span>
+      <span class="ml-4 inline-flex items-center gap-1.5 text-[11px] text-emerald-600"><span class="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>streaming</span>
+    </div>
+    <div class="h-9 px-5 border-b border-slate-200/60 flex items-center gap-6 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-400">
+      <span class="w-[64px]">Time</span><span class="w-[44px]">Seq</span><span class="w-[170px]">Event</span><span>Payload</span>
+    </div>
+    <div class="relative h-[420px] overflow-hidden">
+      <div class="rt-log">
+        {rows.map((r) => (
+          <div class="flex h-[30px] items-center gap-6 border-b border-slate-100 px-5 font-mono text-[11.5px]">
+            <span class="w-[64px] tabular-nums text-slate-400">{r.time}</span>
+            <span class="w-[44px] tabular-nums text-slate-500">{r.seq}</span>
+            <span class="w-[170px]"><span class={`inline-flex h-5 items-center rounded px-1.5 text-[10.5px] font-medium ${r.tone}`}>{r.type}</span></span>
+            <span class="truncate text-slate-600">{r.detail}</span>
+          </div>
+        ))}
+      </div>
+      <div class="pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-white to-white/0"></div>
+    </div>
+  </div>
+
+  <!-- The join that narrows the stream, and the HELLO it answers with. -->
+  <div class={`${FLOAT} left-[784px] top-[92px] w-[404px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+      <span class={EYEBROW}>phx_join</span>
+      <span class="font-mono text-[11px] text-slate-500">org:1f0c7e52-…</span>
+    </div>
+    <pre class={`px-4 py-2.5 ${code}`}>{`{ "intents": ["EMAIL", "CAMPAIGN", "AUDIT", "CUSTOM"] }`}</pre>
+    <div class="border-t border-slate-100 px-4 pt-2.5 pb-1 flex items-center gap-2">
+      <span class={EYEBROW}>Join reply</span>
+      <span class="inline-flex h-4 items-center rounded-sm bg-emerald-50 px-1 text-[10px] font-medium text-emerald-700">ok</span>
+    </div>
+    <pre class={`px-4 pb-3 ${code}`}>{`{
+  "heartbeat_interval_ms": 25000,
+  "server_timeout_ms": 60000,
+  "seq": 4821,
+  "resume_supported": true
+}`}</pre>
+  </div>
+
+  <!-- A reconnect picks up where it left off. -->
+  <div class="enter-fade absolute left-[860px] top-[338px] w-[340px]" style="--d:1200ms">
+    <div class="float-layer overflow-hidden rounded-[10px] bg-white ring-1 ring-slate-900/[0.07] shadow-[0_24px_60px_-26px_rgba(15,23,42,0.5)]">
+      <div class="flex items-start gap-3 px-4 py-3">
+        <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><Glyph name="checkCircle" size={15} /></span>
+        <div class="min-w-0">
+          <div class="text-[12.5px] font-medium text-slate-900">Reconnected and resumed</div>
+          <div class="mt-0.5 text-[11.5px] leading-[1.5] text-slate-500">The 12 events missed while offline were replayed in order.</div>
+        </div>
+      </div>
+      <pre class={`border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 ${code}`}><span class="text-slate-400">resume</span>  {`{ "last_seq": 4821 }`}
+<span class="text-slate-400">resumed</span> {`{ "current_seq": 4895, "replayed": 12 }`}</pre>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The log steps up one row at a time as each event arrives. */
+  .rt-log { animation: rt-log 16s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+  @keyframes rt-log {
+    0%, 9.75% { transform: none; }
+    12.5%, 22.25% { transform: translateY(-30px); }
+    25%, 34.75% { transform: translateY(-60px); }
+    37.5%, 47.25% { transform: translateY(-90px); }
+    50%, 59.75% { transform: translateY(-120px); }
+    62.5%, 72.25% { transform: translateY(-150px); }
+    75%, 84.75% { transform: translateY(-180px); }
+    87.5%, 97.25% { transform: translateY(-210px); }
+    100% { transform: translateY(-240px); }
+  }
+</style>

@@ -1,0 +1,130 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from './Ico.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, TAB } from '../../../lib/scene';
+
+/**
+ * How an open was read: a contact's Overview (Engagement tiles, How they
+ * read) and beside it the Activity tab, every open and click with the device
+ * and client it came from. A new open arrives on the timeline on a loop.
+ */
+const tiles = [
+  { icon: 'mail', label: 'Sent', value: 3 },
+  { icon: 'mailOpen', label: 'Opened', value: 3, of: 3 },
+  { icon: 'mousePointerClick', label: 'Clicked', value: 1, of: 3 },
+  { icon: 'reply', label: 'Replied', value: 0, of: 3 },
+  { icon: 'mailWarning', label: 'Bounced', value: 0, of: 3 },
+  { icon: 'ban', label: 'Complained', value: 0, of: 3 },
+];
+const reads = [
+  { icon: 'smartphone', text: 'iPhone · Apple Mail app', n: '5 opens', when: '2h ago' },
+  { icon: 'monitor', text: 'Windows PC · Outlook app', n: '2 opens', when: 'yesterday' },
+  { icon: 'tablet', text: 'iPad · Apple Mail app', n: '1 open', when: '4d ago' },
+];
+const tabs = [
+  { label: 'Overview', icon: 'gauge', active: true },
+  { label: 'Activity', icon: 'activity' },
+  { label: 'Deals', icon: 'dollar' },
+  { label: 'Notes', icon: 'penLine' },
+] as const;
+const events = [
+  { icon: 'mailOpen', label: 'Opened', meta: 'step Email 3', origin: 'iPhone · Apple Mail app', o: 'smartphone', where: 'Austin, Texas', when: 'now', isNew: true },
+  { icon: 'mousePointerClick', label: 'Clicked', link: 'acme.io/demo', meta: 'step Email 2', origin: 'Windows PC · Edge', o: 'monitor', when: '2d' },
+  { icon: 'mailOpen', label: 'Opened', meta: 'step Email 2', origin: 'Windows PC · Outlook app', o: 'monitor', where: 'Austin, Texas', when: '2d' },
+  { icon: 'mailOpen', label: 'Opened', meta: 'step Email 1', origin: 'iPad · Apple Mail app', o: 'tablet', when: '4d' },
+  { icon: 'mail', label: 'Email sent', meta: 'step Email 1', when: '4d' },
+];
+---
+<ScaledStage w={680} h={510} photo="sheer-peach">
+  <div class={`${WINDOW} left-[32px] top-[32px] w-[400px] h-[478px]`}>
+    <div class="h-14 px-5 flex items-center gap-3 border-b border-slate-200">
+      <span class="flex size-8 items-center justify-center rounded-full bg-sky-50 text-[11px] font-semibold text-sky-700">JC</span>
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-[13px] font-medium text-slate-900">Jenna Carter</div>
+        <div class="truncate text-[11px] text-slate-400">jenna@acme.io · Acme</div>
+      </div>
+      <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="x" size={15} /></span>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={13} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+    <div class="p-4 space-y-5">
+      <section>
+        <h2 class="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Engagement</h2>
+        <div class="grid grid-cols-3 gap-1.5">
+          {tiles.map((t, i) => (
+            <div class="rounded-md border border-slate-200 bg-white px-2.5 py-2">
+              <div class="flex items-center gap-1 text-[10px] uppercase tracking-[0.1em] text-slate-400"><Ico name={t.icon} size={11} />{t.label}</div>
+              <div class={`mt-1 text-[17px] font-light leading-none tabular-nums ${t.good ? 'text-emerald-600' : 'text-slate-900'}`}>{t.value}</div>
+              {t.of !== undefined && <div class="mt-1.5 h-0.5 rounded-full bg-slate-100"><div class={`enter-grow-x h-full rounded-full ${t.good ? 'bg-emerald-500' : 'bg-sky-500'}`} style={`width:${(t.value / t.of) * 100}%;--d:${150 + i * 70}ms`}></div></div>}
+            </div>
+          ))}
+        </div>
+      </section>
+      <section>
+        <h2 class="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">How they read</h2>
+        <div class="rounded-md border border-slate-200 bg-white overflow-hidden">
+          {reads.map((r) => (
+            <div class="flex items-center gap-2 px-3 py-1.5 border-b last:border-b-0 border-slate-100">
+              <span class="inline-flex flex-1 items-center gap-1 text-[11.5px] text-slate-700"><Ico name={r.icon} size={12} class="text-slate-400" />{r.text}</span>
+              <span class="text-[11.5px] tabular-nums text-slate-500">{r.n} · {r.when}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section>
+        <h2 class="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Profile</h2>
+        <div class="rounded-md border border-slate-200 bg-white overflow-hidden text-[12px]">
+          <div class="flex items-center px-3 h-8 border-b border-slate-100"><span class="w-24 text-slate-400">Company</span><span class="text-slate-700">Acme</span></div>
+          <div class="flex items-center px-3 h-8"><span class="w-24 text-slate-400">Location</span><span class="text-slate-700">Austin, Texas</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- The Activity tab of the same contact. -->
+  <div class={`${FLOAT} left-[408px] top-[64px] w-[252px] overflow-hidden`}>
+    <div class="h-10 px-3 flex items-center gap-1.5 border-b border-slate-200">
+      <Glyph name="activity" size={13} class="text-slate-500" />
+      <span class="text-[12px] font-medium text-slate-900">Activity</span>
+      <span class="ml-auto h-6 px-2 rounded-md bg-slate-100 text-[10.5px] font-medium text-slate-600 inline-flex items-center">Emails</span>
+    </div>
+    <div class="relative h-[364px] overflow-hidden">
+      <div class="rs-feed">
+        {events.map((e) => (
+          <div class={`px-3 py-2 border-b border-slate-100 ${e.isNew ? 'rs-new' : ''}`}>
+            <div class="flex items-start gap-2">
+              <Ico name={e.icon} size={13} class="mt-0.5 text-slate-400" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline gap-1.5"><span class="text-[12px] font-medium text-slate-900">{e.label}</span>{e.link && <span class="truncate text-[11.5px] text-slate-700">{e.link}</span>}</div>
+                <div class="mt-0.5 text-[11px] leading-snug text-slate-500">
+                  {e.meta}{e.origin && <> · <span class="inline-flex items-center gap-1 align-[-2px]"><Ico name={e.o} size={11} class="text-slate-400" />{e.origin}</span></>}{e.where && <> · {e.where}</>}
+                </div>
+              </div>
+              <span class="text-[10.5px] text-slate-400 tabular-nums">{e.when}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* An 11s loop: a fresh open from her phone lands on top. */
+  .rs-feed { animation: rs-feed 11s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes rs-feed {
+    0% { transform: translateY(-66px); opacity: 0; }
+    5%, 32% { transform: translateY(-66px); opacity: 1; }
+    39%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .rs-new { animation: rs-new 11s ease-out infinite; }
+  @keyframes rs-new { 0%, 36% { background: rgb(240 249 255 / 0); } 42%, 72% { background: rgb(240 249 255); } 92%, 100% { background: rgb(240 249 255 / 0); } }
+</style>

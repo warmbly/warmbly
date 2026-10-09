@@ -1,0 +1,114 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import BrandMark from '../../../page/BrandMark.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../../lib/scene';
+import { TH, initials } from '../ui';
+
+/**
+ * HubSpot connected as the team's CRM (integrations/_crm/CrmSettings.tsx):
+ * sync health and the People card that matches HubSpot owners to reps. The
+ * card over it is the team's connections, Slack included.
+ */
+const counters = [
+  { k: 'Contacts linked', v: '4,812' },
+  { k: 'Deals', v: '63' },
+  { k: 'Tasks', v: '118' },
+  { k: 'Pipelines', v: '2' },
+  { k: 'Owners', v: '4' },
+];
+const people = [
+  { owner: 'Dana Vasquez', member: 'dana@acme.com' },
+  { owner: 'Marcus Lee', member: 'marcus@acme.com' },
+  { owner: 'Priya Natarajan', member: 'priya@acme.com' },
+  { owner: 'Tom Becker', member: 'tom@acme.com' },
+];
+const connections = [
+  { brand: 'hubspot', name: 'HubSpot', account: 'Acme Inc' },
+  { brand: 'slack', name: 'Slack', account: '#sales-replies' },
+];
+---
+<ScaledStage w={760} h={570} photo="paint-teal">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px]`}>
+    <div class="px-6 pt-4 pb-4 border-b border-slate-200">
+      <div class="text-[11.5px] text-slate-400">← Integrations</div>
+      <div class="mt-2 flex items-center gap-3">
+        <span class="size-10 rounded-lg bg-orange-50 flex items-center justify-center"><BrandMark name="hubspot" size={26} class="ring-0 bg-transparent" /></span>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-[18px] font-semibold text-slate-900">HubSpot</span>
+            <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-md border text-[10px] uppercase tracking-[0.12em] font-medium bg-emerald-50 text-emerald-700 border-emerald-200"><span class="size-1.5 rounded-full bg-emerald-500"></span>Your CRM</span>
+          </div>
+          <div class="text-[11.5px] text-slate-400">Acme Inc · Portal 4410289 · synced <span data-tick="4,30,1000">4</span>s ago</div>
+        </div>
+        <div class="ml-auto mr-10 flex items-center gap-1.5">
+          <span class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5"><Glyph name="activity" size={12} />Sync now</span>
+          <span class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center">Open HubSpot</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-6 py-4">
+      <div class="rounded-lg border border-slate-200 mr-10">
+        <div class="px-4 pt-3.5">
+          <div class="text-[12.5px] font-semibold text-slate-900">Sync health</div>
+          <div class="mt-0.5 text-[11.5px] text-slate-500">Warmbly sends its changes to HubSpot as they happen and pulls HubSpot's changes back on its own.</div>
+        </div>
+        <div class="mt-3 grid grid-cols-5 border-y border-slate-100">
+          {counters.map((c, i) => (
+            <div class={`px-4 py-3 ${i < 4 ? 'border-r border-slate-100' : ''}`}>
+              <div class="text-[9.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">{c.k}</div>
+              <div class="mt-1.5 text-[20px] font-light leading-none tabular-nums text-slate-900">{c.v}</div>
+            </div>
+          ))}
+        </div>
+        <div class="px-4 py-2.5 flex flex-wrap gap-1.5 text-[11px]">
+          <span class="h-6 px-2 rounded-md bg-slate-50 ring-1 ring-inset ring-slate-200 inline-flex items-center text-slate-600"><span class="cs-wait mr-1.5 size-1.5 rounded-full bg-sky-500"></span>3 changes waiting</span>
+          <span class="h-6 px-2 rounded-md bg-slate-50 ring-1 ring-inset ring-slate-200 inline-flex items-center text-slate-600">0 failures</span>
+          <span class="h-6 px-2 rounded-md bg-emerald-50 ring-1 ring-inset ring-emerald-200 inline-flex items-center text-emerald-700"><span data-tick="1204,1240,2200">1204</span>&nbsp;changes synced in the last 24 hours</span>
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-lg border border-slate-200 mr-10 w-[420px]">
+        <div class="px-4 pt-3.5 pb-2">
+          <div class="text-[12.5px] font-semibold text-slate-900">People</div>
+          <div class="mt-0.5 text-[11.5px] text-slate-500">HubSpot owners matched to members.</div>
+        </div>
+        <table class="w-full table-fixed">
+          <thead><tr class="border-y border-slate-100"><th class={`${TH} pl-4`}>HubSpot owner</th><th class={TH}>Member</th></tr></thead>
+          <tbody>
+            {people.map((p) => (
+              <tr class="h-9 border-b border-slate-100 last:border-0">
+                <td class="pl-4 pr-3"><span class="flex items-center gap-2 text-[12px] text-slate-800"><span class="size-5 rounded-full bg-orange-50 text-orange-700 text-[8.5px] font-semibold flex items-center justify-center">{initials(p.owner)}</span>{p.owner}</span></td>
+                <td class="px-3"><span class="flex items-center gap-1.5 text-[12px] text-slate-600"><Glyph name="check" size={11} class="text-emerald-600" />{p.member}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- The team's connections. -->
+  <div class={`${FLOAT} left-[490px] top-[340px] w-[244px] overflow-hidden`}>
+    <div class="h-9 px-4 border-b border-slate-200 flex items-center gap-2">
+      <span class={EYEBROW}>Your connections</span>
+      <span class="font-mono text-[10.5px] text-slate-400">2</span>
+    </div>
+    {connections.map((c) => (
+      <div class="px-4 py-3 flex items-center gap-3 border-b border-slate-100 last:border-0">
+        <BrandMark name={c.brand} size={34} />
+        <div class="min-w-0 flex-1">
+          <div class="text-[12.5px] font-semibold text-slate-900">{c.name}</div>
+          <div class="truncate text-[11px] text-slate-400">{c.account}</div>
+        </div>
+        <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded text-[9.5px] uppercase tracking-[0.08em] font-medium bg-emerald-50 text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span>connected</span>
+      </div>
+    ))}
+  </div>
+</ScaledStage>
+
+<style>
+  .cs-wait { animation: cs-wait 1.6s ease-in-out infinite; }
+  @keyframes cs-wait { 50% { opacity: 0.25; } }
+</style>

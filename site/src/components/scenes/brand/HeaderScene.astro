@@ -1,0 +1,44 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import DashboardMock from '../../DashboardMock.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The lockup in the product: the dashboard header as AppHeader draws it,
+ * with its measurements (w-7 mark, gap-2.5, extra bold 15.5px) called out.
+ */
+const MARK = 'M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z';
+const specs = [
+  ['Mark', '28 px'],
+  ['Gap', '10 px'],
+  ['Wordmark', 'Inter Extra Bold, 15.5 px'],
+];
+---
+<ScaledStage w={680} h={510} photo="sheer-sky">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[480px]`}>
+    <div class="w-[1280px]"><DashboardMock /></div>
+  </div>
+
+  <div class={`${FLOAT} left-[322px] top-[246px] w-[330px] overflow-hidden`}>
+    <div class="relative flex h-[132px] items-center justify-center border-b border-slate-200" style="background-image:linear-gradient(rgb(226 232 240 / 0.7) 1px, transparent 1px),linear-gradient(90deg, rgb(226 232 240 / 0.7) 1px, transparent 1px);background-size:14px 14px;">
+      <div class="relative inline-flex items-center gap-5 text-slate-900">
+        <svg viewBox="0 0 746 764" class="w-14" fill="currentColor"><path d={MARK} /></svg>
+        <span class="text-[31px] font-extrabold tracking-tight">Warmbly</span>
+        <!-- the 10px gap, at 2x -->
+        <span class="absolute left-[56px] top-[-14px] h-[8px] w-[20px] border-x border-t border-sky-500"></span>
+        <span class="absolute left-0 bottom-[-14px] h-[8px] w-[56px] border-x border-b border-sky-500"></span>
+      </div>
+      <span class="absolute right-2.5 top-2 font-mono text-[9.5px] text-sky-600">2×</span>
+    </div>
+    <div class="px-4 py-3">
+      <div class={EYEBROW}>In the dashboard header</div>
+      <div class="mt-2 space-y-1.5">
+        {specs.map(([k, v]) => (
+          <div class="flex items-center justify-between text-[12px]">
+            <span class="text-slate-500">{k}</span><span class="font-mono text-[11px] text-slate-800">{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>

@@ -1,0 +1,137 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../../lib/scene';
+import { AVATAR } from '../ui';
+
+/**
+ * The unified inbox for the founder setup: replies to the three cold
+ * mailboxes land together, labelled, beside the open thread; the card over
+ * it is today's volume spread across the three, each under its own cap.
+ */
+type Conv = { who: string; preview: string; time: string; mailbox: string; label: string; color: string; unread?: boolean; selected?: boolean };
+const convs: Conv[] = [
+  { who: 'Jenna Carter', preview: 'Thursday 10am ET works for me.', time: '4m', mailbox: 'intro@out.acme.com', label: 'Interested', color: '#10b981', unread: true, selected: true },
+  { who: 'Ravi Shah', preview: 'Does it run on our own servers?', time: '18m', mailbox: 'hello@out.acme.com', label: 'Question', color: '#0ea5e9', unread: true },
+  { who: 'Lena Fischer', preview: 'Send me two times next week.', time: '41m', mailbox: 'team@out.acme.com', label: 'Interested', color: '#10b981' },
+  { who: 'Aman Patel', preview: 'I am out of the office until the 14th.', time: '1h', mailbox: 'hello@out.acme.com', label: 'Out of office', color: '#f59e0b' },
+  { who: 'Kai Brandt', preview: 'Not the right time for us.', time: '2h', mailbox: 'intro@out.acme.com', label: 'Not interested', color: '#64748b' },
+  { who: 'Noor Haddad', preview: 'Who else is using this today?', time: '3h', mailbox: 'team@out.acme.com', label: 'Question', color: '#0ea5e9' },
+];
+const filters = [
+  { label: 'All', n: 14, on: true },
+  { label: 'Interested', n: 5 },
+  { label: 'Question', n: 4 },
+];
+const senders = [
+  { addr: 'hello@out.acme.com', sent: 41 },
+  { addr: 'intro@out.acme.com', sent: 38 },
+  { addr: 'team@out.acme.com', sent: 36 },
+];
+---
+<ScaledStage w={760} h={620} photo="lake-mist">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[600px] flex`}>
+    <div class="w-[312px] shrink-0 border-r border-slate-200 flex flex-col">
+      <div class="h-11 pl-3 pr-2 flex items-center gap-1.5">
+        <span class="text-[13.5px] font-semibold text-slate-900">Inbox</span>
+        <span class="text-[11.5px] tabular-nums text-slate-400">14</span>
+        <span class="ml-auto h-7 pl-2 pr-1.5 rounded-md text-[12px] font-medium text-sky-700 inline-flex items-center gap-1.5"><Glyph name="penLine" size={14} />Compose</span>
+      </div>
+      <div class="px-3 pb-2 border-b border-slate-200 space-y-2">
+        <div class="h-8 px-2.5 rounded-md bg-slate-100/80 flex items-center gap-2 text-[12.5px] text-slate-400"><Glyph name="search" size={14} />Search all mail</div>
+        <div class="flex items-center gap-1">
+          {filters.map((f) => (
+            <span class={`h-6 px-2 rounded-md inline-flex items-center gap-1.5 text-[11.5px] ${f.on ? 'bg-slate-900 text-white' : 'border border-slate-200 text-slate-600'}`}>{f.label}<span class={`font-mono text-[10px] ${f.on ? 'text-white/60' : 'text-slate-400'}`}>{f.n}</span></span>
+          ))}
+        </div>
+      </div>
+      <div class="px-4 h-7 flex items-center text-[10.5px] uppercase tracking-[0.12em] text-slate-400 font-medium">Today</div>
+      <div class="divide-y divide-slate-100">
+        {convs.map((c, i) => (
+          <div class={`flex items-start gap-2 pl-3 pr-4 py-2.5 ${c.selected ? 'bg-sky-50' : ''} ${i === 0 ? 'si-new' : ''}`}>
+            <span class="w-2 shrink-0 flex h-[18px] items-center justify-center">{c.unread && <span class="block size-2 rounded-full bg-sky-500"></span>}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex h-[18px] items-center gap-2">
+                <span class={`truncate text-[12.5px] ${c.unread ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>{c.who}</span>
+                <span class={`ml-auto shrink-0 text-[11px] tabular-nums ${c.unread ? 'font-medium text-sky-700' : 'text-slate-400'}`}>{c.time}</span>
+              </div>
+              <div class="mt-0.5 truncate text-[11.5px] text-slate-500">{c.preview}</div>
+              <div class="mt-1 flex h-4 items-center gap-2">
+                <span class="truncate font-mono text-[10.5px] text-slate-400">to {c.mailbox}</span>
+                <span class="ml-auto inline-flex h-4 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] font-medium" style={`color:${c.color};background-color:${c.color}14;`}>
+                  <span class="size-1.5 rounded-full" style={`background-color:${c.color}`}></span>{c.label}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div class="flex-1 min-w-0 flex flex-col">
+      <div class="min-h-12 px-5 py-2 border-b border-slate-200 flex items-center gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[13.5px] font-semibold leading-5 text-slate-900">Re: Hiring your first SDR?</div>
+          <div class="flex items-center gap-1.5 text-[11px] leading-4 text-slate-400">
+            <span>2 messages</span><span class="text-slate-300">·</span><span>intro@out.acme.com</span>
+          </div>
+        </div>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="tag" size={15} /></span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="archive" size={15} /></span>
+      </div>
+      <article class="px-5 py-2.5 flex items-start gap-3 border-b border-slate-100">
+        <span class={`${AVATAR} size-7 text-[10.5px]`}>MO</span>
+        <div class="min-w-0 flex-1">
+          <div class="text-[12.5px] font-semibold text-slate-900">Maya Okonkwo</div>
+          <div class="truncate text-[12px] text-slate-500">Hi Jenna, saw Carter &amp; Co just posted its first SDR role…</div>
+        </div>
+        <span class="text-[11px] text-slate-400">Mon</span>
+      </article>
+      <article class="px-5 py-4">
+        <div class="flex items-start gap-3">
+          <span class={`${AVATAR} size-7 text-[10.5px]`}>JC</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-baseline gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Jenna Carter</span><span class="text-[11px] text-slate-400">jenna@carter.co</span></div>
+            <div class="mt-0.5 text-[11px] text-slate-400">to intro@out.acme.com</div>
+          </div>
+          <span class="text-[11px] text-slate-400">4m</span>
+        </div>
+        <div class="mt-3 pl-10 text-[13px] leading-[1.6] text-slate-800">Good timing, we were about to start hiring. Thursday 10am ET works for me if you send an invite.</div>
+      </article>
+      <div class="mx-5 mt-1 rounded-lg ring-1 ring-slate-200">
+        <div class="px-3.5 pt-3 h-[70px] text-[13px] leading-[1.6] text-slate-800">Great, invite on its way for Thursday at 10am ET.<span class="si-caret ml-px inline-block h-4 w-px translate-y-[3px] bg-sky-500"></span></div>
+        <div class="flex items-center justify-between border-t border-slate-100 px-3 py-2">
+          <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-400"><Glyph name="reply" size={12} />Reply as intro@out.acme.com</span>
+          <span class="h-7 px-3 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5"><Glyph name="send" size={12} />Send</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Volume spread across three mailboxes, each inside its own cap. -->
+  <div class={`${FLOAT} left-[392px] top-[420px] w-[300px] overflow-hidden`}>
+    <div class="flex items-center border-b border-slate-200 px-4 py-3">
+      <span class={EYEBROW}>Sent today</span>
+      <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-900"><span data-tick="115,125,3200">115</span><span class="text-slate-400">/150</span></span>
+    </div>
+    <div class="px-4 py-2">
+      {senders.map((s) => (
+        <div class="py-1.5">
+          <div class="flex items-center gap-2 text-[12px]">
+            <Glyph mark="google" size={12} />
+            <span class="truncate text-slate-700">{s.addr}</span>
+            <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-900">{s.sent}<span class="text-slate-400">/50</span></span>
+          </div>
+          <div class="mt-1.5 h-1 rounded-full bg-slate-100"><div class="enter-grow-x h-full rounded-full bg-sky-500" style={`width:${(s.sent / 50) * 100}%`}></div></div>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .si-caret { animation: si-caret 1.1s steps(1) infinite; }
+  @keyframes si-caret { 50% { opacity: 0; } }
+  .si-new { animation: si-new 8s ease-out infinite; }
+  @keyframes si-new { 0%, 8% { background: rgb(224 242 254); } 40%, 100% { background: rgb(240 249 255); } }
+</style>

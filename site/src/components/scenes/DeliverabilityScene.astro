@@ -1,0 +1,116 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import Glyph from './Glyph.astro';
+import MailboxDrawerHead from './MailboxDrawerHead.astro';
+import { WINDOW, EYEBROW } from '../../lib/scene';
+
+/**
+ * The mailbox drawer's Deliverability tab (MailboxPlacementTab): the inbox
+ * rate ring, where mail landed each day, and the rate per provider. A note
+ * from another mailbox slides in when its placement slips.
+ */
+// Inbox / other tabs / spam per day, out of each day's receipts.
+const daysData = [
+  [16, 1, 0], [17, 0, 1], [18, 1, 0], [18, 1, 0], [19, 0, 0], [19, 1, 1], [20, 1, 0],
+  [21, 0, 0], [21, 1, 0], [22, 0, 1], [22, 1, 0], [23, 0, 0], [23, 1, 0], [24, 0, 0],
+];
+const max = 25;
+const providers = [
+  { mark: 'google', name: 'Google', pct: 97 },
+  { mark: 'microsoft', name: 'Microsoft', pct: 95 },
+  { mark: 'yahoo', name: 'Yahoo', pct: 94 },
+] as const;
+const R = 36;
+const C = 2 * Math.PI * R;
+const seg = 'h-6 px-2 rounded text-[11px] font-medium inline-flex items-center';
+---
+<ScaledStage w={760} h={570} photo="paint-blue">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[600px] h-[560px]`}>
+    <MailboxDrawerHead addr="sam@northwind.io" initials="SO" provider="Microsoft 365" mark="microsoft" active="Deliverability" />
+
+    <div class="flex items-center gap-5 px-5 py-4 border-b border-slate-200/60">
+      <div class="relative size-[84px] shrink-0">
+        <svg width="84" height="84" viewBox="0 0 84 84" class="-rotate-90">
+          <circle cx="42" cy="42" r={R} stroke="#f1f5f9" stroke-width="7" fill="none" />
+          <circle class="enter-draw" cx="42" cy="42" r={R} stroke="#10b981" stroke-width="7" fill="none" stroke-linecap="round" stroke-dasharray={C} stroke-dashoffset={C * 0.04} style={`--len:${C}; --d:150ms`} />
+        </svg>
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <span class="text-[19px] font-light leading-none text-slate-900">96%</span>
+          <span class="mt-1 text-[8.5px] uppercase tracking-[0.14em] text-slate-400">inbox</span>
+        </div>
+      </div>
+      <div class="min-w-0">
+        <span class="inline-flex h-5 items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 text-[10px] font-medium text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span>Healthy</span>
+        <div class="mt-2 text-[12.5px] text-slate-700">96% of warmup mail reached the inbox in the last 14 days.</div>
+        <div class="mt-1 font-mono text-[11px] text-slate-400">3 in spam · 8 in other tabs · 90%+ is healthy</div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 px-5 py-2.5 border-b border-slate-200/60">
+      <span class={EYEBROW}>History</span>
+      <span class="ml-auto inline-flex rounded-md bg-slate-100 p-0.5">
+        <span class={`${seg} bg-white text-slate-900 shadow-sm`}>All</span>
+        <span class={`${seg} text-slate-500`}>Google</span>
+        <span class={`${seg} text-slate-500`}>Microsoft</span>
+      </span>
+      <span class="inline-flex rounded-md bg-slate-100 p-0.5">
+        <span class={`${seg} text-slate-500`}>7d</span>
+        <span class={`${seg} bg-white text-slate-900 shadow-sm`}>14d</span>
+        <span class={`${seg} text-slate-500`}>30d</span>
+      </span>
+    </div>
+
+    <div class="px-5 py-4 border-b border-slate-200/60">
+      <div class="flex items-center justify-between">
+        <span class={EYEBROW}>Where it landed each day</span>
+        <span class="flex items-center gap-3 text-[10px] text-slate-400">
+          <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-emerald-500"></span>Inbox</span>
+          <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-violet-500"></span>Other tabs</span>
+          <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-rose-500"></span>Spam</span>
+        </span>
+      </div>
+      <div class="mt-4 flex h-[112px] items-end gap-[6px]">
+        {daysData.map(([inbox, tabs, spam], i) => (
+          <div class="enter-grow-y flex flex-1 flex-col-reverse overflow-hidden rounded-t-[2px]" style={`height:${((inbox + tabs + spam) / max) * 100}%; --d:${300 + i * 40}ms`}>
+            <div class="bg-emerald-500/85" style={`flex:${inbox}`}></div>
+            {tabs > 0 && <div class="bg-violet-500/85" style={`flex:${tabs}`}></div>}
+            {spam > 0 && <div class="bg-rose-500/85" style={`flex:${spam}`}></div>}
+          </div>
+        ))}
+      </div>
+      <div class="h-px bg-slate-200/80"></div>
+      <div class="mt-1.5 flex justify-between font-mono text-[9.5px] text-slate-400"><span>14 days ago</span><span>Today</span></div>
+    </div>
+
+    <div class="px-5 py-4">
+      <div class={EYEBROW}>By recipient provider</div>
+      <div class="mt-3 space-y-3">
+        {providers.map((p) => (
+          <div class="flex items-center gap-3 text-[12px]">
+            <Glyph mark={p.mark} size={13} />
+            <span class="w-[72px] text-slate-700">{p.name}</span>
+            <div class="h-1.5 flex-1 rounded-full bg-slate-100"><div class="enter-grow-x h-full rounded-full bg-emerald-500" style={`width:${p.pct}%; --d:700ms`}></div></div>
+            <span class="w-9 text-right font-mono text-[11.5px] tabular-nums text-emerald-600">{p.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- Another mailbox's placement slipped: Warmbly lowers its volume. -->
+  <div class="enter-fade absolute left-[396px] top-[392px] w-[330px]" style="--d:1500ms">
+  <div class="float-layer rounded-[10px] bg-white p-4 ring-1 ring-slate-900/[0.07] shadow-[0_24px_60px_-26px_rgba(15,23,42,0.5)]">
+    <div class="flex items-start gap-3">
+      <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600"><Glyph name="alert" size={15} /></span>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="text-[12.5px] font-medium text-slate-900">ops@northwind.co</span>
+          <span class="inline-flex h-5 items-center rounded border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-700">Watch</span>
+        </div>
+        <div class="mt-1 text-[12px] leading-[1.5] text-slate-500">12% of its warmup mail went to spam at Outlook this week. Its volume is lowered until placement recovers.</div>
+      </div>
+    </div>
+  </div>
+  </div>
+</ScaledStage>
+

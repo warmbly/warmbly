@@ -1,0 +1,100 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../warmup/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, TAB } from '../../../lib/scene';
+
+/**
+ * Contacts > Suppression list (web/src/app/app/contacts/suppressions/page.tsx).
+ * A reply asking to stop lands in the inbox and, a moment later, its sender
+ * arrives at the top of the list, on a loop.
+ */
+type Entry = { who: string; domain?: boolean; reason: string; source: string; mine: boolean; when: string };
+const incoming: Entry = { who: 'karim@stratech.io', reason: 'Replied asking to stop', source: 'Unsubscribed', mine: true, when: 'Oct 9, 2:52 PM' };
+const entries: Entry[] = [
+  { who: 'r.patel@quarry.co', reason: 'Hard bounce: the mailbox does not exist', source: 'Bounced', mine: true, when: 'Oct 9, 11:04 AM' },
+  { who: 'acme.co', domain: true, reason: 'Existing customer', source: 'Added by hand', mine: false, when: 'Oct 8, 4:30 PM' },
+  { who: 'm.lopez@brightline.io', reason: 'Complaint report from the recipient’s provider', source: 'Spam complaint', mine: true, when: 'Oct 8, 9:12 AM' },
+  { who: 'jonas@helio.gen', reason: 'One-click unsubscribe from the mail client', source: 'Unsubscribed', mine: true, when: 'Oct 7, 6:41 PM' },
+  { who: 'legal@northwind.com', reason: 'Our own legal team', source: 'Added by hand', mine: false, when: 'Oct 2, 10:05 AM' },
+  { who: 'ops@verdant.co', reason: 'Do-not-contact list from the CRM', source: 'Imported', mine: false, when: 'Sep 29, 3:18 PM' },
+];
+const tabs = [
+  { label: 'All contacts', icon: 'users' },
+  { label: 'Segments', icon: 'layers' },
+  { label: 'Labels', icon: 'tag' },
+  { label: 'Suppression list', icon: 'ban', active: true },
+] as const;
+---
+<ScaledStage w={760} h={570} photo="paint-aqua">
+  <div class={`${WINDOW} left-[30px] top-[30px] w-[740px] h-[560px]`}>
+    <div class="flex items-center gap-1 border-b border-slate-200 px-3">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          {t.icon === 'users' || t.icon === 'ban' ? <Ico name={t.icon} size={14} /> : <Glyph name={t.icon} size={14} />}{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Suppression list</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Addresses and domains no campaign will email</span>
+      <span class={`${ACTION_PRIMARY} ml-auto`}><Glyph name="plus" size={12} />Add</span>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Entries</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">214</span>
+      <div class="ml-auto h-7 w-64 pl-2 rounded-md border border-slate-200 bg-white flex items-center gap-1.5"><Glyph name="search" size={13} class="text-slate-400" /><span class="text-[12.5px] text-slate-400">Search addresses or domains…</span></div>
+    </div>
+    <div class="relative h-[400px] overflow-hidden">
+      <div class="sp-list">
+        {[incoming, ...entries].map((e, i) => (
+          <div class={`flex h-11 items-center gap-3 border-b border-slate-200/60 px-5 ${i === 0 ? 'sp-new' : ''}`}>
+            {e.domain ? <Glyph name="globe" size={14} class="text-slate-400" /> : <Glyph name="mail" size={14} class="text-slate-400" />}
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-[12.5px] font-medium text-slate-900">{e.domain ? `@${e.who}` : e.who}</div>
+              <div class="truncate text-[11px] text-slate-500">{e.reason}</div>
+            </div>
+            <span class={`inline-flex h-5 shrink-0 items-center rounded border px-1.5 text-[10px] font-medium ${e.mine ? 'border-red-200 bg-red-50 text-red-700' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>{e.source}</span>
+            <span class="w-[104px] shrink-0 text-right text-[11px] tabular-nums text-slate-400">{e.when}</span>
+            <span class="inline-flex size-7 items-center justify-center text-slate-400"><Glyph name="more" size={14} /></span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- The reply that put karim@stratech.io on the list. -->
+  <div class={`${FLOAT} sp-reply left-[390px] top-[388px] w-[350px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+      <Glyph name="inbox" size={13} class="text-slate-400" />
+      <span class="text-[11.5px] text-slate-500">Reply to sam@northwind.io</span>
+      <span class="ml-auto inline-flex h-4 items-center gap-1 rounded-sm px-1.5 text-[10px] font-medium" style="color:#64748b;background-color:#64748b14;"><span class="size-1.5 rounded-full bg-slate-500"></span>Unsubscribe</span>
+    </div>
+    <div class="px-4 py-3">
+      <div class="flex items-baseline gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Karim Salah</span><span class="text-[11px] text-slate-400">Re: Quick question about Stratech</span></div>
+      <p class="mt-1.5 text-[12.5px] leading-[1.55] text-slate-700">Please take me off your list.</p>
+      <div class="mt-3 flex items-center gap-1.5 text-[11px] font-medium text-red-700"><Ico name="ban" size={12} />Suppressed in every campaign</div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* An 11s loop: the reply shows up, then its sender is added on top
+     (rows are 44px). Base styles are the end state. */
+  .sp-list { animation: sp-list 11s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes sp-list {
+    0%, 30% { transform: translateY(-44px); }
+    38%, 94% { transform: none; opacity: 1; }
+    99%, 100% { transform: none; opacity: 0; }
+  }
+  .sp-new { animation: sp-new 11s ease-out infinite; }
+  @keyframes sp-new { 0%, 34% { background: rgb(254 242 242 / 0); } 40%, 76% { background: rgb(254 242 242); } 92%, 100% { background: rgb(254 242 242 / 0); } }
+  .sp-reply { animation: sp-reply 11s ease-out infinite; }
+  @keyframes sp-reply {
+    0%, 4% { opacity: 0; translate: 0 8px; }
+    10%, 92% { opacity: 1; translate: 0 0; }
+    98%, 100% { opacity: 0; }
+  }
+</style>

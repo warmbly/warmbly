@@ -1,0 +1,47 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * A write retried with the same Idempotency-Key (docs/content/docs/api/authentication.mdx):
+ * the second call gets the stored response back instead of creating twice.
+ */
+const reqs = [
+  { label: 'First try', note: 'timed out on the client', d: 200 },
+  { label: 'Retry', note: 'same key, 40s later', d: 900 },
+];
+---
+<ScaledStage w={460} h={345} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-11 px-4 border-b border-slate-200 flex items-center gap-2">
+      <span class={EYEBROW}>Requests</span>
+      <span class="ml-auto font-mono text-[10.5px] text-slate-400">POST /v1/contacts</span>
+    </div>
+    <div class="space-y-2.5 p-3 pr-10">
+      {reqs.map((r, i) => (
+        <div class="enter-fade rounded-md border border-slate-200" style={`--d:${r.d}ms`}>
+          <div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+            <span class="text-[12px] font-medium text-slate-900">{r.label}</span>
+            <span class="text-[11px] text-slate-400">{r.note}</span>
+            <span class="ml-auto inline-flex h-5 items-center rounded bg-emerald-50 px-1.5 font-mono text-[10.5px] font-medium text-emerald-700">201</span>
+          </div>
+          <div class="px-3 py-2 font-mono text-[10.5px] leading-[1.7]">
+            <div><span class="text-slate-400">Idempotency-Key:</span> <span class="text-slate-800">7f3c9a2e-import-01</span></div>
+            <div><span class="text-slate-400">→ id</span> <span class={i ? 'rounded bg-sky-50 px-1 text-sky-700' : 'text-slate-800'}>2c3d4e5f-6071-…</span></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div class="enter-fade absolute left-[236px] top-[256px] w-[206px]" style="--d:1500ms">
+  <div class={`${FLOAT} relative px-3.5 py-3`}>
+    <div class="flex items-center gap-2">
+      <span class="inline-flex size-6 items-center justify-center rounded-md bg-emerald-50 text-emerald-600"><Glyph name="check" size={13} /></span>
+      <span class="text-[12px] font-medium text-slate-900">One contact, not two</span>
+    </div>
+    <div class="mt-1 text-[11px] leading-[1.45] text-slate-500">The retry gets the stored response. Keys are kept for 24 hours.</div>
+  </div>
+  </div>
+</ScaledStage>

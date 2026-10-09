@@ -9,6 +9,8 @@ The admin panel is the operator's view of an instance: every worker, user, organ
 
 The panel runs on `:5174` in the default stack (`http://localhost:5174` on a stock install, or the host you proxied to it). Sign in with the same account as the dashboard. The first owner holds every admin bit from the moment they claim the instance, and `warmblyctl user create --admin` creates a further account that already holds them. A page the account has no bit for says which bit it needs instead of rendering.
 
+A completed admin sign-in discards previously cached operator data and permissions before storing the new session. An unsuccessful sign-in or a pending email-code/second-factor step does not replace the session.
+
 <Callout type="warn" title="Two-factor authentication is required">
 Every admin route refuses a session that did not present a second factor. Turn on 2FA or add a passkey under **Settings > Security** in the dashboard, then sign in again; the panel says so rather than failing silently.
 
@@ -47,6 +49,10 @@ The panel is dark by default. The account menu at the bottom of the sidebar (you
 ## Overview
 
 The landing page. Instance-wide counters and their trends, acquisition by channel, and a strip of open instance problems at the top, which is the same list as the Findings tab of [Setup and health](/development/instance-health/).
+
+**Operational monitoring** adds recorded failure evidence, unverified recovery, safety restrictions, missing telemetry and measured backlogs. Positive Kafka lag or JetStream pending/ack-pending/redelivered counts stay visible separately, even when their backend condition is unknown. These are observations, not proof of an outage or provider delivery. Counts are per metric and can overlap; the attention count is a count of signals, not customers or failed messages.
+
+The strip displays coverage gaps, stale sources and unknown/no-recent-evidence sources, rather than hiding a failed request behind an empty panel. **All operational details** opens Setup and health's Operations tab. The snapshot and each investigation link require their own admin permission; hidden sections cannot be recovered by changing tabs. See [monitoring permissions and evidence](/development/instance-health/#operational-monitoring).
 
 ## Operations
 
@@ -123,7 +129,7 @@ Reading the tabs needs `view_organizations`; every action needs `manage_organiza
 
 | Page | What it answers |
 |---|---|
-| **Setup and health** | Two tabs. **Findings** is the [instance health](/development/instance-health/) check list, and the sidebar badge counts its open findings. **Services** is the old System Status page: the per-service probes and the platform mail card with its connection check and send test |
+| **Setup and health** | Three tabs. **Findings** is the [instance health](/development/instance-health/) check list, and the sidebar badge counts its errors and warnings, not operational signals. **Services** holds scoped service reachability probes and the platform mail card. **Operations** holds read-only measurements, coverage, affected counts, evidence age, waits and permission-gated investigation links |
 | **Configuration** | Four tabs. **Settings** is the database-backed settings document; **Notifications** is the [operator notification](/development/operator-notifications/) channels; **Environment** is the read-only [configuration reference](/development/configuration/) view of what the backend resolved; **Effective limits** lists the compiled pacing constants |
 | **Transfers** | Workspace export and import for any organization, from the operator side, with the same archives as `warmblyctl org export` and `org import`. A whole-instance backup stays `warmblyctl backup` and `restore` |
 

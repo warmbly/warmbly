@@ -1,7 +1,3 @@
-// Setup and health: two views of "is this instance ok". Findings are the
-// backend's own verdicts about configuration and state; services are live
-// probes of what it runs on. ?tab= deep-links either one.
-
 import { Link, useSearchParams } from "react-router-dom";
 import { Activity, ListChecks } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -10,8 +6,11 @@ import { Button } from "@/components/ui/button";
 import { useInstanceHealth } from "@/hooks/useInstanceHealth";
 import { FindingsTab } from "./health/FindingsTab";
 import { ServicesTab } from "./health/ServicesTab";
+import { InstanceMonitoringPanel } from "./InstanceMonitoringPanel";
+import { useAdminPerm } from "@/hooks/useAdminPerm";
+import { AdminPerm } from "@/lib/auth/permissions";
 
-const TAB_IDS = ["findings", "services"] as const;
+const TAB_IDS = ["findings", "services", "operations"] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 function isTabId(v: string | null): v is TabId {
@@ -19,6 +18,7 @@ function isTabId(v: string | null): v is TabId {
 }
 
 export default function HealthPage() {
+    const canConfigure = useAdminPerm(AdminPerm.ManageSettings);
     const [params, setParams] = useSearchParams();
     const raw = params.get("tab");
     const tab: TabId = isTabId(raw) ? raw : "findings";
@@ -44,11 +44,11 @@ export default function HealthPage() {
         <div>
             <PageHeader
                 title="Setup and health"
-                description="What the backend thinks is wrong with this instance, and whether the services it depends on are answering."
+                description="Configuration findings, live service probes and evidence-based operational measurements. Missing coverage is not an all-clear."
             >
-                <Button size="sm" variant="outline" asChild>
+                {canConfigure && <Button size="sm" variant="outline" asChild>
                     <Link to="/configuration">Configuration</Link>
-                </Button>
+                </Button>}
             </PageHeader>
 
             <PageTabs
@@ -60,12 +60,13 @@ export default function HealthPage() {
                         badge: findings > 0 ? findings : undefined,
                     },
                     { id: "services", label: "Services", icon: Activity },
+                    { id: "operations", label: "Operations", icon: Activity },
                 ]}
                 value={tab}
                 onChange={setTab}
             />
 
-            {tab === "findings" ? <FindingsTab /> : <ServicesTab />}
+            {tab === "findings" ? <FindingsTab /> : tab === "services" ? <ServicesTab /> : <InstanceMonitoringPanel />}
         </div>
     );
 }

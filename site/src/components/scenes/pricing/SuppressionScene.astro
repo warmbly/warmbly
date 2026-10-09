@@ -1,0 +1,60 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY } from '../../../lib/scene';
+
+/**
+ * The suppression list (web/src/app/app/contacts/suppressions/page.tsx):
+ * addresses and domains no campaign will email, each with what put it there.
+ * A one-click unsubscribe lands on top on a loop.
+ */
+type Row = { who: string; domain?: boolean; reason: string; source: string; mine?: boolean; when: string };
+const incoming: Row = { who: 'lena@sprucebio.com', reason: 'One-click unsubscribe from the mail client', source: 'Unsubscribed', when: 'Just now' };
+const rows: Row[] = [
+  { who: 'karim@stratech.io', reason: 'Replied asking to stop', source: 'Unsubscribed', when: 'Oct 8' },
+  { who: 'info@quarry.co', reason: 'Mailbox does not exist', source: 'Bounced', when: 'Oct 7' },
+  { who: 'northwind.dev', domain: true, reason: 'Our own domain', source: 'Added by hand', mine: true, when: 'Sep 30' },
+  { who: 'ravi@helio.gen', reason: 'Marked as spam', source: 'Spam complaint', when: 'Sep 28' },
+  { who: 'acme.io', domain: true, reason: 'Existing customer', source: 'Added by hand', mine: true, when: 'Sep 21' },
+];
+---
+<ScaledStage w={460} h={345} photo="paint-teal">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Suppression list</span>
+      <span class="ml-auto mr-6"><span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Add</span></span>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Entries</span>
+      <span class="font-mono text-[10.5px] tabular-nums text-slate-400">214</span>
+    </div>
+    <div class="relative h-[260px] overflow-hidden">
+      <div class="sp-list">
+        {[incoming, ...rows].map((r, i) => (
+          <div class={`flex h-11 items-center gap-2.5 border-b border-slate-200/60 px-4 pr-9 ${i === 0 ? 'sp-new' : ''}`}>
+            <Glyph name={r.domain ? 'globe' : 'mail'} size={13} class="text-slate-400" />
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-[12.5px] font-medium text-slate-900">{r.domain ? `@${r.who}` : r.who}</div>
+              <div class="truncate text-[11px] text-slate-500">{r.reason}</div>
+            </div>
+            <span class={`inline-flex h-5 shrink-0 items-center rounded border px-1.5 text-[10px] font-medium ${r.mine ? 'border-slate-200 bg-slate-100 text-slate-600' : 'border-red-200 bg-red-50 text-red-700'}`}>{r.source}</span>
+            <span class="w-[48px] shrink-0 text-right text-[11px] tabular-nums text-slate-400">{r.when}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 9s loop: a new unsubscribe slides in on top (rows are 44px). */
+  .sp-list { animation: sp-list 9s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes sp-list {
+    0% { transform: translateY(-44px); opacity: 0; }
+    5%, 30% { transform: translateY(-44px); opacity: 1; }
+    38%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .sp-new { animation: sp-new 9s ease-out infinite; }
+  @keyframes sp-new { 0%, 34% { background: rgb(240 249 255 / 0); } 40%, 70% { background: rgb(240 249 255); } 90%, 100% { background: rgb(240 249 255 / 0); } }
+</style>

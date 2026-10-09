@@ -77,6 +77,7 @@ import (
 	"github.com/warmbly/warmbly/internal/app/mailboxavatar"
 	"github.com/warmbly/warmbly/internal/app/mailboximport"
 	"github.com/warmbly/warmbly/internal/app/mcp"
+	"github.com/warmbly/warmbly/internal/app/monitoring"
 	"github.com/warmbly/warmbly/internal/app/nativeactions"
 	"github.com/warmbly/warmbly/internal/app/notification"
 	"github.com/warmbly/warmbly/internal/app/oauth"
@@ -341,6 +342,7 @@ func main() {
 	// deployment with no channels simply never delivers anything.
 	var opsNotifier opsnotify.Notifier
 	var instanceChecksDB *pgxpool.Pool
+	var monitoringBus eventbus.EventBus
 	var userRepoForHandler repository.UserRepository
 	var organizationRepoForHandler repository.OrganizationRepository
 	var orgRiskService orgrisk.Service
@@ -628,6 +630,7 @@ func main() {
 			errs.CaptureFatal(err)
 			log.Fatal(err)
 		}
+		monitoringBus = bus
 
 		// The captcha bypass exists only in dev and only as an explicitly set token; there is no default.
 		turnstileBypassToken := ""
@@ -2273,6 +2276,11 @@ func main() {
 		}
 	}
 
+	monitoringRepo := repository.NewMonitoringRepository(instanceChecksDB)
+	monitoringSources := append(monitoringRepo.Sources(), monitoringRepo.BrokerSources(monitoringBus)...)
+	monitoringSources = append(monitoringSources, monitoring.UnobservedSources()...)
+	monitoringService := monitoring.New(monitoringSources)
+
 	// The facts only boot knows, handed to the configuration and health pages so
 	// they report what this process actually resolved rather than re-reading the
 	// environment and drifting from it.
@@ -2312,6 +2320,7 @@ func main() {
 		InstanceRuntime:  instanceRuntime,
 		InstanceChecks:   instanceChecks,
 		InstanceSettings: instanceSettings,
+		Monitoring:       monitoringService,
 		OpsNotifier:      opsNotifier,
 
 		PoolLinkService:  poolLinkService,

@@ -1,0 +1,110 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../analytics/Ico.astro';
+import Step from './Step.astro';
+import BuilderBar from './BuilderBar.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * An AI step in Agent mode (AIStepFields / AIAgentFields): the instruction,
+ * the reversible actions it may take, a label pool on Add a label, and the
+ * extended thinking switch. Over the canvas, the Test panel's row for it: an
+ * agent under test reports what it would do and applies nothing.
+ */
+const allow = [
+  { label: 'Add a label', on: true, pool: true },
+  { label: 'Remove a label' },
+  { label: 'Create a task', on: true },
+  { label: 'Create a deal' },
+  { label: 'Move the deal stage' },
+  { label: 'Label the conversation' },
+  { label: 'Set variables' },
+  { label: 'Unsubscribe the contact', on: true },
+];
+const label = 'mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400';
+---
+<ScaledStage w={760} h={570} photo="reeded-glass">
+  <div class={`${WINDOW} left-[40px] top-[40px] right-0 h-[530px] flex flex-col`}>
+    <BuilderBar name="Triage replies" />
+    <div class="flex flex-1 min-h-0">
+      <div class="relative flex-1 min-w-0 overflow-hidden bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 20px 20px;">
+        <svg class="absolute inset-0" width="320" height="480" fill="none">
+          <path d="M160 80 L160 120" stroke="#cbd5e1" stroke-width="1.25" />
+          <path d="M160 176 L160 206" stroke="#cbd5e1" stroke-width="1.25" />
+        </svg>
+        <Step x={28} y={24} icon="zap" tone="sky" kicker="Trigger" title="Prospect replies" summary="Starts this automation" />
+        <Step x={28} y={120} icon="sparkles" tone="purple" kicker="AI step" title="Read the reply. If they ask about pricing, l…" summary="Agent · billed in credits" selected />
+        <span class="absolute left-[149px] top-[206px] flex size-[22px] items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400"><Ico name="plus" size={12} /></span>
+      </div>
+
+      <aside class="w-[400px] shrink-0 border-l border-slate-200 bg-white overflow-hidden">
+        <div class="h-14 px-3 flex items-center gap-2.5 border-b border-slate-200">
+          <span class="inline-flex size-7 items-center justify-center rounded-md bg-purple-50 text-purple-600 ring-1 ring-inset ring-purple-100"><Ico name="sparkles" size={14} /></span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">AI step</div>
+            <div class="truncate text-[13px] font-semibold text-slate-900">Read the reply. If they ask about pricing, l…</div>
+          </div>
+          <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Ico name="x" size={16} /></span>
+        </div>
+        <div class="space-y-3 p-3">
+          <div>
+            <div class={label}>Instruction</div>
+            <div class="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[12.5px] leading-[1.55] text-slate-800">Read the reply. If they ask about pricing, label them pricing and create a follow-up task with what they asked. If they ask to stop, unsubscribe them.</div>
+          </div>
+          <div>
+            <div class={label}>Actions the agent may take</div>
+            <div class="divide-y divide-slate-100 rounded-md border border-slate-200 p-1">
+              {allow.map((a) => (
+                <div class="py-0.5">
+                  <div class="flex items-center gap-2 rounded px-2 py-1 text-[12.5px] text-slate-700">
+                    <span class={`inline-flex size-4 shrink-0 items-center justify-center rounded border ${a.on ? 'border-sky-500 bg-sky-500 text-white' : 'border-slate-300 bg-white'}`}>{a.on && <Ico name="check" size={12} />}</span>
+                    {a.label}
+                  </div>
+                  {a.pool && (
+                    <div class="ml-[1.35rem] mt-0.5 border-l border-slate-200 pl-3 pb-1.5">
+                      <div class={label}>Labels the agent can add</div>
+                      <div class="flex h-7 items-center gap-1 rounded-md border border-slate-200 px-1.5">
+                        <span class="inline-flex h-5 items-center gap-1 rounded-sm px-1.5 text-[11px] font-medium text-sky-700" style="background:rgba(14,165,233,0.1)"><span class="size-1.5 rounded-full bg-sky-500"></span>pricing</span>
+                        <span class="inline-flex h-5 items-center gap-1 rounded-sm px-1.5 text-[11px] font-medium text-emerald-700" style="background:rgba(16,185,129,0.1)"><span class="size-1.5 rounded-full bg-emerald-500"></span>interested</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p class="mt-1.5 text-[11px] leading-relaxed text-slate-400">The agent decides which of these to use for each event, writes any task or deal details itself, and can chain several. It only takes these reversible actions. It never sends or replies.</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- The Test panel's verdict on a sample reply. -->
+  <div class={`${FLOAT} left-[22px] top-[318px] w-[330px] overflow-hidden`}>
+    <div class="h-10 px-3 flex items-center border-b border-slate-200">
+      <span class="text-[12.5px] font-medium text-slate-900">Test run</span>
+      <span class="ml-auto text-[10.5px] text-slate-400">AI steps run for real</span>
+    </div>
+    <div class="space-y-2 p-3">
+      <div class="rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-slate-500">"Thanks, this looks useful. What would 20 seats cost us per year?"</div>
+      <div class="rounded-md border border-slate-200 px-2.5 py-1.5">
+        <div class="flex items-center gap-1.5"><Ico name="checkCircle2" size={14} class="text-emerald-500" /><span class="text-[11.5px] font-medium text-slate-700">AI step</span><span class="ml-auto text-[10.5px] text-slate-400">not applied</span></div>
+        <div class="mt-1 space-y-0.5 text-[10.5px] text-slate-500">
+          <div class="ai-l1"><span class="text-slate-400">add label:</span> <span class="font-mono">pricing</span></div>
+          <div class="ai-l2"><span class="text-slate-400">create task:</span> <span class="font-mono">Send 20-seat pricing to Jenna</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The agent's decisions appear one after the other, on a loop. */
+  .ai-l1, .ai-l2 { animation: ai-line 8s ease-out infinite; }
+  .ai-l2 { animation-delay: 0.6s; }
+  @keyframes ai-line {
+    0%, 10% { opacity: 0; transform: translateY(3px); }
+    16%, 92% { opacity: 1; transform: none; }
+    98%, 100% { opacity: 0; }
+  }
+</style>

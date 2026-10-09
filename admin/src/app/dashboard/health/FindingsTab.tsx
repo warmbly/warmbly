@@ -1,7 +1,3 @@
-// Setup and health, findings: everything this deployment is currently
-// getting wrong, as decided by the running backend. The endpoint returns
-// only checks that are not ok, so an empty response is a real all-clear.
-
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "react-router-dom";
@@ -43,7 +39,7 @@ export function FindingsTab() {
                 <div className="flex items-center gap-2">
                     {healthQ.dataUpdatedAt > 0 && (
                         <span className="text-xs text-subtle-foreground tabular-nums">
-                            Last checked {new Date(healthQ.dataUpdatedAt).toLocaleTimeString()}
+                            Response received {new Date(healthQ.dataUpdatedAt).toLocaleTimeString()}
                         </span>
                     )}
                     <Button
@@ -70,7 +66,7 @@ export function FindingsTab() {
 
             {healthQ.isError && (
                 <ErrorState
-                    error={healthQ.error}
+                    error={new Error(healthQ.data ? "The refresh failed. Findings below are from the previous response, not a fresh verdict." : "Findings are unavailable. Verify access or retry; this is not an all-clear.")}
                     title="Could not run the instance checks"
                     onRetry={() => healthQ.refetch()}
                 />
@@ -78,13 +74,12 @@ export function FindingsTab() {
 
             {healthQ.data && (
                 <>
-                    {problemCount === 0 && (
-                        <Callout tone="success" icon={CheckCircle2} title="No problems found">
-                            No errors or warnings were reported.
+                    <Callout tone={healthQ.isError ? "warning" : "info"} icon={Info} title={problemCount === 0 ? "No errors or warnings reported" : "Reported configuration findings"}>
+                            {healthQ.data.execution_coverage === "complete" ? "Configuration check coverage was reported complete, not operational send or sync coverage." : "Check execution coverage is not established. Absent findings do not prove every check ran or that the instance is healthy."}
+                            {" See Operations for measured activity, backlog and evidence freshness."}
                             {checks.length > 0 &&
                                 " The informational notes below do not mean this instance is unhealthy."}
-                        </Callout>
-                    )}
+                    </Callout>
                     {checks.length > 0 && (
                         <div className={problemCount === 0 ? "mt-6" : undefined}>
                             <SummaryStrip summary={summary} />

@@ -1,0 +1,101 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from '../inbox/Ic.astro';
+import Mark from './Mark.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * HubSpot mode: the provider page (integrations/_crm/CrmSettings.tsx) with its
+ * Sync health card (SyncHealthCard.tsx), and the HubSpot side of a contact as
+ * the drawer and the inbox show it (crm/CrmContactCard.tsx).
+ */
+const counts = [
+  ['Contacts linked', '4,812'], ['Deals', '316'], ['Tasks', '128'], ['Pipelines', '2'], ['Owners', '9'],
+];
+const pulls = [
+  ['Deals', '1m ago'], ['Tasks', '1m ago'], ['Owners', '14m ago'], ['Pipelines', '14m ago'], ['Warmbly fields', '2h ago'],
+];
+const card = [
+  ['Owner', 'Marcus Lee'], ['Lifecycle stage', 'Opportunity'], ['Lead status', 'In progress'], ['Company', 'Acme'],
+];
+const chip = 'inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11.5px] font-medium tabular-nums';
+---
+<ScaledStage w={760} h={570} photo="sheer-peach">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[730px] h-[526px] bg-white`}>
+    <div class="space-y-4 px-5 py-5">
+      <div>
+        <span class="mb-2 inline-flex h-6 items-center gap-1 text-[11.5px] text-slate-500"><Ic name="arrowLeft" size={12} />Integrations</span>
+        <div class="flex items-start gap-3">
+          <span class="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-orange-50"><Mark name="hubspot" size={20} /></span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <div class="text-[18px] font-semibold tracking-tight text-slate-900">HubSpot</div>
+              <span class="inline-flex h-5 items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 text-[10.5px] font-medium text-emerald-700">Your CRM</span>
+            </div>
+            <p class="truncate text-[12px] text-slate-500">Northwind Inc <span class="text-slate-400">· Portal 48213901</span></p>
+            <span class="mt-0.5 inline-flex items-center gap-1 text-[11px] text-slate-400"><Mark name="hubspot" size={12} class="opacity-80" />Synced with HubSpot · 1m ago</span>
+          </div>
+          <div class="flex items-center gap-1.5 pr-6">
+            <span class="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 text-[12px] text-slate-700"><Ic name="refresh" size={12} />Sync now</span>
+            <span class="inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 text-[12px] text-slate-700"><Mark name="hubspot" size={12} />Open HubSpot<Ic name="externalLink" size={12} class="opacity-60" /></span>
+          </div>
+        </div>
+      </div>
+
+      <section class="rounded-md border border-slate-200 bg-white">
+        <header class="border-b border-slate-200 px-4 py-3">
+          <h3 class="text-[12.5px] font-semibold text-slate-900">Sync health</h3>
+          <p class="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">Warmbly sends its changes to HubSpot as they happen and pulls HubSpot's changes back on its own.</p>
+        </header>
+        <div class="space-y-4 px-4 py-4">
+          <div class="grid grid-cols-5 gap-px overflow-hidden rounded-md border border-slate-200 bg-slate-200/70">
+            {counts.map(([l, v]) => (
+              <div class="bg-white px-3 py-2.5">
+                <div class="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">{l}</div>
+                <div class="mt-0.5 text-[16px] font-semibold tabular-nums text-slate-900">{v}</div>
+              </div>
+            ))}
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class={`${chip} bg-sky-50 text-sky-700`}><Ic name="loader" size={12} class="hm-spin" />2 changes waiting</span>
+            <span class={`${chip} bg-slate-100 text-slate-600`}>0 failures</span>
+            <span class={`${chip} bg-emerald-50 text-emerald-700`}><span data-tick="1284,1299,2400">1284</span> changes synced in the last 24 hours</span>
+          </div>
+          <div class="space-y-1.5">
+            <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Pulled from HubSpot</div>
+            <div class="divide-y divide-slate-100 rounded-md border border-slate-200">
+              {pulls.map(([o, t]) => (
+                <div class="flex items-center gap-3 px-3 py-1.5 text-[12px]"><span class="w-28 shrink-0 text-slate-800">{o}</span><span class="tabular-nums text-slate-500">{t}</span></div>
+              ))}
+            </div>
+          </div>
+          <p class="inline-flex items-center gap-1.5 text-[12px] text-emerald-700"><Glyph name="checkCircle" size={14} />Nothing failed. Everything Warmbly changed is in HubSpot.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- The HubSpot side of a contact, in the drawer and the inbox. -->
+  <div class={`${FLOAT} left-[452px] top-[300px] w-[276px] p-3.5`}>
+    <div class="mb-2 flex items-center gap-2">
+      <span class="inline-flex h-5 items-center gap-1 rounded-md bg-orange-50 px-1.5 text-[10.5px] font-medium text-orange-700"><Mark name="hubspot" size={12} />HubSpot</span>
+      <span class="text-[12px] font-medium text-slate-900">Jenna Carter</span>
+      <span class="ml-auto inline-flex items-center gap-1 text-[11px] text-slate-500">Open<Ic name="externalLink" size={11} /></span>
+    </div>
+    <div class="divide-y divide-slate-100 rounded-md border border-slate-200 bg-white">
+      {card.map(([k, v]) => (
+        <div class="flex h-8 items-center gap-2 px-2.5">
+          <span class="w-[92px] shrink-0 text-[11px] text-slate-400">{k}</span>
+          <span class="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 text-[12px] text-slate-800">{v}{k !== 'Company' && <Glyph name="chevronDown" size={11} class="ml-auto text-slate-400" />}</span>
+        </div>
+      ))}
+    </div>
+    <span class="mt-1.5 inline-flex items-center gap-1 text-[11px] text-slate-400"><Mark name="hubspot" size={12} class="opacity-80" />Synced with HubSpot · 2m ago</span>
+  </div>
+</ScaledStage>
+
+<style>
+  .hm-spin { animation: hm-spin 1s linear infinite; }
+  @keyframes hm-spin { to { transform: rotate(360deg); } }
+</style>

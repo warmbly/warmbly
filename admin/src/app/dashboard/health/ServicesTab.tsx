@@ -11,6 +11,9 @@ import { Callout, StatusBadge, StatusDot } from "@/components/ui/kit";
 import { cn } from "@/lib/utils";
 import { MailStatusCard } from "../MailStatusCard";
 import { getSystemStatus, type SystemComponentStatus } from "@/lib/api/client/admin/system";
+import { observationIsOld } from "@/lib/monitoring";
+import { useAdminPerm } from "@/hooks/useAdminPerm";
+import { AdminPerm } from "@/lib/auth/permissions";
 
 export const SYSTEM_STATUS_KEY = ["admin", "system", "status"] as const;
 
@@ -36,17 +39,20 @@ function titleCase(name: string): string {
 }
 
 export function ServicesTab() {
+    const canConfigure = useAdminPerm(AdminPerm.ManageSettings);
     // Probes have no realtime event, so this is a deliberate poll; the query
     // only lives while the tab is mounted.
     const statusQ = useQuery({
         queryKey: SYSTEM_STATUS_KEY,
         queryFn: getSystemStatus,
         refetchInterval: 15_000,
+        refetchIntervalInBackground: false,
         retry: false,
     });
 
     const components = statusQ.data?.data ?? [];
     const failing = components.filter((c) => !c.ok);
+    const cached = statusQ.isError || observationIsOld(statusQ.data?.checked_at, Date.now());
 
     return (
         <div>
@@ -85,7 +91,7 @@ export function ServicesTab() {
 
             {statusQ.isError && (
                 <ErrorState
-                    error={statusQ.error}
+                    error={new Error(statusQ.data ? "Refresh failed. The previous probe results are retained, not a fresh verdict." : "Service probe results are unavailable. An empty or failed request is not an all-clear.")}
                     title="Could not run health checks"
                     onRetry={() => statusQ.refetch()}
                 />
@@ -93,8 +99,10 @@ export function ServicesTab() {
 
             {statusQ.data && (
                 <>
-                    {failing.length === 0 ? (
-                        <Callout tone="success" icon={CheckCircle2} title="All systems operational" className="mb-5" />
+                    {cached || components.length === 0 ? (
+                        <Callout tone="warning" title="Current service coverage unknown" className="mb-5">{components.length === 0 ? "No components were returned. Reachability has not been established." : "Cached probes cannot establish current reachability."}</Callout>
+                    ) : failing.length === 0 ? (
+                        <Callout tone="info" icon={CheckCircle2} title="Reported service probes passed" className="mb-5">Reachability at the probe time only. This does not prove send throughput, mailbox sync or recovery.</Callout>
                     ) : (
                         <Callout
                             tone="danger"
@@ -102,8 +110,8 @@ export function ServicesTab() {
                             className="mb-5"
                             title={
                                 failing.length === 1
-                                    ? "1 component is down"
-                                    : `${failing.length} components are down`
+                                    ? "1 service probe failed"
+                                    : `${failing.length} service probes failed`
                             }
                         >
                             {failing.map((c) => titleCase(c.name)).join(", ")}
@@ -123,13 +131,13 @@ export function ServicesTab() {
                             ) : (
                                 <ul className="divide-y divide-border/70">
                                     {components.map((c) => (
-                                        <ComponentRow key={c.name} component={c} />
+                                        <ComponentRow key={c.name} component={c} cached={cached} />
                                     ))}
                                 </ul>
                             )}
                         </div>
                         <div className="order-1 lg:order-2">
-                            <MailStatusCard />
+                            {canConfigure ? <MailStatusCard /> : <Callout tone="neutral" title="Platform mail permission required">Manage settings access is required to inspect or test platform mail.</Callout>}
                         </div>
                     </div>
                 </>
@@ -138,12 +146,12 @@ export function ServicesTab() {
     );
 }
 
-function ComponentRow({ component: c }: { component: SystemComponentStatus }) {
+function ComponentRow({ component: c, cached }: { component: SystemComponentStatus; cached: boolean }) {
     return (
         <li className="px-4 py-3 transition-colors hover:bg-accent/50">
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                    <StatusDot tone={c.ok ? "success" : "danger"} className="font-medium text-foreground">
+                    <StatusDot tone={cached ? "neutral" : c.ok ? "success" : "danger"} className="font-medium text-foreground">
                         <span className="truncate">{titleCase(c.name)}</span>
                     </StatusDot>
                     <p className="mt-0.5 pl-3.5 text-xs leading-relaxed text-muted-foreground">
@@ -154,14 +162,14 @@ function ComponentRow({ component: c }: { component: SystemComponentStatus }) {
                     <span className="text-xs text-muted-foreground tabular-nums" title="Latency">
                         {c.latency_ms} ms
                     </span>
-                    <StatusBadge tone={c.ok ? "success" : "danger"} className="w-[5.75rem] justify-center">
-                        {c.ok ? "Operational" : "Down"}
+                    <StatusBadge tone={cached ? "neutral" : c.ok ? "success" : "danger"} className="min-w-[5.75rem] justify-center">
+                        {cached ? c.ok ? "Cached: passed" : "Cached: failed" : c.ok ? "Probe passed" : "Probe failed"}
                     </StatusBadge>
                 </div>
             </div>
             {c.error && (
                 <div className="mt-2 ml-3.5 break-words rounded-md border border-red-500/20 bg-red-500/[0.06] px-2.5 py-1.5 font-mono text-[11.5px] text-red-700 dark:text-red-400">
-                    {c.error}
+                    Probe failed. Inspect protected service logs for details; raw connection errors are not displayed here.
                 </div>
             )}
         </li>

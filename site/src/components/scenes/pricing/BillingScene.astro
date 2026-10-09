@@ -1,0 +1,154 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR } from '../../../lib/scene';
+
+/**
+ * Settings > Billing, Overview tab (web/src/app/app/settings/billing:
+ * page.tsx and OverviewTab.tsx): the plan card with its controls, then usage
+ * against the limits the server enforces. Invoices open in the billing
+ * portal, shown beside it.
+ */
+const rail = [
+  { group: 'Account', items: [['Profile', 'user'], ['Notifications', 'info'], ['Security', 'shieldCheck']] },
+  { group: 'Workspace', items: [['Members', 'user'], ['Sending', 'send'], ['Billing', 'dollar'], ['Limits', 'gauge']] },
+  { group: 'Developers', items: [['Webhooks', 'activity'], ['OAuth apps', 'layers']] },
+] as const;
+const tabs = [
+  { label: 'Overview', icon: 'gauge', active: true },
+  { label: 'Plans', icon: 'layers' },
+  { label: 'AI & credits', icon: 'sparkles' },
+  { label: 'Payment', icon: 'dollar' },
+] as const;
+const btn = 'h-7 px-2.5 rounded-md border border-slate-200 text-[12px] text-slate-700 inline-flex items-center gap-1.5';
+const meters = [
+  { label: 'Sends today', now: '6412', cap: '15,000', pct: 43, hint: "Campaign emails sent today against the workspace's daily allowance", tick: '6412,6480,1500' },
+  { label: 'Mailboxes', now: '38', cap: '15,000', pct: 1, hint: 'Fair use: one mailbox for every send a day your plan includes' },
+  { label: 'API calls, last 24h', now: '8,241', cap: 'unmetered', hint: 'Requests made with API keys during the rolling 24-hour window' },
+  { label: 'Sends in the last month', now: '171,204', cap: 'unmetered', hint: 'Campaign emails sent during the rolling one-month window' },
+];
+const invoices = [
+  { date: 'Oct 1, 2026', amount: '$3,156.00' },
+  { date: 'Oct 1, 2025', amount: '$3,156.00' },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-blue">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px] flex flex-col`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Settings</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Plan, payment, invoices.</span>
+    </div>
+    <div class="flex min-h-0 flex-1">
+      <nav class="w-[168px] shrink-0 border-r border-slate-200/70 px-2.5 py-3">
+        {rail.map((g, gi) => (
+          <div>
+            <div class={`px-2 ${gi ? 'mt-3' : ''} mb-1 ${EYEBROW}`}>{g.group}</div>
+            {g.items.map(([label, icon]) => (
+              <div class={`flex h-7 items-center gap-2 rounded-md px-2 text-[12.5px] ${label === 'Billing' ? 'bg-slate-100 font-medium text-slate-900' : 'text-slate-600'}`}>
+                <Glyph name={icon} size={13} class={label === 'Billing' ? 'text-slate-700' : 'text-slate-400'} />{label}
+              </div>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      <div class="min-w-0 flex-1">
+        <div class="px-6 pt-5 pb-4 flex items-start gap-4 border-b border-slate-200/70 pr-12">
+          <div class="min-w-0 flex-1">
+            <div class="text-[16px] font-semibold tracking-tight text-slate-900">Billing</div>
+            <div class="mt-0.5 text-[12.5px] text-slate-500">Plan, payment and invoices for Acme.</div>
+          </div>
+          <span class={btn}><Glyph name="link" size={12} />Manage billing</span>
+        </div>
+        <div class="px-4 flex items-center gap-1 border-b border-slate-200/70">
+          {tabs.map((t) => (
+            <span class={`relative h-10 px-2.5 inline-flex items-center gap-1.5 text-[12.5px] ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+              <Glyph name={t.icon} size={13} />{t.label}
+              {'active' in t && <span class="absolute left-1.5 right-1.5 -bottom-px h-0.5 rounded-full bg-sky-600"></span>}
+            </span>
+          ))}
+        </div>
+
+        <section class="px-6 py-4 border-b border-slate-200/70 pr-12">
+          <div class="mb-3 text-[12.5px] font-semibold tracking-tight text-slate-900">Subscription</div>
+          <div class="overflow-hidden rounded-lg border border-slate-200">
+            <div class="flex items-start gap-3.5 bg-gradient-to-b from-slate-50/60 to-white px-4 py-3.5">
+              <span class="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700"><Glyph name="sparkles" size={17} /></span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-[17px] font-semibold tracking-tight text-slate-900">Business</span>
+                  <span class="inline-flex h-4 items-center gap-1 rounded border border-emerald-100 bg-emerald-50 px-1.5 text-[10px] font-medium uppercase tracking-[0.1em] text-emerald-700"><Glyph name="check" size={8} />Active</span>
+                </div>
+                <div class="mt-1 text-[12px] leading-relaxed text-slate-500">For established teams that need higher limits and advanced features.</div>
+                <div class="mt-3 flex gap-7">
+                  <div><div class="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Price</div><div class="mt-0.5 text-[14px] font-semibold tabular-nums text-slate-900">$3,156</div><div class="text-[10.5px] text-slate-400">per year</div></div>
+                  <div><div class="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Renews</div><div class="mt-0.5 text-[14px] font-semibold tabular-nums text-slate-900">October 1, 2027</div><div class="text-[10.5px] text-slate-400">in 357 days</div></div>
+                  <div><div class="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Daily sends</div><div class="mt-0.5 text-[14px] font-semibold tabular-nums text-slate-900">15,000</div><div class="text-[10.5px] text-slate-400">across the workspace</div></div>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5 border-t border-slate-200 px-3 py-2.5">
+              <span class="h-7 px-3 rounded-md bg-slate-900 text-white text-[12px] font-medium inline-flex items-center gap-1.5"><Glyph name="sparkles" size={12} />Change plan</span>
+              <span class={btn}><Glyph name="dollar" size={12} />Payment method</span>
+              <span class={`${btn} bl-inv`}><Glyph name="archive" size={12} />Invoices</span>
+              <span class={btn}><Glyph name="settings" size={12} />Request a limit increase</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="px-6 py-4 pr-12">
+          <div class="mb-3 flex items-center">
+            <span class="text-[12.5px] font-semibold tracking-tight text-slate-900">Usage and limits</span>
+            <span class="ml-auto inline-flex items-center gap-1 text-[11.5px] font-medium text-slate-500">Request an increase <Glyph name="chevronDown" size={11} class="-rotate-90" /></span>
+          </div>
+          <div class="grid grid-cols-2 gap-x-8 gap-y-4">
+            {meters.map((m) => (
+              <div>
+                <div class="mb-1 flex items-baseline justify-between gap-2">
+                  <span class="text-[12px] font-medium text-slate-700">{m.label}</span>
+                  <span class="font-mono text-[11.5px] tabular-nums text-slate-700">{m.tick ? <span data-tick={m.tick}>{m.now}</span> : m.now}<span class="text-slate-400"> / {m.cap}</span></span>
+                </div>
+                <div class="h-1 overflow-hidden rounded-full bg-slate-100">
+                  {m.pct != null && <div class="bl-dither enter-grow-x h-full rounded-full" style={`width:${Math.max(m.pct, 2)}%; --d:400ms`}></div>}
+                </div>
+                <div class="mt-1 text-[10.5px] leading-snug text-slate-400">{m.hint}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoices live in the billing portal; one click from the plan card. -->
+  <div class="enter-fade absolute left-[468px] top-[438px] w-[272px]" style="--d:900ms">
+    <div class={`${FLOAT} relative overflow-hidden`}>
+      <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+        <span class={EYEBROW}>Invoice history</span>
+        <span class="ml-auto text-[10.5px] text-slate-400">Billing portal</span>
+      </div>
+      <div class="divide-y divide-slate-100">
+        {invoices.map((v) => (
+          <div class="flex h-10 items-center gap-3 px-4 text-[12px]">
+            <span class="text-slate-700">{v.date}</span>
+            <span class="font-mono tabular-nums text-slate-900">{v.amount}</span>
+            <span class="inline-flex h-4 items-center rounded bg-emerald-50 px-1.5 text-[10px] font-medium text-emerald-700">Paid</span>
+            <span class="ml-auto inline-flex items-center gap-1 text-[11px] text-sky-700"><Glyph name="archive" size={11} />PDF</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* DitherMeter, the dashboard's halftone fill. */
+  .bl-dither {
+    background-color: rgb(14 165 233 / 0.85);
+    background-image: repeating-conic-gradient(rgb(14 165 233 / 0.3) 0 25%, transparent 0 50%);
+    background-size: 2px 2px;
+  }
+  .bl-inv { animation: bl-inv 5s ease-in-out infinite; }
+  @keyframes bl-inv { 0%, 70%, 100% { border-color: #e2e8f0; } 80%, 90% { border-color: #7dd3fc; background: #f0f9ff; } }
+</style>

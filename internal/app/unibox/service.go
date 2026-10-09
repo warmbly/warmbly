@@ -29,6 +29,8 @@ type UniboxService interface {
 		ctx context.Context,
 		orgID, id uuid.UUID,
 	) (*models.EmailMessage, *errx.Error)
+	// Peek is GetByID without marking the message read.
+	Peek(ctx context.Context, orgID, id uuid.UUID) (*models.EmailMessage, *errx.Error)
 	// ForwardSource is the message a forward carries, read without marking it
 	// seen. NotFound when the id names no message in the organization.
 	ForwardSource(ctx context.Context, orgID, id uuid.UUID) (*models.ForwardedMessage, *errx.Error)
@@ -37,6 +39,8 @@ type UniboxService interface {
 		orgID, emailID uuid.UUID,
 		threadID, limit, cursor string,
 	) (*models.MailSearchResult, *errx.Error)
+	// GetByThreadWithin is GetByThread limited to the allowed mailboxes; nil allows every mailbox.
+	GetByThreadWithin(ctx context.Context, orgID, emailID uuid.UUID, threadID, limit, cursor string, allowed []uuid.UUID) (*models.MailSearchResult, *errx.Error)
 	// LatestMessageIDInThread is the RFC Message-ID a reply into this thread
 	// should name in its In-Reply-To header. Returns "" when the thread is
 	// unknown or holds no message id, which callers treat as "no backfill".

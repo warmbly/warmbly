@@ -1,0 +1,13 @@
+---
+/** A brand's own mark drawn inline, without the tile BrandMark puts it on. */
+import { BRAND_ICON } from '../../../lib/brandIcons';
+import { RAW_BRAND_LOGOS } from '../../../lib/brandLogos';
+
+interface Props { name: string; size?: number; class?: string }
+const { name, size = 14, class: className = '' } = Astro.props;
+const raw = RAW_BRAND_LOGOS[name];
+const icon = BRAND_ICON[name];
+---
+{raw
+  ? <svg viewBox={raw.viewBox} width={size} height={size} class={`shrink-0 overflow-hidden rounded-[3px] ${className}`} set:html={raw.inner} />
+  : icon && <svg viewBox="0 0 24 24" width={size} height={size} fill={icon.hex} class={`shrink-0 ${className}`}><path d={icon.path} /></svg>}

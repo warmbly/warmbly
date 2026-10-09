@@ -1,0 +1,101 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../about/Ico.astro';
+import { WINDOW } from '../../../lib/scene';
+
+/**
+ * The brand hero: the lockup on a title slide, the app icon on a phone's
+ * home screen (public/brand/social-avatar.jpg), and a business card.
+ */
+const MARK = 'M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z';
+const thumbs = ['title', 'ramp', 'inbox', 'close'];
+const apps = [
+  { label: 'Mail', bg: 'linear-gradient(160deg,#60a5fa,#2563eb)' },
+  { label: 'Calendar', bg: 'linear-gradient(160deg,#ffffff,#e2e8f0)' },
+  { label: 'Notes', bg: 'linear-gradient(160deg,#fde68a,#f59e0b)' },
+  { label: 'Photos', bg: 'linear-gradient(160deg,#fbcfe8,#a78bfa)' },
+  { label: 'Maps', bg: 'linear-gradient(160deg,#bbf7d0,#22c55e)' },
+  { label: 'Warmbly', icon: true },
+  { label: 'Music', bg: 'linear-gradient(160deg,#fda4af,#e11d48)' },
+  { label: 'Files', bg: 'linear-gradient(160deg,#bae6fd,#0ea5e9)' },
+];
+---
+<ScaledStage w={1240} h={640} photo="paint-blue">
+  <!-- A presentation, open on its title slide -->
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[860px] h-[620px] bg-slate-100`}>
+    <div class="h-10 px-4 flex items-center gap-2 border-b border-slate-200 bg-white">
+      <span class="flex gap-1.5"><span class="size-2.5 rounded-full bg-slate-200"></span><span class="size-2.5 rounded-full bg-slate-200"></span><span class="size-2.5 rounded-full bg-slate-200"></span></span>
+      <Ico name="presentation" size={13} class="ml-3 text-slate-400" />
+      <span class="text-[12px] text-slate-600">Warmbly, an introduction</span>
+      <span class="ml-auto h-7 px-3 rounded-md bg-slate-900 inline-flex items-center gap-1.5 text-[12px] font-medium text-white"><Ico name="playCircle" size={12} />Present</span>
+    </div>
+    <div class="flex">
+      <div class="w-[132px] shrink-0 space-y-3 border-r border-slate-200 bg-white p-3">
+        {thumbs.map((t, i) => (
+          <div class="flex gap-1.5">
+            <span class="w-3 pt-0.5 text-right font-mono text-[9px] text-slate-400">{i + 1}</span>
+            <div class={`aspect-video flex-1 rounded-[3px] bg-white ring-1 ${i === 0 ? 'ring-2 ring-sky-500' : 'ring-slate-200'} p-1.5`}>
+              {i === 0 && <div class="flex h-full items-center gap-1"><svg viewBox="0 0 746 764" class="w-3 text-slate-900" fill="currentColor"><path d={MARK} /></svg><span class="h-1.5 w-8 rounded bg-slate-800"></span></div>}
+              {i === 1 && <div class="flex h-full items-end gap-[2px]">{[3, 4, 5, 6, 7, 8, 9].map((h) => <span class="flex-1 rounded-t-[1px] bg-sky-400" style={`height:${h * 10}%`}></span>)}</div>}
+              {i === 2 && <div class="space-y-1"><span class="block h-1 w-full rounded bg-slate-200"></span><span class="block h-1 w-4/5 rounded bg-slate-200"></span><span class="block h-1 w-3/5 rounded bg-sky-300"></span><span class="block h-1 w-4/5 rounded bg-slate-200"></span></div>}
+              {i === 3 && <div class="flex h-full items-center justify-center"><span class="h-1.5 w-10 rounded bg-slate-800"></span></div>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div class="flex-1 p-8">
+        <div class="relative aspect-video w-full overflow-hidden rounded-[4px] bg-white shadow-[0_20px_50px_-30px_rgba(15,23,42,0.45)] ring-1 ring-slate-200">
+          <div class="absolute left-[9%] top-[22%] inline-flex items-center gap-4 text-slate-900">
+            <svg viewBox="0 0 746 764" class="w-[58px]" fill="currentColor"><path d={MARK} /></svg>
+            <span class="text-[56px] font-extrabold tracking-[-0.03em]">Warmbly</span>
+          </div>
+          <div class="absolute left-[9%] top-[56%] max-w-[70%] text-[19px] font-medium leading-[1.3] tracking-[-0.02em] text-slate-500">Cold email you can read, run and trust.</div>
+          <div class="absolute bottom-[8%] left-[9%] right-[9%] flex items-center justify-between border-t border-slate-200 pt-3 text-[11px] text-slate-400">
+            <span>warmbly.com</span><span class="inline-flex items-center gap-1.5"><span class="size-1.5 rounded-full bg-sky-600"></span>Open source, Apache 2.0</span>
+          </div>
+        </div>
+        <div class="mt-5 rounded-md bg-white p-3 ring-1 ring-slate-200">
+          <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Speaker notes</div>
+          <div class="mt-1.5 text-[12px] leading-[1.5] text-slate-500">Ink mark on white, the lockup at the top left, nothing else on the slide.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The app icon where it lives: a phone's home screen -->
+  <div class="float-layer absolute left-[930px] top-[86px] w-[268px] h-[600px] rounded-[44px] bg-slate-900 p-[10px] shadow-[0_40px_90px_-40px_rgba(15,23,42,0.7)]">
+    <div class="relative h-full overflow-hidden rounded-[36px]" style="background:linear-gradient(180deg,#7dd3fc 0%,#38bdf8 45%,#0ea5e9 100%)">
+      <div class="flex items-center justify-between px-6 pt-4 text-[11px] font-semibold text-white">
+        <span>9:41</span>
+        <span class="inline-flex items-center gap-1"><Ico name="wifi" size={12} /><Ico name="battery" size={14} /></span>
+      </div>
+      <div class="mt-8 grid grid-cols-4 gap-x-3 gap-y-5 px-5">
+        {apps.map((a) => (
+          <div class="flex flex-col items-center gap-1.5">
+            {a.icon
+              ? <img src="/brand/social-avatar-256.webp" alt="" width="48" height="48" class="size-12 rounded-[12px] shadow-[0_6px_14px_-6px_rgba(15,23,42,0.6)]" loading="lazy" />
+              : <span class="block size-12 rounded-[12px] opacity-90" style={`background:${a.bg}`}></span>}
+            <span class={`text-[9.5px] text-white ${a.icon ? 'font-semibold' : 'opacity-90'}`}>{a.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- A business card, set down on the slide -->
+  <div class="absolute left-[640px] top-[436px] w-[318px] h-[184px] -rotate-[4deg]">
+  <div class="float-layer relative h-full overflow-hidden rounded-[10px] bg-white ring-1 ring-slate-900/[0.07] shadow-[0_24px_60px_-26px_rgba(15,23,42,0.5)]">
+    <div class="flex h-full flex-col justify-between p-5">
+      <div class="flex items-center gap-2 text-slate-900">
+        <svg viewBox="0 0 746 764" class="w-6" fill="currentColor"><path d={MARK} /></svg>
+        <span class="text-[17px] font-extrabold tracking-tight">Warmbly</span>
+      </div>
+      <div>
+        <div class="text-[13px] font-medium text-slate-900">The Warmbly team</div>
+        <div class="mt-1 flex items-center justify-between text-[11px] text-slate-500"><span>team@warmbly.com</span><span>warmbly.com</span></div>
+      </div>
+    </div>
+    <span class="absolute right-0 top-0 h-full w-1.5 bg-sky-600"></span>
+  </div>
+  </div>
+</ScaledStage>
