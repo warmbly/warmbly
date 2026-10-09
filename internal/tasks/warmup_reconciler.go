@@ -42,6 +42,9 @@ func (s *tasksService) ReconcileWarmupSchedules(ctx context.Context, limit int) 
 			n, selected, err := recoverBatch(ctx, time.Now().Add(-10*time.Minute), limit)
 			recovered += n
 			if err != nil {
+				if recovered > 0 {
+					log.Info().Int("recovered", recovered).Msg("warmup reconcile retired unstarted dispatches before failing")
+				}
 				return 0, err
 			}
 			if selected < limit || limit <= 0 {

@@ -78,10 +78,7 @@ func NewKafkaFromProducer(p *kafka.Producer, cfg KafkaConfig) *KafkaBus {
 
 func (b *KafkaBus) Name() string { return "kafka" }
 
-// Publish writes to the underlying producer. The context is checked for
-// cancellation before the call but not used to bound the produce itself: the
-// confluent-kafka-go producer is asynchronous and Produce returns immediately
-// after enqueuing.
+// Publish succeeds only after a native broker delivery report.
 func (b *KafkaBus) Publish(ctx context.Context, topic, key string, payload []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -97,7 +94,9 @@ func (b *KafkaBus) Publish(ctx context.Context, topic, key string, payload []byt
 	if err := b.ensureTopics(ctx, topic); err != nil {
 		return err
 	}
-	err := b.producer.Produce(topic, []byte(key), payload)
+	pctx, cancel := context.WithTimeout(ctx, handlerTimeout())
+	defer cancel()
+	err := b.producer.ProduceConfirmed(pctx, topic, []byte(key), payload)
 	if errors.Is(err, kafka.ErrClientClosed) {
 		return ErrBusClosed
 	}
@@ -184,6 +183,9 @@ func (b *KafkaBus) subscribeOnce(ctx context.Context, topics []string, group str
 	err = cons.ConsumeConcurrent(ctx, lanes, resolve, deliver)
 	if errors.Is(err, kafka.ErrClientClosed) {
 		return ErrBusClosed
+	}
+	if errors.Is(err, kafka.ErrAssignmentLost) {
+		return errors.Join(ErrSubscriptionRebalanced, err)
 	}
 	return err
 }

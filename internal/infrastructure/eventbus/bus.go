@@ -40,6 +40,8 @@ import (
 // distinguish it from a broker fault so they do not report a clean stop.
 var ErrBusClosed = errors.New("eventbus: bus closed")
 
+var ErrSubscriptionRebalanced = errors.New("eventbus: subscription rebalanced")
+
 // EventBus is the transport-level interface. Implementations must be safe for
 // concurrent use by multiple goroutines.
 type EventBus interface {
@@ -107,7 +109,11 @@ func retrySubscription(ctx context.Context, subscribe func(context.Context) erro
 		if errors.Is(err, ErrBusClosed) {
 			return err
 		}
-		log.Warn().Msg("eventbus subscription interrupted; reopening for replay")
+		if errors.Is(err, ErrSubscriptionRebalanced) {
+			log.Debug().Msg("eventbus subscription rebalanced; reopening for replay")
+		} else {
+			log.Warn().Err(err).Msg("eventbus subscription interrupted; reopening for replay")
+		}
 		timer := time.NewTimer(time.Second)
 		select {
 		case <-ctx.Done():

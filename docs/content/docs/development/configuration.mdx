@@ -311,6 +311,8 @@ On `filesystem`, a remote worker writes blobs to its own disk rather than a volu
 | `PUBSUB_ENABLED` | `false` uses the Redis bridge for realtime fanout, `true` uses Google Pub/Sub | `false` | yes |
 | `GCP_PROJECT_ID` | Project when `PUBSUB_ENABLED=true` | unset | yes |
 
+Kafka event publication waits for the broker's delivery report with all in-sync replica acknowledgements, bounded by the caller's deadline and `EVENTBUS_HANDLER_TIMEOUT`. Local queue admission is not evidence of publication. A rejected or timed-out result keeps the original command unacknowledged for replay; a timeout does not prove the event was never delivered, so consumers still deduplicate replayed outcomes.
+
 <Callout title="Topics are created by the bus, not by hand">
 A worker's command topic is named after the node id issued when it joined, so the set of topics is not knowable in advance. The Kafka backend creates what it uses, once per topic per process, rather than depending on the broker's `auto.create.topics.enable`, which is off by default on Confluent Cloud and configurable only on Dedicated clusters, not on Basic, Standard, Enterprise or Freight. The credential therefore needs `CREATE` on topics as well as read and write.
 </Callout>

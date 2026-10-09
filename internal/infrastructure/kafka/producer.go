@@ -3,6 +3,8 @@
 package kafka
 
 import (
+	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -31,6 +33,7 @@ func NewProducer(servers string) *ProducerConfig {
 	return &ProducerConfig{
 		config: map[string]ckf.ConfigValue{
 			"bootstrap.servers": servers,
+			"acks":              "all",
 		},
 	}
 }
@@ -93,4 +96,37 @@ func (pr *Producer) Produce(topic string, key, value []byte) error {
 		Value:          value,
 		Timestamp:      time.Now(),
 	}, nil)
+}
+
+// ProduceConfirmed waits for broker delivery, not merely local queue admission.
+func (pr *Producer) ProduceConfirmed(ctx context.Context, topic string, key, value []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report := make(chan ckf.Event, 1)
+	pr.mu.Lock()
+	if pr.closed {
+		pr.mu.Unlock()
+		return ErrClientClosed
+	}
+	err := pr.p.Produce(&ckf.Message{
+		TopicPartition: ckf.TopicPartition{Topic: &topic, Partition: ckf.PartitionAny},
+		Key:            key,
+		Value:          value,
+		Timestamp:      time.Now(),
+	}, report)
+	pr.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case event := <-report:
+		msg, ok := event.(*ckf.Message)
+		if !ok || msg == nil {
+			return fmt.Errorf("kafka: unexpected delivery report %T", event)
+		}
+		return msg.TopicPartition.Error
+	}
 }
