@@ -1,0 +1,88 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../../lib/scene';
+
+/**
+ * The two emails in the step editor (campaigns/sequences/EmailContentEditor):
+ * the first with its own subject and variables, and over it the second, a
+ * reply in the same thread five days later, its subject carried over.
+ */
+const chip = 'rounded bg-sky-50 px-1 py-px font-mono text-[11.5px] text-sky-700';
+const tools = ['bold', 'italic', 'link'] as const;
+---
+<ScaledStage w={1240} h={640} photo="reeded-glass">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[1240px] h-[620px]`}>
+    <div class="h-12 px-5 flex items-center gap-2 border-b border-slate-200">
+      <span class="text-[13px] font-medium text-slate-900">Email 1</span>
+      <span class="text-[11.5px] text-slate-400">First email · Day 0</span>
+      <div class="ml-auto mr-[470px] flex items-center gap-1.5">
+        <span class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center">A/B test</span>
+        <span class="h-7 px-3 rounded-md bg-sky-600 text-[12px] font-medium text-white inline-flex items-center">Save changes</span>
+      </div>
+    </div>
+    <div class="w-[700px] px-6 py-5 space-y-4">
+      <div>
+        <div class="text-[11.5px] font-medium text-slate-700">Step name</div>
+        <div class="mt-1.5 h-8 px-3 rounded-md border border-slate-200 flex items-center text-[13px] text-slate-800">The ask</div>
+      </div>
+      <div>
+        <div class="flex items-center"><span class={EYEBROW}>Subject</span><span class="ml-auto inline-flex items-center gap-1 text-[11.5px] text-slate-500"><Glyph name="braces" size={12} />Variables</span></div>
+        <div class="mt-1.5 h-9 px-3 rounded-md border border-slate-200 flex items-center gap-1 text-[13.5px] text-slate-800"><span class={chip}>{'{{.Company}}'}</span>&nbsp;&lt;&gt; Atlas</div>
+      </div>
+      <div>
+        <div class="flex items-center">
+          <span class={EYEBROW}>Body</span>
+          <span class="ml-auto inline-flex rounded-md bg-slate-100 p-0.5">
+            <span class="h-6 px-2 rounded inline-flex items-center text-[11.5px] font-medium bg-white text-slate-900 shadow-sm">Edit</span>
+            <span class="h-6 px-2 rounded inline-flex items-center text-[11.5px] font-medium text-slate-500">Preview</span>
+          </span>
+        </div>
+        <div class="mt-1.5 rounded-md border border-slate-200">
+          <div class="flex h-9 items-center gap-0.5 border-b border-slate-200 px-1.5 text-slate-500">
+            {tools.map((t) => <span class="inline-flex size-7 items-center justify-center rounded"><Glyph name={t} size={14} /></span>)}
+            <span class="mx-1 h-4 w-px bg-slate-200"></span>
+            <span class="inline-flex h-7 items-center gap-1.5 rounded px-2 text-[12px]"><Glyph name="braces" size={13} />Variables</span>
+          </div>
+          <div class="space-y-3 px-4 py-4 text-[13.5px] leading-[1.7] text-slate-700">
+            <p>Hi <span class={chip}>{'{{.FirstName}}'}</span>,</p>
+            <p>Saw <span class={chip}>{'{{.Company}}'}</span> leads a lot of seed developer-tools rounds. We launched Atlas 14 weeks ago, just crossed $40k MRR growing about 30% a month, and are opening a small seed.</p>
+            <p>Worth a look? Happy to send the deck if it’s a fit.</p>
+            <p class="text-slate-500">Jamie</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 text-[11.5px]">
+        <span class="text-slate-500">Content score</span>
+        <div class="h-1.5 w-28 rounded-full bg-slate-100"><div class="enter-grow-x h-full w-[91%] rounded-full bg-emerald-500"></div></div>
+        <span class="font-mono tabular-nums text-emerald-600">91</span>
+        <span class="text-slate-400">· Looks good · one clear ask</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Five days later, in the same thread. -->
+  <div class={`${FLOAT} left-[770px] top-[120px] w-[430px] overflow-hidden`}>
+    <div class="h-11 px-4 flex items-center gap-2 border-b border-slate-200">
+      <span class="inline-flex size-6 items-center justify-center rounded-md bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-100"><Glyph name="mail" size={13} /></span>
+      <span class="text-[12.5px] font-medium text-slate-900">Email 2</span>
+      <span class="inline-flex items-center gap-1 text-[11px] text-slate-400"><Glyph name="clock" size={11} />5 days after Email 1</span>
+    </div>
+    <div class="px-4 py-3 space-y-3">
+      <div class="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2 flex items-center gap-3">
+        <span class="text-[12px] font-medium text-slate-900">Reply in thread</span>
+        <span class="ml-auto relative inline-flex h-5 w-9 items-center rounded-full bg-sky-600"><span class="inline-block size-4 translate-x-4 rounded-full bg-white shadow-sm"></span></span>
+      </div>
+      <div>
+        <div class={EYEBROW}>Subject</div>
+        <div class="mt-1.5 h-8 px-3 rounded-md border border-slate-200 bg-slate-50 flex items-center text-[12.5px] text-slate-500">Re: <span class={`${chip} ml-1`}>{'{{.Company}}'}</span>&nbsp;&lt;&gt; Atlas</div>
+      </div>
+      <div class="rounded-md border border-slate-200 px-3.5 py-3 space-y-2.5 text-[12.5px] leading-[1.6] text-slate-700">
+        <p>Hi <span class={chip}>{'{{.FirstName}}'}</span>,</p>
+        <p>Last note on this, then I’ll leave you alone. Two more design partners signed since I wrote.</p>
+        <p>If it isn’t one for <span class={chip}>{'{{.Company}}'}</span>, no hard feelings at all.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[11px] text-slate-500"><Glyph name="flag" size={12} class="text-slate-400" />Not sent to anyone who replied to Email 1</div>
+  </div>
+</ScaledStage>

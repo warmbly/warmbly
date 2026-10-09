@@ -1,0 +1,118 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../../../lib/scene';
+
+/**
+ * A team campaign's Settings tab (preferences/CampaignAppearance.tsx and
+ * CampaignEmails.tsx): every rep's mailbox in Sending accounts, rotation on
+ * Even spacing. The card over it is today's pool, where the next new lead
+ * goes to the mailbox idle longest.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'barChart' },
+  { label: 'Leads', icon: 'user' },
+  { label: 'Steps', icon: 'layers' },
+  { label: 'Schedule', icon: 'calendar' },
+  { label: 'Settings', icon: 'settings', active: true },
+] as const;
+const chips = ['dana@acme.com', 'marcus@acme.com', 'priya@acme.com', 'tom@acme.com'];
+const modes = [
+  { t: 'Even spacing', d: 'Recommended: always picks the mailbox that’s been idle longest, for the most natural send pattern.', on: true },
+  { t: 'Round-robin', d: 'Cycles through your mailboxes in order (A → B → C → A). A simple, even split.' },
+  { t: 'Weighted', d: 'Sends more from your healthiest, higher-limit mailboxes.' },
+];
+const pool = [
+  { addr: 'dana@acme.com', sent: 31, idle: 3 },
+  { addr: 'marcus@acme.com', sent: 34, idle: 1 },
+  { addr: 'priya@acme.com', sent: 30, idle: 6 },
+  { addr: 'tom@acme.com', sent: 29, idle: 11, next: true },
+];
+---
+<ScaledStage w={760} h={620} photo="sheer-cream">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[470px] h-[600px]`}>
+    <div class="px-5 pt-4 pb-3">
+      <div class="inline-flex items-center gap-1 text-[11.5px] text-slate-400"><span>←</span> Campaigns</div>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="text-[17px] font-semibold text-slate-900">Q4 mid-market ops</span>
+        <span class="inline-flex h-5 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+      </div>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <section class="px-5 py-4 border-b border-slate-200/70">
+      <div class="text-[12.5px] font-semibold text-slate-900">Sending accounts</div>
+      <div class="mt-0.5 text-[11.5px] text-slate-500">Which mailboxes send this campaign, by tag, individually, or both, and the per-mailbox daily cap.</div>
+      <div class="mt-3 rounded-md border border-slate-200 bg-white min-h-[34px] p-1.5 flex flex-wrap gap-1">
+        <span class="inline-flex items-center gap-1 h-5 pl-1.5 pr-1.5 rounded text-[11px] font-medium" style="background-color:#6366f11f;border:1px solid #6366f140;color:#6366f1;"><Glyph name="tag" size={10} />Sales team</span>
+        {chips.map((c) => (
+          <span class="inline-flex items-center gap-1.5 h-5 pl-1.5 pr-1.5 rounded text-[11px] font-medium border border-slate-200 bg-slate-50 text-slate-700"><span class="size-2 rounded-full bg-emerald-500"></span>{c}</span>
+        ))}
+      </div>
+      <div class="mt-3 flex items-center gap-3">
+        <span class="text-[12px] text-slate-700">Maximum per mailbox per day</span>
+        <span class="h-7 w-[60px] rounded-md border border-slate-200 px-2 flex items-center font-mono text-[12px] tabular-nums text-slate-900">50</span>
+        <span class="text-[11.5px] text-slate-500">emails / day</span>
+      </div>
+    </section>
+
+    <section class="px-5 py-4">
+      <div class="text-[12.5px] font-semibold text-slate-900">Inbox rotation</div>
+      <div class="mt-0.5 text-[11.5px] text-slate-500">Send this campaign from several mailboxes so no single inbox sends too much.</div>
+      <div class="mt-3 space-y-1.5">
+        {modes.map((m) => (
+          <div class={`rounded-md border px-3 py-2.5 flex items-start gap-2.5 ${m.on ? 'border-sky-200 bg-sky-50/60' : 'border-slate-200'}`}>
+            <span class={`mt-0.5 size-3.5 shrink-0 rounded-full border ${m.on ? 'border-[4px] border-sky-600' : 'border-slate-300'}`}></span>
+            <div>
+              <div class="text-[12.5px] font-medium text-slate-900">{m.t}</div>
+              <div class="text-[11px] leading-snug text-slate-500">{m.d}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  </div>
+
+  <!-- Today's pool: the next new lead goes to whoever has been idle longest. -->
+  <div class={`${FLOAT} left-[470px] top-[196px] w-[268px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class={EYEBROW}>Next new lead</div>
+      <div class="mt-1.5 flex items-center gap-2 text-[12px]">
+        <span class="rt-chip inline-flex h-6 items-center gap-1.5 rounded-full bg-sky-50 px-2 font-medium text-sky-700 ring-1 ring-inset ring-sky-200"><Glyph name="user" size={11} />Sara Ito</span>
+        <span class="text-slate-300">→</span>
+        <span class="font-medium text-slate-900">tom@acme.com</span>
+      </div>
+    </div>
+    <div class="px-4 py-2">
+      {pool.map((p) => (
+        <div class={`-mx-2 rounded-md px-2 py-1.5 ${p.next ? 'rt-next' : ''}`}>
+          <div class="flex items-center gap-2 text-[12px]">
+            <Glyph mark="google" size={12} />
+            <span class="truncate text-slate-700">{p.addr}</span>
+            <span class={`ml-auto shrink-0 text-[10.5px] ${p.next ? 'font-medium text-sky-700' : 'text-slate-400'}`}>idle {p.idle}m</span>
+            <span class="w-11 shrink-0 text-right font-mono text-[11px] tabular-nums text-slate-900">{p.sent}<span class="text-slate-400">/50</span></span>
+          </div>
+          <div class="mt-1.5 h-1 rounded-full bg-slate-100"><div class="h-full rounded-full bg-sky-500" style={`width:${(p.sent / 50) * 100}%`}></div></div>
+        </div>
+      ))}
+    </div>
+    <div class="border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[11px] leading-snug text-slate-500">Every follow-up to that lead comes from the same address.</div>
+  </div>
+</ScaledStage>
+
+<style>
+  .rt-next { background: rgb(240 249 255); }
+  .rt-chip { animation: rt-chip 6s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes rt-chip {
+    0% { opacity: 0; transform: translateX(-8px); }
+    8%, 88% { opacity: 1; transform: none; }
+    100% { opacity: 0; transform: none; }
+  }
+</style>

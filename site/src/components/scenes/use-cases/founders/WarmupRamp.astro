@@ -1,0 +1,103 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import MailboxDrawerHead from '../../MailboxDrawerHead.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../../lib/scene';
+
+/**
+ * A cold mailbox's Warmup tab on day 13: the ramp so far and the rest of it
+ * to 40 a day, and beside it the campaign's sender list, where every mailbox
+ * still warming is held to 5 cold emails a day.
+ */
+const TODAY = 13;
+const days = Array.from({ length: 34 }, (_, i) => ({ target: Math.min(40, 10 + i), sent: i < TODAY ? 10 + i - (i % 5 === 3 ? 1 : 0) : 0 }));
+const pool = [
+  { addr: 'hello@out.acme.com', day: 13 },
+  { addr: 'intro@out.acme.com', day: 13 },
+  { addr: 'team@out.acme.com', day: 12 },
+];
+---
+<ScaledStage w={760} h={570} photo="paint-blue">
+  <div class={`${WINDOW} left-[196px] top-[40px] w-[600px] h-[560px]`}>
+    <MailboxDrawerHead addr="hello@out.acme.com" initials="MO" provider="Google Workspace" mark="google" active="Warmup" />
+
+    <div class="divide-y divide-slate-200/60">
+      <div class="px-5 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <span class="inline-flex size-8 items-center justify-center rounded-lg bg-orange-50 text-orange-600"><Glyph name="flame" size={16} class="flame-flicker" /></span>
+          <div>
+            <div class="text-[12.5px] font-medium text-slate-900">Warming up</div>
+            <div class="text-[11px] text-slate-400">Day {TODAY} of the ramp · premium pool</div>
+          </div>
+        </div>
+        <span class="h-8 px-3 rounded-md border border-slate-200 inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-700"><Glyph name="pause" size={13} />Pause</span>
+      </div>
+
+      <div class="px-5 py-4 grid grid-cols-3 gap-4">
+        <div>
+          <div class={EYEBROW}>Today</div>
+          <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900"><span data-tick="16,21,2600">16</span><span class="text-[13px] text-slate-400">/22</span></div>
+        </div>
+        <div>
+          <div class={EYEBROW}>Ramp</div>
+          <div class="mt-1.5 text-[13px] text-slate-700">+1 a day</div>
+          <div class="text-[10.5px] text-slate-400">up to 40</div>
+        </div>
+        <div>
+          <div class={EYEBROW}>Reputation</div>
+          <div class="mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium text-emerald-600"><Glyph name="shieldCheck" size={14} />Healthy</div>
+        </div>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between">
+          <span class={EYEBROW}>Daily volume</span>
+          <span class="flex items-center gap-3 text-[10px] text-slate-400">
+            <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-sky-500"></span>Sent</span>
+            <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm border border-dashed border-slate-300"></span>Still to come</span>
+          </span>
+        </div>
+        <div class="relative mt-4 flex h-[170px] items-end gap-[4px]">
+          {days.map((d, i) => (
+            <div class="relative flex-1 h-full flex items-end">
+              {i < TODAY ? (
+                <div class="enter-grow-y w-full rounded-t-[2px] border-t-[1.5px] border-sky-500 bg-gradient-to-b from-sky-500/90 to-sky-500/25" style={`height:${(d.sent / 40) * 100}%; --d:${150 + i * 40}ms`}></div>
+              ) : (
+                <div class={`w-full rounded-t-[2px] border border-dashed ${i === TODAY ? 'wr-today border-orange-300 bg-orange-50' : 'border-slate-200'}`} style={`height:${(d.target / 40) * 100}%`}></div>
+              )}
+            </div>
+          ))}
+          <span class="absolute right-0 top-0 -translate-y-[130%] font-mono text-[10px] text-slate-400">40 a day</span>
+        </div>
+        <div class="mt-2 h-px bg-slate-200/80"></div>
+        <div class="relative mt-1.5 flex justify-between font-mono text-[9.5px] text-slate-400"><span>Day 1</span><span class="absolute -translate-x-1/2 text-orange-600" style={`left:${((TODAY + 0.5) / days.length) * 100}%`}>Today</span><span>Day 34</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The campaign's view of the same mailboxes. -->
+  <div class={`${FLOAT} left-[24px] top-[262px] w-[276px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class={EYEBROW}>Sending accounts</div>
+      <div class="mt-1 text-[11.5px] text-slate-500">Seed founders · tag Cold</div>
+    </div>
+    <div class="px-4 py-1.5">
+      {pool.map((p) => (
+        <div class="flex h-11 items-center gap-2 text-[12px]">
+          <span class="size-2 shrink-0 rounded-full bg-amber-500"></span>
+          <div class="min-w-0">
+            <div class="truncate text-slate-700">{p.addr}</div>
+            <div class="text-[10.5px] text-orange-600">Ramping up · day {p.day}</div>
+          </div>
+          <span class="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-slate-900">5<span class="text-slate-400">/day</span></span>
+        </div>
+      ))}
+    </div>
+    <div class="border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[11px] leading-snug text-slate-500">While a mailbox is warming it sends at most 5 cold emails a day.</div>
+  </div>
+</ScaledStage>
+
+<style>
+  .wr-today { animation: wr-today 2.4s ease-in-out infinite; }
+  @keyframes wr-today { 50% { background: rgb(254 215 170); } }
+</style>

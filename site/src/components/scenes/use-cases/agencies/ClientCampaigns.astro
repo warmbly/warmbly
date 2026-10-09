@@ -1,0 +1,78 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY } from '../../../../lib/scene';
+import { TH } from '../ui';
+
+/**
+ * A client workspace's own Campaigns list, with that client's contact lists
+ * in the card beside it. Nothing from another workspace appears in either.
+ */
+const campaigns = [
+  { name: 'Ops leaders · EU', status: 'sending', leads: 2140, sent: 1640, replies: 116 },
+  { name: 'Logistics heads · US', status: 'sending', leads: 1980, sent: 1388, replies: 86 },
+  { name: 'Warehouse automation', status: 'sending', leads: 1460, sent: 1104, replies: 64 },
+  { name: 'Re-engage Q2 trials', status: 'done', leads: 680, sent: 680, replies: 37 },
+  { name: 'Freight forwarders · DACH', status: 'draft', leads: 912, sent: 0, replies: 0 },
+] as const;
+const lists = [
+  { name: 'EU ops leaders', n: '2,140' },
+  { name: 'US logistics heads', n: '1,980' },
+  { name: 'Q2 trial sign-ups', n: '680' },
+];
+---
+<ScaledStage w={680} h={510} photo="paint-aqua">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[480px]`}>
+    <div class={TOPBAR}>
+      <span class="size-5 rounded-md bg-slate-900 flex items-center justify-center"><span class="text-[9px] font-bold text-white">N</span></span>
+      <span class={EYEBROW}>Campaigns</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Northwind</span>
+      <span class={`${ACTION_PRIMARY} ml-auto mr-8`}><Glyph name="plus" size={12} />New campaign</span>
+    </div>
+    <div class={SECTIONBAR}><span class={EYEBROW}>All campaigns</span><span class="font-mono text-[10.5px] text-slate-400">5</span></div>
+    <table class="w-[644px] table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class={`${TH} pl-5`}>Campaign</th>
+          <th class={`${TH} w-[96px]`}>Status</th>
+          <th class={`${TH} w-[70px]`}>Leads</th>
+          <th class={`${TH} w-[70px]`}>Sent</th>
+          <th class={`${TH} w-[78px]`}>Replies</th>
+        </tr>
+      </thead>
+      <tbody>
+        {campaigns.map((c) => (
+          <tr class="h-10 border-b border-slate-200/60">
+            <td class="pl-5 pr-3 truncate text-[12.5px] font-medium text-slate-900">{c.name}</td>
+            <td class="px-3">
+              {c.status === 'sending' && <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700"><span class="campaign-grid"></span><span class="text-shimmer">Sending</span></span>}
+              {c.status === 'done' && <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-indigo-700"><Glyph name="check" size={12} />Done</span>}
+              {c.status === 'draft' && <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-400"><Glyph name="penLine" size={12} />Draft</span>}
+            </td>
+            <td class="px-3 font-mono text-[12px] tabular-nums text-slate-600">{c.leads.toLocaleString('en-US')}</td>
+            <td class="px-3 font-mono text-[12px] tabular-nums text-slate-600">{c.sent ? c.sent.toLocaleString('en-US') : '—'}</td>
+            <td class="px-3 font-mono text-[12px] tabular-nums text-emerald-700">{c.replies || <span class="text-slate-300">—</span>}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- That client's contacts, and only theirs. -->
+  <div class={`${FLOAT} left-[352px] top-[368px] w-[300px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+      <Glyph name="user" size={13} class="text-slate-400" />
+      <span class={EYEBROW}>Northwind contacts</span>
+      <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-900">6,214</span>
+    </div>
+    <div class="px-4 py-1.5">
+      {lists.map((l) => (
+        <div class="flex h-7 items-center text-[12px]">
+          <span class="text-slate-700">{l.name}</span>
+          <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-500">{l.n}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>

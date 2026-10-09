@@ -1,0 +1,97 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR } from '../../../../lib/scene';
+import { TH } from '../ui';
+
+/**
+ * A warmed week, read off Analytics by mailbox: the three cold mailboxes at
+ * their 50 a day on weekdays, founder@ at zero, and the week's totals in the
+ * card over it.
+ */
+const week = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const rows = [
+  { addr: 'founder@acme.com', note: 'Real mail only', sends: [0, 0, 0, 0, 0, 0, 0], replies: 0 },
+  { addr: 'hello@out.acme.com', note: 'Cold · 50 a day', sends: [50, 50, 50, 50, 50, 0, 0], replies: 21 },
+  { addr: 'intro@out.acme.com', note: 'Cold · 50 a day', sends: [50, 50, 50, 50, 50, 0, 0], replies: 19 },
+  { addr: 'team@out.acme.com', note: 'Cold · 50 a day', sends: [50, 50, 50, 50, 50, 0, 0], replies: 17 },
+];
+const total = rows.reduce((s, r) => s + r.sends.reduce((a, b) => a + b, 0), 0);
+const replies = rows.reduce((s, r) => s + r.replies, 0);
+---
+<ScaledStage w={1240} h={540} photo="lake-motion">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[1240px] h-[520px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Analytics</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Sends by mailbox</span>
+      <span class="ml-auto mr-[300px] inline-flex rounded-md bg-slate-100 p-0.5 text-[11px] font-medium">
+        <span class="h-6 px-2 inline-flex items-center rounded bg-white text-slate-900 shadow-sm">This week</span>
+        <span class="h-6 px-2 inline-flex items-center rounded text-slate-500">30d</span>
+        <span class="h-6 px-2 inline-flex items-center rounded text-slate-500">90d</span>
+      </span>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400">4</span>
+      <span class="ml-auto mr-[300px] inline-flex items-center gap-3 text-[10px] text-slate-400">
+        <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-sky-500"></span>Cold sends</span>
+        <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-slate-200"></span>None</span>
+      </span>
+    </div>
+    <table class="w-[936px] table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class={`${TH} pl-6 w-[250px]`}>Mailbox</th>
+          {week.map((d) => <th class={`${TH} text-center`}>{d}</th>)}
+          <th class={`${TH} w-[90px] text-right`}>Week</th>
+          <th class={`${TH} w-[90px] text-right pr-6`}>Replies</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, ri) => (
+          <tr class={`h-[78px] border-b border-slate-200/60 ${ri === 0 ? 'bg-slate-50/60' : ''}`}>
+            <td class="pl-6 pr-3">
+              <div class="flex items-center gap-2.5">
+                <span class="inline-flex size-7 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark="google" size={14} /></span>
+                <div>
+                  <div class="text-[13px] font-medium text-slate-900">{r.addr}</div>
+                  <div class="text-[11px] text-slate-400">{r.note}</div>
+                </div>
+              </div>
+            </td>
+            {r.sends.map((n, di) => (
+              <td class="px-1.5">
+                <div class={`enter-fade mx-auto flex h-11 items-center justify-center rounded-md font-mono text-[12.5px] tabular-nums ${n ? 'bg-sky-100 font-medium text-sky-800' : 'bg-slate-50 text-slate-300 ring-1 ring-inset ring-slate-100'}`} style={`--d:${200 + ri * 90 + di * 45}ms`}>{n || '0'}</div>
+              </td>
+            ))}
+            <td class="px-3 text-right font-mono text-[13px] tabular-nums text-slate-900">{r.sends.reduce((a, b) => a + b, 0)}</td>
+            <td class="pl-3 pr-6 text-right font-mono text-[13px] tabular-nums text-emerald-700">{r.replies}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- The week in three numbers. -->
+  <div class={`${FLOAT} left-[1000px] top-[96px] w-[212px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class={EYEBROW}>This week</div>
+    </div>
+    <div class="divide-y divide-slate-100">
+      <div class="px-4 py-3">
+        <div class="text-[10.5px] text-slate-500">Cold emails</div>
+        <div class="mt-1 text-[26px] font-light leading-none tabular-nums text-slate-900">{total}</div>
+      </div>
+      <div class="px-4 py-3">
+        <div class="text-[10.5px] text-slate-500">Sent by founder@</div>
+        <div class="mt-1 text-[26px] font-light leading-none tabular-nums text-slate-900">0</div>
+      </div>
+      <div class="px-4 py-3">
+        <div class="text-[10.5px] text-slate-500">Human replies</div>
+        <div class="mt-1 text-[26px] font-light leading-none tabular-nums text-emerald-700">{replies}</div>
+      </div>
+      <div class="px-4 py-3 text-[11px] leading-snug text-slate-500">Weekends left empty in the sending window.</div>
+    </div>
+  </div>
+</ScaledStage>

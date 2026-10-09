@@ -1,0 +1,68 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../../lib/scene';
+
+/**
+ * The first email's Preview tab, rendered for one candidate through the send
+ * engine: plain text, no images, nothing that reads as marketing. The card
+ * is the content check under the editor (campaigns/ContentScore.tsx).
+ */
+const judgments = [
+  { k: 'To the reader', v: 'Personal note', w: 14 },
+  { k: 'Personalization', v: 'Written for this reader', w: 22 },
+  { k: 'Ask', v: 'One clear ask' },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-peach">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px]`}>
+    <div class="h-12 px-5 flex items-center gap-2 border-b border-slate-200">
+      <span class="text-[13px] font-medium text-slate-900">First message</span>
+      <span class="text-[11.5px] text-slate-400">Email 1 of 3</span>
+      <span class="ml-auto mr-10 inline-flex rounded-md bg-slate-100 p-0.5">
+        <span class="h-6 px-2 rounded inline-flex items-center text-[11.5px] font-medium text-slate-500">Edit</span>
+        <span class="h-6 px-2 rounded inline-flex items-center text-[11.5px] font-medium bg-white text-slate-900 shadow-sm">Preview</span>
+      </span>
+    </div>
+    <div class="h-11 px-5 flex items-center gap-2 border-b border-slate-200/70 bg-slate-50/50 text-[12px]">
+      <span class={EYEBROW}>Preview as</span>
+      <span class="h-7 px-2 rounded-md border border-slate-200 bg-white inline-flex items-center gap-1.5 text-slate-700"><Glyph name="user" size={12} class="text-slate-400" />Maya Chen<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>
+      <span class="h-7 px-2 rounded-md border border-slate-200 bg-white inline-flex items-center gap-1.5 text-slate-700"><Glyph mark="google" size={12} />dana@northwind.so<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>
+      <span class="ml-auto mr-10 h-7 px-2.5 rounded-md border border-slate-200 bg-white inline-flex items-center gap-1.5 font-medium text-slate-700"><Glyph name="send" size={12} />Send test</span>
+    </div>
+    <div class="px-8 py-5">
+      <div class="space-y-1 text-[12.5px]">
+        <div><span class="text-slate-400">From:</span> <span class="text-slate-800">Dana Reyes &lt;dana@northwind.so&gt;</span></div>
+        <div><span class="text-slate-400">Subject:</span> <span class="text-slate-800">Quick question about your platform work</span></div>
+      </div>
+      <div class="mt-4 w-[440px] rounded-md border border-slate-200 px-5 py-4 font-[ui-sans-serif] text-[13.5px] leading-[1.65] text-slate-800 space-y-3">
+        <p>Hi Maya,</p>
+        <p>I read your write-up on moving Helio’s billing to event sourcing. We’re hiring a staff engineer to lead exactly that kind of work, with a team of six.</p>
+        <p>Open to a 20-minute call next week?</p>
+        <p>Dana<br /><span class="text-slate-500">Northwind Talent</span></p>
+        <p class="pt-2 text-[11.5px] text-slate-400">If you would rather not hear from me, just say so.</p>
+      </div>
+      <p class="mt-3 w-[440px] text-[11px] leading-snug text-slate-400">Rendered with the real send engine for Maya Chen and the campaign’s opt-out footer.</p>
+    </div>
+  </div>
+
+  <!-- The content check under the editor. -->
+  <div class={`${FLOAT} left-[500px] top-[196px] w-[236px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+      <span class={EYEBROW}>Content</span>
+      <span class="ml-auto text-[11px] font-medium text-emerald-600">Looks good</span>
+    </div>
+    <div class="px-4 py-3">
+      <div class="flex items-baseline gap-1.5"><span class="text-[28px] font-light leading-none tabular-nums text-slate-900">94</span><span class="text-[11px] text-slate-400">/ 100</span></div>
+      <div class="mt-2 h-1.5 rounded-full bg-slate-100"><div class="enter-grow-x h-full w-[94%] rounded-full bg-emerald-500"></div></div>
+    </div>
+    <div class="border-t border-slate-100 px-4 py-2.5 space-y-2.5">
+      {judgments.map((j, i) => (
+        <div>
+          <div class="flex items-center text-[11.5px]"><span class="text-slate-600">{j.k}</span><span class="ml-auto text-[11.5px] font-medium text-emerald-600">{j.v}</span></div>
+          {j.w && <div class="mt-1 h-1 rounded-full bg-slate-100"><div class="enter-grow-x h-full rounded-full bg-emerald-500" style={`width:${j.w}%; --d:${300 + i * 150}ms`}></div></div>}
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>

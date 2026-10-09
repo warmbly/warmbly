@@ -1,0 +1,38 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW } from '../../../../lib/scene';
+import { AVATAR } from '../ui';
+
+/**
+ * One to one first, the team second: a partner's reply in the inbox, and
+ * the founder's answer bringing the co-founder in on Cc only now.
+ */
+---
+<ScaledStage w={460} h={345} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="px-4 py-3 border-b border-slate-100 flex items-start gap-2.5 pr-10">
+      <span class={`${AVATAR} size-7 text-[10px]`}>AK</span>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-baseline gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Anna Keller</span><span class="text-[10.5px] text-slate-400">to jamie@atlas.dev</span></div>
+        <div class="mt-1 text-[12px] leading-[1.5] text-slate-700">Interesting numbers. Can you send the deck and a few lines on the team?</div>
+      </div>
+    </div>
+    <div class="mx-4 mt-3 mr-10 rounded-lg ring-1 ring-sky-300">
+      <div class="px-3 py-2 border-b border-slate-100 space-y-1.5 text-[11.5px]">
+        <div class="flex items-center gap-2"><span class="w-6 text-slate-400">To</span><span class="h-5 px-1.5 rounded bg-slate-100 inline-flex items-center text-slate-700">anna@hafen.de</span></div>
+        <div class="flex items-center gap-2"><span class="w-6 text-slate-400">Cc</span><span class="oo-cc h-5 px-1.5 rounded bg-sky-50 inline-flex items-center gap-1 text-sky-700 ring-1 ring-inset ring-sky-200">maria@atlas.dev</span></div>
+      </div>
+      <div class="px-3 py-2.5 h-[86px] text-[12px] leading-[1.55] text-slate-800">Thanks Anna, the deck is here: atlas.dev/deck. Looping in Maria, my co-founder, who runs product.</div>
+      <div class="flex items-center justify-between border-t border-slate-100 px-3 py-2">
+        <span class="inline-flex items-center gap-1.5 text-[10.5px] text-slate-400"><Glyph name="reply" size={11} />Reply as jamie@atlas.dev</span>
+        <span class="h-6 px-2.5 rounded-md bg-sky-600 text-white text-[11.5px] font-medium inline-flex items-center gap-1"><Glyph name="send" size={11} />Send</span>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .oo-cc { animation: oo-cc 7s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes oo-cc { 0%, 15% { opacity: 0; transform: scale(0.9); } 22%, 92% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+</style>

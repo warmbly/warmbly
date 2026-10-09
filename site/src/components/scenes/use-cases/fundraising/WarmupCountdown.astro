@@ -1,0 +1,75 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import MailboxDrawerHead from '../../MailboxDrawerHead.astro';
+import { WINDOW, EYEBROW } from '../../../../lib/scene';
+
+/**
+ * The countdown, as the product shows it: the raise mailbox's Warmup tab
+ * five weeks in, the ramp climbing by one a day to its ceiling, inbox
+ * placement read off the big three.
+ */
+const TODAY = 35;
+const days = Array.from({ length: 42 }, (_, i) => Math.min(40, 10 + i));
+const providers = [
+  { mark: 'google', k: 'Gmail', v: 98 },
+  { mark: 'microsoft', k: 'Outlook', v: 96 },
+  { mark: 'yahoo', k: 'Yahoo', v: 97 },
+] as const;
+---
+<ScaledStage w={680} h={600} photo="reeded-glass">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[580px]`}>
+    <MailboxDrawerHead addr="hello@go.atlas.dev" initials="JR" provider="Google Workspace" mark="google" active="Warmup" />
+    <div class="divide-y divide-slate-200/60 pr-6">
+      <div class="px-5 py-4 flex items-center gap-3">
+        <span class="inline-flex size-8 items-center justify-center rounded-lg bg-orange-50 text-orange-600"><Glyph name="flame" size={16} class="flame-flicker" /></span>
+        <div>
+          <div class="text-[12.5px] font-medium text-slate-900">Warming up</div>
+          <div class="text-[11px] text-slate-400">Day {TODAY} of the ramp · premium pool</div>
+        </div>
+        <div class="ml-auto text-right">
+          <div class={EYEBROW}>Today</div>
+          <div class="mt-1 text-[20px] font-light leading-none tabular-nums text-slate-900"><span data-tick="31,39,2400">31</span><span class="text-[12px] text-slate-400">/40</span></div>
+        </div>
+      </div>
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between">
+          <span class={EYEBROW}>Daily volume · six weeks</span>
+          <span class="font-mono text-[10px] text-slate-400">+1 a day, up to 40</span>
+        </div>
+        <div class="relative mt-4 flex h-[150px] items-end gap-[3px]">
+          {days.map((v, i) => (
+            i < TODAY
+              ? <div class="enter-grow-y flex-1 rounded-t-[2px] border-t-[1.5px] border-sky-500 bg-gradient-to-b from-sky-500/90 to-sky-500/25" style={`height:${(v / 40) * 100}%; --d:${100 + i * 22}ms`}></div>
+              : <div class={`flex-1 rounded-t-[2px] border border-dashed ${i === TODAY ? 'wc-today border-orange-300 bg-orange-50' : 'border-slate-200'}`} style={`height:${(v / 40) * 100}%`}></div>
+          ))}
+        </div>
+        <div class="mt-2 h-px bg-slate-200/80"></div>
+        <div class="relative mt-1.5 flex justify-between font-mono text-[9.5px] text-slate-400">
+          <span>Week 1</span>
+          <span class="absolute -translate-x-1/2 text-orange-600" style={`left:${((TODAY + 0.5) / days.length) * 100}%`}>Today</span>
+          <span>Week 6</span>
+        </div>
+      </div>
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between">
+          <span class={EYEBROW}>Inbox placement · last 7 days</span>
+          <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600"><Glyph name="shieldCheck" size={13} />Healthy</span>
+        </div>
+        <div class="mt-3 grid grid-cols-3 gap-3">
+          {providers.map((p) => (
+            <div class="rounded-md border border-slate-200 px-3 py-2.5">
+              <div class="flex items-center gap-1.5 text-[11.5px] text-slate-500"><Glyph mark={p.mark} size={12} />{p.k}</div>
+              <div class="mt-1 font-mono text-[15px] font-medium tabular-nums text-emerald-600">{p.v}%</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .wc-today { animation: wc-today 2.4s ease-in-out infinite; }
+  @keyframes wc-today { 50% { background: rgb(254 215 170); } }
+</style>

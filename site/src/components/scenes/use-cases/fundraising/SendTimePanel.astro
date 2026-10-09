@@ -1,0 +1,78 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../../lib/scene';
+
+/**
+ * Settings > Sending > Send-time optimization (settings/sending/page.tsx):
+ * on, reading each contact's timezone, delivery hours picked. The card is
+ * where three partners' mail will land, each in their own morning.
+ */
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const on = [9, 10, 11, 14, 15, 16];
+const fmt = (h: number) => (h === 0 ? '12am' : h === 12 ? '12pm' : h < 12 ? `${h}am` : `${h - 12}pm`);
+const rows = [
+  { label: 'Use the recipient’s local hours', d: 'On. Sends aim for the hours below.', toggle: true },
+  { label: 'Read each contact’s timezone', d: 'Uses the contact’s timezone field, then the country its email domain points at.', toggle: true },
+  { label: 'Fallback timezone', d: 'Used when a contact’s timezone cannot be worked out.', select: 'America/New_York' },
+  { label: 'Skip weekends', d: 'Push a send that would land on Saturday or Sunday to the next weekday.', toggle: true },
+];
+const partners = [
+  { who: 'anna@hafen.de', tz: 'Europe/Berlin', how: 'from the domain', at: '9:40am' },
+  { who: 'li@harbourcap.co.uk', tz: 'Europe/London', how: 'from the domain', at: '10:15am' },
+  { who: 'hannah@ridgeline.com', tz: 'America/Los_Angeles', how: 'contact field', at: '9:20am' },
+];
+---
+<ScaledStage w={760} h={600} photo="sheer-sky">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[580px]`}>
+    <div class="px-8 pt-6 pb-4 border-b border-slate-200/70">
+      <div class="text-[16px] font-semibold tracking-tight text-slate-900">Sending</div>
+      <div class="mt-0.5 text-[12.5px] text-slate-500">When campaign mail goes out, measured in your recipient's day.</div>
+    </div>
+    <section class="px-8 py-5 pr-16">
+      <div class="text-[12.5px] font-semibold tracking-tight text-slate-900">Send-time optimization</div>
+      <div class="mt-0.5 max-w-[560px] text-[11.5px] leading-relaxed text-slate-500">Hold each campaign email until it lands inside the hours you pick, in the recipient's own timezone. It only ever delays a send, never brings one forward.</div>
+      <div class="mt-4 space-y-3.5">
+        {rows.map((r) => (
+          <div class="flex items-center gap-4">
+            <div class="min-w-0 flex-1">
+              <div class="text-[12.5px] font-medium leading-tight text-slate-900">{r.label}</div>
+              <div class="mt-0.5 text-[11.5px] leading-tight text-slate-500">{r.d}</div>
+            </div>
+            {r.toggle && <span class="relative h-4 w-7 shrink-0 rounded-full bg-slate-900"><span class="absolute top-0.5 left-0.5 size-3 translate-x-3 rounded-full bg-white"></span></span>}
+            {r.select && <span class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium"><Glyph name="globe" size={12} class="text-slate-400" />{r.select}<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>}
+          </div>
+        ))}
+        <div class="flex items-start gap-4">
+          <div class="flex-1 text-[12.5px] font-medium text-slate-900">Delivery hours</div>
+          <div class="w-[320px]">
+            <div class="grid grid-cols-6 gap-1">
+              {HOURS.map((h) => <span class={`h-7 rounded-md border text-[11.5px] inline-flex items-center justify-center ${on.includes(h) ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-white text-slate-500 border-slate-200'}`}>{fmt(h)}</span>)}
+            </div>
+            <p class="mt-2 inline-flex items-start gap-1.5 text-[11.5px] leading-relaxed text-slate-500"><Glyph name="clock" size={13} class="mt-px text-slate-400" />Mail arrives around 9-11am, 2-4pm for each recipient.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Where three partners' emails will land. -->
+  <div class={`${FLOAT} left-[24px] top-[418px] w-[372px] overflow-hidden`}>
+    <div class="h-10 px-4 border-b border-slate-200 flex items-center"><span class={EYEBROW}>Next sends · in their own morning</span></div>
+    {partners.map((p, i) => (
+      <div class="px-4 py-2 flex items-center gap-3 border-b border-slate-100 last:border-0" style={`--i:${i}`}>
+        <Glyph name="globe" size={13} class="text-slate-400" />
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[12px] font-medium text-slate-900">{p.who}</div>
+          <div class="truncate text-[10.5px] text-slate-400">{p.tz} · {p.how}</div>
+        </div>
+        <span class="st-at shrink-0 rounded bg-sky-50 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-sky-700">{p.at} local</span>
+      </div>
+    ))}
+  </div>
+</ScaledStage>
+
+<style>
+  .st-at { animation: st-at 6s ease-in-out infinite; animation-delay: calc(var(--i) * 2s); }
+  @keyframes st-at { 0%, 100% { box-shadow: none; } 8%, 22% { box-shadow: 0 0 0 3px rgb(186 230 253); } 30% { box-shadow: none; } }
+</style>
