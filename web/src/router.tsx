@@ -20,6 +20,7 @@ import getToken from "./lib/helper/getToken";
 import { bootDashboard, requireDashboardToken } from "./lib/boot";
 import { queryClient } from "./lib/queryClient";
 import { parseSearch, stringifySearch, type SearchParams } from "./lib/routerSearch";
+import { acquisitionSearch } from "./lib/acquisition";
 import * as loaders from "./routeLoaders";
 import type { PageLoader } from "./routeLoaders";
 
@@ -130,16 +131,16 @@ function forward<TParent extends AnyRoute, TPath extends string>(parent: TParent
 }
 
 // Pages for someone who must be signed in, outside the dashboard chrome.
-function requireToken({ location }: { location: { href: string } }) {
+function requireToken({ location }: { location: { href: string; searchStr: string } }) {
     if (getToken()) return;
-    throw redirect({ to: "/auth/login", search: { next: location.href }, replace: true });
+    throw redirect({ to: "/auth/login", search: { ...acquisitionSearch(location.searchStr), next: location.href }, replace: true });
 }
 
 const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
-    beforeLoad: () => {
-        throw redirect({ to: "/app/emails", replace: true });
+    beforeLoad: ({ location }) => {
+        throw redirect({ to: "/app/emails", search: acquisitionSearch(location.searchStr), replace: true });
     },
 });
 
@@ -207,9 +208,7 @@ const onboardingRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "onboarding",
     pendingComponent: BlankPending,
-    beforeLoad: () => {
-        if (!getToken()) throw redirect({ to: "/auth/login", replace: true });
-    },
+    beforeLoad: requireToken,
     component: lazyRouteComponent(() => import("./app/onboarding/layout")),
 });
 const onboardingIndex = createRoute({

@@ -781,10 +781,9 @@ const adminOrgListColumns = `
 	(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id) AS campaign_count,
 	(SELECT COUNT(*) FROM campaigns c WHERE c.organization_id = o.id AND c.status = 'active') AS active_campaigns,
 	o.risk_state,
-	oa.utm_source, oa.utm_medium, oa.utm_campaign, oa.landing_path, o.category`
+	oa.utm_source, oa.utm_medium, oa.utm_campaign, oa.landing_path, oa.referrer_host, o.category`
 
-// adminOrgAcquisitionJoin brings in the signup channel. LEFT because most
-// workspaces have no row: a direct signup carries nothing to record.
+// LEFT JOIN preserves workspaces with no recorded acquisition.
 const adminOrgAcquisitionJoin = `
 		LEFT JOIN organization_acquisition oa ON oa.organization_id = o.id`
 
@@ -906,11 +905,8 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 	addChannel("utm_source", search.UTMSource)
 	addChannel("utm_medium", search.UTMMedium)
 	addChannel("utm_campaign", search.UTMCampaign)
-	// Presence of a record, not presence of a UTM tag: a signup that came from
-	// a marketing page with no campaign parameters still has a landing path,
-	// and calling that "direct" would be wrong. The admin panel's labels and
-	// its Channel column use the same definition (models.AdminOrgSearch).
-	// Mutually exclusive; both set applies only HasAcquisition.
+	addChannel("referrer_host", search.ReferrerHost)
+	// Record presence is not proof of a known source; both set applies only HasAcquisition.
 	if search.HasAcquisition {
 		where += ` AND oa.organization_id IS NOT NULL`
 	} else if search.NoAcquisition {
@@ -1000,6 +996,7 @@ func (r *organizationRepository) SearchOrganizationsForAdmin(ctx context.Context
 			&item.MemberCount, &item.EmailAccountCount, &item.CampaignCount, &item.ActiveCampaigns,
 			&item.RiskState,
 			&item.UTMSource, &item.UTMMedium, &item.UTMCampaign, &item.LandingPath,
+			&item.ReferrerHost,
 			&item.Category,
 			&planName, &planPublic, &isEnterprise,
 			&managedAt, &managedReason, &managedUntil,
@@ -1064,6 +1061,7 @@ func (r *organizationRepository) GetOrganizationAdminDetail(ctx context.Context,
 		&detail.MemberCount, &detail.EmailAccountCount, &detail.CampaignCount, &detail.ActiveCampaigns,
 		&detail.RiskState,
 		&detail.UTMSource, &detail.UTMMedium, &detail.UTMCampaign, &detail.LandingPath,
+		&detail.ReferrerHost,
 		&detail.Category,
 		&detail.UpdatedAt, &detail.DeletionScheduledAt,
 		&detail.PlanName, &detail.SubscriptionStatus, &isEnterprise, &detail.CurrentPeriodEnd, &detail.TrialEnd,
