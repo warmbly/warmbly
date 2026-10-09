@@ -161,6 +161,19 @@ Run `QA_FLEET_FIXTURES=1 pnpm proof fleet-telemetry` in `qa/`. Stop the addition
 admin server as well as the stack afterward. This proof does not validate real
 worker sampling, network egress, mail delivery or inbox placement.
 
+## Member access proof fixtures
+
+`flows/member-access.flow.ts` is opt-in: apply `fixtures/member-access.sql` to
+this worktree's rich-seed database, which adds a teammate restricted to the
+Outbound folder and one mailbox (`client@acme-agency.test`, `password123`).
+The first flow saves a change to that scope, so apply the fixture again before
+every recording.
+
+```bash
+docker exec -i warmbly-postgres-1 psql -U warmbly -d warmbly_qa_<worktree> < fixtures/member-access.sql
+QA_MEMBER_ACCESS_FIXTURES=1 pnpm proof member-access
+```
+
 ## Tester sample data proof
 
 The `tester-sample-data` flow uses the real local tester-provisioning and sample-data endpoints. Start the worktree's lite stack, then serve `admin/` separately against its API. Set `QA_WEB_URL` to that localhost admin origin. Prepare a seeded admin holding `view_users` and `manage_testers`, with a locally MFA-verified session; clear only that user's and session's isolated Redis entries after SQL fixture changes. These authentication fixtures are not proof of real MFA. Run `QA_TESTER_SAMPLE_FIXTURES=1 pnpm proof tester-sample-data`.
@@ -198,6 +211,9 @@ test("search contacts and open a contact's details", async ({ page, proof }) => 
   data. A flow is skipped, with the command that fixes it, when the stack holds
   the other seed
 - `test.use({ signedIn: false })` for a flow that starts on the sign-in pages
+- `test.use({ account: { email, password } })` for a flow recorded as another
+  seeded or fixture account. It signs in once through Mailpit like the stack's
+  own account, and keeps its session in a file of its own
 
 Conventions:
 

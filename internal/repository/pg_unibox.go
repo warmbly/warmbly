@@ -1826,6 +1826,11 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 		overview.Mailboxes = append(overview.Mailboxes, m)
 	}
 
+	// A mailbox-limited view lists only the tags on its own mailboxes.
+	tagsOnMailboxes := ""
+	if len(accountIDs) > 0 {
+		tagsOnMailboxes = " AND EXISTS (SELECT 1 FROM email_tags et2 WHERE et2.tag_id = t.id" + onlyMailboxes("et2.email_id") + ")"
+	}
 	// Per-tag counters. Mailbox tags live in `tags` + `email_tags`.
 	// Per THREAD (distinct thread key) so threads aren't over-counted by
 	// message multiplicity or the email_tags fan-out. Every join is on the
@@ -1852,7 +1857,7 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 		LEFT JOIN unibox_emails ue ON ue.email_id = ea.id
 			AND ue.folder NOT IN `+foldersOutsideWorkingViews+`
 			AND NOT `+automatedThreadSQL("ue.thread_id", "ue.automated", "$1")+onlyMailboxes("ue.email_id")+`
-		WHERE t.organization_id = $1
+		WHERE t.organization_id = $1`+tagsOnMailboxes+`
 		GROUP BY t.id, t.title, t.color, t.position
 		ORDER BY t.position ASC, t.title ASC
 	`, orgID)

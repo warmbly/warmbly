@@ -59,6 +59,9 @@ export function touchStack(): void {
   if (existsSync(STACK_DIR)) writeFileSync(join(STACK_DIR, "last-used"), new Date().toISOString());
 }
 
-export function authFile(): string {
-  return join(AUTH_DIR, `${new URL(env.webURL).host.replace(/[^a-z0-9]+/gi, "_")}.json`);
+// A second account a flow signs in as gets its own session file beside the stack's.
+export function authFile(email: string = env.email): string {
+  const host = new URL(env.webURL).host.replace(/[^a-z0-9]+/gi, "_");
+  const who = email === env.email ? "" : `__${email.replace(/[^a-z0-9]+/gi, "_")}`;
+  return join(AUTH_DIR, `${host}${who}.json`);
 }

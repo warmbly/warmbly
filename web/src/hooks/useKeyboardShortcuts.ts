@@ -13,7 +13,7 @@ import { useCallback, useEffect, type KeyboardEvent as ReactKeyboardEvent } from
 import { useNavigate } from '@tanstack/react-router'
 import { useAppStore } from '@/stores'
 import { useComposeStore } from '@/hooks/useComposeStore'
-import { checkPermission } from '@/hooks/usePermission'
+import { checkPermission, isAccessRestricted } from '@/hooks/usePermission'
 import { shortcutAction, type ShortcutActions } from '@/hooks/useShortcutActions'
 
 export type ShortcutGroupId = 'navigation' | 'list' | 'actions' | 'assistant'
@@ -230,7 +230,10 @@ export const globalShortcuts: GlobalShortcut[] = [
     description: 'Compose a new email',
     group: 'actions',
     match: plain('n'),
-    run: () => useComposeStore.getState().openCompose(),
+    run: () => {
+      if (isAccessRestricted(useAppStore.getState().currentOrganization)) return
+      useComposeStore.getState().openCompose()
+    },
   },
   {
     keys: ['b'],

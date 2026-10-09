@@ -482,7 +482,7 @@ export function ConversationList({
           open={filtersOpen}
           onOpenChange={setFiltersOpen}
         />
-        <ComposeButton />
+        {!readOnly && <ComposeButton />}
       </div>
 
       <div className="px-3 pb-2 shrink-0 border-b border-slate-200">
