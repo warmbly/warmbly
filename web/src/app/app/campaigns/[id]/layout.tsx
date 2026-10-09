@@ -28,14 +28,15 @@ import toast from "react-hot-toast/headless";
 import { CAMPAIGN_DELETED_EVENT, type CampaignDeletedDetail } from "@/lib/realtime/campaignDeleted";
 import ResourceViewers from "@/components/app/presence/ResourceViewers";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
-import { usePermission } from "@/hooks/usePermission";
+import { useAccessRestricted, usePermission } from "@/hooks/usePermission";
 
+// `scoped` tabs read only the campaign's own data, so a restricted member sees them.
 const TABS = [
-    { label: "Overview", to: "/app/campaigns/$id", Icon: BarChart3Icon },
-    { label: "Leads", to: "/app/campaigns/$id/leads", Icon: UsersIcon },
-    { label: "Steps", to: "/app/campaigns/$id/steps", Icon: ListChecksIcon },
-    { label: "Schedule", to: "/app/campaigns/$id/schedule", Icon: CalendarIcon },
-    { label: "Settings", to: "/app/campaigns/$id/preferences", Icon: Settings2Icon },
+    { label: "Overview", to: "/app/campaigns/$id", Icon: BarChart3Icon, scoped: true },
+    { label: "Leads", to: "/app/campaigns/$id/leads", Icon: UsersIcon, scoped: false },
+    { label: "Steps", to: "/app/campaigns/$id/steps", Icon: ListChecksIcon, scoped: true },
+    { label: "Schedule", to: "/app/campaigns/$id/schedule", Icon: CalendarIcon, scoped: true },
+    { label: "Settings", to: "/app/campaigns/$id/preferences", Icon: Settings2Icon, scoped: false },
 ] as const;
 
 const STATUS_PILL: Record<string, string> = {
@@ -58,6 +59,7 @@ export default function CampaignLayout() {
     const [launchOpen, setLaunchOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const canSend = usePermission("SEND_CAMPAIGNS");
+    const restricted = useAccessRestricted();
     const launchRequested = searchParams.get("launch") === "1";
     const loadedStatus = campaignData.data?.status;
 
@@ -205,7 +207,7 @@ export default function CampaignLayout() {
                 <UndeliverableBanner campaignId={campaign.id} status={status} />
 
                 <div className="shrink-0 px-3 flex items-center gap-1 border-b border-slate-200 overflow-x-auto no-scrollbar">
-                    {TABS.map(({ label, to, Icon }) => (
+                    {TABS.filter((t) => t.scoped || !restricted).map(({ label, to, Icon }) => (
                         <Link
                             key={to}
                             to={to}

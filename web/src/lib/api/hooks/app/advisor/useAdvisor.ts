@@ -10,6 +10,7 @@ import type {
     AdvisorSurface,
 } from "@/lib/api/models/app/advisor/Advisor";
 import { indexByEntity } from "@/lib/api/models/app/advisor/Advisor";
+import { useAccessRestricted } from "@/hooks/usePermission";
 import {
     agentFixAdvisorFinding,
     applyAdvisorFinding,
@@ -30,11 +31,13 @@ import {
 // org-wide.
 const ADVISOR_KEY = ["advisor"] as const;
 
+// The Advisor reads the whole workspace, so a member restricted to selected resources never asks it.
 export function useAdvisorSummary(enabled = true) {
+    const restricted = useAccessRestricted();
     return useQuery<AdvisorSummary>({
         queryKey: [...ADVISOR_KEY, "summary"],
         queryFn: getAdvisorSummary,
-        enabled,
+        enabled: enabled && !restricted,
         // The findings themselves only move on the backend's own schedule, so a
         // long stale time keeps navigation from refetching on every route change.
         staleTime: 60_000,
@@ -49,9 +52,10 @@ export const advisorFindingsQuery = (query: AdvisorFindingsQuery = {}) =>
     });
 
 export function useAdvisorFindings(query: AdvisorFindingsQuery = {}, enabled = true) {
+    const restricted = useAccessRestricted();
     return useQuery({
         ...advisorFindingsQuery(query),
-        enabled,
+        enabled: enabled && !restricted,
     });
 }
 

@@ -17,6 +17,15 @@ func (s *uniboxService) GetByID(
 	ctx context.Context,
 	orgID, id uuid.UUID,
 ) (*models.EmailMessage, *errx.Error) {
+	return s.getByID(ctx, orgID, id, true)
+}
+
+// Peek is GetByID for a reader who must not change the shared read state.
+func (s *uniboxService) Peek(ctx context.Context, orgID, id uuid.UUID) (*models.EmailMessage, *errx.Error) {
+	return s.getByID(ctx, orgID, id, false)
+}
+
+func (s *uniboxService) getByID(ctx context.Context, orgID, id uuid.UUID, markSeen bool) (*models.EmailMessage, *errx.Error) {
 	var resp models.EmailMessage
 	var snippet string
 	var fixtureMessage bool
@@ -42,7 +51,7 @@ func (s *uniboxService) GetByID(
 		// member clears the shared unread state. Relayed like any other read
 		// state change, so the mailbox agrees: this is the path a developer
 		// hitting the API reaches, where nothing calls PATCH /unibox/seen.
-		if !msg.Seen {
+		if !msg.Seen && markSeen {
 			if changed, err := s.uniboxRepository.MarkSeenBulk(ctx, orgID, []uuid.UUID{id}, true); err == nil {
 				msg.Seen = true
 				s.relaySeen(ctx, orgID, changed)

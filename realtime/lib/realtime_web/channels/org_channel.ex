@@ -117,7 +117,7 @@ defmodule RealtimeWeb.OrgChannel do
     # event consumers, not teammates. When the org has turned off "show who's
     # online", we track no one — so nobody appears online for anybody — but
     # still push the (empty) roster so the client's join-complete logic runs.
-    if Map.get(socket.assigns, :auth_type) == :jwt do
+    if Map.get(socket.assigns, :auth_type) == :jwt and not restricted?(socket) do
       if socket.assigns[:presence_show_online] do
         profile = Auth.get_user_profile(socket.assigns.user_id)
 
@@ -159,7 +159,7 @@ defmodule RealtimeWeb.OrgChannel do
       |> assign(:presence_show_online, show_online)
       |> assign(:presence_show_activity, show_activity)
 
-    if Map.get(socket.assigns, :auth_type) == :jwt do
+    if Map.get(socket.assigns, :auth_type) == :jwt and not restricted?(socket) do
       Presence.untrack(socket, socket.assigns.user_id)
 
       if show_online do
@@ -188,7 +188,7 @@ defmodule RealtimeWeb.OrgChannel do
   # the durable event gates would exclude from the frame's surface.
   @impl true
   def handle_info({:live_event, event}, socket) do
-    if Map.get(socket.assigns, :auth_type) == :jwt do
+    if Map.get(socket.assigns, :auth_type) == :jwt and not restricted?(socket) do
       event =
         if is_binary(event["chat"]) and not can_see_live_chat?(socket, event["resource"]) do
           Map.put(event, "chat", nil)
@@ -229,9 +229,10 @@ defmodule RealtimeWeb.OrgChannel do
 
   # Membership is read at join; a change to this member, to a role or to ownership re-reads it.
   defp refresh_membership(socket, %{"event_type" => "AUDIT_CREATED"} = event) do
-    if affects_membership?(socket.assigns.user_id, event),
-      do: reread_membership(socket),
-      else: {:ok, socket}
+    if affects_membership?(socket.assigns.user_id, event) or
+         (restricted?(socket) and affects_scope?(event)),
+       do: reread_membership(socket),
+       else: {:ok, socket}
   end
 
   defp refresh_membership(socket, _event), do: {:ok, socket}
@@ -245,6 +246,11 @@ defmodule RealtimeWeb.OrgChannel do
       _ -> false
     end
   end
+
+  # A restricted member's folder grants follow the folder's contents, so a
+  # campaign or folder change can move what they reach.
+  @doc false
+  def affects_scope?(event), do: event["entity_type"] in ["campaign", "folder"]
 
   # An unanswered read withholds gated events and retries with jitter, so an org's sockets do not retry together.
   defp reread_membership(socket) do
@@ -299,9 +305,11 @@ defmodule RealtimeWeb.OrgChannel do
   # handle_out/3, so we must define it (its absence crashed the channel and
   # dropped the socket). Push presence_state/presence_diff straight to the
   # client — they are low-volume and not permission-sensitive.
+  # A restricted member is not shown the team's presence, which names what
+  # teammates are viewing across the workspace.
   @impl true
   def handle_out(event, payload, socket) do
-    push(socket, event, payload)
+    unless restricted?(socket), do: push(socket, event, payload)
     {:noreply, socket}
   end
 
@@ -319,7 +327,7 @@ defmodule RealtimeWeb.OrgChannel do
   @impl true
   def handle_in("live:" <> kind, payload, socket) when kind in @live_kinds and is_map(payload) do
     cond do
-      Map.get(socket.assigns, :auth_type) != :jwt ->
+      Map.get(socket.assigns, :auth_type) != :jwt or restricted?(socket) ->
         {:noreply, socket}
 
       not socket.assigns[:presence_show_online] or not socket.assigns[:presence_show_activity] ->
@@ -502,6 +510,46 @@ defmodule RealtimeWeb.OrgChannel do
       |> String.upcase()
       |> String.replace(~r/[.:\s-]+/, "_")
 
+    (not restricted?(socket) or
+       scoped_event?(socket.assigns.member, socket.assigns.user_id, event_type, event)) and
+      permitted_event?(socket, event_type)
+  end
+
+  defp restricted?(socket), do: match?(%{scope: %{}}, socket.assigns[:member])
+
+  # A restricted member sees an event only when it names something they were
+  # granted: inbox content needs its mailbox, campaign activity its campaign or
+  # sending mailbox, and an audit entry its entity. Everything else is dropped.
+  @doc false
+  def scoped_event?(member, user_id, event_type, event) do
+    mailbox = event["email_account_id"]
+    campaign = event["campaign_id"]
+
+    cond do
+      event_type == "AUDIT_CREATED" ->
+        case event["entity_type"] do
+          "organization_member" -> event["entity_id"] == user_id
+          "campaign" -> Auth.in_scope?(member, :campaigns, event["entity_id"])
+          "folder" -> Auth.in_scope?(member, :folders, event["entity_id"])
+          "email_account" -> Auth.in_scope?(member, :mailboxes, event["entity_id"])
+          _ -> false
+        end
+
+      inbox_event?(event_type) ->
+        Auth.in_scope?(member, :mailboxes, mailbox)
+
+      true ->
+        (is_binary(campaign) and Auth.in_scope?(member, :campaigns, campaign)) or
+          (is_binary(mailbox) and Auth.in_scope?(member, :mailboxes, mailbox))
+    end
+  end
+
+  defp inbox_event?(event_type) do
+    String.contains?(event_type, "INBOX") or String.contains?(event_type, "AI_DRAFT") or
+      event_type in ["EMAIL_RECEIVED", "EMAIL_UPDATED", "EMAIL_DELETED"]
+  end
+
+  defp permitted_event?(socket, event_type) do
     permissions = socket.assigns.permissions
     has = fn perm -> Auth.has_permission?(%{permissions: permissions}, Auth.permission(perm)) end
 
@@ -619,7 +667,8 @@ defmodule RealtimeWeb.OrgChannel do
   # (nothing to update); if "show activity" is off we keep them online but strip
   # the viewing/editing/page detail so teammates never see what they're doing.
   defp handle_client_event("presence:update", payload, socket) do
-    if Map.get(socket.assigns, :auth_type) == :jwt and socket.assigns[:presence_show_online] do
+    if Map.get(socket.assigns, :auth_type) == :jwt and socket.assigns[:presence_show_online] and
+         not restricted?(socket) do
       patch =
         if socket.assigns[:presence_show_activity] do
           sanitize_presence(payload)

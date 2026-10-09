@@ -422,6 +422,9 @@ type DashboardAnalytics struct {
 type DashboardFilter struct {
 	CampaignIDs []uuid.UUID
 	FolderIDs   []uuid.UUID
+	// AllowedCampaigns and AllowedMailboxes hold a restricted caller to their grants; set by the server, nil allows all.
+	AllowedCampaigns []uuid.UUID
+	AllowedMailboxes []uuid.UUID
 }
 
 // Empty reports a filter that leaves the dashboard workspace-wide.

@@ -126,3 +126,14 @@ export function useWriteGuard(key: PermissionKey): WriteGuard {
     );
     return { allowed, locked: !allowed, guard };
 }
+
+// useAccessRestricted reports whether the current member reaches only the
+// campaigns and mailboxes granted to them, read-only. The owner never does.
+export function useAccessRestricted(): boolean {
+    const org = useAppStore((s) => s.currentOrganization);
+    return isAccessRestricted(org);
+}
+
+export function isAccessRestricted(org: { role?: string; access_scope?: string } | null | undefined): boolean {
+    return !!org && org.role !== "owner" && org.access_scope === "restricted";
+}

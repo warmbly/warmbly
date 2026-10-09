@@ -12,12 +12,15 @@ export default function AccessLockedDialog({
     onClose,
     feature,
     permissionLabel = "the required",
+    reason = "permission",
 }: {
     open: boolean;
     onClose: () => void;
     feature: string;
     /** The friendly permission name they're missing. */
     permissionLabel?: string;
+    /** "scope" when the member is restricted to selected resources rather than missing a permission. */
+    reason?: "permission" | "scope";
 }) {
     // Portal to <body>: this dialog renders inside the sidebar <aside>, which has
     // a transform (slide-in) + overflow, so a `fixed` overlay would clip to the
@@ -56,11 +59,19 @@ export default function AccessLockedDialog({
                         <h3 className="text-[14px] font-semibold text-slate-900">
                             You don't have access to {feature}
                         </h3>
-                        <p className="text-[12.5px] text-slate-500 leading-relaxed mt-1.5">
-                            Your role in this workspace doesn't include the{" "}
-                            <span className="font-medium text-slate-700">{permissionLabel}</span> permission. Ask a
-                            workspace admin or the owner to grant it from Settings → Roles &amp; access.
-                        </p>
+                        {reason === "scope" ? (
+                            <p className="text-[12.5px] text-slate-500 leading-relaxed mt-1.5">
+                                Your access to this workspace is limited to selected campaigns and mailboxes, and{" "}
+                                {feature} is not part of it. Ask a workspace admin or the owner to change your access
+                                from Settings → Members.
+                            </p>
+                        ) : (
+                            <p className="text-[12.5px] text-slate-500 leading-relaxed mt-1.5">
+                                Your role in this workspace doesn't include the{" "}
+                                <span className="font-medium text-slate-700">{permissionLabel}</span> permission. Ask a
+                                workspace admin or the owner to grant it from Settings → Roles &amp; access.
+                            </p>
+                        )}
                         <button
                             type="button"
                             onClick={onClose}

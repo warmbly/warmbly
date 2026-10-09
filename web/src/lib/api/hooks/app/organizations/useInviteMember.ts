@@ -5,7 +5,7 @@ export default function useInviteMember() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: (data: { email: string; role_ids?: string[]; role_id?: string }) => inviteMember(data),
+        mutationFn: (data: Parameters<typeof inviteMember>[0]) => inviteMember(data),
         onSuccess: () => {
             queryClient.invalidateQueries({
                 queryKey: ["organizations", "invitations"],

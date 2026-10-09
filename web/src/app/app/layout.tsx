@@ -8,6 +8,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { DataSyncProvider } from "@/hooks/DataSyncProvider";
 import { RealtimeManager } from "@/hooks/RealtimeManager";
 import { OrgGate } from "@/hooks/OrgGate";
+import { RestrictedRouteGuard } from "@/hooks/RestrictedRouteGuard";
 import { ErrorContext } from "@/hooks/ErrorContext";
 import TagsModal from "@/components/app/modals/TagsModal";
 import FoldersModal from "@/components/app/modals/FoldersModal";
@@ -46,6 +47,7 @@ export default function RootAppLayout() {
                                     to /select-org before any org-scoped
                                     query (e.g. /unibox) runs with no org. */}
                                 <OrgGate />
+                                <RestrictedRouteGuard />
                                 {/* Names the workspace and user on reported
                                     exceptions, and leaves the route on their
                                     trail. Renders nothing. */}

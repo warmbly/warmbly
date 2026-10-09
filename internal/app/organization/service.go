@@ -98,6 +98,11 @@ type OrganizationService interface {
 	UpdateRole(ctx context.Context, orgID, actorID, roleID uuid.UUID, req *models.UpdateOrganizationRoleRequest) (*models.OrganizationRole, *errx.Error)
 	DeleteRole(ctx context.Context, orgID, actorID, roleID uuid.UUID) *errx.Error
 	UpdateMemberRole(ctx context.Context, orgID, actorID, memberUserID uuid.UUID, req *models.UpdateMemberRequest) (*models.OrganizationMember, *errx.Error)
+	// Resource scope: a restricted member's role applies only to the campaigns, folders and mailboxes granted to them.
+	GetMemberAccess(ctx context.Context, orgID, userID uuid.UUID) (*models.MemberAccess, *errx.Error)
+	SetMemberAccess(ctx context.Context, orgID, actorID, memberUserID uuid.UUID, access *models.MemberAccess) (*models.OrganizationMember, *errx.Error)
+	ResolveMemberScope(ctx context.Context, orgID, userID uuid.UUID) (*models.ResourceScope, *errx.Error)
+	SuggestCampaignSenders(ctx context.Context, orgID uuid.UUID, campaignIDs, folderIDs []uuid.UUID) ([]models.SuggestedSender, *errx.Error)
 	RemoveMember(ctx context.Context, orgID, actorID, memberUserID uuid.UUID) *errx.Error
 
 	// Invitations
@@ -639,6 +644,7 @@ func (s *organizationService) GetMembers(ctx context.Context, orgID uuid.UUID) (
 	if err := s.orgRepo.HydrateMemberRoles(ctx, orgID, members); err != nil {
 		errs.CaptureException(err)
 	}
+	s.attachMemberAccess(ctx, orgID, members)
 	return members, nil
 }
 
@@ -700,6 +706,13 @@ func (s *organizationService) InviteMember(ctx context.Context, orgID uuid.UUID,
 	if xerr := s.validateActorHoldsPermissions(ctx, orgID, inviterID, permissions); xerr != nil {
 		return nil, xerr
 	}
+	access := req.Access
+	if access == nil {
+		access = models.WorkspaceAccess()
+	}
+	if xerr := s.validateAccess(ctx, orgID, access); xerr != nil {
+		return nil, xerr
+	}
 
 	role := roles[0].Name
 	roleID := &roles[0].ID
@@ -722,6 +735,7 @@ func (s *organizationService) InviteMember(ctx context.Context, orgID uuid.UUID,
 		Token:          crypt.SHA256(token),
 		ExpiresAt:      time.Now().Add(s.invitationTTL(ctx)),
 		CreatedAt:      time.Now(),
+		Access:         access,
 	}
 
 	if err := s.orgRepo.CreateInvitation(ctx, inv); err != nil {
@@ -939,6 +953,8 @@ func (s *organizationService) acceptResolved(ctx context.Context, inv *models.Or
 		InvitedBy:      &inv.InvitedBy,
 		InvitedAt:      inv.CreatedAt,
 		AcceptedAt:     &now,
+		// Grants on resources deleted since the invite are dropped by the insert.
+		Access: inv.Access,
 	}
 	if err := s.orgRepo.AddMemberWithRoles(ctx, member, liveRoleIDs); err != nil {
 		errs.CaptureException(err)

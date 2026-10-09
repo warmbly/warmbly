@@ -160,7 +160,7 @@ func TestLiveListCursorOtherListsReturnEveryRowOnce(t *testing.T) {
 				s := cursor.String()
 				c = &s
 			}
-			res, err := campaignRepo.Search(ctx, f.org.String(), "", c, nil, "", int32(limit))
+			res, err := campaignRepo.Search(ctx, f.org.String(), "", c, nil, "", int32(limit), nil)
 			if err != nil {
 				t.Fatalf("campaign Search: %v", err)
 			}

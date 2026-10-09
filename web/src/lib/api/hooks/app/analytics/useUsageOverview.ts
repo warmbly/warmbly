@@ -7,6 +7,6 @@ export const usageOverviewQuery = (period: "day" | "week" | "month" = "day") =>
         queryFn: () => getUsageOverview(period),
     });
 
-export default function useUsageOverview(period: "day" | "week" | "month" = "day") {
-    return useQuery(usageOverviewQuery(period))
+export default function useUsageOverview(period: "day" | "week" | "month" = "day", enabled = true) {
+    return useQuery({ ...usageOverviewQuery(period), enabled })
 }

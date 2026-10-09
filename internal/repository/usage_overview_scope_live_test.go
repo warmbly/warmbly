@@ -93,7 +93,7 @@ func TestLiveUsageOverviewCountsTheSelectedOrganization(t *testing.T) {
 	}
 
 	from, to := time.Now().Add(-24*time.Hour), time.Now().Add(24*time.Hour)
-	overall, xerr := repo.GetDashboardOverallStats(ctx, orgID, from, to, nil)
+	overall, xerr := repo.GetDashboardOverallStats(ctx, orgID, from, to, nil, nil)
 	if xerr != nil {
 		t.Fatalf("GetDashboardOverallStats: %v", xerr)
 	}
@@ -152,7 +152,7 @@ func TestLiveUsageOverviewCountsTheSelectedOrganization(t *testing.T) {
 
 	exec(`INSERT INTO warmup_pool_participants (pool_id, email_account_id, health_state)
 	      VALUES ($1, $2, 'watch')`, models.WarmupPoolPremiumID, accountID)
-	health, xerr := repo.GetAccountHealthSummary(ctx, orgID)
+	health, xerr := repo.GetAccountHealthSummary(ctx, orgID, nil)
 	if xerr != nil {
 		t.Fatalf("GetAccountHealthSummary watch: %v", xerr)
 	}
@@ -160,7 +160,7 @@ func TestLiveUsageOverviewCountsTheSelectedOrganization(t *testing.T) {
 		t.Fatalf("account health for watch state = %+v, want one warning", health)
 	}
 	exec(`UPDATE warmup_pool_participants SET health_state = 'throttled' WHERE email_account_id = $1`, accountID)
-	health, xerr = repo.GetAccountHealthSummary(ctx, orgID)
+	health, xerr = repo.GetAccountHealthSummary(ctx, orgID, nil)
 	if xerr != nil {
 		t.Fatalf("GetAccountHealthSummary throttled: %v", xerr)
 	}
@@ -173,7 +173,7 @@ func TestLiveUsageOverviewCountsTheSelectedOrganization(t *testing.T) {
 	        (email_account_id, user_id, error_code, severity, title, message)
 	      VALUES ($1, $2, 'usage-warning', 'WARNING', 'Warning', 'Warning'),
 	             ($1, $2, 'usage-critical', 'CRITICAL', 'Critical', 'Critical')`, accountID, userID)
-	health, xerr = repo.GetAccountHealthSummary(ctx, orgID)
+	health, xerr = repo.GetAccountHealthSummary(ctx, orgID, nil)
 	if xerr != nil {
 		t.Fatalf("GetAccountHealthSummary: %v", xerr)
 	}

@@ -38,6 +38,7 @@ import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { usePresenceResource } from "@/hooks/PresenceProvider";
 import { useMediaQuery, LG_QUERY } from "@/hooks/useMediaQuery";
 import { useShortcutActions } from "@/hooks/useShortcutActions";
+import { useAccessRestricted } from "@/hooks/usePermission";
 import { ThreadLabelMenu } from "./ThreadLabelMenu";
 import ContactContextPanel from "./ContactContextPanel";
 import { CategoryChip } from "@/components/app/contacts/CategoryPicker";
@@ -103,6 +104,8 @@ function defaultCustomSnoozeValue(): string {
 }
 
 export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
+  // A member restricted to selected resources reads the conversation and nothing more.
+  const readOnly = useAccessRestricted();
   const q = useThread(threadId, emailId);
   const scheduledQ = useThreadScheduled(threadId);
   const accounts = useAppStore((s) => s.emails);
@@ -161,7 +164,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
   // `c` labels the open conversation. The key itself is declared in the global
   // shortcut registry; registering the action here is what makes the row live
   // (and shown in the `?` modal) only while a thread is actually open.
-  useShortcutActions({ labelThread: () => setLabelMenuOpen(true) });
+  useShortcutActions(readOnly ? {} : { labelThread: () => setLabelMenuOpen(true) });
 
   // Composer is opt-in. Default: no reply UI mounted. The user has
   // to click Reply (per-message or the footer CTA) before any blank
@@ -241,13 +244,13 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
   // effect), and reading back the patch Mark as unread just wrote undoes it.
   const selected = useAppStore((s) => s.selectedThreadId === threadId);
   React.useEffect(() => {
-    if (!selected) return;
+    if (!selected || readOnly) return;
     const unseenIds = (q.data?.data ?? [])
       .filter((m) => !m.seen)
       .map((m) => m.id);
     if (unseenIds.length === 0) return;
     markSeenMutate({ ids: unseenIds, threadIds: [threadId] });
-  }, [selected, threadId, q.data, markSeenMutate]);
+  }, [selected, readOnly, threadId, q.data, markSeenMutate]);
 
   // Header actions. Each one closes the thread: the effect above would
   // otherwise re-mark an "unread" thread as seen on the next refetch, and a
@@ -430,6 +433,16 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
             <ResourceViewers resource={`thread:${threadId}`} className="shrink-0 ml-1" />
           </div>
         </div>
+        {readOnly ? (
+          onClose && (
+            <IconAction
+              label="Close conversation"
+              className="hidden md:inline-flex"
+              icon={<XIcon className="w-[15px] h-[15px]" />}
+              onClick={onClose}
+            />
+          )
+        ) : (
         <div className="flex items-center gap-0.5 shrink-0">
           <ThreadLabelMenu
             threadId={threadId}
@@ -637,6 +650,7 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
             </>
           )}
         </div>
+        )}
       </div>
 
       <motion.div
@@ -664,8 +678,8 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
                 ? accounts.find((a) => a.id === email.answers_mailbox_id)?.email
                 : undefined
             }
-            onReply={() => openReply(email.id, "reply")}
-            onForward={() => openReply(email.id, "forward")}
+            onReply={readOnly ? undefined : () => openReply(email.id, "reply")}
+            onForward={readOnly ? undefined : () => openReply(email.id, "forward")}
           />
         ))}
         {(scheduledQ.data?.data ?? []).map((item) => (
@@ -673,13 +687,14 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
             key={item.task_id}
             item={item}
             cancelling={cancel.isPending && cancel.variables === item.task_id}
-            onCancel={() => cancel.mutate(item.task_id)}
+            onCancel={readOnly ? undefined : () => cancel.mutate(item.task_id)}
           />
         ))}
       </motion.div>
 
-      <AgentDraftCard threadId={threadId} />
+      {!readOnly && <AgentDraftCard threadId={threadId} />}
 
+      {!readOnly && (
       <AnimatePresence mode="wait" initial={false}>
         {replyState && replyTarget ? (
           <ReplyComposer
@@ -729,9 +744,10 @@ export function ThreadView({ threadId, emailId, onClose }: ThreadViewProps) {
           </motion.div>
         )}
       </AnimatePresence>
+      )}
       </div>
 
-      {crmOpen && (
+      {crmOpen && !readOnly && (
         <ContactContextPanel
           email={contactEmail}
           name={contactName}
@@ -883,7 +899,7 @@ function ScheduledMessageBubble({
 }: {
   item: UniboxScheduledItem;
   cancelling: boolean;
-  onCancel: () => void;
+  onCancel?: () => void;
 }) {
   const when = formatScheduled(item.scheduled_at);
   const recipients = [...item.to, ...(item.cc ?? []), ...(item.bcc ?? [])];
@@ -917,6 +933,7 @@ function ScheduledMessageBubble({
               </span>
             </div>
           </div>
+          {onCancel && (
           <button
             type="button"
             onClick={onCancel}
@@ -931,6 +948,7 @@ function ScheduledMessageBubble({
             )}
             {cancelling ? "Cancelling" : "Cancel"}
           </button>
+          )}
         </header>
         <div className="mt-2.5 ml-10">
           {item.subject && (

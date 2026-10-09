@@ -20,6 +20,7 @@
 
 import React from "react";
 import useBrowseState from "@/hooks/useBrowseState";
+import { useAccessRestricted } from "@/hooks/usePermission";
 import { inboxBooleanSchema, inboxSearchSchema } from "@/lib/browse-inbox";
 import {
   AnimatePresence,
@@ -226,6 +227,8 @@ export function ScopeRail({ scope, onChange, browseKey = "desktop" }: ScopeRailP
   const overview = useUniboxOverview();
   const data = overview.data;
   const markSeen = useMarkSeen();
+  // A restricted member reads; marking a folder read changes it for everyone.
+  const readOnly = useAccessRestricted();
   // The page and the mobile sheet both mount a rail; each slides its own highlight.
   const layoutGroup = React.useId();
   const transition = useRailTransition();
@@ -281,7 +284,7 @@ export function ScopeRail({ scope, onChange, browseKey = "desktop" }: ScopeRailP
       accent: folder !== "drafts" && !!count,
       noun: "folder",
       onOpen: () => onChange({ kind: "folder", folder }),
-      onMarkAllRead: () => markSeen.mutate({ folder, seen: true }),
+      onMarkAllRead: readOnly ? undefined : () => markSeen.mutate({ folder, seen: true }),
     };
   };
 
@@ -692,7 +695,7 @@ export function ScopeRail({ scope, onChange, browseKey = "desktop" }: ScopeRailP
         >
           {/* Collapses when there are no drafts. */}
           <div className="px-3 pb-2 empty:hidden">
-            <ComposeDraftsItem />
+            {!readOnly && <ComposeDraftsItem />}
           </div>
           <AnimatePresence initial={false}>
             {present.map((id) => (

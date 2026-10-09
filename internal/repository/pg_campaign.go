@@ -41,10 +41,10 @@ type CampaignRepository interface {
 	// Search filters by name substring, folder id, and status bucket
 	// ("draft" | "active" | "paused" | "completed"; paused matches every
 	// paused_* variant; empty means all).
-	Search(ctx context.Context, userID, query string, cursor, folder *string, status string, limit int32) (*models.CampaignsResult, error)
+	Search(ctx context.Context, userID, query string, cursor, folder *string, status string, limit int32, allowed []uuid.UUID) (*models.CampaignsResult, error)
 	// Overview returns status-bucket counts plus per-folder totals for the
 	// campaigns browser sidebar.
-	Overview(ctx context.Context, orgID string) (*models.CampaignsOverview, error)
+	Overview(ctx context.Context, orgID string, allowed []uuid.UUID) (*models.CampaignsOverview, error)
 	Update(ctx context.Context, orgID, query string, data *models.UpdateCampaign) (*models.Campaign, *errx.Error)
 	UpdateStatus(ctx context.Context, campaignID uuid.UUID, status string) error
 	UpdateStatusWithLock(ctx context.Context, campaignID uuid.UUID, status string) error
@@ -770,7 +770,7 @@ func (r *campaignRepository) Get(ctx context.Context, orgID, id string) (*models
 	return &campaign, nil
 }
 
-func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cursor, folder *string, status string, limit int32) (*models.CampaignsResult, error) {
+func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cursor, folder *string, status string, limit int32, allowed []uuid.UUID) (*models.CampaignsResult, error) {
 	tx, err := beginResultTx(ctx, r.DB)
 	if err != nil {
 		db.CaptureError(err, "", nil, "begin")
@@ -795,6 +795,7 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 		  SELECT 1 FROM campaign_folders cf WHERE cf.campaign_id = c.id AND cf.folder_id = $4
 		 ))
 		 AND ($5 = '' OR CASE WHEN $5 = 'paused' THEN c.status::text LIKE 'paused%%' ELSE c.status::text = $5 END)
+		 AND ($6::uuid[] IS NULL OR c.id = ANY($6))
 		GROUP BY c.id
 		ORDER BY c.created_at DESC, c.id DESC
 		LIMIT %d`,
@@ -813,6 +814,7 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 				SELECT 1 FROM campaign_folders cf WHERE cf.campaign_id = c.id AND cf.folder_id = $3
 			  ))
 			  AND ($4 = '' OR CASE WHEN $4 = 'paused' THEN c.status::text LIKE 'paused%' ELSE c.status::text = $4 END)
+			  AND ($5::uuid[] IS NULL OR c.id = ANY($5))
 		`
 	}
 
@@ -822,6 +824,7 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 		query,
 		folder,
 		status,
+		allowed,
 	}
 
 	rows, err := tx.Query(
@@ -869,6 +872,7 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 			query,
 			folder,
 			status,
+			allowed,
 		}
 		var tmp int64
 		err = tx.QueryRow(ctx, countSQL, params...).Scan(&tmp)
@@ -889,7 +893,7 @@ func (r *campaignRepository) Search(ctx context.Context, orgID, query string, cu
 	}, nil
 }
 
-func (r *campaignRepository) Overview(ctx context.Context, orgID string) (*models.CampaignsOverview, error) {
+func (r *campaignRepository) Overview(ctx context.Context, orgID string, allowed []uuid.UUID) (*models.CampaignsOverview, error) {
 	overview := models.CampaignsOverview{Folders: []models.CampaignFolderCount{}}
 
 	countsSQL := `
@@ -900,8 +904,8 @@ func (r *campaignRepository) Overview(ctx context.Context, orgID string) (*model
 			COUNT(*) FILTER (WHERE status = 'draft'),
 			COUNT(*) FILTER (WHERE status = 'completed')
 		FROM campaigns
-		WHERE organization_id = $1`
-	err := resultDB(ctx, r.DB).QueryRow(ctx, countsSQL, orgID).Scan(
+		WHERE organization_id = $1 AND ($2::uuid[] IS NULL OR id = ANY($2))`
+	err := resultDB(ctx, r.DB).QueryRow(ctx, countsSQL, orgID, allowed).Scan(
 		&overview.Total,
 		&overview.Active,
 		&overview.Paused,
@@ -917,9 +921,9 @@ func (r *campaignRepository) Overview(ctx context.Context, orgID string) (*model
 		SELECT cf.folder_id, COUNT(*)
 		FROM campaign_folders cf
 		JOIN campaigns c ON c.id = cf.campaign_id
-		WHERE c.organization_id = $1
+		WHERE c.organization_id = $1 AND ($2::uuid[] IS NULL OR c.id = ANY($2))
 		GROUP BY cf.folder_id`
-	rows, err := resultDB(ctx, r.DB).Query(ctx, foldersSQL, orgID)
+	rows, err := resultDB(ctx, r.DB).Query(ctx, foldersSQL, orgID, allowed)
 	if err != nil {
 		db.CaptureError(err, foldersSQL, []any{orgID}, "query")
 		return nil, err
