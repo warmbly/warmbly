@@ -108,6 +108,10 @@ func TestLivePersistentMailboxLoadingFailure(t *testing.T) {
 	failed(now.Add(-75*time.Minute), models.MailboxNotLoadedPrefix)
 	failed(now.Add(-40*time.Minute), models.MailboxNotLoadedPrefix)
 	assertVisible(true)
+	future := failed(now.Add(10*time.Minute), models.MailboxNotLoadedPrefix)
+	assertVisible(false)
+	f.exec(`DELETE FROM tasks WHERE id=$1`, future)
+	assertVisible(true)
 	got, err := repo.LastWarmupSendFailure(ctx, f.account, since)
 	if err != nil || got.Kind != models.WarmupFailureLoading || got.FirstFailureAt == nil || !got.FirstFailureAt.Equal(now.Add(-2*time.Hour)) {
 		t.Fatalf("missing incident classification: %+v %v", got, err)

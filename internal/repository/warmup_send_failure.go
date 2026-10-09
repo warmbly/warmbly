@@ -85,7 +85,7 @@ func (r *taskRepository) ListOverdueWarmupDispatches(ctx context.Context, now ti
 func (r *warmupRepository) ListMailboxLoadingIncidents(ctx context.Context, now time.Time) ([]MailboxLoadingIncident, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, organization_id, worker_id, first_at, at FROM (`+warmupSendFailuresSQL+`) f
-		WHERE message LIKE $2 AND first_at <= $3 AND at > $3
+		WHERE message LIKE $2 AND first_at <= $3 AND at > $3 AND at <= $3 + INTERVAL '1 hour'
 		  AND status = 'active' AND warming AND sending
 		ORDER BY worker_id, id
 	`, nil, mailboxLoadingPattern, now.Add(-models.WarmupLoadingGracePeriod))
