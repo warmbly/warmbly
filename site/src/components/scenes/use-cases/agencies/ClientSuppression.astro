@@ -1,0 +1,50 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, EYEBROW, TOPBAR, SECTIONBAR } from '../../../../lib/scene';
+
+/**
+ * One client's suppression list (web/src/app/app/contacts/suppressions):
+ * its own bounces, complaints and unsubscribes, which no other client's
+ * campaigns ever read.
+ */
+const RED = 'text-red-700 bg-red-50 border-red-200';
+const SLATE = 'text-slate-600 bg-slate-100 border-slate-200';
+const rows = [
+  { who: 'ana@brightfold.com', reason: 'Clicked unsubscribe', src: 'Unsubscribed', tone: RED, when: 'Oct 8' },
+  { who: 'ops@kestrel.io', reason: 'Mailbox does not exist', src: 'Bounced', tone: RED, when: 'Oct 7' },
+  { who: '@northwind.io', reason: 'Our own domain', src: 'Added by hand', tone: SLATE, when: 'Sep 2', domain: true },
+  { who: 'li@harbour.co', reason: 'Marked as spam', src: 'Spam complaint', tone: RED, when: 'Sep 28' },
+];
+---
+<ScaledStage w={460} h={345} photo="frost-blue">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Suppression list</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12px] text-slate-600">Northwind</span>
+    </div>
+    <div class={SECTIONBAR}><span class={EYEBROW}>Entries</span><span class="font-mono text-[10.5px] text-slate-400">214</span></div>
+    {rows.map((r, i) => (
+      <div class={`h-[54px] px-5 pr-10 flex items-center gap-3 border-b border-slate-200/60 ${i === 0 ? 'sp-new' : ''}`}>
+        <Glyph name={r.domain ? 'globe' : 'mail'} size={14} class="text-slate-400" />
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-[12.5px] font-medium text-slate-900">{r.who}</div>
+          <div class="truncate text-[11px] text-slate-500">{r.reason}</div>
+        </div>
+        <span class={`inline-flex h-5 shrink-0 items-center rounded border px-1.5 text-[10px] font-medium ${r.tone}`}>{r.src}</span>
+        <span class="w-11 shrink-0 text-right text-[11px] tabular-nums text-slate-400">{r.when}</span>
+      </div>
+    ))}
+  </div>
+</ScaledStage>
+
+<style>
+  /* The newest entry arrives on top. */
+  .sp-new { animation: sp-new 9s ease-out infinite; }
+  @keyframes sp-new {
+    0%, 6% { opacity: 0; transform: translateY(-6px); background: rgb(254 242 242); }
+    12% { opacity: 1; transform: none; background: rgb(254 242 242); }
+    50%, 100% { background: transparent; }
+  }
+</style>

@@ -1,0 +1,117 @@
+---
+import TrustFigure from './TrustFigure.astro';
+import Glyph from '../Glyph.astro';
+
+/**
+ * The worker boundary (CLAUDE.md, Worker Networking Rules): a worker reaches
+ * the control plane only through the event bus and one-request brokers, signs
+ * file operations one at a time, holds no cloud key and never connects to the
+ * database. The mailbox provider is the only other thing it talks to.
+ */
+interface Props { n: number; caption: string }
+const { n, caption } = Astro.props;
+
+const box = 'absolute flex items-center gap-2.5 rounded-lg bg-white px-3 ring-1 ring-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.05)]';
+const tag = 'font-mono text-[10px] uppercase tracking-[0.12em] text-slate-400';
+const dbIcon = '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>';
+const boxIcon = '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>';
+const lockIcon = '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>';
+
+const rows = [
+  { y: 60, label: 'Event bus', sub: 'commands out, results back', icon: 'activity' },
+  { y: 140, label: 'Backend API', sub: 'answers one request at a time', icon: 'server' },
+  { y: 220, label: 'Key management', sub: 'root key stays here', svg: lockIcon },
+  { y: 300, label: 'File storage', sub: 'buckets and blobs', svg: boxIcon },
+  { y: 380, label: 'Database', sub: 'relational state', svg: dbIcon },
+] as const;
+---
+<TrustFigure w={900} h={460} n={n} caption={caption}>
+  <!-- The control plane's edge -->
+  <div class="absolute left-[20px] top-[20px] w-[300px] h-[424px] rounded-xl border border-dashed border-slate-300 bg-white/40"></div>
+  <span class={`absolute left-[36px] top-[30px] ${tag}`}>Control plane</span>
+
+  <svg class="absolute inset-0" width="900" height="460" fill="none">
+    <defs>
+      <marker id="wk-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L8 4 L0 8 z" fill="#94a3b8" />
+      </marker>
+    </defs>
+    <!-- Bus: both directions -->
+    <path d="M286 84 H556" stroke="#94a3b8" stroke-width="1.25" marker-start="url(#wk-arrow)" marker-end="url(#wk-arrow)" />
+    <!-- Backend: the worker asks, the backend answers -->
+    <path d="M286 164 H556" stroke="#94a3b8" stroke-width="1.25" marker-start="url(#wk-arrow)" />
+    <!-- Backend to key management, inside the control plane -->
+    <path d="M166 188 V218" stroke="#cbd5e1" stroke-width="1.25" />
+    <!-- Storage: one signed operation -->
+    <path d="M286 324 H556" stroke="#94a3b8" stroke-width="1.25" stroke-dasharray="4 4" marker-start="url(#wk-arrow)" marker-end="url(#wk-arrow)" />
+    <!-- Database: no connection -->
+    <path d="M286 404 H556" stroke="#fda4af" stroke-width="1.25" stroke-dasharray="2 5" />
+    <!-- Worker to the mailbox provider -->
+    <path d="M712 244 H756" stroke="#94a3b8" stroke-width="1.25" marker-start="url(#wk-arrow)" marker-end="url(#wk-arrow)" />
+  </svg>
+
+  {rows.map((r) => (
+    <div class={`${box} left-[46px] w-[240px] h-[48px]`} style={`top:${r.y}px`}>
+      <span class={`inline-flex size-7 shrink-0 items-center justify-center rounded-md ${r.label === 'Database' ? 'bg-rose-50 text-rose-500' : 'bg-slate-100 text-slate-600'}`}>
+        {'icon' in r ? <Glyph name={r.icon} size={14} /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={r.svg} />}
+      </span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium leading-tight text-slate-900">{r.label}</div>
+        <div class="truncate text-[10.5px] text-slate-500">{r.sub}</div>
+      </div>
+    </div>
+  ))}
+
+  <!-- What crosses each line -->
+  <span class="absolute left-[312px] top-[64px] font-mono text-[10.5px] text-slate-500">commands and results</span>
+  <span class="absolute left-[312px] top-[144px] font-mono text-[10.5px] text-slate-500">decrypt · sign one file operation</span>
+  <span class="absolute left-[312px] top-[304px] font-mono text-[10.5px] text-slate-500">one signed upload or download</span>
+  <span class="absolute left-[312px] top-[384px] inline-flex items-center gap-1.5 font-mono text-[10.5px] text-rose-500">
+    <span class="inline-flex size-4 items-center justify-center rounded-full bg-rose-50 ring-1 ring-rose-200"><Glyph name="x" size={10} /></span>never connects
+  </span>
+
+  <!-- The worker -->
+  <div class="absolute left-[558px] top-[60px] w-[154px] h-[368px] rounded-xl bg-white p-4 ring-1 ring-slate-300 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.35)]">
+    <span class="inline-flex size-9 items-center justify-center rounded-lg bg-slate-900 text-white"><Glyph name="server" size={17} /></span>
+    <div class="mt-3 text-[14px] font-semibold text-slate-900">Worker</div>
+    <div class="mt-0.5 text-[11px] leading-snug text-slate-500">Signs in to your mailboxes, sends and syncs</div>
+    <div class="mt-4 space-y-2 border-t border-slate-100 pt-3">
+      {['No database connection', 'No cloud credentials', 'Replaceable at any time'].map((t) => (
+        <div class="flex items-start gap-1.5 text-[11px] leading-snug text-slate-700"><Glyph name="check" size={12} class="mt-px shrink-0 text-emerald-500" />{t}</div>
+      ))}
+    </div>
+  </div>
+
+  <!-- The customer's own mailbox provider -->
+  <div class="absolute left-[758px] top-[176px] w-[124px] h-[136px] rounded-lg bg-white p-3 ring-1 ring-slate-200">
+    <div class={tag}>Your provider</div>
+    <div class="mt-2 space-y-1.5">
+      <div class="flex items-center gap-1.5 text-[11px] text-slate-700"><Glyph mark="google" size={13} />Google</div>
+      <div class="flex items-center gap-1.5 text-[11px] text-slate-700"><Glyph mark="microsoft" size={13} />Microsoft</div>
+      <div class="flex items-center gap-1.5 text-[11px] text-slate-700"><Glyph mark="imap" size={13} />IMAP and SMTP</div>
+    </div>
+  </div>
+
+  <!-- Live traffic on the bus. -->
+  <span class="wk-dot wk-out"></span>
+  <span class="wk-dot wk-back"></span>
+</TrustFigure>
+
+<style>
+  .wk-dot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    opacity: 0;
+  }
+  .wk-out { background: #0ea5e9; offset-path: path('M290 84 H552'); animation: wk-move 3.6s linear infinite; }
+  .wk-back { background: #10b981; offset-path: path('M552 84 H290'); animation: wk-move 3.6s linear infinite; animation-delay: -1.8s; }
+  @keyframes wk-move {
+    0% { offset-distance: 0%; opacity: 0; }
+    10%, 85% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+</style>

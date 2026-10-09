@@ -1,313 +1,158 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
-import Cloud from '../components/Cloud.astro';
 import Icon from '../components/Icon.astro';
+import CTA from '../components/CTA.astro';
+import Photo from '../components/Photo.astro';
+import Rule from '../components/page/Rule.astro';
+import Faq from '../components/page/Faq.astro';
+import SettingsScene from '../components/scenes/referral/SettingsScene.astro';
+import ShareStep from '../components/scenes/referral/ShareStep.astro';
+import CheckoutStep from '../components/scenes/referral/CheckoutStep.astro';
+import CreditStep from '../components/scenes/referral/CreditStep.astro';
+import SettleScene from '../components/scenes/referral/SettleScene.astro';
 
-// Authenticated members land on the in-app referral page; everyone else signs up first.
+// Terms from docs/content/docs/guides/referral-program.mdx; plan prices from
+// web/src/lib/plans.ts. The reward is one month of the invitee's plan.
 const referralHref = 'https://app.warmbly.com/app/settings/referral';
-const signupHref = 'https://app.warmbly.com/auth/register';
+const plans = [
+  { id: 'starter', name: 'Starter', price: 29 },
+  { id: 'grow', name: 'Grow', price: 89 },
+  { id: 'business', name: 'Business', price: 329 },
+];
+const save = (p: number) => Math.round(p * 0.1 * 3);
 
 const steps = [
-  {
-    icon: 'link',
-    label: 'Step 1',
-    title: 'Share your link',
-    desc: 'Grab your personal referral link from settings and send it to anyone who runs cold outreach. No limits on how many people you invite.',
-  },
-  {
-    icon: 'spark',
-    label: 'Step 2',
-    title: 'They get 10% off',
-    desc: 'Anyone who signs up through your link gets 10% off their first three months of Warmbly. A real reason to try it, not just a coupon.',
-  },
-  {
-    icon: 'flame',
-    label: 'Step 3',
-    title: 'You earn a month',
-    desc: 'When they subscribe to a paid plan, you earn account credit equal to one month of that plan. It lands on your account automatically.',
-  },
-];
-
-// Reward examples. Numbers mirror the published Starter and Pro list prices only.
-const rewards = [
-  { plan: 'Starter', price: 29, note: 'Invitee on Starter earns you' },
-  { plan: 'Pro', price: 99, note: 'Invitee on Pro earns you' },
+  { t: 'Share your link', d: 'Find it under Settings, Refer & earn, and send it to anyone who runs cold outreach.' },
+  { t: 'They save 10%', d: 'Their first three months are 10% off, applied at checkout with no code to type.' },
+  { t: 'You earn a month', d: 'When they move to a paid plan, one month of that plan lands on your account as credit.' },
 ];
 
 const terms = [
-  {
-    icon: 'check',
-    title: 'One reward per referral',
-    desc: 'Each person you refer earns you one credit when they first subscribe. Refer ten people, stack ten rewards.',
-  },
-  {
-    icon: 'database',
-    title: 'Applied as account credit',
-    desc: 'Credit is netted off your own Warmbly invoices automatically. It is not a cash payout, and there is nothing to claim.',
-  },
-  {
-    icon: 'clock',
-    title: '30-day clawback',
-    desc: 'If a referred subscription is refunded or cancelled inside 30 days, the matching credit is reversed. Genuine signups keep theirs.',
-  },
-  {
-    icon: 'shield',
-    title: 'Fair use',
-    desc: 'Self-referrals, duplicate accounts, and other abuse do not qualify. We review rewards before they apply.',
-  },
+  { t: 'One reward per team you refer', d: 'And they stack. Refer five teams that upgrade and you earn five rewards.' },
+  { t: 'Paid as account credit', d: 'It comes off your next Warmbly invoices automatically. It is never a cash payout.' },
+  { t: 'Settled after 30 days', d: 'If a referred subscription is refunded or cancelled within 30 days, that credit is reversed.' },
+  { t: 'Fair use', d: 'Self-referrals and duplicate accounts don’t qualify, and rewards are reviewed before they apply.' },
 ];
 
-const faqs = [
-  ['How do I find my referral link?', 'It lives in your dashboard under Settings, Referral. Copy it once and reuse it everywhere.'],
-  ['When does my credit appear?', 'As soon as a person you referred subscribes to a paid plan and clears the review window, the credit is added to your account.'],
-  ['Can I stack rewards?', 'Yes. Each paid referral earns its own credit, and they add up across every person you bring in.'],
-  ['What does the invitee get?', '10% off their first three months. The discount applies to whichever paid plan they choose.'],
-  ['Is there a cash payout?', 'No. Rewards are account credit applied to your Warmbly invoices, never a cash transfer.'],
-  ['What if a referral cancels?', 'Credit from a referral that is refunded or cancelled within 30 days is reversed. After that window it stays.'],
+const faq: [string, string][] = [
+  ['Where do I find my referral link?', 'In the dashboard under Settings, Refer & earn. Only the workspace owner sees it, because the credit lands on the workspace’s own invoices. The same page shows how many people signed up, how many upgraded and how much you have earned.'],
+  ['What does the person I refer get?', '10% off their first three months on whichever paid plan they choose, applied automatically.'],
+  ['How much do I earn for an annual plan?', 'One month of that plan’s price, the same as for a monthly plan, not a share of the whole year.'],
+  ['Can I get paid in cash?', 'No. Rewards are account credit that comes off your own Warmbly invoices.'],
+  ['What if someone I referred cancels?', 'If they refund or cancel within 30 days of your reward, it is reversed. After that it is yours.'],
 ];
 ---
 <Layout
-  title="Referral program - Refer a friend, earn credit | Warmbly"
-  description="Share your Warmbly link. Friends get 10% off their first three months, and you earn account credit equal to one month of their plan, applied automatically."
+  title="Referral Program: Give 10%, Earn a Month | Warmbly"
+  description="Share your Warmbly link: the teams you refer get 10% off their first three months, and you earn account credit worth one month of their plan, applied automatically."
 >
-  <!-- ============================================================
-       HERO — same sky atmosphere as pricing, referral copy.
-       The reward cards drop into the white section below.
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-40 md:pb-52 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white text-[color:var(--sky-6)]">
-          Referral program
-        </span>
-        Earn credit for every friend you bring
+  <!-- HERO: the offer beside a calculator for it. -->
+  <section class="container-page pt-14 md:pt-24 pb-20 md:pb-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[1fr_1fr] lg:gap-16">
+      <div>
+        <div class="text-[14px] text-slate-500">Referral program</div>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">Give 10% off. Earn a month free.</h1>
+        <p class="mt-6 max-w-xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">Send your link to a team that does cold outreach. They save 10% on their first three months, and when they upgrade you get a month of their plan as credit.</p>
+        <div class="mt-9 flex flex-wrap items-center gap-3">
+          <a href={referralHref} class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">Get your link <Icon name="arrowRight" size={14} /></a>
+          <a href="https://docs.warmbly.com/guides/referral-program/" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">Read the terms</a>
+        </div>
       </div>
 
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        Refer a friend,<br/>earn credit.
-      </h1>
-
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Share your link. They get 10% off their first three months. When they subscribe, you earn account credit worth a full month of their plan.
-      </p>
-
-      <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
-        <a
-          href={referralHref}
-          class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white !text-[#075985] hover:bg-white hover:!text-[#0c4a6e] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]"
-        >
-          <span style="color:#075985;">Get your referral link</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href={signupHref} class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          Create an account
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       HOW IT WORKS — three steps, overlapping the sky hero
-  ============================================================ -->
-  <section class="relative -mt-32 md:-mt-40 pb-20 md:pb-28 z-10">
-    <div class="container-page">
-      <div class="grid md:grid-cols-3 gap-4 lg:gap-5 items-stretch">
-        {steps.map((s) => (
-          <div class="relative rounded-[18px] flex flex-col p-7 lg:p-8 bg-white ring-1 ring-[color:var(--border)] shadow-[0_24px_48px_-20px_rgba(15,23,42,0.18),0_4px_12px_-6px_rgba(15,23,42,0.06)]">
-            <div class="inline-flex items-center justify-center w-11 h-11 rounded-[12px] bg-[color:var(--sky-1)] text-[color:var(--sky-6)]">
-              <Icon name={s.icon} size={20} />
+      <div class="relative overflow-hidden rounded-[6px] bg-slate-100">
+        <Photo name="sheer-peach" priority sizes="(min-width: 1024px) 50vw, 100vw" class="absolute inset-0 h-full w-full object-cover" />
+        <div class="relative p-5 sm:p-10">
+          <div class="rounded-[10px] bg-white p-6 shadow-[0_30px_70px_-30px_rgba(15,23,42,0.5)] ring-1 ring-slate-900/[0.06] sm:p-7" data-calc>
+            <div class="text-[13px] text-slate-500">If the team you refer chooses</div>
+            <div class="mt-3 inline-flex rounded-full bg-slate-100 p-1 ring-1 ring-slate-200/70">
+              {plans.map((p, i) => (
+                <button type="button" data-plan={p.id} data-earn={p.price} data-save={save(p.price)} aria-pressed={i === 1 ? 'true' : 'false'} class="h-9 rounded-full px-4 text-[14px] text-slate-500 transition-colors aria-pressed:bg-white aria-pressed:font-medium aria-pressed:text-slate-900 aria-pressed:shadow-sm">{p.name}</button>
+              ))}
             </div>
-            <div class="mt-6 text-[11px] uppercase tracking-[0.18em] font-mono font-semibold text-[color:var(--sky-6)]">
-              {s.label}
-            </div>
-            <h3 class="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-heading">
-              {s.title}
-            </h3>
-            <p class="mt-3 text-[14px] leading-relaxed text-foreground/70 flex-1">
-              {s.desc}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       REWARD EXAMPLES — quiet strip, concrete numbers
-  ============================================================ -->
-  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]">
-    <div class="container-page py-12 md:py-16">
-      <div class="max-w-2xl">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">What you earn</div>
-        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          One month of their plan, on us.
-        </h2>
-        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
-          Your reward scales with the plan your friend picks. The bigger their commitment, the bigger your credit.
-        </p>
-      </div>
-
-      <div class="mt-10 grid sm:grid-cols-2 gap-4 lg:gap-5">
-        {rewards.map((r) => (
-          <div class="rounded-[16px] bg-white ring-1 ring-[color:var(--border)] p-7 flex items-center justify-between gap-6 shadow-[0_24px_48px_-20px_rgba(15,23,42,0.12),0_4px_12px_-6px_rgba(15,23,42,0.05)]">
-            <div>
-              <div class="text-[11px] uppercase tracking-[0.18em] font-mono font-semibold text-[color:var(--sky-6)]">{r.plan}</div>
-              <p class="mt-2 text-[14px] text-foreground/70">{r.note}</p>
-            </div>
-            <div class="text-right shrink-0">
-              <div class="text-[40px] font-semibold tracking-[-0.035em] leading-none text-heading flex items-baseline justify-end">
-                <span class="text-[24px] mr-0.5 text-foreground/55 font-medium">$</span>
-                {r.price}
+            <div class="mt-8 grid grid-cols-2 gap-6">
+              <div>
+                <div class="text-[13px] text-slate-400">You earn</div>
+                <div class="mt-1 text-[44px] font-medium tracking-[-0.05em] leading-none text-slate-900">$<span data-out="earn">{plans[1].price}</span></div>
+                <div class="mt-2 text-[13px] text-slate-400">in account credit</div>
               </div>
-              <div class="mt-1 text-[11.5px] font-mono text-foreground/50">credit</div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p class="mt-5 text-[12.5px] text-muted-foreground">
-        Credit equals one month of the plan your referral subscribes to, applied automatically to your invoices.
-      </p>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       TERMS STRIP — the rules in plain language
-  ============================================================ -->
-  <section class="relative py-20 md:py-28 overflow-hidden">
-    <div class="absolute top-8 right-[-80px] w-[320px] opacity-25 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: multiply;">
-      <Cloud variant={3} opacity={0.6} />
-    </div>
-    <div class="container-page relative">
-      <div class="max-w-2xl">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">How it pays out</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          The terms, kept simple.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          No points, no tiers, no waiting on a payout. Just account credit, applied for you.
-        </p>
-      </div>
-
-      <div class="mt-12 grid sm:grid-cols-2 gap-4 lg:gap-5">
-        {terms.map((t) => (
-          <div class="rounded-[16px] bg-white ring-1 ring-[color:var(--border)] p-7 flex items-start gap-4 shadow-[0_24px_48px_-20px_rgba(15,23,42,0.1),0_4px_12px_-6px_rgba(15,23,42,0.04)]">
-            <span class="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-[10px] bg-[color:var(--sky-1)] text-[color:var(--sky-6)]">
-              <Icon name={t.icon} size={16} />
-            </span>
-            <div>
-              <h3 class="text-[15.5px] font-semibold text-heading">{t.title}</h3>
-              <p class="mt-1.5 text-[13.5px] text-foreground/70 leading-relaxed">{t.desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       FAQ — compact, split layout (mirrors pricing)
-  ============================================================ -->
-  <section class="relative py-20 md:py-28 bg-[color:var(--surface-1)] border-t border-[color:var(--border)] overflow-hidden">
-    <div class="absolute -top-10 left-[-60px] w-[280px] opacity-30 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: multiply;">
-      <Cloud variant={2} opacity={0.55} />
-    </div>
-    <div class="container-page relative grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
-      <div style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Referral FAQ</div>
-        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          Good questions, answered.
-        </h2>
-        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
-          Still unclear? Email <a class="text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] font-medium" href="mailto:team@warmbly.com">team@warmbly.com</a>.
-        </p>
-      </div>
-      <div class="divide-y divide-[color:var(--border)]" data-faq>
-        {faqs.map(([q, a]) => (
-          <div class="faq-row py-2">
-            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
-              <span class="text-[15.5px] font-medium text-heading group-hover:text-[color:var(--brand)] transition-colors">{q}</span>
-              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
-              </span>
-            </button>
-            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
-              <div class="overflow-hidden">
-                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
+              <div>
+                <div class="text-[13px] text-slate-400">They save</div>
+                <div class="mt-1 text-[44px] font-medium tracking-[-0.05em] leading-none text-slate-900">$<span data-out="save">{save(plans[1].price)}</span></div>
+                <div class="mt-2 text-[13px] text-slate-400">over three months</div>
               </div>
             </div>
+            <div class="mt-7 flex items-center justify-between rounded-md bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+              <span class="truncate font-mono text-[13px] text-slate-600">app.warmbly.com/auth/register?ref=YOURCODE</span>
+              <Icon name="link" size={14} class="shrink-0 text-slate-400" />
+            </div>
           </div>
-        ))}
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ============================================================
-       FINAL CTA — deep Warmbly sky, same composition as pricing
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden text-white">
-    <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 140% 90% at 50% 0%, #0ea5e9 0%, #0284c7 35%, #075985 70%, #0c4a6e 100%);"></div>
-    <div class="absolute top-[30%] left-1/2 -translate-x-1/2 w-[720px] h-[400px] pointer-events-none" style="background: radial-gradient(ellipse, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 65%);"></div>
-
-    <div class="absolute top-[8%] left-[-100px] w-[380px] opacity-50 pointer-events-none cloud-drift cloud-1" style="mix-blend-mode: screen;">
-      <Cloud variant={5} opacity={0.85} />
+  <!-- THE PAGE: Settings > Refer & earn, as the owner sees it. -->
+  <section class="container-page pb-20 md:pb-28">
+    <div class="grid gap-6 lg:grid-cols-2 lg:items-end lg:gap-20">
+      <h2 class="text-[30px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08]"><span class="text-slate-400">Your link.</span> <span class="text-slate-900">One page in Settings.</span></h2>
+      <p class="max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500">Settings, Refer &amp; earn holds your link and code, the credit you have waiting, and every team you referred with where it is: pending, qualified or rewarded.</p>
     </div>
-    <div class="absolute top-[14%] right-[-90px] w-[340px] opacity-45 pointer-events-none cloud-drift cloud-2" style="mix-blend-mode: screen;">
-      <Cloud variant={2} opacity={0.8} />
-    </div>
-    <div class="absolute bottom-[-60px] left-[12%] w-[260px] opacity-35 pointer-events-none cloud-drift cloud-3" style="mix-blend-mode: screen;">
-      <Cloud variant={3} opacity={0.7} />
-    </div>
+    <div class="mt-12 md:mt-16"><SettingsScene /></div>
+  </section>
 
-    <svg class="absolute pointer-events-none animate-pulse-soft" style="top: 22%; left: 38%; width: 12px; height: 12px;" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M7 1 L8.5 5.5 L13 7 L8.5 8.5 L7 13 L5.5 8.5 L1 7 L5.5 5.5 Z" fill="rgba(255,255,255,0.9)" />
-    </svg>
+  <!-- STEPS: three scenes, one per step. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <h2 class="text-[30px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08] text-slate-900"><span class="text-slate-400">How it works.</span> Three steps, nothing to claim.</h2>
+    <ol class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 md:grid-cols-2 lg:grid-cols-3">
+      {steps.map((s, i) => (
+        <li class={i === 2 ? 'md:col-span-2 lg:col-span-1' : ''}>
+          {i === 0 && <ShareStep />}
+          {i === 1 && <CheckoutStep />}
+          {i === 2 && <CreditStep />}
+          <div class="mt-6 flex items-baseline gap-3">
+            <span class="font-mono text-[13px] text-slate-400">0{i + 1}</span>
+            <h3 class="text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">{s.t}</h3>
+          </div>
+          <p class="mt-2 max-w-md text-[16px] leading-[1.55] text-slate-500">{s.d}</p>
+        </li>
+      ))}
+    </ol>
+  </section>
 
-    <div class="container-page relative py-24 md:py-32 text-center">
-      <h2 class="text-[36px] md:text-[56px] font-semibold tracking-[-0.03em] leading-[1.04] text-white mx-auto max-w-2xl">
-        Start earning credit today.
-      </h2>
-      <p class="mt-5 text-[15.5px] md:text-[17px] text-white/80 max-w-md mx-auto">
-        Grab your link, share it, and watch the credit stack up.
-      </p>
-      <div class="mt-10 flex flex-wrap items-center justify-center gap-3">
-        <a
-          href={referralHref}
-          class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white !text-[#075985] hover:bg-white hover:!text-[#0c4a6e] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]"
-        >
-          <span style="color:#075985;">Get your referral link</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href={signupHref} class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          Create an account
-        </a>
+  <!-- TERMS: the rules beside the window they describe. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] lg:gap-16">
+      <div>
+        <h2 class="text-[30px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08] text-slate-900"><span class="text-slate-400">The fine print.</span> Kept short.</h2>
+        <dl class="mt-10 divide-y divide-slate-200 border-y border-slate-200">
+          {terms.map((t) => (
+            <div class="py-5">
+              <dt class="text-[17px] font-medium text-slate-900">{t.t}</dt>
+              <dd class="mt-1.5 text-[15px] leading-[1.6] text-slate-500">{t.d}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
+      <SettleScene />
     </div>
   </section>
 
-  <script is:inline>
-    // FAQ accordion · smooth grid-rows animation (same pattern as pricing)
-    (function () {
-      const faq = document.querySelector('[data-faq]');
-      if (!faq) return;
-      faq.querySelectorAll('.faq-trigger').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const row   = btn.closest('.faq-row');
-          const panel = row.querySelector('.faq-panel');
-          const icon  = btn.querySelector('.faq-icon');
-          const open  = btn.getAttribute('aria-expanded') === 'true';
+  <Rule />
+  <Faq items={faq} title="Referrals, answered." />
 
-          btn.setAttribute('aria-expanded', String(!open));
-          panel.style.gridTemplateRows = open ? '0fr' : '1fr';
-          if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
-        });
-      });
-    })();
-  </script>
+  <CTA photo="sheer-peach" title="Share Warmbly with a team you know." description="Your link is waiting under Settings, Refer & earn." primaryLabel="Get your link" primaryHref={referralHref} secondaryLabel="Start free" secondaryHref="https://app.warmbly.com/auth/register" />
 </Layout>
+
+<script>
+  const calc = document.querySelector<HTMLElement>('[data-calc]');
+  const buttons = [...(calc?.querySelectorAll<HTMLButtonElement>('[data-plan]') ?? [])];
+  buttons.forEach((b) => b.addEventListener('click', () => {
+    buttons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    const earn = calc?.querySelector('[data-out="earn"]');
+    const save = calc?.querySelector('[data-out="save"]');
+    if (earn) earn.textContent = b.dataset.earn ?? '';
+    if (save) save.textContent = b.dataset.save ?? '';
+  }));
+</script>

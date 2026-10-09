@@ -1,0 +1,47 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, EYEBROW } from '../../../lib/scene';
+
+/**
+ * Today's sending plan opened to "From your settings to today" (SendPlanCard):
+ * the mailbox caps added up, every limit that took something off, and what
+ * is still to go. The numbers add up the way the card's do.
+ */
+const limits = [
+  { label: 'Campaign daily limit', n: '6 mailboxes', v: 60 },
+  { label: 'Easing out of warmup', n: '1 mailbox', v: 15 },
+  { label: 'Used by other campaigns', n: '2 mailboxes', v: 22 },
+  { label: 'Minimum gap between sends', n: '1 mailbox', v: 9 },
+];
+---
+<ScaledStage w={460} h={345} photo="sheer-sky">
+  <div class={`${WINDOW} left-[24px] top-[24px] w-[460px] h-[340px]`}>
+    <div class="min-h-12 px-4 py-2 flex items-center gap-3 border-b border-slate-200/60">
+      <span class="flex items-baseline gap-1.5">
+        <span class="text-[20px] font-semibold leading-none tabular-nums text-slate-900">194</span>
+        <span class="text-[11.5px] text-slate-600">today</span>
+      </span>
+      <span class="w-16 h-1 rounded-full bg-slate-100 overflow-hidden"><span class="enter-grow-x block h-full rounded-full bg-sky-500" style="width:45%"></span></span>
+      <span class="font-mono text-[11px] tabular-nums text-slate-400">87 sent · 107 to go</span>
+      <span class="ml-auto mr-6 inline-flex items-center gap-1 text-[11px] text-slate-500">Why<span class="rotate-180 inline-flex"><Glyph name="chevronDown" size={11} /></span></span>
+    </div>
+    <div class="px-4 py-3 pr-10">
+      <div class={`${EYEBROW} mb-1.5`}>From your settings to today</div>
+      <div class="divide-y divide-slate-100 text-[12px]">
+        <div class="h-7 flex items-center"><span class="text-slate-700">Mailbox caps added up</span><span class="ml-auto font-mono text-[11.5px] tabular-nums text-slate-700">300</span></div>
+        {limits.map((l, i) => (
+          <div class="enter-fade h-7 flex items-center gap-2" style={`--d:${i * 120}ms`}>
+            <span class="truncate text-slate-700">{l.label}</span>
+            <span class="text-[10.5px] text-slate-400">{l.n}</span>
+            <span class="ml-auto font-mono text-[11.5px] tabular-nums text-rose-600">−{l.v}</span>
+          </div>
+        ))}
+        <div class="h-7 flex items-center"><span class="text-slate-700">Sent today</span><span class="ml-auto font-mono text-[11.5px] tabular-nums text-slate-500">−87</span></div>
+        <div class="h-7 flex items-center"><span class="font-medium text-slate-900">Still to go today</span><span class="ml-auto font-mono text-[11.5px] font-medium tabular-nums text-slate-900">107</span></div>
+      </div>
+      <div class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-slate-500"><Ico name="users" size={12} class="text-slate-400" />Leads: 88 due now · 140 later today · 312 waiting on a step</div>
+    </div>
+  </div>
+</ScaledStage>

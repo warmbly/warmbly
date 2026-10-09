@@ -86,6 +86,9 @@ type OrganizationMember struct {
 	InvitedBy   *uuid.UUID             `json:"invited_by,omitempty"`
 	InvitedAt   time.Time              `json:"invited_at"`
 	AcceptedAt  *time.Time             `json:"accepted_at,omitempty"`
+	// AccessScope is which resources the role applies to; Access is filled where the grants are listed.
+	AccessScope AccessScope   `json:"access_scope"`
+	Access      *MemberAccess `json:"access,omitempty"`
 
 	// Joined data
 	User         *User         `json:"user,omitempty"`
@@ -115,6 +118,11 @@ func (m *OrganizationMember) IsOwner() bool {
 	return m.Role == string(RoleOwner)
 }
 
+// IsRestricted reports whether the member reaches only the resources granted to them.
+func (m *OrganizationMember) IsRestricted() bool {
+	return m != nil && !m.IsOwner() && m.AccessScope == AccessScopeRestricted
+}
+
 // OrganizationInvitation represents a pending invitation to join an organization
 type OrganizationInvitation struct {
 	ID             uuid.UUID              `json:"id"`
@@ -128,6 +136,7 @@ type OrganizationInvitation struct {
 	Token          string                 `json:"-"` // Never expose token in JSON
 	ExpiresAt      time.Time              `json:"expires_at"`
 	CreatedAt      time.Time              `json:"created_at"`
+	Access         *MemberAccess          `json:"access,omitempty"`
 
 	// Joined data
 	Organization  *Organization `json:"organization,omitempty"`
@@ -200,6 +209,8 @@ type InviteMemberRequest struct {
 	// RoleID stays accepted as a single-role shorthand.
 	RoleIDs []uuid.UUID `json:"role_ids,omitempty"`
 	RoleID  *uuid.UUID  `json:"role_id,omitempty"`
+	// Access restricts the invitee from the moment they join; absent is the entire workspace.
+	Access *MemberAccess `json:"access,omitempty"`
 }
 
 // Resolved returns the requested role ids, merging the single-role shorthand.

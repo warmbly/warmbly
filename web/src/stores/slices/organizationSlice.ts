@@ -11,6 +11,8 @@ export interface Organization {
   role: string
   // Caller's effective permission bitmask in this org (custom-role aware).
   permissions?: number
+  // "restricted" reaches only the campaigns and mailboxes granted to the caller.
+  access_scope?: "workspace" | "restricted"
 }
 
 export interface OrganizationSlice {

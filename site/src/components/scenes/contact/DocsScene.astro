@@ -1,0 +1,73 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../about/Ico.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * docs.warmbly.com: the Guides sidebar in its real order (guides/meta.json)
+ * open on Mailboxes, quoting its own first lines, with search open over it.
+ */
+const MARK = 'M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z';
+const sending = ['Mailboxes', 'Import mailboxes', 'Sending domains', 'Sending behavior', 'Warmup', 'Warmbly Cloud', 'Campaigns', 'Sequences & steps', 'Deliverability'];
+const results = [
+  { t: 'Warmup', s: 'Guides · Sending' },
+  { t: 'Warmbly Cloud', s: 'Guides · Sending' },
+  { t: 'Deliverability', s: 'Guides · Sending' },
+];
+---
+<ScaledStage w={680} h={460}>
+  <div class={`${WINDOW} left-[32px] top-[32px] w-[648px] h-[428px] text-left`}>
+    <div class="h-12 px-4 flex items-center gap-5 border-b border-slate-200">
+      <span class="inline-flex items-center gap-1.5 text-slate-900"><svg viewBox="0 0 746 764" class="w-4" fill="currentColor"><path d={MARK} /></svg><span class="text-[13px] font-extrabold tracking-tight">Warmbly</span><span class="text-[12px] text-slate-400">Docs</span></span>
+      <span class="flex items-center gap-4 text-[12px]">
+        <span class="font-medium text-slate-900">Guides</span><span class="text-slate-500">Learn</span><span class="text-slate-500">API</span><span class="text-slate-500">Development</span>
+      </span>
+    </div>
+    <div class="flex h-[380px]">
+      <div class="w-[176px] shrink-0 border-r border-slate-200 px-3 py-3">
+        <div class="h-8 px-2.5 rounded-md border border-slate-200 bg-slate-50 flex items-center gap-2 text-[11.5px] text-slate-400">
+          <Glyph name="search" size={12} /> Search
+          <span class="ml-auto rounded border border-slate-200 bg-white px-1 text-[9.5px] font-medium text-slate-500">⌘K</span>
+        </div>
+        <div class="mt-4 px-2 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Sending</div>
+        <div class="mt-1.5 space-y-0.5">
+          {sending.map((s, i) => <div class={`h-[26px] px-2 rounded flex items-center truncate text-[11.5px] ${i === 0 ? 'bg-sky-50 font-medium text-sky-700' : 'text-slate-600'}`}>{s}</div>)}
+        </div>
+      </div>
+      <div class="min-w-0 flex-1 px-7 py-6">
+        <div class="text-[11px] text-slate-400">Guides › Sending</div>
+        <div class="mt-1.5 text-[26px] font-semibold tracking-[-0.02em] text-slate-900">Mailboxes</div>
+        <div class="mt-1 text-[12.5px] text-slate-500">Connect sender accounts, providers, and how they are assigned to workers.</div>
+        <p class="mt-5 text-[12.5px] leading-[1.7] text-slate-700">A mailbox is a sender account you connect to Warmbly. Every warmup message and campaign email goes out through one you own.</p>
+        <div class="mt-6 text-[15px] font-semibold text-slate-900">Connecting an account</div>
+        <p class="mt-2 text-[12.5px] leading-[1.7] text-slate-700">Open <b class="font-semibold">Accounts</b> and choose <b class="font-semibold">Add account</b>. Google and Microsoft each have one entry, and choosing it asks how to connect.</p>
+      </div>
+    </div>
+    <!-- Search is open: the page dims behind it. -->
+    <div class="absolute inset-0 top-12 bg-slate-900/[0.06]"></div>
+  </div>
+
+  <div class={`${FLOAT} left-[150px] top-[170px] w-[400px] overflow-hidden text-left`}>
+    <div class="h-11 px-4 flex items-center gap-2.5 border-b border-slate-200">
+      <Glyph name="search" size={14} class="text-slate-400" />
+      <span class="text-[13px] text-slate-900">warmup</span>
+      <span class="dc-caret -ml-1 h-4 w-px bg-sky-600"></span>
+      <span class="ml-auto rounded border border-slate-200 px-1 text-[9.5px] font-medium text-slate-400">Esc</span>
+    </div>
+    <div class="p-1.5">
+      {results.map((r, i) => (
+        <div class={`flex items-center gap-2.5 rounded-md px-3 py-2.5 ${i === 0 ? 'bg-sky-50' : ''}`}>
+          <Ico name="book" size={13} class={i === 0 ? 'text-sky-600' : 'text-slate-400'} />
+          <span class="text-[12.5px] font-medium text-slate-900">{r.t}</span>
+          <span class="ml-auto text-[10.5px] text-slate-400">{r.s}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .dc-caret { animation: dc-caret 1s steps(1) infinite; }
+  @keyframes dc-caret { 50% { opacity: 0; } }
+</style>

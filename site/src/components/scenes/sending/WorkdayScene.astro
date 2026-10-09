@@ -1,0 +1,184 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../campaigns/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../../lib/scene';
+
+/**
+ * The mailbox drawer's Sending tab (emails/SendingBehaviorTab.tsx): the
+ * Variable sending plan switch, today's rolled workday (hours, break,
+ * spacing band, hourly ceiling, how much of the target is spent) drawn on
+ * the day it describes, then the working days and workday ranges below.
+ * The campaign's plan floats over it with this mailbox's share of the day.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'gauge' },
+  { label: 'Deliverability', icon: 'mailCheck' },
+  { label: 'Analytics', icon: 'barChart' },
+  { label: 'Warmup', icon: 'flame' },
+  { label: 'Sending', icon: 'clock', active: true },
+  { label: 'Settings', icon: 'settings' },
+] as const;
+
+// Today's roll, local to Europe/London, drawn on a 06:00 to 20:00 axis.
+const A0 = 6 * 60, A1 = 20 * 60;
+const day = { start: 9 * 60 + 14, end: 17 * 60 + 41, lunch: 12 * 60 + 32, lunchEnd: 13 * 60 + 19, target: 31, hourly: 7 };
+const now = 14 * 60 + 24;
+const W = 652;
+const x = (m: number) => ((m - A0) / (A1 - A0)) * W;
+const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
+// 31 sends paced across the open minutes with jitter; a seed keeps every build identical.
+let seed = 11;
+const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const open = day.end - day.start - (day.lunchEnd - day.lunch);
+const sends: number[] = [];
+for (let i = 0; i < day.target; i++) {
+  let m = day.start + ((i + 0.5) / day.target) * open + (rand() - 0.5) * 9;
+  if (m >= day.lunch) m += day.lunchEnd - day.lunch;
+  sends.push(Math.round(m));
+}
+const sent = sends.filter((t) => t < now).length;
+const nextSend = sends.find((t) => t >= now) ?? now;
+const left = day.target - sent;
+const hours = [6, 8, 10, 12, 14, 16, 18, 20];
+const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const field = 'h-9 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 tabular-nums flex items-center w-full';
+---
+<ScaledStage w={760} h={820} photo="lake-motion">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[740px] h-[800px]`}>
+    <div class="h-14 px-5 flex items-center gap-3 border-b border-slate-200">
+      <div class="relative size-8 shrink-0 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center text-[11px] font-semibold">
+        AK
+        <span class="absolute -right-1 -bottom-1 inline-flex size-4 items-center justify-center rounded border border-slate-200 bg-white ring-2 ring-white"><Glyph mark="google" size={10} /></span>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-[13px] font-medium text-slate-900">alex@northwind.dev</div>
+        <div class="truncate text-[10.5px] text-slate-400">Google Workspace</div>
+      </div>
+      <span class="inline-flex h-5 items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">active</span>
+      <span class="mr-6 inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="x" size={16} /></span>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="divide-y divide-slate-200/60 pr-5">
+      <!-- On/off -->
+      <div class="px-5 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <span class="size-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center"><Glyph name="clock" size={16} /></span>
+          <div>
+            <div class="text-[12.5px] font-medium text-slate-900">Variable sending plan</div>
+            <div class="text-[11px] text-slate-400">Hours, volume and spacing are re-rolled each day</div>
+          </div>
+        </div>
+        <span class="relative inline-flex h-[18px] w-8 items-center rounded-full bg-sky-600"><span class="inline-block size-3.5 translate-x-[15px] rounded-full bg-white shadow-sm"></span></span>
+      </div>
+
+      <!-- Today's workday -->
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between">
+          <span class={EYEBROW}>Today’s workday</span>
+          <span class="font-mono text-[10.5px] text-slate-400">Europe/London</span>
+        </div>
+        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-slate-700">
+          <span class="inline-flex items-center gap-1.5"><Glyph name="clock" size={14} class="text-slate-400" /><b class="font-semibold text-slate-900 tabular-nums">{clock(day.start)}</b><span class="text-slate-400">–</span><b class="font-semibold text-slate-900 tabular-nums">{clock(day.end)}</b></span>
+          <span class="inline-flex items-center gap-1.5"><Ico name="coffee" size={14} class="text-slate-400" /><span class="tabular-nums">{clock(day.lunch)}–{clock(day.lunchEnd)}</span></span>
+          <span class="inline-flex items-center gap-1.5"><Ico name="timer" size={14} class="text-slate-400" />1m 30s–7m apart</span>
+          <span class="inline-flex items-center gap-1.5"><Glyph name="gauge" size={14} class="text-slate-400" />max {day.hourly}/hour</span>
+        </div>
+        <div class="mt-3 flex items-center justify-between text-[12px] text-slate-600">
+          <span><b class="font-semibold text-slate-900 tabular-nums">{sent}</b> of <b class="font-semibold text-slate-900 tabular-nums">{day.target}</b> sent</span>
+          <span class="text-slate-400 tabular-nums">{left} left in plan</span>
+        </div>
+        <div class="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="enter-grow-x h-full rounded-full bg-sky-500" style={`width:${(sent / day.target) * 100}%`}></div></div>
+
+        <!-- The same day, hour by hour. -->
+        <div class="mt-5 rounded-md border border-slate-200 bg-slate-50/50 px-3 pt-3 pb-2">
+          <div class="relative h-14" style={`width:${W}px`}>
+            <div class="absolute inset-y-0 rounded bg-sky-50 ring-1 ring-inset ring-sky-100" style={`left:${x(day.start)}px; width:${x(day.end) - x(day.start)}px`}></div>
+            <div class="absolute inset-y-0 bg-[repeating-linear-gradient(135deg,#e2e8f0_0,#e2e8f0_3px,#fff_3px,#fff_7px)]" style={`left:${x(day.lunch)}px; width:${x(day.lunchEnd) - x(day.lunch)}px`}></div>
+            {sends.map((t, i) => (
+              <span class={`enter-grow-y absolute bottom-2 top-2 w-[2px] rounded-full ${t < now ? 'bg-sky-500' : 'bg-slate-300'}`} style={`left:${x(t)}px; --d:${i * 35}ms`}></span>
+            ))}
+            <span class="wd-next absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-500" style={`left:${x(nextSend) + 1}px`}></span>
+            <div class="absolute -top-1 -bottom-1 w-px bg-rose-400" style={`left:${x(now)}px`}>
+              <span class="absolute -top-0.5 left-1.5 whitespace-nowrap rounded bg-rose-50 px-1 font-mono text-[9.5px] text-rose-600">{clock(now)}</span>
+            </div>
+          </div>
+          <div class="relative mt-1 h-4 font-mono text-[10px] text-slate-400" style={`width:${W}px`}>
+            {hours.map((h) => <span class="absolute -translate-x-1/2" style={`left:${x(h * 60)}px`}>{String(h).padStart(2, '0')}:00</span>)}
+          </div>
+          <div class="mt-1.5 flex items-center gap-4 border-t border-slate-200/70 pt-2 text-[10.5px] text-slate-500">
+            <span class="inline-flex items-center gap-1.5"><span class="h-3 w-[2px] rounded-full bg-sky-500"></span>Sent</span>
+            <span class="inline-flex items-center gap-1.5"><span class="h-3 w-[2px] rounded-full bg-slate-300"></span>Planned</span>
+            <span class="inline-flex items-center gap-1.5"><span class="size-2.5 rounded-sm bg-[repeating-linear-gradient(135deg,#e2e8f0_0,#e2e8f0_2px,#fff_2px,#fff_4px)] ring-1 ring-slate-200"></span>Lunch</span>
+            <span class="ml-auto font-mono text-slate-400">next send {clock(nextSend)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Working days -->
+      <div class="px-5 py-5 space-y-2">
+        <div class={EYEBROW}>Working days</div>
+        <div class="grid grid-cols-7 gap-1.5">
+          {weekdays.map((d, i) => (
+            <span class={`h-12 rounded-md border flex flex-col items-center justify-center ${i < 5 ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+              <span class="text-[11px] font-medium">{d}</span>
+              <span class={`mt-1 size-1.5 rounded-full ${i < 5 ? 'bg-sky-500' : 'bg-slate-300'}`}></span>
+            </span>
+          ))}
+        </div>
+        <p class="text-[10.5px] leading-relaxed text-slate-400">Days this mailbox sends anything at all, cold outreach and warmup alike.</p>
+      </div>
+
+      <!-- Workday ranges -->
+      <div class="px-5 py-5 space-y-5">
+        <div class={EYEBROW}>Workday</div>
+        {[['sunrise', 'Starts somewhere between', '09:03', '09:27'], ['sunset', 'Finishes somewhere between', '17:18', '17:56']].map(([icon, label, a, b]) => (
+          <div>
+            <div class="mb-1 flex items-center gap-1.5"><Ico name={icon as never} size={14} class="text-slate-400" /><span class="text-[12px] font-medium text-slate-700">{label}</span></div>
+            <div class="flex items-center gap-2"><span class={field}>{a}</span><span class="shrink-0 text-[11.5px] text-slate-400">to</span><span class={field}>{b}</span></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- The campaign's plan, with this mailbox's rolled day in it. -->
+  <div class={`${FLOAT} left-[384px] top-[628px] w-[350px] overflow-hidden`}>
+    <div class="px-4 pt-3 pb-2 border-b border-slate-200/70">
+      <div class="flex items-baseline gap-1.5">
+        <span class={EYEBROW}>Today’s sending plan</span>
+        <span class="ml-auto truncate text-[11px] text-slate-400">Series A founders, Q3</span>
+      </div>
+      <div class="mt-2 h-7 flex items-center gap-2 text-[12px]">
+        <span class="text-slate-700">Sending behaviour plan</span>
+        <span class="text-[10.5px] text-slate-400">1 mailbox</span>
+        <span class="ml-auto font-mono text-[11.5px] tabular-nums text-rose-600">−19</span>
+      </div>
+    </div>
+    <div class="px-4 py-2.5 flex items-center gap-2">
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-[12px] text-slate-900">alex@northwind.dev</span>
+        <span class="block truncate text-[10.5px] text-slate-400">gap 2m</span>
+      </span>
+      <span class="shrink-0 font-mono text-[11px] tabular-nums text-slate-500">{sent}<span class="text-slate-300"> / </span><span class="text-slate-700">{day.target}</span><span class="text-slate-400"> of 50</span></span>
+      <span class="shrink-0 inline-flex h-5 items-center rounded px-1.5 text-[10px] font-medium ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200">Sending</span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The next planned send waits its turn. */
+  .wd-next { box-shadow: 0 0 0 0 rgb(14 165 233 / 0.45); animation: wd-next 2.4s ease-out infinite; }
+  @keyframes wd-next {
+    0% { box-shadow: 0 0 0 0 rgb(14 165 233 / 0.45); }
+    70%, 100% { box-shadow: 0 0 0 8px rgb(14 165 233 / 0); }
+  }
+</style>

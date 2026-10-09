@@ -1,686 +1,140 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import HeroAtmosphere from '../../components/HeroAtmosphere.astro';
 import Icon from '../../components/Icon.astro';
 import CTA from '../../components/CTA.astro';
+import SectionIntro from '../../components/page/SectionIntro.astro';
+import Rule from '../../components/page/Rule.astro';
+import Faq from '../../components/page/Faq.astro';
+import HeroLeads from '../../components/scenes/use-cases/recruiters/HeroLeads.astro';
+import CadenceFlow from '../../components/scenes/use-cases/recruiters/CadenceFlow.astro';
+import PlainPreview from '../../components/scenes/use-cases/recruiters/PlainPreview.astro';
+import RecruiterMailboxes from '../../components/scenes/use-cases/recruiters/RecruiterMailboxes.astro';
+import OptOuts from '../../components/scenes/use-cases/recruiters/OptOuts.astro';
 
-// ===========================================================================
-// Recruiters use case. Every number is a real Warmbly constant, not a measured
-// outcome: cold cap defaults to 50/day and is validated up to 100 max
-// (internal/config/constants.go, internal/repository/pg_email.go), 600s minimum
-// gap, warmup 10 to 40/day at +1/day in the premium pool. The 30/day recruiter
-// figure is a recommendation.
-//
-// Astro JSX caveat: no `<`, `>`, or `<=` may appear inside a {} expression, and
-// no literal `{{ }}` may appear in markup (it parses as an expression), so Go
-// template braces are written as {`{{...}}`} template literals where needed.
-// ===========================================================================
+// Defaults from internal/config/constants.go; suppression and stop-on-reply
+// from the campaigns and contacts guides.
 
-// --- Section 1 · two senders, one candidate -------------------------------
-const specimens = [
-  {
-    label: 'Shared inbox',
-    ring: 'ring-rose-200',
-    tag: 'Promotions',
-    tagClass: 'bg-amber-50 text-amber-700 ring-amber-200',
-    avatar: 'C',
-    avatarClass: 'bg-rose-50 text-rose-600 ring-rose-200',
-    from: 'Careers at Acme',
-    addr: 'careers@acme.com',
-    subject: 'Exciting opportunity at Acme, apply today',
-    time: '9:02 AM',
-    connector: 'bg-rose-300',
-    dot: 'bg-rose-400',
-    callouts: [
-      'Shared by the whole team',
-      'Carries everyone’s complaint history',
-      "No sending history that's clearly one person's",
-    ],
-  },
-  {
-    label: 'Recruiter mailbox',
-    ring: 'ring-[color:var(--sky-2)]',
-    tag: 'Primary',
-    tagClass: 'bg-[color:var(--sky-1)]/60 text-[#0369a1] ring-[color:var(--sky-2)]',
-    avatar: 'DR',
-    avatarClass: 'bg-[color:var(--brand-soft)] text-[#0369a1] ring-[color:var(--sky-2)]',
-    from: 'Dana Reyes',
-    addr: 'dana@northwind.so',
-    subject: 'Quick question about your work',
-    time: '9:04 AM',
-    connector: 'bg-[color:var(--sky-2)]',
-    dot: 'bg-[#0284c7]',
-    callouts: [
-      'Belongs to one recruiter',
-      'Builds its own sending history',
-      'Replies come straight back to her',
-    ],
-  },
-];
-
-// --- Section 2 · how the two setups compare -------------------------------
-const ownershipLedger = [
-  { label: 'Reputation', shared: 'The address itself, shared by everyone.', mine: 'The individual recruiter.' },
-  { label: 'One complaint', shared: 'Affects everyone who sends from the address.', mine: 'Stays with that one mailbox.' },
-  { label: 'What the candidate sees', shared: 'A generic careers address.', mine: 'A named person they can reply to.' },
-  { label: 'If a recruiter leaves', shared: 'Their threads stay stuck on the alias.', mine: 'The mailbox goes with them.' },
-  { label: 'Warmup', shared: 'Hard to warm an inbox many people send from.', mine: 'Each mailbox warms on its own in the premium pool.' },
-];
-
-// --- Section 3 · sending limits -------------------------------------------
-// fillPct / ceilingPct precomputed so no comparison appears in the meter markup.
-const parameters = [
-  {
-    id: '01',
-    label: 'Recommended daily cap',
-    value: '30 / day',
-    fillPct: 30,
-    ceilingPct: 50,
-    ceiling: '50 default, 100 max',
-    why: 'We suggest starting here and raising the cap only once a mailbox has a clean record over a few weeks.',
-  },
-  {
-    id: '02',
-    label: 'Minimum gap between sends',
-    value: '600s',
-    fillPct: 100,
-    ceilingPct: 100,
-    ceiling: 'every mailbox',
-    why: 'A 600 second gap between sends avoids the burst pattern filters associate with bulk tools.',
-  },
-  {
-    id: '03',
-    label: 'Warmup volume',
-    value: '10 to 40',
-    fillPct: 40,
-    ceilingPct: 100,
-    ceiling: '+1 / day, premium pool',
-    why: 'Each mailbox warms on its own and keeps some normal back-and-forth going while it sends.',
-  },
-  {
-    id: '04',
-    label: 'Recruiter to mailbox',
-    value: '1 : 1',
-    fillPct: 100,
-    ceilingPct: 100,
-    ceiling: 'one per person',
-    why: 'Since reputation sits with the mailbox, each one should belong to a single recruiter.',
-  },
-];
-
-const paramFootnote =
-  'The 30/day figure is a recommendation, not a measured result. The platform sets a 50/day default and allows overrides up to 100. Raise a mailbox toward that only after it has built a clean complaint and bounce record.';
-
-// --- Section 4 · how many follow-ups --------------------------------------
 const cadence = [
-  { day: 'Day 0', label: 'First message', intent: 'A short, specific question.' },
-  { day: 'Day 5', label: 'Follow-up', intent: 'One line of context and an easy out.' },
-  { day: 'Day 12', label: 'Last note', intent: 'A final check-in, then it stops.' },
+  { day: 'Day 0', t: 'First message', d: 'A short, specific question about their work.' },
+  { day: 'Day 5', t: 'Follow-up', d: 'One line of context and an easy way out.' },
+  { day: 'Day 12', t: 'Last note', d: 'A final check-in, then the sequence stops.' },
+  { day: 'After that', t: 'Nothing', d: 'No fourth, fifth or sixth nudge.', end: true },
 ];
 
-const phantomTouches = [
-  { n: '04', op: 0.5 },
-  { n: '05', op: 0.38 },
-  { n: '06', op: 0.26 },
-  { n: '07', op: 0.16 },
+const leaveOut = [
+  ['A logo banner', 'reads as a newsletter'],
+  ['The job description as an image', 'link to the posting instead'],
+  ['A signature full of social icons', 'looks like marketing mail'],
+  ['Open tracking', 'adds an image and says little'],
 ];
 
-// --- Section 5 · plain text -----------------------------------------------
-const stripped = [
-  { name: 'Logo banner', icon: 'layers', why: 'reads as a newsletter header' },
-  { name: 'Image-based job description', icon: 'spark', why: 'link to a hosted page instead' },
-  { name: 'HTML signature with social icons', icon: 'contact', why: 'extra chrome looks promotional' },
-  { name: 'Tracking pixel', icon: 'search', why: 'a spam signal and a trust cost' },
-];
+const tileTitle = 'mt-6 text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900';
+const tileBody = 'mt-2 max-w-xl text-[16px] md:text-[17px] leading-[1.55] text-slate-500';
 
-const cleanLines = [
-  'Hi Maya,',
-  'I came across your work and the role lined up with it.',
-  'Open to a 20-minute call next week?',
-];
-
-// --- Section 6 · Go templating --------------------------------------------
-// Merge fields are plain string values, so they are safe to render with {field}.
-const mergeFields = ['{{.FirstName}}', '{{.LastName}}', '{{.Company}}', '{{.Role}}', '{{.Email}}'];
-
-// --- Section 7 · opt-outs --------------------------------------------------
-const suppressTriggers = ['STOP', 'REMOVE', 'NOT INTERESTED', 'OOO bounce'];
-
-const suppressEndpoints = [
-  { label: 'dana@northwind.so', kind: 'mailbox' },
-  { label: 'mara@northwind.so', kind: 'mailbox' },
-  { label: 'Eng leads · Q2', kind: 'sequence' },
-  { label: 'Design senior', kind: 'sequence' },
-  { label: 'GTM warm', kind: 'sequence' },
-  { label: 'Workspace contact', kind: 'record' },
-];
-
-const verdicts = [
-  { label: 'Interested', icon: 'spark', chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500', does: 'The sequence stops and the reply is flagged for the recruiter.' },
-  { label: 'Not now', icon: 'clock', chip: 'bg-amber-50 text-amber-700 ring-amber-200', dot: 'bg-amber-500', does: 'Logged as a decline for now. If the wording is a clear opt-out, the candidate is added to the suppression list.' },
-  { label: 'Referral', icon: 'users', chip: 'bg-[color:var(--sky-1)]/50 text-[#0369a1] ring-[color:var(--sky-2)]', dot: 'bg-[#0284c7]', does: 'A pointer to someone else, logged against the contact.' },
-];
-
-// --- FAQ ------------------------------------------------------------------
 const faq: [string, string][] = [
-  [
-    'Why recommend about 30 a day when the platform allows more?',
-    'The platform sets a 50/day default and lets you raise it up to 100. That headroom is there for high-volume sales sending to a known set of business domains, where the sender already has a track record. Recruiter outreach goes to a much wider mix of personal and work inboxes, so a single complaint carries more weight. Start near 30 and raise the cap once a mailbox has gone a few weeks without complaints or bounces, which lowers the chance a complaint forces you to pause it.',
-  ],
-  [
-    'Should each recruiter have their own warmup?',
-    'Yes. Each recruiter mailbox warms up on its own in the premium pool. Warmup ramps by one message a day, from 10 a day up to a 40 a day ceiling, and runs separately from the cold sending budget, so the reputation each mailbox builds stays with that mailbox.',
-  ],
-  [
-    'Why three messages and not seven?',
-    'Most candidates who reply do so on the first or second message. A longer sequence rarely adds replies. It mostly keeps a low-interest email in front of someone who has already passed, which is how spam reports build up. The third message gives an easy way to opt out, and then it stops.',
-  ],
+  ['Should every recruiter have their own mailbox?', 'Yes. Reputation belongs to the mailbox, so one recruiter’s habits never affect another’s, and candidates reply to a real person instead of a careers address.'],
+  ['How many candidates can one recruiter contact a day?', 'Start around 30 a day per warmed mailbox. The default cap is 50, and more volume should come from more recruiters’ mailboxes rather than pushing one harder.'],
+  ['What happens when a candidate isn’t interested?', 'A reply stops the sequence for them. If they ask to be removed, or click unsubscribe, the address is suppressed across your whole workspace, so no other recruiter writes to them by mistake.'],
+  ['Can we track which roles get replies?', 'Yes. Use a campaign per role or a label per opening, and analytics shows sends, replies and meetings for each.'],
+  ['Do candidates see they are in a sequence?', 'They see a plain email from a named recruiter, with follow-ups as replies in the same thread, the way a person would write.'],
 ];
 ---
 <Layout
-  title="Candidate Outreach for Recruiters | Warmbly"
-  description="Each recruiter sends candidate outreach from their own warmed mailbox. Plain text, short follow-up sequences, and opt-out handling that keeps the agency's sending reputation clean."
+  title="Cold Email for Recruiters: Candidate Outreach That Gets Replies | Warmbly"
+  description="Candidate outreach from each recruiter’s own warmed mailbox: plain-text messages, a short three-touch sequence that stops on reply, and opt-outs honoured across the whole agency."
 >
-  <!-- ============================================================
-       HERO · stands alone, no floating anchor
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-20 md:pb-28 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Recruiters
-        </span>
-        Candidate outreach from each recruiter's own mailbox
-      </div>
-
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-5xl mx-auto">
-        Every recruiter sends from<br/>their own mailbox.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Each recruiter connects their own mailbox and writes to candidates under their own name. Warmbly warms those mailboxes, keeps the daily volume in a safe range, and handles opt-outs, so each recruiter builds their own sending reputation instead of sharing one address's history.
-      </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Start free</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="https://docs.warmbly.com/learn/cold-email-rules/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          Read the outreach guide
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 1 · where the email comes from
-  ============================================================ -->
-  <section class="bg-white border-t border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 1 · Where the email comes from</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          A shared inbox doesn't build its own reputation.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          When a whole team sends from careers@ or talent@, every recruiter ends up sharing the same complaint history, and the message tends to read like a mass careers update. Sending from an individual mailbox means each recruiter builds up their own sending history.
-        </p>
-      </div>
-
-      <div class="space-y-5">
-        {specimens.map((s) => (
-          <div class="grid lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-5 lg:gap-8 items-center">
-            <!-- The specimen inbox row -->
-            <div class={`rounded-[14px] bg-white ring-1 ${s.ring} overflow-hidden`}>
-              <div class="px-4 py-2 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/50 flex items-center justify-between">
-                <span class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">{s.label}</span>
-                <span class={`inline-flex items-center h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] ring-1 ${s.tagClass}`}>{s.tag}</span>
-              </div>
-              <div class="px-4 py-3.5 flex items-center gap-3">
-                <span class={`inline-grid place-items-center w-9 h-9 rounded-full ring-1 text-[12px] font-semibold shrink-0 ${s.avatarClass}`}>{s.avatar}</span>
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-baseline gap-2">
-                    <span class="text-[13.5px] font-semibold text-heading truncate">{s.from}</span>
-                    <span class="font-mono text-[11px] text-muted-foreground truncate">{s.addr}</span>
-                  </div>
-                  <div class="text-[12.5px] text-foreground/65 truncate">{s.subject}</div>
-                </div>
-                <span class="font-mono text-[10.5px] text-muted-foreground shrink-0">{s.time}</span>
-              </div>
-            </div>
-
-            <!-- Leader-line callouts -->
-            <ul class="space-y-2.5">
-              {s.callouts.map((c) => (
-                <li class="flex items-center gap-3">
-                  <span class={`h-px w-7 shrink-0 ${s.connector}`}></span>
-                  <span class={`w-1.5 h-1.5 rounded-full shrink-0 -ml-2 ${s.dot}`}></span>
-                  <span class="text-[12.5px] text-foreground/75 leading-snug">{c}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 2 · how the two setups compare
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-y border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mx-auto text-center mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 2 · Who owns the reputation</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Comparing the two setups.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          With a shared address, one complaint or spam report touches everyone who sends from it. With a mailbox per recruiter, a problem stays with the person it belongs to. It changes how warmup, complaints, and replies are tracked, not only how the email reads.
-        </p>
-      </div>
-
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <!-- Header -->
-        <div class="grid grid-cols-[1fr_104px_1fr] md:grid-cols-[1fr_180px_1fr] border-b border-[color:var(--border)]">
-          <div class="px-5 py-3 bg-rose-50/40 text-[11px] font-mono uppercase tracking-[0.16em] text-rose-700/80">Shared careers@</div>
-          <div class="px-2 py-3 text-center text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground bg-[color:var(--surface-1)]/60"></div>
-          <div class="px-5 py-3 bg-[color:var(--sky-1)]/25 text-[11px] font-mono uppercase tracking-[0.16em] text-[#0369a1] text-right">Per-recruiter mailboxes</div>
+  <!-- HERO: the role's Leads tab and the email a candidate reads, beside the pitch. -->
+  <section class="container-page pt-14 md:pt-24 pb-20 md:pb-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
+      <div class="lg:order-2">
+        <a href="/use-cases/" class="text-[14px] text-slate-500 hover:text-slate-900">Use cases · Recruiters</a>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[58px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">Candidate outreach that reads like a person wrote it.</h1>
+        <p class="mt-6 max-w-xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">Every recruiter sends from their own warmed mailbox, in plain text, with a short sequence that stops the moment a candidate answers.</p>
+        <div class="mt-9 flex flex-wrap items-center gap-3">
+          <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">Start free <Icon name="arrowRight" size={14} /></a>
+          <a href="#cadence" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">See the cadence</a>
         </div>
-
-        <!-- Rows -->
-        {ownershipLedger.map((r) => (
-          <div class="grid grid-cols-[1fr_104px_1fr] md:grid-cols-[1fr_180px_1fr] border-b border-[color:var(--border)] last:border-b-0 items-stretch">
-            <div class="px-5 py-4 bg-rose-50/20 text-[12.5px] md:text-[13px] text-foreground/60 leading-snug flex items-center">{r.shared}</div>
-            <div class="px-1 py-4 flex items-center justify-center">
-              <span class="text-center text-[9.5px] md:text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground leading-tight">{r.label}</span>
-            </div>
-            <div class="px-5 py-4 bg-[color:var(--sky-1)]/15 text-[12.5px] md:text-[13px] font-medium text-heading leading-snug flex items-center justify-end text-right">{r.mine}</div>
-          </div>
-        ))}
+      </div>
+      <div class="lg:order-1">
+        <HeroLeads />
       </div>
     </div>
   </section>
 
-  <!-- ============================================================
-       SECTION 3 · sending limits
-  ============================================================ -->
-  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page grid lg:grid-cols-[1fr_1.5fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 3 · Daily volume</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Recommended sending limits.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          A sales rep working a known list of business domains can usually absorb the odd complaint. Recruiter outreach goes to a scattered mix of personal and work inboxes, where a single complaint counts for more. That is why we suggest keeping the daily cap well under the 100 the platform allows.
-        </p>
-        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
-          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Candidates use personal Gmail and iCloud as well as work Outlook, so there is no single domain reputation to lean on.</span></li>
-          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>A complaint tied to a named recruiter is harder to recover from than one against an anonymous list.</span></li>
-        </ul>
-      </div>
+  <!-- CADENCE: the three touches on the real sequence canvas. -->
+  <Rule />
+  <section id="cadence" class="container-page scroll-mt-28 py-20 md:py-28">
+    <div class="grid items-end gap-8 lg:grid-cols-[1.2fr_1fr] lg:gap-16">
+      <SectionIntro lead="The cadence." title="Three messages, then it stops." />
+      <p class="text-[16px] md:text-[18px] leading-[1.6] text-slate-500 lg:pb-2">Candidates are busy, not uninterested. Three short messages over twelve days is enough, and a reply at any point ends the sequence for them.</p>
+    </div>
+    <div class="mt-12 md:mt-14">
+      <CadenceFlow />
+    </div>
+    <ol class="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
+      {cadence.map((c) => (
+        <li class={`border-t pt-5 ${c.end ? 'border-slate-200' : 'border-slate-900'}`}>
+          <div class="text-[13px] text-slate-400">{c.day}</div>
+          <h3 class={`mt-1 text-[18px] font-medium ${c.end ? 'text-slate-300' : 'text-slate-900'}`}>{c.t}</h3>
+          <p class={`mt-1.5 text-[15px] leading-[1.6] ${c.end ? 'text-slate-400' : 'text-slate-500'}`}>{c.d}</p>
+        </li>
+      ))}
+    </ol>
+  </section>
 
+  <!-- PLAIN TEXT: what to leave out, beside the email's preview. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
       <div>
-        <div class="divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
-          {parameters.map((p) => (
-            <div class="py-5">
-              <div class="flex items-baseline justify-between gap-4">
-                <div class="flex items-baseline gap-2.5">
-                  <span class="font-mono text-[11px] text-[#0284c7] font-semibold">PARAM {p.id}</span>
-                  <span class="text-[14.5px] font-semibold text-heading">{p.label}</span>
-                </div>
-                <span class="font-mono tabular-nums text-[22px] md:text-[28px] font-semibold tracking-[-0.02em] text-heading whitespace-nowrap">{p.value}</span>
-              </div>
-              <!-- Inline allowance meter -->
-              <div class="mt-3 relative h-1.5 rounded-full bg-[color:var(--sky-1)]/40">
-                <div class="absolute inset-y-0 left-0 rounded-full bg-[#0284c7]" style={`width:${p.fillPct}%`}></div>
-                <div class="absolute inset-y-[-3px] w-px bg-[color:var(--border-strong)]" style={`left:${p.ceilingPct}%`}></div>
-              </div>
-              <div class="mt-2 flex items-baseline justify-between gap-4">
-                <p class="text-[12.5px] text-foreground/65 leading-relaxed max-w-md">{p.why}</p>
-                <span class="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground whitespace-nowrap shrink-0">{p.ceiling}</span>
-              </div>
-            </div>
+        <SectionIntro lead="Plain text." title="What to leave out of a recruiting email." text="Anything that makes a message look designed makes it look sent in bulk. Write it the way you would write to one person." />
+        <ul class="mt-9 divide-y divide-slate-200 border-y border-slate-200">
+          {leaveOut.map(([k, v]) => (
+            <li class="flex items-baseline justify-between gap-6 py-4">
+              <span class="flex items-center gap-3 text-[16px] text-slate-900"><span class="h-px w-3 shrink-0 bg-rose-400"></span>{k}</span>
+              <span class="text-right text-[14.5px] text-slate-400">{v}</span>
+            </li>
           ))}
-        </div>
-        <p class="mt-5 text-[11.5px] font-mono italic text-muted-foreground leading-relaxed">{paramFootnote}</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 4 · how many follow-ups
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 4 · Sequence length</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          How many follow-ups to send.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          Most candidates who are going to reply do so on the first or second message. A longer sequence rarely adds replies. It keeps a low-interest email in front of someone who has already passed, and an uninterested recipient is the one most likely to mark it as spam. The third message gives the candidate an easy way to opt out, and the sequence ends there.
-        </p>
-      </div>
-
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-6 md:p-10">
-        <!-- Reply wedge above the spine -->
-        <div class="relative h-12 mb-1">
-          <div class="absolute left-0 bottom-0 h-full w-[62%]" style="clip-path: polygon(0 0, 0 100%, 100% 100%); background: linear-gradient(180deg, rgba(2,132,199,0.20), rgba(2,132,199,0.03));"></div>
-          <span class="absolute bottom-1 left-3 text-[10.5px] font-mono uppercase tracking-[0.12em] text-[#0369a1]">most replies come in here</span>
-        </div>
-
-        <!-- Spine + nodes -->
-        <div class="relative">
-          <div class="absolute left-0 right-0 top-[18px] h-px bg-[color:var(--border)]"></div>
-          <div class="relative grid grid-cols-[1fr_1fr_1fr_0.6fr_0.6fr_0.6fr_0.6fr] gap-1">
-            {cadence.map((c) => (
-              <div class="flex flex-col items-center text-center px-1">
-                <span class="relative z-10 inline-grid place-items-center w-9 h-9 rounded-full bg-white ring-1 ring-[color:var(--sky-2)] font-mono text-[9px] font-semibold text-[#0369a1] leading-none">
-                  {c.day.replace('Day ', 'D')}
-                </span>
-                <div class="mt-3 text-[12.5px] font-semibold text-heading">{c.label}</div>
-                <div class="text-[11.5px] text-foreground/60 leading-snug mt-0.5">{c.intent}</div>
-              </div>
-            ))}
-            {phantomTouches.map((p) => (
-              <div class="flex flex-col items-center text-center px-1" style={`opacity:${p.op};margin-top:4px`}>
-                <span class="relative z-10 inline-grid place-items-center w-7 h-7 rounded-full bg-[color:var(--surface-1)] border border-dashed border-[color:var(--border-strong)]">
-                  <Icon name="warning" size={11} class="text-rose-400" />
-                </span>
-                <div class="mt-3 font-mono text-[10px] text-muted-foreground">{p.n}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div class="mt-6 pt-4 border-t border-[color:var(--border)] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
-          <span class="inline-flex items-center gap-2 text-[#0369a1]"><span class="w-1.5 h-1.5 rounded-full bg-[#0284c7]"></span>3 messages</span>
-          <span class="inline-flex items-center gap-2 text-rose-600"><span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>messages 4 to 7 rarely add replies</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 5 · plain text
-  ============================================================ -->
-  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 5 · Formatting</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Plain text emails.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          When you write to one person, you don't add a banner image or a tracking pixel. Those are the same signals filters use to classify marketing mail, so a recruiting email that carries them tends to land in Promotions. Plain text reads like a normal note and is more likely to reach the main inbox.
-        </p>
-      </div>
-
-      <div class="relative grid md:grid-cols-2 rounded-[14px] ring-1 ring-[color:var(--border)] overflow-hidden bg-white">
-        <!-- Seam medallion -->
-        <div class="hidden md:grid place-items-center absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white ring-1 ring-[color:var(--border)] shadow-[0_4px_14px_-4px_rgba(15,23,42,0.2)]">
-          <Icon name="arrowRight" size={14} class="text-[#0284c7]" />
-        </div>
-
-        <!-- Left · stripped -->
-        <div class="p-6 md:p-7 bg-rose-50/20 border-b md:border-b-0 md:border-r border-[color:var(--border)]">
-          <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-rose-700/80 mb-4">What a lot of ATS tools send</div>
-          <div class="rounded-[12px] ring-1 ring-rose-200/70 bg-white p-3 space-y-2">
-            {stripped.map((b) => (
-              <div class="relative overflow-hidden rounded-[8px] bg-rose-50/50 px-3 py-2.5 flex items-center gap-2.5">
-                <span class="absolute inset-0 pointer-events-none" style="background: repeating-linear-gradient(45deg, rgba(244,63,94,0.10) 0 5px, transparent 5px 11px);"></span>
-                <Icon name={b.icon} size={14} class="relative text-rose-400 shrink-0" />
-                <span class="relative text-[12.5px] text-rose-700/70 line-through decoration-rose-300">{b.name}</span>
-                <span class="relative ml-auto text-[9.5px] font-mono uppercase tracking-[0.12em] text-rose-500/80">stripped</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <!-- Right · clean -->
-        <div class="p-6 md:p-7">
-          <div class="text-[10.5px] font-mono uppercase tracking-[0.16em] text-[#0369a1] mb-4">What Warmbly sends</div>
-          <div class="rounded-[12px] ring-1 ring-[color:var(--sky-2)] bg-white p-4">
-            <div class="space-y-1.5">
-              {cleanLines.map((l) => (
-                <div class="text-[13px] text-foreground/75 leading-relaxed">{l}</div>
-              ))}
-            </div>
-            <div class="mt-4 pt-4 border-t border-[color:var(--border)] flex items-center gap-2">
-              <span class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[8px] bg-[color:var(--sky-1)]/50 ring-1 ring-[color:var(--sky-2)] text-[#0369a1] text-[12px] font-medium">
-                <Icon name="link" size={12} />
-                View the role
-              </span>
-              <span class="text-[11px] font-mono text-muted-foreground">links to a hosted page</span>
-            </div>
-          </div>
-          <p class="mt-4 text-[12px] text-foreground/60 leading-relaxed">
-            The job description lives on a hosted page, so the email stays light and reads like a note from a person.
-          </p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       SECTION 6 · Go templating
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page grid lg:grid-cols-[1fr_1.3fr] gap-12 lg:gap-16 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 6 · Templating</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Personalization with Go templates.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          Every step is a Go text/template, the same syntax used across the rest of Warmbly. Pull in a candidate's details with a leading dot, branch on a field with if/else, and the template renders per candidate at send time.
-        </p>
-        <ul class="mt-6 space-y-2.5 text-[14px] text-foreground/85">
-          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>An empty field renders as nothing, so a missing value never leaves a broken line.</span></li>
-          <li class="flex items-start gap-2"><Icon name="check" size={13} class="text-[#0284c7] mt-1 shrink-0" /><span>Wrap an optional detail in an if, and it only appears when the field is set.</span></li>
         </ul>
-
-        <div class="mt-6">
-          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">Available fields</div>
-          <div class="flex flex-wrap gap-1.5">
-            {mergeFields.map((f) => (
-              <code class="inline-flex items-center h-6 px-2 rounded-md bg-[#0c1224] text-[11.5px] font-mono text-sky-300 ring-1 ring-white/10">{f}</code>
-            ))}
-          </div>
-        </div>
       </div>
-
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <!-- Template source -->
-        <div class="bg-[#0c1224]">
-          <div class="px-4 py-2.5 border-b border-white/10 flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-[#ff5f56]/80"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]/80"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-[#27c93f]/80"></span>
-            <span class="ml-2 text-[11px] font-mono text-white/55">first message · body</span>
-          </div>
-          <div class="p-5 font-mono text-[12.5px] leading-[1.85] text-white/85">
-            <div>Hi <span class="text-sky-300">{`{{.FirstName}}`}</span>,</div>
-            <div class="h-3.5"></div>
-            <div class="whitespace-pre-wrap">I came across your work<span class="text-violet-300">{`{{if .Company}}`}</span> at <span class="text-sky-300">{`{{.Company}}`}</span><span class="text-violet-300">{`{{end}}`}</span> and the <span class="text-sky-300">{`{{.Role}}`}</span> role lined up with it. Open to a 20-minute call next week?</div>
-            <div class="h-3.5"></div>
-            <div>Dana</div>
-          </div>
-        </div>
-
-        <!-- Rendered -->
-        <div class="p-5">
-          <div class="flex items-center gap-2 mb-3 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-            <Icon name="arrowRight" size={12} class="text-[#0284c7]" />
-            Renders for Maya, who has no company on file
-          </div>
-          <div class="rounded-[10px] bg-[color:var(--surface-1)]/60 ring-1 ring-[color:var(--border)] p-4 text-[13px] leading-[1.85] text-foreground/80">
-            <div>Hi <span class="text-[#0369a1] font-medium">Maya</span>,</div>
-            <div class="h-3"></div>
-            <div>I came across your work and the <span class="text-[#0369a1] font-medium">Staff Engineer</span> role lined up with it. Open to a 20-minute call next week?</div>
-            <div class="h-3"></div>
-            <div>Dana</div>
-          </div>
-          <p class="mt-3 text-[12px] text-foreground/60 leading-relaxed">
-            Her company was blank, so the if skips the "at ..." clause and the sentence has no gap or stray comma.
-          </p>
-        </div>
-      </div>
+      <PlainPreview />
     </div>
   </section>
 
-  <!-- ============================================================
-       SECTION 7 · opt-outs (suppression fan-out + verdicts)
-  ============================================================ -->
-  <section class="bg-white border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Section 7 · Opt-outs</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          An opt-out applies across the whole workspace.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          When a candidate replies with STOP, REMOVE, or not interested, or their mailbox sends an out-of-office bounce, Warmbly adds them to the suppression list for the whole workspace. After that, no other recruiter or sequence will contact them. So a candidate who has opted out won't be contacted again by another recruiter on the team.
-        </p>
-      </div>
-
-      <div class="grid lg:grid-cols-[340px_1fr] gap-6 lg:gap-10 items-center">
-        <!-- Hub: the matched reply -->
-        <div>
-          <div class="rounded-[14px] bg-white ring-1 ring-rose-200 overflow-hidden">
-            <div class="px-4 py-2 border-b border-[color:var(--border)] bg-rose-50/40 flex items-center justify-between">
-              <span class="text-[10px] font-mono uppercase tracking-[0.16em] text-rose-700/80">Inbound reply</span>
-              <span class="inline-flex items-center gap-1.5 h-5 px-1.5 rounded text-[10px] font-mono uppercase tracking-[0.08em] bg-rose-100 text-rose-700">
-                <Icon name="reply" size={10} />
-                matched
-              </span>
-            </div>
-            <div class="px-4 py-3.5">
-              <div class="flex items-center gap-2.5">
-                <span class="inline-grid place-items-center w-8 h-8 rounded-full bg-rose-50 ring-1 ring-rose-200 text-rose-600 text-[11px] font-semibold">M</span>
-                <div class="text-[12.5px] font-semibold text-heading">Maya · candidate</div>
-              </div>
-              <p class="mt-2.5 text-[13px] text-foreground/70 leading-snug">"Thanks, but I'm not interested right now."</p>
-            </div>
-          </div>
-          <div class="mt-3 flex flex-wrap gap-1.5">
-            {suppressTriggers.map((t) => (
-              <span class="inline-flex items-center h-5 px-1.5 rounded bg-white ring-1 ring-[color:var(--border)] text-[10px] font-mono uppercase tracking-[0.06em] text-foreground/65">{t}</span>
-            ))}
-          </div>
-          <div class="mt-2.5 text-[10.5px] font-mono uppercase tracking-[0.12em] text-rose-600">added to the suppression list</div>
-        </div>
-
-        <!-- Fan-out: every surface flips to suppressed -->
-        <div>
-          <div class="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-3">Suppressed across the workspace</div>
-          <div class="grid sm:grid-cols-2 gap-2.5">
-            {suppressEndpoints.map((e, i) => (
-              <div class="supp-endpoint flex items-center gap-2.5 rounded-[10px] bg-[color:var(--surface-1)]/50 ring-1 ring-[color:var(--border)] px-3 py-2.5" style={`--d:${i * 90}ms`}>
-                <span class="h-px w-5 bg-[color:var(--border-strong)] shrink-0"></span>
-                <Icon name="lock" size={12} class="text-muted-foreground shrink-0" />
-                <span class="font-mono text-[12px] text-foreground/70 truncate">{e.label}</span>
-                <span class="ml-auto text-[9px] font-mono uppercase tracking-[0.1em] text-muted-foreground shrink-0">{e.kind}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <!-- Three-verdict strip -->
-      <div class="mt-10 grid md:grid-cols-3 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
-        {verdicts.map((v) => (
-          <div class="bg-white p-5">
-            <div class="flex items-center justify-between">
-              <span class={`inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[10.5px] font-mono uppercase tracking-[0.1em] ring-1 ${v.chip}`}>
-                <span class={`w-1.5 h-1.5 rounded-full ${v.dot}`}></span>
-                {v.label}
-              </span>
-              <Icon name={v.icon} size={15} class="text-foreground/45" />
-            </div>
-            <p class="mt-3 text-[13px] text-foreground/70 leading-relaxed">{v.does}</p>
+  <!-- MAILBOXES AND OPT-OUTS: one mailbox each, one list for everyone. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-end gap-10 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
+      <SectionIntro lead="The team." title="A mailbox each, and one list of opt-outs for all of them." />
+      <dl class="grid grid-cols-3 gap-6">
+        {[
+          { v: '1 : 1', k: 'A mailbox per recruiter' },
+          { v: '~30', k: 'Candidates a day to start' },
+          { v: '1 list', k: 'For every opt-out' },
+        ].map((c) => (
+          <div class="border-t border-slate-200 pt-4">
+            <dt class="text-[32px] md:text-[40px] font-medium tracking-[-0.05em] leading-none text-slate-900">{c.v}</dt>
+            <dd class="mt-2 text-[14px] text-slate-500">{c.k}</dd>
           </div>
         ))}
-      </div>
-      <p class="mt-4 text-[12px] text-foreground/55 leading-relaxed max-w-2xl">
-        Warmbly tags each reply so the recruiter can act on it. An opt-out is just one of those outcomes; most replies route back to the recruiter to answer.
-      </p>
+      </dl>
+    </div>
+    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 md:grid-cols-2">
+      <article>
+        <RecruiterMailboxes />
+        <h3 class={tileTitle}>Reputation stays with the person who earned it</h3>
+        <p class={tileBody}>Each recruiter sends from their own mailbox, starting around 30 candidates a day, below the default cap of 50.</p>
+      </article>
+      <article>
+        <OptOuts />
+        <h3 class={tileTitle}>An unsubscribe covers the whole agency</h3>
+        <p class={tileBody}>Whichever recruiter wrote, an opt-out lands on one workspace list, so nobody else writes to that candidate by mistake.</p>
+      </article>
     </div>
   </section>
 
-  <!-- ============================================================
-       FAQ · shared accordion pattern
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Recruiter FAQ</div>
-        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          A few questions recruiters ask first.
-        </h2>
-      </div>
-      <div class="divide-y divide-[color:var(--border)]" data-faq>
-        {faq.map(([q, a]) => (
-          <div class="faq-row py-2">
-            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
-              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
-              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-              </span>
-            </button>
-            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
-              <div class="overflow-hidden">
-                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+  <Rule />
+  <Faq items={faq} title="Recruiters, answered." />
 
-      <script is:inline>
-        (function () {
-          const faq = document.querySelector('[data-faq]');
-          if (!faq) return;
-          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-              const row   = btn.closest('.faq-row');
-              const panel = row.querySelector('.faq-panel');
-              const icon  = btn.querySelector('.faq-icon');
-              const open  = btn.getAttribute('aria-expanded') === 'true';
-              btn.setAttribute('aria-expanded', String(!open));
-              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
-              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
-            });
-          });
-        })();
-      </script>
-    </div>
-  </section>
-
-  <CTA
-    title="Set up a mailbox for each recruiter."
-    description="Connect a mailbox, let it warm up in the premium pool, and send your first candidate emails."
-    primaryLabel="Start free"
-  />
-
-  <!-- Staggered reveal for the workspace suppression list. -->
-  <style is:inline>
-    @keyframes rs1-supp-in {
-      from { opacity: 0.25; transform: translateY(4px); }
-      to   { opacity: 1;    transform: translateY(0); }
-    }
-    .supp-endpoint {
-      animation: rs1-supp-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-      animation-delay: var(--d, 0ms);
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .supp-endpoint { animation: none; opacity: 1; transform: none; }
-    }
-  </style>
+  <CTA photo="sheer-peach" title="Give every recruiter a mailbox candidates trust." description="Connect each recruiter’s mailbox, let warmup run, and send the first three-touch sequence." />
 </Layout>

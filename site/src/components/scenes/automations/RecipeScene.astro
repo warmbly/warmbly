@@ -1,0 +1,66 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../analytics/Ico.astro';
+import Step from './Step.astro';
+import { WINDOW } from '../../../lib/scene';
+
+/**
+ * A small automation as it sits on the canvas: a trigger and the steps under
+ * it, top to bottom, with an event running down the path on a loop.
+ */
+type S = { icon?: string; brand?: string; tone?: 'sky' | 'amber' | 'purple' | 'violet' | 'emerald' | 'rose' | 'indigo' | 'slate'; kicker: string; title: string; summary?: string; pill?: string };
+interface Props { name: string; photo: string; steps: S[] }
+const { name, photo, steps } = Astro.props;
+const CW = 412, W = 264, X = (CW - W) / 2, GAP = 30, H = 56;
+const ys = steps.map((_, i) => 14 + i * (H + GAP));
+const cx = X + W / 2;
+const path = `M${cx} ${ys[0] + H / 2} L${cx} ${ys[ys.length - 1] + H / 2}`;
+---
+<ScaledStage w={460} h={345} photo={photo}>
+  <div class={`${WINDOW} left-[24px] top-[24px] right-0 h-[321px] flex flex-col`}>
+    <div class="h-10 px-3 flex items-center gap-2 border-b border-slate-200">
+      <Ico name="workflow" size={14} class="text-slate-400" />
+      <span class="truncate text-[12.5px] font-medium text-slate-900">{name}</span>
+      <span class="ml-auto inline-flex items-center gap-1.5 pr-1">
+        <span class="relative inline-flex h-[18px] w-8 items-center rounded-full bg-sky-600"><span class="inline-block size-3.5 translate-x-[16px] rounded-full bg-white shadow-sm"></span></span>
+        <span class="text-[12px] font-medium text-slate-700">Active</span>
+      </span>
+    </div>
+    <div class="relative flex-1 overflow-hidden bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 18px 18px;">
+      <div class="absolute left-0 top-0 origin-top-left" style={`width:${CW}px;transform:scale(0.84) translateX(8px)`}>
+        <svg class="absolute left-0 top-0" width={CW} height="360" fill="none">
+          {ys.slice(1).map((y) => <path d={`M${cx} ${y - GAP} L${cx} ${y}`} stroke="#cbd5e1" stroke-width="1.25" />)}
+        </svg>
+        <span class="rc-dot" style={`offset-path: path('${path}')`}></span>
+        {steps.map((s, i) => (
+          <>
+            <Step x={X} y={ys[i]} icon={s.icon} brand={s.brand} tone={s.tone} kicker={s.kicker} title={s.title} summary={s.summary} />
+            {s.pill && <span class="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-50 px-2 text-[11px] font-medium leading-[18px] text-emerald-700 ring-1 ring-inset ring-emerald-200/80" style={`left:${cx}px;top:${ys[i] + H + GAP / 2}px`}>{s.pill}</span>}
+          </>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .rc-dot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: #0ea5e9;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+    offset-rotate: 0deg;
+    opacity: 0;
+    animation: rc-run 6s linear infinite;
+  }
+  @keyframes rc-run {
+    0% { offset-distance: 0%; opacity: 0; }
+    8% { opacity: 1; }
+    80% { offset-distance: 100%; opacity: 1; }
+    90%, 100% { offset-distance: 100%; opacity: 0; }
+  }
+</style>

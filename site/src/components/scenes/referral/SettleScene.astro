@@ -1,0 +1,68 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The 30-day clawback (docs/content/docs/guides/referral-program.mdx): the
+ * earnings history, where a reversed reward is a negative row, and over it
+ * two rewards on the same window, one that settles and one refunded inside it.
+ */
+const ledger = [
+  ['Referral reward', '+$89.00', '$207.00', 'Oct 6', 'text-emerald-600'],
+  ['Applied to invoice', '−$89.00', '$118.00', 'Oct 1', 'text-slate-500'],
+  ['Referral reward reversed', '−$29.00', '$207.00', 'Sep 20', 'text-rose-600'],
+  ['Referral reward', '+$89.00', '$236.00', 'Sep 12', 'text-emerald-600'],
+  ['Referral reward', '+$29.00', '$147.00', 'Sep 8', 'text-emerald-600'],
+  ['Referral reward', '+$89.00', '$118.00', 'Aug 21', 'text-emerald-600'],
+  ['Referral reward', '+$29.00', '$29.00', 'Aug 2', 'text-emerald-600'],
+];
+const lanes = [
+  { org: '3f9a…c21', plan: 'Grow', amount: '$89.00', end: 100, ok: true, note: 'Day 30 · settled' },
+  { org: 'd07b…5e8', plan: 'Starter', amount: '$29.00', end: 40, ok: false, note: 'Day 12 · refunded' },
+];
+const cols = 'grid grid-cols-[1fr_96px_96px_72px] gap-3';
+---
+<ScaledStage w={760} h={570} photo="reeded-glass">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[740px] h-[540px]`}>
+    <div class="px-6 pt-5 pb-3">
+      <div class="text-[12.5px] font-semibold text-slate-900 tracking-tight">Earnings history</div>
+      <div class="text-[11.5px] text-slate-500">Every credit and adjustment applied to your balance.</div>
+    </div>
+    <div class={`${cols} border-y border-slate-200 px-6 py-2 text-[10.5px] uppercase tracking-[0.08em] text-slate-400 font-medium`}>
+      <span>Reason</span><span class="text-right">Amount</span><span class="text-right">Balance</span><span class="text-right">Date</span>
+    </div>
+    {ledger.map(([r, a, b, d, c]) => (
+      <div class={`${cols} border-b border-slate-100 px-6 py-2.5 text-[12px] text-slate-700 ${c === 'text-rose-600' ? 'bg-rose-50/40' : ''}`}>
+        <span>{r}</span><span class={`text-right font-mono tabular-nums ${c}`}>{a}</span><span class="text-right font-mono tabular-nums">{b}</span><span class="text-right text-slate-500">{d}</span>
+      </div>
+    ))}
+  </div>
+
+  <div class={`${FLOAT} left-[300px] top-[318px] w-[430px] px-5 py-4`}>
+    <div class="flex items-center justify-between">
+      <span class={EYEBROW}>The 30-day window</span>
+      <span class="font-mono text-[10px] text-slate-400">day 0 to day 30</span>
+    </div>
+    <div class="mt-4 space-y-5">
+      {lanes.map((l, i) => (
+        <div>
+          <div class="flex items-center gap-2 text-[11.5px]">
+            <span class="text-slate-500">Referred org</span><span class="font-mono text-[10.5px] text-slate-400">{l.org}</span>
+            <span class="text-slate-300">·</span><span class="text-slate-600">{l.plan}</span>
+            <span class="ml-auto font-mono text-[11px] text-slate-500">+{l.amount}</span>
+          </div>
+          <div class="relative mt-2.5 h-6">
+            <div class="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-slate-100"></div>
+            <div class={`enter-grow-x absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full ${l.ok ? 'bg-emerald-500' : 'bg-rose-400'}`} style={`width:${l.end}%;--d:${400 + i * 300}ms`}></div>
+            <span class={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-full text-white ${l.ok ? 'bg-emerald-500' : 'bg-rose-500'}`} style={`left:${l.end === 100 ? 'calc(100% - 10px)' : `${l.end}%`}`}><Glyph name={l.ok ? 'check' : 'x'} size={11} /></span>
+          </div>
+          <div class="relative mt-1 h-4 font-mono text-[10px]">
+            <span class="absolute left-0 text-slate-400">Day 0 · reward</span>
+            <span class={`absolute whitespace-nowrap ${l.ok ? 'right-0 text-emerald-600' : '-translate-x-1/2 text-rose-500'}`} style={l.ok ? '' : `left:${l.end}%`}>{l.note}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>

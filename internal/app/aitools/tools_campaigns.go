@@ -409,7 +409,7 @@ func (d Deps) listCampaigns(ctx context.Context, inv Invocation, args json.RawMe
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-	res, xerr := d.Campaigns.Search(ctx, inv.OrgID.String(), in.Query, "", "", in.Status, fmt.Sprintf("%d", limit))
+	res, xerr := d.Campaigns.Search(ctx, inv.OrgID.String(), in.Query, "", "", in.Status, fmt.Sprintf("%d", limit), nil)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}

@@ -4,8 +4,11 @@
 import { PenLineIcon } from "lucide-react";
 import ShortcutTooltip, { shortcutLabel } from "@/components/ui/shortcut-tooltip";
 import { useComposeStore } from "@/hooks/useComposeStore";
+import { useAccessRestricted } from "@/hooks/usePermission";
 
 export default function ComposeButton() {
+    // A member restricted to selected resources reads the inbox and sends nothing.
+    if (useAccessRestricted()) return null;
     return (
         <ShortcutTooltip label="New email" combo="n" side="bottom">
             <button

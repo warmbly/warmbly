@@ -1,0 +1,124 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../warmup/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY } from '../../../lib/scene';
+
+/**
+ * The Accounts page with each mailbox's sends today against its own cap,
+ * counting up as campaigns run. Over it, one mailbox's Sending tab
+ * (SendingBehaviorTab.tsx): the workday it rolled for today.
+ */
+type Row = { addr: string; name: string; provider: string; mark: 'google' | 'microsoft' | 'imap'; sent: number; cap: number; inbox: number; health: number; resting?: boolean; tick?: number; selected?: boolean };
+const rows: Row[] = [
+  { addr: 'alex@northwind.dev', name: 'Alex Kim', provider: 'Google Workspace', mark: 'google', sent: 31, cap: 50, inbox: 97, health: 96, tick: 2900 },
+  { addr: 'sam@northwind.io', name: 'Sam Ortiz', provider: 'Microsoft 365', mark: 'microsoft', sent: 18, cap: 50, inbox: 95, health: 93, selected: true },
+  { addr: 'ops@northwind.co', name: 'Ops team', provider: 'SMTP / IMAP', mark: 'imap', sent: 22, cap: 50, inbox: 92, health: 90, tick: 3600 },
+  { addr: 'hello@helio.gen', name: 'Lena Fischer', provider: 'Microsoft 365', mark: 'microsoft', sent: 27, cap: 50, inbox: 94, health: 94, tick: 4100 },
+  { addr: 'growth@acme.co', name: 'Maya Okonkwo', provider: 'Google Workspace', mark: 'google', sent: 12, cap: 30, inbox: 97, health: 96, tick: 5200 },
+  { addr: 'sales@brightco.io', name: 'Ana Silva', provider: 'Google Workspace', mark: 'google', sent: 34, cap: 50, inbox: 96, health: 95 },
+  { addr: 'leo@northwind.dev', name: 'Leo Park', provider: 'Google Workspace', mark: 'google', sent: 29, cap: 50, inbox: 98, health: 98, tick: 3300 },
+  { addr: 'partners@acme.co', name: 'Ravi Shah', provider: 'Google Workspace', mark: 'google', sent: 0, cap: 50, inbox: 95, health: 94, resting: true },
+];
+const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
+---
+<ScaledStage w={760} h={570} photo="reeded-glass">
+  <div class={`${WINDOW} left-[30px] top-[30px] w-[740px] h-[560px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">8 mailboxes</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-8">
+        <span class={ACTION_GHOST}><Glyph name="globe" size={12} />Sending domains</span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Add account</span>
+      </div>
+    </div>
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">8</span>
+      <div class="ml-auto mr-8 h-7 w-52 pl-2 rounded-md border border-slate-200 bg-white flex items-center gap-1.5"><Glyph name="search" size={13} class="text-slate-400" /><span class="text-[12.5px] text-slate-400">Search by email…</span></div>
+    </div>
+    <table class="w-full table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class="pl-5 pr-2 py-2 w-11"><span class="block size-3.5 rounded-[4px] border border-slate-300"></span></th>
+          <th class={th}>Mailbox</th>
+          <th class={`${th} w-[100px]`}>Status</th>
+          <th class={`${th} w-[150px]`}>Sent today</th>
+          <th class={`${th} w-[72px]`}>Inbox</th>
+          <th class={`${th} w-[126px]`}>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr class={`h-11 border-b border-slate-200/60 ${r.selected ? 'bg-sky-50/70' : ''}`}>
+            <td class="pl-5 pr-2"><span class="block size-3.5 rounded-[4px] border border-slate-300"></span></td>
+            <td class="px-3">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark={r.mark} size={r.mark === 'imap' ? 13 : 14} /></span>
+                <div class="min-w-0">
+                  <div class="truncate text-[12.5px] font-medium leading-tight text-slate-900">{r.addr}</div>
+                  <div class="mt-0.5 truncate text-[11px] leading-tight text-slate-400"><span class="text-slate-500">{r.name}</span> · {r.provider}</div>
+                </div>
+              </div>
+            </td>
+            <td class="px-3">
+              {r.resting ? (
+                <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-violet-600"><Glyph name="moon" size={12} class="text-violet-500" />Resting</span>
+              ) : (
+                <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700"><Glyph name="send" size={12} class="text-sky-600" /><span class="text-shimmer">Sending</span></span>
+              )}
+            </td>
+            <td class="px-3">
+              <div class="flex items-center gap-2">
+                <span class={`inline-flex w-[62px] items-center gap-1.5 font-mono text-[12px] tabular-nums ${r.sent ? 'text-sky-700' : 'text-slate-500'}`}>
+                  <Glyph name="send" size={12} class="text-sky-500" />
+                  <span>{r.tick ? <span data-tick={`${r.sent},${r.sent + 4},${r.tick}`}>{r.sent}</span> : r.sent}<span class="text-slate-400">/{r.cap}</span></span>
+                </span>
+                <span class="h-1 flex-1 overflow-hidden rounded-full bg-slate-100"><span class="enter-grow-x block h-full rounded-full bg-sky-400" style={`width:${(r.sent / r.cap) * 100}%; --d:300ms`}></span></span>
+              </div>
+            </td>
+            <td class="px-3"><span class="inline-flex items-center gap-1.5 font-mono text-[11.5px] font-medium tabular-nums text-emerald-600"><span class="size-1.5 rounded-full bg-emerald-500"></span>{r.inbox}%</span></td>
+            <td class="px-3"><span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span><span class="uppercase tracking-[0.08em]">Healthy {r.health}</span></span></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- sam@northwind.io's Sending tab: the workday it rolled for today. -->
+  <div class={`${FLOAT} left-[372px] top-[302px] w-[364px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+      <Glyph mark="microsoft" size={13} />
+      <span class="text-[12.5px] font-medium text-slate-900">sam@northwind.io</span>
+      <span class="ml-auto inline-flex items-center gap-1 text-[11.5px] text-slate-500"><Glyph name="clock" size={12} />Sending</span>
+    </div>
+    <div class="flex items-center justify-between gap-3 border-b border-slate-200/60 px-4 py-3">
+      <div class="flex items-center gap-2.5">
+        <span class="inline-flex size-8 items-center justify-center rounded-lg bg-sky-50 text-sky-600"><Glyph name="clock" size={16} /></span>
+        <div>
+          <div class="text-[12.5px] font-medium text-slate-900">Variable sending plan</div>
+          <div class="text-[11px] text-slate-400">Hours, volume and spacing re-rolled each day</div>
+        </div>
+      </div>
+      <span class="relative inline-block h-[18px] w-8 rounded-full bg-sky-600"><span class="absolute right-0.5 top-0.5 size-[14px] rounded-full bg-white"></span></span>
+    </div>
+    <div class="px-4 py-3">
+      <div class="flex items-center justify-between">
+        <span class={EYEBROW}>Today's workday</span>
+        <span class="font-mono text-[10.5px] text-slate-400">Europe/Berlin</span>
+      </div>
+      <div class="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12px] text-slate-700">
+        <span class="inline-flex items-center gap-1.5"><Glyph name="clock" size={13} class="text-slate-400" /><b class="tabular-nums text-slate-900">09:14</b><span class="text-slate-400">–</span><b class="tabular-nums text-slate-900">17:41</b></span>
+        <span class="inline-flex items-center gap-1.5"><Ico name="coffee" size={13} class="text-slate-400" /><span class="tabular-nums">12:38–13:16</span></span>
+        <span class="inline-flex items-center gap-1.5"><Ico name="timer" size={13} class="text-slate-400" />90s–7m apart</span>
+        <span class="inline-flex items-center gap-1.5"><Glyph name="gauge" size={13} class="text-slate-400" />max 7/hour</span>
+      </div>
+      <div class="mt-3 flex items-center justify-between text-[12px] text-slate-600">
+        <span><b class="tabular-nums text-slate-900">18</b> of <b class="tabular-nums text-slate-900">31</b> sent</span>
+        <span class="tabular-nums text-slate-400">13 left in plan</span>
+      </div>
+      <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div class="enter-grow-x h-full w-[58%] rounded-full bg-sky-500" style="--d:700ms"></div></div>
+    </div>
+  </div>
+</ScaledStage>

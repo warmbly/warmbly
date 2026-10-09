@@ -1,0 +1,109 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The Schedule tab (schedule/page.tsx with WeekScheduleGrid): weekly sending
+ * windows, each day on its own, in the campaign's timezone. The First email
+ * setting (CampaignFirstEmail with EntryDelayPicker) floats over it.
+ */
+const DAY = 1440;
+const ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const HOURS = [0, 6, 9, 12, 15, 18, 24];
+const windows: [number, number][][] = [
+  [[540, 720], [780, 1020]],
+  [[540, 1020]],
+  [[510, 720], [840, 1080]],
+  [[540, 1020]],
+  [[540, 900]],
+  [],
+  [],
+];
+const BODY = 300;
+const GUTTER = 40;
+const y = (m: number) => (m / DAY) * BODY;
+const label = (h: number) => (h === 0 || h === 24 ? '12a' : h === 12 ? '12p' : h < 12 ? `${h}a` : `${h - 12}p`);
+const fmt = (m: number) => {
+  const h = Math.floor(m / 60), mm = m % 60;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}${mm ? `:${String(mm).padStart(2, '0')}` : ''}${h < 12 ? 'am' : 'pm'}`;
+};
+---
+<ScaledStage w={680} h={560} photo="sheer-cream">
+  <div class={`${WINDOW} left-[32px] top-[32px] w-[680px] h-[540px]`}>
+    <div class="px-4 h-14 flex items-center gap-3 border-b border-slate-200/70">
+      <span class="size-7 rounded-md bg-sky-50 text-sky-600 inline-flex items-center justify-center"><Ico name="calendarClock" size={16} /></span>
+      <div>
+        <div class={EYEBROW}>Weekly sending windows</div>
+        <p class="text-[12.5px] text-slate-700 leading-tight mt-0.5"><span class="font-medium text-slate-900">7</span> windows across <span class="font-medium text-slate-900">5</span> days</p>
+      </div>
+      <span class="ml-auto mr-8 h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium">
+        <Glyph name="globe" size={13} class="text-slate-400" />(UTC+01:00) Europe/London<Glyph name="chevronDown" size={10} class="text-slate-400" />
+      </span>
+    </div>
+    <div class="px-4 py-2.5 flex items-center gap-2 border-b border-slate-200/70 bg-slate-50/30">
+      <span class={`${EYEBROW} mr-0.5`}>Presets</span>
+      {['Mon–Fri 9–5', 'Every day 9–5', 'Clear'].map((p) => <span class="h-7 px-2.5 inline-flex items-center rounded-md border border-slate-200 bg-white text-[11.5px] text-slate-600">{p}</span>)}
+    </div>
+    <div class="px-4 pt-3 pr-12">
+      <div class="flex">
+        <div style={`width:${GUTTER}px`}></div>
+        <div class="flex flex-1 gap-px">
+          {ABBR.map((d, i) => (
+            <div class={`relative flex-1 h-8 flex items-center justify-center rounded-t-md text-[11px] ${windows[i].length ? 'text-sky-700 font-semibold bg-sky-50/60' : 'text-slate-400'}`}>
+              {d}{i === 2 && <span class="absolute bottom-1 size-1 rounded-full bg-sky-500"></span>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div class="relative" style={`height:${BODY}px`}>
+        {HOURS.map((h) => (
+          <>
+            <span class="absolute left-0 -translate-y-1/2 pr-2 text-right text-[10px] text-slate-400 tabular-nums" style={`top:${y(h * 60)}px; width:${GUTTER}px`}>{label(h)}</span>
+            <div class="absolute right-0 border-t border-slate-100" style={`left:${GUTTER}px; top:${y(h * 60)}px`}></div>
+          </>
+        ))}
+        <div class="absolute top-0 bottom-0 right-0 flex gap-px" style={`left:${GUTTER}px`}>
+          {ABBR.map((_, i) => (
+            <div class={`relative flex-1 ${windows[i].length ? 'bg-sky-50/30' : 'bg-slate-50/40'} ${i === 2 ? 'ring-1 ring-inset ring-sky-100' : ''}`}>
+              {windows[i].length === 0 && <span class="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[9.5px] text-slate-300">drag, or tap +</span>}
+              {windows[i].map(([s, e]) => (
+                <div class="absolute inset-x-[3px] rounded-md border border-sky-400/60 bg-sky-500/15 overflow-hidden" style={`top:${y(s)}px; height:${y(e) - y(s)}px`}>
+                  <span class="absolute left-1.5 top-1 text-[9.5px] font-medium leading-tight text-sky-700 tabular-nums">{fmt(s)}<br />{fmt(e)}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <p class="mt-3 text-[11px] text-slate-400">Each day is independent. Set different windows per day, or several in one day.</p>
+    </div>
+  </div>
+
+  <!-- Settings > First email: the wait before a new contact's first email. -->
+  <div class={`${FLOAT} left-[318px] top-[396px] w-[344px] overflow-hidden`}>
+    <div class="px-3.5 pt-3 pb-2.5 flex items-center gap-2">
+      <p class="text-[12.5px] font-medium text-slate-900">First email</p>
+      <span class="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700">After a wait<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>
+      <span class="inline-flex h-7 items-center rounded-md border border-sky-300 bg-sky-50 px-2.5 text-[11.5px] font-medium text-sky-700">2 days</span>
+    </div>
+    <div class="mx-3.5 mb-3.5 rounded-md border border-slate-200 bg-slate-50/60 px-3 py-3 flex items-start">
+      <div class="w-[92px] shrink-0 flex flex-col items-center text-center">
+        <span class="size-7 rounded-full bg-white text-slate-500 ring-1 ring-slate-200 inline-flex items-center justify-center"><Ico name="users" size={13} /></span>
+        <span class="mt-1.5 text-[11px] font-medium text-slate-800">Contact joins</span>
+        <span class="text-[10px] text-slate-400">Added to the campaign</span>
+      </div>
+      <div class="relative flex-1 mt-3.5 mx-1">
+        <div class="border-t border-dashed border-sky-300"></div>
+        <span class="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 inline-flex items-center gap-1 h-5 px-1.5 rounded-full border border-sky-200 bg-sky-50 text-[10.5px] font-medium text-sky-700 whitespace-nowrap"><Ico name="timer" size={11} />waits 2 days</span>
+      </div>
+      <div class="w-[92px] shrink-0 flex flex-col items-center text-center">
+        <span class="size-7 rounded-full bg-sky-600 text-white ring-1 ring-sky-600 inline-flex items-center justify-center"><Glyph name="mail" size={13} /></span>
+        <span class="mt-1.5 text-[11px] font-medium text-slate-800">First email</span>
+        <span class="text-[10px] text-slate-400">In the next sending window</span>
+      </div>
+    </div>
+  </div>
+</ScaledStage>

@@ -45,7 +45,8 @@ func recomputeMemberPermissions(ctx context.Context, tx pgx.Tx, orgID, userID uu
 // AddMemberWithRoles inserts a membership row and its role assignments and
 // recomputes the effective permission snapshot, all in one transaction.
 // Used by invite-accept so a partial failure can never strand a member with
-// no role rows.
+// no role rows. A restricted member.Access lands with the row, so the member is
+// never workspace-wide in between.
 func (r *organizationRepository) AddMemberWithRoles(ctx context.Context, member *models.OrganizationMember, roleIDs []uuid.UUID) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -53,12 +54,24 @@ func (r *organizationRepository) AddMemberWithRoles(ctx context.Context, member 
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	if member.Access.Restricted() {
+		member.AccessScope = models.AccessScopeRestricted
+	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO organization_members (id, organization_id, user_id, role, role_id, permissions, invited_by, invited_at, accepted_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO organization_members (id, organization_id, user_id, role, role_id, permissions, invited_by, invited_at, accepted_at, access_scope)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`, member.ID, member.OrganizationID, member.UserID, member.Role, member.RoleID,
-		member.Permissions, member.InvitedBy, member.InvitedAt, member.AcceptedAt); err != nil {
+		member.Permissions, member.InvitedBy, member.InvitedAt, member.AcceptedAt, memberScope(member)); err != nil {
 		return err
+	}
+	if member.Access.Restricted() {
+		var grantedBy uuid.UUID
+		if member.InvitedBy != nil {
+			grantedBy = *member.InvitedBy
+		}
+		if err := writeMemberGrants(ctx, tx, member.OrganizationID, member.UserID, member.Access, grantedBy); err != nil {
+			return err
+		}
 	}
 	for _, roleID := range roleIDs {
 		if _, err := tx.Exec(ctx, `

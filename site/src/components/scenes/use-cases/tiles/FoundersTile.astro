@@ -1,0 +1,44 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR } from '../../../../lib/scene';
+import { STATUS, tagStyle } from '../ui';
+
+/** Founders: founder@ kept out of campaigns, three sub-domain mailboxes warming. */
+const rows = [
+  { addr: 'founder@acme.com', sub: 'Main domain · in no campaign', tag: { label: 'Real mail', color: '#64748b' }, warm: '26/40' },
+  { addr: 'hello@out.acme.com', sub: 'Sub-domain · day 13', tag: { label: 'Cold', color: '#0ea5e9' }, warm: '22/40' },
+  { addr: 'intro@out.acme.com', sub: 'Sub-domain · day 13', tag: { label: 'Cold', color: '#0ea5e9' }, warm: '22/40' },
+  { addr: 'team@out.acme.com', sub: 'Sub-domain · day 12', tag: { label: 'Cold', color: '#0ea5e9' }, warm: '21/40' },
+];
+---
+<ScaledStage w={680} h={510} photo="sheer-blue">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[480px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">4 mailboxes</span>
+    </div>
+    {rows.map((r, i) => (
+      <div class={`h-[60px] px-5 pr-12 flex items-center gap-3 border-b border-slate-200/60 ${i === 0 ? 'bg-slate-50/70' : ''}`}>
+        <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark="google" size={14} /></span>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5"><span class="text-[13px] font-medium text-slate-900">{r.addr}</span><span class="inline-flex h-4 items-center gap-1 rounded-full px-1.5 text-[9.5px] font-medium" style={tagStyle(r.tag.color)}><span class="size-1.5 rounded-full" style={`background-color:${r.tag.color}`}></span>{r.tag.label}</span></div>
+          <div class="mt-0.5 text-[11px] text-slate-400">{r.sub}</div>
+        </div>
+        <span class={`${STATUS} text-orange-600`}><Glyph name="flame" size={12} class="flame-flicker" /><span class="text-shimmer">Warming</span></span>
+        <span class="w-16 text-right font-mono text-[12px] tabular-nums text-orange-600">{r.warm}</span>
+      </div>
+    ))}
+  </div>
+  <div class={`${FLOAT} left-[360px] top-[318px] w-[290px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg bg-sky-50 text-sky-600"><Glyph name="globe" size={14} /></span>
+      <div class="text-[12.5px] font-medium text-slate-900">out.acme.com</div>
+      <span class="ml-auto inline-flex h-5 items-center gap-1.5 rounded-full bg-emerald-50 px-2 text-[10.5px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200/70"><span class="size-1.5 rounded-full bg-emerald-500"></span>Authenticated</span>
+    </div>
+    <div class="px-4 py-1.5">
+      {['SPF', 'DMARC'].map((k) => <div class="flex h-9 items-center justify-between text-[12px]"><span class="text-slate-600">{k}</span><span class="inline-flex items-center gap-1 font-medium text-emerald-600"><Glyph name="check" size={12} />Found</span></div>)}
+    </div>
+  </div>
+</ScaledStage>

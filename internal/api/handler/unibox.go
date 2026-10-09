@@ -262,10 +262,12 @@ func (h *Handler) GetUniboxEmail(c *gin.Context) {
 		return
 	}
 
-	resp, xerr := h.UniboxService.GetByID(
-		c.Request.Context(),
-		*orgID, mid,
-	)
+	// A restricted member reads the inbox without changing its shared read state.
+	get := h.UniboxService.GetByID
+	if middleware.IsScopeRestricted(c) {
+		get = h.UniboxService.Peek
+	}
+	resp, xerr := get(c.Request.Context(), *orgID, mid)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -328,10 +330,10 @@ func (h *Handler) GetUniboxThread(c *gin.Context) {
 	cursor := c.Query("cursor")
 	limit := c.Query("limit")
 
-	resp, xerr := h.UniboxService.GetByThread(
+	resp, xerr := h.UniboxService.GetByThreadWithin(
 		c.Request.Context(),
 		*orgID, eid,
-		threadID, limit, cursor,
+		threadID, limit, cursor, restrictedMailboxes(c),
 	)
 	if xerr != nil {
 		errx.Handle(c, xerr)
@@ -842,7 +844,7 @@ func (h *Handler) ListUniboxScheduled(c *gin.Context) {
 	}
 
 	if threadID := c.Query("thread_id"); threadID != "" {
-		items, xerr := h.UniboxService.ListScheduledByThread(c.Request.Context(), *orgID, threadID, middleware.GetAPIKeyAllowedEmailAccounts(c))
+		items, xerr := h.UniboxService.ListScheduledByThread(c.Request.Context(), *orgID, threadID, middleware.AllowedEmailAccounts(c))
 		if xerr != nil {
 			errx.Handle(c, xerr)
 			return
@@ -851,7 +853,7 @@ func (h *Handler) ListUniboxScheduled(c *gin.Context) {
 		return
 	}
 
-	items, xerr := h.UniboxService.ListScheduled(c.Request.Context(), *orgID, middleware.GetAPIKeyAllowedEmailAccounts(c))
+	items, xerr := h.UniboxService.ListScheduled(c.Request.Context(), *orgID, middleware.AllowedEmailAccounts(c))
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -878,7 +880,7 @@ func (h *Handler) CancelUniboxScheduled(c *gin.Context) {
 		return
 	}
 
-	if xerr := h.UniboxService.CancelScheduled(c.Request.Context(), *orgID, taskID, middleware.GetAPIKeyAllowedEmailAccounts(c)); xerr != nil {
+	if xerr := h.UniboxService.CancelScheduled(c.Request.Context(), *orgID, taskID, middleware.AllowedEmailAccounts(c)); xerr != nil {
 		errx.Handle(c, xerr)
 		return
 	}

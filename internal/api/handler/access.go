@@ -86,12 +86,11 @@ func (h *Handler) callerMember(c *gin.Context) (*models.OrganizationMember, *err
 	return h.OrganizationService.GetMembership(c.Request.Context(), *orgID, userID)
 }
 
-// mailboxAllowed enforces an API key's mailbox allow-list on an account id
-// taken from a request body, the way RequireAPIKeyEmailAccountParam does for
-// a route parameter.
+// mailboxAllowed enforces the caller's mailbox allowlist on an account id from
+// a request body, the way RequireEmailAccountParam does for a route parameter.
 func mailboxAllowed(c *gin.Context, accountID uuid.UUID) *errx.Error {
-	if !middleware.APIKeyAllowsEmailAccount(c, accountID) {
-		return errx.New(errx.Forbidden, "email account is not allowed for this API key")
+	if !middleware.EmailAccountAllowed(c, accountID) {
+		return middleware.ErrEmailAccountNotAllowed(c)
 	}
 	return nil
 }
@@ -99,7 +98,7 @@ func mailboxAllowed(c *gin.Context, accountID uuid.UUID) *errx.Error {
 // apiKeyMailboxLimited is the stable code for a mailbox-limited key refused on a workspace-wide surface.
 const apiKeyMailboxLimited = "api_key_mailbox_limited"
 
-// keyMailboxLimited reports whether the caller is a key held to an allowlist of mailboxes.
+// keyMailboxLimited reports whether the caller is held to an allowlist of mailboxes.
 func keyMailboxLimited(c *gin.Context) bool {
-	return middleware.GetAuthType(c) != "jwt" && len(middleware.GetAPIKeyAllowedEmailAccounts(c)) > 0
+	return middleware.AllowedEmailAccounts(c) != nil
 }

@@ -1,0 +1,73 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, EYEBROW, TAB } from '../../../lib/scene';
+
+/**
+ * The mailbox drawer's Settings tab, Sending limits
+ * (web/src/components/app/emails/InboxDetails.tsx): the daily cap defaults to
+ * 50 and can be raised, with the warning that appears past 100.
+ */
+const tabs = ['Overview', 'Warmup', 'Sending', 'Settings'];
+const field = 'relative flex h-9 items-center rounded-md border border-slate-200 bg-white';
+---
+<ScaledStage w={460} h={345} photo="reeded-glass">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-12 px-4 flex items-center gap-2.5 border-b border-slate-200">
+      <span class="relative flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-[10.5px] font-semibold text-sky-700">
+        AK<span class="absolute -right-1 -bottom-1 inline-flex size-3.5 items-center justify-center rounded border border-slate-200 bg-white ring-2 ring-white"><Glyph mark="google" size={9} /></span>
+      </span>
+      <span class="truncate text-[12.5px] font-medium text-slate-900">alex@northwind.dev</span>
+    </div>
+    <div class="flex items-center gap-1 px-2 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} h-9! text-[12px]! ${t === 'Settings' ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          {t}{t === 'Settings' && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+    <div class="space-y-3.5 px-4 py-3.5 pr-10">
+      <div class={EYEBROW}>Sending limits</div>
+      <div>
+        <div class="mb-1 text-[12px] font-medium text-slate-700">Maximum cold emails per day</div>
+        <div class={field}>
+          <span class="relative h-5 flex-1 overflow-hidden text-right">
+            <span class="ml-a absolute inset-0 pr-2.5 text-[12.5px] tabular-nums text-slate-900">50</span>
+            <span class="ml-b absolute inset-0 pr-2.5 text-[12.5px] tabular-nums text-slate-900">120</span>
+          </span>
+          <span class="pr-2 text-[11px] text-slate-400">emails / day</span>
+          <span class="flex flex-col self-stretch border-l border-slate-200 text-slate-400">
+            <span class="flex flex-1 items-center px-1"><Glyph name="chevronDown" size={11} class="rotate-180" /></span>
+            <span class="flex flex-1 items-center border-t border-slate-200 px-1"><Glyph name="chevronDown" size={11} /></span>
+          </span>
+        </div>
+        <div class="relative mt-1 h-[42px]">
+          <p class="ml-a absolute inset-0 text-[10.5px] leading-relaxed text-slate-400">Shared ceiling across all campaigns, not a daily target. Default 50, adjustable.</p>
+          <p class="ml-b absolute inset-0 text-[10.5px] leading-relaxed text-amber-600">Well above the 30–50/day safe band for cold outreach. Caps this high need a warmed, established mailbox.</p>
+        </div>
+      </div>
+      <div>
+        <div class="mb-1 text-[12px] font-medium text-slate-700">Minimum gap</div>
+        <div class={field}>
+          <span class="flex-1 pr-2.5 text-right text-[12.5px] tabular-nums text-slate-900">600</span>
+          <span class="pr-2 text-[11px] text-slate-400">seconds</span>
+          <span class="flex flex-col self-stretch border-l border-slate-200 text-slate-400">
+            <span class="flex flex-1 items-center px-1"><Glyph name="chevronDown" size={11} class="rotate-180" /></span>
+            <span class="flex flex-1 items-center border-t border-slate-200 px-1"><Glyph name="chevronDown" size={11} /></span>
+          </span>
+        </div>
+        <p class="mt-1 text-[10.5px] text-slate-400">Smallest delay between two sends from this mailbox, currently 10 min.</p>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* An 8s loop: the cap is raised past 100 and the warning replaces the hint.
+     Base state is the default, which is what reduced motion keeps. */
+  .ml-b { opacity: 0; }
+  .ml-a { animation: ml-a 8s ease-in-out infinite; }
+  .ml-b { animation: ml-b 8s ease-in-out infinite; }
+  @keyframes ml-a { 0%, 40% { opacity: 1; transform: none; } 46%, 88% { opacity: 0; transform: translateY(-6px); } 94%, 100% { opacity: 1; transform: none; } }
+  @keyframes ml-b { 0%, 40% { opacity: 0; transform: translateY(6px); } 46%, 88% { opacity: 1; transform: none; } 94%, 100% { opacity: 0; transform: translateY(6px); } }
+</style>

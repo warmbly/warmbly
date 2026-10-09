@@ -1,0 +1,57 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Rail from './Rail.astro';
+import Row, { type Conv } from './Row.astro';
+import { L } from './labels';
+import { WINDOW } from '../../../lib/scene';
+import { UNIBOX_AUTOMATED } from './views';
+
+/**
+ * The Automated view: mail nobody wrote, out of the inbox and its unread
+ * badge, with the rail's hover explanation for the view (lib/unibox/views.ts).
+ */
+const convs: Conv[] = [
+  { who: 'Google', time: '2m', subject: 'Your sign-in code is 482 913', preview: 'Use this code to finish signing in. It expires in 10 minutes.', mailbox: 'ops@northwind.co', labels: [L.notification], unread: true },
+  { who: 'Stripe', time: '26m', subject: 'Your receipt from Linear #2213-4471', preview: 'Amount paid $96.00 · Visa ending 4242', mailbox: 'alex@northwind.dev', labels: [L.notification], unread: true },
+  { who: 'Mail Delivery Subsystem', time: '1h', subject: 'Delivery Status Notification (Failure)', preview: 'Address not found: hello@oldco.io', mailbox: 'sam@northwind.io', labels: [L.bounced] },
+  { who: 'Aman Patel', time: '2h', subject: 'Automatic reply: Following up', preview: 'I am out of the office until the 14th with limited access.', mailbox: 'sam@northwind.io', labels: [L.ooo] },
+  { who: 'Helio Support', time: '3h', subject: 'We received your request [#48213]', preview: 'A member of our team will get back to you shortly.', mailbox: 'ops@northwind.co', labels: [L.autoReply] },
+  { who: 'The Growth Memo', time: '5h', subject: 'This week: nine openers that get replies', preview: 'Plus the one subject line we stopped using.', mailbox: 'alex@northwind.dev', labels: [L.notification] },
+];
+---
+<ScaledStage w={680} h={510} photo="frost-blue">
+  <div class={`${WINDOW} left-[34px] top-[34px] w-[660px] h-[476px] flex`}>
+    <Rail active="automated" sections={['views', 'mailboxes', 'labels']} />
+    <div class="flex min-w-0 flex-1 flex-col">
+      <div class="flex h-11 shrink-0 items-center gap-1.5 pl-3 pr-2">
+        <span class="text-[13.5px] font-semibold text-slate-900">Automated</span>
+        <span class="text-[11.5px] tabular-nums text-slate-400">34</span>
+        <span class="flex-1"></span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-500"><Glyph name="listFilter" size={16} /></span>
+      </div>
+      <div class="shrink-0 border-b border-slate-200 px-3 pb-2">
+        <div class="flex h-8 items-center gap-2 rounded-md bg-slate-100/80 px-2.5 text-[12.5px] text-slate-400"><Glyph name="search" size={14} />Search Automated</div>
+      </div>
+      <div class="flex h-7 items-center px-4 text-[10.5px] font-medium uppercase tracking-[0.12em] text-slate-400">Today</div>
+      <div class="divide-y divide-slate-100">
+        {convs.map((c) => <Row c={c} />)}
+      </div>
+    </div>
+  </div>
+
+  <!-- The view's hover explanation, as the rail shows it. -->
+  <div class="au-tip float-layer absolute left-[262px] top-[212px] w-[300px] rounded-md bg-slate-900 px-3 py-2 text-[12px] leading-[1.45] text-white shadow-[0_18px_40px_-18px_rgba(15,23,42,0.6)]">
+    {UNIBOX_AUTOMATED}
+    <span class="absolute -left-1 top-[14px] size-2.5 rotate-45 rounded-[2px] bg-slate-900"></span>
+  </div>
+</ScaledStage>
+
+<style>
+  .au-tip { animation: au-tip 8s ease-in-out infinite; }
+  @keyframes au-tip {
+    0%, 8% { opacity: 0; transform: translateX(-6px) scale(0.97); }
+    14%, 86% { opacity: 1; transform: none; }
+    94%, 100% { opacity: 0; transform: translateX(-6px) scale(0.97); }
+  }
+</style>

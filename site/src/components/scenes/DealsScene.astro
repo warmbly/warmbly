@@ -1,0 +1,75 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import Glyph from './Glyph.astro';
+import { WINDOW, EYEBROW } from '../../lib/scene';
+
+/**
+ * The deals board (crm/deals): a deal is dragged from Replied to Meeting
+ * booked on a loop.
+ */
+type Deal = { name: string; contact: string; value: string; close?: string };
+const cols: { name: string; color: string; open: string; deals: Deal[] }[] = [
+  { name: 'Replied', color: '#0ea5e9', open: '$36,000 open', deals: [{ name: 'Helio', contact: 'founder@helio.gen', value: '$24,000' }] },
+  { name: 'Meeting booked', color: '#8b5cf6', open: '$51,200 open', deals: [{ name: 'Stratech', contact: 'rowan@stratech.io', value: '$45,000', close: 'Jul 15' }, { name: 'Spruce Bio', contact: 'lena@sprucebio.com', value: '$6,200' }] },
+  { name: 'Won', color: '#10b981', open: '$18,400 won', deals: [{ name: 'Quarry', contact: 'max@quarry.co', value: '$18,400' }] },
+];
+const card = 'rounded-md bg-white border border-slate-200 px-2.5 py-2';
+---
+<ScaledStage w={460} h={345} photo="reeded-glass">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-11 px-4 border-b border-slate-200 flex items-center gap-3">
+      <span class={EYEBROW}>Deals</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Sales pipeline</span>
+    </div>
+    <div class="relative flex gap-3 p-3">
+      {cols.map((c, ci) => (
+        <div class="w-[184px] shrink-0 rounded-md border border-slate-200 bg-slate-50">
+          <div class="h-9 px-3 flex items-center gap-2 border-b border-slate-200">
+            <span class="size-1.5 rounded-full" style={`background-color:${c.color}`}></span>
+            <span class="truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-700">{c.name}</span>
+            <span class="ml-auto font-mono text-[10.5px] text-slate-400">{c.deals.length + (ci === 0 ? 1 : 0)}</span>
+          </div>
+          <div class="border-b border-slate-200/60 bg-white px-3 py-1"><span class="font-mono text-[10.5px] text-emerald-700">{c.open}</span></div>
+          <div class="space-y-1.5 p-2">
+            {ci === 0 && <div class="h-[78px]"></div>}
+            {ci === 1 && <div class="dl-slot h-[78px] rounded-md border border-dashed border-violet-300 bg-violet-50/50"></div>}
+            {c.deals.map((d) => (
+              <div class={card}>
+                <div class="truncate text-[12px] font-medium text-slate-900">{d.name}</div>
+                <div class="mt-1 flex items-center gap-1 truncate text-[10.5px] text-slate-500"><Glyph name="user" size={10} />{d.contact}</div>
+                <div class="mt-1.5 flex items-center text-[10.5px]">
+                  <span class="inline-flex items-center gap-1 font-mono text-emerald-600"><Glyph name="dollar" size={10} />{d.value}</span>
+                  {d.close && <span class="ml-auto inline-flex items-center gap-1 text-slate-400"><Glyph name="calendar" size={10} />{d.close}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <!-- The deal on the move: from Replied's first slot into Meeting booked's. -->
+      <div class={`dl-drag ${card} absolute left-[21px] top-[83px] w-[166px] h-[78px]`}>
+        <div class="flex items-center gap-1.5"><span class="truncate text-[12px] font-medium text-slate-900">Acme</span><span class="ml-auto inline-flex h-4 items-center rounded-sm px-1 text-[9.5px] font-medium text-emerald-600 bg-emerald-50">Interested</span></div>
+        <div class="mt-1 flex items-center gap-1 truncate text-[10.5px] text-slate-500"><Glyph name="user" size={10} />jenna@acme.io</div>
+        <div class="mt-1.5 flex items-center text-[10.5px]"><span class="inline-flex items-center gap-1 font-mono text-emerald-600"><Glyph name="dollar" size={10} />$12,000</span><span class="ml-auto inline-flex items-center gap-1 text-slate-400"><Glyph name="calendar" size={10} />Thu</span></div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 12s loop: rests in Replied, is carried over, rests in Meeting booked,
+     then fades home for the next pass. Base is the landed state. */
+  .dl-drag { transform: translateX(196px); animation: dl-drag 12s cubic-bezier(0.5, 0, 0.2, 1) infinite; }
+  @keyframes dl-drag {
+    0%, 22% { transform: none; box-shadow: none; opacity: 1; }
+    28% { transform: translate(6px, -6px) rotate(-2deg); box-shadow: 0 18px 30px -12px rgba(15,23,42,0.35); }
+    46% { transform: translate(196px, -6px) rotate(1.5deg); box-shadow: 0 18px 30px -12px rgba(15,23,42,0.35); }
+    52%, 86% { transform: translateX(196px); box-shadow: none; opacity: 1; }
+    92% { transform: translateX(196px); opacity: 0; }
+    93% { transform: none; opacity: 0; }
+    100% { transform: none; opacity: 1; }
+  }
+  .dl-slot { opacity: 0; animation: dl-slot 12s ease infinite; }
+  @keyframes dl-slot { 0%, 24% { opacity: 0; } 30%, 50% { opacity: 1; } 54%, 100% { opacity: 0; } }
+</style>

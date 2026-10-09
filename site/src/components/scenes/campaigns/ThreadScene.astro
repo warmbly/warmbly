@@ -1,0 +1,144 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * The contact's own inbox: the first email and the follow-up are one
+ * conversation, because the follow-up replies on the thread. Her answer
+ * lands at the bottom on a loop, and the lead's campaign panel (the contact
+ * drawer's Activity tab) flips from waiting on step three to "Replied,
+ * sending stopped".
+ */
+const steps = [
+  { name: 'Quick question', kind: 'Email 1', marks: ['Sent', 'Opened'] },
+  { name: 'Follow-up', kind: 'Email 2 · reply in thread', marks: ['Sent', 'Opened'] },
+  { name: 'Last note', kind: 'Email 3 · reply in thread', marks: [] },
+];
+---
+<ScaledStage w={760} h={570} photo="paint-aqua">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px]`}>
+    <!-- Mail client toolbar -->
+    <div class="h-11 px-4 flex items-center gap-1 border-b border-slate-200 text-slate-500">
+      <span class="size-8 inline-flex items-center justify-center rounded-full"><Ico name="arrowLeft" size={16} /></span>
+      <span class="size-8 inline-flex items-center justify-center rounded-full"><Glyph name="archive" size={15} /></span>
+      <span class="size-8 inline-flex items-center justify-center rounded-full"><Glyph name="alert" size={15} /></span>
+      <span class="size-8 inline-flex items-center justify-center rounded-full"><Ico name="trash" size={15} /></span>
+      <span class="mx-1 h-5 w-px bg-slate-200"></span>
+      <span class="size-8 inline-flex items-center justify-center rounded-full"><Glyph name="mail" size={15} /></span>
+      <span class="size-8 inline-flex items-center justify-center rounded-full"><Glyph name="clock" size={15} /></span>
+      <span class="ml-auto pr-10 text-[12px] text-slate-400 tabular-nums">3 of 1,204</span>
+    </div>
+
+    <div class="px-6 pt-5 pr-14">
+      <div class="flex items-center gap-2.5">
+        <span class="text-[21px] text-slate-900">Quick question about Acme</span>
+        <span class="inline-flex h-5 items-center gap-1 rounded bg-slate-100 px-1.5 text-[11.5px] text-slate-600">Inbox <Glyph name="x" size={10} class="text-slate-400" /></span>
+      </div>
+
+      <div class="mt-4 divide-y divide-slate-100 border-y border-slate-100">
+        <!-- First email, collapsed -->
+        <div class="py-3 flex items-center gap-3">
+          <span class="size-9 shrink-0 rounded-full bg-sky-600 text-white text-[13px] font-medium flex items-center justify-center">A</span>
+          <span class="w-[150px] shrink-0 text-[13px] font-semibold text-slate-900">Alex Kim</span>
+          <span class="min-w-0 flex-1 truncate text-[13px] text-slate-500">Hi Jenna, saw Acme just opened a Berlin office. Teams growing that fast…</span>
+          <span class="shrink-0 text-[12px] text-slate-500">Mon, Sep 7</span>
+        </div>
+
+        <!-- The follow-up: a reply in the same conversation -->
+        <div class="py-4">
+          <div class="flex items-start gap-3">
+            <span class="size-9 shrink-0 rounded-full bg-sky-600 text-white text-[13px] font-medium flex items-center justify-center">A</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5">
+                <span class="text-[13px] font-semibold text-slate-900">Alex Kim</span>
+                <span class="text-[12px] text-slate-500">&lt;alex@northwind.dev&gt;</span>
+              </div>
+              <div class="mt-0.5 inline-flex items-center gap-0.5 text-[12px] text-slate-500">to me <Glyph name="chevronDown" size={11} /></div>
+            </div>
+            <span class="shrink-0 text-[12px] text-slate-500">Thu, Sep 10, 9:40 AM</span>
+            <span class="shrink-0 text-slate-400"><Glyph name="reply" size={15} /></span>
+          </div>
+          <div class="mt-3 max-w-[440px] pl-12 space-y-2.5 text-[13.5px] leading-[1.6] text-slate-800">
+            <p>Hi Jenna,</p>
+            <p>Following up in case this got buried. Happy to share how two teams your size kept outbound landing while they doubled their sending.</p>
+            <p>Worth a quick call this week?</p>
+            <p class="text-slate-500">Alex</p>
+          </div>
+        </div>
+
+        <!-- Her reply, arriving -->
+        <div class="th-reply py-4 bg-white">
+          <div class="flex items-start gap-3">
+            <span class="size-9 shrink-0 rounded-full bg-emerald-600 text-white text-[13px] font-medium flex items-center justify-center">J</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5">
+                <span class="text-[13px] font-semibold text-slate-900">me</span>
+              </div>
+              <div class="mt-0.5 inline-flex items-center gap-0.5 text-[12px] text-slate-500">to Alex <Glyph name="chevronDown" size={11} /></div>
+            </div>
+            <span class="shrink-0 text-[12px] text-slate-500">11:03 AM</span>
+          </div>
+          <div class="mt-3 max-w-[440px] pl-12 text-[13.5px] leading-[1.6] text-slate-800">Thursday 10am ET works for me. Send an invite over?</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The lead's campaign panel in the contact drawer. -->
+  <div class={`${FLOAT} left-[436px] top-[300px] w-[300px] overflow-hidden`}>
+    <div class="px-3.5 py-2.5 border-b border-slate-200/70 flex items-center gap-2">
+      <div class="min-w-0 flex-1">
+        <div class="truncate text-[12.5px] font-medium text-slate-900">Series A founders, Q3</div>
+        <div class="text-[10.5px] text-slate-400">via alex@northwind.dev</div>
+      </div>
+      <span class="relative inline-flex h-4 w-[86px] justify-end">
+        <span class="th-a absolute right-0 inline-flex items-center gap-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700"><span class="campaign-grid text-sky-600"></span>Processing</span>
+        <span class="th-b absolute right-0 inline-flex items-center gap-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-emerald-700"><Ico name="cornerUpLeft" size={12} />Replied</span>
+      </span>
+    </div>
+    <div class="px-3.5 py-2.5">
+      <div class={`${EYEBROW} mb-1.5`}>Flow</div>
+      {steps.map((s, i) => (
+        <div class={`relative flex items-center gap-2.5 py-1.5 ${i === 2 ? 'th-last' : ''}`}>
+          <span class={`size-5 shrink-0 rounded-full flex items-center justify-center ${s.marks.length ? 'bg-sky-50 text-sky-600 ring-1 ring-sky-100' : 'bg-slate-50 text-slate-300 ring-1 ring-slate-200'}`}><Glyph name="mail" size={11} /></span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-[12px] text-slate-800">{s.name}</div>
+            <div class="truncate text-[10.5px] text-slate-400">{s.kind}</div>
+          </div>
+          <span class="flex items-center gap-1">
+            {s.marks.map((m) => <span class="inline-flex h-4 items-center rounded px-1 text-[10px] font-medium bg-slate-100 text-slate-600">{m}</span>)}
+            {i === 1 && <span class="th-b inline-flex h-4 items-center rounded px-1 text-[10px] font-medium bg-emerald-50 text-emerald-700">Replied</span>}
+          </span>
+        </div>
+      ))}
+    </div>
+    <div class="relative h-10 border-t border-slate-200/70 bg-slate-50/60 text-[11.5px]">
+      <span class="th-a absolute inset-0 px-3.5 flex items-center gap-1.5 text-slate-600"><Glyph name="clock" size={12} class="text-slate-400" />Waiting 4 days after Follow-up</span>
+      <span class="th-b absolute inset-0 px-3.5 flex items-center gap-1.5 font-medium text-emerald-700"><Glyph name="check" size={12} />Replied, sending stopped</span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* One 12s loop: her reply lands, then the lead flips to Replied and the last
+     step is dropped. Base styles are the end state, for reduced motion. */
+  .th-a { opacity: 0; }
+  .th-last { opacity: 0.45; text-decoration: line-through; text-decoration-color: #cbd5e1; }
+  .th-reply { animation: th-reply 12s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes th-reply {
+    0%, 34% { opacity: 0; transform: translateY(10px); }
+    40%, 94% { opacity: 1; transform: none; }
+    100% { opacity: 0; }
+  }
+  .th-a { animation: th-a 12s linear infinite; }
+  .th-b { animation: th-b 12s linear infinite; }
+  @keyframes th-a { 0%, 46% { opacity: 1; } 49%, 100% { opacity: 0; } }
+  @keyframes th-b { 0%, 46% { opacity: 0; } 50%, 96% { opacity: 1; } 100% { opacity: 0; } }
+  .th-last { animation: th-last 12s linear infinite; }
+  @keyframes th-last {
+    0%, 48% { opacity: 1; text-decoration-color: transparent; }
+    54%, 100% { opacity: 0.45; text-decoration-color: #cbd5e1; }
+  }
+</style>

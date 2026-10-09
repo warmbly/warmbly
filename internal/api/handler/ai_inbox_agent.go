@@ -43,7 +43,7 @@ func (h *Handler) ListAgentDrafts(c *gin.Context) {
 	if len(restrictedMailboxes(c)) > 0 {
 		kept := drafts[:0]
 		for _, d := range drafts {
-			if middleware.APIKeyAllowsEmailAccount(c, d.EmailAccountID) {
+			if middleware.EmailAccountAllowed(c, d.EmailAccountID) {
 				kept = append(kept, d)
 			}
 		}

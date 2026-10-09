@@ -15,7 +15,7 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-func TestRequireAPIKeyEmailAccountParam(t *testing.T) {
+func TestRequireEmailAccountParam(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	allowedID := uuid.New()
 	deniedID := uuid.New()
@@ -43,7 +43,7 @@ func TestRequireAPIKeyEmailAccountParam(t *testing.T) {
 					c.Set(APIKeyAllowedEmailAccountsKey, tt.allowlist)
 					c.Next()
 				},
-				RequireAPIKeyEmailAccountParam("id"),
+				RequireEmailAccountParam("id"),
 				func(c *gin.Context) {
 					c.Status(http.StatusOK)
 				},

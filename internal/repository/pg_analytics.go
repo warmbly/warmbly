@@ -48,11 +48,12 @@ type AnalyticsRepository interface {
 	// Dashboard analytics
 	// ResolveDashboardScope resolves a filter to this workspace's campaigns, deduplicated; foreign ids drop out.
 	ResolveDashboardScope(ctx context.Context, orgID uuid.UUID, filter models.DashboardFilter) (*models.DashboardScope, *models.CampaignScope, *errx.Error)
-	GetDashboardOverallStats(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope) (*models.DashboardOverallStats, *errx.Error)
+	// mailboxes limits the mailbox counts; nil is every mailbox.
+	GetDashboardOverallStats(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope, mailboxes []uuid.UUID) (*models.DashboardOverallStats, *errx.Error)
 	GetRecentActivity(ctx context.Context, orgID uuid.UUID, limit int, scope *models.CampaignScope) ([]models.RecentActivityItem, *errx.Error)
 	GetTopCampaigns(ctx context.Context, orgID uuid.UUID, from, to time.Time, limit int, sortBy string, scope *models.CampaignScope) ([]models.TopCampaignStats, *errx.Error)
 	GetDashboardDailyTrend(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope) ([]models.DashboardDailyStats, *errx.Error)
-	GetAccountHealthSummary(ctx context.Context, orgID uuid.UUID) (*models.AccountHealthSummary, *errx.Error)
+	GetAccountHealthSummary(ctx context.Context, orgID uuid.UUID, mailboxes []uuid.UUID) (*models.AccountHealthSummary, *errx.Error)
 
 	// Campaign hourly stats
 	GetCampaignHourlyStats(ctx context.Context, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error)
@@ -188,6 +189,22 @@ func inCampaignScope(column string, scope *models.CampaignScope, arg int) string
 		return ""
 	}
 	return fmt.Sprintf(" AND %s = ANY($%d::uuid[])", column, arg)
+}
+
+// inMailboxes narrows column to the allowed mailboxes as $arg; nil adds nothing.
+func inMailboxes(column string, mailboxes []uuid.UUID, arg int) string {
+	if mailboxes == nil {
+		return ""
+	}
+	return fmt.Sprintf(" AND %s = ANY($%d::uuid[])", column, arg)
+}
+
+// mailboxArgs is the parameter inMailboxes refers to, or nothing.
+func mailboxArgs(mailboxes []uuid.UUID) []any {
+	if mailboxes == nil {
+		return nil
+	}
+	return []any{mailboxes}
 }
 
 // scopeArgs is the parameter inCampaignScope refers to, or nothing.
@@ -756,7 +773,8 @@ func (r *analyticsRepository) ResolveDashboardScope(ctx context.Context, orgID u
 	return scope, members, nil
 }
 
-func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope) (*models.DashboardOverallStats, *errx.Error) {
+func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope, mailboxes []uuid.UUID) (*models.DashboardOverallStats, *errx.Error) {
+	mailboxArg := 4 + len(scopeArgs(scope))
 	query := `
 		SELECT
 			COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_sent,
@@ -773,14 +791,14 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgI
 			COUNT(CASE WHEN ccp.replied_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_replies,
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_bounces,
 			(SELECT COUNT(*) FROM campaigns ac WHERE ac.organization_id = $1 AND ac.status = 'active'` + inCampaignScope("ac.id", scope, 4) + `) as active_campaigns,
-			(SELECT COUNT(*) FROM email_accounts WHERE organization_id = $1 AND status = 'active') as active_accounts
+			(SELECT COUNT(*) FROM email_accounts WHERE organization_id = $1 AND status = 'active'` + inMailboxes("id", mailboxes, mailboxArg) + `) as active_accounts
 		FROM campaign_contact_progress ccp
 		JOIN campaigns c ON c.id = ccp.campaign_id
 		JOIN sequences s ON s.id = ccp.sequence_id AND s.kind = 'email'
 		WHERE c.organization_id = $1` + inCampaignScope("c.id", scope, 4) + `
 	`
 
-	params := append([]any{orgID, from, to}, scopeArgs(scope)...)
+	params := append(append([]any{orgID, from, to}, scopeArgs(scope)...), mailboxArgs(mailboxes)...)
 
 	var stats models.DashboardOverallStats
 	err := r.DB.QueryRow(ctx, query, params...).Scan(
@@ -1027,7 +1045,7 @@ func (r *analyticsRepository) GetDashboardDailyTrend(ctx context.Context, orgID 
 	return stats, nil
 }
 
-func (r *analyticsRepository) GetAccountHealthSummary(ctx context.Context, orgID uuid.UUID) (*models.AccountHealthSummary, *errx.Error) {
+func (r *analyticsRepository) GetAccountHealthSummary(ctx context.Context, orgID uuid.UUID, mailboxes []uuid.UUID) (*models.AccountHealthSummary, *errx.Error) {
 	query := `
 		WITH account_health AS (
 			SELECT CASE
@@ -1049,7 +1067,7 @@ func (r *analyticsRepository) GetAccountHealthSummary(ctx context.Context, orgID
 			FROM email_accounts ea
 			LEFT JOIN LATERAL (` + warmupStandingSQL("ea.id") + `
 			) wh ON true
-			WHERE ea.organization_id = $1
+			WHERE ea.organization_id = $1` + inMailboxes("ea.id", mailboxes, 2) + `
 		)
 		SELECT
 			COUNT(*) as total,
@@ -1060,7 +1078,7 @@ func (r *analyticsRepository) GetAccountHealthSummary(ctx context.Context, orgID
 	`
 
 	var summary models.AccountHealthSummary
-	err := r.DB.QueryRow(ctx, query, orgID).Scan(&summary.TotalAccounts, &summary.HealthyAccounts, &summary.WarningAccounts, &summary.ErrorAccounts)
+	err := r.DB.QueryRow(ctx, query, append([]any{orgID}, mailboxArgs(mailboxes)...)...).Scan(&summary.TotalAccounts, &summary.HealthyAccounts, &summary.WarningAccounts, &summary.ErrorAccounts)
 	if err != nil {
 		db.CaptureError(err, query, []any{orgID}, "queryrow")
 		return nil, errx.InternalError()

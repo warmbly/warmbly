@@ -1,439 +1,161 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import HeroAtmosphere from '../../components/HeroAtmosphere.astro';
 import Icon from '../../components/Icon.astro';
 import CTA from '../../components/CTA.astro';
+import SectionIntro from '../../components/page/SectionIntro.astro';
+import Rule from '../../components/page/Rule.astro';
+import Faq from '../../components/page/Faq.astro';
+import WarmupCountdown from '../../components/scenes/use-cases/fundraising/WarmupCountdown.astro';
+import InvestorCampaign from '../../components/scenes/use-cases/fundraising/InvestorCampaign.astro';
+import NewMailbox from '../../components/scenes/use-cases/fundraising/NewMailbox.astro';
+import OneToOne from '../../components/scenes/use-cases/fundraising/OneToOne.astro';
+import SpreadSends from '../../components/scenes/use-cases/fundraising/SpreadSends.astro';
+import TwoEmails from '../../components/scenes/use-cases/fundraising/TwoEmails.astro';
+import SendTimePanel from '../../components/scenes/use-cases/fundraising/SendTimePanel.astro';
+import PartnerReply from '../../components/scenes/use-cases/fundraising/PartnerReply.astro';
 
-// Three real traps for VC outreach + the corresponding platform defence.
+// Warmup ramp and health policy from CLAUDE.md; recipient-timezone sending
+// from docs/content/docs/guides/sending-behavior.mdx.
+
+const countdown = [
+  { when: '6 weeks out', t: 'Connect and warm', d: 'Warmup starts at 10 a day and climbs by one a day.', on: true },
+  { when: '4 weeks out', t: 'Write the sequence', d: 'Two emails, plain text, one ask.', on: true },
+  { when: '2 weeks out', t: 'Build the list', d: 'Partners who actually lead rounds like yours.', on: true },
+  { when: 'Launch week', t: 'Send', d: 'Inside each partner’s working hours, spaced out.', now: true },
+  { when: 'After', t: 'Reply fast', d: 'Every reply lands in one inbox, ready for the deck.' },
+];
+
 const traps = [
-  {
-    n: '01',
-    trap: 'Mailbox set up the same week as the raise',
-    detail: 'A mailbox you connected this week has no history, so the first thing it ever does is cold-email strangers. That is the textbook spammer pattern, and you can taint the domain for the whole raise in a couple of days.',
-    defence: 'Warmup',
-    fix: 'Connect the mailbox four to six weeks out and let warmup run. It climbs from 10 to 40 sends a day, so by the time you write the first partner the mailbox already looks lived-in.',
-    link: '/warmup/',
-    linkLabel: 'See warmup ramp',
-  },
-  {
-    n: '02',
-    trap: 'CC the co-founders on every send',
-    detail: 'CC-ing your co-founders does two bad things at once: Gmail reads the chain as bulk mail, and the partner opens to a wall of names instead of a two-line ask from one person.',
-    defence: 'Sender pool',
-    fix: 'Send one to one, one founder to one partner. If someone on your side needs to be in the loop, bring them in from the shared inbox once the partner replies, not on the cold send.',
-    link: '/inbox/',
-    linkLabel: 'How inbox routing works',
-  },
-  {
-    n: '03',
-    trap: 'Blast 80 partners at 9am Tuesday',
-    detail: 'Firing the whole list at 9am Tuesday is the loudest spam tell there is. One mailbox sends dozens of near-identical emails in the same minute, which is not something a person ever does.',
-    defence: 'Business-hour scheduling · 600s gap',
-    fix: 'Spread the sends across each partner’s own working hours, with a gap between them (600 seconds by default). It paces out like someone working through a list, and stays under the mailbox’s daily cap.',
-    link: '/campaigns/',
-    linkLabel: 'Scheduling rules',
-  },
+  { t: 'Setting up the mailbox the week of the raise', d: 'A brand-new mailbox whose first act is emailing strangers looks exactly like a spammer. Connect it four to six weeks out and let warmup give it a history.', href: '/warmup/', link: 'How warmup works', scene: 'new' },
+  { t: 'Copying your co-founders on every email', d: 'A cold email with a wall of names reads as bulk mail. Write one to one, and bring the team in once a partner replies.', href: '/inbox/', link: 'How the inbox works', scene: 'cc' },
+  { t: 'Sending to the whole list at 9am Tuesday', d: 'Dozens of near-identical emails in one minute is the loudest spam signal there is. Spread them across each partner’s own working day.', href: '/sending/', link: 'How sending is paced', scene: 'spread' },
 ];
 
-// The two emails in the example flow below. {{.FirstName}} / {{.Company}} are
-// the real contact tokens the campaign editor uses (here the contact is the
-// investor, {{.Company}} is their fund). The founder's own details are written
-// straight into the template.
-const email1Subject = '{{.Company}} <> Atlas';
-const email1Body =
-  'Hi {{.FirstName}},\n\nSaw {{.Company}} leads a lot of seed dev-tools rounds. We launched Atlas 14 weeks ago, just crossed $40k MRR, growing about 30% month over month, and are opening a small seed.\n\nWorth a look? I’ll send the deck if it’s a fit for you.\n\nThanks,\nMara';
-// The follow-up is sent as a reply on the thread the first email opened, so it
-// carries that thread's subject rather than one of its own. Mirrors the step
-// card in /app/campaigns/:id/steps.
-const email2Subject = email1Subject;
-const email2Body =
-  'Hi {{.FirstName}},\n\nLast nudge on this, then I’ll leave you alone. Two more design partners signed since I wrote, and the round is filling faster than I expected.\n\nIf it isn’t for {{.Company}}, no hard feelings at all. If it is, I can have the deck in your inbox today.\n\nMara';
-
-// Reputation bands lifted from CLAUDE.md "Recommended internal policy for shared paid pools".
-const bands = [
-  { name: 'Healthy',     tone: 'emerald', spam: '< 10%', complaint: '< 0.03%', action: 'Default state. Continue sending.' },
-  { name: 'Watch',       tone: 'amber',   spam: '≥ 10%', complaint: '≥ 0.03%', action: 'Lower volume, increase spacing. Notify operator.' },
-  { name: 'Quarantined', tone: 'rose',    spam: '≥ 20%', complaint: '≥ 0.10%', action: 'Removed from shared paid pool for 7 days. Cold sequence pauses.' },
+const watch = [
+  { v: '10%', k: 'Spam placement', d: 'The point where warmup slows down to protect the mailbox.' },
+  { v: '0.10%', k: 'Complaints', d: 'The point where the mailbox is paused and pulled from the pool.' },
+  { v: '0', k: 'Follow-ups after a reply', d: 'A partner who answers is out of the sequence at once.' },
 ];
 
-const toneClass = (t: string) => {
-  if (t === 'emerald') return { dot: 'bg-emerald-500', text: 'text-emerald-700', soft: 'bg-emerald-50' };
-  if (t === 'amber')   return { dot: 'bg-amber-500',   text: 'text-amber-700',   soft: 'bg-amber-50' };
-  return                       { dot: 'bg-rose-500',    text: 'text-rose-700',    soft: 'bg-rose-50' };
-};
-
-const faq = [
-  ['How long before the raise should I connect the mailbox?', 'Four to six weeks. The ramp from 10 to 40 per day takes about 30 business days, and warmup needs at least 20 deliveries in the pool before the mailbox is rated Healthy.'],
-  ['How short should an investor sequence be?', 'Shorter than you think. Partners get hundreds of these a week, so one strong first touch and a single follow-up does most of the work. You can build more, the editor goes up to 50 steps with branching, but for a raise we would not. A fourth and fifth email mostly buys you complaints.'],
-  ['Should I attach the deck on the first send?', 'No. A cold attachment hurts deliverability and, honestly, it takes away their reason to reply. Send three or four sentences and an ask, then send the deck once they answer. The reply is the whole point of the first email.'],
+const faq: [string, string][] = [
+  ['How long before the raise should I connect the mailbox?', 'Four to six weeks. Warmup reaches 40 emails a day after about a month, and while a mailbox is still warming it sends at most 5 cold emails a day.'],
+  ['How short should an investor sequence be?', 'Shorter than you think. Partners get hundreds of these a week, so one strong first email and a single follow-up in the same thread do most of the work. A reply stops the sequence for that partner.'],
+  ['Should I attach the deck to the first email?', 'No. A cold attachment hurts deliverability, and it takes away their reason to reply. Send a few sentences and an ask, then the deck once they answer.'],
+  ['Should I send from my main domain?', 'Use a sending sub-domain, so a complaint on cold mail never touches the inbox you run the company from. The founder setup walks through it.'],
+  ['What if a partner marks it as spam?', 'Complaints are tracked per mailbox. A spam complaint suppresses that address, and if complaints climb, the mailbox is slowed down or paused before it can damage your domain.'],
 ];
 ---
 <Layout
-  title="Investor Outreach for Fundraising | Warmbly"
-  description="Run a focused cold investor sequence that lands in the inbox. Warm the mailbox weeks before the raise, build a short branching flow that stops the moment a partner replies, and watch reputation while you send."
+  title="Cold Email for Fundraising: Investor Outreach That Lands | Warmbly"
+  description="Plan investor outreach that reaches the inbox: warm the mailbox weeks before the raise, send a short two-email sequence in each partner’s working hours, and stop the moment a partner replies."
 >
-  <!-- ============================================================
-       HERO · HeroAtmosphere, shared with home / pricing / warmup
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-24 md:pb-32 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Fundraising
-        </span>
-        Warm the mailbox before the deck is finished
+  <!-- HERO: the countdown as two screens, six weeks out and launch week. -->
+  <section class="container-page pt-14 md:pt-24">
+    <div class="max-w-4xl">
+      <a href="/use-cases/" class="text-[14px] text-slate-500 hover:text-slate-900">Use cases · Fundraising</a>
+      <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">Warm up now. Send when the deck is ready.</h1>
+      <p class="mt-6 max-w-2xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">Investor outreach fails for one boring reason: the mailbox was set up the week of the raise. Start six weeks out, and on launch day your email lands in the inbox, not the promotions tab.</p>
+      <div class="mt-9 flex flex-wrap items-center gap-3">
+        <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">Start warming today <Icon name="arrowRight" size={14} /></a>
+        <a href="/use-cases/founders/" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">The founder setup</a>
       </div>
+    </div>
 
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-5xl mx-auto">
-        Get your raise emails<br/>read by the partner.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        You only get a handful of these emails, and one bad sending pattern can burn the whole list. So warm the mailbox weeks ahead, keep the follow-up light, and make the send look like a founder typing at their desk, not a tool firing on a schedule.
-      </p>
+    <div class="mt-14 md:mt-16 grid gap-3 md:grid-cols-2">
+      <figure>
+        <WarmupCountdown />
+        <figcaption class="mt-4 flex items-baseline gap-3 text-[15px]"><span class="font-mono text-[13px] text-slate-400">Week 5</span><span class="text-slate-900">The mailbox is nearly at 40 a day and lands in the inbox.</span></figcaption>
+      </figure>
+      <figure>
+        <InvestorCampaign />
+        <figcaption class="mt-4 flex items-baseline gap-3 text-[15px]"><span class="font-mono text-[13px] text-sky-600">Launch week</span><span class="text-slate-900">Partners reply, and each reply ends their sequence.</span></figcaption>
+      </figure>
+    </div>
 
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Start free</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="https://docs.warmbly.com/learn/email-warmup/" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          How warmup works
-        </a>
-      </div>
+    <ol class="relative mt-14 grid min-w-0 gap-8 sm:grid-cols-2 lg:grid-cols-5 lg:gap-6">
+      <span aria-hidden="true" class="absolute left-0 right-0 top-[7px] hidden h-px bg-slate-200 lg:block"></span>
+      {countdown.map((c) => (
+        <li class="relative">
+          <span class={`relative z-[1] block size-[15px] rounded-full border-2 border-white ring-1 ${c.now ? 'bg-sky-500 ring-sky-300' : c.on ? 'bg-slate-900 ring-slate-300' : 'bg-white ring-slate-300'}`}></span>
+          <div class={`mt-5 text-[13px] ${c.now ? 'font-medium text-sky-600' : 'text-slate-400'}`}>{c.when}</div>
+          <div class="mt-1 text-[16px] font-medium text-slate-900">{c.t}</div>
+          <p class="mt-1 text-[14px] leading-[1.55] text-slate-500">{c.d}</p>
+        </li>
+      ))}
+    </ol>
+  </section>
+
+  <!-- TRAPS: three mistakes, each with the screen that avoids it. -->
+  <Rule class="mt-20" />
+  <section class="container-page py-20 md:py-28">
+    <SectionIntro lead="Three mistakes." title="How founders burn their domain mid-raise." />
+    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 md:grid-cols-3">
+      {traps.map((t, i) => (
+        <article>
+          {t.scene === 'new' && <NewMailbox />}
+          {t.scene === 'cc' && <OneToOne />}
+          {t.scene === 'spread' && <SpreadSends />}
+          <div class="mt-6 font-mono text-[13px] text-slate-400">{String(i + 1).padStart(2, '0')}</div>
+          <h3 class="mt-1.5 text-[20px] md:text-[21px] tracking-[-0.02em] text-slate-900">{t.t}</h3>
+          <p class="mt-2 text-[15.5px] leading-[1.6] text-slate-500">{t.d}</p>
+          <a href={t.href} class="group mt-3 inline-flex items-center gap-1.5 text-[15px] text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">{t.link}<Icon name="arrowRight" size={13} class="transition-transform group-hover:translate-x-0.5" /></a>
+        </article>
+      ))}
     </div>
   </section>
 
-  <!-- ============================================================
-       THREE TRAPS · what kills VC reply rate
-  ============================================================ -->
-  <section class="border-y border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Three traps</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          The three patterns that kill an investor sequence.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          None of these are exotic. They are the same three mistakes founders make on almost every raise, and each one has a setting in Warmbly that quietly keeps it from happening.
-        </p>
-      </div>
-
-      <div class="grid md:grid-cols-3 gap-4 lg:gap-5">
-        {traps.map((t) => (
-          <div class="relative rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden flex flex-col">
-            <div class="h-1.5 bg-rose-400"></div>
-            <div class="p-6 flex-1 flex flex-col">
-              <div class="flex items-baseline justify-between mb-3">
-                <span class="text-[10.5px] font-mono uppercase tracking-[0.18em] text-rose-700 font-semibold">Trap {t.n}</span>
-                <span class="inline-flex items-center gap-1 text-[10.5px] font-mono text-rose-600">
-                  <span class="w-1 h-1 rounded-full bg-rose-500"></span>
-                  kills reply rate
-                </span>
-              </div>
-              <div class="text-[16px] font-semibold text-heading leading-snug">{t.trap}</div>
-              <p class="mt-2 text-[13px] text-foreground/65 leading-relaxed">{t.detail}</p>
-
-              <div class="mt-5 pt-5 border-t border-[color:var(--border)]">
-                <div class="text-[10.5px] font-mono uppercase tracking-[0.18em] text-[#0369a1] font-semibold mb-2">Defence · {t.defence}</div>
-                <p class="text-[13px] text-foreground/80 leading-relaxed">{t.fix}</p>
-                <a href={t.link} class="mt-4 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#0369a1] hover:text-[#075985]">
-                  {t.linkLabel} <Icon name="arrowRight" size={11} />
-                </a>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+  <!-- SEQUENCE: the two emails, in the editor. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-end gap-8 lg:grid-cols-[1.2fr_1fr] lg:gap-16">
+      <SectionIntro lead="The sequence." title="Two emails. The second is a reply to the first." />
+      <p class="text-[16px] md:text-[18px] leading-[1.6] text-slate-500 lg:pb-2">A partner who answers either one is taken out of the sequence straight away, so nobody gets a follow-up after saying yes or no.</p>
+    </div>
+    <div class="mt-12 md:mt-14">
+      <TwoEmails />
     </div>
   </section>
 
-  <!-- ============================================================
-       THE SEQUENCE · the real branching flow, not a drip list
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page grid lg:grid-cols-[1fr_1.55fr] gap-12 lg:gap-16 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">The sequence</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          You draw a flow, not a drip list.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-          A campaign is a small canvas. Each step holds for as long as you set, sends, then splits on what the
-          investor actually did. There is no separate wait block to babysit, the wait sits on the step itself. A
-          reply can stop the chase on the spot, open a task, or ping you. For a raise we keep it to two emails, but
-          it is the same builder every campaign runs on.
-        </p>
-        <ul class="mt-6 space-y-3.5 text-[14px] text-foreground/85">
-          <li class="flex items-start gap-3">
-            <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-[color:var(--sky-1)] text-[#0369a1]"><Icon name="clock" size={13} /></span>
-            <span><span class="font-medium text-heading">The wait lives on the step.</span> Each one holds for the number of days you give it, then sends. Nothing to wire up in between.</span>
-          </li>
-          <li class="flex items-start gap-3">
-            <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-[color:var(--sky-1)] text-[#0369a1]"><Icon name="workflow" size={13} /></span>
-            <span><span class="font-medium text-heading">Branches read behaviour.</span> Opened, clicked, replied, or a reply we have read as interested, not interested, or out of office: each can take its own path.</span>
-          </li>
-          <li class="flex items-start gap-3">
-            <span class="mt-px inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-600"><Icon name="zap" size={13} /></span>
-            <span><span class="font-medium text-heading">A reply cuts the line.</span> The moment a partner answers, the cold steps stop and a step can run right then: tag them, open a CRM deal, or drop you a notification.</span>
-          </li>
+  <!-- HOURS: sending inside each partner's own day. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
+      <div>
+        <SectionIntro lead="Their working hours." title="Land in each partner’s morning, wherever they are." text="Turn on send-time optimization and each email waits until the partner’s own clock reaches the hours you pick. Warmbly reads the contact’s timezone field first, then the country their email domain points at, then your fallback." />
+        <ul class="mt-9 space-y-4 text-[15.5px] text-slate-600">
+          <li class="flex gap-3"><Icon name="check" size={16} class="mt-1 shrink-0 text-emerald-600" />It only ever delays a send, never brings one forward.</li>
+          <li class="flex gap-3"><Icon name="check" size={16} class="mt-1 shrink-0 text-emerald-600" />The campaign window, the daily cap and the gap between sends still apply.</li>
+          <li class="flex gap-3"><Icon name="check" size={16} class="mt-1 shrink-0 text-emerald-600" />Weekends can roll over to Monday.</li>
         </ul>
-        <p class="mt-6 text-[12px] text-muted-foreground italic">
-          Two emails is our call for a raise, not a ceiling. The same canvas branches up to 50 steps when a campaign needs it.
-        </p>
       </div>
+      <SendTimePanel />
+    </div>
+  </section>
 
-      <!-- Flow canvas — mirrors the in-app campaign builder: email steps with a
-           per-step wait, behaviour branches, an instant reply path, and action
-           nodes (task / notify / tag) that end in Stop. -->
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <div class="px-5 py-3.5 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex flex-wrap items-center justify-between gap-3">
-          <div class="flex items-baseline gap-3">
-            <div class="text-[13px] font-semibold text-heading">vc-seed-fy26</div>
-            <span class="inline-flex items-center gap-1.5 h-5 px-2 rounded-full bg-[color:var(--sky-1)] text-[#0369a1] text-[10.5px] font-medium font-mono uppercase tracking-[0.08em]">
-              <span class="w-1 h-1 rounded-full bg-[#0284c7]"></span>
-              2 emails · 2 actions
-            </span>
-          </div>
-          <span class="inline-flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.12em] text-[#0369a1]">
-            <Icon name="reply" size={11} /> stop on reply: on
-          </span>
-        </div>
-
-        <div class="p-4 sm:p-5">
-          <!-- ── Email 1 ─────────────────────────────────────────── -->
-          <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-3 py-2">
-              <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><Icon name="mail" size={13} /></span>
-              <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">First touch</span>
-              <span class="shrink-0 rounded bg-sky-600 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.12em] text-white">Start</span>
+  <!-- REPLIES: a partner answers, the sequence ends, the deck goes back. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
+      <div class="lg:order-2">
+        <SectionIntro lead="When they reply." title="The sequence stops, and the thread is yours." text="A reply lands in one inbox, labelled by what the partner wants, and their place in the campaign ends there. Meanwhile Warmbly keeps watching the mailbox for you." />
+        <dl class="mt-10 grid gap-5 sm:grid-cols-3">
+          {watch.map((c) => (
+            <div class="border-t border-slate-200 pt-4">
+              <dt class="text-[28px] md:text-[32px] font-medium tracking-[-0.05em] leading-none text-slate-900">{c.v}</dt>
+              <dd class="mt-2 text-[14px] font-medium text-slate-900">{c.k}</dd>
+              <dd class="mt-1 text-[13.5px] leading-[1.5] text-slate-500">{c.d}</dd>
             </div>
-            <div class="px-3 py-2.5">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Email 1</span>
-                <span class="text-[10px] font-mono text-slate-400">sends on entry</span>
-              </div>
-              <div class="mt-1.5 text-[12px] text-slate-500"><span class="text-slate-400">Subject&nbsp;&nbsp;</span><span class="text-slate-700">{email1Subject}</span></div>
-              <div class="mt-2.5 rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono text-[11.5px] leading-[1.65] text-slate-600 whitespace-pre-wrap">{email1Body}</div>
-            </div>
-          </div>
-
-          <!-- branches out of Email 1 -->
-          <div class="ml-3.5 border-l-2 border-dashed border-slate-200 pl-4 sm:pl-5 pt-3 space-y-3">
-            <!-- reply → instant action chain -->
-            <div>
-              <div class="flex flex-wrap items-center gap-1.5">
-                <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-[color:var(--sky-1)] ring-1 ring-sky-200/70 text-[11px] font-medium text-[#0369a1]">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
-                  if they reply
-                </span>
-                <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-violet-50 ring-1 ring-violet-200/70 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-violet-600"><Icon name="zap" size={10} /> instant</span>
-              </div>
-              <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50/50 overflow-hidden">
-                <div class="flex items-center gap-1.5 border-b border-slate-200/70 px-3 py-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  <Icon name="zap" size={11} class="text-violet-500" /> the moment a reply lands
-                </div>
-                <div class="divide-y divide-slate-200/70">
-                  <div class="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-600">
-                    <span class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-violet-50 text-violet-600 ring-1 ring-violet-200/70"><Icon name="check" size={11} /></span>
-                    <span><span class="text-slate-400">Create task</span>&nbsp;&nbsp;Send the deck, book the call</span>
-                  </div>
-                  <div class="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-600">
-                    <span class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-sky-50 text-sky-600 ring-1 ring-sky-200/70"><Icon name="send" size={11} /></span>
-                    <span><span class="text-slate-400">Notify</span>&nbsp;&nbsp;Ping me in Slack</span>
-                  </div>
-                </div>
-                <div class="flex items-center gap-1.5 border-t border-slate-200/70 bg-white px-3 py-1.5 text-[11px] font-medium text-rose-600">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>
-                  Sequence stops here
-                </div>
-              </div>
-            </div>
-
-            <!-- no reply → wait → Email 2 -->
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-slate-100 text-[11px] font-medium text-slate-600">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
-                no reply
-              </span>
-              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-slate-100 text-[10px] font-mono text-slate-500"><Icon name="clock" size={10} /> waits 5 days</span>
-              <span class="text-slate-300"><Icon name="arrowRight" size={12} /></span>
-              <span class="text-[11px] font-medium text-slate-500">down to Email 2</span>
-            </div>
-          </div>
-
-          <!-- ── Email 2 ─────────────────────────────────────────── -->
-          <div class="mt-3 rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div class="flex items-center gap-2 rounded-t-xl border-b border-slate-200/70 bg-gradient-to-r from-sky-50/80 to-white px-3 py-2">
-              <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-600 ring-1 ring-sky-200/70"><Icon name="mail" size={13} /></span>
-              <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">One follow-up</span>
-              <span class="inline-flex items-center gap-1 shrink-0 rounded bg-slate-100 px-1.5 py-px text-[10px] font-mono text-slate-500"><Icon name="clock" size={10} /> 5d</span>
-            </div>
-            <div class="px-3 py-2.5">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-300">Reply in thread</span>
-                <span class="text-[10px] font-mono text-slate-400">lands under the first email</span>
-              </div>
-              <div class="mt-1.5 text-[12px] text-slate-500"><span class="text-slate-400">Subject&nbsp;&nbsp;</span><span class="text-slate-700">{email2Subject}</span></div>
-              <div class="mt-2.5 rounded-lg bg-slate-50 ring-1 ring-slate-200/70 p-3 font-mono text-[11.5px] leading-[1.65] text-slate-600 whitespace-pre-wrap">{email2Body}</div>
-            </div>
-          </div>
-
-          <!-- branches out of Email 2 -->
-          <div class="ml-3.5 border-l-2 border-dashed border-slate-200 pl-4 sm:pl-5 pt-3 space-y-3">
-            <!-- opened, no reply → tag → stop -->
-            <div>
-              <div class="flex flex-wrap items-center gap-1.5">
-                <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-[color:var(--sky-1)] ring-1 ring-sky-200/70 text-[11px] font-medium text-[#0369a1]">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
-                  if they opened it but never replied
-                </span>
-                <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-slate-100 text-[10px] font-mono text-slate-500"><Icon name="clock" size={10} /> within 4 days</span>
-              </div>
-              <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50/50 overflow-hidden">
-                <div class="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-600">
-                  <span class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/70">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
-                  </span>
-                  <span><span class="text-slate-400">Add tag</span>&nbsp;&nbsp;warm · no reply, follow up after the raise</span>
-                </div>
-                <div class="flex items-center gap-1.5 border-t border-slate-200/70 bg-white px-3 py-1.5 text-[11px] font-medium text-rose-600">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>
-                  Sequence stops here
-                </div>
-              </div>
-            </div>
-
-            <!-- everyone else → stop -->
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-slate-100 text-[11px] font-medium text-slate-600">everyone else</span>
-              <span class="text-slate-300"><Icon name="arrowRight" size={12} /></span>
-              <span class="inline-flex items-center gap-1 h-5 px-1.5 rounded bg-rose-50 ring-1 ring-rose-200/70 text-[10px] font-medium text-rose-600">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="10" height="10" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>
-                Stop
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div class="px-5 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-2 text-[11.5px] font-mono text-muted-foreground">
-          <span>Drawn on the campaign canvas · up to 50 steps</span>
-          <span class="text-[#0369a1]">A reply stops it for that contact only</span>
-        </div>
+          ))}
+        </dl>
+      </div>
+      <div class="lg:order-1">
+        <PartnerReply />
       </div>
     </div>
   </section>
 
-  <!-- ============================================================
-       REPUTATION WATCH · warmup keeps running during the raise
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-24">
-    <div class="container-page">
-      <div class="grid lg:grid-cols-[1fr_1.4fr] gap-12 lg:gap-16 items-start">
-        <div class="lg:sticky lg:top-24" style="align-self: start;">
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Reputation watch</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-            Warmup keeps running during the raise.
-          </h2>
-          <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed max-w-md">
-            A mailbox can drift in the middle of a raise. Warmup runs in parallel so any spam-folder placement is caught at the partner pool before a partner hits the report button.
-          </p>
-          <a href="https://docs.warmbly.com/learn/email-warmup/" class="mt-6 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[#0369a1] hover:text-[#075985]">
-            Read the warmup guide
-            <Icon name="arrowRight" size={12} />
-          </a>
-        </div>
+  <Rule />
+  <Faq items={faq} title="Fundraising, answered." />
 
-        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-          <div class="px-6 py-3.5 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/70 flex items-baseline justify-between">
-            <div class="text-[13px] font-semibold text-heading">Per-mailbox health bands</div>
-            <span class="text-[10.5px] font-mono uppercase tracking-[0.14em] text-muted-foreground">rolling window</span>
-          </div>
-
-          <div class="divide-y divide-[color:var(--border)]">
-            {bands.map((b) => {
-              const t = toneClass(b.tone);
-              return (
-                <div class="grid grid-cols-[110px_1fr_auto] gap-4 px-6 py-5 items-center">
-                  <div class="flex items-center gap-2">
-                    <span class={`w-2 h-2 rounded-full ${t.dot}`}></span>
-                    <span class={`text-[13px] font-semibold ${t.text}`}>{b.name}</span>
-                  </div>
-                  <div class="text-[13.5px] text-foreground/75 leading-snug">{b.action}</div>
-                  <div class="text-right font-mono text-[11.5px] text-muted-foreground">
-                    <div>spam {b.spam}</div>
-                    <div>complaint {b.complaint}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 text-[11.5px] font-mono text-muted-foreground">
-            Bands require at least 20 warmup deliveries in 7 days before action. Cold sending pauses automatically when a mailbox enters Quarantined.
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       FAQ · animated grid-rows accordion (shared pattern)
-  ============================================================ -->
-  <section class="py-20 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Fundraising FAQ</div>
-        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          Three questions founders ask before a raise.
-        </h2>
-        <p class="mt-4 text-[14.5px] text-foreground/70 leading-relaxed">
-          More context? Read the <a class="text-[#0369a1] hover:text-[#075985] font-medium" href="https://docs.warmbly.com/learn/email-warmup/">warmup guide</a>.
-        </p>
-      </div>
-      <div class="divide-y divide-[color:var(--border)]" data-faq>
-        {faq.map(([q, a]) => (
-          <div class="faq-row py-2">
-            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
-              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
-              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-white ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
-              </span>
-            </button>
-            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
-              <div class="overflow-hidden">
-                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <script is:inline>
-        (function () {
-          const faq = document.querySelector('[data-faq]');
-          if (!faq) return;
-          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-              const row   = btn.closest('.faq-row');
-              const panel = row.querySelector('.faq-panel');
-              const icon  = btn.querySelector('.faq-icon');
-              const open  = btn.getAttribute('aria-expanded') === 'true';
-              btn.setAttribute('aria-expanded', String(!open));
-              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
-              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
-            });
-          });
-        })();
-      </script>
-    </div>
-  </section>
-
-  <CTA
-    title="Warm now, send when the deck is ready."
-    primaryLabel="Start free"
-  />
+  <CTA photo="reeded-glass" title="Start warming six weeks before the raise." description="Connect the mailbox today and it will be ready by the time the deck is." />
 </Layout>

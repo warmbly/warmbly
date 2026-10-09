@@ -1,0 +1,53 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../about/Ico.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/** Step three: the earnings history (Reason, Amount, Balance, Date) and the next invoice drawing it down. */
+const rows = [
+  { r: 'Referral reward', a: '+$89.00', b: '$207.00', d: 'Oct 6', pos: true },
+  { r: 'Applied to invoice', a: '−$89.00', b: '$118.00', d: 'Oct 1' },
+  { r: 'Referral reward', a: '+$89.00', b: '$207.00', d: 'Sep 12', pos: true },
+  { r: 'Referral reward', a: '+$29.00', b: '$118.00', d: 'Aug 28', pos: true },
+];
+---
+<ScaledStage w={460} h={345} photo="lake-mist">
+  <div class={`${WINDOW} left-[24px] top-[24px] w-[460px] h-[340px]`}>
+    <div class="px-4 pt-3.5 pb-2">
+      <div class="text-[12.5px] font-semibold text-slate-900">Earnings history</div>
+      <div class="text-[11px] text-slate-500">Every credit and adjustment applied to your balance.</div>
+    </div>
+    <table class="w-full text-[12px]">
+      <thead>
+        <tr class="text-left text-[10.5px] uppercase tracking-[0.08em] text-slate-400 border-y border-slate-200">
+          <th class="font-medium px-4 py-2">Reason</th>
+          <th class="font-medium px-3 py-2 text-right">Amount</th>
+          <th class="font-medium px-3 py-2 text-right">Balance</th>
+          <th class="font-medium px-4 py-2 text-right">Date</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {rows.map((x, i) => (
+          <tr class={`enter-fade text-slate-700 ${i === 0 ? 'bg-emerald-50/50' : ''}`} style={`--d:${150 + i * 90}ms`}>
+            <td class="px-4 py-2.5">{x.r}</td>
+            <td class={`px-3 py-2.5 text-right font-mono tabular-nums ${x.pos ? 'text-emerald-600' : 'text-slate-500'}`}>{x.a}</td>
+            <td class="px-3 py-2.5 text-right font-mono tabular-nums">{x.b}</td>
+            <td class="px-4 py-2.5 text-right text-slate-500">{x.d}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <div class={`${FLOAT} left-[196px] top-[206px] w-[244px] overflow-hidden`}>
+    <div class="px-3.5 py-2.5 flex items-center gap-2 border-b border-slate-200">
+      <Ico name="receipt" size={13} class="text-slate-400" />
+      <span class="text-[12px] font-medium text-slate-900">Next invoice</span>
+    </div>
+    <div class="px-3.5 py-2.5 space-y-1.5 text-[11.5px]">
+      <div class="flex justify-between"><span class="text-slate-500">Grow</span><span class="font-mono text-slate-800">$89.00</span></div>
+      <div class="flex justify-between"><span class="text-emerald-700">Referral credit</span><span class="font-mono text-emerald-700">−$89.00</span></div>
+      <div class="flex justify-between border-t border-slate-100 pt-1.5"><span class="font-medium text-slate-900">Amount due</span><span class="font-mono font-medium text-slate-900">$0.00</span></div>
+    </div>
+  </div>
+</ScaledStage>

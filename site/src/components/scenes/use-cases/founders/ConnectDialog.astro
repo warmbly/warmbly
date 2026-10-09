@@ -1,0 +1,100 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, ACTION_GHOST, ACTION_PRIMARY } from '../../../../lib/scene';
+
+/**
+ * The Add account dialog (web/src/components/app/modals/AddEmailModal.tsx)
+ * over the Accounts page, with Google picked and the next step, how Warmbly
+ * should connect, in the card beside it.
+ */
+const providers = [
+  { mark: 'google', title: 'Google', sub: 'Gmail and Google Workspace', on: true },
+  { mark: 'microsoft', title: 'Microsoft', sub: 'Outlook and Microsoft 365' },
+  { mark: 'imap', title: 'Other (SMTP / IMAP)', sub: 'Any provider with manual host, port, and app password.' },
+  { icon: 'listFilter', title: 'Import mailboxes', sub: 'CSV, spreadsheet or pasted list. Server settings are detected for you.' },
+  { icon: 'server', title: 'Inbox vendor', sub: 'InboxKit, Zapmail, Mailforge and more. Paste an API key, pick mailboxes.' },
+] as const;
+const ways = [
+  { t: 'Whole Workspace domain', d: 'A super admin authorizes Warmbly once, then you pick the mailboxes.', rec: true },
+  { t: 'App password', d: 'One mailbox over IMAP and SMTP, in about two minutes.' },
+  { t: 'Sign in with Google', d: 'One mailbox at a time, through Google\'s consent screen.' },
+];
+const behind = ['founder@acme.com', 'hello@out.acme.com', 'intro@out.acme.com'];
+---
+<ScaledStage w={760} h={570} photo="frost-blue">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[760px] h-[560px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">3 mailboxes</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-10">
+        <span class={ACTION_GHOST}><Glyph name="globe" size={12} />Sending domains</span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Add account</span>
+      </div>
+    </div>
+    <div class="divide-y divide-slate-200/60">
+      {behind.map((b) => (
+        <div class="h-11 px-5 flex items-center gap-2.5 text-[12.5px] text-slate-700">
+          <span class="inline-flex size-6 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark="google" size={13} /></span>{b}
+          <span class="ml-auto inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-orange-600"><Glyph name="flame" size={12} />Warming</span>
+        </div>
+      ))}
+    </div>
+
+    <!-- The modal over a dimmed page. -->
+    <div class="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]"></div>
+    <div class="absolute left-[46px] top-[72px] w-[440px] rounded-lg border border-slate-200 bg-white shadow-[0_30px_60px_-30px_rgba(15,23,42,0.5)] overflow-hidden">
+      <div class="h-12 px-3 border-b border-slate-200 flex items-center gap-3">
+        <span class={EYEBROW}>Mailbox</span>
+        <span class="h-4 w-px bg-slate-200"></span>
+        <span class="text-[12.5px] text-slate-700">Connect a sending account</span>
+        <span class="ml-auto inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="x" size={15} /></span>
+      </div>
+      <div class="h-9 px-4 flex items-center gap-2 border-b border-slate-100 bg-slate-50/50 text-[11.5px] text-slate-500">
+        <span class="font-mono text-slate-900">3 / 150</span>mailboxes on this workspace
+        <span class="ml-auto text-sky-700">Need more?</span>
+      </div>
+      <div class="divide-y divide-slate-100">
+        {providers.map((p) => (
+          <div class={`w-full px-4 py-3 flex items-center gap-3 ${'on' in p ? 'cd-on' : ''}`}>
+            <span class="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500">
+              {'mark' in p ? <Glyph mark={p.mark} size={p.mark === 'imap' ? 16 : 18} /> : <Glyph name={p.icon} size={16} />}
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="text-[13px] font-medium text-slate-900">{p.title}</div>
+              <div class="truncate text-[11.5px] text-slate-500">{p.sub}</div>
+            </div>
+            <span class="text-slate-300">›</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- The next step for Google. -->
+  <div class={`${FLOAT} left-[452px] top-[206px] w-[280px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class="flex items-center gap-2"><Glyph mark="google" size={14} /><span class="text-[12.5px] font-medium text-slate-900">How should Warmbly connect?</span></div>
+    </div>
+    <div class="p-2 space-y-1">
+      {ways.map((w, i) => (
+        <div class={`rounded-md px-2.5 py-2 ${i === 0 ? 'cd-way bg-sky-50/70 ring-1 ring-inset ring-sky-200' : ''}`}>
+          <div class="flex items-center gap-2">
+            <span class={`size-3.5 shrink-0 rounded-full border ${i === 0 ? 'border-sky-600 border-[4px]' : 'border-slate-300'}`}></span>
+            <span class="text-[12.5px] text-slate-900">{w.t}</span>
+            {w.rec && <span class="ml-auto inline-flex h-[18px] items-center rounded-full border border-sky-200 bg-sky-50 px-1.5 text-[10px] font-medium text-sky-700">Recommended</span>}
+          </div>
+          <div class="mt-0.5 pl-[22px] text-[11px] text-slate-500">{w.d}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The picked provider row, pressed and held. */
+  .cd-on { background: rgb(240 249 255); }
+  .cd-way { animation: cd-way 6s ease-in-out infinite; }
+  @keyframes cd-way { 0%, 100% { box-shadow: inset 0 0 0 1px rgb(186 230 253); } 50% { box-shadow: inset 0 0 0 1px rgb(56 189 248); } }
+</style>

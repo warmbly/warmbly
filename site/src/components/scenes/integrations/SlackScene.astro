@@ -1,0 +1,136 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../analytics/Ico.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * Inbox in Slack (internal/app/slackapp/inbox.go): a reply posted to the
+ * inbox channel with its fields, the excerpt and the buttons, one thread per
+ * conversation. Over it, the Reply form the button opens: recipient and
+ * subject fixed, the body editable, sent from the conversation's mailbox. A
+ * new reply lands in the channel on a loop.
+ */
+const channels = ['general', 'sales', 'inbox-replies', 'deliverability', 'random'];
+const fields = [
+  ['Subject', 'Re: Quick question about Acme'],
+  ['Mailbox', 'alex@northwind.dev'],
+  ['Campaign', 'Q4 outbound'],
+  ['Intent', 'positive'],
+];
+const buttons = ['Draft with AI', 'Interested', 'Not interested', 'Assign to me', 'Open in Warmbly'];
+const sbtn = 'h-7 px-2.5 rounded-md border border-slate-300 bg-white text-[12px] font-semibold text-slate-800 inline-flex items-center';
+---
+<ScaledStage w={760} h={620} photo="lake-motion">
+  <div class={`${WINDOW} left-[40px] top-[40px] right-0 h-[580px] flex font-[system-ui]`}>
+    <aside class="w-[178px] shrink-0 bg-[#3f0e40] px-2 py-3 text-[13px] text-white/70">
+      <div class="px-2 pb-3 text-[14.5px] font-bold text-white">Northwind</div>
+      <div class="px-2 pb-1 text-[12px] text-white/50">Channels</div>
+      {channels.map((c) => (
+        <div class={`flex h-7 items-center gap-1.5 rounded-md px-2 ${c === 'inbox-replies' ? 'bg-[#1164a3] text-white' : ''}`}><Ico name="hash" size={13} class="opacity-70" />{c}</div>
+      ))}
+      <div class="mt-3 px-2 pb-1 text-[12px] text-white/50">Apps</div>
+      <div class="flex h-7 items-center gap-1.5 rounded-md px-2"><img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-4 rounded" />Warmbly</div>
+    </aside>
+
+    <div class="flex min-w-0 flex-1 flex-col bg-white">
+      <div class="flex h-12 items-center gap-1.5 border-b border-slate-200 px-4 text-[14.5px] font-bold text-slate-900"><Ico name="hash" size={15} class="text-slate-500" />inbox-replies</div>
+      <div class="relative flex-1 overflow-hidden">
+        <div class="sl-feed">
+          <!-- The newest conversation, posted as its thread's first message. -->
+          <div class="sl-new flex gap-2.5 px-4 py-3">
+            <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-9 shrink-0 rounded-md" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5"><span class="text-[13.5px] font-bold text-slate-900">Warmbly</span><span class="rounded-sm bg-slate-100 px-1 text-[9.5px] font-semibold text-slate-500">APP</span><span class="text-[11.5px] text-slate-400">2:41 PM</span></div>
+              <div class="text-[13.5px] text-slate-800">New reply from <b>Jenna Carter</b> (jenna@acme.io)</div>
+              <div class="mt-1.5 grid grid-cols-2 gap-x-6 gap-y-1.5">
+                {fields.map(([k, v]) => <div><div class="text-[12.5px] font-bold text-slate-900">{k}</div><div class="truncate text-[12.5px] text-slate-700">{v}</div></div>)}
+              </div>
+              <div class="mt-2 border-l-4 border-slate-300 pl-3 text-[13px] leading-[1.45] text-slate-700">Thanks for reaching out. Thursday 10am ET works for me, can you send over an invite?</div>
+              <div class="mt-2.5 flex flex-wrap gap-1.5">
+                <span class="h-7 px-2.5 rounded-md bg-[#007a5a] text-[12px] font-semibold text-white inline-flex items-center">Reply</span>
+                {buttons.map((b) => <span class={sbtn}>{b}</span>)}
+              </div>
+              <div class="mt-2 inline-flex items-center gap-1.5 text-[12px]">
+                <span class="flex size-5 items-center justify-center rounded bg-amber-100 text-[9px] font-bold text-amber-800">AK</span>
+                <span class="font-semibold text-[#1264a3]">2 replies</span><span class="text-slate-400">Last reply today at 2:44 PM</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex gap-2.5 px-4 py-3 border-t border-slate-100">
+            <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-9 shrink-0 rounded-md" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5"><span class="text-[13.5px] font-bold text-slate-900">Warmbly</span><span class="rounded-sm bg-slate-100 px-1 text-[9.5px] font-semibold text-slate-500">APP</span><span class="text-[11.5px] text-slate-400">1:58 PM</span></div>
+              <div class="text-[13.5px] text-slate-800">New reply from <b>Ravi Shah</b> (ravi@stratech.io)</div>
+              <div class="mt-2 border-l-4 border-slate-300 pl-3 text-[13px] text-slate-700">Send me a few times next week.</div>
+            </div>
+          </div>
+          <div class="flex gap-2.5 px-4 py-3 border-t border-slate-100">
+            <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-9 shrink-0 rounded-md" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5"><span class="text-[13.5px] font-bold text-slate-900">Warmbly</span><span class="rounded-sm bg-slate-100 px-1 text-[9.5px] font-semibold text-slate-500">APP</span><span class="text-[11.5px] text-slate-400">1:12 PM</span></div>
+              <div class="text-[13.5px] text-slate-800">New reply from <b>Lina Park</b> (lina@helio.dev)</div>
+              <div class="mt-2 border-l-4 border-slate-300 pl-3 text-[13px] text-slate-700">Does this work with Outlook too?</div>
+            </div>
+          </div>
+          <div class="flex gap-2.5 px-4 py-3 border-t border-slate-100">
+            <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-9 shrink-0 rounded-md" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5"><span class="text-[13.5px] font-bold text-slate-900">Warmbly</span><span class="rounded-sm bg-slate-100 px-1 text-[9.5px] font-semibold text-slate-500">APP</span><span class="text-[11.5px] text-slate-400">12:40 PM</span></div>
+              <div class="text-[13.5px] text-slate-800">New reply from <b>Omar Haddad</b> (omar@brightco.io)</div>
+              <div class="mt-2 border-l-4 border-slate-300 pl-3 text-[13px] text-slate-700">We are locked in until March, ping me then.</div>
+            </div>
+          </div>
+          <div class="flex gap-2.5 px-4 py-3 border-t border-slate-100">
+            <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-9 shrink-0 rounded-md" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5"><span class="text-[13.5px] font-bold text-slate-900">Warmbly</span><span class="rounded-sm bg-slate-100 px-1 text-[9.5px] font-semibold text-slate-500">APP</span><span class="text-[11.5px] text-slate-400">11:52 AM</span></div>
+              <div class="text-[13.5px] text-slate-800">New reply from <b>Karim Salah</b> (karim@northpeak.co)</div>
+              <div class="mt-2 border-l-4 border-slate-300 pl-3 text-[13px] text-slate-700">Who else is on the team? Happy to loop in our ops lead.</div>
+            </div>
+          </div>
+          <div class="flex gap-2.5 px-4 py-3 border-t border-slate-100">
+            <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-9 shrink-0 rounded-md" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5"><span class="text-[13.5px] font-bold text-slate-900">Warmbly</span><span class="rounded-sm bg-slate-100 px-1 text-[9.5px] font-semibold text-slate-500">APP</span><span class="text-[11.5px] text-slate-400">11:05 AM</span></div>
+              <div class="text-[13.5px] text-slate-800">New reply from <b>Aman Patel</b> (aman@finlo.io)</div>
+              <div class="mt-2 border-l-4 border-slate-300 pl-3 text-[13px] text-slate-700">Interesting, can you send a short deck?</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The Reply form: recipient and subject fixed, the draft editable. -->
+  <div class={`${FLOAT} left-[318px] top-[386px] w-[404px] overflow-hidden font-[system-ui]`}>
+    <div class="flex h-12 items-center gap-2 border-b border-slate-200 px-4">
+      <img src="/brand/social-avatar-256.webp" alt="" width="36" height="36" loading="lazy" class="size-6 rounded" />
+      <span class="text-[15px] font-bold text-slate-900">Reply</span>
+      <Ico name="x" size={16} class="ml-auto text-slate-400" />
+    </div>
+    <div class="space-y-2 px-4 py-3 text-[13px]">
+      <div class="flex gap-2"><span class="w-14 font-bold text-slate-900">To</span><span class="text-slate-700">jenna@acme.io</span></div>
+      <div class="flex gap-2"><span class="w-14 font-bold text-slate-900">Subject</span><span class="truncate text-slate-700">Re: Quick question about Acme</span></div>
+      <div class="rounded-md border border-[#1d9bd1] px-2.5 py-2 text-[13px] leading-[1.45] text-slate-800 ring-2 ring-[#1d9bd1]/20">Perfect, I just sent an invite for Thursday at 10am ET. Talk then!<span class="sl-caret ml-px inline-block h-3.5 w-px translate-y-0.5 bg-slate-800"></span></div>
+    </div>
+    <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-2.5">
+      <span class="h-8 px-3 rounded-md border border-slate-300 text-[13px] font-semibold text-slate-800 inline-flex items-center">Cancel</span>
+      <span class="h-8 px-3 rounded-md bg-[#007a5a] text-[13px] font-semibold text-white inline-flex items-center">Send</span>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* An 11s loop: a new reply is posted to the channel on top. */
+  .sl-feed { animation: sl-feed 11s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes sl-feed {
+    0% { transform: translateY(-290px); opacity: 0; }
+    4%, 28% { transform: translateY(-290px); opacity: 1; }
+    36%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .sl-new { animation: sl-new 11s ease-out infinite; }
+  @keyframes sl-new { 0%, 34% { background: rgb(254 249 231 / 0); } 40%, 70% { background: rgb(254 249 231); } 92%, 100% { background: rgb(254 249 231 / 0); } }
+  .sl-caret { animation: sl-caret 1s steps(1) infinite; }
+  @keyframes sl-caret { 50% { opacity: 0; } }
+</style>

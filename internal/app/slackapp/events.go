@@ -124,14 +124,15 @@ func (s *Service) revokeTeam(ctx context.Context, teamID string, status models.I
 // actor is a Slack member resolved to a connection and, when linked and still
 // a member, to the Warmbly member they act as.
 type actor struct {
-	teamID  string
-	userID  string
-	conn    *models.IntegrationConnection
-	token   string
-	link    *models.SlackUserLink
-	member  *models.OrganizationMember
-	unknown bool // membership could not be read; try again later
-	gone    bool // was linked, but is no longer a member
+	teamID     string
+	userID     string
+	conn       *models.IntegrationConnection
+	token      string
+	link       *models.SlackUserLink
+	member     *models.OrganizationMember
+	unknown    bool // membership could not be read; try again later
+	gone       bool // was linked, but is no longer a member
+	restricted bool // a restricted member, whose grants Slack cannot act within
 }
 
 // resolveActor returns nil when the team has no usable connection.
@@ -159,6 +160,8 @@ func (s *Service) resolveActor(ctx context.Context, teamID, slackUserID string) 
 			a.gone = true
 		case memberUnknown:
 			a.unknown = true
+		case memberRestricted:
+			a.restricted = true
 		}
 	}
 	return a
@@ -203,6 +206,10 @@ func (s *Service) tell(ctx context.Context, token, user string, q *ask, m Messag
 func (s *Service) promptLink(ctx context.Context, a *actor, q *ask) {
 	if a.unknown {
 		s.tell(ctx, a.token, a.userID, q, plainMessage("I couldn't check your Warmbly account just now. Please try again in a moment."))
+		return
+	}
+	if a.restricted {
+		s.tell(ctx, a.token, a.userID, q, plainMessage("Your Warmbly access is limited to selected campaigns and mailboxes, so I can't act for you here. Use the Warmbly dashboard instead."))
 		return
 	}
 	lead := ""

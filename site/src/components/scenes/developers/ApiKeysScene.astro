@@ -1,0 +1,172 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, STAT, STAT_VALUE, STAT_SUB } from '../../../lib/scene';
+
+/**
+ * The API keys page (web/src/app/app/api-keys/page.tsx): stat strip, the
+ * 24-hour traffic bars and the key list, with one key's detail drawer
+ * (KeyDetailDrawer) open over it to show the scopes it carries.
+ */
+const keyIcon = '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>';
+const refreshIcon = '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>';
+
+const keys = [
+  { name: 'production-server', desc: 'Server-side calls from EU production', prefix: 'wmbly_live_a1', suffix: '4f2a', rpm: 600, last: 'used 14s ago', status: 'active' },
+  { name: 'ci-pipeline', desc: 'GitHub Actions deploy step', prefix: 'wmbly_live_7c', suffix: '91c7', rpm: 120, last: 'used 1h ago', status: 'active' },
+  { name: 'zapier-replies', desc: 'Inbound reply automation', prefix: 'wmbly_live_3d', suffix: '3d8e', rpm: 300, last: 'used 2m ago', status: 'active', open: true },
+  { name: 'jane-macbook', desc: 'warmbly CLI sign-in', prefix: 'wmbly_live_9b', suffix: 'e04d', rpm: 120, last: 'used 3d ago', status: 'active' },
+  { name: 'old-laptop', desc: 'Rotated out, kept for audit', prefix: 'wmbly_live_0p', suffix: 'xx0p', rpm: 120, last: 'used 23d ago', status: 'revoked' },
+];
+const tone = (s: string) => s === 'active'
+  ? 'bg-emerald-50 text-emerald-700 [--dot:#10b981]'
+  : 'bg-rose-50 text-rose-700 [--dot:#f43f5e]';
+
+// 24 hourly buckets as a share of the bar height; a few hours carry 4xx and 5xx.
+const buckets = [42, 55, 38, 61, 49, 72, 58, 80, 64, 47, 69, 53, 76, 60, 84, 51, 68, 57, 73, 45, 62, 79, 54, 66];
+
+const scopes = [
+  { name: 'READ_UNIBOX', dot: 'bg-sky-400' },
+  { name: 'READ_CONTACTS', dot: 'bg-sky-400' },
+  { name: 'WRITE_CONTACTS', dot: 'bg-violet-400' },
+  { name: 'WEBHOOKS', dot: 'bg-emerald-400' },
+];
+const endpoints = [
+  { m: 'GET', e: '/v1/unibox/threads', n: '1,204' },
+  { m: 'POST', e: '/v1/contacts', n: '312' },
+  { m: 'GET', e: '/v1/me', n: '48' },
+];
+---
+<ScaledStage w={780} h={620} photo="paint-teal">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[780px] h-[600px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>API keys</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="truncate text-[12.5px] text-slate-600">Programmatic access · stripe-style scoped tokens</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-10">
+        <span class="h-7 px-2 rounded-md border border-slate-200 bg-white flex items-center gap-1.5">
+          <Glyph name="search" size={12} class="text-slate-400" />
+          <span class="w-[92px] text-[12px] text-slate-400">Search…</span>
+        </span>
+        <span class="size-7 rounded-md border border-slate-200 text-slate-500 inline-flex items-center justify-center">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={refreshIcon} />
+        </span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Create key</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-4 border-b border-slate-200">
+      <div class={STAT}>
+        <div class="flex items-center gap-2"><span class={EYEBROW}>Active keys</span><span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span></div>
+        <div class={STAT_VALUE}>4</div>
+        <div class={STAT_SUB}>1 inactive</div>
+      </div>
+      <div class={STAT}>
+        <div class={EYEBROW}>Requests · 24h</div>
+        <div class={STAT_VALUE}><span data-tick="8241,8320,1700">8241</span></div>
+        <div class={STAT_SUB}>4 errors</div>
+      </div>
+      <div class={STAT}>
+        <div class={EYEBROW}>Avg latency · 24h</div>
+        <div class={STAT_VALUE}>28ms</div>
+        <div class={STAT_SUB}>across all keys</div>
+      </div>
+      <div class="px-5 py-4">
+        <div class={EYEBROW}>Last call</div>
+        <div class={STAT_VALUE}><span data-tick="3,29,1000">14</span>s ago</div>
+        <div class={STAT_SUB}>Oct 9, 02:02 PM</div>
+      </div>
+    </div>
+
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Traffic · last 24h</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">8,241</span>
+    </div>
+    <div class="px-5 py-4 border-b border-slate-200/60">
+      <div class="relative h-[104px] flex items-end gap-[3px] pr-[40px]">
+        {buckets.map((h, i) => (
+          <div class="enter-grow-y flex-1 flex h-full flex-col justify-end" style={`--d:${150 + i * 30}ms`}>
+            {i % 7 === 3 && <div class="ak-dither w-full" style="height:4px; --c:244,63,94;"></div>}
+            {i % 5 === 2 && <div class="ak-dither w-full" style="height:6px; --c:245,158,11;"></div>}
+            <div class={`ak-dither w-full ${i === buckets.length - 1 ? 'ak-live' : ''}`} style={`height:${h}%; --c:16,185,129;`}></div>
+          </div>
+        ))}
+      </div>
+      <div class="h-px bg-slate-200/80 mr-[40px]"></div>
+      <div class="mt-1.5 mr-[40px] flex justify-between font-mono text-[9.5px] text-slate-400"><span>Oct 8, 03:00 PM</span><span>Oct 9, 02:00 PM</span></div>
+      <div class="mt-2 flex items-center gap-3 text-[10.5px] text-slate-500 pr-10">
+        <span class="inline-flex items-center gap-1"><span class="size-1.5 rounded-sm bg-emerald-500/80"></span>2xx</span>
+        <span class="inline-flex items-center gap-1"><span class="size-1.5 rounded-sm bg-amber-400/80"></span>4xx</span>
+        <span class="inline-flex items-center gap-1"><span class="size-1.5 rounded-sm bg-rose-500/80"></span>5xx</span>
+        <span class="ml-auto inline-flex items-center gap-1.5 text-slate-400"><Glyph name="gauge" size={12} />live; refreshes every minute</span>
+      </div>
+    </div>
+
+    <div class={SECTIONBAR}>
+      <span class={EYEBROW}>Keys</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">5</span>
+    </div>
+    <div class="divide-y divide-slate-200/60">
+      {keys.map((k) => (
+        <div class={`h-12 px-5 flex items-center gap-3 ${k.open ? 'bg-sky-50/70' : ''}`}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 ${k.status === 'active' ? 'text-slate-500' : 'text-slate-300'}`} set:html={keyIcon} />
+          <div class="flex w-[190px] flex-col min-w-0">
+            <span class="truncate text-[12.5px] font-medium text-slate-900">{k.name}</span>
+            <span class="truncate text-[10.5px] text-slate-500">{k.desc}</span>
+          </div>
+          <span class="font-mono text-[10.5px] text-slate-500">{k.prefix}…{k.suffix}</span>
+          <span class={`inline-flex h-5 items-center gap-1 rounded px-1.5 text-[10px] font-medium uppercase tracking-[0.08em] ${tone(k.status)}`}>
+            <span class="size-1.5 rounded-full bg-[var(--dot)]"></span>{k.status}
+          </span>
+          <span class="ml-auto flex shrink-0 items-center gap-3 pr-10">
+            <span class="inline-flex items-center gap-1 text-[10.5px] tabular-nums text-slate-400"><Glyph name="gauge" size={12} />{k.rpm}/m</span>
+            <span class="w-28 truncate text-right font-mono text-[10.5px] tabular-nums text-slate-400">{k.last}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- The open key's drawer: what it may do, and what it has been calling. -->
+  <div class={`${FLOAT} left-[436px] top-[300px] w-[316px] overflow-hidden`}>
+    <div class="h-11 px-4 border-b border-slate-200 flex items-center gap-2">
+      <span class={EYEBROW}>API key</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="truncate font-mono text-[11.5px] text-slate-900">wmbly_live_3d…3d8e</span>
+    </div>
+    <div class="px-4 py-3 border-b border-slate-200/60">
+      <div class="mb-2 inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500"><Glyph name="shieldCheck" size={12} />Permissions · 4</div>
+      <div class="flex flex-wrap gap-1">
+        {scopes.map((s) => (
+          <span class="inline-flex h-6 items-center gap-1 rounded border border-slate-200 bg-white px-1.5 font-mono text-[10.5px] text-slate-700"><span class={`size-1.5 rounded-full ${s.dot}`}></span>{s.name}</span>
+        ))}
+      </div>
+      <div class="mt-3 mb-2 inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500"><Glyph name="globe" size={12} />IP allowlist</div>
+      <div class="flex gap-1">
+        <span class="h-6 inline-flex items-center rounded border border-slate-200 px-1.5 font-mono text-[10.5px] text-slate-700">203.0.113.0/24</span>
+      </div>
+    </div>
+    <div class="px-4 py-3">
+      <div class="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">Top endpoints</div>
+      {endpoints.map((e) => (
+        <div class="flex items-center gap-2 py-1">
+          <span class="w-10 shrink-0 font-mono text-[10px] uppercase text-slate-400">{e.m}</span>
+          <span class="truncate font-mono text-[11px] text-slate-900">{e.e}</span>
+          <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-700">{e.n}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* DitherColumns: the dashboard's halftone bar fill. */
+  .ak-dither {
+    background-color: rgb(var(--c) / 0.84);
+    background-image: repeating-conic-gradient(rgb(var(--c) / 0.3) 0 25%, transparent 0 50%);
+    background-size: 2px 2px;
+  }
+  /* The current hour keeps filling while the page is open. */
+  .ak-live { transform-origin: bottom; animation: ak-live 6s ease-in-out infinite; }
+  @keyframes ak-live { 0% { transform: scaleY(0.82); } 100% { transform: scaleY(1); } }
+</style>

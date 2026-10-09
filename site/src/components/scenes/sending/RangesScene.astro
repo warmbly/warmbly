@@ -1,0 +1,129 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../campaigns/Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../../lib/scene';
+
+/**
+ * Further down the Sending tab: the ranges themselves (lunch, daily target,
+ * hourly ceiling, delay), as PairFields of our NumberInput with steppers.
+ * Over it, the workday each morning rolls out of them, one day after another.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'gauge' },
+  { label: 'Deliverability', icon: 'mailCheck' },
+  { label: 'Analytics', icon: 'barChart' },
+  { label: 'Warmup', icon: 'flame' },
+  { label: 'Sending', icon: 'clock', active: true },
+  { label: 'Settings', icon: 'settings' },
+] as const;
+const volume = [
+  { label: 'Daily cold-email target range', a: '28', b: '32', suffix: '/ day', hint: 'Chosen once per local day and kept stable across retries. Mailbox and campaign maximums can lower it.' },
+  { label: 'Cold emails per hour', a: '5', b: '9', suffix: '/ hour', hint: 'Stops a whole day’s allowance landing in one burst before lunch.' },
+  { label: 'Delay between emails', a: '90', b: '420', suffix: 'seconds', hint: 'Drawn fresh for every send, so the intervals stay irregular. Currently 1m 30s to 7m.' },
+];
+// Three mornings, three different days out of the same ranges.
+const rolls = [
+  { day: 'Mon', hours: ['09:14', '17:41'], lunch: '12:32–13:19', hourly: 7, target: 31 },
+  { day: 'Tue', hours: ['09:22', '17:19'], lunch: '12:08–12:51', hourly: 6, target: 29 },
+  { day: 'Wed', hours: ['09:05', '17:52'], lunch: '13:02–13:58', hourly: 8, target: 32 },
+];
+const clockField = 'h-9 px-2.5 rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-900 tabular-nums flex items-center w-full';
+---
+<ScaledStage w={760} h={570} photo="reeded-glass">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[740px] h-[560px]`}>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+    <div class="divide-y divide-slate-200/60 pr-5">
+      <div class="px-5 py-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <span class={EYEBROW}>Lunch break</span>
+          <span class="relative inline-flex h-[18px] w-8 items-center rounded-full bg-sky-600"><span class="inline-block size-3.5 translate-x-[15px] rounded-full bg-white shadow-sm"></span></span>
+        </div>
+        <div class="grid grid-cols-2 gap-5">
+          <div>
+            <div class="mb-1 flex items-center gap-1.5"><Ico name="coffee" size={14} class="text-slate-400" /><span class="text-[12px] font-medium text-slate-700">Starts somewhere between</span></div>
+            <div class="flex items-center gap-2"><span class={clockField}>12:00</span><span class="shrink-0 text-[11.5px] text-slate-400">to</span><span class={clockField}>13:30</span></div>
+          </div>
+          <div>
+            <div class="mb-1 text-[12px] font-medium text-slate-700">Lasts</div>
+            <div class="flex items-center gap-2">
+              {['30', '60'].map((v, i) => (
+                <>
+                  {i === 1 && <span class="shrink-0 text-[11.5px] text-slate-400">to</span>}
+                  <span class="relative inline-flex h-9 w-full items-center rounded-md border border-slate-200 bg-white">
+                    <span class="flex-1 px-2.5 text-right text-[12.5px] tabular-nums text-slate-900">{v}</span>
+                    {i === 1 && <span class="pr-2 text-[11px] text-slate-400">minutes</span>}
+                    <span class="flex flex-col self-stretch border-l border-slate-200 text-slate-400"><span class="flex-1 px-1 flex items-center"><Ico name="chevronUp" size={11} /></span><span class="flex-1 px-1 flex items-center border-t border-slate-200"><Glyph name="chevronDown" size={11} /></span></span>
+                  </span>
+                </>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-5 space-y-4">
+        <div class={EYEBROW}>Volume and spacing</div>
+        {volume.map((f) => (
+          <div>
+            <div class="mb-1 text-[12px] font-medium text-slate-700">{f.label}</div>
+            <div class="flex items-center gap-2 max-w-[396px]">
+              {[f.a, f.b].map((v, i) => (
+                <>
+                  {i === 1 && <span class="shrink-0 text-[11.5px] text-slate-400">to</span>}
+                  <span class="relative inline-flex h-9 w-full items-center rounded-md border border-slate-200 bg-white">
+                    <span class="flex-1 px-2.5 text-right text-[12.5px] tabular-nums text-slate-900">{v}</span>
+                    {i === 1 && <span class="pr-2 text-[11px] text-slate-400 whitespace-nowrap">{f.suffix}</span>}
+                    <span class="flex flex-col self-stretch border-l border-slate-200 text-slate-400"><span class="flex-1 px-1 flex items-center"><Ico name="chevronUp" size={11} /></span><span class="flex-1 px-1 flex items-center border-t border-slate-200"><Glyph name="chevronDown" size={11} /></span></span>
+                  </span>
+                </>
+              ))}
+            </div>
+            <p class="mt-1 max-w-[396px] text-[10.5px] leading-relaxed text-slate-400">{f.hint}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- Each morning a new workday is rolled from the ranges. -->
+  <div class={`${FLOAT} left-[474px] top-[236px] w-[264px] overflow-hidden`}>
+    <div class="relative h-[150px]">
+      {rolls.map((r, i) => (
+        <div class={`rg-roll absolute inset-0 px-4 py-3.5`} style={`--i:${i}`}>
+          <div class="flex items-center justify-between">
+            <span class={EYEBROW}>Today’s workday</span>
+            <span class="inline-flex h-5 items-center rounded bg-sky-50 px-1.5 text-[10.5px] font-medium text-sky-700">{r.day}</span>
+          </div>
+          <div class="mt-2.5 space-y-1.5 text-[12.5px] text-slate-700">
+            <div class="flex items-center gap-1.5"><Glyph name="clock" size={13} class="text-slate-400" /><b class="font-semibold tabular-nums text-slate-900">{r.hours[0]}</b><span class="text-slate-400">–</span><b class="font-semibold tabular-nums text-slate-900">{r.hours[1]}</b></div>
+            <div class="flex items-center gap-1.5"><Ico name="coffee" size={13} class="text-slate-400" /><span class="tabular-nums">{r.lunch}</span></div>
+            <div class="flex items-center gap-1.5"><Glyph name="gauge" size={13} class="text-slate-400" />max {r.hourly}/hour<span class="ml-auto font-mono text-[11px] text-slate-500">target {r.target}</span></div>
+          </div>
+        </div>
+      ))}
+    </div>
+    <div class="flex items-center gap-1.5 border-t border-slate-200/70 bg-slate-50/60 px-4 py-2 text-[10.5px] text-slate-500">
+      <Glyph name="info" size={12} class="text-slate-400" />Saved ranges apply from the next local day.
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* Three days on a 12s loop, 4s each. At rest (reduced motion) Monday shows. */
+  .rg-roll { opacity: 0; }
+  .rg-roll[style*='--i:0'] { opacity: 1; }
+  .rg-roll { animation: rg-roll 12s ease-in-out infinite; animation-delay: calc(var(--i) * 4s - 0.4s); }
+  @keyframes rg-roll {
+    0% { opacity: 0; transform: translateY(6px); }
+    4%, 30% { opacity: 1; transform: none; }
+    34%, 100% { opacity: 0; transform: translateY(-6px); }
+  }
+</style>

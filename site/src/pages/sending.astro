@@ -1,415 +1,184 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
 import PillarPosts from '../components/PillarPosts.astro';
+import SectionIntro from '../components/page/SectionIntro.astro';
+import Rule from '../components/page/Rule.astro';
+import Faq from '../components/page/Faq.astro';
+import WorkdayScene from '../components/scenes/sending/WorkdayScene.astro';
+import RangesScene from '../components/scenes/sending/RangesScene.astro';
+import ClocksScene from '../components/scenes/sending/ClocksScene.astro';
+import PathScene from '../components/scenes/sending/PathScene.astro';
+import VolumeScene from '../components/scenes/sending/VolumeScene.astro';
 
-// Single-send trace
-const trace = [
-  { t: 'T+0ms',     stage: 'queue',         actor: 'backend',    body: 'campaign_scheduler picks recipient · checks per-mailbox cap (47/100) + gap (last send 11m ago > 10m)' },
-  { t: 'T+4ms',     stage: 'kafka',         actor: 'backend →',  body: 'publishes send command to worker.commands.w-01 with message envelope + mailbox creds reference' },
-  { t: 'T+8ms',     stage: 'consume',       actor: '→ worker',   body: 'worker w-01 consumes command, fetches OAuth refresh token from KMS-cached DEK, builds RFC 5322 message' },
-  { t: 'T+121ms',   stage: 'oauth',         actor: 'provider',   body: 'refresh access token from Google identity service' },
-  { t: 'T+312ms',   stage: 'smtp send',     actor: 'gmail api',  body: 'POST users.messages.send → 200 OK · returns gmail message id 18f3a2b9c1' },
-  { t: 'T+318ms',   stage: 'ack',           actor: '← worker',   body: 'worker publishes send-result event to worker.results.w-01 · cap usage incremented to 48/100' },
-  { t: 'T+326ms',   stage: 'persist',       actor: 'consumer',   body: 'consumer folds result into campaign state · contact moves to "sent" status' },
+// Behaviour from docs/content/docs/guides/sending-behavior.mdx, campaigns.mdx
+// and the worker topology in CLAUDE.md.
+
+const heroStats = [
+  { v: '28 to 32', k: 'cold emails a day' },
+  { v: '5 to 9', k: 'an hour, at most' },
+  { v: '90 to 420s', k: 'between two emails' },
 ];
 
-const scenarios = [
-  {
-    label: 'Founder · 1 mailbox',
-    mailboxes: 1,
-    workers: 1,
-    daily: 100,
-    note: 'A single ben@acme.com runs on one worker. Default 100/day cap. Plenty of headroom on the worker for warmup partners.',
-  },
-  {
-    label: 'Sales team · 10 mailboxes',
-    mailboxes: 10,
-    workers: 1,
-    daily: 1000,
-    featured: true,
-    note: 'Right at the per-worker concentration warning. One worker carries all 10 mailboxes; healthy as long as no mailbox drifts.',
-  },
-  {
-    label: 'Agency · 50 mailboxes',
-    mailboxes: 50,
-    workers: 5,
-    daily: 5000,
-    note: 'Spread across 5 workers so each holds ~10. Concentration warnings never fire. Adding mailboxes triggers a new worker, not a denser one.',
-  },
+const ranges = [
+  ['Working days', 'Monday to Friday, for warmup and cold mail alike'],
+  ['Start of the day', 'Somewhere between 09:03 and 09:27'],
+  ['End of the day', 'Somewhere between 17:18 and 17:56'],
+  ['Lunch break', 'Starts between 12:00 and 13:30, lasts 30 to 60 minutes'],
 ];
 
-const providers = [
-  { name: 'Google Workspace',  tag: 'Gmail · app password', body: 'A guided setup over smtp.gmail.com and imap.gmail.com, no Google app review in the way. Threaded replies preserved via In-Reply-To and References. Postmaster Tools surfaced where the domain is enrolled.', accent: '#ea4335' },
-  { name: 'Microsoft 365',     tag: 'Outlook · OAuth',   body: 'Graph API for send with shared-mailbox support. IMAP and EWS for sync. Tenant-scoped admin consent.', accent: '#0078d4' },
-  { name: 'Custom SMTP / IMAP',tag: 'BYOS · TLS',        body: 'Bring your own server. TLS, STARTTLS, app passwords, and OAuth where the provider supports it. iCloud and Zoho work first-class.', accent: '#0284c7' },
+const timezones = [
+  ['1', 'The contact’s own timezone field, when it holds a real zone such as America/Denver'],
+  ['2', 'The country of their email domain: acme.de reads as Berlin, acme.co.uk as London'],
+  ['3', 'The fallback timezone you choose, for everyone else'],
 ];
 
-const faq = [
-  ['How does worker assignment happen?',     'Mailboxes are pinned to a worker on first connect and stay there for stability. The control plane can rebalance live by moving the mailbox to a different worker without dropping campaigns or warmup.'],
-  ['What happens if a worker crashes?',      'Worker state is disposable. A replacement worker reads pending commands from the same Kafka topic on boot and resumes. No mailbox is stuck waiting on a single host.'],
-  ['Can a single mailbox use multiple IPs?', 'No. A mailbox lives on one worker with one IP at a time so receiver reputation can stabilise. Migration changes the IP intentionally and is logged.'],
-  ['How are bursts prevented?',              'The per-mailbox 600-second gap is enforced server-side. Even if a campaign queues 100 sends at once, dispatch is rate-limited to the gap, not the queue size.'],
+const path = [
+  { t: 'Signed in, not relayed', d: 'Google mailboxes send through the Gmail API, Microsoft mailboxes through Microsoft Graph, and every other host over SMTP.' },
+  { t: 'A familiar address', d: 'Each mailbox stays on the same worker wherever it can, and moves only when that worker goes down, is throttled or runs far over capacity.' },
+  { t: 'An address of your own', d: 'On Business and above, your mailboxes sign in from an address no other customer uses.' },
 ];
 
+const limits = [
+  { v: '50', k: 'cold emails a day per mailbox by default, and the dashboard warns past 100' },
+  { v: '10 min', k: 'between two sends from one mailbox on a fixed schedule' },
+  { v: '~30', k: 'a day on a newly connected mailbox’s rolled plan' },
+  { v: '5', k: 'cold emails a day at most while a mailbox is still warming' },
+];
+
+const faq: [string, string][] = [
+  ['Why randomise sending at all?', 'A mailbox that sends exactly 40 emails at exactly 10-minute intervals from 09:00:00 sharp looks like a machine. Varying the workday, the breaks and the spacing makes it look like the person whose mailbox it is.'],
+  ['Can this make a mailbox send more than its cap?', 'No. The workday can only lower volume or delay a send. A mailbox capped at 50 that rolls 31 for the day sends at most 31.'],
+  ['Does warmup follow the same workday?', 'Yes. Warmup keeps the same days, hours and lunch break, so warmup mail never goes out at 3am from a mailbox that keeps office hours. It has its own ramp and doesn’t eat into the cold budget.'],
+  ['Can I send in each recipient’s timezone?', 'Yes. Send-time optimization holds each email until the recipient’s local clock reaches the hours you choose. It reads the contact’s timezone field first, then the country of their email domain, then a fallback you set.'],
+  ['Do my mailboxes send from your servers?', 'Your mailboxes send through their own providers, Google, Microsoft or your SMTP host. Warmbly’s workers sign in to those providers for you, and each mailbox is kept on the same worker wherever possible, because a stable sign-in address is what providers trust.'],
+  ['Does the worker’s IP address affect my deliverability?', 'Recipients never see it. Your provider delivers the email from its own servers, so spam filters judge your mailbox and your domain. The worker’s address only matters to your provider when it signs in, which is why mailboxes are not moved between workers without a reason.'],
+];
 ---
 <Layout
-  title="Distributed Sending Engine | Warmbly"
-  description="A distributed sending engine that spreads cold mail across many mailboxes, many workers and many IPs. Per-mailbox safety caps baked in."
+  title="Cold Email Sending That Looks Human | Warmbly"
+  description="Give every mailbox a human workday: randomised start and finish times, a lunch break, varied spacing and hourly limits in its own timezone, with per-mailbox caps and recipient-timezone sending."
 >
-  <!-- ============================================================
-       HERO · HeroAtmosphere, matches home / pricing / warmup / campaigns
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Sending engine
-        </span>
-        Distributed across many machines, many IPs
-      </div>
-
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        Many mailboxes.<br/>Many workers. Many IPs.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Not a glorified SMTP relay. The control plane decides what to send. Workers spread sends across machines and IPs so no single point becomes a reputation liability.
-      </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Connect a mailbox</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="#anatomy" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          See the architecture
-        </a>
-      </div>
-    </div>
-  </section>
-
-
-  <!-- ============================================================
-       ANATOMY · big architecture diagram as the centerpiece
-  ============================================================ -->
-  <section id="anatomy" class="border-b border-[color:var(--border)] bg-white py-20 md:py-28 scroll-mt-4">
-    <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Anatomy</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          The engine, end to end.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          Every component, every link. The backend never talks to a mailbox provider directly. Workers never read from Postgres. Each plane has one job and stays in its lane.
+  <!-- HERO: copy beside the mailbox's Sending tab, today's workday open. -->
+  <section class="container-page pt-14 md:pt-20">
+    <div class="grid items-center gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-14">
+      <div>
+        <div class="text-[14px] text-slate-500">Sending</div>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[60px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">
+          Every mailbox keeps a workday, like the person who owns it.
+        </h1>
+        <p class="mt-6 max-w-xl text-[17px] md:text-[18px] leading-[1.55] text-slate-500">
+          Each mailbox starts at a slightly different time every day, takes a lunch break, spaces its emails unevenly and stops before evening, all in its own timezone. Volume comes from more mailboxes, never from pushing one harder.
         </p>
-      </div>
-
-      <!-- Big architecture SVG -->
-      <div class="rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
-        <div class="px-6 py-3 border-b border-white/10 flex items-center justify-between text-[10.5px] font-mono text-white/55">
-          <span>architecture · v3</span>
-          <span>backend → kafka → workers → providers → receivers</span>
+        <div class="mt-8 flex flex-wrap items-center gap-3">
+          <a href="https://app.warmbly.com/auth/register" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">
+            Start free <Icon name="arrowRight" size={14} />
+          </a>
+          <a href="https://docs.warmbly.com/guides/sending-behavior/" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">
+            Read the guide
+          </a>
         </div>
-        <div class="p-6 md:p-10">
-          <svg viewBox="0 0 1000 440" class="w-full h-auto">
-            <defs>
-              <linearGradient id="archLine" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.7"/>
-                <stop offset="100%" stop-color="#7dd3fc" stop-opacity="0.2"/>
-              </linearGradient>
-            </defs>
-
-            <!-- Lane labels -->
-            <text x="100" y="24" fill="#7dd3fc" font-size="10" font-family="ui-monospace,monospace" letter-spacing="2">CONTROL PLANE</text>
-            <text x="500" y="24" fill="#7dd3fc" font-size="10" font-family="ui-monospace,monospace" letter-spacing="2">EXECUTION PLANE</text>
-            <text x="820" y="24" fill="#7dd3fc" font-size="10" font-family="ui-monospace,monospace" letter-spacing="2">RECEIVERS</text>
-
-            <!-- Backend -->
-            <rect x="40" y="50" width="180" height="60" rx="8" fill="rgba(255,255,255,0.05)" stroke="#7dd3fc" stroke-opacity="0.45"/>
-            <text x="130" y="75" text-anchor="middle" fill="white" font-size="13" font-weight="600">Backend (REST)</text>
-            <text x="130" y="92" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">cmd/backend</text>
-
-            <!-- Postgres -->
-            <rect x="40" y="140" width="180" height="50" rx="8" fill="rgba(255,255,255,0.05)" stroke="#7dd3fc" stroke-opacity="0.3"/>
-            <text x="130" y="162" text-anchor="middle" fill="white" font-size="12" font-weight="600">Postgres</text>
-            <text x="130" y="178" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">campaigns · contacts · auth</text>
-
-            <!-- Consumer -->
-            <rect x="40" y="220" width="180" height="50" rx="8" fill="rgba(255,255,255,0.05)" stroke="#7dd3fc" stroke-opacity="0.3"/>
-            <text x="130" y="242" text-anchor="middle" fill="white" font-size="12" font-weight="600">Consumer</text>
-            <text x="130" y="258" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">cmd/consumer</text>
-
-            <!-- Kafka spine -->
-            <rect x="290" y="50" width="100" height="340" rx="8" fill="rgba(14,165,233,0.08)" stroke="#0ea5e9" stroke-opacity="0.5"/>
-            <text x="340" y="78" text-anchor="middle" fill="#7dd3fc" font-size="11" font-family="ui-monospace,monospace" letter-spacing="1.5">KAFKA</text>
-            <text x="340" y="120" text-anchor="middle" fill="#cbd5e1" font-size="10" font-family="ui-monospace,monospace">worker.commands.*</text>
-            <text x="340" y="140" text-anchor="middle" fill="#cbd5e1" font-size="10" font-family="ui-monospace,monospace">worker.results.*</text>
-            <text x="340" y="160" text-anchor="middle" fill="#cbd5e1" font-size="10" font-family="ui-monospace,monospace">tracking.events</text>
-            <text x="340" y="180" text-anchor="middle" fill="#cbd5e1" font-size="10" font-family="ui-monospace,monospace">deliverability</text>
-
-            <!-- Workers column -->
-            {[80, 170, 260, 350].map((y, i) => (
-              <g>
-                <rect x="450" y={y} width="200" height="60" rx="8" fill="rgba(255,255,255,0.05)" stroke="#7dd3fc" stroke-opacity="0.35"/>
-                <circle cx="467" cy={y + 18} r="3" fill="#10b981"/>
-                <text x="482" y={y + 21} fill="white" font-size="12" font-weight="600" font-family="ui-monospace,monospace">worker-{String(i + 1).padStart(2, '0')}</text>
-                <text x="467" y={y + 38} fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">192.0.2.{14 + i * 14} · {7 + i} mailboxes</text>
-                <text x="467" y={y + 52} fill="#64748b" font-size="9" font-family="ui-monospace,monospace">+ Redis · KMS · S3</text>
-              </g>
-            ))}
-
-            <!-- Providers -->
-            {[
-              { y: 80,  name: 'Gmail API',      color: '#ea4335' },
-              { y: 170, name: 'Graph API',      color: '#0078d4' },
-              { y: 260, name: 'SMTP / IMAP',    color: '#0ea5e9' },
-              { y: 350, name: 'iCloud / Zoho',  color: '#7c3aed' },
-            ].map((p, i) => (
-              <g>
-                <rect x="730" y={p.y} width="220" height="60" rx="8" fill="rgba(255,255,255,0.04)" stroke="#7dd3fc" stroke-opacity="0.25"/>
-                <circle cx="747" cy={p.y + 18} r="3" fill={p.color}/>
-                <text x="762" y={p.y + 21} fill="white" font-size="12" font-weight="600" font-family="ui-monospace,monospace">{p.name}</text>
-                <text x="747" y={p.y + 38} fill="#94a3b8" font-size="10" font-family="ui-monospace,monospace">OAuth · refresh tokens</text>
-                <text x="747" y={p.y + 52} fill="#64748b" font-size="9" font-family="ui-monospace,monospace">→ Gmail · Outlook · receivers</text>
-              </g>
-            ))}
-
-            <!-- Lines: backend/consumer ↔ kafka -->
-            <line x1="220" y1="80" x2="290" y2="120" stroke="url(#archLine)" stroke-width="1.5"/>
-            <line x1="220" y1="245" x2="290" y2="220" stroke="url(#archLine)" stroke-width="1.5"/>
-            <line x1="220" y1="165" x2="290" y2="220" stroke="#7dd3fc" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3 4"/>
-
-            <!-- Lines: kafka ↔ workers -->
-            {[110, 200, 290, 380].map((y, i) => (
-              <g>
-                <line x1="390" y1={200} x2="450" y2={y} stroke="url(#archLine)" stroke-width="1.5"/>
-                <circle r="2.5" fill="#7dd3fc" opacity="0.95">
-                  <animateMotion dur={`${3 + i * 0.3}s`} repeatCount="indefinite" begin={`${i * 0.5}s`}
-                    path={`M 390 200 L 450 ${y}`}/>
-                </circle>
-              </g>
-            ))}
-
-            <!-- Lines: workers → providers -->
-            {[110, 200, 290, 380].map((y) => (
-              <g>
-                <line x1="650" y1={y} x2="730" y2={y} stroke="#7dd3fc" stroke-opacity="0.4" stroke-width="1.5"/>
-                <circle r="2.5" fill="#0ea5e9">
-                  <animateMotion dur="2.5s" repeatCount="indefinite"
-                    path={`M 650 ${y} L 730 ${y}`}/>
-                </circle>
-              </g>
-            ))}
-          </svg>
-        </div>
-      </div>
-
-      <!-- Annotation legend -->
-      <div class="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-[12.5px]">
-        {[
-          { c: '#7dd3fc', t: 'Control plane',   d: 'Owns Postgres. Decides assignment. Never sends mail.' },
-          { c: '#0ea5e9', t: 'Kafka spine',     d: 'Per-worker command + result topics. Replayable.' },
-          { c: '#10b981', t: 'Execution plane', d: 'Disposable workers. One IP each. No SQL connection.' },
-        ].map((l) => (
-          <div class="flex items-baseline gap-3">
-            <span class="w-2 h-2 rounded-full mt-1.5 shrink-0" style={`background: ${l.c}`}></span>
-            <div>
-              <div class="text-foreground font-semibold">{l.t}</div>
-              <div class="text-foreground/60">{l.d}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================
-       TRACE A SINGLE SEND · timeline with timestamps + actors
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Trace a single send</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          318ms from queue to 200 OK.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          One message, every handoff. Latencies here are illustrative for a Gmail mailbox connected with Google sign-in, on a warm worker; one connected with an app password takes the SMTP path at the same points. Real traces are visible in the per-mailbox event view.
-        </p>
-      </div>
-
-      <!-- Trace timeline -->
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <div class="px-6 py-3 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex items-center justify-between text-[10.5px] font-mono text-muted-foreground">
-          <span>trace · msg_01HQX9F7P3A8KY2NJM4R6BWT0S</span>
-          <span>mailbox: ben@acme.com · worker: w-01</span>
-        </div>
-
-        <div class="relative">
-          <!-- Vertical spine -->
-          <div class="absolute left-[110px] top-6 bottom-6 w-px bg-[color:var(--border)]"></div>
-
-          {trace.map((s, i) => (
-            <div class="grid grid-cols-[90px_30px_120px_1fr] gap-4 px-6 py-4 border-b border-[color:var(--border)] last:border-b-0 items-baseline">
-              <div class="font-mono text-[11.5px] text-foreground/65">{s.t}</div>
-              <div class="relative flex justify-center pt-1">
-                <span class={`relative w-2.5 h-2.5 rounded-full ${i === trace.length - 1 ? 'bg-emerald-500' : 'bg-[#0284c7]'} ring-4 ring-white`}></span>
-              </div>
-              <div>
-                <div class="text-[12px] font-mono uppercase tracking-[0.14em] text-foreground/55">{s.actor}</div>
-                <div class="mt-0.5 text-[13.5px] font-semibold text-heading">{s.stage}</div>
-              </div>
-              <div class="text-[13px] text-foreground/70 leading-relaxed">{s.body}</div>
+        <div class="mt-12 grid max-w-xl grid-cols-3 border-y border-slate-200">
+          {heroStats.map((s, i) => (
+            <div class={`py-4 ${i ? 'border-l border-slate-200 pl-4 md:pl-5' : 'pr-4'}`}>
+              <p class="text-[19px] sm:text-[22px] md:text-[26px] font-light leading-none tracking-[-0.02em] text-slate-900 tabular-nums">{s.v}</p>
+              <p class="mt-2 text-[12.5px] md:text-[13.5px] leading-snug text-slate-500">{s.k}</p>
             </div>
           ))}
         </div>
+        <p class="mt-3 text-[13px] text-slate-400">The defaults for a newly connected mailbox. Change any of them.</p>
+      </div>
+      <WorkdayScene />
+    </div>
+  </section>
 
-        <div class="px-6 py-3 border-t border-[color:var(--border)] bg-[color:var(--surface-1)]/60 flex flex-wrap items-center justify-between gap-2 text-[11.5px] font-mono">
-          <span class="text-muted-foreground">total: 326ms · 7 handoffs · 1 provider call</span>
-          <span class="inline-flex items-center gap-1.5 text-emerald-700">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            delivered
-          </span>
+  <!-- RANGES: the form the day is rolled from. -->
+  <Rule class="mt-20" />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[1.15fr_1fr] lg:gap-16">
+      <div class="order-2 lg:order-1"><RangesScene /></div>
+      <div class="order-1 lg:order-2">
+        <SectionIntro lead="Ranges, not fixed values." title="A new workday is rolled every morning." text="You set ranges once. Each day the mailbox picks its hours, break, target and spacing from them and keeps to that day, so a retry or a busy campaign never re-rolls it. Edits apply from the next local day." />
+        <dl class="mt-8 max-w-xl divide-y divide-slate-200 border-y border-slate-200">
+          {ranges.map(([k, v]) => (
+            <div class="grid gap-1 py-3.5 sm:grid-cols-[150px_1fr] sm:gap-6">
+              <dt class="text-[15px] font-medium text-slate-900">{k}</dt>
+              <dd class="text-[15px] leading-[1.55] text-slate-500">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- THREE CLOCKS: send-time optimization, and where the calendars overlap. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[1fr_1.15fr] lg:gap-16">
+      <div>
+        <SectionIntro lead="Three clocks." title="An email goes out only when every clock agrees." text="The campaign has its sending window, the mailbox has its workday, and with send-time optimization on, the recipient has their own local hours. Warmbly waits for the moment all of them allow, and never sends outside them to catch up." />
+        <div class="mt-8 max-w-xl">
+          <div class="text-[13px] text-slate-400">How a recipient’s timezone is worked out</div>
+          <ol class="mt-3 divide-y divide-slate-200 border-y border-slate-200">
+            {timezones.map(([n, v]) => (
+              <li class="flex gap-4 py-3.5">
+                <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[12px] font-medium text-slate-600 tabular-nums">{n}</span>
+                <span class="text-[15px] leading-[1.55] text-slate-600">{v}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
+      <ClocksScene />
     </div>
   </section>
 
-  <!-- ============================================================
-       SCALING STORY · 3 progressive scenarios
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Scaling</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Volume scales by adding mailboxes.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          Not by cranking a few. Each scenario keeps every mailbox at the default cap. When one worker fills with mailboxes, the next worker takes the next batch.
-        </p>
-      </div>
-
-      <div class="grid md:grid-cols-3 gap-4 lg:gap-5">
-        {scenarios.map((s) => (
-          <div class={`relative rounded-[14px] bg-white overflow-hidden ${s.featured ? 'ring-2 ring-[#0284c7]/35 shadow-[0_24px_48px_-20px_rgba(2,132,199,0.3)]' : 'ring-1 ring-[color:var(--border)]'}`}>
-            <div class="h-1.5" style={`background: ${s.featured ? '#0284c7' : '#e6ebf2'}`}></div>
-            <div class="p-6">
-              <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">{s.label}</div>
-              <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-5 border-b border-[color:var(--border)]">
-                <div>
-                  <div class="text-[22px] font-semibold tracking-[-0.02em] text-heading font-mono">{s.mailboxes}</div>
-                  <div class="mt-0.5 text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground">mailboxes</div>
-                </div>
-                <div>
-                  <div class="text-[22px] font-semibold tracking-[-0.02em] text-heading font-mono">{s.workers}</div>
-                  <div class="mt-0.5 text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground">workers</div>
-                </div>
-                <div>
-                  <div class={`text-[22px] font-semibold tracking-[-0.02em] font-mono ${s.featured ? 'text-[#0369a1]' : 'text-heading'}`}>{s.daily.toLocaleString()}</div>
-                  <div class="mt-0.5 text-[10px] uppercase tracking-[0.16em] font-mono text-muted-foreground">cold / day</div>
-                </div>
-              </div>
-              <!-- Mailbox dot grid -->
-              <div class="mt-4">
-                <div class="flex flex-wrap gap-1">
-                  {Array.from({ length: Math.min(s.mailboxes, 50) }).map(() => (
-                    <span class={`w-2 h-2 rounded-sm ${s.featured ? 'bg-[#0284c7]' : 'bg-slate-400'}`} style="opacity:0.7"></span>
-                  ))}
-                  {s.mailboxes > 50 && (
-                    <span class="text-[10px] font-mono text-muted-foreground self-center ml-1">+{s.mailboxes - 50}</span>
-                  )}
-                </div>
-              </div>
-              <p class="mt-4 text-[12.5px] text-foreground/65 leading-relaxed">{s.note}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+  <!-- THE PATH: who actually delivers the email, wide. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-end gap-6 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
+      <SectionIntro lead="The path." title="Your provider delivers your email, not ours." />
+      <p class="text-[16px] md:text-[18px] leading-[1.6] text-slate-500">Warmbly’s workers sign in to your mailbox at Google, Microsoft or your SMTP host and hand the email over. Your provider delivers it from its own servers, so recipients judge your mailbox and your domain, not our infrastructure.</p>
+    </div>
+    <div class="mt-12 md:mt-14">
+      <PathScene />
+    </div>
+    <div class="mt-10 grid gap-8 md:grid-cols-3 md:gap-10">
+      {path.map((p) => (
+        <div class="border-t border-slate-200 pt-5">
+          <h3 class="text-[17px] font-medium tracking-[-0.01em] text-slate-900">{p.t}</h3>
+          <p class="mt-2 text-[15px] leading-[1.6] text-slate-500">{p.d}</p>
+        </div>
+      ))}
     </div>
   </section>
 
-  <!-- ============================================================
-       PROVIDERS · compact
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/40 py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-10">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Providers</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Gmail in three steps. Native Outlook. SMTP for the rest.
-        </h2>
+  <!-- VOLUME: a campaign's day is its mailboxes' days added up. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid items-center gap-12 lg:grid-cols-[1.15fr_1fr] lg:gap-16">
+      <div class="order-2 lg:order-1"><VolumeScene /></div>
+      <div class="order-1 lg:order-2">
+        <SectionIntro lead="Volume." title="More mailboxes, never one mailbox pushed harder." text="Every mailbox has its own cap and its own workday, and a campaign’s day is the sum of them. A second healthy mailbox roughly doubles how fast a campaign works through its leads, while each one stays inside its own limits." />
+        <a href="/blog/how-many-mailboxes-and-domains-cold-email/" class="group mt-6 inline-flex items-center gap-2 text-[16px] text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">
+          How many mailboxes you need
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform group-hover:translate-x-0.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </a>
       </div>
-
-      <div class="grid md:grid-cols-3 gap-4">
-        {providers.map((p) => (
-          <div class="rounded-[12px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-            <div class="h-1" style={`background:${p.accent}`}></div>
-            <div class="p-6">
-              <div class="text-[10.5px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">{p.tag}</div>
-              <div class="text-[16px] font-semibold text-heading">{p.name}</div>
-              <p class="mt-2 text-[12.5px] text-foreground/65 leading-relaxed">{p.body}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+    </div>
+    <div class="mt-16 grid grid-cols-2 gap-px border-y border-slate-200 bg-slate-200 lg:grid-cols-4">
+      {limits.map((l, i) => (
+        <div class={`bg-white py-6 pr-5 ${i ? "pl-5" : ""}`}>
+          <p class="text-[32px] md:text-[40px] font-light leading-none tracking-[-0.03em] text-slate-900 tabular-nums">{l.v}</p>
+          <p class="mt-3 max-w-[30ch] text-[14px] leading-snug text-slate-500">{l.k}</p>
+        </div>
+      ))}
     </div>
   </section>
 
-  <!-- ============================================================
-       FAQ · grid-rows accordion
-  ============================================================ -->
-  <section class="bg-white py-20 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.8fr] gap-12 lg:gap-20 items-start">
-      <div class="lg:sticky lg:top-24" style="align-self: start;">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-muted-foreground mb-3">FAQ</div>
-        <h2 class="text-[28px] md:text-[36px] font-semibold tracking-[-0.025em] leading-[1.08] text-heading">
-          Four engine questions.
-        </h2>
-      </div>
-      <div class="divide-y divide-[color:var(--border)]" data-faq>
-        {faq.map(([q, a]) => (
-          <div class="faq-row py-2">
-            <button type="button" class="faq-trigger group w-full flex items-start justify-between gap-4 py-3 text-left" aria-expanded="false">
-              <span class="text-[15.5px] font-medium text-heading group-hover:text-[#0369a1] transition-colors">{q}</span>
-              <span class="faq-icon shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)] text-foreground/60 transition-transform duration-300 ease-out">
-                <Icon name="plus" size={12} />
-              </span>
-            </button>
-            <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
-              <div class="overflow-hidden">
-                <p class="pb-4 pr-12 text-[14px] text-foreground/75 leading-relaxed max-w-2xl">{a}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <script is:inline>
-        (function () {
-          const faq = document.querySelector('[data-faq]');
-          if (!faq) return;
-          faq.querySelectorAll('.faq-trigger').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-              const row   = btn.closest('.faq-row');
-              const panel = row.querySelector('.faq-panel');
-              const icon  = btn.querySelector('.faq-icon');
-              const open  = btn.getAttribute('aria-expanded') === 'true';
-              btn.setAttribute('aria-expanded', String(!open));
-              panel.style.gridTemplateRows = open ? '0fr' : '1fr';
-              if (icon) icon.style.transform = open ? 'rotate(0deg)' : 'rotate(45deg)';
-            });
-          });
-        })();
-      </script>
-    </div>
-  </section>
+  <Rule />
+  <Faq items={faq} title="Sending, answered." />
 
   <PillarPosts
     title="Sending, in more depth"
@@ -420,10 +189,5 @@ const faq = [
     ]}
   />
 
-  <CTA
-    title="Connect a mailbox. Send your first campaign today."
-    description="Connect Gmail with an app password or Outlook with one sign-in. Worker assignment is automatic."
-    primaryLabel="Start free"
-    primaryHref="https://app.warmbly.com/auth/register"
-  />
+  <CTA photo="lake-motion" title="Give your mailboxes a human workday." description="Connect a mailbox and it starts with a sensible workday, ready to change whenever you like." />
 </Layout>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import useBrowseState from "@/hooks/useBrowseState";
+import { useAccessRestricted } from "@/hooks/usePermission";
 import { campaignPeriodSchema, hiddenMetricsSchema } from "@/lib/browse-contacts-campaigns";
 import {
     MailCheckIcon,
@@ -53,6 +54,8 @@ function num(v: number | undefined): string {
 export default function CampaignOverview() {
     const campaign = useCampaign();
     const id = campaign?.id ?? "";
+    // The send plan names mailboxes and the forms panel reads contacts, neither in a restricted scope.
+    const restricted = useAccessRestricted();
 
     // One period drives every figure on the page: summary, steps, engagement
     // and the chart all read the same sends.
@@ -164,7 +167,7 @@ export default function CampaignOverview() {
             {/* What will actually go out today and every limit that decided
                 it, read through the scheduler's own gates. This is the number
                 the caps added up used to misstate (issue #606). */}
-            <SendPlanCard campaignId={id} />
+            {!restricted && <SendPlanCard campaignId={id} />}
 
             <div className="grid lg:grid-cols-[1fr_340px] gap-5 items-start">
                 {/* Main analytics column */}
@@ -374,7 +377,7 @@ export default function CampaignOverview() {
 
                     <EngagementAudience breakdown={analytics.data?.engagement ?? null} loading={loading} scoped={!allTime} />
 
-                    <CampaignFormsPanel campaignId={id} />
+                    {!restricted && <CampaignFormsPanel campaignId={id} />}
 
                     {/* quick breakdown strip below sequence table, mobile-friendly summary */}
                     <div className="rounded-md border border-slate-200 overflow-hidden bg-white lg:hidden">

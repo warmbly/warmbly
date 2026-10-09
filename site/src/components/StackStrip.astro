@@ -1,0 +1,89 @@
+---
+import { BRAND_ICON } from '../lib/brandIcons';
+import { RAW_BRAND_LOGOS } from '../lib/brandLogos';
+
+/**
+ * The integrations automations can reach, shown inside the Automations
+ * section as two slow rows of flat grey
+ * marks drifting in opposite directions; a mark takes its colour on hover.
+ * Each action follows docs/content/docs/guides/integrations.mdx.
+ */
+const items = [
+  { brand: 'slack', name: 'Slack', does: 'Reply from a channel' },
+  { brand: 'hubspot', name: 'HubSpot', does: 'Run your pipeline' },
+  { brand: 'salesforce', name: 'Salesforce', does: 'Two-way sync' },
+  { brand: 'pipedrive', name: 'Pipedrive', does: 'Create people on reply' },
+  { brand: 'close', name: 'Close', does: 'Create leads on reply' },
+  { brand: 'discord', name: 'Discord', does: 'Ping a channel' },
+  { brand: 'zapier', name: 'Zapier', does: 'Send events anywhere' },
+  { brand: 'make', name: 'Make', does: 'Start a scenario' },
+  { brand: 'n8n', name: 'n8n', does: 'Trigger a workflow' },
+  { brand: 'calendly', name: 'Calendly', does: 'Log booked calls' },
+  { brand: 'cal_com', name: 'Cal.com', does: 'Log booked calls' },
+  { brand: 'millionverifier', name: 'MillionVerifier', does: 'Verify addresses' },
+];
+
+// A mark drawn on its own coloured tile (Pipedrive) is shown as the app draws
+// it, web/src/components/app/crm/crmProviders.tsx: the rounded tile with the
+// glyph knocked out in white. It is greyed without flattening, so the glyph stays.
+const glyph = (brand: string) => {
+  const raw = RAW_BRAND_LOGOS[brand];
+  if (!raw) return null;
+  if (!raw.fullBleed) return raw;
+  return { ...raw, inner: raw.inner.replace(/<rect /, '<rect rx="64" ') };
+};
+
+const rows = [items.slice(0, 6), items.slice(6)];
+
+---
+<div class="mt-16 md:mt-20 text-center text-[13px] text-slate-400">Works with the tools you already use</div>
+<div class="stack-rows mt-8 space-y-8 md:space-y-10">
+    {rows.map((row, r) => (
+      <div class="stack-row overflow-hidden">
+        <ul class={`stack-track flex w-max ${r ? 'stack-reverse' : ''}`}>
+          {[...row, ...row].map((it, i) => {
+            const raw = glyph(it.brand);
+            const icon = BRAND_ICON[it.brand];
+            return (
+              <li class="stack-item flex shrink-0 items-center gap-3.5 px-8 md:px-11" aria-hidden={i >= row.length ? 'true' : undefined}>
+                <span class={`stack-mark inline-flex size-9 items-center justify-center ${raw?.fullBleed ? 'stack-mark-tile' : ''}`}>
+                  {raw ? (
+                    <svg width="32" height="32" viewBox={raw.viewBox} aria-hidden="true" set:html={raw.inner} />
+                  ) : icon ? (
+                    <svg width="30" height="30" viewBox="0 0 24 24" fill={icon.hex} aria-hidden="true"><path d={icon.path} /></svg>
+                  ) : null}
+                </span>
+                <span class="text-left">
+                  <span class="block text-[15px] leading-tight text-slate-700">{it.name}</span>
+                  <span class="block text-[13px] leading-tight text-slate-400">{it.does}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    ))}
+</div>
+
+<style>
+  .stack-row {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  }
+  .stack-track { animation: stack-drift 60s linear infinite; }
+  .stack-reverse { animation-direction: reverse; animation-duration: 70s; }
+  .stack-row:hover .stack-track { animation-play-state: paused; }
+  @keyframes stack-drift { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+  /* Flat grey marks; each takes its own colours on hover. */
+  .stack-mark { filter: grayscale(1) contrast(0) brightness(1.1); opacity: 0.85; transition: filter 300ms ease, opacity 300ms ease; }
+  /* A tile mark keeps its knocked-out glyph: grey it, don't flatten it. */
+  .stack-mark-tile { filter: grayscale(1) brightness(1.45); }
+  .stack-item:hover .stack-mark { filter: none; opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stack-row { -webkit-mask-image: none; mask-image: none; }
+    .stack-track { animation: none; flex-wrap: wrap; justify-content: center; width: auto; row-gap: 1.5rem; }
+    .stack-track > [aria-hidden='true'] { display: none; }
+  }
+</style>

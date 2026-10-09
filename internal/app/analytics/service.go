@@ -744,9 +744,12 @@ func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid
 			return nil, xerr
 		}
 	}
+	if filter.AllowedCampaigns != nil {
+		scope = withinCampaigns(scope, filter.AllowedCampaigns)
+	}
 
 	// Get overall stats
-	overallStats, xerr := s.analyticsRepo.GetDashboardOverallStats(ctx, orgID, from, to, scope)
+	overallStats, xerr := s.analyticsRepo.GetDashboardOverallStats(ctx, orgID, from, to, scope, filter.AllowedMailboxes)
 	if xerr != nil {
 		return nil, xerr
 	}
@@ -764,7 +767,7 @@ func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid
 	}
 
 	// Get account health summary
-	accountHealth, xerr := s.analyticsRepo.GetAccountHealthSummary(ctx, orgID)
+	accountHealth, xerr := s.analyticsRepo.GetAccountHealthSummary(ctx, orgID, filter.AllowedMailboxes)
 	if xerr != nil {
 		accountHealth = &models.AccountHealthSummary{}
 	}
@@ -784,6 +787,24 @@ func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid
 		DailyTrend:     dailyTrend,
 		Scope:          view,
 	}, nil
+}
+
+// withinCampaigns narrows scope to allowed; a nil scope becomes allowed itself.
+func withinCampaigns(scope *models.CampaignScope, allowed []uuid.UUID) *models.CampaignScope {
+	if scope == nil {
+		return &models.CampaignScope{CampaignIDs: append([]uuid.UUID{}, allowed...)}
+	}
+	keep := make(map[uuid.UUID]bool, len(allowed))
+	for _, id := range allowed {
+		keep[id] = true
+	}
+	out := &models.CampaignScope{CampaignIDs: []uuid.UUID{}}
+	for _, id := range scope.CampaignIDs {
+		if keep[id] {
+			out.CampaignIDs = append(out.CampaignIDs, id)
+		}
+	}
+	return out
 }
 
 func (s *analyticsService) GetCampaignHourlyStats(ctx context.Context, orgID, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error) {

@@ -1,0 +1,123 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import BrandMark from '../../page/BrandMark.astro';
+import Ico from '../analytics/Ico.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * HubSpot mode after setup (web/src/app/app/integrations/_crm/CrmSettings):
+ * the account header and Sync health, its counts, the changes on their way,
+ * and when each kind of record was last pulled. Over it, the field mapping
+ * from the Contacts and fields card, a direction per field.
+ */
+const counts = [
+  ['Contacts linked', '2,418'],
+  ['Deals', '312'],
+  ['Tasks', '96'],
+  ['Pipelines', '3'],
+  ['Owners', '8'],
+];
+const pulls = [
+  ['Deals', '42s ago'],
+  ['Tasks', '42s ago'],
+  ['Owners', '12m ago'],
+];
+const map = [
+  { field: 'First name', prop: 'First name', key: 'firstname', dir: 'Most recent', icon: 'arrowLeftRight' },
+  { field: 'Phone', prop: 'Phone number', key: 'phone', dir: 'HubSpot wins', icon: 'arrowLeft' },
+  { field: 'team_size', custom: true, prop: 'Team size', key: 'team_size', dir: 'Warmbly wins', icon: 'arrowRight' },
+];
+const sel = 'h-7 px-2 rounded-md border border-slate-200 bg-white text-[12px] text-slate-800 flex items-center gap-1.5 min-w-0';
+---
+<ScaledStage w={760} h={570} photo="sheer-peach">
+  <div class={`${WINDOW} left-[40px] top-[40px] right-0 h-[530px] bg-slate-50/60`}>
+    <div class="px-5 py-5 space-y-4">
+      <div>
+        <div class="mb-2 -ml-1.5 inline-flex h-6 items-center gap-1 px-1.5 text-[11.5px] text-slate-500"><Ico name="arrowLeft" size={12} />Integrations</div>
+        <div class="flex items-start gap-3">
+          <span class="inline-flex size-10 items-center justify-center rounded-lg bg-orange-50"><BrandMark name="hubspot" size={30} class="bg-transparent ring-0" /></span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <div class="text-[18px] font-semibold tracking-tight text-slate-900">HubSpot</div>
+              <span class="inline-flex h-5 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span>Your CRM</span>
+              <span class="inline-flex items-center gap-1 text-[11px] text-slate-400"><Ico name="check" size={12} />Saved</span>
+            </div>
+            <p class="text-[12px] text-slate-500">Northwind Inc <span class="text-slate-400">· Portal 4410293</span></p>
+            <span class="mt-0.5 inline-flex items-center gap-1 text-[11px] text-slate-400"><BrandMark name="hubspot" size={12} class="bg-transparent ring-0" />Synced with HubSpot · just now</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] text-slate-700 inline-flex items-center gap-1.5"><Ico name="refreshCw" size={12} />Sync now</span>
+            <span class="h-7 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] text-slate-700 inline-flex items-center gap-1.5"><BrandMark name="hubspot" size={12} class="bg-transparent ring-0" />Open HubSpot<Ico name="externalLink" size={12} class="opacity-60" /></span>
+          </div>
+        </div>
+      </div>
+
+      <section class="rounded-md border border-slate-200 bg-white">
+        <header class="border-b border-slate-200 px-4 py-3">
+          <h3 class="text-[12.5px] font-semibold text-slate-900">Sync health</h3>
+          <p class="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">Warmbly sends its changes to HubSpot as they happen and pulls HubSpot's changes back on its own.</p>
+        </header>
+        <div class="space-y-4 px-4 py-4">
+          <div class="grid grid-cols-5 gap-px overflow-hidden rounded-md border border-slate-200 bg-slate-200/70">
+            {counts.map(([k, v]) => (
+              <div class="bg-white px-3 py-2.5">
+                <div class="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">{k}</div>
+                <div class="mt-0.5 text-[16px] font-semibold tabular-nums text-slate-900">{v}</div>
+              </div>
+            ))}
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="hs-wait inline-flex h-6 items-center gap-1 rounded-md bg-sky-50 px-2 text-[11.5px] font-medium tabular-nums text-sky-700"><span class="hs-spin size-3 rounded-full border-[1.5px] border-sky-200 border-t-sky-600"></span>3 changes waiting</span>
+            <span class="inline-flex h-6 items-center rounded-md bg-slate-100 px-2 text-[11.5px] font-medium text-slate-600">0 failures</span>
+            <span class="inline-flex h-6 items-center rounded-md bg-emerald-50 px-2 text-[11.5px] font-medium tabular-nums text-emerald-700"><span data-tick="842,868,1900">842</span>&nbsp;changes synced in the last 24 hours</span>
+          </div>
+          <div class="space-y-1.5">
+            <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Pulled from HubSpot</div>
+            <div class="divide-y divide-slate-100 rounded-md border border-slate-200">
+              {pulls.map(([k, v]) => (
+                <div class="flex items-center gap-3 px-3 py-1.5 text-[12px]"><span class="w-28 text-slate-800">{k}</span><span class="tabular-nums text-slate-500">{v}</span></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Contacts and fields: which side wins for each mapped field. -->
+  <div class={`${FLOAT} left-[268px] top-[318px] w-[472px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+      <span class="text-[12.5px] font-semibold text-slate-900">Field mapping</span>
+      <span class="text-[11.5px] text-slate-500">Contacts and fields</span>
+    </div>
+    <div class="px-4 pt-2.5 pb-3">
+      <div class="grid grid-cols-[minmax(0,1fr)_20px_minmax(0,1.25fr)_118px] items-center gap-2 px-1 pb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
+        <span>Warmbly</span><span></span><span class="inline-flex items-center gap-1"><BrandMark name="hubspot" size={12} class="bg-transparent ring-0" />HubSpot property</span><span>When both change</span>
+      </div>
+      <div class="divide-y divide-slate-100 rounded-md border border-slate-200">
+        <div class="grid grid-cols-[minmax(0,1fr)_20px_minmax(0,1.25fr)_118px] items-center gap-2 px-3 py-1.5">
+          <span class="inline-flex items-center gap-1.5 text-[12.5px] text-slate-900"><Ico name="mail" size={12} class="text-slate-400" />Email</span>
+          <Ico name="arrowLeftRight" size={12} class="text-slate-300" />
+          <span class="text-[12px] text-slate-600">Email</span>
+          <span class="text-[11px] text-slate-400">Contacts are matched by email</span>
+        </div>
+        {map.map((m) => (
+          <div class="grid grid-cols-[minmax(0,1fr)_20px_minmax(0,1.25fr)_118px] items-center gap-2 px-3 py-1.5">
+            <span class="flex items-center gap-2 min-w-0"><span class="truncate text-[12.5px] text-slate-900">{m.field}</span>{m.custom && <span class="text-[10px] text-slate-400">custom</span>}</span>
+            <Ico name={m.icon} size={12} class="text-slate-400" />
+            <span class={sel}><span class="truncate">{m.prop}</span><Ico name="chevronDown" size={12} class="ml-auto text-slate-400" /></span>
+            <span class={sel}>{m.dir}<Ico name="chevronDown" size={12} class="ml-auto text-slate-400" /></span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* Changes leave for HubSpot as they happen: the waiting chip comes and goes. */
+  .hs-spin { animation: hs-spin 0.8s linear infinite; }
+  @keyframes hs-spin { to { transform: rotate(360deg); } }
+  .hs-wait { animation: hs-wait 7s ease-in-out infinite; }
+  @keyframes hs-wait { 0%, 60% { opacity: 1; } 70%, 85% { opacity: 0.35; } 95%, 100% { opacity: 1; } }
+</style>

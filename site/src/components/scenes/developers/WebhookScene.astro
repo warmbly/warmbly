@@ -1,0 +1,126 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import { WINDOW, TAB } from '../../../lib/scene';
+
+/**
+ * A webhook endpoint's drawer on its Deliveries tab
+ * (web/src/app/app/settings/webhooks/page.tsx: EndpointDrawer, DeliveryRow):
+ * every attempt with its status, response code and attempt count, one opened
+ * to its payload. A new delivery lands on top on a loop. The receiving end's
+ * signature check floats beside it.
+ */
+type Row = { ev: string; status: 'delivered' | 'failed' | 'pending'; code?: number; att: string; when: string; open?: boolean };
+const incoming: Row = { ev: 'campaign.reply_received', status: 'delivered', code: 200, att: '1/8', when: 'just now' };
+const rows: Row[] = [
+  { ev: 'meeting.booked', status: 'delivered', code: 200, att: '1/8', when: '4m ago' },
+  { ev: 'contact.created', status: 'delivered', code: 200, att: '1/8', when: '12m ago' },
+  { ev: 'campaign.unsubscribed', status: 'failed', code: 503, att: '2/8', when: '18m ago' },
+  { ev: 'campaign.reply_received', status: 'delivered', code: 200, att: '1/8', when: '26m ago', open: true },
+  { ev: 'crm.deal_updated', status: 'delivered', code: 200, att: '1/8', when: '41m ago' },
+  { ev: 'form.submitted', status: 'delivered', code: 200, att: '1/8', when: '1h ago' },
+];
+const tone = {
+  delivered: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  failed: 'bg-amber-50 text-amber-700 border-amber-100',
+  pending: 'bg-slate-100 text-slate-600 border-slate-200',
+};
+const tabs = [
+  { label: 'Overview', icon: 'gauge' },
+  { label: 'Deliveries', icon: 'activity', active: true },
+  { label: 'Settings', icon: 'settings' },
+] as const;
+const select = 'h-7 rounded-md border border-slate-200 bg-white px-2 inline-flex items-center gap-1.5 text-[12px] text-slate-700';
+const payload = `{
+  "id": "e9f8a7b6-c5d4-3e2f-1a0b-9c8d7e6f5a4b",
+  "event_type": "campaign.reply_received",
+  "organization_id": "1f0c7e52-…",
+  "created_at": "2026-10-09T13:36:02Z",
+  "data": { "campaign_id": "4c1d7a90-…", … }
+}`;
+---
+<ScaledStage w={760} h={570} photo="sheer-sky">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[600px] h-[560px]`}>
+    <div class="h-14 px-5 flex items-center gap-3 border-b border-slate-200">
+      <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Glyph name="activity" size={16} /></span>
+      <div class="min-w-0 flex-1">
+        <div class="truncate font-mono text-[13px] font-medium text-slate-900">https://hooks.acme.com/warmbly</div>
+        <div class="text-[10.5px] text-slate-400">Created 3w ago</div>
+      </div>
+      <span class="inline-flex items-center gap-1 rounded-sm border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-emerald-700"><Glyph name="shieldCheck" size={12} />Verified</span>
+      <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="x" size={16} /></span>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="p-4">
+      <div class="flex items-center gap-2">
+        <span class={select}>All statuses<Glyph name="chevronDown" size={11} class="text-slate-400" /></span>
+        <span class={select}>All events<Glyph name="chevronDown" size={11} class="text-slate-400" /></span>
+        <span class="ml-auto inline-flex items-center gap-1.5 text-[10.5px] text-emerald-600"><span class="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Live</span>
+      </div>
+
+      <div class="mt-3 overflow-hidden rounded-md border border-slate-200">
+        <div class="wh-list divide-y divide-slate-100">
+          {[incoming, ...rows].map((r, i) => (
+            <div class={i === 0 ? 'wh-new' : ''}>
+              <div class="flex h-[34px] items-center gap-2 px-2.5">
+                <Glyph name="chevronDown" size={13} class={`shrink-0 text-slate-300 ${r.open ? '' : '-rotate-90'}`} />
+                <span class="min-w-0 flex-1 truncate font-mono text-[11.5px] text-slate-700">{r.ev}</span>
+                <span class={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] ${tone[r.status]}`}>{r.status}</span>
+                <span class={`w-7 text-right font-mono text-[11px] tabular-nums ${r.code && r.code < 300 ? 'text-emerald-600' : 'text-rose-600'}`}>{r.code}</span>
+                <span class="w-7 text-right text-[10.5px] tabular-nums text-slate-400">{r.att}</span>
+                <span class="w-[58px] text-right text-[10.5px] text-slate-400">{r.when}</span>
+              </div>
+              {r.open && (
+                <div class="space-y-2 bg-slate-50/60 px-3 py-2.5">
+                  <div class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Payload</div>
+                  <pre class="rounded-md border border-slate-200 bg-white p-2 font-mono text-[10.5px] leading-[1.55] text-slate-600">{payload}</pre>
+                  <div class="flex items-center justify-between">
+                    <span class="text-[10.5px] text-slate-400">Last attempt 26m ago</span>
+                    <span class="h-7 px-2.5 rounded-md border border-slate-200 bg-white inline-flex items-center gap-1.5 text-[11.5px] text-slate-700"><Glyph name="reply" size={12} />Redeliver</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The receiver's side: the signed request and the check it runs. -->
+  <div class="enter-fade absolute left-[404px] top-[300px] w-[328px]" style="--d:700ms">
+    <div class="float-layer overflow-hidden rounded-[10px] bg-[#0b1020] ring-1 ring-slate-900/20 shadow-[0_30px_70px_-30px_rgba(15,23,42,0.8)]">
+      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2.5 font-mono text-[10.5px]">
+        <span class="text-emerald-400">POST</span><span class="truncate text-white/60">hooks.acme.com/warmbly</span>
+      </div>
+      <pre class="px-4 py-3 font-mono text-[10.5px] leading-[1.7] text-slate-300"><span class="text-white/40">X-Warmbly-Event:</span> campaign.reply_received
+<span class="text-white/40">X-Warmbly-Signature:</span> <span class="text-sky-300">t=1791557762,v1=3f9c2a…</span>
+
+<span class="text-white/40">// verify against the raw body</span>
+<span class="text-violet-300">const</span> signed = <span class="text-amber-200">`${"{"}t{"}"}.${"{"}rawBody{"}"}`</span>;
+<span class="text-violet-300">const</span> expected = hmacSha256(secret, signed);
+<span class="text-violet-300">if</span> (!timingSafeEqual(expected, v1)) reject();</pre>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A 9s loop: a fresh delivery slides in on top (rows are 35px with their divider). */
+  .wh-list { animation: wh-list 9s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes wh-list {
+    0% { transform: translateY(-35px); opacity: 0; }
+    5%, 30% { transform: translateY(-35px); opacity: 1; }
+    38%, 93% { transform: none; opacity: 1; }
+    98%, 100% { transform: none; opacity: 0; }
+  }
+  .wh-new { animation: wh-new 9s ease-out infinite; }
+  @keyframes wh-new { 0%, 34% { background: rgb(240 249 255 / 0); } 40%, 70% { background: rgb(240 249 255); } 90%, 100% { background: rgb(240 249 255 / 0); } }
+</style>

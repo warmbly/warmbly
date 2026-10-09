@@ -1,5 +1,5 @@
 import { NoAccess } from "@/components/layout/NoAccess";
-import { usePermission } from "@/hooks/usePermission";
+import { useAccessRestricted, usePermission } from "@/hooks/usePermission";
 import { useEffect, useMemo } from "react";
 import useBrowseState from "@/hooks/useBrowseState";
 import { useUserProfile } from "@/hooks/context/user";
@@ -66,6 +66,8 @@ function num(v: number | undefined): string {
 
 export default function AnalyticsPage() {
     const canView = usePermission("VIEW_ANALYTICS");
+    // Hand-written mail is reported workspace-wide, outside a restricted scope.
+    const restricted = useAccessRestricted();
     const [range, setRange] = useBrowseState<Range>("analytics.range", "7d", analyticsRange);
     // Legend toggles: every metric charts together; hidden ones drop out.
     const [hiddenMetrics, setHiddenMetrics] = useBrowseState<Metric[]>("analytics.hiddenMetrics", [], analyticsHiddenMetrics);
@@ -276,7 +278,7 @@ export default function AnalyticsPage() {
                         </div>
                     )}
 
-                    <DirectMailSection period={range} unfiltered={scoped} />
+                    {!restricted && <DirectMailSection period={range} unfiltered={scoped} />}
 
                     <SectionBar label="Recent activity" />
                     <PageBody>

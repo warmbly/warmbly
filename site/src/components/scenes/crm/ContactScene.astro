@@ -1,0 +1,172 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic, { type IcName } from '../inbox/Ic.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * The contact drawer (ContactEdit.tsx) on its Activity tab
+ * (contact-edit/ActivityTab.tsx), over the dimmed Contacts page, with the
+ * Overview tab's "How they read" block beside it. The booking arrives live.
+ */
+type Ev = { ic: IcName | 'mail' | 'reply'; label: string; link?: string; subject?: string; meta: string[]; device?: 'phone' | 'monitor'; quote?: string; when: string; cls?: string };
+const events: Ev[] = [
+  { ic: 'calendarPlus', label: 'Meeting booked', subject: 'Intro call', meta: ['for Oct 16, 10:00 AM', 'via Cal.com'], when: '2h', cls: 'ct-new' },
+  { ic: 'reply', label: 'Replied', subject: 'Re: Quick question about Acme', meta: ['from alex@northwind.dev', 'in Q3 outreach', 'step Follow-up', 'intent: positive'], quote: 'Thursday 10am ET works for me. Can you send over an invite?', when: '3h' },
+  { ic: 'mousePointerClick', label: 'Clicked', link: 'Pricing', meta: ['from alex@northwind.dev', 'in Q3 outreach', 'utm pricing'], device: 'monitor', when: '1d' },
+  { ic: 'mailOpen', label: 'Opened', subject: 'Quick question about Acme', meta: [], device: 'phone', when: '1d' },
+  { ic: 'mail', label: 'Email sent', subject: 'Quick question about Acme', meta: ['from alex@northwind.dev', 'in Q3 outreach', 'step Follow-up'], when: '1d' },
+  { ic: 'mailOpen', label: 'Opened', subject: 'Quick question about Acme', meta: ['Gmail · device hidden'], when: '5d' },
+  { ic: 'mail', label: 'Email sent', subject: 'Quick question about Acme', meta: ['from alex@northwind.dev', 'in Q3 outreach', 'step Intro'], when: '6d' },
+  { ic: 'megaphone', label: 'Added to campaign', meta: ['Q3 outreach'], when: '6d' },
+  { ic: 'userPlus', label: 'Imported from a file', meta: ['leads-q3.csv'], when: '6d' },
+];
+const tabs: { label: string; ic?: IcName; glyph?: string; on?: boolean }[] = [
+  { label: 'Overview', glyph: 'gauge' },
+  { label: 'Activity', glyph: 'activity', on: true },
+  { label: 'Deals', ic: 'circleDollar' },
+  { label: 'Notes', ic: 'stickyNote' },
+  { label: 'Research', glyph: 'sparkles' },
+  { label: 'Details', ic: 'sliders' },
+];
+const chips = ['All', 'Emails', 'Replies', 'Deliv.', 'Notes', 'Meetings', 'Campaigns'];
+const people = [
+  ['Jenna Carter', 'jenna@acme.io', 'Acme'], ['Ravi Shah', 'ravi@stratech.io', 'Stratech'], ['Lena Fischer', 'lena@helio.gen', 'Helio'],
+  ['Aman Patel', 'aman@lumenhealth.io', 'Lumen Health'], ['Tom Becker', 'tom@quarry.co', 'Quarry'], ['Chen Wei', 'chen@tidewater.io', 'Tidewater'],
+  ['Priya Nair', 'priya@sprucebio.com', 'Spruce Bio'], ['Maya Lopez', 'maya@brightline.co', 'Brightline'], ['Karim Salah', 'karim@cobalt.io', 'Cobalt'],
+];
+const reads = [
+  { d: 'phone', t: 'iPhone · Apple Mail app', n: '4 opens · 1d ago' },
+  { d: 'monitor', t: 'Mac · Apple Mail app', n: '2 opens · 3d ago' },
+  { d: 'mail', t: 'Gmail · device hidden', n: '1 open · 5d ago' },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-cream">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[716px] h-[526px]`}>
+    <!-- The Contacts page under the drawer's scrim. -->
+    <div class="absolute inset-0">
+      <div class="flex h-12 items-center gap-3 border-b border-slate-200 px-5">
+        <span class="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Contacts</span>
+        <span class="h-4 w-px bg-slate-200"></span>
+        <span class="text-[12.5px] text-slate-600">4,812 contacts</span>
+      </div>
+      {people.map(([n, e, c]) => (
+        <div class="flex h-11 items-center gap-3 border-b border-slate-200/60 px-5 text-[12.5px]">
+          <span class="size-3.5 rounded-[4px] border border-slate-300"></span>
+          <span class="w-[110px] truncate font-medium text-slate-900">{n}</span>
+          <span class="truncate font-mono text-[11.5px] text-slate-500">{e}</span>
+          <span class="ml-auto text-slate-500">{c}</span>
+        </div>
+      ))}
+      <div class="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]"></div>
+    </div>
+
+    <!-- The drawer: 32rem, slid in from the right. -->
+    <aside class="absolute bottom-0 right-0 top-0 flex w-[512px] flex-col border-l border-slate-200 bg-white shadow-[-12px_0_24px_-12px_rgba(15,23,42,0.08)]">
+      <header class="flex shrink-0 items-start gap-3 border-b border-slate-200 px-4 pb-3 pt-4">
+        <div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[12px] font-semibold text-slate-700">JC</div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h2 class="truncate text-[14px] font-semibold leading-tight text-slate-900">Jenna Carter</h2>
+          </div>
+          <div class="mt-1 truncate font-mono text-[11.5px] text-slate-500">jenna@acme.io</div>
+        </div>
+        <span class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-slate-500"><Glyph name="mail" size={14} />Email</span>
+        <span class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-slate-500"><Ic name="calendarPlus" size={14} />Schedule call</span>
+        <span class="inline-flex size-7 items-center justify-center rounded-md text-slate-400"><Glyph name="x" size={14} /></span>
+      </header>
+      <div class="flex shrink-0 gap-1 border-b border-slate-200 px-3">
+        {tabs.map((t) => (
+          <span class={`relative inline-flex h-10 items-center gap-1.5 px-2.5 text-[12.5px] ${t.on ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+            {t.glyph && <Glyph name={t.glyph as any} size={14} />}{t.ic && <Ic name={t.ic} size={14} />}{t.label}
+            {t.on && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+          </span>
+        ))}
+      </div>
+      <div class="flex-1 overflow-hidden px-4 py-3">
+        <div class="rounded-md border border-slate-200 px-3 py-2">
+          <div class="flex items-center gap-2">
+            <Ic name="megaphone" size={13} class="text-slate-400" />
+            <span class="text-[12px] font-medium text-slate-900">Q3 outreach</span>
+            <span class="inline-flex h-4 items-center rounded bg-emerald-50 px-1.5 text-[10px] font-medium text-emerald-700">Replied</span>
+            <span class="ml-auto text-[11px] text-slate-400">step 2 of 3</span>
+          </div>
+          <div class="mt-1 text-[11.5px] text-slate-500"><span class="mr-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Next</span>Nothing scheduled · stopped on reply</div>
+        </div>
+        <div class="mt-2.5 flex items-center gap-2">
+          <div class="flex h-8 flex-1 items-center gap-2 rounded-md border border-slate-200 px-2.5 text-[12px] text-slate-400"><Glyph name="search" size={14} />Search subject, content, campaign…</div>
+          <span class="inline-flex h-6 items-center gap-1 rounded bg-slate-100 px-2 text-[11px] font-medium text-slate-600"><Glyph name="calendar" size={12} />Any date</span>
+        </div>
+        <div class="mt-2 inline-flex rounded-md bg-slate-100 p-0.5">
+          {chips.map((c, i) => <span class={`h-6 rounded px-2 text-[11px] font-medium leading-6 ${i === 0 ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{c}</span>)}
+        </div>
+        <div class="relative mt-2.5 overflow-hidden rounded-md border border-slate-200">
+          <div class="ct-feed">
+            {events.map((e) => (
+              <div class={`border-b border-slate-100 px-3 py-2 last:border-b-0 ${e.cls ?? ''}`}>
+                <div class="flex items-start gap-2.5">
+                  <span class="mt-0.5 text-slate-400">
+                    {e.ic === 'mail' ? <Glyph name="mail" size={14} /> : e.ic === 'reply' ? <Glyph name="reply" size={14} /> : <Ic name={e.ic as IcName} size={14} />}
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex min-w-0 items-baseline gap-1.5">
+                      <span class="shrink-0 text-[12px] font-medium text-slate-900">{e.label}</span>
+                      {e.link && <span class="truncate text-[11.5px] text-slate-700">{e.link}</span>}
+                      {e.subject && <span class="truncate text-[11.5px] text-slate-600">· {e.subject}</span>}
+                    </div>
+                    {(e.meta.length > 0 || e.device) && (
+                      <div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                        {e.meta.map((m, i) => <>{i > 0 && <span class="text-slate-300">·</span>}<span class={m.startsWith('from') ? 'font-mono' : ''}>{m}</span></>)}
+                        {e.device && (
+                          <>
+                            {e.meta.length > 0 && <span class="text-slate-300">·</span>}
+                            <span class="inline-flex items-center gap-1"><Ic name={e.device === 'phone' ? 'smartphone' : 'monitor'} size={12} class="text-slate-400" />{e.device === 'phone' ? 'iPhone · Apple Mail app' : 'Mac · Chrome'}</span>
+                            <span class="text-slate-300">·</span><span>Austin, US</span>
+                          </>
+                        )}
+                        {e.ic === 'calendarPlus' && <><span class="text-slate-300">·</span><span class="font-medium text-sky-600">Join</span></>}
+                      </div>
+                    )}
+                    {e.quote && <div class="ml-0 mt-1.5 line-clamp-2 border-l-2 border-slate-100 pl-2 text-[11.5px] text-slate-700">{e.quote}</div>}
+                  </div>
+                  <span class="mt-0.5 shrink-0 text-[10.5px] tabular-nums text-slate-400">{e.when}</span>
+                  <Glyph name="chevronDown" size={14} class="mt-0.5 text-slate-300" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Overview tab: How they read. -->
+  <div class={`${FLOAT} left-[18px] top-[350px] w-[272px] p-3.5`}>
+    <div class="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">How they read</div>
+    <div class="overflow-hidden rounded-md border border-slate-200 bg-white">
+      {reads.map((r) => (
+        <div class="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 last:border-b-0">
+          <span class="inline-flex min-w-0 flex-1 items-center gap-1 text-[11.5px] text-slate-700">
+            {r.d === 'mail' ? <Glyph name="mail" size={12} class="text-slate-400" /> : <Ic name={r.d as IcName} size={12} class="text-slate-400" />}
+            <span class="truncate">{r.t}</span>
+          </span>
+          <span class="shrink-0 text-[11.5px] tabular-nums text-slate-500">{r.n}</span>
+        </div>
+      ))}
+    </div>
+    <p class="mt-2 text-[11px] leading-[1.45] text-slate-400">Each client and device their opens came from, with the count and the latest.</p>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The booking lands on top of the feed, live, on a 10s loop. */
+  .ct-feed { animation: ct-feed 10s cubic-bezier(0.2, 0.8, 0.2, 1) infinite; }
+  @keyframes ct-feed {
+    0% { transform: translateY(-50px); opacity: 0; }
+    4%, 30% { transform: translateY(-50px); opacity: 1; }
+    37%, 92% { transform: none; opacity: 1; }
+    97%, 100% { transform: none; opacity: 0; }
+  }
+  .ct-new { animation: ct-new 10s ease-out infinite; }
+  @keyframes ct-new { 0%, 32% { background: rgb(240 249 255 / 0); } 38%, 72% { background: rgb(240 249 255); } 90%, 100% { background: rgb(240 249 255 / 0); } }
+</style>

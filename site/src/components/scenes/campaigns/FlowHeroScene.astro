@@ -1,0 +1,230 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW, TAB } from '../../../lib/scene';
+
+/**
+ * A running campaign's Steps tab (web/src/app/app/campaigns/[id]/layout.tsx
+ * and sequences/CampaignFlow.tsx): the header, the tab bar, and the flow
+ * canvas with its StepCards, waits beside the lines, branch pills, + buttons
+ * and zoom controls. Contacts travel the paths while a teammate works on a
+ * follow-up, and Today's sending plan (SendPlanCard) floats beside it.
+ */
+const tabs = [
+  { label: 'Overview', icon: 'barChart' },
+  { label: 'Leads', icon: 'users' },
+  { label: 'Steps', icon: 'listChecks', active: true },
+  { label: 'Schedule', icon: 'calendar' },
+  { label: 'Settings', icon: 'settings2' },
+] as const;
+
+// Tree coordinates, laid out the way layoutFlow places them: 232x56 cards,
+// three columns 264 apart, waits beside the line into a step.
+const CW = 232;
+const C = [116, 380, 644];
+const TONE = {
+  sky: 'bg-sky-50 text-sky-600 ring-sky-100',
+  violet: 'bg-violet-50 text-violet-600 ring-violet-100',
+  emerald: 'bg-emerald-50 text-emerald-600 ring-emerald-100',
+};
+type Card = { x: number; y: number; icon: string; tone: string; title: string; kicker: string; summary: string; peer?: boolean };
+const cards: Card[] = [
+  { x: C[1] - CW / 2, y: 0, icon: 'login', tone: TONE.violet, title: 'Contact enters the campaign', kicker: 'Start', summary: 'First email right away' },
+  { x: C[1] - CW / 2, y: 84, icon: 'mail', tone: TONE.sky, title: 'Quick question', kicker: 'First email', summary: '3 variants' },
+  { x: C[0] - CW / 2, y: 228, icon: 'handshake', tone: TONE.emerald, title: 'Create a deal', kicker: 'Action', summary: 'Stage: Interested' },
+  { x: C[0] - CW / 2, y: 320, icon: 'send', tone: TONE.sky, title: 'Notify the team', kicker: 'Action', summary: 'Fires your webhooks' },
+  { x: C[1] - CW / 2, y: 228, icon: 'mail', tone: TONE.sky, title: 'Case study', kicker: 'Reply in thread', summary: 'How Ramp cut onboarding' },
+  { x: C[2] - CW / 2, y: 228, icon: 'mail', tone: TONE.sky, title: 'Follow-up', kicker: 'Reply in thread', summary: 'Bumping this up', peer: true },
+  { x: C[2] - CW / 2, y: 320, icon: 'mail', tone: TONE.sky, title: 'Last note', kicker: 'Reply in thread', summary: 'Closing the loop' },
+];
+const branch = (sx: number, sy: number, tx: number, ty: number) => {
+  const busY = sy + 20;
+  if (sx === tx) return `M${sx},${sy} L${tx},${ty}`;
+  const r = 10;
+  const dir = tx >= sx ? 1 : -1;
+  return `M${sx},${sy} L${sx},${busY - r} Q${sx},${busY} ${sx + dir * r},${busY} L${tx - dir * r},${busY} Q${tx},${busY} ${tx},${busY + r} L${tx},${ty}`;
+};
+const lines = [
+  `M${C[1]},56 L${C[1]},84`,
+  branch(C[1], 140, C[0], 228),
+  branch(C[1], 140, C[1], 228),
+  branch(C[1], 140, C[2], 228),
+  `M${C[0]},284 L${C[0]},320`,
+  `M${C[0]},376 L${C[0]},398`,
+  `M${C[1]},284 L${C[1]},306`,
+  `M${C[2]},284 L${C[2]},320`,
+  `M${C[2]},376 L${C[2]},398`,
+];
+const pills = [
+  { x: C[0], label: 'Replied: positive', instant: true, cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200/80' },
+  { x: C[1], label: 'Opened within 3d', instant: true, cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200/80' },
+  { x: C[2], label: 'Otherwise', instant: false, cls: 'bg-white text-slate-500 ring-slate-200' },
+];
+const waits = [
+  { x: C[2], y: 210, label: '3 days' },
+  { x: C[2], y: 302, label: '4 days' },
+];
+const adds: [number, number][] = [[C[0], 409], [C[1], 317], [C[2], 409]];
+
+// Dots ride these: most contacts wait for the follow-ups, a few branch off.
+const pFollow = `M${C[1]},28 L${C[1]},160 L${C[2]},160 L${C[2]},256 L${C[2]},348 L${C[2]},398`;
+const pReply = `M${C[1]},28 L${C[1]},160 L${C[0]},160 L${C[0]},256 L${C[0]},348`;
+const pOpen = `M${C[1]},28 L${C[1]},160 L${C[1]},256 L${C[1]},306`;
+
+// Today's sending plan: four mailboxes whose caps add up to 200, one still
+// easing out of warmup, which is the limit that sets the day.
+const mailboxes = [
+  { addr: 'alex@northwind.dev', sub: 'gap 10m', sent: 23, cap: 50 },
+  { addr: 'sam@northwind.io', sub: 'gap 10m', sent: 19, cap: 50 },
+  { addr: 'ops@northwind.co', sub: 'gap 10m', sent: 14, cap: 50 },
+  { addr: 'mia@northwind.dev', sub: 'easing out of warmup · 3 clean days to 50', sent: 6, cap: 36, of: 50 },
+];
+---
+<ScaledStage w={1240} h={740} photo="sheer-blue">
+  <div class={`${WINDOW} left-[48px] top-[40px] w-[1220px] h-[720px]`}>
+    <!-- Campaign header -->
+    <div class="px-5 pt-4 pb-3 flex items-start gap-3">
+      <div class="min-w-0">
+        <span class="inline-flex items-center gap-1 h-6 -ml-1.5 px-1.5 mb-1 rounded-md text-[11.5px] text-slate-500"><Ico name="arrowLeft" size={12} />Campaigns</span>
+        <div class="flex items-center gap-2">
+          <span class="text-[18px] font-semibold text-slate-900">Series A founders, Q3</span>
+          <span class="inline-flex items-center h-5 px-2 rounded-md border text-[10px] uppercase tracking-[0.12em] font-medium bg-emerald-50 text-emerald-700 border-emerald-200">running</span>
+          <span class="ml-1 flex -space-x-1.5">
+            <span class="size-5 rounded-full bg-violet-100 text-violet-700 ring-2 ring-white text-[9px] font-semibold flex items-center justify-center">MC</span>
+            <span class="size-5 rounded-full bg-amber-100 text-amber-700 ring-2 ring-white text-[9px] font-semibold flex items-center justify-center">JR</span>
+          </span>
+        </div>
+        <p class="text-[11px] text-slate-400 font-mono mt-1">cmp_8fK2pQ7rXa19</p>
+      </div>
+      <div class="ml-auto pr-10 flex items-center gap-1.5">
+        <span class="h-7 px-2.5 rounded-md bg-sky-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5"><Glyph name="pause" size={13} />Pause</span>
+        <span class="size-7 rounded-md border border-slate-200 text-slate-500 inline-flex items-center justify-center"><Glyph name="more" size={14} /></span>
+      </div>
+    </div>
+
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Ico name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute left-1.5 right-1.5 -bottom-px h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="p-5">
+      <div class="relative h-[494px] flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white">
+        <div class="flex min-h-10 items-center gap-x-4 border-b border-slate-200 px-3 py-1.5">
+          <span class="text-[11.5px] text-slate-600">Stop on reply</span>
+          <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-sky-600"><span class="inline-block size-4 translate-x-4 rounded-full bg-white shadow-sm"></span></span>
+          <span class="ml-auto pr-10 inline-flex items-center gap-1.5 text-[11px] text-slate-400"><Ico name="users" size={12} /><span class="font-mono tabular-nums text-slate-600" data-tick="412,436,2600">412</span> in flow · 1,284 leads</span>
+        </div>
+
+        <div class="relative flex-1 bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 20px 20px;">
+          <div class="absolute left-[40px] top-[16px] w-[760px] h-[420px]">
+            <svg class="absolute inset-0 overflow-visible" width="760" height="420" fill="none">
+              {lines.map((d) => <path d={d} stroke="#cbd5e1" stroke-width="1.25" />)}
+            </svg>
+            {pills.map((p) => (
+              <span class={`absolute whitespace-nowrap rounded-full px-2 text-[11px] font-medium leading-[18px] ring-1 ring-inset ${p.cls}`} style={`left:${p.x}px; top:184px; transform: translate(-50%, -50%);`}>
+                {p.label}{p.instant && <span class="ml-1 rounded-sm bg-violet-100 px-1 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-violet-700">instant</span>}
+              </span>
+            ))}
+            {waits.map((n) => (
+              <span class="absolute inline-flex items-center gap-1 whitespace-nowrap text-[11px] text-slate-400" style={`left:${n.x + 12}px; top:${n.y}px; transform: translateY(-50%);`}><Glyph name="clock" size={12} />{n.label}</span>
+            ))}
+            {adds.map(([x, y]) => (
+              <span class="absolute flex size-[22px] items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400" style={`left:${x}px; top:${y}px; transform: translate(-50%, -50%);`}><Glyph name="plus" size={12} /></span>
+            ))}
+            {cards.map((c) => (
+              <div class={`absolute flex h-[56px] items-center gap-2.5 rounded-xl border bg-white pl-2.5 pr-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${c.peer ? 'border-violet-400 ring-[3px] ring-violet-100' : 'border-slate-200/90'}`} style={`left:${c.x}px; top:${c.y}px; width:${CW}px`}>
+                <span class={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${c.tone}`}><Ico name={c.icon as never} size={16} /></span>
+                <div class="min-w-0">
+                  <div class="truncate text-[13px] font-medium leading-5 text-slate-900">{c.title}</div>
+                  <div class="truncate text-[11.5px] leading-4 text-slate-400">{c.kicker}<span class="text-slate-500"> · {c.summary}</span></div>
+                </div>
+              </div>
+            ))}
+
+            {[0, 1, 2].map((k) => (
+              <span class="fh-dot fh-follow" style={`offset-path: path('${pFollow}'); animation-delay: ${k * -3.4}s;`}></span>
+            ))}
+            <span class="fh-dot fh-reply" style={`offset-path: path('${pReply}'); animation-delay: -1.6s;`}></span>
+            <span class="fh-dot fh-open" style={`offset-path: path('${pOpen}'); animation-delay: -6.1s;`}></span>
+
+            <!-- A teammate on the same canvas: their cursor and the step they selected. -->
+            <div class="fh-peer absolute left-[700px] top-[272px]">
+              <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 1.5 L13.5 7.2 L8.2 8.6 L6 14 Z" fill="#8b5cf6" stroke="#fff" stroke-width="1.2" stroke-linejoin="round" /></svg>
+              <span class="absolute left-3.5 top-3.5 whitespace-nowrap rounded-md bg-violet-500 px-1.5 py-0.5 text-[10.5px] font-medium text-white">Maya</span>
+            </div>
+          </div>
+
+          <div class="absolute left-3 bottom-3 flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white/95 p-0.5 shadow-sm text-slate-500">
+            <span class="inline-flex size-7 items-center justify-center"><Ico name="minus" size={14} /></span>
+            <span class="inline-flex h-7 min-w-11 items-center justify-center px-1 text-[11.5px] tabular-nums text-slate-600">100%</span>
+            <span class="inline-flex size-7 items-center justify-center"><Glyph name="plus" size={14} /></span>
+            <span class="mx-0.5 h-4 w-px bg-slate-200"></span>
+            <span class="inline-flex size-7 items-center justify-center"><Ico name="maximize" size={14} /></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Today's sending plan, opened to each mailbox's day. -->
+  <div class={`${FLOAT} left-[876px] top-[206px] w-[340px] overflow-hidden`}>
+    <div class="px-4 pt-3 pb-2.5 border-b border-slate-200/70">
+      <div class="flex items-baseline gap-1.5">
+        <span class="text-[20px] font-semibold leading-none tabular-nums text-slate-900">186</span>
+        <span class="text-[11.5px] text-slate-600">today</span>
+        <span class="ml-auto font-mono text-[11px] tabular-nums text-slate-400"><span data-tick="62,70,3200">62</span> sent · 124 to go</span>
+      </div>
+      <div class="mt-2 h-1 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full bg-sky-500" style="width:33%"></div></div>
+      <p class="mt-2 text-[11.5px] leading-snug text-slate-500">Easing out of warmup is holding it below the 200 your settings allow.</p>
+      <p class="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-slate-500"><Glyph name="clock" size={12} class="text-slate-400" />Window open until 17:00 <span class="text-slate-400">· London</span></p>
+    </div>
+    <div class="px-4 py-2.5">
+      <div class={`${EYEBROW} mb-1`}>4 mailboxes</div>
+      <div class="divide-y divide-slate-100">
+        {mailboxes.map((m, i) => (
+          <div class="fh-mb -mx-2 px-2 py-1.5 rounded flex items-center gap-2" style={`--i:${i}`}>
+            <span class="flex-1 min-w-0">
+              <span class="block truncate text-[12px] text-slate-900">{m.addr}</span>
+              <span class="block truncate text-[10.5px] text-slate-400">{m.sub}</span>
+            </span>
+            <span class="shrink-0 font-mono text-[11px] tabular-nums text-slate-500">{m.sent}<span class="text-slate-300"> / </span><span class="text-slate-700">{m.cap}</span>{m.of && <span class="text-slate-400"> of {m.of}</span>}</span>
+            <span class="shrink-0 inline-flex h-5 items-center rounded px-1.5 text-[10px] font-medium ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200">Sending</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  .fh-dot {
+    position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 9999px;
+    background: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2); offset-rotate: 0deg; opacity: 0;
+    animation: fh-move 10.2s linear infinite;
+  }
+  .fh-reply { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); animation-duration: 9s; }
+  .fh-open { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); animation-duration: 7s; }
+  @keyframes fh-move {
+    0% { offset-distance: 0%; opacity: 0; }
+    6%, 90% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+  .fh-peer { animation: fh-peer 8s ease-in-out infinite; }
+  @keyframes fh-peer {
+    0%, 100% { transform: translate(0, 0); }
+    35% { transform: translate(-46px, 10px); }
+    60% { transform: translate(-20px, -6px); }
+  }
+  /* The next send rotates through the mailboxes. */
+  .fh-mb { animation: fh-turn 8s linear infinite; animation-delay: calc(var(--i) * 2s); }
+  @keyframes fh-turn {
+    0%, 2% { background: transparent; }
+    5%, 20% { background: rgb(240 249 255); }
+    25%, 100% { background: transparent; }
+  }
+</style>

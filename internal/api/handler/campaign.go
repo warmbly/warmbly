@@ -220,7 +220,7 @@ func (h *Handler) SearchCampaigns(c *gin.Context) {
 	status := c.Query("status")
 	limit := c.Query("limit")
 
-	resp, err := h.CampaignService.Search(c.Request.Context(), orgID.String(), query, cursor, folder, status, limit)
+	resp, err := h.CampaignService.Search(c.Request.Context(), orgID.String(), query, cursor, folder, status, limit, middleware.AllowedCampaigns(c))
 	if err != nil {
 		errx.JSON(c, err)
 		return
@@ -264,7 +264,7 @@ func (h *Handler) GetCampaignsOverview(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.CampaignService.Overview(c.Request.Context(), orgID.String())
+	resp, err := h.CampaignService.Overview(c.Request.Context(), orgID.String(), middleware.AllowedCampaigns(c))
 	if err != nil {
 		errx.JSON(c, err)
 		return

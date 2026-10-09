@@ -1,0 +1,47 @@
+---
+/**
+ * A background photo from src/assets/textures, built into AVIF (WebP for the
+ * few browsers without it) at a few widths, so every screen downloads only
+ * what it draws. Quality 50 keeps the grain of these photos at a fraction of
+ * WebP's size. A ~300-byte blurred copy is inlined as the image's own
+ * background, so the frame is never empty while the real file arrives.
+ */
+import { Picture } from 'astro:assets';
+import sharp from 'sharp';
+import path from 'node:path';
+
+interface Props {
+  name: string;
+  /** The rendered width at each breakpoint, as an <img sizes> list. */
+  sizes: string;
+  /** Above the fold: load first instead of lazily. */
+  priority?: boolean;
+  class?: string;
+}
+const { name, sizes, priority = false, class: className = '' } = Astro.props;
+
+const images = import.meta.glob<{ default: ImageMetadata }>('../assets/textures/*.webp', { eager: true });
+const image = images[`../assets/textures/${name}.webp`]?.default;
+if (!image) throw new Error(`Photo: no texture named "${name}" in src/assets/textures`);
+
+const lqip = await sharp(path.join(process.cwd(), 'src/assets/textures', `${name}.webp`))
+  .resize(24)
+  .webp({ quality: 50 })
+  .toBuffer();
+const placeholder = `background-image:url(data:image/webp;base64,${lqip.toString('base64')});background-size:cover;background-position:center;`;
+---
+<Picture
+  src={image}
+  formats={['avif']}
+  fallbackFormat="webp"
+  widths={[400, 640, 960, image.width]}
+  sizes={sizes}
+  quality={50}
+  alt=""
+  aria-hidden="true"
+  loading={priority ? 'eager' : 'lazy'}
+  fetchpriority={priority ? 'high' : 'auto'}
+  decoding="async"
+  class={className}
+  style={placeholder}
+/>

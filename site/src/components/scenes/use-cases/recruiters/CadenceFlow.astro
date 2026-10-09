@@ -1,0 +1,133 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, EYEBROW, TAB } from '../../../../lib/scene';
+
+/**
+ * The three-touch sequence on the real flow canvas
+ * (campaigns/sequences/CampaignFlow.tsx + flow/StepCard.tsx): Start, three
+ * emails with their waits on the edges, End, and stop on reply on in the
+ * toolbar. The side panel has the second email open: a reply in the same
+ * thread, so its subject is locked to the conversation's.
+ */
+const CW = 264;
+const X = 168;
+const cards = [
+  { y: 24, icon: 'login', tone: 'bg-violet-50 text-violet-600 ring-violet-100', title: 'Contact enters the campaign', sub: 'Start', sum: 'First email right away' },
+  { y: 124, icon: 'mail', tone: 'bg-sky-50 text-sky-600 ring-sky-100', title: 'First message', sub: 'First email', sum: 'Quick question about your work' },
+  { y: 244, icon: 'mail', tone: 'bg-sky-50 text-sky-600 ring-sky-100', title: 'Follow-up', sub: 'Reply in thread', sum: 'One line and an easy way out', selected: true },
+  { y: 364, icon: 'mail', tone: 'bg-sky-50 text-sky-600 ring-sky-100', title: 'Last note', sub: 'Reply in thread', sum: 'A final check-in' },
+] as const;
+const cx = X + CW / 2;
+const lines = [`M${cx} 80 L${cx} 124`, `M${cx} 180 L${cx} 244`, `M${cx} 300 L${cx} 364`, `M${cx} 420 L${cx} 452`];
+const waits = [{ y: 206, t: '5 days' }, { y: 326, t: '7 days' }];
+const path = `M${cx} 52 L${cx} 152 L${cx} 272 L${cx} 392 L${cx} 464`;
+const tabs = [
+  { label: 'Overview', icon: 'barChart' },
+  { label: 'Leads', icon: 'user' },
+  { label: 'Steps', icon: 'layers', active: true },
+  { label: 'Schedule', icon: 'calendar' },
+  { label: 'Settings', icon: 'settings' },
+] as const;
+---
+<ScaledStage w={1240} h={680} photo="sheer-cream">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[1240px] h-[660px]`}>
+    <div class="px-5 pt-4 pb-3 flex items-center gap-2">
+      <span class="text-[17px] font-semibold text-slate-900">Staff platform engineer</span>
+      <span class="inline-flex h-5 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+    </div>
+    <div class="px-3 flex items-center gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <span class={`${TAB} ${'active' in t ? 'font-medium text-slate-900' : 'text-slate-500'}`}>
+          <Glyph name={t.icon} size={14} />{t.label}
+          {'active' in t && <span class="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-sky-600"></span>}
+        </span>
+      ))}
+    </div>
+
+    <div class="flex">
+      <!-- Canvas -->
+      <div class="w-[600px] shrink-0 border-r border-slate-200">
+        <div class="flex min-h-10 items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5">
+          <span class="text-[11.5px] text-slate-600">Stop on reply</span>
+          <span class="relative inline-flex h-5 w-9 items-center rounded-full bg-sky-600"><span class="inline-block size-4 translate-x-4 rounded-full bg-white shadow-sm"></span></span>
+          <span class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-400"><Glyph name="user" size={12} /><span data-tick="64,71,2600">64</span> candidates in flow</span>
+        </div>
+        <div class="relative h-[500px] bg-slate-50/40" style="background-image: radial-gradient(circle, #dde3eb 1px, transparent 1.2px); background-size: 20px 20px;">
+          <svg class="absolute inset-0" width="600" height="500" fill="none">
+            {lines.map((d) => <path d={d} stroke="#cbd5e1" stroke-width="1.25" />)}
+          </svg>
+          {waits.map((w) => (
+            <span class="absolute inline-flex items-center gap-1 whitespace-nowrap rounded bg-slate-50 px-1 text-[11px] text-slate-400" style={`left:${cx + 8}px; top:${w.y}px`}><Glyph name="clock" size={12} />{w.t}</span>
+          ))}
+          {cards.map((c) => (
+            <div class={`absolute flex h-[56px] items-center gap-2.5 rounded-xl border bg-white pl-2.5 pr-8 ${'selected' in c ? 'border-sky-400 ring-[3px] ring-sky-100' : 'border-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.04)]'}`} style={`left:${X}px; top:${c.y}px; width:${CW}px`}>
+              <span class={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${c.tone}`}><Glyph name={c.icon} size={16} /></span>
+              <div class="min-w-0">
+                <div class="truncate text-[13px] font-medium leading-5 text-slate-900">{c.title}</div>
+                <div class="truncate text-[11.5px] leading-4 text-slate-400">{c.sub} <span class="text-slate-500">· {c.sum}</span></div>
+              </div>
+            </div>
+          ))}
+          <span class="absolute inline-flex h-6 w-[72px] items-center justify-center gap-1 rounded-full border border-slate-200 bg-white text-[11.5px] font-medium text-slate-400" style={`left:${cx - 36}px; top:452px`}><Glyph name="flag" size={12} />End</span>
+          <span class="cd-dot" style={`offset-path: path('${path}');`}></span>
+          <span class="cd-dot" style={`offset-path: path('${path}'); animation-delay:-5s;`}></span>
+        </div>
+      </div>
+
+      <!-- FlowPanel: the selected step -->
+      <div class="flex-1 min-w-0 pr-[60px]">
+        <div class="h-12 px-5 flex items-center gap-2 border-b border-slate-200">
+          <span class="text-[13px] font-medium text-slate-900">Follow-up</span>
+          <span class="text-[11.5px] text-slate-400">Email 2 of 3</span>
+          <span class="ml-auto h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center">A/B test</span>
+          <span class="h-7 px-3 rounded-md bg-sky-600 text-[12px] font-medium text-white inline-flex items-center">Save changes</span>
+        </div>
+        <div class="px-5 py-4 space-y-4">
+          <div class="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-2.5 flex items-start gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="text-[12.5px] font-medium text-slate-900">Reply in thread</div>
+              <div class="mt-0.5 text-[11.5px] leading-snug text-slate-500">Send this step as a reply on the conversation the contact is already in, so it lands under the email they have instead of arriving as a second cold email.</div>
+            </div>
+            <span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-sky-600"><span class="inline-block size-4 translate-x-4 rounded-full bg-white shadow-sm"></span></span>
+          </div>
+          <div>
+            <div class={EYEBROW}>Subject</div>
+            <div class="mt-1.5 h-9 px-3 rounded-md border border-slate-200 bg-slate-50 flex items-center text-[13.5px] text-slate-500">Re: Quick question about your platform work</div>
+            <div class="mt-1 text-[11px] text-slate-400">A reply carries the conversation's subject.</div>
+          </div>
+          <div>
+            <div class="flex items-center">
+              <span class={EYEBROW}>Body</span>
+              <span class="ml-auto inline-flex rounded-md bg-slate-100 p-0.5">
+                <span class="h-6 px-2 rounded inline-flex items-center text-[11.5px] font-medium bg-white text-slate-900 shadow-sm">Edit</span>
+                <span class="h-6 px-2 rounded inline-flex items-center text-[11.5px] font-medium text-slate-500">Preview</span>
+              </span>
+            </div>
+            <div class="mt-1.5 rounded-md border border-slate-200 px-4 py-3.5 space-y-3 text-[13px] leading-[1.65] text-slate-700">
+              <p>Hi <span class="rounded bg-sky-50 px-1 py-px font-mono text-[11.5px] text-sky-700">{'{{.FirstName}}'}</span>,</p>
+              <p>Bumping this in case it got buried. The role is remote-first and the team is six engineers today.</p>
+              <p>If the timing is wrong, just say so and I won’t write again.</p>
+              <p class="text-slate-500">Dana</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* Candidates move down the sequence; a reply at any point takes them out. */
+  .cd-dot {
+    position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 9999px;
+    background: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+    offset-rotate: 0deg; opacity: 0;
+    animation: cd-move 10s linear infinite;
+  }
+  @keyframes cd-move {
+    0% { offset-distance: 0%; opacity: 0; }
+    5%, 92% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+</style>

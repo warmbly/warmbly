@@ -1,569 +1,285 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import EncryptionFigure from '../components/scenes/trust/EncryptionFigure.astro';
+import SecurityScene from '../components/scenes/trust/SecurityScene.astro';
+import WorkerFigure from '../components/scenes/trust/WorkerFigure.astro';
+import AuditScene from '../components/scenes/trust/AuditScene.astro';
 
-/* -----------------------------------------------------------------
-   Trust page. Full redesign.
+// Technical facts from CLAUDE.md (encryption model, worker networking,
+// security invariants, fraud and abuse detection). Posture, subprocessors and
+// disclosure commitments are the company's own statements.
 
-   Source of truth:
-     - CLAUDE.md, sections "Encryption Model", "Worker Networking
-       Rules", "Fraud And Abuse Detection", "Sending Safety Policy"
-     - internal/app/cipher/*
-     - internal/infrastructure/kms/*
-     - cmd/worker/main.go
-     - internal/api/middleware/ratelimit.go
-     - internal/pkg/captcha/turnstile.go
-     - internal/repository/pg_warmup.go
+const toc = [
+  { id: 'posture', t: 'At a glance' },
+  { id: 'encryption', t: 'Encryption' },
+  { id: 'accounts', t: 'Accounts and sign-in' },
+  { id: 'data', t: 'What we store' },
+  { id: 'workers', t: 'The worker boundary' },
+  { id: 'abuse', t: 'Abuse controls' },
+  { id: 'subprocessors', t: 'Subprocessors' },
+  { id: 'disclosure', t: 'Reporting a vulnerability' },
+];
 
-   Tone: factual. No fake compliance badges. No fake metrics.
-   No customer quotes. Planned items are marked as planned, not shipped.
-
-   Astro parser quirk: any `<` or `<=` comparison inside `{}` blocks
-   breaks the parser. Hoist them up here.
-   ----------------------------------------------------------------- */
-
-// Posture badges. Honest about what is shipped vs planned.
-// `state` drives the dot color in the JSX below.
 const posture = [
-  {
-    label: 'Open source, auditable',
-    note: 'Backend, workers, consumer and frontend are public.',
-    state: 'shipped',
-  },
-  {
-    label: 'TLS 1.2+ in transit',
-    note: 'Edge terminates on Cloudflare. Origin requires TLS 1.2 or above.',
-    state: 'shipped',
-  },
-  {
-    label: 'Encryption at rest via AWS KMS',
-    note: 'Per-organization data keys, AES-256-GCM application layer.',
-    state: 'shipped',
-  },
-  {
-    label: 'GDPR-aligned data handling',
-    note: 'Plain-English privacy policy and data processing terms on request.',
-    state: 'shipped',
-  },
-  {
-    label: 'SOC 2 Type II',
-    note: 'Controls in place. Audit window opens with our auditor.',
-    state: 'planned',
-  },
-  {
-    label: 'ISO 27001',
-    note: 'Under evaluation. No certification claimed today.',
-    state: 'planned',
-  },
+  { label: 'Open source and auditable', note: 'The backend, workers and dashboard are public.', state: 'shipped' },
+  { label: 'TLS 1.2 or later in transit', note: 'Every connection is encrypted on the way.', state: 'shipped' },
+  { label: 'Encryption at rest', note: 'A data key per workspace, AES-256-GCM.', state: 'shipped' },
+  { label: 'GDPR-aligned handling', note: 'Plain-English privacy policy, data processing terms on request.', state: 'shipped' },
+  { label: 'SOC 2 Type II', note: 'Controls in place. The audit window opens with our auditor.', state: 'planned' },
+  { label: 'ISO 27001', note: 'Under evaluation. No certification claimed today.', state: 'planned' },
 ];
 
-// Encryption flow steps for the KMS visual.
 const flow = [
-  {
-    n: '01',
-    title: 'AWS KMS',
-    body: 'Customer Master Key lives in KMS and never leaves it. KMS generates a 32-byte data encryption key for each organization on first use.',
-    tag: 'Root of trust',
-  },
-  {
-    n: '02',
-    title: 'Per-organization DEK',
-    body: 'The plaintext DEK is returned briefly to the application. The encrypted DEK blob comes back in the same call and is the only long-term copy.',
-    tag: 'AES-256',
-  },
-  {
-    n: '03',
-    title: 'AES-GCM seal',
-    body: 'Sensitive fields like mailbox tokens and IMAP credentials are sealed with AES-256-GCM using the user DEK, then base64 encoded.',
-    tag: 'Authenticated',
-  },
-  {
-    n: '04',
-    title: 'Ciphertext at rest',
-    body: 'Ciphertext is stored in Postgres. The encrypted DEK blob lives in the user_encrypted_keys Postgres table. Plaintext DEKs are cached in Redis with a TTL.',
-    tag: 'Envelope',
-  },
+  { t: 'Key management service', d: 'The root key never leaves it. It creates a 32-byte data key for each workspace.' },
+  { t: 'A key per workspace', d: 'Only the encrypted copy of that key is stored. The plain key is used briefly and cached for a short time.' },
+  { t: 'Sealed fields', d: 'Message content and integration tokens are sealed with AES-256-GCM under that key before they are written.' },
 ];
 
-// Two-column "what we collect / what we never collect".
+const signin = [
+  'Passwords are hashed with Argon2id and checked against a list of known breached passwords.',
+  'Sign-in, sign-up and password reset are protected by a CAPTCHA.',
+  'Two-factor codes can only be used once.',
+  'Changing your password or signing out other sessions ends those sessions everywhere, including live connections.',
+  'Every API response carries strict security headers, including HSTS and a default-deny content policy.',
+];
+
 const collect = [
-  'Account profile: email, name, organization.',
-  'Mailbox credentials, encrypted at rest: OAuth tokens, IMAP and SMTP secrets.',
-  'Sent and received message bodies for connected mailboxes, encrypted at rest.',
-  'Recipient lists you upload or sync.',
-  'Deliverability signals: bounces, complaints, replies, opens, clicks, suppression.',
-  'Billing metadata via Stripe. Card data never touches our servers.',
-  'Operational logs scoped to debugging. Customer message bodies are not logged.',
+  'Your account: email, name and workspace.',
+  'Mailbox credentials, encrypted at rest.',
+  'Messages from connected mailboxes, encrypted at rest.',
+  'The contacts you upload or sync.',
+  'Sending signals: bounces, complaints, replies, opens and clicks.',
+  'Billing details, through Stripe.',
+];
+const never = [
+  'Passwords in a form that can be reversed.',
+  'Card numbers. Stripe holds the payment details.',
+  'What your recipients do outside your own emails.',
+  'Message content inside error reports.',
+  'Anything shared between workspaces. Every query is scoped to yours.',
 ];
 
-const neverCollect = [
-  'Plaintext passwords. We store password hashes only, and never store mailbox passwords in plaintext.',
-  'Plaintext DEKs at rest. The encrypted DEK is what persists.',
-  'Card numbers, CVCs, or full PAN. Stripe holds the payment instrument.',
-  'Recipient browsing or off-platform behavior. Tracking covers your campaign mail only.',
-  'Customer message bodies inside error reports. Error payloads are scrubbed.',
-  'Cross-customer data sharing. Tenancy is enforced at the query layer.',
+const boundary = [
+  { k: 'Database', v: 'Never connects to it' },
+  { k: 'Commands and results', v: 'Over the event bus' },
+  { k: 'Decryption', v: 'Asks the control plane, holds no cloud key' },
+  { k: 'File storage', v: 'One signed operation at a time' },
 ];
 
-// Subprocessor summary. The infrastructure Warmbly relies on to run.
+const abuse = [
+  { t: 'Verified warmup', d: 'Every warmup email carries a single-use token tied to its recipient, so warmup can’t be faked, replayed or redirected.' },
+  { t: 'Strict pool rules', d: 'High complaint or bounce rates take a mailbox out of the shared pool, well before providers would act.' },
+  { t: 'Suppression at send time', d: 'Bounces, complaints and unsubscribes are checked before every send, across the whole workspace.' },
+  { t: 'Rate limits', d: 'API and live connections are limited per user, with budgets by plan.' },
+  { t: 'Duplicate protection', d: 'Tracking, deliverability and billing events are de-duplicated, so nothing is counted or charged twice.' },
+  { t: 'Admin oversight', d: 'Accounts that abuse the platform can be banned, and every enforcement action is recorded.' },
+];
+
 const subs = [
-  { name: 'AWS',         use: 'Compute, KMS, S3, MSK, RDS',               region: 'us-east-1, eu-west-1' },
-  { name: 'Cloudflare',  use: 'Edge, DDoS, Turnstile CAPTCHA',            region: 'Global' },
-  { name: 'Stripe',      use: 'Billing and tax',                          region: 'United States' },
-  { name: 'Postmark',    use: 'Transactional account email',              region: 'United States' },
-  { name: 'PostHog',     use: 'Product analytics, session replay and error reporting', region: 'United States' },
-  { name: 'Sentry',      use: 'Error reporting, content scrubbed',        region: 'United States' },
+  { name: 'AWS', use: 'Compute, key management, storage, databases', region: 'us-east-1, eu-west-1' },
+  { name: 'Cloudflare', use: 'Edge network, DDoS protection, CAPTCHA', region: 'Global' },
+  { name: 'Stripe', use: 'Billing and tax', region: 'United States' },
+  { name: 'Postmark', use: 'Account email', region: 'United States' },
+  { name: 'PostHog', use: 'Product analytics and error reporting', region: 'United States' },
+  { name: 'Sentry', use: 'Error reporting, content scrubbed', region: 'United States' },
 ];
 
-// Abuse and safety controls. Numbers below come straight from the repo.
-const safety = [
-  {
-    icon: 'shield',
-    title: 'Warmup-token verification',
-    body: 'Every warmup email carries a verification token. Missing, expired or malformed tokens are recorded against the sending mailbox.',
-  },
-  {
-    icon: 'warning',
-    title: 'Auto-block thresholds',
-    body: 'Spam placement, complaints, bounces, or tampering with warmup mail a mailbox received remove it from the shared warmup pool.',
-  },
-  {
-    icon: 'filter',
-    title: 'Suppression hygiene',
-    body: 'Bounces, complaints and unsubscribes are written to suppression and enforced at send time. Campaigns skip suppressed recipients automatically.',
-  },
-  {
-    icon: 'lock',
-    title: 'Turnstile on auth surfaces',
-    body: 'Cloudflare Turnstile gates login, registration, password reset and confirmation flows. Challenge freshness and remote IP are validated server-side.',
-  },
-  {
-    icon: 'cpu',
-    title: 'Per-user rate limiting',
-    body: 'API and WebSocket traffic are rate-limited per user against Redis-backed counters, with category-specific budgets per plan.',
-  },
-  {
-    icon: 'check',
-    title: 'Event idempotency',
-    body: 'Tracking events deduplicate via in-memory and persistent caches. Deliverability events and Stripe webhooks carry idempotency keys.',
-  },
-];
-
-// Worker boundary properties.
-const workerBoundary = [
-  { k: 'PostgreSQL',  v: 'never connected', tone: 'never' },
-  { k: 'Kafka',       v: 'commands in, results out', tone: 'yes' },
-  { k: 'AWS KMS',     v: 'envelope decryption only', tone: 'yes' },
-  { k: 'Backend API', v: 'DEK + message map (HTTPS)', tone: 'yes' },
-  { k: 'S3',          v: 'object storage only',      tone: 'yes' },
-  { k: 'Redis',       v: 'plaintext DEK cache, TTL', tone: 'yes' },
-];
-
-// Disclosure SLAs. Honest, conservative.
 const disclosure = [
-  { k: 'Acknowledge',   v: 'within 1 business day' },
-  { k: 'Initial triage', v: 'within 3 business days' },
-  { k: 'Status updates', v: 'every 7 days until resolved' },
-  { k: 'Public credit',  v: 'on request, after fix shipped' },
+  { k: 'We acknowledge your report', v: 'within 1 business day' },
+  { k: 'We triage it', v: 'within 3 business days' },
+  { k: 'We update you', v: 'every 7 days until it’s fixed' },
+  { k: 'We credit you publicly', v: 'on request, once the fix ships' },
 ];
+
+const h2 = 'scroll-mt-28 text-[28px] md:text-[34px] font-medium tracking-[-0.035em] leading-[1.15] text-slate-900';
+const lead = 'mt-4 max-w-2xl text-[16.5px] leading-[1.7] text-slate-600';
+const cap = 'mt-3 max-w-2xl text-[13.5px] leading-[1.55] text-slate-500';
 ---
 <Layout
-  title="Security, Privacy & Trust | Warmbly"
-  description="How Warmbly protects your mailbox, your data and your reputation. Envelope encryption with AWS KMS, worker isolation, abuse controls and vulnerability reporting."
+  title="Security and Trust | Warmbly"
+  description="How Warmbly protects your mailboxes and data: per-workspace encryption, Argon2id passwords, workers with no database access, abuse controls, subprocessors and how to report a vulnerability."
 >
-
-  <!-- =====================================================
-       HERO. HeroAtmosphere + floating card below.
-       ===================================================== -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-44 md:pb-56 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          Trust
-        </span>
-        Operational truth, not marketing.
-      </div>
-
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        How Warmbly protects<br/>your mailbox.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        We hold mailbox credentials, message bodies, and recipient lists. That is a serious responsibility. This page documents the encryption model, the worker boundary, the abuse controls, and how to reach our security team.
-      </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="mailto:team@warmbly.com" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Report a vulnerability</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-          </svg>
-        </a>
-        <a href="https://status.warmbly.com" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-          status.warmbly.com
-          <Icon name="arrowUpRight" size={12} />
-        </a>
-      </div>
+  <!-- HEADER: a document title, not a banner. -->
+  <section class="container-page pt-14 md:pt-24 pb-14 md:pb-16">
+    <div class="text-[14px] text-slate-500">Trust</div>
+    <h1 class="mt-4 max-w-4xl text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">
+      How Warmbly protects your mailboxes and your data.
+    </h1>
+    <p class="mt-6 max-w-2xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">
+      We hold mailbox credentials, messages and contact lists. This page describes how they are encrypted, who can reach them, and how to tell us if you find a problem.
+    </p>
+    <div class="mt-9 flex flex-wrap items-center gap-3">
+      <a href="mailto:team@warmbly.com" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">
+        Report a vulnerability <Icon name="arrowRight" size={14} />
+      </a>
+      <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">
+        Audit the code
+      </a>
     </div>
   </section>
 
-  <!-- =====================================================
-       FLOATING POSTURE CARD under hero. -mt-36 / -mt-44 pattern.
-       ===================================================== -->
-  <section class="relative -mt-36 md:-mt-44 pb-16 md:pb-24 z-10">
-    <div class="container-page">
-      <div class="rounded-[16px] bg-white ring-1 ring-slate-200 overflow-hidden shadow-[0_40px_90px_-30px_rgba(2,32,71,0.35),0_12px_30px_-12px_rgba(15,23,42,0.12)]">
-
-        <div class="px-5 md:px-7 py-4 border-b border-slate-200 flex items-center gap-3">
-          <div>
-            <div class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Posture</div>
-            <div class="mt-0.5 text-[13px] text-slate-900 font-medium">What we have shipped, and what is still planned.</div>
-          </div>
-          <a href="/changelog/" class="ml-auto text-[12px] font-medium text-[color:var(--brand)] hover:text-[color:var(--brand-strong)] inline-flex items-center gap-1">
-            Changelog <Icon name="arrowUpRight" size={11} />
-          </a>
-        </div>
-
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3">
-          {posture.map((p, i) => {
-            const shipped = p.state === 'shipped';
-            const dot = shipped ? 'bg-emerald-500' : 'bg-amber-500';
-            const pillBg = shipped ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700';
-            const stateLabel = shipped ? 'Shipped' : 'Planned';
-            const borderRight = (i % 3) !== 2 ? 'lg:border-r' : '';
-            const borderBottomLg = i < 3 ? 'lg:border-b' : '';
-            return (
-              <div class={`p-5 md:p-6 border-b border-slate-200 sm:[&:nth-child(odd)]:border-r sm:last:border-b-0 ${borderRight} ${borderBottomLg}`}>
-                <div class="flex items-start justify-between gap-3">
-                  <div class="text-[14px] font-semibold text-slate-900 tracking-[-0.01em]">{p.label}</div>
-                  <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium ${pillBg}`}>
-                    <span class={`w-1 h-1 rounded-full ${dot}`}></span>
-                    {stateLabel}
-                  </span>
-                </div>
-                <p class="mt-2 text-[12.5px] text-slate-500 leading-relaxed">{p.note}</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <p class="mt-4 text-center text-[12px] text-muted-foreground max-w-2xl mx-auto">
-        We do not claim certifications we do not hold. SOC 2 and ISO 27001 are listed as planned because they are honestly not in place yet.
-      </p>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       ENCRYPTION FLOW. The real envelope model.
-       ===================================================== -->
-  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24">
-    <div class="container-page">
-      <div class="max-w-2xl">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Encryption model</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Envelope encryption, with AWS KMS at the root.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/75 leading-relaxed">
-          Mailbox tokens, IMAP credentials and other sensitive fields are sealed at the application layer before they touch a database. The key that does the sealing is itself protected by KMS, so a database snapshot in isolation is not enough to read a single byte of plaintext.
-        </p>
-      </div>
-
-      <!-- Flow card -->
-      <div class="mt-10 rounded-[16px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
-        <div class="grid md:grid-cols-4">
-          {flow.map((f, i) => {
-            const isLast = i === 3;
-            const isFirstRow = i < 2;
-            const showArrow = i < 3;
-            const borderRight = isLast ? '' : 'md:border-r';
-            const borderBottom = isFirstRow ? 'border-b md:border-b-0' : (i === 2 ? 'border-b md:border-b-0' : '');
-            return (
-              <div class={`p-5 md:p-6 ${borderRight} ${borderBottom} border-[color:var(--border)] relative`}>
-                <div class="flex items-center justify-between">
-                  <div class="font-mono text-[11px] text-muted-foreground tracking-[0.14em]">{f.n}</div>
-                  <span class="inline-flex items-center h-5 px-1.5 rounded text-[10px] font-medium bg-sky-50 text-sky-700">{f.tag}</span>
-                </div>
-                <div class="mt-3 text-[15px] font-semibold text-heading tracking-[-0.01em]">{f.title}</div>
-                <p class="mt-2 text-[13px] text-foreground/70 leading-relaxed">{f.body}</p>
-                {showArrow && (
-                  <div class="hidden md:flex absolute right-[-10px] top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white ring-1 ring-[color:var(--border)] items-center justify-center z-10">
-                    <Icon name="arrowRight" size={10} class="text-[color:var(--sky-4)]" />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <!-- Footer summary strip -->
-        <div class="px-5 md:px-7 py-4 bg-[color:var(--surface-1)] border-t border-[color:var(--border)] flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Plaintext DEK cached in Redis with TTL</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Encrypted DEK persisted in Postgres</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> AES-256-GCM authenticated encryption</span>
-        </div>
-      </div>
-
-      <!-- Source anchors. Honest pointer to actual code. -->
-      <div class="mt-6 grid sm:grid-cols-2 gap-2">
-        {[
-          'internal/app/cipher/cipher.go',
-          'internal/app/cipher/encrypt.go',
-          'internal/infrastructure/kms/encryption.go',
-          'internal/infrastructure/encryptedkeys/postgres.go',
-        ].map((p) => (
-          <div class="flex items-center gap-2 px-3 py-2 rounded-[8px] bg-white ring-1 ring-[color:var(--border)] font-mono text-[12px] text-foreground/75">
-            <Icon name="code" size={12} class="text-[color:var(--sky-4)]" />
-            {p}
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       WORKER BOUNDARY.
-       ===================================================== -->
-  <section class="py-16 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_1.2fr] gap-10 lg:gap-16 items-start">
-      <div>
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Worker boundary</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Workers do not touch your database.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/75 leading-relaxed">
-          Workers are the execution plane. They send and sync mail across many machines with separate network identities. They receive commands from Kafka and publish results to Kafka. They never open a PostgreSQL connection.
-        </p>
-        <p class="mt-3 text-[14.5px] text-foreground/70 leading-relaxed">
-          That boundary matters. A worker compromise does not expose the relational store. Sensitive payloads stay encrypted in transit and are only opened against KMS-backed primitives.
-        </p>
-        <a href="https://github.com/warmbly/warmbly/blob/main/resources/architecture.md" class="mt-5 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">
-          Read the architecture <Icon name="arrowRight" size={12} />
-        </a>
-      </div>
-
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
-        <div class="px-5 py-3 border-b border-[color:var(--border)] bg-[color:var(--surface-1)] flex items-center gap-2">
-          <Icon name="cpu" size={14} class="text-[color:var(--sky-5)]" />
-          <div class="text-[12px] font-mono text-muted-foreground tracking-[0.06em]">cmd/worker · network surface</div>
-        </div>
-        <div class="divide-y divide-[color:var(--border)]">
-          {workerBoundary.map((row) => {
-            const isNever = row.tone === 'never';
-            const dot = isNever ? 'bg-rose-500' : 'bg-emerald-500';
-            const pill = isNever ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700';
-            return (
-              <div class="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-5 py-3.5">
-                <div class="text-[13.5px] font-semibold text-heading">{row.k}</div>
-                <div class="text-[12.5px] text-foreground/70 font-mono">{row.v}</div>
-                <span class={`inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10.5px] font-medium ${pill}`}>
-                  <span class={`w-1 h-1 rounded-full ${dot}`}></span>
-                  {isNever ? 'never' : 'allowed'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       DATA WE COLLECT / WE NEVER COLLECT.
-       ===================================================== -->
-  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24">
-    <div class="container-page">
-      <div class="max-w-2xl mb-10">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Data handling</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          What we hold, and what we refuse to hold.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/75 leading-relaxed">
-          Specifics, not slogans. If you do not see something on the left, we are probably not collecting it. If something on the right ever moves, we will say so on /changelog/.
-        </p>
-      </div>
-
-      <div class="grid lg:grid-cols-2 gap-5">
-        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
-          <div class="px-5 py-3 border-b border-[color:var(--border)] flex items-center gap-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
-            <div class="text-[12px] uppercase tracking-[0.14em] font-mono text-muted-foreground">What we collect</div>
-          </div>
-          <ul class="divide-y divide-[color:var(--border)]">
-            {collect.map((c) => (
-              <li class="px-5 py-3.5 flex items-start gap-3">
-                <Icon name="check" size={14} class="text-sky-600 mt-0.5 shrink-0" />
-                <span class="text-[13.5px] text-foreground/85 leading-relaxed">{c}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
-          <div class="px-5 py-3 border-b border-[color:var(--border)] flex items-center gap-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-            <div class="text-[12px] uppercase tracking-[0.14em] font-mono text-muted-foreground">What we never collect</div>
-          </div>
-          <ul class="divide-y divide-[color:var(--border)]">
-            {neverCollect.map((c) => (
-              <li class="px-5 py-3.5 flex items-start gap-3">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-rose-500 mt-0.5 shrink-0" aria-hidden="true">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-                <span class="text-[13.5px] text-foreground/85 leading-relaxed">{c}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       ABUSE AND SAFETY POSTURE.
-       ===================================================== -->
-  <section class="py-16 md:py-24">
-    <div class="container-page">
-      <div class="max-w-2xl">
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Abuse and safety</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Layered controls, not one brittle gate.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/75 leading-relaxed">
-          A cold email platform is only as safe as the slowest line of defense. We block early, dedupe everywhere, and keep an audit trail of admin actions.
-        </p>
-      </div>
-
-      <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {safety.map((s) => (
-          <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-5" style="box-shadow: var(--shadow-sm);">
-            <div class="inline-flex items-center justify-center w-9 h-9 rounded-[10px] bg-sky-50 text-[color:var(--sky-5)]">
-              <Icon name={s.icon} size={16} />
-            </div>
-            <div class="mt-4 text-[14.5px] font-semibold text-heading tracking-[-0.01em]">{s.title}</div>
-            <p class="mt-1.5 text-[13px] text-foreground/70 leading-relaxed">{s.body}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       SUBPROCESSORS SUMMARY + LINK.
-       ===================================================== -->
-  <section class="bg-[color:var(--surface-1)] border-y border-[color:var(--border)] py-16 md:py-24">
-    <div class="container-page">
-      <div class="flex items-end justify-between flex-wrap gap-4 mb-8">
-        <div class="max-w-xl">
-          <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Subprocessors</div>
-          <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">Who else touches your data.</h2>
-          <p class="mt-4 text-[15px] text-foreground/75 leading-relaxed">
-            The infrastructure and operational providers Warmbly relies on to run.
-          </p>
-        </div>
-      </div>
-
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
-        <div class="grid grid-cols-[1.2fr_2fr_1.2fr] px-5 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.14em] font-mono text-muted-foreground">
-          <div>Subprocessor</div>
-          <div>Purpose</div>
-          <div>Region</div>
-        </div>
-        {subs.map((s) => (
-          <div class="grid grid-cols-[1.2fr_2fr_1.2fr] px-5 py-3.5 border-b border-[color:var(--border)] last:border-b-0 text-[13.5px] items-baseline">
-            <div class="font-semibold text-heading">{s.name}</div>
-            <div class="text-foreground/75">{s.use}</div>
-            <div class="font-mono text-[12.5px] text-foreground/70">{s.region}</div>
-          </div>
-        ))}
-      </div>
-
-      <p class="mt-4 text-[12px] text-muted-foreground">
-        We give 30 days notice before adding any subprocessor that processes customer Personal Data.
-      </p>
-    </div>
-  </section>
-
-  <!-- =====================================================
-       RESPONSIBLE DISCLOSURE.
-       ===================================================== -->
-  <section class="py-16 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1.1fr_1fr] gap-10 lg:gap-16 items-start">
-      <div>
-        <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">Responsible disclosure</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Found something. Tell us first.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/75 leading-relaxed">
-          We welcome reports from security researchers and operators. Send a description, a proof of concept, and any logs to <span class="font-mono text-heading">team@warmbly.com</span>. We will acknowledge quickly, triage in the open, and keep you posted until the fix ships.
-        </p>
-        <p class="mt-3 text-[14.5px] text-foreground/70 leading-relaxed">
-          Please avoid testing that degrades service for other customers, accesses data that is not your own, or relies on social engineering of employees or contractors. Good faith research is welcome.
-        </p>
-
-        <div class="mt-6 inline-flex items-center gap-2 px-3 py-2 rounded-[10px] bg-white ring-1 ring-[color:var(--border)]">
-          <Icon name="mail" size={14} class="text-[color:var(--sky-5)]" />
-          <a href="mailto:team@warmbly.com" class="font-mono text-[13px] text-heading hover:text-[color:var(--brand-strong)]">team@warmbly.com</a>
-        </div>
-      </div>
-
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden" style="box-shadow: var(--shadow-sm);">
-        <div class="px-5 py-3 border-b border-[color:var(--border)] bg-[color:var(--surface-1)] text-[12px] uppercase tracking-[0.14em] font-mono text-muted-foreground">
-          Response SLA
-        </div>
-        <div class="divide-y divide-[color:var(--border)]">
-          {disclosure.map((d) => (
-            <div class="grid grid-cols-[140px_1fr] gap-3 px-5 py-3.5 items-baseline">
-              <div class="text-[12.5px] uppercase tracking-[0.12em] font-mono text-muted-foreground">{d.k}</div>
-              <div class="text-[13.5px] text-foreground/85">{d.v}</div>
-            </div>
+  <!-- DOCUMENT: a sticky contents list beside the sections. -->
+  <div class="container-page border-t border-slate-900/[0.06] pb-20 md:pb-28">
+    <div class="grid gap-12 pt-14 lg:grid-cols-[220px_1fr] lg:gap-20">
+      <nav class="hidden lg:block" aria-label="On this page">
+        <ol class="sticky top-28 space-y-1 border-l border-slate-200" data-toc>
+          {toc.map((t) => (
+            <li><a href={`#${t.id}`} data-toc-link={t.id} class="-ml-px block border-l border-transparent py-1.5 pl-4 text-[14px] text-slate-500 transition-colors hover:text-slate-900">{t.t}</a></li>
           ))}
-        </div>
+        </ol>
+      </nav>
+
+      <div class="min-w-0 space-y-20">
+        <section id="posture" class="scroll-mt-28">
+          <h2 class={h2}>At a glance</h2>
+          <ul class="mt-8 divide-y divide-slate-200 border-y border-slate-200">
+            {posture.map((p) => (
+              <li class="grid gap-1 py-4 sm:grid-cols-[1fr_1.4fr_auto] sm:items-baseline sm:gap-6">
+                <span class="text-[16px] font-medium text-slate-900">{p.label}</span>
+                <span class="text-[15px] text-slate-500">{p.note}</span>
+                <span class={`inline-flex items-center gap-1.5 text-[13px] ${p.state === 'shipped' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  <span class={`size-1.5 rounded-full ${p.state === 'shipped' ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                  {p.state === 'shipped' ? 'In place' : 'Planned'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section id="encryption" class="scroll-mt-28">
+          <h2 class={h2}>Encryption</h2>
+          <p class={lead}>Warmbly uses envelope encryption. A key management service holds the root key, every workspace gets its own data key, and sensitive fields are sealed with that key before they reach the database. Mailbox credentials are sealed separately, with a dedicated credentials key.</p>
+          <div class="mt-8">
+            <EncryptionFigure n={1} caption="Envelope encryption. The root key stays inside the key management service, each workspace has its own data key, and only that key's encrypted copy is ever stored." />
+          </div>
+          <ol class="mt-8 grid gap-6 md:grid-cols-3 md:gap-8">
+            {flow.map((f, i) => (
+              <li class="border-t border-slate-200 pt-4">
+                <div class="font-mono text-[12px] text-slate-400">{String(i + 1).padStart(2, '0')}</div>
+                <h3 class="mt-2 text-[16px] font-medium text-slate-900">{f.t}</h3>
+                <p class="mt-2 text-[14.5px] leading-[1.6] text-slate-500">{f.d}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section id="accounts" class="scroll-mt-28">
+          <h2 class={h2}>Accounts and sign-in</h2>
+          <figure class="m-0 mt-8">
+            <SecurityScene />
+            <figcaption class={cap}><span class="font-medium text-slate-700">Figure 2.</span> Settings &gt; Security. Two-factor status and every device signed in to your account. Signing out the other sessions ends them everywhere at once.</figcaption>
+          </figure>
+          <ul class="mt-8 space-y-4">
+            {signin.map((s) => (
+              <li class="flex items-start gap-3 text-[16px] leading-[1.6] text-slate-600"><Icon name="check" size={16} class="mt-1 shrink-0 text-slate-900" />{s}</li>
+            ))}
+          </ul>
+        </section>
+
+
+        <section id="data" class="scroll-mt-28">
+          <h2 class={h2}>What we store, and what we never store</h2>
+          <div class="mt-8 grid gap-3 md:grid-cols-2">
+            <div class="rounded-[6px] bg-white p-6 ring-1 ring-slate-200">
+              <h3 class="text-[16px] font-medium text-slate-900">We store</h3>
+              <ul class="mt-4 divide-y divide-slate-100 text-[15px] leading-[1.55] text-slate-600">{collect.map((c) => (
+                <li class="flex items-start gap-3 py-2.5"><Icon name={c.includes('encrypted') ? 'lock' : 'check'} size={15} class={`mt-1 shrink-0 ${c.includes('encrypted') ? 'text-sky-600' : 'text-slate-400'}`} /><span>{c}</span></li>
+              ))}</ul>
+            </div>
+            <div class="rounded-[6px] bg-white p-6 ring-1 ring-slate-200">
+              <h3 class="text-[16px] font-medium text-slate-900">We never store</h3>
+              <ul class="mt-4 divide-y divide-slate-100 text-[15px] leading-[1.55] text-slate-600">{never.map((c) => (
+                <li class="flex items-start gap-3 py-2.5"><span class="mt-[5px] inline-flex size-[15px] shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-500 ring-1 ring-rose-100"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span>{c}</span></li>
+              ))}</ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="workers" class="scroll-mt-28">
+          <h2 class={h2}>The worker boundary</h2>
+          <p class={lead}>Workers are the machines that sign in to your mailboxes. They are kept deliberately small: no database connection and no cloud credentials. Anything privileged goes through the control plane, one request at a time.</p>
+          <div class="mt-8">
+            <WorkerFigure n={3} caption="The worker boundary. A worker talks to the control plane only through the event bus and single requests, and otherwise only to your mailbox provider. It never connects to the database." />
+          </div>
+          <dl class="mt-8 grid gap-px overflow-hidden rounded-[6px] bg-slate-200 ring-1 ring-slate-200 sm:grid-cols-2">
+            {boundary.map((b) => (
+              <div class="bg-white p-5">
+                <dt class="text-[13px] text-slate-400">{b.k}</dt>
+                <dd class="mt-1 text-[16px] font-medium text-slate-900">{b.v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <section id="abuse" class="scroll-mt-28">
+          <h2 class={h2}>Abuse controls</h2>
+          <p class={lead}>A shared warmup pool and shared infrastructure only work if nobody can abuse them, so the controls are layered rather than one gate.</p>
+          <figure class="m-0 mt-8">
+            <AuditScene />
+            <figcaption class={cap}><span class="font-medium text-slate-700">Figure 4.</span> The audit log. Owners and admins see every change made in the workspace, who made it and the address it came from, as it happens.</figcaption>
+          </figure>
+          <div class="mt-10 grid gap-x-10 gap-y-8 md:grid-cols-2">
+            {abuse.map((a) => (
+              <div>
+                <h3 class="text-[16px] font-medium text-slate-900">{a.t}</h3>
+                <p class="mt-1.5 text-[15px] leading-[1.6] text-slate-500">{a.d}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+
+        <section id="subprocessors" class="scroll-mt-28">
+          <h2 class={h2}>Subprocessors</h2>
+          <p class={lead}>The services Warmbly Cloud relies on to run. New subprocessors are announced 30 days before they start. A self-hosted instance uses none of them unless you choose to.</p>
+          <div class="mt-8 overflow-x-auto">
+            <table class="w-full min-w-[560px] text-left text-[15px]">
+              <thead><tr class="border-b border-slate-200 text-[13px] text-slate-400"><th class="py-3 pr-6 font-normal">Service</th><th class="py-3 pr-6 font-normal">Used for</th><th class="py-3 font-normal">Region</th></tr></thead>
+              <tbody class="divide-y divide-slate-100">
+                {subs.map((s) => <tr><td class="py-3.5 pr-6 font-medium text-slate-900">{s.name}</td><td class="py-3.5 pr-6 text-slate-600">{s.use}</td><td class="py-3.5 text-slate-500">{s.region}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="disclosure" class="scroll-mt-28">
+          <h2 class={h2}>Reporting a vulnerability</h2>
+          <p class={lead}>We welcome reports from researchers and from people running Warmbly themselves. Send a description, a proof of concept and any logs to <a class="font-medium text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900" href="mailto:team@warmbly.com">team@warmbly.com</a>.</p>
+          <ol class="relative mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
+            <span class="absolute left-0 right-0 top-[7px] hidden h-px bg-slate-200 lg:block" aria-hidden="true"></span>
+            {disclosure.map((d, i) => (
+              <li class="relative">
+                <span class={`relative z-10 block size-[15px] rounded-full ring-4 ring-white ${i === disclosure.length - 1 ? 'bg-emerald-500' : 'bg-slate-900'}`}></span>
+                <div class="mt-4 text-[15px] font-medium text-slate-900">{d.k}</div>
+                <div class="mt-1 text-[15px] text-slate-500">{d.v}</div>
+              </li>
+            ))}
+          </ol>
+        </section>
       </div>
     </div>
-  </section>
+  </div>
 
-  <!-- =====================================================
-       STATUS + CHANGELOG QUICK LINKS.
-       ===================================================== -->
-  <section class="bg-[color:var(--surface-1)] border-t border-[color:var(--border)] py-12 md:py-16">
-    <div class="container-page grid sm:grid-cols-2 gap-4">
-      <a href="https://status.warmbly.com" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-5 flex items-start gap-4 hover:-translate-y-0.5 transition-transform" style="box-shadow: var(--shadow-sm);">
-        <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-emerald-50">
-          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        </div>
-        <div class="flex-1">
-          <div class="text-[14.5px] font-semibold text-heading">Live status</div>
-          <div class="mt-1 text-[12.5px] text-foreground/70 leading-relaxed">API, worker fleet, webhooks, realtime and inbox sync. Component-level history at <span class="font-mono">status.warmbly.com</span>.</div>
-        </div>
-        <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[color:var(--brand)] mt-1" />
-      </a>
-
-      <a href="/changelog/" class="group rounded-[14px] bg-white ring-1 ring-[color:var(--border)] p-5 flex items-start gap-4 hover:-translate-y-0.5 transition-transform" style="box-shadow: var(--shadow-sm);">
-        <div class="inline-flex items-center justify-center w-10 h-10 rounded-[10px] bg-sky-50 text-[color:var(--sky-5)]">
-          <Icon name="list" size={16} />
-        </div>
-        <div class="flex-1">
-          <div class="text-[14.5px] font-semibold text-heading">Changelog</div>
-          <div class="mt-1 text-[12.5px] text-foreground/70 leading-relaxed">Security-relevant changes are flagged. Subprocessor additions are announced 30 days ahead.</div>
-        </div>
-        <Icon name="arrowUpRight" size={14} class="text-muted-foreground group-hover:text-[color:var(--brand)] mt-1" />
-      </a>
-    </div>
-  </section>
-
-  <CTA
-    title="Want the full security package?"
-    description="Data processing terms, security questionnaire, and architecture deep dive on request. Replies from a human within one business day."
-    primaryLabel="Email team@warmbly.com"
-    primaryHref="mailto:team@warmbly.com"
-    secondaryLabel="Read the privacy policy"
-    secondaryHref="/privacy/"
-  />
+  <CTA photo="frost-blue" title="Need the full security package?" description="Data processing terms, a security questionnaire and an architecture walkthrough, on request. A person replies within one business day." primaryLabel="Email us" primaryHref="mailto:team@warmbly.com" secondaryLabel="Read the code" secondaryHref="https://github.com/warmbly/warmbly" />
 </Layout>
-</content>
-</invoke>
+
+<style>
+  .toc-on { color: #0f172a; border-color: #0f172a; }
+</style>
+
+<script>
+  // Highlight the section being read in the contents list.
+  const links = new Map([...document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]')].map((a) => [a.dataset.tocLink!, a]));
+  if (links.size && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        links.forEach((a) => a.classList.remove('toc-on'));
+        links.get(e.target.id)?.classList.add('toc-on');
+      });
+    }, { rootMargin: '-30% 0px -60% 0px' });
+    links.forEach((_, id) => { const s = document.getElementById(id); if (s) io.observe(s); });
+  }
+</script>

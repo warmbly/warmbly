@@ -16,34 +16,24 @@ const follow = [
 ];
 ---
 <Layout
-  title="Blog | Warmbly"
+  title="Cold Email and Deliverability Blog | Warmbly"
   description="Deliverability, sending infrastructure, and what it takes to run an open-source cold email platform."
 >
-  <!-- ============================================================
-       HEADER — compact, newsroom style; the posts are the page.
-  ============================================================ -->
-  <section class="bg-white">
-    <div class="container-page pt-12 md:pt-16 pb-8 md:pb-10">
-      <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Blog</div>
-      <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
-        <h1 class="text-[34px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.04] text-heading">
-          The Warmbly blog.
-        </h1>
-        <p class="text-[12px] font-mono text-muted-foreground pb-1.5">
-          RSS feed at <a href="/blog/rss.xml" class="text-[#0369a1] hover:text-[#075985]">/blog/rss.xml</a>
-        </p>
+  <section class="container-page pt-14 md:pt-24 pb-10">
+    <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+      <div class="max-w-3xl">
+        <div class="text-[14px] text-slate-500">Blog</div>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">Notes on sending cold email that lands.</h1>
+        <p class="mt-6 max-w-2xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">Deliverability, warmup, sending limits and what it takes to build an open-source cold email platform.</p>
       </div>
-      <p class="mt-3 text-[15px] md:text-[16px] text-foreground/70 max-w-2xl leading-relaxed">
-        Deliverability, sending infrastructure, and what it takes to run an
-        open-source cold email platform.
-      </p>
+      <a href="/blog/rss.xml" class="text-[14px] text-slate-500 hover:text-slate-900">RSS feed</a>
     </div>
   </section>
 
   <!-- ============================================================
        POSTS — tabs + search + cover-image grid
   ============================================================ -->
-  <section class="bg-white pb-16 md:pb-20">
+  <section class="pb-20 md:pb-28">
     <div class="container-page">
       <PostGrid posts={posts}>
         <TagFilter slot="filters" tags={tags} total={posts.length} />
@@ -51,33 +41,27 @@ const follow = [
     </div>
   </section>
 
-  <!-- ============================================================
-       TOPICS + ELSEWHERE — one compact band
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-2)]/40 border-y border-[color:var(--border)] py-10 md:py-14">
-    <div class="container-page">
-      <div class="grid lg:grid-cols-2 gap-10 lg:gap-16">
-        <div>
-          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">Topics</div>
-          <div class="flex flex-wrap gap-2.5">
-            {tags.map(({ tag, count }) => (
-              <a href={`/blog/tag/${tag}/`} class="group inline-flex items-center gap-2 h-9 px-3.5 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 hover:-translate-y-0.5 transition-all duration-200 text-[13px] font-medium text-foreground/80 hover:text-[#0369a1]">
-                {tag}
-                <span class="font-mono text-[10.5px] text-muted-foreground">{count}</span>
-              </a>
-            ))}
-          </div>
+  <div class="container-page" aria-hidden="true"><div class="h-px bg-slate-900/[0.06] md:-mx-6"></div></div>
+  <section class="container-page py-16 md:py-20">
+    <div class="grid gap-10 lg:grid-cols-2 lg:gap-16">
+      <div>
+        <h2 class="text-[13px] text-slate-400">Topics</h2>
+        <div class="mt-4 flex flex-wrap gap-2">
+          {tags.map(({ tag, count }) => (
+            <a href={`/blog/tag/${tag}/`} class="inline-flex h-9 items-center gap-2 rounded-full px-4 text-[14px] text-slate-600 ring-1 ring-slate-200 transition-colors hover:text-slate-900 hover:ring-slate-300">
+              {tag}<span class="tabular-nums text-[12.5px] text-slate-400">{count}</span>
+            </a>
+          ))}
         </div>
-        <div>
-          <div class="text-[10.5px] uppercase tracking-[0.22em] font-mono text-muted-foreground mb-4">Elsewhere</div>
-          <div class="flex flex-wrap gap-2.5">
-            {follow.map((f) => (
-              <a href={f.href} {...(f.external ? { target: '_blank', rel: 'noopener' } : {})} class="group inline-flex items-center gap-2 h-9 px-3.5 rounded-[10px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 hover:-translate-y-0.5 transition-all duration-200 text-[13px] font-medium text-foreground/80 hover:text-[#0369a1]">
-                <Icon name={f.icon} size={13} class="text-[#0284c7]" />
-                {f.title}
-              </a>
-            ))}
-          </div>
+      </div>
+      <div>
+        <h2 class="text-[13px] text-slate-400">Elsewhere</h2>
+        <div class="mt-4 flex flex-wrap gap-2">
+          {follow.map((f) => (
+            <a href={f.href} {...(f.external ? { target: '_blank', rel: 'noopener' } : {})} class="inline-flex h-9 items-center gap-2 rounded-full px-4 text-[14px] text-slate-600 ring-1 ring-slate-200 transition-colors hover:text-slate-900 hover:ring-slate-300">
+              <Icon name={f.icon} size={13} class="text-slate-400" />{f.title}
+            </a>
+          ))}
         </div>
       </div>
     </div>

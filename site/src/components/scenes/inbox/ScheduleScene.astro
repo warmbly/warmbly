@@ -1,0 +1,54 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from './Ic.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * The reply composer's Schedule menu (ReplyComposer.tsx SCHEDULE_PRESETS),
+ * with a queued reply already sitting in the thread as a dashed card.
+ */
+const presets = ['In 1 hour', 'In 3 hours', 'Tomorrow 9:00', 'Tomorrow 17:00', 'Monday 9:00'];
+---
+<ScaledStage w={460} h={345} photo="sheer-blue">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[440px] h-[319px] flex flex-col`}>
+    <div class="flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-100/80 pl-3.5 pr-1.5">
+      <Ic name="cornerUp" size={14} class="text-slate-500" />
+      <span class="truncate text-[11.5px] text-slate-500"><span class="font-semibold text-slate-800">Reply</span> to Lena Fischer</span>
+    </div>
+    <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-[7px]">
+      <span class="w-9 shrink-0 text-[11px] text-slate-400">From</span>
+      <span class="text-[12.5px] text-slate-800">Alex Kim</span>
+      <span class="font-mono text-[10.5px] text-slate-400">alex@northwind.dev</span>
+    </div>
+    <div class="flex-1 px-4 py-3 text-[12.5px] leading-[1.6] text-slate-800">
+      Hi Lena, here is the two-minute walkthrough I mentioned. The ramp section is the part your team asked about.
+    </div>
+    <div class="flex items-center gap-1.5 border-t border-slate-200/60 px-3 py-2">
+      <span class="inline-flex h-7 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 text-[12px] font-medium text-white"><Glyph name="send" size={12} />Send</span>
+      <span class="inline-flex h-7 items-center gap-1 rounded-md border border-slate-300 bg-slate-50 px-2 text-[12px] text-slate-900"><Glyph name="clock" size={12} />Schedule<Glyph name="chevronDown" size={12} class="text-slate-400" /></span>
+      <span class="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 px-2 text-[12px] text-slate-700"><Ic name="fileText" size={12} />Template<Glyph name="chevronDown" size={12} class="text-slate-400" /></span>
+    </div>
+  </div>
+
+  <!-- PopoverMenu, opened upward from Schedule. -->
+  <div class={`sc-menu ${FLOAT} left-[114px] top-[80px] w-[200px] py-1`}>
+    <div class="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Send at</div>
+    {presets.map((p) => (
+      <div class={`flex h-7 items-center px-3 text-[12.5px] ${p === 'Tomorrow 9:00' ? 'sc-pick bg-slate-50 text-slate-900' : 'text-slate-700'}`}>{p}</div>
+    ))}
+    <div class="my-1 h-px bg-slate-200"></div>
+    <div class="flex h-7 items-center px-3 text-[12.5px] text-slate-700">Pick a time</div>
+  </div>
+
+  <!-- How a queued send shows in the thread for everyone. -->
+  <div class={`${FLOAT} left-[230px] top-[12px] w-[216px] border border-dashed border-sky-300 px-3 py-2`}>
+    <div class="flex items-center gap-1.5 text-[11px] font-medium text-sky-700"><Glyph name="clock" size={12} />Scheduled · Tomorrow 9:00</div>
+    <div class="mt-0.5 truncate text-[11px] text-slate-500">Anyone on the team can cancel it.</div>
+  </div>
+</ScaledStage>
+
+<style>
+  .sc-pick { animation: sc-pick 6s ease-in-out infinite; }
+  @keyframes sc-pick { 0%, 30% { background-color: transparent; } 40%, 85% { background-color: #f1f5f9; } 95%, 100% { background-color: transparent; } }
+</style>

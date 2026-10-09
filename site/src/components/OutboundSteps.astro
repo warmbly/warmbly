@@ -1,0 +1,65 @@
+---
+import AccountsScene from './scenes/AccountsScene.astro';
+import WarmupScene from './scenes/WarmupScene.astro';
+import CampaignScene from './scenes/CampaignScene.astro';
+import DeliverabilityScene from './scenes/DeliverabilityScene.astro';
+
+/**
+ * How it works, in four numbered steps that alternate copy and a live
+ * dashboard scene.
+ */
+const steps = [
+  {
+    n: '01',
+    title: 'Connect your mailboxes',
+    text: "Add Google Workspace, Microsoft 365 or any SMTP and IMAP account. Warmbly checks your domain's SPF and DMARC records and shows the health of every mailbox.",
+    link: { text: 'Learn about sending', href: '/sending/' },
+  },
+  {
+    n: '02',
+    title: 'Warm them up',
+    text: 'Each mailbox exchanges a small amount of real email with other inboxes, starting at 10 a day and growing slowly. This builds the reputation it needs before your first campaign.',
+    link: { text: 'Learn about warmup', href: '/warmup/' },
+  },
+  {
+    n: '03',
+    title: 'Send your campaigns',
+    text: 'Build a sequence, add your contacts and choose your sending hours. Warmbly spreads the emails across your mailboxes, with a daily limit and a pause between sends for each one.',
+    link: { text: 'Learn about campaigns', href: '/campaigns/' },
+  },
+  {
+    n: '04',
+    title: 'Watch your deliverability',
+    text: 'See how much of your mail lands in the inbox at Gmail, Outlook and Yahoo. If a mailbox starts going to spam, Warmbly lowers its volume before it affects the others.',
+    link: { text: 'Learn about deliverability', href: '/deliverability/' },
+  },
+];
+---
+<section class="container-page py-20 md:py-28">
+  <h2 class="max-w-5xl text-[36px] md:text-[58px] font-medium tracking-[-0.045em] leading-[1.04]">
+    <span class="text-slate-400">How it works.</span>
+    <span class="text-slate-900"> Warmbly keeps your mailboxes healthy while you send.</span>
+  </h2>
+
+  <div class="mt-16 md:mt-28 space-y-20 md:space-y-32">
+    {steps.map((s, i) => (
+      <div class="grid items-end gap-10 lg:grid-cols-2 lg:gap-16">
+        <div class={`${i % 2 ? 'lg:order-2' : ''} lg:pb-2`}>
+          <div class="text-[34px] md:text-[44px] font-light tracking-[-0.04em] leading-none text-slate-400">{s.n}</div>
+          <h3 class="mt-5 text-[30px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.05] text-slate-900">{s.title}</h3>
+          <p class="mt-4 max-w-xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">{s.text}</p>
+          <a href={s.link.href} class="group mt-5 inline-flex items-center gap-2 text-[17px] md:text-[18px] text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">
+            {s.link.text}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform group-hover:translate-x-0.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </a>
+        </div>
+        <div class={i % 2 ? 'lg:order-1' : ''}>
+          {s.n === '01' && <AccountsScene />}
+          {s.n === '02' && <WarmupScene />}
+          {s.n === '03' && <CampaignScene />}
+          {s.n === '04' && <DeliverabilityScene />}
+        </div>
+      </div>
+    ))}
+  </div>
+</section>

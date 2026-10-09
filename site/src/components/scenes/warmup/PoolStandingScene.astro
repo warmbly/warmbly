@@ -1,0 +1,106 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import DrawerHead from './DrawerHead.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * A quarantined mailbox on the drawer's Warmup tab: the banner
+ * (WarmupBanBanner) with its reason, dates and appeal, then the pool standing
+ * the Warmup reputation block shows. Beside it, the bands a standing moves
+ * through, with this one lit.
+ */
+const bands = [
+  { label: 'Healthy', dot: 'bg-emerald-500', when: 'Nothing over a line', does: 'Full volume' },
+  { label: 'Watch', dot: 'bg-amber-400', when: 'Spam 10% · complaints 0.03%', does: 'Slowed a little' },
+  { label: 'Throttled', dot: 'bg-amber-500', when: 'Spam 20%', does: 'Half volume, lifts itself' },
+  { label: 'Quarantined', dot: 'bg-rose-500', when: 'Complaints 0.10% · bounces 5%', does: 'Out 7 days, cold paused', current: true },
+  { label: 'Blocked', dot: 'bg-rose-700', when: 'Complaints 0.30% · bounces 10%', does: 'Out 30 days' },
+];
+---
+<ScaledStage w={760} h={570} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[470px] h-[560px]`}>
+    <DrawerHead addr="ana@brightco.io" provider="Google Workspace" mark="google" active="Warmup" />
+    <div class="divide-y divide-slate-200/60">
+      <div class="px-5 py-4">
+        <div class="rounded-md border border-rose-200 bg-rose-50 p-3.5">
+          <div class="flex items-start gap-2.5">
+            <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-rose-100 text-rose-600"><Ico name="ban" size={16} /></span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-[12.5px] font-semibold text-rose-900">Blocked from warmup</span>
+                <span class="inline-flex h-5 items-center rounded-full border border-rose-200 bg-white/60 px-2 text-[10px] font-semibold uppercase tracking-wide text-rose-700">Quarantined</span>
+              </div>
+              <p class="mt-1 text-[11.5px] leading-relaxed text-rose-800/90">bounce rate 6.2% exceeded quarantine threshold</p>
+              <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-rose-700/80">
+                <span class="inline-flex items-center gap-1"><Glyph name="clock" size={12} />Blocked Oct 9</span>
+                <span class="inline-flex items-center gap-1"><Glyph name="calendar" size={12} />Until Oct 16</span>
+              </div>
+              <span class="mt-3 h-8 px-3 rounded-md bg-rose-600 text-white text-[12px] font-medium inline-flex items-center gap-1.5"><Ico name="shieldAlert" size={14} />Appeal this block</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class={EYEBROW}>Warmup reputation</span>
+            <span class="text-[10.5px] text-slate-400">Premium pool</span>
+          </div>
+          <span class="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600"><Glyph name="shieldCheck" size={14} />Quarantined</span>
+        </div>
+        <p class="mt-1.5 text-[11.5px] leading-relaxed text-slate-500">bounce rate 6.2% exceeded quarantine threshold</p>
+        <p class="mt-1 text-[11px] text-rose-600">Paused from the pool until Oct 16.</p>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class={EYEBROW}>Domain authentication</div>
+            <p class="mt-1 text-[11px] leading-relaxed text-slate-400">SPF, DKIM and DMARC records for brightco.io.</p>
+          </div>
+          <span class="h-8 px-3 rounded-md border border-slate-200 inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-slate-700"><Ico name="refresh" size={14} />Check</span>
+        </div>
+      </div>
+
+      <div class="px-5 py-4">
+        <div class={EYEBROW}>Ramp configuration</div>
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <div><div class="mb-1 text-[12px] font-medium text-slate-700">Starting volume</div><div class="flex h-9 items-center justify-end gap-2 rounded-md border border-slate-200 px-2.5 text-[12.5px] tabular-nums text-slate-900">10 <span class="text-[11px] text-slate-400">emails / day</span></div></div>
+          <div><div class="mb-1 text-[12px] font-medium text-slate-700">Maximum volume</div><div class="flex h-9 items-center justify-end gap-2 rounded-md border border-slate-200 px-2.5 text-[12.5px] tabular-nums text-slate-900">40 <span class="text-[11px] text-slate-400">emails / day</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The bands a mailbox's pool standing moves through. -->
+  <div class={`${FLOAT} left-[452px] top-[150px] w-[284px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class={EYEBROW}>Pool standing</div>
+      <div class="mt-1 text-[12px] text-slate-500">The worst signal sets the band.</div>
+    </div>
+    <div class="py-1.5">
+      {bands.map((b, i) => (
+        <div class={`relative mx-1.5 rounded-md px-2.5 py-2 ${b.current ? 'ps-cur bg-rose-50 ring-1 ring-rose-200' : ''}`} style={`--i:${i}`}>
+          <div class="flex items-center gap-2">
+            <span class={`size-2 rounded-full ${b.dot}`}></span>
+            <span class={`text-[12.5px] font-medium ${b.current ? 'text-rose-900' : 'text-slate-900'}`}>{b.label}</span>
+            <span class={`ml-auto text-[11px] ${b.current ? 'text-rose-700' : 'text-slate-500'}`}>{b.does}</span>
+          </div>
+          <div class={`mt-0.5 pl-4 font-mono text-[10.5px] ${b.current ? 'text-rose-700/80' : 'text-slate-400'}`}>{b.when}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The current band is picked out once the card is on screen. */
+  .ps-cur { animation: ps-cur 6s ease-in-out infinite; }
+  @keyframes ps-cur {
+    0%, 100% { box-shadow: 0 0 0 0 rgb(244 63 94 / 0); }
+    50% { box-shadow: 0 0 0 4px rgb(244 63 94 / 0.12); }
+  }
+</style>

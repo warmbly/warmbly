@@ -1,0 +1,48 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, EYEBROW, TOPBAR, SECTIONBAR } from '../../../../lib/scene';
+
+/**
+ * A client workspace's API keys page: the keys its integrations use, each
+ * scoped to that workspace and nothing else.
+ */
+const keys = [
+  { name: 'HubSpot sync', prefix: 'wmbly_7f2c', scopes: ['Contacts', 'Campaigns'], last: '2m ago' },
+  { name: 'Reporting sheet', prefix: 'wmbly_a91e', scopes: ['Analytics'], last: '1h ago' },
+  { name: 'Lead form', prefix: 'wmbly_3b0d', scopes: ['Contacts'], last: 'Yesterday' },
+];
+---
+<ScaledStage w={460} h={345} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>API keys</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12px] text-slate-600">Northwind</span>
+    </div>
+    <div class="grid grid-cols-2 border-b border-slate-200 pr-6">
+      <div class="px-5 py-3 border-r border-slate-200">
+        <div class={EYEBROW}>Active keys</div>
+        <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900">3</div>
+      </div>
+      <div class="px-5 py-3">
+        <div class={EYEBROW}>Requests · 24h</div>
+        <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900"><span data-tick="1284,1320,1900">1284</span></div>
+      </div>
+    </div>
+    <div class={SECTIONBAR}><span class={EYEBROW}>Keys</span><span class="font-mono text-[10.5px] text-slate-400">3</span></div>
+    {keys.map((k) => (
+      <div class="h-[52px] px-5 pr-10 flex items-center gap-3 border-b border-slate-200/60">
+        <span class="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-500 ring-1 ring-slate-200"><Glyph name="terminal" size={13} /></span>
+        <div class="min-w-0 flex-1">
+          <div class="text-[12.5px] font-medium text-slate-900">{k.name}</div>
+          <div class="font-mono text-[10.5px] text-slate-400">{k.prefix}…</div>
+        </div>
+        <div class="flex shrink-0 gap-1">
+          {k.scopes.map((s) => <span class="inline-flex h-5 items-center rounded bg-sky-50 px-1.5 text-[10px] font-medium text-sky-700">{s}</span>)}
+        </div>
+        <span class="w-14 shrink-0 text-right text-[10.5px] text-slate-400">{k.last}</span>
+      </div>
+    ))}
+  </div>
+</ScaledStage>

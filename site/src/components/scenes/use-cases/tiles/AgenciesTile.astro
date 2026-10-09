@@ -1,0 +1,42 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, EYEBROW, STAT, STAT_VALUE, STAT_SUB } from '../../../../lib/scene';
+import { MENU, MENU_LABEL, MENU_ITEM, initials } from '../ui';
+
+/** Agencies: the workspace switcher open, one workspace per client. */
+const clients = ['Northwind', 'Lumen Robotics', 'Glasshouse Labs', 'Penna Health', 'Stratech'];
+---
+<ScaledStage w={680} h={510} photo="paint-aqua">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[480px]`} style="background:#f5f6f8;">
+    <div class="h-12 px-4 flex items-center gap-2">
+      <div class="flex items-center gap-2 pl-1 pr-2 h-8 rounded-md bg-slate-200/60 w-[170px]">
+        <span class="size-6 rounded-md bg-slate-900 flex items-center justify-center"><span class="text-[10px] font-bold text-white">N</span></span>
+        <span class="flex-1 text-[12.5px] font-medium text-slate-900">Northwind</span>
+        <span class="rotate-180 text-slate-600"><Glyph name="chevronDown" size={13} /></span>
+      </div>
+      <span class="text-slate-300">›</span><span class="text-[13px] font-medium text-slate-900">Analytics</span>
+    </div>
+    <div class="ml-[200px] h-full rounded-tl-2xl border-t border-l border-slate-200/70 bg-white">
+      <div class="grid grid-cols-2 border-b border-slate-200 pr-10">
+        {[['Total sent', '4,812', 'in range'], ['Reply rate', '6.4%', 'incl. positive']].map(([k, v, s], i) => (
+          <div class={i === 0 ? STAT : 'px-5 py-4'}><div class={EYEBROW}>{k}</div><div class={STAT_VALUE}>{v}</div><div class={STAT_SUB}>{s}</div></div>
+        ))}
+      </div>
+      <div class="px-5 pt-5 pr-14 flex h-[200px] items-end gap-1.5">
+        {[42, 55, 48, 60, 66, 30, 26, 64, 70, 68, 74, 78, 34, 30, 76, 80].map((v, i) => <span class="enter-grow-y flex-1 rounded-t-[2px] bg-sky-500/70" style={`height:${v}%; --d:${150 + i * 40}ms`}></span>)}
+      </div>
+    </div>
+    <div class={`${MENU} absolute left-[16px] top-[46px] w-[230px]`}>
+      <div class={MENU_LABEL}>Workspaces</div>
+      {clients.map((c, i) => (
+        <div class={`${MENU_ITEM} ${i === 0 ? 'bg-slate-50 font-medium text-slate-900' : ''}`}>
+          <span class="size-5 rounded-md bg-slate-900 flex items-center justify-center"><span class="text-[9px] font-bold text-white">{initials(c)}</span></span>
+          <span class="flex-1">{c}</span>{i === 0 && <span class="text-[10px] text-sky-600">●</span>}
+        </div>
+      ))}
+      <div class="my-1 h-px bg-slate-200"></div>
+      <div class={MENU_ITEM}><span class="text-slate-400"><Glyph name="plus" size={12} /></span>New workspace</div>
+    </div>
+  </div>
+</ScaledStage>

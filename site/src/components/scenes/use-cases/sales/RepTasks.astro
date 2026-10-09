@@ -1,0 +1,136 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_PRIMARY, STAT, STAT_VALUE, STAT_SUB } from '../../../../lib/scene';
+import { TH, CHECK, initials } from '../ui';
+
+/**
+ * The Tasks page (crm/tasks/page.tsx), grouped by due date: every reply has
+ * opened a follow-up for the rep whose mailbox received it, due in 24
+ * hours. The card is the setting that does it, under Settings > Sending.
+ */
+type Task = { t: string; who: string; pri: 'High' | 'Medium'; status: 'Pending' | 'Active'; due: string; overdue?: boolean; fresh?: boolean };
+const groups: { label: string; dot: string; text: string; tasks: Task[] }[] = [
+  { label: 'Overdue', dot: 'bg-red-500', text: 'text-red-600', tasks: [
+    { t: 'Follow up: question reply from noor@quarry.co', who: 'Priya Natarajan', pri: 'High', status: 'Pending', due: 'Oct 8', overdue: true },
+  ] },
+  { label: 'Today', dot: 'bg-sky-500', text: 'text-sky-700', tasks: [
+    { t: 'Follow up: positive reply from jenna@carter.co', who: 'Marcus Lee', pri: 'High', status: 'Active', due: 'Today', fresh: true },
+    { t: 'Follow up: positive reply from lena@helio.gen', who: 'Dana Vasquez', pri: 'High', status: 'Pending', due: 'Today' },
+    { t: 'Follow up: question reply from ravi@stratech.io', who: 'Priya Natarajan', pri: 'High', status: 'Pending', due: 'Today' },
+  ] },
+  { label: 'Tomorrow', dot: 'bg-slate-400', text: 'text-slate-600', tasks: [
+    { t: 'Follow up: reply from owen@kestrel.io', who: 'Tom Becker', pri: 'High', status: 'Pending', due: 'Tomorrow' },
+    { t: 'Follow up: positive reply from sara@orbitlabs.io', who: 'Dana Vasquez', pri: 'High', status: 'Pending', due: 'Tomorrow' },
+  ] },
+];
+const stats = [
+  { label: 'Overdue', value: '1', sub: 'needs attention', pulse: true },
+  { label: 'High priority', value: '6', sub: 'urgent + high' },
+  { label: 'Pending', value: '5', sub: 'not started' },
+  { label: 'Active', value: '1', sub: 'in progress' },
+  { label: 'Completed', value: '48', sub: 'done', last: true },
+];
+const which = [
+  { k: 'Positive', on: true },
+  { k: 'Question', on: true },
+  { k: 'Neutral', on: true },
+  { k: 'Negative', on: true },
+  { k: 'Automated', on: false },
+];
+---
+<ScaledStage w={1240} h={600} photo="sheer-sky">
+  <div class={`${WINDOW} left-[48px] top-[48px] w-[1240px] h-[580px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Tasks</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">Follow-ups + reminders across the org</span>
+      <div class="ml-auto mr-[330px] flex items-center gap-1.5">
+        <span class="inline-flex rounded-md bg-slate-100 p-0.5 text-[11px] font-medium">
+          <span class="h-6 px-2 inline-flex items-center rounded bg-white text-slate-900 shadow-sm">Grouped</span>
+          <span class="h-6 px-2 inline-flex items-center rounded text-slate-500">Flat</span>
+        </span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />New task</span>
+      </div>
+    </div>
+    <div class="grid grid-cols-5 border-b border-slate-200 w-[880px]">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class="flex items-center gap-2"><span class={EYEBROW}>{s.label}</span>{s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}</div>
+          <div class={STAT_VALUE}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+    <div class={`${SECTIONBAR} w-[880px]`}>
+      <span class={EYEBROW}>6 tasks</span>
+      <span class="ml-auto inline-flex rounded-md bg-slate-100 p-0.5">
+        {['All', 'Pending', 'Active', 'Done'].map((s, i) => <span class={`h-6 px-2 rounded inline-flex items-center text-[11px] font-medium ${i === 0 ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{s}</span>)}
+      </span>
+      <span class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium"><Glyph name="user" size={12} class="text-slate-400" />Assignee<Glyph name="chevronDown" size={10} class="text-slate-400" /></span>
+    </div>
+    <table class="w-[880px] table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class="pl-5 pr-2 py-2 w-11"><span class={CHECK}></span></th>
+          <th class={TH}>Task</th>
+          <th class={`${TH} w-[76px]`}>Type</th>
+          <th class={`${TH} w-[150px]`}>Assignee</th>
+          <th class={`${TH} w-[86px]`}>Priority</th>
+          <th class={`${TH} w-[80px]`}>Status</th>
+          <th class={`${TH} w-[84px]`}>Due</th>
+        </tr>
+      </thead>
+      {groups.map((g) => (
+        <tbody>
+          <tr class="h-8 border-b border-slate-200">
+            <td colspan="7" class="px-5">
+              <span class={`inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.1em] font-semibold ${g.text}`}><span class={`size-1.5 rounded-full ${g.dot}`}></span>{g.label}<span class="font-mono text-[10.5px] text-slate-400">{g.tasks.length}</span></span>
+            </td>
+          </tr>
+          {g.tasks.map((t) => (
+            <tr class={`h-10 border-b border-slate-200/60 ${t.fresh ? 'rt-fresh' : ''}`}>
+              <td class="pl-5 pr-2"><span class={CHECK}></span></td>
+              <td class="px-3"><span class="flex items-center gap-2 min-w-0"><span class="size-3.5 shrink-0 rounded-[3px] border border-slate-300"></span><span class="truncate text-[12.5px] font-medium text-slate-900">{t.t}</span></span></td>
+              <td class="px-3"><span class="inline-flex items-center gap-1 rounded h-[18px] px-1.5 text-[10.5px] font-medium" style="background-color:#0ea5e91f;color:#0ea5e9;"><Glyph name="mail" size={10} />Email</span></td>
+              <td class="px-3"><span class="flex items-center gap-1.5"><span class="size-5 rounded-full bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-semibold uppercase flex items-center justify-center">{initials(t.who)}</span><span class="truncate text-[11.5px] text-slate-600">{t.who}</span></span></td>
+              <td class="px-3"><span class={`inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] font-semibold ${t.pri === 'High' ? 'text-amber-700' : 'text-sky-700'}`}><span class={`size-1.5 rounded-full ${t.pri === 'High' ? 'bg-amber-500' : 'bg-sky-500'}`}></span>{t.pri}</span></td>
+              <td class="px-3"><span class={`inline-flex items-center gap-1.5 text-[11px] font-medium ${t.status === 'Active' ? 'text-sky-700' : 'text-slate-600'}`}><span class={`size-1.5 rounded-full ${t.status === 'Active' ? 'bg-sky-500' : 'bg-slate-400'}`}></span>{t.status}</span></td>
+              <td class="px-3"><span class={`inline-flex items-center gap-1 font-mono text-[10.5px] tabular-nums ${t.overdue ? 'text-red-600' : 'text-slate-400'}`}><Glyph name={t.overdue ? 'alert' : 'calendar'} size={11} />{t.due}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      ))}
+    </table>
+  </div>
+
+  <!-- The switch behind it, in Settings > Sending. -->
+  <div class={`${FLOAT} left-[948px] top-[112px] w-[264px] overflow-hidden`}>
+    <div class="border-b border-slate-200 px-4 py-3">
+      <div class="text-[12.5px] font-semibold text-slate-900">Reply follow-ups</div>
+      <div class="mt-1 text-[11px] leading-snug text-slate-500">Open a CRM task when a reply lands. The task is assigned to the mailbox owner and due in 24 hours.</div>
+    </div>
+    <div class="px-4 py-3 space-y-3">
+      <div class="flex items-center gap-3">
+        <span class="text-[12px] font-medium text-slate-900">Open a task on a reply</span>
+        <span class="ml-auto relative h-4 w-7 rounded-full bg-slate-900"><span class="absolute top-0.5 left-0.5 size-3 translate-x-3 rounded-full bg-white"></span></span>
+      </div>
+      <div>
+        <div class="text-[11px] text-slate-500">Which replies</div>
+        <div class="mt-1.5 flex flex-wrap gap-1">
+          {which.map((w) => <span class={`h-6 px-2 rounded-md border inline-flex items-center text-[11px] ${w.on ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-white text-slate-400 border-slate-200'}`}>{w.k}</span>)}
+        </div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* A reply has just landed: its task appears for the rep. */
+  .rt-fresh { animation: rt-fresh 8s ease-out infinite; }
+  @keyframes rt-fresh {
+    0%, 4% { opacity: 0; background: rgb(240 249 255); }
+    10% { opacity: 1; background: rgb(240 249 255); }
+    60%, 100% { background: transparent; }
+  }
+</style>

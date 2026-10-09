@@ -448,6 +448,7 @@ Returned when authenticated but lacking necessary permissions.
 - Request IP not in allowlist
 - Email account not in allowlist
 - Organization access restricted
+- The member is restricted to selected resources (`member_access_restricted`)
 
 **Example:**
 
@@ -541,6 +542,31 @@ Turning on two-factor authentication (`POST /auth/2fa/enroll/start` and `/confir
   "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
 }
 ```
+
+#### Member access scope
+
+A member restricted to [selected resources](/guides/team-roles/#access-scope), and any API key or OAuth app acting for one, reaches only the read routes that filter to their grants. The scope's own refusals:
+
+| `code` | Status | Meaning |
+|--------|--------|---------|
+| `member_access_restricted` | 403 | The caller is restricted to selected campaigns and mailboxes, and this route is not one their scope covers. Writes are always refused, as are workspace-wide surfaces such as contacts and settings |
+| `invalid_access_resource` | 400 | `PUT /organization/members/:id/access` or an invitation named a campaign folder, campaign or mailbox that is not in this workspace |
+| `invalid_access_scope` | 400 | The scope is neither `workspace` nor `restricted` |
+| `too_many_access_grants` | 400 | More than 500 folders, campaigns or mailboxes in one list |
+| `owner_access_unrestricted` | 403 | The workspace owner always reaches the entire workspace and cannot be restricted |
+
+A campaign or mailbox outside a restricted caller's grants answers `404`, the same as one that does not exist, so a scope does not reveal what else the workspace holds.
+
+```json
+{
+  "error": "Forbidden",
+  "message": "Your access to this workspace is limited to selected campaigns and mailboxes, and this is outside it.",
+  "code": "member_access_restricted",
+  "request_id": "4bbbd1b2-8f86-47dd-8a7f-9476501ad20e"
+}
+```
+
+**How to fix:** ask a member with **Manage team** to widen the access under **Settings > Members**.
 
 #### `slack_link_email_mismatch`
 

@@ -1,0 +1,26 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { WINDOW, EYEBROW } from '../../../../lib/scene';
+
+/** Fundraising: the raise mailbox five weeks into warmup, nearly at full volume. */
+const days = Array.from({ length: 42 }, (_, i) => Math.min(40, 10 + i));
+---
+<ScaledStage w={460} h={345} photo="reeded-glass">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-12 px-4 flex items-center gap-2.5 border-b border-slate-200">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg bg-orange-50 text-orange-600"><Glyph name="flame" size={14} class="flame-flicker" /></span>
+      <div><div class="text-[12.5px] font-medium text-slate-900">hello@go.atlas.dev</div><div class="text-[10.5px] text-slate-400">Day 35 of the ramp</div></div>
+      <span class="ml-auto mr-6 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600"><Glyph name="shieldCheck" size={13} />Healthy</span>
+    </div>
+    <div class="px-4 py-3.5 pr-10">
+      <div class="flex justify-between"><span class={EYEBROW}>Six weeks</span><span class="font-mono text-[10.5px] text-slate-400">to 40 a day</span></div>
+      <div class="mt-3 flex h-[120px] items-end gap-[2px]">
+        {days.map((v, i) => i < 35
+          ? <span class="enter-grow-y flex-1 rounded-t-[2px] bg-sky-500/80" style={`height:${(v / 40) * 100}%; --d:${100 + i * 20}ms`}></span>
+          : <span class="flex-1 rounded-t-[2px] border border-dashed border-slate-200" style={`height:${(v / 40) * 100}%`}></span>)}
+      </div>
+      <div class="mt-3 flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-[11.5px] text-slate-600"><Glyph mark="google" size={12} />Gmail <span class="font-mono text-emerald-600">98%</span><span class="text-slate-300">·</span><Glyph mark="microsoft" size={12} />Outlook <span class="font-mono text-emerald-600">96%</span></div>
+    </div>
+  </div>
+</ScaledStage>

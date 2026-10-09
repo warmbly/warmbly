@@ -1,0 +1,226 @@
+---
+import ScaledStage from '../../../ScaledStage.astro';
+import Glyph from '../../Glyph.astro';
+import { EYEBROW, TOPBAR, SECTIONBAR, STAT, STAT_VALUE, STAT_SUB } from '../../../../lib/scene';
+import { TH, MENU, MENU_LABEL, MENU_ITEM, initials } from '../ui';
+
+/**
+ * The whole dashboard for an agency: the workspace switcher
+ * (web/src/components/layout/OrgSwitcher.tsx) open over one client's
+ * Analytics page, every client a workspace of its own.
+ */
+const workspaces = [
+  { name: 'Acme Outbound', note: 'your agency' },
+  { name: 'Northwind', selected: true },
+  { name: 'Lumen Robotics' },
+  { name: 'Glasshouse Labs' },
+  { name: 'Penna Health' },
+  { name: 'Vela Logistics' },
+  { name: 'Stratech' },
+];
+const nav = [
+  { section: '', items: [{ t: 'Inbox', i: 'inbox', badge: 4 }] },
+  { section: 'Email', items: [
+    { t: 'Accounts', i: 'mail', n: '8' },
+    { t: 'Campaigns', i: 'send', n: '5' },
+    { t: 'Contacts', i: 'user', n: '6.2k' },
+    { t: 'Analytics', i: 'barChart', active: true },
+    { t: 'Deliverability', i: 'shieldCheck' },
+  ] },
+  { section: 'CRM', items: [
+    { t: 'Deals', i: 'dollar', n: '14' },
+    { t: 'Tasks', i: 'checkCircle', n: '6' },
+    { t: 'Meetings', i: 'calendar', n: '3' },
+  ] },
+  { section: 'Resources', items: [
+    { t: 'Templates', i: 'layers', n: '9' },
+    { t: 'Settings', i: 'settings' },
+  ] },
+] as const;
+const stats = [
+  { label: 'Total sent', value: '4,812', sub: 'in range', tick: '4812,4840,1700', pulse: true },
+  { label: 'Open rate', value: '41.3%', sub: 'after delivery' },
+  { label: 'Reply rate', value: '6.4%', sub: 'incl. positive' },
+  { label: 'Bounce rate', value: '0.7%', sub: 'hard + soft', last: true },
+];
+// Sends and replies over 30 days.
+const W = 560, H = 170;
+const sent = [120, 138, 132, 150, 162, 70, 64, 168, 176, 170, 182, 190, 80, 72, 186, 192, 188, 198, 204, 86, 80, 196, 206, 202, 214, 220, 92, 84, 210, 224];
+const repl = [7, 9, 8, 10, 11, 4, 3, 11, 12, 11, 13, 13, 5, 4, 12, 13, 13, 14, 14, 5, 5, 13, 14, 14, 15, 15, 6, 5, 14, 16];
+const toPath = (arr: number[], max: number) => arr.map((v, i) => `${i ? 'L' : 'M'} ${((i / (arr.length - 1)) * W).toFixed(1)} ${(H - (v / max) * (H - 12)).toFixed(1)}`).join(' ');
+const sentLine = toPath(sent, 240);
+const replyLine = toPath(repl, 24);
+const campaigns = [
+  { name: 'Ops leaders · EU', status: 'Sending', sent: 1640, reply: 7.1, pos: 2.6 },
+  { name: 'Logistics heads · US', status: 'Sending', sent: 1388, reply: 6.2, pos: 2.1 },
+  { name: 'Warehouse automation', status: 'Sending', sent: 1104, reply: 5.8, pos: 1.9 },
+  { name: 'Re-engage Q2 trials', status: 'Done', sent: 680, reply: 5.4, pos: 2.0 },
+];
+---
+<ScaledStage w={1240} h={720} photo="paint-aqua">
+  <div class="absolute left-[44px] top-[44px] w-[1260px] h-[720px] overflow-hidden rounded-tl-[14px] ring-1 ring-slate-900/[0.08] shadow-[0_50px_100px_-40px_rgba(15,23,42,0.55)]" style="background:#f5f6f8 url(/backdrops/shell-ambient.svg) 0 0 / 100% 100% no-repeat;">
+    <!-- AppHeader -->
+    <div class="relative h-14 flex items-center">
+      <div class="w-60 px-5 h-full flex items-center gap-2.5 shrink-0">
+        <svg viewBox="0 0 746 764" class="w-7 text-slate-900" fill="currentColor"><path d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z"/></svg>
+        <span class="font-extrabold text-[15.5px] tracking-tight text-slate-900" style="font-family: var(--font-display);">Warmbly</span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <!-- OrgSwitcher trigger, open -->
+        <div class="flex items-center gap-2 pl-1 pr-2 h-8 rounded-md bg-slate-200/60 text-left w-[176px]">
+          <span class="size-6 rounded-md ring-1 ring-slate-200 bg-slate-900 flex items-center justify-center shrink-0"><span class="text-[10px] font-bold text-white leading-none tracking-tight">N</span></span>
+          <span class="text-[12.5px] font-medium text-slate-900 truncate flex-1">Northwind</span>
+          <span class="rotate-180 text-slate-700"><Glyph name="chevronDown" size={14} /></span>
+        </div>
+        <span class="text-slate-300">›</span>
+        <span class="text-[13px] font-medium text-slate-900">Analytics</span>
+      </div>
+      <div class="ml-auto flex items-center gap-2 pr-[60px]">
+        <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded border text-[11px] font-semibold uppercase tracking-[0.08em] bg-amber-50 text-amber-700 border-amber-100"><span class="size-1.5 rounded-full bg-amber-500"></span>Grow</span>
+        <div class="h-4 w-px bg-slate-200/80"></div>
+        <div class="flex items-center -space-x-1.5">
+          {['JL', 'AK', 'RS'].map((m, i) => (
+            <span class={`relative flex size-6 items-center justify-center rounded-full ring-2 ring-white border text-[9.5px] font-semibold ${i === 1 ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-emerald-300/70 bg-emerald-50 text-emerald-700'}`}>{m}</span>
+          ))}
+        </div>
+        <span class="flex items-center gap-2 pl-1"><span class="size-2 rounded-full bg-emerald-500 animate-pulse"></span><span class="text-[12px] text-slate-500">Live</span></span>
+        <span class="flex items-center gap-2 px-2 h-7 rounded-md text-slate-500 text-[12.5px]"><Glyph name="search" size={14} />Search<kbd class="inline-flex h-4 items-center px-1 rounded border border-slate-300/70 bg-white/60 font-mono text-[10px] text-slate-500">⌘K</kbd></span>
+      </div>
+    </div>
+
+    <div class="flex">
+      <!-- AppNav -->
+      <aside class="w-60 shrink-0 pt-2">
+        {nav.map((s, si) => (
+          <div class={si === 0 ? '' : 'mt-3 pt-3 border-t border-slate-200/50 mx-3'}>
+            {s.section && <div class={`${si === 0 ? 'mx-3' : ''} mb-1 h-6 flex items-center px-[9px] text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400`}>{s.section}</div>}
+            {s.items.map((it) => (
+              <div class={`${si === 0 ? 'mx-3' : ''} flex items-center gap-2.5 px-[9px] h-7 rounded-md text-[12.5px] ${'active' in it ? 'bg-slate-200/70 text-slate-900 font-medium' : 'text-slate-600'}`}>
+                <Glyph name={it.i} size={14} class={'active' in it ? 'text-slate-700' : 'text-slate-400'} />
+                <span class="flex-1">{it.t}</span>
+                {'badge' in it && <span class="text-[10px] font-medium bg-red-500 text-white rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 tabular-nums">{it.badge}</span>}
+                {'n' in it && <span class="text-[10.5px] font-medium tabular-nums text-slate-300">{it.n}</span>}
+              </div>
+            ))}
+          </div>
+        ))}
+      </aside>
+
+      <!-- Content panel: Northwind's Analytics -->
+      <div class="flex-1 min-w-0 h-[680px] bg-white rounded-tl-2xl border-t border-l border-slate-200/70 overflow-hidden">
+        <div class={TOPBAR}>
+          <span class={EYEBROW}>Analytics</span>
+          <span class="h-4 w-px bg-slate-200"></span>
+          <span class="text-[12.5px] text-slate-600">Northwind · every campaign</span>
+          <div class="ml-auto mr-[60px] flex items-center gap-1.5">
+            <span class="h-7 px-2.5 rounded-md border border-slate-200 text-[12px] font-medium text-slate-700 inline-flex items-center gap-1.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>Share image</span>
+            <span class="inline-flex rounded-md bg-slate-100 p-0.5 text-[11px] font-medium">
+              <span class="h-6 px-2 inline-flex items-center rounded text-slate-500">7d</span>
+              <span class="h-6 px-2 inline-flex items-center rounded bg-white text-slate-900 shadow-sm">30d</span>
+              <span class="h-6 px-2 inline-flex items-center rounded text-slate-500">90d</span>
+            </span>
+          </div>
+        </div>
+        <div class="grid grid-cols-4 border-b border-slate-200 mr-[60px]">
+          {stats.map((s) => (
+            <div class={s.last ? 'px-5 py-4' : STAT}>
+              <div class="flex items-center gap-2"><span class={EYEBROW}>{s.label}</span>{s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}</div>
+              <div class={STAT_VALUE}>{s.tick ? <span data-tick={s.tick}>{s.value}</span> : s.value}</div>
+              <div class={STAT_SUB}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+        <div class="flex">
+          <div class="flex-1 border-r border-slate-200">
+            <div class={SECTIONBAR}>
+              <span class={EYEBROW}>Email performance</span>
+              <span class="ml-auto flex items-center gap-3 text-[10px] text-slate-400">
+                <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-sky-500"></span>Sent</span>
+                <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-emerald-500"></span>Replies</span>
+              </span>
+            </div>
+            <div class="px-5 pt-4">
+              <svg width={W} height={H} class="overflow-visible">
+                {[0.25, 0.5, 0.75].map((f) => <line x1="0" x2={W} y1={H * f} y2={H * f} stroke="#f1f5f9" />)}
+                <path class="enter-fade" d={`${sentLine} L ${W} ${H} L 0 ${H} Z`} fill="#0ea5e9" fill-opacity="0.08" style="--d:900ms" />
+                <path class="enter-draw" d={sentLine} fill="none" stroke="#0ea5e9" stroke-width="1.75" pathLength="1" stroke-dasharray="1" style="--d:200ms" />
+                <path class="enter-draw" d={replyLine} fill="none" stroke="#10b981" stroke-width="1.75" pathLength="1" stroke-dasharray="1" style="--d:450ms" />
+              </svg>
+            </div>
+          </div>
+          <div class="w-[300px] shrink-0 mr-[60px]">
+            <div class={SECTIONBAR}><span class={EYEBROW}>Account health</span></div>
+            <div class="px-5 py-4 space-y-3">
+              {[
+                { k: 'Healthy', n: 7, c: 'bg-emerald-500' },
+                { k: 'At risk', n: 1, c: 'bg-amber-500' },
+                { k: 'Issues', n: 0, c: 'bg-rose-500' },
+              ].map((h) => (
+                <div class="flex items-center gap-2 text-[12px] text-slate-600">
+                  <span class={`size-1.5 rounded-full ${h.c}`}></span>{h.k}
+                  <span class="flex-1 mx-2 h-1 rounded-full bg-slate-100"><span class={`enter-grow-x block h-full rounded-full ${h.c}`} style={`width:${(h.n / 8) * 100}%`}></span></span>
+                  <span class="font-mono tabular-nums text-slate-900">{h.n}</span>
+                </div>
+              ))}
+              <div class="pt-2 border-t border-slate-100 text-[11px] text-slate-400">8 mailboxes on northwind.io</div>
+            </div>
+          </div>
+        </div>
+        <div class={`${SECTIONBAR} border-t border-slate-200`}><span class={EYEBROW}>Top campaigns</span></div>
+        <table class="w-[880px] table-fixed">
+          <thead>
+            <tr class="border-b border-slate-200">
+              <th class={`${TH} pl-5`}>Campaign</th>
+              <th class={`${TH} w-[120px]`}>Status</th>
+              <th class={`${TH} w-[100px]`}>Sent</th>
+              <th class={`${TH} w-[110px]`}>Reply rate</th>
+              <th class={`${TH} w-[110px]`}>Positive</th>
+            </tr>
+          </thead>
+          <tbody>
+            {campaigns.map((c) => (
+              <tr class="h-10 border-b border-slate-200/60">
+                <td class="pl-5 pr-3 text-[12.5px] font-medium text-slate-900">{c.name}</td>
+                <td class="px-3">
+                  {c.status === 'Sending'
+                    ? <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700"><span class="campaign-grid"></span>Sending</span>
+                    : <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-indigo-700"><Glyph name="check" size={12} />Done</span>}
+                </td>
+                <td class="px-3 font-mono text-[12px] tabular-nums text-slate-600">{c.sent.toLocaleString('en-US')}</td>
+                <td class="px-3 font-mono text-[12px] tabular-nums text-slate-900">{c.reply}%</td>
+                <td class="px-3 font-mono text-[12px] tabular-nums text-emerald-700">{c.pos}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- The switcher's popover, open under its trigger. -->
+    <div class={`${MENU} enter-fade absolute left-[240px] top-[50px] w-[248px] z-10`} style="--d:250ms">
+      <div class={MENU_LABEL}>Workspaces</div>
+      {workspaces.map((w) => (
+        <div class={`${MENU_ITEM} ${w.selected ? 'font-medium text-slate-900 bg-slate-50' : ''} ${w.selected ? '' : 'hs-row'}`}>
+          <span class="size-5 rounded-md ring-1 ring-slate-200 bg-slate-900 flex items-center justify-center shrink-0"><span class="text-[9px] font-bold text-white leading-none tracking-tight">{initials(w.name)}</span></span>
+          <span class="flex-1 truncate">{w.name}</span>
+          {w.note && <span class="text-[10.5px] text-slate-400">{w.note}</span>}
+          {w.selected && <span class="text-[10px] text-sky-600">●</span>}
+        </div>
+      ))}
+      <div class="my-1 h-px bg-slate-200"></div>
+      <div class={MENU_ITEM}><span class="text-slate-400"><Glyph name="plus" size={12} /></span>New workspace</div>
+      <div class={MENU_ITEM}><span class="text-slate-400"><Glyph name="settings" size={12} /></span>Manage workspaces</div>
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* The pointer drifts down the client list, the way you look for the next one. */
+  .hs-row { animation: hs-row 10s ease-in-out infinite; }
+  .hs-row:nth-child(4) { animation-delay: 2s; }
+  .hs-row:nth-child(5) { animation-delay: 4s; }
+  .hs-row:nth-child(6) { animation-delay: 6s; }
+  .hs-row:nth-child(7) { animation-delay: 8s; }
+  .hs-row:nth-child(2), .hs-row:nth-child(8) { animation: none; }
+  @keyframes hs-row { 0%, 100% { background: transparent; } 4%, 16% { background: rgb(248 250 252); } 20% { background: transparent; } }
+</style>

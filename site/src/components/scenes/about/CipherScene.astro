@@ -1,0 +1,57 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import Code from './Code.astro';
+import { WINDOW, FLOAT, EYEBROW } from '../../../lib/scene';
+
+/**
+ * Evidence for "encrypted by design": the function that seals a field
+ * (internal/app/cipher/encrypt.go, verbatim) and the key chain above it.
+ */
+const encrypt = `
+func (c *Cipher) Encrypt(ctx context.Context, s string) (string, error) {
+  if s == "" {
+    return "", nil // handle empty string
+  }
+  block, err := aes.NewCipher(c.plainDEK)
+  if err != nil {
+    return "", err
+  }
+  gcm, err := cipher.NewGCM(block)
+  if err != nil {
+    return "", err
+  }
+  nonce := make([]byte, gcm.NonceSize())
+`;
+const chain = [
+  { icon: 'key', title: 'Root key', sub: 'held by your key management service' },
+  { icon: 'lock', title: 'Workspace data key', sub: 'stored encrypted, one per workspace' },
+  { icon: 'database', title: 'Credentials and messages', sub: 'sealed with AES-256-GCM' },
+] as const;
+---
+<ScaledStage w={460} h={345} photo="frost-blue">
+  <div class={`${WINDOW} left-[24px] top-[24px] w-[460px] h-[340px]`}>
+    <div class="flex items-center bg-slate-50 border-b border-slate-200">
+      <span class="h-9 px-3 inline-flex items-center gap-1.5 font-mono text-[10.5px] border-r border-slate-200 bg-white text-slate-800 -mb-px"><Glyph name="braces" size={11} class="text-sky-600" />encrypt.go</span>
+    </div>
+    <div class="px-4 h-7 flex items-center font-mono text-[10px] text-slate-400">internal › app › cipher › encrypt.go</div>
+    <Code start={12} code={encrypt} mark={[16]} size="text-[11px] leading-[19px]" />
+  </div>
+
+  <div class={`${FLOAT} left-[214px] top-[150px] w-[226px] px-3.5 py-3`}>
+    <div class={EYEBROW}>Envelope encryption</div>
+    <div class="mt-2.5">
+      {chain.map((c, i) => (
+        <div class="enter-fade relative flex items-start gap-2.5 pb-3 last:pb-0" style={`--d:${400 + i * 200}ms`}>
+          {i < chain.length - 1 && <span class="absolute left-[11px] top-6 bottom-0 w-px bg-slate-200"></span>}
+          <span class="relative inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sky-50 text-sky-600"><Ico name={c.icon} size={12} /></span>
+          <div class="min-w-0">
+            <div class="text-[11.5px] font-medium text-slate-900">{c.title}</div>
+            <div class="text-[10px] leading-tight text-slate-400">{c.sub}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>

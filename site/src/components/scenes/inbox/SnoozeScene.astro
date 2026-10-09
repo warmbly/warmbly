@@ -1,0 +1,57 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ic from './Ic.astro';
+import Row, { type Conv } from './Row.astro';
+import { L } from './labels';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * Snooze from the list, without opening anything: a row's three-dot menu
+ * (ConversationItem.tsx RowActions) on its Snooze step (lib/unibox/snooze.ts).
+ */
+const rows: Conv[] = [
+  { who: 'Lena Fischer', time: '1h', subject: 'Re: Quick question about Helio', preview: 'Good timing actually, tell me more.', labels: [L.interested] },
+  { who: 'Aman Patel', count: 2, time: '2h', subject: 'Re: Following up', preview: 'Circle back in Q3, we are mid-migration.', labels: [L.notNow] },
+  { who: 'Chen Wei', time: '3h', subject: 'Re: A thought on Tidewater', preview: 'Can we do Tuesday afternoon instead?', labels: [L.meeting] },
+  { who: 'Priya Nair', time: 'Mon', subject: 'Re: Quick question about Spruce', preview: 'Yes, happy to see a demo next week.', labels: [L.interested] },
+];
+const presets = ['In 1 hour', 'In 3 hours', 'Tomorrow 9:00', 'Monday 9:00', 'Next week'];
+---
+<ScaledStage w={460} h={345} photo="paint-teal">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[440px] h-[319px]`}>
+    <div class="flex h-11 items-center gap-1.5 pl-3 pr-2">
+      <span class="text-[13.5px] font-semibold text-slate-900">Inbox</span>
+      <span class="text-[11.5px] tabular-nums text-slate-400">48</span>
+    </div>
+    <div class="flex h-7 items-center border-t border-slate-200 px-4 text-[10.5px] font-medium uppercase tracking-[0.12em] text-slate-400">Today</div>
+    <div class="relative divide-y divide-slate-100">
+      {rows.map((c, i) => (
+        <div class="relative">
+          <Row c={c} class={i === 0 ? 'bg-slate-50' : ''} />
+          {i === 0 && (
+            <span class="absolute right-2 top-1.5 flex items-center gap-0.5 rounded-md bg-slate-50">
+              <span class="inline-flex size-6 items-center justify-center rounded text-slate-500"><Glyph name="archive" size={14} /></span>
+              <span class="inline-flex size-6 items-center justify-center rounded bg-slate-200/70 text-slate-900"><Ic name="more" size={14} /></span>
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- The row menu, on its Snooze step. -->
+  <div class={`sn-menu ${FLOAT} left-[272px] top-[128px] w-[184px] py-1`}>
+    <div class="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">Snooze until</div>
+    {presets.map((p) => (
+      <div class={`flex h-7 items-center px-3 text-[12.5px] ${p === 'Monday 9:00' ? 'sn-pick text-slate-900' : 'text-slate-700'}`}>{p}</div>
+    ))}
+    <div class="my-1 h-px bg-slate-200"></div>
+    <div class="flex h-7 items-center gap-2 px-3 text-[12.5px] text-slate-700"><Ic name="arrowLeft" size={12} class="text-slate-400" />Back</div>
+  </div>
+</ScaledStage>
+
+<style>
+  .sn-pick { background-color: #f1f5f9; animation: sn-pick 6s ease-in-out infinite; }
+  @keyframes sn-pick { 0%, 30% { background-color: transparent; } 40%, 85% { background-color: #f1f5f9; } 95%, 100% { background-color: transparent; } }
+</style>
