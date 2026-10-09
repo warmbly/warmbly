@@ -1,0 +1,16 @@
+---
+import { LUCIDE, type LucideName } from '../../lib/lucide';
+import { PROVIDER_MARKS } from '../../lib/marks';
+
+interface Props {
+  name?: LucideName;
+  /** A provider mark instead of a lucide icon. */
+  mark?: keyof typeof PROVIDER_MARKS;
+  size?: number;
+  class?: string;
+}
+const { name, mark, size = 14, class: className = '' } = Astro.props;
+---
+{mark
+  ? <svg width={size} height={size} viewBox="0 0 48 48" class={`shrink-0 ${className}`} set:html={PROVIDER_MARKS[mark]} />
+  : <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={`shrink-0 ${className}`} set:html={name ? LUCIDE[name] : ''} />}

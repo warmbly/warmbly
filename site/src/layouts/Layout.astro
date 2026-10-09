@@ -346,10 +346,10 @@ const websiteJsonLd = {
         }
       })();
     </script>
-    <!-- Phone diagnostics: ?noshell / ?noanim / ?nogl switch heavy subsystems off (global.css, GrainBackdrop). -->
+    <!-- Phone diagnostics: ?noshell / ?noanim switch heavy subsystems off (global.css). -->
     <script is:inline>
       var diagParams = new URLSearchParams(location.search);
-      document.documentElement.dataset.diag = ['noshell', 'noanim', 'nogl'].filter(function (f) { return diagParams.has(f); }).join(' ');
+      document.documentElement.dataset.diag = ['noshell', 'noanim'].filter(function (f) { return diagParams.has(f); }).join(' ');
     </script>
   </head>
   <body class="min-h-screen flex flex-col antialiased">

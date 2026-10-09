@@ -1,0 +1,224 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import Glyph from './Glyph.astro';
+import {
+  WINDOW, FLOAT, EYEBROW, TOPBAR, SECTIONBAR, ACTION_GHOST, ACTION_PRIMARY,
+  STAT, STAT_VALUE, STAT_SUB,
+} from '../../lib/scene';
+
+/**
+ * The Accounts page (web/src/app/app/emails/page.tsx): topbar, stat strip,
+ * the mailbox table. A mailbox connects at the bottom of the list and its
+ * domain is checked in the card over it, on a loop.
+ */
+type Row = {
+  addr: string; name: string; provider: string; mark: 'google' | 'microsoft' | 'imap';
+  status: 'active' | 'warming'; sent?: [number, number]; warm: [number, number];
+  inbox?: number; health: number;
+};
+const rows: Row[] = [
+  { addr: 'alex@northwind.dev', name: 'Alex Kim', provider: 'Google Workspace', mark: 'google', status: 'active', sent: [23, 50], warm: [24, 40], inbox: 98, health: 96 },
+  { addr: 'sam@northwind.io', name: 'Sam Ortiz', provider: 'Microsoft 365', mark: 'microsoft', status: 'active', sent: [31, 50], warm: [40, 40], inbox: 95, health: 93 },
+  { addr: 'ops@northwind.co', name: 'Ops team', provider: 'SMTP / IMAP', mark: 'imap', status: 'active', sent: [18, 50], warm: [32, 40], inbox: 92, health: 88 },
+  { addr: 'mia@northwind.dev', name: 'Mia Chen', provider: 'Google Workspace', mark: 'google', status: 'warming', warm: [14, 40], inbox: 97, health: 91 },
+  { addr: 'jon@northwind.dev', name: 'Jon Reyes', provider: 'Google Workspace', mark: 'google', status: 'warming', warm: [11, 40], health: 90 },
+];
+const stats = [
+  { label: 'Total', value: '6', sub: 'connected' },
+  { label: 'Healthy', value: '5', sub: 'sending now', pulse: true },
+  { label: 'Warming', value: '3', sub: 'ramping up' },
+  { label: 'Needs attention', value: '0', sub: 'paused or failing', last: true },
+];
+const checks = ['SPF', 'DKIM', 'DMARC', 'MX'];
+const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
+---
+<ScaledStage w={760} h={570} photo="lake-motion">
+  <div class={`${WINDOW} left-[44px] top-[44px] w-[760px] h-[560px]`}>
+    <div class={TOPBAR}>
+      <span class={EYEBROW}>Accounts</span>
+      <span class="h-4 w-px bg-slate-200"></span>
+      <span class="text-[12.5px] text-slate-600">6 mailboxes</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-10">
+        <span class={ACTION_GHOST}><Glyph name="globe" size={12} />Sending domains</span>
+        <span class={ACTION_PRIMARY}><Glyph name="plus" size={12} />Add account</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-4 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={s.last ? 'px-5 py-4' : STAT}>
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">{s.label}</span>
+            {s.pulse && <span class="size-1.5 rounded-full bg-sky-500 animate-pulse"></span>}
+          </div>
+          <div class={STAT_VALUE}>{s.value}</div>
+          <div class={STAT_SUB}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+
+    <div class={SECTIONBAR}>
+      <span class="text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Mailboxes</span>
+      <span class="font-mono text-[10.5px] text-slate-400 tabular-nums">6</span>
+      <div class="ml-auto flex items-center gap-1.5 pr-10">
+        <div class="h-7 w-52 pl-2 pr-1 rounded-md border border-slate-200 bg-white flex items-center gap-1.5">
+          <Glyph name="search" size={13} class="text-slate-400" />
+          <span class="text-[12.5px] text-slate-400">Search by email…</span>
+        </div>
+        <span class="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 inline-flex items-center gap-1.5 text-[12px] font-medium">
+          <Glyph name="filter" size={13} class="text-slate-400" />All accounts<Glyph name="chevronDown" size={10} class="text-slate-400" />
+        </span>
+      </div>
+    </div>
+
+    <table class="w-full table-fixed">
+      <thead>
+        <tr class="border-b border-slate-200">
+          <th class="pl-5 pr-2 py-2 w-11"><span class="block size-3.5 rounded-[4px] border border-slate-300"></span></th>
+          <th class={th}>Mailbox</th>
+          <th class={`${th} w-[104px]`}>Status</th>
+          <th class={`${th} w-[92px]`}>Sent today</th>
+          <th class={`${th} w-[84px]`}>Warmup</th>
+          <th class={`${th} w-[70px]`}>Inbox</th>
+          <th class={`${th} w-[120px]`}>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr class="h-11 border-b border-slate-200/60 transition-colors hover:bg-slate-50/80">
+            <td class="pl-5 pr-2"><span class="block size-3.5 rounded-[4px] border border-slate-300"></span></td>
+            <td class="px-3">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white">
+                  <Glyph mark={r.mark} size={r.mark === 'imap' ? 13 : 14} />
+                </span>
+                <div class="min-w-0">
+                  <div class="truncate text-[12.5px] font-medium leading-tight text-slate-900">{r.addr}</div>
+                  <div class="mt-0.5 truncate text-[11px] leading-tight text-slate-400"><span class="text-slate-500">{r.name}</span> · {r.provider}</div>
+                </div>
+              </div>
+            </td>
+            <td class="px-3">
+              {r.status === 'active' ? (
+                <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-sky-700">
+                  <span class="inline-flex items-center gap-0.5"><Glyph name="send" size={12} class="text-sky-600" /><Glyph name="flame" size={12} class="text-orange-500" /></span>
+                  <span class="text-shimmer">Active</span>
+                </span>
+              ) : (
+                <span class="inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-orange-600">
+                  <Glyph name="flame" size={12} class="text-orange-500 flame-flicker" />
+                  <span class="text-shimmer">Warming</span>
+                </span>
+              )}
+            </td>
+            <td class="px-3">
+              {r.sent ? (
+                <span class="inline-flex items-center gap-1.5 font-mono text-[12px] tabular-nums text-sky-700">
+                  <Glyph name="send" size={12} class="text-sky-500" />
+                  <span><span data-tick={`${r.sent[0]},${r.sent[1] - 4},${2600 + r.sent[0] * 40}`}>{r.sent[0]}</span><span class="text-slate-400">/{r.sent[1]}</span></span>
+                </span>
+              ) : <span class="text-slate-300">—</span>}
+            </td>
+            <td class="px-3 font-mono text-[12px] tabular-nums text-orange-600">
+              <span class="inline-flex items-center gap-1.5"><span class="campaign-grid"></span><span>{r.warm[0]}<span class="opacity-60">/{r.warm[1]}</span></span></span>
+            </td>
+            <td class="px-3">
+              {r.inbox ? (
+                <span class="inline-flex items-center gap-1.5">
+                  <Glyph name="mailCheck" size={12} class="text-slate-400" />
+                  <span class="inline-flex items-center gap-1.5 font-mono text-[11.5px] font-medium tabular-nums text-emerald-600"><span class="size-1.5 rounded-full bg-emerald-500"></span>{r.inbox}%</span>
+                </span>
+              ) : (
+                <span class="inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400"><span class="size-1.5 rounded-full bg-slate-300"></span>7/20</span>
+              )}
+            </td>
+            <td class="px-3">
+              <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
+                <span class="size-1.5 rounded-full bg-emerald-500"></span>
+                <span class="uppercase tracking-[0.08em]">Healthy {r.health}</span>
+              </span>
+            </td>
+          </tr>
+        ))}
+        <!-- The mailbox being connected: arrives, gets checked, starts warming. -->
+        <tr class="acc-new h-11 border-b border-slate-200/60 bg-sky-50/60">
+          <td class="pl-5 pr-2"><span class="block size-3.5 rounded-[4px] border border-slate-300"></span></td>
+          <td class="px-3">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white"><Glyph mark="microsoft" size={13} /></span>
+              <div class="min-w-0">
+                <div class="truncate text-[12.5px] font-medium leading-tight text-slate-900">lea@northwind.io</div>
+                <div class="mt-0.5 truncate text-[11px] leading-tight text-slate-400"><span class="text-slate-500">Lea Novak</span> · Microsoft 365</div>
+              </div>
+            </div>
+          </td>
+          <td class="px-3">
+            <span class="relative block h-4">
+              <span class="acc-swap-a absolute inset-0 inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-slate-500">
+                <span class="acc-spin size-3 rounded-full border-[1.5px] border-slate-300 border-t-sky-500"></span>Checking
+              </span>
+              <span class="acc-swap-b absolute inset-0 inline-flex items-center gap-1.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-orange-600">
+                <Glyph name="flame" size={12} class="text-orange-500" /><span class="text-shimmer">Warming</span>
+              </span>
+            </span>
+          </td>
+          <td class="px-3 text-slate-300">—</td>
+          <td class="px-3 font-mono text-[12px] tabular-nums text-orange-600">
+            <span class="acc-swap-b inline-flex items-center gap-1.5"><span class="campaign-grid"></span><span>10<span class="opacity-60">/40</span></span></span>
+          </td>
+          <td class="px-3"><span class="font-mono text-[11px] text-slate-300">—</span></td>
+          <td class="px-3"><span class="acc-swap-b inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500"></span><span class="uppercase tracking-[0.08em]">Healthy 100</span></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- The sending domain check for the new mailbox. -->
+  <div class={`${FLOAT} left-[440px] top-[372px] w-[280px] overflow-hidden`}>
+    <div class="flex items-center gap-2.5 border-b border-slate-200 px-4 py-3">
+      <span class="inline-flex size-7 items-center justify-center rounded-lg bg-sky-50 text-sky-600"><Glyph name="globe" size={14} /></span>
+      <div class="min-w-0">
+        <div class="text-[12.5px] font-medium text-slate-900">northwind.io</div>
+        <div class="text-[10.5px] text-slate-400">Sending domain</div>
+      </div>
+      <span class="acc-ok ml-auto inline-flex h-5 items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Ready</span>
+    </div>
+    <div class="px-4 py-2">
+      {checks.map((c, i) => (
+        <div class="flex h-8 items-center justify-between text-[12px]" style={`--i:${i}`}>
+          <span class="text-slate-600">{c}</span>
+          <span class="relative inline-flex h-4 w-14 items-center justify-end">
+            <span class="acc-check-wait absolute right-0 size-3 rounded-full border-[1.5px] border-slate-200 border-t-sky-500"></span>
+            <span class="acc-check-ok absolute right-0 inline-flex items-center gap-1 font-medium text-emerald-600"><Glyph name="check" size={12} />Pass</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+</ScaledStage>
+
+<style>
+  /* One 12s loop: the row arrives, its domain is checked, then it starts warming.
+     Base styles are the end state, which is what reduced motion shows. */
+  .acc-swap-a, .acc-check-wait { opacity: 0; }
+  .acc-new { animation: acc-row 12s ease-out infinite; }
+  @keyframes acc-row {
+    0%, 4% { opacity: 0; transform: translateY(6px); }
+    9%, 94% { opacity: 1; transform: none; }
+    100% { opacity: 0; }
+  }
+  .acc-swap-a { animation: acc-a 12s linear infinite; }
+  .acc-swap-b { animation: acc-b 12s linear infinite; }
+  @keyframes acc-a { 0%, 44% { opacity: 1; } 47%, 100% { opacity: 0; } }
+  @keyframes acc-b { 0%, 44% { opacity: 0; } 48%, 100% { opacity: 1; } }
+  .acc-spin, .acc-check-wait { animation: acc-spin 0.8s linear infinite; }
+  @keyframes acc-spin { to { transform: rotate(360deg); } }
+
+  .acc-check-wait { animation: acc-spin 0.8s linear infinite, acc-wait 12s linear infinite; animation-delay: 0s, calc(var(--i) * 0.55s); }
+  .acc-check-ok { animation: acc-pass 12s linear infinite; animation-delay: calc(var(--i) * 0.55s); }
+  @keyframes acc-wait { 0%, 18% { opacity: 1; } 20%, 100% { opacity: 0; } }
+  @keyframes acc-pass { 0%, 18% { opacity: 0; transform: scale(0.8); } 21%, 100% { opacity: 1; transform: none; } }
+  .acc-ok { animation: acc-ok 12s linear infinite; }
+  @keyframes acc-ok { 0%, 42% { opacity: 0; } 45%, 100% { opacity: 1; } }
+  .acc-check-ok, .acc-check-wait, .acc-ok { animation-fill-mode: both; }
+</style>

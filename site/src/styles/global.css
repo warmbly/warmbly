@@ -171,18 +171,8 @@ body {
    Reusable patterns
 ---------------------------------------------------------------- */
 
-/* Site-wide content width. Widened to 90rem so the header, hero, footer
-   and every section share the same generous width as the feature showcase. */
+/* Site-wide content width, shared by the header, hero, footer and every section. */
 @utility container-page {
-  width: 100%;
-  margin-inline: auto;
-  padding-inline: 1.25rem;
-  max-width: 90rem;
-  @media (min-width: 768px) { padding-inline: 2.5rem; }
-}
-
-/* Alias kept for the feature showcase; same width as container-page. */
-@utility container-wide {
   width: 100%;
   margin-inline: auto;
   padding-inline: 1.25rem;
@@ -875,35 +865,6 @@ body {
   }
 }
 
-/* ----------------------------------------------------------------
-   Grain frame.
-
-   Paper Shaders injects its own `@layer paper-shaders` at runtime, and a
-   layer registered after Tailwind's beats Tailwind at ANY specificity. Two
-   of its rules matter here:
-
-     :where([data-paper-shader]) { position: relative }
-     :where([data-paper-shader]) canvas { height: 100%; border-radius: inherit }
-
-   It puts that attribute on whatever element we mount to. So its `position:
-   relative` was overriding the `absolute inset-0` on our mount target, which
-   left the target auto-height (its only child is the absolute canvas), which
-   made the canvas 100% of zero. Declaring position here, unlayered, wins it
-   back: unlayered CSS beats every layer.
-
-   The radius travels as a custom property because the canvas is created by
-   the library at a depth we do not control, and `inherit` only reads one
-   level up. clip-path is the belt to that pair of braces: it clips
-   descendants whatever their overflow, z-index or containment.
----------------------------------------------------------------- */
-/* The shadow lives on the shell, outside the clip, or the frame's own
-   clip-path would cut it off. */
-.feat-frame-shell {
-  --frame-radius: 28px;
-
-  border-radius: var(--frame-radius);
-}
-
 /* The one clip every visual on the page goes through: a plain box, overflow
    hidden, one radius. A transformed child (a scaled screen, a sliding track)
    gets its own compositor layer, and Safari and Chrome both skip a rounded
@@ -939,31 +900,9 @@ body {
 }
 
 /* Diagnostics for the phone: ?noshell hides every app shell, ?noanim stops
-   every animation, ?nogl (GrainBackdrop) skips WebGL. */
+   every animation. */
 html[data-diag~="noshell"] [data-stage] { display: none !important; }
 html[data-diag~="noanim"] *, html[data-diag~="noanim"] *::before, html[data-diag~="noanim"] *::after { animation: none !important; transition: none !important; }
-
-/* The outer clip. clip-path (not just overflow) because the shader canvas
-   carries `contain: strict` and a negative z-index from the library's own
-   layer; this clips it regardless. */
-.feat-frame {
-  border-radius: var(--frame-radius);
-  clip-path: inset(0 round var(--frame-radius));
-}
-
-.feat-frame .grain-backdrop {
-  border-radius: var(--frame-radius);
-}
-
-.feat-frame .grain-canvas {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--frame-radius);
-}
-
-.feat-frame .grain-canvas canvas {
-  border-radius: var(--frame-radius);
-}
 
 /* The demo pointer (DemoCursor.astro), moved by lib/cursor.ts. Hidden until
    the engine takes over, so a mock never shows a pointer parked at 0,0. */
@@ -1032,6 +971,23 @@ html[data-diag~="noanim"] *, html[data-diag~="noanim"] *::before, html[data-diag
 [data-stage] svg[stroke="currentColor"] {
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The dashboard's live-label sheen (web/src/global.css). */
+.text-shimmer {
+  background-image: linear-gradient(100deg, currentColor 0%, currentColor 40%, color-mix(in oklab, currentColor 30%, white) 50%, currentColor 60%, currentColor 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 2.6s linear infinite;
+}
+@keyframes text-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .text-shimmer { animation: none; }
 }
 
 /* ── Sidebar activity motifs, copied from web/src/global.css ── */

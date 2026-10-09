@@ -3,23 +3,9 @@ import Layout from '../layouts/Layout.astro';
 import Icon from '../components/Icon.astro';
 import DashboardMock from '../components/DashboardMock.astro';
 import HeroAtmosphere from '../components/HeroAtmosphere.astro';
-import FeatureSection from '../components/FeatureSection.astro';
-import CampaignBuilderMock from '../components/CampaignBuilderMock.astro';
-import ScheduleMock from '../components/ScheduleMock.astro';
-import UniboxMock from '../components/UniboxMock.astro';
-import AnalyticsMock from '../components/AnalyticsMock.astro';
-import IntegrationsMock from '../components/IntegrationsMock.astro';
-import DeveloperMock from '../components/DeveloperMock.astro';
-import CRMMock from '../components/CRMMock.astro';
-import FormsMock from '../components/FormsMock.astro';
-import FormBuilderMock from '../components/FormBuilderMock.astro';
-import HostedFormMock from '../components/HostedFormMock.astro';
-import TemplatingShowcase from '../components/TemplatingShowcase.astro';
-import ChangelogShowcase from '../components/ChangelogShowcase.astro';
-import OpenSourceShowcase from '../components/OpenSourceShowcase.astro';
+import FeatureGrid from '../components/FeatureGrid.astro';
+import OutboundSteps from '../components/OutboundSteps.astro';
 import AutomationsShowcase from '../components/AutomationsShowcase.astro';
-import MobileAppShowcase from '../components/MobileAppShowcase.astro';
-import BentoGrid from '../components/BentoGrid.astro';
 
 
 // Mirrors web/src/lib/plans.ts — single source of truth.
@@ -257,244 +243,18 @@ const softwareJsonLd = {
     </section>
 
     <!-- ============================================================
-         FEATURE SHOWCASE — one section per feature, each on its own
-         background, with a pixel-faithful product window + an auto-playing
-         demo cursor. (Replaces the old warmup + abstract inbox/campaign bands.)
+         BENTO, then the outbound loop in numbered steps
     ============================================================ -->
-
-    <FeatureSection
-      eyebrow="Campaigns"
-      title="Sequences that branch on real behavior."
-      description="Build the flow on a canvas and fork it on opens, clicks and replies."
-      side="right"
-      bg="sky"
-      url="app.warmbly.com/campaigns/q1-sales/sequences"
-      nav="Campaigns"
-      crumb="Q1 sales"
-      anchor="tr"
-      zoom={1000}
-      cursor="a"
-      callouts={[
-        { label: 'Drag to branch', text: 'Pull a link from any step to add a path.' },
-        { label: 'A/B at every step', text: 'Weighted variants, the stronger one keeps sending.' },
-        { label: 'Threaded follow-ups', text: 'Replies land in the same conversation.' },
-      ]}
-      cta={{ text: 'Explore campaigns', href: '/campaigns/' }}
-    >
-      <CampaignBuilderMock />
-    </FeatureSection>
-
-    <FeatureSection
-      eyebrow="Scheduling"
-      title="Send only inside their working hours."
-      description="Draw a sending window on any weekday. Drag to move it, grab an edge to resize."
-      side="left"
-      bg="light"
-      url="app.warmbly.com/campaigns/q1-sales/schedule"
-      nav="Campaigns"
-      crumb="Schedule"
-      anchor="tl"
-      zoom={1120}
-      cursor="b"
-      callouts={[
-        { label: 'Per-day windows', text: 'Mornings only, split shifts, several a day.' },
-        { label: 'Timezone-aware', text: 'Sends follow the timezone you pick.' },
-        { label: 'One-click presets', text: 'Mon to Fri, 9 to 5, in a tap.' },
-      ]}
-      cta={{ text: 'See sending controls', href: '/sending/' }}
-    >
-      <ScheduleMock />
-    </FeatureSection>
-
-    <FeatureSection
-      eyebrow="Unified inbox"
-      title="Every reply, triaged the moment it lands."
-      description="Replies from every mailbox stream into one queue, labeled on arrival."
-      side="right"
-      bg="navy"
-      url="app.warmbly.com/unibox"
-      nav="Inbox"
-      anchor="br"
-      zoom={1000}
-      cursor="c"
-      callouts={[
-        { label: 'One queue', text: 'Scope by inbox, tag or status.' },
-        { label: 'Classified on arrival', text: 'Positive, out of office, unsubscribe, bounce.' },
-        { label: 'Reply in place', text: 'Snooze, schedule and send from the same pane.' },
-      ]}
-      cta={{ text: 'Tour the inbox', href: '/inbox/' }}
-    >
-      <UniboxMock />
-    </FeatureSection>
-
-    <FeatureSection
-      eyebrow="Analytics"
-      title="Proof of what actually landed."
-      description="Sent, opens, clicks, replies and bounces, with account health on one screen."
-      side="left"
-      bg="wallpaper"
-      url="app.warmbly.com/analytics"
-      nav="Analytics"
-      anchor="tl"
-      zoom={1280}
-      wide
-      slides={[{ url: 'app.warmbly.com/analytics?share=1' }]}
-      cursor="d"
-      callouts={[
-        { label: 'Placement, not vanity', text: 'The metrics that move reputation, over 7, 30 or 90 days.' },
-        { label: 'Best performers', text: 'Top campaigns rank themselves as sends roll in.' },
-        { label: 'Shareable report', text: 'Export a branded image of any range.' },
-      ]}
-      cta={{ text: 'View analytics', href: '/analytics/' }}
-    >
-      <AnalyticsMock demo="off" />
-      <AnalyticsMock demo="open" slot="slide2" />
-    </FeatureSection>
-
-    <FeatureSection
-      eyebrow="AI"
-      title="AI that writes the email and runs the steps."
-      description="Ask at the caret and the draft lands where you type. Put a Switch or an AI step in the flow and the model decides each contact's path."
-      side="right"
-      bg="sky"
-      url="app.warmbly.com/campaigns/q1-sales/steps"
-      nav="Campaigns"
-      crumb="Steps"
-      anchor="br"
-      zoom={1020}
-      slides={[
-        { url: 'app.warmbly.com/campaigns/q1-sales/steps', crumb: 'Steps' },
-        { url: 'app.warmbly.com/campaigns/q1-sales/steps', crumb: 'Steps' },
-      ]}
-      cursor="a"
-      callouts={[
-        { label: 'Where you type', text: 'A sparkle on the line, or ⌘J. Undo or run it again.' },
-        { label: 'Switch on AI', text: 'A prompt reads each reply and picks a case, every case its own path.' },
-        { label: 'AI step', text: 'An agent that tags, tasks and unsubscribes. Only the actions you allow.' },
-      ]}
-      cta={{ text: 'Try the assistant', href: '/campaigns/' }}
-    >
-      <CampaignBuilderMock demo="ai" />
-      <CampaignBuilderMock demo="switch" slot="slide2" />
-      <CampaignBuilderMock demo="agent" slot="slide3" />
-    </FeatureSection>
-
-    <FeatureSection
-      eyebrow="Integrations"
-      title="Plug into the stack you already run."
-      description="Gmail, Microsoft 365, your CRM, Slack and Zapier, connected over OAuth."
-      side="left"
-      bg="light"
-      url="app.warmbly.com/integrations"
-      nav="Integrations"
-      anchor="tl"
-      zoom={1280}
-      wide
-      cursor="b"
-      callouts={[
-        { label: 'OAuth in two clicks', text: 'Authorize once, revoke any time.' },
-        { label: 'Signed webhooks', text: 'HMAC-signed and HTTPS by default.' },
-        { label: 'Encrypted at rest', text: 'Secrets sealed with your data key.' },
-      ]}
-      cta={{ text: 'Browse integrations', href: '/integrations/' }}
-    >
-      <IntegrationsMock />
-    </FeatureSection>
+    <FeatureGrid />
+    <OutboundSteps />
 
     <!-- ============================================================
-         MOBILE APP — sky band with the iOS app in a half-cut iPhone,
-         air-glass tabs flipping between the real app's screens.
-    ============================================================ -->
-    <MobileAppShowcase />
-
-    <!-- ============================================================
-         AUTOMATIONS — full-width centerpiece: the live builder demo
-         running a test end to end. Deliberately breaks the side-by-side
-         rhythm so it reads as the headline act of the showcase.
+         AUTOMATIONS: full-width centerpiece, the live builder demo
+         running a test end to end.
     ============================================================ -->
     <AutomationsShowcase />
 
-    <FeatureSection
-      eyebrow="Developers"
-      title="An API you can build a product on."
-      description="Everything in the dashboard is a REST endpoint."
-      side="right"
-      bg="navy"
-      url="app.warmbly.com/api-keys"
-      nav="API Keys"
-      anchor="tl"
-      zoom={1280}
-      wide
-      cursor="c"
-      callouts={[
-        { label: 'Scoped keys', text: 'Read, write or send-only, per environment.' },
-        { label: 'Idempotent by default', text: 'Send an Idempotency-Key and retries are safe.' },
-        { label: 'Webhooks that verify', text: 'Signed payloads for every event.' },
-      ]}
-      cta={{ text: 'Read the API docs', href: '/developers/' }}
-    >
-      <DeveloperMock />
-    </FeatureSection>
 
-    <FeatureSection
-      eyebrow="CRM"
-      title="From positive reply to closed won."
-      description="A positive reply opens the deal and pauses the sequence on its own."
-      side="left"
-      bg="wallpaper"
-      url="app.warmbly.com/crm/deals"
-      nav="Deals"
-      anchor="tr"
-      zoom={1280}
-      wide
-      cursor="d"
-      callouts={[
-        { label: 'Born from the reply', text: 'Nothing keeps sending to someone who said yes.' },
-        { label: 'Board and value', text: 'Stages with their open value at a glance.' },
-        { label: 'Edit in place', text: 'Stage, value and close date in one dialog.' },
-      ]}
-      cta={{ text: 'See the CRM', href: '/crm/' }}
-    >
-      <CRMMock />
-    </FeatureSection>
-
-    <FeatureSection
-      eyebrow="Forms"
-      title="Lead capture that lands in the same pipeline."
-      description="Hosted forms whose submissions become contacts, attributed to the send that brought them."
-      side="right"
-      bg="sky"
-      url="app.warmbly.com/forms"
-      nav="Forms"
-      anchor="tl"
-      zoom={1100}
-      slides={[
-        { url: 'app.warmbly.com/forms/book-a-demo', crumb: 'Book a demo' },
-        { url: 'forms.northwind.dev/f/book-a-demo', shell: false },
-      ]}
-      cursor="a"
-      callouts={[
-        { label: 'Themes and layouts', text: 'Card, wide or split, with a brand cover.' },
-        { label: 'Personalized links', text: 'Prefilled per contact, no second email ask.' },
-        { label: 'Your own domain', text: 'Serve every form from a subdomain you own.' },
-      ]}
-      cta={{ text: 'Read the forms guide', href: 'https://docs.warmbly.com/guides/forms/' }}
-    >
-      <FormsMock />
-      <FormBuilderMock slot="slide2" />
-      <HostedFormMock slot="slide3" />
-    </FeatureSection>
-
-    <!-- Changelog, open-source CTA, and Go templating sections after the feature showcase -->
-    <ChangelogShowcase />
-    <OpenSourceShowcase />
-    <TemplatingShowcase />
-
-
-    <!-- ============================================================
-         BENTO
-    ============================================================ -->
-    <BentoGrid />
 
 
     <!-- ============================================================
@@ -776,12 +536,6 @@ const softwareJsonLd = {
         transform: none;
         transition: none;
       }
-    }
-
-    /* Pause the demo cursor while a visitor is inspecting a feature window. */
-    .feature-window:hover .demo-cursor,
-    .feature-window:hover .demo-cursor-ripple {
-      animation-play-state: paused;
     }
 
   </style>

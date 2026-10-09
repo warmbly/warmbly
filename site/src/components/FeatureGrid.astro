@@ -1,0 +1,54 @@
+---
+import InboxScene from './scenes/InboxScene.astro';
+import WriterScene from './scenes/WriterScene.astro';
+import DealsScene from './scenes/DealsScene.astro';
+import AnalyticsScene from './scenes/AnalyticsScene.astro';
+import InstallScene from './scenes/InstallScene.astro';
+
+/**
+ * Landing page bento: what the product does, two wide cards then three,
+ * each a live dashboard scene with a plain title and one line underneath.
+ */
+const title = 'mt-6 text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900';
+const body = 'mt-2 max-w-xl text-[16px] md:text-[17px] leading-[1.55] text-slate-500';
+---
+<section class="container-page py-20 md:py-28">
+  <h2 class="max-w-4xl text-[36px] md:text-[58px] font-medium tracking-[-0.045em] leading-[1.02] text-slate-900">
+    Everything you need to run cold email.
+  </h2>
+  <p class="mt-5 max-w-2xl text-[17px] md:text-[19px] leading-[1.55] text-slate-500">
+    Connect your mailboxes, warm them up, send campaigns and handle the replies, all from one dashboard.
+  </p>
+
+  <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 md:grid-cols-2 lg:grid-cols-6">
+    <article class="lg:col-span-3">
+      <InboxScene />
+      <h3 class={title}>One inbox for every reply</h3>
+      <p class={body}>Replies from all your mailboxes arrive in one place, already labeled as interested, out of office, a question or an unsubscribe.</p>
+    </article>
+
+    <article class="lg:col-span-3">
+      <WriterScene />
+      <h3 class={title}>Emails that read as personal</h3>
+      <p class={body}>Write each step with variables like first name and company, test two versions against each other, and draft or rewrite with AI.</p>
+    </article>
+
+    <article class="lg:col-span-2">
+      <DealsScene />
+      <h3 class={title}>A pipeline for your deals</h3>
+      <p class={body}>Move interested leads from reply to meeting to closed on a simple board.</p>
+    </article>
+
+    <article class="lg:col-span-2">
+      <AnalyticsScene />
+      <h3 class={title}>Campaign analytics</h3>
+      <p class={body}>Sends, replies and bounces for every campaign and every mailbox.</p>
+    </article>
+
+    <article class="md:col-span-2 lg:col-span-2">
+      <InstallScene />
+      <h3 class={title}>Open source</h3>
+      <p class={body}>Use Warmbly Cloud, or install it on your own server with one command.</p>
+    </article>
+  </div>
+</section>

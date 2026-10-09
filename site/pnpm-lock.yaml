@@ -29,9 +29,6 @@ importers:
       '@fontsource/inter':
         specifier: ^5.2.6
         version: 5.2.8
-      '@paper-design/shaders':
-        specifier: ^0.0.80
-        version: 0.0.80
       '@tailwindcss/vite':
         specifier: ^4.1.10
         version: 4.3.0(vite@8.3.0(@types/node@24.13.5)(esbuild@0.28.2)(jiti@2.7.0))
@@ -602,9 +599,6 @@ packages:
 
   '@oxc-project/types@0.150.0':
     resolution: {integrity: sha512-rDS5/31E9HfPl/CIzGrn0DOlvBbXFseQ5URJ9sYMfstbKLD/c6Gm9vmRzRGDdAXyOIL4zmO37lc9RIwYqVruZw==}
-
-  '@paper-design/shaders@0.0.80':
-    resolution: {integrity: sha512-pcabvt5xDlFoEhpjUj4b1tGJMfqb0i5mXifWMNQf6z7FoOJYxYDo7F8R6k0JAh5D/7ouxjX5+N0cIq5WURyQ1Q==}
 
   '@rolldown/binding-android-arm-eabi@1.2.9':
     resolution: {integrity: sha512-tNISae1QEf/vkb3xkRcjV5SEdzPE97We5IVaa2Z8jSszQPZ8U60B/YCYpw4QI7VidYsBtKavczXf+DyDs9WGxw==}
@@ -2583,8 +2577,6 @@ snapshots:
   '@oslojs/encoding@1.1.0': {}
 
   '@oxc-project/types@0.150.0': {}
-
-  '@paper-design/shaders@0.0.80': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.9':
     optional: true

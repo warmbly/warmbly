@@ -1,0 +1,98 @@
+---
+/**
+ * A fixed-size scene over a photo, scaled as one picture to the width it is
+ * given, so a phone sees the same composition a desktop does.
+ *
+ * The scene is authored at `w` x `h` px; everything inside it positions
+ * absolutely against that box. Its loops only run while it is on screen
+ * (`.is-live`), `[data-tick]` numbers count up while live, and `enter-*`
+ * pieces play once, the first time it scrolls in (`.is-seen`).
+ */
+interface Props {
+  w: number;
+  h: number;
+  /** Background photo under /textures. */
+  photo: string;
+  class?: string;
+}
+const { w, h, photo, class: className = '' } = Astro.props;
+---
+<div class={`stage-box group/stage relative w-full overflow-hidden rounded-[6px] bg-slate-100 ${className}`} style={`aspect-ratio:${w}/${h};`}>
+  <img src={`/textures/${photo}.webp`} alt="" aria-hidden="true" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover select-none pointer-events-none transition-transform duration-[1200ms] ease-out group-hover/stage:scale-[1.03]" />
+  <div class="stage absolute left-0 top-0 origin-top-left" style={`width:${w}px;height:${h}px;transform:scale(var(--k,1));`} data-w={w} aria-hidden="true">
+    <slot />
+  </div>
+</div>
+
+<style is:global>
+  /* Off screen, every loop in a scene holds still. */
+  .stage-box:not(.is-live) .stage *,
+  .stage-box:not(.is-live) .stage *::before,
+  .stage-box:not(.is-live) .stage *::after {
+    animation-play-state: paused !important;
+  }
+  /* Floating cards lift a little while the scene is hovered. */
+  .stage .float-layer {
+    transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 700ms ease;
+  }
+  .stage-box:hover .stage .float-layer {
+    transform: translateY(-4px);
+    box-shadow: 0 34px 70px -28px rgba(15, 23, 42, 0.55);
+  }
+  /* One-shot entrances. Without the script nothing is hidden. */
+  .enter-grow-y { transform-origin: bottom; transition: transform 1000ms cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0ms); }
+  .enter-grow-x { transform-origin: left; transition: transform 1000ms cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0ms); }
+  .enter-fade { transition: opacity 700ms ease var(--d, 0ms), transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0ms); }
+  .enter-draw { transition: stroke-dashoffset 1600ms cubic-bezier(0.4, 0, 0.2, 1) var(--d, 0ms); }
+  .js-stage:not(.is-seen) .enter-grow-y { transform: scaleY(0); }
+  .js-stage:not(.is-seen) .enter-grow-x { transform: scaleX(0); }
+  .js-stage:not(.is-seen) .enter-fade { opacity: 0; transform: translateY(10px); }
+  .js-stage:not(.is-seen) .enter-draw { stroke-dashoffset: var(--len, 1); }
+  @media (prefers-reduced-motion: reduce) {
+    .stage *, .stage *::before, .stage *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<script>
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const fit = (box: HTMLElement) => {
+    const stage = box.querySelector<HTMLElement>(':scope > .stage');
+    const w = Number(stage?.dataset.w) || 0;
+    if (stage && w) stage.style.setProperty('--k', String(box.clientWidth / w));
+  };
+
+  // data-tick="from,to,everyMs": counts up by one while live, then starts over.
+  const tick = (el: HTMLElement) => {
+    const [from, to, every] = (el.dataset.tick ?? '').split(',').map(Number);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || !every) return;
+    const box = el.closest<HTMLElement>('.stage-box');
+    let n = Number(el.textContent) || from;
+    const step = () => {
+      if (box?.classList.contains('is-live')) {
+        n = n >= to ? from : n + 1;
+        el.textContent = String(n);
+      }
+      setTimeout(step, every * (0.75 + Math.random() * 0.5));
+    };
+    setTimeout(step, every);
+  };
+
+  const boxes = [...document.querySelectorAll<HTMLElement>('.stage-box')];
+  const ro = new ResizeObserver((entries) => entries.forEach((e) => fit(e.target as HTMLElement)));
+  boxes.forEach((b) => { fit(b); ro.observe(b); });
+
+  if (reduced || typeof IntersectionObserver === 'undefined') {
+    boxes.forEach((b) => b.classList.add('is-seen', ...(reduced ? [] : ['is-live'])));
+  } else {
+    boxes.forEach((b) => b.classList.add('js-stage'));
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        e.target.classList.toggle('is-live', e.isIntersecting);
+        if (e.isIntersecting) e.target.classList.add('is-seen');
+      });
+    }, { threshold: 0.3 });
+    boxes.forEach((b) => io.observe(b));
+  }
+  if (!reduced) document.querySelectorAll<HTMLElement>('.stage [data-tick]').forEach(tick);
+</script>

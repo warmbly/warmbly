@@ -1,0 +1,69 @@
+---
+import ScaledStage from '../ScaledStage.astro';
+import { WINDOW, EYEBROW } from '../../lib/scene';
+
+/**
+ * The Analytics page: the stat strip and the sends and replies trend, drawn
+ * in once as it scrolls into view.
+ */
+const W = 420, H = 150;
+const sent = [62, 70, 66, 80, 86, 78, 92, 98, 94, 108, 112, 104, 120, 126, 118, 134];
+const replies = [5, 6, 5, 8, 7, 9, 8, 10, 11, 10, 12, 13, 12, 14, 15, 16];
+const maxY = 140;
+const pts = (arr: number[], scale = 1) => arr.map((v, i) => [(i / (arr.length - 1)) * W, H - (v * scale / maxY) * (H - 10)]);
+const smooth = (p: number[][]) => {
+  let d = `M ${p[0][0]} ${p[0][1]}`;
+  for (let i = 0; i < p.length - 1; i++) {
+    const p0 = p[i - 1] ?? p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] ?? p2;
+    d += ` C ${p1[0] + (p2[0] - p0[0]) / 6} ${p1[1] + (p2[1] - p0[1]) / 6}, ${p2[0] - (p3[0] - p1[0]) / 6} ${p2[1] - (p3[1] - p1[1]) / 6}, ${p2[0]} ${p2[1]}`;
+  }
+  return d;
+};
+const sentLine = smooth(pts(sent));
+const replyLine = smooth(pts(replies, 4));
+const sentArea = `${sentLine} L ${W} ${H} L 0 ${H} Z`;
+const stats = [
+  { label: 'Sent', value: '2184', sub: 'last 30 days', tick: '2184,2299,1400' },
+  { label: 'Reply rate', value: '8.4%', sub: '183 replies' },
+  { label: 'Bounced', value: '0.6%', sub: '13 bounces', last: true },
+];
+---
+<ScaledStage w={460} h={345} photo="sheer-lavender">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-11 px-4 border-b border-slate-200 flex items-center gap-3">
+      <span class={EYEBROW}>Analytics</span>
+      <span class="ml-auto mr-6 inline-flex rounded-md bg-slate-100 p-0.5 text-[11px] font-medium">
+        <span class="h-6 px-2 inline-flex items-center rounded text-slate-500">7d</span>
+        <span class="h-6 px-2 inline-flex items-center rounded bg-white text-slate-900 shadow-sm">30d</span>
+        <span class="h-6 px-2 inline-flex items-center rounded text-slate-500">90d</span>
+      </span>
+    </div>
+    <div class="grid grid-cols-3 border-b border-slate-200">
+      {stats.map((s) => (
+        <div class={`px-4 py-3 ${s.last ? '' : 'border-r border-slate-200'}`}>
+          <div class={EYEBROW}>{s.label}</div>
+          <div class="mt-1.5 text-[22px] font-light leading-none tabular-nums text-slate-900">{s.tick ? <span data-tick={s.tick}>{s.value}</span> : s.value}</div>
+          <div class="mt-1.5 truncate font-mono text-[10px] text-slate-400">{s.sub}</div>
+        </div>
+      ))}
+    </div>
+    <div class="px-4 pt-3">
+      <div class="flex items-center gap-3 text-[10px] text-slate-400">
+        <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-sky-500"></span>Sent</span>
+        <span class="inline-flex items-center gap-1.5"><span class="size-2 rounded-sm bg-emerald-500"></span>Replies</span>
+      </div>
+      <div class="relative mt-2" style={`width:${W}px;height:${H}px`}>
+        <svg width={W} height={H} class="overflow-visible">
+          <defs>
+            <linearGradient id="an-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#0ea5e9" stop-opacity="0.18" /><stop offset="1" stop-color="#0ea5e9" stop-opacity="0" /></linearGradient>
+          </defs>
+          {[0.25, 0.5, 0.75].map((f) => <line x1="0" x2={W} y1={H * f} y2={H * f} stroke="#f1f5f9" />)}
+          <path class="enter-fade" d={sentArea} fill="url(#an-fill)" style="--d:900ms" />
+          <path class="enter-draw" d={sentLine} fill="none" stroke="#0ea5e9" stroke-width="1.75" pathLength="1" stroke-dasharray="1" style="--d:200ms" />
+          <path class="enter-draw" d={replyLine} fill="none" stroke="#10b981" stroke-width="1.75" pathLength="1" stroke-dasharray="1" style="--d:450ms" />
+        </svg>
+      </div>
+    </div>
+  </div>
+</ScaledStage>
+
