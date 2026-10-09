@@ -11,6 +11,10 @@ export const mailboxSort = z.strictObject({
     by: z.enum(["mailbox", "status", "sent", "warmup", "inbox", "health"]),
     reverse: z.boolean(),
 }).nullable();
+export const analyticsCampaignFilter = z.strictObject({
+    campaigns: z.array(z.string()).max(100),
+    folders: z.array(z.string()).max(100),
+});
 export const analyticsHiddenMetrics = z.array(z.enum(["sent", "opens", "clicks", "replies"]))
     .max(3).refine((values) => new Set(values).size === values.length);
 export const deliverabilityHiddenMetrics = z.array(z.enum(["bounces", "complaints", "opens", "replies", "sent"]))

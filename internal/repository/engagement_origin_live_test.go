@@ -93,7 +93,7 @@ func TestLiveEngagementOriginReachesEverySurface(t *testing.T) {
 	}
 
 	analytics := NewAnalyticsRepository(handle)
-	recent, xerr := analytics.GetRecentActivity(ctx, f.org, 20)
+	recent, xerr := analytics.GetRecentActivity(ctx, f.org, 20, nil)
 	if xerr != nil {
 		t.Fatalf("recent activity: %v", xerr)
 	}

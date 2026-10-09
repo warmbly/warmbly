@@ -45,7 +45,9 @@ type AnalyticsService interface {
 	GetUsageOverview(ctx context.Context, orgID, userID uuid.UUID, period string) (*models.UsageOverview, *errx.Error)
 
 	// Dashboard analytics
-	GetDashboardAnalytics(ctx context.Context, orgID uuid.UUID, period string) (*models.DashboardAnalytics, *errx.Error)
+	// GetDashboardAnalytics narrows the campaign-derived sections to filter
+	// when it names anything; account health stays workspace-wide.
+	GetDashboardAnalytics(ctx context.Context, orgID uuid.UUID, period string, filter models.DashboardFilter) (*models.DashboardAnalytics, *errx.Error)
 	GetDirectMailAnalytics(ctx context.Context, orgID uuid.UUID, period string) (*models.DirectMailAnalytics, *errx.Error)
 	GetCampaignHourlyStats(ctx context.Context, orgID, campaignID uuid.UUID, date time.Time) ([]models.CampaignHourlyStats, *errx.Error)
 	CompareCampaigns(ctx context.Context, orgID uuid.UUID, campaignIDs []uuid.UUID, from, to time.Time) (*models.CampaignComparison, *errx.Error)
@@ -714,7 +716,7 @@ func (s *analyticsService) warmupPartnerLimit(ctx context.Context, email *models
 
 // Dashboard Analytics implementations
 
-func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid.UUID, period string) (*models.DashboardAnalytics, *errx.Error) {
+func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid.UUID, period string, filter models.DashboardFilter) (*models.DashboardAnalytics, *errx.Error) {
 	// Calculate date range from period
 	to := time.Now().UTC()
 	startOfToday := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
@@ -732,20 +734,31 @@ func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid
 		period = "7d"
 	}
 
+	// The one place a filter becomes a campaign set, so every section reads the same one.
+	var view *models.DashboardScope
+	var scope *models.CampaignScope
+	if !filter.Empty() {
+		var xerr *errx.Error
+		view, scope, xerr = s.analyticsRepo.ResolveDashboardScope(ctx, orgID, filter)
+		if xerr != nil {
+			return nil, xerr
+		}
+	}
+
 	// Get overall stats
-	overallStats, xerr := s.analyticsRepo.GetDashboardOverallStats(ctx, orgID, from, to)
+	overallStats, xerr := s.analyticsRepo.GetDashboardOverallStats(ctx, orgID, from, to, scope)
 	if xerr != nil {
 		return nil, xerr
 	}
 
 	// Get recent activity
-	recentActivity, xerr := s.analyticsRepo.GetRecentActivity(ctx, orgID, 20)
+	recentActivity, xerr := s.analyticsRepo.GetRecentActivity(ctx, orgID, 20, scope)
 	if xerr != nil {
 		recentActivity = make([]models.RecentActivityItem, 0)
 	}
 
 	// Get top campaigns
-	topCampaigns, xerr := s.analyticsRepo.GetTopCampaigns(ctx, orgID, from, to, 5, "emails_sent")
+	topCampaigns, xerr := s.analyticsRepo.GetTopCampaigns(ctx, orgID, from, to, 5, "emails_sent", scope)
 	if xerr != nil {
 		topCampaigns = make([]models.TopCampaignStats, 0)
 	}
@@ -757,7 +770,7 @@ func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid
 	}
 
 	// Get daily trend
-	dailyTrend, xerr := s.analyticsRepo.GetDashboardDailyTrend(ctx, orgID, from, to)
+	dailyTrend, xerr := s.analyticsRepo.GetDashboardDailyTrend(ctx, orgID, from, to, scope)
 	if xerr != nil {
 		dailyTrend = make([]models.DashboardDailyStats, 0)
 	}
@@ -769,6 +782,7 @@ func (s *analyticsService) GetDashboardAnalytics(ctx context.Context, orgID uuid
 		TopCampaigns:   topCampaigns,
 		AccountHealth:  *accountHealth,
 		DailyTrend:     dailyTrend,
+		Scope:          view,
 	}, nil
 }
 

@@ -53,18 +53,38 @@ type dashboardAnalyticsRepoStub struct {
 	overallTo   time.Time
 	trendFrom   time.Time
 	trendTo     time.Time
+	// resolved is what ResolveDashboardScope answers; scopes records what
+	// each section was then asked for, keyed by section.
+	resolved *models.CampaignScope
+	resolves int
+	scopes   map[string]*models.CampaignScope
 }
 
-func (s *dashboardAnalyticsRepoStub) GetDashboardOverallStats(_ context.Context, _ uuid.UUID, from, to time.Time) (*models.DashboardOverallStats, *errx.Error) {
+func (s *dashboardAnalyticsRepoStub) record(section string, scope *models.CampaignScope) {
+	if s.scopes == nil {
+		s.scopes = map[string]*models.CampaignScope{}
+	}
+	s.scopes[section] = scope
+}
+
+func (s *dashboardAnalyticsRepoStub) ResolveDashboardScope(_ context.Context, _ uuid.UUID, _ models.DashboardFilter) (*models.DashboardScope, *models.CampaignScope, *errx.Error) {
+	s.resolves++
+	return &models.DashboardScope{CampaignCount: len(s.resolved.CampaignIDs)}, s.resolved, nil
+}
+
+func (s *dashboardAnalyticsRepoStub) GetDashboardOverallStats(_ context.Context, _ uuid.UUID, from, to time.Time, scope *models.CampaignScope) (*models.DashboardOverallStats, *errx.Error) {
 	s.overallFrom, s.overallTo = from, to
+	s.record("overall", scope)
 	return &models.DashboardOverallStats{}, nil
 }
 
-func (*dashboardAnalyticsRepoStub) GetRecentActivity(context.Context, uuid.UUID, int) ([]models.RecentActivityItem, *errx.Error) {
+func (s *dashboardAnalyticsRepoStub) GetRecentActivity(_ context.Context, _ uuid.UUID, _ int, scope *models.CampaignScope) ([]models.RecentActivityItem, *errx.Error) {
+	s.record("recent", scope)
 	return []models.RecentActivityItem{}, nil
 }
 
-func (*dashboardAnalyticsRepoStub) GetTopCampaigns(context.Context, uuid.UUID, time.Time, time.Time, int, string) ([]models.TopCampaignStats, *errx.Error) {
+func (s *dashboardAnalyticsRepoStub) GetTopCampaigns(_ context.Context, _ uuid.UUID, _, _ time.Time, _ int, _ string, scope *models.CampaignScope) ([]models.TopCampaignStats, *errx.Error) {
+	s.record("top", scope)
 	return []models.TopCampaignStats{}, nil
 }
 
@@ -72,8 +92,9 @@ func (*dashboardAnalyticsRepoStub) GetAccountHealthSummary(context.Context, uuid
 	return &models.AccountHealthSummary{}, nil
 }
 
-func (s *dashboardAnalyticsRepoStub) GetDashboardDailyTrend(_ context.Context, _ uuid.UUID, from, to time.Time) ([]models.DashboardDailyStats, *errx.Error) {
+func (s *dashboardAnalyticsRepoStub) GetDashboardDailyTrend(_ context.Context, _ uuid.UUID, from, to time.Time, scope *models.CampaignScope) ([]models.DashboardDailyStats, *errx.Error) {
 	s.trendFrom, s.trendTo = from, to
+	s.record("trend", scope)
 	return []models.DashboardDailyStats{}, nil
 }
 
@@ -139,7 +160,7 @@ func TestDashboardUsesTheSameSevenCalendarDaysForCardsAndTrend(t *testing.T) {
 	repo := &dashboardAnalyticsRepoStub{}
 	svc := &analyticsService{analyticsRepo: repo}
 
-	got, xerr := svc.GetDashboardAnalytics(context.Background(), uuid.New(), "7d")
+	got, xerr := svc.GetDashboardAnalytics(context.Background(), uuid.New(), "7d", models.DashboardFilter{})
 	if xerr != nil {
 		t.Fatalf("GetDashboardAnalytics: %v", xerr)
 	}
@@ -154,5 +175,57 @@ func TestDashboardUsesTheSameSevenCalendarDaysForCardsAndTrend(t *testing.T) {
 	}
 	if days := int(repo.overallTo.Sub(repo.overallFrom).Hours() / 24); days != 6 {
 		t.Fatalf("range starts %d whole days before today, want 6", days)
+	}
+}
+
+func TestDashboardWithoutFilterStaysWorkspaceWide(t *testing.T) {
+	repo := &dashboardAnalyticsRepoStub{}
+	svc := &analyticsService{analyticsRepo: repo}
+
+	got, xerr := svc.GetDashboardAnalytics(context.Background(), uuid.New(), "30d", models.DashboardFilter{})
+	if xerr != nil {
+		t.Fatalf("GetDashboardAnalytics: %v", xerr)
+	}
+	if repo.resolves != 0 || got.Scope != nil {
+		t.Fatalf("an empty filter resolved %d times and echoed %+v; want the workspace with no scope", repo.resolves, got.Scope)
+	}
+	for section, scope := range repo.scopes {
+		if scope != nil {
+			t.Errorf("%s narrowed to %+v without a filter", section, scope)
+		}
+	}
+}
+
+func TestDashboardFilterNarrowsEveryCampaignSectionToOneSet(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ids  []uuid.UUID
+	}{
+		{"campaigns", []uuid.UUID{uuid.New(), uuid.New()}},
+		// Foreign or deleted ids resolve to nothing, which must not read as no filter.
+		{"nothing in the workspace", []uuid.UUID{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolved := &models.CampaignScope{CampaignIDs: tc.ids}
+			repo := &dashboardAnalyticsRepoStub{resolved: resolved}
+			svc := &analyticsService{analyticsRepo: repo}
+
+			filter := models.DashboardFilter{FolderIDs: []uuid.UUID{uuid.New()}}
+			got, xerr := svc.GetDashboardAnalytics(context.Background(), uuid.New(), "7d", filter)
+			if xerr != nil {
+				t.Fatalf("GetDashboardAnalytics: %v", xerr)
+			}
+			if repo.resolves != 1 {
+				t.Fatalf("resolved %d times, want once for every section", repo.resolves)
+			}
+			if got.Scope == nil || got.Scope.CampaignCount != len(tc.ids) {
+				t.Fatalf("scope = %+v, want the resolved %d campaigns echoed", got.Scope, len(tc.ids))
+			}
+			for _, section := range []string{"overall", "recent", "top", "trend"} {
+				if repo.scopes[section] != resolved {
+					t.Errorf("%s read %+v, want the resolved scope", section, repo.scopes[section])
+				}
+			}
+		})
 	}
 }

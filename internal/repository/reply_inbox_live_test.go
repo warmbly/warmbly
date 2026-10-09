@@ -125,7 +125,7 @@ func TestLiveCopiedReplyAtAnUnnamedMailboxFindsNothing(t *testing.T) {
 func TestLiveRecentActivityNamesTheSendingMailbox(t *testing.T) {
 	handle, _ := liveContactDB(t)
 	f := newReplyInboxFixture(t, func(inbox string) string { return inbox })
-	items, xerr := NewAnalyticsRepository(handle).GetRecentActivity(context.Background(), f.org, 10)
+	items, xerr := NewAnalyticsRepository(handle).GetRecentActivity(context.Background(), f.org, 10, nil)
 	if xerr != nil {
 		t.Fatalf("GetRecentActivity: %v", xerr)
 	}
