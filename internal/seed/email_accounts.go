@@ -64,7 +64,7 @@ func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error
 				tracking_domain, timezone,
 				warmup, warmup_base, warmup_max, warmup_increase, warmup_reply_rate,
 				warmup_tag, warmup_start_time, warmup_end_time, warmup_days,
-				warmup_pool_type,
+				warmup_pool_type, test_mode,
 				created_at, updated_at
 			) VALUES (
 				$1,$2,$3,$4,$5,$6,
@@ -74,13 +74,14 @@ func seedEmailAccounts(ctx context.Context, pool *pgxpool.Pool, r *Result) error
 				CASE WHEN $8 THEN NOW() ELSE NULL END,
 				10, 40, 1, 30,
 				$9, '08:00', '20:00', 62,
-				$10,
+				$10, 'legacy',
 				NOW(), NOW()
 			)
 			ON CONFLICT (id) DO UPDATE SET
 				worker_id = EXCLUDED.worker_id,
 				warmup = EXCLUDED.warmup,
 				warmup_pool_type = EXCLUDED.warmup_pool_type,
+				test_mode = EXCLUDED.test_mode,
 				status = 'active',
 				updated_at = NOW()
 		`,

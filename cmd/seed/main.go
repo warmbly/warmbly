@@ -453,13 +453,13 @@ func upsertEmailAccount(ctx context.Context, pool *pgxpool.Pool, id, userID, org
 			email, name,
 			signature_plain, signature_html,
 			provider, status,
-			warmup_tag, warmup_pool_type
+			warmup_tag, warmup_pool_type, test_mode
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6,
 			'', '',
 			'smtp_imap', 'active',
-			$7, $8
+			$7, $8, 'legacy'
 		)
 		ON CONFLICT (id) DO NOTHING`,
 		id, userID, orgID, workerID, email, name, warmupTag, poolType)
