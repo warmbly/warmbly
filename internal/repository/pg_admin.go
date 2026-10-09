@@ -1711,6 +1711,25 @@ func (r *adminRepository) SearchAuditLogs(ctx context.Context, search *models.Ad
 // GetPlatformOverview gets high-level platform statistics
 func (r *adminRepository) GetPlatformOverview(ctx context.Context) (*models.PlatformOverview, error) {
 	overview := &models.PlatformOverview{}
+	err := r.db.QueryRow(ctx, `
+		WITH confirmed_sends AS (
+			SELECT COALESCE(t.send_result_applied_at, t.completed_at) AS sent_at
+			FROM tasks t
+			WHERE (t.task_type = 'warmup' AND EXISTS (
+				SELECT 1 FROM warmup_tokens wt
+				WHERE wt.task_id = t.id AND wt.sent_message_id <> ''
+			)) OR (t.task_type <> 'warmup' AND t.send_result_state = 'sent'
+				AND t.send_result_applied_at IS NOT NULL)
+		)
+		SELECT COUNT(*), COUNT(*) FILTER (
+			WHERE sent_at >= (date_trunc('day', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+			AND sent_at <= NOW()
+		)
+		FROM confirmed_sends
+	`).Scan(&overview.TotalEmailsSent, &overview.EmailsSentToday)
+	if err != nil {
+		return nil, err
+	}
 
 	// Total users
 	r.db.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&overview.TotalUsers)

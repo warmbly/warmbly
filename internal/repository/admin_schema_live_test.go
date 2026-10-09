@@ -28,6 +28,105 @@ type adminFixture struct {
 	tag      string
 }
 
+func TestLiveAdminPlatformOverviewConfirmedSends(t *testing.T) {
+	_, pool := liveContactDB(t)
+	ctx := t.Context()
+	f := newAdminFixture(t, pool)
+	config := pool.Config()
+	config.ConnConfig.RuntimeParams["timezone"] = "Pacific/Honolulu"
+	localPool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer localPool.Close()
+	repo := &adminRepository{db: localPool}
+	before, err := repo.GetPlatformOverview(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []uuid.UUID
+	t.Cleanup(func() {
+		for _, query := range []string{
+			`DELETE FROM warmup_tokens WHERE task_id = ANY($1::uuid[])`,
+			`DELETE FROM tasks WHERE id = ANY($1::uuid[])`,
+		} {
+			if _, err := pool.Exec(context.Background(), query, ids); err != nil {
+				t.Errorf("cleanup: %v", err)
+			}
+		}
+	})
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	yesterday := today.Add(-24 * time.Hour)
+	tomorrow := today.Add(24 * time.Hour)
+	for _, tt := range []struct {
+		name, kind, status, messageID, state string
+		completedAt                          time.Time
+		appliedAt                            *time.Time
+		tokens                               int
+		confirmedToken                       bool
+	}{
+		{"legacy warmup", "warmup", "completed", "", "", yesterday, nil, 1, true},
+		{"delayed warmup result", "warmup", "completed", "planned@test.local", "sent", yesterday, &today, 2, true},
+		{"campaign result", "campaign", "completed", "", "sent", yesterday, &today, 0, false},
+		{"legacy direct dispatch", "email", "completed", "planned@test.local", "", today, nil, 0, false},
+		{"direct result", "email", "completed", "", "sent", today, &today, 0, false},
+		{"placement result", "placement", "completed", "", "sent", today, &today, 0, false},
+		{"future receipt", "email", "completed", "", "sent", today, &tomorrow, 0, false},
+		{"warmup dispatch", "warmup", "completed", "planned@test.local", "unknown", today, nil, 1, false},
+		{"warmup without receipt", "warmup", "completed", "planned@test.local", "sent", today, &today, 1, false},
+		{"campaign dispatch", "campaign", "completed", "", "", today, nil, 0, false},
+		{"unknown with message ID", "email", "completed", "planned@test.local", "unknown", today, nil, 0, false},
+		{"unapplied success", "campaign", "completed", "planned@test.local", "sent", today, nil, 0, false},
+		{"legacy failure", "email", "failed", "planned@test.local", "", today, nil, 0, false},
+		{"failed result", "campaign", "failed", "planned@test.local", "failed", today, &today, 0, false},
+		{"cancelled dispatch", "warmup", "cancelled", "planned@test.local", "failed", today, &today, 1, false},
+	} {
+		id := uuid.New()
+		ids = append(ids, id)
+		_, err := pool.Exec(ctx, `INSERT INTO tasks
+			(id, task_type, email_account_id, status, message_id, completed_at, send_result_state, send_result_applied_at)
+			VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8)`,
+			id, tt.kind, f.mailbox, tt.status, tt.messageID, tt.completedAt, tt.state, tt.appliedAt)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.name, err)
+		}
+		for range tt.tokens {
+			messageID := ""
+			if tt.confirmedToken {
+				messageID = "<confirmed@test.local>"
+			}
+			_, err := pool.Exec(ctx, `INSERT INTO warmup_tokens
+				(token, task_id, sender_account_id, recipient_account_id, conversation_turn, sent_message_id)
+				VALUES ($1, $2, $3, $3, 0, $4)`, uuid.New(), id, f.mailbox, messageID)
+			if err != nil {
+				t.Fatalf("%s token: %v", tt.name, err)
+			}
+		}
+	}
+	after, err := repo.GetPlatformOverview(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := after.TotalEmailsSent - before.TotalEmailsSent; got != 6 {
+		t.Fatalf("confirmed total delta = %d, want 6", got)
+	}
+	if got := after.EmailsSentToday - before.EmailsSentToday; got != 4 {
+		t.Fatalf("confirmed UTC today delta = %d, want 4", got)
+	}
+}
+
+func TestAdminPlatformOverviewReturnsSendCountError(t *testing.T) {
+	pool, err := pgxpool.New(t.Context(), "postgres://test:test@127.0.0.1:1/test?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.Close()
+	got, err := (&adminRepository{db: pool}).GetPlatformOverview(t.Context())
+	if err == nil || got != nil {
+		t.Fatalf("closed database: got %+v, %v; want an error, not zero counters", got, err)
+	}
+}
+
 func newAdminFixture(t *testing.T, pool *pgxpool.Pool) *adminFixture {
 	t.Helper()
 	ctx := context.Background()
