@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
 import type Tag from "@/lib/api/models/app/Tag";
 import type * as UserModule from "@/hooks/context/user";
+import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import AddressesPage from "./page";
 
-const { tags, rows } = vi.hoisted(() => ({
+const { tags, rows, statusState } = vi.hoisted(() => ({
+    statusState: { data: [] as AccountStatus[], isLoading: false, isFetching: false, isError: false, cloudLoading: false, cloudUnavailable: false },
     tags: [
         { id: "sending", title: "Sending account", color: "#0088cc", position: 0 },
         { id: "serveblink", title: "Serveblink.com", color: "#008800", position: 1 },
@@ -30,12 +32,12 @@ vi.mock("@/hooks/usePermission", () => ({ usePermission: () => true }));
 vi.mock("@/lib/api/hooks/app/emails/useEmails", () => ({
     default: ({ tag }: { tag: string }) => ({ emails: tag ? rows.filter((row) => row.tags.includes(tag)) : rows }),
 }));
-vi.mock("@/lib/api/hooks/app/analytics/useAccountStatuses", () => ({ default: () => ({ data: [] }) }));
+vi.mock("@/lib/api/hooks/app/analytics/useAccountStatuses", () => ({ default: () => statusState }));
 vi.mock("@/lib/api/hooks/app/subscription/useFeatureStatus", () => ({ default: () => ({ data: { can_use_warmup: true } }) }));
 vi.mock("@/lib/api/hooks/auth/useAuthConfig", () => ({ default: () => ({ data: {}, isLoading: false }) }));
 vi.mock("@/lib/api/hooks/app/emails/useMailboxGrants", () => ({ useSigninMigration: () => ({ data: { data: [] } }) }));
 vi.mock("@/lib/api/hooks/app/advisor/useAdvisor", () => ({ useAdvisorEntityIndex: () => ({ get: () => [] }) }));
-vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, connected: false }) }));
+vi.mock("@/hooks/useCloudPool", () => ({ default: () => ({ selfHosted: false, connected: false, loading: statusState.cloudLoading, unavailable: statusState.cloudUnavailable, observedAt: 0 }) }));
 vi.mock("@/lib/api/hooks/app/cloudlink/useCloudLink", () => ({
     useEnrollCloudLinkMailbox: () => ({}), useUnenrollCloudLinkMailbox: () => ({}), useCloudLinkMailboxLifecycle: () => ({}),
 }));
@@ -70,9 +72,19 @@ function orderedEmails() {
     return screen.getAllByRole("row").slice(1).map((row) => within(row).getByText(/@/).textContent);
 }
 
+function measuredStatus(row: Inbox): AccountStatus {
+    return { id: row.id, email: row.email, provider: "gmail", status: "active", last_synced_at: null, health: { status: "healthy", score: 100 }, errors: [], daily_usage: { date: "2026-10-09", campaign_sent: 0, campaign_limit: 50 }, in_campaign: false };
+}
+
 describe("mailbox ordering with a tag filter", () => {
     beforeEach(() => {
         sessionStorage.clear();
+        statusState.data = [];
+        statusState.isLoading = false;
+        statusState.isFetching = false;
+        statusState.isError = false;
+        statusState.cloudLoading = false;
+        statusState.cloudUnavailable = false;
         vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     });
     afterEach(() => {
@@ -121,5 +133,50 @@ describe("mailbox ordering with a tag filter", () => {
         fireEvent.click(screen.getByRole("menuitem", { name: "Serveblink.com" }));
         await waitFor(() => expect(orderedEmails()).toEqual(all.filter((email) => email?.endsWith("@serveblink.example"))));
         expect(screen.getByRole("columnheader", { name: "Mailbox" })).toHaveAttribute("aria-sort", "descending");
+    });
+});
+
+describe("mailbox status while account and Cloud checks settle", () => {
+    beforeEach(() => {
+        sessionStorage.clear();
+        vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+        statusState.data = [];
+        statusState.isLoading = false;
+        statusState.isFetching = false;
+        statusState.isError = false;
+        statusState.cloudLoading = false;
+        statusState.cloudUnavailable = false;
+    });
+    afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+    it("does not show Idle or Healthy while Cloud and account status are loading, then shows the real error", async () => {
+        statusState.cloudLoading = true;
+        statusState.data = rows.map(measuredStatus);
+        await renderPage();
+        expect(screen.getAllByText("Checking…").length).toBeGreaterThan(4);
+        expect(screen.queryByText("Idle")).not.toBeInTheDocument();
+        expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
+        expect(screen.queryByTitle("0 of 50 campaign emails sent today")).not.toBeInTheDocument();
+
+        statusState.cloudLoading = false;
+        statusState.data[0] = { ...measuredStatus(rows[0]), health: { status: "error", score: 40 }, errors: [{ id: "error-1", error_code: "PROVIDER_UNAVAILABLE", severity: "critical", title: "Provider unavailable", message: "Provider refused the last attempt", created_at: new Date("2026-10-09T00:00:00Z") }] };
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        const sara = screen.getAllByRole("row").find((row) => row.textContent?.includes(rows[0].email));
+        expect(sara).toBeDefined();
+        expect(within(sara!).getByText("Issue 40")).toBeInTheDocument();
+        expect(within(sara!).getAllByText("Error").length).toBeGreaterThan(0);
+    });
+
+    it("leaves partial, stale and failed status checks unknown instead of counting them healthy", async () => {
+        statusState.data = [measuredStatus(rows[0])];
+        statusState.isFetching = true;
+        await renderPage();
+        expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
+        statusState.isFetching = false;
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+        statusState.isError = true;
+        fireEvent.click(screen.getByRole("button", { name: "Mailbox" }));
+        expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
     });
 });

@@ -18,7 +18,7 @@ function chunk(ids: string[]): string[][] {
     return out;
 }
 
-export default function useAccountStatuses(emailIds: string[]) {
+export default function useAccountStatuses(emailIds: string[], options?: { enabled?: boolean; sourceRevision?: number }) {
     // Sort so a chunk's id set (and its query key) is stable regardless of the
     // order the mailbox list arrived in; adding a mailbox only refetches the
     // chunk it lands in.
@@ -26,15 +26,16 @@ export default function useAccountStatuses(emailIds: string[]) {
 
     return useQueries({
         queries: chunks.map((ids) => ({
-            queryKey: ["analytics", "accounts", "list", ids],
+            queryKey: ["analytics", "accounts", "list", ids, options?.sourceRevision ?? 0],
             queryFn: ({ signal }: { signal: AbortSignal }) => getAccountStatuses(ids, signal),
-            enabled: ids.length > 0,
+            enabled: ids.length > 0 && (options?.enabled ?? true),
         })),
         // react-query memoizes this by result reference, so the merged array is
         // stable across renders until a chunk actually updates.
         combine: (results) => ({
             data: results.flatMap((r) => (r.data ?? []) as AccountStatus[]),
             isLoading: results.some((r) => r.isLoading),
+            isFetching: results.some((r) => r.isFetching),
             isError: results.some((r) => r.isError),
         }),
     });

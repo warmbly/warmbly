@@ -50,7 +50,6 @@ import { useSigninMigration } from "@/lib/api/hooks/app/emails/useMailboxGrants"
 import { mailboxBrand, mailboxSource } from "@/lib/mailboxSource";
 import type Tag from "@/lib/api/models/app/Tag";
 import type Inbox from "@/lib/api/models/app/emails/Inbox";
-import mailboxDisplayStatus from "@/lib/mailboxStatus";
 import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import {
     ActivityIcon,
@@ -184,18 +183,28 @@ export default function AddressesPage() {
         () => (emailsData.emails ?? []).map((e) => e.id),
         [emailsData.emails],
     );
-    const statuses = useAccountStatuses(visibleEmailIds);
+    const cloudChecking = authConfigLoading || cloud.loading || cloud.refreshing;
+    const statuses = useAccountStatuses(visibleEmailIds, {
+        enabled: !cloudChecking,
+        sourceRevision: cloud.observedAt,
+    });
     // Coerce to an array defensively: a wrong-shape (non-array) response must
     // never reach a `for…of`, which would throw "{} is not iterable".
     const accountStatuses = useMemo(
-        () => (Array.isArray(statuses.data) ? statuses.data : []),
-        [statuses.data],
+        () => (!cloudChecking && !statuses.isError && !statuses.isFetching && Array.isArray(statuses.data) ? statuses.data : []),
+        [cloudChecking, statuses.data, statuses.isError, statuses.isFetching],
     );
     const statusById = useMemo(() => {
         const m = new Map<string, AccountStatus>();
         for (const s of accountStatuses) m.set(s.id, s);
         return m;
     }, [accountStatuses]);
+    const statusChecking = cloudChecking || statuses.isLoading || statuses.isFetching;
+    const cloudStandingUnavailable = cloud.connected && (emailsData.emails ?? []).some((box) => {
+        const row = cloud.rowFor(box.id);
+        return row?.enrolled && !row.cloud?.health;
+    });
+    const statusUnavailable = cloud.unavailable || cloudStandingUnavailable || statuses.isError || (!statusChecking && visibleEmailIds.some((id) => !statusById.has(id)));
 
     // Proactively notify the user when a mailbox's health drops.
     const prevHealth = useRef<Map<string, string>>(new Map());
@@ -344,13 +353,21 @@ export default function AddressesPage() {
         const s = { total: 0, healthy: 0, warming: 0, issues: 0 };
         for (const e of emailsData.emails ?? []) {
             s.total++;
-            const st = mailboxDisplayStatus(e);
-            if (st === "healthy") s.healthy++;
-            else if (st === "warming") s.warming++;
-            else s.issues++;
+            const current = statusById.get(e.id);
+            if (!current) continue;
+            if (e.status !== "active" || e.auth_state === "failing" || current.health?.status !== "healthy" || current.errors?.length) {
+                s.issues++;
+                continue;
+            }
+            const linked = cloud.connected ? cloud.rowFor(e.id) : undefined;
+            if (linked?.enrolled ? linked.cloud?.warmup?.enabled && !cloudWarmupPaused(linked.cloud) : diagnosticWarmupActive(e)) {
+                s.warming++;
+            } else {
+                s.healthy++;
+            }
         }
         return s;
-    }, [emailsData.emails]);
+    }, [emailsData.emails, statusById, cloud.connected, cloud.rowFor]);
 
     // Mailboxes actively warming (enabled and not paused). Warmup pairs mailboxes
     // with each other, so too few starves it; the notice below warns on that.
@@ -413,9 +430,9 @@ export default function AddressesPage() {
 
             <StatStrip cols={4}>
                 <Stat label="Total" value={<AnimatedNumber value={stats.total} />} sub="connected" />
-                <Stat label="Healthy" value={<AnimatedNumber value={stats.healthy} />} sub="sending now" accent={stats.healthy > 0} />
-                <Stat label="Warming" value={<AnimatedNumber value={stats.warming} />} sub="ramping up" />
-                <Stat label="Needs attention" value={<AnimatedNumber value={stats.issues} />} sub="paused or failing" last />
+                <Stat label="Healthy" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.healthy} />} sub="no reported health issues" accent={!statusChecking && !statusUnavailable && stats.healthy > 0} />
+                <Stat label="Warming" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.warming} />} sub="ramping up" />
+                <Stat label="Needs attention" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.issues} />} sub="paused or failing" last />
             </StatStrip>
 
             <SectionBar label="Mailboxes" count={emailsData.emails?.length ?? 0}>
@@ -547,7 +564,9 @@ export default function AddressesPage() {
                                         key={box.id}
                                         box={box}
                                         tags={p?.user.tags ?? []}
-                                        status={statusById.get(box.id)}
+                                        status={(cloud.unavailable || cloudStandingUnavailable) && cloud.connected && statusById.get(box.id)?.health?.status === "healthy" && !statusById.get(box.id)?.errors?.length ? undefined : statusById.get(box.id)}
+                                        statusPending={statusChecking && !statusUnavailable}
+                                        cloudStatusPending={cloudChecking || cloud.unavailable || cloudStandingUnavailable}
                                         findings={advisor.get(box.id)}
                                         canWarmup={canWarmup}
                                         cloud={cloud.connected ? cloud.rowFor(box.id) : undefined}
@@ -723,6 +742,8 @@ function MailboxRow({
     box,
     tags,
     status,
+    statusPending,
+    cloudStatusPending,
     findings,
     canWarmup,
     cloud,
@@ -736,6 +757,8 @@ function MailboxRow({
     box: Inbox;
     tags: Tag[];
     status?: AccountStatus;
+    statusPending: boolean;
+    cloudStatusPending: boolean;
     findings: AdvisorFinding[];
     canWarmup: boolean;
     cloud?: CloudLinkMailboxRow;
@@ -1008,7 +1031,7 @@ function MailboxRow({
                         </div>
                         {/* Too narrow for the metric columns: the same readings, labelled, under the address. */}
                         <div className="@2xl:hidden mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0 leading-tight">
-                            <MailboxStatusPill box={box} status={status} warming={inCloud ? !cloudPaused : warming} compact />
+                            <MailboxStatusPill box={box} status={status} warming={inCloud ? !cloudPaused : warming} compact pending={statusPending} />
                             <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                                 <span className="text-[10.5px] text-slate-400">Warmup</span>
                                 <span className={`font-mono text-[11.5px] tabular-nums ${warmupTone}`}>{warmupCell}</span>
@@ -1032,7 +1055,7 @@ function MailboxRow({
                 </div>
             </td>
             <td className={`px-3 overflow-hidden ${colShow("status")}`}>
-                <MailboxStatusPill box={box} status={status} warming={inCloud ? !cloudPaused : warming} />
+                <MailboxStatusPill box={box} status={status} warming={inCloud ? !cloudPaused : warming} pending={statusPending} />
             </td>
             <td className={`px-3 overflow-hidden ${colShow("sent")}`}>
                 {status?.daily_usage ? (
@@ -1051,7 +1074,7 @@ function MailboxRow({
                 )}
             </td>
             <td className={`px-3 overflow-hidden font-mono text-[12px] tabular-nums ${warmupTone} ${colShow("warmup")}`}>
-                {warmupCell}
+                {cloudStatusPending && !inCloud ? <span className="text-slate-500">{statusPending ? "Checking…" : "Unavailable"}</span> : warmupCell}
             </td>
             <td className={`px-3 ${colShow("inbox")}`}>
                 <button
@@ -1337,7 +1360,7 @@ function MailboxTh({ col, sort, onSort }: { col: MailboxColumn; sort: MailboxSor
 // What the mailbox is doing right now. Cold sending and warmup run side by
 // side, so both show when both are on; a problem that stops it wins.
 // compact spells a problem out, since it is the one reading a phone must not miss.
-function MailboxStatusPill({ box, status, warming, compact = false }: { box: Inbox; status?: AccountStatus; warming: boolean; compact?: boolean }) {
+function MailboxStatusPill({ box, status, warming, compact = false, pending = false }: { box: Inbox; status?: AccountStatus; warming: boolean; compact?: boolean; pending?: boolean }) {
     const error = status?.errors?.[0];
     const lifecycle = status?.send_lifecycle;
     const inCampaign = !!status?.in_campaign;
@@ -1358,6 +1381,8 @@ function MailboxStatusPill({ box, status, warming, compact = false }: { box: Inb
             </span>
         );
     }
+
+    if (!status) return <span className="text-[10.5px] text-slate-500">{pending ? "Checking…" : "Unavailable"}</span>;
 
     // One word; the icons beside it say which activities are on.
     const label = sending && warming ? "Active" : sending ? "Sending" : resting ? (lifecycle?.state === "reserve" ? "Reserve" : "Resting") : warming ? "Warming" : "Idle";
