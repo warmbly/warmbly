@@ -1,0 +1,33 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../about/Ico.astro';
+import { WINDOW } from '../../../lib/scene';
+
+/** The favicon where most people meet it: a browser tab on warmbly.com. */
+---
+<ScaledStage w={460} h={345} photo="lake-mist">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px] bg-slate-100`}>
+    <div class="flex items-end gap-1 px-3 pt-2.5">
+      <span class="flex gap-1.5 pb-3 pr-2"><span class="size-2.5 rounded-full bg-slate-300"></span><span class="size-2.5 rounded-full bg-slate-300"></span><span class="size-2.5 rounded-full bg-slate-300"></span></span>
+      <span class="h-9 w-[220px] rounded-t-lg bg-white px-3 flex items-center gap-2 text-[11.5px] text-slate-800">
+        <img src="/favicon-32x32.png" alt="" width="16" height="16" class="size-4 rounded-[3px]" loading="lazy" />
+        <span class="truncate">Open-Source Cold Email &amp; Warmup Platform | Warmbly</span>
+      </span>
+      <span class="h-8 w-[110px] px-3 flex items-center gap-2 text-[11.5px] text-slate-500"><span class="size-4 rounded-[3px] bg-slate-300"></span><span class="truncate">Inbox</span></span>
+    </div>
+    <div class="bg-white">
+      <div class="flex items-center gap-2 border-b border-slate-200 px-3 py-2">
+        <Ico name="chevronLeft" size={14} class="text-slate-400" /><Ico name="chevronRight" size={14} class="text-slate-300" />
+        <span class="ml-1 h-7 flex-1 rounded-full bg-slate-100 px-3 flex items-center gap-2 text-[11.5px] text-slate-600"><Ico name="lock" size={11} class="text-slate-400" />warmbly.com</span>
+      </div>
+      <div class="px-6 pt-7">
+        <div class="inline-flex items-center gap-2 text-slate-900">
+          <svg viewBox="0 0 746 764" class="w-5" fill="currentColor"><path d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z" /></svg>
+          <span class="text-[14px] font-extrabold tracking-tight">Warmbly</span>
+        </div>
+        <div class="mt-5 text-[24px] font-medium leading-[1.05] tracking-[-0.04em] text-slate-900">The largest open-source cold email platform.</div>
+        <div class="mt-4 flex gap-2"><span class="h-7 px-3 rounded-full bg-slate-900 text-[11px] font-medium text-white inline-flex items-center">Start free</span><span class="h-7 px-3 rounded-full border border-slate-200 text-[11px] text-slate-700 inline-flex items-center">Star on GitHub</span></div>
+      </div>
+    </div>
+  </div>
+</ScaledStage>

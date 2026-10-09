@@ -1,124 +1,87 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import Icon from '../components/Icon.astro';
+import DiscordScene from '../components/scenes/contact/DiscordScene.astro';
+import DocsScene from '../components/scenes/contact/DocsScene.astro';
 
-// Every link here is one that already exists elsewhere on the site
-// (header, footer, trust, terms). Nothing on this page is invented.
+// Every destination here already exists elsewhere on the site.
 const channels = [
-  {
-    icon: 'mail',
-    title: 'Email',
-    label: 'team@warmbly.com',
-    href: 'mailto:team@warmbly.com',
-    body: 'Sales, billing, account questions, self-host help, partnerships, security reports.',
-    external: false,
-  },
-  {
-    icon: 'discord',
-    title: 'Discord',
-    label: 'dc.warmbly.com',
-    href: 'https://dc.warmbly.com',
-    body: 'Ask questions, share what you are building, talk to other people running Warmbly.',
-    external: true,
-  },
-  {
-    icon: 'warning',
-    title: 'Bug reports',
-    label: 'github.com/warmbly/warmbly/issues',
-    href: 'https://github.com/warmbly/warmbly/issues',
-    body: 'Something broken in the app, the CLI or the self-host installer.',
-    external: true,
-  },
-  {
-    icon: 'users',
-    title: 'Feature requests',
-    label: 'github.com/warmbly/warmbly/discussions',
-    href: 'https://github.com/warmbly/warmbly/discussions',
-    body: 'Ideas, feedback and questions about where the product is going.',
-    external: true,
-  },
-  {
-    icon: 'code',
-    title: 'Documentation',
-    label: 'docs.warmbly.com',
-    href: 'https://docs.warmbly.com',
-    body: 'Product guides, API reference, self-hosting and deliverability fundamentals.',
-    external: true,
-  },
-  {
-    icon: 'check',
-    title: 'Status',
-    label: 'status.warmbly.com',
-    href: 'https://status.warmbly.com',
-    body: 'Uptime and incident history for the hosted service.',
-    external: true,
-  },
+  { icon: 'discord', title: 'Discord', label: 'dc.warmbly.com', href: 'https://dc.warmbly.com', body: 'Ask questions and talk to other people running Warmbly.' },
+  { icon: 'warning', title: 'Bug reports', label: 'GitHub issues', href: 'https://github.com/warmbly/warmbly/issues', body: 'Something broken in the app, the CLI or the installer.' },
+  { icon: 'users', title: 'Feature requests', label: 'GitHub discussions', href: 'https://github.com/warmbly/warmbly/discussions', body: 'Ideas and feedback about where the product goes next.' },
+  { icon: 'code', title: 'Documentation', label: 'docs.warmbly.com', href: 'https://docs.warmbly.com', body: 'Guides, the API reference and self-hosting.' },
+  { icon: 'check', title: 'Status', label: 'status.warmbly.com', href: 'https://status.warmbly.com', body: 'Uptime and incidents for Warmbly Cloud.' },
 ];
 ---
 <Layout
-  title="Contact | Warmbly"
-  description="Email the team, join the Discord, or open an issue on GitHub."
+  title="Contact Warmbly"
+  description="Email the Warmbly team about sales, billing, self-hosting or security, join the Discord, or open an issue on GitHub."
 >
-  <section class="border-b border-[color:var(--border)]">
-    <div class="container-page pt-16 md:pt-24 pb-12 md:pb-16">
-      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">
-        Contact
+  <section class="container-page pt-14 md:pt-24 pb-20 md:pb-28">
+    <div class="grid gap-12 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
+      <div>
+        <div class="text-[14px] text-slate-500">Contact</div>
+        <h1 class="mt-4 text-[40px] sm:text-[52px] md:text-[64px] font-medium tracking-[-0.05em] leading-[1.02] text-slate-900">Talk to the people who build it.</h1>
+        <p class="mt-6 max-w-lg text-[17px] md:text-[19px] leading-[1.55] text-slate-500">Warmbly is a small team. Email reaches us directly, and everything else happens in public on Discord and GitHub.</p>
+
+        <a href="mailto:team@warmbly.com" class="group mt-10 flex items-center justify-between gap-6 rounded-[6px] border border-slate-200 px-6 py-5 transition-colors hover:border-slate-300 hover:bg-slate-50">
+          <div class="min-w-0">
+            <div class="text-[13px] text-slate-500">Sales, billing, self-hosting, partnerships and security</div>
+            <div class="mt-1.5 text-[24px] md:text-[28px] font-medium tracking-[-0.03em] text-slate-900">team@warmbly.com</div>
+            <div class="mt-1.5 text-[13.5px] text-slate-500">A person replies within one business day.</div>
+          </div>
+          <Icon name="arrowRight" size={18} class="shrink-0 text-slate-400 transition-all group-hover:translate-x-1 group-hover:text-slate-900" />
+        </a>
       </div>
-      <h1 class="text-[34px] md:text-[48px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading max-w-2xl">
-        Get in touch.
-      </h1>
-      <p class="mt-5 text-[15.5px] md:text-[16.5px] text-foreground/75 leading-relaxed max-w-xl">
-        Warmbly is a small team. Email reaches us directly, and everything else happens in public on Discord and GitHub.
-      </p>
+
+      <div class="lg:pt-10">
+        <ul class="divide-y divide-slate-200 border-y border-slate-200">
+          {channels.map((c) => (
+            <li>
+              <a href={c.href} target="_blank" rel="noopener noreferrer" class="group flex items-start gap-4 py-5">
+                <span class="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 ring-1 ring-slate-200 transition-colors group-hover:text-slate-900"><Icon name={c.icon} size={15} /></span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center justify-between gap-4">
+                    <span class="text-[16px] font-medium text-slate-900">{c.title}</span>
+                    <span class="hidden sm:inline-flex items-center gap-1 text-[13.5px] text-slate-400 transition-colors group-hover:text-slate-900">{c.label}<Icon name="arrowUpRight" size={12} /></span>
+                  </div>
+                  <p class="mt-1 text-[14.5px] text-slate-500">{c.body}</p>
+                </div>
+              </a>
+            </li>
+          ))}
+        </ul>
+
+        <div class="mt-12">
+          <h2 class="text-[13px] text-slate-400">Company</h2>
+          <p class="mt-3 text-[15px] leading-[1.6] text-slate-600">Warmbly is operated by Mindroot Ltd, registered in England and Wales, company number 16543299.</p>
+          <address class="mt-3 text-[15px] not-italic leading-[1.6] text-slate-900">
+            Mindroot Ltd<br />71-75 Shelton Street<br />London WC2H 9JQ<br />United Kingdom
+          </address>
+          <p class="mt-4 text-[14px] text-slate-500">Legal notices and data requests go to <a href="mailto:team@warmbly.com" class="text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900">team@warmbly.com</a>. See the <a href="/terms/" class="text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900">terms</a> and the <a href="/privacy/" class="text-slate-900 underline decoration-slate-300 underline-offset-4 hover:decoration-slate-900">privacy policy</a>.</p>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section class="py-12 md:py-16">
-    <div class="container-page">
-      <ul class="divide-y divide-[color:var(--border)] border-y border-[color:var(--border)]">
-        {channels.map((c) => (
-          <li>
-            <a
-              href={c.href}
-              target={c.external ? '_blank' : undefined}
-              rel={c.external ? 'noopener noreferrer' : undefined}
-              class="group grid sm:grid-cols-[180px_1fr_auto] gap-x-8 gap-y-1.5 items-baseline py-5 md:py-6 hover:bg-[color:var(--surface-2)] -mx-4 px-4 rounded-[8px] transition-colors"
-            >
-              <span class="inline-flex items-center gap-2 text-[14.5px] font-semibold text-heading">
-                <Icon name={c.icon} size={15} class="text-[color:var(--brand)]" />
-                {c.title}
-              </span>
-              <span class="text-[14px] text-foreground/75 leading-relaxed">
-                {c.body}
-              </span>
-              <span class="inline-flex items-center gap-1.5 font-mono text-[13px] text-[color:var(--brand)] group-hover:text-[color:var(--brand-strong)] break-all sm:justify-self-end">
-                {c.label}
-                <Icon name={c.external ? 'arrowUpRight' : 'arrowRight'} size={12} />
-              </span>
-            </a>
-          </li>
-        ))}
-      </ul>
+  <!-- IN THE OPEN: the two places most questions get answered, as they look. -->
+  <div class="container-page" aria-hidden="true"><div class="h-px bg-slate-900/[0.06] md:-mx-6"></div></div>
+  <section class="container-page py-20 md:py-28">
+    <div class="grid gap-6 lg:grid-cols-2 lg:items-end lg:gap-20">
+      <h2 class="text-[30px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08]"><span class="text-slate-400">Before you write.</span> <span class="text-slate-900">Most answers are already public.</span></h2>
+      <p class="max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500">The docs cover the product, the API and self-hosting. Discord is where people running Warmbly help each other, and where the team answers in the open.</p>
     </div>
-  </section>
-
-  <section class="pb-16 md:pb-24">
-    <div class="container-page">
-      <div class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-mono mb-3">
-        Company
-      </div>
-      <p class="text-[14px] text-foreground/75 leading-relaxed max-w-xl">
-        Warmbly is operated by Mindroot Ltd, registered in England and Wales, company number 16543299.
-      </p>
-      <address class="mt-3 not-italic font-mono text-[13.5px] text-foreground/85 leading-relaxed">
-        Mindroot Ltd<br/>
-        71-75 Shelton Street<br/>
-        London WC2H 9JQ<br/>
-        United Kingdom
-      </address>
-      <p class="mt-4 text-[13px] text-muted-foreground">
-        Legal notices and data requests: <a href="mailto:team@warmbly.com" class="font-mono text-[color:var(--brand)] hover:text-[color:var(--brand-strong)]">team@warmbly.com</a>. See the <a href="/terms/" class="underline underline-offset-2 hover:text-heading">terms</a> and <a href="/privacy/" class="underline underline-offset-2 hover:text-heading">privacy policy</a>.
-      </p>
+    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-12 md:grid-cols-2">
+      <a href="https://dc.warmbly.com" target="_blank" rel="noopener noreferrer" class="group block">
+        <DiscordScene />
+        <h3 class="mt-6 inline-flex items-center gap-2 text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">Ask in Discord <Icon name="arrowUpRight" size={15} class="text-slate-400 transition-colors group-hover:text-slate-900" /></h3>
+        <p class="mt-2 max-w-xl text-[16px] md:text-[17px] leading-[1.55] text-slate-500">Questions about setup, sending and self-hosting, answered where the next person can find them.</p>
+      </a>
+      <a href="https://docs.warmbly.com" target="_blank" rel="noopener noreferrer" class="group block">
+        <DocsScene />
+        <h3 class="mt-6 inline-flex items-center gap-2 text-[21px] md:text-[23px] tracking-[-0.02em] text-slate-900">Search the docs <Icon name="arrowUpRight" size={15} class="text-slate-400 transition-colors group-hover:text-slate-900" /></h3>
+        <p class="mt-2 max-w-xl text-[16px] md:text-[17px] leading-[1.55] text-slate-500">Guides for every feature, the API reference, and how to install, configure and back up your own instance.</p>
+      </a>
     </div>
   </section>
 </Layout>

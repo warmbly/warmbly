@@ -1,441 +1,231 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import HeroAtmosphere from '../components/HeroAtmosphere.astro';
 import Icon from '../components/Icon.astro';
 import CTA from '../components/CTA.astro';
+import SectionIntro from '../components/page/SectionIntro.astro';
+import Rule from '../components/page/Rule.astro';
+import RepoScene from '../components/scenes/about/RepoScene.astro';
+import StoryScene from '../components/scenes/about/StoryScene.astro';
+import MergedScene from '../components/scenes/about/MergedScene.astro';
+import LimitsScene from '../components/scenes/about/LimitsScene.astro';
+import CipherScene from '../components/scenes/about/CipherScene.astro';
+import ArchitectureScene from '../components/scenes/about/ArchitectureScene.astro';
+import { GITHUB_PATH } from '../lib/marks';
+import { getChangelog } from '../lib/changelog';
 
-// All facts on this page are sourced from the Warmbly repo:
-//   internal/app/worker/assignment.go, internal/app/cipher/*,
-//   internal/infrastructure/kms/*, internal/repository/pg_warmup.go,
-//   internal/scheduler/*, internal/config/constants.go, README.md.
-// No fabricated metrics, no fictional employees, no invented customers.
+// Facts from the repository: README.md and CLAUDE.md (system shape, worker
+// topology, encryption model). No invented metrics, people or customers.
+const entries = await getChangelog();
+
+const groups = [
+  {
+    scene: 'merged',
+    label: 'In the open',
+    items: [
+      { t: 'Open by default', b: 'The whole platform is on GitHub under Apache 2.0: sending, warmup pools, health thresholds and abuse checks. If you want to know why a mailbox was paused, you can read the code that paused it.' },
+      { t: 'Built in public', b: 'The changelog is public and dated, and every entry maps to a merged change. We don’t invent metrics or pretend to be bigger than we are.' },
+    ],
+  },
+  {
+    scene: 'limits',
+    label: 'Safe by default',
+    items: [
+      { t: 'Safety is per mailbox', b: 'A safe day of sending is the sum of what each mailbox can safely send. We will not ship a feature that pushes a mailbox past its own limits to make a chart look better.' },
+      { t: 'Act before the providers do', b: 'Our thresholds for the shared warmup pool are stricter than the points where Google or Amazon SES start penalising a sender. By the time a provider would act, the mailbox has already been slowed down.' },
+    ],
+  },
+  {
+    scene: 'cipher',
+    label: 'Nothing hidden from you',
+    items: [
+      { t: 'Encrypted by design', b: 'Mailbox credentials are encrypted with a dedicated credentials key, and message content with a data key that belongs to your workspace alone.' },
+      { t: 'No black boxes', b: 'Every health state, suppression and pool block comes with a reason you can read in the dashboard, and the rules behind them are documented.' },
+    ],
+  },
+];
 
 const planes = [
-  {
-    tag: 'Control plane',
-    color: '#7dd3fc',
-    accent: '#0284c7',
-    title: 'Backend + consumer',
-    body: 'Owns the relational state. Decides which mailbox sends what, when, and on which worker. Reads Postgres. Speaks to Stripe, KMS, S3. Never opens an SMTP socket itself.',
-    parts: ['cmd/backend', 'cmd/consumer', 'Postgres', 'Kafka producer'],
-  },
-  {
-    tag: 'Execution plane',
-    color: '#10b981',
-    accent: '#059669',
-    title: 'Workers',
-    body: 'One process per machine. One IP per worker. Receives commands from a worker-specific Kafka topic. Sends, syncs, validates, heartbeats. State is disposable. A crashed worker is replaced by another reading the same topic.',
-    parts: ['cmd/worker', 'Kafka consumer', 'Redis cache', 'KMS + S3'],
-  },
+  { t: 'The control plane decides', b: 'The backend and consumer hold your data, decide which mailbox sends what and when, and assign each mailbox to a worker.' },
+  { t: 'The bus carries the work', b: 'Commands go out on a topic per worker and results come back on one shared stream, over NATS or Kafka.' },
+  { t: 'Workers send and sync', b: 'They sign in to your mailboxes, send, sync and report back. They hold no database connection, so one that goes away is simply replaced.' },
 ];
 
-const principles = [
-  {
-    n: '01',
-    title: 'Open source by default.',
-    body: 'The whole platform is on GitHub under Apache 2.0. Sending logic, warmup pools, abuse thresholds, fraud heuristics. If you want to audit how a quarantine decision was made, you can read the code that made it.',
-  },
-  {
-    n: '02',
-    title: 'Mailbox-first safety, not worker-first.',
-    body: 'A worker is not a flat send limit. Its safe daily volume is the sum of its mailbox budgets, full stop. We will not ship a feature that bypasses the per-mailbox cap to make a chart look better.',
-  },
-  {
-    n: '03',
-    title: 'Many workers, many IPs.',
-    body: 'Sending is intentionally distributed. No central choke-point that becomes a single reputation liability. Adding volume means adding mailboxes and workers, not cranking a few harder.',
-  },
-  {
-    n: '04',
-    title: 'Quarantine before providers do.',
-    body: 'Our thresholds for the shared paid warmup pool are stricter than what Google, Microsoft, or SES will tolerate. We act in the warning band, not the catastrophe band. By the time a provider penalises you, we have already pulled the mailbox.',
-  },
-  {
-    n: '05',
-    title: 'Encrypted by design.',
-    body: 'Application secrets and sensitive payloads use AWS KMS envelope encryption. A per-organization DEK. AES-256-GCM at the field level. Plaintext keys only ever live in a Redis cache with a TTL. The repo says it. The migrations enforce it.',
-  },
-  {
-    n: '06',
-    title: 'No black-box scoring.',
-    body: 'Every health band, every suppression entry, every pool block has a reason you can read in the dashboard and a row you can read in the database. The product owes you the same explanation in both places.',
-  },
+const compare = [
+  ['Source code', 'Apache 2.0 on GitHub. Read it, fork it, run it.', 'Closed. You see the dashboard, not the engine.'],
+  ['Where it runs', 'Our cloud, or your own servers with one command.', 'Their cloud only.'],
+  ['Health rules', 'Documented, and stricter than provider enforcement.', 'Undocumented until something goes wrong.'],
+  ['Changelog', 'Public and dated, one entry per merged change.', 'Announcements on a marketing schedule.'],
+  ['Pricing', 'Per workspace, with unlimited mailboxes and warmup.', 'Often per mailbox or per seat.'],
 ];
 
-// Differentiation. Positioning only. No fabricated competitor claims.
-const positioning = [
-  {
-    label: 'Source code',
-    warmbly: 'Apache 2.0 on GitHub. Fork, audit, run.',
-    closed: 'Closed source. You see the dashboard, not the engine.',
-  },
-  {
-    label: 'Self-hosting',
-    warmbly: 'Self-host the whole platform if you want to.',
-    closed: 'SaaS only. Your data lives where the vendor decides.',
-  },
-  {
-    label: 'Sending architecture',
-    warmbly: 'Distributed workers, one IP each, per-mailbox caps.',
-    closed: 'Typically opaque. You buy throughput, not architecture.',
-  },
-  {
-    label: 'Abuse and quarantine logic',
-    warmbly: 'Thresholds documented in this repo. Stricter than provider enforcement.',
-    closed: 'Undocumented. You find out when your reputation is gone.',
-  },
-  {
-    label: 'Changelog',
-    warmbly: 'Public, dated changelog. Every entry maps to a commit.',
-    closed: 'Internal. Released on announcement cadence.',
-  },
-  {
-    label: 'Pricing posture',
-    warmbly: 'Per-workspace, not per-inbox. Free tier and a public free repo.',
-    closed: 'Per-inbox license fees that scale with team size.',
-  },
+const repo = [
+  ['cmd/backend', 'The API and the business logic. Owns the database.'],
+  ['cmd/consumer', 'Folds results from the workers back into the platform.'],
+  ['cmd/worker', 'Sends and syncs mail. Holds no database connection.'],
+  ['cmd/cli', 'The warmbly command-line tool.'],
+  ['tracking/', 'The open and click tracking service, in Rust.'],
+  ['realtime/', 'The live websocket layer for the dashboard, in Elixir.'],
+  ['web/', 'The dashboard.'],
+  ['site/', 'This website.'],
+  ['docs/', 'The documentation at docs.warmbly.com.'],
 ];
-
-// Project shape, sourced from the repo layout in README.md.
-const surface = [
-  { path: 'cmd/backend',         desc: 'REST API and business orchestration. Owns Postgres.' },
-  { path: 'cmd/consumer',        desc: 'Kafka consumer that folds worker results into platform state.' },
-  { path: 'cmd/worker',          desc: 'Distributed execution worker. One IP per machine. No SQL.' },
-  { path: 'tracking/',           desc: 'Open and click tracking edge service.' },
-  { path: 'realtime/',           desc: 'WebSocket fanout for the dashboard, written in Elixir.' },
-  { path: 'web/',                desc: 'Frontend dashboard for sending, warmup, inbox, and CRM.' },
-  { path: 'site/',               desc: 'This marketing site. Astro 5 with Tailwind v4.' },
-  { path: 'internal/app/cipher', desc: 'Envelope encryption primitives for application secrets.' },
-  { path: 'internal/app/worker', desc: 'Worker assignment, tiers, rebalance, concentration warnings.' },
-  { path: 'deploy/',             desc: 'Production deploy manifests, infrastructure, and runtime config.' },
-  { path: 'docs/',               desc: 'Engineering documentation and operational runbooks.' },
-  { path: 'resources/',          desc: 'Architecture notes, design references, and longform context.' },
-  { path: 'scripts/',            desc: 'One-off tooling: codegen, migrations helpers, local dev utilities.' },
-];
-
-// External links. Real destinations only.
-const involve = [
-  { label: 'GitHub',     href: 'https://github.com/warmbly/warmbly', note: 'Source, issues, pull requests.',          icon: 'arrowUpRight' },
-  { label: 'Developers', href: '/developers/',                       note: 'API, webhooks, scopes, idempotency.',     icon: 'arrowRight' },
-  { label: 'Changelog',  href: '/changelog/',                        note: 'Every release, dated, plain wording.',    icon: 'arrowRight' },
-  { label: 'Trust',      href: '/trust/',                            note: 'Encryption, subprocessors, security.',    icon: 'arrowRight' },
-];
+let n = 0;
 ---
 <Layout
-  title="About - The Open Cold Email Engine | Warmbly"
-  description="Warmbly is an open-source email warmup and cold outreach platform. Control plane and distributed workers. Per-mailbox safety. Public changelog."
+  title="About Warmbly: The Open-Source Cold Email Platform"
+  description="Warmbly is an open-source email warmup and cold outreach platform under Apache 2.0. Why it exists, the principles it is built on, and how the platform is put together."
 >
-  <!-- ============================================================
-       HERO · HeroAtmosphere (matches sending, warmup, developers)
-  ============================================================ -->
-  <section class="relative isolate overflow-hidden">
-    <HeroAtmosphere />
-
-    <div class="container-page relative pt-16 md:pt-24 pb-20 md:pb-28 text-center">
-      <div class="inline-flex items-center gap-2 h-7 pl-1 pr-3 rounded-full bg-white/15 backdrop-blur ring-1 ring-white/25 text-[12px] text-white/95 shadow-[0_4px_14px_-4px_rgba(0,0,0,0.25)]">
-        <span class="inline-flex items-center h-5 px-1.5 rounded-full text-[10.5px] font-semibold uppercase tracking-[0.06em] bg-white" style="color:#0369a1;">
-          About
-        </span>
-        Open source. Apache 2.0. Public changelog.
-      </div>
-
-      <h1 class="mt-8 md:mt-10 text-[44px] sm:text-6xl md:text-[72px] lg:text-[80px] font-semibold tracking-[-0.04em] leading-[0.98] text-white max-w-4xl mx-auto">
-        The cold outreach<br/>platform you can read.
-      </h1>
-      <p class="mt-6 text-[17px] md:text-[19px] text-white/80 max-w-2xl mx-auto leading-relaxed">
-        Warmbly is the open-source alternative to the closed-source warmup and cold outreach suites. Same surface area, fewer black boxes. The whole engine is on GitHub.
+  <!-- HERO: the statement, then the repository and the dashboard it builds. -->
+  <section class="container-page pt-14 md:pt-24">
+    <div class="text-[14px] text-slate-500">About</div>
+    <h1 class="mt-5 max-w-5xl text-[40px] sm:text-[56px] md:text-[76px] font-medium tracking-[-0.05em] leading-[1.0] text-slate-900">
+      Cold email you can read, run and trust.
+    </h1>
+    <div class="mt-8 md:mt-10 grid gap-8 md:grid-cols-[1fr_auto] md:items-end">
+      <p class="max-w-2xl text-[18px] md:text-[21px] leading-[1.5] text-slate-500">
+        Warmbly is the open-source platform for email warmup and cold outreach. Everything that decides whether your email lands in the inbox is in a public repository, and you can run all of it yourself.
       </p>
-
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <a href="https://github.com/warmbly/warmbly" class="inline-flex h-11 px-5 items-center gap-2 rounded-[10px] text-[14.5px] font-semibold bg-white hover:bg-white hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-6px_rgba(0,0,0,0.3)] transition-all duration-200 ease-out shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)]">
-          <span style="color:#075985;">Star on GitHub</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#075985" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M7 7h10v10"/><path d="M7 17 17 7"/>
-          </svg>
+      <div class="flex flex-wrap gap-3">
+        <a href="https://github.com/warmbly/warmbly" target="_blank" rel="noopener noreferrer" class="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-[15px] font-medium text-white transition-colors hover:bg-slate-800">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={GITHUB_PATH} /></svg>
+          Read the code
         </a>
-        <a href="#why" class="inline-flex h-11 px-5 items-center rounded-[10px] text-[14.5px] font-medium bg-white/10 backdrop-blur ring-1 ring-white/40 text-white hover:bg-white/20 hover:-translate-y-0.5 transition-all duration-200 ease-out">
-          Read the story
-        </a>
+        <a href="#story" class="inline-flex h-11 items-center rounded-full border border-slate-200 px-5 text-[15px] text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50">Read the story</a>
       </div>
     </div>
   </section>
+  <div class="container-page mt-12 md:mt-16">
+    <RepoScene />
+  </div>
 
-
-  <!-- ============================================================
-       WHY WARMBLY EXISTS · long-form essay, single column
-  ============================================================ -->
-  <section id="why" class="bg-white border-y border-[color:var(--border)] py-20 md:py-28 scroll-mt-4">
-    <div class="container-page grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20">
-      <div class="lg:sticky lg:top-24 self-start">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Why Warmbly exists</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Cold outreach deserves an open engine.
-        </h2>
+  <!-- STORY: the essay, with the pull quote and what it means in the product beside it. -->
+  <section id="story" class="container-page scroll-mt-24 py-20 md:py-28">
+    <div class="grid gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)] lg:gap-20">
+      <div class="max-w-[640px]">
+        <h2 class="text-[30px] md:text-[40px] font-medium tracking-[-0.04em] leading-[1.1] text-slate-900">Why Warmbly exists</h2>
+        <div class="mt-8 space-y-6 text-[18px] leading-[1.75] text-slate-600">
+          <p>For years the main tools for cold email have charged by the mailbox while keeping their warmup logic, sending rules and abuse thresholds closed. You paid for volume. You never got to see how decisions about your reputation were made.</p>
+          <p>We started Warmbly to take that away. The workers that send your mail, the warmup pools, the encryption and the health rules all live in a public repository under Apache 2.0.</p>
+          <p>So when Warmbly slows a mailbox down, the dashboard says why in a full sentence, and the sentence is written by code you can open. The figure beside this is a real one: the reason a throttled mailbox shows, and the lines of <code class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[15px] text-slate-800">service.go</code> that wrote it.</p>
+          <p>Founders, agencies, sales teams, recruiters and fundraisers can read the engine, run it on their own servers if they want, and stop paying a tax on every mailbox they add.</p>
+          <p>We are a small team building in public. We say what we are working on, we don’t invent numbers, and the product gets better where everyone can see it.</p>
+        </div>
       </div>
-
-      <div class="space-y-5 text-[16px] leading-[1.75] text-foreground/85">
-        <p>
-          For years, the dominant tools in this category have charged near a hundred dollars per inbox, per month, while keeping their warmup logic, sending heuristics, and abuse-detection thresholds completely closed. You paid for throughput. You did not get to see how decisions were made on your behalf.
-        </p>
-
-        <blockquote class="border-l-2 border-[#0284c7] pl-5 my-8 text-[19px] md:text-[21px] font-semibold tracking-[-0.015em] text-heading leading-[1.4]">
-          When deliverability breaks on a closed platform, you cannot read the code that broke it. You can only ask support, then wait.
+      <figure class="lg:sticky lg:top-24 lg:self-start">
+        <blockquote class="border-l-2 border-slate-900 pl-6 text-[22px] md:text-[24px] leading-[1.45] font-medium tracking-[-0.015em] text-slate-900">
+          When deliverability breaks on a closed platform, you can’t read the code that broke it. You can only write to support and wait.
         </blockquote>
-
-        <p>
-          We started Warmbly to remove that opacity. The control plane, the workers, the warmup pools, the encryption model, the quarantine bands. Everything that decides whether your mail lands in the inbox or the spam folder lives in a public repository under Apache 2.0.
-        </p>
-
-        <p>
-          The positioning is straightforward. Warmbly is the only credible open-source alternative in cold outreach. Founders, agencies, sales teams, recruiters, and fundraisers can read the engine, run it on their own infrastructure if they want, and stop paying per-inbox tax to closed competitors.
-        </p>
-
-        <p>
-          We are a small team building in public. We do not hide what we are working on. We do not invent metrics. We do not pretend to be larger than we are. The product gets better in public.
-        </p>
-      </div>
+        <div class="mt-8"><StoryScene /></div>
+        <figcaption class="mt-3 text-[13.5px] text-slate-400">A mailbox slowed for spam placement, and the rule that slowed it.</figcaption>
+      </figure>
     </div>
   </section>
 
+  <!-- PRINCIPLES: six rules in three pairs, each pair beside its proof. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid gap-6 lg:grid-cols-2 lg:items-end lg:gap-20">
+      <h2 class="text-[30px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08]"><span class="text-slate-400">What we believe.</span> <span class="text-slate-900">Six rules the code is held to.</span></h2>
+      <p class="max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500">These aren’t values for a slide. They are written into the codebase, and a feature that breaks one doesn’t ship. Each pair below sits next to the code or the record that proves it.</p>
+    </div>
+    <div class="mt-12 md:mt-16 grid gap-x-3 gap-y-14 md:grid-cols-2 lg:grid-cols-3">
+      {groups.map((g, gi) => (
+        <article class={gi === 2 ? 'md:col-span-2 lg:col-span-1' : ''}>
+          {g.scene === 'merged' && <MergedScene entries={entries} />}
+          {g.scene === 'limits' && <LimitsScene />}
+          {g.scene === 'cipher' && <CipherScene />}
+          <div class="mt-6 text-[13px] text-slate-400">{g.label}</div>
+          <ol class="mt-3 space-y-6">
+            {g.items.map((p) => (
+              <li class="grid grid-cols-[36px_1fr] gap-1">
+                <span class="font-mono text-[13px] leading-[28px] text-slate-400">{String(++n).padStart(2, '0')}</span>
+                <div>
+                  <h3 class="text-[19px] font-medium tracking-[-0.02em] text-slate-900">{p.t}</h3>
+                  <p class="mt-1.5 text-[15.5px] leading-[1.6] text-slate-500">{p.b}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </article>
+      ))}
+    </div>
+  </section>
 
-  <!-- ============================================================
-       PLATFORM SHAPE · control plane vs execution plane
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Platform shape</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Two planes. One rule per lane.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          The backend decides. The workers execute. They communicate through Kafka and nothing else. This separation is the reason we can scale send volume by adding small workers instead of growing one giant runtime.
-        </p>
-      </div>
-
-      <div class="grid md:grid-cols-2 gap-5">
-        {planes.map((p) => (
-          <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-            <div class="h-1" style={`background:${p.color}`}></div>
-            <div class="p-6">
-              <div class="flex items-baseline justify-between gap-3 mb-3">
-                <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono" style={`color:${p.accent}`}>{p.tag}</div>
-                <span class="inline-flex items-center h-5 px-1.5 rounded text-[10.5px] font-mono text-foreground/55 bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)]">
-                  {p.parts.length} components
-                </span>
-              </div>
-              <div class="text-[19px] font-semibold tracking-[-0.02em] text-heading">{p.title}</div>
-              <p class="mt-2 text-[13.5px] text-foreground/70 leading-relaxed">{p.body}</p>
-              <div class="mt-4 pt-4 border-t border-[color:var(--border)] flex flex-wrap gap-1.5">
-                {p.parts.map((part) => (
-                  <span class="inline-flex items-center h-6 px-2 rounded text-[11px] font-mono text-foreground/70 bg-[color:var(--surface-1)] ring-1 ring-[color:var(--border)]">
-                    {part}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <!-- Kafka spine annotation -->
-      <div class="mt-6 rounded-[12px] bg-[color:var(--surface-1)]/60 ring-1 ring-[color:var(--border)] px-6 py-4 flex flex-wrap items-baseline justify-between gap-3">
-        <div class="flex items-baseline gap-3">
-          <span class="inline-flex items-center h-5 px-2 rounded text-[10.5px] font-mono uppercase tracking-[0.14em] bg-[#0c1224] text-white/90">Kafka spine</span>
-          <span class="text-[13px] text-foreground/75">Per-worker command and result topics. Replayable. The only thing connecting the two planes.</span>
+  <!-- SHAPE: the whole instance, drawn as it runs. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid gap-6 lg:grid-cols-2 lg:items-end lg:gap-20">
+      <h2 class="text-[30px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08]"><span class="text-slate-400">How it’s built.</span> <span class="text-slate-900">One part decides, the other part sends.</span></h2>
+      <p class="max-w-xl text-[16px] md:text-[18px] leading-[1.6] text-slate-500">Adding capacity means adding small workers, not growing one giant server. Your mailbox provider delivers the mail, so a worker is only where your mailbox signs in from, and Warmbly keeps that stable.</p>
+    </div>
+    <div class="mt-12 md:mt-16"><ArchitectureScene /></div>
+    <div class="mt-10 grid gap-8 md:grid-cols-3 md:gap-10">
+      {planes.map((p) => (
+        <div>
+          <h3 class="text-[18px] font-medium tracking-[-0.02em] text-slate-900">{p.t}</h3>
+          <p class="mt-2 text-[15.5px] leading-[1.6] text-slate-500">{p.b}</p>
         </div>
-        <span class="text-[11.5px] font-mono text-muted-foreground">worker.commands.* · worker.results.*</span>
-      </div>
+      ))}
     </div>
   </section>
 
-
-  <!-- ============================================================
-       PRINCIPLES · six rules. numbered. monospace prefix.
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Build philosophy</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Six rules we will not bend.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          These are not marketing values. They are constraints written into the codebase and the migrations. If a feature breaks one of them, we do not ship it.
-        </p>
-      </div>
-
-      <div class="grid md:grid-cols-2 gap-px bg-[color:var(--border)] rounded-[14px] overflow-hidden ring-1 ring-[color:var(--border)]">
-        {principles.map((p) => (
-          <div class="bg-white p-6 md:p-7">
-            <div class="flex items-baseline gap-4">
-              <span class="font-mono text-[11px] text-[#0284c7] font-semibold tracking-[0.08em]">{p.n}</span>
-              <div class="flex-1">
-                <div class="text-[16px] md:text-[17px] font-semibold tracking-[-0.015em] text-heading">{p.title}</div>
-                <p class="mt-2 text-[13.5px] text-foreground/70 leading-relaxed">{p.body}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-
-
-  <!-- ============================================================
-       POSITIONING · Warmbly vs closed-source competitors
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-3xl mb-12">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">What is different</div>
-        <h2 class="text-[32px] md:text-[44px] font-semibold tracking-[-0.03em] leading-[1.05] text-heading">
-          Open engine versus closed engine.
-        </h2>
-        <p class="mt-4 text-[15.5px] text-foreground/70 leading-relaxed">
-          A factual comparison of posture, not a feature audit. Other tools in this category may match individual capabilities. None of them open up the engine.
-        </p>
-      </div>
-
-      <div class="rounded-[14px] bg-white ring-1 ring-[color:var(--border)] overflow-hidden">
-        <div class="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)_minmax(0,1.6fr)] px-6 py-3 bg-[color:var(--surface-1)] border-b border-[color:var(--border)] text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">
-          <div></div>
-          <div class="flex items-center gap-2 text-[#0369a1]">
-            <span class="w-2 h-2 rounded-full bg-[#0284c7]"></span>
-            Warmbly
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-slate-400"></span>
-            Closed-source suites
-          </div>
+  <!-- COMPARE + REPO: what is different, and where to look. -->
+  <Rule />
+  <section class="container-page py-20 md:py-28">
+    <div class="grid gap-12 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-14">
+      <div>
+        <SectionIntro lead="What’s different." title="An open engine, in a category of closed ones." />
+        <div class="mt-10 overflow-x-auto rounded-[6px] bg-white ring-1 ring-slate-200">
+          <table class="w-full min-w-[560px] text-left text-[14.5px]">
+            <thead>
+              <tr class="border-b border-slate-200 text-[13px]">
+                <th class="w-[24%] px-5 py-3.5 font-normal text-slate-400"></th>
+                <th class="px-5 py-3.5 font-medium text-slate-900">
+                  <span class="inline-flex items-center gap-2"><svg viewBox="0 0 746 764" class="w-4 text-slate-900" fill="currentColor" aria-hidden="true"><path d="M222.805 644.772L186.274 108.881L704.5 451.158L484.5 451.158L245.5 196.158L444 463.5L222.805 644.772Z"/></svg>Warmbly</span>
+                </th>
+                <th class="px-5 py-3.5 font-normal text-slate-400">Closed-source tools</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {compare.map(([k, a, b]) => (
+                <tr>
+                  <td class="px-5 py-4 align-top text-slate-500">{k}</td>
+                  <td class="px-5 py-4 align-top text-slate-900"><span class="flex gap-2"><Icon name="check" size={15} class="mt-[3px] shrink-0 text-emerald-600" />{a}</span></td>
+                  <td class="px-5 py-4 align-top text-slate-500">{b}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        {positioning.map((row, i) => (
-          <div class={`grid grid-cols-[minmax(0,1.1fr)_minmax(0,1.6fr)_minmax(0,1.6fr)] px-6 py-4 items-baseline ${i < positioning.length - 1 ? 'border-b border-[color:var(--border)]' : ''}`}>
-            <div class="text-[12.5px] font-mono uppercase tracking-[0.14em] text-foreground/55">{row.label}</div>
-            <div class="text-[13.5px] text-heading font-medium pr-4">{row.warmbly}</div>
-            <div class="text-[13.5px] text-foreground/65 pr-4">{row.closed}</div>
+        <p class="mt-4 text-[13.5px] text-slate-400">This describes how Warmbly is built. We don’t speak for any other company’s plans or pricing.</p>
+      </div>
+
+      <div>
+        <SectionIntro lead="The repository." title="What you’ll find when you open it." />
+        <div class="mt-10 overflow-hidden rounded-[10px] bg-[#0b1020] ring-1 ring-slate-900/20">
+          <div class="flex items-center gap-2 border-b border-white/10 px-5 py-3 font-mono text-[12.5px] text-white/60">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={GITHUB_PATH} /></svg>
+            warmbly/warmbly
+            <span class="ml-auto text-white/40">main</span>
           </div>
-        ))}
-      </div>
-
-      <p class="mt-4 text-[11.5px] font-mono text-muted-foreground">
-        Comparison reflects how Warmbly is built. We do not speak for any other vendor's plans or pricing.
-      </p>
-    </div>
-  </section>
-
-
-  <!-- ============================================================
-       REPO SURFACE · what is in the repo
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 border-b border-[color:var(--border)] py-20 md:py-28">
-    <div class="container-page">
-      <div class="max-w-2xl mb-10">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Repo surface</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          What is in the repository.
-        </h2>
-        <p class="mt-4 text-[15px] text-foreground/70 leading-relaxed">
-          The full platform, top-level. Backend, consumer, workers, tracking, realtime, web, and the encryption primitives that hold them together.
-        </p>
-      </div>
-
-      <div class="rounded-[14px] bg-[#0c1224] ring-1 ring-white/10 overflow-hidden">
-        <div class="px-5 py-2.5 border-b border-white/10 flex items-center justify-between text-[10.5px] font-mono text-white/55">
-          <span>warmbly/warmbly · main</span>
-          <span>{surface.length} top-level paths</span>
+          <ul class="divide-y divide-white/5">
+            {repo.map(([path, d]) => (
+              <li class="grid grid-cols-[124px_1fr] gap-4 px-5 py-3 text-[13.5px] sm:grid-cols-[140px_1fr]">
+                <span class="font-mono text-sky-300">{path}</span>
+                <span class="text-white/60">{d}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-        <div class="divide-y divide-white/5">
-          {surface.map((s) => (
-            <div class="grid grid-cols-[200px_1fr] gap-4 px-5 py-3.5 items-baseline">
-              <div class="font-mono text-[12.5px] text-[#7dd3fc]">{s.path}</div>
-              <div class="text-[12.5px] text-white/70 leading-snug">{s.desc}</div>
-            </div>
-          ))}
+        <div class="mt-6 flex flex-wrap gap-x-7 gap-y-3 text-[15px]">
+          <a href="https://docs.warmbly.com" class="inline-flex items-center gap-1.5 font-medium text-slate-900 hover:text-slate-600">Documentation <Icon name="arrowUpRight" size={13} /></a>
+          <a href="/changelog/" class="inline-flex items-center gap-1.5 font-medium text-slate-900 hover:text-slate-600">Changelog <Icon name="arrowRight" size={13} /></a>
+          <a href="/trust/" class="inline-flex items-center gap-1.5 font-medium text-slate-900 hover:text-slate-600">Security and trust <Icon name="arrowRight" size={13} /></a>
+          <a href="https://dc.warmbly.com" class="inline-flex items-center gap-1.5 font-medium text-slate-900 hover:text-slate-600">Discord <Icon name="arrowUpRight" size={13} /></a>
         </div>
       </div>
     </div>
   </section>
 
-
-  <!-- ============================================================
-       THE TEAM · deliberately small, deliberately public
-  ============================================================ -->
-  <section class="border-b border-[color:var(--border)] py-20 md:py-24">
-    <div class="container-page grid lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20">
-      <div class="lg:sticky lg:top-24 self-start">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">The team</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Small team. Built in public. Open source.
-        </h2>
-      </div>
-
-      <div class="space-y-5 text-[15.5px] leading-[1.75] text-foreground/85">
-        <p>
-          We are a small group of engineers. We will not pretend to be a global enterprise. Issues on GitHub are read by the people writing the code. Contact emails reach a person, not a queue.
-        </p>
-        <p>
-          Because the team is small, the constraints we put on the codebase have to do the heavy lifting. Safe defaults, conservative warmup, layered abuse controls, encryption everywhere we touch user secrets. We would rather ship one fewer feature than ship a feature that puts your sending reputation at risk.
-        </p>
-        <p>
-          You can follow the work in public. Open issues, pull requests, and the changelog. Everything that matters is visible.
-        </p>
-
-        <div class="mt-8 grid sm:grid-cols-3 gap-3">
-          <a href="/trust/" class="group rounded-[12px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 transition-all p-5 block">
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Trust</div>
-            <div class="mt-2 text-[14.5px] font-semibold text-heading">How it is secured</div>
-            <div class="mt-1 text-[12px] text-foreground/60">Encryption, subprocessors, posture.</div>
-          </a>
-          <a href="/changelog/" class="group rounded-[12px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 transition-all p-5 block">
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">Changelog</div>
-            <div class="mt-2 text-[14.5px] font-semibold text-heading">What just shipped</div>
-            <div class="mt-1 text-[12px] text-foreground/60">Every release, dated, plain wording.</div>
-          </a>
-          <a href="https://github.com/warmbly/warmbly" class="group rounded-[12px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 transition-all p-5 block">
-            <div class="text-[10.5px] uppercase tracking-[0.18em] font-mono text-muted-foreground">GitHub</div>
-            <div class="mt-2 text-[14.5px] font-semibold text-heading">The repository</div>
-            <div class="mt-1 text-[12px] text-foreground/60">Source, issues, pull requests.</div>
-          </a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-
-  <!-- ============================================================
-       GET INVOLVED · final link row
-  ============================================================ -->
-  <section class="bg-[color:var(--surface-1)]/40 py-20 md:py-24">
-    <div class="container-page">
-      <div class="max-w-2xl mb-10">
-        <div class="text-[11px] uppercase tracking-[0.18em] font-mono text-[#0284c7] mb-3">Get involved</div>
-        <h2 class="text-[28px] md:text-[40px] font-semibold tracking-[-0.025em] leading-[1.06] text-heading">
-          Read the engine. Run the engine. Improve the engine.
-        </h2>
-      </div>
-
-      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {involve.map((l) => (
-          <a href={l.href} class="group flex items-center justify-between p-5 rounded-[12px] bg-white ring-1 ring-[color:var(--border)] hover:ring-[#0284c7]/40 hover:-translate-y-0.5 transition-all duration-200">
-            <div>
-              <div class="text-[14.5px] font-semibold text-heading">{l.label}</div>
-              <div class="text-[12px] text-foreground/60 mt-0.5">{l.note}</div>
-            </div>
-            <Icon name={l.icon} size={14} class="text-muted-foreground group-hover:text-[#0284c7] group-hover:translate-x-0.5 transition-all" />
-          </a>
-        ))}
-      </div>
-    </div>
-  </section>
-
-
-  <CTA
-    title="The open engine for cold outreach."
-    description="Read the source. Run it yourself. Or start sending today on the hosted platform."
-    primaryLabel="Start free"
-    primaryHref="https://app.warmbly.com/auth/register"
-    secondaryLabel="View on GitHub"
-    secondaryHref="https://github.com/warmbly/warmbly"
-  />
+  <CTA photo="sheer-sky" title="Read it, run it, or let us run it." description="Start free on Warmbly Cloud, or install the whole platform on your own server with one command." secondaryLabel="Self-host it" secondaryHref="https://github.com/warmbly/warmbly" />
 </Layout>

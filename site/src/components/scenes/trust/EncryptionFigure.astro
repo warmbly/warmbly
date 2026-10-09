@@ -1,0 +1,136 @@
+---
+import TrustFigure from './TrustFigure.astro';
+
+/**
+ * Envelope encryption as described on the trust page and in CLAUDE.md
+ * (Encryption Model): the key management service makes a data key per
+ * workspace, only its encrypted copy is stored, the plain key is cached
+ * briefly, and sensitive fields are sealed with AES-256-GCM before writing.
+ */
+interface Props { n: number; caption: string }
+const { n, caption } = Astro.props;
+
+const box = 'absolute rounded-lg bg-white ring-1 ring-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.05)]';
+const tag = 'font-mono text-[10px] uppercase tracking-[0.12em] text-slate-400';
+const lockIcon = '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>';
+const keyIcon = '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>';
+const dbIcon = '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>';
+---
+<TrustFigure w={900} h={420} n={n} caption={caption}>
+  <svg class="absolute inset-0" width="900" height="420" fill="none">
+    <defs>
+      <marker id="enc-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L8 4 L0 8 z" fill="#94a3b8" />
+      </marker>
+    </defs>
+    <path d="M208 206 H266" stroke="#94a3b8" stroke-width="1.25" marker-end="url(#enc-arrow)" />
+    <path d="M464 202 H522" stroke="#94a3b8" stroke-width="1.25" marker-end="url(#enc-arrow)" />
+    <path d="M674 202 H716" stroke="#94a3b8" stroke-width="1.25" marker-end="url(#enc-arrow)" />
+    <path d="M798 286 V316" stroke="#94a3b8" stroke-width="1.25" marker-end="url(#enc-arrow)" />
+    <path d="M464 256 H588 Q600 256 600 268 V346 Q600 358 612 358 H716" stroke="#94a3b8" stroke-width="1.25" marker-end="url(#enc-arrow)" />
+    <path d="M366 294 V328" stroke="#94a3b8" stroke-width="1.25" stroke-dasharray="3 3" marker-end="url(#enc-arrow)" />
+  </svg>
+
+  <!-- A field on its way through the cipher, passing under it. -->
+  <span class="enc-dot"></span>
+
+  <!-- Flow labels -->
+  <span class={`absolute left-[212px] top-[176px] ${tag}`}>generates</span>
+  <span class="absolute left-[212px] top-[214px] font-mono text-[10.5px] text-slate-500">32-byte key</span>
+  <span class={`absolute left-[470px] top-[180px] ${tag}`}>in use</span>
+  <span class={`absolute left-[680px] top-[180px] ${tag}`}>seal</span>
+  <span class={`absolute left-[806px] top-[293px] ${tag}`}>write</span>
+  <span class={`absolute left-[610px] top-[294px] ${tag}`}>stored</span>
+  <span class={`absolute left-[374px] top-[303px] ${tag}`}>cached</span>
+
+  <!-- Key management service -->
+  <div class={`${box} left-[32px] top-[150px] w-[176px] h-[112px] p-3.5`}>
+    <div class="flex items-center gap-2">
+      <span class="inline-flex size-7 items-center justify-center rounded-md bg-slate-900 text-white"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={lockIcon} /></span>
+      <span class={tag}>Root of trust</span>
+    </div>
+    <div class="mt-2.5 text-[13px] font-medium leading-tight text-slate-900">Key management service</div>
+    <div class="mt-1 text-[11px] leading-snug text-slate-500">Holds the root key, which never leaves it</div>
+  </div>
+
+  <!-- The workspace data key -->
+  <div class={`${box} left-[268px] top-[118px] w-[196px] h-[176px] overflow-hidden`}>
+    <div class="flex items-center gap-2 border-b border-slate-100 px-3.5 py-2.5">
+      <span class="inline-flex size-7 items-center justify-center rounded-md bg-sky-50 text-sky-700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" set:html={keyIcon} /></span>
+      <div>
+        <div class="text-[13px] font-medium leading-tight text-slate-900">Workspace data key</div>
+        <div class="text-[10.5px] text-slate-400">one per workspace</div>
+      </div>
+    </div>
+    <div class="px-3.5 pt-2.5">
+      <div class="flex h-[40px] items-center justify-between rounded-md bg-sky-50 px-2.5 ring-1 ring-sky-100">
+        <span class="text-[11.5px] font-medium text-sky-800">Plain key</span>
+        <span class="font-mono text-[10px] text-sky-600">memory only</span>
+      </div>
+      <div class="mt-2 flex h-[40px] items-center justify-between rounded-md bg-slate-50 px-2.5 ring-1 ring-slate-200">
+        <span class="text-[11.5px] font-medium text-slate-700">Encrypted copy</span>
+        <span class="font-mono text-[10px] text-slate-400">base64</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Short-lived cache of the plain key -->
+  <div class="absolute left-[268px] top-[330px] w-[196px] h-[60px] rounded-lg border border-dashed border-slate-300 bg-white/70 px-3.5 py-2.5">
+    <div class="text-[12px] font-medium text-slate-700">Cache</div>
+    <div class="text-[10.5px] text-slate-500">Plain key reused for a short time</div>
+  </div>
+
+  <!-- The cipher -->
+  <div class={`${box} left-[524px] top-[168px] w-[150px] h-[68px] px-3.5 py-2.5`}>
+    <div class={tag}>Cipher</div>
+    <div class="mt-1 font-mono text-[13px] font-medium text-slate-900">AES-256-GCM</div>
+  </div>
+
+  <!-- Sealed fields -->
+  <div class={`${box} left-[718px] top-[120px] w-[160px] h-[166px] overflow-hidden`}>
+    <div class="border-b border-slate-100 px-3 py-2 text-[12px] font-medium text-slate-900">Sealed fields</div>
+    <div class="space-y-2 px-3 py-2.5">
+      <div>
+        <div class="text-[11px] text-slate-600">Integration tokens</div>
+        <div class="enc-cipher mt-0.5 truncate rounded bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 ring-1 ring-slate-100">q9F2kLx0Zc7aT1mR…</div>
+      </div>
+      <div>
+        <div class="text-[11px] text-slate-600">Message content</div>
+        <div class="enc-cipher mt-0.5 truncate rounded bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-400 ring-1 ring-slate-100" style="animation-delay:-1.4s">kA7cX1pW8nE3vYd0…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Database -->
+  <div class={`${box} left-[718px] top-[318px] w-[160px] h-[80px] px-3 py-2.5`}>
+    <div class="flex items-center gap-2">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500" set:html={dbIcon} />
+      <span class="text-[12.5px] font-medium text-slate-900">Database</span>
+    </div>
+    <div class="mt-1.5 text-[10.5px] leading-snug text-slate-500">Encrypted key and sealed fields. No plain key.</div>
+  </div>
+</TrustFigure>
+
+<style>
+  .enc-dot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    background: #0ea5e9;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18);
+    offset-path: path('M464 202 H716');
+    opacity: 0;
+    animation: enc-move 4s linear infinite;
+  }
+  @keyframes enc-move {
+    0% { offset-distance: 0%; opacity: 0; }
+    8%, 88% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+  /* Fresh ciphertext each time a field is written. */
+  .enc-cipher { animation: enc-cipher 2.8s steps(1) infinite; }
+  @keyframes enc-cipher { 0%, 100% { color: #94a3b8; } 50% { color: #64748b; } }
+</style>

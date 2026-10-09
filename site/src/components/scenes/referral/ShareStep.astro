@@ -1,0 +1,33 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from '../about/Ico.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/** Step one: the share link copied from Settings > Refer & earn, pasted into an email. */
+---
+<ScaledStage w={460} h={345} photo="sheer-sky">
+  <div class={`${WINDOW} left-[24px] top-[24px] w-[460px] h-[340px]`}>
+    <div class="h-10 px-4 flex items-center gap-2 border-b border-slate-200">
+      <Glyph name="penLine" size={13} class="text-sky-600" />
+      <span class="text-[12.5px] font-semibold text-slate-900">New message</span>
+    </div>
+    <div class="divide-y divide-slate-100 text-[12px]">
+      <div class="h-9 px-4 flex items-center gap-2"><span class="w-12 text-slate-400">From</span><span class="text-slate-700">alex@northwind.dev</span></div>
+      <div class="h-9 px-4 flex items-center gap-2"><span class="w-12 text-slate-400">To</span><span class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-700">dana@helio.gen</span></div>
+      <div class="h-9 px-4 flex items-center gap-2"><span class="w-12 text-slate-400">Subject</span><span class="font-medium text-slate-900">What we run our outreach on</span></div>
+    </div>
+    <div class="px-4 py-3 text-[12.5px] leading-[1.6] text-slate-700">
+      Dana, this is the tool behind our cold email. Your first three months are 10% off with this link:
+      <div class="mt-1.5 font-mono text-[11.5px] text-sky-700 underline decoration-sky-300">app.warmbly.com/auth/register?ref=NORTHWIND</div>
+    </div>
+  </div>
+
+  <div class={`${FLOAT} left-[150px] top-[250px] w-[290px] px-3 py-2.5`}>
+    <div class="flex items-center gap-2">
+      <div class="h-7 flex-1 min-w-0 px-2 rounded-md border border-slate-200 bg-slate-50 font-mono text-[10.5px] text-slate-600 flex items-center truncate">…/register?ref=NORTHWIND</div>
+      <span class="h-7 px-2.5 rounded-md bg-slate-900 text-white text-[11.5px] font-medium inline-flex items-center gap-1.5"><Glyph name="check" size={11} />Copied</span>
+    </div>
+    <div class="mt-1.5 inline-flex items-center gap-1.5 text-[10.5px] text-slate-400"><Ico name="gift" size={11} />Settings, Refer &amp; earn</div>
+  </div>
+</ScaledStage>

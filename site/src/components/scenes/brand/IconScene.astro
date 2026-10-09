@@ -1,0 +1,29 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import { WINDOW, EYEBROW } from '../../../lib/scene';
+
+/** The app icon at the sizes the site actually ships (public/ and public/brand/). */
+const sizes = [
+  { src: '/brand/social-avatar-256.webp', px: 120, label: '1024 px', use: 'Source' },
+  { src: '/apple-touch-icon.png', px: 76, label: '180 px', use: 'Home screen' },
+  { src: '/favicon-48x48.png', px: 48, label: '48 px', use: 'Favicon' },
+  { src: '/favicon-32x32.png', px: 32, label: '32 px', use: 'Tab' },
+];
+---
+<ScaledStage w={460} h={345} photo="paint-aqua">
+  <div class={`${WINDOW} left-[26px] top-[26px] w-[460px] h-[340px]`}>
+    <div class="h-10 px-4 flex items-center border-b border-slate-200"><span class={EYEBROW}>App icon</span></div>
+    <div class="flex h-[220px] items-end gap-7 px-6 pb-5" style="background-image:radial-gradient(circle, rgb(148 163 184 / 0.3) 1px, transparent 1px);background-size:14px 14px;">
+      {sizes.map((s) => (
+        <div class="flex flex-col items-center gap-2.5">
+          <img src={s.src} alt="" width={s.px} height={s.px} loading="lazy" class="shadow-[0_10px_24px_-12px_rgba(15,23,42,0.6)]" style={`width:${s.px}px;height:${s.px}px;border-radius:${Math.round(s.px * 0.225)}px`} />
+          <div class="text-center">
+            <div class="font-mono text-[10.5px] text-slate-700">{s.label}</div>
+            <div class="text-[10px] text-slate-400">{s.use}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+    <div class="border-t border-slate-200 px-4 py-3 text-[11.5px] text-slate-500">The white mark on sky, corners rounded by the platform.</div>
+  </div>
+</ScaledStage>

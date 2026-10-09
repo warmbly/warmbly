@@ -1,0 +1,164 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Glyph from '../Glyph.astro';
+import Ico from './Ico.astro';
+import { WINDOW, EYEBROW } from '../../../lib/scene';
+
+/**
+ * How one instance is put together (README "How it works", CLAUDE.md system
+ * shape): the control plane owns state, workers execute over the event bus,
+ * tracking and realtime sit at the edge. Lines that carry live traffic flow.
+ */
+const LANG = {
+  Go: '#00ADD8',
+  Rust: '#dea584',
+  Elixir: '#6e4a7e',
+  TypeScript: '#3178c6',
+} as const;
+type Lang = keyof typeof LANG;
+type Node = { x: number; y: number; w: number; h: number; icon: string; name: string; path: string; lang?: Lang; port?: string; text: string };
+const nodes: Node[] = [
+  { x: 36, y: 64, w: 196, h: 104, icon: 'monitor', name: 'Dashboard', path: 'web/', lang: 'TypeScript', text: 'Where your team works, live.' },
+  { x: 296, y: 64, w: 258, h: 116, icon: 'server', name: 'Backend', path: 'cmd/backend', lang: 'Go', port: ':8080', text: 'The API and the business logic. Owns the database and decides which worker runs each mailbox.' },
+  { x: 296, y: 204, w: 258, h: 96, icon: 'repeat', name: 'Consumer', path: 'cmd/consumer', lang: 'Go', text: 'Folds worker results and tracking events back into the database.' },
+  { x: 36, y: 484, w: 196, h: 92, icon: 'pointer', name: 'Recipients', path: 'mail clients', text: 'Load the pixel or follow a link.' },
+  { x: 296, y: 484, w: 258, h: 92, icon: 'activity', name: 'Tracking', path: 'tracking/', lang: 'Rust', port: ':3000', text: 'Open pixel and click redirects, published to the bus.' },
+  { x: 786, y: 484, w: 230, h: 92, icon: 'radio', name: 'Realtime', path: 'realtime/', lang: 'Elixir', port: ':4000', text: 'Pushes every change to open dashboards.' },
+];
+const workers = [
+  { y: 64, region: 'fra-1', count: 18, beat: 4 },
+  { y: 196, region: 'fra-2', count: 21, beat: 7 },
+  { y: 328, region: 'iad-1', count: 16, beat: 2 },
+];
+const providers = [
+  { y: 72, mark: 'google', name: 'Google', via: 'Gmail API' },
+  { y: 204, mark: 'microsoft', name: 'Microsoft', via: 'Microsoft Graph' },
+  { y: 336, mark: 'imap', name: 'Any host', via: 'IMAP and SMTP' },
+] as const;
+const stores = [
+  { icon: 'database', name: 'Postgres' },
+  { icon: 'layers', name: 'Redis' },
+  { icon: 'key', name: 'KMS', sub: 'root key' },
+  { icon: 'archive', name: 'Blob store' },
+];
+// Traffic that moves on its own; drawn twice, a hairline and a flowing dash.
+const flows = [
+  'M232 112 H296',
+  'M554 100 H610',
+  'M610 252 H554',
+  'M730 120 H786', 'M730 252 H786', 'M730 384 H786',
+  'M1016 120 H1062', 'M1016 252 H1062', 'M1016 384 H1062',
+  'M232 530 H296',
+  'M554 530 H670 V440',
+  'M690 440 V530 H786',
+  'M901 576 V608 H16 V140 H36',
+];
+const quiet = ['M296 150 H286 V382 H296', 'M425 300 V324'];
+const labels = [
+  { x: 264, y: 100, t: 'API' },
+  { x: 582, y: 88, t: 'commands' },
+  { x: 582, y: 270, t: 'results' },
+  { x: 612, y: 518, t: 'events' },
+  { x: 460, y: 598, t: 'websocket to every open dashboard' },
+  { x: 650, y: 12, t: 'internal API: data keys, signed blob URLs' },
+];
+const card = 'absolute rounded-[8px] bg-white ring-1 ring-slate-200 shadow-[0_1px_2px_rgba(15,23,42,0.05)]';
+---
+<ScaledStage w={1240} h={680} photo="frost-blue">
+  <div class={`${WINDOW} left-[40px] top-[40px] w-[1240px] h-[680px]`} style="background-image:radial-gradient(circle, rgb(148 163 184 / 0.28) 1px, transparent 1px);background-size:16px 16px;">
+    <!-- Plane outlines -->
+    <div class="absolute left-[280px] top-[36px] w-[290px] h-[420px] rounded-[12px] border border-dashed border-slate-300 bg-sky-50/30">
+      <span class={`absolute left-3 top-2 ${EYEBROW}`}>Control plane</span>
+    </div>
+    <div class="absolute left-[770px] top-[36px] w-[262px] h-[420px] rounded-[12px] border border-dashed border-slate-300 bg-orange-50/30">
+      <span class={`absolute left-3 top-2 ${EYEBROW}`}>Execution plane</span>
+    </div>
+
+    <svg class="absolute inset-0" width="1240" height="640" viewBox="0 0 1240 640" fill="none">
+      {flows.map((d) => <path d={d} stroke="#cbd5e1" stroke-width="1.5" />)}
+      {flows.map((d, i) => <path class="arch-flow" d={d} stroke="#0284c7" stroke-width="1.5" stroke-dasharray="3 9" style={`animation-delay:-${(i * 0.37) % 1}s`} />)}
+      {quiet.map((d) => <path d={d} stroke="#cbd5e1" stroke-width="1.5" />)}
+      <path d="M901 64 V22 H425 V64" stroke="#94a3b8" stroke-width="1.25" stroke-dasharray="4 4" />
+    </svg>
+    {labels.map((l) => (
+      <span class="absolute -translate-x-1/2 whitespace-nowrap rounded bg-white px-1 font-mono text-[9.5px] text-slate-400" style={`left:${l.x}px;top:${l.y}px`}>{l.t}</span>
+    ))}
+
+    {nodes.map((n) => (
+      <div class={card} style={`left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px`}>
+        <div class="flex items-center gap-2 px-3 pt-2.5">
+          <span class="inline-flex size-6 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+            {n.icon === 'server' || n.icon === 'activity' ? <Glyph name={n.icon} size={12} /> : <Ico name={n.icon as 'monitor'} size={12} />}
+          </span>
+          <span class="text-[12.5px] font-medium text-slate-900">{n.name}</span>
+          {n.lang && <span class="ml-auto inline-flex items-center gap-1 text-[10px] text-slate-500"><span class="size-2 rounded-full" style={`background:${LANG[n.lang]}`}></span>{n.lang}</span>}
+        </div>
+        <div class="mt-1.5 px-3 text-[11px] leading-[1.45] text-slate-500">{n.text}</div>
+        <div class="absolute bottom-2 left-3 right-3 flex items-center justify-between font-mono text-[9.5px] text-slate-400">
+          <span>{n.path}</span>{n.port && <span>{n.port}</span>}
+        </div>
+      </div>
+    ))}
+
+    <!-- Stores the control plane keeps -->
+    <div class={card} style="left:296px;top:324px;width:258px;height:116px">
+      <div class="px-3 pt-2.5 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">State</div>
+      <div class="mt-2 grid grid-cols-2 gap-1.5 px-3">
+        {stores.map((s) => (
+          <span class="h-8 rounded-md border border-slate-200 bg-slate-50/70 px-2 inline-flex items-center gap-1.5 text-[11px] text-slate-700">
+            {s.icon === 'layers' || s.icon === 'archive' ? <Glyph name={s.icon} size={12} class="text-slate-400" /> : <Ico name={s.icon as 'key'} size={12} class="text-slate-400" />}
+            {s.name}{s.sub && <span class="text-[9.5px] text-slate-400">{s.sub}</span>}
+          </span>
+        ))}
+      </div>
+    </div>
+
+    <!-- The bus between the planes -->
+    <div class="absolute left-[610px] top-[64px] w-[120px] h-[376px] rounded-[8px] bg-slate-900 text-white shadow-[0_10px_30px_-12px_rgba(15,23,42,0.6)]">
+      <div class="px-3 pt-3">
+        <div class="text-[12.5px] font-medium">Event bus</div>
+        <div class="mt-0.5 font-mono text-[10px] text-white/50">NATS or Kafka</div>
+      </div>
+      <div class="absolute left-3 right-3 top-[132px] space-y-1.5 font-mono text-[9.5px] text-sky-200/80">
+        <div class="rounded bg-white/[0.06] px-1.5 py-1">one topic per worker</div>
+      </div>
+      <div class="absolute left-3 right-3 top-[176px] rounded bg-white/[0.06] px-1.5 py-1 font-mono text-[9.5px] text-sky-200/80">jobs.worker-events</div>
+      <div class="absolute left-3 right-3 top-[318px] rounded bg-white/[0.06] px-1.5 py-1 font-mono text-[9.5px] text-sky-200/80">tracking events</div>
+    </div>
+
+    {workers.map((w) => (
+      <div class={card} style={`left:786px;top:${w.y}px;width:230px;height:112px`}>
+        <div class="flex items-center gap-2 px-3 pt-2.5">
+          <span class="inline-flex size-6 items-center justify-center rounded-md bg-orange-50 text-orange-600"><Ico name="cpu" size={12} /></span>
+          <span class="text-[12.5px] font-medium text-slate-900">Worker</span>
+          <span class="rounded bg-slate-100 px-1.5 font-mono text-[10px] text-slate-500">{w.region}</span>
+          <span class="ml-auto inline-flex items-center gap-1 text-[10px] text-slate-500"><span class="size-2 rounded-full" style={`background:${LANG.Go}`}></span>Go</span>
+        </div>
+        <div class="mt-2 px-3 flex items-center gap-3 text-[11px] text-slate-600">
+          <span class="inline-flex items-center gap-1"><Glyph name="mail" size={11} class="text-slate-400" /><span class="tabular-nums">{w.count}</span> mailboxes</span>
+          <span class="inline-flex items-center gap-1 text-emerald-700"><span class="size-1.5 rounded-full bg-emerald-500 animate-pulse"></span>heartbeat {w.beat}s</span>
+        </div>
+        <div class="absolute bottom-2 left-3 right-3 flex items-center justify-between">
+          <span class="font-mono text-[9.5px] text-slate-400">cmd/worker</span>
+          <span class="inline-flex h-4 items-center rounded border border-slate-200 px-1.5 text-[9.5px] text-slate-500">no database</span>
+        </div>
+      </div>
+    ))}
+
+    {providers.map((p) => (
+      <div class={card} style={`left:1062px;top:${p.y}px;width:132px;height:96px`}>
+        <div class="flex items-center gap-2 px-3 pt-3">
+          <Glyph mark={p.mark} size={15} />
+          <span class="text-[12px] font-medium text-slate-900">{p.name}</span>
+        </div>
+        <div class="mt-1.5 px-3 text-[10.5px] leading-[1.4] text-slate-500">{p.via}</div>
+        <div class="absolute bottom-2 left-3 font-mono text-[9.5px] text-slate-400">delivers the mail</div>
+      </div>
+    ))}
+  </div>
+</ScaledStage>
+
+<style>
+  .arch-flow { animation: arch-flow 1s linear infinite; }
+  @keyframes arch-flow { to { stroke-dashoffset: -12; } }
+</style>

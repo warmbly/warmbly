@@ -1,0 +1,46 @@
+---
+/**
+ * Go source with line numbers and light syntax colour, for excerpts copied
+ * from the repository. `start` is the first line's real number in the file.
+ */
+interface Props {
+  start: number;
+  code: string;
+  /** Real line numbers to mark, e.g. the rule a figure is about. */
+  mark?: number[];
+  class?: string;
+  size?: string;
+}
+const { start, code, mark = [], class: className = '', size = 'text-[11.5px] leading-[19px]' } = Astro.props;
+
+const TOKEN = /("(?:[^"\\]|\\.)*")|(\/\/.*$)|\b(func|if|return|const|case|switch|var|type|struct|package|import|for|range|nil|err|true|false|make)\b|\b(\d+(?:\.\d+)?)\b|\b([A-Za-z_][A-Za-z0-9_]*)(?=\()/g;
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const TONE = ['', 'text-sky-800', 'text-slate-400', 'text-rose-600', 'text-blue-700', 'text-violet-700'];
+
+// One pass over the raw line, so a colour never lands inside another's markup.
+function hl(line: string): string {
+  let out = '';
+  let last = 0;
+  for (const m of line.matchAll(TOKEN)) {
+    const i = m.index ?? 0;
+    out += esc(line.slice(last, i));
+    const g = m.findIndex((v, k) => k > 0 && v !== undefined);
+    out += `<span class="${TONE[g]}">${esc(m[0])}</span>`;
+    last = i + m[0].length;
+  }
+  return out + esc(line.slice(last));
+}
+const lines = code.replace(/^\n/, '').replace(/\n\s*$/, '').split('\n');
+---
+<div class={`font-mono ${size} ${className}`}>
+  {lines.map((l, i) => {
+    const n = start + i;
+    const on = mark.includes(n);
+    return (
+      <div class={`flex whitespace-pre ${on ? 'bg-amber-50 code-mark' : ''}`}>
+        <span class={`w-10 shrink-0 select-none pr-3 text-right tabular-nums ${on ? 'text-amber-600' : 'text-slate-300'}`}>{n}</span>
+        <span class="text-slate-800" set:html={hl(l) || ' '} />
+      </div>
+    );
+  })}
+</div>

@@ -1,0 +1,55 @@
+---
+import ScaledStage from '../../ScaledStage.astro';
+import Ico from '../about/Ico.astro';
+import { WINDOW, FLOAT } from '../../../lib/scene';
+
+/**
+ * The social card: a link to warmbly.com unfurled in a team chat with the
+ * real public/og-image.jpg and the home page's own title and description,
+ * and the avatar (public/brand/social-avatar.jpg) on a profile card.
+ */
+const channels = ['general', 'outreach', 'deliverability', 'random'];
+---
+<ScaledStage w={680} h={510} photo="sheer-cream">
+  <div class={`${WINDOW} left-[36px] top-[36px] w-[680px] h-[480px] flex`}>
+    <div class="w-[168px] shrink-0 border-r border-slate-200 bg-slate-50/80 px-2 py-3">
+      <div class="px-2 text-[12.5px] font-semibold text-slate-900">Northwind</div>
+      <div class="mt-3 px-2 text-[10px] uppercase tracking-[0.14em] text-slate-400 font-medium">Channels</div>
+      <div class="mt-1 space-y-0.5">
+        {channels.map((c) => (
+          <div class={`h-7 px-2 rounded-md flex items-center gap-1.5 text-[12.5px] ${c === 'outreach' ? 'bg-slate-200/70 font-medium text-slate-900' : 'text-slate-500'}`}><Ico name="hash" size={12} class="text-slate-400" />{c}</div>
+        ))}
+      </div>
+    </div>
+    <div class="min-w-0 flex-1">
+      <div class="h-11 px-4 flex items-center gap-1.5 border-b border-slate-200 text-[13px] font-semibold text-slate-900"><Ico name="hash" size={13} class="text-slate-400" />outreach</div>
+      <div class="px-4 py-3 space-y-4">
+        <div class="flex gap-2.5">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-md bg-sky-100 text-[11px] font-semibold text-sky-700">MO</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-baseline gap-2"><span class="text-[12.5px] font-semibold text-slate-900">Maya Okonkwo</span><span class="text-[10.5px] text-slate-400">10:24</span></div>
+            <div class="mt-0.5 text-[12.5px] leading-[1.5] text-slate-700">Moving our outreach here, the whole thing is open source <span class="text-sky-700 underline decoration-sky-300">warmbly.com</span></div>
+            <div class="mt-2 flex max-w-[400px] gap-3 border-l-[3px] border-slate-300 pl-3">
+              <div class="min-w-0">
+                <div class="text-[11px] font-semibold text-slate-900">Warmbly</div>
+                <div class="mt-0.5 text-[12.5px] font-semibold leading-[1.35] text-sky-700">Open-Source Cold Email &amp; Warmup Platform | Warmbly</div>
+                <div class="mt-1 line-clamp-2 text-[11.5px] leading-[1.45] text-slate-500">Warmbly is the open-source platform for cold email: warm your mailboxes, send campaigns, and triage every reply.</div>
+                <img src="/og-image.jpg" alt="" width="360" height="189" loading="lazy" class="mt-2 w-[360px] rounded-md ring-1 ring-slate-200" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class={`${FLOAT} left-[420px] top-[300px] w-[232px] overflow-hidden`}>
+    <div class="h-[58px]" style="background:linear-gradient(120deg,#7dd3fc,#0284c7)"></div>
+    <div class="px-4 pb-4">
+      <img src="/brand/social-avatar-256.webp" alt="" width="56" height="56" loading="lazy" class="-mt-7 size-14 rounded-full ring-4 ring-white" />
+      <div class="mt-2 text-[14px] font-semibold text-slate-900">Warmbly</div>
+      <div class="text-[11.5px] text-slate-500">The open-source cold email and warmup platform.</div>
+      <div class="mt-2 inline-flex items-center gap-1 text-[11px] text-sky-700"><Ico name="externalLink" size={11} />warmbly.com</div>
+    </div>
+  </div>
+</ScaledStage>
