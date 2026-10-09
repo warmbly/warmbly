@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/mail"
 	"sort"
 	"strings"
@@ -16,6 +17,19 @@ import (
 )
 
 var ErrSendAdmissionDenied = errors.New("current send authority or capacity unavailable")
+
+var ErrCampaignDailyLimit = fmt.Errorf("%w: campaign daily limit reached for this mailbox", ErrSendAdmissionDenied)
+
+func SendAdmissionCode(err error) string {
+	switch {
+	case errors.Is(err, ErrCampaignDailyLimit):
+		return "CAMPAIGN_DAILY_LIMIT_REACHED"
+	case errors.Is(err, ErrSendAdmissionDenied):
+		return "SEND_ADMISSION_DENIED"
+	default:
+		return ""
+	}
+}
 
 type OutboundReservation struct {
 	TaskID         uuid.UUID
@@ -241,20 +255,23 @@ func checkCampaignReservation(ctx context.Context, tx pgx.Tx, task uuid.UUID) er
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,272))`, campaign.String()); err != nil {
 		return err
 	}
-	var allowed bool
+	var allowed, capacity bool
 	err := tx.QueryRow(ctx, `SELECT c.status='active' AND (c.end_date IS NULL OR c.end_date>=NOW())
 	 AND NOT recipient_suppressed(c.organization_id,contact.email) AND contact.subscribed IS DISTINCT FROM false
 	 AND NOT EXISTS(SELECT 1 FROM campaign_leads h WHERE h.campaign_id=c.id AND h.contact_id=ct.contact_id AND h.paused_at IS NOT NULL AND (h.paused_until IS NULL OR h.paused_until>NOW()))
-	 AND (c.daily_limit<=0 OR (SELECT COUNT(*) FROM campaign_contact_progress p WHERE p.campaign_id=c.id
-	 AND COALESCE(p.sent_at,p.dispatched_at)>=date_trunc('day',NOW() AT TIME ZONE COALESCE(NULLIF(c.timezone,''),NULLIF(o.timezone,''),'UTC')) AT TIME ZONE COALESCE(NULLIF(c.timezone,''),NULLIF(o.timezone,''),'UTC'))<=c.daily_limit)
 	 AND c.organization_id=ea.organization_id AND contact.organization_id=c.organization_id
-	 AND EXISTS(SELECT 1 FROM campaign_contact_progress p WHERE p.campaign_id=c.id AND p.contact_id=ct.contact_id AND p.sequence_id=ct.sequence_id AND p.dispatch_task_id=t.id)
-	 FROM campaign_tasks ct JOIN tasks t ON t.id=ct.task_id JOIN email_accounts ea ON ea.id=t.email_account_id JOIN campaigns c ON c.id=ct.campaign_id JOIN organizations o ON o.id=c.organization_id JOIN contacts contact ON contact.id=ct.contact_id WHERE ct.task_id=$1`, task).Scan(&allowed)
+	 AND EXISTS(SELECT 1 FROM campaign_contact_progress p WHERE p.campaign_id=c.id AND p.contact_id=ct.contact_id AND p.sequence_id=ct.sequence_id AND p.dispatch_task_id=t.id),
+	 c.daily_limit<=0 OR (SELECT COUNT(*) FROM tasks t JOIN campaign_tasks sent ON sent.task_id=t.id
+	 WHERE sent.campaign_id=c.id AND t.email_account_id=ea.id AND t.id<>ct.task_id AND `+campaignSendToday+`)<c.daily_limit
+	 FROM campaign_tasks ct JOIN tasks t ON t.id=ct.task_id JOIN email_accounts ea ON ea.id=t.email_account_id JOIN campaigns c ON c.id=ct.campaign_id JOIN contacts contact ON contact.id=ct.contact_id WHERE ct.task_id=$1`, task).Scan(&allowed, &capacity)
 	if err != nil {
 		return err
 	}
 	if !allowed {
 		return ErrSendAdmissionDenied
+	}
+	if !capacity {
+		return ErrCampaignDailyLimit
 	}
 	return nil
 }
@@ -332,10 +349,11 @@ func (r *taskRepository) BeginOutbound(ctx context.Context, task, mailbox, worke
 		if !errors.Is(err, ErrSendAdmissionDenied) {
 			return nil, err
 		}
+		reason := err
 		if err = tx.Commit(ctx); err != nil {
 			return nil, err
 		}
-		if err = r.CancelOutbound(ctx, task, mailbox, worker, nonce); err != nil {
+		if err = r.cancelOutbound(ctx, task, mailbox, worker, nonce, reason); err != nil {
 			return nil, err
 		}
 		return &WarmupDispatchState{State: "denied"}, nil
@@ -400,6 +418,10 @@ func (r *taskRepository) FinishOutbound(ctx context.Context, task, mailbox, work
 }
 
 func (r *taskRepository) CancelOutbound(ctx context.Context, task, mailbox, worker, nonce uuid.UUID) error {
+	return r.cancelOutbound(ctx, task, mailbox, worker, nonce, nil)
+}
+
+func (r *taskRepository) cancelOutbound(ctx context.Context, task, mailbox, worker, nonce uuid.UUID, reason error) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -427,6 +449,16 @@ func (r *taskRepository) CancelOutbound(ctx context.Context, task, mailbox, work
 		inner := context.WithValue(ctx, sendResultKey{}, sendResultContext{tx: tx, taskID: task})
 		if err = NewCampaignProgressRepository(r.db).ReleaseSend(inner, c, contact, sequence, newLead); err != nil {
 			return err
+		}
+		if reason != nil {
+			if _, err = tx.Exec(ctx, `INSERT INTO task_failures(task_id,title,message) VALUES($1,'Send admission denied',$2)
+			 ON CONFLICT(task_id) DO UPDATE SET title=EXCLUDED.title,message=EXCLUDED.message`, task, reason.Error()); err != nil {
+				return err
+			}
+			metadata := map[string]any{"level": "error", "code": SendAdmissionCode(reason), "contact_id": contact.String(), "sequence_id": sequence.String(), "account_id": mailbox.String(), "task_id": task.String(), "error": reason.Error(), "will_retry": true}
+			if _, err = tx.Exec(ctx, `INSERT INTO campaign_logs(campaign_id,event_type,message,metadata) VALUES($1,'email_failed',$2,$3)`, c, "Send admission denied before worker execution, will retry: "+reason.Error(), metadata); err != nil {
+				return err
+			}
 		}
 	}
 	if lane == "warmup" {

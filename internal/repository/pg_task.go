@@ -465,6 +465,10 @@ func (r *taskRepository) GetEmailTask(ctx context.Context, taskID uuid.UUID) (*E
 const taskDispatchedEmail = `(t.task_type <> 'campaign' OR t.message_id <> '' OR EXISTS (
 		SELECT 1 FROM campaign_contact_progress ccp WHERE ccp.dispatch_task_id = t.id))`
 
+const campaignSendToday = `t.status = 'completed' AND t.task_type = 'campaign'
+	AND (t.completed_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+	AND ` + taskDispatchedEmail
+
 // CountCampaignEmailsSentToday counts the campaign emails a mailbox dispatched
 // today (excludes warmup, and the campaign chain's own wake-ups). Placement
 // test probes count too: they are cold mail from the same daily budget.
@@ -476,10 +480,7 @@ func (r *taskRepository) CountCampaignEmailsSentToday(ctx context.Context, accou
 			SELECT COUNT(*)
 			FROM tasks t
 			WHERE t.email_account_id = $1
-			  AND t.status = 'completed'
-			  AND t.task_type = 'campaign'
-			  AND DATE(t.completed_at) = CURRENT_DATE
-			  AND ` + taskDispatchedEmail + `
+			  AND ` + campaignSendToday + `
 		) + (` + placementSentTodaySQL + ` AND t.email_account_id = $1)
 	`
 
@@ -530,10 +531,7 @@ func (r *taskRepository) CountCampaignEmailsSentTodayByAccounts(ctx context.Cont
 		SELECT t.email_account_id, COUNT(*)
 		FROM tasks t
 		WHERE t.email_account_id = ANY($1)
-		  AND t.status = 'completed'
-		  AND t.task_type = 'campaign'
-		  AND DATE(t.completed_at) = CURRENT_DATE
-		  AND ` + taskDispatchedEmail + `
+		  AND ` + campaignSendToday + `
 		GROUP BY t.email_account_id
 		UNION ALL
 		SELECT t.email_account_id, COUNT(*)
@@ -612,10 +610,7 @@ func (r *taskRepository) CountCampaignSendsTodayBySender(ctx context.Context, ca
 		FROM tasks t
 		JOIN campaign_tasks ct ON ct.task_id = t.id
 		WHERE ct.campaign_id = $1
-		  AND t.status = 'completed'
-		  AND t.task_type = 'campaign'
-		  AND DATE(t.completed_at) = CURRENT_DATE
-		  AND ` + taskDispatchedEmail + `
+		  AND ` + campaignSendToday + `
 		GROUP BY t.email_account_id
 	`
 	rows, err := r.db.Query(ctx, query, campaignID)
