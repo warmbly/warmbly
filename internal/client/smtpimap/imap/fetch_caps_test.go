@@ -87,6 +87,10 @@ func TestFetchEnvelopesAsksModSeqWithCondStore(t *testing.T) {
 		t.Fatalf("SelectForSync: %v", err)
 	}
 	c.condStore.Store(true)
+	selected := *c.selection.Load()
+	selected.modSeq = 1
+	c.selection.Store(&selected)
+	c.syncView = &selected
 
 	// The result is deliberately ignored: this server refuses MODSEQ when
 	// CONDSTORE was not enabled, which is #405's failure reproduced in

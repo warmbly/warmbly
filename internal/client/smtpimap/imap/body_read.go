@@ -3,6 +3,7 @@ package imap
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"io"
 	"mime/quotedprintable"
 	"strconv"
@@ -35,14 +36,14 @@ const maxTextParts = 5
 // bytes back as the HTML body too, so plain text was rendered as markup: line
 // breaks collapsed, "&" showed as an entity, and anything inside angle
 // brackets vanished.
-func fetchTextParts(c *imapclient.Client, uid imap.UID, bs imap.BodyStructure) (plain, html string) {
+func fetchTextParts(c *imapclient.Client, uid imap.UID, bs imap.BodyStructure) (plain, html string, err error) {
 	if bs == nil {
-		return "", ""
+		return "", "", nil
 	}
 
 	wanted := selectTextParts(bs)
 	if len(wanted) == 0 {
-		return "", ""
+		return "", "", nil
 	}
 
 	sections := make([]*imap.FetchItemBodySection, 0, len(wanted))
@@ -56,12 +57,15 @@ func fetchTextParts(c *imapclient.Client, uid imap.UID, bs imap.BodyStructure) (
 		})
 	}
 
-	raw := fetchSections(c, uid, sections)
+	raw, err := fetchSections(c, uid, sections)
+	if err != nil {
+		return "", "", err
+	}
 	var plainParts, htmlParts []string
 	for _, p := range wanted {
 		body, ok := raw[partKey(p.path)]
 		if !ok {
-			continue
+			return "", "", errors.New("imap: required body section missing")
 		}
 		decoded := decodePart(body, p.encoding, p.charset)
 		if p.html {
@@ -72,7 +76,7 @@ func fetchTextParts(c *imapclient.Client, uid imap.UID, bs imap.BodyStructure) (
 	}
 	// Sibling inline parts (a body followed by a disclaimer, say) are pieces of
 	// one message, so they are joined rather than one replacing the other.
-	return strings.Join(plainParts, "\n\n"), strings.Join(htmlParts, "")
+	return strings.Join(plainParts, "\n\n"), strings.Join(htmlParts, ""), nil
 }
 
 // reportPartTypes are the machine-readable parts of a multipart/report. They
@@ -159,16 +163,20 @@ func selectTextParts(bs imap.BodyStructure) []textPart {
 
 // fetchSections runs one FETCH for the given sections and returns each part's
 // raw (still transfer-encoded) bytes, keyed by part path.
-func fetchSections(c *imapclient.Client, uid imap.UID, sections []*imap.FetchItemBodySection) map[string][]byte {
+var errBodyMessageGone = errors.New("imap: body message no longer exists")
+
+func fetchSections(c *imapclient.Client, uid imap.UID, sections []*imap.FetchItemBodySection) (map[string][]byte, error) {
 	out := make(map[string][]byte, len(sections))
 
 	cmd := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{
 		UID:         true,
 		BodySection: sections,
 	})
-	defer cmd.Close()
+	seen := false
+	var readErr error
 
 	for msg := cmd.Next(); msg != nil; msg = cmd.Next() {
+		seen = true
 		for item := msg.Next(); item != nil; item = msg.Next() {
 			v, ok := item.(imapclient.FetchItemDataBodySection)
 			if !ok || v.Literal == nil || v.Section == nil {
@@ -178,13 +186,29 @@ func fetchSections(c *imapclient.Client, uid imap.UID, sections []*imap.FetchIte
 			// Belt and braces alongside the server-side Partial: a server that
 			// ignores the partial range must not be able to stream us an
 			// unbounded body.
-			if _, err := io.Copy(buf, io.LimitReader(v.Literal, int64(config.MaxEmailBodySize))); err != nil {
+			n, err := io.Copy(buf, io.LimitReader(v.Literal, int64(config.MaxEmailBodySize)))
+			if err == nil && n < min(v.Literal.Size(), int64(config.MaxEmailBodySize)) {
+				err = io.ErrUnexpectedEOF
+			}
+			if err != nil {
+				// Stop the decoder before go-imap tries discarding a short literal a second time.
+				_ = c.Close()
+				readErr = err
 				continue
 			}
 			out[partKey(v.Section.Part)] = buf.Bytes()
 		}
 	}
-	return out
+	if err := cmd.Close(); err != nil {
+		return nil, err
+	}
+	if readErr != nil {
+		return nil, readErr
+	}
+	if !seen {
+		return nil, errBodyMessageGone
+	}
+	return out, nil
 }
 
 // partKey renders an IMAP part path ("1", "1.2") so a fetched section can be
