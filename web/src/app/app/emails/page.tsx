@@ -374,7 +374,7 @@ export default function AddressesPage() {
     const sortedEmails = useMemo(() => {
         const list = emailsData.emails ?? [];
         const col = sort && MAILBOX_COLUMNS.find((c) => c.id === sort.by);
-        if (!sort || !col?.sortValue) return tag ? list : groupMailboxes(list, p.user.tags);
+        if (!sort || !col?.sortValue) return groupMailboxes(list, p.user.tags);
         const value = col.sortValue;
         const dir = sort.reverse ? 1 : -1;
         return [...list].sort((a, b) => {
@@ -383,7 +383,7 @@ export default function AddressesPage() {
             if (x === y) return 0;
             return (x > y ? 1 : -1) * dir;
         });
-    }, [emailsData.emails, sort, statusById, tag, p.user.tags]);
+    }, [emailsData.emails, sort, statusById, p.user.tags]);
 
     if (!canView) {
         return <NoAccess feature="email accounts" permissionLabel="Manage mailboxes" />;
