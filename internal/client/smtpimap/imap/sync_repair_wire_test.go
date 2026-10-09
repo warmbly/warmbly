@@ -414,11 +414,35 @@ func TestStartTLSSetupStillRejectsUntrustedCertificate(t *testing.T) {
 	}
 }
 
+type literalReadSignalConn struct {
+	net.Conn
+	ready    chan struct{}
+	sawShort atomic.Bool
+	signaled atomic.Bool
+}
+
+func (c *literalReadSignalConn) Read(p []byte) (int, error) {
+	if c.sawShort.Load() && c.signaled.CompareAndSwap(false, true) {
+		c.ready <- struct{}{}
+	}
+	n, err := c.Conn.Read(p)
+	if strings.Contains(string(p[:n]), "short") {
+		c.sawShort.Store(true)
+	}
+	return n, err
+}
+
 func TestFetchBodyTLSLiteralFailureReleasesDecoderAndRetries(t *testing.T) {
 	var attempts atomic.Int32
+	bodyStarted := make(chan struct{}, 1)
+	literalReadReady := make(chan struct{}, 1)
+	unblockServer := make(chan struct{})
+	defer close(unblockServer)
 	c, _ := bodyRepairFixture(t, func(conn net.Conn, tag string) bool {
 		if attempts.Add(1) == 1 {
 			_, _ = io.WriteString(conn, "* 1 FETCH (UID 1 BODY[1] {13}\r\nshort")
+			bodyStarted <- struct{}{}
+			<-unblockServer
 			return false
 		}
 		_, _ = fmt.Fprintf(conn, "* 1 FETCH (UID 1 BODY[1] {13}\r\ncomplete body)\r\n%s OK body\r\n", tag)
@@ -451,7 +475,7 @@ func TestFetchBodyTLSLiteralFailureReleasesDecoderAndRetries(t *testing.T) {
 			_ = raw.Close()
 			t.Fatal(err)
 		}
-		c.client = imapclient.New(secure, nil)
+		c.client = imapclient.New(&literalReadSignalConn{Conn: secure, ready: literalReadReady}, nil)
 		c.conn = conn
 		c.transport = raw
 		c.selected.Store(false)
@@ -471,6 +495,17 @@ func TestFetchBodyTLSLiteralFailureReleasesDecoderAndRetries(t *testing.T) {
 	}
 	result := make(chan *errx.MailError, 1)
 	go func() { result <- c.FetchBody(fetched[0]) }()
+	select {
+	case <-bodyStarted:
+	case <-time.After(time.Second):
+		t.Fatal("TLS literal did not start")
+	}
+	select {
+	case <-literalReadReady:
+	case <-time.After(time.Second):
+		t.Fatal("TLS literal reader did not block on remaining bytes")
+	}
+	_ = c.transport.Close()
 	select {
 	case err := <-result:
 		if err == nil {
