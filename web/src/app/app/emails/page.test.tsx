@@ -9,7 +9,7 @@ import type AccountStatus from "@/lib/api/models/app/analytics/AccountStatus";
 import AddressesPage from "./page";
 
 const { tags, rows, statusState } = vi.hoisted(() => ({
-    statusState: { data: [] as AccountStatus[], observations: [] as { status: AccountStatus; observedAt: number; current: boolean }[], isLoading: false, isFetching: false, isError: false, cloudLoading: false, cloudUnavailable: false, emailsLoading: false },
+    statusState: { data: [] as AccountStatus[], observations: [] as { status: AccountStatus; observedAt: number; current: boolean }[], isLoading: false, isFetching: false, isError: false, cloudLoading: false, cloudUnavailable: false, emailsLoading: false, emailsError: false, emailsIncomplete: false },
     tags: [
         { id: "sending", title: "Sending account", color: "#0088cc", position: 0 },
         { id: "serveblink", title: "Serveblink.com", color: "#008800", position: 1 },
@@ -30,7 +30,7 @@ vi.mock("@/hooks/context/user", async (original) => ({
 vi.mock("@/hooks/context/confirm", () => ({ useConfirm: () => ({ show: vi.fn() }) }));
 vi.mock("@/hooks/usePermission", () => ({ usePermission: () => true }));
 vi.mock("@/lib/api/hooks/app/emails/useEmails", () => ({
-    default: ({ tag }: { tag: string }) => ({ emails: statusState.emailsLoading ? [] : tag ? rows.filter((row) => row.tags.includes(tag)) : rows, isLoading: statusState.emailsLoading, isPending: statusState.emailsLoading }),
+    default: ({ tag }: { tag: string }) => ({ emails: statusState.emailsLoading || statusState.emailsError ? [] : tag ? rows.filter((row) => row.tags.includes(tag)) : rows, isLoading: statusState.emailsLoading, isPending: statusState.emailsLoading, isError: statusState.emailsError || statusState.emailsIncomplete, isIncomplete: statusState.emailsIncomplete, refetch: vi.fn() }),
 }));
 vi.mock("@/lib/api/hooks/app/analytics/useAccountStatuses", () => ({ default: () => statusState }));
 vi.mock("@/lib/api/hooks/app/subscription/useFeatureStatus", () => ({ default: () => ({ data: { can_use_warmup: true } }) }));
@@ -149,6 +149,8 @@ describe("mailbox status while account and Cloud checks settle", () => {
         statusState.cloudLoading = false;
         statusState.cloudUnavailable = false;
         statusState.emailsLoading = false;
+        statusState.emailsError = false;
+        statusState.emailsIncomplete = false;
     });
     afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -157,6 +159,22 @@ describe("mailbox status while account and Cloud checks settle", () => {
         await renderPage();
         expect(screen.getAllByText("Checking…").length).toBeGreaterThanOrEqual(4);
         expect(screen.queryByText("Healthy 100")).not.toBeInTheDocument();
+    });
+
+    it("shows failed or partial mailbox inventory as unavailable rather than measured zeros", async () => {
+        statusState.emailsError = true;
+        await renderPage();
+        expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(4);
+        expect(screen.getAllByText("Mailboxes unavailable").length).toBeGreaterThan(0);
+        expect(screen.queryByText("No email accounts yet")).not.toBeInTheDocument();
+        expect(screen.queryByText("0 mailboxes")).not.toBeInTheDocument();
+        cleanup();
+
+        statusState.emailsError = false;
+        statusState.emailsIncomplete = true;
+        statusState.data = rows.map(measuredStatus);
+        await renderPage();
+        expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(4);
     });
 
     it("does not show Idle or Healthy while Cloud and account status are loading, then shows the real error", async () => {

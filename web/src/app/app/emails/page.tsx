@@ -206,7 +206,8 @@ export default function AddressesPage() {
         const row = cloud.rowFor(box.id);
         return row?.enrolled && !row.cloud?.health;
     });
-    const statusUnavailable = cloud.unavailable || cloudStandingUnavailable || statuses.isError || (!statusChecking && visibleEmailIds.some((id) => !statusById.has(id)));
+    const inventoryUnavailable = !emailsData.isLoading && (emailsData.isError || emailsData.isIncomplete);
+    const statusUnavailable = inventoryUnavailable || cloud.unavailable || cloudStandingUnavailable || statuses.isError || (!statusChecking && visibleEmailIds.some((id) => !statusById.has(id)));
     const [lastReportedIssues, setLastReportedIssues] = React.useState<Map<string, { status: AccountStatus; observedAt: number }>>(new Map());
     useEffect(() => {
         setLastReportedIssues((previous) => {
@@ -443,7 +444,9 @@ export default function AddressesPage() {
                 subtitle={
                     emailsData.isPending
                         ? "Loading…"
-                        : `${stats.total.toLocaleString()}${emailsData.isLoadingRest || emailsData.isIncomplete ? "+" : ""} mailbox${stats.total === 1 ? "" : "es"}`
+                        : emailsData.isError && emailsData.emails.length === 0
+                          ? "Mailboxes unavailable"
+                          : `${stats.total.toLocaleString()}${emailsData.isLoadingRest || emailsData.isIncomplete ? "+" : ""} mailbox${stats.total === 1 ? "" : "es"}`
                 }
             >
                 <MailboxImportsMenu />
@@ -459,7 +462,7 @@ export default function AddressesPage() {
             </PageTopbar>
 
             <StatStrip cols={4}>
-                <Stat label="Total" value={emailsData.isLoading ? "Checking…" : <AnimatedNumber value={stats.total} />} sub="connected" />
+                <Stat label="Total" value={emailsData.isLoading ? "Checking…" : inventoryUnavailable ? "Unavailable" : <AnimatedNumber value={stats.total} />} sub="connected" />
                 <Stat label="Healthy" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.healthy} />} sub="no reported health issues" accent={!statusChecking && !statusUnavailable && stats.healthy > 0} />
                 <Stat label="Warming" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.warming} />} sub="ramping up" />
                 <Stat label="Needs attention" value={statusChecking ? "Checking…" : statusUnavailable ? "Unavailable" : <AnimatedNumber value={stats.issues} />} sub="paused or failing" last />
@@ -540,6 +543,16 @@ export default function AddressesPage() {
                             </div>
                         ))}
                     </div>
+                ) : emailsData.isError && emailsData.emails.length === 0 ? (
+                    <EmptyBlock
+                        title="Mailboxes unavailable"
+                        body="The mailbox list could not be loaded, so no counts are shown."
+                        cta={
+                            <TopbarAction onClick={() => void emailsData.refetch()}>
+                                Try again
+                            </TopbarAction>
+                        }
+                    />
                 ) : !emailsData.emails || emailsData.emails.length === 0 ? (
                     cloud.selfHosted || authConfigLoading ? (
                     <EmptyBlock
