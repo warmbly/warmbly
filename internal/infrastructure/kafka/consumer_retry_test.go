@@ -80,6 +80,32 @@ func TestConsumerRetriesFailedRecordBeforeLaterOffsets(t *testing.T) {
 	}
 }
 
+func TestConsumerRetryBudgetAllowsUnattemptedSendResultBeforeLaterReload(t *testing.T) {
+	first := &ckf.Message{TopicPartition: ckf.TopicPartition{Partition: 0, Offset: 10}}
+	next := &ckf.Message{TopicPartition: ckf.TopicPartition{Partition: 0, Offset: 11}}
+	c := &orderedConsumer{queue: []*ckf.Message{first, next}}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	attempts := 0
+	err := (&Consumer{c: c}).Consume(ctx, func(msg *ckf.Message) error {
+		if msg == first {
+			attempts++
+			if attempts < 5 {
+				return errors.New("mailbox not loaded")
+			}
+			return nil
+		}
+		if len(c.stored) != 1 || c.stored[0] != 10 || attempts != 5 {
+			t.Fatal("reload ran before resolving the unattempted send")
+		}
+		cancel()
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) || attempts != 5 || len(c.stored) != 2 {
+		t.Fatalf("attempts=%d stored=%v err=%v", attempts, c.stored, err)
+	}
+}
+
 func TestConsumerFailureCancellationNeverStoresOffset(t *testing.T) {
 	c := &orderedConsumer{queue: []*ckf.Message{{}}}
 	ctx, cancel := context.WithCancel(context.Background())

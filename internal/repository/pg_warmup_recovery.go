@@ -107,7 +107,10 @@ func (r *warmupRecoveryRepository) EnqueueFiling(ctx context.Context, action mod
 }
 
 func (r *warmupRecoveryRepository) ClaimFilings(ctx context.Context, limit int) ([]models.WarmupEmailAction, error) {
-	rows, err := r.db.Query(ctx, `UPDATE warmup_pending_filings SET next_attempt_at = NOW() + INTERVAL '5 minutes'
+	rows, err := r.db.Query(ctx, `UPDATE warmup_pending_filings SET next_attempt_at = NOW() + CASE
+		  WHEN created_at > NOW() - INTERVAL '20 minutes' THEN INTERVAL '5 minutes'
+		  WHEN created_at > NOW() - INTERVAL '1 hour' THEN INTERVAL '15 minutes'
+		  ELSE INTERVAL '30 minutes' END
 		WHERE id IN (SELECT f.id FROM warmup_pending_filings f
 		  JOIN email_accounts a ON a.id = f.email_account_id
 		  WHERE f.next_attempt_at <= NOW() AND a.worker_id IS NOT NULL

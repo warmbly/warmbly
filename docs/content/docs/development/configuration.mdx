@@ -311,6 +311,8 @@ On `filesystem`, a remote worker writes blobs to its own disk rather than a volu
 | `PUBSUB_ENABLED` | `false` uses the Redis bridge for realtime fanout, `true` uses Google Pub/Sub | `false` | yes |
 | `GCP_PROJECT_ID` | Project when `PUBSUB_ENABLED=true` | unset | yes |
 
+Kafka event publication waits for the broker's delivery report with all in-sync replica acknowledgements, bounded by the caller's deadline and `EVENTBUS_HANDLER_TIMEOUT`. Local queue admission is not evidence of publication. A rejected or timed-out result keeps the original command unacknowledged for replay; a timeout does not prove the event was never delivered, so consumers still deduplicate replayed outcomes. Generic producer events are drained separately through shutdown, without consuming a publication's independent delivery report.
+
 <Callout title="Topics are created by the bus, not by hand">
 A worker's command topic is named after the node id issued when it joined, so the set of topics is not knowable in advance. The Kafka backend creates what it uses, once per topic per process, rather than depending on the broker's `auto.create.topics.enable`, which is off by default on Confluent Cloud and configurable only on Dedicated clusters, not on Basic, Standard, Enterprise or Freight. The credential therefore needs `CREATE` on topics as well as read and write.
 </Callout>
@@ -436,6 +438,7 @@ Keep the copies private. GeoLite2 may not be redistributed, which is also why no
 | `WORKER_BIND_IP` | Source address to bind outbound connections to, and the seed for a derived `WORKER_ID` | unset | yes |
 | `WORKER_PUBLIC_IP` | Public IPv4 reported by the worker, never replaced by the backend-observed address, which may be a reverse proxy. Otherwise the node discovers HTTPS egress IPv4 using `api.ipify.org` every ten minutes. Set this explicitly when mail and HTTPS have different egress routes | detected | yes |
 | `WARMBLY_WORKER_CAPACITY` | Assigned-mailbox planning target for this worker. This guides placement and is not a mailbox-provider send limit | `100` | yes |
+| `WORKER_COMMAND_CONCURRENCY` | Kafka worker command lanes, from `1` to `64`. Commands are grouped by the mailbox in the payload, including older task-keyed sends. Each mailbox stays in order; independent lanes run concurrently. NATS remains serial. Invalid values use the default | `8` | yes |
 | `WARMBLY_NODE_REGION` | Free-form label for where this node egresses from, e.g. `eu-central`. Placement prefers a worker near where a mailbox's provider expects sign-ins; unset scores neutral. Written by the join script from `--region` | unset | yes |
 | `ENCRYPTED_KEYS_BACKEND_URL` | Backend base the worker fetches organization keys from | unset | yes |
 | `ENCRYPTED_KEYS_WORKER_TOKEN` | The worker's copy of `INTERNAL_API_TOKEN` | unset | yes |

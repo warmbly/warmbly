@@ -7,8 +7,38 @@ import (
 	"errors"
 	"testing"
 
+	ckf "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/warmbly/warmbly/internal/infrastructure/kafka"
 )
+
+func TestKafkaHandlerCountsIndependentRetriesUntilPreparationCanResolve(t *testing.T) {
+	first, other := &ckf.Message{}, &ckf.Message{}
+	var seen []int
+	deliver := kafkaHandler(t.Context(), func(_ context.Context, msg Message) error {
+		seen = append(seen, msg.Attempt)
+		if !msg.Redelivers {
+			t.Fatal("retry delivery was not marked")
+		}
+		if msg.Attempt < 5 {
+			return errors.New("mailbox not loaded")
+		}
+		return nil
+	})
+	for attempt := 1; attempt <= 5; attempt++ {
+		err := deliver(first)
+		if (err == nil) != (attempt == 5) || seen[len(seen)-1] != attempt {
+			t.Fatalf("attempt=%d seen=%v err=%v", attempt, seen, err)
+		}
+		if attempt == 3 {
+			if err := deliver(other); err == nil || seen[len(seen)-1] != 1 {
+				t.Fatal("another mailbox inherited retry state")
+			}
+		}
+	}
+	if err := deliver(first); err == nil || seen[len(seen)-1] != 1 {
+		t.Fatal("successful delivery retained retry state")
+	}
+}
 
 func TestKafkaSubscriptionReopensAfterFailureOrUnexpectedExit(t *testing.T) {
 	for _, failure := range []error{errors.New("offset assignment lost"), nil} {
@@ -38,7 +68,7 @@ func TestKafkaSubscriptionRetiresClientsBeforeReopening(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	for i := 0; i < 3; i++ {
-		if err := b.subscribeOnce(ctx, []string{"sync-test"}, "sync-test", func(context.Context, Message) error { return nil }); !errors.Is(err, context.Canceled) {
+		if err := b.subscribeOnce(ctx, []string{"sync-test"}, "sync-test", 1, nil, func(context.Context, Message) error { return nil }); !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
 		b.mu.Lock()
