@@ -173,28 +173,29 @@ func calculateFirstSlotTomorrowAt(timezone, startTime string) time.Time {
 	return finalSlot(firstSlot.Add(time.Minute * time.Duration(jitter)))
 }
 
-// humanizeSeconds randomises the sub-minute component of a scheduled time. All
-// jitter above is minute-granular and every time.Date construction lands on
-// second :00, so without this the whole platform sends at second zero — a
-// fleet-wide fingerprint in Received headers. Applied as the last step of the
-// schedulers.
-//
-// It truncates DOWN to the minute before re-randomising, so on its own it can
-// move a slot up to 59 seconds EARLIER. Callers that are producing a real
-// scheduled_at must therefore use finalSlot, which clamps afterwards; this
-// helper deliberately stays a pure formatter.
+// humanizeSeconds moves a slot sitting on second :00 (every time.Date build and
+// minute-granular jitter) 1-59s later, so the fleet never sends at second zero.
+// A slot already off :00 keeps its exact time and the pacing that produced it.
 func humanizeSeconds(t time.Time) time.Time {
-	return t.Truncate(time.Minute).Add(time.Duration(rand.Intn(60)) * time.Second)
+	if t.Second() != 0 {
+		return t
+	}
+	return t.Add(time.Duration(1+rand.Intn(59)) * time.Second)
 }
 
-// finalSlot is the last thing a scheduler does to a candidate: randomise its
-// sub-minute component, then guarantee the result is still in the future.
-//
-// Both halves matter. Without the randomisation the whole fleet sends at second
-// :00, which is a fingerprint in Received headers. Without the clamp, that same
-// randomisation — plus the symmetric jitter each scheduler applies — can land a
-// near-term send in the past, where it fires immediately with none of the
-// spacing it was placed with, or gets cancelled outright by the overdue sweep.
+// poolSendInterval is a campaign chain's gap to its next send: the window left
+// over the pool's budget left, varied 0.55-1.45x by draw so sends come in bursts
+// and lulls. The floor is the pool's spacing (one mailbox gap over the pool
+// size), never the chosen mailbox's, whose own gap STEP 10 enforces.
+func poolSendInterval(remainingMinutes, remainingEmails, gapSeconds, poolSize int, draw float64) time.Duration {
+	perSend := float64(remainingMinutes) / float64(max(1, remainingEmails))
+	interval := time.Duration(perSend * (0.55 + draw*0.9) * float64(time.Minute))
+	floor := time.Second * time.Duration(gapSeconds) / time.Duration(max(1, poolSize))
+	return max(interval, floor)
+}
+
+// finalSlot is the last thing a scheduler does to a candidate: take it off
+// second :00, then clamp a slot the jitter left in the past to the near future.
 func finalSlot(t time.Time) time.Time {
 	return notBefore(humanizeSeconds(t))
 }

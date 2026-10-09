@@ -280,7 +280,7 @@ A step whose turn comes while the window is shut waits for the next one; it is n
 
 Within a window Warmbly spreads the day's emails evenly, adds random jitter, and rounds to natural send times so nothing arrives in obvious bursts. A mailbox with its own timezone is also kept inside its local business hours (`8am` to `8pm`).
 
-The spread covers every mailbox on the campaign, not one at a time: the day's remaining capacity across the whole sending pool is paced across the hours left in the window. Adding a second healthy mailbox roughly doubles how fast a campaign works through its leads, while each mailbox still stays inside its own daily cap, hourly ceiling and minimum gap.
+The spread covers every mailbox on the campaign, not one at a time: the day's remaining capacity across the whole sending pool is paced across the hours left in the window. Adding a second healthy mailbox roughly doubles how fast a campaign works through its leads, while each mailbox still stays inside its own daily cap, hourly ceiling and minimum gap. This holds for large pools too: a single campaign can use the whole daily capacity of a hundred mailboxes, sending several emails a minute across them when the window calls for it, so there is no need to split one sequence across several campaigns to reach it.
 
 The spacing sits between sends, never in front of the first one. A campaign you start (or resume) with a lead due sends that lead as soon as one of its mailboxes can (inside the sending window, under its daily cap and past its minimum gap), and the paced gap only begins once that email has gone.
 
