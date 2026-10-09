@@ -25,6 +25,7 @@ export interface Acquisition {
 // every ad platform and email tool already emits, so nothing has to be taught
 // a Warmbly-specific parameter.
 export const UTM_PARAMS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"] as const;
+const ACQUISITION_PARAMS = [...UTM_PARAMS, "wb_lp", "wb_ref"] as const;
 
 // Values are clamped here as well as on the server, so a hand-edited link
 // cannot make the signup request enormous.
@@ -36,8 +37,17 @@ function clamp(value: string | null): string | undefined {
     return trimmed || undefined;
 }
 
-// readAcquisition reads the current URL. Returns an empty object for a direct
-// visit, which is most of them, and the backend then stores nothing.
+export function acquisitionSearch(search: string): Record<string, string> {
+    const params = new URLSearchParams(search);
+    const result: Record<string, string> = {};
+    for (const name of ACQUISITION_PARAMS) {
+        const value = clamp(params.get(name));
+        if (value) result[name] = value;
+    }
+    return result;
+}
+
+// Unknown visits with no acquisition data write nothing on the backend.
 export function readAcquisition(search: string = window.location.search): Acquisition {
     const params = new URLSearchParams(search);
     const acquisition: Acquisition = {};
@@ -51,16 +61,22 @@ export function readAcquisition(search: string = window.location.search): Acquis
     // clicked through. Only a path is accepted: a full URL would carry the
     // referring page's own query string, which is not ours to store.
     const landing = clamp(params.get("wb_lp"));
-    if (landing && landing.startsWith("/")) acquisition.landing_path = landing;
+    if (landing?.startsWith("/") && !landing.startsWith("//")) {
+        try {
+            const url = new URL(landing, window.location.origin);
+            if (url.origin === window.location.origin) acquisition.landing_path = url.pathname;
+        } catch { /* Invalid landing paths carry no attribution. */ }
+    }
 
     // The referrer is reduced to a bare host for the same reason.
-    const referrer = clamp(params.get("wb_ref")) ?? hostOf(document.referrer);
+    const forwarded = clamp(params.get("wb_ref"));
+    const referrer = (forwarded ? hostOf(forwarded) : undefined) ?? hostOf(document.referrer);
     if (referrer) acquisition.referrer_host = referrer;
 
     return acquisition;
 }
 
-// isEmpty reports a direct visit, so the caller can omit the field entirely.
+// Omit the field entirely when no acquisition data is available.
 export function isEmpty(acquisition: Acquisition): boolean {
     return Object.keys(acquisition).length === 0;
 }
@@ -68,9 +84,9 @@ export function isEmpty(acquisition: Acquisition): boolean {
 function hostOf(url: string): string | undefined {
     if (!url) return undefined;
     try {
-        const host = new URL(url).hostname.toLowerCase();
+        const host = new URL(url.includes("://") ? url : `https://${url}`).hostname.toLowerCase();
         // Our own origin is not a referral.
-        return host === window.location.hostname ? undefined : host;
+        return host === window.location.hostname || host === "warmbly.com" || host.endsWith(".warmbly.com") ? undefined : host;
     } catch {
         return undefined;
     }

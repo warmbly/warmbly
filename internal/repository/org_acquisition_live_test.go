@@ -7,10 +7,7 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// Acquisition is written once at signup and read back through the admin org
-// list, which means a LEFT JOIN, four extra scanned columns and three new
-// filters. None of that is exercised by a unit test, so it is checked here
-// against a real schema.
+// Acquisition round-trips through signup and admin queries against a real schema.
 //
 //	WARMBLY_TEST_DB=postgres://warmbly:warmbly@localhost:15432/warmbly_dev?sslmode=disable \
 //	  go test ./internal/repository/ -run LiveOrgAcquisition -v
@@ -120,7 +117,9 @@ func TestLiveOrgAcquisitionSurfacesInTheAdminList(t *testing.T) {
 	if item.UTMSource != nil {
 		t.Errorf("utm_source = %v for an org with no acquisition row, want nil", *item.UTMSource)
 	}
-	// It counts as a direct signup and not as a tagged one.
+	if item.ReferrerHost != nil {
+		t.Errorf("referrer_host = %v for an org with no acquisition row, want nil", *item.ReferrerHost)
+	}
 	if find(t, &models.AdminOrgSearch{NoAcquisition: true}) == nil {
 		t.Error("an org with no acquisition row should match no_acquisition")
 	}
@@ -132,6 +131,7 @@ func TestLiveOrgAcquisitionSurfacesInTheAdminList(t *testing.T) {
 		OrganizationID: f.org,
 		UTMSource:      "newsletter",
 		UTMMedium:      "email",
+		ReferrerHost:   "newsletter.example",
 		LandingPath:    "/pricing",
 	}); err != nil {
 		t.Fatalf("RecordOrganizationAcquisition: %v", err)
@@ -149,6 +149,25 @@ func TestLiveOrgAcquisitionSurfacesInTheAdminList(t *testing.T) {
 	}
 	if item.LandingPath == nil || *item.LandingPath != "/pricing" {
 		t.Errorf("landing_path = %v, want /pricing", item.LandingPath)
+	}
+	if item.ReferrerHost == nil || *item.ReferrerHost != "newsletter.example" {
+		t.Errorf("referrer_host = %v, want newsletter.example", item.ReferrerHost)
+	}
+	detail, err := repo.GetOrganizationAdminDetail(ctx, f.org)
+	if err != nil {
+		t.Fatalf("GetOrganizationAdminDetail: %v", err)
+	}
+	if detail.ReferrerHost == nil || *detail.ReferrerHost != "newsletter.example" {
+		t.Errorf("detail referrer_host = %v, want newsletter.example", detail.ReferrerHost)
+	}
+	if find(t, &models.AdminOrgSearch{ReferrerHost: "newsletter.example"}) == nil {
+		t.Error("filtering by the saved referrer did not find the org")
+	}
+	if find(t, &models.AdminOrgSearch{ReferrerHost: "www.google.com"}) != nil {
+		t.Error("filtering by another referrer still found the org")
+	}
+	if find(t, &models.AdminOrgSearch{ReferrerHost: "newsletter.example' OR TRUE --"}) != nil {
+		t.Error("referrer filter should treat SQL syntax as a literal host")
 	}
 	// The join must not duplicate the row.
 	if item.MemberCount != 1 {
@@ -178,4 +197,30 @@ func TestLiveOrgAcquisitionSurfacesInTheAdminList(t *testing.T) {
 			t.Errorf("cleanup acquisition: %v", err)
 		}
 	})
+}
+
+func TestLiveOrgAcquisitionReferrerOnly(t *testing.T) {
+	_, pool := liveContactDB(t)
+	ctx := context.Background()
+	f := newAdminFixture(t, pool)
+	repo := NewOrganizationRepository(pool)
+	if err := repo.RecordOrganizationAcquisition(ctx, &models.OrgAcquisition{
+		OrganizationID: f.org,
+		ReferrerHost:   "www.google.com",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := repo.SearchOrganizationsForAdmin(ctx, &models.AdminOrgSearch{
+		Query: f.tag, ReferrerHost: "www.google.com", HasAcquisition: true, Limit: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Data) != 1 {
+		t.Fatalf("referrer-only filter matched %d rows, want 1", len(result.Data))
+	}
+	item := result.Data[0]
+	if item.ReferrerHost == nil || *item.ReferrerHost != "www.google.com" || item.UTMSource != nil {
+		t.Fatalf("referrer-only attribution = %+v", item)
+	}
 }

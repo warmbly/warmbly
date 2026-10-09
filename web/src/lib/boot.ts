@@ -4,6 +4,7 @@ import { isRedirect, redirect } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 
 import getToken from "./helper/getToken";
+import { acquisitionSearch } from "./acquisition";
 import { clearClientSession } from "./session";
 import { AuthError } from "./errors/auth";
 import type { AppError } from "./api/client/normalizeError";
@@ -41,9 +42,14 @@ function isAuthFailure(err: unknown): boolean {
 
 export function requireDashboardToken(location: { pathname: string; href: string }) {
     if (getToken()) return;
+    redirectToLogin(location);
+}
+
+function redirectToLogin(location: { pathname: string; href: string }) {
     // A Slack link code is single-use and short-lived, so it survives sign-in.
     const next = location.pathname === "/app/slack/link" ? location.href : undefined;
-    throw redirect({ to: "/auth/login", search: next ? { next } : {}, replace: true });
+    const search = acquisitionSearch(new URL(location.href, window.location.origin).search);
+    throw redirect({ to: "/auth/login", search: next ? { ...search, next } : search, replace: true });
 }
 
 /** Resolves once the dashboard session is ready; page loaders await it before org-scoped fetches. */
@@ -53,14 +59,14 @@ export function dashboardReady(): Promise<void> {
 
 export async function bootDashboard(queryClient: QueryClient, location: { pathname: string; href: string }) {
     requireDashboardToken(location);
-    boot ??= runBoot(queryClient).catch((err) => {
+    boot ??= runBoot(queryClient, location).catch((err) => {
         boot = null;
         throw err;
     });
     await boot;
 }
 
-async function runBoot(queryClient: QueryClient) {
+async function runBoot(queryClient: QueryClient, location: { pathname: string; href: string }) {
     const store = useAppStore.getState();
     const remembered = store.currentOrganization;
 
@@ -101,7 +107,7 @@ async function runBoot(queryClient: QueryClient) {
     } catch (err) {
         if (isAuthFailure(err)) {
             clearClientSession(queryClient);
-            throw redirect({ to: "/auth/login", replace: true });
+            redirectToLogin(location);
         }
         if (isRedirect(err)) throw err;
         // Anything else is shown by the providers' error states, and the next navigation boots again.
