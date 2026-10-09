@@ -16,8 +16,8 @@ import (
 // Every minute-of-day value below is minutes since LOCAL midnight in the
 // mailbox's own timezone (email_accounts.timezone).
 const (
-	BehaviorDailyLimitMinDefault = 30
-	BehaviorDailyLimitMaxDefault = 45
+	BehaviorDailyLimitMinDefault = 28
+	BehaviorDailyLimitMaxDefault = 32
 	BehaviorDailyLimitFloor      = 1
 	BehaviorDailyLimitCeiling    = 500
 

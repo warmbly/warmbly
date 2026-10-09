@@ -915,15 +915,16 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 				}
 			}
 		}
+		failureCode := campaignDispatchFailureCode(err)
 		s.taskRepo.RecordTaskFailure(ctx, taskID, "Send failed", err.Error())
 		if s.campaignLogRepo != nil {
 			s.campaignLogRepo.CreateLog(ctx, &repository.CampaignLogEntry{
 				CampaignID: campaign.ID,
 				EventType:  "email_failed",
-				Message:    fmt.Sprintf("Could not hand %s's email to a sending worker, will retry: %s", contact.Email, err.Error()),
+				Message:    fmt.Sprintf("Could not dispatch %s's email, will retry: %s", contact.Email, err.Error()),
 				Metadata: map[string]interface{}{
 					"level":       "error",
-					"code":        "WORKER_UNAVAILABLE",
+					"code":        failureCode,
 					"contact_id":  contact.ID.String(),
 					"sequence_id": sequence.ID.String(),
 					"account_id":  account.ID.String(),
@@ -938,6 +939,7 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 				"campaign_id": campaign.ID.String(),
 				"contact_id":  contact.ID.String(),
 				"error":       err.Error(),
+				"code":        failureCode,
 			})
 
 			s.streamingPublisher.PublishTaskProgress(ctx, s.sendProgress(ctx, campaign, taskID, contact, sequence, "failed", processedCount, totalEmails, totalContacts))
@@ -1078,6 +1080,20 @@ func (s *tasksService) HandleCampaignTask(task *proto.ProcessTask) (result *errx
 
 	executionStatus = "completed"
 	return nil
+}
+
+func campaignDispatchFailureCode(err error) string {
+	if code := repository.SendAdmissionCode(err); code != "" {
+		return code
+	}
+	switch {
+	case errors.Is(err, ErrWorkerOffline), errors.Is(err, ErrWorkerUnconfirmed):
+		return "WORKER_UNAVAILABLE"
+	case errors.Is(err, ErrSendDispatchUnknown):
+		return "SEND_DISPATCH_UNKNOWN"
+	default:
+		return "SEND_FAILED"
+	}
 }
 
 // threadParent resolves the email this step should be sent as a reply to, or

@@ -45,7 +45,7 @@ describe("SendingBehaviorTab on the fixed schedule", () => {
         mount();
         await screen.findByText("Fixed schedule");
 
-        expect(screen.getByText(/nothing below applies/i)).toBeTruthy();
+        expect(screen.getByText(/this mailbox uses its fixed cap/i)).toBeTruthy();
         // A plain button (weekday cell) and a spinbutton (a range bound): both
         // inherit their disabled state from the fieldset alone.
         expect(screen.getByTitle("Mon")).toBeDisabled();
@@ -60,8 +60,8 @@ describe("SendingBehaviorTab on the fixed schedule", () => {
 
         fireEvent.click(profileToggle());
 
-        await waitFor(() => expect(screen.getByText("Sending like a person")).toBeTruthy());
-        expect(screen.queryByText(/nothing below applies/i)).toBeNull();
+        await waitFor(() => expect(screen.getByText("Variable sending plan")).toBeTruthy());
+        expect(screen.queryByText(/this mailbox uses its fixed cap/i)).toBeNull();
         expect(screen.getByTitle("Mon")).not.toBeDisabled();
         expect(screen.getAllByRole("spinbutton")[0]).not.toBeDisabled();
     });

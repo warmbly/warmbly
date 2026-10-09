@@ -11,6 +11,27 @@ import (
 
 var testAccount = uuid.MustParse("6f1b1c4e-2b7a-4a1e-9d0e-2f3a4b5c6d7e")
 
+func TestDefaultPlanIsAroundThirtyAndStable(t *testing.T) {
+	b := models.DefaultSendingBehavior(testAccount)
+	if b.Enabled || b.DailyLimitMin != 28 || b.DailyLimitMax != 32 {
+		t.Fatalf("legacy fallback or recommended range changed: %+v", b)
+	}
+	b.Weekdays = models.BehaviorWeekdaysAll
+	seen := map[int]bool{}
+	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 365 {
+		date := start.AddDate(0, 0, i)
+		plan := RollPlan(b, date)
+		if plan.DailyLimit < 28 || plan.DailyLimit > 32 || plan.DailyLimit != RollPlan(b, date).DailyLimit {
+			t.Fatalf("daily target out of range or unstable: %+v", plan)
+		}
+		seen[plan.DailyLimit] = true
+	}
+	if len(seen) != 5 {
+		t.Fatalf("range was clipped instead of varying: %v", seen)
+	}
+}
+
 func profile() models.SendingBehavior {
 	b := models.DefaultSendingBehavior(testAccount)
 	b.Enabled = true

@@ -2,8 +2,67 @@ package tasks
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/warmbly/warmbly/internal/repository"
 )
+
+func TestCampaignDispatchFailureCode(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		code string
+	}{
+		{repository.ErrCampaignDailyLimit, "CAMPAIGN_DAILY_LIMIT_REACHED"},
+		{repository.ErrMailboxSendingPlan, "MAILBOX_SENDING_PLAN_DENIED"},
+		{repository.ErrSendAdmissionDenied, "SEND_ADMISSION_DENIED"},
+		{ErrWorkerOffline, "WORKER_UNAVAILABLE"},
+		{ErrWorkerUnconfirmed, "WORKER_UNAVAILABLE"},
+		{ErrSendDispatchUnknown, "SEND_DISPATCH_UNKNOWN"},
+		{errors.New("publish failed"), "SEND_FAILED"},
+	} {
+		t.Run(tc.code+"/"+tc.err.Error(), func(t *testing.T) {
+			if got := campaignDispatchFailureCode(fmt.Errorf("dispatch: %w", tc.err)); got != tc.code {
+				t.Fatalf("got %s, want %s", got, tc.code)
+			}
+		})
+	}
+}
+
+func TestLiveCampaignAdmissionFailureReleasesReservationWithoutAnAttempt(t *testing.T) {
+	for _, denied := range []error{repository.ErrCampaignDailyLimit, repository.ErrMailboxSendingPlan, repository.ErrSendAdmissionDenied} {
+		t.Run(denied.Error(), func(t *testing.T) {
+			f := newSendFixture(t)
+			f.sender.fail = fmt.Errorf("dispatch: %w", denied)
+			id := f.tick(t)
+			var code, message string
+			if err := f.pool.QueryRow(t.Context(), `SELECT metadata->>'code' FROM campaign_logs WHERE campaign_id=$1 AND event_type='email_failed' ORDER BY created_at DESC LIMIT 1`, f.campaign).Scan(&code); err != nil || code != campaignDispatchFailureCode(denied) {
+				t.Fatalf("admission mislabeled as a worker outage: %s %v", code, err)
+			}
+			if err := f.pool.QueryRow(t.Context(), `SELECT message FROM task_failures WHERE task_id=$1`, id).Scan(&message); err != nil || !strings.Contains(message, denied.Error()) {
+				t.Fatalf("task failure lost admission reason: %s %v", message, err)
+			}
+			var reserved, bound bool
+			var attempts, sends, leads int
+			if err := f.pool.QueryRow(t.Context(), `SELECT dispatched_at IS NOT NULL OR dispatch_task_id IS NOT NULL,send_attempts FROM campaign_contact_progress WHERE campaign_id=$1 AND contact_id=$2 AND sequence_id=$3`, f.campaign, f.leadA, f.step).Scan(&reserved, &attempts); err != nil || reserved || attempts != 0 {
+				t.Fatalf("denied handoff kept reservation or spent an attempt: %v %d %v", reserved, attempts, err)
+			}
+			if err := f.pool.QueryRow(t.Context(), `SELECT email_account_id IS NOT NULL FROM campaign_leads WHERE campaign_id=$1 AND contact_id=$2`, f.campaign, f.leadA).Scan(&bound); err != nil || bound {
+				t.Fatalf("denied handoff kept mailbox binding: %v %v", bound, err)
+			}
+			if err := f.pool.QueryRow(t.Context(), `SELECT emails_sent,new_leads_started FROM campaign_daily_sends WHERE campaign_id=$1 AND send_date=CURRENT_DATE`, f.campaign).Scan(&sends, &leads); err != nil || sends != 0 || leads != 0 {
+				t.Fatalf("denied handoff spent a daily reservation: %d %d %v", sends, leads, err)
+			}
+			f.sender.fail = nil
+			f.tick(t)
+			if f.sender.count() != 1 {
+				t.Fatal("released lead could not be retried")
+			}
+		})
+	}
+}
 
 // End-to-end checks for issue #306 over the real campaign tick: the chain's
 // own wake-ups (a deferral, a pause) must not spend the mailbox's daily

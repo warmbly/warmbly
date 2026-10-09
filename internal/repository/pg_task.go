@@ -469,6 +469,10 @@ func (r *taskRepository) GetEmailTask(ctx context.Context, taskID uuid.UUID) (*E
 const taskDispatchedEmail = `(t.task_type <> 'campaign' OR t.message_id <> '' OR EXISTS (
 		SELECT 1 FROM campaign_contact_progress ccp WHERE ccp.dispatch_task_id = t.id))`
 
+const campaignSendToday = `t.status = 'completed' AND t.task_type = 'campaign'
+	AND (t.completed_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+	AND ` + taskDispatchedEmail
+
 // CountCampaignEmailsSentToday counts the campaign emails a mailbox dispatched
 // today (excludes warmup, and the campaign chain's own wake-ups). Placement
 // test probes count too: they are cold mail from the same daily budget.
@@ -480,10 +484,7 @@ func (r *taskRepository) CountCampaignEmailsSentToday(ctx context.Context, accou
 			SELECT COUNT(*)
 			FROM tasks t
 			WHERE t.email_account_id = $1
-			  AND t.status = 'completed'
-			  AND t.task_type = 'campaign'
-			  AND DATE(t.completed_at) = CURRENT_DATE
-			  AND ` + taskDispatchedEmail + `
+			  AND ` + campaignSendToday + `
 		) + (` + placementSentTodaySQL + ` AND t.email_account_id = $1)
 	`
 
@@ -534,18 +535,13 @@ func (r *taskRepository) CountCampaignEmailsSentTodayByAccounts(ctx context.Cont
 		SELECT t.email_account_id, COUNT(*)
 		FROM tasks t
 		WHERE t.email_account_id = ANY($1)
-		  AND t.status = 'completed'
-		  AND t.task_type = 'campaign'
-		  AND DATE(t.completed_at) = CURRENT_DATE
-		  AND ` + taskDispatchedEmail + `
+		  AND ` + campaignSendToday + `
 		GROUP BY t.email_account_id
 		UNION ALL
 		SELECT t.email_account_id, COUNT(*)
 		FROM tasks t
 		WHERE t.email_account_id = ANY($1)
-		  AND t.task_type = 'placement'
-		  AND ((t.status = 'completed' AND t.completed_at >= CURRENT_DATE AND t.completed_at < CURRENT_DATE + 1)
-		    OR (t.status IN ('pending', 'active') AND t.scheduled_at < CURRENT_DATE + 1))
+		  AND ` + placementSendToday + `
 		GROUP BY t.email_account_id
 	`
 	rows, err := r.db.Query(ctx, query, accountIDs)
@@ -598,14 +594,12 @@ func (r *taskRepository) CampaignSendsPerDayByAccounts(ctx context.Context, acco
 	return out, rows.Err()
 }
 
-// placementSentTodaySQL counts today's placement probes, sent or still
-// queued: a queued probe already holds its place in the day, so a campaign
-// cannot spend it while the test is sending. Callers add the mailbox predicate.
-const placementSentTodaySQL = `
-	SELECT COUNT(*) FROM tasks t
-	WHERE t.task_type = 'placement'
-	  AND ((t.status = 'completed' AND t.completed_at >= CURRENT_DATE AND t.completed_at < CURRENT_DATE + 1)
-	    OR (t.status IN ('pending', 'active') AND t.scheduled_at < CURRENT_DATE + 1))`
+// Queued placement probes hold today's UTC capacity until they send or cancel.
+const placementSendToday = `t.task_type = 'placement'
+	 AND ((t.status = 'completed' AND (t.completed_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date)
+	 OR (t.status IN ('pending', 'active') AND t.scheduled_at < (((NOW() AT TIME ZONE 'UTC')::date + 1)::timestamp AT TIME ZONE 'UTC')))`
+
+const placementSentTodaySQL = `SELECT COUNT(*) FROM tasks t WHERE ` + placementSendToday
 
 // CountCampaignSendsTodayBySender is CountCampaignEmailsSentToday for one
 // campaign, split by mailbox. Same ledger and the same day boundary, so the
@@ -616,10 +610,7 @@ func (r *taskRepository) CountCampaignSendsTodayBySender(ctx context.Context, ca
 		FROM tasks t
 		JOIN campaign_tasks ct ON ct.task_id = t.id
 		WHERE ct.campaign_id = $1
-		  AND t.status = 'completed'
-		  AND t.task_type = 'campaign'
-		  AND DATE(t.completed_at) = CURRENT_DATE
-		  AND ` + taskDispatchedEmail + `
+		  AND ` + campaignSendToday + `
 		GROUP BY t.email_account_id
 	`
 	rows, err := r.db.Query(ctx, query, campaignID)

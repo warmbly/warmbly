@@ -22,6 +22,18 @@ All errors follow this structure:
 
 ## HTTP status codes
 
+### Campaign send-admission diagnostics
+
+These codes appear in campaign activity and task failure metadata, not as HTTP response codes:
+
+| Code | Meaning |
+|------|---------|
+| `CAMPAIGN_DAILY_LIMIT_REACHED` | This campaign has reached its configured UTC-day maximum for this sending mailbox. Other mailboxes have separate campaign allowances. |
+| `MAILBOX_SENDING_PLAN_DENIED` | The mailbox's enabled local-day sending plan is unavailable, outside working hours or on a break, or its daily/hourly quota is exhausted. The scheduler retries when capacity opens. |
+| `SEND_ADMISSION_DENIED` | Another current send-authority, recipient or mailbox capacity check denied admission. |
+
+Admission denial before dispatch releases the send reservation without spending a failed-send attempt. See [campaigns](/guides/campaigns/) and [sending behavior](/guides/sending-behavior/) for the separate configurable ceilings and daily targets.
+
 ### Client errors (4xx)
 
 | Code | Error | Description |

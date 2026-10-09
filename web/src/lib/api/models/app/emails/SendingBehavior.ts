@@ -66,8 +66,8 @@ export interface DailyPlanView extends DailyPlan {
 // resolves, and so "reset to defaults" needs no round trip.
 export const DEFAULT_SENDING_BEHAVIOR: SendingBehaviorPatch = {
     enabled: false,
-    daily_limit_min: 30,
-    daily_limit_max: 45,
+    daily_limit_min: 28,
+    daily_limit_max: 32,
     hourly_limit_min: 5,
     hourly_limit_max: 9,
     gap_min_seconds: 90,

@@ -142,6 +142,20 @@ jobs:
     needs: changes
     if: needs.changes.outputs.go-services == 'true'
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: warmbly
+          POSTGRES_PASSWORD: warmbly
+          POSTGRES_DB: warmbly_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U warmbly -d warmbly_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -175,6 +189,14 @@ jobs:
       - name: Run tests with coverage
         run: |
           go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Campaign send admission regressions (PostgreSQL)
+        env:
+          PRIMARY_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+          WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
+        run: |
+          go run ./cmd/migrate
+          go test -race ./internal/app/behavior ./internal/repository ./internal/tasks -run 'TestDefaultPlan|TestLiveMailboxPlan|TestLiveCampaignAdmission|TestLiveSharedAdmission|TestLiveDeferredTicksDoNotSpendTheDailyBudget|TestLiveCampaignAtDailyCapWaitsForTomorrow' -count=1
 
       - name: Test the Kafka codec and client lifecycle
         run: go test -race -tags kafka ./internal/infrastructure/codec/ ./internal/infrastructure/kafka/ ./internal/infrastructure/eventbus/

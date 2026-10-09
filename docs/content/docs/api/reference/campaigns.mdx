@@ -7,6 +7,8 @@ Campaigns are the cold outreach unit in Warmbly. A campaign holds sending rules,
 
 All errors follow the shared `{error, message, code, request_id}` envelope documented in [error codes](/api/error-codes/). Authentication and the scope model are covered in [authentication](/api/authentication/) and [permissions](/api/permissions/).
 
+`daily_limit` applies separately to each mailbox, not to the total sent by the campaign. Campaign send budgets use UTC calendar days; `timezone` controls the sending windows instead. Each mailbox is also constrained by its own cap, other campaigns sharing it, shared daily and rolling recipient limits, and scheduler safety clamps. Dispatch reservations count once, while campaign wake-ups that send no email do not consume the cap. See [campaign sending limits](/guides/campaigns/#sending-limits).
+
 ## List campaigns
 
 `GET /campaigns`
@@ -120,7 +122,7 @@ Project an audience against a sender pool before a campaign exists. The campaign
 | --- | --- | --- | --- |
 | `segment_ids` | string[] | yes | Segments making up the audience (at most 20). A contact in several of them is counted once. Send `[]` to project the pool alone: its mailboxes and capacity, with no finish date. |
 | `email_tag_ids` | string[] | no | Mailbox tags that resolve the pool. Omit or send `[]` for every active mailbox in the workspace. |
-| `daily_limit` | integer | no | Per-mailbox campaign cap to apply (defaults to `50`). Each mailbox counts the smaller of this and its own cap, lowered further by any clamp the scheduler applies. |
+| `daily_limit` | integer | no | Configurable campaign ceiling per mailbox, from `3` to `5000` (defaults to `50`), not a daily target. New mailboxes separately plan `28` to `32` per local working day by default; the lower limit wins. |
 | `days` | integer (0-127) | no | Weekday bitmask of sending days, bit 0 = Monday. Defaults to weekdays. |
 | `timezone` | string | no | IANA timezone the days and window are read in. Omit or send `""` to use the workspace timezone (UTC when none is set). |
 | `start_date` | string (RFC 3339) | no | When sending begins. Omit for now. |
@@ -191,7 +193,7 @@ Create a campaign. Only `name` is required, every other field is optional and ap
 | `utm_medium` | string | no | Overrides the default `email`. Empty means the default. |
 | `utm_campaign` | string | no | Overrides the default, the campaign name as a slug. Empty means the default. |
 | `text_only` | boolean | no | Send plain text only: no HTML part, and open and click tracking are off regardless of their flags. |
-| `daily_limit` | integer | no | Per-campaign daily send cap. |
+| `daily_limit` | integer | no | Daily campaign send cap per mailbox, from `3` to `5000`. |
 | `unsubscribe_header` | boolean | no | Add the RFC 8058 one-click unsubscribe header. |
 | `risky_emails` | boolean | no | Allow sending to risky/unverified addresses. |
 | `cc` | string[] | no | Static CC list, on every email to every lead. An address that is suppressed, is the lead's own, or has bounced on this campaign is left off that email. To copy someone on one lead only, see [set a lead's CC](#set-a-leads-cc). |
