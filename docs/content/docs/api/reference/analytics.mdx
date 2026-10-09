@@ -18,6 +18,28 @@ Returns the main dashboard overview for the active organization: aggregate stats
 | Parameter | In | Type | Description |
 | --- | --- | --- | --- |
 | `period` | query | string | One of `7d`, `30d`, `90d`, measured as UTC calendar days including today. Defaults to `7d`; any other value falls back to `7d`. |
+| `campaign_ids` | query | string | Optional. Comma-separated campaign ids (or the parameter repeated) to narrow the campaign sections to. At most `100`. |
+| `folder_ids` | query | string | Optional. Comma-separated campaign folder ids. Each one stands for the campaigns in that folder when the request is made. At most `100`. |
+
+### Filtering by campaign or folder
+
+Without `campaign_ids` and `folder_ids` the dashboard covers every campaign in the workspace. With either, the server resolves them to one set: the named campaigns plus every campaign currently in a named folder. A campaign named both ways, or sitting in two named folders, is counted once.
+
+The filter narrows everything built from campaign sends: `overall_stats` (sends, opens, clicks, replies, bounces, their rates and `active_campaigns`), `daily_trend`, `top_campaigns` and `recent_activity`. It does not narrow `account_health`, `overall_stats.active_accounts` or `capacity_today`, which describe the workspace's mailboxes, or [direct mail](/guides/analytics/#direct-mail), which belongs to no campaign.
+
+An id that does not belong to the active organization, or no longer exists, is dropped and never widens the filter: if nothing named belongs to the workspace, every campaign figure is zero. A malformed id, or more than `100` of either, is a `400`. A filtered response echoes what it was computed for in `scope`:
+
+```json
+{
+  "scope": {
+    "campaigns": [{ "id": "b1f2c3d4-0000-0000-0000-000000000001", "name": "Client A - Dentists" }],
+    "folders": [{ "id": "f01d0000-0000-0000-0000-000000000004", "name": "Client A" }],
+    "campaign_count": 6
+  }
+}
+```
+
+`campaigns` and `folders` list the requested ones that belong to the workspace; `campaign_count` is how many distinct campaigns they cover together. `scope` is absent when the request was not filtered.
 
 ### Response
 

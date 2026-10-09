@@ -11,9 +11,11 @@ import (
 func (d Deps) registerAnalyticsTools(r *Registry) {
 	r.Register(Tool{
 		Name:        "get_dashboard_analytics",
-		Description: "Org-wide sending analytics for a period: totals (sent, opens, clicks, replies, bounces), rates, top campaigns, and account-health summary. Use this for \"how are we doing\" questions.",
+		Description: "Sending analytics for a period: totals (sent, opens, clicks, replies, bounces), rates, top campaigns, and account-health summary. Org-wide by default, or for chosen campaigns and campaign folders together. Use this for \"how are we doing\" questions.",
 		InputSchema: objectSchema(map[string]any{
-			"period": enumProp("Aggregation window (default 30d).", "7d", "30d", "90d"),
+			"period":       enumProp("Aggregation window (default 30d).", "7d", "30d", "90d"),
+			"campaign_ids": arrProp("Only these campaigns. Combined with folder_ids, each campaign counts once.", strProp("Campaign id")),
+			"folder_ids":   arrProp("Only the campaigns currently in these campaign folders.", strProp("Folder id")),
 		}),
 		Risk:            generation.RiskRead,
 		RequiredOrgPerm: models.PermViewAnalytics,
@@ -34,7 +36,9 @@ func (d Deps) registerAnalyticsTools(r *Registry) {
 
 func (d Deps) getDashboardAnalytics(ctx context.Context, inv Invocation, args json.RawMessage) (string, error) {
 	in, err := decodeArgs[struct {
-		Period string `json:"period"`
+		Period      string   `json:"period"`
+		CampaignIDs []string `json:"campaign_ids"`
+		FolderIDs   []string `json:"folder_ids"`
 	}](args)
 	if err != nil {
 		return "", err
@@ -43,7 +47,22 @@ func (d Deps) getDashboardAnalytics(ctx context.Context, inv Invocation, args js
 	if period == "" {
 		period = "30d"
 	}
-	a, xerr := d.Analytics.GetDashboardAnalytics(ctx, inv.OrgID, period)
+	var filter models.DashboardFilter
+	for _, raw := range in.CampaignIDs {
+		id, perr := parseUUIDArg(raw)
+		if perr != nil {
+			return "", perr
+		}
+		filter.CampaignIDs = append(filter.CampaignIDs, id)
+	}
+	for _, raw := range in.FolderIDs {
+		id, perr := parseUUIDArg(raw)
+		if perr != nil {
+			return "", perr
+		}
+		filter.FolderIDs = append(filter.FolderIDs, id)
+	}
+	a, xerr := d.Analytics.GetDashboardAnalytics(ctx, inv.OrgID, period, filter)
 	if xerr != nil {
 		return "", fromErrx(xerr)
 	}
@@ -72,6 +91,7 @@ func (d Deps) getDashboardAnalytics(ctx context.Context, inv Invocation, args js
 		},
 		"top_campaigns":  top,
 		"account_health": a.AccountHealth,
+		"scope":          a.Scope,
 	})
 }
 

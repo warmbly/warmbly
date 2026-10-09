@@ -1741,7 +1741,16 @@ func analyticsSpec() resource {
 		Short:   "The numbers: sends, opens, replies, deliverability, warmup",
 		Group:   groupData,
 		Endpoints: []endpoint{
-			{Name: "dashboard", Short: "The headline numbers", Method: http.MethodGet, Path: "/analytics/dashboard"},
+			{
+				Name: "dashboard", Short: "The headline numbers, for the workspace or chosen campaigns and folders",
+				Method: http.MethodGet, Path: "/analytics/dashboard",
+				Example: "  $ warmbly analytics dashboard --period 30d --folders <folder-id> --campaigns <id>,<id>",
+				Flag: []flagSpec{
+					{Name: "period", Help: "7d, 30d or 90d", Query: true},
+					{Name: "campaigns", Help: "Only these campaigns, comma-separated ids", Query: true, Key: "campaign_ids"},
+					{Name: "folders", Help: "Only the campaigns in these folders, comma-separated ids", Query: true, Key: "folder_ids"},
+				},
+			},
 			{Name: "deliverability", Short: "Bounces, complaints and placement", Method: http.MethodGet, Path: "/analytics/deliverability"},
 			{
 				Name: "warmup", Short: "Warmup analytics over a date range",

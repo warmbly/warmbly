@@ -46,10 +46,12 @@ type AnalyticsRepository interface {
 	GetContactCounts(ctx context.Context, orgID uuid.UUID) (*models.ContactsUsage, *errx.Error)
 
 	// Dashboard analytics
-	GetDashboardOverallStats(ctx context.Context, orgID uuid.UUID, from, to time.Time) (*models.DashboardOverallStats, *errx.Error)
-	GetRecentActivity(ctx context.Context, orgID uuid.UUID, limit int) ([]models.RecentActivityItem, *errx.Error)
-	GetTopCampaigns(ctx context.Context, orgID uuid.UUID, from, to time.Time, limit int, sortBy string) ([]models.TopCampaignStats, *errx.Error)
-	GetDashboardDailyTrend(ctx context.Context, orgID uuid.UUID, from, to time.Time) ([]models.DashboardDailyStats, *errx.Error)
+	// ResolveDashboardScope resolves a filter to this workspace's campaigns, deduplicated; foreign ids drop out.
+	ResolveDashboardScope(ctx context.Context, orgID uuid.UUID, filter models.DashboardFilter) (*models.DashboardScope, *models.CampaignScope, *errx.Error)
+	GetDashboardOverallStats(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope) (*models.DashboardOverallStats, *errx.Error)
+	GetRecentActivity(ctx context.Context, orgID uuid.UUID, limit int, scope *models.CampaignScope) ([]models.RecentActivityItem, *errx.Error)
+	GetTopCampaigns(ctx context.Context, orgID uuid.UUID, from, to time.Time, limit int, sortBy string, scope *models.CampaignScope) ([]models.TopCampaignStats, *errx.Error)
+	GetDashboardDailyTrend(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope) ([]models.DashboardDailyStats, *errx.Error)
 	GetAccountHealthSummary(ctx context.Context, orgID uuid.UUID) (*models.AccountHealthSummary, *errx.Error)
 
 	// Campaign hourly stats
@@ -170,6 +172,27 @@ func sentWithin(alias string, period *models.DateRange, next int) (string, []any
 func calendarDay(t time.Time) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
+// inCampaignScope narrows column to the scope's campaigns as $arg; a nil
+// scope adds nothing, so the caller appends scopeArgs only when it is set.
+func inCampaignScope(column string, scope *models.CampaignScope, arg int) string {
+	if scope == nil {
+		return ""
+	}
+	return fmt.Sprintf(" AND %s = ANY($%d::uuid[])", column, arg)
+}
+
+// scopeArgs is the parameter inCampaignScope refers to, or nothing.
+func scopeArgs(scope *models.CampaignScope) []any {
+	if scope == nil {
+		return nil
+	}
+	ids := scope.CampaignIDs
+	if ids == nil {
+		ids = []uuid.UUID{}
+	}
+	return []any{ids}
 }
 
 func (r *analyticsRepository) GetCampaignSummary(ctx context.Context, orgID, campaignID uuid.UUID, period *models.DateRange) (*models.CampaignSummary, *errx.Error) {
@@ -643,7 +666,68 @@ func (r *analyticsRepository) GetContactCounts(ctx context.Context, orgID uuid.U
 
 // Dashboard Analytics Methods
 
-func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgID uuid.UUID, from, to time.Time) (*models.DashboardOverallStats, *errx.Error) {
+func (r *analyticsRepository) ResolveDashboardScope(ctx context.Context, orgID uuid.UUID, filter models.DashboardFilter) (*models.DashboardScope, *models.CampaignScope, *errx.Error) {
+	campaignIDs, folderIDs := filter.CampaignIDs, filter.FolderIDs
+	if campaignIDs == nil {
+		campaignIDs = []uuid.UUID{}
+	}
+	if folderIDs == nil {
+		folderIDs = []uuid.UUID{}
+	}
+	// A folder reaches only campaigns of its own workspace, and only through a folder of that workspace.
+	query := `
+		SELECT 'campaign', c.id, c.name, 0 FROM campaigns c
+		WHERE c.organization_id = $1 AND c.id = ANY($2::uuid[])
+		UNION ALL
+		SELECT 'folder', f.id, f.title, f.position FROM folders f
+		WHERE f.organization_id = $1 AND f.id = ANY($3::uuid[])
+		UNION ALL
+		SELECT 'member', c.id, '', 0 FROM campaigns c
+		WHERE c.organization_id = $1
+		  AND (c.id = ANY($2::uuid[]) OR EXISTS (
+			SELECT 1 FROM campaign_folders cf
+			JOIN folders f ON f.id = cf.folder_id AND f.organization_id = $1
+			WHERE cf.campaign_id = c.id AND cf.folder_id = ANY($3::uuid[])
+		  ))
+		ORDER BY 1, 4, 3
+	`
+	params := []any{orgID, campaignIDs, folderIDs}
+
+	rows, err := r.DB.Query(ctx, query, params...)
+	if err != nil {
+		db.CaptureError(err, query, params, "query")
+		return nil, nil, errx.InternalError()
+	}
+	defer rows.Close()
+
+	scope := &models.DashboardScope{Campaigns: []models.DashboardScopeItem{}, Folders: []models.DashboardScopeItem{}}
+	members := &models.CampaignScope{CampaignIDs: []uuid.UUID{}}
+	for rows.Next() {
+		var kind string
+		var item models.DashboardScopeItem
+		var position int
+		if err := rows.Scan(&kind, &item.ID, &item.Name, &position); err != nil {
+			db.CaptureError(err, "", nil, "scan")
+			return nil, nil, errx.InternalError()
+		}
+		switch kind {
+		case "campaign":
+			scope.Campaigns = append(scope.Campaigns, item)
+		case "folder":
+			scope.Folders = append(scope.Folders, item)
+		default:
+			members.CampaignIDs = append(members.CampaignIDs, item.ID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		db.CaptureError(err, query, params, "rows")
+		return nil, nil, errx.InternalError()
+	}
+	scope.CampaignCount = len(members.CampaignIDs)
+	return scope, members, nil
+}
+
+func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope) (*models.DashboardOverallStats, *errx.Error) {
 	query := `
 		SELECT
 			COUNT(CASE WHEN ccp.sent_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_sent,
@@ -659,15 +743,15 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgI
 			) THEN 1 END) as machine_clicks,
 			COUNT(CASE WHEN ccp.replied_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_replies,
 			COUNT(CASE WHEN ccp.bounced_at IS NOT NULL AND ccp.sent_at >= $2 AND ccp.sent_at <= $3 THEN 1 END) as total_bounces,
-			(SELECT COUNT(*) FROM campaigns WHERE organization_id = $1 AND status = 'active') as active_campaigns,
+			(SELECT COUNT(*) FROM campaigns ac WHERE ac.organization_id = $1 AND ac.status = 'active'` + inCampaignScope("ac.id", scope, 4) + `) as active_campaigns,
 			(SELECT COUNT(*) FROM email_accounts WHERE organization_id = $1 AND status = 'active') as active_accounts
 		FROM campaign_contact_progress ccp
 		JOIN campaigns c ON c.id = ccp.campaign_id
 		JOIN sequences s ON s.id = ccp.sequence_id AND s.kind = 'email'
-		WHERE c.organization_id = $1
+		WHERE c.organization_id = $1` + inCampaignScope("c.id", scope, 4) + `
 	`
 
-	params := []any{orgID, from, to}
+	params := append([]any{orgID, from, to}, scopeArgs(scope)...)
 
 	var stats models.DashboardOverallStats
 	err := r.DB.QueryRow(ctx, query, params...).Scan(
@@ -697,7 +781,8 @@ func (r *analyticsRepository) GetDashboardOverallStats(ctx context.Context, orgI
 	return &stats, nil
 }
 
-func (r *analyticsRepository) GetRecentActivity(ctx context.Context, orgID uuid.UUID, limit int) ([]models.RecentActivityItem, *errx.Error) {
+func (r *analyticsRepository) GetRecentActivity(ctx context.Context, orgID uuid.UUID, limit int, scope *models.CampaignScope) ([]models.RecentActivityItem, *errx.Error) {
+	inScope := inCampaignScope("ccp.campaign_id", scope, 3)
 	// Union query to get recent opens, clicks, replies, and bounces. The
 	// origin of an open or click is looked up only for the rows that make
 	// the page, from the person's first logged open or click on the step,
@@ -711,7 +796,7 @@ func (r *analyticsRepository) GetRecentActivity(ctx context.Context, orgID uuid.
 			FROM campaign_contact_progress ccp
 			JOIN campaigns c ON c.id = ccp.campaign_id
 			JOIN contacts co ON co.id = ccp.contact_id
-			WHERE c.organization_id = $1 AND ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine
+			WHERE c.organization_id = $1 AND ccp.opened_at IS NOT NULL AND NOT ccp.opened_machine` + inScope + `
 
 			UNION ALL
 
@@ -725,7 +810,7 @@ func (r *analyticsRepository) GetRecentActivity(ctx context.Context, orgID uuid.
 			FROM campaign_contact_progress ccp
 			JOIN campaigns c ON c.id = ccp.campaign_id
 			JOIN contacts co ON co.id = ccp.contact_id
-			WHERE c.organization_id = $1 AND ccp.clicked_at IS NOT NULL
+			WHERE c.organization_id = $1 AND ccp.clicked_at IS NOT NULL` + inScope + `
 
 			UNION ALL
 
@@ -735,7 +820,7 @@ func (r *analyticsRepository) GetRecentActivity(ctx context.Context, orgID uuid.
 			FROM campaign_contact_progress ccp
 			JOIN campaigns c ON c.id = ccp.campaign_id
 			JOIN contacts co ON co.id = ccp.contact_id
-			WHERE c.organization_id = $1 AND ccp.replied_at IS NOT NULL
+			WHERE c.organization_id = $1 AND ccp.replied_at IS NOT NULL` + inScope + `
 
 			UNION ALL
 
@@ -745,7 +830,7 @@ func (r *analyticsRepository) GetRecentActivity(ctx context.Context, orgID uuid.
 			FROM campaign_contact_progress ccp
 			JOIN campaigns c ON c.id = ccp.campaign_id
 			JOIN contacts co ON co.id = ccp.contact_id
-			WHERE c.organization_id = $1 AND ccp.bounced_at IS NOT NULL
+			WHERE c.organization_id = $1 AND ccp.bounced_at IS NOT NULL` + inScope + `
 		), page AS (
 			SELECT * FROM recent_events
 			ORDER BY timestamp DESC
@@ -780,7 +865,7 @@ func (r *analyticsRepository) GetRecentActivity(ctx context.Context, orgID uuid.
 		ORDER BY p.timestamp DESC
 	`
 
-	params := []any{orgID, limit}
+	params := append([]any{orgID, limit}, scopeArgs(scope)...)
 
 	rows, err := r.DB.Query(ctx, query, params...)
 	if err != nil {
@@ -812,7 +897,7 @@ func (r *analyticsRepository) GetRecentActivity(ctx context.Context, orgID uuid.
 	return activities, nil
 }
 
-func (r *analyticsRepository) GetTopCampaigns(ctx context.Context, orgID uuid.UUID, from, to time.Time, limit int, sortBy string) ([]models.TopCampaignStats, *errx.Error) {
+func (r *analyticsRepository) GetTopCampaigns(ctx context.Context, orgID uuid.UUID, from, to time.Time, limit int, sortBy string, scope *models.CampaignScope) ([]models.TopCampaignStats, *errx.Error) {
 	// Default sort by emails_sent
 	orderClause := "emails_sent DESC"
 	switch sortBy {
@@ -843,14 +928,14 @@ func (r *analyticsRepository) GetTopCampaigns(ctx context.Context, orgID uuid.UU
 		LEFT JOIN campaign_contact_progress ccp ON ccp.campaign_id = c.id
 			AND ccp.sent_at >= $2 AND ccp.sent_at <= $3
 			AND EXISTS (SELECT 1 FROM sequences s WHERE s.id = ccp.sequence_id AND s.kind = 'email')
-		WHERE c.organization_id = $1
+		WHERE c.organization_id = $1` + inCampaignScope("c.id", scope, 5) + `
 		GROUP BY c.id, c.name, c.status
 		HAVING COUNT(CASE WHEN ccp.sent_at IS NOT NULL THEN 1 END) > 0
 		ORDER BY ` + orderClause + `
 		LIMIT $4
 	`
 
-	params := []any{orgID, from, to, limit}
+	params := append([]any{orgID, from, to, limit}, scopeArgs(scope)...)
 
 	rows, err := r.DB.Query(ctx, query, params...)
 	if err != nil {
@@ -872,7 +957,7 @@ func (r *analyticsRepository) GetTopCampaigns(ctx context.Context, orgID uuid.UU
 	return campaigns, nil
 }
 
-func (r *analyticsRepository) GetDashboardDailyTrend(ctx context.Context, orgID uuid.UUID, from, to time.Time) ([]models.DashboardDailyStats, *errx.Error) {
+func (r *analyticsRepository) GetDashboardDailyTrend(ctx context.Context, orgID uuid.UUID, from, to time.Time, scope *models.CampaignScope) ([]models.DashboardDailyStats, *errx.Error) {
 	query := `
 		SELECT
 			sent_at::date::text as date,
@@ -886,12 +971,12 @@ func (r *analyticsRepository) GetDashboardDailyTrend(ctx context.Context, orgID 
 		WHERE c.organization_id = $1
 		  AND ccp.sent_at IS NOT NULL
 		  AND ccp.sent_at::date >= $2
-		  AND ccp.sent_at::date <= $3
+		  AND ccp.sent_at::date <= $3` + inCampaignScope("c.id", scope, 4) + `
 		GROUP BY sent_at::date
 		ORDER BY sent_at::date ASC
 	`
 
-	params := []any{orgID, from, to}
+	params := append([]any{orgID, from, to}, scopeArgs(scope)...)
 
 	rows, err := r.DB.Query(ctx, query, params...)
 	if err != nil {

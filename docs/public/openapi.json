@@ -15112,7 +15112,7 @@
           "analytics"
         ],
         "summary": "Get dashboard analytics",
-        "description": "Org-wide dashboard overview: aggregate stats, recent activity, top campaigns, account health, and a daily trend series.",
+        "description": "Org-wide dashboard overview: aggregate stats, recent activity, top campaigns, account health, and a daily trend series. campaign_ids and folder_ids narrow the campaign sections; account health stays org-wide.",
         "security": [
           {
             "bearerAuth": []
@@ -15132,6 +15132,24 @@
                 "90d"
               ],
               "default": "7d"
+            }
+          },
+          {
+            "name": "campaign_ids",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated campaign ids to narrow the campaign sections to, unioned with folder_ids and counted once each. Ids outside the organization are dropped. At most 100.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder_ids",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated campaign folder ids; each stands for the campaigns in that folder at request time. Ids outside the organization are dropped. At most 100.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -36358,6 +36376,54 @@
             "items": {
               "$ref": "#/components/schemas/DailyTrendPoint"
             }
+          },
+          "scope": {
+            "$ref": "#/components/schemas/DashboardScope"
+          }
+        }
+      },
+      "DashboardScope": {
+        "type": "object",
+        "description": "The campaign filter a dashboard response was computed for. Absent when the request was not filtered.",
+        "required": [
+          "campaigns",
+          "folders",
+          "campaign_count"
+        ],
+        "properties": {
+          "campaigns": {
+            "type": "array",
+            "description": "Requested campaigns that belong to the organization.",
+            "items": {
+              "$ref": "#/components/schemas/DashboardScopeItem"
+            }
+          },
+          "folders": {
+            "type": "array",
+            "description": "Requested campaign folders that belong to the organization.",
+            "items": {
+              "$ref": "#/components/schemas/DashboardScopeItem"
+            }
+          },
+          "campaign_count": {
+            "type": "integer",
+            "description": "Distinct campaigns the campaigns and folders cover together."
+          }
+        }
+      },
+      "DashboardScopeItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },

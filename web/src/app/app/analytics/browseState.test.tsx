@@ -16,6 +16,7 @@ function Owner({ children }: { children: ReactNode }) {
 const cases: { name: string; schema: z.ZodType; initial: unknown; value: unknown }[] = [
     { name: "analytics.range", schema: schemas.analyticsRange, initial: "7d", value: "90d" },
     { name: "analytics.hiddenMetrics", schema: schemas.analyticsHiddenMetrics, initial: [], value: ["sent", "replies"] },
+    { name: "analytics.campaigns", schema: schemas.analyticsCampaignFilter, initial: { campaigns: [], folders: [] }, value: { campaigns: ["c1", "c2"], folders: ["f1"] } },
     { name: "deliverability.view", schema: schemas.deliverabilityView, initial: { range: "7d", hidden: [] }, value: { range: "30d", hidden: ["providers", "mailboxes"] } },
     { name: "deliverability.hiddenMetrics", schema: schemas.deliverabilityHiddenMetrics, initial: ["sent"], value: ["opens", "replies"] },
     { name: "emails.search", schema: schemas.browseString, initial: "", value: "alice" },
@@ -83,6 +84,8 @@ describe("accounts and analytics browse schemas", () => {
         expect(schemas.mailboxTab.safeParse("old").success).toBe(false);
         expect(schemas.domainTab.safeParse("old").success).toBe(false);
         expect(schemas.batchSenderStatus.safeParse("needs_signin").success).toBe(false);
+        expect(schemas.analyticsCampaignFilter.safeParse({ campaigns: [], folders: [], tags: [] }).success).toBe(false);
+        expect(schemas.analyticsCampaignFilter.safeParse({ campaigns: "c1", folders: [] }).success).toBe(false);
         expect(schemas.analyticsHiddenMetrics.safeParse(["sent", "sent"]).success).toBe(false);
         expect(schemas.analyticsHiddenMetrics.safeParse(["sent", "opens", "clicks", "replies"]).success).toBe(false);
         expect(schemas.deliverabilityHiddenMetrics.safeParse(["sent", "opens", "replies", "bounces", "complaints"]).success).toBe(false);

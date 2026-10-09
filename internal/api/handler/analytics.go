@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -347,8 +348,12 @@ func (h *Handler) GetRealtimeInfo(c *gin.Context) {
 	})
 }
 
+// maxDashboardScopeIDs bounds each of campaign_ids and folder_ids; a folder
+// stands in for any number of campaigns, so a larger set is never needed.
+const maxDashboardScopeIDs = 100
+
 // GetDashboardAnalytics returns main dashboard analytics overview
-// GET /analytics/dashboard?period=7d
+// GET /analytics/dashboard?period=7d[&campaign_ids=a,b][&folder_ids=c]
 func (h *Handler) GetDashboardAnalytics(c *gin.Context) {
 	orgID := middleware.GetOrganizationID(c)
 	if orgID == nil {
@@ -362,7 +367,18 @@ func (h *Handler) GetDashboardAnalytics(c *gin.Context) {
 		period = "7d"
 	}
 
-	analytics, xerr := h.AnalyticsService.GetDashboardAnalytics(c.Request.Context(), *orgID, period)
+	var filter models.DashboardFilter
+	var xerr *errx.Error
+	if filter.CampaignIDs, xerr = uuidListQuery(c, "campaign_ids", maxDashboardScopeIDs); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+	if filter.FolderIDs, xerr = uuidListQuery(c, "folder_ids", maxDashboardScopeIDs); xerr != nil {
+		errx.Handle(c, xerr)
+		return
+	}
+
+	analytics, xerr := h.AnalyticsService.GetDashboardAnalytics(c.Request.Context(), *orgID, period, filter)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
@@ -479,6 +495,30 @@ func (h *Handler) CompareCampaigns(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, comparison)
+}
+
+// uuidListQuery reads a comma-separated or repeated query parameter of
+// UUIDs, deduplicated in order. A malformed id or more than max is a 400.
+func uuidListQuery(c *gin.Context, key string, max int) ([]uuid.UUID, *errx.Error) {
+	var ids []uuid.UUID
+	seen := make(map[uuid.UUID]struct{})
+	for _, raw := range c.QueryArray(key) {
+		for _, part := range splitAndTrim(raw) {
+			id, err := uuid.Parse(part)
+			if err != nil {
+				return nil, errx.New(errx.BadRequest, key+" must be a comma-separated list of UUIDs")
+			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > max {
+		return nil, errx.New(errx.BadRequest, fmt.Sprintf("%s accepts at most %d ids", key, max))
+	}
+	return ids, nil
 }
 
 // splitAndTrim splits a comma-separated string and trims whitespace

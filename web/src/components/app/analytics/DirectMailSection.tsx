@@ -51,7 +51,8 @@ function SkeletonRows({ rows = 3 }: { rows?: number }) {
     );
 }
 
-export default function DirectMailSection({ period }: { period: string }) {
+// unfiltered marks the section while the page is narrowed to campaigns: direct mail belongs to none.
+export default function DirectMailSection({ period, unfiltered = false }: { period: string; unfiltered?: boolean }) {
     const q = useDirectMail(period);
     const d: DirectMailAnalytics | undefined = q.data;
     const vol = d?.volume;
@@ -78,6 +79,11 @@ export default function DirectMailSection({ period }: { period: string }) {
     return (
         <>
             <SectionBar label="Direct mail">
+                {unfiltered && (
+                    <span className="text-[10.5px] text-slate-400" title="Direct mail belongs to no campaign, so the campaign filter does not apply">
+                        Not filtered by campaign
+                    </span>
+                )}
                 <Link
                     to="/app/unibox/{-$scope}/{-$threadId}"
                     params={{ scope: "sent", threadId: undefined }}

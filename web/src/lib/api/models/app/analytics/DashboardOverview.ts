@@ -1,7 +1,7 @@
 import type { WorkspaceSendCapacity } from "@/lib/api/models/app/campaigns/SendPlan"
 import type { EngagementOrigin } from "@/lib/api/models/app/contacts/ContactTimelineEvent"
 
-// GET /analytics/dashboard?period=7d|30d|90d — a single (un-enveloped) object
+// GET /analytics/dashboard?period=7d|30d|90d[&campaign_ids][&folder_ids] — a single (un-enveloped) object
 // mirroring the backend models.DashboardAnalytics. The previous flat shape
 // (total_campaigns/total_contacts…) did not match the wire body.
 
@@ -74,4 +74,26 @@ export default interface DashboardOverview {
     // What the workspace's mailboxes can send today under the scheduler's
     // clamps; the sidebar meter's denominator. Absent when not computed.
     capacity_today?: WorkspaceSendCapacity
+    // The campaign filter the campaign sections were computed for; absent
+    // when they cover the whole workspace.
+    scope?: DashboardScope
+}
+
+// What the page asks for: campaign and folder ids, unioned by the server.
+export interface DashboardCampaignFilter {
+    campaigns: string[]
+    folders: string[]
+}
+
+export interface DashboardScopeItem {
+    id: string
+    name: string
+}
+
+// The requested campaigns and folders that belong to the workspace, and how
+// many distinct campaigns they cover together.
+export interface DashboardScope {
+    campaigns: DashboardScopeItem[]
+    folders: DashboardScopeItem[]
+    campaign_count: number
 }
