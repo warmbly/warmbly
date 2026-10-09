@@ -76,14 +76,12 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 		return nil
 	}
 
-	// condStore decides the incremental strategy for the whole account:
-	// mod-sequences where the server has CONDSTORE, UIDNEXT where it does not
-	// (Outlook.com, Microsoft 365 over IMAP, Yahoo, many hosted servers).
-	condStore := client.HasCondStore()
+	// CONDSTORE is effective per folder; NOMODSEQ uses UIDNEXT and periodic flags.
 	caughtUp := true
 
 	for i := range folders {
 		box := &folders[i]
+		condStore := client.HasCondStore() && box.HighestModSeq > 0
 		// The listing is remembered before anything is decided from it, so
 		// the departure check below reads the previous pass, never this one.
 		prevListing, listedBefore := w.listed[box.Name]
@@ -93,6 +91,10 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 			// First sight: baseline. Live sync starts from this cursor; the
 			// backfill owns everything before it.
 			saved := *box
+			if !w.imapRecoverFolder(box) {
+				stats.aborted = true
+				return nil
+			}
 			if err := w.mboxEvent(&saved); err != nil {
 				return nil
 			}
@@ -105,20 +107,38 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 		// snapshot is about messages that may no longer be there. Re-baseline
 		// it exactly like a first sighting, and drop its backfill floor so an
 		// import still running walks it again (stored messages are matched by
-		// Message-ID, so nothing is stored twice). A finished import stays
-		// finished; the mail that is already here keeps its rows, and its
-		// stale UIDs are what the warmup path checks the generation against.
+		// Message-ID, so nothing is stored twice). Completed accounts schedule
+		// a separate bounded folder recovery without resetting global history.
 		if befBox.UIDValidity != box.UIDValidity {
 			saved := *box
+			if w.tracker.state.BackfillStatus != models.SyncBackfillComplete {
+				w.tracker.setFolder(box.Name, models.SyncFolderCursor{})
+			}
+			if !w.imapRecoverFolder(box) {
+				stats.aborted = true
+				return nil
+			}
 			if err := w.mboxEvent(&saved); err != nil {
 				return nil
 			}
 			*befBox = saved
 			delete(w.flagScan, box.Name)
-			w.tracker.setFolder(box.Name, models.SyncFolderCursor{})
 			continue
 		}
 
+		var selected *imap.Selected
+		if condStore && !stats.aborted {
+			view, err := client.SelectForSyncState(box.Name)
+			if err != nil {
+				return err
+			}
+			selected = &view
+			condStore = view.HighestModSeq > 0
+			if view.UIDValidity != 0 && view.UIDValidity != box.UIDValidity {
+				caughtUp = false
+				continue
+			}
+		}
 		changed := imapFolderChanged(befBox, box, condStore)
 		// A pass cut short by the search cap left rows unexamined, so the
 		// next pass looks again whether or not the count moved.
@@ -128,12 +148,13 @@ func (w *WMail) Sync(ctx context.Context) *errx.MailError {
 		var view imap.Selected
 		if changed && !stats.aborted {
 			w.setWalking(box)
-			done, sel, ids, err := w.imapIncremental(ctx, box, befBox, condStore, stats)
+			done, sel, ids, err := w.imapIncremental(ctx, box, befBox, condStore, stats, selected)
 			if err != nil {
 				return err
 			}
 			fullyProcessed = done
 			view = sel
+			condStore = condStore && view.HighestModSeq > 0
 			touched = ids
 		} else if changed {
 			// The pass was aborted before this folder; hold its cursor too.
@@ -239,12 +260,15 @@ outer:
 	}
 
 	if !stats.aborted {
+		if err := w.imapRecoverFolders(ctx, folders, stats); err != nil {
+			return err
+		}
 		if err := w.imapBackfill(ctx, folders, stats); err != nil {
 			return err
 		}
 	}
 
-	complete = caughtUp
+	complete = caughtUp && !w.imapRecoveryPending(folders)
 	return nil
 }
 
@@ -461,7 +485,7 @@ const imapSkipSearchesPerPass = 50
 // AND flag changes; without it only arrivals are visible here, and flag
 // changes are picked up by the periodic scan in imapIncremental.
 func imapFolderChanged(before, now *models.Mailbox, condStore bool) bool {
-	if condStore {
+	if condStore && before.HighestModSeq > 0 && now.HighestModSeq > 0 {
 		return before.HighestModSeq != now.HighestModSeq
 	}
 	return before.UIDNext != now.UIDNext
@@ -473,11 +497,17 @@ func imapFolderChanged(before, now *models.Mailbox, condStore bool) bool {
 // folder's cursor advance, the selected view the search ran against, which is
 // where it advances to, and the Message-IDs it fetched so the drafts
 // reconciliation can tell a re-appended draft from an expunged one.
-func (w *WMail) imapIncremental(ctx context.Context, box, before *models.Mailbox, condStore bool, stats *tickStats) (bool, imap.Selected, map[string]struct{}, *errx.MailError) {
+func (w *WMail) imapIncremental(ctx context.Context, box, before *models.Mailbox, condStore bool, stats *tickStats, selected *imap.Selected) (bool, imap.Selected, map[string]struct{}, *errx.MailError) {
 	client := w.SmtpImapData.ImapClient
-	view, err := client.SelectForSyncState(box.Name)
-	if err != nil {
-		return false, view, nil, err
+	var view imap.Selected
+	var err *errx.MailError
+	if selected != nil {
+		view = *selected
+	} else {
+		view, err = client.SelectForSyncState(box.Name)
+		if err != nil {
+			return false, view, nil, err
+		}
 	}
 	// The listing and this view name different generations, so the search
 	// would answer about UIDs the cursor does not; the next pass re-baselines.
@@ -488,7 +518,7 @@ func (w *WMail) imapIncremental(ctx context.Context, box, before *models.Mailbox
 		return true, view, nil, nil
 	}
 	var uids []goimap.UID
-	if condStore {
+	if condStore && before.HighestModSeq > 0 && view.HighestModSeq > 0 {
 		uids, err = client.SearchChangedSince(before.HighestModSeq)
 	} else {
 		uids, err = client.SearchNewSince(before.UIDNext)
@@ -515,7 +545,7 @@ func (w *WMail) imapIncremental(ctx context.Context, box, before *models.Mailbox
 		if err != nil {
 			return false, view, touched, err
 		}
-		done, err := w.imapApply(ctx, fetched, false, stats)
+		done, err := w.imapApply(ctx, fetched, false, stats, nil)
 		if err != nil {
 			return false, view, touched, err
 		}
@@ -614,7 +644,7 @@ func (w *WMail) imapReconcileDrafts(ctx context.Context, box *models.Mailbox, to
 // unknown ones are stored if their lane admits them. backfill selects the
 // backfill lane and skips flood accounting. Returns whether every unknown
 // message in the batch was stored.
-func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill bool, stats *tickStats) (bool, *errx.MailError) {
+func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill bool, stats *tickStats, recovery *imapFolderRecovery) (bool, *errx.MailError) {
 	sort.Slice(fetched, func(i, j int) bool { return fetched[i].Email.UID > fetched[j].Email.UID })
 
 	var fresh []*imap.Fetched
@@ -667,7 +697,7 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 		if stats.aborted {
 			return false, nil
 		}
-		if backfill && w.tracker.state.BackfillSynced >= policy.BackfillMessages {
+		if backfill && w.imapImportCount(recovery) >= policy.BackfillMessages {
 			return false, nil
 		}
 		if !w.admit(ctx, w.laneOf(ctx, f.Email.MessageID, f.Email, backfill), stats) {
@@ -677,15 +707,24 @@ func (w *WMail) imapApply(ctx context.Context, fetched []*imap.Fetched, backfill
 			}
 			continue
 		}
-		w.SmtpImapData.ImapClient.FetchBody(f)
+		if err := w.SmtpImapData.ImapClient.FetchBody(f); err != nil {
+			if err.Code == errx.MailErrorCodeNotFound {
+				continue
+			}
+			return false, err
+		}
 		if err := w.imapStore(ctx, f.Email); err != nil {
 			return false, w.controlPlaneError(err, stats)
 		}
 		w.laneCache.forget(f.Email.MessageID)
 		if backfill {
-			w.tracker.state.BackfillSynced++
-			w.tracker.mark()
-			w.tracker.setFolder(w.SmtpImapData.folderPath, models.SyncFolderCursor{UID: f.Email.UID})
+			if recovery != nil {
+				recovery.Synced++
+			} else {
+				w.tracker.state.BackfillSynced++
+				w.tracker.mark()
+			}
+			w.imapImportCursor(w.SmtpImapData.folderPath, f.Email.UID, false, recovery)
 		}
 	}
 	return all, nil
@@ -870,7 +909,7 @@ func (w *WMail) imapBackfill(ctx context.Context, folders []models.Mailbox, stat
 			if err != nil {
 				return err
 			}
-			done, err := w.imapApply(ctx, fetched, true, stats)
+			done, err := w.imapApply(ctx, fetched, true, stats, nil)
 			if err != nil {
 				return err
 			}

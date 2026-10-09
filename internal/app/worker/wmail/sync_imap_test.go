@@ -43,7 +43,11 @@ type fakeImapConn struct {
 	failFinds bool
 	// view, when set, is the cursors SELECT reports in place of the listing's:
 	// a server whose selected view lags or leads its STATUS.
-	view *imap.Selected
+	view           *imap.Selected
+	searches       int
+	bodyErr        *errx.MailError
+	modseqSearches int
+	uidSearches    int
 }
 
 // Folders hands out a copy, like a real listing: the pass filters the slice
@@ -61,6 +65,7 @@ func (c *fakeImapConn) FolderConflicts() int { return c.conflicts }
 func (c *fakeImapConn) HasCondStore() bool { return !c.noCondStore }
 
 func (c *fakeImapConn) SearchNewSince(uidNext uint32) ([]goimap.UID, *errx.MailError) {
+	c.uidSearches++
 	var out []goimap.UID
 	for _, uid := range c.changed {
 		if uint32(uid) >= uidNext {
@@ -115,10 +120,16 @@ func (c *fakeImapConn) SelectForSyncGen(name string) (uint32, uint32, *errx.Mail
 }
 
 func (c *fakeImapConn) SearchChangedSince(uint64) ([]goimap.UID, *errx.MailError) {
+	c.modseqSearches++
 	return append([]goimap.UID(nil), c.changed...), nil
 }
 
 func (c *fakeImapConn) SearchAll() ([]goimap.UID, *errx.MailError) {
+	return append([]goimap.UID(nil), c.all...), nil
+}
+
+func (c *fakeImapConn) SearchSince(time.Time) ([]goimap.UID, *errx.MailError) {
+	c.searches++
 	return append([]goimap.UID(nil), c.all...), nil
 }
 
@@ -135,7 +146,13 @@ func (c *fakeImapConn) FetchEnvelopes(_ context.Context, uids []goimap.UID) ([]*
 	return out, nil
 }
 
-func (c *fakeImapConn) FetchBody(*imap.Fetched) {}
+func (c *fakeImapConn) FetchBody(f *imap.Fetched) *errx.MailError {
+	if c.bodyErr != nil {
+		return c.bodyErr
+	}
+	f.Email.BodyPlain = "complete body"
+	return nil
+}
 
 // fixedBudget is a syncBudget that admits a fixed number of messages and then
 // denies on the daily window, which is how a real governor answers once the
@@ -339,6 +356,17 @@ func (c *backfillImapConn) FolderConflicts() int                         { retur
 func (c *backfillImapConn) HasCondStore() bool                           { return true }
 func (c *backfillImapConn) ReleaseMailbox()                              {}
 
+func (c *backfillImapConn) SelectForSyncState(folder string) (imap.Selected, *errx.MailError) {
+	count, err := c.SelectForSync(folder)
+	view := imap.Selected{Count: count}
+	for _, box := range c.folders {
+		if box.Name == folder {
+			view.UIDValidity, view.UIDNext, view.HighestModSeq = box.UIDValidity, box.UIDNext, box.HighestModSeq
+		}
+	}
+	return view, err
+}
+
 func (c *backfillImapConn) SelectForSync(name string) (uint32, *errx.MailError) {
 	c.selected = name
 	return uint32(len(c.uids[name])), nil
@@ -375,7 +403,7 @@ func (c *backfillImapConn) FetchEnvelopes(_ context.Context, uids []goimap.UID) 
 	return out, nil
 }
 
-func (c *backfillImapConn) FetchBody(*imap.Fetched) {}
+func (c *backfillImapConn) FetchBody(*imap.Fetched) *errx.MailError { return nil }
 
 // The Graph defect's shape, checked on the IMAP import: a folder whose search
 // fails holds its cursor and is walked again on the next pass. Nothing about a
