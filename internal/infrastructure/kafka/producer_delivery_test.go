@@ -50,13 +50,26 @@ func waitDelivery(t *testing.T, done <-chan error) error {
 	}
 }
 
+func waitEnqueue(t *testing.T, p *deliveryProducer, done <-chan error) queuedPublication {
+	t.Helper()
+	select {
+	case queued := <-p.queued:
+		return queued
+	case err := <-done:
+		t.Fatalf("publication returned before enqueue: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("publication did not enter the native queue")
+	}
+	return queuedPublication{}
+}
+
 func TestProducerConfirmedPublicationWaitsForIndependentDeliveryReports(t *testing.T) {
 	p := &deliveryProducer{queued: make(chan queuedPublication, 2)}
 	pr := &Producer{p: p}
 	first := confirmedPublication(t, pr, t.Context())
-	a := <-p.queued
+	a := waitEnqueue(t, p, first)
 	second := confirmedPublication(t, pr, t.Context())
-	b := <-p.queued
+	b := waitEnqueue(t, p, second)
 	select {
 	case err := <-first:
 		t.Fatalf("local admission was treated as delivered: %v", err)
@@ -81,7 +94,7 @@ func TestProducerConfirmedPublicationCancellationAllowsLateReport(t *testing.T) 
 	p := &deliveryProducer{queued: make(chan queuedPublication, 1)}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := confirmedPublication(t, &Producer{p: p}, ctx)
-	a := <-p.queued
+	a := waitEnqueue(t, p, done)
 	cancel()
 	if err := waitDelivery(t, done); !errors.Is(err, context.Canceled) {
 		t.Fatal("canceled publication was acknowledged", err)
@@ -121,12 +134,27 @@ func TestProducerConfirmedPublicationReportsNativeTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pr.Close()
+	t.Cleanup(pr.Close)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	err = pr.ProduceConfirmed(ctx, "jobs", nil, []byte("result"))
 	var native ckf.Error
 	if !errors.As(err, &native) || native.Code() != ckf.ErrMsgTimedOut {
 		t.Fatalf("native undelivered result treated as success: %v", err)
+	}
+	closed := make(chan struct{})
+	go func() {
+		pr.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("generic producer events prevented shutdown after delivery settled")
+	}
+	select {
+	case <-pr.eventsDrained:
+	default:
+		t.Fatal("producer event drain outlived shutdown")
 	}
 }

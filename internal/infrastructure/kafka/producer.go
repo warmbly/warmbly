@@ -19,10 +19,11 @@ type producerClient interface {
 }
 
 type Producer struct {
-	p      producerClient
-	Avrov2 *Avrov2
-	mu     sync.Mutex
-	closed bool
+	p             producerClient
+	Avrov2        *Avrov2
+	mu            sync.Mutex
+	closed        bool
+	eventsDrained <-chan struct{}
 }
 
 type ProducerConfig struct {
@@ -60,8 +61,24 @@ func (conf *ProducerConfig) Connect() (*Producer, error) {
 		return nil, err
 	}
 
+	eventsDrained := make(chan struct{})
+	go func() {
+		defer close(eventsDrained)
+		for event := range p.Events() {
+			switch event := event.(type) {
+			case *ckf.Message:
+				if event != nil && event.TopicPartition.Error != nil {
+					log.Warn().Err(event.TopicPartition.Error).Msg("kafka background delivery failed")
+				}
+			case ckf.Error:
+				log.Debug().Str("code", event.Code().String()).Msg("kafka producer event")
+			}
+		}
+	}()
+
 	return &Producer{
-		p: p,
+		p:             p,
+		eventsDrained: eventsDrained,
 	}, nil
 }
 
@@ -77,11 +94,14 @@ func (pr *Producer) Close() {
 	}
 	pr.closed = true
 	pr.mu.Unlock()
-	undelivered := pr.p.Flush(30_000) // 30 seconds
-	if undelivered > 0 {
-		log.Warn().Int("count", undelivered).Msg("messages not delivered during shutdown")
+	outstanding := pr.p.Flush(30_000) // 30 seconds
+	if outstanding > 0 {
+		log.Warn().Int("count", outstanding).Msg("kafka producer has unflushed events during shutdown")
 	}
 	pr.p.Close()
+	if pr.eventsDrained != nil {
+		<-pr.eventsDrained
+	}
 }
 
 func (pr *Producer) Produce(topic string, key, value []byte) error {
