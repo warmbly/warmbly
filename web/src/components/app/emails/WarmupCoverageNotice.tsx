@@ -53,7 +53,8 @@ export default function WarmupCoverageNotice({
                 <div className="min-w-0 text-[12.5px] leading-snug">
                     <span className="font-medium">{title}.</span>{" "}
                     <span className="text-amber-800/90">
-                        {body} A believable pool is around 20 to 50 mailboxes, ramped over a few weeks toward a safe 40 to 50 a day.
+                        {body}
+                        <span className="hidden sm:inline"> A believable pool is around 20 to 50 mailboxes, ramped over a few weeks toward a safe 40 to 50 a day.</span>
                     </span>{" "}
                     <button
                         type="button"

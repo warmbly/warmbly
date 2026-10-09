@@ -31,23 +31,25 @@ export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect
         if (atLimit && plan?.upgrade_url) {
             return (
                 <div>
-                    <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] text-slate-700">
+                    <div className="flex items-start sm:items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] text-slate-700">
                         <SoftIcon icon={TrendingUpIcon} />
-                        <span className="min-w-0 flex-1 leading-snug">
-                            <span className="font-medium text-slate-900">Give every mailbox better deliverability.</span>{" "}
-                            <span className="text-slate-500">
-                                All {limit} free pool mailboxes are in use. Premium warms the rest in the premium pool, built for inbox placement, for ${plan.price_usd} a month.
+                        <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                            <span className="min-w-0 flex-1 leading-snug">
+                                <span className="font-medium text-slate-900">Give every mailbox better deliverability.</span>{" "}
+                                <span className="text-slate-500">
+                                    All {limit} free pool mailboxes are in use. Premium warms the rest in the premium pool, built for inbox placement, for ${plan.price_usd} a month.
+                                </span>
                             </span>
-                        </span>
-                        <a
-                            href={plan.upgrade_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
-                        >
-                            Upgrade to Premium
-                            <ExternalLinkIcon className="w-3 h-3" />
-                        </a>
+                            <a
+                                href={plan.upgrade_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="self-start sm:self-auto shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                            >
+                                Upgrade to Premium
+                                <ExternalLinkIcon className="w-3 h-3" />
+                            </a>
+                        </div>
                     </div>
                 </div>
             );
@@ -78,23 +80,25 @@ export default function CloudPoolBanner({ onConnect, mailboxCount }: { onConnect
 
     return (
         <div>
-            <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] text-slate-700">
+            <div className="flex items-start sm:items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-[12.5px] text-slate-700">
                 <SoftIcon icon={MailCheckIcon} />
-                <span className="min-w-0 flex-1 leading-snug">
-                    <span className="font-medium text-slate-900">Get these mailboxes into the inbox, not spam.</span>{" "}
-                    <span className="text-slate-500">
-                        Warm them in Warmbly Cloud's large, active pool to build sender reputation, with replies and spam rescue handled for you.
-                        Free for 10 mailboxes, set up in a minute, and your data stays here.
+                <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                    <span className="min-w-0 flex-1 leading-snug">
+                        <span className="font-medium text-slate-900">Get these mailboxes into the inbox, not spam.</span>{" "}
+                        <span className="text-slate-500">
+                            Warm them in Warmbly Cloud's large, active pool to build sender reputation, with replies and spam rescue handled for you.
+                            Free for 10 mailboxes, set up in a minute, and your data stays here.
+                        </span>
                     </span>
-                </span>
-                <button
-                    type="button"
-                    onClick={onConnect}
-                    className="shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
-                >
-                    Connect for free
-                    <ArrowRightIcon className="w-3 h-3" />
-                </button>
+                    <button
+                        type="button"
+                        onClick={onConnect}
+                        className="self-start sm:self-auto shrink-0 h-7 px-2.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                    >
+                        Connect for free
+                        <ArrowRightIcon className="w-3 h-3" />
+                    </button>
+                </div>
                 <button
                     type="button"
                     aria-label="Dismiss"
