@@ -17,9 +17,9 @@ vi.mock("@tanstack/react-router", () => ({
         <a href={to} onClick={onClick}>{children}</a>
     ),
 }));
-vi.mock("framer-motion", () => ({
+vi.mock("framer-motion", async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
     AnimatePresence: ({ children }: PropsWithChildren) => children,
-    motion: { div: ({ children }: PropsWithChildren) => <div>{children}</div> },
 }));
 vi.mock("@/lib/api/hooks/app/notifications/useNotifications", () => ({
     useNotifications: (unreadOnly: boolean) => {
@@ -44,6 +44,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("notification bell unread default", () => {
+    it("portals the feed outside a clipped header with dialog semantics", () => {
+        const { container } = render(<div style={{ overflow: "hidden", transform: "translateX(0)" }}><NotificationBell /></div>);
+        fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+        const feed = screen.getByRole("dialog", { name: "Notifications" });
+        expect(container.contains(feed)).toBe(false);
+        expect(feed.parentElement).toBe(document.body);
+        expect(feed).toHaveStyle({ position: "fixed", visibility: "visible" });
+        fireEvent.pointerDown(screen.getByRole("button", { name: "All" }));
+        expect(feed).toBeInTheDocument();
+    });
+
     it("requests and shows only unread notifications on the first opening", () => {
         render(<NotificationBell />);
         fireEvent.click(screen.getByRole("button", { name: "Notifications" }));

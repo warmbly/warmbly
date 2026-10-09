@@ -4,7 +4,6 @@
 
 import React from "react";
 import { Link } from "@tanstack/react-router";
-import { AnimatePresence, motion } from "framer-motion";
 import {
     BellIcon,
     ClockIcon,
@@ -24,7 +23,7 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { hrefTarget } from "@/lib/routerSearch";
-import useClickOutside from "@/hooks/useClickOutside";
+import { PopoverMenu, PopoverMenuContent, PopoverMenuTrigger } from "@/components/ui/popover-menu";
 import {
     useNotifications,
     useMarkAllNotificationsRead,
@@ -92,9 +91,7 @@ export function NotificationBell() {
     const markAll = useMarkAllNotificationsRead();
     const markOne = useMarkNotificationRead();
     const [open, setOpen] = React.useState(false);
-    const ref = React.useRef<HTMLDivElement>(null);
     const close = React.useCallback(() => setOpen(false), []);
-    useClickOutside(open, close, ref);
 
     const unread = data?.unread ?? 0;
     const items = data?.notifications ?? [];
@@ -172,105 +169,106 @@ export function NotificationBell() {
     );
 
     return (
-        <div ref={ref} className="relative">
-            <button
-                type="button"
-                onClick={() => {
-                    if (!open) setFilter("unread");
-                    setOpen(!open);
-                }}
-                aria-label="Notifications"
-                className="relative w-7 h-7 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 transition-colors"
-            >
-                <BellIcon className="w-4 h-4" />
-                {unread > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-semibold flex items-center justify-center">
-                        {unread > 9 ? "9+" : unread}
-                    </span>
-                )}
-            </button>
+        <PopoverMenu
+            open={open}
+            onOpenChange={(next) => {
+                if (next) setFilter("unread");
+                setOpen(next);
+            }}
+            align="end"
+        >
+            <PopoverMenuTrigger asChild>
+                <button
+                    type="button"
+                    aria-label="Notifications"
+                    aria-haspopup="dialog"
+                    className="relative w-7 h-7 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 transition-colors"
+                >
+                    <BellIcon className="w-4 h-4" />
+                    {unread > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-semibold flex items-center justify-center">
+                            {unread > 9 ? "9+" : unread}
+                        </span>
+                    )}
+                </button>
+            </PopoverMenuTrigger>
 
-            <AnimatePresence>
-                {open && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute right-0 top-full mt-1.5 w-[340px] max-w-[90vw] rounded-md border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18)] z-50 overflow-hidden"
-                    >
-                        <div className="h-9 px-3 flex items-center gap-2 border-b border-slate-200">
-                            <span className="text-[12px] font-medium text-slate-900">Notifications</span>
-                            <div className="ml-auto flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
-                                {(["all", "unread"] as const).map((f) => (
-                                    <button
-                                        key={f}
-                                        type="button"
-                                        onClick={() => setFilter(f)}
-                                        aria-pressed={filter === f}
-                                        className={`h-5 px-1.5 rounded text-[10.5px] font-medium transition-colors ${
-                                            filter === f
-                                                ? "bg-white text-slate-900 shadow-sm"
-                                                : "text-slate-500 hover:text-slate-900"
-                                        }`}
-                                    >
-                                        {f === "all" ? "All" : "Unread"}
-                                    </button>
-                                ))}
-                            </div>
-                            {unread > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => markAll.mutate()}
-                                    className="text-[11px] text-sky-600 hover:text-sky-700 shrink-0"
-                                >
-                                    Mark all read
-                                </button>
-                            )}
-                        </div>
-                        <div className="max-h-96 overflow-y-auto">
-                            {isLoading ? (
-                                skeleton
-                            ) : visible.length === 0 ? (
-                                emptyState
-                            ) : (
-                                grouped.map((g) => (
-                                    <div key={g.bucket}>
-                                        <div className="sticky top-0 z-10 px-3 pt-2 pb-1 bg-white text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                                            {BUCKET_LABELS[g.bucket]}
-                                        </div>
-                                        {g.rows.map((n) => {
-                                            const click = () => {
-                                                if (!n.read_at) markOne.mutate(n.id);
-                                                setOpen(false);
-                                            };
-                                            return n.link ? (
-                                                <Link key={n.id} {...hrefTarget(n.link)} onClick={click} className={rowClass(n)}>
-                                                    {itemBody(n)}
-                                                </Link>
-                                            ) : (
-                                                <button key={n.id} type="button" onClick={click} className={rowClass(n)}>
-                                                    {itemBody(n)}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                        <div className="border-t border-slate-200 bg-slate-50/60">
-                            <Link
-                                to="/app/settings/notifications"
-                                onClick={close}
-                                className="flex h-8 items-center justify-center gap-1.5 text-[11.5px] text-slate-500 hover:text-slate-900 transition-colors"
+            <PopoverMenuContent
+                role="dialog"
+                aria-label="Notifications"
+                minWidth={340}
+                className="w-[340px] flex flex-col p-0 max-h-[min(28rem,calc(100dvh-1rem))]"
+            >
+                <div className="h-9 shrink-0 px-3 flex items-center gap-2 border-b border-slate-200">
+                    <span className="text-[12px] font-medium text-slate-900">Notifications</span>
+                    <div className="ml-auto flex items-center gap-0.5 rounded-md bg-slate-100 p-0.5">
+                        {(["all", "unread"] as const).map((f) => (
+                            <button
+                                key={f}
+                                type="button"
+                                onClick={() => setFilter(f)}
+                                aria-pressed={filter === f}
+                                className={`h-5 px-1.5 rounded text-[10.5px] font-medium transition-colors ${
+                                    filter === f
+                                        ? "bg-white text-slate-900 shadow-sm"
+                                        : "text-slate-500 hover:text-slate-900"
+                                }`}
                             >
-                                <Settings2Icon className="size-3.5" />
-                                Notification settings
-                            </Link>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+                                {f === "all" ? "All" : "Unread"}
+                            </button>
+                        ))}
+                    </div>
+                    {unread > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => markAll.mutate()}
+                            className="text-[11px] text-sky-600 hover:text-sky-700 shrink-0"
+                        >
+                            Mark all read
+                        </button>
+                    )}
+                </div>
+                <div className="min-h-0 max-h-96 flex-1 overflow-y-auto">
+                    {isLoading ? (
+                        skeleton
+                    ) : visible.length === 0 ? (
+                        emptyState
+                    ) : (
+                        grouped.map((g) => (
+                            <div key={g.bucket}>
+                                <div className="sticky top-0 z-10 px-3 pt-2 pb-1 bg-white text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                    {BUCKET_LABELS[g.bucket]}
+                                </div>
+                                {g.rows.map((n) => {
+                                    const click = () => {
+                                        if (!n.read_at) markOne.mutate(n.id);
+                                        setOpen(false);
+                                    };
+                                    return n.link ? (
+                                        <Link key={n.id} {...hrefTarget(n.link)} onClick={click} className={rowClass(n)}>
+                                            {itemBody(n)}
+                                        </Link>
+                                    ) : (
+                                        <button key={n.id} type="button" onClick={click} className={rowClass(n)}>
+                                            {itemBody(n)}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ))
+                    )}
+                </div>
+                <div className="shrink-0 border-t border-slate-200 bg-slate-50/60">
+                    <Link
+                        to="/app/settings/notifications"
+                        onClick={close}
+                        className="flex h-8 items-center justify-center gap-1.5 text-[11.5px] text-slate-500 hover:text-slate-900 transition-colors"
+                    >
+                        <Settings2Icon className="size-3.5" />
+                        Notification settings
+                    </Link>
+                </div>
+            </PopoverMenuContent>
+        </PopoverMenu>
     );
 }
