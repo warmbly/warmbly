@@ -8,17 +8,23 @@
  * (`.is-live`), `[data-tick]` numbers count up while live, and `enter-*`
  * pieces play once, the first time it scrolls in (`.is-seen`).
  */
+import Photo from './Photo.astro';
+
 interface Props {
   w: number;
   h: number;
-  /** Background photo under /textures. */
-  photo: string;
+  /** Background photo in src/assets/textures; without one the stage is a plain grey frame. */
+  photo?: string;
   class?: string;
 }
 const { w, h, photo, class: className = '' } = Astro.props;
+// Wide scenes fill half the page at md+, the small bento ones a third at lg.
+const sizes = w >= 600
+  ? '(min-width: 768px) 50vw, 100vw'
+  : '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw';
 ---
-<div class={`stage-box group/stage relative w-full overflow-hidden rounded-[6px] bg-slate-100 ${className}`} style={`aspect-ratio:${w}/${h};`}>
-  <img src={`/textures/${photo}.webp`} alt="" aria-hidden="true" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover select-none pointer-events-none transition-transform duration-[1200ms] ease-out group-hover/stage:scale-[1.03]" />
+<div class={`stage-box group/stage relative w-full overflow-hidden rounded-[6px] ${photo ? 'bg-slate-100' : 'bg-slate-50 ring-1 ring-inset ring-slate-200'} ${className}`} style={`aspect-ratio:${w}/${h};`}>
+  {photo && <Photo name={photo} sizes={sizes} class="absolute inset-0 h-full w-full object-cover select-none pointer-events-none transition-transform duration-[1200ms] ease-out group-hover/stage:scale-[1.03]" />}
   <div class="stage absolute left-0 top-0 origin-top-left" style={`width:${w}px;height:${h}px;transform:scale(var(--k,1));`} data-w={w} aria-hidden="true">
     <slot />
   </div>
