@@ -11,7 +11,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -85,6 +87,7 @@ type Client struct {
 // cfg and persists the new token via OnTokenRefresh (the worker relays it back to
 // the control plane, which owns the encrypted credential store).
 func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Config) *errx.MailError {
+	ctx = stoken.BoundedContext(ctx)
 	ts := cfg.TokenSource(ctx, token)
 	ts = oauth2.ReuseTokenSource(token, ts)
 	// Same guard as goog.Init: a nil OnTokenRefresh would panic per request.
@@ -99,7 +102,7 @@ func (c *Client) Init(ctx context.Context, token *oauth2.Token, cfg oauth2.Confi
 // InitWithSource builds the client on a caller-owned token source (brokered
 // tokens from Warmbly Cloud); nothing is persisted from it.
 func (c *Client) InitWithSource(ctx context.Context, ts oauth2.TokenSource) *errx.MailError {
-	c.hc = oauth2.NewClient(ctx, ts)
+	c.hc = stoken.HTTPClient(ctx, ts)
 	if c.DeltaLinks == nil {
 		c.DeltaLinks = map[string]string{}
 	}
@@ -158,9 +161,16 @@ func (c *Client) doJSON(ctx context.Context, method, url string, in, out any) er
 		return HandleError(resp)
 	}
 	if out != nil {
-		return json.NewDecoder(resp.Body).Decode(out)
+		err := json.NewDecoder(resp.Body).Decode(out)
+		var networkError net.Error
+		if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return transportError(err)
+		}
+		return err
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return transportError(err)
+	}
 	return nil
 }
 

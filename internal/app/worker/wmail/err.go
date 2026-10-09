@@ -37,6 +37,12 @@ func reportable(err error) bool {
 }
 
 func (w *WMail) CaptureError(err error) {
+	w.lifecycleMu.Lock()
+	stopped := w.stopped
+	w.lifecycleMu.Unlock()
+	if stopped {
+		return
+	}
 	if reportable(err) {
 		errs.CaptureException(err,
 			errs.Tag("user_id", w.UserID.String()),
@@ -71,18 +77,19 @@ func (w *WMail) CaptureError(err error) {
 		Timestamp:      time.Now().Unix(),
 	}
 
+	w.lifecycleMu.Lock()
+	if w.stopped {
+		w.lifecycleMu.Unlock()
+		return
+	}
 	_ = w.onEvent(eventType, errorEvent)
+	w.lifecycleMu.Unlock()
 
 	// Critical errors should stop the sync loop and remove the account from the
 	// worker's local state until the user re-authenticates.
 	if eventType == models.JobEventTypeEmailAuthError ||
 		eventType == models.JobEventTypeEmailDisabled {
-		if w.Cancel != nil {
-			w.Cancel()
-		}
-		if w.TerminateFunc != nil {
-			w.TerminateFunc()
-		}
+		w.Terminate()
 	}
 }
 
