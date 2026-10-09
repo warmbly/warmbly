@@ -9,13 +9,10 @@ import (
 	"github.com/warmbly/warmbly/internal/models"
 )
 
-// restrictedMailboxes is an API key's mailbox allowlist; nil when the caller
+// restrictedMailboxes is the caller's mailbox allowlist; nil when the caller
 // is not limited to specific mailboxes.
 func restrictedMailboxes(c *gin.Context) []uuid.UUID {
-	if middleware.GetAuthType(c) != middleware.AuthTypeAPIKey {
-		return nil
-	}
-	return middleware.GetAPIKeyAllowedEmailAccounts(c)
+	return middleware.AllowedEmailAccounts(c)
 }
 
 // allowedMailboxFilter narrows a mailbox filter to the caller's allowlist: no
@@ -61,7 +58,11 @@ func keepAllowedMessages(c *gin.Context, res *models.MailSearchResult) {
 	}
 	kept := res.Data[:0]
 	for _, m := range res.Data {
-		if middleware.APIKeyAllowsEmailAccount(c, m.EmailID) {
+		if middleware.EmailAccountAllowed(c, m.EmailID) {
+			// Which other mailbox a message answers is not shown outside the allowlist.
+			if m.AnswersMailboxID != nil && !middleware.EmailAccountAllowed(c, *m.AnswersMailboxID) {
+				m.AnswersMailboxID = nil
+			}
 			kept = append(kept, m)
 		}
 	}

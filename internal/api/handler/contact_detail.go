@@ -68,7 +68,7 @@ func (h *Handler) LookupContactByEmail(c *gin.Context) {
 			errx.Handle(c, errx.ErrUuid)
 			return
 		}
-		if !middleware.APIKeyAllowsEmailAccount(c, id) {
+		if !middleware.EmailAccountAllowed(c, id) {
 			errx.Handle(c, errx.New(errx.Forbidden, "email account is not allowed for this API key"))
 			return
 		}
@@ -77,7 +77,7 @@ func (h *Handler) LookupContactByEmail(c *gin.Context) {
 
 	orgID := middleware.GetOrganizationID(c)
 
-	thread := models.ContactLookupThread{ID: threadID, AccountID: accountID, AllowedAccounts: middleware.GetAPIKeyAllowedEmailAccounts(c)}
+	thread := models.ContactLookupThread{ID: threadID, AccountID: accountID, AllowedAccounts: middleware.AllowedEmailAccounts(c)}
 	res, xerr := h.ContactService.LookupSender(c.Request.Context(), orgID, email, thread)
 	if xerr != nil {
 		errx.Handle(c, xerr)

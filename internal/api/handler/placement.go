@@ -105,7 +105,7 @@ func (h *Handler) CreatePlacementTest(c *gin.Context) {
 		errx.JSON(c, errx.New(errx.BadRequest, "invalid sender_account_id"))
 		return
 	}
-	if !middleware.APIKeyAllowsEmailAccount(c, senderID) {
+	if !middleware.EmailAccountAllowed(c, senderID) {
 		errx.JSON(c, errx.New(errx.Forbidden, "this API key cannot send from that mailbox"))
 		return
 	}
@@ -255,7 +255,7 @@ func (h *Handler) ListPlacementSeeds(c *gin.Context) {
 	}
 	allowed := seeds[:0]
 	for _, s := range seeds {
-		if middleware.APIKeyAllowsEmailAccount(c, s.EmailAccountID) {
+		if middleware.EmailAccountAllowed(c, s.EmailAccountID) {
 			allowed = append(allowed, s)
 		}
 	}

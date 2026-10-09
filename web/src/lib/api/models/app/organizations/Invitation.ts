@@ -1,3 +1,5 @@
+import type MemberAccess from "./MemberAccess";
+
 export default interface Invitation {
     id: string
     organization_id: string
@@ -10,4 +12,5 @@ export default interface Invitation {
     invited_by: string
     created_at: Date
     expires_at: Date
+    access?: MemberAccess
 }

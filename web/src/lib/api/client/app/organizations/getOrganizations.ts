@@ -8,6 +8,7 @@ interface RawMembership {
     organization_id: string;
     role: string;
     permissions?: number;
+    access_scope?: Organization["access_scope"];
     organization?: {
         id: string;
         name: string;
@@ -43,6 +44,7 @@ export default async function getOrganizations(): Promise<Organization[]> {
             plan: r.organization!.plan,
             role: r.role,
             permissions: r.permissions,
+            access_scope: r.access_scope ?? "workspace",
             created_at: new Date(r.organization!.created_at),
         }));
 }

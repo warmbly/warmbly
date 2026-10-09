@@ -46,6 +46,8 @@ type UniboxRepository interface {
 	// the owner even when a different teammate opens it.
 	GetByIDForOrg(ctx context.Context, orgID, id uuid.UUID) (*models.EmailMessageStoreData, uuid.UUID, error)
 	GetByThread(ctx context.Context, orgID, emailID uuid.UUID, threadID string, limit int, cursor string) (*models.MailSearchResult, error)
+	// GetByThreadWithin is GetByThread held to the allowed mailboxes before paging; nil allows every mailbox.
+	GetByThreadWithin(ctx context.Context, orgID, emailID uuid.UUID, threadID string, limit int, cursor string, allowed []uuid.UUID) (*models.MailSearchResult, error)
 	GetBySender(ctx context.Context, userID uuid.UUID, sender string, limit int, cursor string) (*models.MailSearchResult, error)
 	Search(ctx context.Context, orgID uuid.UUID, params *models.MailSearchParams) (*models.MailSearchResult, error)
 	GetUnseenCount(ctx context.Context, orgID uuid.UUID, emailAccountID *uuid.UUID) (int64, error)
@@ -530,6 +532,10 @@ func (r *uniboxRepository) GetByIDForOrg(ctx context.Context, orgID, id uuid.UUI
 // not user_id, so any member with unibox access sees the whole conversation,
 // matching the org-scoped inbox list.
 func (r *uniboxRepository) GetByThread(ctx context.Context, orgID, emailID uuid.UUID, threadID string, limit int, cursor string) (*models.MailSearchResult, error) {
+	return r.GetByThreadWithin(ctx, orgID, emailID, threadID, limit, cursor, nil)
+}
+
+func (r *uniboxRepository) GetByThreadWithin(ctx context.Context, orgID, emailID uuid.UUID, threadID string, limit int, cursor string, allowed []uuid.UUID) (*models.MailSearchResult, error) {
 	query := fmt.Sprintf(`
 		SELECT %s
 		FROM unibox_emails
@@ -543,6 +549,11 @@ func (r *uniboxRepository) GetByThread(ctx context.Context, orgID, emailID uuid.
 	if emailID != uuid.Nil {
 		query += fmt.Sprintf(` AND email_id = $%d`, argPos)
 		args = append(args, emailID)
+		argPos++
+	}
+	if allowed != nil {
+		query += fmt.Sprintf(` AND email_id = ANY($%d::uuid[])`, argPos)
+		args = append(args, allowed)
 		argPos++
 	}
 
@@ -1718,7 +1729,7 @@ func (r *uniboxRepository) overview(ctx context.Context, orgID uuid.UUID, accoun
 			COUNT(*) FILTER (WHERE NOT t.is_snoozed AND t.working AND t.is_automated AND t.has_unread)          AS automated_unread,
 			(SELECT COUNT(*) FROM latest_per_thread l WHERE `+ownAddressSQL("l.from_addr", "$1")+`) AS awaiting,
 			(SELECT COUNT(*) FROM ai_thread_drafts d
-				WHERE d.organization_id = $1 AND d.status = 'pending')                        AS awaiting_agent_draft
+				WHERE d.organization_id = $1 AND d.status = 'pending'`+onlyMailboxes("d.email_account_id")+`) AS awaiting_agent_draft
 		FROM threads t
 	`, orgID, todayStart, weekStart).Scan(
 		&overview.Total,

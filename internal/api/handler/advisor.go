@@ -142,7 +142,7 @@ func (h *Handler) advisorFixInvocation(c *gin.Context, id uuid.UUID) (aitools.In
 	if xerr != nil {
 		return inv, xerr
 	}
-	if len(middleware.GetAPIKeyAllowedEmailAccounts(c)) == 0 {
+	if len(middleware.AllowedEmailAccounts(c)) == 0 {
 		return inv, nil
 	}
 	f, xerr := h.AdvisorService.Get(c.Request.Context(), inv.OrgID, id)

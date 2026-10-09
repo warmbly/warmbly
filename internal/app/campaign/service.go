@@ -22,8 +22,9 @@ type CampaignService interface {
 	Create(ctx context.Context, userID string, orgID *uuid.UUID, data *models.CreateCampaign) (*models.Campaign, *errx.Error)
 	// Get loads one of orgID's campaigns; any other id is not found.
 	Get(ctx context.Context, orgID, id string) (*models.Campaign, *errx.Error)
-	Search(ctx context.Context, userID, query, cursor, folder, status, limit string) (*models.CampaignsResult, *errx.Error)
-	Overview(ctx context.Context, orgID string) (*models.CampaignsOverview, *errx.Error)
+	// allowed limits the results to those campaigns; nil is every campaign in the workspace.
+	Search(ctx context.Context, userID, query, cursor, folder, status, limit string, allowed []uuid.UUID) (*models.CampaignsResult, *errx.Error)
+	Overview(ctx context.Context, orgID string, allowed []uuid.UUID) (*models.CampaignsOverview, *errx.Error)
 	// Estimate projects how many contacts a set of segments reaches and how
 	// many sending days a mailbox pool needs under the per-mailbox caps.
 	// Read-only; the new-campaign flow shows it as its launch plan.

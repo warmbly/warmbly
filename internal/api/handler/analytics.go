@@ -377,16 +377,35 @@ func (h *Handler) GetDashboardAnalytics(c *gin.Context) {
 		errx.Handle(c, xerr)
 		return
 	}
+	restricted := middleware.IsScopeRestricted(c)
+	if restricted {
+		// The filter's echo names what it asked for, so it may only ask for granted ones.
+		if !idsWithin(filter.CampaignIDs, middleware.AllowedCampaigns(c)) || !idsWithin(filter.FolderIDs, middleware.AllowedFolders(c)) {
+			errx.Handle(c, errx.New(errx.NotFound, "campaign or folder not found"))
+			return
+		}
+		filter.AllowedCampaigns = middleware.AllowedCampaigns(c)
+		filter.AllowedMailboxes = middleware.AllowedEmailAccounts(c)
+	}
 
 	analytics, xerr := h.AnalyticsService.GetDashboardAnalytics(c.Request.Context(), *orgID, period, filter)
 	if xerr != nil {
 		errx.Handle(c, xerr)
 		return
 	}
+	if restricted {
+		// A sender outside the member's mailboxes is not named to them.
+		for i := range analytics.RecentActivity {
+			if a := &analytics.RecentActivity[i]; a.SenderID != nil && !middleware.EmailAccountAllowed(c, *a.SenderID) {
+				a.SenderID, a.SenderEmail = nil, ""
+			}
+		}
+	}
 	// The sidebar meter's denominator: the mailboxes' day under the
 	// scheduler's own clamps, not their caps added up. Best effort; the
-	// dashboard still renders without it.
-	if h.CampaignService != nil {
+	// dashboard still renders without it. It is the workspace's, so a
+	// restricted member is not given it.
+	if h.CampaignService != nil && !restricted {
 		if capacity, cerr := h.CampaignService.WorkspaceCapacity(c.Request.Context(), *orgID); cerr == nil {
 			analytics.CapacityToday = capacity
 		}
@@ -461,6 +480,10 @@ func (h *Handler) CompareCampaigns(c *gin.Context) {
 		errx.Handle(c, errx.New(errx.BadRequest, "at least one valid campaign ID is required"))
 		return
 	}
+	if !idsWithin(campaignIDs, middleware.AllowedCampaigns(c)) {
+		errx.Handle(c, errx.New(errx.NotFound, "campaign not found"))
+		return
+	}
 
 	// Limit to 10 campaigns
 	if len(campaignIDs) > 10 {
@@ -519,6 +542,26 @@ func uuidListQuery(c *gin.Context, key string, max int) ([]uuid.UUID, *errx.Erro
 		return nil, errx.New(errx.BadRequest, fmt.Sprintf("%s accepts at most %d ids", key, max))
 	}
 	return ids, nil
+}
+
+// idsWithin reports whether every id is on allowed; a nil allowed list allows everything.
+func idsWithin(ids, allowed []uuid.UUID) bool {
+	if allowed == nil {
+		return true
+	}
+	for _, id := range ids {
+		ok := false
+		for _, a := range allowed {
+			if a == id && a != uuid.Nil {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // splitAndTrim splits a comma-separated string and trims whitespace

@@ -38,7 +38,7 @@ import { type ReactElement, type ReactNode, useId, useLayoutEffect, useMemo, use
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useAppStore } from "@/stores";
 import useFeatureAccess from "@/hooks/useFeatureAccess";
-import { orgHasPermission, usePermission, type PermissionKey } from "@/hooks/usePermission";
+import { orgHasPermission, useAccessRestricted, usePermission, type PermissionKey } from "@/hooks/usePermission";
 import { useUpgradeDialog } from "@/hooks/context/upgrade";
 import { PLAN_ACCENT_CLASSES, getPlan, type PlanID } from "@/lib/plans";
 import AccessLockedDialog from "./AccessLockedDialog";
@@ -91,6 +91,8 @@ interface NavItem {
     requires?: "inbox" | "advanced" | "subscription";
     /** Role gate — when set, sidebar hides the row entirely for non-matching roles. */
     rolesAllowed?: "manage";
+    /** Shown to a member restricted to selected resources; every other row is hidden from them. */
+    scoped?: boolean;
     /** Permission gate — when the member lacks it, the row shows a lock and a
      *  click pops an access dialog instead of navigating to an empty page. */
     permission?: PermissionKey;
@@ -146,6 +148,7 @@ const topItems: NavItem[] = [
         icon: InboxIcon,
         badgeStoreKey: "unseenCount",
         requires: "inbox",
+        scoped: true,
         permission: "ACCESS_UNIBOX",
         permissionLabel: "Use unified inbox",
     },
@@ -157,10 +160,10 @@ const sections: NavSection[] = [
         label: "Email",
         items: [
             { title: "Accounts", url: "/app/emails", icon: MailIcon, indicator: "accounts", advisorSurface: "emails", permission: "MANAGE_EMAILS", permissionLabel: "Manage mailboxes" },
-            { title: "Campaigns", requires: "subscription", url: "/app/campaigns", icon: MegaphoneIcon, indicator: "campaigns", advisorSurface: "campaigns", permission: "VIEW_CAMPAIGNS", permissionLabel: "View campaigns" },
+            { title: "Campaigns", scoped: true, requires: "subscription", url: "/app/campaigns", icon: MegaphoneIcon, indicator: "campaigns", advisorSurface: "campaigns", permission: "VIEW_CAMPAIGNS", permissionLabel: "View campaigns" },
             { title: "Contacts", requires: "subscription", url: "/app/contacts", icon: UsersIcon, indicator: "contacts", advisorSurface: "contacts", permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
             { title: "Forms", requires: "subscription", url: "/app/forms", icon: ClipboardListIcon, permission: "VIEW_CONTACTS", permissionLabel: "View contacts" },
-            { title: "Analytics", requires: "subscription", url: "/app/analytics", icon: BarChart3Icon, indicator: "analytics", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
+            { title: "Analytics", scoped: true, requires: "subscription", url: "/app/analytics", icon: BarChart3Icon, indicator: "analytics", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
             { title: "Deliverability", requires: "subscription", url: "/app/deliverability", icon: ShieldCheckIcon, advisorSurface: "deliverability", permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
             { title: "Placement tests", requires: "subscription", url: "/app/placement", icon: MailCheckIcon, permission: "VIEW_ANALYTICS", permissionLabel: "View analytics" },
         ],
@@ -249,10 +252,13 @@ function NavRow({ item, collapsed = false }: { item: NavItem; collapsed?: boolea
     const unseen = useAppStore((s) => s.unseenCount);
     const access = useFeatureAccess();
     const hasItemPermission = usePermission(item.permission ?? "VIEW_CAMPAIGNS");
+    const restricted = useAccessRestricted();
     const [deniedOpen, setDeniedOpen] = useState(false);
     const upgradeDialog = useUpgradeDialog();
     const active = isNavItemActive(pathname, item);
     const badge = item.badgeStoreKey === "unseenCount" ? unseen : undefined;
+
+    if (restricted && !item.scoped) return null;
 
     // Role-gated items disappear from the sidebar for users that
     // can't access them, instead of showing a lock — these are
@@ -674,7 +680,9 @@ function TemplatesActivity() {
 // Analytics row: a live, compact tally of emails sent this period — the headline
 // throughput metric, surfaced right in the nav. From the org-wide usage overview.
 function AnalyticsActivity() {
-    const { data } = useUsageOverview("day");
+    // The usage overview counts the whole workspace, which a restricted member does not reach.
+    const restricted = useAccessRestricted();
+    const { data } = useUsageOverview("day", !restricted);
     const sent = data?.campaigns?.emails_sent ?? 0;
     return (
         <TabStat
@@ -763,11 +771,14 @@ function Section({
     const toggleNavSection = useAppStore((s) => s.toggleNavSection);
     const org = useAppStore((s) => s.currentOrganization);
     const access = useFeatureAccess();
+    const restricted = useAccessRestricted();
     const reduceMotion = useReducedMotion();
 
     // Folded, a section keeps only the row you are on, in the rail and the
     // full sidebar alike, so where you are never folds away with the rest.
-    const permitted = section.items.filter((item) => item.rolesAllowed !== "manage" || access.canManage);
+    const permitted = section.items.filter(
+        (item) => (item.rolesAllowed !== "manage" || access.canManage) && (!restricted || item.scoped),
+    );
     const shown = folded ? permitted.filter((item) => isNavItemActive(pathname, item)) : permitted;
     const hiddenSurfaces = folded
         ? permitted.flatMap((item) =>
@@ -779,6 +790,9 @@ function Section({
                 : [],
         )
         : [];
+
+    // A section holding nothing this member may open is not drawn at all.
+    if (permitted.length === 0) return null;
 
     // In the rail a folded section with nothing left to show goes, divider and all.
     const gone = collapsed && shown.length === 0;
@@ -1348,7 +1362,7 @@ export function AppNav({ open = false, onClose }: { open?: boolean; onClose?: ()
 
             <div className="border-t border-slate-200/60 py-1 shrink-0">
                 <NavRow
-                    item={{ title: "Settings", url: "/app/settings", icon: SettingsIcon }}
+                    item={{ title: "Settings", url: "/app/settings", icon: SettingsIcon, scoped: true }}
                     collapsed={iconOnly}
                 />
                 <CollapseToggle collapsed={iconOnly} onToggle={toggleSidebar} />

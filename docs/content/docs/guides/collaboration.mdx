@@ -35,6 +35,8 @@ Indicators are workspace-scoped. Teammates see only your name, avatar, current p
 
 **Events are permission-aware**: a member without inbox access never receives unibox events, and billing events reach only those who can manage billing. See [Team roles](/guides/team-roles/).
 
+A member restricted to [selected resources](/guides/team-roles/#access-scope) receives only events about what they were granted: new mail in their mailboxes, and activity on their campaigns. They are not part of presence or live cursors, in either direction: they do not appear online, and they do not see who else is or what teammates are viewing.
+
 ## Connection status
 
 A dot in the header reports the live connection: green **Live** when it is healthy, amber **Slow connection** or red **Poor connection** when heartbeats are taking longer than they should, amber **Reconnecting...** while it retries, and red **Disconnected** when it is down. The reading comes from the measured round trip to the realtime service, so amber means your connection genuinely is slow rather than merely busy.

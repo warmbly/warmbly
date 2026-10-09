@@ -211,6 +211,10 @@ func (s *service) notifyMembers(ctx context.Context, orgID uuid.UUID, perm model
 		if m.AcceptedAt == nil || m.UserID == uuid.Nil || m.UserID == exclude {
 			continue
 		}
+		// Workspace notifications name resources a restricted member may not reach.
+		if m.IsRestricted() {
+			continue
+		}
 		if perm != 0 && !m.Permissions.HasPermission(perm) {
 			continue
 		}

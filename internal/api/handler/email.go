@@ -23,7 +23,7 @@ func (h *Handler) EmailsSearch(c *gin.Context) {
 	tag := c.Query("tag")
 	limit := c.Query("limit")
 
-	resp, err := h.EmailService.Search(c.Request.Context(), orgID.String(), query, cursor, tag, limit, middleware.GetAPIKeyAllowedEmailAccounts(c))
+	resp, err := h.EmailService.Search(c.Request.Context(), orgID.String(), query, cursor, tag, limit, middleware.AllowedEmailAccounts(c))
 	if err != nil {
 		errx.Handle(c, err)
 		return
@@ -130,9 +130,9 @@ func (h *Handler) BulkTagEmails(c *gin.Context) {
 	}
 	// The mailbox scope here is the workspace, so a restricted API key needs
 	// the same allowlist check the per-id routes get from
-	// RequireAPIKeyEmailAccountParam; there is no path param to gate on.
+	// RequireEmailAccountParam; there is no path param to gate on.
 	for _, id := range emailIDs {
-		if !middleware.APIKeyAllowsEmailAccount(c, id) {
+		if !middleware.EmailAccountAllowed(c, id) {
 			errx.Handle(c, errx.New(errx.Forbidden, "email account is not allowed for this API key"))
 			return
 		}

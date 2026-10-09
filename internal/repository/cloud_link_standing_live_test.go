@@ -309,7 +309,7 @@ func TestLiveCloudLinkStandingGatesTheInstance(t *testing.T) {
 		t.Fatalf("GetCloudStanding = %+v", info)
 	}
 
-	summary, xerr := NewAnalyticsRepository(handle).GetAccountHealthSummary(ctx, f.org)
+	summary, xerr := NewAnalyticsRepository(handle).GetAccountHealthSummary(ctx, f.org, nil)
 	if xerr != nil || summary.ErrorAccounts != 1 {
 		t.Fatalf("GetAccountHealthSummary = %+v, %v; want the quarantined mailbox in error", summary, xerr)
 	}

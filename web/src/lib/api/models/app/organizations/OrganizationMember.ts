@@ -2,6 +2,9 @@
 // `role` and `permissions` come from the server; `permissions` is a
 // uint16 bitmask matching internal/models/organization_permission.go.
 
+import type MemberAccess from "./MemberAccess";
+import type { AccessScope } from "./MemberAccess";
+
 export interface MemberRole {
     id: string;
     name: string;
@@ -23,4 +26,7 @@ export default interface OrganizationMember {
     roles?: MemberRole[];
     permissions?: number;
     joined_at?: Date;
+    // Which resources the roles apply to; "restricted" reaches only `access`'s grants.
+    access_scope?: AccessScope;
+    access?: MemberAccess;
 }

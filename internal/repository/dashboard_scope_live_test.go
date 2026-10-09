@@ -98,7 +98,7 @@ func TestLiveDashboardScopeNarrowsCampaignSections(t *testing.T) {
 		t.Fatalf("echoed scope = %+v, want only this workspace's campaign and folder", view)
 	}
 
-	overall, xerr := repo.GetDashboardOverallStats(ctx, orgID, from, to, scope)
+	overall, xerr := repo.GetDashboardOverallStats(ctx, orgID, from, to, scope, nil)
 	if xerr != nil {
 		t.Fatalf("GetDashboardOverallStats: %v", xerr)
 	}
@@ -154,14 +154,14 @@ func TestLiveDashboardScopeNarrowsCampaignSections(t *testing.T) {
 	if view.CampaignCount != 0 || len(view.Campaigns) != 0 || len(view.Folders) != 0 {
 		t.Fatalf("foreign ids resolved to %+v, want nothing", view)
 	}
-	overall, xerr = repo.GetDashboardOverallStats(ctx, orgID, from, to, scope)
+	overall, xerr = repo.GetDashboardOverallStats(ctx, orgID, from, to, scope, nil)
 	if xerr != nil {
 		t.Fatalf("GetDashboardOverallStats: %v", xerr)
 	}
 	if overall.TotalEmailsSent != 0 || overall.ActiveCampaigns != 0 {
 		t.Fatalf("an empty scope counted sent %d, active %d; want nothing", overall.TotalEmailsSent, overall.ActiveCampaigns)
 	}
-	whole, xerr := repo.GetDashboardOverallStats(ctx, orgID, from, to, nil)
+	whole, xerr := repo.GetDashboardOverallStats(ctx, orgID, from, to, nil, nil)
 	if xerr != nil {
 		t.Fatalf("GetDashboardOverallStats: %v", xerr)
 	}

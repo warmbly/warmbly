@@ -270,6 +270,7 @@ const (
 	memberOK memberState = iota
 	memberGone
 	memberUnknown
+	memberRestricted
 )
 
 // membership re-reads the linked member's org permissions; a link whose
@@ -290,6 +291,10 @@ func (s *Service) membership(ctx context.Context, link *models.SlackUserLink) (*
 		if err != nil || models.BanScope(scope).Has(models.BanScopeLogin) {
 			return nil, memberUnknown
 		}
+	}
+	// Slack mirrors the whole workspace's inbox, which a restricted member's grants do not cover.
+	if m.IsRestricted() {
+		return nil, memberRestricted
 	}
 	return m, memberOK
 }

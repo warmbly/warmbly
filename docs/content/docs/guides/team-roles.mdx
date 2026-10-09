@@ -1,9 +1,9 @@
 ---
 title: "Team & roles"
-description: "Invite members and control access with roles and permissions."
+description: "Invite members and control access with roles, permissions, and resource scopes."
 ---
 
-Share a workspace with your team: invite by email, give each person a role, and the role decides what they can see and change. The roster and invitations live under **Settings > Members**; roles and the permission matrix under **Settings > Roles & access**.
+Share a workspace with your team: invite by email, give each person a role, and the role decides what they can see and change. An optional access scope narrows which campaigns and mailboxes the role applies to, so a client or contractor can work inside your workspace without seeing the rest of it. The roster and invitations live under **Settings > Members**; roles and the permission matrix under **Settings > Roles & access**.
 
 <Callout type="info" title="Who can manage the team">
 Inviting, re-roling, removing, and managing roles all need the **Manage team** permission (the owner and the seeded Admin role have it; any custom role can carry it). Without it the roster is read-only.
@@ -11,13 +11,13 @@ Inviting, re-roling, removing, and managing roles all need the **Manage team** p
 
 ## Inviting members
 
-In the **Invite teammates** box, paste or type addresses into **Emails**, separated by comma, semicolon, space, or Enter. Each becomes a chip: valid ones grey, malformed ones red so you can remove them first. Pick one or more **Roles** for the batch (a description on the right says what you are granting), then **Send invitations**.
+In the **Invite teammates** box, paste or type addresses into **Emails**, separated by comma, semicolon, space, or Enter. Each becomes a chip: valid ones grey, malformed ones red so you can remove them first. Pick one or more **Roles** for the batch (a description on the right says what you are granting), optionally narrow the batch's **Access** (see [access scope](#access-scope)), then **Send invitations**. A restricted invitee is restricted from the moment they join; there is no window in which they see the whole workspace.
 
 Warmbly sends one invitation per address and reports results as "Invited 2 · 1 failed". Invalid addresses are skipped and called out. The chips clear when the batch finishes.
 
 When several trusted dashboards share one backend, invitation emails link back to the dashboard that sent the invitation. Copying an invitation link also keeps that dashboard's hostname. See [multi-dashboard configuration](/development/configuration/#google-sign-in-per-dashboard-deployment).
 
-**Pending invitations** shows the email, role, and expiry for each unaccepted invite, with two actions on the right of the row: copy the invite link (to share directly instead of waiting on email) and cancel the invitation. There is no resend button. To give somebody a fresh link, invite the same address again: that replaces the invitation in place with a new token and a reset expiry, and the previously emailed and copied links stop working. Copying the link again also issues a new link, so only the most recently copied link works; the emailed link is unaffected.
+**Pending invitations** shows the email, role, access, and expiry for each unaccepted invite, with two actions on the right of the row: copy the invite link (to share directly instead of waiting on email) and cancel the invitation. There is no resend button. To give somebody a fresh link, invite the same address again: that replaces the invitation in place with a new token and a reset expiry, and the previously emailed and copied links stop working. Copying the link again also issues a new link, so only the most recently copied link works; the emailed link is unaffected.
 
 <Callout type="info" title="Roles are not permanent">
 The invite-time role can be changed inline from the roster later, so it is fine to start people narrow and widen access afterward.
@@ -35,11 +35,43 @@ Both are covered in [accounts and access](/development/accounts-and-access/#with
 
 ## The roster
 
-Each row shows email, role, and join date, with your own row tagged "you". Open the role picker on a row to tick the roles that member holds; a member can hold several, and their effective access is the union. The owner's row is a fixed Owner badge, and your own row is not editable.
+Each row shows email, role, access, and join date, with your own row tagged "you". Open the role picker on a row to tick the roles that member holds; a member can hold several, and their effective access is the union. The owner's row is a fixed Owner badge, and your own row is not editable.
 
 To remove someone, hover (or tap) their row and click the remove icon. **You cannot remove the owner or yourself.** To leave a workspace you own, transfer ownership first.
 
 Removal takes effect at once, including for someone who is signed in right now. Their open dashboard loses the workspace on its next request and its live updates stop, and they are asked to pick another workspace they belong to. Apps they authorized in the workspace are disconnected. Nothing they created is removed with them: mailboxes, contacts, campaigns and API keys belong to the workspace, so revoke their keys under **API keys** if those should go too. A changed role or a new owner reaches open dashboards' live updates without a reload.
+
+## Access scope
+
+A role says what a member may do. Their access scope says which resources it applies to:
+
+- **Entire workspace**, the default and what every member had before scopes existed.
+- **Selected resources**, which reaches only the campaign folders, campaigns and mailboxes you choose.
+
+Click the **Access** cell on a member's row to change it. In the dialog, choose **Selected resources**, then pick from three lists:
+
+| Grant | Gives access to |
+| --- | --- |
+| **Campaign folders** | Every campaign the folder holds at the time of each request. Moving a campaign into the folder grants it, moving it out takes it away. |
+| **Campaigns** | One campaign, for workspaces that do not organize by folder. |
+| **Mailboxes** | The conversations in that mailbox in the unified inbox. |
+
+A campaign is reachable when it sits in at least one granted folder or is granted on its own. Campaign access never includes a mailbox, even the ones the campaign sends from: inbox access is always granted mailbox by mailbox. Under the mailbox picker, **Senders of the selected campaigns** lists the mailboxes the chosen campaigns and folders send from, to review and add with one click. A restricted member with nothing selected reaches nothing.
+
+<Callout type="warn" title="Restricted access is read-only">
+A restricted member's roles still apply, but only their read permissions do: **View campaigns**, **View analytics** and **Use unified inbox** (reading only). Everything else is set aside while the scope is restricted, so they cannot edit, start, send, reply, label, move, or mark anything read or unread. Opening a conversation does not mark it read for the rest of the team.
+</Callout>
+
+What a restricted member sees:
+
+- **Campaigns**: the list, folder counts, each granted campaign's settings, steps and activity feed, and its analytics. Any other campaign answers as not found, including by direct link.
+- **Analytics**: the dashboard and campaign reports, computed only over their campaigns and mailboxes.
+- **Inbox**: the conversations of their mailboxes, with counts and filters to match.
+- **Live updates** for those resources only. They do not appear in the team's presence and do not see who else is online.
+
+Everything that cannot yet be narrowed to a scope is unavailable to them: contacts, CRM, templates, forms, automations, deliverability, placement tests, settings other than their own profile and security, the AI assistant, and the Slack app. They are not sent workspace notifications. An API key a restricted member already holds, and an app they authorized, are held to the same scope and the same read-only routes; they cannot create new keys.
+
+Changing a member's access needs **Manage team** and a recent sign-in, takes effect on their next request, and applies to their open dashboard and live updates without a reload. You must hold every permission the member's roles grant, the owner always reaches the entire workspace, and you cannot change your own access. Grants on a deleted folder, campaign or mailbox disappear with it.
 
 ## Roles
 
@@ -87,7 +119,7 @@ Five rules keep this safe:
 - **Members can hold several roles**, and their effective access is the union of all of them. A member left with no roles keeps membership but has no permissions.
 - Up to 25 roles per workspace, including the seeded ones.
 
-Custom roles apply everywhere permissions do: API access checks, dashboard visibility, and which realtime events a member receives.
+Custom roles apply everywhere permissions do: API access checks, dashboard visibility, and which realtime events a member receives. For a member with a restricted [access scope](#access-scope), only a role's read permissions take effect.
 
 ## Related guides
 

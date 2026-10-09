@@ -213,7 +213,7 @@ defmodule Realtime.Auth do
   def check_org_membership(user_id, org_id) do
     query = """
     SELECT om.id, om.role, om.permissions,
-           o.presence_show_online, o.presence_show_activity
+           o.presence_show_online, o.presence_show_activity, om.access_scope
     FROM organization_members om
     JOIN organizations o ON o.id = om.organization_id
     WHERE om.organization_id = $1 AND om.user_id = $2
@@ -229,18 +229,22 @@ defmodule Realtime.Auth do
 
   defp run_org_membership(query, org_bin, user_bin, org_id, user_id) do
     case Realtime.Repo.query(query, [org_bin, user_bin]) do
-      {:ok, %{rows: [[id, role, permissions, show_online, show_activity] | _]}} ->
-        {:ok,
-         %{
-           id: id,
-           role: role,
-           permissions: permissions,
-           organization_id: org_id,
-           user_id: user_id,
-           # Org-wide presence privacy. Default to visible if somehow null.
-           presence_show_online: show_online != false,
-           presence_show_activity: show_activity != false
-         }}
+      {:ok, %{rows: [[id, role, permissions, show_online, show_activity, access_scope] | _]}} ->
+        with {:ok, scope} <- member_scope(role, access_scope, org_bin, user_bin) do
+          {:ok,
+           %{
+             id: id,
+             role: role,
+             permissions: permissions,
+             organization_id: org_id,
+             user_id: user_id,
+             # Org-wide presence privacy. Default to visible if somehow null.
+             presence_show_online: show_online != false,
+             presence_show_activity: show_activity != false,
+             # nil for the whole workspace; a restricted member's grants otherwise.
+             scope: scope
+           }}
+        end
 
       {:ok, %{rows: []}} ->
         {:error, :not_a_member}
@@ -249,6 +253,61 @@ defmodule Realtime.Auth do
         {:error, :database_error}
     end
   end
+
+  # The owner is never restricted, whatever the row says.
+  defp member_scope("owner", _access_scope, _org_bin, _user_bin), do: {:ok, nil}
+  defp member_scope(_role, "restricted", org_bin, user_bin), do: load_scope(org_bin, user_bin)
+  defp member_scope(_role, _access_scope, _org_bin, _user_bin), do: {:ok, nil}
+
+  # Mirrors ResolveMemberScope in the backend: folder grants follow the folder's current contents.
+  defp load_scope(org_bin, user_bin) do
+    query = """
+    WITH granted_folders AS (
+      SELECT f.id FROM folders f
+      JOIN organization_member_campaign_access a ON a.folder_id = f.id
+      WHERE f.organization_id = $1 AND a.organization_id = $1 AND a.user_id = $2
+    ), in_scope AS (
+      SELECT c.id FROM campaigns c
+      WHERE c.organization_id = $1 AND (
+        c.id IN (SELECT a.campaign_id FROM organization_member_campaign_access a
+          WHERE a.organization_id = $1 AND a.user_id = $2 AND a.campaign_id IS NOT NULL)
+        OR c.id IN (SELECT cf.campaign_id FROM campaign_folders cf WHERE cf.folder_id IN (SELECT id FROM granted_folders)))
+    )
+    SELECT
+      COALESCE((SELECT array_agg(id::text) FROM in_scope), '{}'),
+      COALESCE((SELECT array_agg(DISTINCT id::text) FROM (
+        SELECT id FROM granted_folders
+        UNION SELECT cf.folder_id FROM campaign_folders cf WHERE cf.campaign_id IN (SELECT id FROM in_scope)) v), '{}'),
+      COALESCE((SELECT array_agg(ea.id::text) FROM email_accounts ea
+        JOIN organization_member_mailbox_access a ON a.email_account_id = ea.id
+        WHERE ea.organization_id = $1 AND a.organization_id = $1 AND a.user_id = $2), '{}')
+    """
+
+    case Realtime.Repo.query(query, [org_bin, user_bin]) do
+      {:ok, %{rows: [[campaigns, folders, mailboxes] | _]}} ->
+        {:ok,
+         %{
+           campaigns: MapSet.new(campaigns),
+           folders: MapSet.new(folders),
+           mailboxes: MapSet.new(mailboxes)
+         }}
+
+      {:error, _reason} ->
+        {:error, :database_error}
+    end
+  end
+
+  @doc """
+  Whether a membership resolved by check_org_membership reaches a resource.
+  `kind` is :campaigns, :folders or :mailboxes; a workspace member reaches everything.
+  """
+  def in_scope?(%{scope: nil}, _kind, _id), do: true
+
+  def in_scope?(%{scope: scope}, kind, id) when is_binary(id),
+    do: MapSet.member?(Map.fetch!(scope, kind), String.downcase(id))
+
+  def in_scope?(%{scope: _}, _kind, _id), do: false
+  def in_scope?(_member, _kind, _id), do: true
 
   @doc """
   Fetch a user's display profile (name + avatar) for presence metadata.
@@ -284,8 +343,12 @@ defmodule Realtime.Auth do
 
     case dump_and_query(org_query, [campaign_id]) do
       {:ok, %{rows: [[org_id] | _]}} when not is_nil(org_id) ->
-        # Check if user is a member of the organization
-        check_org_membership(user_id, org_id)
+        # Check if user is a member of the organization, and reaches this campaign
+        with {:ok, member} <- check_org_membership(user_id, org_id) do
+          if in_scope?(member, :campaigns, campaign_id),
+            do: {:ok, member},
+            else: {:error, :forbidden}
+        end
 
       {:ok, %{rows: [[nil] | _]}} ->
         # Campaign exists but has no organization - check direct ownership
@@ -334,7 +397,11 @@ defmodule Realtime.Auth do
 
     case dump_and_query(org_query, [email_account_id]) do
       {:ok, %{rows: [[org_id] | _]}} when not is_nil(org_id) ->
-        check_org_membership(user_id, org_id)
+        with {:ok, member} <- check_org_membership(user_id, org_id) do
+          if in_scope?(member, :mailboxes, email_account_id),
+            do: {:ok, member},
+            else: {:error, :forbidden}
+        end
 
       {:ok, %{rows: [[nil] | _]}} ->
         # Check direct ownership

@@ -18,6 +18,10 @@ func (s *uniboxService) GetByThread(
 	orgID, emailID uuid.UUID,
 	threadID, limit, cursor string,
 ) (*models.MailSearchResult, *errx.Error) {
+	return s.GetByThreadWithin(ctx, orgID, emailID, threadID, limit, cursor, nil)
+}
+
+func (s *uniboxService) GetByThreadWithin(ctx context.Context, orgID, emailID uuid.UUID, threadID, limit, cursor string, allowed []uuid.UUID) (*models.MailSearchResult, *errx.Error) {
 	l := DefaultThreadLimit
 	if limit != "" {
 		parsed, err := strconv.Atoi(limit)
@@ -30,7 +34,7 @@ func (s *uniboxService) GetByThread(
 		l = parsed
 	}
 
-	resp, err := s.uniboxRepository.GetByThread(ctx, orgID, emailID, threadID, l, cursor)
+	resp, err := s.uniboxRepository.GetByThreadWithin(ctx, orgID, emailID, threadID, l, cursor, allowed)
 	if err != nil {
 		errs.CaptureException(err)
 		return nil, errx.InternalError()

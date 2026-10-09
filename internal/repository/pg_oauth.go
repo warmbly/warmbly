@@ -420,12 +420,12 @@ const grantAppIsUsable = ` AND EXISTS (SELECT 1 FROM oauth_applications a
 func (r *oauthRepository) grantByTokenHash(ctx context.Context, column, hash string) (*models.OAuthAccessGrant, error) {
 	var g models.OAuthAccessGrant
 	holder := &models.OrganizationMember{}
-	row := r.db.QueryRow(ctx, `SELECT `+oauthGrantCols+`, holder.role, holder.permissions
+	row := r.db.QueryRow(ctx, `SELECT `+oauthGrantCols+`, holder.role, holder.permissions, holder.access_scope
 		FROM oauth_access_grants
-		CROSS JOIN LATERAL (SELECT m.role, m.permissions FROM organization_members m
+		CROSS JOIN LATERAL (SELECT m.role, m.permissions, m.access_scope FROM organization_members m
 			WHERE m.organization_id = oauth_access_grants.organization_id AND m.user_id = oauth_access_grants.user_id) holder
 		WHERE `+column+` = $1`+grantHolderIsMember+grantHolderNotBanned+grantAppIsUsable, hash)
-	if err := scanOAuthGrant(row, &g, &holder.Role, &holder.Permissions); err != nil {
+	if err := scanOAuthGrant(row, &g, &holder.Role, &holder.Permissions, &holder.AccessScope); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}

@@ -18,6 +18,7 @@ import { SelectionBar } from "./SelectionBar";
 import { useConversationActions } from "@/hooks/useConversationActions";
 import useUniboxSearch from "@/lib/api/hooks/app/unibox/useUniboxSearch";
 import { useShortcutActions } from "@/hooks/useShortcutActions";
+import { useAccessRestricted } from "@/hooks/usePermission";
 import useInboxDebouncedValue from "@/hooks/useBrowseDebouncedValue";
 import { useScrollMemory } from "@/hooks/useScrollMemory";
 import { useAppStore } from "@/stores";
@@ -92,6 +93,7 @@ export function ConversationList({
   onOpenScopeSheet,
 }: ConversationListProps) {
   const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const readOnly = useAccessRestricted();
 
   const searchRef = React.useRef<HTMLInputElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
@@ -382,12 +384,14 @@ export function ConversationList({
         setSelectedAccountId(null);
       },
       listToggleSelect: () => {
+        if (readOnly) return;
         const row = emails[currentIndex()];
         if (!row) return;
         const id = rowKey(row);
         toggleSelect(id, !picked.has(id), false);
       },
       listArchive: () => {
+        if (readOnly) return;
         // The ticked rows when there are any, otherwise the focused one.
         const target = selectedIds.length > 0 ? selectedIds : [];
         if (target.length === 0) {
@@ -462,7 +466,7 @@ export function ConversationList({
               <XIcon className="w-3.5 h-3.5" />
             </button>
           </span>
-        ) : (
+        ) : readOnly ? null : (
           <button
             type="button"
             onClick={() => setSelectMode(true)}

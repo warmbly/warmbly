@@ -5,7 +5,8 @@ import type { RouterContext } from "./router";
 
 import { dashboardReady } from "./lib/boot";
 import { useAppStore } from "./stores/useAppStore";
-import { orgHasPermission, type PermissionKey } from "./hooks/usePermission";
+import { isAccessRestricted, orgHasPermission, type PermissionKey } from "./hooks/usePermission";
+import { isScopedPath } from "./lib/accessScope";
 import { hasPermission, PERMISSION_BITS } from "./lib/permissions";
 import { loadCampaignPeriod, periodWindow, utcToday } from "./lib/campaignPeriod";
 import { parseSearch, type SearchParams } from "./lib/routerSearch";
@@ -101,6 +102,9 @@ function pageLoader(prefetch: (qc: QueryClient, page: PageArgs) => Prefetch[]): 
         } catch {
             return;
         }
+        // A restricted member is sent elsewhere; the page's reads would be refused.
+        const org = useAppStore.getState().currentOrganization;
+        if (isAccessRestricted(org) && !isScopedPath(ctx.location.pathname)) return;
         prefetch((ctx.context as RouterContext).queryClient, {
             params: (ctx as PageLoaderContext & { params?: Record<string, string | undefined> }).params ?? {},
             search: parseSearch(ctx.location.searchStr),
@@ -109,6 +113,7 @@ function pageLoader(prefetch: (qc: QueryClient, page: PageArgs) => Prefetch[]): 
 }
 
 const can = (key: PermissionKey) => orgHasPermission(useAppStore.getState().currentOrganization, key);
+const restricted = () => isAccessRestricted(useAppStore.getState().currentOrganization);
 
 // Mirrors useFeatureAccess().canManage.
 function canManageTeam(): boolean {
@@ -180,7 +185,7 @@ export const campaignsLoader = pageLoader((qc) =>
     can("VIEW_CAMPAIGNS")
         ? [
               qc.prefetchInfiniteQuery(campaignsListQuery({ query: "", folder: "" })),
-              qc.prefetchQuery(advisorSurfaceQuery("campaigns")),
+              !restricted() && qc.prefetchQuery(advisorSurfaceQuery("campaigns")),
           ]
         : [],
 );
@@ -205,7 +210,7 @@ export const campaignOverviewLoader = pageLoader((qc, { params }) => {
     return [
         qc.prefetchQuery(campaignAnalyticsQuery(id, asked)),
         daily,
-        qc.prefetchQuery(advisorFindingsQuery({ entityType: "campaign", entityId: id, limit: 7 })),
+        !restricted() && qc.prefetchQuery(advisorFindingsQuery({ entityType: "campaign", entityId: id, limit: 7 })),
     ];
 });
 
