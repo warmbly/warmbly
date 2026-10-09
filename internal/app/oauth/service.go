@@ -23,7 +23,6 @@ import (
 	"github.com/warmbly/warmbly/internal/errx"
 	"github.com/warmbly/warmbly/internal/infrastructure/cache"
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/pkg/displayname"
 	"github.com/warmbly/warmbly/internal/pkg/whdomain"
 	"github.com/warmbly/warmbly/internal/repository"
 )
@@ -66,16 +65,6 @@ func (e *ValidationError) Error() string { return e.msg }
 
 func invalidf(format string, args ...any) error {
 	return &ValidationError{msg: fmt.Sprintf(format, args...)}
-}
-
-// appName applies the shared naming rules: an app name is shown to every
-// workspace that sees its consent screen or its directory listing.
-func appName(raw string) (string, error) {
-	name, xerr := displayname.Validate("name", raw, displayname.Workspace, false)
-	if xerr != nil {
-		return "", xerr
-	}
-	return name, nil
 }
 
 // appWebsite accepts an empty value or an http(s) address on a host, without
@@ -151,7 +140,7 @@ func (s *Service) RegisterApplication(ctx context.Context, orgID, userID uuid.UU
 	if err := s.CheckDeveloperAccess(ctx, orgID, userID); err != nil {
 		return nil, err
 	}
-	name, err := appName(w.Name)
+	name, err := appName(w.Name, "")
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +215,7 @@ func (s *Service) UpdateApplication(ctx context.Context, orgID, userID, id uuid.
 	if app.SuspendedAt != nil {
 		return nil, ErrAppSuspended
 	}
-	name, err := appName(w.Name)
+	name, err := appName(w.Name, app.Name)
 	if err != nil {
 		return nil, err
 	}

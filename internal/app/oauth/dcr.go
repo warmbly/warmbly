@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/warmbly/warmbly/internal/models"
-	"github.com/warmbly/warmbly/internal/pkg/displayname"
 )
 
 // Dynamic Client Registration (RFC 7591). An MCP client (Claude Code, Cursor,
@@ -23,7 +22,8 @@ import (
 const dcrMaxPerIPPerHour = 20
 
 // DCRRequest is the RFC 7591 client-registration request (only the members we
-// honor; unknown members are ignored per the spec).
+// honor; unknown members are ignored per the spec). client_uri and logo_uri are
+// not honored: nobody vouches for a self-registered client's website or logo.
 type DCRRequest struct {
 	ClientName              string   `json:"client_name"`
 	RedirectURIs            []string `json:"redirect_uris"`
@@ -31,8 +31,6 @@ type DCRRequest struct {
 	ResponseTypes           []string `json:"response_types"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	Scope                   string   `json:"scope"`
-	ClientURI               string   `json:"client_uri"`
-	LogoURI                 string   `json:"logo_uri"`
 }
 
 // DCRResponse is the RFC 7591 client-information response. client_secret is set
@@ -65,10 +63,7 @@ func (s *Service) RegisterDynamicClient(ctx context.Context, clientIP string, re
 	}
 
 	// A self-registered name nobody can be asked to correct is cleaned, not refused.
-	name := displayname.Clean(req.ClientName, displayname.Workspace)
-	if name == "" {
-		name = "MCP client"
-	}
+	name := dcrClientName(req.ClientName)
 
 	uris, err := validateDCRRedirectURIs(req.RedirectURIs)
 	if err != nil {
@@ -104,7 +99,6 @@ func (s *Service) RegisterDynamicClient(ctx context.Context, clientIP string, re
 
 	app := &models.OAuthApplication{
 		Name:                  name,
-		WebsiteURL:            dcrWebsite(req.ClientURI),
 		ClientID:              clientID,
 		RedirectURIs:          uris,
 		AllowedWebhookDomains: []string{},
@@ -221,15 +215,4 @@ func (s *Service) checkDCRRate(ctx context.Context, ip string) error {
 		return errTooManyRegistrations()
 	}
 	return nil
-}
-
-// dcrWebsite keeps a self-registered client's website only when it is a plain
-// http(s) address. Its logo_uri is never kept: the consent screen shows only
-// images this instance stored.
-func dcrWebsite(raw string) string {
-	w, err := appWebsite(raw)
-	if err != nil {
-		return ""
-	}
-	return w
 }

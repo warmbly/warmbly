@@ -15,7 +15,7 @@ import { CheckSquare } from "@/components/ui/check-square";
 import { Label, TextInput } from "@/components/ui/field";
 import { useConfirm } from "@/hooks/context/confirm";
 import useAPIPermissions from "@/lib/api/hooks/app/api-keys/useAPIPermissions";
-import { nameError } from "@/lib/displayName";
+import { appNameError } from "@/lib/displayName";
 import { useCreateOAuthApp, useSetOAuthAppLogo } from "@/lib/api/hooks/app/oauth/useOAuthApps";
 import { useWebhookEventCatalog } from "@/lib/api/hooks/app/webhooks/useWebhooks";
 import type APIPermission from "@/lib/api/models/app/apikeys/APIPermission";
@@ -90,7 +90,7 @@ export default function RegisterAppDialog({ onClose }: { onClose: () => void }) 
 
     const redirectList = redirects.map((r) => r.trim()).filter(Boolean);
     const redirectErrors = redirects.map(redirectProblem);
-    const nameProblem = nameError("Name", name, "workspace");
+    const nameProblem = appNameError("Name", name);
     const websiteProblem = website.trim() && !/^https?:\/\/[^\s/]+/i.test(website.trim()) ? "Start with https://" : null;
     const webhookProblem =
         webhooksOn && webhookUrl.trim() && !/^https:\/\/[^\s/]+/i.test(webhookUrl.trim()) ? "Use an https address" : null;
