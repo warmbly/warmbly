@@ -46,7 +46,7 @@ func TestLiveMailboxPlanDefaultsMigrationPreservesRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, direction := range []string{"up", "down"} {
-		migration, err := os.ReadFile("../infrastructure/db/migrations/000275_mailbox_behavior_defaults." + direction + ".sql")
+		migration, err := os.ReadFile("../infrastructure/db/migrations/000276_mailbox_behavior_defaults." + direction + ".sql")
 		if err != nil {
 			t.Fatal(err)
 		}
