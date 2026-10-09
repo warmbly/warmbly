@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -62,6 +63,74 @@ func TestLiveLastWarmupSendFailure(t *testing.T) {
 	f.exec(`UPDATE warmup_tokens SET sent_message_id = '<delivered@example.test>' WHERE task_id = $1`, later)
 	if got, err := repo.LastWarmupSendFailure(ctx, f.account, since); err != nil || got != nil {
 		t.Fatalf("after a delivered send: got %+v, %v; want nil", got, err)
+	}
+}
+
+func TestLiveDispatchRetryUpgradePreservesOldTasksAndNewMailboxes(t *testing.T) {
+	_, pool := liveContactDB(t)
+	ctx, now := t.Context(), time.Now().UTC().Truncate(time.Microsecond)
+	f := newWarmupUsageFixture(t, pool)
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := tx.Exec(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply := func(file string) {
+		t.Helper()
+		sql, err := os.ReadFile("../infrastructure/db/migrations/" + file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exec(string(sql))
+	}
+	// Recreate the v0.6.39 schema inside a transaction; never commit the rollback.
+	for _, file := range []string{"000277_task_dispatch_retry.down.sql", "000276_mailbox_behavior_defaults.down.sql", "000275_unibox_forward_thread.down.sql"} {
+		apply(file)
+	}
+	old, uncertain, nonce := uuid.New(), uuid.New(), uuid.New()
+	exec(`UPDATE email_accounts SET status='active',warmup=NOW(),test_mode='legacy',send_recovery_hold=true,
+	    send_recovery_reason='unknown',send_recovery_task_id=$2 WHERE id=$1`, f.account, uncertain)
+	exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,scheduled_at)
+	    VALUES($1,'warmup',$2,'pending','',$3)`, old, f.account, now.Add(-2*time.Hour))
+	exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,send_reserved_at,send_result_state,send_executor_nonce,send_executor_started_at)
+	    VALUES($1,'warmup',$2,'completed','',$3,'unknown',$4,$3)`, uncertain, f.account, now.Add(-time.Hour), nonce)
+	for _, file := range []string{"000275_unibox_forward_thread.up.sql", "000276_mailbox_behavior_defaults.up.sql", "000277_task_dispatch_retry.up.sql"} {
+		apply(file)
+	}
+	var retries int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE id IN($1,$2) AND dispatch_retry_at IS NOT NULL`, old, uncertain).Scan(&retries); err != nil || retries != 0 {
+		t.Fatalf("upgrade unexpectedly delayed existing tasks: retries=%d err=%v", retries, err)
+	}
+	newAccount, newer := uuid.New(), uuid.New()
+	exec(`INSERT INTO email_accounts(id,user_id,organization_id,email,name,signature_plain,signature_html,provider,status,warmup,test_mode)
+	    VALUES($1,$2,$3,$4,'Upgrade test','','','smtp_imap','active',NOW(),'legacy')`, newAccount, f.user, f.org, "upgrade-"+newAccount.String()+"@example.test")
+	exec(`INSERT INTO tasks(id,task_type,email_account_id,status,message_id,scheduled_at)
+	    VALUES($1,'warmup',$2,'pending','',$3)`, newer, newAccount, now.Add(-time.Minute))
+	checkDue := func(want uuid.UUID) {
+		t.Helper()
+		var next uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT id FROM tasks WHERE id IN($1,$2,$3) AND status='pending'
+		    AND GREATEST(scheduled_at,COALESCE(dispatch_retry_at,scheduled_at))<=NOW()
+		    ORDER BY GREATEST(scheduled_at,COALESCE(dispatch_retry_at,scheduled_at)),id LIMIT 1`, old, newer, uncertain).Scan(&next); err != nil || next != want {
+			t.Fatalf("next due task=%v, want=%v err=%v", next, want, err)
+		}
+	}
+	checkDue(old)
+	exec(`UPDATE tasks SET dispatch_retry_at=$2 WHERE id=$1`, old, now.Add(5*time.Minute))
+	checkDue(newer)
+	var held bool
+	var state string
+	var savedNonce uuid.UUID
+	var started time.Time
+	if err := tx.QueryRow(ctx, `SELECT e.send_recovery_hold,t.send_result_state,t.send_executor_nonce,t.send_executor_started_at
+	    FROM tasks t JOIN email_accounts e ON e.id=t.email_account_id WHERE t.id=$1`, uncertain).Scan(&held, &state, &savedNonce, &started); err != nil || !held || state != "unknown" || savedNonce != nonce || !started.Equal(now.Add(-time.Hour)) {
+		t.Fatalf("upgrade changed send protections: held=%v state=%s nonce=%v started=%v err=%v", held, state, savedNonce, started, err)
 	}
 }
 
