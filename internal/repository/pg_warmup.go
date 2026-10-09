@@ -1144,10 +1144,10 @@ func (r *warmupRepository) LastWarmupSendFailure(ctx context.Context, accountID 
 	var first time.Time
 	err := resultDB(ctx, r.db).QueryRow(ctx, `
 		SELECT message, at, first_at FROM (`+warmupSendFailuresSQL+`) f
-		WHERE (message LIKE $2 AND first_at <= $3 AND at > $3 AND at <= $3 + INTERVAL '1 hour'
+		WHERE (message LIKE $2 AND first_at <= $3 - INTERVAL '1 hour' AND at > $3 - INTERVAL '1 hour'
 		       AND status = 'active' AND warming AND sending)
 		   OR (message NOT LIKE $2 AND at >= $4)
-	`, accountID, mailboxLoadingPattern, time.Now().Add(-models.WarmupLoadingGracePeriod), since).
+	`, accountID, mailboxLoadingPattern, time.Now(), since).
 		Scan(&f.Message, &f.At, &first)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

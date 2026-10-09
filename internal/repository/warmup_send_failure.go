@@ -22,12 +22,13 @@ const warmupSendFailuresSQL = `
 		SELECT tf.message, t.updated_at AS at
 		FROM tasks t JOIN task_failures tf ON tf.task_id = t.id
 		WHERE t.email_account_id = e.id AND t.task_type = 'warmup' AND t.status = 'failed'
+		  AND t.updated_at <= $3
 		ORDER BY t.updated_at DESC, t.id DESC LIMIT 1
 	) latest ON true
 	LEFT JOIN LATERAL (
 		SELECT MAX(c.completed_at) AS at
 		FROM tasks c JOIN warmup_tokens wt ON wt.task_id = c.id AND wt.sent_message_id <> ''
-		WHERE c.email_account_id = e.id AND c.task_type = 'warmup' AND c.status = 'completed'
+		WHERE c.email_account_id = e.id AND c.task_type = 'warmup' AND c.status = 'completed' AND c.completed_at <= $3
 	) confirmed ON true
 	LEFT JOIN LATERAL (
 		WITH loading AS (
@@ -36,11 +37,12 @@ const warmupSendFailuresSQL = `
 			FROM tasks t JOIN task_failures tf ON tf.task_id = t.id
 			WHERE t.email_account_id = e.id AND t.task_type = 'warmup' AND t.status = 'failed'
 			  AND tf.message LIKE $2
+			  AND t.updated_at <= $3
 			  AND (confirmed.at IS NULL OR t.updated_at > confirmed.at)
 			  AND NOT EXISTS (
 				SELECT 1 FROM tasks p JOIN task_failures pf ON pf.task_id=p.id
 				WHERE p.email_account_id=e.id AND p.task_type='warmup' AND p.status='failed'
-				  AND pf.message NOT LIKE $2 AND p.updated_at >= t.updated_at
+				  AND pf.message NOT LIKE $2 AND p.updated_at >= t.updated_at AND p.updated_at <= $3
 			  )
 		)
 		SELECT MIN(at) AS at FROM loading
@@ -85,10 +87,10 @@ func (r *taskRepository) ListOverdueWarmupDispatches(ctx context.Context, now ti
 func (r *warmupRepository) ListMailboxLoadingIncidents(ctx context.Context, now time.Time) ([]MailboxLoadingIncident, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, organization_id, worker_id, first_at, at FROM (`+warmupSendFailuresSQL+`) f
-		WHERE message LIKE $2 AND first_at <= $3 AND at > $3 AND at <= $3 + INTERVAL '1 hour'
+		WHERE message LIKE $2 AND first_at <= $3 - INTERVAL '1 hour' AND at > $3 - INTERVAL '1 hour'
 		  AND status = 'active' AND warming AND sending
 		ORDER BY worker_id, id
-	`, nil, mailboxLoadingPattern, now.Add(-models.WarmupLoadingGracePeriod))
+	`, nil, mailboxLoadingPattern, now)
 	if err != nil {
 		return nil, err
 	}
