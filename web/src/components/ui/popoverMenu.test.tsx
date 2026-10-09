@@ -18,7 +18,11 @@ vi.mock("framer-motion", async (importOriginal) => ({
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+});
 
 function Menu({ name, children }: { name: string; children?: React.ReactNode }) {
     return (
@@ -36,6 +40,48 @@ const open = (name: string) => fireEvent.click(screen.getByRole("button", { name
 const shown = () => screen.queryAllByRole("menuitem").map((i) => i.textContent);
 
 describe("PopoverMenu", () => {
+    it("clamps a right-aligned feed to a narrow screen", () => {
+        vi.stubGlobal("innerWidth", 320);
+        vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(304);
+        vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(400);
+        vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(280, 8, 28, 28));
+        render(
+            <PopoverMenu align="end">
+                <PopoverMenuTrigger>Notifications</PopoverMenuTrigger>
+                <PopoverMenuContent minWidth={340} role="dialog" aria-label="Notifications">
+                    Feed
+                </PopoverMenuContent>
+            </PopoverMenu>,
+        );
+        open("Notifications");
+        const feed = screen.getByRole("dialog", { name: "Notifications" });
+        expect(feed).toHaveStyle({ minWidth: "304px", left: "8px", visibility: "visible" });
+        expect(parseFloat(feed.style.top) + 400).toBeLessThan(window.innerHeight - 8);
+    });
+
+    it("keeps an upward profile menu outside a transformed, clipped sidebar", () => {
+        vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(232);
+        vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(160);
+        vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(8, window.innerHeight - 40, 232, 32));
+        const { container } = render(
+            <aside style={{ overflow: "hidden", transform: "translateX(0)" }}>
+                <PopoverMenu side="top">
+                    <PopoverMenuTrigger>My profile</PopoverMenuTrigger>
+                    <PopoverMenuContent minWidth={232}>
+                        <PopoverMenuItem>Settings</PopoverMenuItem>
+                    </PopoverMenuContent>
+                </PopoverMenu>
+            </aside>,
+        );
+        open("My profile");
+        const menu = screen.getByRole("menu");
+        expect(container.contains(menu)).toBe(false);
+        expect(menu.parentElement).toBe(document.body);
+        expect(menu).toHaveStyle({ position: "fixed", visibility: "visible" });
+        expect(parseFloat(menu.style.top)).toBeGreaterThanOrEqual(8);
+        expect(parseFloat(menu.style.top) + 160).toBeLessThan(window.innerHeight - 8);
+    });
+
     it("closes on a press outside, even inside a card that stops mousedown", () => {
         render(
             <>
