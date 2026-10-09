@@ -612,9 +612,10 @@ func (h *Handler) UniboxReply(c *gin.Context) {
 	// The composer only knows the provider thread id, but a thread id is
 	// meaningless outside the sending mailbox: the recipient's client threads
 	// on In-Reply-To/References. Resolve the parent Message-ID here so a reply
-	// nests for them too, without needing a client change.
+	// nests for them too, without needing a client change. A forward answers
+	// nobody: it is filed into the forwarded message's conversation instead.
 	inReplyTo := req.InReplyTo
-	if len(inReplyTo) == 0 && req.ThreadID != "" {
+	if len(inReplyTo) == 0 && req.ThreadID != "" && forward == nil {
 		if parentMessageID, xerr := h.UniboxService.LatestMessageIDInThread(c.Request.Context(), *orgID, req.ThreadID); xerr == nil && mailhdr.ValidMessageID(parentMessageID) {
 			inReplyTo = []string{parentMessageID}
 		}

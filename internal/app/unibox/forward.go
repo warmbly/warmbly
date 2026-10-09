@@ -24,12 +24,13 @@ func (s *uniboxService) ForwardSource(ctx context.Context, orgID, id uuid.UUID) 
 	}
 
 	out := &models.ForwardedMessage{
-		EmailID: msg.EmailID,
-		From:    msg.FromAddr,
-		To:      msg.ToAddr,
-		CC:      msg.CC,
-		Subject: msg.Subject,
-		Date:    msg.SentDate,
+		EmailID:  msg.EmailID,
+		ThreadID: msg.ThreadID,
+		From:     msg.FromAddr,
+		To:       msg.ToAddr,
+		CC:       msg.CC,
+		Subject:  msg.Subject,
+		Date:     msg.SentDate,
 	}
 	if out.Date.IsZero() {
 		out.Date = msg.InternalDate

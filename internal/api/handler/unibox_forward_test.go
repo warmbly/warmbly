@@ -91,3 +91,64 @@ func TestUniboxReplyForwardNeedsReadAccess(t *testing.T) {
 		})
 	}
 }
+
+type fakeForwardThreadUnibox struct {
+	fakeForwardUnibox
+	parentLookups int
+}
+
+func (f *fakeForwardThreadUnibox) LatestMessageIDInThread(context.Context, uuid.UUID, string) (string, *errx.Error) {
+	f.parentLookups++
+	return "<parent@example.com>", nil
+}
+
+// A forward from an open conversation answers nobody, so no In-Reply-To is
+// resolved from the thread it was forwarded from; a reply still gets one.
+func TestUniboxReplyForwardFromAThreadIsNoReply(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sender := uuid.New()
+
+	for _, tc := range []struct {
+		name    string
+		forward bool
+		parent  bool
+	}{
+		{"forward", true, false},
+		{"reply", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ub := &fakeForwardThreadUnibox{fakeForwardUnibox: fakeForwardUnibox{mailbox: sender}}
+			send := &fakeForwardSend{}
+			h := &Handler{UniboxService: ub, EmailSendService: send, AuditService: audit.NewNoOpService()}
+
+			router := gin.New()
+			router.Use(func(c *gin.Context) {
+				c.Set(middleware.UserIDKey, uuid.NewString())
+				c.Set(middleware.OrganizationIDKey, uuid.New())
+				c.Set(middleware.AuthTypeKey, middleware.AuthTypeAPIKey)
+				c.Set(middleware.APIKeyPermissionsKey, models.APIPermWriteUnibox|models.APIPermReadUnibox)
+			})
+			router.POST("/unibox/reply", h.UniboxReply)
+
+			body := `{"email_account_id":"` + sender.String() + `","to":["team@example.com"],"subject":"Fwd: Pricing","body_plain":"FYI","thread_id":"conversation-1"`
+			if tc.forward {
+				body += `,"forward_message_id":"` + uuid.NewString() + `"`
+			}
+			body += `}`
+			req := httptest.NewRequest(http.MethodPost, "/unibox/reply", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+			}
+			if got := len(send.req.InReplyTo) > 0; got != tc.parent {
+				t.Fatalf("in_reply_to %v, want a parent: %v", send.req.InReplyTo, tc.parent)
+			}
+			if (ub.parentLookups > 0) != tc.parent {
+				t.Fatalf("parent looked up %d times", ub.parentLookups)
+			}
+		})
+	}
+}

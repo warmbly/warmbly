@@ -132,6 +132,10 @@ type UniboxRepository interface {
 	// a reply that arrives with only a provider thread id can still carry the
 	// In-Reply-To header the recipient's mail client threads on.
 	LatestMessageIDInThread(ctx context.Context, orgID uuid.UUID, threadID string) (string, error)
+	// FileSentForward files the sending mailbox's stored copy of a Unibox
+	// forward into the conversation it was forwarded from, for a copy synced
+	// before the send's Message-ID was known. Returns the rows it moved.
+	FileSentForward(ctx context.Context, taskID uuid.UUID) ([]FiledSentForward, error)
 
 	// ListMissingBodyText pages through messages stored before bodies were
 	// indexed for search, oldest id first from afterID. SetBodyText writes the
@@ -230,17 +234,21 @@ func ownAddressSQL(arrayExpr, orgArg string) string {
 			)`, arrayExpr, bareAddrSQL("own.addr"), orgArg)
 }
 
+// CreateEntry stores a synced message. A mailbox's copy of a forward it sent
+// from Unibox is filed into the conversation it was forwarded from, and e
+// carries the thread it was stored under.
 func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e *models.EmailMessageStoreData) error {
 	query := `
+		WITH fwd AS (` + sentForwardThreadSQL + `)
 		INSERT INTO unibox_emails (
 			id, user_id, email_id, mailbox, folder_path, thread_id, message_id,
 			gmail_id, parent_id, uid, mod_seq,
 			flags, bcc, cc, from_addr, in_reply_to, reply_to,
 			to_addr, subject, size, internal_date, sent_date,
 			snippet, seen, created_at, updated_at, body_text, folder,
-			provider_folder, automated
+			provider_folder, automated, filed_forward
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
+			$1, $2, $3, $4, $5, COALESCE((SELECT thread_id FROM fwd), $6), $7,
 			$8, $9, $10, $11,
 			$12, $13, $14, $15, $16, $17,
 			$18, $19, $20, $21, $22,
@@ -252,14 +260,17 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 				WHERE r.organization_id = (SELECT organization_id FROM email_accounts WHERE id = $3)
 				  AND r.message_id = $7 AND $7 <> ''
 				  AND r.automated
-			)
+			),
+			EXISTS (SELECT 1 FROM fwd)
 		)
 		ON CONFLICT (id) DO NOTHING
+		RETURNING thread_id
 	`
 
 	// The array columns are NOT NULL. A nil Go slice binds as SQL NULL, so a
 	// message with no In-Reply-To (any thread root) would fail the insert.
-	_, err := r.db.Exec(ctx, query,
+	var threadID string
+	err := r.db.QueryRow(ctx, query,
 		e.ID, userID, e.EmailID, e.Mailbox, e.FolderPath, e.ThreadID, e.MessageID,
 		e.GmailID, e.ParentID, e.UID, e.ModSeq,
 		textArray(e.Flags), textArray(e.BCC), textArray(e.CC), textArray(e.FromAddr),
@@ -269,9 +280,72 @@ func (r *uniboxRepository) CreateEntry(ctx context.Context, userID uuid.UUID, e 
 		// $28 is both columns: a message starts out where the provider put it,
 		// and only diverges once someone files it in Warmbly.
 		models.NormalizeFolder(e.Folder, e.Flags),
-	)
-	return err
+	).Scan(&threadID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Already stored: the conflict leaves the row as it was.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	e.ThreadID = threadID
+	return nil
 }
+
+// FiledSentForward is a stored copy FileSentForward moved, with its mailbox owner.
+type FiledSentForward struct {
+	UserID  uuid.UUID
+	Message models.EmailMessageStoreData
+}
+
+func (r *uniboxRepository) FileSentForward(ctx context.Context, taskID uuid.UUID) ([]FiledSentForward, error) {
+	// Only the Sent copy can have raced the result, and (email_id, folder) is indexed.
+	rows, err := r.db.Query(ctx, `
+		UPDATE unibox_emails ue
+		SET thread_id = et.forward_thread_id,
+		    filed_forward = true,
+		    updated_at = NOW()
+		FROM tasks t
+		JOIN email_tasks et ON et.task_id = t.id
+		WHERE t.id = $1
+		  AND t.task_type = 'email'
+		  AND t.message_id <> ''
+		  AND COALESCE(et.forward_thread_id, '') <> ''
+		  AND ue.email_id = t.email_account_id
+		  AND ue.folder = $2
+		  AND ue.message_id IN (t.message_id, btrim(t.message_id, '<> '), '<' || btrim(t.message_id, '<> ') || '>')
+		  AND NOT (ue.filed_forward AND ue.thread_id = et.forward_thread_id)
+		RETURNING ue.id, ue.user_id, ue.email_id, ue.thread_id, ue.subject, ue.from_addr, ue.snippet, ue.folder, ue.flags
+	`, taskID, models.FolderSent)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FiledSentForward
+	for rows.Next() {
+		var f FiledSentForward
+		m := &f.Message
+		if err := rows.Scan(&m.ID, &f.UserID, &m.EmailID, &m.ThreadID, &m.Subject, &m.FromAddr, &m.Snippet, &m.Folder, &m.Flags); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// sentForwardThreadSQL finds the conversation a mailbox's message ($3, $7) was
+// forwarded from, when it is the mailbox's own copy of a Unibox forward.
+const sentForwardThreadSQL = `
+			SELECT et.forward_thread_id AS thread_id
+			FROM tasks t
+			JOIN email_tasks et ON et.task_id = t.id
+			WHERE $7 <> ''
+			  AND t.email_account_id = $3
+			  AND t.task_type = 'email'
+			  AND t.message_id IN ($7, btrim($7, '<> '), '<' || btrim($7, '<> ') || '>')
+			  AND COALESCE(et.forward_thread_id, '') <> ''
+			ORDER BY t.created_at DESC
+			LIMIT 1`
 
 // textArray coalesces a nil slice to an empty one so it binds as '{}' rather
 // than NULL.
@@ -1459,6 +1533,8 @@ func (r *uniboxRepository) LatestMessageIDInThread(ctx context.Context, orgID uu
 		FROM unibox_emails
 		WHERE thread_id = $2
 		  AND message_id <> ''
+		  -- A filed forward never reached the people in the conversation.
+		  AND NOT filed_forward
 		  AND email_id IN (SELECT id FROM email_accounts WHERE organization_id = $1)
 		ORDER BY internal_date DESC
 		LIMIT 1
