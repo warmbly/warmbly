@@ -84,7 +84,7 @@ func TestLiveSyncArrivalUpgradePreservesLegacyMaps(t *testing.T) {
 	if _, err := conn.Exec(ctx, `INSERT INTO sync_arrival_outbox(user_id,email_id,organization_id,message_id,id,payload)VALUES($1,$2,$3,'legacy',$4,'fixture')`, user, mailbox, org, id); err != nil {
 		t.Fatal(err)
 	}
-	down, err := migrationsFS.ReadFile("migrations/000278_sync_arrival_outbox.down.sql")
+	down, err := migrationsFS.ReadFile("migrations/000279_sync_arrival_outbox.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
