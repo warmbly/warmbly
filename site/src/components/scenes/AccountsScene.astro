@@ -29,7 +29,7 @@ const stats = [
   { label: 'Warming', value: '3', sub: 'ramping up' },
   { label: 'Needs attention', value: '0', sub: 'paused or failing', last: true },
 ];
-const checks = ['SPF', 'DKIM', 'DMARC', 'MX'];
+const checks = ['SPF', 'DMARC', 'Tracking domain'];
 const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-[0.14em] text-left';
 ---
 <ScaledStage w={760} h={570} photo="lake-motion">
@@ -187,7 +187,7 @@ const th = 'px-3 py-2 text-[10px] font-medium text-slate-400 uppercase tracking-
       {checks.map((c, i) => (
         <div class="flex h-8 items-center justify-between text-[12px]" style={`--i:${i}`}>
           <span class="text-slate-600">{c}</span>
-          <span class="relative inline-flex h-4 w-14 items-center justify-end">
+          <span class="relative inline-flex h-4 w-14 shrink-0 items-center justify-end">
             <span class="acc-check-wait absolute right-0 size-3 rounded-full border-[1.5px] border-slate-200 border-t-sky-500"></span>
             <span class="acc-check-ok absolute right-0 inline-flex items-center gap-1 font-medium text-emerald-600"><Glyph name="check" size={12} />Pass</span>
           </span>
