@@ -299,8 +299,13 @@ const websiteJsonLd = {
 
           // A wb_ value already on this URL came from an earlier page and wins.
           var landing = params.get('wb_lp');
-          var path = landing && landing.charAt(0) === '/' && landing.charAt(1) !== '/'
-            ? new URL(landing, location.origin).pathname : location.pathname;
+          var path = location.pathname;
+          if (landing && landing.charAt(0) === '/' && landing.charAt(1) !== '/') {
+            try {
+              var landingUrl = new URL(landing, location.origin);
+              if (landingUrl.origin === location.origin) path = landingUrl.pathname;
+            } catch (e) { /* Keep the current path if the carried path is invalid. */ }
+          }
           carried.set('wb_lp', path.slice(0, 255));
 
           var ref = params.get('wb_ref');
@@ -327,7 +332,8 @@ const websiteJsonLd = {
           }
           if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
           var toDashboard = url.hostname === DASHBOARD_HOST;
-          var toPage = url.origin === location.origin && !/\.[a-z0-9]+$/i.test(url.pathname) && url.pathname !== location.pathname;
+          var toPage = url.origin === location.origin && !/\.[a-z0-9]+$/i.test(url.pathname) &&
+            (url.pathname !== location.pathname || url.search !== location.search);
           if (!toDashboard && !toPage) return;
           acquisition().forEach(function (value, name) {
             url.searchParams.set(name, value);

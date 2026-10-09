@@ -63,4 +63,11 @@ for (const name of ['click', 'auxclick', 'contextmenu']) {
 const privatePath = visit('https://warmbly.com/?wb_lp=/pricing%3Femail=private%23section&wb_ref=https%3A%2F%2FWWW.REDDIT.COM%2Fr%2Femail', '', ['https://app.warmbly.com/']).links[0];
 assert.equal(privatePath.searchParams.get('wb_lp'), '/pricing');
 assert.equal(privatePath.searchParams.get('wb_ref'), 'www.reddit.com');
+const samePath = visit('https://warmbly.com/pricing?utm_source=ad', '', ['/pricing?interval=year', '#faq']);
+assert.equal(samePath.links[0].searchParams.get('utm_source'), 'ad');
+assert.equal(samePath.links[0].searchParams.get('wb_lp'), '/pricing');
+assert.equal(samePath.links[0].searchParams.get('interval'), 'year');
+assert.equal(samePath.links[1].href, 'https://warmbly.com/pricing?utm_source=ad#faq');
+const invalidPath = visit(`https://warmbly.com/pricing?wb_lp=${encodeURIComponent('/\\evil.example/offer')}`, '', ['https://app.warmbly.com/']).links[0];
+assert.equal(invalidPath.searchParams.get('wb_lp'), '/pricing');
 console.log('Cookieless marketing acquisition regressions passed');

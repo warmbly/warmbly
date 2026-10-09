@@ -747,8 +747,7 @@ export interface AdminOrgListItem {
     campaign_count: number;
     active_campaigns: number;
     risk_state?: OrgRiskState | null;
-    /** Acquisition channel recorded once at signup. Absent for a direct
-     *  signup, which is most of them, and always absent on a self-host. */
+    /** Acquisition recorded once at signup; check referrer_host too, since an absent UTM source is unknown. */
     utm_source?: string | null;
     utm_medium?: string | null;
     utm_campaign?: string | null;

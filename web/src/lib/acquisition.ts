@@ -63,7 +63,8 @@ export function readAcquisition(search: string = window.location.search): Acquis
     const landing = clamp(params.get("wb_lp"));
     if (landing?.startsWith("/") && !landing.startsWith("//")) {
         try {
-            acquisition.landing_path = new URL(landing, window.location.origin).pathname;
+            const url = new URL(landing, window.location.origin);
+            if (url.origin === window.location.origin) acquisition.landing_path = url.pathname;
         } catch { /* Invalid landing paths carry no attribution. */ }
     }
 

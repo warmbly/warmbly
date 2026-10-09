@@ -40,6 +40,7 @@ describe("cookieless acquisition", () => {
     it("rejects network-path landing URLs and malformed referrers", () => {
         browser();
         expect(readAcquisition("?wb_lp=//evil.example/path&wb_ref=%25")).toEqual({});
+        expect(readAcquisition(`?wb_lp=${encodeURIComponent("/\\evil.example/offer")}`)).toEqual({});
         expect(readAcquisition("?wb_lp=https://evil.example/path&wb_ref=warmbly.com")).toEqual({});
     });
 });
