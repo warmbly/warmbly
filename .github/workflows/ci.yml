@@ -202,8 +202,8 @@ jobs:
         env:
           WARMBLY_TEST_DB: postgres://warmbly:warmbly@127.0.0.1:5432/warmbly_test?sslmode=disable
         run: |
-          go test -race ./internal/repository -run '^TestLive(LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|AdminPlatformOverview)' -count=1
-          go test -race ./internal/tasks -run '^TestLiveWarmup(SafetyHoldReschedules|Recovery)' -count=1
+          go test -race ./internal/repository -run '^TestLive(LastWarmupSendFailure|PersistentMailboxLoadingFailure|DispatchRetry|LineageQueueRevisions|AdminPlatformOverview|WarmupRecoversOldPreparation|WarmupPreparationRecoveryRetains)' -count=1
+          go test -race ./internal/tasks -run '^Test(LiveWarmup(SafetyHoldReschedules|Recovery|TaskDoesNotApplyResults)|WarmupSenderDistinguishes)' -count=1
 
       - name: Test the Kafka codec and client lifecycle
         run: go test -race -tags kafka ./internal/infrastructure/codec/ ./internal/infrastructure/kafka/ ./internal/infrastructure/eventbus/

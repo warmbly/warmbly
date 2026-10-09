@@ -146,12 +146,16 @@ export function PopoverMenuContent({
     className,
     minWidth = 200,
     matchTriggerWidth = false,
+    role = "menu",
+    "aria-label": ariaLabel,
 }: {
     children: React.ReactNode;
     className?: string;
     minWidth?: number;
     /** Pin the panel to the trigger's measured width (for full-width selects). */
     matchTriggerWidth?: boolean;
+    role?: "menu" | "dialog";
+    "aria-label"?: string;
 }) {
     const { open, setOpen, triggerRef, side, align, sideOffset, anchorPoint } = useMenu();
     const ref = useRef<HTMLDivElement>(null);
@@ -306,7 +310,8 @@ export function PopoverMenuContent({
                 <motion.div
                     ref={ref}
                     key="popover"
-                    role="menu"
+                    role={role}
+                    aria-label={ariaLabel}
                     tabIndex={-1}
                     data-floating="true"
                     onKeyDown={onMenuKeyDown}
