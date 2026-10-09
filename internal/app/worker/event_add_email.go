@@ -18,6 +18,7 @@ import (
 type mailboxLoad struct {
 	removed atomic.Bool
 	done    chan struct{}
+	prev    *mailboxLoad
 }
 
 // HandleAddEmail loads a mailbox off the bus loop. Loading dials the mail
@@ -28,13 +29,13 @@ func (w *WorkerService) HandleAddEmail(ctx context.Context, e *models.AddWorkerE
 		return nil
 	}
 
-	if w.mailManager.Has(e.ID) {
+	if _, loading := w.loads.Load(e.ID); !loading {
 		// Already loaded: keep the handler idempotent, but take a changed sync
 		// budget so an operator's settings change reaches this mailbox.
-		if mail := w.mailManager.Get(e.ID); mail != nil {
+		if mail := w.mailManager.Get(e.ID); mail != nil && mail.SameExecution(e) {
 			mail.ApplySyncPolicy(e.Sync)
+			return nil
 		}
-		return nil
 	}
 
 	load := &mailboxLoad{done: make(chan struct{})}
@@ -45,10 +46,8 @@ func (w *WorkerService) HandleAddEmail(ctx context.Context, e *models.AddWorkerE
 			break
 		}
 		old := v.(*mailboxLoad)
-		if !old.removed.Load() {
-			return nil
-		}
-		// A removal is pending on the load in flight: this add runs after it rather than being dropped.
+		// Queue after in-flight loads; AddWMail keeps unchanged adds idempotent.
+		load.prev = old
 		if w.loads.CompareAndSwap(e.ID, old, load) {
 			prev = old
 			break
@@ -73,10 +72,18 @@ func (w *WorkerService) HandleAddEmail(ctx context.Context, e *models.AddWorkerE
 // loadedMailbox returns a mailbox, waiting on a load of it still in flight so a
 // command queued behind its ADD_EMAIL finds it as it did when loads were inline.
 func (w *WorkerService) loadedMailbox(ctx context.Context, id uuid.UUID) (*wmail.WMail, bool) {
-	if v, ok := w.loads.Load(id); ok {
+	for {
+		v, ok := w.loads.Load(id)
+		if !ok {
+			break
+		}
 		select {
 		case <-v.(*mailboxLoad).done:
 		case <-ctx.Done():
+			return nil, false
+		}
+		if current, exists := w.loads.Load(id); !exists || current == v {
+			break
 		}
 	}
 	mail := w.mailManager.Get(id)
@@ -85,6 +92,10 @@ func (w *WorkerService) loadedMailbox(ctx context.Context, id uuid.UUID) (*wmail
 
 // loadMailbox connects one mailbox and starts its sync, or reports why it could not.
 func (w *WorkerService) loadMailbox(ctx context.Context, e *models.AddWorkerEmail, load *mailboxLoad) {
+	if load.removed.Load() {
+		return
+	}
+	previous := w.mailManager.Get(e.ID)
 	if err := w.mailManager.AddWMail(ctx, e); err != nil {
 		log.Error().Err(err).Str("email_id", e.ID.String()).Msg("failed to add email account to worker")
 		w.reportLoadFailure(e, err)
@@ -95,8 +106,10 @@ func (w *WorkerService) loadMailbox(ctx context.Context, e *models.AddWorkerEmai
 		return
 	}
 	if load.removed.Load() {
-		mail.Discard()
-		w.mailManager.Terminate(e.ID)
+		w.mailManager.TerminateMailbox(e.ID, mail)
+		return
+	}
+	if previous == mail {
 		return
 	}
 
@@ -146,8 +159,5 @@ func (w *WorkerService) reportLoadFailure(e *models.AddWorkerEmail, err error) {
 
 // dropMailbox removes a loaded mailbox and stops its work.
 func (w *WorkerService) dropMailbox(id uuid.UUID, mail *wmail.WMail) {
-	if mail.Cancel != nil {
-		mail.Cancel()
-	}
-	w.mailManager.Terminate(id)
+	w.mailManager.TerminateMailbox(id, mail)
 }

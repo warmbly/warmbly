@@ -182,6 +182,13 @@ func providerThrottle(err *errx.MailError) bool {
 
 // Send attempts to send an email with retry for transient failures
 func (w *WMail) Send(ctx context.Context, req *SendRequest) *SendResult {
+	done, ok := w.BeginExecution()
+	if !ok {
+		return &SendResult{Error: errx.ErrMailServerUnreachable}
+	}
+	defer done()
+	ctx, cancel := w.ExecutionContext(ctx)
+	defer cancel()
 	// For warmup emails, ensure HTML is empty
 	bodyHTML := req.BodyHTML
 	if req.IsWarmup {

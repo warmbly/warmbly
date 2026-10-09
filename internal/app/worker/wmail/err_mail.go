@@ -35,6 +35,8 @@ func (w *WMail) RunMailError(f func() *errx.MailError) {
 }
 
 func (w *WMail) Terminate() {
-	w.Cancel()
-	w.TerminateFunc()
+	w.Stop()
+	if w.TerminateFunc != nil {
+		w.TerminateFunc()
+	}
 }

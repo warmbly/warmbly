@@ -52,6 +52,16 @@ func (w *WorkerService) HandleWarmupAction(ctx context.Context, action models.Wa
 	}
 
 	mail, exists := w.loadedMailbox(ctx, action.EmailID)
+	if exists {
+		if done, ok := mail.BeginExecution(); ok {
+			defer done()
+			var cancel func()
+			ctx, cancel = mail.ExecutionContext(ctx)
+			defer cancel()
+		} else {
+			exists = false
+		}
+	}
 	var err error
 	switch {
 	case !exists:

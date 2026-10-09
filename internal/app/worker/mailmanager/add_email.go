@@ -15,6 +15,18 @@ func (m *MailManager) AddWMail(
 	ctx context.Context,
 	data *models.AddWorkerEmail,
 ) error {
+	dataCopy := *data
+	data = &dataCopy
+	old := m.Get(data.ID)
+	if old != nil {
+		if old.SameExecution(data) {
+			old.ApplySyncPolicy(data.Sync)
+			return nil
+		}
+		old.Stop()
+		old.Drain()
+		old.ResumeInto(data)
+	}
 	// Cfg is avro-excluded from the payload, so rebuild it from the worker's
 	// local oauth config for token refresh (no-op for smtp_imap).
 	data.Cfg = m.cfgFor(data.Type)
@@ -25,11 +37,12 @@ func (m *MailManager) AddWMail(
 		data.TokenSource = m.tokenBroker.Source(data.ID)
 	}
 
+	var newMail *wmail.WMail
 	newMail, err := wmail.NewWMail(
 		data,
 		m.OnEvent,
 		func() {
-			m.Terminate(data.ID)
+			m.TerminateMailbox(data.ID, newMail)
 		},
 		m.cache,
 		m.storage,
@@ -47,13 +60,15 @@ func (m *MailManager) AddWMail(
 	// Built before the lock: NewWMail dials the server, and holding the lock
 	// through that stalled every send and lookup on this worker.
 	m.Lock()
-	defer m.Unlock()
-	if _, loaded := m.Emails[data.ID]; loaded {
+	if current := m.Emails[data.ID]; current != old {
+		m.Unlock()
 		newMail.Discard()
 		return nil
 	}
+	newMail.PreservePending(old)
 	m.Emails[data.ID] = newMail
 	newMail.ExecutorID = m.ExecutorID
+	m.Unlock()
 
 	return nil
 }

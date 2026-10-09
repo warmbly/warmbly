@@ -35,6 +35,7 @@ var headerFetchFields = append([]string{config.WarmupVerifyHeader}, config.Inbou
 var evidenceFetchFields = append(append([]string{}, headerFetchFields...), "Authentication-Results", "From", "Return-Path", "DKIM-Signature", "List-Unsubscribe", "List-Unsubscribe-Post")
 
 type Client struct {
+	Context     context.Context
 	Email       string
 	AuthType    models.AuthType
 	Credentials *models.Service
